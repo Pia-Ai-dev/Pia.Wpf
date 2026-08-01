@@ -64,6 +64,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// job, through <c>IAgentRunSteeringService</c>. Null ⇒ nothing to revoke, i.e. the pre-Batch-08 behaviour.
     /// </summary>
     private readonly IRunSteeringStore? _runSteering;
+
+    /// <summary>Batch 08 G8: handed on to the hand-constructed <see cref="RunProgressViewModel"/> so its Pause
+    /// button can request a user pause. Null ⇒ <c>CanPause</c> is always false, i.e. the panel renders exactly
+    /// as it did before this batch.</summary>
+    private readonly IAgentRunSteeringService? _steering;
     private bool _disposed;
     private bool _tokenizationEnabled;
     private bool _suggestionsEnabled = true;
@@ -239,7 +244,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // Batch 08 D1: read by the two TERMINAL-intent commands below (Stop, clear conversation) so a cancel
         // the user meant as "stop this run" can never be consumed as a pause. Trailing and defaulted for the
         // same reason as the two above; null ⇒ nothing is ever revoked, which is today's behaviour.
-        IRunSteeringStore? runSteering = null)
+        IRunSteeringStore? runSteering = null,
+        // Batch 08 G8: handed on to the run panel VM only. Trailing and defaulted, same discipline; null ⇒ no
+        // Pause button anywhere this VM constructs the panel.
+        IAgentRunSteeringService? steering = null)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -275,6 +283,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _uiDispatcher = uiDispatcher;
         _permissions = permissions;
         _runSteering = runSteering;
+        _steering = steering;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         RunInBackgroundCommand = new AsyncRelayCommand(ExecuteRunInBackground, CanExecuteRunInBackground);
@@ -413,7 +422,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _runProgress?.Dispose(); // unsubscribes the prior RunChanged handler
         _runProgress = runId is { } id
             ? new RunProgressViewModel(_agentRunService, id, _localizationService, _resumeService, _logger,
-                _agentTimelineService, _runWorkspaces, _personaService)
+                _agentTimelineService, _runWorkspaces, _personaService, _steering)
             : null;
         ActiveRunProgress = _runProgress;
     }

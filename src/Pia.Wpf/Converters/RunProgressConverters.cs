@@ -81,20 +81,34 @@ public sealed class RunStateToLabelConverter : IValueConverter
 /// (TextMutedBrush) — never <c>PiaDangerBrush</c>; a clean Completed is <c>PiaSuccessBrush</c>.</summary>
 public sealed class RunStateToBrushConverter : IValueConverter
 {
+    /// <summary>
+    /// The state → resource-key mapping, extracted (precedent: <see cref="RunStateToLabelConverter.LabelKey"/>)
+    /// so a theory can pin it without resolving a WPF resource, which needs a live <see cref="Application"/>.
+    /// </summary>
+    internal static string BrushKey(RunProgressState state) => state switch
+    {
+        RunProgressState.Completed => "PiaSuccessBrush",
+        RunProgressState.TruncatedCompleted => "TextMutedBrush", // muted truncation note, never danger (R5)
+        RunProgressState.Failed => "PiaDangerBrush",
+        RunProgressState.WaitingForInput => "PiaAccentBrush", // action-needed accent — invites the Continue
+        // Batch 08 G8: a paused run now carries the SAME action-needed affordance WaitingForInput does —
+        // both offer the identical Continue command. Do NOT touch Run_State_Paused in any locale and do
+        // not add a spinner arm for Paused (RunStateToSpinnerVisibilityConverter deliberately excludes it):
+        // that pairing is what makes the German participle "Pausiert" safe (967d761's "Delegiert" ->
+        // "Verteilt Arbeit" lesson) — a lit spinner beside a past-participle label reads as still moving.
+        RunProgressState.Paused => "PiaAccentBrush",
+        // 07 G8: TextDefaultBrush is also what the default arm gives it — made EXPLICIT so the next
+        // appended member is a decision rather than an accident.
+        RunProgressState.WaitingForChildren => "TextDefaultBrush",
+        _ => "TextDefaultBrush", // Planning / Running
+    };
+
     public object Convert(object? value, Type targetType, object parameter, CultureInfo culture)
     {
-        var key = value switch
-        {
-            RunProgressState.Completed => "PiaSuccessBrush",
-            RunProgressState.TruncatedCompleted => "TextMutedBrush", // muted truncation note, never danger (R5)
-            RunProgressState.Failed => "PiaDangerBrush",
-            RunProgressState.WaitingForInput => "PiaAccentBrush", // action-needed accent — invites the Continue
-            RunProgressState.Paused => "TextMutedBrush",
-            // 07 G8: TextDefaultBrush is also what the default arm gives it — made EXPLICIT so the next
-            // appended member is a decision rather than an accident.
-            RunProgressState.WaitingForChildren => "TextDefaultBrush",
-            _ => "TextDefaultBrush", // Planning / Running
-        };
+        // Byte-identical to the pre-extraction fall-through: a non-RunProgressState value (the binding engine
+        // hands one across during a transient unresolved pass) still resolves "TextDefaultBrush", exactly as
+        // the old inline `value switch { …, _ => "TextDefaultBrush" }` did.
+        var key = value is RunProgressState state ? BrushKey(state) : "TextDefaultBrush";
         return Application.Current?.TryFindResource(key) as Brush ?? DependencyProperty.UnsetValue;
     }
 

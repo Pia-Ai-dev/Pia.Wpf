@@ -917,6 +917,9 @@
   <data name="Run_Activity_ChildrenInterrupted" xml:space="preserve"><value>Interrupted while sub-agents were working — continue?</value></data>
   <data name="Run_Activity_UserPaused" xml:space="preserve"><value>You paused this run</value></data>
   <data name="Run_Action_Continue" xml:space="preserve"><value>Continue</value></data>
+  <!-- Batch 08 G8: the header Pause button and its in-flight label. -->
+  <data name="Run_Action_Pause" xml:space="preserve"><value>Pause</value></data>
+  <data name="Run_Action_Pausing" xml:space="preserve"><value>Pausing…</value></data>
   <!-- Batch 06: promotion. A clean run's files are published automatically before it is marked complete; a
        failed or cancelled one keeps them in its workspace and offers them here. In worktree mode nothing is
        copied at all — the run branch IS the deliverable, so the panel says where it is. -->

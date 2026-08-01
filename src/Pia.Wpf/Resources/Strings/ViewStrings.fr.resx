@@ -945,6 +945,8 @@
   <data name="Run_Activity_ChildrenInterrupted" xml:space="preserve"><value>Interrompue pendant le travail des sous-agents — continuer ?</value></data>
   <data name="Run_Activity_UserPaused" xml:space="preserve"><value>Vous avez mis cette exécution en pause</value></data>
   <data name="Run_Action_Continue" xml:space="preserve"><value>Continuer</value></data>
+  <data name="Run_Action_Pause" xml:space="preserve"><value>Mettre en pause</value></data>
+  <data name="Run_Action_Pausing" xml:space="preserve"><value>Mise en pause…</value></data>
   <data name="Run_Action_Publish" xml:space="preserve"><value>Publier les fichiers</value></data>
   <data name="Run_Publish_Pending" xml:space="preserve"><value>Les fichiers de cette exécution sont encore dans son espace de travail.</value></data>
   <data name="Run_Publish_Done" xml:space="preserve"><value>{0} fichier(s) publié(s).</value></data>

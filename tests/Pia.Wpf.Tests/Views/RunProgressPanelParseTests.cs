@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Controls.Assistant;
@@ -28,12 +29,16 @@ public class RunProgressPanelParseTests
     /// <summary>
     /// A floor, not a count (D2 — lives here, never in <see cref="BindingPathWalker"/>): "no unresolved paths"
     /// is vacuously true over an empty walk, which is reachable if a container ever stops reporting logical
-    /// children. The live walk measures 28 tuples (23 distinct paths — the walker yields one tuple per bound
-    /// DP, not per distinct path: <c>State</c> is bound three times, <c>CanPublish</c>/<c>PublishNote</c>/
-    /// <c>ChildrenNote</c> twice each). This floor is set well under that, at roughly 64%, so an ordinary edit
-    /// to the panel never has to touch this file.
+    /// children. The live walk measures 31 tuples as of Batch 08 8a (was 28) — 8a's header Pause button
+    /// inserted three more into the prefix (<c>Button.Visibility=CanPause</c>,
+    /// <c>Button.Command=PauseCommand</c>, <c>Button.Content=PauseLabel</c>), MEASURED by a temporary
+    /// <c>Assert.Fail</c> dumping the array (<c>dotnet test ... --filter-method
+    /// "*EveryNonTemplatedBindingPath*"</c>), not taken from this document. This floor stays exactly the tuple
+    /// count AT-OR-BEFORE <c>RunProgressPanel.xaml:74</c> (the Steps <c>ItemsControl</c>'s own
+    /// <c>ItemsSource</c> binding — everything from there is droppable without tripping this fact): 18 before
+    /// this batch, 21 now that the Pause button lives in that same header region.
     /// </summary>
-    private const int MinimumBoundPaths = 18;
+    private const int MinimumBoundPaths = 21;
 
     /// <summary>
     /// Reflects the ViewModel type off <see cref="AssistantViewModel.ActiveRunProgress"/> rather than
@@ -105,6 +110,13 @@ public class RunProgressPanelParseTests
         Assert.Contains(bindings, b => b.Contains("=PublishCommand "));   // the publish offer (:40)
         Assert.Contains(bindings, b => b.Contains("=TimelineNote "));     // the first Expander's content (:120)
 
+        // Batch 08 8a: the header Pause button, single-occurrence in the markup (the same anchor discipline
+        // as the four above). RED DEMO: renamed PauseCommand's binding in the XAML to PauseCommandX,
+        // full -t:Rebuild (still 0 Warning(s)/0 Error(s) — a binding path is not a compile error), ran the
+        // class: this anchor failed with "Filter not matched in collection"; reverted, git diff --stat -- src/
+        // came back empty.
+        Assert.Contains(bindings, b => b.Contains("=PauseCommand "));
+
         // Proves the walk reached the SECOND Expander's content and did not stop at the first: both Expanders'
         // Content IS in the logical tree at parse time regardless of IsExpanded (Expander : HeaderedContentControl
         // : ContentControl adds it unconditionally). If that ever stopped being true this walk would silently
@@ -117,6 +129,54 @@ public class RunProgressPanelParseTests
             "these Binding paths in Controls/Assistant/RunProgressPanel.xaml do not resolve to a public " +
             "property on the ViewModel the markup roots them at, so they bind to nothing and fail silently " +
             $"at runtime: {string.Join(", ", unresolved)}");
+    }
+
+    /// <summary>
+    /// Batch 08 8a. The header Pause button's <c>Command</c> binding resolves to the SAME
+    /// <see cref="CommunityToolkit.Mvvm.Input.IRelayCommand"/> instance <see cref="RunProgressViewModel.PauseCommand"/>
+    /// exposes — command IDENTITY, not merely "not null" (the <see cref="ScheduledJobsRowTemplateTests"/>
+    /// discipline). <see cref="System.Windows.UIElement.Visibility"/> is asserted by its declared binding PATH
+    /// (hazard 12), never by its resolved value: <c>Visibility</c> defaults to <c>Visible</c>, so a value-only
+    /// check would pass even against a deleted binding.
+    /// </summary>
+    [Fact]
+    public void RunProgressPanel_PauseButton_IsBoundToThePauseCommand()
+    {
+        RunProgressViewModel? vm = null;
+        RunProgressPanel? panel = null;
+        string? commandPath;
+        bool sameCommand;
+        string? visibilityPath;
+        try
+        {
+            WpfStaHost.Run(() =>
+            {
+                vm = CreateRunProgressViewModelWithInterpolatingLocalization();
+                panel = new RunProgressPanel { DataContext = vm };
+                return 0;
+            });
+            WpfStaHost.Pump();
+
+            (commandPath, sameCommand, visibilityPath) = WpfStaHost.Run(() =>
+            {
+                var button = BindingPathWalker.FindLogical<ButtonBase>(panel!)
+                    .Single(b => BindingPathWalker.PathOf(b, ButtonBase.CommandProperty) == "PauseCommand");
+                return (
+                    BindingPathWalker.PathOf(button, ButtonBase.CommandProperty),
+                    ReferenceEquals(button.Command, vm!.PauseCommand),
+                    BindingPathWalker.PathOf(button, UIElement.VisibilityProperty));
+            });
+        }
+        finally
+        {
+            // Hazard 4: the VM subscribes to IAgentRunService.RunChanged in its ctor and the host outlives
+            // every test.
+            WpfStaHost.Run(() => { vm?.Dispose(); return 0; });
+        }
+
+        Assert.Equal("PauseCommand", commandPath);
+        Assert.True(sameCommand, "the Pause button's Command did not resolve to vm.PauseCommand itself");
+        Assert.Equal("CanPause", visibilityPath);
     }
 
     /// <summary>

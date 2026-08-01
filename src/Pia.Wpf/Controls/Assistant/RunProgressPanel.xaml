@@ -27,9 +27,16 @@
                      Visibility="{Binding IsTruncated, Converter={StaticResource BooleanToVisibilityConverter}}" />
         </StackPanel>
         <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" VerticalAlignment="Center">
-          <!-- Budget-pause Continue: the one sanctioned Phase-2 mutation on this read-only panel.
-               CanContinue hides it off the WaitingForInput state; CanExecute also disables it
-               (IsResuming) so a double-click can't launch two resumes (the CAS is the hard guard). -->
+          <!-- Batch 08 D1: user pause. Visibility hides it off the pausable states; CanExecute also disables it
+               while a request is in flight (the CAS in the loop is the hard guard, exactly as for Continue). -->
+          <ui:Button Content="{Binding PauseLabel}" Command="{Binding PauseCommand}"
+                     Appearance="Secondary" Padding="10,3" Margin="0,0,8,0" FontSize="12"
+                     Visibility="{Binding CanPause, Converter={StaticResource BooleanToVisibilityConverter}}" />
+          <!-- Budget-pause / user-pause Continue: the one sanctioned Phase-2 mutation on this read-only panel,
+               widened by Batch 08 D1 item 8 to the Paused state too. CanContinue hides it off both states;
+               CanExecute also disables it (IsResuming) so a double-click can't launch two resumes (the CAS is
+               the hard guard). CanPause and CanContinue are mutually exclusive by construction, so at most one
+               of these two buttons is ever visible. -->
           <ui:Button Content="{loc:Str Run_Action_Continue}" Command="{Binding ContinueCommand}"
                      Appearance="Primary" Padding="10,3" Margin="0,0,8,0" FontSize="12"
                      Visibility="{Binding CanContinue, Converter={StaticResource BooleanToVisibilityConverter}}" />

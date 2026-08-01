@@ -77,7 +77,13 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
     /// </summary>
     internal static bool IsPublishableState(AgentRunState state) =>
         state is AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled
-            or AgentRunState.WaitingForInput or AgentRunState.Running;
+            or AgentRunState.WaitingForInput or AgentRunState.Running
+            // Batch 08 G8: a user-paused run needs the SAME ActionRequired card WaitingForInput gets, or a run
+            // the user paused from a background chat is invisible forever — the startup sweep never touches
+            // Paused (AgentRunService.cs's `State < @Terminal` excludes it by design, W15). Widened in the SAME
+            // edit as the arm below, per the method's own doc comment: any state past this filter with no arm
+            // of its own publishes a "run finished" item for a run that is still working.
+            or AgentRunState.Paused;
 
     /// <summary>
     /// Which "continue?" body a parked run's Flow card carries. Extracted and internal for the same reason
@@ -143,7 +149,7 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
             && _windowManager.ActiveAssistantChatId == run.ChatId)
             return;
 
-        if (state == AgentRunState.WaitingForInput)
+        if (state is AgentRunState.WaitingForInput or AgentRunState.Paused)
         {
             _flowService.Publish(new FlowItemDraft
             {

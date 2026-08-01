@@ -53,6 +53,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private readonly IAgentTimelineService? _timelineService;
     private readonly IRunWorkspaceService? _workspaces;
     private readonly IPersonaService? _personaService;
+    private readonly IAgentRunSteeringService? _steering;
     private readonly ILogger _logger;
     private bool _disposed;
 
@@ -68,7 +69,9 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanContinue))]
+    [NotifyPropertyChangedFor(nameof(CanPause))]
     [NotifyCanExecuteChangedFor(nameof(ContinueCommand))]
+    [NotifyCanExecuteChangedFor(nameof(PauseCommand))]
     private RunProgressState _state;
 
     /// <summary>True while a resume is being launched — gates the Continue button against a double-click
@@ -78,9 +81,50 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     [NotifyCanExecuteChangedFor(nameof(ContinueCommand))]
     private bool _isResuming;
 
-    /// <summary>The budget-pause Continue affordance is the sanctioned Phase-2 exception to the otherwise
-    /// read-only panel — enabled only while the run sits WaitingForInput and no resume is in flight.</summary>
-    public bool CanContinue => State == RunProgressState.WaitingForInput && !IsResuming;
+    /// <summary>The budget-pause Continue affordance, widened by Batch 08 D1 item 8 to the user-pause state
+    /// too: <see cref="RunProgressState.Paused"/> is the CAS's own target, and both states offer the identical
+    /// Continue command (<see cref="IAgentRunResumeService.ResumeAsync"/> claims either via the row's own
+    /// state). Trips nothing per Ground E, and the <c>!IsTerminal</c> form this could also be written as would
+    /// red <c>RunProgressViewModelChildrenTests.cs</c>'s WaitingForChildren fact — this two-member set does not.</summary>
+    public bool CanContinue => (State is RunProgressState.WaitingForInput or RunProgressState.Paused) && !IsResuming;
+
+    /// <summary>True while a user pause request is in flight — gates the Pause button against a double-click
+    /// the same way <see cref="IsResuming"/> gates Continue. Cleared only once <see cref="Project"/> observes
+    /// the run having left the state the pause was requested FROM (see the clearing site below), never in a
+    /// bare <c>finally</c> after the request call: <see cref="IAgentRunSteeringService.PauseAsync"/> returns as
+    /// soon as the intent is recorded and the cancel is fired, well before the run's own loop actually lands
+    /// the row at <see cref="RunProgressState.Paused"/>.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanPause))]
+    [NotifyCanExecuteChangedFor(nameof(PauseCommand))]
+    private bool _isPausing;
+
+    partial void OnIsPausingChanged(bool value) => OnPropertyChanged(nameof(PauseLabel));
+
+    /// <summary>PARENTHESIZE THE OR-PATTERN. Both predicates mix a pattern combinator with <c>&amp;&amp;</c>,
+    /// and while <c>is</c> binds tighter than <c>&amp;&amp;</c> so the bare form does compile as
+    /// <c>(State is A or B) &amp;&amp; …</c>, the unbracketed reading is exactly the kind a builder "fixes" by
+    /// guessing — and the wrong guess yields a button visible on a terminal run.
+    /// <para>
+    /// Explicit set, never a range (D7): <see cref="RunProgressState.Running"/> covers real <c>Running</c>
+    /// AND <c>Verifying</c> (which folds into it in <see cref="MapState"/>); <c>Planning</c> is excluded per §1
+    /// D1 item 8 (a resume skips planning entirely); <see cref="RunProgressState.WaitingForChildren"/> is D6's
+    /// cascade.
+    /// </para>
+    /// <para><c>_steering is not null</c> is the trailing-optional guard: a build with no steering service
+    /// injected renders exactly the pre-Batch-08 panel (no Pause button, ever).</para>
+    /// </summary>
+    public bool CanPause =>
+        _steering is not null
+        && (State is RunProgressState.Running or RunProgressState.WaitingForChildren)
+        && !IsPausing;
+
+    /// <summary><c>Run_Action_Pausing</c> while a request is in flight, <c>Run_Action_Pause</c>
+    /// otherwise. Notified from <see cref="OnIsPausingChanged"/> rather than a
+    /// <c>[NotifyPropertyChangedFor]</c> attribute on <see cref="IsPausing"/>, so both notifications (the
+    /// bool's own CanPause/CanExecute pair and this derived string) read as one intentional list rather than
+    /// four attributes stacked on the field.</summary>
+    public string PauseLabel => IsPausing ? _localization["Run_Action_Pausing"] : _localization["Run_Action_Pause"];
 
     [ObservableProperty]
     private bool _isTruncated;
@@ -260,11 +304,16 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         IRunWorkspaceService? workspaces = null,
         // Batch 07 G7, same discipline again — now LAST (06 took the 7th slot first). Null ⇒ _personas
         // never loads ⇒ every step row's HasPersona is false ⇒ the panel renders exactly as before this batch.
-        IPersonaService? personaService = null)
+        IPersonaService? personaService = null,
+        // Batch 08 D1/§5.4 — LAST again, same discipline. Null ⇒ CanPause is always false ⇒ no Pause button,
+        // i.e. the panel is byte-for-byte the pre-Batch-08 one. AssistantViewModel.cs constructs this VM
+        // positionally, which is exactly why every one of these keeps landing at the tail.
+        IAgentRunSteeringService? steering = null)
     {
         _timelineService = timelineService;
         _workspaces = workspaces;
         _personaService = personaService;
+        _steering = steering;
         _runService = runService;
         _runId = runId;
         _localization = localization;
@@ -489,6 +538,17 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     {
         var truncation = ReadTruncation(run);
         (State, IsTruncated) = MapState(run, truncation.Truncated);
+
+        // Clear a pending user-pause request only once the run has left the state it was requested FROM —
+        // CanPause's own explicit set, not a bare `State != Running`: a WaitingForChildren parent's cascade
+        // keeps re-projecting WaitingForChildren while its children pause one at a time (each child's
+        // RunChanged is ours too, per D17), and clearing on the first such event would re-enable the button
+        // before the parent's own request has landed at Paused. Delegated sub-choice (not literally the
+        // impl spec's "a non-Running state" prose, which describes the common Running path only): this is
+        // the same predicate CanPause already uses, so the two can never disagree.
+        if (State is not (RunProgressState.Running or RunProgressState.WaitingForChildren))
+            IsPausing = false;
+
         TruncationNote = IsTruncated ? DescribeTruncation(truncation.Reason) : null;
         SyncSteps(run.Plan);
         CurrentActivity = ComputeActivity(run);
@@ -574,9 +634,21 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     };
 
     /// <summary>
-    /// Resume a budget-paused run (§7.2 — the sanctioned Phase-2 mutation on the otherwise read-only
-    /// panel). The resume service CAS-claims internally, so a double-click or a panel+Flow race is safe;
-    /// a real resume flips State→Running via RunChanged, which clears CanContinue. Logs the run id only.
+    /// Batch 08 D4: an optional steering note typed while the run sits paused, carried into the NEXT dispatch
+    /// only and then cleared — never persisted (the scope-to-dispatch sub-choice, W7). SENSITIVE (user
+    /// content): bound to the panel's TextBox, never logged. A null/blank value is inert — the box being 8b's
+    /// job is what keeps this property here in 8a rather than idle.
+    /// </summary>
+    [ObservableProperty]
+    private string? _nudgeText;
+
+    /// <summary>
+    /// Resume a budget-paused OR user-paused run (§7.2 / Batch 08 D1 item 8's CanContinue widening). The
+    /// resume service CAS-claims internally by the row's own state, so a double-click or a panel+Flow race is
+    /// safe; a real resume flips State→Running via RunChanged, which clears CanContinue. Carries
+    /// <see cref="NudgeText"/> (null on an ordinary budget-continue) and clears it once the dispatch has been
+    /// started, whether it succeeded or not — a nudge that failed to reach this resume must not silently ride
+    /// the next one. Logs the run id only; <see cref="NudgeText"/> is user content and never appears in a log.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanContinue))]
     private async Task Continue()
@@ -584,7 +656,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         IsResuming = true;
         try
         {
-            await _resumeService.ResumeAsync(_runId);
+            await _resumeService.ResumeAsync(_runId, NudgeText);
         }
         catch (Exception ex)
         {
@@ -593,6 +665,39 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         finally
         {
             IsResuming = false;
+            NudgeText = null;
+        }
+    }
+
+    /// <summary>
+    /// Batch 08 D1: request a USER pause of this run. Refused (a no-op) when no steering service was injected
+    /// — the trailing-optional guard, mirroring <see cref="Publish"/>'s <c>if (_workspaces is null) return;</c>
+    /// rather than relying on <see cref="CanPause"/> alone, which only gates the bound button's
+    /// <c>CanExecute</c> and is not a hard guard against a programmatic <c>ExecuteAsync</c>.
+    /// <para>
+    /// <see cref="IAgentRunSteeringService.PauseAsync"/> writes no row and returns as soon as the intent is
+    /// recorded and the cancel is fired — well before the run's own loop actually lands the row at
+    /// <see cref="RunProgressState.Paused"/>. <see cref="IsPausing"/> therefore does NOT clear in a
+    /// <c>finally</c> here; it stays true until <see cref="Project"/> observes the run having left the state
+    /// the pause was requested from (see that clearing site's own comment) — a pause that has been asked for
+    /// but not yet landed must not re-enable the button. A run that never leaves that state (nothing here is
+    /// dispatching it, or the loop never reaches a boundary) leaves the button disabled forever: stated rather
+    /// than hidden, because the alternative is a timer nobody can test.
+    /// </para>
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanPause))]
+    private async Task Pause()
+    {
+        if (_steering is null) return;
+
+        IsPausing = true;
+        try
+        {
+            await _steering.PauseAsync(_runId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run {RunId} pause failed from panel", _runId);
         }
     }
 

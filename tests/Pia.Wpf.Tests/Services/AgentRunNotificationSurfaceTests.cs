@@ -79,6 +79,9 @@ public sealed class AgentRunNotificationSurfaceTests
     [InlineData(AgentRunState.Completed)]
     [InlineData(AgentRunState.Failed)]
     [InlineData(AgentRunState.WaitingForInput)]
+    // Batch 08 G8: Paused joined the publishable set below, so the same delegated-child filter must still
+    // catch it — a cascade-paused child (D6) is exactly as un-actionable to the user as a budget-parked one.
+    [InlineData(AgentRunState.Paused)]
     public async Task ADelegatedRun_PublishesNothing(AgentRunState state)
     {
         var runId = Guid.NewGuid();
@@ -309,6 +312,30 @@ public sealed class AgentRunNotificationSurfaceTests
         _flow.Received(1).Retract(runId.ToString());
     }
 
+    /// <summary>
+    /// Batch 08 G8. A user-paused run needs the SAME ActionRequired/ContinueRun card
+    /// <see cref="AgentRunState.WaitingForInput"/> gets, or a run the user paused from a background chat is
+    /// invisible forever — the startup sweep's <c>State &lt; @Terminal</c> excludes <c>Paused</c> by design
+    /// (W15), so there is no other surface that would ever tell the user about it.
+    /// </summary>
+    [Fact]
+    public async Task PausedRun_PublishesAnActionRequiredCardWithContinueRun()
+    {
+        var runId = Guid.NewGuid();
+        SetupRun(runId, RunShape.Planned);
+        _windows.IsInForeground(WindowMode.Assistant).Returns(false);
+
+        await Create().HandleRunStateAsync(runId, AgentRunState.Paused);
+
+        _flow.Received(1).Publish(Arg.Is<FlowItemDraft>(d =>
+            d.Severity == FlowSeverity.ActionRequired &&
+            d.Source == FlowSource.AgentRun &&
+            d.DedupKey == runId.ToString() &&
+            d.Lifetime.IsPersistent &&
+            d.RequestDurable &&
+            d.Action is ContinueRunAction));
+    }
+
     [Fact]
     public async Task Running_NoPriorPublish_RetractsNothing()
     {
@@ -322,14 +349,20 @@ public sealed class AgentRunNotificationSurfaceTests
     }
 
     /// <summary>
-    /// Batch 07 G8, <b>GUARD</b>. A delegating parent (<c>WaitingForChildren</c>) is not user-actionable, so it
-    /// must fall OUT of the publish filter entirely. Pinned deliberately rather than left to the
-    /// <c>is … or …</c> set's shape, because widening that set is not harmless: the last arm of
-    /// <c>HandleRunStateAsync</c> is the TERMINAL publish, so a state that passes the filter without an arm of
-    /// its own would publish a "run finished" card for a run whose children are still working.
+    /// Batch 07 G8, <b>GUARD</b> (for the rows unrelated to <c>Paused</c>). A delegating parent
+    /// (<c>WaitingForChildren</c>) is not user-actionable, so it must fall OUT of the publish filter entirely.
+    /// Pinned deliberately rather than left to the <c>is … or …</c> set's shape, because widening that set is
+    /// not harmless: the last arm of <c>HandleRunStateAsync</c> is the TERMINAL publish, so a state that passes
+    /// the filter without an arm of its own would publish a "run finished" card for a run whose children are
+    /// still working.
     /// <para>
-    /// A row per state, plus a member-count pin so an appended state cannot slip through unasserted. Not a
-    /// regression test: nothing was changed here, and that is the claim.
+    /// <b>Batch 08 G8:</b> the <c>Paused</c> row flips from <c>false</c> to <c>true</c> — a REGRESSION-shaped
+    /// pin now, not a guard. A user-paused run needs the same ActionRequired card <c>WaitingForInput</c> gets
+    /// (<see cref="PausedRun_PublishesAnActionRequiredCardWithContinueRun"/>), or it is invisible forever once
+    /// the panel that shows its Continue button is closed.
+    /// </para>
+    /// <para>
+    /// A row per state, plus a member-count pin so an appended state cannot slip through unasserted.
     /// </para>
     /// </summary>
     [Theory]
@@ -337,7 +370,7 @@ public sealed class AgentRunNotificationSurfaceTests
     [InlineData(AgentRunState.Running, true)]
     [InlineData(AgentRunState.Verifying, false)]
     [InlineData(AgentRunState.WaitingForInput, true)]
-    [InlineData(AgentRunState.Paused, false)]
+    [InlineData(AgentRunState.Paused, true)]
     [InlineData(AgentRunState.Completed, true)]
     [InlineData(AgentRunState.Failed, true)]
     [InlineData(AgentRunState.Cancelled, true)]

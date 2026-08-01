@@ -83,4 +83,21 @@ public sealed class RunProgressConvertersTests
     [Fact]
     public void TheSpinnerTheoryCoversEveryState()
         => Assert.Equal(8, Enum.GetValues<RunProgressState>().Length);
+
+    /// <summary>
+    /// Batch 08 8a. Pins the KEY the state-brush mapping resolves for <see cref="RunProgressState.Paused"/>
+    /// against the extracted <see cref="RunStateToBrushConverter.BrushKey"/> — never the resolved
+    /// <see cref="System.Windows.Media.Brush"/> itself, which needs a live <see cref="System.Windows.Application"/>
+    /// this test suite does not construct (see this file's own class-level note). A paused run now carries the
+    /// SAME action-needed accent <see cref="RunProgressState.WaitingForInput"/> does — both offer the identical
+    /// Continue command — so the two keys must be equal, not merely both non-null.
+    /// </summary>
+    [Theory]
+    [InlineData(RunProgressState.Paused, "PiaAccentBrush")]
+    public void PausedSharesTheWaitingForInputAccentBrushKey(RunProgressState state, string expectedKey)
+    {
+        Assert.Equal(expectedKey, RunStateToBrushConverter.BrushKey(state));
+        Assert.Equal(RunStateToBrushConverter.BrushKey(RunProgressState.WaitingForInput),
+            RunStateToBrushConverter.BrushKey(state));
+    }
 }
