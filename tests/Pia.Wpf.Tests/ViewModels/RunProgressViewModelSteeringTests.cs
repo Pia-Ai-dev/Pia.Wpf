@@ -174,3 +174,206 @@ public sealed class RunProgressViewModelSteeringTests
         public override void Send(SendOrPostCallback d, object? state) => d(state);
     }
 }
+
+/// <summary>
+/// Batch 08 8b — the row-level plan-mutation verbs (D3). Substitute-based, like the class above: G6 already
+/// proved the SERVICE's own validation exhaustively (16 cases against real SQLite), so these facts stay
+/// scoped to what only the VM is responsible for — building the right <see cref="PlanStepEdit"/> list per
+/// verb, repainting rows IN PLACE rather than re-minting them (W12), and refusing every verb while the run is
+/// live. <c>_runs.GetAsync</c> is stubbed to return a fixed <see cref="AgentRun"/>/<see cref="AgentStep"/>
+/// graph that a fact mutates in place immediately before invoking a command — standing in for "what the real
+/// service would have persisted" without a database, since the VM's mutation handler (private; exercised only
+/// through the commands) always re-reads via <c>RefreshAsync</c> after the call.
+/// </summary>
+public sealed class RunProgressViewModelPlanMutationTests
+{
+    private readonly Guid _runId = Guid.NewGuid();
+    private readonly IAgentRunService _runs = Substitute.For<IAgentRunService>();
+    private readonly ILocalizationService _loc = Substitute.For<ILocalizationService>();
+    private readonly IAgentRunResumeService _resume = Substitute.For<IAgentRunResumeService>();
+
+    public RunProgressViewModelPlanMutationTests()
+    {
+        _loc[Arg.Any<string>()].Returns(ci => (string)ci[0]); // echo the key so a rejection note is assertable
+    }
+
+    private RunProgressViewModel CreateVm()
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        return new RunProgressViewModel(_runs, _runId, _loc, _resume, NullLogger.Instance);
+    }
+
+    private sealed class InlineSyncContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback d, object? state) => d(state);
+        public override void Send(SendOrPostCallback d, object? state) => d(state);
+    }
+
+    /// <summary>
+    /// Each of the five mutating verbs calls <c>ApplyPlanMutationAsync</c> EXACTLY once per invocation — never
+    /// zero (the verb silently no-opping) and never twice (a double-submit). <c>ClearReceivedCalls</c> between
+    /// verbs is what makes "once" a per-verb claim rather than a cumulative count.
+    /// </summary>
+    [Fact]
+    public async Task EveryVerb_RoundTripsThroughApplyPlanMutationAsync_Once()
+    {
+        var step1 = new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "s1", Status = AgentStepStatus.Pending };
+        var step2 = new AgentStep { Id = Guid.NewGuid(), Ordinal = 1, Title = "s2", Status = AgentStepStatus.Pending };
+        var run = new AgentRun { Id = _runId, State = AgentRunState.Paused, Plan = [step1, step2] };
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(run);
+        _runs.ApplyPlanMutationAsync(_runId, Arg.Any<IReadOnlyList<PlanStepEdit>>(), Arg.Any<CancellationToken>())
+            .Returns(new PlanMutationResult(PlanMutationOutcome.Applied, 2));
+
+        var vm = CreateVm();
+        await vm.RefreshAsync();
+        var row1 = vm.Steps.Single(r => r.StepId == step1.Id);
+        var row2 = vm.Steps.Single(r => r.StepId == step2.Id);
+
+        async Task AssertCalledOnce(Func<Task> act)
+        {
+            await act();
+            await _runs.Received(1).ApplyPlanMutationAsync(
+                _runId, Arg.Any<IReadOnlyList<PlanStepEdit>>(), Arg.Any<CancellationToken>());
+            _runs.ClearReceivedCalls();
+        }
+
+        row1.EditTitle = "edited";
+        row1.EditIntent = null;
+        await AssertCalledOnce(() => vm.SaveStepEditCommand.ExecuteAsync(row1));
+        await AssertCalledOnce(() => vm.InsertStepBelowCommand.ExecuteAsync(row1));
+        await AssertCalledOnce(() => vm.MoveStepUpCommand.ExecuteAsync(row2));
+        await AssertCalledOnce(() => vm.MoveStepDownCommand.ExecuteAsync(row1));
+        await AssertCalledOnce(() => vm.SkipStepCommand.ExecuteAsync(row2));
+
+        vm.Dispose();
+    }
+
+    /// <summary>A rejection sets the localized note and leaves the rows exactly as they were — the
+    /// re-projection reads back the SAME persisted plan, so nothing repaints.</summary>
+    [Fact]
+    public async Task AFailedMutation_ShowsALocalizedNote_AndDoesNotChangeTheRows()
+    {
+        var step = new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "s1", Status = AgentStepStatus.Pending };
+        var run = new AgentRun { Id = _runId, State = AgentRunState.Paused, Plan = [step] };
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(run);
+        _runs.ApplyPlanMutationAsync(_runId, Arg.Any<IReadOnlyList<PlanStepEdit>>(), Arg.Any<CancellationToken>())
+            .Returns(new PlanMutationResult(PlanMutationOutcome.TitleRequired, 1));
+
+        var vm = CreateVm();
+        await vm.RefreshAsync();
+        var row = vm.Steps.Single();
+
+        await vm.SkipStepCommand.ExecuteAsync(row);
+
+        Assert.Equal("Run_Plan_Error_TitleRequired", vm.PlanMutationNote); // the fake echoes the loc key
+        Assert.Single(vm.Steps);
+        Assert.Equal("s1", vm.Steps.Single().Title);
+        Assert.Equal(AgentStepStatus.Pending, vm.Steps.Single().Status); // the skip did NOT land
+        vm.Dispose();
+    }
+
+    /// <summary>
+    /// W12, the RED-before-the-fix fact: an edit preserves the step's Id, and the row must repaint IN PLACE —
+    /// never be re-minted — or the panel would lose whatever local UI state (this test doesn't set any, but
+    /// <see cref="StepRowViewModel"/>'s own identity is otherwise meaningless to a caller holding a reference).
+    /// RED before <c>StepRowViewModel.Title</c> became an <c>[ObservableProperty]</c>: <c>SyncSteps</c>'s
+    /// else-branch could not assign it, so <c>vm.Steps.Single().Title</c> stayed "old title" forever.
+    /// </summary>
+    [Fact]
+    public async Task EditingAStepTitle_RepaintsTheRow_WithoutReMintingItsId()
+    {
+        var stepId = Guid.NewGuid();
+        var step = new AgentStep { Id = stepId, Ordinal = 0, Title = "old title", Status = AgentStepStatus.Pending };
+        var run = new AgentRun { Id = _runId, State = AgentRunState.Paused, Plan = [step] };
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(run);
+        _runs.ApplyPlanMutationAsync(_runId, Arg.Any<IReadOnlyList<PlanStepEdit>>(), Arg.Any<CancellationToken>())
+            .Returns(new PlanMutationResult(PlanMutationOutcome.Applied, 1));
+
+        var vm = CreateVm();
+        await vm.RefreshAsync();
+        var rowBefore = vm.Steps.Single();
+        rowBefore.EditTitle = "new title";
+        rowBefore.EditIntent = null;
+
+        // Stand-in for "what the real service just persisted" — the same AgentStep instance run.Plan holds,
+        // mutated in place so the re-projection RefreshAsync triggers next reads the NEW title back.
+        step.Title = "new title";
+
+        await vm.SaveStepEditCommand.ExecuteAsync(rowBefore);
+
+        var rowAfter = vm.Steps.Single();
+        Assert.Same(rowBefore, rowAfter);          // never re-minted
+        Assert.Equal(stepId, rowAfter.StepId);     // the Id survived the edit
+        Assert.Equal("new title", rowAfter.Title);
+        Assert.False(rowAfter.IsEditing);           // the editor closed either way
+        vm.Dispose();
+    }
+
+    /// <summary>
+    /// W12, the other RED-before-the-fix fact: a reorder that preserves every step's Id must actually MOVE the
+    /// existing rows, never rebuild the collection. RED before <c>SyncSteps</c> gained its index-reconciling
+    /// pass: the insert/update loop only ever INSERTS a brand-new row at its plan index, so two rows whose Ids
+    /// both already existed would repaint in place and the collection would keep its OLD visual order forever.
+    /// </summary>
+    [Fact]
+    public async Task ReorderingSteps_MovesTheExistingRows()
+    {
+        var s1 = new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "s1", Status = AgentStepStatus.Pending };
+        var s2 = new AgentStep { Id = Guid.NewGuid(), Ordinal = 1, Title = "s2", Status = AgentStepStatus.Pending };
+        var run = new AgentRun { Id = _runId, State = AgentRunState.Paused, Plan = [s1, s2] };
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(run);
+        _runs.ApplyPlanMutationAsync(_runId, Arg.Any<IReadOnlyList<PlanStepEdit>>(), Arg.Any<CancellationToken>())
+            .Returns(new PlanMutationResult(PlanMutationOutcome.Applied, 2));
+
+        var vm = CreateVm();
+        await vm.RefreshAsync();
+        var row1 = vm.Steps[0];
+        var row2 = vm.Steps[1];
+        Assert.Equal(s1.Id, row1.StepId);
+        Assert.Equal(s2.Id, row2.StepId);
+
+        // Stand-in for the persisted reorder a real MoveStepDown would have produced.
+        run.Plan = [s2, s1];
+
+        await vm.MoveStepDownCommand.ExecuteAsync(row1);
+
+        Assert.Same(row2, vm.Steps[0]); // the SAME instances, just moved — never re-minted
+        Assert.Same(row1, vm.Steps[1]);
+        Assert.Equal(s2.Id, vm.Steps[0].StepId);
+        Assert.Equal(s1.Id, vm.Steps[1].StepId);
+        vm.Dispose();
+    }
+
+    /// <summary>
+    /// All five mutating verbs refuse to execute while the run is live — asserted through
+    /// <c>ICommand.CanExecute</c> directly, never through the row's own <c>IsMutable</c> (which is
+    /// Status-based, not run-state-based, and defaults such that a value-only check would not discriminate —
+    /// hazard 4/8). <c>CancelStepEditCommand</c> is the deliberate exception: dismissing an already-open editor
+    /// must work even if the run stopped being pausable mid-edit.
+    /// </summary>
+    [Fact]
+    public void RowCommands_AreDisabledWhileTheRunIsLive()
+    {
+        var vm = CreateVm();
+        var row = new StepRowViewModel { StepId = Guid.NewGuid(), Title = "s1", Status = AgentStepStatus.Pending };
+
+        vm.State = RunProgressState.Running;
+        Assert.False(vm.EditStepCommand.CanExecute(row));
+        Assert.False(vm.SaveStepEditCommand.CanExecute(row));
+        Assert.False(vm.InsertStepBelowCommand.CanExecute(row));
+        Assert.False(vm.MoveStepUpCommand.CanExecute(row));
+        Assert.False(vm.MoveStepDownCommand.CanExecute(row));
+        Assert.False(vm.SkipStepCommand.CanExecute(row));
+        Assert.True(vm.CancelStepEditCommand.CanExecute(row));
+
+        vm.State = RunProgressState.Paused;
+        Assert.True(vm.EditStepCommand.CanExecute(row));
+        Assert.True(vm.SaveStepEditCommand.CanExecute(row));
+        Assert.True(vm.InsertStepBelowCommand.CanExecute(row));
+        Assert.True(vm.MoveStepUpCommand.CanExecute(row));
+        Assert.True(vm.MoveStepDownCommand.CanExecute(row));
+        Assert.True(vm.SkipStepCommand.CanExecute(row));
+
+        vm.Dispose();
+    }
+}

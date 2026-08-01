@@ -29,16 +29,16 @@ public class RunProgressPanelParseTests
     /// <summary>
     /// A floor, not a count (D2 — lives here, never in <see cref="BindingPathWalker"/>): "no unresolved paths"
     /// is vacuously true over an empty walk, which is reachable if a container ever stops reporting logical
-    /// children. The live walk measures 31 tuples as of Batch 08 8a (was 28) — 8a's header Pause button
-    /// inserted three more into the prefix (<c>Button.Visibility=CanPause</c>,
-    /// <c>Button.Command=PauseCommand</c>, <c>Button.Content=PauseLabel</c>), MEASURED by a temporary
-    /// <c>Assert.Fail</c> dumping the array (<c>dotnet test ... --filter-method
+    /// children. The live walk measures 36 tuples as of Batch 08 8b (28 before Batch 08; 31 after 8a) — 8b adds
+    /// five more into the prefix ahead of the Steps <c>ItemsControl</c>: the pause-first note
+    /// (<c>Visibility=CanMutatePlan</c>), the mutation-result note (<c>Visibility</c>/<c>Text=PlanMutationNote</c>),
+    /// and the nudge box (<c>StackPanel.Visibility=CanContinue</c>, <c>TextBox.Text=NudgeText</c>) — MEASURED by
+    /// a temporary <c>Assert.Fail</c> dumping the array (<c>dotnet test ... --filter-method
     /// "*EveryNonTemplatedBindingPath*"</c>), not taken from this document. This floor stays exactly the tuple
-    /// count AT-OR-BEFORE <c>RunProgressPanel.xaml:74</c> (the Steps <c>ItemsControl</c>'s own
-    /// <c>ItemsSource</c> binding — everything from there is droppable without tripping this fact): 18 before
-    /// this batch, 21 now that the Pause button lives in that same header region.
+    /// count AT-OR-BEFORE the Steps <c>ItemsControl</c>'s own <c>ItemsSource</c> binding (everything from there
+    /// is droppable without tripping this fact): 18 before Batch 08, 21 after 8a, 26 now.
     /// </summary>
-    private const int MinimumBoundPaths = 21;
+    private const int MinimumBoundPaths = 26;
 
     /// <summary>
     /// Reflects the ViewModel type off <see cref="AssistantViewModel.ActiveRunProgress"/> rather than
@@ -116,6 +116,15 @@ public class RunProgressPanelParseTests
         // class: this anchor failed with "Filter not matched in collection"; reverted, git diff --stat -- src/
         // came back empty.
         Assert.Contains(bindings, b => b.Contains("=PauseCommand "));
+
+        // Batch 08 8b: the pause-first note and the nudge box, both single-occurrence in the markup (the
+        // same discipline). PlanMutationNote is NOT used as an anchor here — it is bound twice
+        // (Visibility AND Text), so removing one occurrence would still leave it matching.
+        // RED DEMO (CanMutatePlan): renamed its XAML binding to CanMutatePlanX, full -t:Rebuild (still
+        // 0 Warning(s)/0 Error(s)), ran the class: this anchor failed with "Filter not matched in
+        // collection"; reverted, git diff --stat -- src/ came back empty.
+        Assert.Contains(bindings, b => b.Contains("=CanMutatePlan "));
+        Assert.Contains(bindings, b => b.Contains("=NudgeText "));
 
         // Proves the walk reached the SECOND Expander's content and did not stop at the first: both Expanders'
         // Content IS in the logical tree at parse time regardless of IsExpanded (Expander : HeaderedContentControl

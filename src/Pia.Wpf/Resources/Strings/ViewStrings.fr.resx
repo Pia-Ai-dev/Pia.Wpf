@@ -953,6 +953,22 @@
   <data name="Run_Publish_Conflicts" xml:space="preserve"><value>{0} fichier(s) ont été laissés tels quels car ils ont changé pendant l'exécution.</value></data>
   <data name="Run_Publish_Failed" xml:space="preserve"><value>Rien n'a pu être publié — les fichiers restent dans l'espace de travail de l'exécution.</value></data>
   <data name="Run_Output_Branch" xml:space="preserve"><value>Le résultat est sur la branche {0}</value></data>
+  <data name="Run_Nudge_Label" xml:space="preserve"><value>Remarque pour la suite de cette exécution</value></data>
+  <data name="Run_Nudge_Placeholder" xml:space="preserve"><value>Facultatif – par exemple : limiter le résumé à 200 mots</value></data>
+  <data name="Run_Nudge_Scope_Note" xml:space="preserve"><value>La remarque n'est envoyée qu'avec la prochaine étape de cette reprise. Elle n'est pas enregistrée et ne survit pas à un redémarrage.</value></data>
+  <data name="Run_Plan_Action_Edit" xml:space="preserve"><value>Modifier l'étape</value></data>
+  <data name="Run_Plan_Action_Insert" xml:space="preserve"><value>Insérer une étape en dessous</value></data>
+  <data name="Run_Plan_Action_MoveUp" xml:space="preserve"><value>Déplacer l'étape vers le haut</value></data>
+  <data name="Run_Plan_Action_MoveDown" xml:space="preserve"><value>Déplacer l'étape vers le bas</value></data>
+  <data name="Run_Plan_Action_Skip" xml:space="preserve"><value>Ignorer l'étape</value></data>
+  <data name="Run_Plan_NewStep_Title" xml:space="preserve"><value>Nouvelle étape</value></data>
+  <data name="Run_Plan_Note_PauseFirst" xml:space="preserve"><value>Mettez l'exécution en pause pour modifier son plan.</value></data>
+  <data name="Run_Plan_Error_NotPaused" xml:space="preserve"><value>Le plan ne peut être modifié que pendant la pause de l'exécution.</value></data>
+  <data name="Run_Plan_Error_UnknownStep" xml:space="preserve"><value>Cette étape ne fait plus partie du plan.</value></data>
+  <data name="Run_Plan_Error_TitleRequired" xml:space="preserve"><value>Une étape doit avoir un titre.</value></data>
+  <data name="Run_Plan_Error_EmptyPlan" xml:space="preserve"><value>Un plan doit comporter au moins une étape.</value></data>
+  <data name="Run_Plan_Error_TooLong" xml:space="preserve"><value>Le plan comporte trop d'étapes.</value></data>
+  <data name="Run_Plan_Error_WriteFailed" xml:space="preserve"><value>La modification du plan n'a pas pu être enregistrée.</value></data>
   <data name="Run_Timeline_Header" xml:space="preserve"><value>Activité des outils</value></data>
   <data name="Run_Timeline_Empty" xml:space="preserve"><value>Aucune décision d'outil n'a été enregistrée pour cette exécution.</value></data>
   <data name="Run_Children_Header" xml:space="preserve"><value>Sous-agents</value></data>

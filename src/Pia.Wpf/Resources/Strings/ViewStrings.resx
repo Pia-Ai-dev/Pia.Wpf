@@ -929,6 +929,23 @@
   <data name="Run_Publish_Conflicts" xml:space="preserve"><value>{0} file(s) were left alone because they changed while the run was working.</value></data>
   <data name="Run_Publish_Failed" xml:space="preserve"><value>Nothing could be published — the files are still in the run's workspace.</value></data>
   <data name="Run_Output_Branch" xml:space="preserve"><value>Output is on branch {0}</value></data>
+  <!-- Batch 08 8b: the paused-run plan editor — nudge box, per-row verbs and their rejection notes. -->
+  <data name="Run_Nudge_Label" xml:space="preserve"><value>Note for the rest of this run</value></data>
+  <data name="Run_Nudge_Placeholder" xml:space="preserve"><value>Optional — for example, keep the summary under 200 words</value></data>
+  <data name="Run_Nudge_Scope_Note" xml:space="preserve"><value>The note is sent with the next step of this continuation only. It is not saved and does not survive a restart.</value></data>
+  <data name="Run_Plan_Action_Edit" xml:space="preserve"><value>Edit step</value></data>
+  <data name="Run_Plan_Action_Insert" xml:space="preserve"><value>Insert step below</value></data>
+  <data name="Run_Plan_Action_MoveUp" xml:space="preserve"><value>Move step up</value></data>
+  <data name="Run_Plan_Action_MoveDown" xml:space="preserve"><value>Move step down</value></data>
+  <data name="Run_Plan_Action_Skip" xml:space="preserve"><value>Skip step</value></data>
+  <data name="Run_Plan_NewStep_Title" xml:space="preserve"><value>New step</value></data>
+  <data name="Run_Plan_Note_PauseFirst" xml:space="preserve"><value>Pause the run to change its plan.</value></data>
+  <data name="Run_Plan_Error_NotPaused" xml:space="preserve"><value>The plan can only be changed while the run is paused.</value></data>
+  <data name="Run_Plan_Error_UnknownStep" xml:space="preserve"><value>That step is no longer part of the plan.</value></data>
+  <data name="Run_Plan_Error_TitleRequired" xml:space="preserve"><value>A step needs a title.</value></data>
+  <data name="Run_Plan_Error_EmptyPlan" xml:space="preserve"><value>A plan needs at least one step.</value></data>
+  <data name="Run_Plan_Error_TooLong" xml:space="preserve"><value>The plan has too many steps.</value></data>
+  <data name="Run_Plan_Error_WriteFailed" xml:space="preserve"><value>The plan change could not be saved.</value></data>
   <!-- Batch 03: the per-run tool-decision trace. Eleven persisted decision ordinals collapse to five
        user-facing categories; anything a build does not recognise renders as Unknown. -->
   <data name="Run_Timeline_Header" xml:space="preserve"><value>Tool activity</value></data>

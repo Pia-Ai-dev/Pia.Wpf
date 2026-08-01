@@ -70,8 +70,14 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanContinue))]
     [NotifyPropertyChangedFor(nameof(CanPause))]
+    [NotifyPropertyChangedFor(nameof(CanMutatePlan))]
     [NotifyCanExecuteChangedFor(nameof(ContinueCommand))]
     [NotifyCanExecuteChangedFor(nameof(PauseCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveStepEditCommand))]
+    [NotifyCanExecuteChangedFor(nameof(InsertStepBelowCommand))]
+    [NotifyCanExecuteChangedFor(nameof(MoveStepUpCommand))]
+    [NotifyCanExecuteChangedFor(nameof(MoveStepDownCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SkipStepCommand))]
     private RunProgressState _state;
 
     /// <summary>True while a resume is being launched — gates the Continue button against a double-click
@@ -125,6 +131,23 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// bool's own CanPause/CanExecute pair and this derived string) read as one intentional list rather than
     /// four attributes stacked on the field.</summary>
     public string PauseLabel => IsPausing ? _localization["Run_Action_Pausing"] : _localization["Run_Action_Pause"];
+
+    /// <summary>
+    /// Batch 08 D3/D4: every row-level plan mutation (edit/insert/reorder/skip) is refused unless the run is
+    /// PAUSED — one state, never a set and never a range (D7), matching
+    /// <see cref="IAgentRunService.ApplyPlanMutationAsync"/>'s own gate exactly. Gates each row command's
+    /// <c>CanExecute</c> AND is bound directly in the row template (via <c>AncestorType=ItemsControl</c>) to
+    /// hide the whole per-row button group while the run is live — <see cref="StepRowViewModel.IsMutable"/> is
+    /// the OTHER, independent half: it greys out a settled row's buttons even while this is true. The
+    /// service's own state read is the hard guard; this is the UI-visible affordance.
+    /// </summary>
+    public bool CanMutatePlan => State == RunProgressState.Paused;
+
+    /// <summary>The muted result line of the last plan mutation — the <see cref="PublishNote"/> shape. Null
+    /// when there is nothing to say; cleared on a successful mutation (the re-projected plan speaks for
+    /// itself) so the panel never shows a stale rejection over a plan that has since changed.</summary>
+    [ObservableProperty]
+    private string? _planMutationNote;
 
     [ObservableProperty]
     private bool _isTruncated;
@@ -701,6 +724,138 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>Opens <paramref name="row"/>'s inline editor, seeded from its CURRENT (persisted) Title/Intent
+    /// — never from a stale prior edit. Purely local state: no service call, so this needs no try/catch and
+    /// touches nothing but the one row.</summary>
+    [RelayCommand(CanExecute = nameof(CanMutatePlan))]
+    private void EditStep(StepRowViewModel row)
+    {
+        row.EditTitle = row.Title;
+        row.EditIntent = row.Intent;
+        row.IsEditing = true;
+    }
+
+    /// <summary>Closes <paramref name="row"/>'s inline editor without submitting anything. Deliberately NOT
+    /// gated on <see cref="CanMutatePlan"/>: a user mid-edit when the run stops being pausable (a rare race,
+    /// not a mutation) must still be able to dismiss their own open editor.</summary>
+    [RelayCommand]
+    private void CancelStepEdit(StepRowViewModel row) => row.IsEditing = false;
+
+    /// <summary>Submits the edited Title/Intent for <paramref name="row"/> as part of the FULL pending tail —
+    /// every other currently-Pending row rides along verbatim (D3: the service takes the complete list, never
+    /// a diff). Closes the editor unconditionally: on success the re-projection shows the saved text, on
+    /// rejection it shows the UNCHANGED persisted text plus <see cref="PlanMutationNote"/> explaining why —
+    /// either way there is nothing left to edit.</summary>
+    [RelayCommand(CanExecute = nameof(CanMutatePlan))]
+    private async Task SaveStepEdit(StepRowViewModel row)
+    {
+        var edits = Steps.Where(r => r.Status == AgentStepStatus.Pending)
+            .Select(r => r.StepId == row.StepId
+                ? new PlanStepEdit(r.StepId, row.EditTitle, row.EditIntent, r.ExpectedArtifact)
+                : new PlanStepEdit(r.StepId, r.Title, r.Intent, r.ExpectedArtifact))
+            .ToList();
+        row.IsEditing = false;
+        await ApplyStepEditsAsync(edits);
+    }
+
+    /// <summary>Inserts a new Pending step immediately after <paramref name="row"/> in the submitted order —
+    /// there is no "insert above" verb (D3's stated verb set). <paramref name="row"/> must itself be Pending
+    /// (<see cref="StepRowViewModel.IsMutable"/> gates its button), since only Pending steps are ever part of
+    /// the submitted tail at all.</summary>
+    [RelayCommand(CanExecute = nameof(CanMutatePlan))]
+    private async Task InsertStepBelow(StepRowViewModel row)
+    {
+        var edits = new List<PlanStepEdit>();
+        foreach (var r in Steps.Where(r => r.Status == AgentStepStatus.Pending))
+        {
+            edits.Add(new PlanStepEdit(r.StepId, r.Title, r.Intent, r.ExpectedArtifact));
+            if (r.StepId == row.StepId)
+                edits.Add(new PlanStepEdit(null, _localization["Run_Plan_NewStep_Title"], null, null));
+        }
+        await ApplyStepEditsAsync(edits);
+    }
+
+    /// <summary>Swaps <paramref name="row"/> with the PRECEDING Pending row. A no-op (no service call at all)
+    /// when <paramref name="row"/> is already first among the Pending rows — reordering can never place a
+    /// Pending step ahead of the settled prefix (that boundary is structurally impossible on the service side,
+    /// D3), and within the Pending tail itself there is nothing above the first row to swap with.</summary>
+    [RelayCommand(CanExecute = nameof(CanMutatePlan))]
+    private async Task MoveStepUp(StepRowViewModel row)
+    {
+        var pending = Steps.Where(r => r.Status == AgentStepStatus.Pending).ToList();
+        var index = pending.FindIndex(r => r.StepId == row.StepId);
+        if (index <= 0) return;
+
+        (pending[index - 1], pending[index]) = (pending[index], pending[index - 1]);
+        await ApplyStepEditsAsync(ToEdits(pending));
+    }
+
+    /// <summary>Swaps <paramref name="row"/> with the FOLLOWING Pending row — the mirror of
+    /// <see cref="MoveStepUp"/>, a no-op when already last.</summary>
+    [RelayCommand(CanExecute = nameof(CanMutatePlan))]
+    private async Task MoveStepDown(StepRowViewModel row)
+    {
+        var pending = Steps.Where(r => r.Status == AgentStepStatus.Pending).ToList();
+        var index = pending.FindIndex(r => r.StepId == row.StepId);
+        if (index < 0 || index >= pending.Count - 1) return;
+
+        (pending[index], pending[index + 1]) = (pending[index + 1], pending[index]);
+        await ApplyStepEditsAsync(ToEdits(pending));
+    }
+
+    /// <summary>Marks <paramref name="row"/> Skipped in the submitted tail — every other Pending row rides
+    /// along unchanged. ONE-WAY: a skipped step joins the immutable prefix the moment this lands, so a later
+    /// mutation cannot un-skip it (D3).</summary>
+    [RelayCommand(CanExecute = nameof(CanMutatePlan))]
+    private async Task SkipStep(StepRowViewModel row)
+    {
+        var edits = Steps.Where(r => r.Status == AgentStepStatus.Pending)
+            .Select(r => new PlanStepEdit(r.StepId, r.Title, r.Intent, r.ExpectedArtifact, Skip: r.StepId == row.StepId))
+            .ToList();
+        await ApplyStepEditsAsync(edits);
+    }
+
+    private static List<PlanStepEdit> ToEdits(IEnumerable<StepRowViewModel> rows) =>
+        rows.Select(r => new PlanStepEdit(r.StepId, r.Title, r.Intent, r.ExpectedArtifact)).ToList();
+
+    /// <summary>
+    /// The one call site every mutating verb shares (D3). Sets <see cref="PlanMutationNote"/> from the
+    /// outcome and ALWAYS re-projects afterward — win or lose — so a fact can await the mutation's full
+    /// UI-visible effect instead of racing the fire-and-forget <see cref="RefreshAsync"/> that
+    /// <see cref="OnRunChanged"/> would otherwise kick off on its own, and so the panel never shows a mutation
+    /// that did not land. Privacy: titles never appear in the warning line, only the run id.
+    /// </summary>
+    private async Task ApplyStepEditsAsync(IReadOnlyList<PlanStepEdit> edits)
+    {
+        PlanMutationResult result;
+        try
+        {
+            result = await _runService.ApplyPlanMutationAsync(_runId, edits);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run {RunId} plan mutation failed from panel", _runId);
+            PlanMutationNote = _localization["Run_Plan_Error_WriteFailed"];
+            await RefreshAsync();
+            return;
+        }
+
+        PlanMutationNote = result.Outcome == PlanMutationOutcome.Applied
+            ? null
+            : _localization[MutationErrorKey(result.Outcome)];
+        await RefreshAsync();
+    }
+
+    private static string MutationErrorKey(PlanMutationOutcome outcome) => outcome switch
+    {
+        PlanMutationOutcome.NotPaused => "Run_Plan_Error_NotPaused",
+        PlanMutationOutcome.UnknownStep => "Run_Plan_Error_UnknownStep",
+        PlanMutationOutcome.TitleRequired => "Run_Plan_Error_TitleRequired",
+        PlanMutationOutcome.EmptyPlan => "Run_Plan_Error_EmptyPlan",
+        PlanMutationOutcome.TooLong => "Run_Plan_Error_TooLong",
+        _ => "Run_Plan_Error_WriteFailed", // WriteFailed, and any future member — never a silent success read
+    };
+
     /// <summary>
     /// Read the run's tool-decision trace and project it. <c>internal</c> so the facts can await it directly
     /// rather than racing the <c>_uiContext.Post</c> the collection fill is marshaled through (G3, by the same
@@ -856,8 +1011,32 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             else
             {
                 existing.Status = step.Status; // move the highlight / update the glyph
+                // Batch 08 W12: an EDIT preserves the step Id, so this is the only branch that ever sees a
+                // rewritten Title/Intent/ExpectedArtifact — the row is never re-minted for those alone (R23).
+                existing.Title = step.Title;
+                existing.Intent = step.Intent;
+                existing.ExpectedArtifact = step.ExpectedArtifact;
                 ApplyPersonaAttribution(existing); // re-applied every pass — see the field's own doc comment
             }
+        }
+
+        // Batch 08 W12: reconcile ORDER as a SEPARATE pass, after the drop/insert/update pass above has
+        // settled every row's presence and content. The insert pass only ever INSERTS a brand-new row at its
+        // plan index; it never MOVES an existing one, so a reorder that preserves every step's Id (which is
+        // the whole point of a reorder — the settled prefix's ledger/timeline rows stay attached) would
+        // otherwise repaint content in place but leave the collection in its old visual order forever. Kept
+        // separate from the loop above on purpose: an ObservableCollection.Move interleaved with that loop's
+        // own index-based Insert calls would invalidate the indices it is still iterating.
+        for (var ordinal = 0; ordinal < plan.Count; ordinal++)
+        {
+            var stepId = plan[ordinal].Id;
+            var currentIndex = -1;
+            for (var i = 0; i < Steps.Count; i++)
+            {
+                if (Steps[i].StepId == stepId) { currentIndex = i; break; }
+            }
+            if (currentIndex >= 0 && currentIndex != ordinal)
+                Steps.Move(currentIndex, ordinal);
         }
     }
 
@@ -1123,7 +1302,23 @@ public sealed partial class StepRowViewModel : ObservableObject
 {
     public Guid StepId { get; init; }
 
-    public string Title { get; init; } = string.Empty;
+    /// <summary>
+    /// Batch 08 8b (W12): SETTABLE, not init-only. <c>RunProgressViewModel.SyncSteps</c>'s else-branch (the
+    /// path taken when a step's Id survives — an EDIT preserves it, by design) assigns it directly, which is
+    /// the only way an edited title ever repaints: rows are otherwise replaced only when a step Id changes
+    /// (R23), and an edit changes nothing else about the row's identity.
+    /// </summary>
+    [ObservableProperty]
+    private string _title = string.Empty;
+
+    /// <summary>SENSITIVE (user content), like <see cref="Title"/>. Not bound to the read-only row display —
+    /// carried only so a submitted plan mutation can round-trip every OTHER pending row's Intent verbatim
+    /// while one row is being edited/inserted/reordered/skipped (the service takes the COMPLETE pending tail,
+    /// never a diff).</summary>
+    public string? Intent { get; set; }
+
+    /// <summary>Same reason as <see cref="Intent"/> — round-tripped, not displayed.</summary>
+    public string? ExpectedArtifact { get; set; }
 
     /// <summary>The persona the PLANNER assigned, or null. Kept as the raw fact; <see cref="PersonaId"/> and
     /// the other render values below are the resolved projection (Batch 07 §4.3).</summary>
@@ -1152,6 +1347,7 @@ public sealed partial class StepRowViewModel : ObservableObject
     partial void OnPersonaIdChanged(Guid value) => OnPropertyChanged(nameof(HasPersona));
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsMutable))]
     private AgentStepStatus _status;
 
     [ObservableProperty]
@@ -1162,12 +1358,38 @@ public sealed partial class StepRowViewModel : ObservableObject
 
     public bool IsRunning => Status == AgentStepStatus.Running;
 
+    /// <summary>
+    /// Batch 08 D3: gates the row's five plan-mutation buttons' <c>IsEnabled</c> — a settled step (Done,
+    /// Skipped or Failed) never offers to be edited, inserted after, reordered or skipped again (a skip is
+    /// ONE-WAY). This is independent of <see cref="RunProgressViewModel.CanMutatePlan"/>, which gates the
+    /// SAME buttons' visibility and each command's own <c>CanExecute</c> at the run level — a live run hides
+    /// the whole row-button group; a paused run still greys out a settled row's group via this property.
+    /// </summary>
+    public bool IsMutable => Status == AgentStepStatus.Pending;
+
     partial void OnStatusChanged(AgentStepStatus value) => OnPropertyChanged(nameof(IsRunning));
+
+    /// <summary>True while this row's inline editor (Title/Intent) is open. Batch 08 D3: inline, never a
+    /// dialog — the panel is embedded in a chat.</summary>
+    [ObservableProperty]
+    private bool _isEditing;
+
+    /// <summary>The editor's working copy of <see cref="Title"/>, seeded by <c>EditStep</c> and discarded by
+    /// <c>CancelStepEdit</c> — <see cref="Title"/> itself is never touched until <c>SaveStepEdit</c> actually
+    /// lands.</summary>
+    [ObservableProperty]
+    private string _editTitle = string.Empty;
+
+    /// <summary>The editor's working copy of <see cref="Intent"/>, same discipline as <see cref="EditTitle"/>.</summary>
+    [ObservableProperty]
+    private string? _editIntent;
 
     public static StepRowViewModel From(AgentStep step) => new()
     {
         StepId = step.Id,
         Title = step.Title,
+        Intent = step.Intent,
+        ExpectedArtifact = step.ExpectedArtifact,
         AssignedPersonaId = step.AssignedPersonaId,
         Status = step.Status,
     };

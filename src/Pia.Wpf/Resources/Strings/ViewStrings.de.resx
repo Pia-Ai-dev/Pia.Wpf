@@ -953,6 +953,22 @@
   <data name="Run_Publish_Conflicts" xml:space="preserve"><value>{0} Datei(en) blieben unberührt, weil sie sich während der Ausführung geändert haben.</value></data>
   <data name="Run_Publish_Failed" xml:space="preserve"><value>Es konnte nichts veröffentlicht werden – die Dateien liegen weiterhin im Arbeitsbereich der Ausführung.</value></data>
   <data name="Run_Output_Branch" xml:space="preserve"><value>Das Ergebnis liegt auf Branch {0}</value></data>
+  <data name="Run_Nudge_Label" xml:space="preserve"><value>Hinweis für den Rest dieser Ausführung</value></data>
+  <data name="Run_Nudge_Placeholder" xml:space="preserve"><value>Optional – zum Beispiel: Zusammenfassung unter 200 Wörter halten</value></data>
+  <data name="Run_Nudge_Scope_Note" xml:space="preserve"><value>Der Hinweis wird nur mit dem nächsten Schritt dieser Fortsetzung gesendet. Er wird nicht gespeichert und übersteht keinen Neustart.</value></data>
+  <data name="Run_Plan_Action_Edit" xml:space="preserve"><value>Schritt bearbeiten</value></data>
+  <data name="Run_Plan_Action_Insert" xml:space="preserve"><value>Schritt darunter einfügen</value></data>
+  <data name="Run_Plan_Action_MoveUp" xml:space="preserve"><value>Schritt nach oben</value></data>
+  <data name="Run_Plan_Action_MoveDown" xml:space="preserve"><value>Schritt nach unten</value></data>
+  <data name="Run_Plan_Action_Skip" xml:space="preserve"><value>Schritt überspringen</value></data>
+  <data name="Run_Plan_NewStep_Title" xml:space="preserve"><value>Neuer Schritt</value></data>
+  <data name="Run_Plan_Note_PauseFirst" xml:space="preserve"><value>Pausieren Sie die Ausführung, um den Plan zu ändern.</value></data>
+  <data name="Run_Plan_Error_NotPaused" xml:space="preserve"><value>Der Plan kann nur geändert werden, während die Ausführung pausiert ist.</value></data>
+  <data name="Run_Plan_Error_UnknownStep" xml:space="preserve"><value>Dieser Schritt ist nicht mehr Teil des Plans.</value></data>
+  <data name="Run_Plan_Error_TitleRequired" xml:space="preserve"><value>Ein Schritt braucht einen Titel.</value></data>
+  <data name="Run_Plan_Error_EmptyPlan" xml:space="preserve"><value>Ein Plan braucht mindestens einen Schritt.</value></data>
+  <data name="Run_Plan_Error_TooLong" xml:space="preserve"><value>Der Plan hat zu viele Schritte.</value></data>
+  <data name="Run_Plan_Error_WriteFailed" xml:space="preserve"><value>Die Planänderung konnte nicht gespeichert werden.</value></data>
   <data name="Run_Timeline_Header" xml:space="preserve"><value>Werkzeug-Aktivität</value></data>
   <data name="Run_Timeline_Empty" xml:space="preserve"><value>Für diese Ausführung wurden keine Werkzeug-Entscheidungen aufgezeichnet.</value></data>
   <data name="Run_Children_Header" xml:space="preserve"><value>Unteragenten</value></data>

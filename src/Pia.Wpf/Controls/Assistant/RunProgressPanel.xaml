@@ -77,6 +77,35 @@
                  Foreground="{DynamicResource TextMutedBrush}"
                  Visibility="{Binding HasOutputBranch, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
+      <!-- Batch 08 D3: "the UI can require a pause first" — stated as a note, never a silently-frozen plan.
+           Shown only while the run is NOT pausable for mutation (CanMutatePlan inverted). -->
+      <TextBlock Text="{loc:Str Run_Plan_Note_PauseFirst}" Margin="0,0,0,6"
+                 TextWrapping="Wrap" FontSize="12"
+                 Foreground="{DynamicResource TextMutedBrush}"
+                 Visibility="{Binding CanMutatePlan, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+      <!-- The muted result of the last plan mutation — the PublishNote shape, same NullToVisibilityConverter,
+           cleared by the VM on the next successful mutation. -->
+      <TextBlock Text="{Binding PlanMutationNote}" Margin="0,0,0,6"
+                 TextWrapping="Wrap" FontSize="12"
+                 Foreground="{DynamicResource TextMutedBrush}"
+                 Visibility="{Binding PlanMutationNote, Converter={StaticResource NullToVisibilityConverter}}" />
+
+      <!-- Batch 08 D4: the steering note. Offered only while a resume is available — CanContinue already
+           covers both the budget-paused and the user-paused case. Placed BEFORE the step list deliberately, so
+           its binding counts toward the parse test's raised floor. SENSITIVE (user content): bound only, never
+           logged — Continue() carries it to the resume service, this panel never does. -->
+      <StackPanel Margin="0,0,0,6"
+                  Visibility="{Binding CanContinue, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <TextBlock Text="{loc:Str Run_Nudge_Label}" Margin="0,0,0,2" FontSize="11"
+                   Foreground="{DynamicResource TextMutedBrush}" />
+        <ui:TextBox Text="{Binding NudgeText, UpdateSourceTrigger=PropertyChanged}"
+                    PlaceholderText="{loc:Str Run_Nudge_Placeholder}" PlaceholderEnabled="True"
+                    FontSize="12" TextWrapping="Wrap" />
+        <TextBlock Text="{loc:Str Run_Nudge_Scope_Note}" Margin="0,2,0,0" FontSize="11"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource TextMutedBrush}" />
+      </StackPanel>
+
       <!-- Step list -->
       <ItemsControl ItemsSource="{Binding Steps}">
         <ItemsControl.ItemTemplate>
@@ -84,31 +113,85 @@
             <Border Padding="6,4" Margin="0,1"
                     CornerRadius="{StaticResource SmallRadius}"
                     Background="{Binding IsRunning, Converter={StaticResource BoolToRunningRowBrushConverter}}">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="Auto" />
-                  <ColumnDefinition Width="Auto" />
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <ui:SymbolIcon Grid.Column="0" FontSize="14" Margin="0,0,6,0"
-                               VerticalAlignment="Center"
-                               Symbol="{Binding Status, Converter={StaticResource StepStatusToGlyphConverter}}"
-                               Foreground="{Binding Status, Converter={StaticResource StepStatusToBrushConverter}}" />
-                <chat:PiaPersonaAvatar Grid.Column="1" Width="20" Height="20" Margin="0,0,6,0"
-                                       VerticalAlignment="Center"
-                                       PersonaId="{Binding PersonaId}"
-                                       Emoji="{Binding PersonaEmoji}"
-                                       AccentColor="{Binding PersonaAccent}"
-                                       Visibility="{Binding HasPersona, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                <TextBlock Grid.Column="2" Text="{Binding Title}"
-                           TextTrimming="CharacterEllipsis"
-                           VerticalAlignment="Center"
-                           Foreground="{DynamicResource TextDefaultBrush}" />
-                <TextBlock Grid.Column="3" VerticalAlignment="Center" FontSize="11"
-                           Foreground="{DynamicResource TextSubtleBrush}"
-                           Text="{Binding InputTokens, StringFormat={}{0:N0} in}" />
-              </Grid>
+              <StackPanel>
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <ui:SymbolIcon Grid.Column="0" FontSize="14" Margin="0,0,6,0"
+                                 VerticalAlignment="Center"
+                                 Symbol="{Binding Status, Converter={StaticResource StepStatusToGlyphConverter}}"
+                                 Foreground="{Binding Status, Converter={StaticResource StepStatusToBrushConverter}}" />
+                  <chat:PiaPersonaAvatar Grid.Column="1" Width="20" Height="20" Margin="0,0,6,0"
+                                         VerticalAlignment="Center"
+                                         PersonaId="{Binding PersonaId}"
+                                         Emoji="{Binding PersonaEmoji}"
+                                         AccentColor="{Binding PersonaAccent}"
+                                         Visibility="{Binding HasPersona, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                  <!-- Read-mode title; hidden while this row's inline editor (below) is open. -->
+                  <TextBlock Grid.Column="2" Text="{Binding Title}"
+                             TextTrimming="CharacterEllipsis"
+                             VerticalAlignment="Center"
+                             Foreground="{DynamicResource TextDefaultBrush}"
+                             Visibility="{Binding IsEditing, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+                  <TextBlock Grid.Column="3" VerticalAlignment="Center" FontSize="11"
+                             Foreground="{DynamicResource TextSubtleBrush}"
+                             Text="{Binding InputTokens, StringFormat={}{0:N0} in}" />
+                </Grid>
+
+                <!-- Batch 08 D3: the inline editor — embedded, never a dialog (the panel lives inside a
+                     chat). Title/Intent only; every other column of the row (Ordinal, persona, ExtraJson) is
+                     carried forward verbatim by the service and untouched by an edit. -->
+                <StackPanel Margin="0,4,0,0"
+                            Visibility="{Binding IsEditing, Converter={StaticResource BooleanToVisibilityConverter}}">
+                  <ui:TextBox Text="{Binding EditTitle, UpdateSourceTrigger=PropertyChanged}"
+                              FontSize="12" Margin="0,0,0,4" />
+                  <ui:TextBox Text="{Binding EditIntent, UpdateSourceTrigger=PropertyChanged}"
+                              FontSize="12" Margin="0,0,0,4" TextWrapping="Wrap" AcceptsReturn="True" />
+                  <StackPanel Orientation="Horizontal">
+                    <ui:Button Content="{loc:Str Common_Save}" FontSize="11" Margin="0,0,6,0"
+                               Command="{Binding DataContext.SaveStepEditCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                               CommandParameter="{Binding}" />
+                    <ui:Button Content="{loc:Str Common_Cancel}" FontSize="11"
+                               Command="{Binding DataContext.CancelStepEditCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                               CommandParameter="{Binding}" />
+                  </StackPanel>
+                </StackPanel>
+
+                <!-- Batch 08 D3: the five plan-mutation verbs — hidden while this row is being edited (the
+                     editor's own Save/Cancel are the only actions offered then), and hidden entirely while the
+                     run is live (CanMutatePlan, bound off the ItemsControl's own DataContext — the VM). A
+                     settled step's five buttons stay VISIBLE but each individually disabled (IsMutable) rather
+                     than vanishing, so the row's shape does not shift as steps finish. -->
+                <StackPanel Visibility="{Binding IsEditing, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                  <StackPanel Orientation="Horizontal" Margin="0,4,0,0"
+                              Visibility="{Binding DataContext.CanMutatePlan, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <ui:Button Content="{loc:Str Run_Plan_Action_Edit}" FontSize="11" Margin="0,0,6,0"
+                               IsEnabled="{Binding IsMutable}"
+                               Command="{Binding DataContext.EditStepCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                               CommandParameter="{Binding}" />
+                    <ui:Button Content="{loc:Str Run_Plan_Action_Insert}" FontSize="11" Margin="0,0,6,0"
+                               IsEnabled="{Binding IsMutable}"
+                               Command="{Binding DataContext.InsertStepBelowCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                               CommandParameter="{Binding}" />
+                    <ui:Button Content="{loc:Str Run_Plan_Action_MoveUp}" FontSize="11" Margin="0,0,6,0"
+                               IsEnabled="{Binding IsMutable}"
+                               Command="{Binding DataContext.MoveStepUpCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                               CommandParameter="{Binding}" />
+                    <ui:Button Content="{loc:Str Run_Plan_Action_MoveDown}" FontSize="11" Margin="0,0,6,0"
+                               IsEnabled="{Binding IsMutable}"
+                               Command="{Binding DataContext.MoveStepDownCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                               CommandParameter="{Binding}" />
+                    <ui:Button Content="{loc:Str Run_Plan_Action_Skip}" FontSize="11"
+                               IsEnabled="{Binding IsMutable}"
+                               Command="{Binding DataContext.SkipStepCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                               CommandParameter="{Binding}" />
+                  </StackPanel>
+                </StackPanel>
+              </StackPanel>
             </Border>
           </DataTemplate>
         </ItemsControl.ItemTemplate>
