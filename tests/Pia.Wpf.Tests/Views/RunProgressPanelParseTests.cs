@@ -85,10 +85,23 @@ public class RunProgressPanelParseTests
         Assert.Contains(bindings, b => b.Contains("=HasOutputBranch "));    // its visibility half
         Assert.Contains(bindings, b => b.Contains("=LedgerSummary "));      // Batch 02's strip
 
+        // Batch 14 review D3: the four anchors above cover two of the six surfaces the batch spec named for
+        // this fact (branch line, ledger strip) -- and the floor (18) is exactly the tuple count at-or-before
+        // :74, so every tuple from the Steps ItemsControl onward was droppable (e.g. by extracting the
+        // timeline block into its own templated control) without tripping anything. These four close the
+        // remaining named surfaces; each is single-occurrence in the markup, per the impl spec's own anchor
+        // discipline (`=State ` and `=CanPublish ` would also fit but are each bound twice or more, so an
+        // anchor on either would survive removal of one occurrence).
+        Assert.Contains(bindings, b => b.Contains("=TruncationNote "));   // the state chip's region (:24)
+        Assert.Contains(bindings, b => b.Contains("=CurrentActivity "));  // the activity line (:50)
+        Assert.Contains(bindings, b => b.Contains("=PublishCommand "));   // the publish offer (:40)
+        Assert.Contains(bindings, b => b.Contains("=TimelineNote "));     // the first Expander's content (:120)
+
         // Proves the walk reached the SECOND Expander's content and did not stop at the first: both Expanders'
         // Content IS in the logical tree at parse time regardless of IsExpanded (Expander : HeaderedContentControl
         // : ContentControl adds it unconditionally). If that ever stopped being true this walk would silently
-        // lose tuples 19-28.
+        // lose tuples 25-28 -- it does NOT, on its own, prove tuples 19-24 (the first Expander's content) were
+        // walked; the =TimelineNote anchor above covers that half.
         Assert.Contains(bindings, b => b.Contains("=Children "));
 
         var unresolved = bindings.Where(b => b.EndsWith("UNRESOLVED", StringComparison.Ordinal)).ToArray();
@@ -150,6 +163,13 @@ public class RunProgressPanelParseTests
         {
             // Hazard 4, non-negotiable: the VM subscribes to IAgentRunService.RunChanged in its ctor and the
             // host outlives every test.
+            // Batch 14 review D5, declined: this bounded Run sits in a finally, so a wedged dispatcher
+            // throws a SECOND TimeoutException here that C# `finally` semantics let REPLACE whatever was
+            // already propagating from the try body (the real failing stage and its message are lost).
+            // Not fixed: the honest fix needs a `bodyFaulted` flag set from a catch that rethrows and
+            // gates a swallow here, bigger than this nit's budget across the 3 sites this batch raised it
+            // at; a bare `catch` was rejected because it would silently drop a genuine disposal failure on
+            // an otherwise-passing test.
             WpfStaHost.Run(() => { vm?.Dispose(); return 0; });
         }
 

@@ -166,6 +166,14 @@ public class ScheduledJobsRowTemplateTests
         {
             // ScheduledJobsSettingsViewModel is not IDisposable (UiThreadViewModel : ObservableObject, no ctor
             // subscriptions), so this is inert today. Kept per hazard 4's shape for the day it gains one.
+            // Batch 14 review D5, declined: this is a bounded WpfStaHost.Run inside a finally, so a wedged
+            // dispatcher throws a SECOND TimeoutException here that C# `finally` semantics let REPLACE
+            // whatever was already propagating from the try body above (the real stage, and its message,
+            // is lost). Not fixed: the honest fix needs a `bodyFaulted` flag set from a catch that
+            // rethrows and gates a swallow here, ~5 lines across 3 sites in this batch, which is bigger
+            // than this nit's budget; a bare `catch` around this call was rejected because it would
+            // silently drop a genuine disposal failure on an otherwise-passing test, which is worse than
+            // the message it would be closing.
             WpfStaHost.Run(() => { (ctx?.Vm as IDisposable)?.Dispose(); return 0; });
         }
 
@@ -225,6 +233,14 @@ public class ScheduledJobsRowTemplateTests
         var toggle = buttons.Single(b => BindingPathWalker.PathOf(b, ButtonBase.CommandProperty) == "DataContext.ToggleEnabledCommand");
         var runNow = buttons.Single(b => BindingPathWalker.PathOf(b, ButtonBase.CommandProperty) == "DataContext.RunNowCommand");
 
+        // D2 (Batch 14 review): paths 9-10 were located above by their Command path and then read only by
+        // VALUE, and both fixture rows co-vary on StatusIsKnown/CanRunNow/OwnedByThisDevice/IsEnabled, so any
+        // of the four booleans was interchangeable with any other in either IsEnabled slot -- a swap at
+        // AssistantView.xaml:587<->:592 kept the value-only asserts below green. Assert the declared
+        // IsEnabled binding PATH itself, never by index or by the value it happens to resolve to.
+        Assert.Equal("StatusIsKnown", BindingPathWalker.PathOf(toggle, UIElement.IsEnabledProperty));
+        Assert.Equal("CanRunNow", BindingPathWalker.PathOf(runNow, UIElement.IsEnabledProperty));
+
         return (
             buttons.Count,
             TextOf("Name"),
@@ -271,6 +287,9 @@ public class ScheduledJobsRowTemplateTests
         }
         finally
         {
+            // Batch 14 review D5, declined: see the sibling finally in
+            // JobsRowTemplate_BindsEveryItemScopedPath_AcrossTwoRowsThatDiscriminate above for why this
+            // bounded Run is left as-is rather than guarded against masking an in-flight exception.
             WpfStaHost.Run(() => { (ctx?.Vm as IDisposable)?.Dispose(); return 0; });
         }
 

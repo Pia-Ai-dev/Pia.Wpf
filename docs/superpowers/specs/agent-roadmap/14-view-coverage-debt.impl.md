@@ -100,8 +100,9 @@ Two calibrations:
   protection**, not as bug-finders. That is exactly why their RED demos are mandatory and non-trivial.
 - **G4 is where a red is plausible.** Path resolution for the 129 walker-visible paths across the five views
   is deliberately **unverified**. Likeliest first reds, named without any claim that they are broken:
-  `OptimizeView.xaml:20` `ProvidersVm.GoToProvidersTabCommand`, `PluginsView.xaml:26` `GoToAccountCommand`,
-  `ProvidersView.xaml:85` `GoToCloudSyncCommand`.
+  `OptimizeView.xaml:21` `ProvidersVm.GoToProvidersTabCommand`, `PluginsView.xaml:27` `GoToAccountCommand`,
+  `ProvidersView.xaml:86` `GoToCloudSyncCommand`. (Corrected from `:20`/`:26`/`:85` — Batch 14 review D7, see
+  §8's "RED demo" note for why.)
 
 Escalate rather than fix if the repair is more than a rename or a one-line binding correction.
 
@@ -745,9 +746,9 @@ which is the W11 trap seen from the other side: `PersonasView` is undetectable p
 |---|---|---|---|---|---|---|
 | 1 | `Pia.Views.SettingsViews.GeneralView` | `SettingsView.xaml:123` | `SettingsViewModel.GeneralVm` → `GeneralSettingsViewModel` | **40** (34 + 6) | **26** | **The two-halves assertion is mandatory here.** `GeneralView.xaml:452` re-roots: `<ScrollViewer … DataContext="{Binding PrivacyVm}">` → `GeneralSettingsViewModel.PrivacyVm` : `PrivacySettingsViewModel` (`GeneralSettingsViewModel.cs:27`), carrying the 6 paths at `:458`, `:487`, `:491`×2, `:502`, `:513`. Assert `=PrivacyVm ` **and** one path tagged `[PrivacySettingsViewModel]` — without the second, a section that stopped being walked still passes. **Read the failure message with W2 in hand:** this is the first new test in the repo over a view with an internal re-root, so if `PrivacyVm` itself ever fails to resolve, the null-context cascade reports **7 UNRESOLVED lines for 1 defect** (the re-root plus all 6 paths under it). Fix the re-root and re-run before touching any of the six. Everything sits in a `TabControl` (`:17`) with four `TabItem`s (`:19`, `:97`, `:230`, `:451`); **`TabItem` reachability is proven, not assumed** — the green settings-Assistant fact asserts two paths that live inside `<TabItem>`s. Out of reach: 24 template bindings, 4 `RelativeSource` (`:392`, `:411`, `:529`, `:541`), 3 `DataTrigger`s (`:399`, `:418`, `:431`). Local `UserControl.Resources` (`:8`–`:15`, incl. `EnumToLocalizedStringConverter`, `CategoryDisplayConverter`) must never be split from the file. |
 | 2 | `Pia.Views.SettingsViews.AccountView` | `SettingsView.xaml:136` | `SettingsViewModel.AccountVm` → `AccountSettingsViewModel` | **61** at runtime (46 own + 15 nested) | **40** | Contains `E2EEOnboardingView` at `:218` as a plain logical child with **no `DataContext`**, so its 15 `OnboardingViewModel.`-prefixed paths are walked under `AccountSettingsViewModel` — **which is correct**. Anchor on one of them (e.g. an `=OnboardingViewModel.…` string from the dump) to prove the nested view was reached. **Plus the D5 duck-type fact** (below). Known gaps to name in the doc comment, not chase: 4 `<Condition Binding="…">` inside `MultiDataTrigger`s (`:86`, `:87`, `:230`, `:231`) are invisible; `x:Name="LoginPasswordBox"` (`:51`) is driven from code-behind, so `AccountSettingsViewModel.LoginPassword` is written by **no binding at all** and is permanently invisible to this technique. |
-| 3 | `Pia.Views.SettingsViews.ProvidersView` | `SettingsView.xaml:84` | `SettingsViewModel.ProvidersVm` → `ProvidersSettingsViewModel` | **12** | **8** | 12 of 28 bindings are inside the `ItemTemplate` (`:120`–`:245`); 4 `RelativeSource AncestorType=UserControl` command bindings (`:188`×2, `:218`, `:230`) filtered by design. Watch `:85` `GoToCloudSyncCommand` — a plausible first red (D3). |
-| 4 | `Pia.Views.SettingsViews.OptimizeView` | `SettingsView.xaml:97` | `SettingsViewModel.OptimizeVm` → `OptimizeSettingsViewModel` | **8** | **5** | **Fully qualify** — `Pia.Views.OptimizeView` also exists and compiles (hazard 10). Anchor on the cross-VM hop `:20` `{Binding ProvidersVm.GoToProvidersTabCommand}`, which resolves through `OptimizeSettingsViewModel.ProvidersVm` (`:70`, expression-bodied `=> _providersVm`) — the most interesting path in the file and a plausible first red. 11 of 23 in the template at `:105`+; 1 `DataTrigger` at `:56` invisible. |
-| 5 | `Pia.Views.SettingsViews.PluginsView` | `SettingsView.xaml:149` | `SettingsViewModel.PluginsVm` → `PluginsSettingsViewModel` | **6** | **4** | Weakest floor in the batch — **say so in the doc comment** rather than let 4 read as meaningful. 12 of 19 bindings in the `ItemTemplate` (`:76`–`:127`), 1 `RelativeSource AncestorType=ItemsControl` (`:127`). Watch `:26` `GoToAccountCommand`. |
+| 3 | `Pia.Views.SettingsViews.ProvidersView` | `SettingsView.xaml:84` | `SettingsViewModel.ProvidersVm` → `ProvidersSettingsViewModel` | **12** | **8** | 12 of 28 bindings are inside the `ItemTemplate` (`:120`–`:245`); 4 `RelativeSource AncestorType=UserControl` command bindings (`:188`×2, `:218`, `:230`) filtered by design. Watch `:86` `GoToCloudSyncCommand` — a plausible first red (D3). |
+| 4 | `Pia.Views.SettingsViews.OptimizeView` | `SettingsView.xaml:97` | `SettingsViewModel.OptimizeVm` → `OptimizeSettingsViewModel` | **8** | **5** | **Fully qualify** — `Pia.Views.OptimizeView` also exists and compiles (hazard 10). Anchor on the cross-VM hop `:21` `{Binding ProvidersVm.GoToProvidersTabCommand}`, which resolves through `OptimizeSettingsViewModel.ProvidersVm` (`:70`, expression-bodied `=> _providersVm`) — the most interesting path in the file and a plausible first red. 11 of 23 in the template at `:105`+; 1 `DataTrigger` at `:56` invisible. |
+| 5 | `Pia.Views.SettingsViews.PluginsView` | `SettingsView.xaml:149` | `SettingsViewModel.PluginsVm` → `PluginsSettingsViewModel` | **6** | **4** | Weakest floor in the batch — **say so in the doc comment** rather than let 4 read as meaningful. 12 of 19 bindings in the `ItemTemplate` (`:76`–`:127`), 1 `RelativeSource AncestorType=ItemsControl` (`:127`). Watch `:27` `GoToAccountCommand`. |
 
 **The `AccountView` duck-type fact (D5)** — `E2EEOnboardingHosts_AllExposeAnOnboardingViewModelOfTheSameType`:
 
@@ -787,9 +788,20 @@ Pick a **single-occurrence** path from the view's own dump (do not reuse an anch
 it in the `.xaml` with a trailing `X`, `-t:Rebuild`, and confirm **two** things fail: the unresolved sweep
 message names `…X … UNRESOLVED`, and the corresponding `Assert.Contains` anchor. Revert, rebuild, confirm
 `git diff --stat -- src/` is empty. Suggested injection points (verify they are single-occurrence in the dump
-first): `GeneralView.xaml:458` (a `PrivacyVm`-scoped path — it also demonstrates the re-root),
+first): `GeneralView.xaml:459` (a `PrivacyVm`-scoped path — it also demonstrates the re-root),
 `AccountView.xaml` one of the `OnboardingViewModel.`-prefixed lines (it demonstrates the nested walk),
-`ProvidersView.xaml:85`, `OptimizeView.xaml:20`, `PluginsView.xaml:26`.
+`ProvidersView.xaml:86`, `OptimizeView.xaml:21`, `PluginsView.xaml:27`.
+
+**Batch 14 review D7, corrected here:** all four single-view citations above were originally one line short
+of the real `Command=`/`IsChecked=` attribute (`:458`, `:85`, `:20`, `:26` — each is the *element's opening
+tag*, one line above where the attribute this recipe actually renames sits). Two of the five G4 commits
+(General `512a9a2`, Plugins `2e75d72`) used the real line and corrected the number **silently**, with no note
+in the commit body; the other two (Providers `53b1565`, Optimize `921efb9`) hit the same off-by-one and
+**disclosed** it in a dedicated "spec-prose divergences" paragraph in their own commit bodies. Both behaviours
+shipped correct tests — no test is wrong — but a reader reconciling this file against the five commits before
+this correction landed would find two of four silently disagreeing with no way to tell a deliberate correction
+from a typo. This file cannot be corrected by amending those commits (no rebase), so the correction is
+recorded here instead, in the commit that closes the finding.
 
 ### G4 decides on its own / must escalate
 

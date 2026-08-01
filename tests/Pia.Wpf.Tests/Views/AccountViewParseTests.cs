@@ -77,6 +77,26 @@ public class AccountViewParseTests
     /// it. Renaming <see cref="AccountSettingsViewModel"/>'s property would break the settings page while
     /// <see cref="FirstRunWizardViewModel"/>'s wizard kept working, silently, because they are two
     /// independent declarations of the same duck-typed contract.
+    /// <para>
+    /// Batch 14 review D4: <c>GetProperty(..., BindingFlags.Public | BindingFlags.Instance)</c> only returns
+    /// <c>null</c> if the member stopped being an instance property under this exact name (a property→field
+    /// or instance→static conversion) — a rename is already a compile error via <c>nameof</c>, one step
+    /// earlier than this fact could ever run. So the two assertions below read <c>?.PropertyType</c> rather
+    /// than asserting <c>NotNull</c> first: that failure mode now fails these two directly (with a message
+    /// naming the expected type), instead of a separate near-tautological pair that could only ever fire on
+    /// that one narrow conversion.
+    /// </para>
+    /// <para>
+    /// RED DEMO (Batch 14 D4-fix, reverted): retyped <c>FirstRunWizardViewModel.OnboardingViewModel</c>
+    /// (<c>:115</c>) from <c>E2EEOnboardingViewModel</c> to <c>object</c>, cast at its one in-file usage
+    /// (<c>:269</c>, <c>((E2EEOnboardingViewModel)OnboardingViewModel).OnboardingCompleted += …</c>) so the
+    /// solution still compiles, full <c>-t:Rebuild</c> (0 Warning(s)/0 Error(s)). Failed with
+    /// <c>Assert.Equal() Failure: Expected: E2EEOnboardingViewModel / Actual: Object</c> at the second
+    /// assertion below — the first (pinned to <see cref="E2EEOnboardingViewModel"/> via the settings host,
+    /// which was untouched) stayed green, proving the concrete-type pin and the cross-host comparison are two
+    /// independent checks, not one duplicated. Both lines reverted; <c>git diff --stat -- src/</c> came back
+    /// empty afterward.
+    /// </para>
     /// </summary>
     [Fact]
     public void E2EEOnboardingHosts_AllExposeAnOnboardingViewModelOfTheSameType()
@@ -86,15 +106,13 @@ public class AccountViewParseTests
         var wizardHostProperty = typeof(FirstRunWizardViewModel)
             .GetProperty(nameof(FirstRunWizardViewModel.OnboardingViewModel), BindingFlags.Public | BindingFlags.Instance);
 
-        Assert.NotNull(settingsHostProperty);
-        Assert.NotNull(wizardHostProperty);
-
         // Anchored to a CONCRETE type, not just to each other: comparing the two reflected types only to
         // one another would pass even if both were retyped to something degenerate (e.g. object) while the
         // 15 OnboardingViewModel.-prefixed paths in E2EEOnboardingView.xaml stopped resolving on either
         // host — the same "assertion satisfied by a degenerate state" hazard the impl spec calls out
-        // elsewhere. Pin one side to the real type, then assert the two agree.
-        Assert.Equal(typeof(E2EEOnboardingViewModel), settingsHostProperty!.PropertyType);
-        Assert.Equal(settingsHostProperty.PropertyType, wizardHostProperty!.PropertyType);
+        // elsewhere. Pin one side to the real type, then assert the two agree. `?.PropertyType` (not `!.`)
+        // so a null property fails THIS comparison directly rather than needing a separate NotNull first.
+        Assert.Equal(typeof(E2EEOnboardingViewModel), settingsHostProperty?.PropertyType);
+        Assert.Equal(settingsHostProperty?.PropertyType, wizardHostProperty?.PropertyType);
     }
 }
