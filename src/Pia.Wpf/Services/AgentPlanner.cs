@@ -517,16 +517,6 @@ public sealed class AgentPlanner : IAgentPlanner
         sb.AppendLine(persona.SystemPrompt);
         sb.AppendLine();
         sb.AppendLine("A step in the current plan failed. Revise the REMAINING plan to recover and still accomplish the goal.");
-        if (ctx.CompletedSteps.Count > 0)
-        {
-            sb.AppendLine("Completed so far (do NOT repeat these steps):");
-            foreach (var c in ctx.CompletedSteps)
-            {
-                sb.AppendLine($"- [{(c.Succeeded ? "ok" : "failed")}] {c.Title}: {c.Intent}");
-                if (c.FromEarlierSegment) // E2: seeded pre-pause step — it ran, its text is just not here
-                    sb.AppendLine($"    {CompletedStepSummary.EarlierSegmentNote}");
-            }
-        }
         if (!string.IsNullOrWhiteSpace(failure))
             sb.AppendLine($"Failure detail: {failure}");
         sb.AppendLine("Call emit_plan with the revised ordered steps (only the steps still needed).");
@@ -538,8 +528,51 @@ public sealed class AgentPlanner : IAgentPlanner
         {
             new(ChatRole.System, sb.ToString()),
             // Batch 08 D4: the replan seeing an active nudge is intentional (§1 D4 item 5) — never the System
-            // prompt above, which is model/persona text, not the user's.
-            new(ChatRole.User, ctx.AppendNudge(ctx.Goal)),
+            // prompt above, which is model/persona text, not the user's. Batch 08 F11 moves the completed-step
+            // listing here on exactly the same argument the analysis block above already makes: those titles
+            // and intents come off the PERSISTED step row, which since D3 can hold raw user keystrokes typed
+            // into the run panel, and TokenizeMessages rewrites ChatRole.User text ONLY — so in the System
+            // prompt they shipped past the tokenizer with tokenization ON.
+            new(ChatRole.User, ctx.AppendNudge(ctx.Goal + BuildCompletedSteps(ctx))),
         };
+    }
+
+    /// <summary>
+    /// The "Completed so far" listing as a USER-message block — see the F11 note at the call site for why it
+    /// is not in the System prompt. Returns <c>""</c> when nothing has completed, so the goal-only shape is
+    /// byte-identical to before.
+    /// </summary>
+    private static string BuildCompletedSteps(RunContext ctx)
+    {
+        if (ctx.CompletedSteps.Count == 0 && ctx.SkippedTitles.Count == 0)
+            return string.Empty;
+
+        var sb = new StringBuilder();
+        sb.AppendLine();
+        sb.AppendLine();
+        if (ctx.CompletedSteps.Count > 0)
+        {
+            sb.AppendLine("Completed so far (do NOT repeat these steps):");
+            foreach (var c in ctx.CompletedSteps)
+            {
+                sb.AppendLine($"- [{(c.Succeeded ? "ok" : "failed")}] {c.Title}: {c.Intent}");
+                if (c.FromEarlierSegment) // E2: seeded pre-pause step — it ran, its text is just not here
+                    sb.AppendLine($"    {CompletedStepSummary.EarlierSegmentNote}");
+            }
+        }
+
+        // Batch 08 F16. W13 kept a skipped ROW through the replan; this is the half that tells the MODEL.
+        // Without it the replanner sees only the goal and the completed steps, so nothing stops it emitting a
+        // fresh "Delete the old backups" step for the very work the user removed — and the run then does it.
+        // Explicitly worded as a prohibition rather than a bare list: "skipped" alone reads to a model as
+        // "still outstanding, go do it".
+        if (ctx.SkippedTitles.Count > 0)
+        {
+            sb.AppendLine("The user REMOVED these steps from the plan. Do not re-add them or their work:");
+            foreach (var title in ctx.SkippedTitles)
+                sb.AppendLine($"- {title}");
+        }
+
+        return sb.ToString().TrimEnd();
     }
 }

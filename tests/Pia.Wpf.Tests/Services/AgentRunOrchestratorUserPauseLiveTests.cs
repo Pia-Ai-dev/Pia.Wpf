@@ -203,18 +203,24 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
     }
 
     /// <summary>Sets a UI context, constructs the live executor bound to the session, restores.</summary>
-    private static LiveTurnExecutor BuildLiveExecutor(ChatSession session, bool supportsTools = false)
+    private static LiveTurnExecutor BuildLiveExecutor(
+        ChatSession session, bool supportsTools = false, StepPersonaResolver? stepPersonas = null)
     {
         var prev = SynchronizationContext.Current;
         SynchronizationContext.SetSynchronizationContext(new SynchronizationContext());
         try
         {
+            // stepPersonas + runPersona are TRAILING and default to null, so every existing call site is
+            // unchanged and gets exactly the pre-Batch-07 "no per-step resolution" executor. Both are needed
+            // together: a resolver with no run default never resolves anything (Batch 08 C1 needs it to).
             return new LiveTurnExecutor(
                 session, _ => false,
                 new PersonaAttribution(Guid.NewGuid(), "Pia", "🤖"),
                 Provider(),
                 new AssistantTurnSetup("system", null, supportsTools, false),
-                tokenizationEnabled: false);
+                tokenizationEnabled: false,
+                stepPersonas: stepPersonas,
+                runPersona: stepPersonas is null ? null : Persona());
         }
         finally
         {
@@ -301,6 +307,95 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
         Assert.NotNull(final.CompletedAt);
         Assert.All(final.Plan, s => Assert.Equal(AgentStepStatus.Done, s.Status)); // the aborted step re-ran
         Assert.Null(RunPauseEnvelope.ReadReason(final));                            // the claim retired the marker
+    }
+
+    /// <summary>
+    /// <b>Batch 08 C1 — the THROWING abort shape, on LIVE.</b> The orchestrator's second consume site is its
+    /// outer <c>catch (OperationCanceledException)</c>, for aborts that leave the loop by throwing rather than
+    /// by returning a cancelled result. That arm is pinned headless
+    /// (<c>AgentRunOrchestratorUserPauseTests.UserPause_WhoseStepThrowsInsteadOfReturning_AlsoLeavesTheRunResumable</c>,
+    /// whose own doc says G4 would otherwise be the first place it is exercised "for Live only") — but BOTH
+    /// mechanisms that actually produce it are LIVE-SPECIFIC, so the shape had no Live fact at all.
+    /// <para>
+    /// This drives the first of the two, and it is the real one rather than a simulated throw:
+    /// <c>LiveTurnExecutor.ExecuteStepAsync</c> awaits <c>StepPersonaResolver.ResolveAsync</c> OUTSIDE its
+    /// <c>PostAsync</c> and outside any exchange try/catch, and <c>GetRosterAsync</c>'s ladder — which swallows
+    /// every other fault by design — deliberately rethrows on
+    /// <c>catch (OperationCanceledException) when (ct.IsCancellationRequested)</c>. So the pause's cancel,
+    /// landing while the roster read is in flight, throws straight past the executor with the step row already
+    /// written <c>Running(1)</c> by the loop and <c>step</c> out of scope in the catch arm.
+    /// </para>
+    /// <para>
+    /// What it would catch: a regression that mis-scoped <c>inflightStepId</c> would leave the Live-paused run
+    /// at <c>Paused</c> with its step still <c>Running(1)</c> — invisible to <c>NextPendingStepAsync</c>, so the
+    /// resume would silently skip it and the run would report success over work it never did. Nothing in the
+    /// suite would have gone red. The <c>Pending</c> + <c>NextPendingStepAsync</c> pair below is that assertion.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task UserPause_ThatThrowsOutOfTheStepPersonaResolve_LeavesTheRunResumable_OnLive()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+
+        var assigned = new Persona { Id = Guid.NewGuid(), Name = "Specialist", SystemPrompt = "spec" };
+        var plan = MakeSteps("s1", "s2");
+        plan[0].AssignedPersonaId = assigned.Id;   // only an ASSIGNED step reaches the roster read
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(plan, false));
+
+        var session = CreateSession();
+        SeedSessionForPlannedRun(session, "goal");
+        RegisterSessionSink(h.Store, run.Id, session);
+
+        // The roster read IS the throw site. GetPersonasAsync takes no token, so the pause is requested from
+        // inside it and the OCE is raised right after — by then session.Cancel() has already run, so the
+        // resolver's `when (ct.IsCancellationRequested)` filter matches and the exception is rethrown instead
+        // of degraded to the run persona.
+        var accepted = false;
+        var personas = Substitute.For<IPersonaService>();
+        var settings = Substitute.For<ISettingsService>();
+        var appSettings = new AppSettings();
+        appSettings.SetAgentPersonaRoster(UserOperatingMode.Personal, [assigned.Id]);
+        settings.GetSettingsAsync().Returns(_ => Task.FromResult(appSettings));
+        personas.GetPersonasAsync().Returns<IReadOnlyList<Persona>>(_ =>
+        {
+            accepted = h.Steering.PauseAsync(run.Id, CancellationToken.None).GetAwaiter().GetResult();
+            throw new OperationCanceledException();
+        });
+
+        var resolver = new StepPersonaResolver(
+            personas, Substitute.For<IProviderService>(), Substitute.For<IAssistantPromptComposer>(),
+            settings, NullLogger<StepPersonaResolver>.Instance);
+
+        var live = BuildLiveExecutor(session, stepPersonas: resolver);
+        await h.BuildOrchestrator(planner, steering: h.Store)
+            .RunAsync(run, live, Persona(), Provider(), RunProfile.Interactive, session.Cts!.Token);
+
+        Assert.True(accepted); // non-vacuity: the pause was accepted, not refused
+
+        // DISCRIMINATING, and this is the assertion that makes the fact about the THROW rather than about the
+        // pause in general: if the resolver had degraded the OCE to the run persona (the ladder's behaviour for
+        // every other fault) the step would have run and come back CANCELLED through the ordinary in-loop
+        // consume — a different code path with the same final row. No exchange means the abort left
+        // ExecuteStepAsync by throwing, before PostAsync, with the step row already written Running(1).
+        _ai.DidNotReceive().GetChatCompletionWithToolsAsync(
+            Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+            Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        Assert.DoesNotContain(session.Messages, m => !m.IsUser); // no step reply was ever streamed
+
+        var paused = await h.Runs.GetAsync(run.Id, ct);
+        Assert.Equal(AgentRunState.Paused, paused!.State);                                   // never Cancelled
+        Assert.Null(paused.CompletedAt);
+        Assert.Equal(AgentRunService.UserPausedReason, RunPauseEnvelope.ReadReason(paused));
+        // The step was left Running(1) by the throw — the catch arm restores it from the hoisted id.
+        Assert.Equal(AgentStepStatus.Pending, Assert.Single(paused.Plan, s => s.Title == "s1").Status);
+        Assert.Equal("s1", (await h.Runs.NextPendingStepAsync(run.Id, ct))!.Title);
+        Assert.Equal(0, planner.ReplanCalls);      // a pause is not a step failure
+        Assert.Null(session.Cts);                  // OnPausedAsync released the live session (non-terminal)
+        Assert.NotEqual(ChatState.Completed, session.State); // …and EndRunAsync did NOT settle it
+        Assert.True(await h.Runs.TryResumeFromPauseAsync(run.Id, ct)); // genuinely claimable
     }
 
     /// <summary>
@@ -533,9 +628,28 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
         vm.ClearConversationCommand.Execute(null);
 
         Assert.False(store.TryConsumePauseRequest(runId), "clearing the conversation must not leave a pause behind");
-        // The registration itself is untouched — the DISPATCH owns that and releases it in its own finally, and
-        // dropping it here would make a later pause of a re-dispatched run silently refused.
-        Assert.True(store.RecordPauseRequest(runId));
+
+        // Batch 08 F10 CHANGED THE NEXT ASSERTION, and changing it IS the fix. It used to read
+        // `Assert.True(store.RecordPauseRequest(runId))`, justified as "the registration itself is untouched —
+        // dropping it here would make a later pause of a RE-DISPATCHED run silently refused". The registration
+        // claim is still true and still asserted (below), but the fact was reading it off the wrong operation:
+        // this is the SAME dispatch, the one the clear just cancelled with terminal intent. Re-arming a pause
+        // against it is precisely F10 — the step takes time to unwind, the row still reads Running so the
+        // panel's Pause button is live, and the unwinding loop consumes the new request and PARKS the run the
+        // user asked to abandon. IRunSteeringStore's own FAILURE DIRECTION paragraph calls that direction
+        // unrecoverable, so the old assertion encoded the defect as the contract.
+        Assert.False(store.RecordPauseRequest(runId),
+            "terminal intent is sticky for the dispatch it was aimed at: a pause pressed while the cancel " +
+            "unwinds must be refused, not re-armed");
+
+        // The registration IS untouched, which is the half the old assertion was really about — and it is now
+        // pinned directly: a NEW dispatch of the same run (a resume, a re-launch) clears the terminal mark
+        // when it registers its own sink, and is fully pausable again.
+        void NewSink() { }
+        store.RegisterDispatch(runId, NewSink);
+        Assert.True(store.RecordPauseRequest(runId),
+            "a re-dispatched run must be pausable again — the intent belonged to the cancelled dispatch");
+        store.ReleaseDispatch(runId, NewSink);
         store.ReleaseDispatch(runId, sink);
     }
 

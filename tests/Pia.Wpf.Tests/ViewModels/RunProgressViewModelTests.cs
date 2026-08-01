@@ -341,6 +341,11 @@ public sealed class RunProgressViewModelTests : IDisposable
     // The arm exists so the mapping is defensible the day that changes, instead of saying "Stopped at budget"
     // to someone who pressed Pause.
     [InlineData("user", "Run_Activity_UserPaused")]
+    // Batch 08 F19, and unlike the "user" row above this one IS reachable today: the launcher's three re-park
+    // arms write it and they write WaitingForInput, which is exactly the state this mapping renders for. It
+    // fell through to the budget arm, so a Continue that never started announced itself as "Stopped at
+    // budget" — and for a run the user had paused by hand a moment earlier, that also overwrote who paused it.
+    [InlineData("resume-interrupted", "Run_Activity_ResumeInterrupted")]
     [InlineData("step-cap", "Run_Activity_WaitingAtBudget")]
     [InlineData("wall-clock", "Run_Activity_WaitingAtBudget")]
     [InlineData("something-a-later-build-invented", "Run_Activity_WaitingAtBudget")]

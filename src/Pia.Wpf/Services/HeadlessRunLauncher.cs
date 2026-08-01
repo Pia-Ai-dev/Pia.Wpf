@@ -22,6 +22,24 @@ namespace Pia.Services;
 /// </summary>
 public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeService, IDisposable
 {
+    /// <summary>
+    /// The pause <c>reason</c> written by the three re-park arms of <see cref="ResumeAsync"/> — a resume that
+    /// CAS-claimed the row and then never reached the orchestrator (cancelled or faulted in the slot wait,
+    /// the scope build or the executor construction). Same closed, app-owned vocabulary as
+    /// <c>"step-cap"</c> / <c>"wall-clock"</c> / <see cref="AgentRunService.ChildrenInterruptedReason"/>.
+    /// <para>
+    /// Batch 08 F19: this used to be a bare literal, which meant BOTH readers fell through to their budget
+    /// arm — so a run the USER paused, whose Continue then failed to start, came back announcing "Stopped at
+    /// its budget" and invited them to raise budgets that were never reached. It is a named constant for the
+    /// same reason the other three are: <see cref="AgentRunService.UserPausedReason"/>'s own doc states that
+    /// adding a token to this vocabulary obliges an arm in <c>RunProgressViewModel.DescribePause</c> AND
+    /// <see cref="AgentRunNotificationSurface.PausedBodyKey"/>, and a literal cannot carry that obligation.
+    /// The row still parks <c>WaitingForInput</c> and stays resumable — this was only ever the panel lying
+    /// about WHY.
+    /// </para>
+    /// </summary>
+    internal const string ResumeInterruptedReason = "resume-interrupted";
+
     /// <summary>Concurrency cap shared by both producers (decision d). A 3rd run queues on the slot.</summary>
     private readonly SemaphoreSlim _slots = new(2, 2);
 
@@ -603,7 +621,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                     // the claim, so re-park it (rather than leave it dangling Running) — it stays resumable.
                     if (!started)
                     {
-                        try { await _agentRunService.PauseAsync(run.Id, "resume-interrupted", CancellationToken.None).ConfigureAwait(false); }
+                        try { await _agentRunService.PauseAsync(run.Id, ResumeInterruptedReason, CancellationToken.None).ConfigureAwait(false); }
                         catch (Exception ex) { _logger.LogWarning(ex, "Failed to re-park interrupted resume {RunId}", run.Id); }
                     }
                 }
@@ -620,7 +638,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                         // Faulted before entering the orchestrator (e.g. slot wait, scope/executor construction) —
                         // the run was CAS'd to Running but no loop is attached. Re-park it so it stays resumable
                         // rather than dangling Running (guardrail 1/3).
-                        try { await _agentRunService.PauseAsync(run.Id, "resume-interrupted", CancellationToken.None).ConfigureAwait(false); }
+                        try { await _agentRunService.PauseAsync(run.Id, ResumeInterruptedReason, CancellationToken.None).ConfigureAwait(false); }
                         catch (Exception px) { _logger.LogWarning(px, "Failed to re-park interrupted resume {RunId}", run.Id); }
                     }
                 }
@@ -649,7 +667,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             // Pre-dispatch failure (settings/persona/provider resolve, workspace create) after the CAS win.
             // Re-park so the run leaves Running and stays resumable; report the resume did not start.
             _logger.LogError(ex, "Resume of run {RunId} failed before dispatch; re-parking", runId);
-            try { await _agentRunService.PauseAsync(runId, "resume-interrupted", CancellationToken.None).ConfigureAwait(false); }
+            try { await _agentRunService.PauseAsync(runId, ResumeInterruptedReason, CancellationToken.None).ConfigureAwait(false); }
             catch (Exception px) { _logger.LogWarning(px, "Failed to re-park run {RunId} after pre-dispatch resume failure", runId); }
             return false;
         }

@@ -416,6 +416,97 @@ public sealed class D5PausePremiseTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// <b>Batch 08 C2.</b> D5(ii) is pinned for a BUDGET park
+    /// (<see cref="ParkedScheduledRun_DoesNotBlockTheNextDueJobOfTheSameTick"/>) and the USER pause is pinned
+    /// for a single job (<see cref="PausedScheduledRun_AdvancesTheScheduleAndFailsNothing"/>) — but nothing
+    /// combined them, so the leg D5's whole premise rests on was never observed for the pause Batch 08 added.
+    /// <para>
+    /// It is an UNCOVERED LEG rather than a suspected defect, and the review was explicit about that:
+    /// <c>_runLock</c> is released in a <c>finally</c> that does not discriminate pause kind, so the reasoning
+    /// says it holds. The reason to pin it anyway is that "the release is in a finally" is an argument about
+    /// today's code, while D5's premise — a user can pause a scheduled run without stalling the fleet — is a
+    /// claim about behaviour: the head-of-line block is bounded by the PARK, not by the paused run's eventual
+    /// resume, and a user pause is the one park that can arrive at an arbitrary moment.
+    /// </para>
+    /// <para>
+    /// Only the FIRST step held: the tick is sequential, so invocation 1 is job 1's step and everything after
+    /// it (job 2's step, any verify turn) drives straight through. "job 2 launched AND completed" is therefore
+    /// evidence that job 1's dispatch returned and released the lock — the same inference
+    /// <see cref="UnsettledCompletion_HoldsTheTick_SoTheSecondDueJobWaits"/> gives its meaning to.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task AUserPausedScheduledRun_DoesNotBlockTheNextDueJobOfTheSameTick()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var store = new RunSteeringStore();
+        var steering = new AgentRunSteeringService(_runs, store, NullLogger<AgentRunSteeringService>.Instance);
+        var stepEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var exchanges = 0;
+        var (real, planner, settings) = BuildLauncher(
+            steering: store,
+            stream: token => Interlocked.Increment(ref exchanges) == 1
+                ? HoldInsideTheStep(stepEntered, token)   // job 1's only step, held until the pause fires
+                : Drive());                               // job 2's step, and every turn after it
+        planner.StepsFor = _ => 1;
+
+        var recorder = new RecordingLauncher(real);
+        var jobs = new FakeJobService();
+        var job1 = NewAgentJob("job-1");
+        var job2 = NewAgentJob("job-2");
+        jobs.SeedDue(job1);
+        jobs.SeedDue(job2);
+        var notifications = new FakeNotificationSurface();
+
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(), new FakeProviderResolver(NewProvider()), notifications,
+            recorder, settings, _runs, NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        try
+        {
+            var tick = bg.ExecuteOnceAsync(ct);
+            await stepEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+            // Same wait-don't-assume discipline as the single-job fact: the recorder appends on the LAUNCHING
+            // thread while the dispatch runs on another.
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (recorder.Launched.Count == 0 && DateTime.UtcNow < deadline)
+                await Task.Delay(10, ct);
+            var pausedRunId = recorder.Launched[0].Handle.RunId;
+
+            Assert.Equal(AgentRunState.Running, (await _runs.GetAsync(pausedRunId, ct))!.State);
+            Assert.Single(recorder.Launched); // job 2 has NOT launched yet — the tick really is serialised here
+            Assert.True(await steering.PauseAsync(pausedRunId, ct));
+
+            await tick.WaitAsync(TimeSpan.FromSeconds(20), ct);
+
+            // THE CLAIM: both jobs of the one tick dispatched, and the second one finished.
+            Assert.Equal(2, recorder.Launched.Count);
+            Assert.Equal("job-1", recorder.Launched[0].Goal);
+            Assert.Equal("job-2", recorder.Launched[1].Goal);
+
+            var paused = await _runs.GetAsync(pausedRunId, ct);
+            Assert.Equal(AgentRunState.Paused, paused!.State);   // job 1 is STILL paused …
+            Assert.Null(paused.CompletedAt);
+            Assert.Equal(AgentRunService.UserPausedReason, RunPauseEnvelope.ReadReason(paused));
+            var completed = await _runs.GetAsync(recorder.Launched[1].Handle.RunId, ct);
+            Assert.Equal(AgentRunState.Completed, completed!.State); // … while job 2 ran to completion
+
+            // Bookkeeping, the half a reorder breaks: a user pause is not a strike for job 1, and job 2 is a
+            // clean success. Both schedules advanced.
+            Assert.Empty(jobs.Failed);
+            Assert.Equal(0, notifications.FailureCount);
+            Assert.Contains(job1.Id, jobs.Advanced);
+            Assert.Contains(job2.Id, jobs.Completed.Select(c => c.JobId));
+        }
+        finally
+        {
+            await real.StopAsync(CancellationToken.None);
+        }
+    }
+
     // ------------------------------------------------- D5's new consequence
 
     /// <summary>

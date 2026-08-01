@@ -221,6 +221,13 @@ public sealed class AgentRunOrchestrator
             {
                 if (replans++ < profile.MaxReplans)
                 {
+                    // Batch 08 F16: tell the replanner what the USER removed, read fresh from the persisted
+                    // plan. Seeded here rather than at the mutation or at resume-seed time because those are
+                    // two places to keep in step with a third (a skip can land at any point while the run is
+                    // paused, from the panel or from a second window) and the DB is the only record that sees
+                    // all of them. Failure-isolated: a faulted read means the replan runs without the block,
+                    // exactly as it did before, never a failed run.
+                    ctx.SetSkippedTitles(await SafeSkippedTitlesAsync(run.Id, cts.Token).ConfigureAwait(false));
                     var revised = await _planner.ReplanAsync(ctx, error, persona, provider, cts.Token).ConfigureAwait(false);
                     await SafeAddUsage(run.Id, revised.Usage, cts.Token).ConfigureAwait(false); // I1
                     if (!revised.FallBackToSingleTurn)
@@ -679,7 +686,28 @@ public sealed class AgentRunOrchestrator
 
         var siblings = await SafeSiblingGroupAsync(run.Id, group, cts.Token).ConfigureAwait(false);
         if (siblings.Count < 2)
+        {
+            // Batch 08 F8. SafeCancelStaleChildrenAsync (inside FanOutCoreAsync) is the ONLY cleanup for a
+            // previous child generation, and this early return used to skip straight past it — so a group that
+            // has dropped below two PENDING members since it was last dispatched orphaned the whole generation
+            // behind it. A Paused child is never swept (the startup reconcile's statement 1 is
+            // `State < WaitingForInput`), so the orphan is PERMANENT, not one a restart clears: it keeps a
+            // visible stub chat and a non-terminal row forever.
+            //
+            // Two triggers, one defect, and the second is user-driven rather than a race: (a) a MIXED
+            // generation — one child Done, one Paused — leaves exactly one Pending member for the resumed
+            // parent; (b) the user pauses a 2-way fan-out, both children park, both sibling steps go back to
+            // Pending, and the user then clicks "Skip step" on one of them before Continue.
+            //
+            // Cleaning up HERE rather than hoisting the call above SafeSiblingGroupAsync keeps the F2 handshake
+            // exactly as it is (the fan-out mark still brackets the whole committed path and nothing else), and
+            // the two branches remain mutually exclusive: the >= 2 branch still cleans up inside
+            // FanOutCoreAsync, so the supersede happens exactly once either way. It is idempotent (terminal
+            // children are skipped) and failure-isolated, so the price on the common decline path — a group of
+            // one on a run that never delegated — is a single GetChildRunsAsync that finds nothing.
+            await SafeCancelStaleChildrenAsync(_childLauncher, run.Id, cts.Token).ConfigureAwait(false);
             return null;
+        }
 
         // ---- Batch 08 F2: from here on this run IS fanning out, and the row does not say so ----
         //
@@ -1222,12 +1250,92 @@ public sealed class AgentRunOrchestrator
     /// is a normal outcome worth a log line, not a silent success.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// Batch 08 F9: give every UNREPAIRED <c>Failed</c> step back to the plan when a user pause parks the run.
+    /// <para>
+    /// A <c>Failed</c> row is only ever a transient: <c>TryReplanAfterFailureAsync</c> either writes a revised
+    /// plan (and <c>KeepDoneAsync</c> drops the failed row on the way through) or exhausts its budget and
+    /// settles the run terminally. A pause that lands DURING that replan — <c>_planner.ReplanAsync</c> is
+    /// awaited on <c>cts.Token</c> with no local catch, so the OCE leaves through the outer arm — parks the
+    /// run correctly and resumably, but leaves the failed step behind with nothing owed to it:
+    /// <c>replans</c> is a <c>RunAsync</c> local so the resumed dispatch has no memory a replan was due,
+    /// <c>NextPendingStepAsync</c> filters <c>Pending</c> so the step never re-runs, and
+    /// <c>SafeSeedResumeContext</c> filters <c>== Done</c> so the critic is never told it failed. The resumed
+    /// run drains the remainder and reports <b>Completed</b> over work that failed and was never repaired.
+    /// Pre-Batch-08 that interleaving settled <c>Cancelled</c>, so the silent-success shape is new.
+    /// </para>
+    /// <para>
+    /// Restoring the row to <c>Pending</c> is the cheap half of the review's fix and it is the half that
+    /// changes the outcome: the resumed run RE-ATTEMPTS the step instead of reporting success over it, and if
+    /// it fails again the replan budget of the new dispatch repairs it exactly as it would have. The expensive
+    /// half — persisting the owed replan in the pause envelope and re-seeding <c>replans</c>/<c>ctx</c> from it
+    /// — buys a more faithful budget accounting and is not attempted here.
+    /// </para>
+    /// <para>
+    /// Called only after the CAS has WON, so a run another writer owns is never touched, and it covers all
+    /// three park sites at once (the in-loop consume, the fan-out boundary, the throwing-abort arm) — the last
+    /// of which is also where a fan-out generation's <c>Failed</c> sibling steps would otherwise be stranded
+    /// unretried. Failure-isolated per step, like every other bookkeeping write on this path.
+    /// </para>
+    /// </summary>
+    private async Task RestoreUnrepairedFailedStepsAsync(Guid runId)
+    {
+        AgentRun? current;
+        try
+        {
+            current = await _runService.GetAsync(runId, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run bookkeeping (re-reading the plan of paused run {RunId}) failed", runId);
+            return;
+        }
+
+        if (current is null)
+            return;
+
+        var restored = 0;
+        foreach (var step in current.Plan.Where(s => s.Status == AgentStepStatus.Failed))
+        {
+            await SafeSetStepStatus(step.Id, AgentStepStatus.Pending, CancellationToken.None).ConfigureAwait(false);
+            restored++;
+        }
+
+        if (restored > 0)
+            _logger.LogInformation(
+                "Run {RunId} paused holding {Count} unrepaired failed step(s); they were returned to Pending so the resume re-attempts them",
+                runId, restored);
+    }
+
+    /// <summary>Batch 08 F16: the titles of this run's <c>Skipped</c> steps, or an empty list on any fault —
+    /// the replan prompt's "do not re-add these" block is an improvement to the prompt, never a reason to
+    /// fail a run.</summary>
+    private async Task<IReadOnlyList<string>> SafeSkippedTitlesAsync(Guid runId, CancellationToken ct)
+    {
+        try
+        {
+            var current = await _runService.GetAsync(runId, ct).ConfigureAwait(false);
+            return current is null
+                ? []
+                : current.Plan.Where(s => s.Status == AgentStepStatus.Skipped)
+                    .OrderBy(s => s.Ordinal).Select(s => s.Title).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run bookkeeping (reading the skipped steps of {RunId}) failed", runId);
+            return [];
+        }
+    }
+
     private async Task<bool> SafePauseUser(Guid runId)
     {
         try
         {
             if (await _runService.TryPauseUserAsync(runId, CancellationToken.None).ConfigureAwait(false))
+            {
+                await RestoreUnrepairedFailedStepsAsync(runId).ConfigureAwait(false); // Batch 08 F9
                 return true;
+            }
 
             _logger.LogInformation(
                 "Run {RunId} user pause was not applied — another writer owns this run; releasing the executor only", runId);

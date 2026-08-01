@@ -185,7 +185,13 @@ it. At least six items, none automatable:
 1. Pause a live interactive run mid-step; confirm it resumes and completes rather than settling cancelled.
 2. Pause a **scheduled** run and confirm another due job dispatches while it sits paused — the D5 premise,
    observed rather than reasoned.
-3. Pause a fan-out **parent**; confirm every child parks, none is orphaned, and every one resumes (D6).
+3. Pause a fan-out **parent**; confirm every child that was pausable parks, none is orphaned, and the
+   Continue **supersedes the paused generation and re-dispatches the group fresh** (D6). *(Batch 08 F20: this
+   item originally read "every one resumes", which the shipped D6 behaviour never does —
+   `ResumingAPausedParent_SupersedesThePausedGeneration_AndDispatchesAFreshOne` pins the opposite, and
+   `SafeCancelStaleChildrenAsync` cancels the old generation on the way in. Not a re-argument of D6: the
+   smoke script would simply have failed against reality. F1's fix adds the "that was pausable" clause — a
+   child still `Planning` at cascade time is deliberately left running rather than cancelled.)*
 4. Edit, insert, reorder and skip a pending step and watch the run honour each on its next step.
 5. A nudge that visibly changes the next step's behaviour — and, if D4 is scoped to the dispatch, that it is
    visibly gone after a resume.

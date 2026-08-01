@@ -141,6 +141,48 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
     }
 
     /// <summary>
+    /// <b>Batch 08 F7: a blank Intent falls back to the Title, because Intent is the field that reaches the
+    /// model and Title is the field that was validated.</b> Both executors build the step turn from
+    /// <c>Intent</c> alone — <c>ChatSession</c>'s <c>$"Execute step {n}: {spec.Intent}."</c> and
+    /// <c>HeadlessTurnExecutor.BuildInstruction(step.Ordinal, step.Intent ?? "", …)</c> — and neither ever reads
+    /// <c>Title</c>. <c>AgentPlanner</c> drops a planner step whose Intent is blank, so this method was the
+    /// first writer in the codebase that could persist a Pending step with a null one; the panel's "Insert step
+    /// below" minted exactly that (<c>new PlanStepEdit(null, "New step", null, null)</c>), and the run then sent
+    /// the literal turn <c>"Execute step 3: ."</c>, burned a step against the budget and billed the tokens.
+    /// <para>
+    /// Both entries below matter: an INSERT (the panel's own shape) and an EDIT that blanks an existing step's
+    /// intent (the inline editor's second box cleared). The third asserts a supplied intent still wins, so the
+    /// fallback cannot be an unconditional overwrite.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task AStepWithNoIntent_FallsBackToItsTitle_SoTheExecutorNeverSendsAnEmptyInstruction()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        await SeedPlanAsync(run.Id, ct, ("s1", AgentStepStatus.Pending), ("s2", AgentStepStatus.Pending));
+        await PauseAsync(run.Id, ct);
+
+        var pending = await PendingAsync(run.Id, ct);
+        var result = await _service.ApplyPlanMutationAsync(run.Id, [
+            new PlanStepEdit(pending[0].Id, "Tidy the report", "   ", null),  // an edit that BLANKS the intent
+            new PlanStepEdit(null, "New step", null, null),                   // the panel's own insert shape
+            new PlanStepEdit(pending[1].Id, "s2", "keep this one", null),     // a real intent still wins
+        ], ct);
+
+        Assert.Equal(PlanMutationOutcome.Applied, result.Outcome);
+        var plan = (await _service.GetAsync(run.Id, ct))!.Plan;
+
+        Assert.Equal("Tidy the report", Assert.Single(plan, s => s.Title == "Tidy the report").Intent);
+        Assert.Equal("New step", Assert.Single(plan, s => s.Title == "New step").Intent);
+        Assert.Equal("keep this one", Assert.Single(plan, s => s.Title == "s2").Intent);
+
+        // The property that actually matters, stated over the whole plan rather than per row: no Pending step
+        // this method writes can reach an executor with nothing to say.
+        Assert.All(plan, s => Assert.False(string.IsNullOrWhiteSpace(s.Intent)));
+    }
+
+    /// <summary>
     /// The insert verb, asserted where it matters: not "a row exists" but "the LOOP runs them in the new
     /// order". The drain here is the real <c>NextPendingStepAsync</c>, the same query the orchestrator's
     /// while-loop calls, so the mutation is honoured by the loop for free — there is no re-plan, no reload

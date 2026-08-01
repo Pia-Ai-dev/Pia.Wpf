@@ -312,10 +312,53 @@ public sealed class AgentPlannerTests
 
         await BuildPlanner().ReplanAsync(ctx, "boom", Persona(), Provider(), TestContext.Current.CancellationToken);
 
-        Assert.Contains("Completed so far", LastPrompt);
-        Assert.Contains("[ok] Early: ran before the pause", LastPrompt);
-        Assert.Contains(CompletedStepSummary.EarlierSegmentNote, LastPrompt); // ran, text just unavailable
-        Assert.Contains("do NOT repeat these steps", LastPrompt);
+        // Batch 08 F11 moved this block from the System prompt to the USER message — every assertion it had is
+        // kept verbatim, only the message it is read from changed, because a step title/intent can be raw user
+        // keystrokes since D3 and TokenizeMessages rewrites ChatRole.User text ONLY. Same precedent as the
+        // reasoning analysis, which this file already reads off LastUserPrompt for the identical reason.
+        Assert.Contains("Completed so far", LastUserPrompt);
+        Assert.Contains("[ok] Early: ran before the pause", LastUserPrompt);
+        Assert.Contains(CompletedStepSummary.EarlierSegmentNote, LastUserPrompt); // ran, text just unavailable
+        Assert.Contains("do NOT repeat these steps", LastUserPrompt);
+
+        // ADDED, and this is the property F11 is actually about: the block must not ALSO be in the System
+        // prompt, where the tokenizer would never see it. Without this the move could be undone silently.
+        Assert.DoesNotContain("Completed so far", LastPrompt);
+        Assert.DoesNotContain("ran before the pause", LastPrompt);
+    }
+
+    /// <summary>
+    /// <b>Batch 08 F16.</b> W13 kept a SKIPPED row alive through a replan; nothing told the replanner it had
+    /// been removed, so the model — seeing only the goal and the completed steps — could emit a fresh step for
+    /// the very work the user deleted and the run would do it. The block rides the USER message with the rest
+    /// (F11): a skipped step's title is user-editable text.
+    /// </summary>
+    [Fact]
+    public async Task ReplanAsync_SkippedSteps_AreListedAsRemoved_OnTheUserMessage()
+    {
+        ReturnsPlan(Steps(("Recover", "finish the goal", null)));
+        var ctx = new RunContext("build a thing", RunProfile.Interactive);
+        ctx.SetSkippedTitles(["Delete the old backups"]);
+
+        await BuildPlanner().ReplanAsync(ctx, "boom", Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        Assert.Contains("The user REMOVED these steps from the plan", LastUserPrompt);
+        Assert.Contains("- Delete the old backups", LastUserPrompt);
+        Assert.DoesNotContain("Delete the old backups", LastPrompt); // never the System prompt (F11)
+    }
+
+    /// <summary>Non-vacuity for the fact above: with no skipped steps the prohibition must not appear at all,
+    /// so an unconditional block could not pass both.</summary>
+    [Fact]
+    public async Task ReplanAsync_NoSkippedSteps_SaysNothingAboutRemovedWork()
+    {
+        ReturnsPlan(Steps(("Recover", "finish the goal", null)));
+        var ctx = new RunContext("build a thing", RunProfile.Interactive);
+
+        await BuildPlanner().ReplanAsync(ctx, "boom", Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain("REMOVED", LastUserPrompt);
+        Assert.DoesNotContain("REMOVED", LastPrompt);
     }
 
     [Fact]
@@ -328,8 +371,10 @@ public sealed class AgentPlannerTests
 
         await BuildPlanner().ReplanAsync(ctx, "boom", Persona(), Provider(), TestContext.Current.CancellationToken);
 
-        Assert.Contains("[ok] Live: ran in this segment", LastPrompt);
-        Assert.DoesNotContain(CompletedStepSummary.EarlierSegmentNote, LastPrompt);
+        // Batch 08 F11: read off the USER message now — see the sibling fact above for the argument.
+        Assert.Contains("[ok] Live: ran in this segment", LastUserPrompt);
+        Assert.DoesNotContain(CompletedStepSummary.EarlierSegmentNote, LastUserPrompt);
+        Assert.DoesNotContain("ran in this segment", LastPrompt);
     }
 
     [Fact]

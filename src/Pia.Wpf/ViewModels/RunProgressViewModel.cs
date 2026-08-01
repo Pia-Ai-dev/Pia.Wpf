@@ -70,6 +70,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanContinue))]
     [NotifyPropertyChangedFor(nameof(CanPause))]
+    [NotifyPropertyChangedFor(nameof(ShowPauseFirstNote))]
     [NotifyPropertyChangedFor(nameof(CanMutatePlan))]
     [NotifyCanExecuteChangedFor(nameof(ContinueCommand))]
     [NotifyCanExecuteChangedFor(nameof(PauseCommand))]
@@ -110,6 +111,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// the row at <see cref="RunProgressState.Paused"/>.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanPause))]
+    [NotifyPropertyChangedFor(nameof(ShowPauseFirstNote))]
     [NotifyCanExecuteChangedFor(nameof(PauseCommand))]
     private bool _isPausing;
 
@@ -151,11 +153,36 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// </summary>
     public bool CanMutatePlan => State == RunProgressState.Paused;
 
+    /// <summary>
+    /// Batch 08 F12: gates the "Pause the run to change its plan." note. It used to be the INVERSE of
+    /// <see cref="CanMutatePlan"/>, which is true in every state except <c>Paused</c> — so a run that parked
+    /// at its budget (<c>WaitingForInput</c>) showed the instruction next to a Continue button and no Pause
+    /// button to press, and a run that completed an hour ago carried it forever. The impl spec §13 8b states
+    /// the condition as "whenever the run is LIVE", and the panel already has the exact predicate for that:
+    /// a run is live-and-steerable precisely when it offers a Pause button.
+    /// <para>
+    /// Deliberately <c>=&gt; CanPause</c> rather than a second copy of its state set, so the note and the
+    /// button it tells the user to press can never disagree — including the <see cref="IsPausing"/> term,
+    /// which correctly hides the note while a pause is already in flight (there is nothing left to press).
+    /// Both <c>_state</c> and <c>_isPausing</c> notify it, for the same reason both notify
+    /// <see cref="CanPause"/>.
+    /// </para>
+    /// </summary>
+    public bool ShowPauseFirstNote => CanPause;
+
     /// <summary>The muted result line of the last plan mutation — the <see cref="PublishNote"/> shape. Null
     /// when there is nothing to say; cleared on a successful mutation (the re-projected plan speaks for
     /// itself) so the panel never shows a stale rejection over a plan that has since changed.</summary>
     [ObservableProperty]
     private string? _planMutationNote;
+
+    /// <summary>Batch 08 F6: the muted line for a pause the service REFUSED — the same
+    /// <see cref="PublishNote"/> shape, and deliberately not <see cref="PlanMutationNote"/>, which
+    /// <see cref="Project"/> wipes on any state but <c>Paused</c> (a refused pause is by definition a run that
+    /// is still live, so that note would be erased before it rendered). Cleared by the next
+    /// <see cref="Pause"/> attempt and by the projection that sees the run leave the pausable states.</summary>
+    [ObservableProperty]
+    private string? _pauseNote;
 
     [ObservableProperty]
     private bool _isTruncated;
@@ -578,7 +605,13 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         // impl spec's "a non-Running state" prose, which describes the common Running path only): this is
         // the same predicate CanPause already uses, so the two can never disagree.
         if (State is not (RunProgressState.Running or RunProgressState.WaitingForChildren))
+        {
             IsPausing = false;
+            // Batch 08 F6: "this run could not be paused" is only true of a run that is still in the states a
+            // pause is offered from. Once it has left them the line has nothing left to describe, so it goes
+            // with the button — one predicate, both clears.
+            PauseNote = null;
+        }
 
         // A rejection note ("the plan can only be changed while paused") must not survive past the pause it
         // was about — the PublishNote precedent guards itself the same way (`if (PublishNote is null && …)`
@@ -650,6 +683,11 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         AgentRunOrchestrator.ChildrenParkedReason => _localization["Run_Activity_ChildrenParked"],
         AgentRunService.ChildrenInterruptedReason => _localization["Run_Activity_ChildrenInterrupted"],
         AgentRunService.UserPausedReason => _localization["Run_Activity_UserPaused"],
+        // Batch 08 F19: a resume that claimed the row and then never reached the orchestrator. Reachable
+        // TODAY, unlike the "user" arm above — the re-park writes WaitingForInput, which is exactly the state
+        // this mapping renders for — and it was announcing "Stopped at budget" for a run that had reached no
+        // budget at all, including one the user had paused by hand a moment earlier.
+        HeadlessRunLauncher.ResumeInterruptedReason => _localization["Run_Activity_ResumeInterrupted"],
         _ => _localization["Run_Activity_WaitingAtBudget"],
     };
 
@@ -719,12 +757,18 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// <para>
     /// <see cref="IAgentRunSteeringService.PauseAsync"/> writes no row and returns as soon as the intent is
     /// recorded and the cancel is fired — well before the run's own loop actually lands the row at
-    /// <see cref="RunProgressState.Paused"/>. <see cref="IsPausing"/> therefore does NOT clear in a
-    /// <c>finally</c> here; it stays true until <see cref="Project"/> observes the run having left the state
-    /// the pause was requested from (see that clearing site's own comment) — a pause that has been asked for
-    /// but not yet landed must not re-enable the button. A run that never leaves that state (nothing here is
-    /// dispatching it, or the loop never reaches a boundary) leaves the button disabled forever: stated rather
-    /// than hidden, because the alternative is a timer nobody can test.
+    /// <see cref="RunProgressState.Paused"/>. On an ACCEPTED pause <see cref="IsPausing"/> therefore does NOT
+    /// clear in a <c>finally</c> here; it stays true until <see cref="Project"/> observes the run having left
+    /// the state the pause was requested from (see that clearing site's own comment) — a pause that has been
+    /// asked for but not yet landed must not re-enable the button.
+    /// </para>
+    /// <para>
+    /// <b>Batch 08 F6: a REFUSED pause is a different thing and is no longer treated as a slow one.</b> The
+    /// <c>bool</c> used to be discarded, so every refusal — the run is not pausable, it is not dispatched in
+    /// THIS process, the read faulted, or the service threw — left the button reading "Pausing…" and disabled
+    /// for the VM's whole life, with nothing said and no way to retry. It is now the one case that clears
+    /// <see cref="IsPausing"/> here and puts a muted line on the panel, because the request provably never
+    /// existed: nothing is coming that <see cref="Project"/> could observe.
     /// </para>
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanPause))]
@@ -732,15 +776,22 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     {
         if (_steering is null) return;
 
+        PauseNote = null;
         IsPausing = true;
         try
         {
-            await _steering.PauseAsync(_runId);
+            if (await _steering.PauseAsync(_runId))
+                return; // accepted: the row's own move to Paused is what clears IsPausing (see Project)
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Run {RunId} pause failed from panel", _runId);
         }
+
+        // Refused or faulted — give the button back and say so. Not a `finally`: the accepted path above
+        // returns through it, and clearing IsPausing there is exactly the flicker this VM avoids.
+        PauseNote = _localization["Run_Pause_Error_Refused"];
+        IsPausing = false;
     }
 
     /// <summary>Opens <paramref name="row"/>'s inline editor, seeded from its CURRENT (persisted) Title/Intent
@@ -848,11 +899,22 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         rows.Select(r => new PlanStepEdit(r.StepId, r.Title, r.Intent, r.ExpectedArtifact)).ToList();
 
     /// <summary>
-    /// The one call site every mutating verb shares (D3). Sets <see cref="PlanMutationNote"/> from the
-    /// outcome and ALWAYS re-projects afterward — win or lose — so a fact can await the mutation's full
-    /// UI-visible effect instead of racing the fire-and-forget <see cref="RefreshAsync"/> that
-    /// <see cref="OnRunChanged"/> would otherwise kick off on its own, and so the panel never shows a mutation
-    /// that did not land. Privacy: titles never appear in the warning line, only the run id.
+    /// The one call site every mutating verb shares (D3). ALWAYS re-projects — win or lose — so a fact can
+    /// await the mutation's full UI-visible effect instead of racing the fire-and-forget
+    /// <see cref="RefreshAsync"/> that <see cref="OnRunChanged"/> would otherwise kick off on its own, and so
+    /// the panel never shows a mutation that did not land. Privacy: titles never appear in the warning line,
+    /// only the run id.
+    /// <para>
+    /// <b>Batch 08 F13: the note is set AFTER the refresh, never before it.</b> <see cref="Project"/> clears
+    /// <see cref="PlanMutationNote"/> whenever the projected state is not <c>Paused</c>, so a note set first
+    /// and refreshed second is wiped by its own refresh in exactly one case — and it is the case that most
+    /// needs the note. <see cref="PlanMutationOutcome.NotPaused"/> means the row has already left
+    /// <c>Paused</c> (the Flow card's "Continue run", or a second window, resumed it between the click and
+    /// the write), so the refresh that was meant to surface the rejection erased it: the user's Skip vanished,
+    /// the whole row-button group vanished with <c>CanMutatePlan</c>, and nothing said why. The other five
+    /// outcomes are returned only after the service's own <c>Paused</c> gate, so they were never affected —
+    /// which is why this is a one-line reorder rather than a freshness flag.
+    /// </para>
     /// </summary>
     private async Task ApplyStepEditsAsync(IReadOnlyList<PlanStepEdit> edits)
     {
@@ -864,18 +926,28 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Run {RunId} plan mutation failed from panel", _runId);
-            PlanMutationNote = _localization["Run_Plan_Error_WriteFailed"];
             await RefreshAsync();
+            PlanMutationNote = _localization["Run_Plan_Error_WriteFailed"];
             return;
         }
 
+        await RefreshAsync();
         PlanMutationNote = result.Outcome == PlanMutationOutcome.Applied
             ? null
             : _localization[MutationErrorKey(result.Outcome)];
-        await RefreshAsync();
     }
 
-    private static string MutationErrorKey(PlanMutationOutcome outcome) => outcome switch
+    /// <summary>
+    /// The rejection line for one <see cref="PlanMutationOutcome"/>. <c>internal</c> for Batch 08 F14:
+    /// <c>LocalizationTests.AllCodeLocalizationKeys_MustExistInResources</c> scans for LITERAL keys
+    /// (<c>_localization["…"]</c>), so five of the six keys below — every one except
+    /// <c>Run_Plan_Error_WriteFailed</c>, which also appears as a literal in the <c>catch</c> above — were
+    /// invisible to it: renaming or dropping one in the resx left the suite green and put a raw
+    /// <c>[Run_Plan_Error_TooLong]</c> in the panel. That is the exact shape <c>T-CONV-3</c> already exists to
+    /// guard for <c>RunStateToLabelConverter.LabelKey</c>, and it now guards this helper the same way, by
+    /// enumerating the enum rather than re-listing the keys.
+    /// </summary>
+    internal static string MutationErrorKey(PlanMutationOutcome outcome) => outcome switch
     {
         PlanMutationOutcome.NotPaused => "Run_Plan_Error_NotPaused",
         PlanMutationOutcome.UnknownStep => "Run_Plan_Error_UnknownStep",

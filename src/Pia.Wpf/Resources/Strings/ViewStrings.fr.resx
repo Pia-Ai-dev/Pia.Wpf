@@ -944,6 +944,7 @@
   <data name="Run_Activity_ChildrenParked" xml:space="preserve"><value>Un sous-agent a atteint son propre budget — continuer ?</value></data>
   <data name="Run_Activity_ChildrenInterrupted" xml:space="preserve"><value>Interrompue pendant le travail des sous-agents — continuer ?</value></data>
   <data name="Run_Activity_UserPaused" xml:space="preserve"><value>Vous avez mis cette exécution en pause</value></data>
+  <data name="Run_Activity_ResumeInterrupted" xml:space="preserve"><value>La reprise n'a pas démarré — relancez-la quand vous le souhaitez</value></data>
   <data name="Run_Action_Continue" xml:space="preserve"><value>Continuer</value></data>
   <data name="Run_Action_Pause" xml:space="preserve"><value>Mettre en pause</value></data>
   <data name="Run_Action_Pausing" xml:space="preserve"><value>Mise en pause…</value></data>
@@ -955,7 +956,7 @@
   <data name="Run_Output_Branch" xml:space="preserve"><value>Le résultat est sur la branche {0}</value></data>
   <data name="Run_Nudge_Label" xml:space="preserve"><value>Remarque pour la suite de cette exécution</value></data>
   <data name="Run_Nudge_Placeholder" xml:space="preserve"><value>Facultatif – par exemple : limiter le résumé à 200 mots</value></data>
-  <data name="Run_Nudge_Scope_Note" xml:space="preserve"><value>La remarque n'est envoyée qu'avec la prochaine étape de cette reprise. Elle n'est pas enregistrée et ne survit pas à un redémarrage.</value></data>
+  <data name="Run_Nudge_Scope_Note" xml:space="preserve"><value>La remarque est envoyée avec toutes les étapes restantes de cette reprise, ainsi qu'avec ses vérifications et toute replanification. Elle n'est pas enregistrée et ne survit pas à un redémarrage.</value></data>
   <data name="Run_Plan_Action_Edit" xml:space="preserve"><value>Modifier l'étape</value></data>
   <data name="Run_Plan_Action_Insert" xml:space="preserve"><value>Insérer une étape en dessous</value></data>
   <data name="Run_Plan_Action_MoveUp" xml:space="preserve"><value>Déplacer l'étape vers le haut</value></data>
@@ -963,6 +964,9 @@
   <data name="Run_Plan_Action_Skip" xml:space="preserve"><value>Ignorer l'étape</value></data>
   <data name="Run_Plan_NewStep_Title" xml:space="preserve"><value>Nouvelle étape</value></data>
   <data name="Run_Plan_Note_PauseFirst" xml:space="preserve"><value>Mettez l'exécution en pause pour modifier son plan.</value></data>
+  <data name="Run_Pause_Error_Refused" xml:space="preserve"><value>Cette exécution n'a pas pu être mise en pause pour le moment — elle a peut-être déjà continué. Vous pouvez réessayer.</value></data>
+  <data name="Run_Plan_Edit_Title" xml:space="preserve"><value>Titre court (affiché dans le plan)</value></data>
+  <data name="Run_Plan_Edit_Intent" xml:space="preserve"><value>Ce que l'assistant doit faire (c'est ce qui lui est demandé)</value></data>
   <data name="Run_Plan_Error_NotPaused" xml:space="preserve"><value>Le plan ne peut être modifié que pendant la pause de l'exécution.</value></data>
   <data name="Run_Plan_Error_UnknownStep" xml:space="preserve"><value>Cette étape ne fait plus partie du plan.</value></data>
   <data name="Run_Plan_Error_TitleRequired" xml:space="preserve"><value>Une étape doit avoir un titre.</value></data>
@@ -992,6 +996,7 @@
   <data name="Flow_Run_ChildrenParked" xml:space="preserve"><value>L'un de ses sous-agents a atteint son propre budget — continuer ?</value></data>
   <data name="Flow_Run_ChildrenInterrupted" xml:space="preserve"><value>Interrompue pendant le travail de ses sous-agents — continuer ?</value></data>
   <data name="Flow_Run_UserPaused" xml:space="preserve"><value>Vous avez mis cette exécution en pause. Reprendre ?</value></data>
+  <data name="Flow_Run_ResumeInterrupted" xml:space="preserve"><value>La reprise n'a pas démarré. Reprendre ?</value></data>
   <data name="Flow_Action_ContinueRun" xml:space="preserve"><value>Reprendre l'exécution</value></data>
   <data name="Assistant_Regenerate_Shorten" xml:space="preserve"><value>Plus court</value></data>
   <data name="Assistant_Regenerate_Detailed" xml:space="preserve"><value>Plus détaillé</value></data>

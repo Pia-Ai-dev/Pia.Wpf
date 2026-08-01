@@ -944,6 +944,7 @@
   <data name="Run_Activity_ChildrenParked" xml:space="preserve"><value>Ein Unteragent hat sein eigenes Budget erreicht – fortsetzen?</value></data>
   <data name="Run_Activity_ChildrenInterrupted" xml:space="preserve"><value>Unterbrochen, während Unteragenten arbeiteten – fortsetzen?</value></data>
   <data name="Run_Activity_UserPaused" xml:space="preserve"><value>Sie haben diese Ausführung pausiert</value></data>
+  <data name="Run_Activity_ResumeInterrupted" xml:space="preserve"><value>Die Fortsetzung wurde nicht gestartet – setzen Sie erneut fort, wenn Sie bereit sind</value></data>
   <data name="Run_Action_Continue" xml:space="preserve"><value>Fortsetzen</value></data>
   <data name="Run_Action_Pause" xml:space="preserve"><value>Pausieren</value></data>
   <data name="Run_Action_Pausing" xml:space="preserve"><value>Wird pausiert…</value></data>
@@ -955,7 +956,7 @@
   <data name="Run_Output_Branch" xml:space="preserve"><value>Das Ergebnis liegt auf Branch {0}</value></data>
   <data name="Run_Nudge_Label" xml:space="preserve"><value>Hinweis für den Rest dieser Ausführung</value></data>
   <data name="Run_Nudge_Placeholder" xml:space="preserve"><value>Optional – zum Beispiel: Zusammenfassung unter 200 Wörter halten</value></data>
-  <data name="Run_Nudge_Scope_Note" xml:space="preserve"><value>Der Hinweis wird nur mit dem nächsten Schritt dieser Fortsetzung gesendet. Er wird nicht gespeichert und übersteht keinen Neustart.</value></data>
+  <data name="Run_Nudge_Scope_Note" xml:space="preserve"><value>Der Hinweis wird mit allen verbleibenden Schritten dieser Fortsetzung gesendet, ebenso mit deren Prüfungen und jeder Neuplanung. Er wird nicht gespeichert und übersteht keinen Neustart.</value></data>
   <data name="Run_Plan_Action_Edit" xml:space="preserve"><value>Schritt bearbeiten</value></data>
   <data name="Run_Plan_Action_Insert" xml:space="preserve"><value>Schritt darunter einfügen</value></data>
   <data name="Run_Plan_Action_MoveUp" xml:space="preserve"><value>Schritt nach oben</value></data>
@@ -963,6 +964,9 @@
   <data name="Run_Plan_Action_Skip" xml:space="preserve"><value>Schritt überspringen</value></data>
   <data name="Run_Plan_NewStep_Title" xml:space="preserve"><value>Neuer Schritt</value></data>
   <data name="Run_Plan_Note_PauseFirst" xml:space="preserve"><value>Pausieren Sie die Ausführung, um den Plan zu ändern.</value></data>
+  <data name="Run_Pause_Error_Refused" xml:space="preserve"><value>Diese Ausführung konnte gerade nicht pausiert werden – möglicherweise ist sie bereits weitergelaufen. Sie können es erneut versuchen.</value></data>
+  <data name="Run_Plan_Edit_Title" xml:space="preserve"><value>Kurzer Titel (wird im Plan angezeigt)</value></data>
+  <data name="Run_Plan_Edit_Intent" xml:space="preserve"><value>Was der Assistent tun soll (genau das wird ihm aufgetragen)</value></data>
   <data name="Run_Plan_Error_NotPaused" xml:space="preserve"><value>Der Plan kann nur geändert werden, während die Ausführung pausiert ist.</value></data>
   <data name="Run_Plan_Error_UnknownStep" xml:space="preserve"><value>Dieser Schritt ist nicht mehr Teil des Plans.</value></data>
   <data name="Run_Plan_Error_TitleRequired" xml:space="preserve"><value>Ein Schritt braucht einen Titel.</value></data>
@@ -992,6 +996,7 @@
   <data name="Flow_Run_ChildrenParked" xml:space="preserve"><value>Einer ihrer Unteragenten hat sein eigenes Budget erreicht – fortsetzen?</value></data>
   <data name="Flow_Run_ChildrenInterrupted" xml:space="preserve"><value>Unterbrochen, während ihre Unteragenten arbeiteten – fortsetzen?</value></data>
   <data name="Flow_Run_UserPaused" xml:space="preserve"><value>Sie haben diese Ausführung pausiert. Fortsetzen?</value></data>
+  <data name="Flow_Run_ResumeInterrupted" xml:space="preserve"><value>Die Fortsetzung wurde nicht gestartet. Fortsetzen?</value></data>
   <data name="Flow_Action_ContinueRun" xml:space="preserve"><value>Ausführung fortsetzen</value></data>
   <data name="Assistant_Regenerate_Shorten" xml:space="preserve"><value>Kürzer</value></data>
   <data name="Assistant_Regenerate_Detailed" xml:space="preserve"><value>Ausführlicher</value></data>

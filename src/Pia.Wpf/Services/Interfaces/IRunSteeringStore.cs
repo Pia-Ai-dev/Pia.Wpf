@@ -71,9 +71,10 @@ public interface IRunSteeringStore
     void ReleaseDispatch(Guid runId, Action ownCancel);
 
     /// <summary>
-    /// Record a user pause request. <c>false</c> ⇒ no dispatch of this run is registered in this process,
-    /// i.e. the pause is REFUSED rather than silently dropped (a run parked by a previous process has no
-    /// loop here to interrupt).
+    /// Record a user pause request. <c>false</c> ⇒ the pause is REFUSED rather than silently dropped, for one
+    /// of two reasons: no dispatch of this run is registered in this process (a run parked by a previous
+    /// process has no loop here to interrupt), or this dispatch has already been given TERMINAL intent by
+    /// <see cref="RevokePauseRequest"/> (Batch 08 F10 — see that method).
     /// </summary>
     bool RecordPauseRequest(Guid runId);
 
@@ -124,6 +125,29 @@ public interface IRunSteeringStore
     /// conversation, chat delete, a superseded fan-out generation, a parent's terminal cascade. The run loop
     /// deliberately does NOT call this on entry any more; that blind clear was Batch 08 F3, and the dispatch
     /// boundary it was approximating is enforced by <see cref="RegisterDispatch"/> instead.
+    /// <para>
+    /// <b>Batch 08 F10: this is STICKY for the rest of the dispatch, not a one-shot.</b> Terminal intent
+    /// outranks a pause, and it has to keep outranking it while the cancel it accompanies UNWINDS. A one-shot
+    /// revoke lost that ordering: the user presses Stop, the step takes a second to come apart, the row still
+    /// reads <c>Running</c> so the panel's Pause button is still live, and a Pause pressed in that window
+    /// re-armed the request — the unwinding loop then consumed it and PARKED the run instead of settling it.
+    /// The run the user asked to terminate came back <c>Paused</c> with a Continue button, which is exactly the
+    /// direction FAILURE DIRECTION above calls unrecoverable. It is not "last click wins": the pause command
+    /// reads only the persisted row and cannot see that the dispatch behind it is already dying.
+    /// </para>
+    /// <para>
+    /// The mark is scoped to the DISPATCH, never to the run: <see cref="ReleaseDispatch"/> clears it when this
+    /// dispatch ends, and <see cref="RegisterDispatch"/> clears it when a new one takes over. A run that was
+    /// Stopped and is later re-launched or resumed is therefore fully pausable again — the intent belonged to
+    /// the dispatch that was cancelled, not to the run id.
+    /// </para>
+    /// <para>
+    /// Deliberately folded into this method rather than exposed as a separate <c>MarkTerminating</c>: all five
+    /// call sites are already terminal intent (they are listed above, and each one revokes precisely because
+    /// it is about to cancel with no intention of coming back), so a second call would be a second thing to
+    /// forget. The refusal surfaces to the user through <c>PauseAsync</c> returning <c>false</c>, which the run
+    /// panel now reports rather than discards (Batch 08 F6).
+    /// </para>
     /// </summary>
     void RevokePauseRequest(Guid runId);
 }

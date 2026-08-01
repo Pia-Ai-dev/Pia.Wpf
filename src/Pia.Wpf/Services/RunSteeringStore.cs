@@ -4,10 +4,10 @@ using Pia.Services.Interfaces;
 namespace Pia.Services;
 
 /// <summary>
-/// Default <see cref="IRunSteeringStore"/>. Three lock-free <see cref="ConcurrentDictionary{TKey,TValue}"/>
-/// maps keyed on the run id — the sink of the dispatch running it here, the pending pause intent, and whether
-/// that dispatch is inside a fan-out — so nothing on the UI thread ever waits on the run pool (the
-/// <c>ExecutingRunStore</c> discipline). Nothing here throws.
+/// Default <see cref="IRunSteeringStore"/>. Four lock-free <see cref="ConcurrentDictionary{TKey,TValue}"/>
+/// maps keyed on the run id — the sink of the dispatch running it here, the pending pause intent, whether that
+/// dispatch is inside a fan-out, and whether it has been given terminal intent — so nothing on the UI thread
+/// ever waits on the run pool (the <c>ExecutingRunStore</c> discipline). Nothing here throws.
 /// <para>
 /// SEPARATE maps rather than one composite entry, deliberately: the sink is written and removed by the DISPATCH
 /// (run pool) and the request by the PAUSE COMMAND (UI thread), so a composite value would need a
@@ -32,6 +32,14 @@ public sealed class RunSteeringStore : IRunSteeringStore
     /// existing entry would need a compare-and-swap to keep one writer off the other's half.
     /// </summary>
     private readonly ConcurrentDictionary<Guid, byte> _fanningOut = new();
+
+    /// <summary>
+    /// Dispatches that have been given TERMINAL intent (Batch 08 F10) — Stop, clear conversation, chat delete,
+    /// a superseded fan-out generation, a parent's terminal cascade. A FOURTH map for the same reason as the
+    /// third, and scoped to the dispatch rather than the run: cleared by <see cref="ReleaseDispatch"/> when
+    /// this dispatch ends and by <see cref="RegisterDispatch"/> when a new one takes over.
+    /// </summary>
+    private readonly ConcurrentDictionary<Guid, byte> _terminating = new();
 
     /// <summary>
     /// Batch 08 F3, and the whole of the ownership rule in three lines: a pause request belongs to the dispatch
@@ -62,7 +70,14 @@ public sealed class RunSteeringStore : IRunSteeringStore
         var superseded = _cancelByRun.TryGetValue(runId, out var previous) && !ReferenceEquals(previous, cancel);
         _cancelByRun[runId] = cancel;
         if (superseded)
+        {
             _pauseRequests.TryRemove(runId, out _);
+            // Batch 08 F10: terminal intent belongs to the dispatch it was aimed at, never to the run id. A
+            // run that was Stopped and is later re-launched or resumed must be pausable again — and this is
+            // cleared LAST, after the sink is installed and the superseded request dropped, so the window in
+            // between refuses a pause (a lost request, the recoverable direction) rather than admitting one.
+            _terminating.TryRemove(runId, out _);
+        }
     }
 
     /// <summary>
@@ -85,6 +100,7 @@ public sealed class RunSteeringStore : IRunSteeringStore
             && _cancelByRun.TryRemove(new KeyValuePair<Guid, Action>(runId, stored)))
         {
             _pauseRequests.TryRemove(runId, out _);
+            _terminating.TryRemove(runId, out _); // Batch 08 F10: the intent dies with the dispatch it was for
         }
     }
 
@@ -95,6 +111,15 @@ public sealed class RunSteeringStore : IRunSteeringStore
         // and then honoured by the run's next dispatch — a "pause" the user asked for minutes earlier
         // silently aborting the step a later Continue started.
         if (!_cancelByRun.ContainsKey(runId))
+            return false;
+
+        // Batch 08 F10: this dispatch is already dying with terminal intent (Stop, clear conversation, chat
+        // delete, a superseded generation, a parent's terminal cascade). Refuse rather than record: the row
+        // still reads Running for as long as the step takes to unwind, so the panel's Pause button is live
+        // over a run that is on its way to Cancelled, and a request armed here would be consumed by the
+        // unwinding loop as "the user asked to pause" — the Stop swallowed and a Continue button offered on a
+        // run the user asked to end.
+        if (_terminating.ContainsKey(runId))
             return false;
 
         _pauseRequests[runId] = 0;
@@ -120,5 +145,19 @@ public sealed class RunSteeringStore : IRunSteeringStore
 
     public bool IsFanningOut(Guid runId) => _fanningOut.ContainsKey(runId);
 
-    public void RevokePauseRequest(Guid runId) => _pauseRequests.TryRemove(runId, out _);
+    /// <summary>
+    /// Batch 08 F10: drop the request AND remember that this dispatch is terminating, so a pause pressed while
+    /// the cancel unwinds is refused instead of re-arming. Order: mark first, then drop — the reverse leaves a
+    /// hole in which a concurrent <see cref="RecordPauseRequest"/> plants a request nothing will revoke, which
+    /// is the spurious-pause direction. Marked even when there was no request to drop: the whole point is the
+    /// request that has not been typed yet. No registration check — a revoke for a run with no dispatch marks
+    /// an entry <see cref="ReleaseDispatch"/> will never clear, so it is deliberately skipped.
+    /// </summary>
+    public void RevokePauseRequest(Guid runId)
+    {
+        if (_cancelByRun.ContainsKey(runId))
+            _terminating[runId] = 0;
+
+        _pauseRequests.TryRemove(runId, out _);
+    }
 }

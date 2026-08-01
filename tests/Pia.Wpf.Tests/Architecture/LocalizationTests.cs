@@ -5,6 +5,7 @@ using System.Resources;
 using System.Text.RegularExpressions;
 using Pia.Converters;
 using Pia.Resources.Strings;
+using Pia.Services.Interfaces;
 using Pia.ViewModels;
 using Xunit;
 
@@ -194,6 +195,44 @@ public class LocalizationTests
 
         Assert.True(missing.Count == 0,
             $"every run-state label key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
+    }
+
+    /// <summary>
+    /// <b>Batch 08 F14</b>, the same GUARD shape as <see cref="EveryRunStateLabelKeyResolvesInAllThreeLocales"/>
+    /// two screens up, for the same reason: <c>RunProgressViewModel.MutationErrorKey</c> is a HELPER, so the
+    /// literal-key regexes in <see cref="AllCodeLocalizationKeys_MustExistInResources"/> cannot see the keys it
+    /// returns. Five of the six (<c>NotPaused</c>, <c>UnknownStep</c>, <c>TitleRequired</c>, <c>EmptyPlan</c>,
+    /// <c>TooLong</c>) matched no scan at all — only <c>Run_Plan_Error_WriteFailed</c> was covered, and only
+    /// because it also appears as a literal in <c>ApplyStepEditsAsync</c>'s <c>catch</c>. Renaming or dropping
+    /// one in the resx left the suite green and shipped a raw <c>[Run_Plan_Error_TooLong]</c> into the panel.
+    /// <para>
+    /// Driven off <c>Enum.GetValues</c>, not a written list: a seventh outcome is covered the moment it exists,
+    /// and the <c>_ =&gt;</c> arm in the helper means a new member silently reads as <c>WriteFailed</c> rather
+    /// than throwing, so nothing else would notice it either.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void EveryPlanMutationErrorKeyResolvesInAllThreeLocales()
+    {
+        var keys = Enum.GetValues<PlanMutationOutcome>()
+            .Where(o => o != PlanMutationOutcome.Applied) // the success arm shows no note at all
+            .Select(RunProgressViewModel.MutationErrorKey)
+            .Distinct()
+            .ToList();
+
+        Assert.NotEmpty(keys);
+        Assert.True(keys.Count >= 6, $"non-vacuity: expected at least 6 distinct mutation-error keys, found {keys.Count}");
+
+        var missing = new List<string>();
+        foreach (var culture in new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") })
+        {
+            var available = GetResourceKeysForCulture(ViewStrings.ResourceManager, culture);
+            foreach (var key in keys.Where(k => !available.Contains(k)))
+                missing.Add($"{culture.Name}: {key}");
+        }
+
+        Assert.True(missing.Count == 0,
+            $"every plan-mutation error key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
     }
 
     [Fact]

@@ -31,7 +31,8 @@ public class RunProgressPanelParseTests
     /// is vacuously true over an empty walk, which is reachable if a container ever stops reporting logical
     /// children. The live walk measures 36 tuples as of Batch 08 8b (28 before Batch 08; 31 after 8a) — 8b adds
     /// five more into the prefix ahead of the Steps <c>ItemsControl</c>: the pause-first note
-    /// (<c>Visibility=CanMutatePlan</c>), the mutation-result note (<c>Visibility</c>/<c>Text=PlanMutationNote</c>),
+    /// (<c>Visibility=ShowPauseFirstNote</c>, <c>Visibility=CanMutatePlan</c> until Batch 08 F12 rebound it),
+    /// the mutation-result note (<c>Visibility</c>/<c>Text=PlanMutationNote</c>),
     /// and the nudge box (<c>StackPanel.Visibility=CanContinue</c>, <c>TextBox.Text=NudgeText</c>) — MEASURED by
     /// a temporary <c>Assert.Fail</c> dumping the array (<c>dotnet test ... --filter-method
     /// "*EveryNonTemplatedBindingPath*"</c>), not taken from this document. This floor stays exactly the tuple
@@ -123,7 +124,17 @@ public class RunProgressPanelParseTests
         // RED DEMO (CanMutatePlan): renamed its XAML binding to CanMutatePlanX, full -t:Rebuild (still
         // 0 Warning(s)/0 Error(s)), ran the class: this anchor failed with "Filter not matched in
         // collection"; reverted, git diff --stat -- src/ came back empty.
-        Assert.Contains(bindings, b => b.Contains("=CanMutatePlan "));
+        // Batch 08 F12 MOVED this anchor, and it is the same surface: the pause-first note's Visibility was
+        // rebound from `CanMutatePlan` (inverted) to `ShowPauseFirstNote`, because the inverse form rendered
+        // the note in every state except Paused — including WaitingForInput and Completed, where there is no
+        // Pause button to press. `=CanMutatePlan ` was single-occurrence in the WALKED markup (the row-group's
+        // copy is `DataContext.CanMutatePlan` inside an ItemTemplate, which the logical walk never realizes
+        // and which would describe as `=DataContext.CanMutatePlan ` anyway), so the old anchor could not
+        // survive the rebind — MEASURED, not assumed: with `=CanMutatePlan ` still asserted after the XAML
+        // change this class failed with "Assert.Contains() Failure: Filter not matched in collection" here.
+        // Nothing was weakened: one single-occurrence anchor on this surface, before and after, and the
+        // assertion count is unchanged.
+        Assert.Contains(bindings, b => b.Contains("=ShowPauseFirstNote "));
         Assert.Contains(bindings, b => b.Contains("=NudgeText "));
 
         // Proves the walk reached the SECOND Expander's content and did not stop at the first: both Expanders'

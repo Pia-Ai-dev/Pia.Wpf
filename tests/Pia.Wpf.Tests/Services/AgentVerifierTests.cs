@@ -22,6 +22,7 @@ public sealed class AgentVerifierTests : IDisposable
     private readonly ISettingsService _settingsService = Substitute.For<ISettingsService>();
     private readonly AppSettings _settings = new();
     private readonly List<string> _systemPrompts = new();
+    private readonly List<string> _userPrompts = new();
     private readonly string _dir;
 
     public AgentVerifierTests()
@@ -65,6 +66,10 @@ public sealed class AgentVerifierTests : IDisposable
     /// <summary>The system prompt of the LAST verify attempt (the probe block lives there).</summary>
     private string LastPrompt => _systemPrompts[^1];
 
+    /// <summary>The user message of the LAST verify attempt — where the goal, the nudge and (since Batch 08
+    /// F11) the executed-step listing ride, because <c>TokenizeMessages</c> rewrites this role only.</summary>
+    private string LastUserPrompt => _userPrompts[^1];
+
     // Drives one verify turn: invokes the captured toolHandler with a synthetic emit_verdict call
     // (when emitArgs is set) then yields Finished carrying usage — the loop drains the whole stream.
     private static async IAsyncEnumerable<ChatStreamItem> VerdictStream(
@@ -86,7 +91,9 @@ public sealed class AgentVerifierTests : IDisposable
                 Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
-                _systemPrompts.Add(ci.ArgAt<IList<ChatMessage>>(0)[0].Text ?? string.Empty);
+                var messages = ci.ArgAt<IList<ChatMessage>>(0);
+                _systemPrompts.Add(messages[0].Text ?? string.Empty);
+                _userPrompts.Add(messages[1].Text ?? string.Empty); // Batch 08 F11: the executed-step listing
                 return VerdictStream(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), emitArgs, usage);
             });
     }
@@ -446,10 +453,18 @@ public sealed class AgentVerifierTests : IDisposable
 
         await BuildVerifier().VerifyAsync(ctx, Persona(), Provider(), TestContext.Current.CancellationToken);
 
-        Assert.Contains(CompletedStepSummary.EarlierSegmentNote, LastPrompt);
-        Assert.Contains("result: post-resume text", LastPrompt);
+        // Batch 08 F11 moved the executed-step listing to the USER message (a step title/intent can be raw
+        // user keystrokes since D3, and TokenizeMessages rewrites ChatRole.User text ONLY). Both assertions
+        // are kept verbatim; only the message they are read from changed. The artifact PROBE block stays in
+        // the System prompt — it is app-generated filesystem metadata, not user text.
+        Assert.Contains(CompletedStepSummary.EarlierSegmentNote, LastUserPrompt);
+        Assert.Contains("result: post-resume text", LastUserPrompt);
         Assert.Contains("declared: early.md → found (512 B, modified ", LastPrompt); // seeded step IS probed
         Assert.Contains("declared: late.md → NOT FOUND", LastPrompt);
+
+        // ADDED: the property F11 is about — the step text is NOT also in the System prompt.
+        Assert.DoesNotContain("post-resume text", LastPrompt);
+        Assert.DoesNotContain("Steps executed", LastPrompt);
     }
 
     private static int CountOccurrences(string haystack, string needle)

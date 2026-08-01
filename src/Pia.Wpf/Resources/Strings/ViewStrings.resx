@@ -916,6 +916,7 @@
   <data name="Run_Activity_ChildrenParked" xml:space="preserve"><value>A sub-agent stopped at its own budget — continue?</value></data>
   <data name="Run_Activity_ChildrenInterrupted" xml:space="preserve"><value>Interrupted while sub-agents were working — continue?</value></data>
   <data name="Run_Activity_UserPaused" xml:space="preserve"><value>You paused this run</value></data>
+  <data name="Run_Activity_ResumeInterrupted" xml:space="preserve"><value>The continuation did not start — continue again when you are ready</value></data>
   <data name="Run_Action_Continue" xml:space="preserve"><value>Continue</value></data>
   <!-- Batch 08 G8: the header Pause button and its in-flight label. -->
   <data name="Run_Action_Pause" xml:space="preserve"><value>Pause</value></data>
@@ -932,7 +933,7 @@
   <!-- Batch 08 8b: the paused-run plan editor — nudge box, per-row verbs and their rejection notes. -->
   <data name="Run_Nudge_Label" xml:space="preserve"><value>Note for the rest of this run</value></data>
   <data name="Run_Nudge_Placeholder" xml:space="preserve"><value>Optional — for example, keep the summary under 200 words</value></data>
-  <data name="Run_Nudge_Scope_Note" xml:space="preserve"><value>The note is sent with the next step of this continuation only. It is not saved and does not survive a restart.</value></data>
+  <data name="Run_Nudge_Scope_Note" xml:space="preserve"><value>The note is sent with every remaining step of this continuation, and with its checks and any re-planning. It is not saved and does not survive a restart.</value></data>
   <data name="Run_Plan_Action_Edit" xml:space="preserve"><value>Edit step</value></data>
   <data name="Run_Plan_Action_Insert" xml:space="preserve"><value>Insert step below</value></data>
   <data name="Run_Plan_Action_MoveUp" xml:space="preserve"><value>Move step up</value></data>
@@ -940,6 +941,9 @@
   <data name="Run_Plan_Action_Skip" xml:space="preserve"><value>Skip step</value></data>
   <data name="Run_Plan_NewStep_Title" xml:space="preserve"><value>New step</value></data>
   <data name="Run_Plan_Note_PauseFirst" xml:space="preserve"><value>Pause the run to change its plan.</value></data>
+  <data name="Run_Pause_Error_Refused" xml:space="preserve"><value>This run could not be paused just now — it may have already moved on. You can try again.</value></data>
+  <data name="Run_Plan_Edit_Title" xml:space="preserve"><value>Short title (shown in the plan)</value></data>
+  <data name="Run_Plan_Edit_Intent" xml:space="preserve"><value>What the assistant should do (this is what it is asked)</value></data>
   <data name="Run_Plan_Error_NotPaused" xml:space="preserve"><value>The plan can only be changed while the run is paused.</value></data>
   <data name="Run_Plan_Error_UnknownStep" xml:space="preserve"><value>That step is no longer part of the plan.</value></data>
   <data name="Run_Plan_Error_TitleRequired" xml:space="preserve"><value>A step needs a title.</value></data>
@@ -999,6 +1003,7 @@
   <data name="Flow_Run_ChildrenParked" xml:space="preserve"><value>One of its sub-agents stopped at its own budget — continue?</value></data>
   <data name="Flow_Run_ChildrenInterrupted" xml:space="preserve"><value>Interrupted while its sub-agents were working — continue?</value></data>
   <data name="Flow_Run_UserPaused" xml:space="preserve"><value>You paused this run. Continue?</value></data>
+  <data name="Flow_Run_ResumeInterrupted" xml:space="preserve"><value>The continuation did not start. Continue?</value></data>
   <data name="Flow_Action_ContinueRun" xml:space="preserve"><value>Continue run</value></data>
   <data name="Assistant_Regenerate_Shorten" xml:space="preserve"><value>Shorter</value></data>
   <data name="Assistant_Regenerate_Detailed" xml:space="preserve"><value>More detailed</value></data>

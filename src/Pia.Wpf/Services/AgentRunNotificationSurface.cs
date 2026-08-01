@@ -98,6 +98,10 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
         // Batch 08 G2. Telling a user who pressed Pause that the run "stopped at its budget" would send them
         // to raise budgets that were never reached; the card still carries the same ContinueRunAction.
         AgentRunService.UserPausedReason => "Flow_Run_UserPaused",
+        // Batch 08 F19: the second of the two readers UserPausedReason's doc names. A Continue that claimed
+        // the row and then failed to start re-parks it here, and "Stopped at its budget — continue?" sends
+        // the user to Settings instead of back to the button they just pressed.
+        HeadlessRunLauncher.ResumeInterruptedReason => "Flow_Run_ResumeInterrupted",
         _ => "Flow_Run_WaitingAtBudget",
     };
 

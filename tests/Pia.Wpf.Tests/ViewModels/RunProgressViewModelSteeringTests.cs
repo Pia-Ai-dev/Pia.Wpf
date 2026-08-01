@@ -490,4 +490,145 @@ public sealed class RunProgressViewModelPlanMutationTests
 
         vm.Dispose();
     }
+
+    /// <summary>
+    /// <b>Batch 08 F6: a REFUSED pause must give the button back and say so.</b> <c>PauseAsync</c>'s
+    /// <c>bool</c> used to be discarded, and <see cref="RunProgressViewModel.IsPausing"/> is deliberately not
+    /// cleared in a <c>finally</c> (an accepted pause takes time to land, and clearing early re-enables the
+    /// button over a request that is still coming). Together those made a refusal indistinguishable from a slow
+    /// pause: the button read "Pausing…" and stayed disabled for the VM's whole life, with no note and no
+    /// retry. Refusal is reachable four ways — the run is not pausable, nothing in this process is dispatching
+    /// it, the read faulted, or the service threw — and after Batch 08 F10 a fifth: the dispatch is already
+    /// terminating from a Stop.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]  // the service refused
+    [InlineData(true)]   // …or threw, which is the same thing to the user
+    public async Task ARefusedPause_ClearsIsPausing_AndExplainsItself(bool throws)
+    {
+        var run = new AgentRun { Id = _runId, State = AgentRunState.Running };
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(run);
+
+        var steering = Substitute.For<IAgentRunSteeringService>();
+        steering.PauseAsync(_runId, Arg.Any<CancellationToken>())
+            .Returns(throws ? Task.FromException<bool>(new InvalidOperationException("boom")) : Task.FromResult(false));
+
+        var vm = CreateVm(steering);
+        await vm.RefreshAsync();
+        Assert.True(vm.CanPause);       // non-vacuity: the button was live before the click
+        Assert.Null(vm.PauseNote);
+
+        await vm.PauseCommand.ExecuteAsync(null);
+
+        Assert.False(vm.IsPausing);                                  // the button is usable again
+        Assert.True(vm.CanPause);                                    // …and really re-enabled, not merely un-flagged
+        Assert.Equal("Run_Pause_Error_Refused", vm.PauseNote);       // the fake echoes the loc key
+        vm.Dispose();
+    }
+
+    /// <summary>Batch 08 F6's other half, and the one that keeps the fix from being "always clear": an
+    /// ACCEPTED pause leaves <c>IsPausing</c> true and says nothing, because the request is on its way and the
+    /// row's own move out of the pausable states is what retires the affordance.</summary>
+    [Fact]
+    public async Task AnAcceptedPause_KeepsTheButtonInFlight_AndAddsNoNote()
+    {
+        var run = new AgentRun { Id = _runId, State = AgentRunState.Running };
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(run);
+
+        var steering = Substitute.For<IAgentRunSteeringService>();
+        steering.PauseAsync(_runId, Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
+
+        var vm = CreateVm(steering);
+        await vm.RefreshAsync();
+        await vm.PauseCommand.ExecuteAsync(null);
+
+        Assert.True(vm.IsPausing);
+        Assert.False(vm.CanPause);
+        Assert.Null(vm.PauseNote);
+
+        // …and the note/flag pair is retired together once the run leaves the pausable states.
+        run.State = AgentRunState.Paused;
+        await vm.RefreshAsync();
+        Assert.False(vm.IsPausing);
+        Assert.Null(vm.PauseNote);
+        vm.Dispose();
+    }
+
+    /// <summary>
+    /// <b>Batch 08 F12: "Pause the run to change its plan." is shown only while there is a Pause button to
+    /// press.</b> The note used to be the INVERSE of <c>CanMutatePlan</c>, i.e. true in every state except
+    /// <c>Paused</c> — so a run parked at its budget showed the instruction next to a Continue button and no
+    /// Pause button (impossible to follow), and a run that completed an hour ago carried it forever. The impl
+    /// spec §13 8b states the condition as "whenever the run is LIVE".
+    /// <para>
+    /// Asserted as an identity against <c>CanPause</c> over EVERY state rather than as a hand-written table, so
+    /// the two can never drift and a ninth state is covered the moment it exists.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void ShowPauseFirstNote_IsExactlyCanPause_InEveryState()
+    {
+        var vm = CreateVm(Substitute.For<IAgentRunSteeringService>());
+
+        foreach (var state in Enum.GetValues<RunProgressState>())
+        {
+            vm.State = state;
+            Assert.Equal(vm.CanPause, vm.ShowPauseFirstNote);
+        }
+
+        // The two states the defect was actually about: the note is GONE where it used to nag.
+        vm.State = RunProgressState.WaitingForInput;
+        Assert.False(vm.ShowPauseFirstNote);
+        vm.State = RunProgressState.Completed;
+        Assert.False(vm.ShowPauseFirstNote);
+        // …and still present where it is actionable (non-vacuity: this is not a property that is always false).
+        vm.State = RunProgressState.Running;
+        Assert.True(vm.ShowPauseFirstNote);
+
+        // It also follows IsPausing, which is half of CanPause — a pause already in flight has nothing left to
+        // instruct. That needs its own notification on _isPausing, which is the easy half to forget.
+        var raised = new List<string>();
+        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName ?? string.Empty);
+        vm.IsPausing = true;
+        Assert.False(vm.ShowPauseFirstNote);
+        Assert.Contains(nameof(RunProgressViewModel.ShowPauseFirstNote), raised);
+        vm.Dispose();
+    }
+
+    /// <summary>
+    /// <b>Batch 08 F13: the <c>NotPaused</c> rejection is no longer wiped by its own refresh.</b>
+    /// <c>ApplyStepEditsAsync</c> set <see cref="RunProgressViewModel.PlanMutationNote"/> and THEN awaited
+    /// <c>RefreshAsync</c>, and <c>Project</c> clears that note on any state but <c>Paused</c> — which is the
+    /// definition of the <c>NotPaused</c> outcome. So the one rejection that means "your edit did not happen
+    /// and the run has moved on" was set and instantly erased: the row-button group vanished with
+    /// <c>CanMutatePlan</c> and nothing said why. The other five outcomes are returned only after the service's
+    /// own <c>Paused</c> gate, which is why the fix is a one-line reorder and not a freshness flag.
+    /// </summary>
+    [Fact]
+    public async Task ANotPausedRejection_SurvivesItsOwnRefresh()
+    {
+        var step = new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "s1", Status = AgentStepStatus.Pending };
+        var run = new AgentRun { Id = _runId, State = AgentRunState.Paused, Plan = [step] };
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(run);
+
+        var vm = CreateVm();
+        await vm.RefreshAsync();
+        var row = vm.Steps.Single();
+
+        // The race the outcome models: something else (the Flow card's "Continue run", a second window) resumed
+        // the run between the click and the write, so the mutation is refused AND the refresh reads Running.
+        _runs.ApplyPlanMutationAsync(_runId, Arg.Any<IReadOnlyList<PlanStepEdit>>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                run.State = AgentRunState.Running;
+                return new PlanMutationResult(PlanMutationOutcome.NotPaused, 1);
+            });
+
+        await vm.SkipStepCommand.ExecuteAsync(row);
+
+        Assert.Equal(RunProgressState.Running, vm.State);                    // the refresh really did re-project
+        Assert.False(vm.CanMutatePlan);                                      // …and the button group really is gone
+        Assert.Equal("Run_Plan_Error_NotPaused", vm.PlanMutationNote);       // so the note is the ONLY feedback left
+        vm.Dispose();
+    }
 }

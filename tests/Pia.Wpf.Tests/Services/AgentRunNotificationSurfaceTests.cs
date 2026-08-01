@@ -56,6 +56,13 @@ public sealed class AgentRunNotificationSurfaceTests
     // coverage its key has: the body is read as _localizationService[PausedBodyKey(...)], so the key literal
     // lives inside the switch arm where LocalizationTests' quoted-literal regex cannot see it.
     [InlineData("user", "Flow_Run_UserPaused")]
+    // Batch 08 F19. HeadlessRunLauncher's three re-park arms write this when a Continue CAS-claimed the row and
+    // then never reached the orchestrator (cancelled or faulted in the slot wait, the scope build or the
+    // executor construction). It fell through to the budget arm, so the card told a user whose Continue had
+    // just failed to go and raise budgets that were never reached — and if they had paused the run by HAND a
+    // moment earlier, it also overwrote who paused it. The row still parks WaitingForInput and stays
+    // resumable; only the wording was a lie.
+    [InlineData("resume-interrupted", "Flow_Run_ResumeInterrupted")]
     [InlineData("step-cap", "Flow_Run_WaitingAtBudget")]
     [InlineData("wall-clock", "Flow_Run_WaitingAtBudget")]
     [InlineData(null, "Flow_Run_WaitingAtBudget")]

@@ -155,4 +155,26 @@ public sealed class RunContext
     /// </summary>
     public void SeedCompletedSteps(IEnumerable<CompletedStepSummary> earlier)
         => _completed.InsertRange(0, earlier);
+
+    /// <summary>
+    /// Batch 08 F16: the titles of steps the USER removed from the plan with the panel's "Skip step" verb.
+    /// <para>
+    /// W13 delivered the row half of D3's promise — <c>KeepDoneAsync</c> keeps <c>Done or Skipped</c>, so a
+    /// skipped row survives a replan and its <c>ExpectedArtifact</c> is never probed. But the PROMPT half was
+    /// missing: <c>BuildReplanMessages</c> lists only <see cref="CompletedSteps"/> (Done-only), so nothing
+    /// told the replanner a step had been removed and nothing forbade regenerating it. <c>PlanStepEdit.Skip</c>
+    /// documents the intent as "a replan must not quietly re-add work they removed"; this is what makes the
+    /// model aware of it at all.
+    /// </para>
+    /// <para>
+    /// Empty until the orchestrator seeds it, which it does immediately before each replan turn from the
+    /// PERSISTED plan rather than from an event: the user can skip a step at any point while the run is
+    /// paused, and the DB is the only reader-independent record of what they removed.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<string> SkippedTitles { get; private set; } = [];
+
+    /// <summary>Replaces (never appends to) <see cref="SkippedTitles"/> — each seed is a fresh read of the
+    /// persisted plan, so accumulating would keep listing rows a later mutation dropped.</summary>
+    public void SetSkippedTitles(IReadOnlyList<string> titles) => SkippedTitles = titles;
 }

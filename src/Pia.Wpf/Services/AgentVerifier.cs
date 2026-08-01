@@ -131,23 +131,6 @@ public sealed class AgentVerifier : IAgentVerifier
         sb.AppendLine();
         sb.AppendLine("The run below has finished executing its plan. Judge whether it actually achieved the user's goal and produced the expected artifacts.");
         sb.AppendLine("Call the emit_verdict tool exactly once: passed=true ONLY if the goal is genuinely satisfied; otherwise passed=false with a short reason and the concrete missing items.");
-        if (ctx.CompletedSteps.Count > 0)
-        {
-            sb.AppendLine("Steps executed (with their results, as reported by the assistant itself):");
-            foreach (var c in ctx.CompletedSteps)
-            {
-                // Title/Intent are flattened for the same reason as in the facts block: a planner title is
-                // model text, and a newline in it would otherwise let a step's own label imitate a
-                // "- step N … → found" fact line. The result text below is deliberately NOT flattened —
-                // it is prose the prompt explicitly frames as the assistant's self-report, and the facts
-                // block is what anchors the verdict.
-                sb.AppendLine($"- [{(c.Succeeded ? "ok" : "failed")}] {Flatten(c.Title)}: {Flatten(c.Intent)}");
-                if (!string.IsNullOrWhiteSpace(c.VisibleText))
-                    sb.AppendLine($"    result: {c.VisibleText}");
-                else if (c.FromEarlierSegment) // E2: a resumed run's pre-pause steps carry no result text
-                    sb.AppendLine($"    result: {CompletedStepSummary.EarlierSegmentNote}");
-            }
-        }
         if (artifactFacts is not null)
         {
             sb.AppendLine();
@@ -162,9 +145,59 @@ public sealed class AgentVerifier : IAgentVerifier
         {
             new(ChatRole.System, sb.ToString()),
             // Batch 08 D4: the critic seeing an active nudge is intentional (§1 D4 item 5) — never the System
-            // prompt above, which is model/persona text, not the user's.
-            new(ChatRole.User, ctx.AppendNudge(ctx.Goal)),
+            // prompt above, which is model/persona text, not the user's. Batch 08 F11 moves the executed-step
+            // listing here for exactly the same reason; see BuildExecutedSteps.
+            new(ChatRole.User, ctx.AppendNudge(ctx.Goal + BuildExecutedSteps(ctx))),
         };
+    }
+
+    /// <summary>
+    /// The "Steps executed" listing, as a USER-message block.
+    /// <para>
+    /// <b>Batch 08 F11: this used to be appended to the System prompt, and that is a PII leak.</b>
+    /// <c>TokenizingAiClientService.TokenizeMessages</c> short-circuits on <c>msg.Role != ChatRole.User</c>, so
+    /// a System message ships verbatim even while tokenization is ON. Every title and intent here comes from
+    /// <c>ctx.RecordStep</c>, i.e. from the PERSISTED step row — and since Batch 08 D3 that row can hold raw
+    /// user keystrokes typed into the run panel's inline editor. So the same edited text was tokenized when it
+    /// rode the step instruction (a User message) and untokenized when it rode the verify prompt of the same
+    /// run: pause a run, edit a step's intent to "Mail the signed contract to john.doe@acme.com", continue,
+    /// and the step turn ships <c>[Email_1]</c> while the verify turn ships the address.
+    /// </para>
+    /// <para>
+    /// Moved rather than tokenized in place: the token map lives BELOW this class (it is the AI-client
+    /// wrapper's, keyed to the running turn), so composing against it here would mean reaching for ambient
+    /// state and re-deciding whether tokenization is on. The precedent is already written twice in this
+    /// codebase — the nudge (§1 D4 item 7) and <c>AgentPlanner</c>'s reasoning analysis — both of which ride
+    /// the User message for this exact reason and say so at the call site.
+    /// </para>
+    /// <para>
+    /// Returns <c>""</c> when nothing has executed, so the goal-only shape is byte-identical to before.
+    /// </para>
+    /// </summary>
+    private static string BuildExecutedSteps(RunContext ctx)
+    {
+        if (ctx.CompletedSteps.Count == 0)
+            return string.Empty;
+
+        var sb = new StringBuilder();
+        sb.AppendLine();
+        sb.AppendLine();
+        sb.AppendLine("Steps executed (with their results, as reported by the assistant itself):");
+        foreach (var c in ctx.CompletedSteps)
+        {
+            // Title/Intent are flattened for the same reason as in the facts block: a planner title is
+            // model text, and a newline in it would otherwise let a step's own label imitate a
+            // "- step N … → found" fact line. The result text below is deliberately NOT flattened —
+            // it is prose the prompt explicitly frames as the assistant's self-report, and the facts
+            // block is what anchors the verdict.
+            sb.AppendLine($"- [{(c.Succeeded ? "ok" : "failed")}] {Flatten(c.Title)}: {Flatten(c.Intent)}");
+            if (!string.IsNullOrWhiteSpace(c.VisibleText))
+                sb.AppendLine($"    result: {c.VisibleText}");
+            else if (c.FromEarlierSegment) // E2: a resumed run's pre-pause steps carry no result text
+                sb.AppendLine($"    result: {CompletedStepSummary.EarlierSegmentNote}");
+        }
+
+        return sb.ToString().TrimEnd();
     }
 
     // ---- H1: declared-artifact probe (mechanical evidence for the verdict) ----

@@ -1129,4 +1129,68 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         // steered — the children above were skipped by the set test, not by a refused pause.
         Assert.True(h.Store.TryConsumePauseRequest(parent.Id));
     }
+
+    /// <summary>
+    /// <b>Batch 08 F8: a group that has dropped below TWO pending members must still supersede the generation
+    /// behind it.</b>
+    /// <para>
+    /// <c>SafeCancelStaleChildrenAsync</c> is the only cleanup for a previous child generation, and
+    /// <c>TryFanOutAsync</c>'s <c>siblings.Count &lt; 2</c> early return — which counts PENDING members only —
+    /// used to skip straight past it. A <c>Paused</c> child is never swept (the startup reconcile's statement 1
+    /// is <c>State &lt; WaitingForInput</c>), so the orphan was PERMANENT rather than something a restart
+    /// cleared: a non-terminal row and a visible stub chat, forever.
+    /// </para>
+    /// <para>
+    /// The trigger modelled here is the USER one rather than the timing one, because it needs no race: pause a
+    /// 2-way fan-out, both children park, both sibling steps go back to <c>Pending</c> — and the user then
+    /// clicks "Skip step" on one of them before Continue. The mixed generation (one child <c>Done</c>, one
+    /// <c>Paused</c>) reaches the identical early return by the identical count.
+    /// </para>
+    /// <para>
+    /// Driven through <c>resume: true</c> so the persisted plan IS the plan (no planner turn can re-write the
+    /// skip away), which is also exactly how the real Continue re-enters.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task AGroupThatDroppedBelowTwoPendingMembers_StillSupersedesItsPausedChild()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var h = new Harness();
+        var parent = await h.NewRunAsync("goal");
+
+        // The plan a paused-then-skipped fan-out leaves behind: both members are in group 1, one was skipped
+        // by the user, so exactly ONE pending member remains.
+        await h.Runs.ReplaceStepsAsync(parent.Id, MakeSteps(("a", 1), ("b", 1)), ct);
+        var stepA = (await h.Runs.GetAsync(parent.Id, ct))!.Plan.Single(s => s.Title == "a");
+        await h.Runs.SetStepStatusAsync(stepA.Id, AgentStepStatus.Skipped, ct);
+
+        // The generation behind it: a child this parent dispatched and the user paused.
+        var child = await h.NewRunAsync("a", parent.Id);
+        await h.Runs.SetStateAsync(child.Id, AgentRunState.Running, ct);
+        Assert.True(await h.Runs.TryPauseUserAsync(child.Id, ct));
+
+        var launcher = new CascadingChildLauncher(h);
+        var exec = new ParentExecutor();
+        await h.Runs.SetStateAsync(parent.Id, AgentRunState.Paused, ct);
+        Assert.True(await h.Runs.TryResumeFromPauseAsync(parent.Id, ct)); // the Continue, exactly as the UI does it
+        var resumed = (await h.Runs.GetAsync(parent.Id, ct))!;
+
+        await h.BuildOrchestrator(new FakePlanner(), childLauncher: launcher)
+            .RunAsync(resumed, exec, Persona(), Provider(), RunProfile.Interactive, ct, resume: true);
+
+        // Non-vacuity: this really did take the DECLINE path — the surviving member ran in-process and no new
+        // child was dispatched. If it had fanned out, the cleanup would have been the pre-existing one inside
+        // FanOutCoreAsync and this fact would prove nothing about the early return.
+        Assert.Equal(new[] { "b" }, exec.Executed);
+        Assert.Empty(launcher.Dispatches);
+
+        // THE CLAIM: the previous generation was superseded on the way past, not orphaned.
+        Assert.Contains(child.Id, launcher.Cancelled);
+        var settled = await h.Runs.GetAsync(child.Id, ct);
+        Assert.Equal(AgentRunState.Cancelled, settled!.State); // terminal — a parked child is never swept
+        Assert.NotNull(settled.CompletedAt);
+
+        var final = await h.Runs.GetAsync(parent.Id, ct);
+        Assert.Equal(AgentRunState.Completed, final!.State);   // and the parent itself is unaffected
+    }
 }

@@ -644,4 +644,140 @@ public sealed class AgentRunOrchestratorUserPauseTests
         // The request is still sitting there unconsumed — nothing in this loop ever read it.
         Assert.True(h.Store.TryConsumePauseRequest(run.Id));
     }
+
+    /// <summary>An executor whose named step FAILS (not cancels), so the loop takes the replan branch. Every
+    /// other step succeeds.</summary>
+    private sealed class FailingExecutor : IAgentTurnExecutor
+    {
+        private readonly string _failOn;
+
+        public FailingExecutor(string failOn) => _failOn = failOn;
+
+        public List<string> Executed { get; } = new();
+
+        public bool PausedCalled { get; private set; }
+
+        public bool EndCalled { get; private set; }
+
+        public Task BeginRunAsync(AgentRun run, RunContext ctx, CancellationToken ct) => Task.CompletedTask;
+
+        public Task<StepTurnResult> ExecuteStepAsync(AgentRun run, AgentStep step, RunContext ctx, CancellationToken ct)
+        {
+            Executed.Add(step.Intent ?? step.Title);
+            return Task.FromResult((step.Intent ?? step.Title) == _failOn
+                ? new StepTurnResult(false, false, "boom", string.Empty, null, Guid.NewGuid(), Guid.NewGuid())
+                : new StepTurnResult(true, false, null, "done", null, Guid.NewGuid(), Guid.NewGuid()));
+        }
+
+        public Task<StepTurnResult> RunSingleTurnFallbackAsync(AgentRun run, RunContext ctx, CancellationToken ct)
+            => Task.FromResult(new StepTurnResult(true, false, null, "fallback", null, Guid.NewGuid(), Guid.NewGuid()));
+
+        public Task EndRunAsync(AgentRun run, RunContext ctx, bool cancelled, bool failed, CancellationToken ct)
+        {
+            EndCalled = true;
+            return Task.CompletedTask;
+        }
+
+        public Task OnPausedAsync(AgentRun run, RunContext ctx, CancellationToken ct)
+        {
+            PausedCalled = true;
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>A planner whose REPLAN turn is where the pause lands — the real one awaits the provider on the
+    /// dispatch token with no local catch, so the OCE leaves through the loop's outer arm.</summary>
+    private sealed class PausingReplanner : IAgentPlanner
+    {
+        private readonly Func<Guid, Task<bool>> _pause;
+        private Guid _runId;
+
+        public PausingReplanner(Func<Guid, Task<bool>> pause) => _pause = pause;
+
+        public Queue<PlanResult> Plans { get; } = new();
+
+        public int ReplanCalls { get; private set; }
+
+        public bool? PauseAccepted { get; private set; }
+
+        public Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
+            => Task.FromResult(Plans.Count > 0 ? Plans.Dequeue() : PlanResult.Fallback);
+
+        public void For(Guid runId) => _runId = runId;
+
+        public async Task<PlanResult> ReplanAsync(RunContext ctx, string? failure, Persona persona, AiProvider provider, CancellationToken ct)
+        {
+            ReplanCalls++;
+            PauseAccepted = await _pause(_runId);
+            ct.ThrowIfCancellationRequested(); // the provider call the real ReplanAsync is sitting in
+            return PlanResult.Fallback;
+        }
+    }
+
+    /// <summary>
+    /// <b>Batch 08 F9: a pause that lands during a REPLAN must not lose the repair the replan was owed.</b>
+    /// <para>
+    /// <c>TryReplanAfterFailureAsync</c> awaits <c>ReplanAsync</c> on the dispatch token with no local catch, so
+    /// a pause there throws into the loop's outer arm, which parks the run correctly and resumably — but used to
+    /// leave the <c>Failed</c> step behind with nothing owed to it. <c>replans</c> is a <c>RunAsync</c> local, so
+    /// the resumed dispatch has no memory a replan was due; <c>NextPendingStepAsync</c> filters <c>Pending</c>,
+    /// so the step never re-ran; and <c>SafeSeedResumeContext</c> filters <c>== Done</c>, so the critic was
+    /// never told it failed. <b>The resumed run drained the remainder and reported <c>Completed</c> over work
+    /// that failed and was never repaired</b> — and pre-Batch-08 that same interleaving settled
+    /// <c>Cancelled</c>, so the silent-success shape was new.
+    /// </para>
+    /// <para>
+    /// The fix is the cheap half of the review's recommendation and it is what changes the OUTCOME: the failed
+    /// row goes back to <c>Pending</c> when the user pause parks, so the resume RE-ATTEMPTS it. The assertions
+    /// are therefore in two parts — the parked plan (what the user sees and can still edit), and the resumed
+    /// run actually executing <c>s1</c> again.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task APauseDuringAReplan_GivesTheFailedStepBackToThePlan_SoTheResumeReattemptsIt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+
+        using var dispatchCts = new CancellationTokenSource();
+        Action sink = () => { try { dispatchCts.Cancel(); } catch { /* disposed */ } };
+        h.Store.RegisterDispatch(run.Id, sink);
+
+        var planner = new PausingReplanner(runId => h.Steering.PauseAsync(runId, ct));
+        planner.For(run.Id);
+        planner.Plans.Enqueue(new PlanResult(MakeSteps("s1", "s2"), false));
+
+        var exec = new FailingExecutor("s1");
+        await h.BuildOrchestrator(planner, steering: h.Store)
+            .RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, dispatchCts.Token);
+
+        Assert.True(planner.PauseAccepted);      // non-vacuity: the pause was accepted inside the replan turn
+        Assert.Equal(1, planner.ReplanCalls);    // …and it really was the replan turn it landed in
+
+        var paused = await h.Runs.GetAsync(run.Id, ct);
+        Assert.Equal(AgentRunState.Paused, paused!.State);
+        Assert.Null(paused.CompletedAt);
+        Assert.Equal(AgentRunService.UserPausedReason, RunPauseEnvelope.ReadReason(paused));
+        Assert.True(exec.PausedCalled);
+        Assert.False(exec.EndCalled);
+
+        // THE FIX: the failed step is back in the plan, not stranded at Failed(3) where NextPendingStepAsync
+        // cannot see it and KeepDoneAsync would drop it.
+        Assert.Equal(AgentStepStatus.Pending, Assert.Single(paused.Plan, s => s.Title == "s1").Status);
+        Assert.Equal("s1", (await h.Runs.NextPendingStepAsync(run.Id, ct))!.Title);
+
+        // …and the consequence, which is the part that was actually wrong: the resumed run RE-ATTEMPTS s1
+        // rather than draining s2 and reporting success over a failure nobody repaired.
+        Assert.True(await h.Runs.TryResumeFromPauseAsync(run.Id, ct));
+        var resumed = (await h.Runs.GetAsync(run.Id, ct))!;
+        var second = new PausingExecutor("never", pause: null);
+        await h.BuildOrchestrator(new FakePlanner(), steering: h.Store)
+            .RunAsync(resumed, second, Persona(), Provider(), RunProfile.Interactive, ct, resume: true);
+
+        Assert.Equal(new[] { "s1", "s2" }, second.Executed);
+        var final = await h.Runs.GetAsync(run.Id, ct);
+        Assert.Equal(AgentRunState.Completed, final!.State);
+        Assert.All(final.Plan, s => Assert.Equal(AgentStepStatus.Done, s.Status));
+    }
 }

@@ -116,8 +116,11 @@ public class ViewHostDataContextTests
         Assert.True(panelPath == nameof(AssistantViewModel.ActiveRunProgress),
             $"AssistantView.xaml:51 hosts RunProgressPanel with DataContext=\"{{Binding {panelPath}}}\", but " +
             $"{nameof(RunProgressPanelParseTests)} walks the panel's binding paths against the type of " +
-            $"AssistantViewModel.{nameof(AssistantViewModel.ActiveRunProgress)} — so all 28 of the panel's " +
-            "paths would be dead at runtime while that walk stayed green (Batch 14 review, D1).");
+            $"AssistantViewModel.{nameof(AssistantViewModel.ActiveRunProgress)} — so EVERY ONE of the panel's " +
+            "bound paths would be dead at runtime while that walk stayed green (Batch 14 review, D1). " +
+            "(Batch 08 F21: the count is deliberately not spelled out here — it was written as 28 when this " +
+            "fact landed and the batch has since raised the walk past that, so a literal drifts silently " +
+            "while the claim it decorates stays true.)");
     }
 
     /// <summary>The DataContext path declared at one host site, or <see cref="NoBinding"/>.</summary>

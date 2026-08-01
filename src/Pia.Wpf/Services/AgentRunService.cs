@@ -781,6 +781,23 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
             // The immutable prefix: everything already settled — Done, Skipped AND Failed. Kept in persisted
             // ordinal order with its ORIGINAL Ids, which is what keeps its per-step ledger entries (keyed by
             // step id) and its timeline rows attached to something.
+            //
+            // Batch 08 F15, KNOWN AND DELIBERATE: a SKIPPED step sorts with the settled work, so the NEXT
+            // mutation hoists it above every still-pending step. Plan [0 Done, 1 Done, 2 Pending, 3 Pending,
+            // 4 Pending], skip 4 (order preserved — the skipped row rides in that submission's tail), then
+            // edit 2: prefix [0,1,4], tail [2,3], persisted order [0,1,4,2,3]. The panel repaints it
+            // faithfully, so the user sees a plan order they never arranged.
+            //
+            // NOT FIXED, on the review's own adjudicated recommendation, because the tempting one-line patch
+            // (narrow this filter to `Done or Failed`) is FOUR-SIDED and half of it is silently destructive:
+            // (a) `editable` below would have to admit Skipped rows or every resubmission of one returns
+            // UnknownStep; (b) the VM's five verbs build their submissions from Pending rows only, so a
+            // Skipped row would be DROPPED from the plan rather than reordered; (c) un-skipping must still be
+            // refused; and (d) it weakens the stated property below from "no settled row can move" to "no
+            // Done/Failed row can move". The defect is cosmetic — a Skipped step never drains, so execution
+            // order is unaffected — and the proportionate action is to say so here. Changing it is an owner
+            // call: "plan order must read as the user arranged it" is a legitimate requirement, it is just not
+            // one worth trading that invariant for unasked.
             var prefix = persisted.Where(s => s.Status != AgentStepStatus.Pending).OrderBy(s => s.Ordinal).ToList();
             var editable = persisted.Where(s => s.Status == AgentStepStatus.Pending).ToDictionary(s => s.Id);
 
@@ -806,12 +823,23 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
                 // planner writes {"parallelGroup":N} and clobbering it quietly makes a fan-out plan sequential
                 // again; AssignedPersonaId for the same class of reason (the step would silently change
                 // persona). An INSERT gets the model's defaults, which is what a step nobody planned has.
+                //
+                // Batch 08 F7: INTENT FALLS BACK TO THE TITLE, it is not separately validated. The validated
+                // field was Title, but Intent is the only field either executor sends — ChatSession builds
+                // `Execute step {n}: {Intent}.` and HeadlessTurnExecutor's BuildInstruction takes
+                // `step.Intent ?? ""`; neither ever reads Title. AgentPlanner drops a planner step whose Intent
+                // is blank, so this method was the FIRST writer in the codebase able to persist a Pending step
+                // with a null Intent — and the panel's "Insert step below" minted exactly that, so an inserted
+                // step shipped the literal turn "Execute step 3: .", burned a step against the budget, billed
+                // the tokens and then entered the verify prompt as completed work. A fallback beats a second
+                // required field: the title is already required, flattened and capped, and an intent-less step
+                // then reads as "do what the title says".
                 tail.Add(new AgentStep
                 {
                     Id = original?.Id ?? Guid.Empty,        // Guid.Empty ⇒ the insert mints one
                     RunId = runId,
                     Title = title,
-                    Intent = NullIfBlank(NormalizeStepText(edit.Intent, MaxStepIntentChars)),
+                    Intent = NullIfBlank(NormalizeStepText(edit.Intent, MaxStepIntentChars)) ?? title,
                     ExpectedArtifact = NullIfBlank(NormalizeStepText(edit.ExpectedArtifact, MaxStepArtifactChars)),
                     Status = edit.Skip ? AgentStepStatus.Skipped : AgentStepStatus.Pending,
                     AssignedPersonaId = original?.AssignedPersonaId,

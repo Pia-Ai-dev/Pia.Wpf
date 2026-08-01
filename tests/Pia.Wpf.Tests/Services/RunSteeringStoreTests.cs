@@ -223,4 +223,83 @@ public sealed class RunSteeringStoreTests
 
         store.EndFanOut(Guid.NewGuid());            // clearing a mark that was never set is a no-op
     }
+
+    /// <summary>
+    /// <b>Batch 08 F10: terminal intent is STICKY for the dispatch it was aimed at.</b> A one-shot revoke lost
+    /// the Stop → Pause ordering: the user presses Stop, the step takes a second to unwind, the row still reads
+    /// <c>Running</c> so the panel's Pause button is still live, and a Pause pressed in that window re-armed the
+    /// request — which the unwinding loop then consumed, PARKING a run the user asked to terminate.
+    /// <c>IRunSteeringStore</c>'s own FAILURE DIRECTION paragraph names that as the unrecoverable direction.
+    /// <para>
+    /// Both directions are pinned here, because the sticky half alone would be satisfied by simply refusing
+    /// forever: the mark must also DIE with the dispatch, or a Stopped-then-relaunched run would be permanently
+    /// unpausable with nothing to explain it.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void RevokePauseRequest_IsStickyForThatDispatch_AndDiesWithIt()
+    {
+        var store = new RunSteeringStore();
+        var runId = Guid.NewGuid();
+        Action sink = () => { };
+        store.RegisterDispatch(runId, sink);
+
+        Assert.True(store.RecordPauseRequest(runId));   // non-vacuity: pausable before the terminal intent
+        store.RevokePauseRequest(runId);                // the Stop
+        Assert.False(store.TryConsumePauseRequest(runId), "the revoke must drop the standing request");
+        Assert.False(store.RecordPauseRequest(runId), "and refuse the next one while this dispatch unwinds");
+        Assert.False(store.TryConsumePauseRequest(runId), "so the unwinding loop finds nothing to honour");
+
+        // Dies with the dispatch: a re-LAUNCH (release, then a fresh registration) is pausable again.
+        store.ReleaseDispatch(runId, sink);
+        Action relaunch = () => { };
+        store.RegisterDispatch(runId, relaunch);
+        Assert.True(store.RecordPauseRequest(runId));
+        Assert.True(store.TryConsumePauseRequest(runId));
+    }
+
+    /// <summary>
+    /// Batch 08 F10's other exit: a RESUME (a new sink registered while the old one is still installed) is a new
+    /// dispatch and clears the mark too — otherwise a run that was Stopped, settled, and later resumed from a
+    /// parked state would silently refuse every pause for the rest of the process's life.
+    /// <para>
+    /// Also pins the ORDER the store documents: the mark is cleared only on a SUPERSEDING registration, i.e. one
+    /// that installs a different sink. Re-registering the same delegate is not a dispatch boundary.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void ANewDispatchsRegistration_ClearsTheTerminalMark_ButReRegisteringTheSameSinkDoesNot()
+    {
+        var store = new RunSteeringStore();
+        var runId = Guid.NewGuid();
+        Action first = () => { };
+        store.RegisterDispatch(runId, first);
+        store.RevokePauseRequest(runId);
+        Assert.False(store.RecordPauseRequest(runId));
+
+        store.RegisterDispatch(runId, first);          // the SAME sink: not a boundary
+        Assert.False(store.RecordPauseRequest(runId), "re-registering the same dispatch must not clear its own terminal intent");
+
+        Action second = () => { };
+        store.RegisterDispatch(runId, second);         // a genuinely new dispatch
+        Assert.True(store.RecordPauseRequest(runId));
+    }
+
+    /// <summary>
+    /// Batch 08 F10, the guard on the mark itself: a revoke for a run with NO dispatch registered must not
+    /// leave a mark behind, because nothing would ever clear it — <c>ReleaseDispatch</c> is ownership-guarded
+    /// and there is no owner. The run would then be unpausable for the rest of the process's life the first
+    /// time it was actually dispatched.
+    /// </summary>
+    [Fact]
+    public void RevokingAnUndispatchedRun_LeavesNoMarkForItsNextDispatchToInherit()
+    {
+        var store = new RunSteeringStore();
+        var runId = Guid.NewGuid();
+
+        store.RevokePauseRequest(runId); // e.g. the chat-delete path firing at a run nothing here is running
+
+        store.RegisterDispatch(runId, () => { });
+        Assert.True(store.RecordPauseRequest(runId));
+    }
 }

@@ -78,17 +78,28 @@
                  Visibility="{Binding HasOutputBranch, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
       <!-- Batch 08 D3: "the UI can require a pause first" — stated as a note, never a silently-frozen plan.
-           Shown only while the run is NOT pausable for mutation (CanMutatePlan inverted). -->
+           Batch 08 F12: gated on ShowPauseFirstNote (== CanPause), NOT on CanMutatePlan inverted. The inverse
+           form rendered in EVERY state except Paused: a run parked at its budget showed "Pause the run to
+           change its plan." with no Pause button to press, and a Completed/Failed run kept nagging forever.
+           An instruction is only honest while the button it names is on screen. -->
       <TextBlock Text="{loc:Str Run_Plan_Note_PauseFirst}" Margin="0,0,0,6"
                  TextWrapping="Wrap" FontSize="12"
                  Foreground="{DynamicResource TextMutedBrush}"
-                 Visibility="{Binding CanMutatePlan, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+                 Visibility="{Binding ShowPauseFirstNote, Converter={StaticResource BooleanToVisibilityConverter}}" />
       <!-- The muted result of the last plan mutation — the PublishNote shape, same NullToVisibilityConverter,
            cleared by the VM on the next successful mutation. -->
       <TextBlock Text="{Binding PlanMutationNote}" Margin="0,0,0,6"
                  TextWrapping="Wrap" FontSize="12"
                  Foreground="{DynamicResource TextMutedBrush}"
                  Visibility="{Binding PlanMutationNote, Converter={StaticResource NullToVisibilityConverter}}" />
+
+      <!-- Batch 08 F6: a pause the service REFUSED. Same muted shape again; separate from PlanMutationNote
+           because that one is wiped by every projection that is not Paused, which is every projection a
+           refused pause can possibly be followed by. -->
+      <TextBlock Text="{Binding PauseNote}" Margin="0,0,0,6"
+                 TextWrapping="Wrap" FontSize="12"
+                 Foreground="{DynamicResource TextMutedBrush}"
+                 Visibility="{Binding PauseNote, Converter={StaticResource NullToVisibilityConverter}}" />
 
       <!-- Batch 08 D4: the steering note. Offered only while a resume is available — CanContinue already
            covers both the budget-paused and the user-paused case. Placed BEFORE the step list deliberately, so
@@ -147,9 +158,14 @@
                      carried forward verbatim by the service and untouched by an edit. -->
                 <StackPanel Margin="0,4,0,0"
                             Visibility="{Binding IsEditing, Converter={StaticResource BooleanToVisibilityConverter}}">
+                  <!-- Batch 08 F7: both boxes carried no label and no placeholder, so nothing told the user
+                       which one the model actually receives — and it is the SECOND one (both executors build
+                       the step turn from Intent alone; neither reads Title). -->
                   <ui:TextBox Text="{Binding EditTitle, UpdateSourceTrigger=PropertyChanged}"
+                              PlaceholderText="{loc:Str Run_Plan_Edit_Title}"
                               FontSize="12" Margin="0,0,0,4" />
                   <ui:TextBox Text="{Binding EditIntent, UpdateSourceTrigger=PropertyChanged}"
+                              PlaceholderText="{loc:Str Run_Plan_Edit_Intent}"
                               FontSize="12" Margin="0,0,0,4" TextWrapping="Wrap" AcceptsReturn="True" />
                   <StackPanel Orientation="Horizontal">
                     <ui:Button Content="{loc:Str Common_Save}" FontSize="11" Margin="0,0,6,0"
@@ -165,7 +181,12 @@
                      editor's own Save/Cancel are the only actions offered then), and hidden entirely while the
                      run is live (CanMutatePlan, bound off the ItemsControl's own DataContext — the VM). A
                      settled step's five buttons stay VISIBLE but each individually disabled (IsMutable) rather
-                     than vanishing, so the row's shape does not shift as steps finish. -->
+                     than vanishing, so the row's shape does not shift as steps finish.
+
+                     Batch 08 F15, so the repaint is not read as a bug: a SKIPPED row sorts with the settled
+                     work, so the NEXT mutation moves it up above the still-pending rows. Cosmetic only — a
+                     skipped step never drains — and deliberately not fixed; see ApplyPlanMutationAsync's
+                     prefix comment for the four-sided change it would take. -->
                 <StackPanel Visibility="{Binding IsEditing, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
                   <StackPanel Orientation="Horizontal" Margin="0,4,0,0"
                               Visibility="{Binding DataContext.CanMutatePlan, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={StaticResource BooleanToVisibilityConverter}}">
