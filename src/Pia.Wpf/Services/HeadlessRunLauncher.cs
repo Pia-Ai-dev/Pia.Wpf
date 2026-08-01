@@ -655,6 +655,17 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         }
     }
 
+    /// <summary>
+    /// App shutdown: cancel every dispatch and wait, bounded, for them to unwind.
+    /// <para>
+    /// Batch 08 D1: this path deliberately does <b>not</b> revoke a pending pause request, unlike the four
+    /// terminal-intent sites that do. It is the recoverable asymmetry — a run whose pause request is still
+    /// unconsumed when the shutdown token fires comes back <see cref="AgentRunState.Paused"/> and RESUMABLE
+    /// rather than <c>Cancelled</c>, which is the direction the user asked for and the only one that keeps the
+    /// work. Asserted, not merely commented, by
+    /// <c>HeadlessRunLauncherTests.Shutdown_DoesNotRevokeAPendingPause_SoTheRunComesBackResumable</c>.
+    /// </para>
+    /// </summary>
     public async Task StopAsync(CancellationToken ct)
     {
         try { _shutdownCts.Cancel(); }
@@ -848,6 +859,14 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     {
         if (_inflight.TryGetValue(runId, out var entry))
         {
+            // Batch 08 D1, revocation site 3, and it must precede the cancel below: deleting the chat is
+            // TERMINAL intent (the run row goes with it by FK cascade and its workspace is about to be
+            // removed), so an unconsumed pause request must never be read by the unwinding loop as "the user
+            // asked to pause". Paired with the cancel it guards rather than done unconditionally at the top —
+            // with no _inflight entry there is no dispatch, so RecordPauseRequest would have refused and
+            // ReleaseDispatch has already dropped anything stale.
+            _steering?.RevokePauseRequest(runId);
+
             // Best-effort: a disposed CTS throws here and must not stop the cleanup.
             try { entry.Cts.Cancel(); }
             catch (Exception ex) { _logger.LogWarning(ex, "Failed to cancel run {RunId} before workspace teardown", runId); }

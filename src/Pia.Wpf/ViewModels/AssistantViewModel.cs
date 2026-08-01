@@ -57,6 +57,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     /// <summary>Tool-permission state consulted by the voice-mode gate (Batch 04 D13).</summary>
     private readonly IToolPermissionService _permissions;
+
+    /// <summary>
+    /// Batch 08 D1: the steering registry, held here for its TERMINAL-INTENT revocations only (§5.3 sites 1
+    /// and 2 — Stop and clear-conversation). This VM never records a pause request; that is the run panel's
+    /// job, through <c>IAgentRunSteeringService</c>. Null ⇒ nothing to revoke, i.e. the pre-Batch-08 behaviour.
+    /// </summary>
+    private readonly IRunSteeringStore? _runSteering;
     private bool _disposed;
     private bool _tokenizationEnabled;
     private bool _suggestionsEnabled = true;
@@ -228,7 +235,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // Batch 06 G4: handed on to the same hand-constructed panel VM so a settled run can offer to publish
         // what is still in its workspace, and so a worktree run can say which branch its output is on. Same
         // trailing-and-defaulted discipline, same reason.
-        IRunWorkspaceService? runWorkspaces = null)
+        IRunWorkspaceService? runWorkspaces = null,
+        // Batch 08 D1: read by the two TERMINAL-intent commands below (Stop, clear conversation) so a cancel
+        // the user meant as "stop this run" can never be consumed as a pause. Trailing and defaulted for the
+        // same reason as the two above; null ⇒ nothing is ever revoked, which is today's behaviour.
+        IRunSteeringStore? runSteering = null)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -263,6 +274,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _dialogService = dialogService;
         _uiDispatcher = uiDispatcher;
         _permissions = permissions;
+        _runSteering = runSteering;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         RunInBackgroundCommand = new AsyncRelayCommand(ExecuteRunInBackground, CanExecuteRunInBackground);
@@ -737,7 +749,27 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     private void ExecuteCancelStreaming()
     {
+        RevokeAnyPendingPause();
         _chatSessionManager.ActiveSession?.Cancel();
+    }
+
+    /// <summary>
+    /// Batch 08 D1, revocation sites 1 and 2. Both callers below cancel the active session with TERMINAL
+    /// intent, and <c>ChatSession.Cancel()</c> is also the sink a user PAUSE fires — so an unconsumed pause
+    /// request sitting behind this cancel would be read by the run's loop as "the user asked to pause", and a
+    /// run the user pressed Stop on would come back <c>Paused</c> and resumable instead of settling
+    /// <c>Cancelled</c>. Revoke FIRST, always: after the cancel the step may already have unwound and consumed
+    /// it. The direction matters — a lost pause is recoverable (press Pause again), a Stop read as a pause is
+    /// not what the user asked for.
+    /// <para>
+    /// No-op when the session carries no run (an ordinary chat turn) or when no request is pending, and it
+    /// deliberately does NOT touch the sink registration: the dispatch owns that and releases it itself.
+    /// </para>
+    /// </summary>
+    private void RevokeAnyPendingPause()
+    {
+        if (_chatSessionManager.ActiveSession?.ActiveRunId is { } runId)
+            _runSteering?.RevokePauseRequest(runId);
     }
 
     /// <summary>
@@ -754,6 +786,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var inheritedDir = _chatSessionManager.ActiveSession?.WorkingDirectory;
         // Destructive: cancel this conversation's in-flight turn + pending cards. Other
         // live sessions are untouched (the manager owns their lifetime).
+        // Batch 08 revocation 2: abandoning the conversation is terminal intent, so a pending pause must not
+        // survive it — see RevokeAnyPendingPause.
+        RevokeAnyPendingPause();
         _chatSessionManager.ActiveSession?.Cancel();
         StartFreshChat(inheritedDir);
     }

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -55,6 +56,13 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         /// </summary>
         public Func<CancellationToken, Task>? OnPlanWithToken { get; set; }
 
+        /// <summary>
+        /// Batch 08 G4: how many REAL steps to plan. Zero (the default) keeps every pre-existing fact in this
+        /// file on <see cref="PlanResult.Fallback"/>, i.e. the single-turn degrade — which is also why no run
+        /// built here could previously reach the drain loop, park, or be paused.
+        /// </summary>
+        public int Steps { get; set; }
+
         public FakePlanner(Func<Task>? onPlan = null) => _onPlan = onPlan;
 
         public async Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
@@ -65,6 +73,20 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             {
                 if (OnPlanWithToken is not null) await OnPlanWithToken(ct);
                 if (_onPlan is not null) await _onPlan();
+                if (Steps > 0)
+                {
+                    return new PlanResult(
+                        Enumerable.Range(0, Steps).Select(i => new AgentStep
+                        {
+                            Id = Guid.NewGuid(),
+                            Ordinal = i,
+                            Title = "S" + i,
+                            Intent = "do it",
+                            Status = AgentStepStatus.Pending,
+                        }).ToList(),
+                        FallBackToSingleTurn: false);
+                }
+
                 return PlanResult.Fallback; // single-turn fallback → one exchange, then Completed
             }
             finally
@@ -131,11 +153,19 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     /// <param name="rosterProvider">The provider <paramref name="rosterPersona"/> prefers, registered with the
     /// provider store. The child's stub CHAT records the resolved provider id, which is how the ladder's answer
     /// is observable at all from outside.</param>
+    /// <param name="steering">Trailing and defaulted (Batch 08 G4): the steering registry, registered with the
+    /// per-run scope as well so the run's own orchestrator reads the SAME instance the launcher writes.
+    /// Omitted ⇒ no registry anywhere, i.e. the pre-Batch-08 launcher every other fact here exercises.</param>
+    /// <param name="stream">Trailing and defaulted (Batch 08 G4): replaces <see cref="Drive"/> so a fact can
+    /// hold a run INSIDE a step (the state a pause is legal from) instead of only inside the planner. Handed the
+    /// step's own token.</param>
     private (HeadlessRunLauncher Launcher, FakePlanner Planner) BuildLauncher(
         Func<Task>? onPlan = null, bool nullDefaultProvider = false, ToolProbe? probe = null,
         AppSettings? appSettings = null, FakeVerifier? verifier = null,
         FakeRunWorkspaceService? workspaces = null, string? runsBaseOverride = null,
-        Persona? rosterPersona = null, AiProvider? rosterProvider = null)
+        Persona? rosterPersona = null, AiProvider? rosterProvider = null,
+        IRunSteeringStore? steering = null,
+        Func<CancellationToken, IAsyncEnumerable<ChatStreamItem>>? stream = null)
     {
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         var persona = new Persona { Name = "Pia", SystemPrompt = "sys" };
@@ -145,9 +175,11 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
                 Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(ci => probe is null
-                ? Drive()
-                : DriveWithToolCall(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), probe));
+            .Returns(ci => stream is not null
+                ? stream(ci.ArgAt<CancellationToken>(5))
+                : probe is null
+                    ? Drive()
+                    : DriveWithToolCall(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), probe));
 
         var plugins = Substitute.For<IPluginService>();
         if (probe is not null)
@@ -196,6 +228,10 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         // HeadlessTurnExecutor -> concrete BackgroundAssistantTurnRunner, which now requires it. Omit this
         // and the resolve throws inside the launcher's dispatch task, which is swallowed there.
         services.AddSingleton<IExecutingRunStore>(_executing);
+        // Batch 08: the loop needs the SAME registry the launcher registers its sink with, or it can never
+        // consume the request the launcher's dispatch made possible (the orchestrator's parameter is
+        // trailing-optional, so an unregistered store is silently "no steering" — the pre-Batch-08 loop).
+        if (steering is not null) services.AddSingleton(steering);
         services.AddTransient<BackgroundAssistantTurnRunner>();
         services.AddTransient<HeadlessTurnExecutor>();
         services.AddTransient<AgentRunOrchestrator>();
@@ -204,7 +240,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var launcher = new HeadlessRunLauncher(
             sp.GetRequiredService<IServiceScopeFactory>(), _chats, _runs, settings, providers, personas,
             _executing, NullLogger<HeadlessRunLauncher>.Instance,
-            runsBaseDirOverride: runsBaseOverride ?? _runsBase, workspaces: workspaces);
+            runsBaseDirOverride: runsBaseOverride ?? _runsBase, workspaces: workspaces, steering: steering);
         return (launcher, planner);
     }
 
@@ -1333,5 +1369,202 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Contains(handle.RunId, workspaces.TornDown);
 
         await launcher.StopAsync(CancellationToken.None);
+    }
+
+    // ---------------------------------------------------------------------------------------------------
+    // Batch 08 G4: the two steering asymmetries this launcher owns — chat delete REVOKES a pending pause,
+    // shutdown deliberately does NOT. Not listed in the impl spec's §17 table for G4 (which names only the new
+    // live-parity file); they live here because this is where a real launcher with a real dispatch already
+    // exists, and lifting that fixture a third time would be worse than two facts on it.
+    // ---------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Records every steering call in order, delegating to a real <see cref="RunSteeringStore"/>. The chat-delete
+    /// revocation has no other observable: deleting the chat takes the run row with it by FK cascade, so
+    /// "the run settled Cancelled rather than Paused" is not assertable — there is no row left to read, and the
+    /// pause CAS would have matched zero rows even if the request HAD been honoured. The order the calls
+    /// happened in is the claim, so the order is what this reads.
+    /// </summary>
+    private sealed class RecordingSteeringStore : IRunSteeringStore
+    {
+        private readonly RunSteeringStore _inner = new();
+        private readonly List<string> _log = new();
+
+        /// <summary>Snapshot, taken under the same lock every append uses.</summary>
+        public List<string> Log
+        {
+            get { lock (_log) return _log.ToList(); }
+        }
+
+        public int ConsumedTrue { get; private set; }
+
+        private void Add(string entry)
+        {
+            lock (_log) _log.Add(entry);
+        }
+
+        public void RegisterDispatch(Guid runId, Action cancel)
+        {
+            Add("register");
+            _inner.RegisterDispatch(runId, cancel);
+        }
+
+        public void ReleaseDispatch(Guid runId, Action ownCancel)
+        {
+            Add("release");
+            _inner.ReleaseDispatch(runId, ownCancel);
+        }
+
+        public bool RecordPauseRequest(Guid runId)
+        {
+            var ok = _inner.RecordPauseRequest(runId);
+            Add(ok ? "record" : "record-refused");
+            return ok;
+        }
+
+        public void FireCancel(Guid runId)
+        {
+            Add("fire");
+            _inner.FireCancel(runId);
+        }
+
+        public bool TryConsumePauseRequest(Guid runId)
+        {
+            var consumed = _inner.TryConsumePauseRequest(runId);
+            if (consumed) ConsumedTrue++;
+            Add(consumed ? "consume" : "consume-empty");
+            return consumed;
+        }
+
+        public void RevokePauseRequest(Guid runId)
+        {
+            Add("revoke");
+            _inner.RevokePauseRequest(runId);
+        }
+
+        /// <summary>
+        /// Not part of the interface: the run token's own cancellation, appended to the SAME log so the two
+        /// orderings are comparable at all. Called from a <c>CancellationToken.Register</c> callback, which runs
+        /// INSIDE <c>Cts.Cancel()</c>.
+        /// </summary>
+        public void NoteDispatchCancelled() => Add("cancelled");
+    }
+
+    /// <summary>
+    /// §5.3 revocation site 3. Deleting the chat is TERMINAL intent — the run row goes with it and its workspace
+    /// is about to be removed — so an unconsumed pause request must be revoked BEFORE the dispatch is cancelled.
+    /// Without the revoke the unwinding loop reads that cancel as "the user asked to pause", which is the
+    /// wrong-direction failure the hardening exists for: a run whose chat the user deleted comes back resumable.
+    /// <para>
+    /// The ordering is deterministic and rests on two measured facts: <c>AssistantChatService</c> raises
+    /// <c>ChatsChanged</c> SYNCHRONOUSLY inside <c>DeleteAsync</c>, and the token registration below runs INSIDE
+    /// <c>Cts.Cancel()</c> — so by the time <c>DeleteAsync</c> returns, both the revoke and the cancel are in the
+    /// log, in the order the production line put them there. The loop's own clear-on-entry revoke happens before
+    /// the request is recorded, which is why the assertion looks for a revoke AFTER the record rather than for
+    /// "a revoke exists".
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task ChatDelete_RevokesAPendingPause_BeforeCancellingTheDispatch()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var store = new RecordingSteeringStore();
+        var planEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var (launcher, planner) = BuildLauncher(steering: store);
+        planner.OnPlanWithToken = async ct2 =>
+        {
+            planEntered.TrySetResult();
+            // Appends to the SAME log the store writes, which is the only way the two orderings are comparable.
+            using var registration = ct2.Register(store.NoteDispatchCancelled);
+            await release.Task;
+        };
+
+        var handle = await launcher.LaunchAsync(new HeadlessRunRequest("a", AgentRunTrigger.User), ct);
+        await planEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        // A pause the user asked for that no step has consumed yet — accepted, so the revoke has something real
+        // to revoke (a refused record would make this fact vacuous).
+        Assert.True(store.RecordPauseRequest(handle.RunId));
+
+        await _chats.DeleteAsync(handle.ChatId, ct);
+
+        var log = store.Log;
+        var recorded = log.IndexOf("record");
+        var cancelled = log.IndexOf("cancelled");
+        var revoked = log.FindIndex(recorded + 1, e => e == "revoke");
+        Assert.True(recorded >= 0 && cancelled > recorded, $"the delete did not cancel the dispatch: [{string.Join(",", log)}]");
+        Assert.True(revoked >= 0 && revoked < cancelled, $"the revoke must precede the cancel: [{string.Join(",", log)}]");
+
+        // Let the dispatch unwind and prove the request is really gone rather than merely unread: the loop's
+        // catch(OperationCanceledException) arm consumes on this path, and it must come back empty.
+        release.TrySetResult();
+        await launcher.StopAsync(CancellationToken.None);
+        Assert.Equal(0, store.ConsumedTrue);
+        Assert.Null(await _runs.GetAsync(handle.RunId, ct)); // the chat took its run with it (FK cascade)
+
+        try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
+    }
+
+    /// <summary>
+    /// The deliberate asymmetry (§5.3), asserted rather than commented: <c>StopAsync</c> is app shutdown and it
+    /// does NOT revoke, so a pause request that is still unconsumed when the shutdown token fires is honoured —
+    /// the run comes back <see cref="AgentRunState.Paused"/> and RESUMABLE instead of <c>Cancelled</c>, which is
+    /// the recoverable direction and the one the user asked for.
+    /// <para>
+    /// Deterministic because the consume happens INSIDE the dispatch task, and <c>StopAsync</c> awaits every
+    /// dispatch task before returning — so reading the row after the await cannot race
+    /// <c>ReleaseDispatch</c> (which is the last thing in the dispatch's <c>finally</c>, after the loop that
+    /// consumed). Do not "simplify" that await away.
+    /// </para>
+    /// <para>
+    /// The pause is recorded directly on the store rather than through <c>IAgentRunSteeringService</c> because
+    /// the service also FIRES the cancel, and the whole point here is that the SHUTDOWN is what cancels.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Shutdown_DoesNotRevokeAPendingPause_SoTheRunComesBackResumable()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var store = new RunSteeringStore();
+        var stepEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var (launcher, planner) = BuildLauncher(
+            steering: store, stream: token => HoldInsideTheStep(stepEntered, token));
+        planner.Steps = 2; // a REAL plan, so the run reaches the drain loop instead of the single-turn degrade
+
+        var handle = await launcher.LaunchAsync(new HeadlessRunRequest("a", AgentRunTrigger.User), ct);
+        await stepEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        // The row is Running with a step in flight — the only state a user pause is legal from, and the state
+        // that makes the CAS below win. Asserted so a future change that parks the run somewhere else cannot
+        // make this fact pass through the Planning hole (where the CAS loses and writes nothing).
+        var mid = await _runs.GetAsync(handle.RunId, ct);
+        Assert.Equal(AgentRunState.Running, mid!.State);
+        Assert.True(store.RecordPauseRequest(handle.RunId));
+
+        await launcher.StopAsync(CancellationToken.None);
+
+        var final = await _runs.GetAsync(handle.RunId, ct);
+        Assert.Equal(AgentRunState.Paused, final!.State);                                    // not Cancelled
+        Assert.Null(final.CompletedAt);                                                     // not settled
+        Assert.Equal(AgentRunService.UserPausedReason, RunPauseEnvelope.ReadReason(final));  // a USER pause
+        Assert.All(final.Plan, s => Assert.Equal(AgentStepStatus.Pending, s.Status));        // the step went back
+        var next = await _runs.NextPendingStepAsync(handle.RunId, ct);
+        Assert.Equal("S0", next!.Title);                                                     // …and is drainable
+
+        try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
+    }
+
+    /// <summary>Signals that a step is in flight, then holds it there until its own token is cancelled.</summary>
+    private static async IAsyncEnumerable<ChatStreamItem> HoldInsideTheStep(
+        TaskCompletionSource entered, [EnumeratorCancellation] CancellationToken ct)
+    {
+        entered.TrySetResult();
+        await Task.Delay(Timeout.Infinite, ct);
+#pragma warning disable CS0162
+        yield break;
+#pragma warning restore CS0162
     }
 }

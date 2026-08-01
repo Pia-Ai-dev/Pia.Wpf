@@ -1129,6 +1129,14 @@ public sealed class ChatSession : IDisposable
         message.Stats = new AnswerStats(totalTokens, finished.Model);
     }
 
+    /// <summary>
+    /// Window teardown / LRU retire. Batch 08 D1: this cancel deliberately does <b>not</b> revoke a pending
+    /// user-pause request (unlike Stop and clear-conversation, which do — <c>AssistantViewModel</c>). The
+    /// reaper never retires a session with a turn in flight, so the reachable case is the window closing on a
+    /// running Planned run, and there a pause request that is still unconsumed yielding a <c>Paused</c>,
+    /// RESUMABLE run is strictly better than a <c>Cancelled</c> one. Same asymmetry, same reason, as
+    /// <c>HeadlessRunLauncher.StopAsync</c>.
+    /// </summary>
     public void Dispose()
     {
         if (_disposed) return;

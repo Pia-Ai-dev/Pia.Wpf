@@ -59,6 +59,15 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     /// </para>
     /// </summary>
     private readonly Func<StepPersonaResolver>? _stepPersonas;
+
+    /// <summary>
+    /// Batch 08 D1: the per-dispatch steering registry an interactive Planned run registers its cancel SINK
+    /// with, so a user pause can interrupt the in-flight step. Null ⇒ no live run is ever registered, so a
+    /// pause of a live run is REFUSED (<c>RecordPauseRequest</c> is registration-scoped) — i.e. exactly the
+    /// pre-Batch-08 behaviour, which is what keeps the hand-constructed call sites source-compatible.
+    /// </summary>
+    private readonly IRunSteeringStore? _runSteering;
+
     private readonly SynchronizationContext _syncContext;
 
     /// <summary>Per-file line cap for <c>@Files</c> content injected directly into the prompt.</summary>
@@ -139,7 +148,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // Batch 07 G6: per-step persona resolution for an interactive Planned run, as a factory so each run
         // gets its own resolver (see the field). Trailing and defaulted for the same reason as the two above —
         // null means "every step runs on the run persona", i.e. today.
-        Func<StepPersonaResolver>? stepPersonas = null)
+        Func<StepPersonaResolver>? stepPersonas = null,
+        // Batch 08 D1: the steering registry this manager registers an interactive Planned run's cancel sink
+        // with (§5.3 producer 3). Trailing and defaulted for the same reason as the three above — null means
+        // "a live run cannot be paused", which is the pre-Batch-08 behaviour, not a broken manager.
+        IRunSteeringStore? steering = null)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -167,6 +180,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         _agentTimelineService = agentTimelineService;
         _runWorkspaces = workspaces;
         _stepPersonas = stepPersonas;
+        _runSteering = steering;
         _syncContext = SynchronizationContext.Current
             ?? throw new InvalidOperationException("ChatSessionManager must be created on the UI thread");
 
@@ -868,10 +882,40 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             // Budget envelope from user settings (clamped in FromBudget); defaults match RunProfile.Interactive.
             var profile = RunProfile.FromBudget(settings.AgentMaxSteps, settings.AgentMaxReplans, settings.AgentWallClockMinutes);
 
-            _agentRunOrchestrator
-                .RunAsync(run, live, persona, request.Provider, profile, session.Cts!.Token)
-                .SafeFireAndForget(_logger);
+            // Batch 08 D1, §5.3 producer 3: THIS dispatch's cancel sink is session.Cancel(), and the choice is
+            // the whole reason the registry carries a sink at all. A second linked CTS (D1's candidate (a))
+            // cannot release a step blocked at ChatState.WaitingForTool — ChatSession awaits
+            // ActionCardInfo.WaitForUserDecisionAsync(), which takes NO CancellationToken — and for an
+            // interactive Planned run the action card is the NORMAL path: write_file is not auto-approve
+            // eligible, so every write goes through a card the user clicks. Cancel() releases the pending cards
+            // AND cancels session.Cts, which is the token the run below is linked from.
+            // A local delegate, not an inline lambda, because the same instance is the release token: reference
+            // equality is what stops this dispatch's unwind from dropping a resume's registration (hazard 7).
+            Action steerCancel = () => { try { session.Cancel(); } catch { /* already torn down */ } };
+            _runSteering?.RegisterDispatch(run.Id, steerCancel);
+
+            // Read the token on THIS thread, before the fire-and-forget, exactly as the direct call did.
+            var runToken = session.Cts!.Token;
+            RunPlannedAsync().SafeFireAndForget(_logger);
             return;
+
+            // The wrapper exists only to own the release. Same `finally` discipline as the launcher's two
+            // dispatches: the registration is dropped on EVERY exit — including the paths where the run faults
+            // before the orchestrator's own bookkeeping runs — and ReleaseDispatch is ownership-guarded, so a
+            // resume that re-registered while this run was still unwinding keeps its own sink and its own
+            // request. RunAsync never throws (it settles the run itself), so this cannot swallow a failure the
+            // SafeFireAndForget above would otherwise log.
+            async Task RunPlannedAsync()
+            {
+                try
+                {
+                    await _agentRunOrchestrator.RunAsync(run, live, persona, request.Provider, profile, runToken);
+                }
+                finally
+                {
+                    _runSteering?.ReleaseDispatch(run.Id, steerCancel);
+                }
+            }
         }
 
         // Persist on the first message so the chat appears in history/flyout immediately —

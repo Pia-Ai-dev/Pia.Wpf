@@ -1513,4 +1513,142 @@ public class ChatSessionManagerTests
             try { Directory.Delete(runsBase, recursive: true); } catch { /* best effort */ }
         }
     }
+
+    // ---------------------------------------------------------------------------------------------------
+    // Batch 08 G4 / impl spec §5.3 producer 3: an interactive Planned run registers its cancel SINK, and the
+    // wrapper around the dispatch releases it. Not in §17's file table for G4 — added because both lines are
+    // trailing/optional wiring: delete either and this file, the new live-parity file and the whole batch stay
+    // green while a live run can no longer be paused at all (RecordPauseRequest is registration-scoped, so the
+    // pause would be silently REFUSED).
+    // ---------------------------------------------------------------------------------------------------
+
+    /// <summary>Parks inside the planner and signals both entry and unwind, so a fact needs no sleep.</summary>
+    private sealed class ParkingPlanner : Pia.Services.Interfaces.IAgentPlanner
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<Pia.Services.Interfaces.PlanResult> PlanAsync(
+            string goal, Pia.Services.RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
+        {
+            Entered.TrySetResult();
+            await Task.Delay(Timeout.Infinite, ct);
+            return Pia.Services.Interfaces.PlanResult.Fallback;
+        }
+
+        public Task<Pia.Services.Interfaces.PlanResult> ReplanAsync(
+            Pia.Services.RunContext ctx, string? failure, Persona persona, AiProvider provider, CancellationToken ct)
+            => Task.FromResult(Pia.Services.Interfaces.PlanResult.Fallback);
+    }
+
+    /// <summary>
+    /// Pass-through over the real <c>RunSteeringStore</c> that signals <see cref="Released"/> when the dispatch
+    /// drops its registration. The release happens in the wrapper's <c>finally</c>, AFTER the orchestrator has
+    /// returned, and nothing else in the process observes it — so without this signal the only alternative would
+    /// be polling, i.e. a sleep dressed up as an assertion.
+    /// </summary>
+    private sealed class ReleaseSignallingSteeringStore : Pia.Services.Interfaces.IRunSteeringStore
+    {
+        private readonly Pia.Services.RunSteeringStore _inner = new();
+
+        public TaskCompletionSource Released { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void RegisterDispatch(Guid runId, Action cancel) => _inner.RegisterDispatch(runId, cancel);
+
+        public void ReleaseDispatch(Guid runId, Action ownCancel)
+        {
+            _inner.ReleaseDispatch(runId, ownCancel);
+            Released.TrySetResult();
+        }
+
+        public bool RecordPauseRequest(Guid runId) => _inner.RecordPauseRequest(runId);
+
+        public void FireCancel(Guid runId) => _inner.FireCancel(runId);
+
+        public bool TryConsumePauseRequest(Guid runId) => _inner.TryConsumePauseRequest(runId);
+
+        public void RevokePauseRequest(Guid runId) => _inner.RevokePauseRequest(runId);
+    }
+
+    /// <summary>
+    /// The manager with a steering store and a planner it parks in. A THIRD builder rather than a parameter on
+    /// either of the two above, for the reason <see cref="CreateIsolatingSut"/> states about itself:
+    /// <see cref="CreateSut"/> passes the ctor positionally with every trailing optional omitted, and keeping
+    /// one call site that way is what proves the new parameter is source-compatible.
+    /// </summary>
+    private ChatSessionManager CreateSteeringSut(
+        Pia.Services.Interfaces.IAgentPlanner planner, Pia.Services.Interfaces.IRunSteeringStore steering)
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSynchronizationContext());
+
+        var orchestrator = new Pia.Services.AgentRunOrchestrator(
+            _runService, planner,
+            new Pia.Tests.Services.FakeVerifier(),
+            NullLogger<Pia.Services.AgentRunOrchestrator>.Instance);
+
+        return new ChatSessionManager(
+            NullLogger<ChatSessionManager>.Instance,
+            NullLoggerFactory.Instance,
+            _chatService, _settings, _personas, _providers, _composer,
+            _titleService, _cards, _plugins, _ai, _permissions, _loc,
+            () => _tokenMap, _notifier, _flow, _files, orchestrator, _runService, _capability,
+            _headlessLauncher, _windowManager, _executingRuns,
+            steering: steering);
+    }
+
+    /// <summary>
+    /// §5.3 producer 3, both halves. An interactive Planned run must register a cancel sink that is
+    /// <c>session.Cancel()</c> — the ONE thing that also releases a pending action card, which is the normal way
+    /// an interactive step blocks — and must drop that registration when the dispatch ends.
+    /// <para>
+    /// Non-vacuity is the point of every assertion here: <c>RecordPauseRequest</c> returning <c>true</c> is only
+    /// possible while a dispatch of that run is registered, firing the sink is observed on the SESSION's own
+    /// token (not on some private CTS), and the same record call returning <c>false</c> at the end is the
+    /// release. Drop <c>RegisterDispatch</c> and the first assertion reds; drop the release and the last one does.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task StartPlannedTurn_RegistersTheSessionsCancelSink_AndReleasesItWhenTheDispatchEnds()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var steering = new ReleaseSignallingSteeringStore();
+        var planner = new ParkingPlanner();
+        var sut = CreateSteeringSut(planner, steering);
+        var session = sut.GetOrCreateActiveForNewChat();
+
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
+            .Returns(new Persona { Name = "Tester", SystemPrompt = "be helpful" });
+        _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>())
+            .Returns(new AiProvider { Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI });
+        _composer.PrepareTurn(default!, default!, default!, default)
+            .ReturnsForAnyArgs(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
+
+        var runId = Guid.NewGuid();
+        _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ci => new AgentRun
+            {
+                Id = runId,
+                ChatId = ci.Arg<AgentRunCreateRequest>().ChatId,
+                RunShape = RunShape.Planned,
+                State = AgentRunState.Planning,
+            });
+
+        await sut.StartPlannedTurnAsync(session, "do the thing");
+        await planner.Entered.Task.WaitAsync(TimeSpan.FromSeconds(20), ct); // the dispatch is really running
+
+        // (1) REGISTERED: a pause of this run is accepted rather than refused. This is the whole gate — the
+        //     steering service records nothing for a run no dispatch here owns.
+        var turnToken = session.Cts!.Token;
+        Assert.True(steering.RecordPauseRequest(runId));
+
+        // (2) …and the sink is the SESSION's cancel, which is what releases a pending action card as well as
+        //     cancelling the turn. Observed on the token the manager handed the run, not on the store.
+        Assert.False(turnToken.IsCancellationRequested);
+        steering.FireCancel(runId);
+        Assert.True(turnToken.IsCancellationRequested);
+
+        // (3) RELEASED on the way out, so the next dispatch of this run starts from a clean registration and a
+        //     request this one never consumed cannot be honoured by it.
+        await steering.Released.Task.WaitAsync(TimeSpan.FromSeconds(20), ct);
+        Assert.False(steering.RecordPauseRequest(runId));
+    }
 }
