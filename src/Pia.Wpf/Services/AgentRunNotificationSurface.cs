@@ -149,7 +149,7 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
             && _windowManager.ActiveAssistantChatId == run.ChatId)
             return;
 
-        if (state is AgentRunState.WaitingForInput or AgentRunState.Paused)
+        if (AgentRunStates.IsParked(state))
         {
             _flowService.Publish(new FlowItemDraft
             {

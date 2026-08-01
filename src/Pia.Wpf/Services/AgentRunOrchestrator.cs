@@ -792,6 +792,9 @@ public sealed class AgentRunOrchestrator
                 // sibling (SafeRecordStep AND ctx.RecordStep, so the critic and any replan see failed work, with
                 // "child run did not settle" as the recorded outcome) and its tokens are dropped as well: the
                 // user presses Pause and the parent replans around durable, resumable work.
+                //
+                // Same two-member set as AgentRunStates.IsParked — kept as a literal case pattern here because
+                // a switch case label cannot invoke a method.
                 case AgentRunState.WaitingForInput or AgentRunState.Paused:
                     // §0.9/D13: HeadlessRunHandle.Completion settles on a budget PAUSE too, which is not
                     // terminality. Roll up NOTHING — the child will resume and its tokens are pushed once, from
@@ -973,7 +976,7 @@ public sealed class AgentRunOrchestrator
                 // reaches a budget-parked one. Without it every cascade-paused child of a re-dispatched fan-out
                 // leaks forever with its own visible stub chat, which is precisely what this settle exists to
                 // prevent.
-                if (old.State is AgentRunState.WaitingForInput or AgentRunState.Paused)
+                if (AgentRunStates.IsParked(old.State))
                     await _runService.FailAsync(old.Id, "superseded by a re-dispatched fan-out", cancelled: true,
                         CancellationToken.None).ConfigureAwait(false);
 

@@ -59,6 +59,22 @@ public enum AgentRunState
 }
 
 /// <summary>
+/// Explicit-set predicates over <see cref="AgentRunState"/> — never a range (D7:
+/// <see cref="WaitingForChildren"/> sits above the terminal band, so any <c>State &lt; x</c> comparison
+/// lies about it).
+/// </summary>
+public static class AgentRunStates
+{
+    /// <summary>
+    /// True for a run that has stalled short of a terminal settle and can be resumed: budget-parked
+    /// (<see cref="AgentRunState.WaitingForInput"/>) or user/cascade-paused (<see cref="AgentRunState.Paused"/>).
+    /// Batch 08 wrote this exact two-member set out at three call sites — the fan-out parked arm, the
+    /// stale-child settle and the Flow notification gate — before it was named here.
+    /// </summary>
+    public static bool IsParked(AgentRunState state) => state is AgentRunState.WaitingForInput or AgentRunState.Paused;
+}
+
+/// <summary>
 /// Lifecycle status of a single step. Persisted as <c>int</c> — append-only, never reorder.
 /// </summary>
 public enum AgentStepStatus
