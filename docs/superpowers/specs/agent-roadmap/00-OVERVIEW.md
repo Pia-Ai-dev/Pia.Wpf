@@ -132,6 +132,86 @@ position from git, always: `git rev-list --count origin/feature/agent-run-spine.
 decides whether a push is safe. One thing Batch 14 does **not** change about that decision, unlike Batch 06:
 it moves no user-visible behaviour at all, so on this batch alone the two refs differ only in test coverage._
 
+_**Snapshot addendum: 2026-08-01 — as-built at `3de2ac1`, which is [Batch 08](08-live-steering.md).** Nothing
+above is retracted; every paragraph still describes the tree it measured. What none of them could know is that
+**live steering has shipped**, so `AgentRunState.Paused(4)` — reserved since Phase 1, and deliberately stepped
+*around* by Phase 3 (G8 appended `WaitingForChildren = 8` rather than taking ordinal 4) — is now a **driven
+state**, with four CASes, a fan-out cascade, a validated plan-mutation API and a panel that drives all of it.
+**Sixteen commits**, and they do not form one range: a Design commit (`7772602`) that belongs to no batch,
+eight build groups plus a simplify (`8166f4a` → `c4d141b`), the adversarial review (`12601ef`), and a
+**three-commit** fix pass (`59dfbde` → `3de2ac1`). **Batches 10, 11, 05, 12, 04, 03, 02, 06, 07, 13, 09, 14 and
+08 have shipped**, which empties the ranked remainder in this folder — Rank 1 is the manual Windows smoke round
+**alone**, and nothing is queued behind it here. Read the two paragraphs after the chain before anything else in
+this block: this batch **shipped its own named central risk as a defect**, and only an adversarial review with
+**executing** verifiers caught it._
+
+_**The Batch 08 gate, measured by the orchestrator on the real trees rather than copied from a commit body.**
+Baseline before the batch: **2734 total / 0 failed / 2733 passed / 1 skipped**, with Debug and Release
+`-t:Rebuild -v:n` both **0 Warning(s) / 0 Error(s)**. **That is exactly the number this file already records for
+`fa331ec`** — and the two commits between them (`1941e3c`, Batch 14's docs commit, and `7772602`, this batch's
+Design commit) are docs-only — so the doc was accurate and the baseline needed no re-derivation. Final tree
+`3de2ac1`: Debug **0/0** and Release **0/0** under `-t:Rebuild -v:n`, with **6** genuine `csc.exe` invocations
+in each log (count `Roslyn.bincore.csc.exe /noconfig`, **not** `CoreCompile:` headers), and the suite at
+**2882 total / 0 failed / 2881 passed / 1 skipped** — run **TWICE, identical**, with neither known intermittent
+firing in either run._
+
+_**One intermediate tree DID cost the known intermittent, and it is recorded rather than skipped — quoting only
+the clean runs is how an intermittent turns into an excuse, and this file has now said so about itself three
+times above.** At `c4d141b` (end of build + simplify, before the review) run 1 was **2853 / 1 failed** at
+864 ms, the failure being
+`AssistantChatConcurrencyTests.DeleteAllAsync_WithAnotherConnectionCommittingThroughout_Completes` — the
+known-probabilistic one below — which then passed **13/13 isolated, three times running**, and a second full
+run came back **2853 / 0 failed**. Consistent with the "low single-digit percent, bursty, load-dependent"
+statement below; it is not a new observation and it does not change that rate._
+
+_**The Batch 08 chain, measured at every stop, never inferred from a diff and never read off a commit body:**
+2734 (baseline) → **2741** (G1, the D5 premise, test-only) → 2757 (G2) → 2772 (G3) → 2780 (G4) → **2787** (G5,
+the D6 cascade) → 2803 (G6) → 2818 (G7) → **2853** (G8a–G8c, the UI) → **2853** (SIMPLIFY, unchanged as
+required — a simplify that moves the count has changed behaviour) → **2858** (F1+F2) → **2864** (F3+F4) →
+**2882** (the should-fix pass). **NET +148**, of which **+29** is the fix pass alone: the review did not merely
+correct this batch, it measurably enlarged what the batch pins._
+
+_**The thing that matters most, and it is not the count. Batch 08 SHIPPED ITS OWN NAMED CENTRAL RISK AS A
+DEFECT.** The batch spec's guardrail read, verbatim (`08-live-steering.md:167`–`:169`): *"The pause path must be
+demonstrated to leave a RESUMABLE run, not a `Cancelled` one, on both executors. D1 makes this the single
+easiest thing in the batch to get wrong, and the failure is silent in the sense that the run does settle — just
+terminally."* As built at `c4d141b`, a user pause settled the run **terminally on three reachable paths**, and
+the adjudicator reproduced one of them itself, by execution:_
+
+```
+ROW-IN-PROLOGUE=Running ACCEPTED=True FINAL=Cancelled COMPLETEDAT=SET RESUMABLE=False
+STEPS=[s1:Done,g1:Done,g2:Done] REPLANS=0
+```
+
+_— both children had **finished their work** and the run was thrown away anyway, `CompletedAt` stamped, with no
+claim path back through the UI. **Root cause, one sentence:** the pause decision was keyed on the persisted row,
+which is transiently wrong — it reads `Running` for the whole fan-out dispatch prologue — and the cascade's
+child filter was keyed on **terminality** instead of on the **pausable set**. **Why the suite missed it, and
+this is the reusable lesson:** every cascade fact awaited `WaitingForChildren` before pausing, so the window was
+**structurally outside** the tests. The tests were not sloppy — they were pinned to the state the design
+reasoned about, and the defect lived in the state it did not. The build was 0/0 and the suite green the entire
+time._
+
+_**All four must-fixes are CLOSED** — `59dfbde` (F1+F2), `f46e95c` (F3+F4), `3de2ac1` (the should-fixes) — and
+the fix added deterministic facts that pause **INSIDE** the prologue, held there by a `TaskCompletionSource` the
+fact controls rather than by a sleep, which is the whole difference between a regression guard and a race. The
+review filed **28** findings resolving to **23 distinct** (21 defects + 2 coverage gaps): 4 must-fix, 11
+should-fix, 6 nits, and **0 refuted**. Read the asymmetry that "0 refuted" hides, because it is the argument for
+how the next review is staffed: three lens *arguments* were corrected on adjudication, and **one lens-level
+NEGATIVE was overturned by execution** — lens 4 reported that it could not break the central risk, and three
+executed `Cancelled` results contradict it. Two of the six lenses were given worktrees, and both of those are
+the lenses that executed._
+
+_**Git position, described rather than counted — this file has been burnt by a hardcoded number four times and
+says so below.** Local-only is everything the paragraphs above describe **plus** all sixteen of Batch 08's
+commits and this docs commit. `origin/feature/agent-run-spine` did not move, and **this pass did not push, merge
+or rebase** — it was instructed not to and did not. Read the position from git, always:
+`git rev-list --count origin/feature/agent-run-spine..HEAD` for the number and `git log --oneline
+origin/feature/agent-run-spine..HEAD` for *which*, and the second is still the half that decides whether a push
+is safe. Unlike Batch 14, this batch **does** move user-visible behaviour, and by more than a settings page: a
+run panel on this tree carries a Pause button, five plan-mutation verbs and a steering-note box that a build of
+`origin` does not, and `Paused(4)` is a state a persisted row can now actually hold._
+
 Each remaining batch has its own file in this folder (`01-…` first). A batch is one workflow-sized unit:
 implement behind the plan's guardrails, keep the build green, ship.
 
@@ -168,6 +248,7 @@ was ever branched from `feature/agent-orchestration-loop` / `-headless-runs` / `
 | 19 | `928e27e` → `09522be` | **[Batch 13](13-view-test-host.md)** — the shared WPF test host, and the View coverage three batches had booked as debt behind it: `Pump()` moved off the host thread so a nested frame can no longer lose the request that ends it (`11722ee`), Batch 03's **withdrawn** row-render fact re-landed verbatim, a **second** View parsed — the *settings* `AssistantView`, by reflected binding path rather than by rendered text (`62c974b`) — and the per-step persona avatar's deferred row template (`09522be`). **The first work on this branch that SHORTENS the Rank-1 round.** Gate `2707 / 0 failed / 1 skipped` | ✅ done |
 | 20 | `c7020fe` → `ea77c95` | **[Batch 09](09-scheduler-ui.md)** — the scheduler UI, as a section of the Assistant settings page: `UpdateAsync` gains `specificDate` + `kind` (and the UPDATE statement gains both columns, which it did not carry), making the **re-arm of a settled one-off reachable for the first time**; a narrow `IScheduledJobRunner` over the existing background-service singleton for an owner-checked manual fire; a `ScheduledJobsSettingsViewModel` with full CRUD, enable/disable, last-run outcome and unknown-status tolerance; and 45 new strings in all three locales. **Budget and policy stay global by decision (D1)** — see [`09-scheduler-ui.impl.md`](09-scheduler-ui.impl.md) | ✅ done |
 | 21 | `86934c9` → `17357e0` | **[Batch 14](14-view-coverage-debt.md)** — the View-coverage debt three batches booked and one made possible, as work groups **G1–G4** plus a simplify: the binding-path walk lifted out of one test file into a shared `BindingPathWalker` (G1, a pure move — suite total unchanged, no assertion edited, `FindLogical<T>` de-duplicated from two copies to one), Batch 09's jobs row `DataTemplate` pinned at ten item-scoped paths **plus** the four `RelativeSource AncestorType=ItemsControl` command paths by command *identity* (G2), the run panel's whole non-templated surface walked — 28 tuples / 23 distinct paths, measured — and its branch line rendered in both states (G3), and **five** settings views parsed, one commit each (G4: General, Account, Providers, Optimize, Plugins). **Zero production change**, measured: `git diff --stat 0c5cb42..fa331ec -- src/` is **empty**. Gate `2734 / 0 failed / 1 skipped`, **+11**, Debug and Release both `0 Warning(s) / 0 Error(s)`. **Its docs/design commits sit BEFORE this range and its review + 3-commit fix pass AFTER it — a single range does not describe this batch; see the note below** | ✅ done |
+| 22 | `8166f4a` → `c4d141b` | **[Batch 08](08-live-steering.md)** — live steering, as work groups **G1–G8** plus a simplify: the D5 scheduled-park premise pinned **before** anything was built on it (G1, test-only), `Paused(4)` made writable by a `TryPauseUserAsync` CAS over the explicit set `{Running, Verifying, WaitingForChildren}` and a disjoint `TryResumeFromPauseAsync` claim from `Paused` (G2), the pause-versus-**stop** discriminator plus the aborted step handed back to the plan as `Pending` (G3, Headless), Live parity including the release of an action card that would otherwise hold the step open (G4), D6's cascade — a paused fan-out parent **parks** its children instead of settling them failed (G5), a **validated** plan mutation and a `Skipped` step that survives the next replan (G6), a nudge folded into the next dispatch on the **user** message only (G7), and the panel that drives all seven verbs plus a steering note that survives a resume that never started (G8a–G8c). Gate `2882 / 0 failed / 1 skipped`, **+148**, Debug and Release both `0 Warning(s) / 0 Error(s)` with 6 genuine `csc.exe`. **Its Design commit sits BEFORE this range, and its review + 3-commit fix pass AFTER it — a single range does not describe this batch either; see the note below** | ✅ done |
 
 **Row 21 needs three qualifications, and none of them is new to this table — each has a precedent above.**
 Batch 14's own build is `86934c9` → `17357e0`, nine commits, all under `tests/Pia.Wpf.Tests/Views/`.
@@ -187,6 +268,31 @@ Batch 14's own build is `86934c9` → `17357e0`, nine commits, all under `tests/
   the joint fix pass all land after row 18 begins: `git log 86934c9..17357e0` is the batch's *build*, not the
   batch's *history*. **The docs commit that records all of this is later still and is folded into no range** —
   the `aa5beb9` precedent.
+
+**Row 22 has the SAME three-part shape as row 21, which makes it a pattern rather than an exception — and the
+precedents are already above it, so nothing here is new law.** Batch 08's own build is `8166f4a` → `c4d141b`,
+eleven commits (G1–G8 as ten, plus the simplify).
+
+- **Its Design commit sits BEFORE the range and belongs to no batch**: `7772602`
+  (`08-live-steering.impl.md`, which also corrected the step status D1 got wrong — W2). Exactly the
+  `2266bf7`/`0c5cb42` precedent one row up, and the `c45f792`/`2c3e661` one before that. A
+  `git log 8166f4a..3de2ac1` does not list it; a reader looking for where the batch's sixteen disagreements
+  with its own spec were settled has to look earlier.
+- **The review commit sits INSIDE any naive span from the build's start to HEAD.** `12601ef`
+  (`08-live-steering.review.md`, docs-only) lands between `c4d141b` and the fix pass. Same treatment as
+  `e36b701` one row up, and as `30ebb52` and `17bff5d` before it: docs-only, belongs to no batch, does not break
+  the range it interrupts.
+- **The fix pass lands OUTSIDE the range, and it is three commits, not one** — `59dfbde` (F1+F2, the two
+  must-fixes that settled a paused run terminally), `f46e95c` (F3+F4) and `3de2ac1` (every remaining should-fix
+  and nit, each closed, documented or declined by name). Same shape as rows 17 and 21. **The docs commit that
+  records all of this is later still and is folded into no range** — the `aa5beb9` / `1941e3c` precedent.
+
+**One difference from row 21 worth stating, because it inverts that row's headline.** Batch 14 shipped **zero**
+production change and could therefore only subtract from the Rank-1 round. Batch 08 is the opposite on both
+counts: it ships a new user-visible control surface, twenty-five new strings in each of three locales, and a new
+writable persisted run state — and it **lengthens** Rank 1 by seven. Two rows in a row is not a trend in either
+direction; the two batches are simply different kinds of work, and the table should not be read as if the second
+undoes the first.
 
 **Rows 12 and 13 are siblings, not a sequence — the only place in this table where reading down is misleading.**
 Batch 05 and Batch 12 were authored independently from the same base (`73e15e8`) on two machines, so neither is
@@ -635,6 +741,28 @@ summary line rather than grepping the log — at `-v:n` every warning prints twi
   varies by nearly an order of magnitude — `AccountView` walks 42 distinct paths, `PluginsView` walks 4 of
   which 2 are its own anchors. And nothing here sees a `DataTemplate`'s contents, a `Style.Trigger`, or a
   `loc:Str` reached through `Content=`/`ToolTip=`/`Header=`.
+- **A user can steer a live run, and a pause leaves a run that is RESUMABLE rather than one that is over**
+  (Batch 08). Pause works on **both** executors and on a scheduled run, and the run comes back at
+  `AgentRunState.Paused(4)` with `CompletedAt` null, a `{paused,user}` envelope and a claim path through the
+  panel's Continue — never at `Cancelled`. The step that was in flight is **aborted and handed back to the plan
+  as `Pending`** (its text discarded, its tokens still billed run-level, D2), so a resume re-runs it clean
+  instead of silently dropping it; a `Failed` step the run never got to repair is handed back the same way.
+  Pausing a **delegating parent** cascades: every child that was *pausable* parks, none is cancelled and none is
+  stranded, and Continue **supersedes the paused generation and re-dispatches the group fresh** rather than
+  resuming the old children. While paused, the pending plan is **editable, insertable, reorderable and
+  skippable** through a validated service API — ordinals are assigned service-side so a duplicate or gapped one
+  is unrepresentable rather than merely rejected, titles and intents are flattened and capped at write time, and
+  a user `Skipped` step now survives the next replan (`KeepDoneAsync` keeps `Done or Skipped`) *and* is named to
+  the replanner so it cannot re-add the work. A **nudge** rides the next dispatch on the **user** message only —
+  never the System prompt, because the tokenizer rewrites `ChatRole.User` and nothing else — and it is scoped to
+  the dispatch by decision, not persisted. All steering is **pause-gated**: there is no mutate-a-running-run
+  control, which removes the mutation-versus-drain race by construction. **What it cost to get right is the part
+  to read, not the feature list.** The batch's own guardrail named the pause-leaves-a-resumable-run property as
+  the single easiest thing in it to get wrong, and the batch shipped that exact defect on **three** reachable
+  paths; it took an adversarial review with executing verifiers, then three fix commits and **+29** test cases
+  after the build was already green, to make the sentence at the top of this bullet true. See "Opened by
+  Batch 08" for what is still open, and the snapshot addendum at the head for why the suite could be green over
+  it.
 
 ---
 
@@ -664,8 +792,8 @@ each other by number. Read the **Rank** column for priority.
 
 | Rank | # | Batch | Phase | Size | Depends on |
 |---|---|-------|-------|------|-----------|
-| **1** | — | **Manual Windows smoke round.** The unit half is DONE — 2422 / **0 failed** / 1 skipped at `c92dfdd`, 2026-07-30; **2697 / 0 failed / 1 skipped at `37a0410`**, 2026-07-31, after Phase 3. **Batches 04 and 03 both lengthened this list and neither shortened it**, and 04's share is the sharpest kind: a **user-visible capability removal** (a write in voice mode now declines) that no test can confirm looks right. ~~**Phase 3 lengthened it by FOURTEEN items and shortened nothing**~~ — nine from its own plan's §8, two more its fix pass added, and three from the consolidation pass of 2026-08-01 (`2704 / 0 failed / 1 skipped at 165486e`, the +7 being that pass's own new facts) — and its share is sharper still: 06 **relocates where every unattended run's files land**, which is the first change on this branch that a user could notice without opening a settings page. **AMENDED 2026-08-01: that clause had never registered EITHER of the two batches that have since moved this list, and crediting one meant crediting both.** Phase 3 did lengthen it by fourteen; then **[Batch 13](13-view-test-host.md) SHORTENED four** (`2708 / 0 failed / 1 skipped at 09522be`) — none closed, each a round trip whose silent half became automated — and **[Batch 14](14-view-coverage-debt.md) moved three more: TWO OFF OUTRIGHT and ONE shortened** (`2734 / 0 failed / 1 skipped at fa331ec`, Debug **and** Release `0 Warning(s) / 0 Error(s)` under `-t:Rebuild`, measured by the orchestrator on the finished tree and confirmed by a second identical run). 14 adds **nothing** to this list — it ships no string, no control and no behaviour, `git diff --stat 0c5cb42..fa331ec -- src/` **empty**. What a unit suite cannot cover remains: a real provider round, a real MCP server, a real repo for worktree mode, and the DE/FR render — see the callout above and every “Opened by” section that carries smoke debt, which is now **six**, named rather than counted: Batch 04, Batch 03, Phase 3, Batch 09, Batch 13 and Batch 14 (this row said “all three” until 2026-08-01, when three more sections had accumulated behind it) | — | S | a Windows runner + a live provider + a real git repo |
-| 2 | 08 | [Live steering](08-live-steering.md) — plan mutation / nudge / pause / resume | 4 | L | budget-pause ✅, **sub-agents (07) ✅ shipped** — and `Paused(4)` is still 08's, see below. **Seven decisions RESOLVED 2026-08-01** — see its own file. Was Rank 3 behind 14 until 2026-08-01; 14 shipped, so this moved up by subtraction, not by reprioritisation |
+| **1** | — | **Manual Windows smoke round.** The unit half is DONE — 2422 / **0 failed** / 1 skipped at `c92dfdd`, 2026-07-30; **2697 / 0 failed / 1 skipped at `37a0410`**, 2026-07-31, after Phase 3. **Batches 04 and 03 both lengthened this list and neither shortened it**, and 04's share is the sharpest kind: a **user-visible capability removal** (a write in voice mode now declines) that no test can confirm looks right. ~~**Phase 3 lengthened it by FOURTEEN items and shortened nothing**~~ — nine from its own plan's §8, two more its fix pass added, and three from the consolidation pass of 2026-08-01 (`2704 / 0 failed / 1 skipped at 165486e`, the +7 being that pass's own new facts) — and its share is sharper still: 06 **relocates where every unattended run's files land**, which is the first change on this branch that a user could notice without opening a settings page. **AMENDED 2026-08-01: that clause had never registered EITHER of the two batches that have since moved this list, and crediting one meant crediting both.** Phase 3 did lengthen it by fourteen; then **[Batch 13](13-view-test-host.md) SHORTENED four** (`2708 / 0 failed / 1 skipped at 09522be`) — none closed, each a round trip whose silent half became automated — and **[Batch 14](14-view-coverage-debt.md) moved three more: TWO OFF OUTRIGHT and ONE shortened** (`2734 / 0 failed / 1 skipped at fa331ec`, Debug **and** Release `0 Warning(s) / 0 Error(s)` under `-t:Rebuild`, measured by the orchestrator on the finished tree and confirmed by a second identical run). 14 adds **nothing** to this list — it ships no string, no control and no behaviour, `git diff --stat 0c5cb42..fa331ec -- src/` **empty**. What a unit suite cannot cover remains: a real provider round, a real MCP server, a real repo for worktree mode, and the DE/FR render — see the callout above and every “Opened by” section that carries smoke debt, which is now **six**, named rather than counted: Batch 04, Batch 03, Phase 3, Batch 09, Batch 13 and Batch 14 (this row said “all three” until 2026-08-01, when three more sections had accumulated behind it). **AMENDED AGAIN, later the same day: [Batch 08](08-live-steering.md) LENGTHENED this round by SEVEN items and shortened none** (`2882 / 0 failed / 1 skipped at 3de2ac1`, Debug **and** Release `0 Warning(s) / 0 Error(s)` under `-t:Rebuild` with 6 genuine `csc.exe` each, measured by the orchestrator on the finished tree and confirmed by a second identical run) — the **first** batch since 13 and 14 to move this number **up**, and the day's ledger is therefore two clauses that must not be collapsed into one net: **14 took two items OFF and shortened one; 08 adds seven.** The seven are enumerated **by name** in "Opened by Batch 08" below, with the reason each is unautomatable. **08's three-commit fix pass did NOT shorten this list** — it added unit facts and retired zero manual items — and the smoke-debt sections behind this row are now **seven** | — | S | a Windows runner + a live provider + a real git repo |
+| — | 08 | [Live steering](08-live-steering.md) | 4 | L | ✅ **shipped** — build `8166f4a`→`c4d141b` (G1–G8 + SIMPLIFY, 11 commits), review `12601ef`, **fix pass `59dfbde`→`3de2ac1` outside that range**; `7772602` (the impl spec) sits **before** it and belongs to no batch. Gate `2882 / 0 failed / 1 skipped`, **+148**. `Paused(4)` is now driven, not reserved. **Its own named central risk shipped as a defect and was caught by review, not by the suite** — all 4 must-fixes closed; **adds seven items to Rank 1**; see “Opened by Batch 08” |
 | — | 01 | [Budget-pause polish](01-budget-pause-polish.md) — **empty**: every item closed by the hardening batch + its fix-up; the file keeps only open assumptions | 2 | — | — |
 | — | 05 | [Planner reason-then-emit](05-planner-reason-then-emit.md) | 2 | S–M | ✅ **shipped** `7a41a68`→`d3c8c61` |
 | — | 10 | [Durability & lifecycle](10-durability-and-lifecycle.md) | 2 | M | ✅ **shipped** `e4ad6bf`→`630c2c2` |
@@ -704,12 +832,33 @@ string, no control and no behaviour shipped in either direction — `git diff --
 **empty**, measured. And the prediction that 08 "will lengthen it by at least six items" is untouched, so the
 gap between Rank 1 and Rank 2 is now wider than the paragraph above describes, not narrower.
 
+**AND THAT ONE HAS RESOLVED ITSELF TOO, later on 2026-08-01: Batch 08 shipped, so RANK 1 IS THE MANUAL WINDOWS
+SMOKE ROUND ALONE, and nothing is queued behind it in this folder.** Said plainly because it is the first time
+on this branch that it has been true. Read it off the Rank column rather than taking it from this sentence:
+every other row in the table now carries either `✅ **shipped**` or, for **01**, the `—` its own row explains
+(*"**empty**: every item closed by the hardening batch + its fix-up; the file keeps only open assumptions"*).
+There is no Rank 2. The paragraph above is left standing per this file's habit — "Rank 2 is now 08" is spent,
+and the *pattern* (each shipped batch retires the sentence that promoted it) is the part worth keeping. **Two
+things this does NOT mean.** It does not mean the roadmap is finished: `10-durability-and-lifecycle.md` and
+`11-context-compaction.md` are shipped files, but "Deliberately open" and eleven "Opened by" sections below
+carry work that nobody has scoped into a batch, and the external-framework assessment is a standing decision,
+not a closed one. And it does not mean Rank 1 got closer — **08 moved it further away**, by seven items, which
+is the largest single lengthening since Phase 3's fourteen.
+
 **Batch 08's seven decisions are resolved and its "Key seams" section has been re-measured** (2026-08-01, at
 `aa5beb9`, by inspection — no gate was run and none is claimed). Three of that section's four bullets needed
 correcting and one hazard was **retired by reading the code**: R15's head-of-line block is *not* extended by a
 user pause, because `HeadlessRunHandle.Completion` settles on a park and
 `ScheduledJobBackgroundService.cs:251` already matches `Paused`. That premise is stated in 08's file as
-something to pin with a test before building on, not as a measurement.
+something to pin with a test before building on, not as a measurement. **UPDATED 2026-08-01 (Batch 08 shipped):
+the premise was pinned first, exactly as demanded — G1 (`8166f4a`) is test-only and lands before any code that
+depends on it, and G5 re-pinned it with a REAL user pause driving the real launcher, orchestrator, steering
+service and `ScheduledJobBackgroundService`, with a non-vacuous negative twin. It is now measured, not read.
+The impl spec also corrected where the mechanism lives (W9): `:647`–`:651` is a comment on the fan-out child
+arm, and the mechanism is `HeadlessRunLauncher.cs:359`/`:424`/`:426` plus the park `return` at orchestrator
+`:234`. And the count of "Key seams" bullets that needed correcting went from three to a larger number once the
+code was read properly — `08-live-steering.impl.md` §0 tabulates **sixteen** disagreements between the batch
+spec and the tree at `1941e3c`, of which four are `src/` line references that were simply wrong.**
 
 **Why the manual smoke round now outranks every batch** (this paragraph said “run the tests” until the suite
 was executed on 2026-07-29). Batches 10 and 11 were ranked 1 and 2 because two of Batch
@@ -817,7 +966,10 @@ Each of these was seen and left; the reason is the point.
   a *parked* run stop re-launching every tick. See hermes-comparison §4(b)(2)/§8² and rec #2.
 - **No structured step-result signal.** Step success is still `!string.IsNullOrWhiteSpace(exchange.Visible)`
   (`HeadlessTurnExecutor.cs:256`), so a step that politely explains its own failure records `Done` and the
-  failure-only replan never fires. `RunContext.Scratchpad` (`RunContext.cs:85`) is declared and read/written
+  failure-only replan never fires. `RunContext.Scratchpad` (`RunContext.cs:72` — this read `:85` until
+  2026-08-01; the line number was stale, the item is not, and Batch 08 explicitly did **not** reuse this field
+  as the nudge carrier: D4 gives the nudge its own `Nudge`/`SetNudge`/`AppendNudge` trio because a
+  `StringBuilder` nobody writes is a seam, not a contract) is declared and read/written
   nowhere — the seam for a real `emit_step_result{succeeded, artifactRef}` already exists. The H1 artifact
   probe narrows the blast radius (a missing declared artifact now reaches the critic) but does **not** make a
   step's own verdict structured. hermes-comparison §5/rec #9.
@@ -2226,6 +2378,280 @@ list's whole discipline is about that.** Ordered by how likely someone is to mak
 - **Everything needing a live provider, a live MCP server, a real repo or a restart** — Batch 04 items 2–5 and
   7, Batch 03 items 1–4, Phase 3 §8 items 1–5 and 8, fix-pass item (i). Batch 14 adds nothing to any of them
   and takes nothing off any of them either.
+
+### Opened by Batch 08 (2026-08-01) — known, reasoned, not closed
+
+[Batch 08](08-live-steering.md) is the **first batch since 13 and 14 to make the Rank-1 round LONGER**, and the
+first batch on this branch to ship a new user-visible control surface since Batch 09. The day's ledger, stated
+as two clauses rather than one net because the units differ and Batch 14's section refuses that collapse by
+name: **Batch 14 took two items OFF Rank 1 and shortened a third; Batch 08 adds SEVEN.** Everything below is
+either an item added to that round, a defect closed with a stated exception, a decision awaiting an owner
+ruling, or a hole this batch measured and did not fill.
+
+**THE BATCH SHIPPED ITS OWN NAMED CENTRAL RISK AS A DEFECT, and only an adversarial review with EXECUTING
+verifiers caught it.** Recorded first, at length, and without softening — this is the most important thing in
+the section and burying it under "and then we fixed it" would repeat the failure this file has had to repair
+most often. The guardrail was written down *before* any code, in the batch spec's own Guardrails block
+(`08-live-steering.md:167`–`:169`): *"The pause path must be demonstrated to leave a RESUMABLE run, not a
+`Cancelled` one, on both executors. D1 makes this the single easiest thing in the batch to get wrong, and the
+failure is silent in the sense that the run does settle — just terminally."* As built at `c4d141b` it did
+exactly that, on **three** reachable paths, and the adjudicator reproduced one itself by execution against the
+real orchestrator and real SQLite: `ROW-IN-PROLOGUE=Running ACCEPTED=True FINAL=Cancelled COMPLETEDAT=SET
+RESUMABLE=False STEPS=[s1:Done,g1:Done,g2:Done] REPLANS=0` — **both children had finished their work** and the
+run was thrown away anyway, with no claim path back through the UI. The three paths were F1 (a cascade fired at
+children outside the pausable set, dragging the parent to a terminal `Failed`), F2 (a pause landing in the
+fan-out **dispatch prologue**, where the row already reads `Running` but the cascade branch is not yet armed)
+and F3 (a pause landing in the resume ramp-up between `RegisterDispatch` and the loop's revoke-on-entry).
+**Root cause, one sentence:** the pause decision was keyed on the persisted row, which is transiently wrong,
+and the cascade's child filter was keyed on **terminality** instead of on the **pausable set**.
+
+**Why the shipped suite missed it, and this is the reusable half.** Every cascade fact in the batch awaited
+`WaitingForChildren` before pausing, so the dangerous window was **structurally outside** the tests — not
+thinly covered, *unreachable* from them. The tests were not sloppy; they were pinned to the state the design
+reasoned about, and the defect lived in the state the design did not name. The build was `0 Warning(s)` in both
+configurations and the suite was green the whole time, at 2853 cases. **Two design lessons worth carrying to
+the next batch:** (i) when a decision is keyed on a persisted row, ask what that row says *during* a dispatch
+prologue, not only at the boundaries a test can await; and (ii) a guardrail that names the single easiest thing
+to get wrong is a reason to give a lens a **worktree**, not a reason to assume the builder read it.
+
+**The review's own results, recorded as RESULTS** — because this file has been burnt before by writing a pass's
+silence down as "no verdict" (see the correction earlier in this document) and will not repeat it.
+[`08-live-steering.review.md`](08-live-steering.review.md) (`12601ef`) ran **six** independent refutation
+lenses over `7772602..c4d141b`; **four read, two executed**, and the adjudicator executed four probes of its
+own against the real orchestrator, real SQLite and a real ViewModel, all deleted afterwards. **28 findings
+filed, resolving to 23 distinct — 21 defects + 2 coverage gaps.** By severity: **4 must-fix, 11 should-fix,
+6 nits**, plus the 2 gaps. **0 REFUTED.** Read the asymmetry that last number hides rather than the number:
+**three lens *arguments* were corrected on adjudication** (lens 5's F3 window width — the window is
+milliseconds, not two `_gate`-serialized SQLite ops, and a pause during `_slots.WaitAsync` is *not* in it;
+lenses 1+2's F2 window boundary — the first two prologue awaits swallow OCE, so the reachable window starts at
+the launch loop; and lens 2's "`TryPauseUserAsync`'s `WaitingForChildren` source is unreachable", which is
+correct and *sharpens* F2 rather than weakening it), **one finding was narrowed** (F13, should-fix → nit), and
+**one lens-level NEGATIVE was overturned by execution**: lens 4 reported *"I found no path that settles
+`Cancelled` on a pause"*, and three executed `Cancelled` results contradict it. A read-only "I could not break
+it" is not a result of the same kind as an executed break — that asymmetry is precisely why two of the six
+lenses were given worktrees, and both of the lenses that executed found a must-fix. **Fourteen** refutation
+attempts also came back **clean with their evidence attached** (the four CASes' disjointness, kill/restart
+survival, all six non-pausable boundary states, the D5 premise, the panel↔service handover's adversarial set,
+child-slot-pool exhaustion, executor parity, trilingual parity, logging privacy, D7) — each a result, not a
+silence.
+
+**All four must-fixes are CLOSED**, and the fix pass is three commits, not one: `59dfbde` (F1+F2), `f46e95c`
+(F3+F4), `3de2ac1` (every remaining should-fix and nit, each closed, documented or declined **by name**). The
+fix's own facts are the part to keep: four of the five new orchestrator-level facts pause **inside** the
+prologue, held there by a `TaskCompletionSource` the fact controls rather than by a sleep, and every fix leg was
+demonstrated **red by reverting it on its own** and measured. Suite `2882 / 0 failed / 1 skipped`, **+29 over
+the reviewed tree**.
+
+#### The SEVEN items Batch 08 adds to the Rank-1 manual round
+
+The batch spec named six up front; `08-live-steering.impl.md` §16 refined them to **seven** against what the
+grounding measured, and the fix pass reworded two more. Numbered to match §16 so the two files cross-check.
+
+1. **Pause a live interactive run mid-step; confirm it resumes and completes rather than settling cancelled.**
+   Unautomatable in the part that matters: the step has to be genuinely mid-provider-call with a real model
+   streaming, which is the only condition under which the executors' cancel arms behave as they do in
+   production. Every automated fact drives a fake client.
+2. **Pause a live run that is SITTING ON AN ACTION CARD** — a `write_file` awaiting the user's click — and
+   confirm it pauses rather than declining-and-continuing. The highest-value item on the list, and the only one
+   on it whose obstacle is not equipment: **it needs a human NOT to click.** No test can hold a real provider's
+   tool loop open by doing nothing, and the release path is a `Decline` that *continues* the exchange
+   (`ActionCardInfo.Cancel()` → `TaskCanceledException` → `ToolDecision.Decline` → a tool result string), which
+   is the W3 failure mode the whole pause-request ordering exists to survive.
+3. **Pause a scheduled run and confirm another due job dispatches while it sits paused** — the D5 premise,
+   observed rather than reasoned. Arrives **pre-narrowed**: G1 pinned the premise before anything was built on
+   it, G5 re-pinned it with a real user pause, and the fix pass's C2 fact combines a user pause with a second
+   due job in the same tick. The manual half is what is left: a real scheduled job, a real clock, a real Flow
+   card, and the schedule visibly advanced in Settings. **Arriving pre-narrowed is not a shortening** — this
+   item did not exist on the list before Batch 08 put it there.
+4. **Pause a fan-out parent; confirm every child THAT WAS PAUSABLE parks, none is orphaned, and Continue
+   SUPERSEDES the paused generation and re-dispatches the group fresh.** This item has been reworded **twice**,
+   and both rewordings are corrections of a script that would have failed against reality rather than
+   re-arguments of D6: F20 removed "every one resumes" (D6 supersedes — `SafeCancelStaleChildrenAsync` cancels
+   the old generation on the way in, and
+   `ResumingAPausedParent_SupersedesThePausedGeneration_AndDispatchesAFreshOne` pins the opposite), and F1's fix
+   added "that was pausable" (a child still `Planning` at cascade time is deliberately **left running** rather
+   than cancelled). The unautomatable half is the **restart**: kill the app with children at `Paused`, relaunch,
+   and confirm the startup sweep leaves them and the parent's Continue supersedes them — the
+   `SafeCancelStaleChildrenAsync` widening across a **process boundary**, which no in-process fact reaches.
+5. **Edit, insert, reorder and skip a pending step of a PAUSED run, and watch the run honour each on its next
+   step.** Reworded from the batch spec, which said "a pending step" without the pause precondition: under D3
+   all steering is **pause-gated** and the controls do not exist on a running run, so a tester who looks for
+   them there will report a bug that is the design. Mostly automatable and manual only for the ergonomics —
+   the drag-free reorder, and F15's cosmetic hoist of a `Skipped` row above the still-pending tail, which a
+   human will see and which is deliberately not chased (below).
+6. **A nudge that visibly changes the next step's behaviour — and that it is visibly gone after a second
+   resume.** The observable sequence is **pause → type the note → Continue → the next step differs**; there is
+   no nudge control on a running run (D4), and the tester must know that or item 6 reads as a missing feature.
+   Needs a real provider mid-stream, because "visibly changes" is a judgement about model behaviour.
+7. **DE/FR for all TWENTY-FIVE new strings without clipping.** Measured, not read: `git diff
+   1941e3c..3de2ac1 -- src/Pia.Wpf/Resources/Strings/ViewStrings*.resx` adds **25** `<data name=` entries to
+   **each** of the three files. (The impl spec and the review both say *twenty* — correct at `c4d141b`; the
+   should-fix pass added five more. A literal in prose drifts silently, which is F21's own lesson, so the
+   command is given rather than the number alone.) Specifically: the button header at DE widths (`Pausieren` +
+   `Fortsetzen` + `Dateien veröffentlichen` never co-occur, but `Wird pausiert…` + `Fortsetzen` can); the FR
+   `Run_Nudge_Scope_Note`, at **200** characters the longest new string in any locale (measured; DE is 187);
+   `Run_Pause_Error_Refused` at **138** characters in DE, rendered as a muted note under the header; the two
+   new inline-editor placeholders (`Run_Plan_Edit_Title`/`_Intent`); and the five row verb tooltips inside a
+   step row that already carries a glyph, an avatar, a trimmed title and a token count. Needs pixels.
+
+**Genuinely unautomatable, and why**, one line each: **(2)** needs a human *not* clicking; **(4)** needs a real
+process death; **(7)** needs pixels; **(1)** and **(6)** need a real provider mid-stream; **(3)** needs a real
+clock; **(5)** needs a pair of eyes on ergonomics.
+
+**THE FIX PASS DID NOT MAKE THIS LIST SHORTER, and nobody should read "all four must-fixes closed" as if it
+did.** Three commits and **+29** test cases retired **zero** manual items. What the fix pass actually did to
+this list is the opposite of shortening it: it **reworded item 4 twice** so the script matches reality, and it
+**grew item 7 from twenty strings to twenty-five**. A rewording is not a shortening and a correction is not a
+closure. The one item that arrived partly automated (3) arrived that way from the *build*, not the fix pass,
+and it is still a net addition of one item to a list that did not have it.
+
+#### Closed with a stated exception, or declined
+
+Two findings were not fixed, in two different categories, and the distinction matters — do not collapse them,
+and do not let F13, F20 or F21 drift into this list, which were fixed.
+
+- **F15 — CLOSED AS DOCUMENTED, on the review's own adjudicated recommendation.** A `Skipped` step sorts with
+  the settled prefix, so the next mutation hoists it above the still-pending tail. Not fixed **deliberately**:
+  the tempting one-line filter change is four-sided — the editable set would have to admit `Skipped` rows or
+  every resubmission returns `UnknownStep`; the VM's five verbs build their submission from `Pending` rows only,
+  so a `Skipped` row would be **dropped** rather than reordered; un-skipping must still be refused; and it
+  weakens the stated invariant *"no settled row can move"* to *"no `Done`/`Failed` row can move"*. The defect is
+  **cosmetic** — a skipped step never drains — so it is written down at both ends (`ApplyPlanMutationAsync`'s
+  prefix comment and the panel's row-group comment) and raised here as an **owner call**.
+- **F17 — DECLINED, with three reasons.** "Move up" on the first pending row and "Move down" on the last are
+  enabled and do nothing. (1) It is not a defect but a stated semantic: both commands' doc comments say a no-op
+  with no service call, and it costs nothing — no write, no note, no repaint. (2) Closing it means per-row
+  **positional** state (`CanMoveUp`/`CanMoveDown`) re-derived on every `SyncSteps`, in a VM whose row state is
+  otherwise purely per-step and whose `SyncSteps` already runs three passes. (3) It would force a change to
+  `RunProgressStepRowTemplateTests`' uniform invariant `Assert.Equal("IsMutable", p.IsEnabledPath)` over **all
+  five** verb buttons, trading one checkable rule for a per-button table — to remove a click that does nothing.
+  Recorded as declined rather than quietly done.
+
+#### Shipped decisions the owner has NOT ruled on
+
+- **The pause-request OWNERSHIP RULE (F3's fix) is the fixer's judged reading, not an owner decision.** It is
+  written into the code at `IRunSteeringStore.RegisterDispatch` as one sentence: *a pause request belongs to the
+  dispatch whose cancel sink was registered when the request was recorded — the sink the request actually
+  fired.* The argument is that the request's whole effect is the token it fires, so attributing it anywhere else
+  produces exactly F3's pathology (a cancelled token with no request to explain it). It is **one `if` in one
+  method to reverse**, the fixer said so, and it is raised here for a ruling rather than left in a commit body.
+- **F10 changed a public interface semantic**: `RevokePauseRequest` is now **sticky for its dispatch** — it
+  marks the dispatch terminating and `RecordPauseRequest` refuses while that mark stands, cleared by
+  `RegisterDispatch` (a new dispatch) or `ReleaseDispatch` (this one ending). That is what makes Stop → Pause
+  end the run instead of parking it, which `IRunSteeringStore`'s own FAILURE DIRECTION paragraph names as the
+  unrecoverable direction. Folded into the existing revoke rather than added as a separate `MarkTerminating`
+  because all five call sites are already terminal intent. Documented at the interface; one `if` to reverse.
+- **A one-instruction-wide sub-window survives F3's fix and is documented at the code rather than left to be
+  rediscovered.** A pause command that has written its request but has not yet called `FireCancel` when a resume
+  registers loses the request and still fires the (now new) sink. **Not reachable from the panel** — `CanPause`
+  needs `Running`/`WaitingForChildren` and `CanContinue` needs `WaitingForInput`/`Paused`, so the two buttons
+  are never live at once — and closing it would mean fusing record-and-fire into one call, which is exactly what
+  D6's cascade forbids.
+
+#### Known holes the fix pass named rather than papered over
+
+- **The entry short-circuit is closed BY CONSTRUCTION but is NOT deterministically pinned.** The F2 fix is a
+  two-flag handshake (the pause command records its request then reads the fan-out mark; the fan-out sets the
+  mark then reads the request, so whichever ran first the other sees it). The *window* therefore closes by
+  construction rather than by being narrow — but there is **no await between the previous step's consume and
+  `BeginFanOut`** for a test to gate on, so no deterministic fact covers the entry itself, and **a sleep-based
+  race test would be worse than none**: it would pass on a fast machine, red intermittently on a loaded one, and
+  teach the next reader to re-run rather than to read. Stated as a limit, not as coverage.
+- **The invariant the fixer explicitly REFUSED to fake: "every child ends `Paused`" is NOT reachable.** A child
+  at `Planning` cannot reach `Paused` — `TryPauseUserAsync`'s CAS does not accept that source state, by settled
+  decision — so a fact asserting the tidy shape would have had to cheat to pass. The **achievable** shape is
+  what the facts assert, and it is the one to quote when someone asks what the cascade guarantees: **no child is
+  `Cancelled`, no child's sink is fired outside the pausable set, no child is stranded non-terminal, and every
+  child that WAS pausable at cascade time reaches `Paused`.** The price is honesty about latency — a pause that
+  reaches no pausable child takes effect when the group finishes rather than immediately, which is the safe
+  direction and is written into the code.
+- **A `Failed` step outside a won user-pause CAS still never re-runs — and read the two-commit interaction, not
+  the first note alone.** The F1/F2 fixer flagged this in its own report at `59dfbde` as an *F1 documented
+  downstream consequence and a separable change*: `NextPendingStepAsync` matches only `Pending`
+  (`AgentRunService.cs:915`) and `SafeSeedResumeContext` filters `== Done`, so a `Failed` sibling step is
+  invisible to the resumed drain and invisible to the critic. **Three commits later F9's fix narrowed it**:
+  `RestoreUnrepairedFailedStepsAsync` (`AgentRunOrchestrator.cs:1281`) runs inside `SafePauseUser` **after the
+  CAS has won**, so all three park sites — the in-loop consume, the fan-out boundary and the throwing-abort arm
+  — now hand every unrepaired `Failed` row back to the plan as `Pending`. What survives is therefore narrower
+  than the original note and is still open in two halves: **(a)** the **expensive half** of the review's fix was
+  not attempted — the owed replan is not persisted, `replans` is a `RunAsync` local, so the resumed dispatch
+  re-attempts the step on a *fresh* replan budget with no memory that one was owed, which is a budget-accounting
+  infidelity rather than a lost step; and **(b)** the restore is installed on the **user-pause** CAS only, so a
+  **budget** park landing in the same replan window strands the row identically. (b) is read from the code, not
+  measured, and is **inherited rather than introduced** — it is the pre-existing shape D1's abort made reachable
+  on demand.
+
+#### The impl spec's own open questions (§19) — none blocking, all for the owner
+
+Restated here rather than left in the spec, because this section is where a reader looks for what is still
+owed. Read [`08-live-steering.impl.md`](08-live-steering.impl.md) §19 for each one's full evidence.
+
+- **Q1 — a cascade-paused child's tokens never reach the parent's ledger.** D2's headline is "its tokens are
+  still BILLED", and this is the one place the batch cannot honour it: the widened parked-child arm rolls up
+  nothing (deliberately — D13's "pushed once, from a terminal branch") and `SafeCancelStaleChildrenAsync`
+  supersedes with a bare `FailAsync` that also rolls up nothing. **Inherited from D13, not introduced here** —
+  the same hole exists today for a budget-parked child that gets superseded.
+- **Q2 — `ActionCardInfo.WaitForUserDecisionAsync()` takes no `CancellationToken`**, so the only way to release
+  a step at `WaitingForTool` is `card.CancelCommand`. This batch routes through it and it works, but it means
+  the pause mechanism on **Live is two mechanisms** (token + card command) where Headless has one. Adding a
+  token to that wait changes the interactive tool gate and belongs to its own batch.
+- **Q3 — an edited step title lands on a System prompt one step later. PARTLY CLOSED by F11, and the
+  remainder is smaller than §19 states.** F11 moved the "Steps executed" / "Completed so far" blocks to the
+  **User** message in both the planner and the verifier, which is the third time that argument has been applied
+  in those two files. What §19 asked about that F11 does *not* answer: whether **any** remaining System-prompt
+  fact block anywhere carries user-authored text. G6's write-time normalization already closed the
+  forged-fact-line half.
+- **Q4 — two live runs of one scheduled job.** Measured during grounding. `AgentRuns.TriggerRef` is written and
+  indexed and read by nothing; a user pause makes the shape reachable **on demand** rather than only at a budget
+  edge. A guard would be a `TriggerRef`-scoped "is a non-terminal run of this job already live" query before
+  dispatch — cheap, but it changes scheduled-job dispatch semantics, so it is a decision.
+- **Q5 — the sweep's set-vs-threshold asymmetry.** `AgentRunService`'s startup sweep is the **one sanctioned**
+  ordinal range (`WHERE State < @Terminal`), and under append-only a tenth member at ordinal 9 escapes it
+  **silently** even if it is crash-recoverable — the mirror image of the hazard D7 forbids. A `[Theory]` over
+  `Enum.GetValues<AgentRunState>()` asserting the intended sweep verdict for every member would catch it, and
+  `AgentRunServiceChildWaitTests` is already that shape. **D7 itself held**: a full `src/` scan for
+  `State`/`Status` against `< > <= >=` returns exactly that one range, and the SIMPLIFY commit did not smuggle
+  one in — `AgentRunStates.IsParked` is `state is WaitingForInput or Paused`.
+- **Q6 — `MoveLedgerClock` across a double pause→resume→pause cycle is unmeasured.** G2 pins one cycle. The
+  open/close pairing was read as symmetric; nobody has run two.
+- **Q7 — `IsPausing` has no timeout.** A run whose step never returns leaves the Pause button disabled and the
+  label at "Pausing…". Honest, testable and recoverable (the run's own budget eventually parks it). **Narrowed
+  by F6**: a *refusal* now clears the flag and says so in a new muted `PauseNote`, so the stuck label is only
+  reachable for an **accepted** pause that is slow to land, not for one that was declined.
+
+#### What the review itself did not cover
+
+Stated because a review's scope is as load-bearing as its findings. **No real provider, ever** — every fact and
+probe used fakes or `FakeVerifier`, so F9's severity (how a real critic reacts to a `Failed` step it was never
+told about), F11's impact (the real tokenizer being enabled) and F16's (what a real replanner does when told a
+step was removed) are all unsettled without a live model. **No real multi-step run and no real fan-out** — child
+dispatch was simulated in every probe, so the *timing* claims (F1's "children spend seconds in their planning
+call", F2's "the prologue is hundreds of ms") are reasoned from what the code does, not measured against a real
+provider and a real workspace provisioner. **No rendering** — DE/FR strings were compared as resource values
+only. **No human NOT clicking** — F3, F10 and F5/F6 are races whose real-world frequency only a human can judge,
+and a human should also confirm the *opposite* of the smoke list: that pausing and then doing nothing for a
+minute leaves the run genuinely idle and the button honest. **Not audited: anything outside the batch diff**,
+in particular the pre-existing budget-pause path, examined only where Batch 08 changed its behaviour.
+
+#### FALSE SHORTENINGS and misreadings to reject out loud
+
+- **"The must-fixes are closed, so the pause is proven."** It is proven *by unit facts* on the paths those facts
+  reach. Items 1, 2 and 4 of the list above exist precisely because the mechanisms that matter — a real
+  streaming cancel, an unclicked action card, a process death — are the ones no fact reaches.
+- **"Batch 08 shortened Rank 1 because item 3 is partly automated."** Item 3 did not exist on that list before
+  this batch put it there. A new item that arrives pre-narrowed is still a new item.
+- **"`Paused` means the same thing as the budget park."** It does not, and the whole batch exists to keep them
+  apart: `WaitingForInput(3)` is the system parking a run at a budget edge, `Paused(4)` is the user parking it,
+  the two claim CASes are **disjoint by source state**, and F19 exists because one re-park path was writing the
+  wrong one of the two and the panel then said "stopped at budget" about a run the user had paused by hand.
+- **"Every child of a paused parent ends up `Paused`."** No — see the refused invariant above. Quote the
+  achievable shape, not the tidy one.
+- **"The plan is editable while a run is live."** No. All steering is pause-gated by design (D3/D4), which is
+  what removes the mutation-versus-drain race by construction rather than with a lock.
+- **Every DE/FR item elsewhere in this file.** Batch 08 adds a **seventh** locale item (its own item 7); it
+  touches none of the existing ones and shortens none of them.
+- **The scheduled-run smoke items already on the list.** Batch 09's clauses (b) and (c) are untouched by this
+  batch, and item 3 above is a *third* scheduled item, not a re-run of either.
 
 ---
 

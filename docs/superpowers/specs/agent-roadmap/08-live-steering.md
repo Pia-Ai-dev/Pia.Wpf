@@ -3,9 +3,21 @@
 **Phase 4 · Size L · Work on `feature/agent-run-spine`**, after the budget-pause batch (shipped) and
 sub-agents (see the chronicle in [`00-OVERVIEW.md`](00-OVERVIEW.md))
 
-_**Status 2026-08-01.** Rank 3 — behind Rank 1 (the manual Windows smoke round) and Rank 2
-([Batch 14](14-view-coverage-debt.md)). Its dependency on Batch 07 cleared when Phase 3 shipped, and its
-seven decisions are now **RESOLVED by the owner** — see §Decisions. Not built. The "Key seams" section below
+_**Status 2026-08-01 — ✅ SHIPPED.** Build `8166f4a` → `c4d141b` (G1–G8 plus a simplify, 11 commits), impl spec
+`7772602` **before** that range, adversarial review `12601ef`, and a **three-commit** fix pass
+`59dfbde` → `3de2ac1`. Gate on the final tree: Debug and Release `-t:Rebuild -v:n` both
+**0 Warning(s) / 0 Error(s)**, suite **2882 / 0 failed / 2881 passed / 1 skipped**, **+148**. Read
+[`08-live-steering.impl.md`](08-live-steering.impl.md) **before this file**: its §0 tabulates **sixteen** places
+this spec was wrong against the tree at `1941e3c` — four of them `src/` line references — and where the two
+disagree, the impl spec wins. Read
+[`08-live-steering.review.md`](08-live-steering.review.md) next: **this batch shipped its own named central risk
+(the Guardrails bullet below) as a defect on three reachable paths**, and only an adversarial review with
+executing verifiers caught it; all four must-fixes are closed. Dispositions, open items and the seven Rank-1
+manual items this batch adds live in "Opened by Batch 08" in [`00-OVERVIEW.md`](00-OVERVIEW.md)._
+
+_**Superseded status, kept because it is the record.** Rank 3 — behind Rank 1 (the manual Windows smoke round)
+and Rank 2 ([Batch 14](14-view-coverage-debt.md)). Its dependency on Batch 07 cleared when Phase 3 shipped, and
+its seven decisions are now **RESOLVED by the owner** — see §Decisions. Not built. The "Key seams" section below
 has been re-measured against the tree at `aa5beb9` and **three of its four bullets needed correcting**; read
 the corrections, not the original claims._
 
@@ -181,6 +193,16 @@ green.
 
 Stated up front because `00-OVERVIEW.md` tracks it as a first-class number and this batch will **lengthen**
 it. At least six items, none automatable:
+
+_**AS SHIPPED (2026-08-01) THIS IS SEVEN, NOT SIX, AND THE NUMBERING BELOW IS THE OLD ONE.**
+[`08-live-steering.impl.md`](08-live-steering.impl.md) §16 refined the list against what the grounding measured
+and inserted a new item — **pause a live run that is sitting on an action card**, the W3 failure mode and the
+highest-value item on the round, unautomatable because it needs a human **not** to click. Items 5 and 6 below
+were reworded there (the pause precondition, and the pause → note → Continue sequence), item 3 again by F20 and
+F1's fix, and item 6's string count is **25 per locale as measured at `3de2ac1`**, not the twenty §16 states.
+**Read the seven as enumerated in "Opened by Batch 08" in [`00-OVERVIEW.md`](00-OVERVIEW.md)** — that is the
+list a tester should work from. The six below are kept because they were written before any code and predicted
+the shape correctly._
 
 1. Pause a live interactive run mid-step; confirm it resumes and completes rather than settling cancelled.
 2. Pause a **scheduled** run and confirm another due job dispatches while it sits paused — the D5 premise,

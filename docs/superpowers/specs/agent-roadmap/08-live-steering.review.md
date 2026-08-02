@@ -4,6 +4,19 @@
 G5 `8e36d19`, G6 `68efc02`, G7 `1a67bce`, G8a `566a026`, G8b `462b543`, G8c `9c3f302`, SIMPLIFY `c4d141b`).
 **HEAD at review:** `c4d141b`. **Branch:** `feature/agent-run-spine`.
 
+_**Addendum 2026-08-01 — nothing below is retracted; it was true of `c4d141b` and that is its value.** All
+**four must-fixes are CLOSED**: F1+F2 at `59dfbde`, F3+F4 at `f46e95c`, and every remaining should-fix and nit
+at `3de2ac1` — each closed with a fact, closed as DOCUMENTED on this file's own adjudicated recommendation
+(**F15**), or DECLINED with a stated reason (**F17**). Both coverage gaps (C1, C2) are closed. The headline
+verdict below therefore describes the reviewed tree, not HEAD. Final tree `3de2ac1`: Debug and Release
+`-t:Rebuild -v:n` both **0 Warning(s) / 0 Error(s)**, suite **2882 / 0 failed / 2881 passed / 1 skipped** (this
+file's `2853` was correct at `c4d141b`; the fix pass added **+29**). Two numbers here went stale with the fix
+and are corrected rather than edited in place: the **twenty** new strings are **25 per locale** at `3de2ac1`,
+and F13's "set and instantly wiped" is fixed by a one-line reorder. Dispositions, the decisions the owner has
+not yet ruled on (the F3 ownership rule, F10's sticky revoke), the invariant the fixer refused to fake, and the
+**seven** Rank-1 manual items this batch adds all live in "Opened by Batch 08" in
+[`00-OVERVIEW.md`](00-OVERVIEW.md)._
+
 **Six independent refutation lenses fed this file:**
 
 | Lens | Scope | Mode |

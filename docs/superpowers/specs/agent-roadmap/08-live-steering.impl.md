@@ -1230,10 +1230,19 @@ because the design does.
 3. **Pause a scheduled run and confirm another due job dispatches while it sits paused** — the D5 premise,
    observed rather than reasoned. Now partly automated (G1 + G5), so the manual half narrows to: a real
    scheduled job, a real clock, a real Flow card, and the schedule visibly advanced in Settings.
-4. **Pause a fan-out parent; confirm every child parks, none is orphaned, and every one resumes.** The
-   unautomatable half is the **restart**: kill the app with children at `Paused`, relaunch, and confirm the
-   startup sweep leaves them and the parent's Continue supersedes them (the `:816` widening across a process
-   boundary, which no in-process fact reaches).
+4. ~~**Pause a fan-out parent; confirm every child parks, none is orphaned, and every one resumes.**~~
+   **CORRECTED 2026-08-01, as-built at `3de2ac1` — twice, and neither correction re-argues D6.** Read:
+   **Pause a fan-out parent; confirm every child THAT WAS PAUSABLE parks, none is orphaned, and Continue
+   SUPERSEDES the paused generation and re-dispatches the group fresh.** F20: "every one resumes" is the
+   opposite of what D6 does —
+   `ResumingAPausedParent_SupersedesThePausedGeneration_AndDispatchesAFreshOne` pins the supersede and
+   `SafeCancelStaleChildrenAsync` cancels the old generation on the way in. F1's fix: a child outside the
+   pausable set (still `Planning`, or still queued behind the child slot pool) is deliberately **left running**
+   rather than cancelled, so "every child parks" was never achievable either. A smoke script written from the
+   struck wording would have failed against reality. The
+   unautomatable half is unchanged and is the **restart**: kill the app with children at `Paused`, relaunch, and
+   confirm the startup sweep leaves them and the parent's Continue supersedes them (the `:816` widening across a
+   process boundary, which no in-process fact reaches).
 5. **Edit, insert, reorder and skip a pending step of a PAUSED run and watch the run honour each on its next
    step.** Reworded: the batch spec said "a pending step" without the pause precondition, and under D3 the
    controls do not exist on a live run. A tester looking for them on a running run will report a bug that is
@@ -1242,7 +1251,13 @@ because the design does.
    resume.** Reworded: the observable sequence is **pause → type the note → Continue → the next step differs**.
    There is no nudge control on a running run (D4). The tester must know that, or item 6 reads as a missing
    feature.
-7. **DE/FR for all twenty new strings without clipping**, specifically: the three-button header at DE widths
+7. **DE/FR for all ~~twenty~~ TWENTY-FIVE new strings without clipping** (**corrected 2026-08-01**: twenty was
+   right at `c4d141b`; the should-fix pass `3de2ac1` added five more — `Run_Pause_Error_Refused`,
+   `Run_Plan_Edit_Title`, `Run_Plan_Edit_Intent`, `Run_Activity_ResumeInterrupted`, `Flow_Run_ResumeInterrupted`
+   — for **25** `<data name=` entries added to **each** of the three resx files, measured by
+   `git diff 1941e3c..3de2ac1`. Two of the five are long: `Run_Pause_Error_Refused` is 138 chars in DE, and the
+   FR `Run_Nudge_Scope_Note` grew to 200 under F18's rewording, still the longest new string in any locale),
+   specifically: the three-button header at DE widths
    (`Pausieren` + `Fortsetzen` + `Dateien veröffentlichen` never co-occur, but `Wird pausiert…` +
    `Fortsetzen` can), the FR `Run_Nudge_Scope_Note` (the longest new string in any locale), and the five row
    verb tooltips inside a step row that already carries a glyph, an avatar, a trimmed title and a token
