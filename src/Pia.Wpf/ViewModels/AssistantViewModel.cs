@@ -308,6 +308,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         _ttsService.IsPlayingChanged += OnTtsPlayingChanged;
         _personaService.PersonasChanged += OnPersonasChanged;
+        _personaService.ManagedPersonaWithdrawn += OnManagedPersonaWithdrawn;
         PropertyChanged += OnPropertyChanged;
         MeetingAttendee.CloseRequested += OnMeetingAttendeeCloseRequested;
         MeetingAttendee.SummarizeRequested += OnMeetingAttendeeSummarizeRequested;
@@ -523,6 +524,19 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private void OnPersonasChanged(object? sender, EventArgs e) =>
         LoadPersonasAsync().SafeFireAndForget(_logger);
 
+    // Set by the withdrawal event, consumed by the very next LoadPersonasAsync. Deliberately not
+    // persisted: clearing the dangling per-mode selection inside
+    // PersonaService.ReplaceManagedPersonasAsync is what makes the notice one-shot — the next replace can
+    // no longer find the withdrawn id in ModePersonaDefaults, so the same withdrawal cannot be detected
+    // twice and no "already told them" flag is needed.
+    private ManagedPersonaWithdrawnEventArgs? _pendingWithdrawnPersona;
+
+    // Stash, don't show. The message names the fallback persona, which is only known once
+    // LoadPersonasAsync has resolved ActivePersona — and PersonaService raises this BEFORE
+    // PersonasChanged precisely so the reload it triggers can pick the stash up.
+    private void OnManagedPersonaWithdrawn(object? sender, ManagedPersonaWithdrawnEventArgs e) =>
+        _pendingWithdrawnPersona = e;
+
     private async Task LoadPersonasAsync()
     {
         try
@@ -546,12 +560,56 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
                 // Seed the Chat/Agent lever from the persisted global default (R15).
                 SeedAgentModeFromSettings(settings);
+
+                // Inside the posted lambda so the snackbar is raised on the UI thread, and after
+                // ActivePersona so the notice names the fallback the user is actually now on.
+                ShowPendingWithdrawnPersonaNotice();
             });
         }
         finally
         {
             _isLoadingPersonas = false;
         }
+    }
+
+    /// <summary>
+    /// Surfaces the one-shot notice for a selected managed persona that the org withdrew (§5.1), if this
+    /// reload is the one that followed the withdrawal. Informational and non-blocking on purpose: no modal,
+    /// and nothing is cancelled — the server freezes resource scope per activation, so a turn already
+    /// streaming completes under the old scope.
+    /// </summary>
+    private void ShowPendingWithdrawnPersonaNotice()
+    {
+        if (_pendingWithdrawnPersona is not { } withdrawn)
+            return;
+
+        // A reload that STARTED before the withdrawal can reach this point holding pre-replace data: the
+        // pull raises PersonasChanged once per applied user persona, well before it applies the managed
+        // snapshot, and LoadPersonasAsync is fire-and-forget, so its posted lambda can land after the stash
+        // was set. Showing the notice then would name the withdrawn persona as its own fallback and burn the
+        // one shot. Leave it pending instead — ReplaceManagedPersonasAsync always raises PersonasChanged
+        // after the withdrawal event, so a reload that sees the real fallback is guaranteed to follow.
+        if (ActivePersona is { } stillActive && stillActive.Id == withdrawn.PersonaId)
+            return;
+
+        // Clear before showing: a throw out of Show must not leave the notice pending and re-fire it on
+        // every later persona reload.
+        _pendingWithdrawnPersona = null;
+
+        var fallbackName = ActivePersona?.Name ?? string.Empty;
+        _logger.LogInformation(
+            "Selected managed persona {PersonaId} was withdrawn; fell back to the resolved persona",
+            withdrawn.PersonaId);
+        // Persona names are admin-authored user content — fine in the snackbar, never in the log file.
+        _logger.SensitiveDebug(
+            "Withdrawn managed persona {PersonaId} name: {Name}, fallback: {Fallback}",
+            withdrawn.PersonaId, withdrawn.PersonaName, fallbackName);
+
+        _snackbarService.Show(
+            _localizationService["Settings_Tab_Personas"],
+            _localizationService.Format(
+                "Msg_Settings_ManagedPersonaWithdrawn", withdrawn.PersonaName, fallbackName),
+            Wpf.Ui.Controls.ControlAppearance.Info, null, TimeSpan.FromSeconds(6));
     }
 
     /// <summary>Seeds the Chat/Agent lever from the persisted global default (R15), guarded so the
@@ -1460,11 +1518,14 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var rawBuffer = new StringBuilder();
         var lastVisibleLength = 0;
 
+        // Any selected persona travels as X-Pia-Persona, managed or not — the server maps an id it does
+        // not know to null, so no IsManaged check belongs here.
         await foreach (var item in _aiClientService.GetChatCompletionWithToolsAsync(
             chatMessages, provider, tools,
             supportsTools ? HandleVoiceModeToolCall : null,
             nameof(WindowMode.Assistant),
-            cancellationToken))
+            persona.Id,
+            cancellationToken: cancellationToken))
         {
             if (item is not TextDelta td)
                 continue;
@@ -1666,6 +1727,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _ttsService.Stop();
         _ttsService.IsPlayingChanged -= OnTtsPlayingChanged;
         _personaService.PersonasChanged -= OnPersonasChanged;
+        _personaService.ManagedPersonaWithdrawn -= OnManagedPersonaWithdrawn;
         PropertyChanged -= OnPropertyChanged;
 
         // Unsubscribe only — the manager owns session lifetime and tears them down

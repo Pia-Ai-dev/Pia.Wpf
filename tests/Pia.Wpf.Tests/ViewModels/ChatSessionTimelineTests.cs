@@ -393,7 +393,7 @@ public sealed class ChatSessionTimelineTests
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
                 Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(),
-                Arg.Any<CancellationToken>(), Arg.Any<AgentContextBudget?>())
+                Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(), contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci => Stream(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), toolNames, arguments));
     }
 

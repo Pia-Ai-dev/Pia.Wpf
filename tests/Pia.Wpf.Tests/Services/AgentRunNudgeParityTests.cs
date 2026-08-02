@@ -74,7 +74,7 @@ public sealed class AgentRunNudgeParityTests
         List<ChatMessage>? sent = null;
         _liveAi.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 sent = [.. ci.ArgAt<IList<ChatMessage>>(0)];
@@ -184,8 +184,8 @@ public sealed class AgentRunNudgeParityTests
         List<ChatMessage>? sent = null;
         h.Ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(),
-                Arg.Any<AgentContextBudget?>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(),
+                cancellationToken: Arg.Any<CancellationToken>(), contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci =>
             {
                 sent = [.. ci.ArgAt<IList<ChatMessage>>(0)];
@@ -237,7 +237,7 @@ public sealed class AgentRunNudgeParityTests
         List<ChatMessage>? sent = null;
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 sent = [.. ci.ArgAt<IList<ChatMessage>>(0)];
@@ -261,7 +261,7 @@ public sealed class AgentRunNudgeParityTests
         List<ChatMessage>? sent = null;
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 sent = [.. ci.ArgAt<IList<ChatMessage>>(0)];

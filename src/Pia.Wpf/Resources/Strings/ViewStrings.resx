@@ -638,6 +638,8 @@
   <data name="Personas_AddPersona" xml:space="preserve"><value>Add Persona</value></data>
   <data name="Personas_Duplicate" xml:space="preserve"><value>Duplicate</value></data>
   <data name="Personas_BuiltIn" xml:space="preserve"><value>Built-in</value></data>
+  <data name="Personas_Managed" xml:space="preserve"><value>Managed</value></data>
+  <data name="Personas_ManagedTooltip" xml:space="preserve"><value>Published by your administrator. Duplicate it to make an editable copy.</value></data>
   <data name="Dialog_ModelDownload_Title" xml:space="preserve"><value>Preparing Model</value></data>
   <data name="Dialog_ModelDownload_Message" xml:space="preserve"><value>Downloading Whisper Model...</value></data>
   <data name="Dialog_ModelDownload_Downloading" xml:space="preserve"><value>Downloading {0}...</value></data>

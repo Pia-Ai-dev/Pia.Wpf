@@ -193,7 +193,10 @@ public class SyncMapper
             SystemPrompt = systemPrompt ?? "",
             Guardrails = guardrails,
             OutputFormat = outputFormat,
-            Archetype = string.IsNullOrEmpty(sync.Archetype) ? "custom" : sync.Archetype,
+            // IsNullOrWhiteSpace, not IsNullOrEmpty: "absent/blank ⇒ custom" (handoff §2.1.1). Archetype is
+            // a closed vocabulary (assistant|analyst|creative|visionary|explainer|custom) that the glyph and
+            // label lookups index into, so a whitespace-only value would silently match nothing.
+            Archetype = string.IsNullOrWhiteSpace(sync.Archetype) ? "custom" : sync.Archetype,
             Expertise = expertise ?? [],
             Emoji = sync.Emoji,
             AccentColor = sync.AccentColor,
@@ -201,6 +204,52 @@ public class SyncMapper
             PreferredProviderId = sync.PreferredProviderId,
             ReasoningEffort = sync.ReasoningEffort.HasValue ? (ReasoningEffort)sync.ReasoningEffort.Value : null,
             SchemaVersion = sync.SchemaVersion,
+            IsBuiltIn = false,
+            CreatedAt = sync.CreatedAt,
+            UpdatedAt = sync.UpdatedAt
+        };
+    }
+
+    /// <summary>
+    /// Maps an admin-published managed persona from the pull's replace-all snapshot. Pull-only by design:
+    /// there is deliberately no <c>ToSyncManagedPersona</c> — the client never authors or pushes these rows,
+    /// and adding the reverse direction would create a write path into another user's shared data.
+    /// </summary>
+    /// <remarks>
+    /// NO E2EE PATH, deliberately: <see cref="SyncManagedPersona"/> has no <c>EncryptedPayload</c>/
+    /// <c>WrappedDek</c> fields at all — a row shared across a group cannot be wrapped with any single
+    /// user's UMK — so managed rows arrive plaintext even for an E2EE-enabled account. This method must
+    /// never touch <c>_e2ee</c>, and its caller must never count a managed row toward the pull's
+    /// decryptionErrors. That is not a gap to be "fixed"; it is the contract (handoff §5.3).
+    /// </remarks>
+    public Persona FromSyncManagedPersona(SyncManagedPersona sync)
+    {
+        return new Persona
+        {
+            Id = sync.Id,
+            // Name/SystemPrompt are nullable on the wire but required on Persona. The admin validator
+            // requires both in practice, so a null here means a malformed row — default it to empty rather
+            // than throwing: one bad row must not abort the whole pull (and with it every other channel).
+            Name = sync.Name ?? "",
+            Tagline = sync.Tagline,
+            SystemPrompt = sync.SystemPrompt ?? "",
+            Guardrails = sync.Guardrails,
+            OutputFormat = sync.OutputFormat,
+            // Same blank handling as FromSyncPersona above, deliberately kept in step (handoff §2.1.1:
+            // "map absent/blank → custom"). An admin who types spaces into the archetype field must not
+            // publish a row whose Archetype matches no entry in the shared vocabulary.
+            Archetype = string.IsNullOrWhiteSpace(sync.Archetype) ? "custom" : sync.Archetype,
+            Expertise = sync.Expertise ?? [],
+            Emoji = sync.Emoji,
+            AccentColor = sync.AccentColor,
+            ToolScope = (PersonaToolScope)sync.ToolScope,
+            // PreferredProviderId stays NULL: the DTO has no such field on purpose (handoff Q8). A provider
+            // id is a soft reference into the OWNING user's local store, so on a shared row it could only
+            // ever be null or a cross-user mis-reference. A managed persona resolves to the member's mode
+            // default, exactly as a user persona with no preference does. Do not "restore" this field.
+            ReasoningEffort = sync.ReasoningEffort.HasValue ? (ReasoningEffort)sync.ReasoningEffort.Value : null,
+            SchemaVersion = sync.SchemaVersion,
+            IsManaged = true,
             IsBuiltIn = false,
             CreatedAt = sync.CreatedAt,
             UpdatedAt = sync.UpdatedAt

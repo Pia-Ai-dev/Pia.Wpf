@@ -243,6 +243,37 @@ public class SqliteContext : IDisposable
 
             CREATE INDEX IF NOT EXISTS IX_Personas_UpdatedAt ON Personas(UpdatedAt);
 
+            -- Admin-authored personas pulled read-only via the sync pull's managedPersonas channel.
+            -- A SEPARATE table rather than a flag column on Personas: Personas is the PUSH SOURCE
+            -- (SyncClientService reads it to build personas.upserted), so a managed row living there is
+            -- exactly the shadow-copy hazard the server quarantines against. Apart, "never push a managed
+            -- row" is structural instead of a filter someone can forget.
+            -- The column list and types are DELIBERATELY identical to Personas so PersonaService's
+            -- existing MapPersona reader and AddPersonaParameters writer are reused with only the table
+            -- name changed. That reuse is why PreferredProviderId stays here even though the wire DTO has
+            -- no such field: keeping the column shape identical is worth more than dropping one column
+            -- that is simply always NULL for managed rows, so the reader/writer never special-case it.
+            -- No index, unlike IX_Personas_UpdatedAt: the table is tiny (server caps it at 25 per group)
+            -- and is only ever read whole or by primary key.
+            CREATE TABLE IF NOT EXISTS ManagedPersonas (
+                Id TEXT PRIMARY KEY,
+                Name TEXT NOT NULL,
+                Tagline TEXT,
+                SystemPrompt TEXT NOT NULL,
+                Guardrails TEXT,
+                Archetype TEXT,
+                Expertise TEXT,
+                Emoji TEXT,
+                AccentColor TEXT,
+                ToolScope INTEGER NOT NULL DEFAULT 2,
+                PreferredProviderId TEXT,
+                ReasoningEffort INTEGER,
+                SchemaVersion INTEGER NOT NULL DEFAULT 1,
+                CreatedAt TEXT NOT NULL,
+                UpdatedAt TEXT NOT NULL,
+                OutputFormat TEXT
+            );
+
             CREATE TABLE IF NOT EXISTS AssistantChats (
                 Id              TEXT PRIMARY KEY,
                 SchemaVersion   INTEGER NOT NULL DEFAULT 1,
@@ -622,6 +653,43 @@ public class SqliteContext : IDisposable
                 CREATE INDEX IF NOT EXISTS IX_Personas_UpdatedAt ON Personas(UpdatedAt);
                 """;
             createPersonas.ExecuteNonQuery();
+        }
+
+        // Create the ManagedPersonas table for databases that predate it. This is how an existing profile
+        // gains the table on startup WITHOUT touching Personas — the two stores stay independent because
+        // Personas is the push source and a managed row must never end up in it. Same defensive
+        // presence-check idiom as above; EnsureSchema already creates it on fresh installs.
+        var hasManagedPersonasTable = false;
+        using (var p = _connection!.CreateCommand())
+        {
+            p.CommandText = "PRAGMA table_info(ManagedPersonas)";
+            using var r = p.ExecuteReader();
+            if (r.Read()) hasManagedPersonasTable = true;
+        }
+        if (!hasManagedPersonasTable)
+        {
+            using var createManagedPersonas = _connection.CreateCommand();
+            createManagedPersonas.CommandText = """
+                CREATE TABLE IF NOT EXISTS ManagedPersonas (
+                    Id TEXT PRIMARY KEY,
+                    Name TEXT NOT NULL,
+                    Tagline TEXT,
+                    SystemPrompt TEXT NOT NULL,
+                    Guardrails TEXT,
+                    Archetype TEXT,
+                    Expertise TEXT,
+                    Emoji TEXT,
+                    AccentColor TEXT,
+                    ToolScope INTEGER NOT NULL DEFAULT 2,
+                    PreferredProviderId TEXT,
+                    ReasoningEffort INTEGER,
+                    SchemaVersion INTEGER NOT NULL DEFAULT 1,
+                    CreatedAt TEXT NOT NULL,
+                    UpdatedAt TEXT NOT NULL,
+                    OutputFormat TEXT
+                );
+                """;
+            createManagedPersonas.ExecuteNonQuery();
         }
 
         // Per-persona output-format guidance, added after the Personas table shipped. Runs after the

@@ -56,8 +56,8 @@ public sealed class HeadlessTurnExecutorTests
         var ai = Substitute.For<IAiClientService>();
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(),
-                Arg.Any<AgentContextBudget?>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(_ => Drive("reply"));
 
         var plugins = Substitute.For<IPluginService>();
@@ -173,8 +173,8 @@ public sealed class HeadlessTurnExecutorTests
         var ai = Substitute.For<IAiClientService>();
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(),
-                Arg.Any<AgentContextBudget?>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci =>
             {
                 capturedTools = ci.ArgAt<IList<AITool>?>(2);
@@ -261,8 +261,8 @@ public sealed class HeadlessTurnExecutorTests
         var ai = Substitute.For<IAiClientService>();
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(),
-                Arg.Any<AgentContextBudget?>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci => DriveWithTool(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), toolCalls));
 
         var executed = false;
@@ -338,8 +338,8 @@ public sealed class HeadlessTurnExecutorTests
         var ai = Substitute.For<IAiClientService>();
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(),
-                Arg.Any<AgentContextBudget?>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci => DriveWithTool(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), toolCalls));
 
         var plugins = Substitute.For<IPluginService>();
@@ -551,8 +551,8 @@ public sealed class HeadlessTurnExecutorTests
             // One distinct reply per step turn, so the persisted transcript is order-verifiable.
             Ai.GetChatCompletionWithToolsAsync(
                     Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                    Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(),
-                    Arg.Any<AgentContextBudget?>())
+                    Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                    contextBudget: Arg.Any<AgentContextBudget?>())
                 .Returns(_ =>
                 {
                     var turn = ++Turns;
@@ -925,8 +925,8 @@ public sealed class HeadlessTurnExecutorTests
 
         h.Ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(),
-                Arg.Any<AgentContextBudget?>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci =>
             {
                 var turn = ++h.Turns;
@@ -969,8 +969,8 @@ public sealed class HeadlessTurnExecutorTests
         var captured = new List<List<ChatMessage>>();
         h.Ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(),
-                Arg.Any<AgentContextBudget?>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci =>
             {
                 captured.Add([.. (IList<ChatMessage>)ci[0]]);
@@ -1139,8 +1139,8 @@ public sealed class HeadlessTurnExecutorTests
         var captured = new List<(List<ChatMessage>, AiProvider)>();
         h.Ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(),
-                Arg.Any<AgentContextBudget?>())
+                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci =>
             {
                 captured.Add(([.. (IList<ChatMessage>)ci[0]], (AiProvider)ci[1]));

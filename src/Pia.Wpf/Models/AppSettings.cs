@@ -310,6 +310,27 @@ public class AppSettings
     // plugin catalog (Sec 3.5). Null on first run / pre-upgrade servers => the param is omitted and
     // the server returns the full catalog.
     public long? LastCatalogVersion { get; set; }
+    /// <summary>
+    /// True once this client has issued its one forced UNCONDITIONAL catalog pull (no
+    /// <c>?catalogVersion=</c>, no <c>If-None-Match</c>) for the managed-persona channel.
+    /// </summary>
+    /// <remarks>
+    /// A build that predates managed personas deserialized the pull into <c>SyncPullResponse</c>, silently
+    /// ignored the then-unknown <c>managedPersonas</c> property (STJ default), and STILL stored the
+    /// <c>catalogVersion</c> that came with it. Such a client echoes an already-current token, the server
+    /// fast-skips the catalog, and the managed personas never arrive — until some unrelated admin catalog
+    /// write happens, potentially weeks later. The same hole reopens whenever the local managed store is
+    /// lost (profile reset, DB rebuild) while the stored token is genuinely current. One unconditional pull
+    /// closes both; this flag is what stops it from becoming every pull.
+    /// <para>
+    /// DEVICE-LOCAL, never synced. The settings sync surface is an explicit allow-list
+    /// (<c>SyncMapper.BuildSettingsPlainPayload</c> / <c>SyncSettings</c>), so adding a property here
+    /// neither reaches the wire nor perturbs <c>ComputeSettingsHash</c>. It must stay off the wire: it
+    /// describes THIS device's local store, and a synced value would tell a freshly-installed second
+    /// device that it had already done a pull it never made.
+    /// </para>
+    /// </remarks>
+    public bool ManagedPersonaStoreInitialized { get; set; }
     // ETag from the last successful assistant-chat startup pull (GET /api/v1/chats). Echoed as
     // If-None-Match so an unchanged chat set answers 304 with no body. Mirrors LastPullETag.
     public string? LastChatPullETag { get; set; }

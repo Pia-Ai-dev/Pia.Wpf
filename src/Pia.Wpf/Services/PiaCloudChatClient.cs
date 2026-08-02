@@ -20,6 +20,7 @@ public sealed class PiaCloudChatClient : IChatClient
     private readonly HttpClient _httpClient;
     private readonly string _chatUrl;
     private readonly string? _mode;
+    private readonly Guid? _managedPersonaId;
     private readonly ILogger _logger;
     private readonly Func<bool, string?, Task<string?>> _tokenProvider;
 
@@ -27,11 +28,18 @@ public sealed class PiaCloudChatClient : IChatClient
     /// Resolves a bearer token; the bool argument requests a forced refresh (used on 401 retry),
     /// and the string argument carries the token that failed so duplicate refreshes can be avoided.
     /// </param>
-    public PiaCloudChatClient(HttpClient httpClient, string serverUrl, Func<bool, string?, Task<string?>> tokenProvider, ILogger logger, string? mode = null)
+    /// <param name="managedPersonaId">
+    /// The persona driving this turn, sent as <c>X-Pia-Persona</c> so the server can UNION the persona's
+    /// bound KBs/connectors into the request's plugin scope. Sent for ANY selected persona, managed or
+    /// not: the server maps an id it does not recognise to null (deliberately no existence oracle), so no
+    /// "is this managed?" check belongs on the chat path.
+    /// </param>
+    public PiaCloudChatClient(HttpClient httpClient, string serverUrl, Func<bool, string?, Task<string?>> tokenProvider, ILogger logger, string? mode = null, Guid? managedPersonaId = null)
     {
         _httpClient = httpClient;
         _chatUrl = $"{serverUrl.TrimEnd('/')}/api/ai/chat";
         _mode = mode;
+        _managedPersonaId = managedPersonaId;
         _logger = logger;
         _tokenProvider = tokenProvider;
     }
@@ -50,6 +58,9 @@ public sealed class PiaCloudChatClient : IChatClient
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             if (!string.IsNullOrEmpty(_mode))
                 request.Headers.Add("X-Pia-Mode", _mode);
+            // Omitted entirely when no persona was resolved — an empty header value is not the contract.
+            if (_managedPersonaId is Guid personaId)
+                request.Headers.Add("X-Pia-Persona", personaId.ToString());
             return (await _httpClient.SendAsync(request, completionOption, cancellationToken), token);
         }
 

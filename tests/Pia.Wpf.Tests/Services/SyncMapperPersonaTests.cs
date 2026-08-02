@@ -1,5 +1,7 @@
 namespace Pia.Tests.Services;
 
+using System.Linq;
+using System.Reflection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Infrastructure;
@@ -7,6 +9,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
+using Pia.Shared.Models;
 using Xunit;
 
 /// <summary>
@@ -150,5 +153,175 @@ public class SyncMapperPersonaTests
         Assert.Equal(original.PreferredProviderId, back.PreferredProviderId);
         Assert.Equal(original.ReasoningEffort, back.ReasoningEffort);
         Assert.False(back.IsBuiltIn);
+    }
+
+    // --- Managed personas (pull-only, admin-published) ---
+
+    private static SyncManagedPersona SampleManagedPersona() => new()
+    {
+        Id = Guid.Parse("6f1b3f2a-9c44-4d1e-8b77-2a0d5e91c4aa"),
+        Name = "Brandvoice",
+        Tagline = "Rewrites anything in our house voice",
+        SystemPrompt = "You are the company's brand voice editor.",
+        Guardrails = "Never invent product claims.",
+        OutputFormat = "Return only the rewritten text, no preamble.",
+        Expertise = ["copywriting", "brand", "editing"],
+        Archetype = "creative",
+        Emoji = "🎨",
+        AccentColor = "#7A5AF8",
+        ToolScope = (int)PersonaToolScope.Full,
+        ReasoningEffort = (int)Pia.Models.ReasoningEffort.High,
+        SchemaVersion = 1,
+        CreatedAt = new DateTime(2026, 7, 30, 11, 2, 41, DateTimeKind.Utc),
+        UpdatedAt = new DateTime(2026, 8, 1, 8, 55, 10, DateTimeKind.Utc),
+        IsManaged = true,
+    };
+
+    [Fact]
+    public void FromSyncManagedPersona_MapsEveryField()
+    {
+        var mapper = PlainMapper();
+        var sync = SampleManagedPersona();
+
+        var persona = mapper.FromSyncManagedPersona(sync);
+
+        Assert.Equal(sync.Id, persona.Id);
+        Assert.Equal("Brandvoice", persona.Name);
+        Assert.Equal("Rewrites anything in our house voice", persona.Tagline);
+        Assert.Equal("You are the company's brand voice editor.", persona.SystemPrompt);
+        Assert.Equal("Never invent product claims.", persona.Guardrails);
+        Assert.Equal("Return only the rewritten text, no preamble.", persona.OutputFormat);
+        Assert.Equal(new List<string> { "copywriting", "brand", "editing" }, persona.Expertise);
+        Assert.Equal("creative", persona.Archetype);
+        Assert.Equal("🎨", persona.Emoji);
+        Assert.Equal("#7A5AF8", persona.AccentColor);
+        // int → enum for the structural fields.
+        Assert.Equal(PersonaToolScope.Full, persona.ToolScope);
+        Assert.Equal(Pia.Models.ReasoningEffort.High, persona.ReasoningEffort);
+        Assert.Equal(1, persona.SchemaVersion);
+        Assert.Equal(sync.CreatedAt, persona.CreatedAt);
+        Assert.Equal(sync.UpdatedAt, persona.UpdatedAt);
+        // Provenance: managed, never built-in, and therefore read-only in the editor.
+        Assert.True(persona.IsManaged);
+        Assert.False(persona.IsBuiltIn);
+        Assert.True(persona.IsReadOnly);
+        // Q8: the DTO has no preferredProviderId, so a managed persona resolves to the member's mode
+        // default exactly as a user persona with no preference does.
+        Assert.Null(persona.PreferredProviderId);
+    }
+
+    [Fact]
+    public void FromSyncManagedPersona_AppliesTolerantDefaults()
+    {
+        var mapper = PlainMapper();
+        // Every nullable wire field omitted (the server elides nulls entirely), blank archetype.
+        var sync = new SyncManagedPersona
+        {
+            Id = Guid.NewGuid(),
+            Archetype = "   ",
+            ToolScope = (int)PersonaToolScope.ReadOnly,
+            SchemaVersion = 1,
+        };
+
+        var persona = mapper.FromSyncManagedPersona(sync);
+
+        // Expertise null ⇒ empty list, never null (the UI binds it directly).
+        Assert.Empty(persona.Expertise);
+        // Blank/absent archetype ⇒ "custom", the shared vocabulary's fallback.
+        Assert.Equal("custom", persona.Archetype);
+        // Absent reasoningEffort ⇒ null (inherit), not None.
+        Assert.Null(persona.ReasoningEffort);
+        Assert.Equal(PersonaToolScope.ReadOnly, persona.ToolScope);
+        // Name/SystemPrompt are `required` locally but nullable on the wire: a malformed row degrades to
+        // empty strings rather than throwing, so one bad row cannot abort the whole pull.
+        Assert.Equal("", persona.Name);
+        Assert.Equal("", persona.SystemPrompt);
+        Assert.Null(persona.Tagline);
+        Assert.Null(persona.Guardrails);
+        Assert.Null(persona.OutputFormat);
+    }
+
+    [Fact]
+    public void FromSyncManagedPersona_BlankArchetypeVariants_AllMapToCustom()
+    {
+        var mapper = PlainMapper();
+
+        // "absent/blank ⇒ custom" (handoff §2.1.1) includes whitespace-only: Archetype indexes a closed
+        // vocabulary, so "   " would match no glyph and no label.
+        foreach (var archetype in new[] { null, "", "   ", "\t" })
+        {
+            var sync = SampleManagedPersona();
+            sync.Archetype = archetype;
+            Assert.Equal("custom", mapper.FromSyncManagedPersona(sync).Archetype);
+        }
+    }
+
+    [Fact]
+    public void FromSyncPersona_BlankArchetypeVariants_AllMapToCustom()
+    {
+        var mapper = PlainMapper();
+
+        // The user-persona mapper is held to the same rule, deliberately: MapPersona and both mappers
+        // treat the two persona flavours as column-identical, so a divergence here would show up as one
+        // kind of persona rendering an archetype the picker cannot label.
+        foreach (var archetype in new[] { null, "", "   ", "\t" })
+        {
+            var sync = mapper.ToSyncPersona(SamplePersona());
+            sync.Archetype = archetype;
+            Assert.Equal("custom", mapper.FromSyncPersona(sync).Archetype);
+        }
+    }
+
+    [Fact]
+    public void FromSyncManagedPersona_UnderE2EE_StillMapsPlaintext()
+    {
+        // Handoff §5.3: managed rows are plaintext even for an E2EE-enabled account, because a
+        // group-shared row cannot be wrapped with any single user's UMK. The mapper here has a live,
+        // ready E2EEService (IsE2EEActive == true) — the same one the encrypted user-persona test uses —
+        // and the managed mapping must ignore it entirely rather than look for a payload to decrypt.
+        var mapper = E2EEMapper();
+        var sync = SampleManagedPersona();
+
+        var persona = mapper.FromSyncManagedPersona(sync);
+
+        Assert.Equal("Brandvoice", persona.Name);
+        Assert.Equal("You are the company's brand voice editor.", persona.SystemPrompt);
+        Assert.Equal("Never invent product claims.", persona.Guardrails);
+        Assert.Equal(new List<string> { "copywriting", "brand", "editing" }, persona.Expertise);
+        Assert.True(persona.IsManaged);
+    }
+
+    [Fact]
+    public void SyncManagedPersona_HasNoE2EEFields()
+    {
+        // The absence of these fields is what makes a decrypt branch impossible to write, so it is the
+        // real pin for §5.3. If they ever reappear on the DTO, FromSyncManagedPersona needs revisiting.
+        var names = typeof(SyncManagedPersona).GetProperties().Select(p => p.Name).ToHashSet();
+
+        Assert.DoesNotContain("EncryptedPayload", names);
+        Assert.DoesNotContain("WrappedDek", names);
+        Assert.DoesNotContain("UserId", names);
+        // Q8: deliberately absent — see FromSyncManagedPersona's comment.
+        Assert.DoesNotContain("PreferredProviderId", names);
+    }
+
+    [Fact]
+    public void SyncMapper_HasNoManagedPersonaPushDirection()
+    {
+        // The managed channel is pull-only: the client never authors these rows, and a push direction
+        // would be a write path into another user's shared data. Expressed by reflection so it fails the
+        // day someone adds one.
+        var methods = typeof(SyncMapper)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static)
+            .Select(m => m.Name)
+            .ToList();
+
+        // Non-vacuity: the pull direction must be there, or the assertion below proves nothing.
+        Assert.Contains(nameof(SyncMapper.FromSyncManagedPersona), methods);
+        Assert.DoesNotContain("ToSyncManagedPersona", methods);
+        // Also nothing that merely returns the DTO under another name.
+        Assert.DoesNotContain(
+            typeof(SyncMapper).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static),
+            m => m.ReturnType == typeof(SyncManagedPersona));
     }
 }

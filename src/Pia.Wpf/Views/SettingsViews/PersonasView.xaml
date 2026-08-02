@@ -96,7 +96,7 @@
                                Height="30"
                                Padding="0"
                                Margin="0,0,4,0"
-                               Visibility="{Binding IsBuiltIn, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                               Visibility="{Binding IsReadOnly, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
                       <ui:SymbolIcon Symbol="Edit24" FontSize="14"/>
                       <ui:Button.ToolTip>
                         <ToolTip Content="{loc:Str Common_Edit}"/>
@@ -108,7 +108,7 @@
                                Width="30"
                                Height="30"
                                Padding="0"
-                               Visibility="{Binding IsBuiltIn, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                               Visibility="{Binding IsReadOnly, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
                       <ui:SymbolIcon Symbol="Delete24" FontSize="14"
                                      Foreground="{DynamicResource PiaDangerBrush}"/>
                       <ui:Button.ToolTip>
@@ -121,6 +121,14 @@
                               Visibility="{Binding IsBuiltIn, Converter={StaticResource BooleanToVisibilityConverter}}"
                               Appearance="Caution"
                               Margin="0,0,8,0"/>
+                    <!-- Managed = admin-published. Info rather than the built-in badge's Caution, so the
+                         two read as different kinds of read-only at a glance. The tooltip is where the
+                         escape hatch (Duplicate, still visible above) is spelled out. -->
+                    <ui:Badge Content="{loc:Str Personas_Managed}"
+                              Visibility="{Binding IsManaged, Converter={StaticResource BooleanToVisibilityConverter}}"
+                              Appearance="Info"
+                              Margin="0,0,8,0"
+                              ToolTip="{loc:Str Personas_ManagedTooltip}"/>
                   </StackPanel>
                 </DockPanel>
               </DockPanel>

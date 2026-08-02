@@ -480,7 +480,10 @@ public class SyncClientService : ISyncClientService, IDisposable
             // the push is chunked below by session slices; the (typically small) non-session entities
             // and Settings ride only the first chunk.
             var templateDtos = templates.Where(t => !t.IsBuiltIn).Select(t => _mapper.ToSyncTemplate(t, userId)).ToList();
-            var personaDtos = personas.Where(p => !p.IsBuiltIn).Select(p => _mapper.ToSyncPersona(p, userId)).ToList();
+            // !IsManaged as well as !IsBuiltIn: GetPersonasAsync returns built-ins ∪ managed ∪ user rows, and
+            // managed rows are pull-only — an id in personas.upserted would be quarantined server-side, but
+            // the client contract is to never emit one. The filter states that invariant at the push site.
+            var personaDtos = personas.Where(p => !p.IsBuiltIn && !p.IsManaged).Select(p => _mapper.ToSyncPersona(p, userId)).ToList();
             var providerDtos = providers.Where(p => p.ProviderType != AiProviderType.PiaCloud).Select(p => _mapper.ToSyncProvider(p, userId)).ToList();
             var sessionDtos = sessions.Select(s => _mapper.ToSyncSession(s, userId)).ToList();
             var memoryDtos = memories.Select(m => _mapper.ToSyncMemory(m, userId)).ToList();
@@ -669,7 +672,11 @@ public class SyncClientService : ISyncClientService, IDisposable
             : [];
 
         var dirtyTemplates = templates.Where(t => !t.IsBuiltIn).Where(t => (t.ModifiedAt ?? t.CreatedAt).ToUniversalTime() >= lastSync).Count();
-        var dirtyPersonas = personas.Where(p => !p.IsBuiltIn).Where(p => p.UpdatedAt.ToUniversalTime() >= lastSync).Count();
+        // Same !IsManaged filter as the request builder below: this only feeds the diagnostic log line (the
+        // push short-circuit reads request.*.Upserted.Count, not these), but a freshly-replaced managed
+        // snapshot bumps UpdatedAt on every row, so without it the log would claim N dirty personas on a
+        // cycle with nothing pushable and send someone hunting a phantom.
+        var dirtyPersonas = personas.Where(p => !p.IsBuiltIn && !p.IsManaged).Where(p => p.UpdatedAt.ToUniversalTime() >= lastSync).Count();
         var dirtyProviders = providers.Where(p => p.ProviderType != AiProviderType.PiaCloud).Where(p => p.UpdatedAt.ToUniversalTime() >= lastSync).Count();
         var dirtySessions = sessions.Count;
         var dirtyMemories = memories.Where(m => m.UpdatedAt.ToUniversalTime() >= lastSync).Count();
@@ -711,7 +718,11 @@ public class SyncClientService : ISyncClientService, IDisposable
             Personas = new SyncEntityChanges<SyncPersona>
             {
                 Upserted = personas
-                    .Where(p => !p.IsBuiltIn)
+                    // !IsManaged as well as !IsBuiltIn: GetPersonasAsync returns built-ins ∪ managed ∪ user
+                    // rows, and managed personas are pull-only. The server quarantines a managed id it
+                    // receives here, but the client contract is to never emit one — this filter is where
+                    // that invariant is stated.
+                    .Where(p => !p.IsBuiltIn && !p.IsManaged)
                     .Where(p => p.UpdatedAt.ToUniversalTime() >= lastSync)
                     .Select(p => _mapper.ToSyncPersona(p, userId))
                     .ToList(),
@@ -942,11 +953,20 @@ public class SyncClientService : ISyncClientService, IDisposable
     {
         var since = sinceUtc.ToString("O");
 
+        // Managed-persona first-run rule (managed-personas handoff §2.1.3): exactly one pull with BOTH
+        // conditional mechanisms disabled, to force a full catalog snapshot. Needed because a build that
+        // predates the managedPersonas channel still stored the catalogVersion it arrived with, so this
+        // profile can be echoing an already-current token while holding no managed rows at all — the
+        // server would fast-skip the catalog forever. Same hole after a profile reset or DB rebuild.
+        // Both mechanisms have to go: ?catalogVersion= gates the catalog block, If-None-Match gates the
+        // entire body (a 304 carries no managedPersonas either).
+        var forceFullCatalog = isFirstPage && !settings.ManagedPersonaStoreInitialized;
+
         // ?limit caps each collection (Sec 6.3); ?catalogVersion lets the server skip re-sending the
         // full plugin catalog when it is unchanged (Sec 3.5). Both are opt-in — a pre-upgrade server
         // ignores them. catalogVersion is omitted on first run (null) so the server sends the full catalog.
         var pullUrl = $"{serverUrl}/api/sync/pull?since={since}&limit={PullPageLimit}";
-        if (settings.LastCatalogVersion.HasValue)
+        if (settings.LastCatalogVersion.HasValue && !forceFullCatalog)
             pullUrl += $"&catalogVersion={settings.LastCatalogVersion.Value}";
         _logger.LogInformation("Pull requesting: {Url}", SafeUrl.Format(pullUrl));
 
@@ -954,8 +974,11 @@ public class SyncClientService : ISyncClientService, IDisposable
         // TryParse (not the EntityTagHeaderValue ctor) so a weak (W/"...") stored ETag never
         // throws FormatException and aborts the whole pull cycle — see AssistantChatSyncService's
         // identical guard for the chat ETag. Only the first page is conditional (see PullChangesAsync).
-        if (isFirstPage && !string.IsNullOrEmpty(settings.LastPullETag) && EntityTagHeaderValue.TryParse(settings.LastPullETag, out var lastPullTag))
+        if (isFirstPage && !forceFullCatalog && !string.IsNullOrEmpty(settings.LastPullETag) && EntityTagHeaderValue.TryParse(settings.LastPullETag, out var lastPullTag))
             pullRequest.Headers.IfNoneMatch.Add(lastPullTag);
+
+        if (forceFullCatalog)
+            _logger.LogInformation("Pull forced unconditional: the managed-persona store has not been initialized yet");
 
         var pullSw = Stopwatch.StartNew();
         var response = await client.SendAsync(pullRequest);
@@ -974,12 +997,19 @@ public class SyncClientService : ISyncClientService, IDisposable
             return (false, false, 0, 0, null, false);
         }
 
-        if (isFirstPage && response.Headers.ETag is not null)
-        {
-            settings.LastPullETag = response.Headers.ETag.ToString();
-            await _settingsService.SaveSettingsAsync(settings);
-            _logger.LogDebug("Pull ETag stored: {ETag}", settings.LastPullETag);
-        }
+        // Read the response ETag here but PERSIST IT ONLY AFTER EVERY APPLY BELOW SUCCEEDS — it rides the
+        // same save as LastCatalogVersion, for a stronger version of the same reason. The ETag is
+        // "v{userDataVersion}-c{catalogVersion}-s{sinceTicks}" and a page whose apply throws advances none
+        // of the three (LastSyncTimestamp is only advanced by a completed pull), so storing it up here
+        // would make the next pull echo a string the server recomputes identically and answer 304: the
+        // un-applied page could never be re-fetched, and for the replace-all managed channel that means a
+        // withdrawn persona stays in the store indefinitely — exactly what replace-all exists to prevent.
+        // Keeping the OLD ETag on failure makes the retry unconditional: it mismatched once (that is why
+        // this response is a 200 and not a 304), so it mismatches again. Same shape as
+        // AssistantChatSyncService's LastChatPullETag, whose comment already claims to mirror this one.
+        var newPullETag = isFirstPage && response.Headers.ETag is not null
+            ? response.Headers.ETag.ToString()
+            : null;
 
         var pullResponse = await response.Content.ReadFromJsonAsync<SyncPullResponse>();
         if (pullResponse is null) return (false, false, 0, 0, null, false);
@@ -996,8 +1026,12 @@ public class SyncClientService : ISyncClientService, IDisposable
             ? pullResponse.CatalogVersion
             : null;
 
+        // Managed personas are logged as COUNTS ONLY — a name, tagline or prompt is admin-authored user
+        // content and must never reach a support log (CLAUDE.md privacy-first logging). 0u/0d therefore
+        // reads the same whether the key was absent or present-and-empty; the two are distinguished at the
+        // apply site below, not here.
         _logger.LogInformation(
-            "Pull response — ServerTimestamp: {ServerTs}, Templates: {TU}u/{TD}d, Personas: {PeU}u/{PeD}d, Providers: {PU}u/{PD}d, Sessions: {SA}a/{SD}d, Memories: {MU}u/{MD}d, KanbanColumns: {KCU}u/{KCD}d, Todos: {ToU}u/{ToD}d, Plugins: {PlU}u/{PlD}d",
+            "Pull response — ServerTimestamp: {ServerTs}, Templates: {TU}u/{TD}d, Personas: {PeU}u/{PeD}d, Providers: {PU}u/{PD}d, Sessions: {SA}a/{SD}d, Memories: {MU}u/{MD}d, KanbanColumns: {KCU}u/{KCD}d, Todos: {ToU}u/{ToD}d, Plugins: {PlU}u/{PlD}d, ManagedPersonas: {MpU}u/{MpD}d",
             pullResponse.ServerTimestamp,
             pullResponse.Templates.Upserted.Count, pullResponse.Templates.Deleted.Count,
             pullResponse.Personas.Upserted.Count, pullResponse.Personas.Deleted.Count,
@@ -1006,7 +1040,9 @@ public class SyncClientService : ISyncClientService, IDisposable
             pullResponse.Memories.Upserted.Count, pullResponse.Memories.Deleted.Count,
             pullResponse.KanbanColumns.Upserted.Count, pullResponse.KanbanColumns.Deleted.Count,
             pullResponse.Todos.Upserted.Count, pullResponse.Todos.Deleted.Count,
-            pullResponse.Plugins.Upserted.Count, pullResponse.Plugins.Deleted.Count);
+            pullResponse.Plugins.Upserted.Count, pullResponse.Plugins.Deleted.Count,
+            pullResponse.ManagedPersonas?.Personas.Count ?? 0,
+            pullResponse.ManagedPersonas?.RecentlyRemoved.Count ?? 0);
 
         var userId = settings.SyncUserId;
 
@@ -1109,10 +1145,14 @@ public class SyncClientService : ISyncClientService, IDisposable
 
                     if (existing is not null)
                     {
-                        if (existing.IsBuiltIn)
+                        // IsReadOnly, not IsBuiltIn: GetPersonasAsync also returns managed rows now, and
+                        // UpdatePersonaAsync THROWS on a managed id. Without this, a user persona whose id
+                        // collided with a managed one would abort the whole pull (the catch below only
+                        // handles CryptographicException) on every cycle, forever.
+                        if (existing.IsReadOnly)
                         {
                             mergeSkipped++;
-                            _logger.LogDebug("Skipped persona {Id}: built-in personas cannot be updated via sync", persona.Id);
+                            _logger.LogDebug("Skipped persona {Id}: built-in and managed personas cannot be updated via sync", persona.Id);
                             continue;
                         }
 
@@ -1531,16 +1571,69 @@ public class SyncClientService : ISyncClientService, IDisposable
                 pullResponse.Plugins.Upserted.Count, pullResponse.Plugins.Deleted.Count);
         }
 
-        // Persist the server's current catalog version now that every entity in this page (including
-        // plugins, applied just above) has been applied without throwing. Storing it only here — not
-        // when it was first read off the response, further up — means a mid-apply exception leaves
-        // the stored version unchanged, so the next pull still omits/mismatches ?catalogVersion= and
-        // the server resends the full catalog instead of skipping the un-applied changes.
-        if (newCatalogVersion.HasValue)
+        // Apply managed personas. Placed here — after every other apply, before the catalog-version and
+        // ETag persist below — for exactly the reason the plugin apply above is here: a throw inside the
+        // replace must leave BOTH conditional tokens UNCHANGED, so the next pull re-sends the catalog
+        // instead of fast-skipping (or 304-ing away) a snapshot this page never stored. Only the first page
+        // is considered, because that is the only page the catalog block can appear on at all.
+        if (isFirstPage && _personaService is not null)
         {
-            settings.LastCatalogVersion = newCatalogVersion;
+            // REPLACE-ALL, unlike every other channel: a non-null managedPersonas is the authoritative
+            // snapshot for this user's group. Null (⇒ key absent, the server omits nulls app-wide) means the
+            // catalog fast-skip fired — keep the store. Never merge, or an unassignment (which carries no
+            // tombstone) would never remove anything. The payload is a SyncManagedPersonaSnapshot, not a
+            // SyncEntityChanges<T>, precisely so this cannot be handed to the merge helper by mistake.
+            if (pullResponse.ManagedPersonas is { } managed)
+            {
+                // No E2EE path and no decryptionErrors bookkeeping: managed rows carry no encryptedPayload/
+                // wrappedDek by design (a group-shared row cannot be wrapped with one user's UMK), so they
+                // are plaintext even for an E2EE account — see FromSyncManagedPersona (handoff §5.3).
+                await _personaService.ReplaceManagedPersonasAsync(
+                    managed.Personas.Select(_mapper.FromSyncManagedPersona).ToList());
+
+                // RecentlyRemoved needs no handling under replace-all — absence from `personas` is what
+                // removes a row, and an unassignment never appears here at all. It is logged as
+                // confirmation, not consumed as the mechanism. Counts only (admin-authored names are
+                // user content).
+                _logger.LogInformation(
+                    "Applied managed persona snapshot: {Count} persona(s), {RecentlyRemoved} recently removed",
+                    managed.Personas.Count, managed.RecentlyRemoved.Count);
+            }
+        }
+
+        // Persist the server's current catalog version now that every entity in this page (including
+        // plugins and the managed snapshot, applied just above) has been applied without throwing. Storing
+        // it only here — not when it was first read off the response, further up — means a mid-apply
+        // exception leaves the stored version unchanged, so the next pull still omits/mismatches
+        // ?catalogVersion= and the server resends the full catalog instead of skipping the un-applied
+        // changes. LastPullETag rides the same save for the same reason (see where it is read, above),
+        // because a stored ETag would otherwise 304 away the retry the un-applied page needs.
+        //
+        // The managed-persona first-run latch closes here too (handoff §2.1.3), on ONE rule: the forced
+        // unconditional pull reached this point — i.e. it returned 2xx with a body whose applies all
+        // succeeded. Deliberately NOT "a managedPersonas block arrived": a pre-upgrade server has no such
+        // channel, so waiting for a non-null block would keep every future pull unconditional and
+        // permanently lose the 304 fast path. Closing it blind is safe because the server folds the caller's
+        // group into catalogVersion (Q10) — a token stored before the server upgrade can never equal a mixed
+        // one, so the upgrade itself forces exactly one full-catalog pull anyway. Never latched on a 304, a
+        // non-2xx or a null body: all three return above, before this point. forceFullCatalog already
+        // carries `isFirstPage && !ManagedPersonaStoreInitialized`, so it is the whole condition.
+        var latchStoreInitialized = forceFullCatalog;
+        var storePullETag = newPullETag is not null && newPullETag != settings.LastPullETag;
+
+        if (newCatalogVersion.HasValue || latchStoreInitialized || storePullETag)
+        {
+            if (newCatalogVersion.HasValue)
+                settings.LastCatalogVersion = newCatalogVersion;
+            if (latchStoreInitialized)
+                settings.ManagedPersonaStoreInitialized = true;
+            if (storePullETag)
+                settings.LastPullETag = newPullETag;
+
             await _settingsService.SaveSettingsAsync(settings);
-            _logger.LogDebug("Pull catalog version stored: {CatalogVersion}", newCatalogVersion);
+            _logger.LogDebug(
+                "Pull catalog version stored: {CatalogVersion} (managed store initialized: {Initialized}, ETag stored: {ETagStored})",
+                newCatalogVersion, settings.ManagedPersonaStoreInitialized, storePullETag);
         }
 
         var pulledCount = pullResponse.Templates.Upserted.Count

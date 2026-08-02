@@ -10,8 +10,9 @@ using Pia.ViewModels.Models;
 namespace Pia.ViewModels;
 
 /// <summary>
-/// Manages personas in settings (list / add / edit / delete / duplicate-a-built-in). Built-ins are
-/// shown read-only. Mirrors <see cref="OptimizeSettingsViewModel"/>.
+/// Manages personas in settings (list / add / edit / delete / duplicate-a-built-in). Built-ins and
+/// admin-published managed personas are shown read-only; Duplicate is the escape hatch for both.
+/// Mirrors <see cref="OptimizeSettingsViewModel"/>.
 /// </summary>
 public partial class PersonaSettingsViewModel : UiThreadViewModel
 {
@@ -79,8 +80,18 @@ public partial class PersonaSettingsViewModel : UiThreadViewModel
     [RelayCommand]
     private async Task EditPersonaAsync(Persona? persona)
     {
-        if (persona is null || persona.IsBuiltIn)
+        if (persona is null)
             return;
+
+        // One gate for both read-only flavours, so a third one would be caught here too. Only the managed
+        // case explains itself: the card looks otherwise ordinary and the flag is new, so users will ask.
+        // A built-in still returns silently, exactly as before — those have always visibly been fixed.
+        if (persona.IsReadOnly)
+        {
+            if (persona.IsManaged)
+                _snackbarService.Show(_localizationService["Msg_Warning"], _localizationService["Msg_Settings_CannotEditManagedPersona"], Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(3));
+            return;
+        }
 
         var editModel = PersonaEditModel.FromPersona(persona, _textOptimizationService);
         await PopulateProvidersAsync(editModel, persona.PreferredProviderId);
@@ -105,12 +116,21 @@ public partial class PersonaSettingsViewModel : UiThreadViewModel
             return;
         }
 
+        // Deleting a managed persona locally would only invite the next sync pull to put it straight back —
+        // the admin owns the catalog. Refuse before reaching the service (which refuses again, in C2).
+        if (persona.IsManaged)
+        {
+            _snackbarService.Show(_localizationService["Msg_Warning"], _localizationService["Msg_Settings_CannotDeleteManagedPersona"], Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(3));
+            return;
+        }
+
         await _personaService.DeletePersonaAsync(persona.Id);
         await RefreshPersonasAsync();
         _snackbarService.Show(_localizationService["Msg_Success"], _localizationService["Msg_Settings_PersonaDeleted"], Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
     }
 
-    /// <summary>Creates a new user persona seeded from an existing one (incl. a built-in) and opens the editor.</summary>
+    /// <summary>Creates a new user persona seeded from an existing one (incl. a read-only built-in or
+    /// managed one — this is the escape hatch for those) and opens the editor.</summary>
     [RelayCommand]
     private async Task DuplicatePersonaAsync(Persona? persona)
     {
@@ -130,7 +150,9 @@ public partial class PersonaSettingsViewModel : UiThreadViewModel
         }
     }
 
-    private static bool CanDeletePersona(Persona? persona) => persona is { IsBuiltIn: false };
+    // IsReadOnly covers built-in OR managed, so the command is disabled for both flavours of
+    // admin/app-owned persona and the XAML can key off the same one flag.
+    private static bool CanDeletePersona(Persona? persona) => persona is { IsReadOnly: false };
 
     private async Task PopulateProvidersAsync(PersonaEditModel editModel, Guid? selectedId)
     {
