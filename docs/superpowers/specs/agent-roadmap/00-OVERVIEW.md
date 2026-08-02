@@ -172,7 +172,7 @@ required — a simplify that moves the count has changed behaviour) → **2858**
 correct this batch, it measurably enlarged what the batch pins._
 
 _**The thing that matters most, and it is not the count. Batch 08 SHIPPED ITS OWN NAMED CENTRAL RISK AS A
-DEFECT.** The batch spec's guardrail read, verbatim (`08-live-steering.md:167`–`:169`): *"The pause path must be
+DEFECT.** The batch spec's guardrail read, verbatim (`08-live-steering.md:179`–`:181`): *"The pause path must be
 demonstrated to leave a RESUMABLE run, not a `Cancelled` one, on both executors. D1 makes this the single
 easiest thing in the batch to get wrong, and the failure is silent in the sense that the run does settle — just
 terminally."* As built at `c4d141b`, a user pause settled the run **terminally on three reachable paths**, and
@@ -2392,7 +2392,7 @@ ruling, or a hole this batch measured and did not fill.
 verifiers caught it.** Recorded first, at length, and without softening — this is the most important thing in
 the section and burying it under "and then we fixed it" would repeat the failure this file has had to repair
 most often. The guardrail was written down *before* any code, in the batch spec's own Guardrails block
-(`08-live-steering.md:167`–`:169`): *"The pause path must be demonstrated to leave a RESUMABLE run, not a
+(`08-live-steering.md:179`–`:181`): *"The pause path must be demonstrated to leave a RESUMABLE run, not a
 `Cancelled` one, on both executors. D1 makes this the single easiest thing in the batch to get wrong, and the
 failure is silent in the sense that the run does settle — just terminally."* As built at `c4d141b` it did
 exactly that, on **three** reachable paths, and the adjudicator reproduced one itself by execution against the
