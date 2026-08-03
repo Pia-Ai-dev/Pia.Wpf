@@ -892,6 +892,12 @@ public class ScheduledJobBackgroundServiceTests
 
         // Models the real query: only jobs whose NextFireAt has passed come back, so a job whose schedule
         // was advanced is genuinely not due on the following tick.
+        //
+        // LIMIT, stated so nobody reads a false green off it: this models only the NextFireAt half of the real
+        // predicate, never `AND Status = 'Active'`, and MarkOccurrenceDispatchedAsync below moves NextFireAt for
+        // EVERY recurrence. A RecurrenceType.Once job leaves the due window in the real service by a Status flip
+        // and its NextFireAt never moves, so a Once scenario cannot be measured here at all — that pair lives in
+        // ScheduledJobServiceTests, against the real service and the real SQL.
         public Task<IReadOnlyList<ScheduledJob>> GetDueJobsAsync()
             => Task.FromResult<IReadOnlyList<ScheduledJob>>(
                 _due.Where(j => j.NextFireAt <= DateTime.Now).ToList());

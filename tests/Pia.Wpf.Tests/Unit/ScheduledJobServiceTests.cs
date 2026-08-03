@@ -175,6 +175,66 @@ public class ScheduledJobServiceTests : IDisposable
         Assert.DoesNotContain(await _service.GetDueJobsAsync(), j => j.Id == job.Id);
     }
 
+    /// <summary>
+    /// hermes #2 layer (a) for the <see cref="RecurrenceType.Once"/> class, which is the half the scheduler's
+    /// own tests cannot see. Now that a tick dispatches without awaiting the run, the schedule must leave the due
+    /// window at DISPATCH — and for a one-off the only column that can do that is <c>Status</c>, because
+    /// <c>NextFireAt</c> is deliberately left at its past instant on every settle path.
+    /// <para>
+    /// The "NextFireAt unchanged" leg is what makes "no longer due" non-vacuous: give the Once branch the
+    /// recurring branch's <c>SET NextFireAt=@NextFireAt</c> and the row also leaves the window, so the not-due leg
+    /// alone would stay green while the honest record was silently rewritten.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task MarkOccurrenceDispatchedAsync_OnceJob_LeavesTheDueWindowByStatus_NotByMovingNextFireAt()
+    {
+        var job = await _service.CreateAsync("TEST_OnceDispatched", "q", RecurrenceType.Once, new TimeOnly(9, 0),
+            specificDate: DateTime.Now.Date.AddDays(-1));
+        var plantedFire = DateTime.Now.AddMinutes(-2);
+        var plantedUpdate = DateTime.Now.AddHours(-3);
+        await ForceNextFireAtAsync(job.Id, plantedFire);
+        await ForceUpdatedAtAsync(job.Id, plantedUpdate);
+        Assert.Contains(await _service.GetDueJobsAsync(), j => j.Id == job.Id); // premise: it really was due
+
+        await _service.MarkOccurrenceDispatchedAsync(job.Id);
+
+        var after = await _service.GetAsync(job.Id);
+        Assert.Equal(ScheduledJobStatus.Completed, after!.Status);
+        Assert.Equal(plantedFire, after.NextFireAt, TimeSpan.FromSeconds(1));
+        Assert.True(after.UpdatedAt > plantedUpdate, "the Status flip must bump UpdatedAt or a sync pull reverts it");
+        // Dispatching is not a job-health signal: the outcome bookkeeping still owns the counter.
+        Assert.Equal(0, after.ConsecutiveFailures);
+
+        Assert.DoesNotContain(await _service.GetDueJobsAsync(), j => j.Id == job.Id);
+    }
+
+    /// <summary>
+    /// The recurring half of the same layer, against the real calculator: the occurrence is spent, so the row
+    /// re-arms into the NEXT one and nothing else moves. <c>UpdatedAt</c> deliberately does not bump —
+    /// <c>NextFireAt</c> is device-local execution state and bumping would force a pointless sync push.
+    /// </summary>
+    [Fact]
+    public async Task MarkOccurrenceDispatchedAsync_RecurringJob_ReArmsAndTouchesNoHealthColumn()
+    {
+        var job = await _service.CreateAsync("TEST_DailyDispatched", "q", RecurrenceType.Daily, new TimeOnly(9, 0));
+        var plantedUpdate = DateTime.Now.AddHours(-3);
+        await ForceNextFireAtAsync(job.Id, DateTime.Now.AddMinutes(-2));
+        await ForceUpdatedAtAsync(job.Id, plantedUpdate);
+        Assert.Contains(await _service.GetDueJobsAsync(), j => j.Id == job.Id);
+
+        await _service.MarkOccurrenceDispatchedAsync(job.Id);
+
+        var after = await _service.GetAsync(job.Id);
+        Assert.True(after!.NextFireAt > DateTime.Now, "a recurring job must re-arm into its next occurrence");
+        Assert.Equal(ScheduledJobStatus.Active, after.Status);
+        Assert.Equal(0, after.ConsecutiveFailures);
+        Assert.Null(after.LastFiredAt);   // the outcome writers own this, not the dispatch
+        Assert.Equal(plantedUpdate, after.UpdatedAt, TimeSpan.FromSeconds(1));
+
+        Assert.DoesNotContain(await _service.GetDueJobsAsync(), j => j.Id == job.Id);
+    }
+
     [Fact]
     public async Task MarkRunFailedAsync_OnceJob_PostModelFailure_FailsOnFirstFailure()
     {
