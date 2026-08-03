@@ -394,11 +394,23 @@ _**hermes #2 is NARROWED, not CLOSED, and this paragraph is the reason the row m
 awaits `handle.Completion`, so a long agent run no longer blocks every other scheduled job — that half is real
 and pinned by a state fact rather than a stopwatch (`e753d25a` rewrote the characterization test for exactly
 that reason). **Two confirmed findings were deliberately left unfixed**, and both were characterized by a test
-that names the contradiction instead of being quietly dropped. **(i) A confirmed MUST-FIX:**
-`FailInterruptedRunsAsync` (`AgentRunService.cs:569`–`:664`) touches only `AgentRuns`/`AgentSteps`, so now that
-the schedule advances at **dispatch** time a crashed job can read `Status == Completed` with `LastFiredAt`
-null — every bounded fix breaks a deliberate choice made in this same change, so it is an owner decision, not
-an oversight. **(ii) A confirmed should-fix:** the tick is **still** held hostage — no longer by run
+that names the contradiction instead of being quietly dropped. **(i) A confirmed MUST-FIX, and the one item
+here that is a REGRESSION THIS SWEEP INTRODUCED rather than a pre-existing gap or a scope boundary:**
+`FailInterruptedRunsAsync` (`AgentRunService.cs:569`) settles crash-recoverable runs to **Cancelled** and
+touches only `AgentRuns`/`AgentSteps`, so now that the schedule advances at **dispatch** time
+(`MoveOffCurrentOccurrenceAsync`, which deliberately writes no job-health column) a crashed firing is never
+reconciled against the job row: a recurring job silently fails to increment `ConsecutiveFailures`, and a
+**one-off reads `Status == Completed` with `LastFiredAt` null forever** having produced nothing.
+**The build agent reported that "every bounded fix breaks a deliberate choice from this batch"; a later pass
+CHECKED that claim against the code and it is OVERSTATED — recorded here because the doc had already repeated
+it.** What is true: the dispatch-time write must not change (`:502`–`:514` argues that case, and dispatch being
+a one-off's settle is deliberate), and `MarkRunFailedAsync` cannot be reused because it recomputes `NextFireAt`,
+which dispatch already advanced — `:509` forbids exactly that double-advance. What is NOT true is that no
+bounded fix exists: **a startup health-only reconcile, joining `ScheduledJobs` to `AgentRuns` on the
+now-indexed `TriggerRef`, does not touch the dispatch write at all.** It was not attempted because it needs a
+NEW non-advancing write plus an `IScheduledJobService` change and a matching edit in every hand-written fake
+(the cost `:510`–`:511` names) — **batch-sized, not a tail-end patch, on the riskiest surface in this sweep.**
+So: an owner decision with the fix SKETCHED, not an unfixable one. **(ii) A confirmed should-fix:** the tick is **still** held hostage — no longer by run
 completion, but by an unanswered grace/late-run **dialog**; two due jobs and one unanswered prompt still
 dispatch neither. Pre-existing, and fixing it changes `ExecuteOnceAsync`'s contract. **And Q4 closes only
 partly**: the `TriggerRef` guard blocks the executing set `{Planning, Running, Verifying, WaitingForChildren}`
@@ -1016,7 +1028,7 @@ each other by number. Read the **Rank** column for priority.
 
 | Rank | # | Batch | Phase | Size | Depends on |
 |---|---|-------|-------|------|-----------|
-| **1** | — | **Manual Windows smoke round.** The unit half is DONE — 2422 / **0 failed** / 1 skipped at `c92dfdd`, 2026-07-30; **2697 / 0 failed / 1 skipped at `37a0410`**, 2026-07-31, after Phase 3. **Batches 04 and 03 both lengthened this list and neither shortened it**, and 04's share is the sharpest kind: a **user-visible capability removal** (a write in voice mode now declines) that no test can confirm looks right. ~~**Phase 3 lengthened it by FOURTEEN items and shortened nothing**~~ — nine from its own plan's §8, two more its fix pass added, and three from the consolidation pass of 2026-08-01 (`2704 / 0 failed / 1 skipped at 165486e`, the +7 being that pass's own new facts) — and its share is sharper still: 06 **relocates where every unattended run's files land**, which is the first change on this branch that a user could notice without opening a settings page. **AMENDED 2026-08-01: that clause had never registered EITHER of the two batches that have since moved this list, and crediting one meant crediting both.** Phase 3 did lengthen it by fourteen; then **[Batch 13](13-view-test-host.md) SHORTENED four** (`2708 / 0 failed / 1 skipped at 09522be`) — none closed, each a round trip whose silent half became automated — and **[Batch 14](14-view-coverage-debt.md) moved three more: TWO OFF OUTRIGHT and ONE shortened** (`2734 / 0 failed / 1 skipped at fa331ec`, Debug **and** Release `0 Warning(s) / 0 Error(s)` under `-t:Rebuild`, measured by the orchestrator on the finished tree and confirmed by a second identical run). 14 adds **nothing** to this list — it ships no string, no control and no behaviour, `git diff --stat 0c5cb42..fa331ec -- src/` **empty**. What a unit suite cannot cover remains: a real provider round, a real MCP server, a real repo for worktree mode, and the DE/FR render — see the callout above and every “Opened by” section that carries smoke debt, which is now **six**, named rather than counted: Batch 04, Batch 03, Phase 3, Batch 09, Batch 13 and Batch 14 (this row said “all three” until 2026-08-01, when three more sections had accumulated behind it). **AMENDED AGAIN, later the same day: [Batch 08](08-live-steering.md) LENGTHENED this round by SEVEN items and shortened none** (`2882 / 0 failed / 1 skipped at 3de2ac1`, Debug **and** Release `0 Warning(s) / 0 Error(s)` under `-t:Rebuild` with 6 genuine `csc.exe` each, measured by the orchestrator on the finished tree and confirmed by a second identical run) — the **first** batch since 13 and 14 to move this number **up**, and the day's ledger is therefore two clauses that must not be collapsed into one net: **14 took two items OFF and shortened one; 08 adds seven.** The seven are enumerated **by name** in "Opened by Batch 08" below, with the reason each is unautomatable. **08's three-commit fix pass did NOT shorten this list** — it added unit facts and retired zero manual items — and the smoke-debt sections behind this row are now **seven** | — | S | a Windows runner + a live provider + a real git repo |
+| **1** | — | **Manual Windows smoke round.** The unit half is DONE — 2422 / **0 failed** / 1 skipped at `c92dfdd`, 2026-07-30; **2697 / 0 failed / 1 skipped at `37a0410`**, 2026-07-31, after Phase 3. **Batches 04 and 03 both lengthened this list and neither shortened it**, and 04's share is the sharpest kind: a **user-visible capability removal** (a write in voice mode now declines) that no test can confirm looks right. ~~**Phase 3 lengthened it by FOURTEEN items and shortened nothing**~~ — nine from its own plan's §8, two more its fix pass added, and three from the consolidation pass of 2026-08-01 (`2704 / 0 failed / 1 skipped at 165486e`, the +7 being that pass's own new facts) — and its share is sharper still: 06 **relocates where every unattended run's files land**, which is the first change on this branch that a user could notice without opening a settings page. **AMENDED 2026-08-01: that clause had never registered EITHER of the two batches that have since moved this list, and crediting one meant crediting both.** Phase 3 did lengthen it by fourteen; then **[Batch 13](13-view-test-host.md) SHORTENED four** (`2708 / 0 failed / 1 skipped at 09522be`) — none closed, each a round trip whose silent half became automated — and **[Batch 14](14-view-coverage-debt.md) moved three more: TWO OFF OUTRIGHT and ONE shortened** (`2734 / 0 failed / 1 skipped at fa331ec`, Debug **and** Release `0 Warning(s) / 0 Error(s)` under `-t:Rebuild`, measured by the orchestrator on the finished tree and confirmed by a second identical run). 14 adds **nothing** to this list — it ships no string, no control and no behaviour, `git diff --stat 0c5cb42..fa331ec -- src/` **empty**. What a unit suite cannot cover remains: a real provider round, a real MCP server, a real repo for worktree mode, and the DE/FR render — see the callout above and every “Opened by” section that carries smoke debt, which is now **six**, named rather than counted: Batch 04, Batch 03, Phase 3, Batch 09, Batch 13 and Batch 14 (this row said “all three” until 2026-08-01, when three more sections had accumulated behind it). **AMENDED AGAIN, later the same day: [Batch 08](08-live-steering.md) LENGTHENED this round by SEVEN items and shortened none** (`2882 / 0 failed / 1 skipped at 3de2ac1`, Debug **and** Release `0 Warning(s) / 0 Error(s)` under `-t:Rebuild` with 6 genuine `csc.exe` each, measured by the orchestrator on the finished tree and confirmed by a second identical run) — the **first** batch since 13 and 14 to move this number **up**, and the day's ledger is therefore two clauses that must not be collapsed into one net: **14 took two items OFF and shortened one; 08 adds seven.** The seven are enumerated **by name** in "Opened by Batch 08" below, with the reason each is unautomatable. **08's three-commit fix pass did NOT shorten this list** — it added unit facts and retired zero manual items — and the smoke-debt sections behind this row are now **seven**. **AMENDED 2026-08-03: the [hermes §7 sweep](hermes-comparison.md) LENGTHENED this round by SIX items and shortened none** (`3092 / 0 failed / 1 skipped`, Debug **and** Release `0 Warning(s) / 0 Error(s)` under `-t:Rebuild` with 6 genuine `csc.exe` each, measured by the orchestrator on the finished tree and confirmed by a **second identical** run) — it is **not a batch**, which is why it has no rank row of its own and is recorded as a snapshot addendum instead, and it is the **second** consecutive change to move this number **up**. The six are enumerated **by name** in "Opened by the hermes §7 sweep" below. Two of them are a different *kind* of debt from everything above: item 2 is a run that now **stops and asks** where it used to deny, so an uninterpretable card leaves the user stuck rather than merely misinformed; and item 4 is the first entry on this list whose automated half is blocked by the shared STA host's refusal to open a `Window` — the guard's production trigger (`Loaded`) is the one step the suite synthesises, on **eight** top-level views. The smoke-debt sections behind this row are therefore now **eight** | — | S | a Windows runner + a live provider + a real git repo |
 | — | 08 | [Live steering](08-live-steering.md) | 4 | L | ✅ **shipped** — build `8166f4a`→`c4d141b` (G1–G8 + SIMPLIFY, 11 commits), review `12601ef`, **fix pass `59dfbde`→`3de2ac1` outside that range**; `7772602` (the impl spec) sits **before** it and belongs to no batch. Gate `2882 / 0 failed / 1 skipped`, **+148**. `Paused(4)` is now driven, not reserved. **Its own named central risk shipped as a defect and was caught by review, not by the suite** — all 4 must-fixes closed; **adds seven items to Rank 1**; see “Opened by Batch 08” |
 | — | 01 | [Budget-pause polish](01-budget-pause-polish.md) — **empty**: every item closed by the hardening batch + its fix-up; the file keeps only open assumptions | 2 | — | — |
 | — | 05 | [Planner reason-then-emit](05-planner-reason-then-emit.md) | 2 | S–M | ✅ **shipped** `7a41a68`→`d3c8c61` |
@@ -2889,6 +2901,47 @@ in particular the pre-existing budget-pause path, examined only where Batch 08 c
   batch, and item 3 above is a *third* scheduled item, not a re-run of either.
 
 ---
+
+### Opened by the hermes §7 sweep (2026-08-03) — known, reasoned, not closed
+
+Six items, enumerated **by name** because the Rank-1 row's convention is that a prose "lengthens" claim with no
+list leaves the next pass nothing to smoke against. **Nothing comes off the list here.** Each says why a unit
+fact cannot stand in for the round.
+
+1. **The tool-approval card now has FOUR buttons** (`Decline` · `Allow once` · `This session` · `Always allow`)
+   where it had three. Order is pinned by a unit fact and the DE/FR strings are parity-checked by a test —
+   **parity is not rendering**, and four buttons is the first time this card's decision bar has had to lay out
+   that many. What needs a human: that the bar does not wrap or clip at the app's smallest width, in all three
+   languages, and that "this session" reads as narrower than "always allow" to someone who did not write it.
+2. **An unattended run that hits an un-granted promptable capability now PARKS and shows a Continue card where
+   it used to silently deny.** The state transition, the resume applying to the right pending call, and the
+   non-promptable arm still hard-denying are all pinned. What needs a human: that the card explains *which*
+   capability is being asked for and *why the run stopped*, on a run the user did not watch start — the one
+   thing no assertion can judge. This is the sharpest item in the list, because a park a user cannot interpret
+   is worse than the deny it replaced: the run is now stuck instead of finished.
+3. **A scheduled job dispatch no longer serializes on run completion.** Two due jobs with the first long-running
+   both proceed. What needs a human: a real clock over a real 30-second tick, with the schedule visibly
+   advancing in Settings and the success/failure toasts still attributable to the right job now that two can be
+   in flight. **This does NOT shorten "Opened by Batch 08" item 3** — that item is about a *paused* run, and
+   Q4's guard deliberately does not count a park as live, so its manual half is untouched.
+4. **Eight views' `AutoWireViewModel` went from INERT to LIVE.** It resolved `null` for all eight before this
+   sweep, so the attached property did nothing at all; the mapping is fixed and a `Loaded`-time guard now
+   refuses to overwrite a host-supplied `DataContext`. The guard is pinned against the real `App.xaml`
+   `DataTemplate` by reference identity **and** by a probe asserting the container is never consulted. What
+   needs a human anyway: that Assistant, History, Memory, Optimize, Reminders, Settings and Todo still show
+   their data in the running app. The STA host cannot raise a real `Loaded` (it needs a `PresentationSource`,
+   i.e. a `Window`, which every file in that folder refuses to open), so the **one** step that fires the guard
+   in production is the step the suite synthesises. That is a narrow but real gap on eight top-level views.
+5. **A step that declares failure now records Failed where prose used to record Done**, and the verifier's
+   digest gained `[ok, declared]` / `[ok, unconfirmed]` / `[failed, declared]` / `[failed, observed]` tags with
+   a legend. What needs a human: that a run panel showing a **failed** step mid-plan still reads as a run in
+   progress rather than as a crashed one, and that the tag legend is comprehensible to a user who has never
+   read this folder.
+6. **A one-off job reads `Status == Completed` for the duration of its run**, by the deliberate choice that
+   dispatch is a one-off's settle. What needs a human: what the Scheduled-jobs settings row actually *shows*
+   during that window. This is the visible half of the confirmed must-fix in the 2026-08-03 addendum
+   (`FailInterruptedRunsAsync` never reconciling the job row), and it is listed here so the smoke round
+   observes the symptom even though the fix is deferred.
 
 ## External framework assessment — Microsoft Agent Framework Harness (2026-07-28)
 
