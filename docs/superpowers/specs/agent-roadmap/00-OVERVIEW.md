@@ -212,6 +212,144 @@ is safe. Unlike Batch 14, this batch **does** move user-visible behaviour, and b
 run panel on this tree carries a Pause button, five plan-mutation verbs and a steering-note box that a build of
 `origin` does not, and `Paused(4)` is a state a persisted row can now actually hold._
 
+_**Snapshot addendum: 2026-08-02 — as-built at `cf571e51`, which is NOT a batch.** Nothing above is
+retracted; every paragraph still describes the tree it measured. What none of them could know is that
+`feature/managed-personas-client` has been **merged into this branch**: four commits (`aafcd66d`,
+`eff8bd98`, `90e6c5a3`, `b695bff8`) delivering admin-published, **read-only** personas over the sync pull's
+`managedPersonas` channel. **It is the first production change on this branch that no batch file in this
+folder describes** — it arrived from a side branch rather than from the roadmap — which is why it gets a
+snapshot addendum and no rank row. It does not change the ranked remainder: Rank 1 is still the manual
+Windows smoke round alone._
+
+_**The gate, measured on this tree by the pass that wrote this line rather than copied from a commit body.**
+Debug `-t:Rebuild -v:n` → **0 Warning(s) / 0 Error(s)** and Release → **0 Warning(s) / 0 Error(s)**, with
+**6** genuine `csc.exe` invocations in each log (count `Roslyn.bincore.csc.exe /noconfig`, **not**
+`CoreCompile:` headers). The suite was run **three times**, and all three numbers are quoted because quoting
+only the clean one is how an intermittent turns into an excuse: **2939 total / 1 skipped** in every run, with
+**1 failed** in runs 1 and 2 and **0 failed** in run 3. Against the **2882** this file records at `3de2ac1` —
+read from here, **not** re-measured — the merge is **+57**._
+
+_**Both failures were the known intermittent —
+`AssistantChatConcurrencyTests.DeleteAllAsync_WithAnotherConnectionCommittingThroughout_Completes` (258 ms,
+then 160 ms) — which then passed 13/13 isolated, three times running. The RATE is the part worth reading,
+not the clean third run.** This file records that intermittent
+as "low single-digit percent, bursty, load-dependent", measured across roughly 30 gates. **Today it fired in
+2 of 3.** Three observations are not a rate — this file says exactly that about itself twice above, and the
+discipline applies to this paragraph too — but there is a named suspect: the merge adds **+57** cases against
+a test whose own comment calls its detection window "**PROBABILISTIC**, not guaranteed" and microseconds wide
+at `busy_timeout=100`, which is the mechanism Batch 03's cap tests already demonstrated once. **Nobody
+measured it at the pre-merge tree**, so this is an observation with a suspect, not a diagnosis. The practical
+rule is unchanged and is still the only part to trust: this test failing alone does not fail the gate —
+re-run it isolated to confirm._
+
+_**The seam, because a merge is where two green suites meet and neither one covered the join.** Managed
+personas were authored against the CHAT picker; Batch 07's agent persona roster shipped before managed
+personas existed. The join was checked by reading and then **pinned by execution**:
+`PersonaService.GetPersonasAsync` merges managed rows between the built-ins and the user personas, and
+`GetPersonaAsync` falls through to the managed store, so `StepPersonaResolver.GetRosterAsync` and
+`HeadlessRunLauncher.ResolveRunPersonaAsync`'s two narrowings admit a managed persona **for free**.
+`ManagedPersonaAgentSeamTests` makes that measured — **4 facts, all against the REAL `PersonaService` on a
+real temp database**, because `StepPersonaResolverTests` and `HeadlessRunLauncherTests` both substitute
+`IPersonaService` and a substitute would pin the test's own assumption rather than the code's behaviour. A
+managed persona reaches the roster and runs a step on its **own composed prompt**; the launcher's second
+narrowing resolves a managed id; a withdrawn one drops off the roster and the step falls back without
+throwing. **Two red demos, so this is not asserted green-only:** commenting out `merged.AddRange(managed)`
+reds the first fact and only it, and nulling the managed single-row lookup reds the second and only it._
+
+_**One residue, and it is the one thing only a merge could produce.** `ReplaceManagedPersonasAsync`'s
+withdrawal latch walks `settings.ModePersonaDefaults` and clears a dangling **chat** selection; it does
+**not** walk `AppSettings.AgentPersonaRoster`, which did not exist when that latch was written. A withdrawn
+managed persona therefore sits on the **agent** roster until the settings page is next saved
+(`AssistantSettingsViewModel` rebuilds the option list from `GetPersonasAsync` and writes back only what is
+checked, so the save drops it). **Left open deliberately**: it degrades safely at every consumer —
+`GetRosterAsync` drops ids that no longer resolve and logs the count, and the launcher's containment check
+keeps a dead id off a delegated run — and the fix is a decision about which store owns the cleanup. The
+fourth fact **pins the residue rather than the desired behaviour** and says so at the assertion, with the
+contrast (the chat selection IS cleared) proving the latch ran at all. Whoever fixes it should **invert** that
+assertion, not delete it._
+
+_**What this does NOT mean: that the merge has been seen.** It ships user-visible behaviour — a Managed badge,
+a read-only persona in the picker, a Duplicate escape hatch, and a withdrawal snackbar — and none of that has
+had a manual round either. It adds no item to Rank 1 as scoped in this folder, because that list is about the
+agent system and this is a persona-delivery channel; read the absence as a scope boundary, not as coverage.
+**Git position, described rather than counted:** local-only is everything the paragraphs above describe plus
+all four managed-persona commits and the merge itself; read it from git —
+`git rev-list --count origin/feature/agent-run-spine..HEAD` for the number and `git log --oneline` for
+*which*._
+
+_**Snapshot addendum: 2026-08-02 — [Batch 15](15-view-coverage-completion.md), built on top of `cf571e51`
+and NOT YET COMMITTED at the time this paragraph was written.** Said first because this file's discipline
+demands it: every other addendum here names a commit range, and this one cannot. The work is in the working
+tree; whoever commits it should replace this clause with the range. Nothing above is retracted._
+
+_**What it is.** The eleven remaining unparsed top-level views, brought under a binding-path walk with a host
+guard — the twelfth, `FirstRunWizardWindow`, was dropped **on evidence**, see below. **Zero production
+change, measured**: `git diff --stat -- src/` is **empty**. The only non-test file touched is
+`tests/Pia.Wpf.Tests/Views/BindingPathWalker.cs`._
+
+_**The gate, measured on the finished tree.** Debug `-t:Rebuild -v:n` → **0 Warning(s) / 0 Error(s)** and
+Release → **0 Warning(s) / 0 Error(s)**, **6** genuine `csc.exe` invocations in each log. Suite **2960 total
+/ 0 failed / 2959 passed / 1 skipped**, run **TWICE, identical**, with neither known intermittent firing in
+either run — which matters more than usual here, because the `cf571e51` paragraph above measured that
+intermittent at **2 of 3** the same day, and one clean run under that rate would have been weaker evidence
+than every other batch record in this file. **The chain has two measured stops and one inferred one, and
+says which is which**: **2939** (the `cf571e51` baseline, **measured**) → **2943** (the four managed-persona
+seam facts, **INFERRED** — the seam class was run alone at 4/4 and the full suite was not run between the two
+additions, so read that number for its arithmetic, not as a measurement) → **2960** (**measured, twice**).
+**NET +21**, of which **+17** is this batch._
+
+_**The host guard is a different and stronger shape than Batch 14's, and that is the batch's one new
+technique.** The seven views hosted by an `App.xaml` `DataTemplate` do not need a property name reflected off
+— the host relationship IS a resource, so the fact reads it:
+`Application.Current.Resources[new DataTemplateKey(vm)]`, `LoadContent()`, assert the produced type. Host
+check and parse cannot drift apart, because the object the walk examines is the one the template really
+produces. A re-typed template reds it, demonstrated by pointing `HistoryViewModel`'s template at `MemoryView`
+— exactly one theory case went red._
+
+_**Two things this batch found that reading would not have, and both are recorded because the SECOND one is
+about this batch's own work.** (i) The top-level `OptimizeView` walk reported **8 UNRESOLVED** paths that are
+not defects: they belong to `TodoPanelControl`, whose ctor NULLS its `DataContext` to break inheritance and
+whose `Loaded` assigns a `TodoViewModel` from the scoped provider — a **code**-level re-root the markup
+cannot express. `BindingPathWalker` gained an optional `codeAssignedRoots` map for it (default null, so the
+seven pre-existing files are untouched), and the map is sound only because three facts pin the mechanism.
+(ii) **One of those three shipped VACUOUS and the red demo is what caught it.** `new TodoPanelControl()
+.DataContext is null` passes whether or not the ctor line exists, because an unparented control has a null
+DataContext by default — it observed the default, not the mechanism. Commenting out `DataContext = null;`
+left it GREEN. The fact now parses the real host, gives it a sentinel, and asserts the panel does not inherit
+it; that version reds. **This is the third time on this branch that a mitigation did not do what its own
+comment said**, after Batch 08's pause and Batch 14's re-host, and the pattern in all three is identical: the
+assertion was pinned to a state that is true for a reason other than the one under test._
+
+_**Row 12 was DROPPED on measured evidence, not skipped.** `FirstRunWizardWindow` cannot be parsed under the
+test host: `Icon="pack://application:,,,/Resources/Icons/Pia.ico"` is an authority-only pack URI with no
+assembly component, so WPF resolves it against `Application.ResourceAssembly`, whose getter latches to the
+ENTRY assembly — `Pia.Wpf.Tests` — giving `IOException: Cannot locate resource 'resources/icons/pia.ico'`
+even though the `.ico` really is a `<Resource>` in `Pia.Wpf`. **A fix was attempted and then REVERTED**:
+assigning `Application.ResourceAssembly` in `WpfStaHost` did not take (it was already latched, and the
+`is null` test that guarded it is itself a read, which is what latches it), and modifying the shared
+never-torn-down host for one view was not worth the risk to eight green files. **`FirstRunWizardWindow` and
+everything under `Views/WizardSteps/` therefore remain manual-smoke debt**, and this batch neither shortens
+nor lengthens Rank 1 for them._
+
+_**A `src/` finding, reported and deliberately NOT fixed.** `ViewModelLocator.GetViewModelType` is
+`viewName.Replace(".Views.", ".ViewModels.").Replace("View", "ViewModel")`, and the second `Replace` hits
+**every** occurrence — so `Pia.Views.HistoryView` reads as `Pia.ViewModelModels.HistoryViewModel`, a
+namespace that does not exist, which would make `AutoWireViewModel="True"` inert on all eight views carrying
+it. **Unproven by execution, and honestly so**: the only observable (`DataContext` stays null) is confounded
+with the documented null-provider path, and discriminating needs `ViewModelLocator.Initialize` — process-wide
+static mutation inside a shared-host collection, a bigger hazard than the finding. Harmless today because all
+eight also have an `App.xaml` `DataTemplate` that supplies the DataContext. `AutoWireViewModelPremiseTests`
+pins only what the other facts need — that the property assigns nothing here — and names both mechanisms._
+
+_**What it does to Rank 1: SHORTENS, adds nothing.** Of the twelve views `00-OVERVIEW.md:1049`–`:1052` names
+as carrying the full silent-misspelled-binding hazard, **eleven now have a parse fact** and one
+(`FirstRunWizardWindow`) does not, for the reason above. The residue is now a set of **shapes** rather than a
+set of **files**: `DataTemplate` content, `Style.Triggers`, bindings carrying
+`RelativeSource`/`ElementName`/explicit `Source`, `loc:Str` reached through `Content=`/`ToolTip=`/`Header=`,
+and everything under `Dialogs/`, `Dialogs/Overlay/`, `WizardSteps/` and `Views/Controls/`, which no batch has
+ever claimed. **No item is CLOSED by this batch** — every DE/FR render item and every live-provider item is
+untouched._
+
 Each remaining batch has its own file in this folder (`01-…` first). A batch is one workflow-sized unit:
 implement behind the plan's guardrails, keep the build green, ship.
 
@@ -806,6 +944,7 @@ each other by number. Read the **Rank** column for priority.
 | — | 07 | [Sub-agents / multi-persona](07-subagents-multipersona.md) | 3 | L | ✅ **shipped** `08e20ab`→`1d6cc15` (G6–G10, **not in that order**) — see “Opened by Phase 3” |
 | — | 13 | [View test host](13-view-test-host.md) | 3 cleanup | S–M | ✅ **shipped** `928e27e`→`09522be` — the **first** batch to make Rank 1 **shorter** (it said "the only" until 2026-08-01, when Batch 14 became the second and the first to take items OFF); see “Opened by Batch 13” |
 | — | 14 | [View-coverage debt](14-view-coverage-debt.md) | 3 cleanup | S–M | ✅ **shipped** — build `86934c9`→`17357e0` (G1–G4 + SIMPLIFY, 9 commits), review `e36b701`, **fix pass `4f8b78d`→`fa331ec` outside that range**; `2266bf7`/`0c5cb42` (filing + impl spec) sit **before** it and belong to no batch. **Zero production change**, measured: `git diff --stat 0c5cb42..fa331ec -- src/` empty. Gate `2734 / 0 failed / 1 skipped`, **+11**. Took **two** items off Rank 1 and shortened a third; **G4 shipped 5 views, not 7 (D5)**; see “Opened by Batch 14” |
+| — | 15 | [View-coverage completion](15-view-coverage-completion.md) | 3 cleanup | S–M | ✅ **built, UNCOMMITTED** at the time this row was written — eleven of twelve views parsed, `FirstRunWizardWindow` dropped on measured evidence (pack-URI/`ResourceAssembly`). **Zero production change**, measured: `git diff --stat -- src/` empty. Gate `2960 / 0 failed / 1 skipped`, **+17**. Shortens Rank 1, closes nothing; one of its own facts shipped vacuous and was caught by a red demo; see the 2026-08-02 addendum |
 | — | 09 | [Scheduler UI](09-scheduler-ui.md) | 4 | L (**not M**) | ✅ **shipped** `c7020fe`→`ea77c95` (**not** →HEAD, which this row said until 2026-08-01 — `aa5beb9` is a docs commit and the chronicle above already pinned the real end) — global-only budget/policy by decision; see [`09-scheduler-ui.impl.md`](09-scheduler-ui.impl.md) and “Opened by Batch 09” |
 
 **A THIRD set of rank moves, 2026-08-01, and this one IS a reprioritisation — the first on this branch.**
@@ -1045,12 +1184,22 @@ and a `Pump()` to `SystemIdle` before every bound read.
    `Views/Controls/`), **7 now have a parse test of their own** — `Views/AssistantView.xaml`,
    `Views/SettingsViews/AssistantView.xaml`, `GeneralView`, `AccountView`, `ProvidersView`, `OptimizeView`,
    `PluginsView` — and **9 are walked**, the extra two being `PersonasView` and `E2EEOnboardingView` as logical
-   children of parsed views. `Views/SettingsViews/` is complete at **8 of 8**. **The hazard is unchanged for
+   children of parsed views. `Views/SettingsViews/` is complete at **8 of 8**. ~~**The hazard is unchanged for
    the other twelve**, and they are worth naming rather than leaving as a remainder: `AssistantHistoryView`,
    `FirstRunWizardWindow`, `HistoryView`, `MeetingAttendeeOverlay`, `MemoryView`, `NavigationSidebarView`,
    `OptimizeView` (the top-level one, *not* the settings view of the same name — both types exist and both
-   compile), `RemindersView`, `SettingsView`, `TodoPanelControl`, `TodoView`, `VoiceModeOverlay`. Two limits
-   that apply even inside the parsed 9, so this bullet is not read as more than it says: the walk skips
+   compile), `RemindersView`, `SettingsView`, `TodoPanelControl`, `TodoView`, `VoiceModeOverlay`.~~
+   **NARROWED AGAIN 2026-08-02 by [Batch 15](15-view-coverage-completion.md), and edited in place per this
+   file's habit: ELEVEN of those twelve now carry a parse fact**, so the struck list above is history and the
+   remainder is ONE — **`FirstRunWizardWindow`**, which is not merely undone but currently **unparseable under
+   the test host**: its `Icon="pack://application:,,,/…"` is an authority-only pack URI, which resolves
+   against `Application.ResourceAssembly`, which latches to the entry assembly (`Pia.Wpf.Tests`). It and
+   everything under `Views/WizardSteps/` stay manual-smoke debt. Note also that the twelve were never a set of
+   ONE shape: seven are hosted by an `App.xaml` `DataTemplate`, two by a bound `DataContext` inside
+   `AssistantView`, one (`TodoPanelControl`) by a **code**-assigned re-root its ctor installs, one
+   (`NavigationSidebarView`) by inheritance from `MainWindow` and through item collections that are not
+   logical children at all. Two limits
+   that apply even inside the parsed views, so this bullet is not read as more than it says: the walk skips
    `RelativeSource` / `ElementName` / explicit `Source` **by design** (which is what keeps `loc:Str` out of
    scope), and `Style.Triggers` / `DataTemplate` content are invisible to it entirely.
 2. **The sweep is narrower than it sounds.** It sees `TextBlock.Text` only: 4 of `AssistantView.xaml`'s 22

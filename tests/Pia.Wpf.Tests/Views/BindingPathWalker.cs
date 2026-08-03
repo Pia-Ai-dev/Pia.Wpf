@@ -31,9 +31,24 @@ internal static class BindingPathWalker
     /// </para>
     /// </summary>
     internal static IEnumerable<(string Element, string Property, string Path, string ContextType, bool Resolves)>
-        Walk(DependencyObject element, Type? contextType)
+        Walk(DependencyObject element, Type? contextType,
+            IReadOnlyDictionary<Type, Type>? codeAssignedRoots = null)
     {
         var elementName = element.GetType().Name;
+
+        // A CODE-assigned re-root, declared by the caller because the markup cannot express it (Batch 15 G1).
+        // TodoPanelControl is the case this exists for: its ctor sets DataContext = null specifically to break
+        // inheritance from the hosting view, and its Loaded handler assigns a TodoViewModel from the window's
+        // scoped provider. Nothing in the markup says so, so a walk that did not know it would report the whole
+        // panel — 8 paths under OptimizeView — as UNRESOLVED against the HOST's ViewModel, which is neither a
+        // defect nor a truth. Applied BEFORE the element's own bindings are read, because the re-root owns them
+        // too, and reported as its own line so a caller can assert the boundary was actually crossed.
+        if (codeAssignedRoots is not null && codeAssignedRoots.TryGetValue(element.GetType(), out var assigned))
+        {
+            yield return (elementName, "DataContext", $"<code-assigned {assigned.Name}>",
+                contextType?.Name ?? "unknown", true);
+            contextType = assigned;
+        }
 
         // A local DataContext binding re-roots this whole subtree, so it is resolved FIRST and its result
         // becomes the context for everything below.
@@ -62,7 +77,7 @@ internal static class BindingPathWalker
         }
 
         foreach (var child in LogicalTreeHelper.GetChildren(element).OfType<DependencyObject>())
-            foreach (var found in Walk(child, contextType))
+            foreach (var found in Walk(child, contextType, codeAssignedRoots))
                 yield return found;
     }
 
@@ -121,8 +136,9 @@ internal static class BindingPathWalker
     /// format string exists in exactly one place — a drifted copy would silently break the anchors in
     /// whichever file drifted.
     /// </summary>
-    internal static string[] Describe(DependencyObject root, Type? contextType) =>
-        Walk(root, contextType)
+    internal static string[] Describe(DependencyObject root, Type? contextType,
+        IReadOnlyDictionary<Type, Type>? codeAssignedRoots = null) =>
+        Walk(root, contextType, codeAssignedRoots)
             .Select(b => $"{b.Element}.{b.Property}={b.Path} [{b.ContextType}] {(b.Resolves ? "ok" : "UNRESOLVED")}")
             .ToArray();
 
