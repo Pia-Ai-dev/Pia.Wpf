@@ -10,22 +10,21 @@ namespace Pia.Tests.Views;
 /// ViewModel nobody intended, and a re-root that only exists in the test process would make every path
 /// resolve for the wrong reason.
 /// <para>
-/// <b>Two candidate mechanisms produce that same null, and this fact deliberately does not claim which one is
-/// operating.</b> (i) The documented one: <c>GetScopedProvider</c> finds no <c>Window</c> and no initialised
-/// static provider, so resolution defers to a <c>Loaded</c> that never fires — nothing in <c>tests/</c> calls
-/// <c>ViewModelLocator.Initialize</c> or <c>SetScopedServiceProvider</c>, verified, so the static provider is
-/// null for the whole suite regardless of collection order. (ii) An UNPROVEN reading of the source:
-/// <c>GetViewModelType</c> is <c>viewName.Replace(".Views.", ".ViewModels.").Replace("View", "ViewModel")</c>,
-/// and the second <c>Replace</c> hits EVERY occurrence — so <c>Pia.Views.HistoryView</c> would become
-/// <c>Pia.ViewModelModels.HistoryViewModel</c>, a namespace that does not exist, making the attached property
-/// inert for every view whatever the provider does.
+/// <b>When this fact was written, two candidate mechanisms produced that same null and it deliberately did not
+/// claim which one was operating.</b> (i) Resolution defers to a <c>Loaded</c> that never fires here.
+/// (ii) <c>GetViewModelType</c>'s second <c>Replace</c> hit EVERY occurrence, so
+/// <c>Pia.Views.HistoryView</c> came out as <c>Pia.ViewModelModels.HistoryViewModel</c> — a namespace that
+/// does not exist — making the attached property inert for every view whatever the provider did.
+/// <b>Both are now settled.</b> (ii) was real, and is FIXED: the convention resolves, and the resolution is
+/// deferred to <c>Loaded</c> and skipped when a <c>DataContext</c> is already there, so the eight views keep
+/// the one their <c>App.xaml</c> <c>DataTemplate</c> supplies. <see cref="ViewModelLocatorAutoWireTests"/>
+/// measured every step of that, and is the file to read for the mapping and the guard.
 /// </para>
 /// <para>
-/// <b>Discriminating between them is deliberately NOT attempted here.</b> It would need a non-null static
-/// provider, i.e. mutating process-wide state inside a shared-host collection — a larger hazard than the
-/// finding. Reading (ii) is recorded as a code-reading finding in the Batch 15 record and is left UNFIXED on
-/// purpose: fixing it would give eight views a <c>DataContext</c> they do not have today, which is a
-/// behavioural change and not this batch's business.
+/// Which leaves (i) as the mechanism behind THIS null, and that is exactly what this fact is still for: no
+/// view-parse test in this folder loads its view, so no auto-wired <c>DataContext</c> can arrive during a
+/// walk. It no longer depends on the static provider being null either — the deferral holds whatever
+/// <c>Initialize</c> was handed, which is what lets the sibling file install a probe provider and restore it.
 /// </para>
 /// </summary>
 [Collection("WpfApplicationStatic")]

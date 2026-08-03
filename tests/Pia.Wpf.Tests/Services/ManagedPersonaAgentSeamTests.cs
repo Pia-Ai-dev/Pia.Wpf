@@ -156,31 +156,33 @@ public sealed class ManagedPersonaAgentSeamTests : IDisposable
     }
 
     [Fact]
-    public async Task AWithdrawnManagedPersonaId_STAYS_InTheAgentRoster_WhichIsTheMergesOneRESIDUE()
+    public async Task AWithdrawnManagedPersonaId_LeavesTheAgentRoster_WhileTheStillPublishedOneStays()
     {
-        // <b>This fact pins a known gap, not a desired behaviour</b> — the one thing only the merge could
-        // produce. ReplaceManagedPersonasAsync's withdrawal latch walks settings.ModePersonaDefaults and
-        // clears a dangling CHAT selection; it does not walk AgentPersonaRoster, which did not exist when
-        // that latch was written. So a withdrawn id sits on the agent roster until the settings page is next
-        // saved (AssistantSettingsViewModel rebuilds the option list from GetPersonasAsync and writes back
-        // only what is checked, so the save drops it).
+        // This fact was written INVERTED, pinning the merge's one residue: ReplaceManagedPersonasAsync's
+        // withdrawal latch walked settings.ModePersonaDefaults only, so a withdrawn id sat on the agent roster
+        // until the settings page was next saved. It carried the instruction to flip rather than delete it when
+        // the latch learned to walk the roster too, and that is what this now is — the roster walk's red.
         //
-        // Left as a residue rather than fixed, because it degrades safely at every consumer and the fix is a
-        // decision about which store owns the cleanup: StepPersonaResolver.GetRosterAsync drops ids that no
-        // longer resolve and logs the count, and the launcher's containment check keeps the dead id off a
-        // delegated run. If that ever changes, THIS assertion is the one that must flip — invert it rather
-        // than deleting it, so the fix has a red to turn green.
-        var managed = ManagedPersona("TEST_ManagedRosterResidue");
-        await _personas.ReplaceManagedPersonasAsync([managed]);
-        _settings.Settings.SetAgentPersonaRoster(UserOperatingMode.Personal, [managed.Id]);
-        _settings.Settings.SetPersonaForMode(WindowMode.Assistant, managed.Id);
+        // The three assertions are one claim in three parts, and none of them alone is worth anything:
+        //  · the chat selection IS cleared — the contrast that proves the latch ran at all, so a red here is
+        //    read as "the whole latch broke" rather than "the roster half broke";
+        //  · the withdrawn id is GONE from the roster — the residue, closed;
+        //  · the still-published id STAYS — the non-vacuity guard, because clearing the roster wholesale (or
+        //    on any id at all, rather than on the withdrawn ones) would satisfy the middle assertion too.
+        var withdrawn = ManagedPersona("TEST_ManagedRosterWithdrawn");
+        var republished = ManagedPersona("TEST_ManagedRosterRepublished");
+        await _personas.ReplaceManagedPersonasAsync([withdrawn, republished]);
+        _settings.Settings.SetAgentPersonaRoster(UserOperatingMode.Personal, [withdrawn.Id, republished.Id]);
+        _settings.Settings.SetPersonaForMode(WindowMode.Assistant, withdrawn.Id);
 
-        await _personas.ReplaceManagedPersonasAsync([]);
+        // The withdrawal: one of the two personas is missing from the new catalog. Publishing a NON-empty
+        // catalog is what makes the survivor meaningful — a replace-all with [] would withdraw both.
+        await _personas.ReplaceManagedPersonasAsync([republished]);
 
-        // The chat selection IS cleared — the contrast is the point, since it proves the latch ran at all and
-        // that this is a missing case rather than a dead code path.
+        var roster = _settings.Settings.GetAgentPersonaRoster(UserOperatingMode.Personal);
         Assert.Null(_settings.Settings.GetPersonaForMode(WindowMode.Assistant));
-        Assert.Contains(managed.Id, _settings.Settings.GetAgentPersonaRoster(UserOperatingMode.Personal));
+        Assert.DoesNotContain(withdrawn.Id, roster);
+        Assert.Contains(republished.Id, roster);
     }
 
     /// <summary>

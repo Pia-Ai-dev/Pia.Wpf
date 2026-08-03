@@ -252,7 +252,29 @@ public class PersonaService : IPersonaService
             }
         }
 
-        if (withdrawnIds.Count > 0)
+        // The AGENT roster needs the same walk, and it is deliberately NOT folded into withdrawnIds: that list
+        // drives the ManagedPersonaWithdrawn notification, whose message is "…is no longer available; switched
+        // to X" — true of a per-mode CHAT selection, which falls back to a replacement persona, and false of a
+        // roster line, which simply stops being offered to the planner. So a roster-only withdrawal saves
+        // silently. Same withdrawal test as above (was managed, is now gone), so a roster id pointing at a user
+        // persona or a built-in is left alone, and the removal is one-shot for the same reason the selection
+        // clear is: the next replace can no longer find the old id here.
+        var rosterChanged = false;
+
+        // Snapshot again: SetAgentPersonaRoster removes the key when nothing is left.
+        foreach (var (mode, ids) in settings.AgentPersonaRoster.ToList())
+        {
+            var kept = ids.Where(id => !previousNames.ContainsKey(id) || incomingIds.Contains(id)).ToList();
+            if (kept.Count == ids.Count)
+                continue;
+
+            // Only written when this mode really lost a line, so the read-side clamp in
+            // SetAgentPersonaRoster cannot silently truncate a roster this replace had no business touching.
+            settings.SetAgentPersonaRoster(mode, kept);
+            rosterChanged = true;
+        }
+
+        if (withdrawnIds.Count > 0 || rosterChanged)
         {
             await _settingsService.SaveSettingsAsync(settings);
 
