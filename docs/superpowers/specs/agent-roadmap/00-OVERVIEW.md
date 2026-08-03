@@ -350,6 +350,92 @@ and everything under `Dialogs/`, `Dialogs/Overlay/`, `WizardSteps/` and `Views/C
 ever claimed. **No item is CLOSED by this batch** — every DE/FR render item and every live-provider item is
 untouched._
 
+_**Snapshot addendum: 2026-08-03 — four `hermes-comparison.md` §7 recommendations, Batch 08's last three open
+questions, and two named residues, as `d3597c37`→`e753d25a` (13 commits). NOT a batch file, and it is the
+second production change on this branch that no file in this folder describes.** It is recorded here rather
+than as rank rows because it is a §7 sweep, not a roadmap batch: **#9** (structured step result), **#16**
+(unattended approval park), **#15** (session-scoped grant tier) and **#2** (scheduler head-of-line), the last
+of which had been owner-deferred since §7 was written. Nothing above is retracted. **On Batch 15's missing
+range, which the paragraph above asks whoever commits it to supply:** this pass found that work already
+committed at or before `7fe4854c` but did **not** determine its first commit, so the clause stays as an open
+request rather than being filled in with a guess._
+
+_**The gate, measured on this tree by the pass that wrote this line, not copied from any commit body.** Debug
+`-t:Rebuild -v:n` → **0 Warning(s) / 0 Error(s)** and Release → **0 Warning(s) / 0 Error(s)**, with **6**
+genuine `csc.exe` invocations in each log (`Roslyn.bincore.csc.exe /noconfig`, **not** `CoreCompile:`
+headers). Suite **3092 total / 0 failed / 3091 passed / 1 skipped**, run **TWICE, identical**, with **neither**
+known intermittent firing in either run. **The chain has three measured stops and no inferred ones**, which is
+worth saying because the `cf571e51` paragraph above had to infer one: **2960** (measured at `7fe4854c` before
+any of this) → **3024** (measured after #9 and #16) → **3092** (measured, twice). **NET +132.** The
+`AssistantChatConcurrencyTests.DeleteAllAsync_…` intermittent that fired **2 of 3** on 2026-08-02 fired **0 of
+2** here; that is not a rate either, and the practical rule is unchanged — it failing **alone** does not fail
+the gate, re-run it isolated._
+
+_**What shipped.** **#9** (`d3597c37`) — a step now declares its own outcome through `emit_step_result`, so
+`succeeded:false` records **Failed** however much fluent prose accompanied it; the two previously-divergent
+predicates (headless: non-empty visible text; live: exception-absence) became one rule. A model that does
+**not** call the tool falls back to the old heuristic but is recorded **unconfirmed**, and the verifier is told
+so — `[ok, declared]` vs `[ok, unconfirmed]`. `RunContext.Scratchpad` was **deleted**, not wired: hermes #9
+asked for one or the other and declaring-and-never-reading was the actual defect. **#16** (`265e929a`,
+`d8eb4a02`) — an unattended un-granted **promptable** capability parks on `WaitingForInput` and reuses Batch
+06's Continue-card machinery; a policy-denied or non-promptable one **still hard-denies**, and that boundary is
+pinned rather than described. **#15** (`585580bf`, `80179d8e`) — `ToolDecision.AllowForSession` into a
+process-scoped, never-persisted store, ordered below the floor and the policy and above the standing grant.
+Two decisions in it are worth reading: the tier got its **own** offerability rule, because reusing the standing
+grant's would have collapsed to `isAllowlisted` (hard-coded false unattended) and left `write_file` — the
+forty-times tool — with no middle tier at all; and `80179d8e` makes an **unhandled `ToolDecision` fail the
+build**, which closes the enum-append fall-through hazard structurally instead of once. **#2 + Q4**
+(`cd86ad33`, `81b6ef5d`, `e753d25a`) — see the next paragraph, because it is the one item here that must not be
+read as closed. **Batch 08 Q5/Q6/Q7** (`0f5be300`) — all three resolved as **pins, no bugs found**.
+**Residues** (`d0fdd481`, `66d569ea`) — the managed-persona withdrawal latch now walks `AgentPersonaRoster`,
+and `ViewModelLocator`'s double `Replace` is fixed. `9b5504c2` is the review fix pass._
+
+_**hermes #2 is NARROWED, not CLOSED, and this paragraph is the reason the row must stay.** The tick no longer
+awaits `handle.Completion`, so a long agent run no longer blocks every other scheduled job — that half is real
+and pinned by a state fact rather than a stopwatch (`e753d25a` rewrote the characterization test for exactly
+that reason). **Two confirmed findings were deliberately left unfixed**, and both were characterized by a test
+that names the contradiction instead of being quietly dropped. **(i) A confirmed MUST-FIX:**
+`FailInterruptedRunsAsync` (`AgentRunService.cs:569`–`:664`) touches only `AgentRuns`/`AgentSteps`, so now that
+the schedule advances at **dispatch** time a crashed job can read `Status == Completed` with `LastFiredAt`
+null — every bounded fix breaks a deliberate choice made in this same change, so it is an owner decision, not
+an oversight. **(ii) A confirmed should-fix:** the tick is **still** held hostage — no longer by run
+completion, but by an unanswered grace/late-run **dialog**; two due jobs and one unanswered prompt still
+dispatch neither. Pre-existing, and fixing it changes `ExecuteOnceAsync`'s contract. **And Q4 closes only
+partly**: the `TriggerRef` guard blocks the executing set `{Planning, Running, Verifying, WaitingForChildren}`
+and **deliberately not a park**, because nothing but a human leaves `WaitingForInput` and counting a park as
+live would let one un-resumed budget park silence a daily job forever. **Batch 08's Q1, Q2 and Q3 are
+untouched** and remain owner decisions — the spec itself assigns Q1 and Q2 to their own batches and Q3 to a
+prompt-shape decision._
+
+_**Residue (b) shipped its behaviour change, and only because three measured steps said it was safe.** Fixing
+`GetViewModelType` alone would have been a regression across eight views: `SetViewModelFromProvider` assigned
+`DataContext` **unconditionally**, and all eight auto-wired ViewModels are `AddScoped` (`Bootstrapper.cs:629`–
+`:635`), so a working convention would have overwritten the `App.xaml` `DataTemplate`'s instance with a
+different one and left the loaded state on the orphan. Measured: at `0f5be300` the convention returned **null
+for all eight** — the attached property was inert and the provider was never consulted — and fixing only the
+`Replace` put a root-scope object on all eight at parse time. So the guard shipped **with** the mapping fix,
+and `66d569ea` then re-settled that guard **on the real host rather than on an analogy of it**, which is the
+same correction Batch 15 had to make to its own `TodoPanelControl` fact._
+
+_**What it does to Rank 1: LENGTHENS. Nothing here is closed by it.** Rank 1 is still the manual Windows smoke
+round, and this sweep **adds** to it rather than shortening it: a **fourth button** on the tool-approval card
+("this session"), an unattended run that now **parks** and shows a Continue card where it used to deny, a
+scheduled-job dispatch that no longer serializes, and eight views whose `AutoWireViewModel` went from inert to
+live. **None of that has been seen by a human.** The DE/FR strings for the new card button are parity-checked
+by a test, which is not the same as being **rendered**. Read the absence of a shortening claim literally._
+
+_**The vacuity pattern has now fired six and seven times on this branch, and both were caught by executing
+verifiers rather than by reading.** Round A's park-timeline probe passed with its mechanism removed; Round B
+shipped four tests that watched nothing (`9b5504c2`'s subject says so). Added to Batch 08's pause, Batch 14's
+re-host and Batch 15's `DataContext is null`, the mechanism is identical every time — **an assertion pinned to
+a state that is true for a reason other than the one under test** — and the only thing that has ever caught it
+is neutralising the mechanism and watching. Two techniques from this round are worth reusing: Q6's red demo
+neutralised the **second** cycle's `OpenSegment` rather than the pause's `CloseSegment`, **because the close
+also reds the pre-existing one-cycle fact and so would have proved nothing second-cycle-specific**; and #15's
+leak test was proved by **injecting** a persisted write rather than by deleting anything. Q6 also confirmed
+**hermes #3's ledger half empirically** — three back-dated segments (3 s / 5 s / 7 s) across a budget park and
+then a user pause accumulate to 15 s, each close banking only its own delta._
+
 Each remaining batch has its own file in this folder (`01-…` first). A batch is one workflow-sized unit:
 implement behind the plan's guardrails, keep the build green, ship.
 
