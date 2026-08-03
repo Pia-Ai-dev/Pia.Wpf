@@ -32,8 +32,12 @@ public class ToolAutonomyTests
         bool allowlisted = false,
         bool standingGrant = false,
         bool namedGrant = false,
-        bool canPark = false)
-        => new(surface, toolName, toolClass, allowlisted, standingGrant, namedGrant, policy, canPark);
+        bool canPark = false,
+        // hermes #15. Defaulted like the rest, so the AXIS is what the exhaustive facts below must add
+        // explicitly — a defaulted parameter silently keeps a matrix green while it stops covering the new
+        // dimension, which is the failure mode this branch has been bitten by four times.
+        bool sessionGrant = false)
+        => new(surface, toolName, toolClass, allowlisted, sessionGrant, standingGrant, namedGrant, policy, canPark);
 
     /// <summary>
     /// T-FLOOR-1. A single Fact with nested loops rather than a ~3.5k-case Theory: the assertion is the same
@@ -55,10 +59,15 @@ public class ToolAutonomyTests
         // "no value of the inputs reaches an auto-approval past the floor" claim is only still exhaustive
         // if the park's own permission is part of the value space.
         foreach (var canPark in new[] { false, true })
+        // hermes #15 added the FIFTH axis for the same reason: the session tier is a new way for a call to be
+        // authorized, so "no value of the inputs reaches an auto-approval past the floor" is only still an
+        // exhaustive claim if the session grant is part of the value space.
+        foreach (var sessionGrant in new[] { false, true })
         {
             var verdict = ToolAutonomy.Resolve(Input(
                 surface, name, toolClass, policy,
-                allowlisted: allowlisted, standingGrant: granted, namedGrant: named, canPark: canPark));
+                allowlisted: allowlisted, standingGrant: granted, namedGrant: named, canPark: canPark,
+                sessionGrant: sessionGrant));
 
             // The M3 FLOOR: a delete-like EXTERNAL tool never auto-runs, whatever the policy says and
             // however it was granted.
@@ -74,11 +83,17 @@ public class ToolAutonomyTests
             // an irreversible action behind a one-button Continue that shows no arguments.
             var parkBroken = verdict.Outcome == ToolGateOutcome.Park;
 
-            if (floorBroken || policyBroken || parkBroken)
+            // hermes #15, and the same shape as policyBroken: a SESSION grant may never be the reason a
+            // delete-like tool ran, on any surface and in any class. One card shows one call's arguments; a
+            // multi-call grant would be authorizing deletions the user never saw.
+            var sessionBroken = verdict.Decision == ToolGateDecision.AutoApprovedSessionGrant;
+
+            if (floorBroken || policyBroken || parkBroken || sessionBroken)
             {
                 violations.Add(
                     $"{surface}/{toolClass}/{name}/policy={(policy is null ? "none" : string.Join('+', policy.AutoApproveClasses))}"
                     + $"/granted={granted}/allowlisted={allowlisted}/named={named}/canPark={canPark}"
+                    + $"/session={sessionGrant}"
                     + $" => {verdict.Outcome} {verdict.Decision}");
             }
         }
@@ -144,6 +159,141 @@ public class ToolAutonomyTests
         // The point of the pair: neither is AutoRun, so no value of canPark authorizes anything.
         Assert.NotEqual(ToolGateOutcome.AutoRun, refused.Outcome);
         Assert.NotEqual(ToolGateOutcome.AutoRun, parked.Outcome);
+    }
+
+    // ------------------------------------------------- hermes #15, THE SESSION TIER, at the resolver
+
+    /// <summary>
+    /// T-SESS-A. What the session tier may NEVER cover, asserted over the whole input space rather than a
+    /// sample: a delete-like name (any class) and a work-discarding one (git_switch/git_restore/git_stash).
+    /// A session grant authorizes calls whose ARGUMENTS the user will never see, so the rule is wider than
+    /// the destructive-external floor by construction.
+    /// <para>
+    /// The non-vacuity control is in the same test: a promptable name with the same grant DOES auto-run on the
+    /// two surfaces that honour the tier, so a resolver that had simply stopped honouring session grants reds
+    /// here instead of passing.
+    /// </para>
+    /// <para><b>Neutralize:</b> drop <c>IsSessionGrantOfferable</c> from the session arm → red.</para>
+    /// </summary>
+    [Fact]
+    public void SessionGrant_NeverCoversADeleteLikeOrWorkDiscardingTool()
+    {
+        var violations = new List<string>();
+
+        foreach (var surface in AllSurfaces)
+        foreach (var toolClass in AllClasses)
+        foreach (var name in DeleteLikeNames.Concat(new[] { "git_switch", "git_restore", "git_stash" }))
+        foreach (var canPark in new[] { false, true })
+        {
+            var verdict = ToolAutonomy.Resolve(Input(
+                surface, name, toolClass, policy: null, sessionGrant: true, canPark: canPark));
+
+            if (verdict.Decision == ToolGateDecision.AutoApprovedSessionGrant)
+                violations.Add($"{surface}/{toolClass}/{name}/canPark={canPark} => {verdict.Outcome}");
+        }
+
+        Assert.Empty(violations);
+
+        // The control: the SAME grant on a promptable name does authorize, so the loop above is not passing
+        // because nothing is honoured any more.
+        foreach (var surface in new[] { ToolGateSurface.Interactive, ToolGateSurface.Unattended })
+        {
+            var honoured = ToolAutonomy.Resolve(Input(surface, "write_file", ToolClass.Files, sessionGrant: true));
+            Assert.Equal(ToolGateOutcome.AutoRun, honoured.Outcome);
+            Assert.Equal(ToolGateDecision.AutoApprovedSessionGrant, honoured.Decision);
+        }
+    }
+
+    /// <summary>
+    /// T-SESS-B. VOICE never honours a session grant. It is collected on a card the speaker cannot see, and
+    /// the tier is wider than the standing grant voice already honours (it covers <c>write_file</c>), so
+    /// honouring it here would silently widen what a spoken turn may do.
+    /// <para><b>Neutralize:</b> drop <c>Surface != Voice</c> from the session arm → red.</para>
+    /// </summary>
+    [Fact]
+    public void VoiceSurface_NeverHonoursASessionGrant()
+    {
+        foreach (var toolClass in AllClasses)
+        foreach (var name in new[] { "write_file", "update_todo", "some_mcp_action", "create_todo" })
+        {
+            var verdict = ToolAutonomy.Resolve(Input(
+                ToolGateSurface.Voice, name, toolClass, sessionGrant: true));
+
+            Assert.NotEqual(ToolGateDecision.AutoApprovedSessionGrant, verdict.Decision);
+        }
+
+        // Control: the standing grant voice DOES honour is unaffected by this batch.
+        var standing = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Voice, "some_mcp_action", ToolClass.External, standingGrant: true));
+        Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, standing.Decision);
+    }
+
+    /// <summary>
+    /// T-SESS-C. WHERE the tier sits, as four separate facts about the same input — this is the ordering the
+    /// requirement pins ("between the once-decision and the persisted list").
+    /// <list type="bullet">
+    /// <item>ABOVE the park: an unattended run holding the grant RUNS instead of stopping to ask again.</item>
+    /// <item>ABOVE the named grant: a run widened by its own Continue AND holding a session grant is audited
+    /// as the session tier — the discriminator the park-interaction tests depend on.</item>
+    /// <item>ABOVE the interactive prompt: no card for a tool granted this session.</item>
+    /// <item>BELOW the floor: it does not lift the destructive-external refusal.</item>
+    /// </list>
+    /// </summary>
+    [Fact]
+    public void SessionGrant_OutranksTheParkAndTheNamedGrant_ButNotTheFloor()
+    {
+        var overPark = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "write_file", ToolClass.Files, canPark: true, sessionGrant: true));
+        Assert.Equal(ToolGateOutcome.AutoRun, overPark.Outcome);
+        Assert.Equal(ToolGateDecision.AutoApprovedSessionGrant, overPark.Decision);
+
+        var overNamed = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "write_file", ToolClass.Files, namedGrant: true, sessionGrant: true));
+        Assert.Equal(ToolGateDecision.AutoApprovedSessionGrant, overNamed.Decision);
+
+        var overPrompt = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Interactive, "write_file", ToolClass.Files, sessionGrant: true));
+        Assert.Equal(ToolGateOutcome.AutoRun, overPrompt.Outcome);
+
+        // …and BELOW the floor: a destructive external tool is still refused unattended and still only
+        // CARDED interactively, session grant or not.
+        var floor = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "delete_issue", ToolClass.External, sessionGrant: true, canPark: true));
+        Assert.Equal(ToolGateOutcome.Refuse, floor.Outcome);
+        Assert.Equal(ToolGateDecision.DeniedDestructiveFloor, floor.Decision);
+
+        // The standing tier keeps its own decision when it is the only authority (no silent re-labelling).
+        var standing = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Interactive, "create_todo", ToolClass.Todo, allowlisted: true, standingGrant: true));
+        Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, standing.Decision);
+    }
+
+    /// <summary>
+    /// T-SESS-D. The offerability rule itself: what the card may offer and the gate may mint are ONE function,
+    /// and it is name-only (unlike the standing rule, which collapses to the allowlist off the External class
+    /// and would therefore make the tier unreachable unattended).
+    /// </summary>
+    [Fact]
+    public void SessionGrantOfferable_AdmitsThePromptableTools_AndExcludesTheIrreversibleOnes()
+    {
+        Assert.True(ToolAutonomy.IsSessionGrantOfferable("write_file"));
+        Assert.True(ToolAutonomy.IsSessionGrantOfferable("update_todo"));
+        Assert.True(ToolAutonomy.IsSessionGrantOfferable("create_todo"));
+        Assert.True(ToolAutonomy.IsSessionGrantOfferable("git_commit"));
+        Assert.True(ToolAutonomy.IsSessionGrantOfferable("send_email"));
+
+        Assert.False(ToolAutonomy.IsSessionGrantOfferable("delete_file"));
+        Assert.False(ToolAutonomy.IsSessionGrantOfferable("forget"));
+        Assert.False(ToolAutonomy.IsSessionGrantOfferable("purge_index"));
+        Assert.False(ToolAutonomy.IsSessionGrantOfferable("git_switch"));
+        Assert.False(ToolAutonomy.IsSessionGrantOfferable("git_restore"));
+        Assert.False(ToolAutonomy.IsSessionGrantOfferable("git_stash"));
+        // Case-insensitive, like IsDeleteLike — a differently-cased route must not slip the exclusion.
+        Assert.False(ToolAutonomy.IsSessionGrantOfferable("GIT_STASH"));
+
+        // The tier is deliberately WIDER than the standing one for a built-in: that is the gap #15 closes.
+        Assert.False(ToolAutonomy.IsStandingGrantOfferable(ToolClass.Files, "write_file", isAllowlisted: false));
+        Assert.True(ToolAutonomy.IsSessionGrantOfferable("write_file"));
     }
 
     /// <summary>T-FLOOR-2: this batch does not tighten the path where a human is looking at the card.</summary>

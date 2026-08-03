@@ -697,6 +697,195 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
+    // ------------------------------------------- hermes #15: THE SESSION TIER MEETS THE PARK
+
+    /// <summary>
+    /// T-SESS-13. A session grant the user gave EARLIER IN THIS PROCESS means the run does not park at all:
+    /// the same launch that parks in T-PARK-1 now runs the tool and completes. This is the tier's whole point
+    /// one layer out — "do not make me answer this again" has to include the background run that is about to
+    /// ask the same question through a Flow card.
+    /// <para>
+    /// <b>Neutralize (the unattended lookup only):</b> in <c>BackgroundAssistantTurnRunner.HandleToolCallAsync</c>
+    /// replace <c>HasSessionGrant: approvals?.HasSessionGrant(...) == true</c> with <c>false</c> → the run parks
+    /// exactly as T-PARK-1 says it does with no grant, and every assertion below reds.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task ASessionGrantHeldInThisProcess_KeepsTheRunFromParkingAtAll()
+    {
+        var pluginId = Guid.NewGuid();
+        var session = new SessionToolGrantStore();
+        session.Grant(pluginId, "write_file");
+
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, sessionGrants: session, pluginId: pluginId);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []),
+            TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+        await AwaitSettledAsync(handle.RunId);
+
+        var run = await GetRunAsync(handle.RunId);
+        Assert.Equal(AgentRunState.Completed, run.State);
+        Assert.NotEqual(AgentRunState.WaitingForInput, run.State);
+        Assert.Null(PauseMember(run, "tool"));
+        Assert.DoesNotContain(_timeline.Rows, r => r.Decision == ToolGateDecision.ParkedForApproval);
+
+        Assert.True(probe.Executed);
+        // The decision names the tier that carried it — not GrantedByName (the launch granted nothing) and not
+        // AutoApprovedPolicy (there is no policy).
+        Assert.Equal(
+            ToolGateDecision.AutoApprovedSessionGrant,
+            Assert.Single(_timeline.Rows, r => r.ToolName == "write_file").Decision);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>
+    /// T-SESS-14, THE PARK INTERACTION. The run parks first; THEN the human chooses the session tier; the
+    /// resumed step's call runs on that grant, and so does a LATER, UNRELATED run in the same process.
+    /// <para>
+    /// TWO DISCRIMINATORS, because the resume widens its own grants with the parked tool name and would make a
+    /// weaker version of this test pass with the session tier removed entirely:
+    /// <list type="number">
+    /// <item>the re-run call is audited <c>AutoApprovedSessionGrant</c>, not <c>GrantedByName</c> — the session
+    /// arm sits ABOVE the named-grant arm in <c>Resolve</c> precisely so this is observable;</item>
+    /// <item>a SECOND root run, launched with an empty grant set and its own fresh envelope, never parks —
+    /// nothing but the process-scoped store can explain that.</item>
+    /// </list>
+    /// And the tier stays where it belongs: <c>AppSettings.AlwaysAllowedTools</c> is untouched throughout.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task TheSessionTierAppliesToTheResumedRun_AndToALaterRun_WithoutTouchingSettings()
+    {
+        var pluginId = Guid.NewGuid();
+        var session = new SessionToolGrantStore();
+        var appSettings = new AppSettings();
+
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, appSettings: appSettings, sessionGrants: session, pluginId: pluginId);
+
+        // 1) The run parks, exactly as T-PARK-1 — the grant does not exist yet.
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []),
+            TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.WaitingForInput, (await GetRunAsync(handle.RunId)).State);
+        Assert.Equal("write_file", PauseMember(await GetRunAsync(handle.RunId), "tool"));
+        Assert.False(probe.Executed);
+
+        // 2) THE HUMAN CHOOSES THE SESSION TIER for the capability the card named, then continues the run.
+        session.Grant(pluginId, "write_file");
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: TestContext.Current.CancellationToken));
+        await AwaitSettledAsync(handle.RunId);
+
+        Assert.True(probe.Executed);
+        Assert.Equal(AgentRunState.Completed, (await GetRunAsync(handle.RunId)).State);
+        // DISCRIMINATOR 1: the re-run call cites the session grant, not the resume's own widening.
+        Assert.Equal(
+            ToolGateDecision.AutoApprovedSessionGrant,
+            _timeline.Rows.Last(r => r.ToolName == "write_file").Decision);
+
+        // 3) DISCRIMINATOR 2: a fresh, unrelated ROOT run with an empty grant set does not park either.
+        var second = new ToolProbe("write_file");
+        var (launcher2, _) = Build(second, appSettings: appSettings, sessionGrants: session, pluginId: pluginId);
+        var handle2 = await launcher2.LaunchAsync(
+            new HeadlessRunRequest("g2", AgentRunTrigger.Schedule, GrantedWrites: []),
+            TestContext.Current.CancellationToken);
+        await handle2.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+        await AwaitSettledAsync(handle2.RunId);
+
+        var run2 = await GetRunAsync(handle2.RunId);
+        Assert.Equal(AgentRunState.Completed, run2.State);
+        Assert.Null(PauseMember(run2, "tool"));
+        Assert.True(second.Executed);
+
+        // 4) NOTHING LEAKED. The session tier never writes settings — the persisted grant list is the thing
+        // the user would have to go and revoke, and it is still empty.
+        Assert.Empty(appSettings.AlwaysAllowedTools);
+
+        await launcher.StopAsync(CancellationToken.None);
+        await launcher2.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>
+    /// T-SESS-15, <b>GUARD</b>, the other direction. Pressing Continue on a park does NOT mint a session
+    /// grant: it is one button whose whole vocabulary is "carry on", and reading it as "and never ask me again
+    /// this session" would hand out the wider tier on evidence of the narrower one. So a LATER run parks
+    /// again on the same tool.
+    /// <para>
+    /// <b>Red demo (inject the defect):</b> make <c>HeadlessRunLauncher.ResumeAsync</c> call
+    /// <c>ISessionToolGrantStore.Grant(...)</c> for <c>approvedTool</c> → the second park below disappears and
+    /// this reds.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task ContinuingAParkGrantsTheRunOnly_NotTheSession()
+    {
+        var pluginId = Guid.NewGuid();
+        var session = new SessionToolGrantStore();
+
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, sessionGrants: session, pluginId: pluginId);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []),
+            TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: TestContext.Current.CancellationToken));
+        await AwaitSettledAsync(handle.RunId);
+        Assert.True(probe.Executed); // the run itself was granted, as T-PARK-2 says
+
+        // The store is still empty, and the proof that MATTERS is behavioural: a new run asks again.
+        Assert.False(session.IsGranted(pluginId, "write_file"));
+
+        var second = new ToolProbe("write_file");
+        var (launcher2, _) = Build(second, sessionGrants: session, pluginId: pluginId);
+        var handle2 = await launcher2.LaunchAsync(
+            new HeadlessRunRequest("g2", AgentRunTrigger.Schedule, GrantedWrites: []),
+            TestContext.Current.CancellationToken);
+        await handle2.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+
+        var run2 = await GetRunAsync(handle2.RunId);
+        Assert.Equal(AgentRunState.WaitingForInput, run2.State);
+        Assert.Equal("write_file", PauseMember(run2, "tool"));
+        Assert.False(second.Executed);
+
+        await launcher.StopAsync(CancellationToken.None);
+        await launcher2.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>
+    /// T-SESS-16, <b>GUARD</b>. A CHILD run does not inherit the session tier — the same invariant T-PARK-5
+    /// defends for the park, and for the same reason: a child is a delegate running a strict subset of its
+    /// parent's grants (<c>NarrowForChild</c>), and a session grant ACQUIRES authority just as a park does. The
+    /// tier is therefore armed on <c>ToolApprovalStore.CanPark</c>, which a child never has.
+    /// <para>
+    /// <b>Neutralize:</b> drop <c>CanPark &amp;&amp;</c> from <c>ToolApprovalStore.HasSessionGrant</c> → the
+    /// child executes the tool and this reds.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task AChildRun_DoesNotInheritTheSessionTier()
+    {
+        var pluginId = Guid.NewGuid();
+        var session = new SessionToolGrantStore();
+        session.Grant(pluginId, "write_file"); // the grant a ROOT run would happily use
+
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, sessionGrants: session, pluginId: pluginId);
+
+        var parent = await NewRunAsync();
+        var child = await ParkedChildAsync(parent.Id);
+        Assert.True(await launcher.ResumeAsync(child.Id, ct: TestContext.Current.CancellationToken));
+        await AwaitSettledAsync(child.Id);
+
+        await AssertHardDeniedNotParkedAsync(child.Id, probe, ToolGateDecision.DeniedNotGranted);
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
     // ---------------------------------------------------------------- helpers
 
     /// <summary>Assert the run finished WITHOUT parking, and that the gate really refused this tool.</summary>
@@ -864,9 +1053,16 @@ public sealed class UnattendedApprovalParkTests : IDisposable
     /// <param name="faultAfterFirstCall">The provider FAULTS on a later round of the same exchange, after the
     /// first call has already parked — a timeout, a truncation or a transport error, all of which surface here
     /// as an exception out of the stream.</param>
+    /// <param name="sessionGrants">hermes #15: the process-scoped session grants. Omitted ⇒ NOT registered at
+    /// all, so <c>HeadlessTurnExecutor</c>'s trailing parameter stays null and the run has no session tier —
+    /// which is why every park fact above is unaffected by that batch.</param>
+    /// <param name="pluginId">hermes #15: a STABLE owner for the routed pending action. The default mints a
+    /// fresh id per call (fine for a name-keyed grant list), but a session grant is keyed on
+    /// <c>(PluginId, ToolName)</c>, so a fact about it has to route the same owner twice.</param>
     private (HeadlessRunLauncher Launcher, OneStepPlanner Planner) Build(
         ToolProbe probe, bool routed = true, bool isMcpTool = false, AppSettings? appSettings = null,
-        string? secondToolName = null, bool faultAfterFirstCall = false)
+        string? secondToolName = null, bool faultAfterFirstCall = false,
+        ISessionToolGrantStore? sessionGrants = null, Guid? pluginId = null)
     {
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         var persona = new Persona { Name = "Pia", SystemPrompt = "sys" };
@@ -893,7 +1089,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
                     // A DEFERRED write (a pending action) — the only shape that reaches the gate at all; a
                     // read returns its Result and short-circuits above it.
                     ? ((object? Result, PluginToolCall? PendingAction)?)(null, new PluginToolCall(
-                        name, Guid.NewGuid(), isMcpTool ? "some-mcp-server" : "files", "desc", null,
+                        name, pluginId ?? Guid.NewGuid(), isMcpTool ? "some-mcp-server" : "files", "desc", null,
                         () => { probe.MarkExecuted(name); return Task.FromResult<object?>("did it"); }))
                     // NULL, not a tuple of nulls: `route is null` is what the handler tests for, and a
                     // (null, null) tuple would fall out at "Tool call handled." instead — a different path.
@@ -930,6 +1126,10 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         // The audit sink is REAL wiring here (the launcher suite omits it): the park's own timeline row is
         // one of the facts, and a decision nobody records is a decision nobody can be shown.
         services.AddSingleton<IAgentTimelineService>(_timeline);
+        // hermes #15: registered ONLY when a fact is about the session tier. Its absence is what keeps every
+        // other fact in this file running on the pre-#15 gate.
+        if (sessionGrants is not null)
+            services.AddSingleton(sessionGrants);
         services.AddTransient<BackgroundAssistantTurnRunner>();
         services.AddTransient<HeadlessTurnExecutor>();
         services.AddTransient<AgentRunOrchestrator>();

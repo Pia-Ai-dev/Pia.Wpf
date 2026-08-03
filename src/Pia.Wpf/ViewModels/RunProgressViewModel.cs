@@ -1060,10 +1060,15 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// </summary>
     internal static string DecisionLabelKey(ToolGateDecision decision) => decision switch
     {
+        // hermes #15's AutoApprovedSessionGrant folds in with the other standing authorities: from the
+        // panel's point of view the call ran without anyone being asked, which is what this category says.
         ToolGateDecision.AutoApprovedStandingGrant or ToolGateDecision.AutoApprovedPolicy
             or ToolGateDecision.GrantedByName or ToolGateDecision.AutoApprovedAllowlist
+            or ToolGateDecision.AutoApprovedSessionGrant
             => "Run_Timeline_Decision_AutoApproved",
+        // ...and ApprovedForSession with the other card answers: a person said yes to this row.
         ToolGateDecision.ApprovedOnce or ToolGateDecision.ApprovedAlways
+            or ToolGateDecision.ApprovedForSession
             => "Run_Timeline_Decision_Approved",
         ToolGateDecision.DeclinedByUser or ToolGateDecision.CardCancelled
             or ToolGateDecision.DeniedNotGranted or ToolGateDecision.UnknownTool

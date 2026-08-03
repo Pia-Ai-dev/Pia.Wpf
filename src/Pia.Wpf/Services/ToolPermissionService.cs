@@ -30,14 +30,16 @@ public class ToolPermissionService : IToolPermissionService
     };
 
     private readonly ISettingsService _settingsService;
+    private readonly ISessionToolGrantStore _sessionGrants;
     private readonly object _lock = new();
     private HashSet<(Guid PluginId, string ToolName)> _grantedKeys = new();
 
     public event EventHandler? Changed;
 
-    public ToolPermissionService(ISettingsService settingsService)
+    public ToolPermissionService(ISettingsService settingsService, ISessionToolGrantStore sessionGrants)
     {
         _settingsService = settingsService;
+        _sessionGrants = sessionGrants;
 
         // Settings are loaded and cached by the time any service is constructed
         // (startup awaits GetSettingsAsync), so this returns immediately from cache.
@@ -108,6 +110,28 @@ public class ToolPermissionService : IToolPermissionService
     public static bool IsPresumedExternalDeleteLike(string? toolName)
         => IsDeleteLike(toolName) && !BuiltInDestructiveTools.Contains(toolName!);
 
+    /// <summary>
+    /// Tools that discard uncommitted work without carrying a destructive STEM in their name, so
+    /// <see cref="IsDeleteLike"/> cannot see them. Case-insensitive like <see cref="IsDeleteLike"/> (the old
+    /// inline copy in <c>ActionCardBuilder</c> was case-sensitive; widening it only ever adds friction, which
+    /// is the safe direction for this check).
+    /// </summary>
+    private static readonly HashSet<string> WorkDiscardingTools = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "git_switch",
+        "git_restore",
+        "git_stash"
+    };
+
+    /// <summary>
+    /// A tool that throws away uncommitted work. Lifted out of <c>ActionCardBuilder</c> (where it was the
+    /// card's own stricter destructive rule) so <see cref="ToolAutonomy.IsSessionGrantOfferable"/> and the card
+    /// share ONE definition: hermes #15's session tier is minted at the gate, and a gate rule wider than the
+    /// card's would let a forged card mint a grant the card never offers.
+    /// </summary>
+    public static bool IsWorkDiscarding(string? toolName)
+        => toolName is not null && WorkDiscardingTools.Contains(toolName);
+
     public bool IsGranted(Guid pluginId, string toolName)
     {
         lock (_lock)
@@ -115,6 +139,24 @@ public class ToolPermissionService : IToolPermissionService
             return _grantedKeys.Contains((pluginId, toolName));
         }
     }
+
+    /// <summary>
+    /// hermes #15. The MIDDLE tier, read here so the interactive and voice gates consult one owner for all
+    /// three answers (eligibility, session, standing) instead of growing a second injected dependency. The
+    /// state itself lives in the singleton <see cref="ISessionToolGrantStore"/> — this is a pass-through, and
+    /// deliberately touches neither <see cref="AppSettings"/> nor the persisted cache above.
+    /// </summary>
+    public bool IsGrantedForSession(Guid pluginId, string toolName)
+        => _sessionGrants.IsGranted(pluginId, toolName);
+
+    /// <summary>
+    /// Record a session grant. NO settings write, NO <c>SaveSettingsAsync</c>, NO
+    /// <see cref="Changed"/> event: nothing durable changed, and raising Changed would tell the settings
+    /// grant list to refresh for a grant it can neither show nor revoke. Synchronous for the same reason —
+    /// there is nothing to await.
+    /// </summary>
+    public void GrantForSession(Guid pluginId, string toolName)
+        => _sessionGrants.Grant(pluginId, toolName);
 
     public async Task GrantAsync(Guid pluginId, string toolName)
     {

@@ -1,3 +1,5 @@
+using Pia.Services.Interfaces;
+
 namespace Pia.Services;
 
 /// <summary>
@@ -22,14 +24,44 @@ public sealed class ToolApprovalStore
 {
     private readonly object _lock = new();
 
+    private readonly ISessionToolGrantStore? _sessionGrants;
+
     /// <param name="canPark">
     /// False ⇒ this store records nothing and the gate resolves exactly as it did before hermes #16. Passed
     /// rather than assumed so a caller that builds a store still has to state the answer.
     /// </param>
-    public ToolApprovalStore(bool canPark) => CanPark = canPark;
+    /// <param name="sessionGrants">
+    /// hermes #15. The process-scoped session grants, or null for "this turn has no session tier" — which is
+    /// what the background SINGLE-TURN path gets, since it builds no store at all. Carried HERE rather than
+    /// injected into <c>BackgroundAssistantTurnRunner</c> on purpose: that file has no notion of root-vs-child,
+    /// and an ambient reader there would hand every CHILD run a capability its parent deliberately narrowed
+    /// away (<c>HeadlessRunLauncher.CanParkForApproval</c> exists because "a park ACQUIRES authority" — so does
+    /// a session grant). Threaded through the same per-step store, the child answer is the safe one for free.
+    /// </param>
+    public ToolApprovalStore(bool canPark, ISessionToolGrantStore? sessionGrants = null)
+    {
+        CanPark = canPark;
+        _sessionGrants = sessionGrants;
+    }
 
     /// <summary>May this run stop and ask a human? Relayed verbatim into <c>ToolGateInput.CanPark</c>.</summary>
     public bool CanPark { get; }
+
+    /// <summary>
+    /// hermes #15. Does the user hold a SESSION grant for this call? Relayed into
+    /// <c>ToolGateInput.HasSessionGrant</c> by the unattended gate.
+    /// <para>
+    /// ARMED ON <see cref="CanPark"/>, which is the whole reason this lives on the store: the session tier
+    /// reaches an unattended run exactly where the park does — a ROOT run's real, re-runnable planned step —
+    /// and nowhere else. The symmetry is the argument, not a coincidence. Both are ways for a run to use
+    /// authority that belongs to a human rather than to its own grant envelope: the park acquires it by asking
+    /// now, a session grant by having been asked earlier in the same process. A child run must have neither
+    /// (it is a delegate running a strict subset of its parent's grants), and the R10 degrade turn and the
+    /// single-turn background path have no step to re-run, so both keep the pre-#15 denial.
+    /// </para>
+    /// </summary>
+    public bool HasSessionGrant(Guid pluginId, string toolName)
+        => CanPark && _sessionGrants?.IsGranted(pluginId, toolName) == true;
 
     /// <summary>
     /// The tool the run is parked on, or null when nothing parked. FIRST call wins — the opposite of

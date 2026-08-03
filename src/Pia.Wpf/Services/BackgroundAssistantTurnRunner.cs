@@ -469,6 +469,11 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 // No allowlist unattended: there is no user to have curated it, and IToolPermissionService is
                 // injected nowhere in this file. That is today's behaviour restated, not a regression.
                 IsAllowlisted: false,
+                // hermes #15: the PROCESS-scoped middle tier. It arrives on the same per-step store CanPark
+                // does, and for the same reason there is still no IToolPermissionService here: read ambiently,
+                // it would hand a CHILD run authority its parent narrowed away. A null store — every
+                // SingleTurn background call — and a store that may not park both answer false.
+                HasSessionGrant: approvals?.HasSessionGrant(pending.PluginId, pending.ToolName) == true,
                 // Persisted "always allow" grants are an INTERACTIVE concept and have never applied here.
                 HasStandingGrant: false,
                 IsNamedGrant: grantedWrites.Contains(pending.ToolName),

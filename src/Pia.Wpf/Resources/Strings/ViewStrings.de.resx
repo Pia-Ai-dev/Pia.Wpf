@@ -771,6 +771,7 @@
   <data name="ActionCard_Decline" xml:space="preserve"><value>Ablehnen</value></data>
   <data name="ActionCard_AllowOnce" xml:space="preserve"><value>Einmal zulassen</value></data>
   <data name="ActionCard_AlwaysAllow" xml:space="preserve"><value>Immer zulassen</value></data>
+  <data name="ActionCard_AllowForSession" xml:space="preserve"><value>Diese Sitzung zulassen</value></data>
   <data name="ActionCard_AutoApproved" xml:space="preserve"><value>Automatisch genehmigt · {0} immer zulassen</value></data>
   <data name="ActionCard_Manage" xml:space="preserve"><value>Verwalten</value></data>
   <data name="Settings_Tab_ToolPermissions" xml:space="preserve"><value>Tool-Zugriff</value></data>

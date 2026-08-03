@@ -55,8 +55,11 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         // Destructive is TOOLNAME-based, not the "delete" substring: git_switch/git_restore/git_stash
         // carry no "delete" yet can shed uncommitted changes, and each needs its OWN warning. (git_stash
         // "list" runs inline and never reaches a card, so marking the tool destructive here is safe.)
+        // hermes #15 moved the git trio into ToolPermissionService.IsWorkDiscarding so this card rule and
+        // ToolAutonomy.IsSessionGrantOfferable share ONE definition — a gate that could mint a session grant
+        // for a tool this card refuses to offer one for would be a gate wider than its own UI.
         var isDelete = ToolPermissionService.IsDeleteLike(pendingAction.ToolName);
-        var isGitDestructive = pendingAction.ToolName is "git_switch" or "git_restore" or "git_stash";
+        var isGitDestructive = ToolPermissionService.IsWorkDiscarding(pendingAction.ToolName);
         var isDestructive = isDelete || isGitDestructive;
 
         var warningText = pendingAction.ToolName switch
@@ -129,6 +132,12 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             IsAutoApprovable = ToolAutonomy.IsStandingGrantOfferable(
                     resolvedClass, pendingAction.ToolName, _permissions.IsAutoApproveEligible(pendingAction.ToolName))
                 && !isDestructive,
+            // hermes #15. The SAME function the gate mints with (ToolAutonomy.IsSessionGrantOfferable, via
+            // ChatSession's `sessionOfferable` hoist), and no `&& !isDestructive` beside it: that rule already
+            // excludes both halves of isDestructive — IsDeleteLike and IsWorkDiscarding — so repeating the
+            // exclusion here would only invite the two to drift. Wider than IsAutoApprovable on purpose:
+            // write_file is the tool a user approves forty times a session and can never "always allow".
+            IsSessionGrantable = ToolAutonomy.IsSessionGrantOfferable(pendingAction.ToolName),
             IsAutoApproved = autoApproved,
             IsDestructive = isDestructive,
             WarningText = warningText,
@@ -141,6 +150,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             DeclineLabel = _localizationService["ActionCard_Decline"],
             AllowOnceLabel = _localizationService["ActionCard_AllowOnce"],
             AlwaysAllowLabel = _localizationService["ActionCard_AlwaysAllow"],
+            AllowForSessionLabel = _localizationService["ActionCard_AllowForSession"],
         };
 
         // [ObservableProperty]-generated State is not init-settable; the auto-approved

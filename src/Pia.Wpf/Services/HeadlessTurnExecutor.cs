@@ -84,6 +84,13 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// </summary>
     private bool _canPark;
 
+    /// <summary>
+    /// hermes #15: the process-scoped session grants, or null when none were injected (⇒ no session tier).
+    /// Read only through the per-step <see cref="ToolApprovalStore"/>, which arms it on the same condition as
+    /// the park — see <see cref="ToolApprovalStore.HasSessionGrant"/>.
+    /// </summary>
+    private readonly ISessionToolGrantStore? _sessionGrants;
+
     public HeadlessTurnExecutor(
         BackgroundAssistantTurnRunner engine,
         IAssistantChatService chatService,
@@ -98,7 +105,11 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // container resolves it because it is registered.
         IAgentTimelineService? timelineService = null,
         // Batch 07 G6, trailing and defaulted for the same reason.
-        StepPersonaResolver? stepPersonas = null)
+        StepPersonaResolver? stepPersonas = null,
+        // hermes #15, trailing and defaulted for the same reason — and null is the RESTRICTIVE answer here
+        // (no session tier at all, i.e. the pre-#15 gate), so a test or a caller that omits it never widens a
+        // run. The container resolves the registered singleton.
+        ISessionToolGrantStore? sessionGrants = null)
     {
         _engine = engine;
         _chatService = chatService;
@@ -111,6 +122,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         _logger = logger;
         _timelineService = timelineService;
         _stepPersonas = stepPersonas;
+        _sessionGrants = sessionGrants;
     }
 
     /// <summary>
@@ -331,7 +343,11 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // Pending and the orchestrator's fallback path has no park slot. Derived from _canPark AND
         // offerStepResultTool for that reason: "this is a real, re-runnable planned step" is exactly the
         // condition both signals already encode, and deriving it keeps them from drifting apart.
-        var approvals = new ToolApprovalStore(canPark: _canPark && offerStepResultTool);
+        //
+        // hermes #15 rides in the SAME store and is armed by the same CanPark: the session tier reaches an
+        // unattended run exactly where the park does. See ToolApprovalStore.HasSessionGrant for why that
+        // symmetry is the safe line — a child run must inherit neither.
+        var approvals = new ToolApprovalStore(canPark: _canPark && offerStepResultTool, _sessionGrants);
 
         // hermes #9, and the placement is the point: AFTER the persona ternary above, so a step carrying an
         // AssignedPersonaId gets the tool on ITS setup. Augmenting _runDefault/_setup instead would silently

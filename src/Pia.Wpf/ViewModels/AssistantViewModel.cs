@@ -1639,6 +1639,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             var verdict = ToolAutonomy.Resolve(new ToolGateInput(
                 ToolGateSurface.Voice, tool, toolClass,
                 IsAllowlisted: allowlisted,
+                // hermes #15: the honest lookup, even though the resolver does not honour a session grant on
+                // THIS surface — the input stays a fact about the user's grants and the reason voice is
+                // excluded stays in one place (ToolAutonomy.Resolve's session arm). A voice turn has no card
+                // to have collected it on and no visible transcript to show what it authorized.
+                HasSessionGrant: _permissions.IsGrantedForSession(pendingAction.PluginId, tool),
                 HasStandingGrant: _permissions.IsGranted(pendingAction.PluginId, tool),
                 // Voice has no per-job grant list and no run envelope; the policy is the settings preset.
                 IsNamedGrant: false,

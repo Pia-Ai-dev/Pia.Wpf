@@ -181,30 +181,45 @@ public class ActionCardBuilderTests
         Assert.True(card.IsAutoApprovable);
         Assert.False(card.IsAutoApproved);
 
-        // Triad: Decline (Default), Allow once (Primary), Always allow (Default).
-        Assert.Equal(3, card.Decisions.Count);
+        // hermes #15 made this a FOUR-button bar: the grant tiers ascend in durability after Allow once, so a
+        // user who does not want to be asked forty times is no longer pushed straight to the permanent one.
+        Assert.True(card.IsSessionGrantable);
+        Assert.Equal(4, card.Decisions.Count);
         Assert.Equal("ActionCard_Decline", card.Decisions[0].Label);
         Assert.Equal(DecisionEmphasis.Default, card.Decisions[0].Emphasis);
         Assert.Equal("ActionCard_AllowOnce", card.Decisions[1].Label);
         Assert.Equal(DecisionEmphasis.Primary, card.Decisions[1].Emphasis);
-        Assert.Equal("ActionCard_AlwaysAllow", card.Decisions[2].Label);
+        Assert.Equal("ActionCard_AllowForSession", card.Decisions[2].Label);
         Assert.Equal(DecisionEmphasis.Default, card.Decisions[2].Emphasis);
+        Assert.Equal("ActionCard_AlwaysAllow", card.Decisions[3].Label);
+        Assert.Equal(DecisionEmphasis.Default, card.Decisions[3].Emphasis);
     }
 
+    /// <summary>
+    /// Neither of these tools may ever offer the PERSISTED tier. hermes #15 split them on the middle one, and
+    /// the pair is the discriminator: <c>write_file</c> is exactly the tool a user approves over and over, so it
+    /// gains "Allow this session"; <c>delete_file</c> is irreversible, so it keeps the bare pair — a multi-call
+    /// grant would authorize deletions whose arguments the user never saw.
+    /// </summary>
     [Theory]
-    [InlineData("write_file", "files")]
-    [InlineData("delete_file", "files")]
-    public void Build_IneligibleTool_HasDeclineAndAllowOncePair_NoAlwaysAllow(string toolName, string pluginName)
+    [InlineData("write_file", "files", true)]
+    [InlineData("delete_file", "files", false)]
+    public void Build_IneligibleTool_NeverOffersAlwaysAllow_AndOffersTheSessionTierOnlyWhenReversible(
+        string toolName, string pluginName, bool sessionGrantable)
     {
         var builder = CreateBuilder(out _, out _);
 
         var card = builder.Build(Call(toolName, pluginName, "do the thing"), detokenize: false);
 
         Assert.False(card.IsAutoApprovable);
-        Assert.Equal(2, card.Decisions.Count);
+        Assert.Equal(sessionGrantable, card.IsSessionGrantable);
+        Assert.Equal(sessionGrantable ? 3 : 2, card.Decisions.Count);
         Assert.Equal("ActionCard_Decline", card.Decisions[0].Label);
         Assert.Equal("ActionCard_AllowOnce", card.Decisions[1].Label);
         Assert.DoesNotContain(card.Decisions, d => d.Label == "ActionCard_AlwaysAllow");
+        Assert.Equal(
+            sessionGrantable,
+            card.Decisions.Any(d => d.Label == "ActionCard_AllowForSession"));
     }
 
     [Fact]

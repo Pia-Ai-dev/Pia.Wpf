@@ -47,9 +47,12 @@ public class ActionCardBuilderScheduledCategoryTests
         var card = CreateBuilder().Build(Call("create_scheduled_research"), detokenize: false);
 
         Assert.False(card.IsAutoApprovable);
-        // The user-visible half of §0.6: a pair (Decline / Allow once), not the triad.
-        Assert.Equal(2, card.Decisions.Count);
+        // The user-visible half of §0.6: never the PERSISTED tier. hermes #15 added the middle one — a
+        // scheduled-research create is reversible and repetitive, which is exactly what it is for — so the bar
+        // is now Decline / Allow once / Allow this session, and still no "Always allow".
+        Assert.Equal(3, card.Decisions.Count);
         Assert.DoesNotContain(card.Decisions, d => ReferenceEquals(d.Command, card.AlwaysAllowCommand));
+        Assert.Contains(card.Decisions, d => ReferenceEquals(d.Command, card.AllowForSessionCommand));
     }
 
     [Fact]

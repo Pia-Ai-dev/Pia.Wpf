@@ -460,6 +460,10 @@ public static class Bootstrapper
         services.AddSingleton<IPluginService, Pia.Services.Plugins.PluginService>();
         services.AddSingleton<IAutocompleteService, AutocompleteService>();
         services.AddSingleton<ISettingsService, SettingsService>();
+        // hermes #15: the session grant tier. SINGLETON is the scope — its lifetime IS the "session" the
+        // button names, and a second instance would be a second session with its own answers. Registered
+        // BEFORE ToolPermissionService, which consults it (and whose ctor resolves it).
+        services.AddSingleton<ISessionToolGrantStore, SessionToolGrantStore>();
         services.AddSingleton<IToolPermissionService, ToolPermissionService>();
         services.AddSingleton<ITemplateService, TemplateService>();
         services.AddSingleton<IPersonaService, PersonaService>();

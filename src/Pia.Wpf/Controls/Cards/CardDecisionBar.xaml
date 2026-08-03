@@ -10,7 +10,10 @@
                 HorizontalAlignment="Right">
     <ItemsControl.ItemsPanel>
       <ItemsPanelTemplate>
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" />
+        <!-- WrapPanel, not StackPanel: hermes #15 added a third grant tier, so an eligible card now shows
+             four buttons and a narrow chat column would clip the last one out of reach. Identical layout
+             while the row fits. -->
+        <WrapPanel Orientation="Horizontal" HorizontalAlignment="Right" />
       </ItemsPanelTemplate>
     </ItemsControl.ItemsPanel>
     <ItemsControl.ItemTemplate>
@@ -19,7 +22,7 @@
                    Command="{Binding Command}"
                    FontSize="12"
                    Padding="12,4"
-                   Margin="6,0,0,0">
+                   Margin="6,2,0,2">
           <ui:Button.Style>
             <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
               <!-- Default emphasis → Secondary (matches the Action Card footer's Decline button). -->

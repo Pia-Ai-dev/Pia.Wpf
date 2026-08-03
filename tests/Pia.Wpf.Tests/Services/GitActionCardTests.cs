@@ -115,7 +115,7 @@ public sealed class GitActionCardTests
     {
         var settings = Substitute.For<ISettingsService>();
         settings.GetSettingsAsync().Returns(new AppSettings());
-        var permissions = new ToolPermissionService(settings);
+        var permissions = new ToolPermissionService(settings, new SessionToolGrantStore());
 
         Assert.False(permissions.IsAutoApproveEligible(toolName));
     }

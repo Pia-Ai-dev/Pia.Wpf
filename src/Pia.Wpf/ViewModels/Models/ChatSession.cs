@@ -1042,9 +1042,17 @@ public sealed class ChatSession : IDisposable
             // Held as a local because the AlwaysAllow branch below needs the same answer the card's button set
             // was built from: an AlwaysAllow on a non-offerable tool executes once and persists NO grant.
             var offerable = ToolAutonomy.IsStandingGrantOfferable(toolClass, tool, allowlisted);
+            // hermes #15, the same hoist for the same reason: the AllowForSession branch below must mint a
+            // grant only where the card was entitled to offer one, and the card computes this with the SAME
+            // function (ActionCardBuilder.IsSessionGrantable), so the two cannot drift.
+            var sessionOfferable = ToolAutonomy.IsSessionGrantOfferable(tool);
             var verdict = ToolAutonomy.Resolve(new ToolGateInput(
                 ToolGateSurface.Interactive, tool, toolClass,
                 IsAllowlisted: allowlisted,
+                // hermes #15: the PROCESS-scoped middle tier, read from the grant set's owner exactly like the
+                // persisted one below it. This is the lookup that makes the second call of a session-granted
+                // tool card-free; without it the tier records a grant nothing ever reads.
+                HasSessionGrant: _permissions.IsGrantedForSession(pluginId, tool),
                 HasStandingGrant: _permissions.IsGranted(pluginId, tool),
                 IsNamedGrant: false,
                 Policy: policy,
@@ -1148,6 +1156,28 @@ public sealed class ChatSession : IDisposable
             {
                 case ToolDecision.AllowOnce:
                     _logger.LogInformation("User allowed {ToolName} action once", tool);
+                    return await ExecuteAndReport(ToolGateDecision.ApprovedOnce);
+
+                // hermes #15 THE MIDDLE TIER. Execute now and remember for the rest of this app session —
+                // nothing is written to AppSettings, so the grant dies with the process and appears in no
+                // revocable list (which is exactly what "for this session" promises).
+                //
+                // Defensive in the same shape the AlwaysAllow arm is, and it is the same class of hazard: the
+                // card is a UI hint and the gate is the authority, so a card that somehow surfaced the option
+                // for a delete-like or work-discarding tool executes ONCE and records nothing. The audit row
+                // then says ApprovedOnce, because that is what actually happened — writing ApprovedForSession
+                // for a grant that was not minted would make the timeline claim a tier the user does not have.
+                case ToolDecision.AllowForSession:
+                    if (sessionOfferable)
+                    {
+                        _permissions.GrantForSession(pluginId, tool);
+                        _logger.LogInformation(
+                            "User granted session approval for {ToolName} (plugin {PluginId})", tool, pluginId);
+                        return await ExecuteAndReport(ToolGateDecision.ApprovedForSession);
+                    }
+
+                    _logger.LogInformation(
+                        "Session approval not offerable for {ToolName}; executing once instead", tool);
                     return await ExecuteAndReport(ToolGateDecision.ApprovedOnce);
 
                 case ToolDecision.AlwaysAllow:

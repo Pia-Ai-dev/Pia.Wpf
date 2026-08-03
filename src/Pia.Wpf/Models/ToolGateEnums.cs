@@ -82,6 +82,24 @@ public enum ToolGateDecision
     /// </para>
     /// </summary>
     ParkedForApproval = 12,
+
+    /// <summary>
+    /// hermes #15. A SESSION grant the user clicked earlier in this app session authorized the call — the
+    /// middle tier between <see cref="ApprovedOnce"/> and the persisted
+    /// <see cref="AutoApprovedStandingGrant"/>. Its own ordinal rather than a reuse of the standing one,
+    /// because the two answer a question a user reading the timeline actually asks: a standing grant is in
+    /// their settings and can be revoked there, a session grant is gone at the next restart and appears in no
+    /// list at all.
+    /// </summary>
+    AutoApprovedSessionGrant = 13,
+
+    /// <summary>
+    /// hermes #15. The user pressed "Allow for this session" on the card, i.e. the row that RECORDS the grant
+    /// the <see cref="AutoApprovedSessionGrant"/> rows below it then cite. Distinct from
+    /// <see cref="ApprovedAlways"/> for the same reason: the audit trail must say which tier was chosen, or a
+    /// user cannot tell from it whether a permanent grant exists.
+    /// </summary>
+    ApprovedForSession = 14,
 }
 
 /// <summary>

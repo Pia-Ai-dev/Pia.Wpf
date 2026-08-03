@@ -28,6 +28,11 @@ public class AgentTimelineVocabularyTests
         ToolGateDecision.DeniedDestructiveFloor,    // unattended floor refusal
         ToolGateDecision.UnknownTool,               // either surface, null route
         ToolGateDecision.ParkedForApproval,         // hermes #16: unattended Park (the FIRST parked call only)
+        // hermes #15, the session tier — BOTH surfaces reach the first one (interactive AutoRun and, since the
+        // tier is armed on the same condition as the park, a root run's unattended AutoRun), while the second
+        // is written only where the grant is minted: the interactive card.
+        ToolGateDecision.AutoApprovedSessionGrant,  // either surface, AutoRun (verdict.Decision)
+        ToolGateDecision.ApprovedForSession,        // interactive card, AllowForSession
     ];
 
     /// <summary>
@@ -128,6 +133,8 @@ public class AgentTimelineVocabularyTests
             ["UnknownTool"] = 10,
             ["AutoApprovedAllowlist"] = 11,
             ["ParkedForApproval"] = 12,
+            ["AutoApprovedSessionGrant"] = 13,
+            ["ApprovedForSession"] = 14,
         }, Enum.GetValues<ToolGateDecision>());
     }
 

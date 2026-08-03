@@ -14,6 +14,12 @@ namespace Pia.Services;
 /// <param name="ToolName">The tool name, as the model called it.</param>
 /// <param name="ToolClass">From <see cref="ToolClassifier.Classify"/>, route-first.</param>
 /// <param name="IsAllowlisted"><c>ToolPermissionService.IsAutoApproveEligible(name)</c>.</param>
+/// <param name="HasSessionGrant">
+/// hermes #15. <c>ISessionToolGrantStore.IsGranted(pluginId, name)</c> — the PROCESS-scoped middle tier,
+/// reached interactively through <c>IToolPermissionService.IsGrantedForSession</c> and unattended through
+/// <c>ToolApprovalStore.HasSessionGrant</c>. Caller knowledge like the other membership bools; the fourth
+/// grant set in the tree and the only one that is never written anywhere.
+/// </param>
 /// <param name="HasStandingGrant"><c>IToolPermissionService.IsGranted(pluginId, name)</c>. False where there
 /// is no persisted-grant concept (the unattended gate).</param>
 /// <param name="IsNamedGrant"><c>grantedWrites.Contains(name)</c>. False where there is no grant list.</param>
@@ -36,6 +42,10 @@ public readonly record struct ToolGateInput(
     string ToolName,
     ToolClass ToolClass,
     bool IsAllowlisted,
+    // DELIBERATELY NOT DEFAULTED either, and for the same reason CanPark is not: hermes #15 adds a way for a
+    // call to be authorized, so a gate that does not answer "does this surface honour a session grant?" out
+    // loud must not compile.
+    bool HasSessionGrant,
     bool HasStandingGrant,
     bool IsNamedGrant,
     RunAutonomyPolicy? Policy,
@@ -73,6 +83,37 @@ public static class ToolAutonomy
            || (toolClass == ToolClass.External && !ToolPermissionService.IsDeleteLike(toolName));
 
     /// <summary>
+    /// hermes #15. May this tool be offered — and honoured — as a SESSION grant? Used by the card to decide
+    /// what to offer and by both gates to decide what to mint and what to honour, so the offer and the
+    /// authority cannot drift apart (the 04 D4/D5 property).
+    /// <para>
+    /// NAME ONLY, and deliberately NOT <see cref="IsStandingGrantOfferable"/>. The standing rule collapses to
+    /// <c>isAllowlisted</c> for every non-<see cref="ToolClass.External"/> tool, and the unattended gate has no
+    /// allowlist at all (it passes <c>IsAllowlisted: false</c>) — so reusing it would make the middle tier
+    /// unreachable on the one surface that needs it most, and would leave the tool a user actually approves
+    /// forty times a session (<c>write_file</c>) with no tier between "once" and "never".
+    /// </para>
+    /// <para>
+    /// The two exclusions are the whole rule, and both are about what a MULTI-CALL grant can consent to. One
+    /// card shows the arguments of ONE call; a session grant authorizes every later call of that tool with
+    /// arguments the user will never see. So:
+    /// <list type="bullet">
+    /// <item><see cref="ToolPermissionService.IsDeleteLike"/> — no destructive tool of any class. Wider than
+    /// the FLOOR (external-only) on purpose, and the same line the unattended park draws.</item>
+    /// <item><see cref="ToolPermissionService.IsWorkDiscarding"/> — <c>git_switch</c> / <c>git_restore</c> /
+    /// <c>git_stash</c> shed uncommitted work while carrying no "delete" in the name. This exclusion used to
+    /// live in <c>ActionCardBuilder</c> as the card's own stricter rule; the session tier shares it rather
+    /// than re-deriving it, so the gate's mint check is exactly as narrow as the card's offer.</item>
+    /// </list>
+    /// It admits a non-destructive EXTERNAL (MCP) tool, which the standing tier already offers — the middle
+    /// tier must not be the only one missing for the tools a user is prompted for most.
+    /// </para>
+    /// </summary>
+    public static bool IsSessionGrantOfferable(string toolName)
+        => !ToolPermissionService.IsDeleteLike(toolName)
+           && !ToolPermissionService.IsWorkDiscarding(toolName);
+
+    /// <summary>
     /// Resolve one gated tool call. The FLOOR is evaluated FIRST and unconditionally, so no policy value and
     /// no grant can reach an auto-approval past it; ordering it first (rather than ANDing it into each
     /// branch) means a branch added below inherits it by construction.
@@ -104,6 +145,34 @@ public static class ToolAutonomy
             return new ToolGateVerdict(ToolGateOutcome.AutoRun, ToolGateDecision.AutoApprovedPolicy);
 
         // EXISTING AUTHORITY — unchanged semantics, per surface.
+
+        // hermes #15 THE SESSION TIER. Positioned exactly where the requirement puts it: BELOW the floor and
+        // the policy (a one-click grant must not lift either), and ABOVE the persisted standing grant, the
+        // named grant, the interactive Prompt and the Park arm. Each of those four is load-bearing:
+        //
+        //  * above the STANDING grant, so a call authorized by both is audited as the tier that is actually
+        //    revocable-by-restart rather than as one the user would look for in Settings and not find. The
+        //    overlap is nearly inert in practice — a tool with a standing grant never shows a card, so no
+        //    session grant is ever collected for it — but the ordering is what makes the audit unambiguous.
+        //  * above the NAMED grant, so a resumed run that was widened by its own Continue AND holds a session
+        //    grant records AutoApprovedSessionGrant. Without that ordering, "the session grant reached the
+        //    resumed run" would be indistinguishable from the resume's per-run widening.
+        //  * above the interactive Prompt, or the tier would authorize nothing at all: the card would come
+        //    back for a tool the user just granted for the session.
+        //  * above the PARK, or an unattended run holding a session grant would stop and ask for a capability
+        //    a human already answered — which is the same "asked forty times" failure one layer out.
+        //
+        // VOICE IS EXCLUDED HERE, not at its call site, so the reason lives with the rule: a session grant is
+        // collected on a CARD, and this tier is wider than the standing tier voice already honours (it covers
+        // write_file). Honouring it on a surface with no card and no visible transcript would silently widen
+        // what a spoken turn may do, on evidence the speaker never sees. Voice keeps exactly the authority it
+        // had, and passes the honest lookup anyway so the input stays a fact and the policy stays here.
+        if (input.HasSessionGrant
+            && input.Surface != ToolGateSurface.Voice
+            && IsSessionGrantOfferable(input.ToolName))
+        {
+            return new ToolGateVerdict(ToolGateOutcome.AutoRun, ToolGateDecision.AutoApprovedSessionGrant);
+        }
 
         // A persisted "always allow" the user clicked. Interactive and voice only (the unattended gate has
         // no persisted-grant concept and passes false).
