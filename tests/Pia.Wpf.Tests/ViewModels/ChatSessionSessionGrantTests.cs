@@ -217,6 +217,60 @@ public sealed class ChatSessionSessionGrantTests
         Assert.False(_session.IsGranted(FilesId, "move_file"));
     }
 
+    /// <summary>
+    /// T-SESS-17, DENY-BY-DEFAULT, mechanized at the only place it can be. <see cref="ToolDecision"/> has
+    /// exactly ONE consumer switch (<c>ChatSession.HandleToolCall</c>) and its <c>default:</c> arm IS the
+    /// decline arm — it executes nothing, emits <c>DeclinedByUser</c>/<c>CardCancelled</c> and tells the model
+    /// not to retry — so a member nobody handles is fail-closed on execution while producing a FALSE audit row
+    /// and a false sentence to the model. Nothing in the language forces the next member to be handled, so this
+    /// does: it asserts the enum's value space and the CARD's producers are in bijection, and lists what the
+    /// gate does with each.
+    /// <para>
+    /// Adding a fifth member reds here with a diff naming it. The executable evidence that the fall-through
+    /// really withholds execution is <c>ChatSessionTimelineTests</c>' decline rows (T-EMIT-1 and
+    /// <c>ACancelledCardIsRecordedAsCancelled_NotAsAUserDenial</c>), which take that same arm.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task EveryToolDecision_HasAProducerAndAnAccountedGateArm()
+    {
+        // What the gate does with each member, walked off the switch rather than copied from the enum.
+        var accounted = new Dictionary<ToolDecision, string>
+        {
+            [ToolDecision.AllowOnce] = "case AllowOnce → execute, ApprovedOnce",
+            [ToolDecision.AlwaysAllow] = "case AlwaysAllow → GrantAsync when offerable, ApprovedAlways",
+            [ToolDecision.AllowForSession] = "case AllowForSession → GrantForSession when offerable, ApprovedForSession",
+            [ToolDecision.Decline] = "default: → nothing executes, DeclinedByUser/CardCancelled",
+        };
+        // Materialized before the assertion so the failure names the member (and so xUnit2029 has nothing to
+        // say about a LINQ query handed to Assert.Empty) — the same shape AgentTimelineVocabularyTests uses.
+        var unaccounted = Enum.GetValues<ToolDecision>().Where(d => !accounted.ContainsKey(d)).ToArray();
+        Assert.Empty(unaccounted);
+
+        // …and every one of them is REACHABLE from a button, so the list above is a statement about the whole
+        // producible value space and not just about the declaration order.
+        var presses = new Action<ActionCardInfo>[]
+        {
+            c => c.AllowOnceCommand.Execute(null),
+            c => c.AlwaysAllowCommand.Execute(null),
+            c => c.AllowForSessionCommand.Execute(null),
+            c => c.DeclineCommand.Execute(null),
+        };
+
+        var produced = new List<ToolDecision>();
+        foreach (var press in presses)
+        {
+            var card = NewCard("write_file", FilesId, sessionGrantable: true);
+            var wait = card.WaitForUserDecisionAsync();
+            press(card);
+            produced.Add(await wait);
+        }
+
+        Assert.Equal(
+            Enum.GetValues<ToolDecision>().Order().ToArray(),
+            produced.Order().ToArray());
+    }
+
     // ---- harness (the shape ChatSessionTimelineTests uses) ----
 
     private ChatSession CreateSession() => new(
