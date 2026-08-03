@@ -129,7 +129,10 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
         return await PostAsync(async () =>
         {
             var result = await _session.RunStepTurnAsync(BuildSpec(run, step.Ordinal, step.Intent ?? string.Empty,
-                step.ExpectedArtifact, useGoalVerbatim: false, stepId: step.Id, setup), ctx, ct);
+                // hermes #9: the ONE entry point whose result becomes an AgentStep's Done/Failed, so the one
+                // that offers emit_step_result. Headless draws the same line at the same place.
+                step.ExpectedArtifact, useGoalVerbatim: false, stepId: step.Id, setup,
+                offerStepResultTool: true), ctx, ct);
 
             // E2 (parity with HeadlessTurnExecutor's per-step write): make this step's assistant message
             // DURABLE now. The interactive path otherwise persists only via TurnCompleted → the manager's
@@ -192,20 +195,34 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
     /// persona-derived members below are the ONLY thing it changes — which is why
     /// <c>ChatSession.RunStepTurnAsync</c> needed no change at all: it already reads <c>spec.Persona</c> for
     /// attribution and <c>spec.Provider</c> for the exchange.</param>
+    /// <param name="offerStepResultTool">hermes #9: append <c>emit_step_result</c> to this turn's tool list.
+    /// True only for <see cref="ExecuteStepAsync"/>; the R10 degrade turn leaves it false (no
+    /// <c>AgentStep</c> row, so there is no Done/Failed for a declaration to decide).</param>
     private StepTurnSpec BuildSpec(
         AgentRun run, int ordinal, string intent, string? expectedArtifact, bool useGoalVerbatim, Guid? stepId,
-        StepPersonaSetup? stepPersona = null) =>
-        new(
+        StepPersonaSetup? stepPersona = null, bool offerStepResultTool = false)
+    {
+        // hermes #9. The setup ternary is hoisted out of the six member initializers below precisely so the
+        // augmentation has ONE choke point, and it sits AFTER the ternary resolves: a step carrying an
+        // AssignedPersonaId runs on stepPersona.TurnSetup, so augmenting _turnSetup alone would silently
+        // withhold the tool from exactly those steps and leave them on the text heuristic forever.
+        // WithStepResultTool copies the tool list — mutating it would leak a step tool into this session's
+        // ordinary chat turns, which share this very _turnSetup instance.
+        var turnSetup = stepPersona?.TurnSetup ?? _turnSetup;
+        if (offerStepResultTool)
+            turnSetup = AgentStepTools.WithStepResultTool(turnSetup);
+
+        return new(
             RunId: run.Id,
             Ordinal: ordinal,
             Intent: intent,
             ExpectedArtifact: expectedArtifact,
-            SystemPrompt: stepPersona?.TurnSetup.SystemPrompt ?? _turnSetup.SystemPrompt,
+            SystemPrompt: turnSetup.SystemPrompt,
             Persona: stepPersona is null ? _persona : PersonaAttribution.From(stepPersona.Persona),
             Provider: stepPersona?.Provider ?? _provider,
-            Tools: stepPersona is null ? _turnSetup.Tools : stepPersona.TurnSetup.Tools,
-            SupportsTools: stepPersona?.TurnSetup.SupportsTools ?? _turnSetup.SupportsTools,
-            WebSearchActive: stepPersona?.TurnSetup.WebSearchActive ?? _turnSetup.WebSearchActive,
+            Tools: turnSetup.Tools,
+            SupportsTools: turnSetup.SupportsTools,
+            WebSearchActive: turnSetup.WebSearchActive,
             TokenizationEnabled: _tokenizationEnabled,
             UseGoalVerbatim: useGoalVerbatim,
             Policy: _policy,
@@ -219,6 +236,7 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
             // read. Trailing and defaulted on the record, so deleting this line COMPILES and silently
             // un-isolates every interactive run — keep it while rewriting the members around it.
             WorkspaceRoot: _workspaceRoot);
+    }
 
     /// <summary>Marshals <paramref name="work"/> onto the captured UI context and bridges it back to an awaitable.</summary>
     private Task PostAsync(Func<Task> work) => PostAsync(async () => { await work(); return true; });

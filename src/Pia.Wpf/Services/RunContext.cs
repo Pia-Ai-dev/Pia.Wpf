@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text;
 using Microsoft.Extensions.AI;
 using Pia.Models;
 using Pia.Services.Interfaces;
@@ -69,7 +68,14 @@ public sealed class RunContext
     /// </summary>
     public string? WorkspaceRoot { get; set; }
 
-    public StringBuilder Scratchpad { get; } = new();
+    // hermes #9: `public StringBuilder Scratchpad { get; } = new();` used to sit here. It was declared in the
+    // original run-context sketch as the free-form carrier for "what the steps learned", and in the whole
+    // repo it had no writer, no reader and no test — the one hit for the name was its own declaration.
+    // It is DELETED rather than wired because this unit gives its job to a typed carrier: a step's outcome
+    // now travels as StepTurnResult.Outcome -> CompletedStepSummary.Outcome, and CompletedSteps already has
+    // two readers that shape the run (AgentPlanner's replan prompt and AgentVerifier's critic prompt). Wiring
+    // the StringBuilder as well would mean two carriers for one fact, the untyped one being uncapped, unowned
+    // and — since it would hold model prose about the user's work — the one with no privacy story.
 
     /// <summary>
     /// Batch 08 D4: a transient, SCOPE-TO-DISPATCH user steering note — never persisted. A fresh
@@ -140,7 +146,11 @@ public sealed class RunContext
         StepsExecuted++;
         _completed.Add(new CompletedStepSummary(
             step.Ordinal, step.Title, step.Intent ?? string.Empty, result.Succeeded, result.VisibleText,
-            step.ExpectedArtifact));
+            step.ExpectedArtifact,
+            // hermes #9: carry the step's own declaration forward, not just the boolean it produced. Without
+            // it the critic cannot tell "the step said it succeeded" from "the step said SOMETHING", which is
+            // the precise confusion that let a failure record as Done.
+            Outcome: result.Outcome));
     }
 
     /// <summary>

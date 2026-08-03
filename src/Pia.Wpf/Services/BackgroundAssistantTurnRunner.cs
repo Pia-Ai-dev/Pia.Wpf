@@ -324,7 +324,11 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         Func<UsageDetails, Task>? onUsage = null,
         AgentContextBudget? contextBudget = null,
         RunAutonomyPolicy? policy = null,
-        AgentTimelineScope? timeline = null)
+        AgentTimelineScope? timeline = null,
+        // hermes #9. Non-null ONLY when the caller put emit_step_result in setup.Tools — i.e. an agent step.
+        // It is what arms the pre-route interception below, so the background single-turn path (which passes
+        // nothing) still treats a hallucinated emit_step_result as the unknown tool it is.
+        StepOutcomeStore? outcomeStore = null)
     {
         var textBuffer = new StringBuilder();
         int? tokens = null;
@@ -336,7 +340,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         await foreach (var item in _aiClient.GetChatCompletionWithToolsAsync(
             messages, provider,
             setup.SupportsTools ? setup.Tools : null,
-            setup.SupportsTools ? toolCall => HandleToolCallAsync(toolCall, grantedWrites, policy, timeline) : null,
+            setup.SupportsTools ? toolCall => HandleToolCallAsync(toolCall, grantedWrites, policy, timeline, outcomeStore) : null,
             nameof(WindowMode.Assistant), setup.PersonaId,
             cancellationToken: ct, contextBudget: contextBudget))
         {
@@ -379,8 +383,19 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
     /// </summary>
     private async Task<object?> HandleToolCallAsync(
         FunctionCallContent toolCall, HashSet<string> grantedWrites, RunAutonomyPolicy? policy = null,
-        AgentTimelineScope? timeline = null)
+        AgentTimelineScope? timeline = null, StepOutcomeStore? outcomeStore = null)
     {
+        // emit_step_result (hermes #9): PRE-ROUTE special case, the unattended twin of ChatSession's
+        // suggest_agent_mode seam and placed for the same reason — the tool has no plugin and no route, so
+        // RouteToolCallAsync would miss it, emit a ToolGateDecision.UnknownTool audit row and hand the model
+        // "Unknown tool.". Short-circuiting here also keeps every other tool path byte-for-byte unchanged.
+        // Never gated: declaring an outcome writes nothing and touches nothing outside this step's sink.
+        if (outcomeStore is not null
+            && string.Equals(toolCall.Name, AgentStepTools.EmitStepResultToolName, StringComparison.Ordinal))
+        {
+            return outcomeStore.Record(toolCall.Arguments);
+        }
+
         // MCP flows through the same grant gate as a built-in write: the Phase-2 MCP handler returns a
         // deferred PluginToolCall (below), so an ungranted MCP call is denied by the pending-action branch
         // and a granted NON-destructive one executes. No MCP-specific pre-check is needed here anymore.

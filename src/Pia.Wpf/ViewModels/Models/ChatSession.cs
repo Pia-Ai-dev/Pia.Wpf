@@ -76,6 +76,20 @@ public sealed class ChatSession : IDisposable
 
     private bool _disposed;
 
+    /// <summary>
+    /// hermes #9: the sink <see cref="HandleToolCall"/> writes an <c>emit_step_result</c> declaration into,
+    /// or null when no step turn is in flight. Set at the top of <see cref="RunStepTurnAsync"/> and cleared
+    /// in its <c>finally</c>; the verdict is read from the METHOD-LOCAL sink afterwards, not from this field,
+    /// so the clear cannot lose the claim.
+    /// <para>
+    /// Non-null is the gate on the interception. It must be back to null before an ordinary
+    /// <see cref="RunTurnAsync"/> chat turn runs, or a hallucinated <c>emit_step_result</c> on a chat turn
+    /// would be silently swallowed instead of answered "Unknown tool.". A session runs at most one turn at a
+    /// time (<see cref="IsStreaming"/> guards the entry points), so one field is enough.
+    /// </para>
+    /// </summary>
+    private StepOutcomeStore? _stepOutcomeStore;
+
     /// <summary>Raised on every real state transition (no-op on unchanged value).</summary>
     public event EventHandler<ChatStateChangedEventArgs>? StateChanged;
 
@@ -684,8 +698,21 @@ public sealed class ChatSession : IDisposable
             // RunWorkspaceRedirects once the run's work is promoted out (plan D8).
             spec.WorkspaceRoot);
 
+        // hermes #9. Armed IFF offered: the sink exists exactly when LiveTurnExecutor.BuildSpec put
+        // emit_step_result in this step's tool list, derived from the list itself rather than from a second
+        // flag so the two cannot drift. A step on a tool-less provider gets no sink and lands on the
+        // unconfirmed fallback, which is right — it could never have declared anything.
+        var outcomeStore = spec.SupportsTools && AgentStepTools.OffersStepResultTool(spec.Tools)
+            ? new StepOutcomeStore()
+            : null;
+        _stepOutcomeStore = outcomeStore;
+
         var succeeded = false;
         var cancelled = false;
+        // Distinct from `succeeded`, which the finally below rewrites: this stays true only if the exchange
+        // itself returned without throwing, and it is what keeps a step's own declaration from overriding a
+        // timeout, a truncation or a crash. The model gets a vote on its work, not on the transport.
+        var exchangeCompleted = false;
         string? error = null;
         UsageDetails? usage = null;
         try
@@ -701,6 +728,7 @@ public sealed class ChatSession : IDisposable
                 spec.Tools, spec.SupportsTools, spec.WebSearchActive, spec.TokenizationEnabled, ct,
                 AgentContextBudget.From(spec.Provider), spec.Policy, spec.Timeline, spec.Persona.Id);
             succeeded = true;
+            exchangeCompleted = true;
         }
         catch (Pia.Services.Exceptions.LlmTimeoutException ex)
         {
@@ -748,7 +776,46 @@ public sealed class ChatSession : IDisposable
                 succeeded = false;
                 error ??= _localizationService["Msg_Assistant_EmptyResponse"];
             }
+
+            // Disarm before anything else can run a turn on this session — the verdict is read from the
+            // method-local `outcomeStore` below, so this loses nothing.
+            _stepOutcomeStore = null;
         }
+
+        // ---- hermes #9: the step-success decision ----
+        // WAS: exception-absence (plus the empty-response downgrade above) — the live half of "the model
+        // produced output, therefore the step worked". A step that ran, failed, and then explained its
+        // failure in perfect prose threw nothing, so it recorded Done.
+        // NOW: the step's own declaration wins over BOTH premises. succeeded:false records Failed however
+        // much text came with it; succeeded:true clears the empty-response downgrade and records Done.
+        // Gated on exchangeCompleted && !cancelled: a claim made in an early tool round must not paper over a
+        // timeout, a truncation or a crash that happened afterwards, and a cancelled step is the user's call.
+        var claim = exchangeCompleted && !cancelled ? outcomeStore?.Claim : null;
+        if (claim is not null)
+        {
+            succeeded = claim.Succeeded;
+            // The model's own reason replaces the generic text — the orchestrator hands Error straight to
+            // ReplanAsync, so this is what the replanner gets to work from.
+            error = claim.Succeeded
+                ? null
+                : string.IsNullOrWhiteSpace(claim.Summary)
+                    ? AgentStepTools.UndetailedFailure
+                    : claim.Summary;
+        }
+
+        // THE FALLBACK: no declaration keeps the old predicate, but the step is recorded as UNCONFIRMED
+        // (Outcome stays null) rather than silently treated as vouched-for. Failing a step that never called
+        // the tool would fail-closed on every provider without tool-calling — see StepOutcomeSignal's remarks.
+        // Ids and booleans only; the summary is user-adjacent model prose and never rises above SensitiveDebug.
+        // Template deliberately does NOT begin "Agent run {RunId} step {Ordinal}": that exact prefix is the
+        // key ChatSessionStepTurnTests uses to Assert.Single the context-compaction diff line, and a second
+        // Information line starting the same way would silently make that assertion ambiguous.
+        _logger.LogInformation(
+            "Step outcome for run {RunId} step {StepOrdinal}: offered={Offered} confirmed={Confirmed} succeeded={Succeeded} declarations={Declarations}",
+            spec.RunId, spec.Ordinal, outcomeStore is not null, claim is not null, succeeded && error is null,
+            outcomeStore?.AcceptedCalls ?? 0);
+        if (claim is not null)
+            _logger.SensitiveDebug("Step outcome summary: {Summary} artifact: {Artifact}", claim.Summary, claim.ArtifactRef);
 
         // Stable Guid Id (AssistantMessage ctor self-assigns) → the R3 transcript slice.
         var id = assistantMessage.Id;
@@ -759,7 +826,8 @@ public sealed class ChatSession : IDisposable
             VisibleText: assistantMessage.Content ?? string.Empty,
             Usage: usage,
             FirstMessageId: id,
-            LastMessageId: id);
+            LastMessageId: id,
+            Outcome: claim);
     }
 
     /// <summary>
@@ -882,6 +950,19 @@ public sealed class ChatSession : IDisposable
                 message.AgentModeSuggestions.Add(new AgentModeSuggestion(goal, reason));
             }
             return "Noted — offered Agent mode to the user.";
+        }
+
+        // emit_step_result (hermes #9): the second pre-route special case, for the same structural reason as
+        // the one above — no plugin, no GUID, no _toolNameRoutes entry, so routing would miss it, log a
+        // warning, emit a ToolGateDecision.UnknownTool audit row and answer "Unknown tool.". Gated on the
+        // SINK, not on the name alone: an ordinary chat turn is never offered this tool, so a model that
+        // invents the name there must still get the honest unknown-tool answer. Never gated for approval —
+        // declaring an outcome writes nothing outside this step's sink. Its unattended twin lives at
+        // BackgroundAssistantTurnRunner.HandleToolCallAsync and must stay in step with this one.
+        if (_stepOutcomeStore is { } outcomeStore
+            && string.Equals(toolCall.Name, AgentStepTools.EmitStepResultToolName, StringComparison.Ordinal))
+        {
+            return outcomeStore.Record(toolCall.Arguments);
         }
 
         // Length only, measured once and reused by every emit arm below (03 §3 — the serialized arguments

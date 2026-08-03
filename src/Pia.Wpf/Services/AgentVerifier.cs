@@ -183,6 +183,14 @@ public sealed class AgentVerifier : IAgentVerifier
         sb.AppendLine();
         sb.AppendLine();
         sb.AppendLine("Steps executed (with their results, as reported by the assistant itself):");
+        // hermes #9. The tag used to be "ok"/"failed" and both meanings were a guess: "ok" only ever meant
+        // "the step emitted some text". Now it says HOW the verdict was reached, because the critic's whole
+        // job is to catch a run that believes its own false premise — and "the step never said whether it
+        // worked" is the single most useful thing it can know about a step.
+        sb.AppendLine(
+            "Tags: [declared] = the step called emit_step_result and this is its own structured verdict; "
+            + "[unconfirmed] = it never declared an outcome, so \"ok\" only means it produced some text and "
+            + "may be wrong; [observed] = the run itself saw the step fail (error or empty reply).");
         foreach (var c in ctx.CompletedSteps)
         {
             // Title/Intent are flattened for the same reason as in the facts block: a planner title is
@@ -190,7 +198,11 @@ public sealed class AgentVerifier : IAgentVerifier
             // "- step N … → found" fact line. The result text below is deliberately NOT flattened —
             // it is prose the prompt explicitly frames as the assistant's self-report, and the facts
             // block is what anchors the verdict.
-            sb.AppendLine($"- [{(c.Succeeded ? "ok" : "failed")}] {Flatten(c.Title)}: {Flatten(c.Intent)}");
+            sb.AppendLine($"- [{OutcomeTag(c)}] {Flatten(c.Title)}: {Flatten(c.Intent)}");
+            // The artifact the step says it PRODUCED, as opposed to the one the planner DECLARED (which the
+            // facts block below probes). Already flattened and capped at parse time.
+            if (!string.IsNullOrWhiteSpace(c.Outcome?.ArtifactRef))
+                sb.AppendLine($"    produced: {c.Outcome.ArtifactRef}");
             if (!string.IsNullOrWhiteSpace(c.VisibleText))
                 sb.AppendLine($"    result: {c.VisibleText}");
             else if (c.FromEarlierSegment) // E2: a resumed run's pre-pause steps carry no result text
@@ -199,6 +211,22 @@ public sealed class AgentVerifier : IAgentVerifier
 
         return sb.ToString().TrimEnd();
     }
+
+    /// <summary>
+    /// hermes #9: how a step's ok/failed was ESTABLISHED, not just what it was.
+    /// <para>
+    /// A step with a claim declared its own outcome. A step without one that "succeeded" did so only by the
+    /// legacy non-empty-text heuristic — that is <c>unconfirmed</c>, and it is the case the critic must be
+    /// suspicious of. A step without a claim that failed was failed by the run itself (exception, timeout,
+    /// empty reply), which is machine-observed and needs no hedging.
+    /// </para>
+    /// </summary>
+    internal static string OutcomeTag(CompletedStepSummary c) => c.Outcome switch
+    {
+        { Succeeded: true } => "ok, declared",
+        { Succeeded: false } => "failed, declared",
+        _ => c.Succeeded ? "ok, unconfirmed" : "failed, observed",
+    };
 
     // ---- H1: declared-artifact probe (mechanical evidence for the verdict) ----
 

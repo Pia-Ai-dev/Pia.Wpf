@@ -87,6 +87,31 @@ public sealed record StepTurnSpec(
     string? WorkspaceRoot = null);
 
 /// <summary>
+/// The outcome a step DECLARED for itself by calling <c>emit_step_result</c> (hermes #9).
+/// <para>
+/// This exists because both executors used to infer step success from "the model produced non-empty text",
+/// so a step that ran, failed, and then eloquently EXPLAINED its failure recorded
+/// <c>AgentStepStatus.Done</c> and the run marched on with a false premise. A claim is the model's own
+/// structured verdict and OVERRIDES the text heuristic in both directions: <see cref="Succeeded"/> false
+/// with a page of prose is a Failed step, and true with no visible text at all is a Done one.
+/// </para>
+/// <para>
+/// It lives here rather than beside <c>StepOutcomeStore</c> in the <c>Pia.Services</c> root because it is a
+/// CONTRACT — <see cref="StepTurnResult"/> and <see cref="CompletedStepSummary"/> below both carry it, and
+/// contracts belong with the interface they serve (the rule
+/// <c>NamingConventionTests.RecordTypes_MustNotLiveInTheServicesRootNamespace</c> enforces).
+/// </para>
+/// <para>
+/// SENSITIVITY: <see cref="Summary"/> and <see cref="ArtifactRef"/> are model-authored free text about the
+/// user's work — prompt-safe, log-unsafe. They may only reach <c>SensitiveDebug</c> (CLAUDE.md). Both are
+/// flattened and capped by <c>StepOutcomeStore</c> at parse time, because both are rendered into later
+/// prompts as their own lines and a newline would otherwise let a step's self-report imitate a surrounding
+/// fact line — the same guard <c>AgentVerifier.Flatten</c> and <c>RunContext.SetNudge</c> apply.
+/// </para>
+/// </summary>
+public sealed record StepOutcomeClaim(bool Succeeded, string Summary, string? ArtifactRef);
+
+/// <summary>
 /// The outcome of one act step-turn. Exceptions inside a step become
 /// <c>Succeeded=false, Error=…</c> (never <c>ChatState.Error</c> / a RunFailed snackbar — §16 R4).
 /// <see cref="FirstMessageId"/>/<see cref="LastMessageId"/> delimit the step's transcript slice
@@ -99,7 +124,20 @@ public sealed record StepTurnResult(
     string VisibleText,
     UsageDetails? Usage,
     Guid FirstMessageId,
-    Guid LastMessageId);
+    Guid LastMessageId,
+
+    /// <summary>
+    /// What the step DECLARED about itself via <c>emit_step_result</c> (hermes #9), or null when it declared
+    /// nothing — in which case <see cref="Succeeded"/> above was inferred from the old non-empty-text
+    /// heuristic and is UNCONFIRMED.
+    /// <para>
+    /// This is the record of HOW the verdict was reached, not the verdict: both executors have already folded
+    /// a present claim into <see cref="Succeeded"/>/<see cref="Error"/>, so the orchestrator's
+    /// <c>Done : Failed</c> mapping needs no change. Trailing and defaulted — the precedent every other
+    /// appended member on these records set — so the fake executors in the suite stay source-compatible.
+    /// </para>
+    /// </summary>
+    StepOutcomeClaim? Outcome = null);
 
 /// <summary>Summary of a completed step, carried forward as context for later steps + replanning.</summary>
 /// <param name="ExpectedArtifact">
@@ -114,9 +152,15 @@ public sealed record StepTurnResult(
 /// context today, so prompts must say the result text is unavailable rather than imply the step never
 /// happened.
 /// </param>
+/// <param name="Outcome">
+/// The step's own <c>emit_step_result</c> declaration (hermes #9), or null when it never made one. This is
+/// what carries the structured signal ACROSS steps: <c>AgentVerifier</c> renders it so the critic can tell a
+/// self-declared "ok" from an "ok" that only means the step emitted some text, and a step that declared
+/// failure now shows up as <c>[failed]</c> in the replan prompt instead of as clean work.
+/// </param>
 public sealed record CompletedStepSummary(
     int Ordinal, string Title, string Intent, bool Succeeded, string VisibleText,
-    string? ExpectedArtifact = null, bool FromEarlierSegment = false)
+    string? ExpectedArtifact = null, bool FromEarlierSegment = false, StepOutcomeClaim? Outcome = null)
 {
     /// <summary>
     /// What every prompt puts where a <see cref="FromEarlierSegment"/> step's result text would go. One

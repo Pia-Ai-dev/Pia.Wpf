@@ -283,7 +283,12 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // never inside RunExchangeStepAsync, which keeps taking a plain string and never sees ctx at all.
         return await RunExchangeStepAsync(
                 ctx.AppendNudge(BuildInstruction(step.Ordinal, step.Intent ?? string.Empty, step.ExpectedArtifact)),
-                persistInterim: true, ct, TimelineScope(step.Id), setup)
+                persistInterim: true, ct, TimelineScope(step.Id), setup,
+                // hermes #9: this is the ONE entry point whose result reaches RecordStepResultAsync as
+                // Done/Failed, so it is the one that offers emit_step_result. The R10 degrade turn below
+                // deliberately does not (no AgentStep row, no step status to decide) — the live executor
+                // draws the same line at the same place.
+                offerStepResultTool: true)
             .ConfigureAwait(false);
     }
 
@@ -301,11 +306,23 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
 
     /// <param name="persona">The step's resolved triple (Batch 07 G6), or null for the RUN's — which is what
     /// the R10 degrade turn passes and what an executor built without a resolver always uses.</param>
+    /// <param name="offerStepResultTool">hermes #9: offer <c>emit_step_result</c> on this turn. True only for
+    /// <see cref="ExecuteStepAsync"/>; the R10 degrade turn leaves it false.</param>
     private async Task<StepTurnResult> RunExchangeStepAsync(
         string instruction, bool persistInterim, CancellationToken ct, AgentTimelineScope? timeline = null,
-        StepPersonaSetup? persona = null)
+        StepPersonaSetup? persona = null, bool offerStepResultTool = false)
     {
         var p = persona ?? _runDefault;
+
+        // hermes #9, and the placement is the point: AFTER the persona ternary above, so a step carrying an
+        // AssignedPersonaId gets the tool on ITS setup. Augmenting _runDefault/_setup instead would silently
+        // withhold the tool from exactly the steps that resolved their own persona, and every such step would
+        // fall back to the text heuristic forever with nothing failing.
+        var turnSetup = offerStepResultTool ? AgentStepTools.WithStepResultTool(p.TurnSetup) : p.TurnSetup;
+        // Armed IFF offered — derived from the resolved list rather than from offerStepResultTool, so a setup
+        // that could not take the tool (SupportsTools=false: no tools and no handler reach the provider) lands
+        // on the unconfirmed fallback instead of waiting for a claim that can never arrive.
+        var outcomeStore = AgentStepTools.OffersStepResultTool(turnSetup.Tools) ? new StepOutcomeStore() : null;
 
         // Append the EPHEMERAL step instruction to a COPY — the accumulating _messages keeps the
         // clean transcript (system + goal + one assistant reply per step) — §13.7.
@@ -317,7 +334,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // instead would leak step N's persona into step N+1 and into a resume's re-seed.
         var exchangeMessages = new List<ChatMessage>(_messages.Count + 1)
         {
-            new(ChatRole.System, p.TurnSetup.SystemPrompt),
+            new(ChatRole.System, turnSetup.SystemPrompt),
         };
         exchangeMessages.AddRange(_messages.Skip(1));
         exchangeMessages.Add(new ChatMessage(ChatRole.User, instruction));
@@ -365,8 +382,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             // The same budget goes down into the exchange so the IN-step tool loop is bounded too: the
             // request compacted above can still grow past the window inside AiClientService as tool
             // calls and tool results accumulate over up to 10 rounds.
-            exchange = await _engine.RunExchangeAsync(request, p.Provider, p.TurnSetup, _grantedWrites, ct,
-                    onUsage: null, contextBudget: contextBudget, policy: _policy, timeline: timeline)
+            exchange = await _engine.RunExchangeAsync(request, p.Provider, turnSetup, _grantedWrites, ct,
+                    onUsage: null, contextBudget: contextBudget, policy: _policy, timeline: timeline,
+                    outcomeStore: outcomeStore)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -384,7 +402,32 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             TaskAmbient.Current = previousTask;
         }
 
-        var succeeded = !string.IsNullOrWhiteSpace(exchange.Visible);
+        // ---- hermes #9: the step-success decision ----
+        // WAS: `var succeeded = !string.IsNullOrWhiteSpace(exchange.Visible);` — i.e. a step that ran, failed,
+        // and then eloquently EXPLAINED its failure recorded Done and the run continued on a false premise.
+        // NOW: the step's own structured declaration decides, in both directions. A claim of false is a Failed
+        // step no matter how much prose came with it; a claim of true is a Done step even with no visible text.
+        // The two catch arms above still short-circuit ahead of this — a cancelled or thrown exchange is not
+        // something the model gets a vote on.
+        var claim = outcomeStore?.Claim;
+        var succeeded = claim?.Succeeded ?? !string.IsNullOrWhiteSpace(exchange.Visible);
+
+        // THE FALLBACK, and why it is not "no call means failure": a step is executed by whatever provider and
+        // persona the run resolved, and neither the tool-less provider (SupportsTools=false gets no tools at
+        // all) nor a model that simply ignores an instruction is misbehaving in a way the USER should pay for
+        // with a failed run. Treating silence as failure would fail-closed on every non-tool-calling provider.
+        // So silence keeps the old heuristic — but it is recorded as UNCONFIRMED (Outcome stays null) and the
+        // critic is told so, instead of the run pretending the model vouched for the step.
+        _logger.LogInformation(
+            "Headless run {RunId} step outcome: offered={Offered} confirmed={Confirmed} succeeded={Succeeded} declarations={Declarations}",
+            _runId, outcomeStore is not null, claim is not null, succeeded, outcomeStore?.AcceptedCalls ?? 0);
+        if (claim is not null)
+        {
+            // Model prose about the user's work — SensitiveDebug only (CLAUDE.md).
+            _logger.SensitiveDebug("Step outcome summary: {Summary} artifact: {Artifact}",
+                claim.Summary, claim.ArtifactRef);
+        }
+
         var assistantMsgId = Guid.NewGuid();
 
         // The visible reply IS persisted and IS carried forward as context for later steps.
@@ -411,11 +454,14 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         return new StepTurnResult(
             Succeeded: succeeded,
             Cancelled: false,
-            Error: succeeded ? null : "Empty response",
+            // A declared failure carries the model's OWN reason, which is strictly better replan input than
+            // the old catch-all "Empty response" — the orchestrator hands this straight to ReplanAsync.
+            Error: succeeded ? null : DescribeFailure(claim),
             VisibleText: exchange.Visible,
             Usage: exchange.Usage,
             FirstMessageId: assistantMsgId,
-            LastMessageId: assistantMsgId);
+            LastMessageId: assistantMsgId,
+            Outcome: claim);
     }
 
     public async Task EndRunAsync(AgentRun run, RunContext ctx, bool cancelled, bool failed, CancellationToken ct)
@@ -544,6 +590,16 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         _logger.LogInformation("Headless run {RunId} parked at budget (no session to release)", run.Id);
         return Task.CompletedTask;
     }
+
+    /// <summary>
+    /// The failure text a non-succeeding step reports. A declared failure yields the model's own summary (the
+    /// replanner then knows WHAT went wrong); a blank summary or no declaration at all keeps the historical
+    /// <c>"Empty response"</c>, which is what the no-claim fallback arm literally means.
+    /// </summary>
+    private static string DescribeFailure(StepOutcomeClaim? claim) =>
+        claim is null ? "Empty response"
+        : string.IsNullOrWhiteSpace(claim.Summary) ? AgentStepTools.UndetailedFailure
+        : claim.Summary;
 
     private static string BuildInstruction(int ordinal, string intent, string? expectedArtifact)
     {
