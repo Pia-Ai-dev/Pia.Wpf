@@ -428,6 +428,34 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
 
         if (pending is not null)
         {
+            // ---- hermes #16 CONTAINMENT: a park STOPS the exchange, it does not merely advise it ----
+            // The Park arm below answers the model with a string asking it to stop, but a string is not a
+            // control-flow construct: AiClientService walks the REMAINING FunctionCallContents of the same round
+            // in a sequential foreach and then continues to the next round, so without this guard every call the
+            // model makes AFTER the run has decided to park still reached Execute() — including the GRANTED,
+            // side-effecting ones, which resolve AutoRun and never look at `approvals` at all.
+            //
+            // That was an at-most-once violation, not just wasted work. The executor discards this step's whole
+            // attempt (no transcript append, no interim persist) and the orchestrator puts the row back to
+            // Pending, so the resumed step re-runs from the top with no record of the work — and does it a
+            // SECOND time. Pre-#16 the ungranted call was simply refused and the step ran to completion once.
+            //
+            // The attempt is still recorded in the store (never executed): Park's first-wins rule is what keeps
+            // the envelope naming the call that actually stopped the run, and ParkedCalls is what tells the log
+            // the model kept going. It returns false here by construction — PendingToolName is already set — so
+            // no second audit row is written and the panel never shows a queue of decisions that does not exist.
+            if (approvals?.PendingToolName is { } parkedFor)
+            {
+                approvals.Park(pending.ToolName);
+                _logger.LogInformation(
+                    "Background turn withheld {ToolName}: the run is already parked on {ParkedToolName}",
+                    pending.ToolName, parkedFor);
+                return $"Not run: this run is already waiting for a person's approval of '{parkedFor}', so "
+                       + $"'{pending.ToolName}' was NOT executed either — nothing more happens in this step. "
+                       + "Stop now and produce no further tool calls; the run will be resumed from this step "
+                       + "once someone answers.";
+            }
+
             // 04 D5: ONE resolver, shared with the interactive gate. The destructive-external FLOOR (B2) is
             // evaluated inside Resolve BEFORE any policy or grant branch, so it stays unliftable: there is no
             // user here to confirm an irreversible action against a third-party system, and an MCP tool's name

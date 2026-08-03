@@ -154,10 +154,23 @@ public static class ToolAutonomy
         //    is one button whose whole vocabulary is "carry on". Approving `delete_file` blind, for a run that
         //    will then re-execute the step and choose its own path, is not informed consent. An irreversible
         //    action stays a hard denial and the model is told to ask the user directly.
+        //  * ToolClass != External, for the SAME reason one step further out, and it is not covered by
+        //    !isDeleteLike: `send_email` and `create_issue` are not delete-like, so without this clause an
+        //    ungranted MCP write raised a Continue button naming a SERVER-DEFINED tool whose arguments the card
+        //    never shows and whose effects are outside the run's workspace containment entirely. The floor above
+        //    already holds that "an MCP tool's name and effect are server-defined, so a grant list authored days
+        //    earlier is not informed consent" — a single unlabelled button is weaker evidence of consent than
+        //    that grant list, not stronger. So an external write stays the hard denial it was before #16, and
+        //    the park keeps its scope: the run's OWN capabilities, which the user can reason about.
         //  * Surface == Unattended, even though only that gate passes CanPark today. Voice has no card either,
         //    and a park would leave a spoken turn hanging on a Flow item the speaker cannot see.
-        if (input.Surface == ToolGateSurface.Unattended && input.CanPark && !isDeleteLike)
+        if (input.Surface == ToolGateSurface.Unattended
+            && input.CanPark
+            && !isDeleteLike
+            && input.ToolClass != ToolClass.External)
+        {
             return new ToolGateVerdict(ToolGateOutcome.Park, ToolGateDecision.ParkedForApproval);
+        }
 
         return new ToolGateVerdict(ToolGateOutcome.Refuse, ToolGateDecision.DeniedNotGranted);
     }

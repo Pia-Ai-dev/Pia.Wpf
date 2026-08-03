@@ -413,6 +413,33 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         catch (Exception ex)
         {
             _logger.LogError(ex, "Headless step exchange failed for chat {ChatId}", _chatId);
+
+            // hermes #16: A PARK SURVIVES A FAULT THAT HAPPENS AFTER IT. The gate writes its
+            // ParkedForApproval audit row the moment it parks, so returning a plain failure here made the
+            // persisted state contradict itself — the timeline said "Awaiting approval" on a run the
+            // orchestrator then settled terminally, with no pause envelope, no Continue card and no button.
+            // That is the reporting failure #16 exists to remove, arrived at from the other side.
+            //
+            // Honouring the park is also the safe direction rather than the lenient one: the tool did not run,
+            // this attempt's text is discarded and the step row goes back to Pending either way, so a fault and
+            // a park end in the same place — except that parking KEEPS the question. And it cannot bury a
+            // persistent fault, because the resume grants the tool, so the next attempt parks on nothing and the
+            // fault surfaces normally. No usage is carried: the exchange never produced a total.
+            //
+            // The CANCELLED arm above is deliberately left alone. Cancellation is the host's or the user's
+            // decision about the whole run and outranks the run's own request for attention, the same
+            // precedence Batch 08 gave a user pause over a budget park.
+            if (approvals.PendingToolName is { } parkedBeforeFault)
+            {
+                _logger.LogInformation(
+                    "Headless run {RunId} step faulted after parking for approval of {ToolName}; keeping the park",
+                    _runId, parkedBeforeFault);
+                return new StepTurnResult(
+                    Succeeded: false, Cancelled: false, Error: null, VisibleText: string.Empty,
+                    Usage: null, FirstMessageId: Guid.Empty, LastMessageId: Guid.Empty,
+                    ApprovalRequiredTool: parkedBeforeFault);
+            }
+
             return new StepTurnResult(false, false, ex.Message, string.Empty, null, Guid.Empty, Guid.Empty);
         }
         finally

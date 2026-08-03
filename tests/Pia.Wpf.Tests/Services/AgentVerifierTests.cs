@@ -467,6 +467,46 @@ public sealed class AgentVerifierTests : IDisposable
         Assert.DoesNotContain("Steps executed", LastPrompt);
     }
 
+    /// <summary>
+    /// hermes #9, <b>THE TAG REACHES THE CRITIC</b>. The whole justification for the fail-open fallback — a step
+    /// that never declared an outcome is still recorded Done — is that the critic is TOLD the "ok" is only an
+    /// inference. Until this fact nothing anywhere observed that: <c>AgentVerifier.OutcomeTag</c>, the
+    /// <c>Tags:</c> legend and the <c>produced:</c> line had zero assertions in the whole suite, so reverting the
+    /// render to the old <c>c.Succeeded ? "ok" : "failed"</c> and deleting the legend left everything green.
+    /// <para>
+    /// TWO steps in one context, and that is the design of the test rather than thoroughness: a single-step
+    /// assertion passes just as well if <c>OutcomeTag</c> is hardwired to one string. Both steps here succeeded,
+    /// so <c>Succeeded</c> cannot be what tells them apart — only the presence of a claim can.
+    /// </para>
+    /// <para><b>Neutralize:</b> replace <c>{OutcomeTag(c)}</c> in <c>BuildExecutedSteps</c> with
+    /// <c>{(c.Succeeded ? "ok" : "failed")}</c> → both tag assertions red.</para>
+    /// </summary>
+    [Fact]
+    public async Task VerifyAsync_TellsTheCriticWhetherEachStepDeclaredItsOwnOutcome()
+    {
+        ReturnsVerdict(V(true, "ok"));
+
+        var ctx = new RunContext("build a thing", RunProfile.Interactive);
+        // A: declared its outcome, with an artifact.
+        ctx.RecordStep(
+            new AgentStep { Ordinal = 0, Title = "Alpha", Intent = "write the file" },
+            new StepTurnResult(true, false, null, "wrote it", null, Guid.NewGuid(), Guid.NewGuid(),
+                Outcome: new StepOutcomeClaim(true, "wrote the file", "out/alpha.md")));
+        // B: never declared one — same Succeeded, so the tag is the only thing that can distinguish them.
+        ctx.RecordStep(
+            new AgentStep { Ordinal = 1, Title = "Beta", Intent = "tidy up" },
+            new StepTurnResult(true, false, null, "tidied", null, Guid.NewGuid(), Guid.NewGuid()));
+
+        await BuildVerifier().VerifyAsync(ctx, Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        Assert.Contains("[ok, declared] Alpha", LastUserPrompt);
+        Assert.Contains("[ok, unconfirmed] Beta", LastUserPrompt);
+        // The artifact the step says it PRODUCED, as opposed to the one the planner declared.
+        Assert.Contains("produced: out/alpha.md", LastUserPrompt);
+        // And the legend that makes the two tags mean anything to the reader.
+        Assert.Contains("[unconfirmed] = it never declared an outcome", LastUserPrompt);
+    }
+
     private static int CountOccurrences(string haystack, string needle)
     {
         var count = 0;

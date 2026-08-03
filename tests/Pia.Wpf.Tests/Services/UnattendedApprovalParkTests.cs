@@ -325,8 +325,10 @@ public sealed class UnattendedApprovalParkTests : IDisposable
     /// <item>the executing-run bracket is CLOSED, so the composer/session bookkeeping is not pinned;</item>
     /// <item>the ledger's work segment is SHUT, so parked wall-clock is not billed as worked time and does
     /// not eat the fresh budget the eventual Continue hands out;</item>
-    /// <item>a SECOND run launches and completes while the first sits parked — the sharpest observable form
-    /// of (1), and the one that would catch a slot leak that the other three miss;</item>
+    /// <item>TWO runs park on the SAME launcher and a THIRD then still gets a permit from that same
+    /// two-wide pool — the sharpest observable form of (1), and the only shape that catches a slot leak:
+    /// the pool is a per-instance field, so a second launcher proves nothing about the first's permits,
+    /// and a single parked run cannot exhaust a cap of two;</item>
     /// <item>and the question survives: the row is still claimable, which is what makes the wait an
     /// unanswered question rather than a lost one.</item>
     /// </list>
@@ -354,22 +356,39 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         // (3) Parked time is not worked time: no OPEN segment is left on the ledger clock.
         Assert.Null(OpenLedgerSegmentStart(run.Id));
 
-        // (4) A second run launches and completes while the first is still parked.
-        var second = new ToolProbe("write_file");
-        var (secondLauncher, _) = Build(second, appSettings: new AppSettings { AgentRunAutoApproveBuiltInWrites = true });
-        var otherHandle = await secondLauncher.LaunchAsync(
+        // (4) THE SLOT ITSELF, on the pool that actually holds it. This step used to build a SECOND
+        // HeadlessRunLauncher — but `_slots` is a per-INSTANCE `new(2, 2)`, so that run drew on a fresh pool of
+        // two permits and would have completed even if the parked launcher had leaked BOTH of its own. The
+        // claim "would catch a slot leak the other three miss" was measured by nothing.
+        //
+        // Two things are needed to observe it. The pool must be the SAME instance that parked — so every run
+        // below goes through `launcher`. And the pool must be EXHAUSTED, which takes TWO parked runs: with a
+        // cap of two, one leaked permit still leaves one, and a queue that drains serially completes anyway.
+        var secondPark = await launcher.LaunchAsync(
             new HeadlessRunRequest("g2", AgentRunTrigger.Schedule, GrantedWrites: []),
             TestContext.Current.CancellationToken);
-        await otherHandle.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
-        await AwaitSettledAsync(otherHandle.RunId);
-        Assert.Equal(AgentRunState.Completed, (await GetRunAsync(otherHandle.RunId)).State);
-        Assert.Equal(AgentRunState.WaitingForInput, (await GetRunAsync(handle.RunId)).State); // still parked
+        await secondPark.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.WaitingForInput, (await GetRunAsync(secondPark.RunId)).State);
+
+        // Both permits are now held by parked runs unless a park releases them. GRANTING the tool this run
+        // would otherwise park on is what lets it reach Completed at all, so the only thing its progress is
+        // evidence about is the pool: if a park held its permit, this line hangs until the timeout.
+        var third = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g3", AgentRunTrigger.Schedule, GrantedWrites: ["write_file"]),
+            TestContext.Current.CancellationToken);
+        await third.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+        await AwaitSettledAsync(third.RunId);
+        Assert.Equal(AgentRunState.Completed, (await GetRunAsync(third.RunId)).State);
+
+        // …and BOTH parked runs are still parked, so the third run's permit did not come from one of them
+        // being swept, resumed or failed out of the way.
+        Assert.Equal(AgentRunState.WaitingForInput, (await GetRunAsync(handle.RunId)).State);
+        Assert.Equal(AgentRunState.WaitingForInput, (await GetRunAsync(secondPark.RunId)).State);
 
         // (5) The question is still answerable — the row remains claimable by the ordinary resume CAS.
         Assert.True(await _runs.TryBeginResumeAsync(handle.RunId, TestContext.Current.CancellationToken));
 
         await launcher.StopAsync(CancellationToken.None);
-        await secondLauncher.StopAsync(CancellationToken.None);
     }
 
     /// <summary>
@@ -480,6 +499,204 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
+    /// <summary>
+    /// T-PARK-12, <b>THE CONTAINMENT</b>. A park must STOP the exchange, not merely advise it — so a GRANTED
+    /// tool the model calls after the run has already decided to park does not run, and the resumed step
+    /// therefore does it exactly ONCE in the run's whole life.
+    /// <para>
+    /// This is the case T-PARK-11 looks like it covers and does not: both of its calls are ungranted, so both
+    /// park and its <c>Assert.Empty(probe.ExecutedNames)</c> passes trivially. Every other fact in this file
+    /// launches with <c>GrantedWrites: []</c>, so until this one no fact had ever put a granted tool and a
+    /// parked tool in the same exchange — the park DECISION was measured eleven times and containment after it
+    /// zero times.
+    /// </para>
+    /// <para>
+    /// Why once matters more than the wasted call: the executor discards the parked step's whole attempt and
+    /// the orchestrator puts the row back to <c>Pending</c>, so a side effect that happened after the park is
+    /// replayed by the re-run with nothing in the transcript to tell the model it had already done it. One
+    /// human Continue press therefore created the same todo twice. Pre-#16 the ungranted call was refused and
+    /// the step ran to completion exactly once, so a park must not be able to lose that.
+    /// </para>
+    /// <para>
+    /// <b>Neutralize:</b> delete the <c>approvals?.PendingToolName is { } parkedFor</c> containment guard in
+    /// <c>BackgroundAssistantTurnRunner.HandleToolCallAsync</c> (leaving the Park arm itself, i.e. the park
+    /// decision, untouched) → <c>update_todo</c> runs during the parked attempt and again on the resume, and
+    /// both assertions below red.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task AGrantedCallAfterThePark_DoesNotRun_AndIsNotReplayedByTheResume()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, secondToolName: "update_todo");
+
+        // GRANTED, unlike every other fact here — so nothing but the park can stop this second call.
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: ["update_todo"]), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        Assert.Equal(AgentRunState.WaitingForInput, (await GetRunAsync(handle.RunId)).State);
+
+        // The premise, so this cannot pass on "the second call never happened": the gate answered it.
+        Assert.Equal(2, probe.Results.Count);
+        // CONTAINMENT: it was answered without being executed.
+        Assert.DoesNotContain("update_todo", probe.ExecutedNames);
+
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
+        await AwaitSettledAsync(handle.RunId);
+
+        // AT MOST ONCE across the park: the re-run is the only time it happens.
+        Assert.Equal(1, probe.ExecutedNames.Count(n => n == "update_todo"));
+        // …and the park really was answered, so the once is the resumed step's and not the parked attempt's.
+        Assert.Equal(AgentRunState.Completed, (await GetRunAsync(handle.RunId)).State);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>
+    /// T-PARK-13, <b>REGRESSION</b>. A park SURVIVES a provider fault that happens later in the same exchange.
+    /// The audit row is written the moment the gate parks, so if the fault then discarded the park the persisted
+    /// state contradicted itself: the timeline showed <c>Run_Timeline_Decision_AwaitingApproval</c> — "Awaiting
+    /// approval" — on a run that had settled terminally with no pause envelope, no <c>tool</c> member, no Flow
+    /// Continue card and no panel Continue button. A user reading that is told the run is waiting for them to
+    /// answer a question that no longer exists, which is the exact reporting failure #16 was built to remove.
+    /// <para>
+    /// It is also the safe direction on its own terms. The tool did not run, the step's text is discarded and
+    /// the row goes back to <c>Pending</c> either way, so a fault and a park lead to the same place — except
+    /// that parking keeps the QUESTION, and failing throws it away. Nor can it hide a persistent fault: the
+    /// resume grants the tool, so the next attempt parks on nothing and the fault surfaces normally.
+    /// </para>
+    /// <para>
+    /// The pairing is the assertion, not either half alone: the timeline row and the run state are read in the
+    /// same fact, because each of them separately was already true in the broken world.
+    /// </para>
+    /// <para><b>Neutralize:</b> delete the <c>approvals.PendingToolName</c> re-check from the generic
+    /// <c>catch (Exception ex)</c> arm in <c>HeadlessTurnExecutor.RunExchangeStepAsync</c> → the run settles
+    /// terminally, the envelope is gone, and the state assertions below red while the timeline row stays.</para>
+    /// </summary>
+    [Fact]
+    public async Task AParkIsNotDiscardedByAProviderFaultLaterInTheSameExchange()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, faultAfterFirstCall: true);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+
+        var run = await GetRunAsync(handle.RunId);
+
+        // The audit already told the user a decision is pending…
+        Assert.Equal(
+            ToolGateDecision.ParkedForApproval,
+            Assert.Single(_timeline.Rows, r => r.ToolName == "write_file").Decision);
+
+        // …so the run has to actually BE parked, and the envelope has to name the tool the card will show.
+        Assert.Equal(AgentRunState.WaitingForInput, run.State);
+        Assert.Equal("tool-approval", PauseMember(run, "reason"));
+        Assert.Equal("write_file", PauseMember(run, "tool"));
+        Assert.Null(run.CompletedAt);
+
+        // And the step is still there to re-run, so answering the question is not answering it into a void.
+        Assert.NotNull(await _runs.NextPendingStepAsync(run.Id, ct));
+        Assert.False(probe.Executed);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>
+    /// T-PARK-14, <b>GUARD</b>. An approval must not make the resume FLOOR durable, and must not destroy an
+    /// envelope it could not read.
+    /// <para>
+    /// The floor (<c>{write_file}</c>) is a deliberate per-dispatch degrade for a run whose launch envelope is
+    /// missing, corrupt, foreign or of a version this build does not know — and it is explicitly WIDER than some
+    /// launches, which is why <c>InteractiveEmptyEnvelopeJson</c> exists as its own documented shape. Writing a
+    /// fresh <c>v:1</c> document built on top of that floor turned a transient degrade into the run's durable
+    /// record of its own authority: a run that never held <c>write_file</c> came back holding it forever, and
+    /// <c>ResumeAsync</c> re-reads the row and hands <c>PolicyJson</c> to <c>LaunchChildAsync</c>, so the next
+    /// fan-out narrows its children from the widened envelope instead of the real one. It also overwrote a
+    /// document a NEWER build wrote, which no build could then ever read back.
+    /// </para>
+    /// <para>
+    /// The approval still reaches the pending call — that is asserted here too, on the same dispatch — so this
+    /// is about the PERSISTED record, not about whether Continue works.
+    /// </para>
+    /// <para><b>Neutralize:</b> drop the <c>envelopeWasReadable</c> condition on the
+    /// <c>UpdatePolicyJsonAsync</c> call in <c>HeadlessRunLauncher.ResumeAsync</c> → the row is rewritten to
+    /// <c>v:1</c> carrying <c>write_file</c> and both assertions below red.</para>
+    /// </summary>
+    [Fact]
+    public async Task Resume_DoesNotPersistTheFloorOverAnEnvelopeItCouldNotRead()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        // A FUTURE version: readable JSON this build must not act on, which is exactly what the floor is for.
+        const string future = """{"v":2,"grantedWrites":["read_file"]}""";
+        var run = await NewRunAsync(policyJson: future);
+        Assert.Null(HeadlessRunLauncher.TryRestoreGrantEnvelope(future)); // the premise: unreadable here
+
+        await _runs.ReplaceStepsAsync(run.Id, [new AgentStep
+        {
+            Id = Guid.NewGuid(), RunId = run.Id, Ordinal = 0, Title = "S1", Intent = "do it",
+            Status = AgentStepStatus.Pending,
+        }], ct);
+        // NOT in the floor, so the widening block is the code under test.
+        await _runs.PauseAsync(run.Id, "tool-approval", ct, approvalTool: "update_todo");
+
+        var probe = new ToolProbe("update_todo");
+        var (launcher, _) = Build(probe);
+        Assert.True(await launcher.ResumeAsync(run.Id, ct: ct));
+
+        var after = await GetRunAsync(run.Id);
+        // The run's own document is still the run's own document.
+        Assert.Equal(future, after.PolicyJson);
+        // …and in particular the floor did not become the run's durable authority.
+        Assert.DoesNotContain("write_file", after.PolicyJson!);
+
+        // The human's decision still reached the call it was collected for — the grant is applied to THIS
+        // dispatch, which is all the Continue card ever promised.
+        await AwaitSettledAsync(run.Id);
+        Assert.Contains("update_todo", probe.ExecutedNames);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>
+    /// T-PARK-15, <b>GUARD</b>. A NON-destructive EXTERNAL (MCP) tool hard-denies too. The floor at the top of
+    /// <c>Resolve</c> only catches the destructive ones, and <c>send_email</c> / <c>create_issue</c> are not
+    /// delete-like — so this is the case that fell between the two guards and raised a Continue button naming a
+    /// server-defined tool.
+    /// <para>
+    /// It is the same argument the suite already makes for <c>delete_file</c> (T-PARK-4), one step further out.
+    /// A park's Continue affordance shows no ARGUMENTS, and here it also names a tool whose meaning and reach
+    /// are defined by a third-party server rather than by this app — outside the run's workspace containment
+    /// entirely. The destructive floor's own rationale is that a curated grant list authored days earlier is not
+    /// informed consent for an MCP call; one unlabelled button is weaker evidence than that list, not stronger.
+    /// </para>
+    /// <para>
+    /// It denies with <c>DeniedNotGranted</c> and NOT with the destructive floor, which is the discriminating
+    /// half: routing a non-destructive external tool through the floor would also stop it parking, and would be
+    /// the wrong reason recorded in the audit a user reads to find out why the run stopped.
+    /// </para>
+    /// <para><b>Greedy-park mutation that must red this:</b> drop
+    /// <c>&amp;&amp; input.ToolClass != ToolClass.External</c> from the Park arm. Proven by doing it.</para>
+    /// </summary>
+    [Fact]
+    public async Task NonDestructiveExternalTool_StillHardDenies_AndNeverParks()
+    {
+        var probe = new ToolProbe("send_email"); // routed, granted to nothing, and NOT delete-like
+        var (launcher, _) = Build(probe, isMcpTool: true);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []),
+            TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+        await AwaitSettledAsync(handle.RunId);
+
+        await AssertHardDeniedNotParkedAsync(handle.RunId, probe, ToolGateDecision.DeniedNotGranted);
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
     // ---------------------------------------------------------------- helpers
 
     /// <summary>Assert the run finished WITHOUT parking, and that the gate really refused this tool.</summary>
@@ -527,7 +744,21 @@ public sealed class UnattendedApprovalParkTests : IDisposable
             : null;
     }
 
-    /// <summary>The ledger's OPEN work segment start, or null when the clock is shut (G1 shape).</summary>
+    /// <summary>
+    /// The ledger's OPEN work segment start, or null when the clock is shut (G1 shape).
+    /// <para>
+    /// The member is <c>segmentStartedAt</c>: <c>AgentRunService</c> serializes its <c>Ledger</c> with
+    /// <c>PropertyNamingPolicy = CamelCase</c> over a property named <c>SegmentStartedAt</c>. It used to be
+    /// read here as <c>openSegmentStartedAt</c>, which no ledger document has ever carried — so this helper
+    /// returned null for EVERY possible state and T-PARK-8's parked-time claim was measured by nothing. The
+    /// spelling is asserted, not just used, because a silent rename is exactly how the read died the first
+    /// time: a helper that cannot find its member must fail loudly rather than report "shut".
+    /// </para>
+    /// <para>
+    /// A CLOSED clock writes <c>"segmentStartedAt":null</c> (the options set no ignore condition), so
+    /// "present" and "open" are different questions and this reads both.
+    /// </para>
+    /// </summary>
     private string? OpenLedgerSegmentStart(Guid runId)
     {
         using var cmd = _ctx.GetConnection().CreateCommand();
@@ -535,9 +766,11 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         cmd.Parameters.AddWithValue("@Id", runId.ToString());
         if (cmd.ExecuteScalar() is not string json) return null;
         using var doc = JsonDocument.Parse(json);
-        return doc.RootElement.TryGetProperty("openSegmentStartedAt", out var v) && v.ValueKind == JsonValueKind.String
-            ? v.GetString()
-            : null;
+        Assert.True(
+            doc.RootElement.TryGetProperty("segmentStartedAt", out var v),
+            "the ledger document carries no 'segmentStartedAt' member — this helper is reading a name that "
+            + "does not exist and would report every run's clock as shut");
+        return v.ValueKind == JsonValueKind.String ? v.GetString() : null;
     }
 
     private async Task<AgentRun> NewRunAsync(Guid? parentRunId = null, string? policyJson = null)
@@ -628,9 +861,12 @@ public sealed class UnattendedApprovalParkTests : IDisposable
     /// <param name="isMcpTool">True ⇒ the gate derives ToolClass.External, which is what arms the floor.</param>
     /// <param name="secondToolName">A SECOND call the same step turn makes, after the first has already
     /// parked. Omitted ⇒ one call, which is every other fact here.</param>
+    /// <param name="faultAfterFirstCall">The provider FAULTS on a later round of the same exchange, after the
+    /// first call has already parked — a timeout, a truncation or a transport error, all of which surface here
+    /// as an exception out of the stream.</param>
     private (HeadlessRunLauncher Launcher, OneStepPlanner Planner) Build(
         ToolProbe probe, bool routed = true, bool isMcpTool = false, AppSettings? appSettings = null,
-        string? secondToolName = null)
+        string? secondToolName = null, bool faultAfterFirstCall = false)
     {
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         var persona = new Persona { Name = "Pia", SystemPrompt = "sys" };
@@ -642,7 +878,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
                 Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(),
                 cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci => DriveWithToolCall(
-                ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), probe, secondToolName));
+                ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), probe, secondToolName,
+                faultAfterFirstCall));
 
         var plugins = Substitute.For<IPluginService>();
         plugins.IsMcpTool(Arg.Any<string>()).Returns(isMcpTool);
@@ -705,12 +942,19 @@ public sealed class UnattendedApprovalParkTests : IDisposable
     }
 
     private static async IAsyncEnumerable<ChatStreamItem> DriveWithToolCall(
-        Func<FunctionCallContent, Task<object?>>? handler, ToolProbe probe, string? secondToolName = null)
+        Func<FunctionCallContent, Task<object?>>? handler, ToolProbe probe, string? secondToolName = null,
+        bool faultAfterFirstCall = false)
     {
         await Task.Yield();
         if (handler is not null)
         {
             probe.Record(await handler(new FunctionCallContent("call-1", probe.ToolName, new Dictionary<string, object?>())));
+
+            // The exchange dies on a LATER round than the one that parked. Thrown from inside the stream
+            // because that is where a real transport error, a timeout and a truncation all surface.
+            if (faultAfterFirstCall)
+                throw new InvalidOperationException("provider faulted after the park");
+
             // A model that keeps going after being told the run is parking. Round-tripped through the SAME
             // handler, because that is the only way the store's first-wins rule is observable.
             if (secondToolName is not null)

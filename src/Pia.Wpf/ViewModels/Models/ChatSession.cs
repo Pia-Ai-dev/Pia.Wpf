@@ -713,6 +713,10 @@ public sealed class ChatSession : IDisposable
         // itself returned without throwing, and it is what keeps a step's own declaration from overriding a
         // timeout, a truncation or a crash. The model gets a vote on its work, not on the transport.
         var exchangeCompleted = false;
+        // Whether CleanupPerExchange synthesized the "assistant did not return a response" placeholder into the
+        // visible message. Hoisted out of the finally because the RESULT has to know: the placeholder is UI text
+        // for a blank chat bubble, not something a step produced. See the VisibleText argument below.
+        var emptyResponseSynthesized = false;
         string? error = null;
         UsageDetails? usage = null;
         try
@@ -771,6 +775,7 @@ public sealed class ChatSession : IDisposable
             // NO per-run finalize (no Cts dispose, no terminal state decision, no snackbar, no TurnCompleted).
             var empty = CleanupPerExchange(assistantMessage, spec.TokenizationEnabled,
                 ct.IsCancellationRequested, previousAmbient, previousTask);
+            emptyResponseSynthesized = empty;
             if (empty)
             {
                 succeeded = false;
@@ -819,11 +824,27 @@ public sealed class ChatSession : IDisposable
 
         // Stable Guid Id (AssistantMessage ctor self-assigns) → the R3 transcript slice.
         var id = assistantMessage.Id;
+        var stepSucceeded = succeeded && error is null;
         return new StepTurnResult(
-            Succeeded: succeeded && error is null,
+            Succeeded: stepSucceeded,
             Cancelled: cancelled,
             Error: error,
-            VisibleText: assistantMessage.Content ?? string.Empty,
+            // hermes #9: THE EMPTY-RESPONSE PLACEHOLDER IS NOT A RESULT. When the step declared success with no
+            // visible text, the claim block above rightly flips `succeeded` back to true — but the localized
+            // "The assistant did not return a response." that CleanupPerExchange synthesized is still sitting in
+            // the message. It belongs there: it is UI text so the chat does not render a blank bubble. It does
+            // NOT belong in VisibleText, which becomes CompletedStepSummary.VisibleText and is rendered to the
+            // critic as `result: …` directly under `- [ok, declared] <title>` — a step presented as a declared
+            // success and contradicted on the very next line, which is a false premise fed to the one reader the
+            // #9 tags exist for. The headless executor carries the empty string here (it has no placeholder at
+            // all), so this is also what makes the two executors agree about what such a step carries.
+            //
+            // Scoped to the SUCCESS path on purpose: a step that really did fail with no text is honestly
+            // described by the placeholder, and CleanupPerExchange is shared with ordinary chat turns and is
+            // deliberately not touched.
+            VisibleText: emptyResponseSynthesized && stepSucceeded
+                ? string.Empty
+                : assistantMessage.Content ?? string.Empty,
             Usage: usage,
             FirstMessageId: id,
             LastMessageId: id,

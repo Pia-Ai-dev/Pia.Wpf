@@ -145,6 +145,19 @@ public sealed class ChatSessionStepOutcomeSignalTests
     /// <b>THE INVERSE DEMO.</b> No visible text at all plus <c>succeeded:true</c>. The old predicate hit
     /// <c>CleanupPerExchange</c>'s empty-response downgrade and returned <c>Succeeded:false</c> with the
     /// localized "empty response" error; the declaration now clears both.
+    /// <para>
+    /// And it clears the placeholder TEXT out of the result too, which is a separate claim from clearing the
+    /// error. The synthesized "The assistant did not return a response." stays in the assistant MESSAGE — that
+    /// is UI text so the chat does not render a blank bubble — but this used to travel on as
+    /// <c>VisibleText</c>, i.e. as <c>CompletedStepSummary.VisibleText</c>, which the critic prompt renders as
+    /// <c>result: …</c> immediately under <c>- [ok, declared] &lt;title&gt;</c>. A step presented as a declared
+    /// success and contradicted on the next line is a false premise handed to the reader the #9 tags were added
+    /// for. The headless twin (<c>HeadlessStepOutcomeSignalTests.DeclaredSuccess_WithNoTextAtAll_RecordsDone</c>)
+    /// carries the empty string, so this is also where the two executors stopped disagreeing.
+    /// </para>
+    /// <para><b>Neutralize:</b> restore <c>VisibleText: assistantMessage.Content ?? string.Empty</c> at the
+    /// <c>StepTurnResult</c> construction in <c>ChatSession.RunStepTurnAsync</c> → the placeholder is back and
+    /// the <c>VisibleText</c> assertion below reds while every other assertion here stays green.</para>
     /// </summary>
     [Fact]
     public async Task DeclaredSuccess_WithNoTextAtAll_Succeeds()
@@ -160,9 +173,11 @@ public sealed class ChatSessionStepOutcomeSignalTests
             Spec(offerStepResultTool: true), new RunContext("goal", RunProfile.Interactive),
             TestContext.Current.CancellationToken);
 
-        // The empty-response placeholder was still synthesized for the UI…
-        Assert.Equal("Msg_Assistant_EmptyResponse", result.VisibleText);
-        // …but the step is a success, because the step said so.
+        // The empty-response placeholder was still synthesized for the UI — the chat bubble is not blank…
+        Assert.Equal("Msg_Assistant_EmptyResponse", session.Messages[^1].Content);
+        // …but it is NOT what this step reports having produced. Empty, exactly like the headless twin.
+        Assert.Equal(string.Empty, result.VisibleText);
+        // …and the step is a success, because the step said so.
         Assert.True(result.Succeeded, result.Error);
         Assert.Null(result.Error);
         Assert.Equal("data/clean.csv", result.Outcome!.ArtifactRef);

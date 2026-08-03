@@ -548,6 +548,9 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             // back with write+delete over the user's real assistant-files folder. Missing/unreadable/foreign
             // envelope → the FLOOR ({write_file}, never delete_file), logged with the run id only.
             var grants = TryRestoreGrantEnvelope(run.PolicyJson);
+            // Whether the row held a document THIS build understands. The approval widening below may only write
+            // back over one that it did — see the comment there.
+            var envelopeWasReadable = grants is not null;
             if (grants is null)
             {
                 _logger.LogInformation(
@@ -581,17 +584,41 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             if (approvedTool is not null && !grants.Contains(approvedTool, StringComparer.OrdinalIgnoreCase))
             {
                 var widened = grants.Append(approvedTool).ToList();
-                try
+                // ONLY over a document this build actually read. `grants` may be the resume FLOOR
+                // ({write_file}), which is a per-dispatch degrade for an absent/corrupt/foreign/future envelope
+                // and is deliberately WIDER than some launches — InteractiveEmptyEnvelopeJson exists as its own
+                // documented shape for exactly that reason. Serializing a fresh v:1 document on top of it would
+                // make the degrade the run's DURABLE record of its own authority: a run that never held
+                // write_file would come back holding it on every later resume, and because this method re-reads
+                // the row and hands PolicyJson to LaunchChildAsync, the next fan-out would narrow its children
+                // from the widened envelope instead of the real one. It would also overwrite a document a NEWER
+                // build wrote, which no build could then read back.
+                //
+                // On the floor path the grant is applied to THIS dispatch only (below), which is precisely what
+                // the Continue card promised. The livelock the persist exists to prevent needs a run that parks
+                // on two different tools; on an unreadable envelope re-parking and asking again is the
+                // fail-closed direction this method already takes when it cannot read the question at all.
+                if (envelopeWasReadable)
                 {
-                    await _agentRunService.UpdatePolicyJsonAsync(
-                            // The ROW's trigger, not the envelope's. GrantEnvelope.Trigger is provenance that
-                            // "never widens a grant", and the row is the authoritative copy of the same fact.
-                            run.Id, SerializeGrantEnvelope(widened, run.TriggerKind, policy), ct)
-                        .ConfigureAwait(false);
+                    try
+                    {
+                        await _agentRunService.UpdatePolicyJsonAsync(
+                                // The ROW's trigger, not the envelope's. GrantEnvelope.Trigger is provenance that
+                                // "never widens a grant", and the row is the authoritative copy of the same fact.
+                                run.Id, SerializeGrantEnvelope(widened, run.TriggerKind, policy), ct)
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Could not persist the approved tool grant for run {RunId}", run.Id);
+                    }
                 }
-                catch (Exception ex)
+                else
                 {
-                    _logger.LogWarning(ex, "Could not persist the approved tool grant for run {RunId}", run.Id);
+                    _logger.LogInformation(
+                        "Resume: run {RunId} granted {ToolName} for this dispatch only — its launch envelope is "
+                        + "not readable by this build, so the floor must not be written back over it",
+                        run.Id, approvedTool);
                 }
 
                 // Applied to THIS dispatch whether or not the persist landed: the human answered, and the
