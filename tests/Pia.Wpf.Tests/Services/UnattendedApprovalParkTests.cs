@@ -436,6 +436,50 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         Assert.Null((await GetRunAsync(approval.Id)).ExtraJson);
     }
 
+    /// <summary>
+    /// T-PARK-11, <b>GUARD</b>. A model that keeps calling tools after it was told the run is parking must not
+    /// move the question. The envelope names ONE tool, that name is what the Continue card shows and what the
+    /// resume grants, so it has to be the call that actually stopped the run — a later call is one the model
+    /// made AFTER being told to stop, and approving THAT because it arrived last would grant a capability the
+    /// human was never shown.
+    /// <para>
+    /// The second half is the audit: exactly ONE <c>ParkedForApproval</c> row. A row per attempt would imply
+    /// several pending decisions when there is one, and the panel would show the user a queue that does not
+    /// exist. Neither the first-wins rule nor the emit-once rule is observable with a single tool call, which
+    /// is why this fact drives two.
+    /// </para>
+    /// <para><b>Neutralize:</b> in <c>ToolApprovalStore.Park</c>, drop the <c>PendingToolName is not null</c>
+    /// early return so the LAST call wins → the envelope names <c>update_todo</c> and this reds.</para>
+    /// </summary>
+    [Fact]
+    public async Task ASecondParkedCallInTheSameStep_DoesNotMoveTheQuestionOrDoubleTheAudit()
+    {
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, secondToolName: "update_todo");
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []),
+            TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+
+        var run = await GetRunAsync(handle.RunId);
+        Assert.Equal(AgentRunState.WaitingForInput, run.State);
+
+        // FIRST WINS. Both calls were parkable, so a last-wins store would read "update_todo" here.
+        Assert.Equal("write_file", PauseMember(run, "tool"));
+
+        // Both calls were told to stop, and neither ran.
+        Assert.Empty(probe.ExecutedNames);
+        Assert.Equal(2, probe.Results.Count);
+        Assert.All(probe.Results, r => Assert.Contains("approval", r ?? string.Empty));
+
+        // ONE pending decision, one audit row — for the tool the envelope actually names.
+        var parkRows = _timeline.Rows.Where(r => r.Decision == ToolGateDecision.ParkedForApproval).ToList();
+        Assert.Equal("write_file", Assert.Single(parkRows).ToolName);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
     // ---------------------------------------------------------------- helpers
 
     /// <summary>Assert the run finished WITHOUT parking, and that the gate really refused this tool.</summary>
@@ -539,17 +583,27 @@ public sealed class UnattendedApprovalParkTests : IDisposable
 
     // ---------------------------------------------------------------- doubles
 
-    /// <summary>Records what the unattended gate did with the ONE tool call each run makes.</summary>
+    /// <summary>Records what the unattended gate did with the tool call(s) a run makes.</summary>
     private sealed class ToolProbe
     {
         public ToolProbe(string toolName) => ToolName = toolName;
 
+        /// <summary>The FIRST tool the run calls — the one the park's envelope must name.</summary>
         public string ToolName { get; }
-        public bool Executed { get; private set; }
-        public string? GateResult { get; private set; }
 
-        public void MarkExecuted() => Executed = true;
-        public void Record(object? gateResult) => GateResult = gateResult as string;
+        /// <summary>Every name that actually reached <c>Execute()</c>, in order.</summary>
+        public List<string> ExecutedNames { get; } = [];
+
+        /// <summary>Every string the gate handed back, in call order.</summary>
+        public List<string?> Results { get; } = [];
+
+        public bool Executed => ExecutedNames.Count > 0;
+
+        /// <summary>The first call's gate result — the only one, for every fact that makes a single call.</summary>
+        public string? GateResult => Results.Count > 0 ? Results[0] : null;
+
+        public void MarkExecuted(string name) => ExecutedNames.Add(name);
+        public void Record(object? gateResult) => Results.Add(gateResult as string);
     }
 
     /// <summary>
@@ -572,8 +626,11 @@ public sealed class UnattendedApprovalParkTests : IDisposable
 
     /// <param name="routed">False ⇒ the plugin service resolves no route for the call (the "Unknown tool." path).</param>
     /// <param name="isMcpTool">True ⇒ the gate derives ToolClass.External, which is what arms the floor.</param>
+    /// <param name="secondToolName">A SECOND call the same step turn makes, after the first has already
+    /// parked. Omitted ⇒ one call, which is every other fact here.</param>
     private (HeadlessRunLauncher Launcher, OneStepPlanner Planner) Build(
-        ToolProbe probe, bool routed = true, bool isMcpTool = false, AppSettings? appSettings = null)
+        ToolProbe probe, bool routed = true, bool isMcpTool = false, AppSettings? appSettings = null,
+        string? secondToolName = null)
     {
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         var persona = new Persona { Name = "Pia", SystemPrompt = "sys" };
@@ -584,20 +641,27 @@ public sealed class UnattendedApprovalParkTests : IDisposable
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
                 Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(),
                 cancellationToken: Arg.Any<CancellationToken>())
-            .Returns(ci => DriveWithToolCall(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), probe));
+            .Returns(ci => DriveWithToolCall(
+                ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), probe, secondToolName));
 
         var plugins = Substitute.For<IPluginService>();
         plugins.IsMcpTool(Arg.Any<string>()).Returns(isMcpTool);
         plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
-            .Returns(_ => routed
-                // A DEFERRED write (a pending action) — the only shape that reaches the gate at all; a read
-                // returns its Result and short-circuits above it.
-                ? ((object? Result, PluginToolCall? PendingAction)?)(null, new PluginToolCall(
-                    probe.ToolName, Guid.NewGuid(), isMcpTool ? "some-mcp-server" : "files", "desc", null,
-                    () => { probe.MarkExecuted(); return Task.FromResult<object?>("did it"); }))
-                // NULL, not a tuple of nulls: `route is null` is what the handler tests for, and a
-                // (null, null) tuple would fall out at "Tool call handled." instead — a different path.
-                : null);
+            // Echoes the INCOMING call's name rather than the probe's, so a turn that makes two different
+            // calls really presents two different tools to the gate.
+            .Returns(ci =>
+            {
+                var name = ci.Arg<FunctionCallContent>().Name;
+                return routed
+                    // A DEFERRED write (a pending action) — the only shape that reaches the gate at all; a
+                    // read returns its Result and short-circuits above it.
+                    ? ((object? Result, PluginToolCall? PendingAction)?)(null, new PluginToolCall(
+                        name, Guid.NewGuid(), isMcpTool ? "some-mcp-server" : "files", "desc", null,
+                        () => { probe.MarkExecuted(name); return Task.FromResult<object?>("did it"); }))
+                    // NULL, not a tuple of nulls: `route is null` is what the handler tests for, and a
+                    // (null, null) tuple would fall out at "Tool call handled." instead — a different path.
+                    : null;
+            });
 
         var composer = Substitute.For<IAssistantPromptComposer>();
         composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
@@ -641,11 +705,18 @@ public sealed class UnattendedApprovalParkTests : IDisposable
     }
 
     private static async IAsyncEnumerable<ChatStreamItem> DriveWithToolCall(
-        Func<FunctionCallContent, Task<object?>>? handler, ToolProbe probe)
+        Func<FunctionCallContent, Task<object?>>? handler, ToolProbe probe, string? secondToolName = null)
     {
         await Task.Yield();
         if (handler is not null)
+        {
             probe.Record(await handler(new FunctionCallContent("call-1", probe.ToolName, new Dictionary<string, object?>())));
+            // A model that keeps going after being told the run is parking. Round-tripped through the SAME
+            // handler, because that is the only way the store's first-wins rule is observable.
+            if (secondToolName is not null)
+                probe.Record(await handler(new FunctionCallContent("call-2", secondToolName, new Dictionary<string, object?>())));
+        }
+
         // TEXT STILL FLOWS. Every park fact in this file therefore discriminates on the RUN's state, never on
         // "the step produced nothing" — neutralising the park leaves this reply exactly where it was.
         yield return new TextDelta("reply");
