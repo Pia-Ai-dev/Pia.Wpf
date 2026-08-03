@@ -191,30 +191,89 @@ public sealed class AgentRunServiceChildWaitTests : IDisposable
     }
 
     /// <summary>
-    /// T-ST-4, <b>GUARD</b>. A row per state, so no threshold change can hide: 0–2 are swept to Cancelled,
-    /// 3/4 are a deliberate park and are untouched, 5–7 are terminal and untouched, and 8 is reconciled to
-    /// WaitingForInput rather than either swept or ignored. Runs are forced into each state through the blind
-    /// <c>SetStateAsync</c> so the row under test is exactly the state named and nothing else.
+    /// The INTENDED startup-sweep verdict for every <see cref="AgentRunState"/>, stated as an independent
+    /// hand-written table — never derived from the predicate under test. 0–2 are crash-recoverable and are
+    /// settled to <see cref="AgentRunState.Cancelled"/> WITH a <c>CompletedAt</c> stamp; 3/4 are a deliberate
+    /// park and must survive restart resumable; 5–7 are already terminal and are not re-stamped; 8 is
+    /// reconciled to <see cref="AgentRunState.WaitingForInput"/> and is NOT a completion.
+    /// <para>
+    /// <c>StampsCompletedAt</c> is here because state alone cannot tell a swept
+    /// <see cref="AgentRunState.Cancelled"/> row from an untouched one — statement 1 writes
+    /// <c>State=Cancelled</c> to both, and only the stamp distinguishes "the sweep reached this row" from "the
+    /// sweep left it alone".
+    /// </para>
+    /// </summary>
+    private static readonly IReadOnlyDictionary<AgentRunState, (AgentRunState After, bool StampsCompletedAt)>
+        ExpectedSweepVerdict = new Dictionary<AgentRunState, (AgentRunState, bool)>
+        {
+            [AgentRunState.Planning] = (AgentRunState.Cancelled, true),
+            [AgentRunState.Running] = (AgentRunState.Cancelled, true),
+            [AgentRunState.Verifying] = (AgentRunState.Cancelled, true),
+            [AgentRunState.WaitingForInput] = (AgentRunState.WaitingForInput, false),
+            [AgentRunState.Paused] = (AgentRunState.Paused, false),
+            [AgentRunState.Completed] = (AgentRunState.Completed, false),
+            [AgentRunState.Failed] = (AgentRunState.Failed, false),
+            [AgentRunState.Cancelled] = (AgentRunState.Cancelled, false),
+            [AgentRunState.WaitingForChildren] = (AgentRunState.WaitingForInput, false),
+        };
+
+    /// <summary>The theory's cases come from the ENUM, not from a hand-listed set of rows: an appended member
+    /// gets its own case the moment it exists, and hits the table lookup below with no verdict declared.</summary>
+    public static TheoryData<AgentRunState> EverySweepState()
+    {
+        var data = new TheoryData<AgentRunState>();
+        foreach (var state in Enum.GetValues<AgentRunState>())
+            data.Add(state);
+        return data;
+    }
+
+    /// <summary>
+    /// T-ST-4, <b>GUARD</b> — Batch 08 §19 Q5. A row per state, so no threshold change can hide, and the rows
+    /// are now ENUMERATED FROM THE ENUM rather than hand-listed. <c>FailInterruptedRunsAsync</c>'s statement 1
+    /// is the one sanctioned ordinal RANGE left over this enum (<c>WHERE State &lt; WaitingForInput</c>); every
+    /// other predicate was converted to an explicit set (D7). Under append-only growth a tenth member at
+    /// ordinal 9 falls OUTSIDE that range silently — no compiler error, no failing row — even if it is
+    /// crash-recoverable and therefore exactly what the sweep exists for. An <c>[InlineData]</c> table cannot
+    /// catch that: the new member simply has no row.
+    /// <para>
+    /// Non-vacuity is the whole point of the shape and it is TWO assertions, because a theory that enumerates
+    /// an enum passes trivially otherwise. The verdict is looked up in
+    /// <see cref="ExpectedSweepVerdict"/> — an INDEPENDENT literal table, never <c>state &lt; WaitingForInput</c>
+    /// restated, which would only prove the production expression equals itself — so an undeclared member fails
+    /// on the lookup; and the count is asserted against <c>Enum.GetValues</c> so the mirror image (a stale entry
+    /// for a member that was removed, or a table left behind entirely) fails too.
+    /// </para>
+    /// <para>
+    /// The spec's alternative reading — "this could simply gain a non-vacuity count assertion" — is already
+    /// satisfied by <see cref="AgentRunState_OrdinalsArePinned"/>'s <c>Assert.Equal(9, all.Length)</c>, which is
+    /// why the count here is against <c>Enum.GetValues</c>'s length rather than a second literal 9: a copy of
+    /// that pin would add nothing, whereas this one binds the TABLE to the enum.
+    /// </para>
+    /// Runs are forced into each state through the blind <c>SetStateAsync</c> so the row under test is exactly
+    /// the state named and nothing else.
     /// </summary>
     [Theory]
-    [InlineData(AgentRunState.Planning, AgentRunState.Cancelled)]
-    [InlineData(AgentRunState.Running, AgentRunState.Cancelled)]
-    [InlineData(AgentRunState.Verifying, AgentRunState.Cancelled)]
-    [InlineData(AgentRunState.WaitingForInput, AgentRunState.WaitingForInput)]
-    [InlineData(AgentRunState.Paused, AgentRunState.Paused)]
-    [InlineData(AgentRunState.Completed, AgentRunState.Completed)]
-    [InlineData(AgentRunState.Failed, AgentRunState.Failed)]
-    [InlineData(AgentRunState.Cancelled, AgentRunState.Cancelled)]
-    [InlineData(AgentRunState.WaitingForChildren, AgentRunState.WaitingForInput)]
-    public async Task TheSweepStillCancelsOnlyStatesBelowWaitingForInput(AgentRunState before, AgentRunState after)
+    [MemberData(nameof(EverySweepState))]
+    public async Task TheSweepStillCancelsOnlyStatesBelowWaitingForInput(AgentRunState before)
     {
         var ct = TestContext.Current.CancellationToken;
+
+        Assert.True(
+            ExpectedSweepVerdict.TryGetValue(before, out var verdict),
+            $"AgentRunState.{before} has no declared startup-sweep verdict. A new member must state whether the "
+            + "sweep cancels it, leaves it parked/terminal, or reconciles it — statement 1 is an ordinal RANGE "
+            + "and will silently ignore any member appended above WaitingForInput.");
+        Assert.Equal(Enum.GetValues<AgentRunState>().Length, ExpectedSweepVerdict.Count);
+
         var run = await NewRunAsync(ct);
         await _service.SetStateAsync(run.Id, before, ct);
+        Assert.Null((await _service.GetAsync(run.Id, ct))!.CompletedAt);     // the stamp below is the sweep's
 
         await _service.FailInterruptedRunsAsync(ct);
 
-        Assert.Equal(after, (await _service.GetAsync(run.Id, ct))!.State);
+        var swept = (await _service.GetAsync(run.Id, ct))!;
+        Assert.Equal(verdict.After, swept.State);
+        Assert.Equal(verdict.StampsCompletedAt, swept.CompletedAt is not null);
     }
 
     /// <summary>

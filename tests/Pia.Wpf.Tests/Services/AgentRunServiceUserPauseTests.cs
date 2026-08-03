@@ -172,6 +172,79 @@ public sealed class AgentRunServiceUserPauseTests : IDisposable
     }
 
     /// <summary>
+    /// <b>REGRESSION</b> — §19 Q6. The fact above pins ONE close; this runs the clock through a DOUBLE
+    /// pause→resume→pause cycle, because the failure it looks for cannot show on a first cycle: an ASYMMETRIC
+    /// open/close pairing corrupts accumulated active time only from the SECOND close onwards. Two shapes, both
+    /// caught here — a close that re-banks a segment an earlier close already banked (the total jumps ahead of
+    /// the work), and a resume that fails to re-open one (the total stops moving while the run works).
+    /// <para>
+    /// This is hermes #3's "must" (persist accumulated active ms; count only the post-resume delta) measured
+    /// rather than argued: <c>ApplyLedgerClock</c>'s <c>ActiveMs</c> + <c>SegmentStartedAt</c> pair is that
+    /// counter, and the old <c>UtcNow - StartedAt</c> snapshot it replaced would report ~15 s of work here on
+    /// the first pause and grow through every parked gap thereafter.
+    /// </para>
+    /// <para>
+    /// The two cycles deliberately go through DIFFERENT pairs — cycle 1 the budget park
+    /// (<c>PauseAsync</c>/<c>TryBeginResumeAsync</c>, state 3), cycle 2 the user pause
+    /// (<c>TryPauseUserAsync</c>/<c>TryResumeFromPauseAsync</c>, state 4). All four call the same
+    /// <c>MoveLedgerClock</c>, so a mixed run also catches the next park that forgets its clock move; two
+    /// identical cycles would only ever re-test one pair.
+    /// </para>
+    /// Each segment is back-dated to a DIFFERENT length (3 s, 5 s, 7 s) so every delta is distinguishable: with
+    /// equal lengths a double-banked segment and a correct one can produce the same total. Neutralize: drop
+    /// <c>MoveLedgerClock(OpenSegment)</c> from <c>TryResumeFromPauseAsync</c> — cycle 2's segment never opens,
+    /// which no one-cycle fact in this file can see.
+    /// </summary>
+    [Fact]
+    public async Task TheLedgerClock_AccumulatesAcrossADoublePauseResumePauseCycle()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        await _service.SetStateAsync(run.Id, AgentRunState.Running, ct);
+
+        // ---- cycle 1: 3 s of work, closed by the BUDGET park ----
+        BackdateOpenSegment(run.Id, TimeSpan.FromSeconds(3));
+        await _service.PauseAsync(run.Id, "step-cap", ct);
+        Assert.Null(SegmentStartedAt(run.Id));
+        var banked1 = ActiveMs(run.Id)!.Value;
+        Assert.InRange(banked1, 3_000, 5_000);
+        Assert.Equal(banked1, WallClockMs(run.Id));
+
+        // The resume opens a FRESH segment and must not move the accumulator: an open that banked its own
+        // (zero-length) segment would be harmless here, but one that re-banked the closed 3 s would not.
+        Assert.True(await _service.TryBeginResumeAsync(run.Id, ct));
+        Assert.NotNull(SegmentStartedAt(run.Id));
+        Assert.Equal(banked1, ActiveMs(run.Id)!.Value);
+
+        // ---- cycle 2: 5 s of work, closed by the USER pause ----
+        BackdateOpenSegment(run.Id, TimeSpan.FromSeconds(5));
+        Assert.True(await _service.TryPauseUserAsync(run.Id, ct));
+        Assert.Null(SegmentStartedAt(run.Id));
+        var banked2 = ActiveMs(run.Id)!.Value;
+        // THE Q6 ASSERTION: the second close banks its own 5 s and nothing else. A close that re-banked
+        // cycle 1's segment would read 8 s here, which is why the upper bound sits below 3 s + 5 s.
+        Assert.InRange(banked2 - banked1, 5_000, 7_000);
+        Assert.Equal(banked2, WallClockMs(run.Id));
+
+        Assert.True(await _service.TryResumeFromPauseAsync(run.Id, ct));
+        Assert.NotNull(SegmentStartedAt(run.Id));
+        Assert.Equal(banked2, ActiveMs(run.Id)!.Value);
+
+        // ---- the third close of one run's clock: 7 s, the user pause again ----
+        BackdateOpenSegment(run.Id, TimeSpan.FromSeconds(7));
+        Assert.True(await _service.TryPauseUserAsync(run.Id, ct));
+        Assert.Null(SegmentStartedAt(run.Id));
+        var total = ActiveMs(run.Id)!.Value;
+        Assert.InRange(total - banked2, 7_000, 9_000);
+        Assert.InRange(total, 15_000, 18_000);          // 3 + 5 + 7 worked, and NOT a re-banked 20 s+
+        Assert.Equal(total, WallClockMs(run.Id));
+
+        // Still resumable after two full cycles — an accounting pin that left the run unclaimable would be
+        // measuring the wrong thing.
+        Assert.True(await _service.TryResumeFromPauseAsync(run.Id, ct));
+    }
+
+    /// <summary>
     /// <b>REGRESSION</b> — guardrail 2 (never two loops on one run) for the new claim, plus W10's deliberate
     /// erasure. The second call must lose: two racers (a double-click, the panel and the Flow card) both see
     /// <see cref="AgentRunState.Paused"/> and both call this.

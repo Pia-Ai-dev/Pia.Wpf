@@ -631,4 +631,89 @@ public sealed class RunProgressViewModelPlanMutationTests
         Assert.Equal("Run_Plan_Error_NotPaused", vm.PlanMutationNote);       // so the note is the ONLY feedback left
         vm.Dispose();
     }
+
+    /// <summary>
+    /// <b>GUARD</b> — Batch 08 §19 Q7, and deliberately a pin on the CURRENT behaviour rather than a fix.
+    /// <see cref="RunProgressViewModel.IsPausing"/> has NO timeout: an accepted pause whose step never comes back
+    /// leaves the Pause button disabled and reading "Pausing…" for as long as the run keeps presenting a pausable
+    /// state. That is honest — the request really is outstanding and nothing has changed about the run — and the
+    /// owner's verdict is that if a "this is taking a while" line is ever wanted, it belongs in <c>Project</c> and
+    /// not in a timer. So this fact exists to make that a DECISION: a future watchdog that quietly re-enables the
+    /// button, or a <c>finally</c> that clears the flag after the request call, has to red this test first.
+    /// <para>
+    /// <b>The appended step is the non-vacuity control, and it is the whole reason this test is not the trap this
+    /// branch has fallen into four times.</b> <c>IsPausing</c> is ALREADY true when the loop starts, so
+    /// "still true after another refresh" is equally consistent with a refresh that projected nothing at all.
+    /// Growing the plan between refreshes and asserting <c>Steps.Count</c> followed it proves each iteration
+    /// really re-projected — so the surviving flag is an observation of <c>Project</c>'s clearing predicate, not
+    /// of an untouched bool.
+    /// </para>
+    /// <para>
+    /// The recovery leg goes through <see cref="AgentRunState.WaitingForInput"/> on purpose. The
+    /// <see cref="AgentRunState.Paused"/> landing (the pause arriving normally) is already pinned by
+    /// <see cref="AnAcceptedPause_KeepsTheButtonInFlight_AndAddsNoNote"/>; the budget park is the OTHER way out,
+    /// the one Q7's "recoverable" claim rests on, and it must retire the in-flight affordance and offer Continue
+    /// just the same — a run whose pause never landed is not a run the panel may strand.
+    /// </para>
+    /// Neutralize (two directions, one mechanism): make <c>Project</c>'s <c>IsPausing = false</c> unconditional →
+    /// the in-flight loop reds; delete it → the recovery leg reds.
+    /// </summary>
+    [Fact]
+    public async Task AnAcceptedPauseThatNeverLands_StaysInFlightWithoutATimeout_AndTheParkIsStillTheWayOut()
+    {
+        var run = new AgentRun
+        {
+            Id = _runId,
+            State = AgentRunState.Running,
+            Plan = [new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "s0", Status = AgentStepStatus.Running }],
+        };
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(run);
+
+        var steering = Substitute.For<IAgentRunSteeringService>();
+        steering.PauseAsync(_runId, Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
+
+        var vm = CreateVm(steering);
+        await vm.RefreshAsync();
+        Assert.True(vm.CanPause);                                   // non-vacuity: the button was live
+        Assert.Equal("Run_Action_Pause", vm.PauseLabel);             // …and reading Pause, not Pausing
+
+        await vm.PauseCommand.ExecuteAsync(null);
+
+        Assert.True(vm.IsPausing);
+        Assert.Equal("Run_Action_Pausing", vm.PauseLabel);
+        Assert.False(vm.PauseCommand.CanExecute(null));
+
+        // The step never returns: the row keeps reading Running, so the panel keeps the request in flight. Three
+        // further projections, each one PROVED to have happened by the step it picked up.
+        for (var i = 1; i <= 3; i++)
+        {
+            run.Plan =
+            [
+                .. run.Plan,
+                new AgentStep { Id = Guid.NewGuid(), Ordinal = i, Title = $"s{i}", Status = AgentStepStatus.Pending },
+            ];
+            await vm.RefreshAsync();
+
+            Assert.Equal(i + 1, vm.Steps.Count);                     // the control: this refresh really re-projected
+            Assert.True(vm.IsPausing);                               // …and nothing gave the button back
+            Assert.Equal("Run_Action_Pausing", vm.PauseLabel);
+            Assert.False(vm.CanPause);
+            Assert.Null(vm.PauseNote);                               // no invented "taking a while" line either
+        }
+
+        // Recoverable: the run's own park is the way out, and the panel follows it.
+        run.State = AgentRunState.WaitingForInput;
+        await vm.RefreshAsync();
+
+        Assert.False(vm.IsPausing);
+        Assert.Equal("Run_Action_Pause", vm.PauseLabel);
+        Assert.True(vm.CanContinue);
+
+        // …and Continue is really wired to the claim, so "recoverable" is a route the user can take rather than
+        // a bool that happens to be true.
+        _resume.ResumeAsync(_runId, Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(true);
+        await vm.ContinueCommand.ExecuteAsync(null);
+        await _resume.Received(1).ResumeAsync(_runId, Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        vm.Dispose();
+    }
 }
