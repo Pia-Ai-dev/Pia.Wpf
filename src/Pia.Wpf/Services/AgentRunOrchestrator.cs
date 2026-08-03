@@ -728,8 +728,8 @@ public sealed class AgentRunOrchestrator
             return null;
 
         // Depth guard (§7.5), one line and structural: a run that is itself a child NEVER delegates. It bounds
-        // the wall clock, the child-pool pressure and the scheduled-job _runLock hold to a single level — a
-        // plan shaped like a tree would otherwise multiply R15 by its depth.
+        // the wall clock, the child-pool pressure and the scheduled run slot the fan-out holds to a single
+        // level — a plan shaped like a tree would otherwise multiply R15 by its depth.
         if (run.ParentRunId is not null)
             return null;
 
@@ -1019,11 +1019,16 @@ public sealed class AgentRunOrchestrator
 
     /// <summary>
     /// A child's budget envelope: the parent's own, with the WALL CLOCK HALVED (clamped at
-    /// <see cref="RunProfile.MinWallClockMinutes"/>). Phase 3 R15 is the reason —
-    /// <c>ScheduledJobBackgroundService</c> holds its <c>_runLock</c> from before the launch across
-    /// <c>await handle.Completion</c>, so while a fan-out runs NO scheduled job of either kind can dispatch, for
-    /// the parent's wall clock PLUS every descendant's. Halving keeps a fan-out roughly inside the envelope one
-    /// scheduled job already occupies.
+    /// <see cref="RunProfile.MinWallClockMinutes"/>). Phase 3 R15 is the reason — a fan-out occupies one of
+    /// <c>HeadlessRunLauncher</c>'s two run slots for the parent's wall clock PLUS every descendant's, so with
+    /// two of them alive a third scheduled agent run waits. Halving keeps a fan-out roughly inside the envelope
+    /// one scheduled job already occupies.
+    /// <para>
+    /// The stronger version of this argument is gone (hermes #2): the scheduler used to hold a single run lock
+    /// from before the launch across <c>await handle.Completion</c>, so while a fan-out ran NO scheduled job of
+    /// either kind could dispatch at all. It now dispatches without awaiting the run, which makes the launcher's
+    /// slots the real bound — and leaves the halving justified by the slot it still holds.
+    /// </para>
     /// <para>
     /// Derived from the PARENT's profile rather than re-read from settings (which §7.5 suggested): the parent's
     /// profile already IS <c>RunProfile.FromBudget(settings.Scheduled*)</c> on the launch path, so this yields

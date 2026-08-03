@@ -744,6 +744,42 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         }
     }
 
+    /// <summary>
+    /// The state values <see cref="AnyExecutingRunForTriggerAsync"/> excludes, DERIVED from
+    /// <see cref="AgentRunStates.IsExecuting"/> rather than restated as a literal list, so the predicate and this
+    /// query cannot drift apart the way a hand-copied set would. Declared before the SQL below because static
+    /// field initializers run in declaration order.
+    /// </summary>
+    private static readonly int[] NonExecutingStates =
+        Enum.GetValues<AgentRunState>().Where(s => !AgentRunStates.IsExecuting(s)).Select(s => (int)s).ToArray();
+
+    /// <summary>
+    /// Seeks <c>IX_AgentRuns_TriggerRef</c>. An explicit exclusion set, never a <c>State &lt; x</c> range (D7:
+    /// <see cref="AgentRunState.WaitingForChildren"/> sits ABOVE the terminal band, so a range lies about it).
+    /// The ints are interpolated rather than parameterized because they come from an enum, not from a caller.
+    /// </summary>
+    private static readonly string AnyExecutingForTriggerSql =
+        "SELECT COUNT(*) FROM AgentRuns WHERE TriggerRef=@Trigger AND State NOT IN (" +
+        string.Join(",", NonExecutingStates) + ")";
+
+    public Task<bool> AnyExecutingRunForTriggerAsync(Guid triggerRef, CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            // A disposed service answers "nothing is executing". The caller is a guard whose miss costs a
+            // duplicate dispatch, and the only way to reach it disposed is app shutdown, where no tick runs.
+            if (_disposed) return Task.FromResult(false);
+
+            using var cmd = Connection().CreateCommand();
+            cmd.CommandText = AnyExecutingForTriggerSql;
+            // Bound exactly as AgentRunService writes it (ToParam → Guid.ToString(), lowercase "D"), or the
+            // index seek matches nothing and the guard silently never fires.
+            cmd.Parameters.AddWithValue("@Trigger", triggerRef.ToString());
+            var count = Convert.ToInt64(cmd.ExecuteScalar());
+            return Task.FromResult(count > 0);
+        }
+    }
+
     public Task ReplaceStepsAsync(Guid runId, IReadOnlyList<AgentStep> steps, CancellationToken ct = default)
     {
         lock (_gate)

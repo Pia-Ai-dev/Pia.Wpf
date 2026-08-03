@@ -43,6 +43,24 @@ public class ScheduledJobBackgroundServiceTests
         return settings;
     }
 
+    /// <summary>
+    /// The join <c>ExecuteOnceAsync</c> no longer contains (hermes #2). A tick returns once every due job has
+    /// been DISPATCHED; the run's outcome — <c>jobs.Completed</c>/<c>Failed</c>, the notification counters, and
+    /// on the Research leg even <c>FakeRunner.RunCount</c> — is written by a continuation afterwards. Any test
+    /// that asserts one of those must come through here, or it is a race that passes on a fast machine.
+    /// <para>
+    /// Bounded: a drain that hangs fails this test in 30 s instead of the whole suite.
+    /// </para>
+    /// </summary>
+    private static Task SettleAsync(ScheduledJobBackgroundService bg, CancellationToken ct) =>
+        bg.WaitForDispatchedRunsAsync().WaitAsync(TimeSpan.FromSeconds(30), ct);
+
+    private static async Task TickAndSettleAsync(ScheduledJobBackgroundService bg, CancellationToken ct)
+    {
+        await bg.ExecuteOnceAsync(ct);
+        await SettleAsync(bg, ct);
+    }
+
     [Fact]
     public async Task RunNowAsync_DispatchesAJobThatIsNotDue()
     {
@@ -65,6 +83,7 @@ public class ScheduledJobBackgroundServiceTests
         Assert.Equal(0, runner.RunCount);
 
         var result = await bg.RunNowAsync(notDue.Id, CancellationToken.None);
+        await SettleAsync(bg, CancellationToken.None);
 
         Assert.Equal(ScheduledJobRunNowResult.Dispatched, result);
         Assert.Equal(1, runner.RunCount);
@@ -125,7 +144,7 @@ public class ScheduledJobBackgroundServiceTests
             Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(),
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
-        await bg.ExecuteOnceAsync(CancellationToken.None);
+        await TickAndSettleAsync(bg, CancellationToken.None);
 
         Assert.Equal(1, runner.RunCount);
         Assert.Single(jobs.Completed);
@@ -156,7 +175,7 @@ public class ScheduledJobBackgroundServiceTests
             Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(),
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
-        await bg.ExecuteOnceAsync(CancellationToken.None);
+        await TickAndSettleAsync(bg, CancellationToken.None);
 
         Assert.NotNull(runner.LastRequest);
         Assert.Equal(AgentRunTrigger.Schedule, runner.LastRequest!.Trigger);
@@ -181,7 +200,7 @@ public class ScheduledJobBackgroundServiceTests
             Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(),
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
-        await bg.ExecuteOnceAsync(CancellationToken.None);
+        await TickAndSettleAsync(bg, CancellationToken.None);
 
         Assert.Single(jobs.Failed);
         Assert.Equal(due.Id, jobs.Failed[0].JobId);
@@ -208,7 +227,7 @@ public class ScheduledJobBackgroundServiceTests
             Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(),
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
-        await bg.ExecuteOnceAsync(CancellationToken.None);
+        await TickAndSettleAsync(bg, CancellationToken.None);
 
         Assert.Single(jobs.Failed);
         Assert.Equal("boom", jobs.Failed[0].Reason);
@@ -316,7 +335,7 @@ public class ScheduledJobBackgroundServiceTests
         var sp = new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner);
         var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), providers, notifications, Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
-        await bg.ExecuteOnceAsync(CancellationToken.None);
+        await TickAndSettleAsync(bg, CancellationToken.None);
 
         Assert.Equal(1, runner.RunCount);
         Assert.Single(jobs.Completed);
@@ -387,7 +406,7 @@ public class ScheduledJobBackgroundServiceTests
             launcher, settings, runService,
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
-        await bg.ExecuteOnceAsync(CancellationToken.None);
+        await TickAndSettleAsync(bg, CancellationToken.None);
 
         await launcher.Received(1).LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>());
         Assert.NotNull(captured);
@@ -399,19 +418,27 @@ public class ScheduledJobBackgroundServiceTests
         Assert.Equal(due.GrantedTools, captured.GrantedWrites);
         Assert.NotNull(captured.Budget);
         Assert.Equal(50, captured.Budget!.WallClock.TotalMinutes);
-        // Completed terminal run → job marked complete with the run's chat id + a success notification.
+        // Completed terminal run → job marked complete with the run's chat id + a success notification. Written
+        // by the bookkeeping continuation now, which is why the assertions come after the drain.
         Assert.Single(jobs.Completed);
         Assert.Equal(chatId, jobs.Completed[0].EntryId);
         Assert.Equal(1, notifications.SuccessCount);
+        // …and the schedule had already moved on at dispatch, before any of that was known.
+        Assert.Equal([due.Id], jobs.Dispatched);
     }
 
     [Fact]
-    public async Task ExecuteOnceAsync_AgentTaskJob_ParkedAtBudget_AdvancesScheduleOnce_AndDoesNotRelaunch()
+    public async Task ExecuteOnceAsync_AgentTaskJob_ParkedAtBudget_MovesTheScheduleOnceAtDispatch_AndDoesNotRelaunch()
     {
-        // F: a parked (budget-paused) run is NOT a job failure — but the schedule must still advance.
+        // F: a parked (budget-paused) run is NOT a job failure — but the schedule must still have moved on.
         // Only MarkRunComplete/MarkRunFailed used to recompute NextFireAt, so the job stayed due and the
         // next 30 s tick launched a DUPLICATE run of the same goal (and, past the grace period, prompted
         // the user about a "missed" run that had in fact already fired).
+        //
+        // What changed with hermes #2: the write is made at DISPATCH (jobs.Dispatched) rather than from the park
+        // arm afterwards (jobs.Advanced), because a park is no longer the only outcome that leaves the row
+        // untouched — a run nobody awaits leaves it untouched too. The park arm is now log-only, and
+        // Assert.Empty(jobs.Advanced) is what pins that: it must not double-write.
         var jobs = new FakeJobService();
         var due = NewDueJob();
         due.Kind = ScheduledJobKind.AgentTask;
@@ -437,29 +464,30 @@ public class ScheduledJobBackgroundServiceTests
             notifications, launcher, NewSettings(), runService,
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
-        await bg.ExecuteOnceAsync(CancellationToken.None);
+        await TickAndSettleAsync(bg, CancellationToken.None);
 
         // Park is not a failure: no MarkRunFailed, no failure toast, no success bookkeeping either.
         Assert.Empty(jobs.Failed);
         Assert.Empty(jobs.Completed);
         Assert.Equal(0, notifications.FailureCount);
         Assert.Equal(0, notifications.SuccessCount);
-        // …but the schedule advanced exactly once.
-        Assert.Single(jobs.Advanced);
-        Assert.Equal(due.Id, jobs.Advanced[0]);
+        // …but the schedule moved on exactly once, at dispatch, and the park arm added nothing on top.
+        Assert.Equal([due.Id], jobs.Dispatched);
+        Assert.Empty(jobs.Advanced);
 
-        // The next tick must NOT relaunch: the job is no longer due, and nothing advances twice.
-        await bg.ExecuteOnceAsync(CancellationToken.None);
+        // The next tick must NOT relaunch: the job is no longer due, and nothing moves the schedule twice.
+        await TickAndSettleAsync(bg, CancellationToken.None);
 
         await launcher.Received(1).LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>());
-        Assert.Single(jobs.Advanced);
+        Assert.Single(jobs.Dispatched);
         Assert.Equal(0, notifications.AskCount); // and no missed-run prompt for a run that already fired
     }
 
     [Fact]
-    public async Task ExecuteOnceAsync_AgentTaskJob_Paused_AlsoAdvancesSchedule()
+    public async Task ExecuteOnceAsync_AgentTaskJob_Paused_IsAlsoNotAFailure()
     {
-        // The park branch covers both non-terminal parked states.
+        // The park branch covers both non-terminal parked states — and neither of them is a job failure, which
+        // is the half that would break if the arm were collapsed into the else.
         var jobs = new FakeJobService();
         var due = NewDueJob();
         due.Kind = ScheduledJobKind.AgentTask;
@@ -479,21 +507,25 @@ public class ScheduledJobBackgroundServiceTests
             new FakeNotificationSurface(), launcher, NewSettings(), runService,
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
-        await bg.ExecuteOnceAsync(CancellationToken.None);
+        await TickAndSettleAsync(bg, CancellationToken.None);
 
-        Assert.Single(jobs.Advanced);
         Assert.Empty(jobs.Failed);
+        Assert.Equal([due.Id], jobs.Dispatched);
+        Assert.Empty(jobs.Advanced);
     }
 
     [Fact]
-    public async Task ExecuteOnceAsync_ParkedJob_AdvanceThrows_DoesNotBreakTheTick()
+    public async Task ExecuteOnceAsync_AgentJob_ScheduleWriteThrows_DoesNotBreakTheTick()
     {
-        // Guardrail 1: the schedule advance is bookkeeping. If it faults, the tick must keep going (the
-        // job simply stays due and re-runs, exactly as it did before this fix) — never an aborted tick.
-        var jobs = new FakeJobService { ThrowOnAdvance = true };
+        // Guardrail 1: moving the schedule on is bookkeeping. If it faults, the tick must keep going — never an
+        // aborted tick that strands the remaining due jobs. Per-job fault (not a global switch) because the
+        // research leg answers the same fault by SKIPPING its occurrence, which would silently make the
+        // second job here prove nothing.
+        var jobs = new FakeJobService();
         var parkedJob = NewDueJob();
         parkedJob.Kind = ScheduledJobKind.AgentTask;
         var researchJob = NewDueJob();
+        jobs.ThrowOnDispatchAdvanceFor.Add(parkedJob.Id);
         jobs.SeedDue(parkedJob);
         jobs.SeedDue(researchJob);
 
@@ -513,10 +545,11 @@ public class ScheduledJobBackgroundServiceTests
             NewSettings(), runService,
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
-        await bg.ExecuteOnceAsync(CancellationToken.None);
+        await TickAndSettleAsync(bg, CancellationToken.None);
 
         Assert.Equal(1, runner.RunCount);       // the second due job in the same tick still ran
         Assert.Empty(jobs.Failed);              // and the park still did not count as a failure
+        Assert.Equal([researchJob.Id], jobs.Dispatched); // only the job whose write did not fault
     }
 
     [Fact]
@@ -537,10 +570,298 @@ public class ScheduledJobBackgroundServiceTests
             launcher, Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(),
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
-        await bg.ExecuteOnceAsync(CancellationToken.None);
+        await TickAndSettleAsync(bg, CancellationToken.None);
 
         Assert.Equal(1, runner.RunCount);
         await launcher.DidNotReceive().LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_TwoDueAgentJobs_DispatchesTheSecondWithoutWaitingForTheFirstToSettle()
+    {
+        // THE HEADLINE FACT (hermes review #2). The tick used to hold one run lock across
+        // `await handle.Completion`, so one long agent run delayed every other scheduled job on the device for up
+        // to its whole 45-minute wall clock. Job 1's Completion is a gate this test never opens before the
+        // assertion, so "job 2 launched AND the tick returned" is only possible if nothing waits for job 1.
+        // <para>Restoring the inline await reds this as a TimeoutException on the tick, which is why the tick is
+        // awaited with a bound instead of bare — a neutralization must fail the test, not hang the suite.</para>
+        var ct = TestContext.Current.CancellationToken;
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var launches = 0;
+
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        launcher.LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new HeadlessRunHandle(Guid.NewGuid(), Guid.NewGuid(),
+                Interlocked.Increment(ref launches) == 1 ? gate.Task : Task.CompletedTask));
+
+        var runService = Substitute.For<IAgentRunService>();
+        runService.GetAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(ci => new AgentRun
+            {
+                Id = ci.ArgAt<Guid>(0), RunShape = RunShape.Planned, State = AgentRunState.Completed,
+            });
+
+        var jobs = new FakeJobService();
+        var slow = NewDueJob();
+        var quick = NewDueJob();
+        slow.Kind = ScheduledJobKind.AgentTask;
+        quick.Kind = ScheduledJobKind.AgentTask;
+        jobs.SeedDue(slow);
+        jobs.SeedDue(quick);
+
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
+            new FakeNotificationSurface(), launcher, NewSettings(), runService,
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        Assert.Equal(2, Volatile.Read(ref launches));   // both jobs of the tick dispatched …
+        Assert.False(gate.Task.IsCompleted);            // … while job 1's run had NOT settled (non-vacuity)
+        Assert.Equal(2, jobs.Dispatched.Count);         // and both occurrences were spent at dispatch
+
+        // The bookkeeping is not lost, only deferred: job 1 is booked when its run finally settles.
+        gate.SetResult();
+        await SettleAsync(bg, ct);
+        Assert.Equal(2, jobs.Completed.Count);
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_RunThatOutlastsTheInterval_TickedTwice_LaunchesExactlyOnce()
+    {
+        // LAYER (a) ALONE — the duplicate-dispatch defence, isolated. GetDueJobsAsync's predicate is
+        // `NextFireAt <= @Now AND Status = 'Active'` and only the bookkeeping methods used to recompute
+        // NextFireAt, so the moment the tick stops awaiting the run, a run outlasting the 30 s interval leaves
+        // its job STILL DUE and the next tick launches the same goal again. MarkOccurrenceDispatchedAsync is
+        // what closes that, and it is awaited inside the tick for exactly this reason.
+        // <para>The guard is deliberately BLIND here: an unstubbed
+        // <c>Substitute.For&lt;IAgentRunService&gt;()</c> hands back false for
+        // <c>AnyExecutingRunForTriggerAsync</c>, so nothing but the schedule write can explain one launch.
+        // Neutralising `await MoveScheduleOnAsync(job)` in the agent leg reds this at two launches.</para>
+        var ct = TestContext.Current.CancellationToken;
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var launches = 0;
+
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        launcher.LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref launches);
+                return new HeadlessRunHandle(Guid.NewGuid(), Guid.NewGuid(), gate.Task);
+            });
+
+        var jobs = new FakeJobService();
+        var due = NewDueJob();
+        due.Kind = ScheduledJobKind.AgentTask;
+        jobs.SeedDue(due);
+
+        var notifications = new FakeNotificationSurface();
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
+            notifications, launcher, NewSettings(), Substitute.For<IAgentRunService>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await bg.ExecuteOnceAsync(ct);
+        await bg.ExecuteOnceAsync(ct);
+
+        Assert.Equal(1, Volatile.Read(ref launches));
+        Assert.Equal([due.Id], jobs.Dispatched);
+        Assert.False(gate.Task.IsCompleted);      // the run really did outlast both ticks
+        Assert.Equal(0, notifications.AskCount);  // and no missed-run prompt for the run in flight
+
+        gate.SetResult();
+        await SettleAsync(bg, ct);
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_ScheduleWriteFaulted_TheTriggerGuardStillStopsTheSecondDispatch()
+    {
+        // LAYER (b) ALONE — the case layer (a) provably cannot cover, because here layer (a) FAILED: the
+        // dispatch-time schedule write faults (guardrail 1 isolates it), so the job is still due on the second
+        // tick with its run in flight. The TriggerRef guard is the only thing left, and this is why it is worth
+        // having rather than being a redundant second copy of the same defence.
+        // <para>The guard answer is modelled, not canned: a run of this job exists and is non-terminal exactly
+        // while a launch has happened and its Completion has not settled — which is what the real
+        // `State NOT IN (parked, terminal)` query would report while the run executes. Neutralising ONLY the
+        // guard call in RunJobAsync reds this at two launches.</para>
+        var ct = TestContext.Current.CancellationToken;
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var launches = 0;
+
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        launcher.LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref launches);
+                return new HeadlessRunHandle(Guid.NewGuid(), Guid.NewGuid(), gate.Task);
+            });
+
+        var jobs = new FakeJobService();
+        var due = NewDueJob();
+        due.Kind = ScheduledJobKind.AgentTask;
+        jobs.SeedDue(due);
+        jobs.ThrowOnDispatchAdvanceFor.Add(due.Id);
+
+        var runService = Substitute.For<IAgentRunService>();
+        runService.AnyExecutingRunForTriggerAsync(due.Id, Arg.Any<CancellationToken>())
+            .Returns(_ => Volatile.Read(ref launches) > 0 && !gate.Task.IsCompleted);
+
+        var notifications = new FakeNotificationSurface();
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
+            notifications, launcher, NewSettings(), runService,
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await bg.ExecuteOnceAsync(ct);
+        await bg.ExecuteOnceAsync(ct);
+
+        Assert.Equal(1, Volatile.Read(ref launches));
+        Assert.Empty(jobs.Dispatched);             // layer (a) genuinely never wrote anything
+        Assert.Empty(jobs.Failed);                 // a refusal is not a job-health signal
+        Assert.Equal(0, notifications.FailureCount);
+
+        gate.SetResult();
+        await SettleAsync(bg, ct);
+    }
+
+    [Fact]
+    public async Task RunNowAsync_RefusedWhenARunOfTheJobIsAlreadyExecuting_AndDoesNotConsumeTheOccurrence()
+    {
+        // The guard's second case, and the one nothing else can reach: a manual fire never consults the due
+        // query, so the dispatch-time schedule write cannot protect it. The refusal must also leave the schedule
+        // ALONE — a manual fire that was refused must not spend the occurrence the tick is still going to fire.
+        var ct = TestContext.Current.CancellationToken;
+        var jobs = new FakeJobService();
+        var job = NewDueJob();
+        job.Kind = ScheduledJobKind.AgentTask;
+        jobs.SeedDue(job);
+
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        var runService = Substitute.For<IAgentRunService>();
+        runService.AnyExecutingRunForTriggerAsync(job.Id, Arg.Any<CancellationToken>()).Returns(true);
+
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
+            new FakeNotificationSurface(), launcher, NewSettings(), runService,
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        Assert.Equal(ScheduledJobRunNowResult.AlreadyRunning, await bg.RunNowAsync(job.Id, ct));
+
+        await launcher.DidNotReceive().LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>());
+        Assert.Empty(jobs.Dispatched);
+        Assert.Empty(jobs.Failed);
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_AgentTaskJob_FailedRun_StillCountsAsAFailure_AfterTheScheduleMovedOn()
+    {
+        // "The schedule moved on" and "the run failed" are now two writes at two times, and the second one must
+        // not get lost with the head-of-line block: job HEALTH still has to track the real outcome, or the
+        // 5-strike valve and the one-off retirement stop working. Neutralising the
+        // `TrackDispatch(BookkeepAgentRunAsync(...))` hand-off reds this on jobs.Failed being empty.
+        var ct = TestContext.Current.CancellationToken;
+        var jobs = new FakeJobService();
+        var due = NewDueJob();
+        due.Kind = ScheduledJobKind.AgentTask;
+        jobs.SeedDue(due);
+
+        var runId = Guid.NewGuid();
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        launcher.LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new HeadlessRunHandle(runId, Guid.NewGuid(), Task.CompletedTask));
+
+        var runService = Substitute.For<IAgentRunService>();
+        runService.GetAsync(runId, Arg.Any<CancellationToken>())
+            .Returns(new AgentRun { Id = runId, RunShape = RunShape.Planned, State = AgentRunState.Failed });
+
+        var notifications = new FakeNotificationSurface();
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
+            notifications, launcher, NewSettings(), runService,
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await TickAndSettleAsync(bg, ct);
+
+        Assert.Equal([due.Id], jobs.Dispatched);   // the schedule moved before the outcome was known …
+        Assert.Single(jobs.Failed);                // … and the outcome still reached the health columns
+        Assert.Equal(due.Id, jobs.Failed[0].JobId);
+        Assert.Equal("Failed", jobs.Failed[0].Reason);
+        Assert.Equal(1, notifications.FailureCount);
+        Assert.Empty(jobs.Advanced);               // a failure is not a park and not a skip
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_TwoDueResearchJobs_DispatchesBothWithoutWaiting_AndRunsThemOneAtATime()
+    {
+        // The research leg converted too, and its bound is NOT the launcher's (that runner never touches the
+        // launcher). Two facts in one, because they are two halves of the same posture: the tick does not wait
+        // for a turn (restoring an inline await reds this as a TimeoutException), and the second turn QUEUES on
+        // the leg's single permit rather than running concurrently — the serialization this leg always had, now
+        // waited inside the dispatched work instead of in the tick.
+        var ct = TestContext.Current.CancellationToken;
+        var hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var jobs = new FakeJobService();
+        var first = NewDueJob();
+        var second = NewDueJob();
+        jobs.SeedDue(first);
+        jobs.SeedDue(second);
+
+        var runner = new FakeRunner { Result = new BackgroundTurnResult(Guid.NewGuid(), true, null), HoldFirstRun = hold };
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
+            new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(), launcher,
+            NewSettings(), Substitute.For<IAgentRunService>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (runner.RunCount == 0 && DateTime.UtcNow < deadline)
+            await Task.Delay(10, ct);
+
+        Assert.Equal(1, runner.RunCount);         // turn 1 is in flight, turn 2 is queued behind the permit
+        Assert.Equal(2, jobs.Dispatched.Count);   // yet BOTH occurrences were already spent at dispatch time
+        Assert.Empty(jobs.Completed);
+
+        hold.SetResult();
+        await SettleAsync(bg, ct);
+
+        Assert.Equal(2, runner.RunCount);
+        Assert.Equal(2, jobs.Completed.Count);
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_ResearchJob_ScheduleWriteThrows_SkipsThatOccurrenceOnly()
+    {
+        // The research leg answers a faulted schedule write by SKIPPING the occurrence, the opposite of the
+        // agent leg — because its AgentRuns row is created inside the runner, so the TriggerRef guard is blind
+        // for as long as the turn sits queued, and dispatching anyway would mean an unbounded re-dispatch loop
+        // of real provider turns, one per 30 s tick. The second job proves the skip is scoped to the one
+        // occurrence and not a broken tick.
+        var ct = TestContext.Current.CancellationToken;
+        var jobs = new FakeJobService();
+        var skipped = NewDueJob();
+        var dispatched = NewDueJob();
+        skipped.Query = "skip-me";
+        dispatched.Query = "run-me";
+        jobs.ThrowOnDispatchAdvanceFor.Add(skipped.Id);
+        jobs.SeedDue(skipped);
+        jobs.SeedDue(dispatched);
+
+        var runner = new FakeRunner { Result = new BackgroundTurnResult(Guid.NewGuid(), true, null) };
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
+            new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
+            Substitute.For<IHeadlessRunLauncher>(), NewSettings(), Substitute.For<IAgentRunService>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await TickAndSettleAsync(bg, ct);
+
+        Assert.Equal(1, runner.RunCount);
+        Assert.Equal("run-me", runner.LastRequest!.Prompt);
+        Assert.Equal([dispatched.Id], jobs.Dispatched);
+        Assert.Empty(jobs.Failed);   // a skipped occurrence is not a job-health signal either
     }
 
     private sealed class FakeJobService : IScheduledJobService
@@ -550,8 +871,22 @@ public class ScheduledJobBackgroundServiceTests
         public List<(Guid JobId, string Reason)> Failed { get; } = new();
         public List<Guid> Advanced { get; } = new();
 
+        /// <summary>
+        /// Jobs whose schedule was moved on at DISPATCH time. Kept separate from <see cref="Advanced"/> even
+        /// though the real service makes the identical write, because the two mean different things and a test
+        /// that could not tell them apart could not show which layer stopped a duplicate dispatch.
+        /// </summary>
+        public List<Guid> Dispatched { get; } = new();
+
         /// <summary>When set, AdvanceMissedRunAsync faults (the bookkeeping degrade path).</summary>
         public bool ThrowOnAdvance { get; set; }
+
+        /// <summary>
+        /// Jobs whose MarkOccurrenceDispatchedAsync faults. Per-job rather than a global switch because the two
+        /// legs answer a fault differently — the agent leg carries on and leans on the guard, the research leg
+        /// skips the occurrence — so a test needs to fault ONE job's write while another's succeeds.
+        /// </summary>
+        public HashSet<Guid> ThrowOnDispatchAdvanceFor { get; } = new();
 
         public void SeedDue(ScheduledJob job) => _due.Add(job);
 
@@ -578,11 +913,25 @@ public class ScheduledJobBackgroundServiceTests
             if (ThrowOnAdvance) throw new InvalidOperationException("advance boom");
 
             Advanced.Add(id);
-            // Mirror the real service: NextFireAt moves to the next occurrence and NOTHING else — no
-            // failure counter, no Status, no LastFiredAt.
+            MoveOffOccurrence(id);
+            return Task.CompletedTask;
+        }
+
+        public Task MarkOccurrenceDispatchedAsync(Guid id)
+        {
+            if (ThrowOnDispatchAdvanceFor.Contains(id)) throw new InvalidOperationException("dispatch advance boom");
+
+            Dispatched.Add(id);
+            MoveOffOccurrence(id);
+            return Task.CompletedTask;
+        }
+
+        // Mirror the real service, which serves both names from ONE write: NextFireAt moves to the next
+        // occurrence and NOTHING else — no failure counter, no Status, no LastFiredAt.
+        private void MoveOffOccurrence(Guid id)
+        {
             var job = _due.FirstOrDefault(j => j.Id == id);
             if (job is not null) job.NextFireAt = DateTime.Now.AddDays(1);
-            return Task.CompletedTask;
         }
 
         public Task<ScheduledJob> CreateAsync(string name, string query, RecurrenceType recurrence,
@@ -620,18 +969,33 @@ public class ScheduledJobBackgroundServiceTests
 
     private sealed class FakeRunner : IBackgroundAssistantTurnRunner
     {
-        public int RunCount { get; private set; }
+        private int _runCount;
+
+        /// <summary>Volatile because the research leg now runs the turn on a dispatched task, not on the tick.</summary>
+        public int RunCount => Volatile.Read(ref _runCount);
+
         public BackgroundTurnResult Result { get; set; } = new(Guid.NewGuid(), true, null);
         public string? ThrowMessage { get; set; }
         public BackgroundTurnRequest? LastRequest { get; private set; }
 
+        /// <summary>When set, the FIRST turn blocks until it is completed — a long-running research job.</summary>
+        public TaskCompletionSource? HoldFirstRun { get; set; }
+
         public Task<BackgroundTurnResult> RunAsync(BackgroundTurnRequest request, CancellationToken ct)
         {
-            RunCount++;
+            var n = Interlocked.Increment(ref _runCount);
             LastRequest = request;
             if (ThrowMessage is not null)
                 throw new InvalidOperationException(ThrowMessage);
+            if (n == 1 && HoldFirstRun is { } hold)
+                return AfterAsync(hold);
             return Task.FromResult(Result);
+        }
+
+        private async Task<BackgroundTurnResult> AfterAsync(TaskCompletionSource hold)
+        {
+            await hold.Task;
+            return Result;
         }
     }
 

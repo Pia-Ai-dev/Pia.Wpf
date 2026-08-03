@@ -14,9 +14,19 @@ namespace Pia.Tests.Services;
 
 /// <summary>
 /// Batch 08 D5's premise, MEASURED rather than read: (i) <c>HeadlessRunHandle.Completion</c> settles on a
-/// PARK and not only on a terminal state; (ii) because it does, <c>ScheduledJobBackgroundService</c>'s
-/// <c>_runLock</c> is released and the next due job runs in the SAME tick; (iii) the park branch already
-/// names <c>Paused</c> and already advances the schedule.
+/// PARK and not only on a terminal state; (ii) because it does, a parked run's bookkeeping happens promptly
+/// instead of hanging forever; (iii) the park branch names <c>Paused</c> too and is not a job failure.
+/// <para>
+/// <b>Rewritten for hermes #2.</b> (ii) used to read "…so <c>ScheduledJobBackgroundService</c>'s
+/// <c>_runLock</c> is released and the next due job runs in the SAME tick", and two facts here pinned that
+/// head-of-line block as a positive property. The scheduler no longer awaits a run inside the tick at all, so
+/// the block is gone and those two facts assert its ABSENCE instead — see
+/// <see cref="UnsettledCompletion_NoLongerHoldsTheTick_SoEveryDueJobDispatches"/> and
+/// <see cref="ManualFire_IsNotQueuedBehindAnUnsettledDispatch"/>. What (i) buys is now the bookkeeping
+/// continuation: a park that never settled <c>Completion</c> would leave the job's outcome unwritten forever.
+/// Every fact that reads a run row or a job's books therefore drains the dispatches first
+/// (<see cref="SettleAsync"/>) — a tick returns before any of that has happened.
+/// </para>
 /// <para>
 /// Uses the BUDGET pause as the stand-in for a user pause — nothing writes <c>AgentRunState.Paused</c> yet.
 /// </para>
@@ -47,6 +57,14 @@ public sealed class D5PausePremiseTests : IDisposable
         _ctx.Dispose();
         try { Directory.Delete(_dir, true); } catch { /* best effort */ }
     }
+
+    /// <summary>
+    /// The join a tick no longer contains: <c>ExecuteOnceAsync</c> returns once the due jobs have been
+    /// DISPATCHED, and each run's outcome — the row's final state, the job's books — is written by a
+    /// continuation afterwards. Bounded, so a fact that never settles fails in 30 s rather than hanging.
+    /// </summary>
+    private static Task SettleAsync(ScheduledJobBackgroundService bg, CancellationToken ct) =>
+        bg.WaitForDispatchedRunsAsync().WaitAsync(TimeSpan.FromSeconds(30), ct);
 
     // ---------------------------------------------------------------- (i)
 
@@ -124,13 +142,16 @@ public sealed class D5PausePremiseTests : IDisposable
 
     /// <summary>
     /// D5(ii), end to end with the REAL launcher and the REAL scheduler: the first due job's run parks at its
-    /// step cap, and the SECOND due job of the same tick still launches and completes. The head-of-line block
-    /// R15 describes is bounded by the park, not by the parked run's eventual resume.
+    /// step cap, and the SECOND due job of the same tick launches and completes. A parked run costs the fleet
+    /// nothing.
     /// <para>
-    /// Mechanism, stated precisely: <c>ExecuteOnceAsync</c> awaits each <c>RunJobAsync</c> in a sequential
-    /// foreach (<c>ScheduledJobBackgroundService.cs:92-96</c>) and <c>ExecuteAgentTaskAsync</c> holds
-    /// <c>_runLock</c> across <c>await handle.Completion</c> (<c>:230</c>), so "job 2 launched" is evidence that
-    /// job 1's dispatch returned AND its lock was released.
+    /// Mechanism, restated for hermes #2: the tick DISPATCHES both jobs (nothing awaits a run any more), and the
+    /// drain is what makes the two runs' final states observable. This used to be the file's headline inference —
+    /// "job 2 launched ⇒ job 1's dispatch returned and released the lock" — and that inference is now vacuous by
+    /// construction, which is precisely why
+    /// <see cref="UnsettledCompletion_NoLongerHoldsTheTick_SoEveryDueJobDispatches"/> exists in its inverted
+    /// form. What survives here is the end-to-end fact with the real orchestrator: a park settles, the other job
+    /// completes, and the parked job is booked as neither a success nor a failure.
     /// </para>
     /// </summary>
     [Fact]
@@ -163,14 +184,18 @@ public sealed class D5PausePremiseTests : IDisposable
             Assert.Equal("job-1", recorder.Launched[0].Goal);
             Assert.Equal("job-2", recorder.Launched[1].Goal);
 
+            await SettleAsync(bg, ct);
+
             var parked = await _runs.GetAsync(recorder.Launched[0].Handle.RunId, ct);
             var completed = await _runs.GetAsync(recorder.Launched[1].Handle.RunId, ct);
             Assert.Equal(AgentRunState.WaitingForInput, parked!.State); // job 1 is STILL parked …
             Assert.Contains("step-cap", parked.ExtraJson ?? string.Empty);
             Assert.Equal(AgentRunState.Completed, completed!.State);    // … while job 2 ran to completion
 
-            // (iii) observed through the real service: the park advanced the schedule and did not fail the job.
-            Assert.Contains(job1.Id, jobs.Advanced);
+            // (iii) observed through the real service: the park did not fail the job, and both occurrences were
+            // spent at dispatch (jobs.Dispatched) rather than from the park arm (jobs.Advanced, now unused here).
+            Assert.Contains(job1.Id, jobs.Dispatched);
+            Assert.Empty(jobs.Advanced);
             Assert.Empty(jobs.Failed);
             Assert.Contains(job2.Id, jobs.Completed.Select(c => c.JobId));
         }
@@ -181,12 +206,19 @@ public sealed class D5PausePremiseTests : IDisposable
     }
 
     /// <summary>
-    /// D5(ii)'s CONTROL, and the fact that gives the test above its meaning: the tick really is blocked while a
-    /// dispatch's <c>Completion</c> is unsettled. Without this, "job 2 ran" would be consistent with a scheduler
-    /// that never serialises at all.
+    /// D5(ii)'s control, INVERTED (hermes #2). It used to assert the head-of-line block as a positive property —
+    /// job 2 stayed undispatched, and the tick stayed inside job 1, until job 1's <c>Completion</c> settled — and
+    /// it was the only evidence in the suite that the scheduler serialised at all. That block is the defect: one
+    /// long agent run delayed every other scheduled job on the device for up to its whole wall clock. So the same
+    /// fixture now pins its absence, which keeps the measurement rather than deleting it.
+    /// <para>
+    /// The gate is never opened before the assertion, so job 1's run is provably unsettled when job 2 dispatches
+    /// and the tick returns. Restoring <c>await handle.Completion</c> inside the leg reds this as a
+    /// TimeoutException on the tick — which is why the tick is awaited with a bound.
+    /// </para>
     /// </summary>
     [Fact]
-    public async Task UnsettledCompletion_HoldsTheTick_SoTheSecondDueJobWaits()
+    public async Task UnsettledCompletion_NoLongerHoldsTheTick_SoEveryDueJobDispatches()
     {
         var ct = TestContext.Current.CancellationToken;
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -214,29 +246,32 @@ public sealed class D5PausePremiseTests : IDisposable
             jobs, new FakeScopeFactory(), new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
             launcher, settings, runService, NullLogger<ScheduledJobBackgroundService>.Instance);
 
-        var tick = bg.ExecuteOnceAsync(ct);
+        await bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
 
-        var deadline = DateTime.UtcNow.AddSeconds(5);
-        while (Volatile.Read(ref launches) == 0 && DateTime.UtcNow < deadline)
-            await Task.Delay(10, ct);
+        Assert.Equal(2, Volatile.Read(ref launches)); // job 2 dispatched in the same tick …
+        Assert.False(gate.Task.IsCompleted);          // … while job 1's run was provably still unsettled
 
-        Assert.Equal(1, Volatile.Read(ref launches)); // job 2 has NOT been dispatched …
-        Assert.False(tick.IsCompleted);               // … and the tick is still inside job 1
-
-        gate.SetResult();                             // the park settles job 1's Completion
-        await tick.WaitAsync(TimeSpan.FromSeconds(10), ct);
-
-        Assert.Equal(2, Volatile.Read(ref launches)); // only now does job 2 dispatch
+        // And job 1's bookkeeping is deferred, not dropped: it lands when the run finally parks.
+        gate.SetResult();
+        await SettleAsync(bg, ct);
+        Assert.Equal(2, jobs.Dispatched.Count);
+        Assert.Empty(jobs.Failed);                    // both runs read WaitingForInput → parks, not failures
     }
 
     /// <summary>
-    /// The lock itself, not the loop. <c>RunNowAsync</c> takes <c>_runLock</c> independently of the tick's
-    /// sequential foreach, so a manual fire is the direct probe: it BLOCKS while an in-flight dispatch holds the
-    /// lock and returns <c>Dispatched</c> the moment that dispatch's <c>Completion</c> settles — which, by
-    /// <see cref="Park_SettlesTheHandleCompletion_AndLeavesTheRunResumable"/>, a park does.
+    /// The lock itself, not the loop — INVERTED with its sibling above (hermes #2). <c>RunNowAsync</c> used to
+    /// queue on <c>_runLock</c> independently of the tick's sequential foreach, so a manual fire was the direct
+    /// probe of the lock: it blocked while an in-flight dispatch held it. There is no such lock now, and this is
+    /// the direct probe of that: the manual fire of a DIFFERENT job returns <c>Dispatched</c> while another job's
+    /// run is still unsettled, so a settings-page button cannot be held hostage by a 45-minute run.
+    /// <para>
+    /// A different job on purpose — the duplicate-run guard is <c>TriggerRef</c>-scoped, and a manual fire of the
+    /// SAME job while its run executes is refused; that fact is
+    /// <c>ScheduledJobBackgroundServiceTests.RunNowAsync_RefusedWhenARunOfTheJobIsAlreadyExecuting_…</c>.
+    /// </para>
     /// </summary>
     [Fact]
-    public async Task RunLock_IsHeldAcrossAnUnsettledCompletion_AndFreedWhenItSettles()
+    public async Task ManualFire_IsNotQueuedBehindAnUnsettledDispatch()
     {
         var ct = TestContext.Current.CancellationToken;
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -267,27 +302,25 @@ public sealed class D5PausePremiseTests : IDisposable
             jobs, new FakeScopeFactory(), new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
             launcher, settings, runService, NullLogger<ScheduledJobBackgroundService>.Instance);
 
-        var tick = bg.ExecuteOnceAsync(ct);
-        var deadline = DateTime.UtcNow.AddSeconds(5);
-        while (Volatile.Read(ref launches) == 0 && DateTime.UtcNow < deadline)
-            await Task.Delay(10, ct);
-        Assert.Equal(1, Volatile.Read(ref launches));
+        await bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
+        Assert.Equal(1, Volatile.Read(ref launches));  // the due job dispatched; its run is unsettled
+        Assert.False(gate.Task.IsCompleted);
 
+        // THE CLAIM: the manual fire goes through NOW, with the first run still in flight.
         var manualFire = bg.RunNowAsync(manual.Id, ct);
-        await Task.Delay(250, ct);
-        Assert.False(manualFire.IsCompleted);          // queued on _runLock, held by the in-flight dispatch
-        Assert.Equal(1, Volatile.Read(ref launches));
-
-        gate.SetResult();                              // the park settles the first Completion → lock released
-        await tick.WaitAsync(TimeSpan.FromSeconds(10), ct);
         Assert.Equal(ScheduledJobRunNowResult.Dispatched, await manualFire.WaitAsync(TimeSpan.FromSeconds(10), ct));
         Assert.Equal(2, Volatile.Read(ref launches));
+        Assert.False(gate.Task.IsCompleted);           // non-vacuity: nothing settled to let it through
+
+        gate.SetResult();
+        await SettleAsync(bg, ct);
     }
 
     /// <summary>
     /// The ORDERING requirement D5 does not state, and the one way (ii) can still bite: the scheduler reads the
-    /// run row AFTER <c>Completion</c> settles (<c>ScheduledJobBackgroundService.cs:244</c>), and its
-    /// <c>WaitingForInput or Paused</c> branch is an <c>else if</c>. A pause that unwinds the dispatch BEFORE the
+    /// run row AFTER <c>Completion</c> settles (now in <c>BookkeepAgentRunAsync</c>, which is the same read at a
+    /// later moment), and its <c>WaitingForInput or Paused</c> branch is an <c>else if</c>. A pause that unwinds
+    /// the dispatch BEFORE the
     /// row says <c>Paused</c> — e.g. D1's cancel reaching the orchestrator's
     /// <c>catch (OperationCanceledException)</c> at <c>AgentRunOrchestrator.cs:378-386</c>, which settles
     /// <c>Cancelled</c> — lands on <c>:271</c> instead: <c>MarkRunFailedAsync</c> + a failure toast. On a
@@ -323,6 +356,7 @@ public sealed class D5PausePremiseTests : IDisposable
             launcher, settings, runService, NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(ct);
+        await SettleAsync(bg, ct);
 
         Assert.Single(jobs.Failed);
         Assert.Equal("Cancelled", jobs.Failed[0].Reason);
@@ -336,7 +370,8 @@ public sealed class D5PausePremiseTests : IDisposable
     /// Batch 08 G5. <b>§1 D1 item 6 as a test, and the fact that catches a builder who reorders the pause
     /// branch.</b> A USER pause of a scheduled agent run must leave the row reading <c>Paused</c> BEFORE the
     /// dispatch task returns, because <c>ScheduledJobBackgroundService</c> reads the row immediately after
-    /// <c>await handle.Completion</c> and its park branch is an <c>else if</c>: a row that is not yet
+    /// <c>await handle.Completion</c> (in its bookkeeping continuation since hermes #2 — a later moment, the same
+    /// read, and the same ordering requirement) and its park branch is an <c>else if</c>: a row that is not yet
     /// <c>Paused</c>/<c>WaitingForInput</c> at that instant lands on <c>MarkRunFailedAsync</c> + a failure toast
     /// + a strike against the 5-strike valve — and a <c>RecurrenceType.Once</c> job is retired on the first
     /// strike.
@@ -363,7 +398,7 @@ public sealed class D5PausePremiseTests : IDisposable
         var stepEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var (real, planner, settings) = BuildLauncher(
-            steering: store, stream: token => HoldInsideTheStep(stepEntered, token));
+            steering: store, stream: (_, token) => HoldInsideTheStep(stepEntered, token));
         planner.StepsFor = _ => 2; // a REAL plan, so the run reaches the drain loop and a step can be in flight
 
         var recorder = new RecordingLauncher(real);
@@ -378,7 +413,7 @@ public sealed class D5PausePremiseTests : IDisposable
 
         try
         {
-            var tick = bg.ExecuteOnceAsync(ct);
+            await bg.ExecuteOnceAsync(ct);
             await stepEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
 
             // The recorder appends on the LAUNCHING thread while the dispatch runs on another, so the step can
@@ -389,18 +424,20 @@ public sealed class D5PausePremiseTests : IDisposable
             var runId = Assert.Single(recorder.Launched).Handle.RunId;
 
             // Running with a step in flight — the only state a user pause is legal from, asserted so this fact
-            // cannot pass through the Planning hole where the CAS loses and writes nothing.
+            // cannot pass through the Planning hole where the CAS loses and writes nothing. Reachable here only
+            // because the tick returned while the run was still executing.
             Assert.Equal(AgentRunState.Running, (await _runs.GetAsync(runId, ct))!.State);
             Assert.True(await steering.PauseAsync(runId, ct));
 
-            await tick.WaitAsync(TimeSpan.FromSeconds(10), ct);
+            await SettleAsync(bg, ct);
 
             // THE CLAIM, asserted first because it is what a reorder breaks: the job was not booked as a
-            // failure, no failure toast was raised, and the schedule still advanced. The Advanced leg is the
+            // failure, no failure toast was raised, and the schedule still moved on. The Dispatched leg is the
             // positive one, so the two Empty legs cannot pass vacuously on a tick that did nothing.
             Assert.Empty(jobs.Failed);
             Assert.Equal(0, notifications.FailureCount);
-            Assert.Contains(job.Id, jobs.Advanced);
+            Assert.Contains(job.Id, jobs.Dispatched);
+            Assert.Empty(jobs.Advanced);  // and the park arm no longer writes the schedule itself
             Assert.Empty(jobs.Completed); // nor was it booked as a success
 
             // And the run really is user-paused and resumable, not merely "not failed".
@@ -430,10 +467,11 @@ public sealed class D5PausePremiseTests : IDisposable
     /// resume, and a user pause is the one park that can arrive at an arbitrary moment.
     /// </para>
     /// <para>
-    /// Only the FIRST step held: the tick is sequential, so invocation 1 is job 1's step and everything after
-    /// it (job 2's step, any verify turn) drives straight through. "job 2 launched AND completed" is therefore
-    /// evidence that job 1's dispatch returned and released the lock — the same inference
-    /// <see cref="UnsettledCompletion_HoldsTheTick_SoTheSecondDueJobWaits"/> gives its meaning to.
+    /// Only JOB 1's step is held, and it is held by GOAL rather than by invocation order (hermes #2): the tick
+    /// dispatches both jobs without waiting, so the two runs execute concurrently and "invocation 1" is no longer
+    /// job 1. Everything else — job 2's step, any verify turn — drives straight through. The inference this fact
+    /// used to rest on (job 2 launched ⇒ job 1's lock was released) is gone with the lock; what it now measures is
+    /// that a run paused mid-step neither blocks nor breaks the OTHER job dispatched alongside it.
     /// </para>
     /// </summary>
     [Fact]
@@ -444,10 +482,9 @@ public sealed class D5PausePremiseTests : IDisposable
         var steering = new AgentRunSteeringService(_runs, store, NullLogger<AgentRunSteeringService>.Instance);
         var stepEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        var exchanges = 0;
         var (real, planner, settings) = BuildLauncher(
             steering: store,
-            stream: token => Interlocked.Increment(ref exchanges) == 1
+            stream: (messages, token) => GoalOf(messages) == "job-1"
                 ? HoldInsideTheStep(stepEntered, token)   // job 1's only step, held until the pause fires
                 : Drive());                               // job 2's step, and every turn after it
         planner.StepsFor = _ => 1;
@@ -466,26 +503,21 @@ public sealed class D5PausePremiseTests : IDisposable
 
         try
         {
-            var tick = bg.ExecuteOnceAsync(ct);
+            await bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
             await stepEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
 
-            // Same wait-don't-assume discipline as the single-job fact: the recorder appends on the LAUNCHING
-            // thread while the dispatch runs on another.
-            var deadline = DateTime.UtcNow.AddSeconds(5);
-            while (recorder.Launched.Count == 0 && DateTime.UtcNow < deadline)
-                await Task.Delay(10, ct);
-            var pausedRunId = recorder.Launched[0].Handle.RunId;
-
-            Assert.Equal(AgentRunState.Running, (await _runs.GetAsync(pausedRunId, ct))!.State);
-            Assert.Single(recorder.Launched); // job 2 has NOT launched yet — the tick really is serialised here
-            Assert.True(await steering.PauseAsync(pausedRunId, ct));
-
-            await tick.WaitAsync(TimeSpan.FromSeconds(20), ct);
-
-            // THE CLAIM: both jobs of the one tick dispatched, and the second one finished.
+            // Both jobs of the one tick dispatched, and job 1's step is in flight while we pause it.
             Assert.Equal(2, recorder.Launched.Count);
             Assert.Equal("job-1", recorder.Launched[0].Goal);
             Assert.Equal("job-2", recorder.Launched[1].Goal);
+            var pausedRunId = recorder.Launched[0].Handle.RunId;
+
+            Assert.Equal(AgentRunState.Running, (await _runs.GetAsync(pausedRunId, ct))!.State);
+            Assert.True(await steering.PauseAsync(pausedRunId, ct));
+
+            await SettleAsync(bg, ct);
+
+            // THE CLAIM: the run alongside the paused one finished, and the pause cost it nothing.
 
             var paused = await _runs.GetAsync(pausedRunId, ct);
             Assert.Equal(AgentRunState.Paused, paused!.State);   // job 1 is STILL paused …
@@ -495,10 +527,12 @@ public sealed class D5PausePremiseTests : IDisposable
             Assert.Equal(AgentRunState.Completed, completed!.State); // … while job 2 ran to completion
 
             // Bookkeeping, the half a reorder breaks: a user pause is not a strike for job 1, and job 2 is a
-            // clean success. Both schedules advanced.
+            // clean success. Both schedules moved on, at dispatch.
             Assert.Empty(jobs.Failed);
             Assert.Equal(0, notifications.FailureCount);
-            Assert.Contains(job1.Id, jobs.Advanced);
+            Assert.Contains(job1.Id, jobs.Dispatched);
+            Assert.Contains(job2.Id, jobs.Dispatched);
+            Assert.Empty(jobs.Advanced);
             Assert.Contains(job2.Id, jobs.Completed.Select(c => c.JobId));
         }
         finally
@@ -510,13 +544,23 @@ public sealed class D5PausePremiseTests : IDisposable
     // ------------------------------------------------- D5's new consequence
 
     /// <summary>
-    /// D5's "one consequence that is new": <c>AdvanceMissedRunAsync</c> moves <c>NextFireAt</c> forward, so when
-    /// the next occurrence comes due the job launches a FRESH run while the previous one is still parked. Nothing
-    /// guards it — <c>AgentRuns.TriggerRef</c> is indexed (<c>SqliteContext.cs:315</c>) and read by nobody — so
-    /// two live, independently resumable runs of one job coexist.
+    /// D5's "one consequence that is new", and the half of Batch 08 §19 Q4 that stays OPEN <b>by decision</b>:
+    /// the schedule moves off the occurrence at dispatch, so when the next occurrence comes due the job launches a
+    /// FRESH run while the previous one is still parked, and two independently resumable runs of one job coexist.
+    /// <para>
+    /// Q4's guard now exists (<c>AgentRuns.TriggerRef</c> is finally read —
+    /// <c>IAgentRunService.AnyExecutingRunForTriggerAsync</c>, seeking <c>IX_AgentRuns_TriggerRef</c> at
+    /// <c>SqliteContext.cs:346</c>) and it deliberately does NOT fire here, because a PARK is not executing. The
+    /// alternative was measured against its cost rather than its neatness: nothing but a human clicking Continue
+    /// leaves <c>WaitingForInput</c>, so a guard that counted a park as live would let one un-resumed budget park
+    /// — a routine outcome — silence a daily job forever, with a log warning as the only trace. Two parked
+    /// generations are recoverable; a job that stops running is not. What the change DOES bound is the number of
+    /// runs per occurrence: one, which is what this fact's second tick shows (a fresh occurrence, not a repeat of
+    /// the first).
+    /// </para>
     /// </summary>
     [Fact]
-    public async Task ParkedScheduledRun_AndTheNextOccurrenceOfTheSameJob_Coexist_WithNoGuard()
+    public async Task ParkedScheduledRun_AndTheNextOccurrenceOfTheSameJob_StillCoexist_BecauseAParkIsNotExecuting()
     {
         var ct = TestContext.Current.CancellationToken;
         var (real, planner, settings) = BuildLauncher(new AppSettings { ScheduledMaxSteps = 1 });
@@ -534,12 +578,18 @@ public sealed class D5PausePremiseTests : IDisposable
 
         try
         {
-            await bg.ExecuteOnceAsync(ct);               // generation 1 → parks, schedule advanced
+            await bg.ExecuteOnceAsync(ct);               // generation 1 → schedule moved on at dispatch
             Assert.Single(recorder.Launched);
-            Assert.Contains(job.Id, jobs.Advanced);
+            Assert.Contains(job.Id, jobs.Dispatched);
+            // Drained BEFORE the second tick on purpose: gen 1 must have reached its PARK, or it would still be
+            // executing and the guard would (correctly) refuse gen 2 — which would measure the guard, not this.
+            await SettleAsync(bg, ct);
+            Assert.Equal(AgentRunState.WaitingForInput,
+                (await _runs.GetAsync(recorder.Launched[0].Handle.RunId, ct))!.State);
 
-            job.NextFireAt = DateTime.Now.AddSeconds(-1); // the advanced occurrence comes due
+            job.NextFireAt = DateTime.Now.AddSeconds(-1); // the next occurrence comes due
             await bg.ExecuteOnceAsync(ct);               // generation 2 of the SAME job
+            await SettleAsync(bg, ct);
 
             Assert.Equal(2, recorder.Launched.Count);
             var gen1 = await _runs.GetAsync(recorder.Launched[0].Handle.RunId, ct);
@@ -586,12 +636,14 @@ public sealed class D5PausePremiseTests : IDisposable
     /// the run's own orchestrator reads the SAME instance the launcher writes its cancel sink into. Omitted ⇒ no
     /// registry anywhere, i.e. the pre-Batch-08 launcher every other fact in this file exercises.</param>
     /// <param name="stream">Batch 08 G5: replaces <see cref="Drive"/> so a fact can hold a run INSIDE a step —
-    /// the only state a user pause is legal from — instead of only inside the planner. Handed the step's own
-    /// token.</param>
+    /// the only state a user pause is legal from — instead of only inside the planner. Handed the turn's messages
+    /// and the step's own token. The messages are there because two scheduled runs now execute CONCURRENTLY
+    /// (hermes #2): a fixture that discriminated on invocation ORDER would be a race, so it discriminates on
+    /// <see cref="GoalOf"/> instead.</param>
     private (HeadlessRunLauncher Launcher, StepPlanner Planner, ISettingsService Settings) BuildLauncher(
         AppSettings? appSettings = null,
         IRunSteeringStore? steering = null,
-        Func<CancellationToken, IAsyncEnumerable<ChatStreamItem>>? stream = null)
+        Func<IList<ChatMessage>, CancellationToken, IAsyncEnumerable<ChatStreamItem>>? stream = null)
     {
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         var persona = new Persona { Name = "Pia", SystemPrompt = "sys" };
@@ -601,7 +653,9 @@ public sealed class D5PausePremiseTests : IDisposable
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
                 Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
-            .Returns(ci => stream is not null ? stream(ci.ArgAt<CancellationToken>(6)) : Drive());
+            .Returns(ci => stream is not null
+                ? stream(ci.ArgAt<IList<ChatMessage>>(0), ci.ArgAt<CancellationToken>(6))
+                : Drive());
 
         var composer = Substitute.For<IAssistantPromptComposer>();
         composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
@@ -652,6 +706,14 @@ public sealed class D5PausePremiseTests : IDisposable
         yield return new TextDelta("reply");
         yield return new Finished(null, "test-model");
     }
+
+    /// <summary>
+    /// The run's goal as <c>HeadlessTurnExecutor</c> seeds it: the opening User message of a fresh launch. Two
+    /// scheduled runs of one tick now execute at the same time, so a fixture that wants to treat them
+    /// differently must key on WHICH run it is, never on which call arrived first.
+    /// </summary>
+    private static string GoalOf(IList<ChatMessage> messages) =>
+        messages.FirstOrDefault(m => m.Role == ChatRole.User)?.Text ?? string.Empty;
 
     /// <summary>Signals that a step is in flight, then holds it there until its own token is cancelled — the
     /// state a user pause is legal from, and the one <see cref="Drive"/> passes straight through.</summary>
@@ -727,6 +789,10 @@ public sealed class D5PausePremiseTests : IDisposable
         public List<(Guid JobId, string Reason)> Failed { get; } = new();
         public List<Guid> Advanced { get; } = new();
 
+        /// <summary>Jobs whose schedule was moved on at DISPATCH time (hermes #2), kept apart from
+        /// <see cref="Advanced"/> so a fact can say WHICH write it observed.</summary>
+        public List<Guid> Dispatched { get; } = new();
+
         public void SeedDue(ScheduledJob job) => _due.Add(job);
 
         public Task<IReadOnlyList<ScheduledJob>> GetDueJobsAsync()
@@ -751,6 +817,17 @@ public sealed class D5PausePremiseTests : IDisposable
         public Task AdvanceMissedRunAsync(Guid id)
         {
             Advanced.Add(id);
+            var job = _due.FirstOrDefault(j => j.Id == id);
+            if (job is not null) job.NextFireAt = DateTime.Now.AddDays(1);
+            return Task.CompletedTask;
+        }
+
+        public Task MarkOccurrenceDispatchedAsync(Guid id)
+        {
+            // The real service serves this and AdvanceMissedRunAsync from ONE write; so does this fake. No lock
+            // needed on these lists even though bookkeeping now runs off the tick: the service takes every
+            // IScheduledJobService call under its own bookkeeping lock.
+            Dispatched.Add(id);
             var job = _due.FirstOrDefault(j => j.Id == id);
             if (job is not null) job.NextFireAt = DateTime.Now.AddDays(1);
             return Task.CompletedTask;

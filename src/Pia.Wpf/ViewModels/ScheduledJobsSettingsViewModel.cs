@@ -397,9 +397,10 @@ public partial class ScheduledJobsSettingsViewModel : UiThreadViewModel
     }
 
     /// <summary>
-    /// Fires a job outside its schedule. Awaits the run, like the scheduler's own tick does, so the button
-    /// stays busy for the run's duration — which is honest: the run holds the scheduler's lock for that whole
-    /// time and no other scheduled job can dispatch meanwhile.
+    /// Fires a job outside its schedule. DISPATCHES it, like the scheduler's own tick does, so the button frees
+    /// up as soon as the run has started rather than sitting busy for its whole wall clock — the run's result
+    /// arrives in the chat it creates. The status message says "started" for that reason; claiming the job had
+    /// finished would be a lie the moment the run outlived this method.
     /// </summary>
     [RelayCommand]
     private async Task RunNowAsync(ScheduledJobRow? row)
@@ -413,8 +414,9 @@ public partial class ScheduledJobsSettingsViewModel : UiThreadViewModel
             var result = await _runner.RunNowAsync(row.Id);
             StatusMessage = result switch
             {
-                ScheduledJobRunNowResult.Dispatched => _localization["Settings_ScheduledJobs_RunFinished"],
+                ScheduledJobRunNowResult.Dispatched => _localization["Settings_ScheduledJobs_RunStarted"],
                 ScheduledJobRunNowResult.NotOwner => _localization["Settings_ScheduledJobs_RunNotOwner"],
+                ScheduledJobRunNowResult.AlreadyRunning => _localization["Settings_ScheduledJobs_RunAlreadyRunning"],
                 _ => _localization["Settings_ScheduledJobs_RunNotFound"],
             };
         }

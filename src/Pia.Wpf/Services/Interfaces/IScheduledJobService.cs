@@ -81,6 +81,22 @@ public interface IScheduledJobService
     Task AdvanceMissedRunAsync(Guid id);
 
     /// <summary>
+    /// This occurrence has been handed to a runner: move the schedule off it NOW, before the run settles, so
+    /// the next 30-second tick cannot see the same occurrence still due and launch a SECOND run of the same
+    /// goal. The identical write to <see cref="AdvanceMissedRunAsync"/>, under the name that says why.
+    /// <para>
+    /// Carries NO job-health signal — not the failure counter, not <see cref="ScheduledJobStatus.Failed"/>.
+    /// "The schedule moved on" and "the run succeeded or failed" are two different facts written at two
+    /// different times: this one when the run starts, <see cref="MarkRunCompleteAsync"/> /
+    /// <see cref="MarkRunFailedAsync"/> when it settles. A <see cref="RecurrenceType.Once"/> job is the one
+    /// exception, and only because <c>Status</c> is the sole column that can take it out of the due window: its
+    /// firing settles as <see cref="ScheduledJobStatus.Completed"/> here and the outcome may still flip it to
+    /// <see cref="ScheduledJobStatus.Failed"/> afterwards.
+    /// </para>
+    /// </summary>
+    Task MarkOccurrenceDispatchedAsync(Guid id);
+
+    /// <summary>
     /// Inserts a new job (no execution state) or updates the synced config of an existing one.
     /// Leaves NextFireAt/LastFiredAt/LastResultEntryId/ConsecutiveFailures untouched on update,
     /// since those are device-local execution state.

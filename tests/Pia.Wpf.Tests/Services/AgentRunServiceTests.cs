@@ -320,6 +320,66 @@ public sealed class AgentRunServiceTests : IDisposable
         Assert.True(await _service.ChatHasPlannedRunAsync(chatId, TestContext.Current.CancellationToken));
     }
 
+    /// <summary>
+    /// The scheduler's duplicate-dispatch guard, against the REAL SQL rather than a substitute (hermes #2 /
+    /// Batch 08 §19 Q4). Three things could silently make this query answer "nothing is running" forever and no
+    /// scheduler test would notice: a <c>TriggerRef</c> parameter bound in a different format from the one
+    /// <c>CreateAsync</c> writes, an exclusion set that misses a state, and a range predicate.
+    /// <para>
+    /// The <c>WaitingForChildren</c> leg is the D7 trap made a test: that member is 8, ABOVE the terminal band,
+    /// so replacing the explicit exclusion set with <c>State &lt; WaitingForInput</c> — the shape the startup
+    /// sweep is allowed to use — reds that leg alone while every other leg stays green. A parent parked over its
+    /// children IS still live, and re-dispatching its job would double a whole fan-out.
+    /// </para>
+    /// <para>
+    /// The parked legs are a DECISION, not an omission: a park needs a human to resume it, so counting one as
+    /// live would let a single un-resumed budget park silence a recurring job forever. See
+    /// <c>AgentRunStates.IsExecuting</c>.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task AnyExecutingRunForTriggerAsync_TrueForEveryExecutingState_FalseForParkedAndTerminal()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var chatId = await MakeChatAsync();
+        var jobId = Guid.NewGuid();
+
+        var run = await _service.CreateAsync(new AgentRunCreateRequest(
+            chatId, RunShape.Planned, AgentRunTrigger.Schedule, jobId, null, "goal"), ct);
+
+        // Planning: the state a launch has already reached when LaunchAsync returns, so the guard sees a run
+        // that has not executed a single step yet — which is the whole point of checking before dispatch.
+        Assert.Equal(AgentRunState.Planning, run.State);
+        Assert.True(await _service.AnyExecutingRunForTriggerAsync(jobId, ct));
+
+        foreach (var executing in new[]
+                 { AgentRunState.Running, AgentRunState.Verifying, AgentRunState.WaitingForChildren })
+        {
+            await _service.SetStateAsync(run.Id, executing, ct);
+            Assert.True(await _service.AnyExecutingRunForTriggerAsync(jobId, ct), $"{executing} is executing");
+        }
+
+        foreach (var settledOrParked in new[]
+                 {
+                     AgentRunState.WaitingForInput, AgentRunState.Paused,
+                     AgentRunState.Completed, AgentRunState.Failed, AgentRunState.Cancelled,
+                 })
+        {
+            await _service.SetStateAsync(run.Id, settledOrParked, ct);
+            Assert.False(await _service.AnyExecutingRunForTriggerAsync(jobId, ct), $"{settledOrParked} is not executing");
+        }
+
+        // Scoped to the trigger: a live run answers for ITS job and no other. Child runs carry a null
+        // TriggerRef for the same reason, so a fan-out's descendants never answer for their parent's job.
+        await _service.SetStateAsync(run.Id, AgentRunState.Running, ct);
+        Assert.True(await _service.AnyExecutingRunForTriggerAsync(jobId, ct));
+        Assert.False(await _service.AnyExecutingRunForTriggerAsync(Guid.NewGuid(), ct));
+
+        var noTrigger = await _service.CreateAsync(
+            new AgentRunCreateRequest(chatId, RunShape.SingleTurn, AgentRunTrigger.User), ct);
+        Assert.Null((await _service.GetAsync(noTrigger.Id, ct))!.TriggerRef);
+    }
+
     [Fact]
     public async Task GetByChatAsync_ReturnsAllRunsForChat_InCreationOrder()
     {

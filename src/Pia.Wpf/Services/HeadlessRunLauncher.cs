@@ -55,9 +55,12 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     /// <para>
     /// Consequence, stated rather than hidden: effective provider concurrency doubles to 2+2. That is why the
     /// persona roster is the opt-in (07 D1) and why a delegating run's budget must still fit the envelope one
-    /// scheduled job may occupy — <c>ScheduledJobBackgroundService</c> holds its <c>_runLock</c> across
-    /// <c>await handle.Completion</c>, so a fan-out blocks every scheduled job for the parent's wall clock
-    /// PLUS every descendant's (Phase 3 R15, and the halved child wall clock in the orchestrator's fan-out).
+    /// scheduled job may occupy — a fan-out holds one of <see cref="_slots"/> for the parent's wall clock PLUS
+    /// every descendant's (Phase 3 R15, and the halved child wall clock in the orchestrator's fan-out).
+    /// <b>Corrected (hermes #2):</b> that used to be far worse — <c>ScheduledJobBackgroundService</c> held a
+    /// single run lock across <c>await handle.Completion</c>, so a fan-out blocked every scheduled job on the
+    /// device for that whole time. The scheduler now dispatches and bookkeeps in a continuation, so this pool
+    /// really is the bound it claims to be, and one long fan-out costs the OTHER due jobs a slot, not the tick.
     /// </para>
     /// <para>
     /// WHY 2, and not wider: it MIRRORS <see cref="_slots"/> rather than the width of a fan-out, so the worst

@@ -74,6 +74,31 @@ public static class AgentRunStates
     public static bool IsParked(AgentRunState state) => state is AgentRunState.WaitingForInput or AgentRunState.Paused;
 
     /// <summary>
+    /// True for a run that is EXECUTING right now: neither parked (<see cref="IsParked"/>) nor settled. The
+    /// scheduler's duplicate-dispatch guard is the consumer — <c>AnyExecutingRunForTriggerAsync</c> derives its
+    /// SQL exclusion list from this predicate rather than restating the set, so the two cannot drift.
+    /// <para>
+    /// Written as a DOUBLE NEGATION on purpose, not as the positive four-member set
+    /// {<see cref="AgentRunState.Planning"/>, <see cref="AgentRunState.Running"/>,
+    /// <see cref="AgentRunState.Verifying"/>, <see cref="AgentRunState.WaitingForChildren"/>}: under append-only
+    /// (see <see cref="AgentRunState.WaitingForChildren"/>) a tenth member would fall OUT of a positive set and
+    /// so out of the guard, which is the fail-OPEN direction — a duplicate unattended run. This way an unknown
+    /// appended state counts as executing and BLOCKS a second dispatch, matching
+    /// <c>HeadlessRunLauncher.RunStartupSweepAsync</c>'s stated rule that a state this build does not know falls
+    /// through to non-terminal.
+    /// </para>
+    /// <para>
+    /// A PARK is deliberately NOT executing, and that is a product decision rather than a technicality: nothing
+    /// but a human clicking Continue leaves <see cref="AgentRunState.WaitingForInput"/>, so a guard that treated
+    /// a park as live would let one un-resumed budget park silence a daily job forever. Two parked generations of
+    /// one job can therefore still coexist (Batch 08 §19 Q4's measured case) — the schedule advancing at dispatch
+    /// is what keeps that bounded to one run per occurrence.
+    /// </para>
+    /// </summary>
+    public static bool IsExecuting(AgentRunState state) =>
+        !IsParked(state) && state is not (AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled);
+
+    /// <summary>
     /// True for a run a USER PAUSE can actually interrupt — the same three members
     /// <c>AgentRunService.TryPauseUserAsync</c>'s CAS names in its <c>WHERE</c> clause, so the pre-check and
     /// the write agree by construction.

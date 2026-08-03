@@ -26,9 +26,12 @@ public enum ScheduledJobStatus
     Failed,
 
     /// <summary>
-    /// A one-off job whose single firing has been settled — it ran, parked for resume, or the user
-    /// skipped it; it will not fire again. NextFireAt is deliberately left at the past instant it was
-    /// meant to fire (an honest record); this Status is what removes the row from the due query.
+    /// A one-off job whose single firing has been spent — it has been dispatched, it ran, it parked for
+    /// resume, or the user skipped it; it will not fire again. NextFireAt is deliberately left at the past
+    /// instant it was meant to fire (an honest record); this Status is what removes the row from the due query,
+    /// which is why it is written at DISPATCH and not only at settle (see
+    /// <c>IScheduledJobService.MarkOccurrenceDispatchedAsync</c>) — a run whose outcome is still unknown has
+    /// nonetheless spent the one firing, and a failed outcome flips the row to <see cref="Failed"/> after.
     /// </summary>
     Completed
 }

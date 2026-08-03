@@ -463,6 +463,35 @@ public class ScheduledJobService : IScheduledJobService
 
     public async Task AdvanceMissedRunAsync(Guid id)
     {
+        var nextFire = await MoveOffCurrentOccurrenceAsync(id);
+
+        if (nextFire is { } fire)
+            _logger.LogInformation("Scheduled job {Id} missed run advanced to {NextFireAt:g}", id, fire);
+        else
+            _logger.LogInformation("Scheduled job {Id} missed run settled; one-off marked Completed, will not fire again", id);
+    }
+
+    public async Task MarkOccurrenceDispatchedAsync(Guid id)
+    {
+        var nextFire = await MoveOffCurrentOccurrenceAsync(id);
+
+        if (nextFire is { } fire)
+            _logger.LogInformation("Scheduled job {Id} dispatched; schedule moved on to {NextFireAt:g}", id, fire);
+        else
+            _logger.LogInformation("Scheduled job {Id} dispatched; one-off firing spent, will not fire again", id);
+    }
+
+    /// <summary>
+    /// The one write shared by <see cref="AdvanceMissedRunAsync"/> and
+    /// <see cref="MarkOccurrenceDispatchedAsync"/>: this occurrence is spent, so take the row out of
+    /// <see cref="GetDueJobsAsync"/>'s window without touching any job-HEALTH column
+    /// (<c>ConsecutiveFailures</c>, and <c>Status</c> except for the one-off settle below). Deliberately ONE
+    /// implementation behind two names: the write is identical, only the reason differs, and a second copy of
+    /// the Once/recurring branch is how the two would drift.
+    /// </summary>
+    /// <returns>The recomputed <c>NextFireAt</c> for a recurring job; null when the one-off branch ran.</returns>
+    private async Task<DateTime?> MoveOffCurrentOccurrenceAsync(Guid id)
+    {
         var existing = await GetAsync(id) ?? throw new InvalidOperationException($"ScheduledJob {id} not found");
         var settleOnce = existing.Recurrence == RecurrenceType.Once;
         DateTime? nextFire = null;
@@ -472,13 +501,19 @@ public class ScheduledJobService : IScheduledJobService
 
         if (settleOnce)
         {
-            // W3: this method has two callers and for a one-off BOTH of them are the job's settle —
-            // the user-Skip door of the missed-run prompt and the parked-at-budget door. Deliberately
-            // one status for both: a job's lifecycle question is "has this firing been settled", not
-            // "did the run eventually succeed", so the PARK settle IS the job's settle and a resumed
-            // run does not re-settle it (that would double-advance a recurring job, and a resume can
-            // happen on a non-owner device). Distinguishing park from Skip would need a parameter here
-            // and a matching edit in every hand-written fake, for a nuance no surface renders.
+            // W3: for a one-off EVERY caller of this write is the job's settle — the user-Skip door of the
+            // missed-run prompt, the parked-at-budget door, and (Batch 09 / hermes #2) the dispatch door, where
+            // the firing has just been handed to a runner. Deliberately one status for all of them: a job's
+            // lifecycle question is "has this firing been spent", not "did the run eventually succeed", so the
+            // DISPATCH is the one-off's settle exactly as the PARK is, and a resumed run does not re-settle it
+            // (that would double-advance a recurring job, and a resume can happen on a non-owner device).
+            // Distinguishing the doors would need a parameter here and a matching edit in every hand-written
+            // fake, for a nuance no surface renders.
+            //
+            // The consequence of the dispatch door, stated rather than discovered: a one-off reads 'Completed'
+            // for the duration of its run, and flips to 'Failed' afterwards if the run failed. That is the price
+            // of Status being the ONLY thing that can take a Once row out of `NextFireAt <= @Now AND
+            // Status = 'Active'` — NextFireAt is deliberately left at its past instant on every settle path.
             //
             // NextFireAt stays at its past instant; UpdatedAt is bumped so the Status flip survives the
             // next sync pull (see MarkRunCompleteAsync for the full reason).
@@ -487,6 +522,10 @@ public class ScheduledJobService : IScheduledJobService
         }
         else
         {
+            // Computed from Now, never from the row's own NextFireAt, which is what makes a second write of
+            // this column later in the same run (MarkRunComplete/MarkRunFailed, from the bookkeeping
+            // continuation) monotonically forward: it can land on the same occurrence or a later one, never
+            // back inside the due window.
             nextFire = ComputeNextFireAt(existing, DateTime.Now);
             // NextFireAt is local execution state; don't bump UpdatedAt.
             command.CommandText = "UPDATE ScheduledJobs SET NextFireAt = @NextFireAt WHERE Id = @Id";
@@ -495,11 +534,7 @@ public class ScheduledJobService : IScheduledJobService
 
         command.Parameters.AddWithValue("@Id", id.ToString());
         await command.ExecuteNonQueryAsync();
-
-        if (nextFire is { } fire)
-            _logger.LogInformation("Scheduled job {Id} missed run advanced to {NextFireAt:g}", id, fire);
-        else
-            _logger.LogInformation("Scheduled job {Id} missed run settled; one-off marked Completed, will not fire again", id);
+        return nextFire;
     }
 
     public async Task UpsertFromSyncAsync(ScheduledJob job)

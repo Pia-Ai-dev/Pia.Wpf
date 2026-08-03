@@ -603,8 +603,9 @@ public static class Bootstrapper
         // Background services
         services.AddSingleton<ReminderBackgroundService>();
         services.AddSingleton<ScheduledJobBackgroundService>();
-        // The SAME instance, not a second one: run-now must serialise against the tick through the one
-        // _runLock, which a separately-constructed service would not share.
+        // The SAME instance, not a second one: run-now must see the tick's own duplicate-dispatch state — the
+        // missed-prompt dedup set, the bookkeeping lock and the in-flight dispatch list — which a
+        // separately-constructed service would not share.
         services.AddSingleton<IScheduledJobRunner>(sp => sp.GetRequiredService<ScheduledJobBackgroundService>());
         services.AddSingleton<AssistantChatRetentionService>();
         services.AddSingleton<Services.Flow.TodoDeadlineBackgroundService>();

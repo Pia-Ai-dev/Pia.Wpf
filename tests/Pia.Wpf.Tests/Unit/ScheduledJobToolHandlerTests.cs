@@ -397,6 +397,7 @@ public class ScheduledJobToolHandlerTests
         public Task MarkRunCompleteAsync(Guid id, Guid resultEntryId) => throw new NotImplementedException();
         public Task MarkRunFailedAsync(Guid id, string reason) => throw new NotImplementedException();
         public Task AdvanceMissedRunAsync(Guid id) => throw new NotImplementedException();
+        public Task MarkOccurrenceDispatchedAsync(Guid id) => throw new NotImplementedException();
     }
 
     private sealed class FakeProviderService : IProviderService

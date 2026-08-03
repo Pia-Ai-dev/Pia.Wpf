@@ -294,6 +294,22 @@ public interface IAgentRunService
     /// <summary>True if the chat has any <see cref="RunShape.Planned"/> run (eviction policy, wired in 1.2).</summary>
     Task<bool> ChatHasPlannedRunAsync(Guid chatId, CancellationToken ct = default);
 
+    /// <summary>
+    /// True if a run with this <see cref="AgentRun.TriggerRef"/> is EXECUTING right now
+    /// (<see cref="AgentRunStates.IsExecuting"/>) — the scheduler's duplicate-dispatch guard (Batch 08 §19 Q4).
+    /// <paramref name="triggerRef"/> is a <c>ScheduledJobs.Id</c>: both dispatch legs stamp it on the run they
+    /// create, and a CHILD run deliberately carries a null <c>TriggerRef</c>, so a fan-out's descendants never
+    /// answer for their parent's job.
+    /// <para>
+    /// Defence in DEPTH, never the primary bound: the schedule advancing at dispatch time is what keeps a tick
+    /// off an occurrence it has already fired. This closes the paths that advance cannot see — a manual
+    /// <c>RunNowAsync</c> racing a live scheduled run, and an occurrence coming due while a resumed run of the
+    /// same job is executing again. It deliberately does NOT answer true for a PARKED run; see
+    /// <see cref="AgentRunStates.IsExecuting"/> for why that is a decision and not an oversight.
+    /// </para>
+    /// </summary>
+    Task<bool> AnyExecutingRunForTriggerAsync(Guid triggerRef, CancellationToken ct = default);
+
     // Steps: API present in 1.1, exercised in 1.2 (Planned).
     Task ReplaceStepsAsync(Guid runId, IReadOnlyList<AgentStep> steps, CancellationToken ct = default);
 
