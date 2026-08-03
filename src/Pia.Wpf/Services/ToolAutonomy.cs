@@ -18,6 +18,19 @@ namespace Pia.Services;
 /// is no persisted-grant concept (the unattended gate).</param>
 /// <param name="IsNamedGrant"><c>grantedWrites.Contains(name)</c>. False where there is no grant list.</param>
 /// <param name="Policy">The run's autonomy policy, or null for "today's behaviour".</param>
+/// <param name="CanPark">
+/// hermes #16. May THIS run stop and ask a human instead of refusing? Caller knowledge, exactly like the
+/// three membership bools above: only the unattended gate ever passes <c>true</c>, and only for a run that
+/// has somewhere to put the question (a ROOT run, whose park raises a durable Flow Continue card and a panel
+/// Continue button). A child run passes <c>false</c> — it is a delegate that does the work its parent asked
+/// for, and hermes #8 pins it to default-deny — and so do the interactive and voice gates, which have their
+/// own answer for "no authority" already.
+/// <para>
+/// It is a permission to ASK, never a permission to run: <see cref="ToolAutonomy.Resolve"/> evaluates the
+/// destructive-external FLOOR before it, and refuses to park a delete-like tool of ANY class. See the Park
+/// arm for why.
+/// </para>
+/// </param>
 public readonly record struct ToolGateInput(
     ToolGateSurface Surface,
     string ToolName,
@@ -25,7 +38,11 @@ public readonly record struct ToolGateInput(
     bool IsAllowlisted,
     bool HasStandingGrant,
     bool IsNamedGrant,
-    RunAutonomyPolicy? Policy);
+    RunAutonomyPolicy? Policy,
+    // DELIBERATELY NOT DEFAULTED. A positional member with no default breaks all three Resolve call sites at
+    // compile time, which is the property this record was given (04 D7) and the reason a fourth gate cannot be
+    // added without answering "may this surface park?" out loud.
+    bool CanPark);
 
 /// <summary>What the gate must do, and the audit reason Batch 03 persists.</summary>
 public readonly record struct ToolGateVerdict(ToolGateOutcome Outcome, ToolGateDecision Decision);
@@ -118,8 +135,30 @@ public static class ToolAutonomy
         if (input.IsNamedGrant)
             return new ToolGateVerdict(ToolGateOutcome.AutoRun, ToolGateDecision.GrantedByName);
 
-        return input.Surface == ToolGateSurface.Interactive
-            ? new ToolGateVerdict(ToolGateOutcome.Prompt, ToolGateDecision.Unknown)
-            : new ToolGateVerdict(ToolGateOutcome.Refuse, ToolGateDecision.DeniedNotGranted);
+        if (input.Surface == ToolGateSurface.Interactive)
+            return new ToolGateVerdict(ToolGateOutcome.Prompt, ToolGateDecision.Unknown);
+
+        // THE UNATTENDED APPROVAL PARK (hermes #16). Nothing above this line authorized the call, and until
+        // now that meant a hard denial even for a capability a human would happily have approved — a headless
+        // run that needed one ungranted write told the model "Do not retry" and produced a run that had
+        // stopped without saying so. It now stops and ASKS, on the Batch 06 park the budget cap already uses.
+        //
+        // It sits HERE — dead last, below every authority branch and far below the FLOOR — because parking is
+        // the weakest possible answer: it changes nothing about which calls may run unattended, only about
+        // what happens to the ones that may not. Two conditions guard it, and each is load-bearing:
+        //
+        //  * !isDeleteLike, so no destructive tool of ANY class ever parks. The FLOOR above already refuses a
+        //    destructive EXTERNAL one, but this is strictly wider and covers the built-ins the floor lets a
+        //    named grant run (delete_file, forget). The asymmetry is deliberate: an interactive card shows the
+        //    ARGUMENTS of the call it is asking about, and the Continue affordance a park reuses does not — it
+        //    is one button whose whole vocabulary is "carry on". Approving `delete_file` blind, for a run that
+        //    will then re-execute the step and choose its own path, is not informed consent. An irreversible
+        //    action stays a hard denial and the model is told to ask the user directly.
+        //  * Surface == Unattended, even though only that gate passes CanPark today. Voice has no card either,
+        //    and a park would leave a spoken turn hanging on a Flow item the speaker cannot see.
+        if (input.Surface == ToolGateSurface.Unattended && input.CanPark && !isDeleteLike)
+            return new ToolGateVerdict(ToolGateOutcome.Park, ToolGateDecision.ParkedForApproval);
+
+        return new ToolGateVerdict(ToolGateOutcome.Refuse, ToolGateDecision.DeniedNotGranted);
     }
 }

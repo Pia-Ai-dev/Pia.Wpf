@@ -1026,7 +1026,10 @@ public sealed class ChatSession : IDisposable
                 IsAllowlisted: allowlisted,
                 HasStandingGrant: _permissions.IsGranted(pluginId, tool),
                 IsNamedGrant: false,
-                Policy: policy));
+                Policy: policy,
+                // hermes #16: this surface already HAS a human — it shows the action card. Parking the whole
+                // run to ask the same question through a Flow item would be strictly worse than the card.
+                CanPark: false));
 
             // The accepted/auto-approved success path: execute, fire ToolSucceeded, re-init the
             // memory token map, return the result. Shared by AllowOnce, AlwaysAllow, and bypass.

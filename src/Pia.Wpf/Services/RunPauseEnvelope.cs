@@ -46,4 +46,40 @@ internal static class RunPauseEnvelope
             return null;
         }
     }
+
+    /// <summary>
+    /// hermes #16. The TOOL a run parked on for a human decision, or <c>null</c> when this park carries no
+    /// such member — which is every park but the approval one.
+    /// <para>
+    /// A SIBLING of <see cref="ReadReason"/> rather than a widened return, because that method has three
+    /// production callers and a suite pinning it, and because the two facts are independent: a reader that
+    /// only wants to know why a run parked must not be made to carry a tool name it will not use.
+    /// </para>
+    /// <para>
+    /// It does NOT check the reason token. The <c>tool</c> member is only ever written alongside
+    /// <see cref="AgentRunOrchestrator.ToolApprovalReason"/>, so keying it on the reason as well would be one
+    /// more place for the two to disagree; a caller that needs the pairing tests the reason itself. Same
+    /// swallowing discipline as its sibling: malformed, absent or foreign reads as <c>null</c>. A blank name
+    /// also reads as <c>null</c> — a Continue card asking a human to approve <c>""</c> is worse than one
+    /// asking them to approve an unnamed tool.
+    /// </para>
+    /// </summary>
+    internal static string? ReadApprovalTool(AgentRun run)
+    {
+        if (string.IsNullOrEmpty(run.ExtraJson)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(run.ExtraJson);
+            if (!doc.RootElement.TryGetProperty("paused", out var paused) || paused.ValueKind != JsonValueKind.True)
+                return null;
+            if (!doc.RootElement.TryGetProperty("tool", out var tool) || tool.ValueKind != JsonValueKind.String)
+                return null;
+            var name = tool.GetString();
+            return string.IsNullOrWhiteSpace(name) ? null : name;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }

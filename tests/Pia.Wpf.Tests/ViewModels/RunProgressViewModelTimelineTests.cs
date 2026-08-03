@@ -176,6 +176,23 @@ public sealed class RunProgressViewModelTimelineTests
         Assert.False(string.IsNullOrWhiteSpace(RunProgressViewModel.DecisionLabelKey(decision)));
     }
 
+    /// <summary>
+    /// hermes #16. <c>EveryDecisionOrdinalMapsToALabel</c> above cannot see this: it asserts only that a label
+    /// is non-empty, so a decision with no arm passes it on the <c>Run_Timeline_Decision_Unknown</c>
+    /// fall-through. A run that stopped to ask a person is the ONE row that user is expected to answer, so
+    /// "unknown" — or "denied", which is the neighbouring wrong answer — is worse than most defaults.
+    /// <para>Neutralize: delete the <c>ParkedForApproval</c> arm from <c>DecisionLabelKey</c> → red.</para>
+    /// </summary>
+    [Fact]
+    public void AParkedForApprovalRow_IsLabelledAsAwaiting_NotAsUnknownAndNotAsDenied()
+    {
+        var key = RunProgressViewModel.DecisionLabelKey(ToolGateDecision.ParkedForApproval);
+
+        Assert.Equal("Run_Timeline_Decision_AwaitingApproval", key);
+        Assert.NotEqual("Run_Timeline_Decision_Unknown", key);
+        Assert.NotEqual(RunProgressViewModel.DecisionLabelKey(ToolGateDecision.DeniedNotGranted), key);
+    }
+
     public static TheoryData<ToolGateDecision> EveryDecision()
     {
         var data = new TheoryData<ToolGateDecision>();

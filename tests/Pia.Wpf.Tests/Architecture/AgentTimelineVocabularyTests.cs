@@ -27,6 +27,7 @@ public class AgentTimelineVocabularyTests
         ToolGateDecision.DeniedNotGranted,          // unattended default
         ToolGateDecision.DeniedDestructiveFloor,    // unattended floor refusal
         ToolGateDecision.UnknownTool,               // either surface, null route
+        ToolGateDecision.ParkedForApproval,         // hermes #16: unattended Park (the FIRST parked call only)
     ];
 
     /// <summary>
@@ -126,6 +127,7 @@ public class AgentTimelineVocabularyTests
             ["DeniedDestructiveFloor"] = 9,
             ["UnknownTool"] = 10,
             ["AutoApprovedAllowlist"] = 11,
+            ["ParkedForApproval"] = 12,
         }, Enum.GetValues<ToolGateDecision>());
     }
 

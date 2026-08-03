@@ -42,6 +42,23 @@ public sealed class AgentRunOrchestrator
     /// </summary>
     internal const string ChildrenParkedReason = "children-parked";
 
+    /// <summary>
+    /// hermes #16. The pause <c>reason</c> written when an unattended step hit a promptable capability the run
+    /// was not granted, and stopped to ask a human instead of hard-denying it.
+    /// <para>
+    /// A named constant for the reason the vocabulary's other tokens are: adding one OBLIGES an arm in
+    /// <c>RunProgressViewModel.DescribePause</c> and in <c>AgentRunNotificationSurface.PausedBodyKey</c>, and a
+    /// literal cannot carry that obligation. Both fall back to the BUDGET wording, so a missing arm does not
+    /// fail — it tells the user their run stopped at a budget it never reached, and sends them to Settings
+    /// instead of to the Continue button (the Batch 08 F19 defect, restated).
+    /// </para>
+    /// <para>
+    /// It is the ONE pause token whose envelope carries a second member: <c>tool</c>, the name the human is
+    /// being asked to approve. Read back by <c>RunPauseEnvelope.ReadApprovalTool</c>.
+    /// </para>
+    /// </summary>
+    internal const string ToolApprovalReason = "tool-approval";
+
     /// <summary>What a settled child's step reports when its answer could not be read. Says the work ran
     /// elsewhere rather than implying the step produced nothing (the failure mode
     /// <c>CompletedStepSummary.FromEarlierSegment</c> exists for).</summary>
@@ -409,6 +426,38 @@ public sealed class AgentRunOrchestrator
                         // Non-terminal executor release (guardrail 5): NOT SafeEndRun. Live must not settle
                         // ChatState.Completed or raise TurnCompleted; OnPausedAsync drops the session to Idle so
                         // Send re-enables while the run sits resumable. Headless no-ops.
+                        await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
+                        return;
+                    }
+
+                    // ---- hermes #16: THE UNATTENDED APPROVAL PARK ----
+                    // The step stopped on a capability a human could legitimately approve. Same slot, same
+                    // order and the same four moves as the user pause above, for the same three reasons —
+                    // and one more that is specific to this branch:
+                    //
+                    // (1) BEFORE SafeRecordStep, so the step goes back to Pending rather than being written
+                    //     Failed(3) — a status NextPendingStepAsync cannot see and KeepDoneAsync drops, i.e.
+                    //     the resumed run would silently lose the very step that asked the question.
+                    // (2) AFTER the user-pause branch, never merged with it. A user pause is a USER's
+                    //     terminal-ish intent and outranks the run's own request; if both are true the run
+                    //     parks as a user pause and the approval question is re-asked on the next attempt.
+                    // (3) NOT &&-ed with r.Succeeded or r.Cancelled. A denied tool very often makes the model
+                    //     declare emit_step_result{succeeded:false}, and reading that as an ordinary step
+                    //     failure would burn a replan on a step that is only waiting. r.Cancelled is checked
+                    //     further down and cannot be true here: the executor returns the park BEFORE the
+                    //     cancelled arm can produce a result.
+                    // (4) The tokens the abandoned step spent are BILLED run-level (stepId: null), because a
+                    //     step that will re-run must not carry a per-step ledger entry for the attempt that
+                    //     did not finish.
+                    if (r.ApprovalRequiredTool is { } approvalTool)
+                    {
+                        await SafeSetStepStatus(step.Id, AgentStepStatus.Pending, CancellationToken.None).ConfigureAwait(false);
+                        await SafeAddUsage(run.Id, r.Usage, CancellationToken.None).ConfigureAwait(false);
+                        await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
+                        await SafeRequestApproval(run.Id, approvalTool).ConfigureAwait(false);
+                        // Non-terminal executor release (guardrail 5): NOT SafeEndRun. A park is not the end
+                        // of a run, and the Headless executor must not persist-and-finalize a chat whose last
+                        // step is going to run again.
                         await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
                         return;
                     }
@@ -1237,6 +1286,29 @@ public sealed class AgentRunOrchestrator
     {
         try { await _runService.PauseAsync(runId, reason, ct).ConfigureAwait(false); }
         catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (pause) failed for {RunId}", runId); }
+    }
+
+    /// <summary>
+    /// hermes #16: park the run WaitingForInput for a HUMAN TOOL DECISION, naming the tool in the envelope.
+    /// The same non-terminal park the budget cap uses (same state, same Continue card, same resume claim) —
+    /// only the reason token and the extra <c>tool</c> member differ, which is the whole point of reusing it.
+    /// <para>
+    /// <c>CancellationToken.None</c>, unlike <see cref="SafePause"/>'s budget call: the step that parked may
+    /// well have left <c>cts.Token</c> cancelled behind it, and a park that does not reach the row leaves the
+    /// run dangling <c>Running</c> — unresumable, with the human's question never asked.
+    /// </para>
+    /// </summary>
+    private async Task SafeRequestApproval(Guid runId, string toolName)
+    {
+        try
+        {
+            await _runService.PauseAsync(runId, ToolApprovalReason, CancellationToken.None, approvalTool: toolName)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run bookkeeping (approval park) failed for {RunId}", runId);
+        }
     }
 
     /// <summary>

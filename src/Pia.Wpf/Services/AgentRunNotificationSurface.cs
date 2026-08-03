@@ -93,6 +93,9 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
     /// </summary>
     internal static string PausedBodyKey(string? reason) => reason switch
     {
+        // hermes #16: the ONE body that takes an argument (the tool name) — see PausedBody, which is what the
+        // publish calls. The key is still mapped here so the vocabulary lives in one switch.
+        AgentRunOrchestrator.ToolApprovalReason => "Flow_Run_ToolApproval",
         AgentRunOrchestrator.ChildrenParkedReason => "Flow_Run_ChildrenParked",
         AgentRunService.ChildrenInterruptedReason => "Flow_Run_ChildrenInterrupted",
         // Batch 08 G2. Telling a user who pressed Pause that the run "stopped at its budget" would send them
@@ -104,6 +107,27 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
         HeadlessRunLauncher.ResumeInterruptedReason => "Flow_Run_ResumeInterrupted",
         _ => "Flow_Run_WaitingAtBudget",
     };
+
+    /// <summary>
+    /// hermes #16. The rendered "continue?" body for a parked run. Split from <see cref="PausedBodyKey"/>
+    /// because the APPROVAL body needs an argument the key cannot carry, and the argument is load-bearing:
+    /// Continue on an approval park IS the grant, so a card that does not say which tool it is granting asks
+    /// the user to approve something blind.
+    /// <para>
+    /// The tool NAME is app/plugin-defined and never user content — the same property that already lets this
+    /// card key its body on the reason token — unlike the run Goal, which stays out of the Flow item entirely.
+    /// An approval envelope whose name did not survive formats an empty one rather than falling through to
+    /// the budget wording: a vague prompt is a degrade, "stopped at its budget" would be a lie.
+    /// </para>
+    /// </summary>
+    internal static string PausedBody(ILocalizationService localization, AgentRun run)
+    {
+        var reason = RunPauseEnvelope.ReadReason(run);
+        var key = PausedBodyKey(reason);
+        return reason == AgentRunOrchestrator.ToolApprovalReason
+            ? localization.Format(key, RunPauseEnvelope.ReadApprovalTool(run) ?? string.Empty)
+            : localization[key];
+    }
 
     private void OnRunChanged(object? sender, AgentRunChangedEventArgs e)
     {
@@ -165,7 +189,9 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
                 // app-owned and never user content — unlike the run Goal, which stays out of the Flow item
                 // entirely — so it is safe to key the body on it, and announcing a child's park or a restart as
                 // "stopped at its budget" sends the user to raise budgets that were never reached.
-                Body = _localizationService[PausedBodyKey(RunPauseEnvelope.ReadReason(run))],
+                // hermes #16 added a FOURTH reason and it is the first one that names something: an approval
+                // park's body carries the tool the Continue button is about to grant.
+                Body = PausedBody(_localizationService, run),
                 DedupKey = runId.ToString(),
                 Lifetime = FlowLifetime.Persistent,
                 Action = new ContinueRunAction(runId, _localizationService["Flow_Action_ContinueRun"]),

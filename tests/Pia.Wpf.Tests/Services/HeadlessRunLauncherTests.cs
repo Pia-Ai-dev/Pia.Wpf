@@ -327,6 +327,48 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
+    /// <summary>
+    /// hermes #16 sibling of <see cref="AwaitRunSettledAsync"/>: poll until the run is parked again, then
+    /// drain. Carries the SAME anti-vacuity property, which is why it is a separate helper rather than a
+    /// relaxed terminal set — a resume that dispatched no step at all leaves the run at whatever state the
+    /// re-park wrote, so the reason token is asserted too, and only the approval park writes that one.
+    /// </summary>
+    private async Task AwaitRunParkedForApprovalAsync(HeadlessRunLauncher launcher, Guid runId, string expectedTool)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        AgentRun run;
+        while (true)
+        {
+            run = (await _runs.GetAsync(runId, ct))!;
+            if (run.State == AgentRunState.WaitingForInput || DateTime.UtcNow >= deadline)
+                break;
+            await Task.Delay(20, ct);
+        }
+
+        Assert.Equal(AgentRunState.WaitingForInput, run.State);
+        Assert.Equal("tool-approval", ReadPauseReason(run));
+        Assert.Equal(expectedTool, ReadPauseTool(run));
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>The pause envelope's reason, read from the raw row (<c>RunPauseEnvelope</c> is internal to src).</summary>
+    private static string? ReadPauseReason(AgentRun run) => ReadPauseMember(run, "reason");
+
+    /// <summary>The pause envelope's hermes #16 <c>tool</c> member.</summary>
+    private static string? ReadPauseTool(AgentRun run) => ReadPauseMember(run, "tool");
+
+    private static string? ReadPauseMember(AgentRun run, string member)
+    {
+        if (string.IsNullOrEmpty(run.ExtraJson)) return null;
+        using var doc = System.Text.Json.JsonDocument.Parse(run.ExtraJson);
+        return doc.RootElement.TryGetProperty(member, out var v)
+            && v.ValueKind == System.Text.Json.JsonValueKind.String
+                ? v.GetString()
+                : null;
+    }
+
     [Fact]
     public async Task Launch_PersistsStubChat_CreatesPlannedUserRun_AndWorkspace()
     {
@@ -680,12 +722,16 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var (writeLauncher, _) = BuildLauncher(probe: writeProbe);
         var parked2 = await ParkRunWithPendingStepAsync(narrowEnvelope);
         Assert.True(await writeLauncher.ResumeAsync(parked2.Id, ct: TestContext.Current.CancellationToken));
-        await AwaitRunSettledAsync(writeLauncher, parked2.Id);
+        // hermes #16 CHANGED THIS LEG'S ENDING, NOT ITS CLAIM. D1's claim is that the resume never WIDENS the
+        // grant set, and it still holds exactly: write_file is not in the envelope, so it does not run. What
+        // changed is what happens instead — a root run no longer hard-denies a promptable capability and
+        // marches on, it stops and asks. The security assertion below is untouched.
+        await AwaitRunParkedForApprovalAsync(writeLauncher, parked2.Id, "write_file");
 
         Assert.False(writeProbe.Executed); // the floor is a FALLBACK, never an addition to a known set
-        // Positive counter-assertion: the gate was actually consulted and refused, so this leg cannot pass
-        // just because the resume never dispatched a step.
-        Assert.Contains("not granted", writeProbe.GateResult ?? string.Empty);
+        // Positive counter-assertion: the gate was actually consulted, so this leg cannot pass just because
+        // the resume never dispatched a step.
+        Assert.Contains("approval", writeProbe.GateResult ?? string.Empty);
 
         var grantProbe = new ToolProbe("create_todo");
         var (grantLauncher, _) = BuildLauncher(probe: grantProbe);
@@ -819,10 +865,13 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
         var parked = await ParkRunWithPendingStepAsync(policylessEnvelope);
         Assert.True(await launcher.ResumeAsync(parked.Id, ct: TestContext.Current.CancellationToken));
-        await AwaitRunSettledAsync(launcher, parked.Id);
+        // hermes #16: the run now PARKS on write_file instead of denying it — the D10 claim is unchanged and
+        // is the assertion below (the settings flip did NOT hand this run card-free write_file), only the
+        // shape of "did not run" moved from a denial to a question put to a human.
+        await AwaitRunParkedForApprovalAsync(launcher, parked.Id, "write_file");
 
         Assert.False(probe.Executed);
-        Assert.Contains("not granted", probe.GateResult ?? string.Empty);
+        Assert.Contains("approval", probe.GateResult ?? string.Empty);
 
         try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
     }

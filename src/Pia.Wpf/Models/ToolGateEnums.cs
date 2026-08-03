@@ -70,6 +70,18 @@ public enum ToolGateDecision
     /// a standing grant as well, and the unattended surface has no allowlist at all (04 §0.3).
     /// </summary>
     AutoApprovedAllowlist = 11,
+
+    /// <summary>
+    /// hermes #16. The unattended gate did not execute the tool and did not refuse it either: the run PARKED
+    /// at <c>WaitingForInput</c> and a human was asked. Distinct from <see cref="DeniedNotGranted"/> on
+    /// purpose — an audit row that said "denied" for a call that is still pending a decision would misreport
+    /// the one gate outcome the user is expected to answer.
+    /// <para>
+    /// The tool did NOT run when this row was written. If the human continues the run, the re-executed step's
+    /// call is a fresh row carrying <see cref="GrantedByName"/>, because the approval reaches it as a grant.
+    /// </para>
+    /// </summary>
+    ParkedForApproval = 12,
 }
 
 /// <summary>
@@ -87,4 +99,12 @@ public enum ToolGateOutcome
 
     /// <summary>Do not execute; tell the model why.</summary>
     Refuse,
+
+    /// <summary>
+    /// hermes #16. Do not execute, and do not refuse: PARK the run at <c>WaitingForInput</c> and ask a human,
+    /// reusing the Batch 06 Continue-card machinery. Only reachable on <see cref="ToolGateSurface.Unattended"/>
+    /// and only when the caller passed <c>CanPark</c> — every other surface and every caller that cannot park
+    /// still gets <see cref="Refuse"/>, so a gate that never learns about this member keeps today's behaviour.
+    /// </summary>
+    Park,
 }

@@ -678,8 +678,16 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     // because the alternative is a latent "Stopped at budget" the day someone makes the line render for
     // Paused, and it is deliberately NOT mapped to the existing Run_State_Paused chip label: a mapping arm
     // that borrows a string written for another control reads fine and breaks on the next copy edit.
-    private string DescribePause(string? reason) => reason switch
+    // hermes #16 takes the RUN, not just the reason: the approval arm has to name the tool, and a resx KEY
+    // cannot carry one. Every other arm ignores the extra argument.
+    private string DescribePause(AgentRun run) => RunPauseEnvelope.ReadReason(run) switch
     {
+        // The tool name is app/plugin-defined and never user content (the same property that lets the Flow
+        // body key on the reason token), so it may be rendered. A tool-approval envelope whose name did not
+        // survive formats an EMPTY name rather than falling through to the budget wording — "waiting for
+        // approval" with a blank tool is degraded, "stopped at its budget" would be false.
+        AgentRunOrchestrator.ToolApprovalReason =>
+            _localization.Format("Run_Activity_WaitingForToolApproval", RunPauseEnvelope.ReadApprovalTool(run) ?? string.Empty),
         AgentRunOrchestrator.ChildrenParkedReason => _localization["Run_Activity_ChildrenParked"],
         AgentRunService.ChildrenInterruptedReason => _localization["Run_Activity_ChildrenInterrupted"],
         AgentRunService.UserPausedReason => _localization["Run_Activity_UserPaused"],
@@ -705,7 +713,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         // pause envelope carries instead of asserting the budget: a parent parked because a CHILD hit its own
         // halved budget, or because the app restarted mid-fan-out, was told "Stopped at budget — continue?" and
         // would sensibly raise its own budgets in Settings to prevent a recurrence, changing nothing.
-        AgentRunState.WaitingForInput => DescribePause(RunPauseEnvelope.ReadReason(run)),
+        AgentRunState.WaitingForInput => DescribePause(run),
         AgentRunState.WaitingForChildren => _localization["Run_Activity_WaitingForChildren"], // 07 G8
         _ => null, // Paused / terminal — the state chip already carries it
     };
@@ -1061,6 +1069,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             or ToolGateDecision.DeniedNotGranted or ToolGateDecision.UnknownTool
             => "Run_Timeline_Decision_Denied",
         ToolGateDecision.DeniedDestructiveFloor => "Run_Timeline_Decision_Blocked",
+        // hermes #16. Its own category, not folded into Denied: the call was not denied, it is WAITING — and
+        // a timeline that said "denied" for the one row the user is expected to answer would misreport the
+        // reason their run stopped. Without this arm it lands on "unknown", which is no better.
+        ToolGateDecision.ParkedForApproval => "Run_Timeline_Decision_AwaitingApproval",
         _ => "Run_Timeline_Decision_Unknown",
     };
 

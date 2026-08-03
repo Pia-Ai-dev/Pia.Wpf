@@ -328,7 +328,11 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         // hermes #9. Non-null ONLY when the caller put emit_step_result in setup.Tools — i.e. an agent step.
         // It is what arms the pre-route interception below, so the background single-turn path (which passes
         // nothing) still treats a hallucinated emit_step_result as the unknown tool it is.
-        StepOutcomeStore? outcomeStore = null)
+        StepOutcomeStore? outcomeStore = null,
+        // hermes #16. Non-null ONLY when the caller owns a run loop that can park it at WaitingForInput — i.e.
+        // an agent step. Null (the background single-turn path) resolves CanPark: false and keeps the hard
+        // denial exactly as it was.
+        ToolApprovalStore? approvals = null)
     {
         var textBuffer = new StringBuilder();
         int? tokens = null;
@@ -340,7 +344,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         await foreach (var item in _aiClient.GetChatCompletionWithToolsAsync(
             messages, provider,
             setup.SupportsTools ? setup.Tools : null,
-            setup.SupportsTools ? toolCall => HandleToolCallAsync(toolCall, grantedWrites, policy, timeline, outcomeStore) : null,
+            setup.SupportsTools ? toolCall => HandleToolCallAsync(toolCall, grantedWrites, policy, timeline, outcomeStore, approvals) : null,
             nameof(WindowMode.Assistant), setup.PersonaId,
             cancellationToken: ct, contextBudget: contextBudget))
         {
@@ -383,7 +387,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
     /// </summary>
     private async Task<object?> HandleToolCallAsync(
         FunctionCallContent toolCall, HashSet<string> grantedWrites, RunAutonomyPolicy? policy = null,
-        AgentTimelineScope? timeline = null, StepOutcomeStore? outcomeStore = null)
+        AgentTimelineScope? timeline = null, StepOutcomeStore? outcomeStore = null,
+        ToolApprovalStore? approvals = null)
     {
         // emit_step_result (hermes #9): PRE-ROUTE special case, the unattended twin of ChatSession's
         // suggest_agent_mode seam and placed for the same reason — the tool has no plugin and no route, so
@@ -441,7 +446,11 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 IsNamedGrant: grantedWrites.Contains(pending.ToolName),
                 // The run's autonomy policy, from the launch envelope (or restored from it on resume). Null
                 // for the SingleTurn background path, which has no plan and no policy — today's behaviour.
-                Policy: policy));
+                Policy: policy,
+                // hermes #16: may this run stop and ask a human rather than refuse? The executor answers it
+                // once per run (root run + a real step turn) and hands the answer down in the store; a null
+                // store — every SingleTurn background call — is false, i.e. the pre-#16 hard denial.
+                CanPark: approvals?.CanPark == true));
 
             switch (verdict.Outcome)
             {
@@ -469,6 +478,31 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                         resultChars: (executed as string)?.Length,
                         durationMs: AgentTimelineScope.ElapsedMs(startedAt));
                     return executed;
+
+                // hermes #16 THE UNATTENDED APPROVAL PARK. The resolver has decided this call is one a human
+                // could legitimately approve, so the run stops and asks instead of denying. Nothing is
+                // executed here and nothing is granted here: the store carries the tool NAME out to the
+                // executor, the executor abandons the step, and the orchestrator parks the run at
+                // WaitingForInput with that name in its pause envelope. If the human presses Continue, the
+                // resume adds the name to the run's grants and the step re-runs from the top.
+                //
+                // The model is told, because it is still mid-exchange and about to be asked for more output:
+                // a plain "stop" beats letting it improvise a workaround for a call that is pending approval.
+                case ToolGateOutcome.Park:
+                    var parked = approvals is not null && approvals.Park(pending.ToolName);
+                    _logger.LogInformation(
+                        "Background turn parked {ToolName} for human approval (first={First})", pending.ToolName, parked);
+                    // Audited only for the call that actually parked the run. A second parked call in the
+                    // same exchange changes nothing about the run and would otherwise write a row implying a
+                    // second pending decision.
+                    if (parked)
+                    {
+                        timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
+                            verdict.Decision, AgentTimelineOutcome.NotExecuted, argsChars);
+                    }
+                    return $"Paused: '{pending.ToolName}' needs a person's approval, and this run has asked for one. "
+                           + "It did NOT run. Stop now and produce no further tool calls — the run will be "
+                           + "resumed from this step once someone answers.";
 
                 case ToolGateOutcome.Refuse when verdict.Decision == ToolGateDecision.DeniedDestructiveFloor:
                     _logger.LogWarning("Background turn refused granted destructive external tool {ToolName}", pending.ToolName);

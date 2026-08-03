@@ -151,7 +151,36 @@ public interface IAgentRunService
     /// <c>{paused:true,reason}</c> to ExtraJson. This is NOT a completion (no CompletedAt) — the run sits
     /// parked until <see cref="TryBeginResumeAsync"/> claims it. Raises RunChanged(WaitingForInput).
     /// </summary>
-    Task PauseAsync(Guid runId, string? reason, CancellationToken ct = default);
+    /// <param name="approvalTool">
+    /// hermes #16, and the ONLY caller that supplies it is the approval park
+    /// (<c>AgentRunOrchestrator.ToolApprovalReason</c>): the tool name the human is being asked to approve,
+    /// written as a third <c>tool</c> member of the same envelope. Null — every other park — writes the
+    /// envelope byte-for-byte as before, so no existing document or pin changes shape.
+    /// <para>
+    /// It is a TOOL name: app/plugin-defined, never user content, which is why it may sit in a document the
+    /// panel and the Flow card both render and why it may be logged as a scalar.
+    /// </para>
+    /// </param>
+    Task PauseAsync(Guid runId, string? reason, CancellationToken ct = default, string? approvalTool = null);
+
+    /// <summary>
+    /// hermes #16. Replace the run's opaque launch-grant envelope (<c>AgentRuns.PolicyJson</c>). The service
+    /// still never parses the string — this is a verbatim overwrite, and <c>HeadlessRunLauncher</c> remains
+    /// the only owner of the shape.
+    /// <para>
+    /// THE ONE DELIBERATE POST-LAUNCH WIDENING, and it contradicts the rule stated at the resume's own grant
+    /// restore ("a resume must never widen them") on purpose: that rule exists so a SETTINGS flip, or a lost
+    /// envelope, cannot silently hand a parked run more authority than it launched with. A human pressing
+    /// Continue on a card that names the tool is the opposite of silent — it is the informed act the
+    /// approval park exists to collect — and persisting it is what stops a run that needs two tools from
+    /// ping-ponging between two parks forever, each resume granting one and forgetting the other.
+    /// </para>
+    /// <para>
+    /// Blind write, no CAS: the caller has already won the resume claim on this run, and the value is
+    /// idempotent (the same envelope re-serialized). A run id that does not exist updates nothing.
+    /// </para>
+    /// </summary>
+    Task UpdatePolicyJsonAsync(Guid runId, string? policyJson, CancellationToken ct = default);
 
     /// <summary>
     /// Atomically CAS-claim a parked run for resume: <see cref="AgentRunState.WaitingForInput"/> →

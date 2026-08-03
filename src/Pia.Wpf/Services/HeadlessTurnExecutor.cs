@@ -77,6 +77,13 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// <summary>This run's autonomy policy (Batch 04); null ⇒ no per-run policy, i.e. today's behaviour.</summary>
     private RunAutonomyPolicy? _policy;
 
+    /// <summary>
+    /// hermes #16: may this run park a promptable-but-ungranted tool call at <c>WaitingForInput</c> and ask a
+    /// human, instead of hard-denying it? Seeded by the launcher, which owns the one fact that decides it (a
+    /// ROOT run may, a CHILD run may not). False ⇒ the pre-#16 behaviour, byte-for-byte.
+    /// </summary>
+    private bool _canPark;
+
     public HeadlessTurnExecutor(
         BackgroundAssistantTurnRunner engine,
         IAssistantChatService chatService,
@@ -131,15 +138,20 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// <param name="policy">The run's autonomy policy (Batch 04), or null for "today's behaviour": no tool
     /// class is auto-approved and only the named grant set authorizes a write. Relayed verbatim into the one
     /// unattended gate; a resume restores it from the run's envelope, never from settings.</param>
+    /// <param name="canPark">hermes #16: may this run stop and ask a human for a promptable capability it was
+    /// not granted, instead of hard-denying it? See <see cref="_canPark"/>. Trailing and defaulted to FALSE,
+    /// which is the pre-#16 behaviour — a caller that forgets it gets the safe answer.</param>
     public void Initialize(
         string? workspaceRoot,
         IReadOnlyCollection<string> grantedWrites,
         AiProvider? providerOverride = null,
-        RunAutonomyPolicy? policy = null)
+        RunAutonomyPolicy? policy = null,
+        bool canPark = false)
     {
         _workspaceRoot = workspaceRoot;
         _providerOverride = providerOverride;
         _policy = policy;
+        _canPark = canPark;
         _grantedWrites.Clear();
         foreach (var w in grantedWrites)
             _grantedWrites.Add(w);
@@ -314,6 +326,13 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     {
         var p = persona ?? _runDefault;
 
+        // hermes #16. Built for every turn that goes through here — including the R10 degrade turn, whose
+        // store is simply never armed (CanPark false) because the run has no AgentStep row to put back to
+        // Pending and the orchestrator's fallback path has no park slot. Derived from _canPark AND
+        // offerStepResultTool for that reason: "this is a real, re-runnable planned step" is exactly the
+        // condition both signals already encode, and deriving it keeps them from drifting apart.
+        var approvals = new ToolApprovalStore(canPark: _canPark && offerStepResultTool);
+
         // hermes #9, and the placement is the point: AFTER the persona ternary above, so a step carrying an
         // AssignedPersonaId gets the tool on ITS setup. Augmenting _runDefault/_setup instead would silently
         // withhold the tool from exactly the steps that resolved their own persona, and every such step would
@@ -384,7 +403,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             // calls and tool results accumulate over up to 10 rounds.
             exchange = await _engine.RunExchangeAsync(request, p.Provider, turnSetup, _grantedWrites, ct,
                     onUsage: null, contextBudget: contextBudget, policy: _policy, timeline: timeline,
-                    outcomeStore: outcomeStore)
+                    outcomeStore: outcomeStore, approvals: approvals)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -400,6 +419,26 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         {
             TokenMapAmbient.Current = previousAmbient;
             TaskAmbient.Current = previousTask;
+        }
+
+        // ---- hermes #16: the step PARKED on a tool that needs a human ----
+        // Placed with the two catch arms above rather than after them, because it is the same KIND of exit: the
+        // step did not finish, so there is nothing for the model to have a vote on. It returns BEFORE the
+        // transcript append and BEFORE the interim persist on purpose — D2's rule for an aborted step is that
+        // its text is discarded so the step re-runs clean, and a park is an abort with a question attached.
+        // Half a step's reply in the transcript would tell the resumed step it had already done the work.
+        //
+        // The USAGE is carried out, because those tokens were genuinely spent; the orchestrator bills them
+        // run-level (stepId: null), exactly as the user-pause branch bills a cancelled step's.
+        if (approvals.PendingToolName is { } parkedTool)
+        {
+            _logger.LogInformation(
+                "Headless run {RunId} parked step for approval of {ToolName} ({ParkedCalls} parked call(s))",
+                _runId, parkedTool, approvals.ParkedCalls);
+            return new StepTurnResult(
+                Succeeded: false, Cancelled: false, Error: null, VisibleText: string.Empty,
+                Usage: exchange.Usage, FirstMessageId: Guid.Empty, LastMessageId: Guid.Empty,
+                ApprovalRequiredTool: parkedTool);
         }
 
         // ---- hermes #9: the step-success decision ----

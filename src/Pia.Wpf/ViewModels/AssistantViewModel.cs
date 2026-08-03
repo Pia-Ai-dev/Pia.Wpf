@@ -1642,7 +1642,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 HasStandingGrant: _permissions.IsGranted(pendingAction.PluginId, tool),
                 // Voice has no per-job grant list and no run envelope; the policy is the settings preset.
                 IsNamedGrant: false,
-                Policy: RunAutonomyPolicy.FromSettings(settings)));
+                Policy: RunAutonomyPolicy.FromSettings(settings),
+                // hermes #16: a voice turn is not a run — there is no row to park, no Continue card that would
+                // reach the speaker, and the refusal below is already spoken back as a remedy.
+                CanPark: false));
 
             if (verdict.Outcome != ToolGateOutcome.AutoRun)
             {

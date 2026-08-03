@@ -318,7 +318,7 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         return Task.CompletedTask;
     }
 
-    public Task PauseAsync(Guid runId, string? reason, CancellationToken ct = default)
+    public Task PauseAsync(Guid runId, string? reason, CancellationToken ct = default, string? approvalTool = null)
     {
         var now = DateTime.UtcNow;
         lock (_gate)
@@ -329,7 +329,13 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
             // here must NOT count as worked time, and the next resume opens a fresh segment (G1).
             MoveLedgerClock(runId, LedgerClock.CloseSegment);
 
-            var extraJson = JsonSerializer.Serialize(new { paused = true, reason }, JsonOptions);
+            // hermes #16: TWO shapes, not one shape with a nullable member. A null approvalTool serializes
+            // the ORIGINAL anonymous type and is therefore byte-identical to every pause this service has
+            // ever written — no `"tool":null` appears on a budget park, a children park or a resume re-park,
+            // and no existing envelope pin moves. The reader tolerates either shape.
+            var extraJson = approvalTool is null
+                ? JsonSerializer.Serialize(new { paused = true, reason }, JsonOptions)
+                : JsonSerializer.Serialize(new { paused = true, reason, tool = approvalTool }, JsonOptions);
 
             using var cmd = Connection().CreateCommand();
             cmd.CommandText = "UPDATE AgentRuns SET State=@State, UpdatedAt=@Now, ExtraJson=@Extra WHERE Id=@Id";
@@ -343,6 +349,26 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         _logger.LogInformation("Run {RunId} → WaitingForInput (paused)", runId);        // scalar, safe
         _logger.SensitiveDebug("Run {RunId} pause reason: {Reason}", runId, reason);    // guardrail 8
         RunChanged?.Invoke(this, new AgentRunChangedEventArgs(runId, AgentRunState.WaitingForInput));
+        return Task.CompletedTask;
+    }
+
+    public Task UpdatePolicyJsonAsync(Guid runId, string? policyJson, CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            if (_disposed) return Task.CompletedTask;
+
+            using var cmd = Connection().CreateCommand();
+            cmd.CommandText = "UPDATE AgentRuns SET PolicyJson=@Policy, UpdatedAt=@Now WHERE Id=@Id";
+            cmd.Parameters.AddWithValue("@Policy", ToParam(policyJson));
+            cmd.Parameters.AddWithValue("@Now", DateTime.UtcNow.ToString("O"));
+            cmd.Parameters.AddWithValue("@Id", runId.ToString());
+            cmd.ExecuteNonQuery();
+        }
+
+        // Presence only, never the document: it names tools and tool classes, and this line lands in a
+        // support-attachable log. Same discipline as the create-time line above.
+        _logger.LogInformation("Run {RunId} grant envelope updated (present={Present})", runId, policyJson is not null);
         return Task.CompletedTask;
     }
 

@@ -178,7 +178,8 @@ public sealed class AgentRunOrchestratorTests
             return _inner.CompleteAsync(runId, truncated, truncationReason, ct);
         }
         public Task FailAsync(Guid runId, string? error, bool cancelled = false, CancellationToken ct = default) => _inner.FailAsync(runId, error, cancelled, ct);
-        public Task PauseAsync(Guid runId, string? reason, CancellationToken ct = default) => _inner.PauseAsync(runId, reason, ct);
+        public Task PauseAsync(Guid runId, string? reason, CancellationToken ct = default, string? approvalTool = null) => _inner.PauseAsync(runId, reason, ct, approvalTool);
+        public Task UpdatePolicyJsonAsync(Guid runId, string? policyJson, CancellationToken ct = default) => _inner.UpdatePolicyJsonAsync(runId, policyJson, ct);
         public Task<bool> TryBeginResumeAsync(Guid runId, CancellationToken ct = default) => _inner.TryBeginResumeAsync(runId, ct);
         public Task<bool> TryPauseUserAsync(Guid runId, CancellationToken ct = default) => _inner.TryPauseUserAsync(runId, ct);
         public Task<bool> TryResumeFromPauseAsync(Guid runId, CancellationToken ct = default) => _inner.TryResumeFromPauseAsync(runId, ct);

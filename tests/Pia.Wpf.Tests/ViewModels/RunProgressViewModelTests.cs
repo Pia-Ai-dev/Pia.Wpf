@@ -362,6 +362,38 @@ public sealed class RunProgressViewModelTests : IDisposable
         vm.Dispose();
     }
 
+    /// <summary>
+    /// hermes #16, <b>REGRESSION</b>. The FOURTH reason a run reaches WaitingForInput, and the first one that
+    /// has to name something: the run is waiting for a human to approve a specific tool, and the Continue
+    /// button beside this line is what grants it.
+    /// <para>
+    /// The assertion is deliberately "not the budget wording, AND it carries the tool name". Asserting only
+    /// that the line is non-empty would pass on the fall-through arm — both pause readers degrade to the
+    /// budget copy rather than failing, which is exactly how Batch 08 F19 shipped a lie, and is the failure
+    /// this branch has now logged three times as "the assertion observed the default, not the mechanism".
+    /// </para>
+    /// <para>Neutralize: delete the <c>ToolApprovalReason</c> arm from <c>DescribePause</c> → red.</para>
+    /// </summary>
+    [Fact]
+    public async Task AToolApprovalParksActivityLineNamesTheToolAndIsNotTheBudgetWording()
+    {
+        // Format is stubbed only here: every other activity string is a bare key lookup, and echoing
+        // "key|arg0" keeps both halves of the claim readable in one assert.
+        _loc.Format(Arg.Any<string>(), Arg.Any<object[]>())
+            .Returns(ci => (string)ci[0] + "|" + string.Join(',', ((object[])ci[1]).Select(a => a?.ToString())));
+
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+
+        await _runs.PauseAsync(run.Id, "tool-approval", TestContext.Current.CancellationToken, approvalTool: "write_file");
+        await vm.RefreshAsync();
+
+        Assert.Equal(RunProgressState.WaitingForInput, vm.State);
+        Assert.Equal("Run_Activity_WaitingForToolApproval|write_file", vm.CurrentActivity);
+        Assert.NotEqual("Run_Activity_WaitingAtBudget", vm.CurrentActivity);
+        vm.Dispose();
+    }
+
     [Fact]
     public async Task Continue_InvokesResumeService()
     {

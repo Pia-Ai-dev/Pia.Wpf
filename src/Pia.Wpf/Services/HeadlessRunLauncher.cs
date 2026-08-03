@@ -128,6 +128,30 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
+    /// <summary>
+    /// hermes #16. May this run PARK a promptable-but-ungranted tool call and ask a human, instead of
+    /// hard-denying it? Exactly one fact decides it, and it decides it for the whole run: a ROOT run may, a
+    /// CHILD run may not.
+    /// <para>
+    /// PRIMARY REASON — a child is a DELEGATE. <see cref="NarrowForChild"/> already states the rule this
+    /// follows ("it does the work the parent asked for and it does not get to destroy anything"): a child
+    /// receives a strict SUBSET of its parent's authority and can never acquire more, which is what
+    /// hermes #8 pins it to. An approval park ACQUIRES authority — the human's Continue adds a grant the run
+    /// did not launch with — so allowing it on a child would make the one path by which a delegate ends up
+    /// wider than its delegator. The parent is where a widening request belongs, and the parent can make it.
+    /// </para>
+    /// <para>
+    /// SUPPORTING — a parked child has nowhere to ask. <c>AgentRunNotificationSurface</c> filters child runs
+    /// out of the Flow publish, because a Continue card carrying the CHILD's run id is "a transition nothing
+    /// supports": a child is only ever re-dispatched by its parent's fan-out. A child that parked for
+    /// approval would therefore sit at <c>WaitingForInput</c> with no card and no panel, and its parent would
+    /// re-park behind it under <c>ChildrenParkedReason</c> — a run stuck on a question nobody was asked.
+    /// (Resuming a parked child by hand IS supported, so this is the supporting argument, not the load-bearing
+    /// one.)
+    /// </para>
+    /// </summary>
+    private static bool CanParkForApproval(Guid? parentRunId) => parentRunId is null;
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAssistantChatService _chatService;
     private readonly IAgentRunService _agentRunService;
@@ -409,7 +433,11 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                 // probes the same root because BeginRunAsync publishes it onto the RunContext (B3). A NULL
                 // runRoot is the NO-ISOLATION degrade the provisioner falls back to (G3 F10): the run writes
                 // straight into the user's assistant files folder, which is what every build before G2 did.
-                executor.Initialize(workspaceRoot: runRoot, grants, provider, policy);
+                //
+                // canPark (hermes #16): a ROOT run may stop and ask a human for a promptable capability it was
+                // not granted; a CHILD run may not, and hard-denies exactly as before. See CanParkForApproval.
+                executor.Initialize(workspaceRoot: runRoot, grants, provider, policy,
+                    canPark: CanParkForApproval(parentRunId));
                 started = true;
 
                 // A2: open the composer bracket. Deliberately HERE and not before `_slots.WaitAsync` above:
@@ -479,6 +507,16 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         // dispatch, never a range (D7) and never "try one, then the other": a run whose state moved between the
         // read and the CAS is not ours, and the loser's log line below says so. A budget park is
         // WaitingForInput; a USER pause is Paused, and its claim also retires the pause envelope it consumed.
+        // hermes #16: READ THE QUESTION BEFORE ANSWERING IT. Both claims below clear ExtraJson, so the tool
+        // name a tool-approval park wrote is gone the instant one of them wins — it has to come off the row we
+        // already read at the top of this method. Null for every other park, and for a tool-approval park
+        // whose envelope did not survive: a resume that cannot read the question grants nothing extra and the
+        // run simply parks again on the same tool, which is the fail-closed direction.
+        var approvedTool = run.State == AgentRunState.WaitingForInput
+            && RunPauseEnvelope.ReadReason(run) == AgentRunOrchestrator.ToolApprovalReason
+                ? RunPauseEnvelope.ReadApprovalTool(run)
+                : null;
+
         var claimed = run.State switch
         {
             AgentRunState.WaitingForInput => await _agentRunService.TryBeginResumeAsync(runId, ct).ConfigureAwait(false),
@@ -522,6 +560,45 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             // member ⇒ null ⇒ today's behaviour, which is the restrictive direction — unlike the grant list,
             // whose fallback is a floor the run can work with.
             var policy = TryRestorePolicy(run.PolicyJson, _logger);
+
+            // ---- hermes #16: APPLY THE HUMAN'S DECISION TO THE CALL THAT PARKED THE RUN ----
+            // Continue IS the approval. The run stopped and asked "may I use <tool>?", the card said so, and
+            // the only affordance it carries is the button the user just pressed — so pressing it grants that
+            // one named tool for this run and nothing else. Declining is not a second button: a run nobody
+            // continues stays parked, and Cancel already ends it.
+            //
+            // The pending CALL cannot be replayed — a park outlives the process, and the deferred action's
+            // Execute() delegate does not — so what is applied is the CAPABILITY. The step's row went back to
+            // Pending when the run parked, the drain loop re-runs it from the top, and the same tool call now
+            // resolves GrantedByName instead of parking. That is what makes the decision reach the pending
+            // call rather than merely unblocking the run.
+            //
+            // PERSISTED, not merely handed to this dispatch. Two tools, two parks: without persistence the
+            // second resume would restore the launch envelope and forget the first approval, so the run would
+            // park on tool A, be granted A, park on B, be granted B but lose A, park on A again — a livelock
+            // paced by a human clicking Continue. The write is failure-isolated: a fault leaves the run with
+            // its launch envelope, i.e. it re-parks and asks again, never runs ungranted.
+            if (approvedTool is not null && !grants.Contains(approvedTool, StringComparer.OrdinalIgnoreCase))
+            {
+                var widened = grants.Append(approvedTool).ToList();
+                try
+                {
+                    await _agentRunService.UpdatePolicyJsonAsync(
+                            // The ROW's trigger, not the envelope's. GrantEnvelope.Trigger is provenance that
+                            // "never widens a grant", and the row is the authoritative copy of the same fact.
+                            run.Id, SerializeGrantEnvelope(widened, run.TriggerKind, policy), ct)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Could not persist the approved tool grant for run {RunId}", run.Id);
+                }
+
+                // Applied to THIS dispatch whether or not the persist landed: the human answered, and the
+                // question they answered was about the step that is about to re-run.
+                grants = widened;
+                _logger.LogInformation("Resume: run {RunId} granted approved tool {ToolName}", run.Id, approvedTool);
+            }
 
             // Budget is DELIBERATELY not restored: a FRESH budget envelope IS the "continue" grant
             // (guardrail 4) — that is the whole point of the pause. Only the write grants are restored.
@@ -605,7 +682,8 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                     // workspace it was parked in, so the Pending remainder sees the work the pre-pause steps
                     // left behind. A separate literal from the launch call on purpose — the two have drifted
                     // before, so each has its own regression fact.
-                    executor.Initialize(workspaceRoot: runRoot, grants, provider, policy);
+                    executor.Initialize(workspaceRoot: runRoot, grants, provider, policy,
+                        canPark: CanParkForApproval(run.ParentRunId));
                     started = true;
                     // A2: same bracket, same reasoning as the launch path — after the slot wait, before the
                     // executor can write. TryBeginResumeAsync already raised RunChanged(Running) at the CAS,

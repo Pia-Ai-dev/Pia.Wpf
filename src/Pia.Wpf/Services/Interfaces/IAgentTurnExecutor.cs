@@ -137,7 +137,26 @@ public sealed record StepTurnResult(
     /// appended member on these records set — so the fake executors in the suite stay source-compatible.
     /// </para>
     /// </summary>
-    StepOutcomeClaim? Outcome = null);
+    StepOutcomeClaim? Outcome = null,
+
+    /// <summary>
+    /// hermes #16. The tool this step stopped on because it needs a human decision, or null (every other
+    /// step, and every step of every LIVE run — the interactive gate has a card and never parks).
+    /// <para>
+    /// Non-null means the step DID NOT FINISH and must not be recorded: the orchestrator puts its row back to
+    /// <c>Pending</c>, bills the tokens run-level, and parks the run at <c>WaitingForInput</c> naming this
+    /// tool. It is deliberately NOT folded into <see cref="Succeeded"/>/<see cref="Cancelled"/> the way
+    /// <see cref="Outcome"/> was folded into <see cref="Succeeded"/>: a parked step usually ALSO reports
+    /// <c>Succeeded:false</c> (the model was denied a tool and often says so through
+    /// <c>emit_step_result</c>), and reading that as an ordinary failure would burn a replan on a step that
+    /// is merely waiting.
+    /// </para>
+    /// <para>
+    /// The NAME only. The pending call itself cannot survive a park — a park outlives the process — so what
+    /// the human approves is the capability, and the resumed step re-issues the call itself.
+    /// </para>
+    /// </summary>
+    string? ApprovalRequiredTool = null);
 
 /// <summary>Summary of a completed step, carried forward as context for later steps + replanning.</summary>
 /// <param name="ExpectedArtifact">

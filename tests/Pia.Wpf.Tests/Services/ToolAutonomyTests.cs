@@ -31,8 +31,9 @@ public class ToolAutonomyTests
         RunAutonomyPolicy? policy = null,
         bool allowlisted = false,
         bool standingGrant = false,
-        bool namedGrant = false)
-        => new(surface, toolName, toolClass, allowlisted, standingGrant, namedGrant, policy);
+        bool namedGrant = false,
+        bool canPark = false)
+        => new(surface, toolName, toolClass, allowlisted, standingGrant, namedGrant, policy, canPark);
 
     /// <summary>
     /// T-FLOOR-1. A single Fact with nested loops rather than a ~3.5k-case Theory: the assertion is the same
@@ -50,10 +51,14 @@ public class ToolAutonomyTests
         foreach (var granted in new[] { false, true })
         foreach (var allowlisted in new[] { false, true })
         foreach (var named in new[] { false, true })
+        // hermes #16 added the FOURTH axis, and it is not decoration: CanPark is a new way in, so the
+        // "no value of the inputs reaches an auto-approval past the floor" claim is only still exhaustive
+        // if the park's own permission is part of the value space.
+        foreach (var canPark in new[] { false, true })
         {
             var verdict = ToolAutonomy.Resolve(Input(
                 surface, name, toolClass, policy,
-                allowlisted: allowlisted, standingGrant: granted, namedGrant: named));
+                allowlisted: allowlisted, standingGrant: granted, namedGrant: named, canPark: canPark));
 
             // The M3 FLOOR: a delete-like EXTERNAL tool never auto-runs, whatever the policy says and
             // however it was granted.
@@ -64,15 +69,81 @@ public class ToolAutonomyTests
             // auditable decision, pinned by PolicyNeverCoversADeleteLikeTool_EvenABuiltInOne.)
             var policyBroken = verdict.Decision == ToolGateDecision.AutoApprovedPolicy;
 
-            if (floorBroken || policyBroken)
+            // hermes #16: and a delete-like tool of ANY class never PARKS. Wider than the floor on purpose —
+            // the floor is external-only and lets a named grant run delete_file, whereas the park would put
+            // an irreversible action behind a one-button Continue that shows no arguments.
+            var parkBroken = verdict.Outcome == ToolGateOutcome.Park;
+
+            if (floorBroken || policyBroken || parkBroken)
             {
                 violations.Add(
                     $"{surface}/{toolClass}/{name}/policy={(policy is null ? "none" : string.Join('+', policy.AutoApproveClasses))}"
-                    + $"/granted={granted}/allowlisted={allowlisted}/named={named} => {verdict.Outcome} {verdict.Decision}");
+                    + $"/granted={granted}/allowlisted={allowlisted}/named={named}/canPark={canPark}"
+                    + $" => {verdict.Outcome} {verdict.Decision}");
             }
         }
 
         Assert.Empty(violations);
+    }
+
+    /// <summary>
+    /// T-PARK-A (hermes #16), <b>GUARD</b>. The park is UNATTENDED-ONLY, asserted over the whole input space
+    /// with <c>canPark</c> forced true: the interactive surface has a card (a park would be strictly worse
+    /// than the card it replaces) and voice has a speaker who would never see a Flow item.
+    /// <para>
+    /// The non-vacuity control is inside the same loop: the unattended surface DOES park these exact inputs,
+    /// so a resolver that had simply stopped parking altogether reds here rather than passing.
+    /// </para>
+    /// <para>Neutralize: drop <c>Surface == ToolGateSurface.Unattended</c> from the Park arm → red.</para>
+    /// </summary>
+    [Fact]
+    public void OnlyTheUnattendedSurfaceEverParks_EvenWhenTheCallerPermitsIt()
+    {
+        var violations = new List<string>();
+        var unattendedParks = 0;
+
+        // Promptable names only — a delete-like name never parks anywhere, which T-FLOOR-1 above now covers.
+        foreach (var surface in AllSurfaces)
+        foreach (var toolClass in AllClasses)
+        foreach (var name in new[] { "write_file", "update_todo", "some_mcp_action" })
+        foreach (var policy in new RunAutonomyPolicy?[] { null, EveryClassPolicy })
+        foreach (var allowlisted in new[] { false, true })
+        {
+            var verdict = ToolAutonomy.Resolve(Input(
+                surface, name, toolClass, policy, allowlisted: allowlisted, canPark: true));
+
+            if (verdict.Outcome != ToolGateOutcome.Park)
+                continue;
+
+            if (surface == ToolGateSurface.Unattended)
+                unattendedParks++;
+            else
+                violations.Add($"{surface}/{toolClass}/{name}/allowlisted={allowlisted} => parked");
+        }
+
+        Assert.Empty(violations);
+        Assert.True(unattendedParks > 0, "no input parked at all — the guard above would then be vacuous");
+    }
+
+    /// <summary>
+    /// T-PARK-B (hermes #16). <c>canPark</c> is a permission to ASK, never to run: the same input that parks
+    /// with it refuses without it, and NEITHER executes. The park changes what happens to a call the gate was
+    /// always going to withhold — it does not widen the set of calls that run unattended.
+    /// </summary>
+    [Fact]
+    public void CanPark_ChangesRefuseIntoAsk_AndNeverIntoRun()
+    {
+        var refused = ToolAutonomy.Resolve(Input(ToolGateSurface.Unattended, "write_file", ToolClass.Files));
+        Assert.Equal(ToolGateOutcome.Refuse, refused.Outcome);
+        Assert.Equal(ToolGateDecision.DeniedNotGranted, refused.Decision);
+
+        var parked = ToolAutonomy.Resolve(Input(ToolGateSurface.Unattended, "write_file", ToolClass.Files, canPark: true));
+        Assert.Equal(ToolGateOutcome.Park, parked.Outcome);
+        Assert.Equal(ToolGateDecision.ParkedForApproval, parked.Decision);
+
+        // The point of the pair: neither is AutoRun, so no value of canPark authorizes anything.
+        Assert.NotEqual(ToolGateOutcome.AutoRun, refused.Outcome);
+        Assert.NotEqual(ToolGateOutcome.AutoRun, parked.Outcome);
     }
 
     /// <summary>T-FLOOR-2: this batch does not tighten the path where a human is looking at the card.</summary>
