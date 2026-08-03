@@ -47,12 +47,16 @@ public class ActionCardBuilderScheduledCategoryTests
         var card = CreateBuilder().Build(Call("create_scheduled_research"), detokenize: false);
 
         Assert.False(card.IsAutoApprovable);
-        // The user-visible half of §0.6: never the PERSISTED tier. hermes #15 added the middle one — a
-        // scheduled-research create is reversible and repetitive, which is exactly what it is for — so the bar
-        // is now Decline / Allow once / Allow this session, and still no "Always allow".
-        Assert.Equal(3, card.Decisions.Count);
+        // The user-visible half of §0.6: never the PERSISTED tier. hermes #15 briefly offered the MIDDLE one
+        // here too, reasoning that a scheduled-research create is reversible and repetitive. The review pass on
+        // #15 took it back off, because THIS tool's arguments are a grant list: one click would have authorized
+        // every later job-authoring call in the process, each with a `grantedTools` argument nobody sees and
+        // which may name delete_file. So the bar is Decline / Allow once, and NEITHER grant tier.
+        // (ToolAutonomyTests.AToolWhoseArgumentsAreAGrantList_IsNeverSessionGrantable owns the rule itself.)
+        Assert.Equal(2, card.Decisions.Count);
         Assert.DoesNotContain(card.Decisions, d => ReferenceEquals(d.Command, card.AlwaysAllowCommand));
-        Assert.Contains(card.Decisions, d => ReferenceEquals(d.Command, card.AllowForSessionCommand));
+        Assert.DoesNotContain(card.Decisions, d => ReferenceEquals(d.Command, card.AllowForSessionCommand));
+        Assert.False(card.IsSessionGrantable);
     }
 
     [Fact]

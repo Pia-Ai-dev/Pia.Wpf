@@ -293,7 +293,7 @@ public class ChatSessionStateMachineTests
             Category = ActionCardCategory.Todo,
             ToolName = "create_todo",
         };
-        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<ToolClass?>()).Returns(card);
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<ToolGateDecision?>(), Arg.Any<ToolClass?>()).Returns(card);
         _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
         _cards.ResolveSuccessTitle(Arg.Any<string>()).Returns("Saved");
 
@@ -361,7 +361,7 @@ public class ChatSessionStateMachineTests
         _permissions.IsGranted(BuiltInPluginDefaults.TodoPluginId, "create_todo").Returns(false);
 
         var card = NewCard("create_todo", BuiltInPluginDefaults.TodoPluginId);
-        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<ToolClass?>()).Returns(card);
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<ToolGateDecision?>(), Arg.Any<ToolClass?>()).Returns(card);
         _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
         _cards.ResolveSuccessTitle(Arg.Any<string>()).Returns("Saved");
 
@@ -404,7 +404,7 @@ public class ChatSessionStateMachineTests
         _permissions.IsGranted(mcpPluginId, "mcp_search").Returns(false); // no standing grant yet
 
         var card = NewCard("mcp_search", mcpPluginId);
-        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<ToolClass?>()).Returns(card);
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<ToolGateDecision?>(), Arg.Any<ToolClass?>()).Returns(card);
         _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
         _cards.ResolveSuccessTitle(Arg.Any<string>()).Returns("Done");
 
@@ -445,7 +445,7 @@ public class ChatSessionStateMachineTests
         _permissions.IsGranted(BuiltInPluginDefaults.TodoPluginId, "create_todo").Returns(false);
 
         var card = NewCard("create_todo", BuiltInPluginDefaults.TodoPluginId);
-        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<ToolClass?>()).Returns(card);
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<ToolGateDecision?>(), Arg.Any<ToolClass?>()).Returns(card);
         _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
         _cards.ResolveSuccessTitle(Arg.Any<string>()).Returns("Saved");
 
@@ -485,7 +485,7 @@ public class ChatSessionStateMachineTests
         _permissions.IsGranted(BuiltInPluginDefaults.TodoPluginId, "create_todo").Returns(false);
 
         var card = NewCard("create_todo", BuiltInPluginDefaults.TodoPluginId);
-        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<ToolClass?>()).Returns(card);
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<ToolGateDecision?>(), Arg.Any<ToolClass?>()).Returns(card);
         _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
 
         _ai.GetChatCompletionWithToolsAsync(
@@ -542,8 +542,10 @@ public class ChatSessionStateMachineTests
         _permissions.IsAutoApproveEligible("create_todo").Returns(true);
         _permissions.IsGranted(BuiltInPluginDefaults.TodoPluginId, "create_todo").Returns(true);
 
-        // Only the autoApproved:true build path returns the resolved card.
-        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), true, Arg.Any<ToolClass?>()).Returns(card);
+        // Only the bypass build path returns the resolved card — and it is now keyed on the DECISION the gate
+        // resolved (the persisted "always allow" this test set up), not on a bare `true`.
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(),
+            ToolGateDecision.AutoApprovedStandingGrant, Arg.Any<ToolClass?>()).Returns(card);
         _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
         _cards.ResolveSuccessTitle(Arg.Any<string>()).Returns("Saved");
 
@@ -597,7 +599,7 @@ public class ChatSessionStateMachineTests
         _permissions.IsGranted(mcpPluginId, "remove_page").Returns(true);    // and ALREADY granted
 
         var card = NewCard("remove_page", mcpPluginId);
-        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<ToolClass?>()).Returns(card);
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<ToolGateDecision?>(), Arg.Any<ToolClass?>()).Returns(card);
         _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
         _cards.ResolveSuccessTitle(Arg.Any<string>()).Returns("Done");
 
@@ -644,7 +646,7 @@ public class ChatSessionStateMachineTests
         _permissions.IsGranted(BuiltInPluginDefaults.FilesPluginId, "write_file").Returns(true);
 
         var card = NewCard("write_file", BuiltInPluginDefaults.FilesPluginId);
-        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<ToolClass?>()).Returns(card);
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<ToolGateDecision?>(), Arg.Any<ToolClass?>()).Returns(card);
         _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
         _cards.ResolveSuccessTitle(Arg.Any<string>()).Returns("Saved");
 
@@ -702,7 +704,7 @@ public class ChatSessionStateMachineTests
         _permissions.IsGranted(pluginId, "delete_file").Returns(true);
 
         var card = NewCard("delete_file", pluginId);
-        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<ToolClass?>()).Returns(card);
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<ToolGateDecision?>(), Arg.Any<ToolClass?>()).Returns(card);
         _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
         _cards.ResolveSuccessTitle(Arg.Any<string>()).Returns("Done");
 

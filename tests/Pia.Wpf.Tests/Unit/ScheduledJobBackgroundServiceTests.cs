@@ -466,6 +466,11 @@ public class ScheduledJobBackgroundServiceTests
 
         await TickAndSettleAsync(bg, CancellationToken.None);
 
+        // THE PREMISE FIRST (see the sibling Paused fact): the park arm is log-only, so all four absences
+        // below are only evidence if the continuation that contains that arm actually ran. GetAsync is its
+        // first act. Neutralise `TrackDispatch(BookkeepAgentRunAsync(job, handle));` → this reds.
+        await runService.Received(1).GetAsync(runId, Arg.Any<CancellationToken>());
+
         // Park is not a failure: no MarkRunFailed, no failure toast, no success bookkeeping either.
         Assert.Empty(jobs.Failed);
         Assert.Empty(jobs.Completed);
@@ -508,6 +513,13 @@ public class ScheduledJobBackgroundServiceTests
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await TickAndSettleAsync(bg, CancellationToken.None);
+
+        // THE PREMISE, and the reason this is not a test of absences: every assertion above is something the
+        // park arm did NOT do, and the park arm is now log-only — so without this line "the arm ran and
+        // correctly wrote nothing" is indistinguishable from "the bookkeeping continuation never ran at all".
+        // GetAsync is the arm's own first act, so observing it is what makes the three absences evidence.
+        // Neutralise `TrackDispatch(BookkeepAgentRunAsync(job, handle));` → this reds and the rest do not.
+        await runService.Received(1).GetAsync(runId, Arg.Any<CancellationToken>());
 
         Assert.Empty(jobs.Failed);
         Assert.Equal([due.Id], jobs.Dispatched);
@@ -750,6 +762,126 @@ public class ScheduledJobBackgroundServiceTests
         await launcher.DidNotReceive().LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>());
         Assert.Empty(jobs.Dispatched);
         Assert.Empty(jobs.Failed);
+    }
+
+    /// <summary>
+    /// REVIEW FIX (hermes #2 Q4). The duplicate-dispatch guard used to be evaluated ONCE, deliberately before
+    /// the grace check — and then the tick awaited an UNBOUNDED human dialog and dispatched without re-testing
+    /// it. So the yes-answer could launch a second concurrent unattended run of the same goal, with real token
+    /// spend, while <c>AnyExecutingRunForTriggerAsync</c> was true: a manual <c>RunNowAsync</c> from Settings (no
+    /// longer serialized against the tick since <c>_runLock</c> went) or a user resuming a parked run of this
+    /// job is enough to open that window. Layer (a) cannot cover it — the schedule write happens INSIDE the
+    /// dispatch that is about to be duplicated.
+    /// <para>
+    /// The <c>PendingAsk</c> seam this drives had ZERO call sites before the review pass, which is precisely why
+    /// no shipped test could see the transition window. Same shape of blind spot as Batch 08's pause: the
+    /// decision is keyed on a state that is only briefly wrong, and every existing test observed it settled.
+    /// </para>
+    /// <para>Neutralize: delete the second <c>RefuseIfAlreadyExecutingAsync</c> call from the yes-path of
+    /// <c>RunJobAsync</c> → red on <c>DidNotReceive</c>.</para>
+    /// </summary>
+    [Fact]
+    public async Task ExecuteOnceAsync_MissedRunAnsweredYes_WhileARunOfTheJobStarted_DoesNotDispatchASecond()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var jobs = new FakeJobService();
+        var late = new ScheduledJob
+        {
+            Name = "T", Query = "q", Recurrence = RecurrenceType.Daily, Kind = ScheduledJobKind.AgentTask,
+            TimeOfDay = TimeOnly.MinValue, NextFireAt = DateTime.Now.AddMinutes(-20)
+        };
+        jobs.SeedDue(late);
+
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        launcher.LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new HeadlessRunHandle(Guid.NewGuid(), Guid.NewGuid(), Task.CompletedTask));
+
+        // Nothing is executing when the guard is first evaluated; a run appears WHILE the dialog is open.
+        var askSeen = 0;
+        var runService = Substitute.For<IAgentRunService>();
+        runService.AnyExecutingRunForTriggerAsync(late.Id, Arg.Any<CancellationToken>())
+            .Returns(_ => Volatile.Read(ref askSeen) > 0);
+
+        var notifications = new FakeNotificationSurface
+        {
+            PendingAsk = new TaskCompletionSource<bool?>(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
+            notifications, launcher, NewSettings(), runService,
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        var tick = bg.ExecuteOnceAsync(ct);
+        Assert.True(SpinWait.SpinUntil(() => notifications.AskCount == 1, 5000), "the dialog never opened");
+        Volatile.Write(ref askSeen, 1);       // a manual RunNow / a resumed park starts a run of THIS job …
+        notifications.PendingAsk.SetResult(true);  // … and only then does the human answer "yes, run it"
+        await tick;
+        await SettleAsync(bg, ct);
+
+        await launcher.DidNotReceive().LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>());
+        // The refusal spends the occurrence, exactly as the pre-grace door does — one implementation, two doors.
+        // Leaving the row due would re-refuse every 30 s and drift back into this same prompt.
+        Assert.Equal([late.Id], jobs.Dispatched);
+        Assert.Empty(jobs.Failed);   // and a refusal is still not a job-health signal
+    }
+
+    /// <summary>
+    /// CHARACTERIZATION OF A KNOWN OPEN DEFECT — this test asserts BROKEN behaviour on purpose, and is expected
+    /// to red on the day it is fixed. Read the assertions as "this is what currently happens", never as a design
+    /// this protects.
+    /// <para>
+    /// hermes #2 moved the RUN off the tick, but not the missed-run DIALOG. <c>ExecuteOnceAsync</c> iterates due
+    /// jobs sequentially and <c>RunJobAsync</c> awaits <c>AskUserToRunMissedAsync</c> — a real ContentDialog that
+    /// resolves only when a human clicks. <c>PeriodicTimer</c> does not queue elapsed ticks, so while the tick is
+    /// parked on that dialog NO tick body runs at all: job B here, and every other due job on the device, and
+    /// every subsequent occurrence of every job, waits for the human. The <c>_bookkeepingLock</c> doc claims
+    /// "never held across a dialog" — true of the lock, false of the tick itself.
+    /// </para>
+    /// <para>
+    /// NOT FIXED in the review pass, deliberately. Moving the ask off-tick (TrackDispatch after the dedup add,
+    /// which must stay on the tick or <c>DedupesPromptOnSecondTickIfUnanswered</c> becomes a race) changes
+    /// <c>ExecuteOnceAsync</c>'s documented contract — "returns once every due job has been DISPATCHED" — forces
+    /// <c>SkipsIfDeclined</c> onto the drain, and parks an UNANSWERED dialog in <c>_dispatches</c> forever, which
+    /// silently changes what <c>WaitForDispatchedRunsAsync</c> means at shutdown and in <see cref="SettleAsync"/>.
+    /// That is an owner decision about the tick's shape, not a review fix. Pre-existing: the batch under review
+    /// only ever claimed the RUN no longer holds the tick.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task ExecuteOnceAsync_APendingMissedRunDialog_StillBlocksEveryOtherDueJob_KnownOpenDefect()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var jobs = new FakeJobService();
+        var late = new ScheduledJob
+        {
+            Name = "late", Query = "q", Recurrence = RecurrenceType.Daily, Kind = ScheduledJobKind.AgentTask,
+            TimeOfDay = TimeOnly.MinValue, NextFireAt = DateTime.Now.AddMinutes(-20)
+        };
+        var normal = NewDueJob();
+        normal.Kind = ScheduledJobKind.AgentTask;
+        jobs.SeedDue(late);      // first, so the tick reaches its dialog before it ever sees `normal`
+        jobs.SeedDue(normal);
+
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        launcher.LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new HeadlessRunHandle(Guid.NewGuid(), Guid.NewGuid(), Task.CompletedTask));
+
+        var notifications = new FakeNotificationSurface
+        {
+            // Never completed: the human has not answered.
+            PendingAsk = new TaskCompletionSource<bool?>(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
+            notifications, launcher, NewSettings(), Substitute.For<IAgentRunService>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await Assert.ThrowsAsync<TimeoutException>(
+            () => bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(5), ct));
+        // Neither job got out — not just the late one. `normal` is due, needs no dialog, and is still stuck.
+        await launcher.DidNotReceive().LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>());
+        Assert.Empty(jobs.Dispatched);
+        Assert.Equal(1, notifications.AskCount);   // the tick really is parked on the human, not on something else
     }
 
     [Fact]

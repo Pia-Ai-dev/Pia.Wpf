@@ -193,6 +193,39 @@ public sealed class RunProgressViewModelTimelineTests
         Assert.NotEqual(RunProgressViewModel.DecisionLabelKey(ToolGateDecision.DeniedNotGranted), key);
     }
 
+    /// <summary>
+    /// hermes #15, and the same blind spot one batch later: <c>EveryDecisionOrdinalMapsToALabel</c> asserts
+    /// only that the key is non-empty, so ordinals 13/14 pass it on the <c>Run_Timeline_Decision_Unknown</c>
+    /// fall-through and BOTH new arms could be deleted with the whole suite green. The session tier is the
+    /// one authority a user cannot find in Settings, so the run panel is where they read what happened —
+    /// "unknown" for every session-granted call would make the tier invisible twice over.
+    /// <para>
+    /// Asserted as an EQUALITY against the two existing categories rather than just "not unknown": the arms
+    /// are deliberate FOLDS (a session-granted call ran with nobody asked; a card answered "for this session"
+    /// is a person saying yes), and a fold that landed in the wrong bucket is the other way to get this wrong.
+    /// </para>
+    /// <para>Neutralize: delete either <c>or ToolGateDecision.AutoApprovedSessionGrant</c> or
+    /// <c>or ToolGateDecision.ApprovedForSession</c> from <c>DecisionLabelKey</c> → red.</para>
+    /// </summary>
+    [Fact]
+    public void TheSessionTierDecisions_FoldIntoAutoApprovedAndApproved_NotIntoUnknown()
+    {
+        var granted = RunProgressViewModel.DecisionLabelKey(ToolGateDecision.AutoApprovedSessionGrant);
+        var approved = RunProgressViewModel.DecisionLabelKey(ToolGateDecision.ApprovedForSession);
+
+        // The call ran with nobody asked — same category as the standing grant it sits above in the resolver.
+        Assert.Equal("Run_Timeline_Decision_AutoApproved", granted);
+        Assert.Equal(RunProgressViewModel.DecisionLabelKey(ToolGateDecision.AutoApprovedStandingGrant), granted);
+
+        // A person clicked "Allow this session" on THIS row — same category as the other two card answers.
+        Assert.Equal("Run_Timeline_Decision_Approved", approved);
+        Assert.Equal(RunProgressViewModel.DecisionLabelKey(ToolGateDecision.ApprovedOnce), approved);
+
+        // …and neither may reach the fall-through, which is what the non-empty Theory above cannot see.
+        Assert.NotEqual("Run_Timeline_Decision_Unknown", granted);
+        Assert.NotEqual("Run_Timeline_Decision_Unknown", approved);
+    }
+
     public static TheoryData<ToolGateDecision> EveryDecision()
     {
         var data = new TheoryData<ToolGateDecision>();

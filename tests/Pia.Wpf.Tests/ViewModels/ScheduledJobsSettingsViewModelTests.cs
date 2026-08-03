@@ -115,6 +115,53 @@ public class ScheduledJobsSettingsViewModelTests
         Assert.Equal("Settings_ScheduledJobs_RunNotOwner", vm.StatusMessage);
     }
 
+    /// <summary>
+    /// hermes #2 Q4's UI half. <c>RunNow_SurfacesTheRefusalReason_NotJustAFailure</c> above pins ONE arm
+    /// (<c>NotOwner</c>); the two this round added or changed were unpinned, and the switch has no
+    /// exhaustiveness guard, so both could be deleted with the suite green:
+    /// <list type="bullet">
+    /// <item><c>AlreadyRunning</c> falls through to <c>_ => RunNotFound</c> — the user who pressed Run now on
+    /// a job whose run is executing is told the job "no longer exists", which is the wrong refusal about a job
+    /// that both exists and is running.</item>
+    /// <item><c>Dispatched</c> now says "started", not "finished": the method returns as soon as the run has
+    /// been handed off, so the old key claimed an outcome that was still 45 minutes away.</item>
+    /// </list>
+    /// The three keys are asserted as DISTINCT as well as correct — a refusal that reads as some other
+    /// refusal is the failure here, and each key's translated text is <c>LocalizationTests</c>' business.
+    /// <para>Neutralize: delete the <c>AlreadyRunning</c> arm (or restore the <c>RunFinished</c> key) from
+    /// <c>ScheduledJobsSettingsViewModel.RunNowAsync</c> → red.</para>
+    /// </summary>
+    [Fact]
+    public async Task RunNow_TellsTheTruthAboutADispatchAndAboutARunAlreadyGoing()
+    {
+        var job = NewJob();
+
+        var (dispatchedVm, _, dispatchedRunner) = CreateSut(job);
+        dispatchedRunner.RunNowAsync(job.Id, Arg.Any<CancellationToken>())
+            .Returns(ScheduledJobRunNowResult.Dispatched);
+        await dispatchedVm.RefreshAsync();
+        await dispatchedVm.RunNowCommand.ExecuteAsync(dispatchedVm.Jobs[0]);
+        Assert.Equal("Settings_ScheduledJobs_RunStarted", dispatchedVm.StatusMessage);
+
+        var (busyVm, _, busyRunner) = CreateSut(job);
+        busyRunner.RunNowAsync(job.Id, Arg.Any<CancellationToken>())
+            .Returns(ScheduledJobRunNowResult.AlreadyRunning);
+        await busyVm.RefreshAsync();
+        await busyVm.RunNowCommand.ExecuteAsync(busyVm.Jobs[0]);
+        Assert.Equal("Settings_ScheduledJobs_RunAlreadyRunning", busyVm.StatusMessage);
+
+        // The one it must not be mistaken for. NotFound is the DEFAULT arm, so "already running" landing there
+        // is exactly how this regresses — and it is a different sentence about a different situation.
+        var (goneVm, _, goneRunner) = CreateSut(job);
+        goneRunner.RunNowAsync(job.Id, Arg.Any<CancellationToken>())
+            .Returns(ScheduledJobRunNowResult.NotFound);
+        await goneVm.RefreshAsync();
+        await goneVm.RunNowCommand.ExecuteAsync(goneVm.Jobs[0]);
+        Assert.Equal("Settings_ScheduledJobs_RunNotFound", goneVm.StatusMessage);
+        Assert.NotEqual(goneVm.StatusMessage, busyVm.StatusMessage);
+        Assert.NotEqual(goneVm.StatusMessage, dispatchedVm.StatusMessage);
+    }
+
     [Fact]
     public async Task Save_RefusesAMalformedTime_RatherThanCoercingTheSchedule()
     {

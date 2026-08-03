@@ -94,8 +94,8 @@ public static class ToolAutonomy
     /// forty times a session (<c>write_file</c>) with no tier between "once" and "never".
     /// </para>
     /// <para>
-    /// The two exclusions are the whole rule, and both are about what a MULTI-CALL grant can consent to. One
-    /// card shows the arguments of ONE call; a session grant authorizes every later call of that tool with
+    /// The three exclusions are the whole rule, and all three are about what a MULTI-CALL grant can consent to.
+    /// One card shows the arguments of ONE call; a session grant authorizes every later call of that tool with
     /// arguments the user will never see. So:
     /// <list type="bullet">
     /// <item><see cref="ToolPermissionService.IsDeleteLike"/> — no destructive tool of any class. Wider than
@@ -104,14 +104,27 @@ public static class ToolAutonomy
     /// <c>git_stash</c> shed uncommitted work while carrying no "delete" in the name. This exclusion used to
     /// live in <c>ActionCardBuilder</c> as the card's own stricter rule; the session tier shares it rather
     /// than re-deriving it, so the gate's mint check is exactly as narrow as the card's offer.</item>
+    /// <item><see cref="ToolPermissionService.IsAuthorityAuthoring"/> — the review pass on #15 found the case
+    /// the "arguments nobody will see" reasoning above points straight at and the first two exclusions miss:
+    /// a tool whose ARGUMENTS ARE THEMSELVES A GRANT LIST. <c>create_scheduled_research</c> is neither
+    /// delete-like nor work-discarding, so one click on "Allow this session" on a benign-looking "create a
+    /// scheduled job" card authorized every LATER job-authoring call in the process, card-free — and that
+    /// tool's <c>grantedTools</c> argument may name <c>delete_file</c> (its create-time filter strips only
+    /// PRESUMED-EXTERNAL destructive names, by design), which the unattended gate then auto-runs as a named
+    /// grant. The persisted tier was never on offer here
+    /// (<c>IsStandingGrantOfferable(Scheduling, "create_scheduled_research", false)</c> is false), so without
+    /// this the middle tier was strictly WIDER than the permanent one for the one tool that mints authority.
+    /// </item>
     /// </list>
     /// It admits a non-destructive EXTERNAL (MCP) tool, which the standing tier already offers — the middle
-    /// tier must not be the only one missing for the tools a user is prompted for most.
+    /// tier must not be the only one missing for the tools a user is prompted for most. (What it may do
+    /// UNATTENDED is narrower still; see the session arm in <see cref="Resolve"/>.)
     /// </para>
     /// </summary>
     public static bool IsSessionGrantOfferable(string toolName)
         => !ToolPermissionService.IsDeleteLike(toolName)
-           && !ToolPermissionService.IsWorkDiscarding(toolName);
+           && !ToolPermissionService.IsWorkDiscarding(toolName)
+           && !ToolPermissionService.IsAuthorityAuthoring(toolName);
 
     /// <summary>
     /// Resolve one gated tool call. The FLOOR is evaluated FIRST and unconditionally, so no policy value and
@@ -167,8 +180,20 @@ public static class ToolAutonomy
         // write_file). Honouring it on a surface with no card and no visible transcript would silently widen
         // what a spoken turn may do, on evidence the speaker never sees. Voice keeps exactly the authority it
         // had, and passes the honest lookup anyway so the input stays a fact and the policy stays here.
+        //
+        // AND UNATTENDED, NOT FOR ToolClass.External. The review pass on #15 found this arm auto-running the
+        // exact class the PARK 60 lines below refuses to raise a question about: `send_email` is not
+        // delete-like, so the floor and IsSessionGrantOfferable both pass it, and
+        // Resolve(Unattended, "send_email", External, sessionGrant: true) returned AutoRun where the same input
+        // without the grant returned Refuse — it did not even reach the park. The park's written reason applies
+        // with MORE force here, not less: an MCP tool's name and effect are server-defined, the card that
+        // collected the grant showed ONE call's arguments, and every later call's arguments are invisible. So
+        // unattended the tier is honoured only for the classes the park would have been willing to ask about,
+        // and an external write stays the hard denial it was. Interactively it is still admitted — a human is
+        // looking at the card, and the standing tier already offers non-destructive external tools.
         if (input.HasSessionGrant
             && input.Surface != ToolGateSurface.Voice
+            && (input.Surface != ToolGateSurface.Unattended || input.ToolClass != ToolClass.External)
             && IsSessionGrantOfferable(input.ToolName))
         {
             return new ToolGateVerdict(ToolGateOutcome.AutoRun, ToolGateDecision.AutoApprovedSessionGrant);

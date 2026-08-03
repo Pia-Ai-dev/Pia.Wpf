@@ -300,7 +300,7 @@ public sealed class LiveTurnExecutorPlannedRunTests
         _permissions.IsGranted(pluginId, "write_file").Returns(false);
         _plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
             .Returns(((object?)null, (PluginToolCall?)pending));
-        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<ToolClass?>()).Returns(card);
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<ToolGateDecision?>(), Arg.Any<ToolClass?>()).Returns(card);
         _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
         _cards.ResolveSuccessTitle(Arg.Any<string>()).Returns("Done");
 

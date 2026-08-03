@@ -773,6 +773,7 @@
   <data name="ActionCard_AlwaysAllow" xml:space="preserve"><value>Toujours autoriser</value></data>
   <data name="ActionCard_AllowForSession" xml:space="preserve"><value>Autoriser cette session</value></data>
   <data name="ActionCard_AutoApproved" xml:space="preserve"><value>Approuvé automatiquement · {0} toujours autorisé</value></data>
+  <data name="ActionCard_AutoApprovedForSession" xml:space="preserve"><value>Approuvé automatiquement · {0} autorisé pour cette session</value></data>
   <data name="ActionCard_Manage" xml:space="preserve"><value>Gérer</value></data>
   <data name="Settings_Tab_ToolPermissions" xml:space="preserve"><value>Accès aux outils</value></data>
   <data name="Settings_ToolPermissions_Title" xml:space="preserve"><value>Outils toujours autorisés</value></data>

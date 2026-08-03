@@ -383,7 +383,7 @@ public sealed class ChatSessionTimelineTests
                     ? ((object?)null, (PluginToolCall?)p)
                     : null;
             });
-        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<ToolClass?>())
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<ToolGateDecision?>(), Arg.Any<ToolClass?>())
             .Returns(ci => cards[ci.ArgAt<PluginToolCall>(0).ToolName]);
     }
 

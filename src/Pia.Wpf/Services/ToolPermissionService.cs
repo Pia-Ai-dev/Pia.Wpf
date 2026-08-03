@@ -111,6 +111,33 @@ public class ToolPermissionService : IToolPermissionService
         => IsDeleteLike(toolName) && !BuiltInDestructiveTools.Contains(toolName!);
 
     /// <summary>
+    /// Tools whose ARGUMENTS ARE A GRANT LIST — calling one AUTHORS authority that some later, unattended run
+    /// will exercise with nobody looking. <c>create_scheduled_research</c> / <c>update_scheduled_research</c>
+    /// take a <c>grantedTools</c> CSV that becomes <c>ScheduledJob.GrantedTools</c>, which
+    /// <c>ScheduledJobBackgroundService.ExecuteAgentTaskAsync</c> hands to the run as <c>GrantedWrites</c>,
+    /// which <see cref="ToolAutonomy.Resolve"/> honours as a NAMED grant — and the FLOOR there is
+    /// External-only, so a named built-in <c>delete_file</c> auto-runs unattended by design.
+    /// <see cref="IsPresumedExternalDeleteLike"/> is that argument's only create-time filter and it
+    /// deliberately does not strip our own destructive names.
+    /// <para>
+    /// The complete set as of this writing: only <c>ScheduledJobToolHandler</c> takes a grant list. Sub-agent
+    /// delegation is orchestrator-internal and exposes no such tool. Add a name here if that changes.
+    /// </para>
+    /// </summary>
+    private static readonly HashSet<string> AuthorityAuthoringTools = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "create_scheduled_research",
+        "update_scheduled_research"
+    };
+
+    /// <summary>
+    /// True for a tool one of whose arguments is itself future authority — see
+    /// <see cref="AuthorityAuthoringTools"/>. Case-insensitive like the other two name tests.
+    /// </summary>
+    public static bool IsAuthorityAuthoring(string? toolName)
+        => toolName is not null && AuthorityAuthoringTools.Contains(toolName);
+
+    /// <summary>
     /// Tools that discard uncommitted work without carrying a destructive STEM in their name, so
     /// <see cref="IsDeleteLike"/> cannot see them. Case-insensitive like <see cref="IsDeleteLike"/> (the old
     /// inline copy in <c>ActionCardBuilder</c> was case-sensitive; widening it only ever adds friction, which

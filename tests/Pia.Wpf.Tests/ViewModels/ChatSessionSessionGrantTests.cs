@@ -67,7 +67,7 @@ public sealed class ChatSessionSessionGrantTests
     /// <para>
     /// The DISCRIMINATOR is the audit decision of the second row. <c>AutoApprovedSessionGrant</c> is written on
     /// exactly one path — the AutoRun bypass, which builds a pre-resolved card and never awaits a decision — so
-    /// it cannot be produced by a card that happened to already be answered. The <c>autoApproved: true</c>
+    /// it cannot be produced by a card that happened to already be answered. The <c>autoApprovedAs</c>
     /// argument captured off the builder says the same thing from the UI side.
     /// </para>
     /// <para>
@@ -109,11 +109,65 @@ public sealed class ChatSessionSessionGrantTests
             _timeline.Rows.Select(r => r.Decision).ToArray());
         Assert.All(_timeline.Rows, r => Assert.Equal(AgentTimelineOutcome.Ok, r.Outcome));
 
-        // …and from the UI side: exactly one card was raised for a decision, the second was a bypass render.
-        Assert.Equal([false, true], autoApprovedFlags);
+        // …and from the UI side: exactly one card was raised for a decision, the second was a bypass render —
+        // and the bypass render was told WHICH tier authorized it, not merely that something had.
+        Assert.Equal([null, ToolGateDecision.AutoApprovedSessionGrant], autoApprovedFlags);
 
         // The grant was minted exactly once, by the tier's own path.
         _permissions.Received(1).GrantForSession(FilesId, "write_file");
+    }
+
+    /// <summary>
+    /// REVIEW FIX (#15). The bypass card must not claim a PERMANENT grant for a SESSION one. The AutoRun path
+    /// used to call <c>Build(..., autoApproved: true, ...)</c> — a bare bool — so the card could not tell
+    /// <c>AutoApprovedSessionGrant</c> from <c>AutoApprovedStandingGrant</c> and rendered
+    /// <c>ActionCard_AutoApproved</c> ("Auto-approved · you always allow {0}") either way. A user who clicked
+    /// "Allow this session" was told, on the very next call, that they always allow it — and then had nowhere
+    /// to revoke it, because <c>ToolPermissionService.List()</c> returns <c>AlwaysAllowedTools</c> only and the
+    /// session tier writes nothing.
+    /// <para>
+    /// The bypass card here comes from the REAL <see cref="ActionCardBuilder"/> (the first, decision-bearing
+    /// card stays a pre-answered stub, or nothing could pre-press it), so the string under assertion is the one
+    /// production renders. The localization double echoes keys, so a KEY is what is asserted; the three
+    /// translations are <c>LocalizationTests</c>' business.
+    /// </para>
+    /// <para>Neutralize: in <c>ActionCardBuilder</c> make <c>AutoApprovedStatusText</c> unconditionally
+    /// <c>Format("ActionCard_AutoApproved", title)</c> again, or pass <c>true</c>-equivalent from
+    /// <c>ChatSession</c> instead of <c>verdict.Decision</c> → red.</para>
+    /// </summary>
+    [Fact]
+    public async Task SessionGrant_TheBypassCard_SaysForThisSession_NotAlwaysAllow()
+    {
+        var pending = Pending("write_file", "files", FilesId);
+        var answered = NewCard("write_file", FilesId, sessionGrantable: true);
+        answered.AllowForSessionCommand.Execute(null);
+        ArrangeRoutes(pending, answered);
+
+        var real = new ActionCardBuilder(_loc, _tokenMap, _permissions);
+        ActionCardInfo? bypass = null;
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<ToolGateDecision?>(), Arg.Any<ToolClass?>())
+            .Returns(ci => ci.ArgAt<ToolGateDecision?>(2) is { } tier
+                ? bypass = real.Build(ci.ArgAt<PluginToolCall>(0), false, tier, ci.ArgAt<ToolClass?>(3))
+                : answered);
+        ArrangeStream(["write_file", "write_file"]);
+
+        await CreateSession().RunStepTurnAsync(
+            Spec(), new RunContext("goal", RunProfile.Interactive), TestContext.Current.CancellationToken);
+
+        // Premise: the second call really did bypass on the session tier.
+        Assert.Equal(
+            new[] { ToolGateDecision.ApprovedForSession, ToolGateDecision.AutoApprovedSessionGrant },
+            _timeline.Rows.Select(r => r.Decision).ToArray());
+        Assert.NotNull(bypass);
+        Assert.True(bypass.IsAutoApproved);
+
+        Assert.Equal("ActionCard_AutoApprovedForSession", bypass.ResolvedStatusText);
+        // The false sentence, named so the fix cannot regress into it silently.
+        Assert.NotEqual("ActionCard_AutoApproved", bypass.ResolvedStatusText);
+
+        // …and the PERMANENT tier keeps the permanent sentence: the fix distinguishes, it does not rename.
+        var standing = real.Build(pending, false, ToolGateDecision.AutoApprovedStandingGrant);
+        Assert.Equal("ActionCard_AutoApproved", standing.ResolvedStatusText);
     }
 
     /// <summary>
@@ -304,10 +358,14 @@ public sealed class ChatSessionSessionGrantTests
         IsSessionGrantable = sessionGrantable,
     };
 
-    /// <summary>One tool; returns the captured <c>autoApproved</c> flag per Build call, in order.</summary>
-    private List<bool> ArrangeRoutes(PluginToolCall pending, ActionCardInfo card)
+    /// <summary>
+    /// One tool; returns the captured <c>autoApprovedAs</c> DECISION per Build call, in order — null on the
+    /// prompted path. It used to capture a bare bool, which is exactly why the card could not tell a session
+    /// grant from a permanent one.
+    /// </summary>
+    private List<ToolGateDecision?> ArrangeRoutes(PluginToolCall pending, ActionCardInfo card)
     {
-        var flags = new List<bool>();
+        var flags = new List<ToolGateDecision?>();
         ArrangeRoutes(
             new Dictionary<string, PluginToolCall>(StringComparer.Ordinal) { [pending.ToolName] = pending },
             new Dictionary<string, ActionCardInfo>(StringComparer.Ordinal) { [pending.ToolName] = card },
@@ -317,7 +375,7 @@ public sealed class ChatSessionSessionGrantTests
 
     private void ArrangeRoutes(
         Dictionary<string, PluginToolCall> pendings, Dictionary<string, ActionCardInfo> cards,
-        List<bool>? autoApprovedFlags = null)
+        List<ToolGateDecision?>? autoApprovedFlags = null)
     {
         _plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
@@ -327,10 +385,10 @@ public sealed class ChatSessionSessionGrantTests
                     ? ((object?)null, (PluginToolCall?)p)
                     : null;
             });
-        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<ToolClass?>())
+        _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<ToolGateDecision?>(), Arg.Any<ToolClass?>())
             .Returns(ci =>
             {
-                autoApprovedFlags?.Add(ci.ArgAt<bool>(2));
+                autoApprovedFlags?.Add(ci.ArgAt<ToolGateDecision?>(2));
                 return cards[ci.ArgAt<PluginToolCall>(0).ToolName];
             });
     }

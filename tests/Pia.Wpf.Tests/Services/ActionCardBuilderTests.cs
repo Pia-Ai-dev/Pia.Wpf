@@ -227,7 +227,7 @@ public class ActionCardBuilderTests
     {
         var builder = CreateBuilder(out _, out _);
 
-        var card = builder.Build(Call("create_todo", "todo", "Create a todo"), detokenize: false, autoApproved: true);
+        var card = builder.Build(Call("create_todo", "todo", "Create a todo"), detokenize: false, autoApprovedAs: ToolGateDecision.AutoApprovedStandingGrant);
 
         Assert.Equal(ActionCardState.Accepted, card.State);
         Assert.True(card.IsAutoApproved);

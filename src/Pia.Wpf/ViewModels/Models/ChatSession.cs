@@ -1112,7 +1112,10 @@ public sealed class ChatSession : IDisposable
             // id — never the arguments (CLAUDE.md privacy).
             if (verdict.Outcome == ToolGateOutcome.AutoRun)
             {
-                var autoCard = _actionCardBuilder.Build(pendingAction, tokenizationEnabled, autoApproved: true, toolClass);
+                // The DECISION, not a bare `true`: the card's resolved line has to say which authority ran this
+                // call, and the session tier is the one that must not be reported as a permanent grant.
+                var autoCard = _actionCardBuilder.Build(
+                    pendingAction, tokenizationEnabled, verdict.Decision, toolClass);
                 // UI-affine loop: the continuation already runs on the UI thread.
                 message.ActionCards.Add(autoCard);
                 _logger.LogInformation("Auto-approved {ToolName} ({Decision}, plugin {PluginId})",

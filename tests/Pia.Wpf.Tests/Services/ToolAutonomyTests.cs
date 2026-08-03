@@ -296,6 +296,96 @@ public class ToolAutonomyTests
         Assert.True(ToolAutonomy.IsSessionGrantOfferable("write_file"));
     }
 
+    /// <summary>
+    /// REVIEW FIX (#15). A tool whose ARGUMENTS ARE A GRANT LIST is not session-grantable. The first two
+    /// exclusions could not see it: <c>create_scheduled_research</c> is neither delete-like nor
+    /// work-discarding, so one click on "Allow this session" minted a grant that authorized every later
+    /// job-authoring call in the process with no card — and that argument may name <c>delete_file</c>, which
+    /// the unattended gate runs as a named grant because the FLOOR is external-only.
+    /// <para>
+    /// The last two assertions are the PREMISE, not decoration: they are what makes this an escalation rather
+    /// than a style rule. Delete them and the fact still passes while no longer saying why it matters.
+    /// </para>
+    /// <para>Neutralize: drop <c>&amp;&amp; !ToolPermissionService.IsAuthorityAuthoring(toolName)</c> from
+    /// <c>IsSessionGrantOfferable</c> → red.</para>
+    /// </summary>
+    [Fact]
+    public void AToolWhoseArgumentsAreAGrantList_IsNeverSessionGrantable()
+    {
+        Assert.False(ToolAutonomy.IsSessionGrantOfferable("create_scheduled_research"));
+        Assert.False(ToolAutonomy.IsSessionGrantOfferable("update_scheduled_research"));
+        // Case-insensitive, like the other two exclusions.
+        Assert.False(ToolAutonomy.IsSessionGrantOfferable("CREATE_SCHEDULED_RESEARCH"));
+        // Its sibling IS delete-like and was already excluded; and reading the schedule stays grantable, so
+        // the exclusion is about AUTHORING authority, not about the scheduling plugin.
+        Assert.False(ToolAutonomy.IsSessionGrantOfferable("delete_scheduled_research"));
+        Assert.True(ToolAutonomy.IsSessionGrantOfferable("query_scheduled_research"));
+
+        // …and the gate honours nothing it would not offer: a forged card cannot make the tier authorize it.
+        var forged = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Interactive, "create_scheduled_research", ToolClass.Scheduling, sessionGrant: true));
+        Assert.Equal(ToolGateOutcome.Prompt, forged.Outcome);
+
+        // THE PREMISE. The persisted tier was never on offer for this tool, so before the fix the SESSION tier
+        // was strictly wider than the permanent one …
+        Assert.False(ToolAutonomy.IsStandingGrantOfferable(ToolClass.Scheduling, "create_scheduled_research", false));
+        // … and what it authorized authoring is real: delete_file survives that tool's create-time grant filter
+        // (IsPresumedExternalDeleteLike spares our own destructive names on purpose), reaches the run as a
+        // NAMED grant, and the floor above is External-only, so it auto-runs unattended.
+        Assert.False(ToolPermissionService.IsPresumedExternalDeleteLike("delete_file"));
+        Assert.Equal(
+            ToolGateDecision.GrantedByName,
+            ToolAutonomy.Resolve(Input(
+                ToolGateSurface.Unattended, "delete_file", ToolClass.Files, namedGrant: true, canPark: true)).Decision);
+    }
+
+    /// <summary>
+    /// REVIEW FIX (#15). UNATTENDED, the session tier is honoured only for the classes the PARK would have been
+    /// willing to raise a question about. Before the fix the arm had no External exclusion and no surface
+    /// condition, so <c>Resolve(Unattended, "send_email", External, sessionGrant: true)</c> returned AutoRun
+    /// where the identical input without the grant returned Refuse — it did not even reach the park, whose own
+    /// doc refuses External on the grounds that a server-defined name behind one unlabelled button is WEAKER
+    /// evidence of consent than the grant list it already rejects.
+    /// <para>
+    /// The interactive leg is asserted in the same fact deliberately: the fix must narrow the UNATTENDED
+    /// surface only. A human looking at a card may still grant a non-destructive MCP tool for the session, and
+    /// the standing tier already offers exactly that — narrowing both would undo #15's stated purpose.
+    /// </para>
+    /// <para>Neutralize: drop
+    /// <c>&amp;&amp; (input.Surface != ToolGateSurface.Unattended || input.ToolClass != ToolClass.External)</c>
+    /// from the session arm → the Refuse assertions red.</para>
+    /// </summary>
+    [Fact]
+    public void UnattendedSessionGrant_DoesNotReachAnExternalWrite_ButInteractiveStillDoes()
+    {
+        // The exact input the review found auto-running: not delete-like, so nothing above the arm stops it.
+        Assert.False(ToolPermissionService.IsDeleteLike("send_email"));
+        Assert.True(ToolAutonomy.IsSessionGrantOfferable("send_email"));
+
+        var unattended = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "send_email", ToolClass.External, canPark: true, sessionGrant: true));
+        Assert.Equal(ToolGateOutcome.Refuse, unattended.Outcome);
+        Assert.Equal(ToolGateDecision.DeniedNotGranted, unattended.Decision);
+        // …the SAME answer the ungranted call gets. The grant buys nothing here, which is the whole fix.
+        var ungranted = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "send_email", ToolClass.External, canPark: true));
+        Assert.Equal(ungranted, unattended);
+
+        // Nor may it park, so the fix does not smuggle the question back in through the arm below.
+        Assert.NotEqual(ToolGateOutcome.Park, unattended.Outcome);
+
+        // INTERACTIVELY it is still honoured — the narrowing is unattended-only.
+        var interactive = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Interactive, "send_email", ToolClass.External, sessionGrant: true));
+        Assert.Equal(ToolGateOutcome.AutoRun, interactive.Outcome);
+        Assert.Equal(ToolGateDecision.AutoApprovedSessionGrant, interactive.Decision);
+
+        // …and an unattended NON-external tool is untouched: T-SESS's headline still holds.
+        var files = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "write_file", ToolClass.Files, canPark: true, sessionGrant: true));
+        Assert.Equal(ToolGateDecision.AutoApprovedSessionGrant, files.Decision);
+    }
+
     /// <summary>T-FLOOR-2: this batch does not tighten the path where a human is looking at the card.</summary>
     [Fact]
     public void InteractiveSurface_NeverRefuses()

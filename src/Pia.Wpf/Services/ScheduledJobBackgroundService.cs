@@ -209,15 +209,7 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
     {
         // Layer (b), and BEFORE the grace check on purpose: a job whose previous run is still executing must
         // not be asked about as a "missed" run either — that prompt exists for a firing that never happened.
-        if (await IsAlreadyExecutingAsync(job, ct))
-        {
-            // A refusal MUST move the schedule. Refuse-and-do-nothing leaves the row due, so it re-refuses
-            // every 30 s and eventually drifts past _gracePeriod into a missed-run prompt for a job that is
-            // running right now — the exact symptom this whole change exists to stop.
-            _logger.LogInformation("Scheduled job {Id} not dispatched: a run of it is still executing", job.Id);
-            await MoveScheduleOnAsync(job);
-            return;
-        }
+        if (await RefuseIfAlreadyExecutingAsync(job, ct)) return;
 
         var lateBy = DateTime.Now - job.NextFireAt;
 
@@ -264,7 +256,34 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
             return;
         }
 
+        // Layer (b)'s SECOND door. The check above was evaluated before an UNBOUNDED wait on a human, so by the
+        // time the answer arrives it can be arbitrarily stale: a manual RunNowAsync from Settings (no longer
+        // serialized against the tick) or a user resuming a parked run of this same job during that window
+        // leaves AnyExecutingRunForTriggerAsync(job) true. Without re-testing it, the yes-answer dispatched a
+        // SECOND concurrent unattended run of the same goal, with real token spend — and layer (a) cannot cover
+        // it, because the schedule write happens inside the dispatch that is about to be duplicated.
+        if (await RefuseIfAlreadyExecutingAsync(job, ct)) return;
+
         await ExecuteJobAsync(job, ct);
+    }
+
+    /// <summary>
+    /// The duplicate-dispatch refusal, ONE implementation behind both doors: the pre-grace check and the
+    /// post-dialog re-check. Returns true when the job must NOT be dispatched.
+    /// <para>
+    /// A refusal MUST move the schedule. Refuse-and-do-nothing leaves the row due, so it re-refuses every 30 s
+    /// and eventually drifts past <see cref="_gracePeriod"/> into a missed-run prompt for a job that is running
+    /// right now — the exact symptom this whole change exists to stop. Both doors give the same answer for the
+    /// same reason, which is why they are not two expressions.
+    /// </para>
+    /// </summary>
+    private async Task<bool> RefuseIfAlreadyExecutingAsync(ScheduledJob job, CancellationToken ct)
+    {
+        if (!await IsAlreadyExecutingAsync(job, ct)) return false;
+
+        _logger.LogInformation("Scheduled job {Id} not dispatched: a run of it is still executing", job.Id);
+        await MoveScheduleOnAsync(job);
+        return true;
     }
 
     /// <summary>

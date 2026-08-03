@@ -107,7 +107,7 @@ public sealed class AgentTimelineParityTests
         loc.Format(Arg.Any<string>(), Arg.Any<object[]>()).Returns(ci => (string)ci[0]);
         cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
         cards.ResolveSuccessTitle(Arg.Any<string>()).Returns("Done");
-        cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<ToolClass?>())
+        cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<ToolGateDecision?>(), Arg.Any<ToolClass?>())
             .Returns(new ActionCardInfo
             {
                 Title = "write_file", Summary = "write_file",

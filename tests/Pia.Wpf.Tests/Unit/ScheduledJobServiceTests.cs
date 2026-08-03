@@ -206,6 +206,21 @@ public class ScheduledJobServiceTests : IDisposable
         // Dispatching is not a job-health signal: the outcome bookkeeping still owns the counter.
         Assert.Equal(0, after.ConsecutiveFailures);
 
+        // CHARACTERIZATION OF A KNOWN OPEN DEFECT, not an endorsement. Status now reads 'Completed' while the
+        // row holds NO record of ever having fired — CreateAsync never seeds these and the Once branch above
+        // does not write them. That contradiction is harmless while the run is alive (MarkRunComplete /
+        // MarkRunFailed fill them in when it settles), but if the process dies mid-run nothing ever does:
+        // AgentRunService.FailInterruptedRunsAsync touches AgentRuns and AgentSteps ONLY, so the job stays
+        // 'Completed' forever, produced no chat, and never fires again (the only re-arms are UpdateAsync with a
+        // future date and EnableAsync). REPORTED as an owner decision rather than patched here, because every
+        // bounded fix breaks something this batch chose deliberately: writing LastFiredAt needs a parameter
+        // through MoveOffCurrentOccurrenceAsync (which the W3 note above forbids, and which would wrongly stamp
+        // the user-Skip door that did NOT fire); moving NextFireAt instead of Status inverts this very test;
+        // and a startup reconciliation needs FailInterruptedRunsAsync to report WHICH runs it cancelled plus a
+        // retire-vs-re-arm rule with sync implications.
+        Assert.Null(after.LastFiredAt);
+        Assert.Null(after.LastResultEntryId);
+
         Assert.DoesNotContain(await _service.GetDueJobsAsync(), j => j.Id == job.Id);
     }
 

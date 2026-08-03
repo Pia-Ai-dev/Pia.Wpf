@@ -155,7 +155,7 @@ public class ActionCardBuilderFilesDiffTests
         var pending = MakeBuilder().Build(FilesWrite(diff, null), detokenize: false);
         Assert.True(pending.IsDiffExpanded);
 
-        var auto = MakeBuilder().Build(FilesWrite(diff, null), detokenize: false, autoApproved: true);
+        var auto = MakeBuilder().Build(FilesWrite(diff, null), detokenize: false, autoApprovedAs: ToolGateDecision.AutoApprovedStandingGrant);
         Assert.False(auto.IsDiffExpanded);
         Assert.Equal(ActionCardState.Accepted, auto.State);
     }

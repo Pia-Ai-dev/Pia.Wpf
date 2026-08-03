@@ -29,9 +29,10 @@ public sealed class ActionCardBuilder : IActionCardBuilder
     public ActionCardInfo Build(
         PluginToolCall pendingAction,
         bool detokenize,
-        bool autoApproved = false,
+        ToolGateDecision? autoApprovedAs = null,
         ToolClass? toolClass = null)
     {
+        var autoApproved = autoApprovedAs is not null;
         // ONE class truth, shared with both gates (04 D4). The gate passes the class it derived from the
         // plugin ROUTE; with no class supplied we fall back to the name-only guess this builder has always
         // made (an unrecognised plugin name is presumed external). Before this, "scheduled-research" — a
@@ -146,7 +147,16 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             FilePath = Detokenize(pendingAction.TargetPath ?? "", detokenize),
             AcceptedStatusText = _localizationService.Format("ActionCard_Status_Accepted", title),
             DeclinedStatusText = _localizationService.Format("ActionCard_Status_Declined", title),
-            AutoApprovedStatusText = _localizationService.Format("ActionCard_AutoApproved", title),
+            // The resolved sentence must name the tier that actually ran the call. Only the SESSION tier gets
+            // its own string, and only because it is the one authority that is NOT permanent and NOT listed:
+            // "you always allow X" for a call the user allowed for this session is false, and it sends them to
+            // Settings → Tool access looking for a grant that was never written (ToolPermissionService.List()
+            // returns AppSettings.AlwaysAllowedTools only). Everything else keeps the historic text.
+            AutoApprovedStatusText = _localizationService.Format(
+                autoApprovedAs == ToolGateDecision.AutoApprovedSessionGrant
+                    ? "ActionCard_AutoApprovedForSession"
+                    : "ActionCard_AutoApproved",
+                title),
             DeclineLabel = _localizationService["ActionCard_Decline"],
             AllowOnceLabel = _localizationService["ActionCard_AllowOnce"],
             AlwaysAllowLabel = _localizationService["ActionCard_AlwaysAllow"],
