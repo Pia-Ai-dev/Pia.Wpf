@@ -876,12 +876,27 @@ public class ScheduledJobBackgroundServiceTests
             notifications, launcher, NewSettings(), Substitute.For<IAgentRunService>(),
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
-        await Assert.ThrowsAsync<TimeoutException>(
-            () => bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(5), ct));
-        // Neither job got out — not just the late one. `normal` is due, needs no dialog, and is still stuck.
-        await launcher.DidNotReceive().LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>());
+        var tick = bg.ExecuteOnceAsync(ct);
+        Assert.True(SpinWait.SpinUntil(() => notifications.AskCount == 1, 5000), "the dialog never opened");
+
+        // A STATE assertion, deliberately not a duration one: "did not finish within N seconds" is both the
+        // weakest form of this claim and an unconditional N-second tax on every suite run. The tick is
+        // unfinished while a dialog it raised is outstanding, and job B — due, needing no dialog — has not been
+        // dispatched or launched. An ask moved OFF the tick would complete the tick with the dialog still
+        // outstanding, so `IsCompleted` is what reds on the day this is fixed.
+        Assert.False(tick.IsCompleted);
         Assert.Empty(jobs.Dispatched);
-        Assert.Equal(1, notifications.AskCount);   // the tick really is parked on the human, not on something else
+        await launcher.DidNotReceive().LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>());
+        Assert.Equal(1, notifications.AskCount);   // parked on the HUMAN, not on something else
+
+        // Let the tick finish rather than leaking it into the rest of the suite: the human answers "skip", so
+        // `late` advances and `normal` — the job this defect stranded — is finally dispatched. That last
+        // assertion is the positive control: job B was reachable all along, only blocked.
+        notifications.PendingAsk.SetResult(false);
+        await tick;
+        await SettleAsync(bg, ct);
+        Assert.Equal([normal.Id], jobs.Dispatched);
+        Assert.Equal([late.Id], jobs.Advanced);
     }
 
     [Fact]
