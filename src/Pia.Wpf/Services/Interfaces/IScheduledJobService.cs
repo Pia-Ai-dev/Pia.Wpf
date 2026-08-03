@@ -97,6 +97,46 @@ public interface IScheduledJobService
     Task MarkOccurrenceDispatchedAsync(Guid id);
 
     /// <summary>
+    /// Books the OUTCOME of a firing that already happened, without touching the schedule. The mirror image of
+    /// <see cref="MarkOccurrenceDispatchedAsync"/>: that one moves the schedule and carries no health signal,
+    /// this one carries only the health signal and moves nothing. Success writes <c>LastFiredAt</c>,
+    /// <c>LastResultEntryId</c> (only when <paramref name="resultEntryId"/> is non-null — a COALESCE, so a
+    /// booking with no chat to point at never erases an earlier one) and clears <c>ConsecutiveFailures</c>;
+    /// failure writes <c>LastFiredAt</c> and increments the counter.
+    /// <para>
+    /// Writes NEITHER <c>Status</c>, NOR <c>NextFireAt</c>, NOR <c>UpdatedAt</c>. All four columns it does write
+    /// are device-local execution state absent from <c>SyncScheduledJob</c>, so there is nothing to push and
+    /// bumping <c>UpdatedAt</c> would only make a local booking outrank a genuine remote edit on the next pull.
+    /// </para>
+    /// <para>
+    /// <b>The <c>ConsecutiveFailures</c> bump is a RECORD, not an action.</b> Because this member never writes
+    /// <c>Status</c>, no amount of booking through it can retire a job: the 5-strike valve lives in
+    /// <see cref="MarkRunFailedAsync"/> and only that method can reach
+    /// <see cref="ScheduledJobStatus.Failed"/>. The counter here is the health signal a support log and the
+    /// settings list read, and clearing it on a success is what stops an old crash from shadowing a job that
+    /// now works.
+    /// </para>
+    /// <para>
+    /// <paramref name="firedAt"/> is a PARAMETER, unlike the three sibling writes which each derive their own
+    /// <c>DateTime.Now</c>, because the callers book a firing that settled in the PAST — a startup reconcile of
+    /// a run the process died in the middle of, and a resumed run whose settle nobody was awaiting. Stamping
+    /// "now" would be a lie, and a lie that is accidentally self-idempotent: the reconcile decides whether a
+    /// firing is already booked by comparing this column against the run's settle time, so a startup-time stamp
+    /// would look newer than every past run and quietly stop booking anything. Expected in the column's own
+    /// convention — LOCAL time, like every other writer of <c>LastFiredAt</c>.
+    /// </para>
+    /// <para>
+    /// Deliberately NOT served by reusing <see cref="MarkRunFailedAsync"/>/<see cref="MarkRunCompleteAsync"/>.
+    /// On a one-off those would overwrite the <c>Status='Completed'</c> that DISPATCH wrote with
+    /// <c>'Failed'</c> and burn a strike on a job that will never fire again; on a recurring job
+    /// <see cref="MarkRunCompleteAsync"/> recomputes <c>NextFireAt</c> from <c>DateTime.Now</c>, which for a
+    /// run that outlived its own next occurrence SKIPS that occurrence. (Note the second problem exists on the
+    /// live bookkeeping path too and is out of scope here.)
+    /// </para>
+    /// </summary>
+    Task MarkFiringOutcomeAsync(Guid id, DateTime firedAt, Guid? resultEntryId, bool succeeded);
+
+    /// <summary>
     /// Inserts a new job (no execution state) or updates the synced config of an existing one.
     /// Leaves NextFireAt/LastFiredAt/LastResultEntryId/ConsecutiveFailures untouched on update,
     /// since those are device-local execution state.

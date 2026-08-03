@@ -317,6 +317,27 @@ public partial class AssistantSettingsViewModel : ObservableObject
         SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
+    // T1-1: how many unattended runs execute AT ONCE. Sits with the Scheduled* knobs because it is the same
+    // audience, but it is a WIDTH and not a budget — the three above bound what one run may spend, this one
+    // bounds how many spend at all. Clamp bounds are AppSettings consts rather than RunProfile's: the pool is
+    // not part of a run's envelope, and HeadlessRunLauncher clamps on the same pair.
+    [ObservableProperty]
+    private int _maxParallelBackgroundRuns = AppSettings.DefaultParallelBackgroundRuns;
+
+    public string MaxParallelBackgroundRunsDisplay =>
+        _localizationService.Format("Settings_Scheduled_ParallelRuns_Value", MaxParallelBackgroundRuns);
+
+    partial void OnMaxParallelBackgroundRunsChanged(int value)
+    {
+        if (_isLoading) return;
+        var clamped = Math.Clamp(value, AppSettings.MinParallelBackgroundRuns, AppSettings.MaxParallelBackgroundRunsCap);
+        if (clamped != value) { MaxParallelBackgroundRuns = clamped; return; }
+        OnPropertyChanged(nameof(MaxParallelBackgroundRunsDisplay));
+        // The save is what makes the new width LIVE: HeadlessRunLauncher resizes its pool from
+        // ISettingsService.SettingsChanged, which SaveSettingsAsync raises. No restart, and no other wiring.
+        SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
     // Reason-then-emit opt-in: split a plan turn into a tool-free reasoning turn plus the constrained
     // emit_plan turn on providers that drop the configured reasoning effort once tools are attached.
     // Global (not per-provider, and it covers unattended runs too), default OFF — it doubles the plan-turn
@@ -440,6 +461,9 @@ public partial class AssistantSettingsViewModel : ObservableObject
         ScheduledMaxSteps = Math.Clamp(settings.ScheduledMaxSteps, RunProfile.MinSteps, RunProfile.MaxStepsCap);
         ScheduledMaxReplans = Math.Clamp(settings.ScheduledMaxReplans, RunProfile.MinReplans, RunProfile.MaxReplansCap);
         ScheduledWallClockMinutes = Math.Clamp(settings.ScheduledWallClockMinutes, RunProfile.MinWallClockMinutes, RunProfile.MaxWallClockMinutes);
+        // Through the accessor, not the raw property: it is the same clamp the launcher's pool applies, so the
+        // slider can never show a width the pool is not actually running at.
+        MaxParallelBackgroundRuns = settings.GetMaxParallelBackgroundRuns();
 
         await MeetingVm.InitializeAsync();
         await LoadAgentRosterOptionsAsync(settings);
@@ -460,6 +484,10 @@ public partial class AssistantSettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(ScheduledMaxStepsDisplay));
         OnPropertyChanged(nameof(ScheduledMaxReplansDisplay));
         OnPropertyChanged(nameof(ScheduledWallClockDisplay));
+        // T1-1's readout belongs in this block for the same reason the six above do: the Slider is bound to the
+        // [ObservableProperty], which raises on load, but the TextBlock beneath it reads a computed string that
+        // nothing raises while _isLoading. Omitting it left the two disagreeing until the user dragged the slider.
+        OnPropertyChanged(nameof(MaxParallelBackgroundRunsDisplay));
     }
 
     [RelayCommand]
@@ -595,6 +623,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         settings.ScheduledMaxSteps = ScheduledMaxSteps;
         settings.ScheduledMaxReplans = ScheduledMaxReplans;
         settings.ScheduledWallClockMinutes = ScheduledWallClockMinutes;
+        settings.MaxParallelBackgroundRuns = MaxParallelBackgroundRuns;
         // Batch 07: gated on _rosterLoaded, NOT "_personaService is not null" — the latter is true in the
         // one case this guards against: LoadAgentRosterOptionsAsync's GetPersonasAsync fault arm leaves
         // AgentRosterOptions empty but _personaService non-null, and a later unrelated save (e.g. a

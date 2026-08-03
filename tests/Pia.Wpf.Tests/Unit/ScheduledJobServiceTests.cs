@@ -206,18 +206,19 @@ public class ScheduledJobServiceTests : IDisposable
         // Dispatching is not a job-health signal: the outcome bookkeeping still owns the counter.
         Assert.Equal(0, after.ConsecutiveFailures);
 
-        // CHARACTERIZATION OF A KNOWN OPEN DEFECT, not an endorsement. Status now reads 'Completed' while the
-        // row holds NO record of ever having fired — CreateAsync never seeds these and the Once branch above
-        // does not write them. That contradiction is harmless while the run is alive (MarkRunComplete /
-        // MarkRunFailed fill them in when it settles), but if the process dies mid-run nothing ever does:
-        // AgentRunService.FailInterruptedRunsAsync touches AgentRuns and AgentSteps ONLY, so the job stays
-        // 'Completed' forever, produced no chat, and never fires again (the only re-arms are UpdateAsync with a
-        // future date and EnableAsync). REPORTED as an owner decision rather than patched here, because every
-        // bounded fix breaks something this batch chose deliberately: writing LastFiredAt needs a parameter
-        // through MoveOffCurrentOccurrenceAsync (which the W3 note above forbids, and which would wrongly stamp
-        // the user-Skip door that did NOT fire); moving NextFireAt instead of Status inverts this very test;
-        // and a startup reconciliation needs FailInterruptedRunsAsync to report WHICH runs it cancelled plus a
-        // retire-vs-re-arm rule with sync implications.
+        // The DISPATCH write deliberately leaves these two null, and that is still the right pin — it is what
+        // keeps "the schedule moved on" and "the run fired and produced something" two separate facts written at
+        // two separate times. Status reads 'Completed' here while the row holds no record of having fired; that
+        // window is closed from the OTHER side, never by widening this write:
+        //   * live: MarkRunComplete / MarkRunFailed fill them in when the run settles;
+        //   * crash: ScheduledFiringReconciler books them at the next startup, from the settled AgentRuns row
+        //     (which FailInterruptedRunsAsync has just swept to Cancelled), via MarkFiringOutcomeAsync —
+        //     health columns only, so the reconcile cannot re-arm, retire or re-schedule anything;
+        //   * park-then-resume: IHeadlessRunLauncher.ResumedRunSettled books the same way, for the run whose
+        //     settle no continuation was awaiting because a resume hands out no handle.
+        // Widening the dispatch write instead would need a parameter through MoveOffCurrentOccurrenceAsync
+        // (which the W3 note above forbids) and would wrongly stamp LastFiredAt for the user-Skip door, which
+        // did NOT fire. Pinned below so a future "just set LastFiredAt at dispatch" reds here.
         Assert.Null(after.LastFiredAt);
         Assert.Null(after.LastResultEntryId);
 
@@ -248,6 +249,73 @@ public class ScheduledJobServiceTests : IDisposable
         Assert.Equal(plantedUpdate, after.UpdatedAt, TimeSpan.FromSeconds(1));
 
         Assert.DoesNotContain(await _service.GetDueJobsAsync(), j => j.Id == job.Id);
+    }
+
+    /// <summary>
+    /// T0-1. The health-only booking, over the exact row shape the crash leaves behind: a ONE-OFF that dispatch
+    /// already settled as <c>Completed</c> with <c>LastFiredAt</c> null. Booking a FAILURE onto it must record
+    /// the firing and NOTHING else — the four schedule/sync columns are the interesting half of this fact, since
+    /// every existing outcome writer moves at least one of them and reusing one of those here is exactly the
+    /// mistake the plan warns about (it would stamp <c>'Failed'</c> over dispatch's <c>'Completed'</c> and burn a
+    /// strike on a job that can never fire again).
+    /// </summary>
+    [Fact]
+    public async Task MarkFiringOutcomeAsync_BooksTheHealthColumns_AndTouchesNeitherStatusNorNextFireAt()
+    {
+        var job = await _service.CreateAsync("TEST_OnceReconciled", "q", RecurrenceType.Once, new TimeOnly(9, 0),
+            specificDate: DateTime.Now.Date.AddDays(-1));
+        var plantedFire = DateTime.Now.AddMinutes(-30);
+        await ForceNextFireAtAsync(job.Id, plantedFire);
+        await _service.MarkOccurrenceDispatchedAsync(job.Id);
+
+        var dispatched = await _service.GetAsync(job.Id);
+        Assert.Equal(ScheduledJobStatus.Completed, dispatched!.Status);   // premise: dispatch settled the one-off
+        Assert.Null(dispatched.LastFiredAt);                             // premise: it never recorded a firing
+        var updatedAtAfterDispatch = dispatched.UpdatedAt;
+
+        // A PAST instant, not "now": the whole reason firedAt is a parameter. Asserting it comes back means a
+        // future implementation that stamps DateTime.Now (which would be self-idempotent and therefore stop the
+        // reconcile booking anything at all) reds here.
+        var settledAt = DateTime.Now.AddMinutes(-20);
+        await _service.MarkFiringOutcomeAsync(job.Id, settledAt, resultEntryId: null, succeeded: false);
+
+        var after = await _service.GetAsync(job.Id);
+        Assert.Equal(settledAt, after!.LastFiredAt!.Value, TimeSpan.FromSeconds(1));
+        Assert.Equal(1, after.ConsecutiveFailures);
+        // The three columns this write must not touch. Status is the one that matters most: a failure booking
+        // that flipped it to 'Failed' would retire a job through a path that has no 5-strike valve.
+        Assert.Equal(ScheduledJobStatus.Completed, after.Status);
+        Assert.Equal(plantedFire, after.NextFireAt, TimeSpan.FromSeconds(1));
+        Assert.Equal(updatedAtAfterDispatch, after.UpdatedAt, TimeSpan.FromMilliseconds(1));
+    }
+
+    /// <summary>
+    /// The success half, on a RECURRING row that already carries a failure count — so "clears the counter" and
+    /// "records the chat" are both non-vacuous, and the re-armed <c>NextFireAt</c> proves the booking did not
+    /// recompute the schedule the way <c>MarkRunCompleteAsync</c> would.
+    /// </summary>
+    [Fact]
+    public async Task MarkFiringOutcomeAsync_Success_RecordsTheChat_AndClearsTheFailureCounter()
+    {
+        var job = await _service.CreateAsync("TEST_DailyReconciled", "q", RecurrenceType.Daily, new TimeOnly(9, 0));
+        await ForceNextFireAtAsync(job.Id, DateTime.Now.AddMinutes(-2));
+        await _service.MarkRunFailedAsync(job.Id, "an earlier occurrence failed");
+        var armed = await _service.GetAsync(job.Id);
+        Assert.Equal(1, armed!.ConsecutiveFailures);   // premise: there is a counter to clear
+        var reArmedFire = armed.NextFireAt;
+
+        var chatId = Guid.NewGuid();
+        await _service.MarkFiringOutcomeAsync(job.Id, DateTime.Now.AddMinutes(-1), chatId, succeeded: true);
+
+        var after = await _service.GetAsync(job.Id);
+        Assert.Equal(chatId, after!.LastResultEntryId);
+        Assert.Equal(0, after.ConsecutiveFailures);
+        Assert.Equal(reArmedFire, after.NextFireAt, TimeSpan.FromSeconds(1));
+
+        // COALESCE, not assignment: a later booking with no chat must not erase the one above. This is the leg
+        // that reds if the SQL is simplified to `LastResultEntryId=@EntryId`.
+        await _service.MarkFiringOutcomeAsync(job.Id, DateTime.Now, resultEntryId: null, succeeded: true);
+        Assert.Equal(chatId, (await _service.GetAsync(job.Id))!.LastResultEntryId);
     }
 
     [Fact]

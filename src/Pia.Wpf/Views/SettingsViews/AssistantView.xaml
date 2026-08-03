@@ -517,6 +517,23 @@
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>
             </StackPanel>
 
+            <!-- T1-1: a WIDTH, not a budget — how many unattended runs execute at once. Min/Max mirror
+                 AppSettings.MinParallelBackgroundRuns / MaxParallelBackgroundRunsCap; the ViewModel clamps on
+                 the same pair, and the launcher's pool resizes live on the save this slider triggers. -->
+            <StackPanel Margin="0,0,0,20">
+              <TextBlock Text="{loc:Str Settings_Scheduled_ParallelRuns_Label}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <Slider HorizontalAlignment="Left" Width="400"
+                      Minimum="1" Maximum="8"
+                      TickFrequency="1" IsSnapToTickEnabled="True"
+                      Value="{Binding MaxParallelBackgroundRuns, Mode=TwoWay}"/>
+              <TextBlock Text="{Binding MaxParallelBackgroundRunsDisplay}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+              <TextBlock Text="{loc:Str Settings_Scheduled_ParallelRuns_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"/>
+            </StackPanel>
+
             <!-- Scheduled jobs (Batch 09). Re-rooted to its own sub-ViewModel, the same shape PersonasVm,
                  ToolPermissionsVm and MeetingVm use. Placed directly under the budget sliders on purpose:
                  those sliders ARE this section's budget (D1 — budget and autonomy are global, not per job),

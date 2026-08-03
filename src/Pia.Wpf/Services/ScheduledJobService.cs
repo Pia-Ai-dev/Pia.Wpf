@@ -482,6 +482,56 @@ public class ScheduledJobService : IScheduledJobService
     }
 
     /// <summary>
+    /// The health-only booking (see the interface for the full contract and for why it is not one of the three
+    /// writes above). ONE statement, no <c>GetAsync</c> first: nothing here branches on the row's recurrence,
+    /// which is the whole point — a firing's outcome is the same fact for a Once row as for a Daily one, and it
+    /// is the SCHEDULE columns that differ. Both branches are written out rather than assembled, matching the
+    /// sibling writes, and each binds only the parameters its own text names.
+    /// </summary>
+    public async Task MarkFiringOutcomeAsync(Guid id, DateTime firedAt, Guid? resultEntryId, bool succeeded)
+    {
+        var connection = _context.GetConnection();
+        using var command = connection.CreateCommand();
+
+        if (succeeded)
+        {
+            // COALESCE, not a plain assignment: a booking that has no chat to point at (a reconciled firing
+            // whose run row lost its chat, say) must not blank a LastResultEntryId the live path already wrote.
+            command.CommandText = """
+                UPDATE ScheduledJobs
+                SET LastFiredAt = @FiredAt,
+                    LastResultEntryId = COALESCE(@EntryId, LastResultEntryId),
+                    ConsecutiveFailures = 0
+                WHERE Id = @Id
+                """;
+            command.Parameters.AddWithValue("@EntryId",
+                resultEntryId.HasValue ? (object)resultEntryId.Value.ToString() : DBNull.Value);
+        }
+        else
+        {
+            // Atomic increment, for the same reason MarkRunFailedAsync uses one: reading the counter in C# to
+            // compute the new value would lose a concurrent increment. No Status arm — see the interface doc:
+            // this counter is a record, and only MarkRunFailedAsync can retire a job.
+            command.CommandText = """
+                UPDATE ScheduledJobs
+                SET LastFiredAt = @FiredAt,
+                    ConsecutiveFailures = ConsecutiveFailures + 1
+                WHERE Id = @Id
+                """;
+        }
+
+        // The caller's instant, in the column's LOCAL convention (MapJob parses it straight back with
+        // DateTime.Parse). Never DateTime.Now — see the interface doc's note on self-idempotence.
+        command.Parameters.AddWithValue("@FiredAt", firedAt.ToString("O"));
+        command.Parameters.AddWithValue("@Id", id.ToString());
+        await command.ExecuteNonQueryAsync();
+
+        _logger.LogInformation(
+            "Scheduled job {Id} firing outcome booked (succeeded={Succeeded}, fired {FiredAt:g}); schedule untouched",
+            id, succeeded, firedAt);
+    }
+
+    /// <summary>
     /// The one write shared by <see cref="AdvanceMissedRunAsync"/> and
     /// <see cref="MarkOccurrenceDispatchedAsync"/>: this occurrence is spent, so take the row out of
     /// <see cref="GetDueJobsAsync"/>'s window without touching any job-HEALTH column

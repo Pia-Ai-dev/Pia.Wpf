@@ -102,6 +102,21 @@ public enum PlanMutationOutcome
 /// </summary>
 public readonly record struct PlanMutationResult(PlanMutationOutcome Outcome, int StepCount);
 
+/// <summary>
+/// One scheduled job's most recently SETTLED firing, as the run rows know it — the join key a startup reconcile
+/// needs to tell "this firing's outcome was booked" from "nothing ever booked it".
+/// </summary>
+/// <param name="JobId">The <c>ScheduledJobs.Id</c> the run carried as its <c>TriggerRef</c>.</param>
+/// <param name="RunId">The settled run.</param>
+/// <param name="ChatId">The run's chat — the value the job's <c>LastResultEntryId</c> points at.</param>
+/// <param name="SettledAtUtc">
+/// The run's <c>CompletedAt</c>, always UTC. Named for its kind on purpose: the job row's <c>LastFiredAt</c> is
+/// LOCAL, and comparing the two without normalizing is a bug that cannot reproduce on a UTC+0 machine.
+/// </param>
+/// <param name="State">Which settle it was — <see cref="AgentRunState.Completed"/> is the only success.</param>
+public sealed record ScheduledFiringOutcome(
+    Guid JobId, Guid RunId, Guid ChatId, DateTime SettledAtUtc, AgentRunState State);
+
 /// <summary>Raised after a state-changing run write. The 1.4 UI/Flow event source; no consumers in 1.1.</summary>
 public sealed class AgentRunChangedEventArgs : EventArgs
 {
@@ -309,6 +324,21 @@ public interface IAgentRunService
     /// </para>
     /// </summary>
     Task<bool> AnyExecutingRunForTriggerAsync(Guid triggerRef, CancellationToken ct = default);
+
+    /// <summary>
+    /// The most recently SETTLED run per <see cref="AgentRun.TriggerRef"/> — one row per scheduled job, for the
+    /// startup reconcile that books firings whose outcome nobody was left alive to book. Only settled runs
+    /// (<see cref="AgentRunState.Completed"/>/<see cref="AgentRunState.Failed"/>/
+    /// <see cref="AgentRunState.Cancelled"/>) with a non-null <c>CompletedAt</c>; a parked run is deliberately
+    /// absent, because a park is not a firing outcome and booking one would burn a strike on a run the user can
+    /// still continue.
+    /// <para>
+    /// A CHILD run carries a null <c>TriggerRef</c> by design (07 D7), so a fan-out's descendants never appear
+    /// here as firings of their parent's job. A non-null <c>TriggerRef</c> that names no job row is harmless:
+    /// the caller joins these against <c>ScheduledJobs</c> and drops what it cannot match.
+    /// </para>
+    /// </summary>
+    Task<IReadOnlyList<ScheduledFiringOutcome>> GetLatestSettledFiringsAsync(CancellationToken ct = default);
 
     // Steps: API present in 1.1, exercised in 1.2 (Planned).
     Task ReplaceStepsAsync(Guid runId, IReadOnlyList<AgentStep> steps, CancellationToken ct = default);

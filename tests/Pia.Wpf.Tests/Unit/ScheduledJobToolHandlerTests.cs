@@ -398,6 +398,11 @@ public class ScheduledJobToolHandlerTests
         public Task MarkRunFailedAsync(Guid id, string reason) => throw new NotImplementedException();
         public Task AdvanceMissedRunAsync(Guid id) => throw new NotImplementedException();
         public Task MarkOccurrenceDispatchedAsync(Guid id) => throw new NotImplementedException();
+
+        // The tool handler never books a firing outcome — it authors and lists jobs. Unimplemented like every
+        // other execution-state write here, so a handler that started making one would fail loudly.
+        public Task MarkFiringOutcomeAsync(Guid id, DateTime firedAt, Guid? resultEntryId, bool succeeded)
+            => throw new NotImplementedException();
     }
 
     private sealed class FakeProviderService : IProviderService

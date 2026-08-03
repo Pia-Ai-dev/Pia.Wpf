@@ -780,6 +780,72 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         }
     }
 
+    /// <summary>
+    /// The SETTLED states, derived from the two existing predicates rather than restated as a literal list, for
+    /// the same anti-drift reason <see cref="NonExecutingStates"/> is derived from one. Today exactly
+    /// {Completed, Failed, Cancelled}; an appended state counts as EXECUTING (see
+    /// <see cref="AgentRunStates.IsExecuting"/>'s double negation) and so falls OUT of this set, which is the
+    /// safe direction here — a firing this build cannot classify is simply not booked, rather than booked as a
+    /// failure the job never had.
+    /// </summary>
+    private static readonly int[] SettledStates =
+        Enum.GetValues<AgentRunState>()
+            .Where(s => !AgentRunStates.IsExecuting(s) && !AgentRunStates.IsParked(s))
+            .Select(s => (int)s).ToArray();
+
+    /// <summary>
+    /// Seeks <c>IX_AgentRuns_TriggerRef</c>. SQLITE-SPECIFIC by design: the bare <c>Id</c>/<c>ChatId</c>/
+    /// <c>State</c> columns beside <c>MAX(CompletedAt)</c> are resolved from the row that produced the maximum —
+    /// SQLite's documented bare-column rule for a min/max aggregate. This repo has one engine and no ORM
+    /// (hand-rolled DDL in <c>SqliteContext.EnsureSchema</c>), so the rule is a fact about the code, not an
+    /// assumption about a portable dialect.
+    /// <para>
+    /// <c>MAX</c> over a TEXT column is a STRING max, and it is chronological here only because
+    /// <c>CompletedAt</c> is uniformly <c>DateTime.UtcNow.ToString("O")</c> — fixed width, zero-padded,
+    /// always <c>Z</c>, so lexicographic order is instant order. That uniformity is exactly what
+    /// <c>ScheduledJobs.LastFiredAt</c> does NOT have (it is local time WITH an offset), which is why the
+    /// reconcile joins these two columns in C# after normalizing, and never in SQL.
+    /// </para>
+    /// </summary>
+    private static readonly string LatestSettledFiringsSql =
+        """
+        SELECT TriggerRef, Id, ChatId, State, MAX(CompletedAt)
+        FROM AgentRuns
+        WHERE TriggerRef IS NOT NULL AND CompletedAt IS NOT NULL AND State IN (
+        """
+        + string.Join(",", SettledStates) + ") GROUP BY TriggerRef";
+
+    public Task<IReadOnlyList<ScheduledFiringOutcome>> GetLatestSettledFiringsAsync(CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            if (_disposed) return Task.FromResult<IReadOnlyList<ScheduledFiringOutcome>>(Array.Empty<ScheduledFiringOutcome>());
+
+            var list = new List<ScheduledFiringOutcome>();
+            using var cmd = Connection().CreateCommand();
+            cmd.CommandText = LatestSettledFiringsSql;
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                // TriggerRef is free-form TEXT at the schema level; a value that is not a Guid belongs to no
+                // scheduled job and is skipped rather than thrown on — this runs at startup, where a single
+                // malformed row must not cost every other job its booking.
+                if (!Guid.TryParse(reader.GetString(0), out var jobId)) continue;
+
+                list.Add(new ScheduledFiringOutcome(
+                    jobId,
+                    Guid.Parse(reader.GetString(1)),
+                    Guid.Parse(reader.GetString(2)),
+                    // Same parse+normalize as MapRun's CompletedAt: the stored string is UTC, but
+                    // DateTime.Parse hands back a LOCAL-kind value, and this record promises UTC.
+                    DateTime.Parse(reader.GetString(4)).ToUniversalTime(),
+                    (AgentRunState)reader.GetInt32(3)));
+            }
+
+            return Task.FromResult<IReadOnlyList<ScheduledFiringOutcome>>(list);
+        }
+    }
+
     public Task ReplaceStepsAsync(Guid runId, IReadOnlyList<AgentStep> steps, CancellationToken ct = default)
     {
         lock (_gate)

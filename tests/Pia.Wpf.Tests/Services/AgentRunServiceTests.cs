@@ -743,6 +743,63 @@ public sealed class AgentRunServiceTests : IDisposable
     }
 
     /// <summary>
+    /// T0-1. The reconcile's read side: ONE row per trigger, and it must be the LATEST SETTLED run, never merely
+    /// the first row of the group. Built so creation order and settle order DISAGREE — the older run settles
+    /// later — because a "take any row per group" implementation would still be green if they agreed.
+    /// <para>
+    /// The negative legs are the other half: a PARKED run must not appear (booking a park burns a strike on work
+    /// the user can still continue) and a null <c>TriggerRef</c> must not appear (a child run, or a user's
+    /// "run in background" detach, is not a scheduled firing).
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task GetLatestSettledFiringsAsync_ReturnsTheMostRecentlySettledRunPerTrigger_AndIgnoresParkedRunsAndNullTriggerRefs()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var jobA = Guid.NewGuid();
+        var jobB = Guid.NewGuid();
+
+        // Two firings of job A, in two chats so the returned ChatId identifies WHICH one came back.
+        var firstChat = await MakeChatAsync();
+        var first = await _service.CreateAsync(new AgentRunCreateRequest(
+            firstChat, RunShape.Planned, AgentRunTrigger.Schedule, jobA, null, "older row, newer settle"), ct);
+        var secondChat = await MakeChatAsync();
+        var second = await _service.CreateAsync(new AgentRunCreateRequest(
+            secondChat, RunShape.Planned, AgentRunTrigger.Schedule, jobA, null, "newer row, older settle"), ct);
+
+        await _service.FailAsync(second.Id, "boom", cancelled: false, ct);
+        await _service.CompleteAsync(first.Id, ct: ct);
+        // Forced, not merely sequenced: two UtcNow stamps microseconds apart make an ordering fact a coin toss.
+        SetCompletedAt(second.Id, DateTime.UtcNow.AddHours(-2));
+        SetCompletedAt(first.Id, DateTime.UtcNow.AddHours(-1));
+
+        // Job B's only run is PARKED — non-terminal, and it also has no CompletedAt.
+        var parkedChat = await MakeChatAsync();
+        var parked = await _service.CreateAsync(new AgentRunCreateRequest(
+            parkedChat, RunShape.Planned, AgentRunTrigger.Schedule, jobB, null, "parked"), ct);
+        await _service.PauseAsync(parked.Id, "step-cap", ct);
+
+        // A settled run that is nobody's firing: no TriggerRef at all.
+        var loose = await _service.CreateAsync(new AgentRunCreateRequest(
+            parkedChat, RunShape.SingleTurn, AgentRunTrigger.User, Goal: "detached"), ct);
+        await _service.CompleteAsync(loose.Id, ct: ct);
+
+        var firings = await _service.GetLatestSettledFiringsAsync(ct);
+
+        var only = Assert.Single(firings);
+        Assert.Equal(jobA, only.JobId);
+        Assert.Equal(first.Id, only.RunId);            // the LATEST settle, not the first row of the group
+        Assert.Equal(firstChat, only.ChatId);          // the bare columns came off the SAME row as the MAX
+        Assert.Equal(AgentRunState.Completed, only.State);
+        // UTC, and normalized as such: the record's whole contract is that the caller never has to guess a kind.
+        Assert.Equal(DateTimeKind.Utc, only.SettledAtUtc.Kind);
+        Assert.Equal(DateTime.UtcNow.AddHours(-1), only.SettledAtUtc, TimeSpan.FromMinutes(1));
+
+        Assert.DoesNotContain(firings, f => f.JobId == jobB);
+        Assert.DoesNotContain(firings, f => f.RunId == loose.Id);
+    }
+
+    /// <summary>
     /// The UPGRADE direction for T-ST-10: an existing database has no <c>IX_AgentRuns_ParentRunId</c>, and the
     /// DDL block lives inside <c>EnsureSchema</c>'s command string, which runs on EVERY open — so the index
     /// arrives at next launch with no MigrateSchema entry. Simulated by dropping it, which leaves exactly the
@@ -827,6 +884,20 @@ public sealed class AgentRunServiceTests : IDisposable
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "UPDATE AgentRuns SET LedgerJson = @Ledger WHERE Id = @Id";
         cmd.Parameters.AddWithValue("@Ledger", ledgerJson);
+        cmd.Parameters.AddWithValue("@Id", runId.ToString());
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Forces a settled run's <c>CompletedAt</c>, in the column's own convention (UTC "O"), so a fact about
+    /// "the most recently settled" does not depend on two <c>DateTime.UtcNow</c> calls landing microseconds apart.
+    /// </summary>
+    private void SetCompletedAt(Guid runId, DateTime completedAtUtc)
+    {
+        var conn = _ctx.GetConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE AgentRuns SET CompletedAt = @CompletedAt WHERE Id = @Id";
+        cmd.Parameters.AddWithValue("@CompletedAt", completedAtUtc.ToString("O"));
         cmd.Parameters.AddWithValue("@Id", runId.ToString());
         cmd.ExecuteNonQuery();
     }

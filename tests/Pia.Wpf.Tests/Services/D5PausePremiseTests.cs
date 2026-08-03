@@ -197,6 +197,12 @@ public sealed class D5PausePremiseTests : IDisposable
             Assert.Contains(job1.Id, jobs.Dispatched);
             Assert.Empty(jobs.Advanced);
             Assert.Empty(jobs.Failed);
+            // T0-1: nor through the new health-only door. A park is not a firing outcome, so BookkeepAgentRunAsync's
+            // park arm must stay log-only — booking one here would burn a strike on work the user can still
+            // continue. Scoped claim: nothing in this fixture resumes anything, so this line says nothing about
+            // BookResumedRunAsync's own parked/executing declines — those are pinned by
+            // ScheduledJobBackgroundServiceTests.AResumedRunThatIsNotASettledFiring_BooksNothing.
+            Assert.DoesNotContain(job1.Id, jobs.Bookings.Select(b => b.JobId));
             Assert.Contains(job2.Id, jobs.Completed.Select(c => c.JobId));
         }
         finally
@@ -765,6 +771,17 @@ public sealed class D5PausePremiseTests : IDisposable
 
         public List<(string Goal, HeadlessRunHandle Handle)> Launched { get; } = new();
 
+        /// <summary>
+        /// FORWARDED to the inner launcher, not re-declared: this is a decorator over the REAL launcher, and the
+        /// scheduler subscribes to whatever it was handed. A private event here would swallow every raise the
+        /// real ResumeAsync makes and the resume-booking facts would silently observe nothing.
+        /// </summary>
+        public event EventHandler<ResumedRunSettledEventArgs>? ResumedRunSettled
+        {
+            add => _inner.ResumedRunSettled += value;
+            remove => _inner.ResumedRunSettled -= value;
+        }
+
         public async Task<HeadlessRunHandle> LaunchAsync(HeadlessRunRequest req, CancellationToken ct = default)
         {
             var handle = await _inner.LaunchAsync(req, ct);
@@ -830,6 +847,19 @@ public sealed class D5PausePremiseTests : IDisposable
             Dispatched.Add(id);
             var job = _due.FirstOrDefault(j => j.Id == id);
             if (job is not null) job.NextFireAt = DateTime.Now.AddDays(1);
+            return Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// T0-1: health-only bookings, recorded rather than thrown so a park fact here can say that a park books
+        /// NOTHING through any door — this list, <see cref="Completed"/> and <see cref="Failed"/> alike. The
+        /// resume-side booking itself is pinned in <c>ScheduledJobBackgroundServiceTests</c>.
+        /// </summary>
+        public List<(Guid JobId, Guid? EntryId, bool Succeeded)> Bookings { get; } = new();
+
+        public Task MarkFiringOutcomeAsync(Guid id, DateTime firedAt, Guid? resultEntryId, bool succeeded)
+        {
+            Bookings.Add((id, resultEntryId, succeeded));
             return Task.CompletedTask;
         }
 

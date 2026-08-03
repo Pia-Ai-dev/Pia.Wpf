@@ -17,8 +17,9 @@ namespace Pia.Services;
 /// Default <see cref="IHeadlessRunLauncher"/>. Detaches a goal as an unattended
 /// <see cref="RunShape.Planned"/> run (§17.1/17.5): stub-chat-first (G-3/R1), create the run, resolve
 /// persona + provider, seed an isolated per-run workspace, and dispatch the orchestrator on a fresh DI
-/// scope with its own linked CTS. A shared <see cref="SemaphoreSlim"/> caps concurrency; app shutdown
-/// cancels + bounded-awaits in-flight runs so none is left <see cref="AgentRunState.Running"/> (G-4).
+/// scope with its own linked CTS. A shared <see cref="RunSlotPool"/> caps concurrency at a user-set,
+/// live-resizable width (T1-1); app shutdown cancels + bounded-awaits in-flight runs so none is left
+/// <see cref="AgentRunState.Running"/> (G-4).
 /// </summary>
 public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeService, IDisposable
 {
@@ -40,20 +41,44 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     /// </summary>
     internal const string ResumeInterruptedReason = "resume-interrupted";
 
-    /// <summary>Concurrency cap shared by both producers (decision d). A 3rd run queues on the slot.</summary>
-    private readonly SemaphoreSlim _slots = new(2, 2);
+    /// <summary>
+    /// Concurrency cap shared by both producers (decision d). A run beyond the width queues on a slot.
+    /// <para>
+    /// T1-1: user-set and LIVE-RESIZABLE — <see cref="AppSettings.MaxParallelBackgroundRuns"/>, default
+    /// <see cref="AppSettings.DefaultParallelBackgroundRuns"/> (the width this was hard-coded to), ceiling
+    /// <see cref="AppSettings.MaxParallelBackgroundRunsCap"/>. Applied from TWO places on purpose:
+    /// <see cref="OnSettingsChanged"/> covers a raise made WHILE runs are queued (nothing else would apply it
+    /// until the next launch, which is exactly the run that is stuck), and the <c>Resize</c> at the top of
+    /// <see cref="LaunchCoreAsync"/>/<see cref="ResumeAsync"/> covers cold start, where no save has happened
+    /// this session and the event therefore never fires. Both are idempotent — <c>Resize</c> early-returns on
+    /// an unchanged width — so the overlap costs a lock acquire, not a behaviour.
+    /// </para>
+    /// <para>
+    /// It bounds EXECUTION, not DISPATCH: <see cref="LaunchCoreAsync"/> creates the stub chat, the run row and
+    /// the workspace and RETURNS before the slot wait, so N due jobs still produce N run rows immediately.
+    /// </para>
+    /// <para>
+    /// T1-3: queued IN LAUNCH ORDER. Both dispatch paths take a <see cref="RunSlotPool.Ticket"/> on the calling
+    /// thread and hand it to the ticketed wait, so the order the tick created its dispatches in (oldest-due-first)
+    /// is the order they enqueue in, instead of whatever order the thread pool happens to start the detached
+    /// bodies in. Not strict FIFO admission — see <see cref="RunSlotPool"/> for what is and is not claimed.
+    /// </para>
+    /// </summary>
+    private readonly RunSlotPool _slots =
+        new(AppSettings.DefaultParallelBackgroundRuns, AppSettings.MaxParallelBackgroundRunsCap);
 
     /// <summary>
-    /// Concurrency cap for CHILD runs (Batch 07 D7) — deliberately a SECOND semaphore, and never
+    /// Concurrency cap for CHILD runs (Batch 07 D7) — deliberately a SECOND pool, and never
     /// <see cref="_slots"/>. A nested acquire on the shared pool DEADLOCKS, permanently: <see cref="_slots"/>
     /// is waited INSIDE the dispatch task and released only in the <c>finally</c> AFTER
-    /// <c>orchestrator.RunAsync</c> RETURNS, so two parents holding the two permits while each awaits a child
-    /// that needs a permit from the same pool can never release one. It takes exactly TWO concurrent parents —
-    /// i.e. the configured cap — and nothing in the process can break it: <see cref="StopAsync"/>'s bounded
-    /// 5-second wait times out and both runs dangle <c>Running</c> until the next startup sweep. Never merge
-    /// these two pools "for simplicity" (07 §7.1).
+    /// <c>orchestrator.RunAsync</c> RETURNS, so parents holding EVERY permit while each awaits a child that
+    /// needs a permit from the same pool can never release one. It takes only as many concurrent parents as
+    /// <see cref="_slots"/> is wide — and since T1-1 that width is a USER SETTING, so the deadlock is now
+    /// reachable at every width, not just at 2. Nothing in the process can break it: <see cref="StopAsync"/>'s
+    /// bounded 5-second wait times out and those runs dangle <c>Running</c> until the next startup sweep. Never
+    /// merge these two pools "for simplicity" (07 §7.1).
     /// <para>
-    /// Consequence, stated rather than hidden: effective provider concurrency doubles to 2+2. That is why the
+    /// Consequence, stated rather than hidden: effective provider concurrency doubles. That is why the
     /// persona roster is the opt-in (07 D1) and why a delegating run's budget must still fit the envelope one
     /// scheduled job may occupy — a fan-out holds one of <see cref="_slots"/> for the parent's wall clock PLUS
     /// every descendant's (Phase 3 R15, and the halved child wall clock in the orchestrator's fan-out).
@@ -63,18 +88,28 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     /// really is the bound it claims to be, and one long fan-out costs the OTHER due jobs a slot, not the tick.
     /// </para>
     /// <para>
-    /// WHY 2, and not wider: it MIRRORS <see cref="_slots"/> rather than the width of a fan-out, so the worst
-    /// case a delegating build can put on the provider is a fixed 2+2 — a number that does not grow when a
-    /// planner emits a 6-way group. A group wider than the pool is not starved, it runs in WAVES: every sibling
-    /// is dispatched and awaited (the parent never returns from the wait with a live child, D16), so the only
-    /// cost of a narrow pool is elapsed time inside the parent's own halved wall-clock budget. Raising it trades
+    /// WHY 2, and not wider: it is a fixed width rather than the width of a fan-out, so the worst case a
+    /// delegating build can put on the provider is <b>a fixed 2 children per delegating parent, on top of a
+    /// user-set parent pool</b> — a number that does not grow when a planner emits a 6-way group. (Until T1-1
+    /// this paragraph read "a fixed 2+2", which was true while <see cref="_slots"/> was hard-coded to 2 and is
+    /// not a current fact.) A group wider than the pool is not starved, it runs in WAVES: every sibling is
+    /// dispatched and awaited (the parent never returns from the wait with a live child, D16), so the only cost
+    /// of a narrow pool is elapsed time inside the parent's own halved wall-clock budget. Raising it trades
     /// exactly that for more concurrent provider load and a longer <see cref="StopAsync"/> drain, and it must
     /// stay a SEPARATE number from <see cref="_slots"/> either way. It is deliberately not user-configurable:
-    /// no setting exists for it, and the depth guard (a child never delegates, 07 §7.5) is what bounds the
-    /// total rather than this cap.
+    /// the setting T1-1 added sizes the PARENT pool only, and the depth guard (a child never delegates,
+    /// 07 §7.5) is what bounds the total rather than this cap.
+    /// </para>
+    /// <para>
+    /// T1-1: a <see cref="RunSlotPool"/> like <see cref="_slots"/>, but constructed with its HARD CAP equal to
+    /// its width, so "fixed at 2" is enforced by the type and not only by this comment — a stray
+    /// <c>Resize</c> on the child pool clamps to 2 instead of widening it.
     /// </para>
     /// </summary>
-    private readonly SemaphoreSlim _childSlots = new(2, 2);
+    private readonly RunSlotPool _childSlots = new(ChildSlotWidth, ChildSlotWidth);
+
+    /// <summary>Fixed width of <see cref="_childSlots"/> — and, deliberately, also its hard cap.</summary>
+    private const int ChildSlotWidth = 2;
 
     /// <summary>Cancelled once at shutdown; every run CTS is linked to it (G-4).</summary>
     private readonly CancellationTokenSource _shutdownCts = new();
@@ -214,7 +249,24 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
 
         // Decision c: delete a run's workspace when its chat (and, by FK cascade, its run) is deleted.
         _chatService.ChatsChanged += OnChatsChanged;
+        // T1-1: the run pool is live-resizable, and THIS is the arm that makes "live" mean anything — the lazy
+        // Resize on the dispatch paths cannot help a run that is already queued, which is the one case a user
+        // raising the cap is trying to fix. Deliberately NOT an initial read here: the ctor is synchronous and
+        // GetSettingsAsync is not, so the width is picked up on the first launch (and on every save after).
+        _settingsService.SettingsChanged += OnSettingsChanged;
     }
+
+    /// <summary>
+    /// T1-1: apply a saved run-pool width immediately. Raising it releases the extra permits at once, so a run
+    /// queued on a slot starts without waiting for an unrelated run to finish; lowering it absorbs permits as
+    /// running dispatches finish and never preempts one (see <see cref="RunSlotPool"/>).
+    /// <para>
+    /// Fires on EVERY settings save — the settings sliders save per tick — so the work here has to be trivial:
+    /// <c>Resize</c> is synchronous, allocation-free and early-returns when the width is unchanged, and only the
+    /// PARENT pool is ever resized (<see cref="_childSlots"/> has no setting, and merging the two deadlocks).
+    /// </para>
+    /// </summary>
+    private void OnSettingsChanged(object? sender, AppSettings e) => _slots.Resize(e.GetMaxParallelBackgroundRuns());
 
     public Task<HeadlessRunHandle> LaunchAsync(HeadlessRunRequest req, CancellationToken ct)
         => LaunchCoreAsync(req, parentRunId: null, _slots, childPolicyJson: null,
@@ -261,7 +313,9 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     /// <param name="parentRunId">Non-null ⇒ this is a CHILD run of that parent, recorded on the run row so
     /// the depth guard and the promotion guard can both read it (G9/G10).</param>
     /// <param name="slots">Which concurrency pool this dispatch queues on. A child MUST get
-    /// <see cref="_childSlots"/> — see its remarks for why the shared pool deadlocks.</param>
+    /// <see cref="_childSlots"/> — see its remarks for why the shared pool deadlocks. Note the T1-1 resize
+    /// below targets <see cref="_slots"/> BY NAME rather than this parameter: the setting sizes the parent pool,
+    /// and a child launch reading it must not be able to touch the child pool's fixed width.</param>
     /// <param name="childPolicyJson">A child's pre-narrowed grant envelope, which REPLACES the resolve-from-
     /// request path entirely. Null ⇒ the ordinary launch resolution.</param>
     /// <param name="workspaceRootOverride">Non-null ⇒ SKIP <c>_workspaces.ProvisionAsync</c> entirely and pass
@@ -272,13 +326,17 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     /// <param name="personaIdOverride">A delegated step's assigned roster persona (07 D3/D5), which becomes the
     /// CHILD's run persona instead of the global per-mode one. Null ⇒ the ordinary resolution.</param>
     private async Task<HeadlessRunHandle> LaunchCoreAsync(
-        HeadlessRunRequest req, Guid? parentRunId, SemaphoreSlim slots, string? childPolicyJson,
+        HeadlessRunRequest req, Guid? parentRunId, RunSlotPool slots, string? childPolicyJson,
         string? workspaceRootOverride, Guid? personaIdOverride, CancellationToken ct)
     {
         var chatId = Guid.NewGuid();
         var now = DateTime.UtcNow;
 
         var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
+        // T1-1 cold start: no save has happened this session, so OnSettingsChanged has never fired and the pool
+        // would still be at its compiled default. Free to do on every launch (a no-op at an unchanged width),
+        // and it reads the settings this method already loaded rather than loading them twice.
+        _slots.Resize(settings.GetMaxParallelBackgroundRuns());
         var persona = await ResolveRunPersonaAsync(personaIdOverride, settings).ConfigureAwait(false);
         // The provider ladder reads the persona: req.ProviderId (null for a child), then the persona's
         // PreferredProviderId, then the mode default, and it clones to apply ReasoningEffort. So handing it the
@@ -418,13 +476,21 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             run.Id, chatId, req.Trigger, parentRunId is not null);
         _logger.SensitiveDebug("Headless run {RunId} goal: {Goal}", run.Id, req.Goal);
 
+        // T1-3: claim this dispatch's place in the pool's admission queue HERE, on the thread that decided the
+        // order — the scheduler tick awaits its launches oldest-due-first, and without a ticket that order is
+        // lost because the slot wait below runs on a thread-pool thread. Deliberately the LAST statement before
+        // Task.Run and nothing throwable in between: an unused ticket stalls the pool's chain (see TakeTicket).
+        // Taken from the `slots` PARAMETER, unlike the Resize above which deliberately names _slots: the width is
+        // the parent pool's setting, but the ordering belongs to whichever pool this dispatch will queue on, and
+        // a child's chain must stay separate from its parent's.
+        var ticket = slots.TakeTicket();
         var completion = Task.Run(async () =>
         {
             var acquired = false;
             var started = false;
             try
             {
-                await slots.WaitAsync(runCts.Token).ConfigureAwait(false);
+                await slots.WaitAsync(ticket, runCts.Token).ConfigureAwait(false);
                 acquired = true;
 
                 using var scope = _scopeFactory.CreateScope();
@@ -498,6 +564,9 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         return new HeadlessRunHandle(run.Id, chatId, completion);
     }
 
+    /// <inheritdoc />
+    public event EventHandler<ResumedRunSettledEventArgs>? ResumedRunSettled;
+
     public async Task<bool> ResumeAsync(Guid runId, string? nudge = null, CancellationToken ct = default)
     {
         var run = await _agentRunService.GetAsync(runId, ct).ConfigureAwait(false);
@@ -540,6 +609,9 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         try
         {
             var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
+            // T1-1 cold start, symmetric with the launch path: a resume can be the FIRST thing this launcher
+            // does in a session (a run parked before a restart), so the width has to be picked up here too.
+            _slots.Resize(settings.GetMaxParallelBackgroundRuns());
             var persona = await _personaService.ResolveActiveAsync(
                 WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal).ConfigureAwait(false);
             // persona/provider are NOT persisted on the run — resolve the current default (same as the launch
@@ -693,6 +765,10 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             _logger.LogInformation("Resuming run {RunId} (chat {ChatId}, parent={HasParent})",
                 run.Id, run.ChatId, run.ParentRunId is not null);
 
+            // T1-3, same rule as the launch path (and for the same reason — see LaunchCoreAsync): a resume that
+            // did not take a ticket would jump the queue, being the one dispatch whose wait is not ordered
+            // against anything. The PARENT pool's chain, matching the pool the wait below uses.
+            var ticket = _slots.TakeTicket();
             var completion = Task.Run(async () =>
             {
                 var acquired = false;
@@ -702,7 +778,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                     // Deliberately the PARENT pool even for a resumed child (Batch 07 §7.1): a resume is a USER
                     // act, so nothing is awaiting this dispatch from inside another run's RunAsync, and the
                     // nested-acquire deadlock that _childSlots exists to prevent cannot arise here.
-                    await _slots.WaitAsync(runCts.Token).ConfigureAwait(false); // re-acquire a slot (guardrail 6)
+                    await _slots.WaitAsync(ticket, runCts.Token).ConfigureAwait(false); // re-acquire a slot (guardrail 6)
                     acquired = true;
 
                     using var scope = _scopeFactory.CreateScope();
@@ -764,6 +840,16 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                     // themselves without entering the orchestrator, so an unconsumed request has to die here.
                     _steering?.ReleaseDispatch(run.Id, steerCancel);
                     runCts.Dispose();
+
+                    // T0-1(b): the resume path's substitute for a handle. LAST, and specifically AFTER the slot
+                    // release above — same rule as the composer bracket beside it, for the same reason: this is
+                    // bookkeeping, and a subscriber that blocks or throws must never be able to strand the
+                    // shared concurrency slot. Raised on EVERY arm, including the !started re-parks, because the
+                    // subscriber's state check is what tells a re-park apart from a settle; suppressing it here
+                    // would silently lose the case where the orchestrator DID run and settle. Swallowing is
+                    // deliberate — nothing in this finally has a caller to throw to.
+                    try { ResumedRunSettled?.Invoke(this, new ResumedRunSettledEventArgs(run.Id, run.ChatId)); }
+                    catch (Exception ex) { _logger.LogWarning(ex, "A ResumedRunSettled handler threw for run {RunId}", run.Id); }
                 }
             }, CancellationToken.None);
 
@@ -1333,6 +1419,9 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         if (_disposed) return;
         _disposed = true;
         _chatService.ChatsChanged -= OnChatsChanged;
+        // T1-1: beside the ChatsChanged unsubscribe and for the same reason — this launcher is a singleton, and
+        // a live handler on the settings service outlives it (in tests, it pins a per-test substitute).
+        _settingsService.SettingsChanged -= OnSettingsChanged;
         _shutdownCts.Dispose();
     }
 }

@@ -11,7 +11,8 @@ namespace Pia.Services;
 /// SQLite-backed store for assistant chats. Uses its own dedicated connection (not the shared
 /// <see cref="SqliteContext"/> connection) guarded by a gate, because chat rows are written from three
 /// different thread classes: the WPF UI thread (<c>ChatSessionManager.PersistAsync</c>), the headless run
-/// pool (<c>HeadlessTurnExecutor.PersistChatAsync</c> — up to two concurrent runs at the slot cap, plus
+/// pool (<c>HeadlessTurnExecutor.PersistChatAsync</c> — as many concurrent runs as the launcher's slot pool is
+/// wide, which since T1-1 is a user setting capped at <c>AppSettings.MaxParallelBackgroundRunsCap</c>, plus
 /// <c>BackgroundAssistantTurnRunner</c>) and the hosted-service pool (<c>AssistantChatSyncService</c>,
 /// <c>AssistantChatRetentionService</c>). The tables live in <see cref="SqliteContext"/>'s canonical schema
 /// (not redefined here); the ctor forces the shared connection once at composition time so that schema

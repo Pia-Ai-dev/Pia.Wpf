@@ -126,6 +126,9 @@
   <data name="Settings_Scheduled_WallClock_Value" xml:space="preserve"><value>{0} min</value></data>
   <data name="Settings_Scheduled_MaxReplans_Label" xml:space="preserve"><value>Replanifications en cas d'échec</value></data>
   <data name="Settings_Scheduled_MaxReplans_Value" xml:space="preserve"><value>{0} replanifications</value></data>
+  <data name="Settings_Scheduled_ParallelRuns_Label" xml:space="preserve"><value>Exécutions en arrière-plan simultanées</value></data>
+  <data name="Settings_Scheduled_ParallelRuns_Value" xml:space="preserve"><value>{0} à la fois</value></data>
+  <data name="Settings_Scheduled_ParallelRuns_Description" xml:space="preserve"><value>Les exécutions supplémentaires démarrent quand même — elles attendent une place libre. Effet immédiat, sans jamais interrompre une exécution en cours.</value></data>
   <data name="Assistant_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Afficher/masquer le panneau des tâches</value></data>
   <!-- Research View -->
   <data name="Research_Title" xml:space="preserve"><value>Mode Recherche</value></data>

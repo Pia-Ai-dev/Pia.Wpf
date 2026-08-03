@@ -350,6 +350,10 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         public Task StopAsync(CancellationToken ct) => throw new NotSupportedException();
 
         public Task RunStartupSweepAsync(CancellationToken ct) => throw new NotSupportedException();
+
+#pragma warning disable CS0067 // never raised: this double dispatches CHILDREN and has no resume path
+        public event EventHandler<ResumedRunSettledEventArgs>? ResumedRunSettled;
+#pragma warning restore CS0067
     }
 
     private sealed class Harness : IDisposable

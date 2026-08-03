@@ -440,6 +440,9 @@ public static class Bootstrapper
         services.AddSingleton<IReminderService, ReminderService>();
         services.AddSingleton<IScheduledJobService, ScheduledJobService>();
         services.AddSingleton<IScheduledResearchProviderResolver, ScheduledResearchProviderResolver>();
+        // Startup-only (App.xaml.cs), between the crash sweep and the scheduler — see the interface for why
+        // that position is load-bearing in both directions.
+        services.AddSingleton<IScheduledFiringReconciler, ScheduledFiringReconciler>();
         services.AddSingleton<IScheduledJobNotificationSurface, ScheduledJobNotificationSurface>();
         // Terminal agent-run Flow notifications (R18/G3). Eager-resolved at startup (App.xaml.cs).
         services.AddSingleton<IAgentRunNotificationSurface, AgentRunNotificationSurface>();

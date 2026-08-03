@@ -159,6 +159,22 @@ public partial class App : Application
             System.Diagnostics.Debug.WriteLine($"Headless run startup recovery failed: {ex.Message}");
         }
 
+        // T0-1: book the outcome of any scheduled firing whose run settled with nobody left alive to record it
+        // (the process died mid-run). Strictly AFTER FailInterruptedRunsAsync above — a crashed run is
+        // non-terminal until that sweep settles it, and this reconcile only reads SETTLED runs — and strictly
+        // BEFORE the scheduler starts below, so no tick can be writing the same job rows. Its OWN try/catch,
+        // not the block above's: a reconcile fault must not skip the workspace sweep, and startup must never
+        // block on it.
+        try
+        {
+            var firingReconciler = Bootstrapper.ServiceProvider.GetRequiredService<IScheduledFiringReconciler>();
+            await firingReconciler.ReconcileAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Scheduled firing reconcile failed: {ex.Message}");
+        }
+
         // Load persisted durable Flow items before the pollers run (the todo poller re-validates against them).
         var flowService = Bootstrapper.ServiceProvider.GetRequiredService<Services.Flow.IFlowService>();
         await flowService.LoadAsync();

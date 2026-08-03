@@ -42,6 +42,24 @@ public sealed record HeadlessRunRequest(
 public sealed record HeadlessRunHandle(Guid RunId, Guid ChatId, Task Completion);
 
 /// <summary>
+/// A RESUMED dispatch has finished unwinding. Carries ids only, never a state: the run row is the authority on
+/// what actually happened, and by the time a handler reads it a further dispatch may have moved it on again.
+/// </summary>
+public sealed class ResumedRunSettledEventArgs : EventArgs
+{
+    public ResumedRunSettledEventArgs(Guid runId, Guid chatId)
+    {
+        RunId = runId;
+        ChatId = chatId;
+    }
+
+    public Guid RunId { get; }
+
+    /// <summary>The run's chat — what a scheduled job's <c>LastResultEntryId</c> points at.</summary>
+    public Guid ChatId { get; }
+}
+
+/// <summary>
 /// Launches and supervises unattended headless agent runs (§17.1/17.5). Singleton: owns the shared
 /// concurrency cap, the shutdown token, and the in-flight/cleanup maps. Each run executes in a fresh
 /// DI scope with its own linked CTS and its own isolated workspace under
@@ -49,6 +67,28 @@ public sealed record HeadlessRunHandle(Guid RunId, Guid ChatId, Task Completion)
 /// </summary>
 public interface IHeadlessRunLauncher
 {
+    /// <summary>
+    /// Raised once per RESUMED dispatch, when that dispatch has finished unwinding. A callback and not a handle,
+    /// because <c>ResumeAsync</c> returns a <c>bool</c> and hands nobody a task to await: a launch is followed by
+    /// a continuation on <see cref="HeadlessRunHandle.Completion"/>, and the resume path had no equivalent, which
+    /// is why a scheduled run that parked at its budget and was later resumed TO COMPLETION never booked its
+    /// outcome onto the job — with no crash involved.
+    /// <para>
+    /// RESUME-ONLY on purpose, rather than the obvious alternative of a general "run settled" event: a general
+    /// one would fire for the launch path too, where a continuation already books the outcome, and the two would
+    /// double-book every scheduled run. It fires on EVERY arm of the dispatch, including the ones that re-park
+    /// without ever entering the orchestrator — the subscriber re-reads the row and decides, because the raiser
+    /// cannot tell "re-parked before starting" from "ran, then parked again" and guessing wrong loses a real
+    /// settle. Not raised at all when <c>ResumeAsync</c> returns false before dispatching (a lost CAS claim, or a
+    /// pre-dispatch failure that re-parked the row): nothing ran, so there is nothing to book.
+    /// </para>
+    /// <para>
+    /// A resume that happens twice raises twice, so a subscriber that writes must be idempotent or must key off
+    /// the row's state — see <c>ScheduledJobBackgroundService.BookResumedRunAsync</c>.
+    /// </para>
+    /// </summary>
+    event EventHandler<ResumedRunSettledEventArgs>? ResumedRunSettled;
+
     /// <summary>
     /// Stub-chat-first (G-3/R1) then create the Planned run, resolve persona/provider, seed the run
     /// workspace, and dispatch the orchestrator fire-and-forget. Returns once the run is queued/started;

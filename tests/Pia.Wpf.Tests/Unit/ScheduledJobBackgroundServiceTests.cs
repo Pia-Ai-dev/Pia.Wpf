@@ -61,6 +61,27 @@ public class ScheduledJobBackgroundServiceTests
         await SettleAsync(bg, ct);
     }
 
+    /// <summary>
+    /// Polls <paramref name="condition"/> until it holds or <paramref name="within"/> elapses, and reports
+    /// WHICH happened rather than asserting.
+    /// <para>
+    /// Meant to be used in BOTH directions in one test, with the SAME bound: "it did not happen within 1 s" is
+    /// only evidence if the identical probe is then shown to observe the very same event once it is unblocked.
+    /// A negative from a probe that was never proven capable of a positive is indistinguishable from a probe
+    /// that is simply too weak, which is how this suite has previously shipped assertions that watched nothing.
+    /// </para>
+    /// </summary>
+    private static async Task<bool> WaitUntilAsync(Func<bool> condition, TimeSpan within, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + within;
+        while (!condition())
+        {
+            if (DateTime.UtcNow >= deadline) return false;
+            await Task.Delay(10, ct);
+        }
+        return true;
+    }
+
     [Fact]
     public async Task RunNowAsync_DispatchesAJobThatIsNotDue()
     {
@@ -307,7 +328,9 @@ public class ScheduledJobBackgroundServiceTests
         var sp = new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner);
         var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), providers, notifications, Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
-        await bg.ExecuteOnceAsync(CancellationToken.None);
+        // Settled, not just ticked: since T0-2 the ask and everything it decides — including this skip write —
+        // happen on a dispatched task, so a bare ExecuteOnceAsync would be a race on jobs.Advanced.
+        await TickAndSettleAsync(bg, CancellationToken.None);
 
         Assert.Equal(0, runner.RunCount);
         Assert.Equal(1, notifications.AskCount);
@@ -363,10 +386,18 @@ public class ScheduledJobBackgroundServiceTests
         var sp = new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner);
         var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), providers, notifications, Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
-        await bg.ExecuteOnceAsync(CancellationToken.None);
-        await bg.ExecuteOnceAsync(CancellationToken.None);
+        var ct = TestContext.Current.CancellationToken;
+        var probe = TimeSpan.FromSeconds(1);
+        await bg.ExecuteOnceAsync(ct);
+        // Since T0-2 the ask is on a dispatched task, so tick 1 can return before it has been raised at all.
+        // Waiting for it keeps this a DEDUP test: "no second ask" is only evidence once a first one exists.
+        Assert.True(await WaitUntilAsync(() => notifications.AskCount == 1, probe, ct));
 
-        Assert.Equal(1, notifications.AskCount); // not 2
+        await bg.ExecuteOnceAsync(ct);
+
+        // The same probe, the same bound, now looking for the ask that must NOT come. Its positive control is the
+        // line above — the identical probe demonstrably observes an ask when there is one to observe.
+        Assert.False(await WaitUntilAsync(() => notifications.AskCount >= 2, probe, ct)); // not 2
     }
 
     [Fact]
@@ -826,29 +857,24 @@ public class ScheduledJobBackgroundServiceTests
     }
 
     /// <summary>
-    /// CHARACTERIZATION OF A KNOWN OPEN DEFECT — this test asserts BROKEN behaviour on purpose, and is expected
-    /// to red on the day it is fixed. Read the assertions as "this is what currently happens", never as a design
-    /// this protects.
+    /// T0-2, and the inversion of a characterization test that used to assert the defect. hermes #2 moved the RUN
+    /// off the tick but not the missed-run DIALOG: <c>ExecuteOnceAsync</c> iterates due jobs sequentially and
+    /// <c>RunJobAsync</c> awaited <c>AskUserToRunMissedAsync</c> — a real ContentDialog that resolves only when a
+    /// human clicks. <c>PeriodicTimer</c> does not queue elapsed ticks, so while the tick was parked on that
+    /// dialog NO tick body ran at all: job B here, every other due job on the device, and every later occurrence
+    /// of every job, waited for that click.
     /// <para>
-    /// hermes #2 moved the RUN off the tick, but not the missed-run DIALOG. <c>ExecuteOnceAsync</c> iterates due
-    /// jobs sequentially and <c>RunJobAsync</c> awaits <c>AskUserToRunMissedAsync</c> — a real ContentDialog that
-    /// resolves only when a human clicks. <c>PeriodicTimer</c> does not queue elapsed ticks, so while the tick is
-    /// parked on that dialog NO tick body runs at all: job B here, and every other due job on the device, and
-    /// every subsequent occurrence of every job, waits for the human. The <c>_bookkeepingLock</c> doc claims
-    /// "never held across a dialog" — true of the lock, false of the tick itself.
+    /// The contract asserted now: the tick RETURNS while the dialog is still outstanding, and the job that needs
+    /// no dialog is dispatched and launched during that window. Both halves are STATE facts read after the tick
+    /// has been awaited — "the tick finished" and "the ask has not resolved" — rather than a duration or an
+    /// <c>IsCompleted</c> peek that would depend on the ask path happening to complete synchronously in these
+    /// fakes. On the pre-change tree the first await times out, because the tick cannot finish at all.
     /// </para>
-    /// <para>
-    /// NOT FIXED in the review pass, deliberately. Moving the ask off-tick (TrackDispatch after the dedup add,
-    /// which must stay on the tick or <c>DedupesPromptOnSecondTickIfUnanswered</c> becomes a race) changes
-    /// <c>ExecuteOnceAsync</c>'s documented contract — "returns once every due job has been DISPATCHED" — forces
-    /// <c>SkipsIfDeclined</c> onto the drain, and parks an UNANSWERED dialog in <c>_dispatches</c> forever, which
-    /// silently changes what <c>WaitForDispatchedRunsAsync</c> means at shutdown and in <see cref="SettleAsync"/>.
-    /// That is an owner decision about the tick's shape, not a review fix. Pre-existing: the batch under review
-    /// only ever claimed the RUN no longer holds the tick.
-    /// </para>
+    /// <para>Neutralize: await <c>AskThenRunMissedAsync</c> in <c>RunJobAsync</c> instead of
+    /// <c>TrackDispatch</c>-ing it → the 10 s wait on the tick times out.</para>
     /// </summary>
     [Fact]
-    public async Task ExecuteOnceAsync_APendingMissedRunDialog_StillBlocksEveryOtherDueJob_KnownOpenDefect()
+    public async Task ExecuteOnceAsync_APendingMissedRunDialog_NoLongerBlocksTheOtherDueJobs()
     {
         var ct = TestContext.Current.CancellationToken;
         var jobs = new FakeJobService();
@@ -868,7 +894,7 @@ public class ScheduledJobBackgroundServiceTests
 
         var notifications = new FakeNotificationSurface
         {
-            // Never completed: the human has not answered.
+            // Never completed while the tick runs: the human has not answered.
             PendingAsk = new TaskCompletionSource<bool?>(TaskCreationOptions.RunContinuationsAsynchronously),
         };
         var bg = new ScheduledJobBackgroundService(
@@ -876,27 +902,265 @@ public class ScheduledJobBackgroundServiceTests
             notifications, launcher, NewSettings(), Substitute.For<IAgentRunService>(),
             NullLogger<ScheduledJobBackgroundService>.Instance);
 
-        var tick = bg.ExecuteOnceAsync(ct);
-        Assert.True(SpinWait.SpinUntil(() => notifications.AskCount == 1, 5000), "the dialog never opened");
+        await bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
 
-        // A STATE assertion, deliberately not a duration one: "did not finish within N seconds" is both the
-        // weakest form of this claim and an unconditional N-second tax on every suite run. The tick is
-        // unfinished while a dialog it raised is outstanding, and job B — due, needing no dialog — has not been
-        // dispatched or launched. An ask moved OFF the tick would complete the tick with the dialog still
-        // outstanding, so `IsCompleted` is what reds on the day this is fixed.
-        Assert.False(tick.IsCompleted);
-        Assert.Empty(jobs.Dispatched);
-        await launcher.DidNotReceive().LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>());
-        Assert.Equal(1, notifications.AskCount);   // parked on the HUMAN, not on something else
+        Assert.Equal(1, notifications.AskCount);                    // the dialog was raised …
+        Assert.False(notifications.PendingAsk.Task.IsCompleted);    // … and is STILL outstanding, unanswered
+        Assert.Equal([normal.Id], jobs.Dispatched);                 // yet job B's occurrence was already spent
+        await launcher.Received(1).LaunchAsync(
+            Arg.Is<HeadlessRunRequest>(r => r.TriggerRef == normal.Id), Arg.Any<CancellationToken>());
+        Assert.Empty(jobs.Advanced);   // and nothing was decided for `late`: that is what the dialog gates
 
-        // Let the tick finish rather than leaking it into the rest of the suite: the human answers "skip", so
-        // `late` advances and `normal` — the job this defect stranded — is finally dispatched. That last
-        // assertion is the positive control: job B was reachable all along, only blocked.
+        // Answer "skip" so the tracked ask completes and the drain can finish (an ignored dialog stays in
+        // _dispatches until the token is cancelled — see the shutdown test below).
         notifications.PendingAsk.SetResult(false);
-        await tick;
         await SettleAsync(bg, ct);
-        Assert.Equal([normal.Id], jobs.Dispatched);
         Assert.Equal([late.Id], jobs.Advanced);
+    }
+
+    /// <summary>
+    /// The gate's mechanism (T0-2). Two late jobs in one tick are now two dispatched asks, and
+    /// <c>ContentDialogHost</c> shows ONE dialog: a second concurrent <c>ShowAsync</c> throws, the surface's catch
+    /// reports that as "no answer", and the job then sits in <c>_pendingMissedPrompts</c> for the whole session —
+    /// never re-asked, occurrence silently lost. So the prompts must QUEUE.
+    /// <para>
+    /// The recorded PEAK is the fact, not a sample: it survives the second ask having resolved by the time we
+    /// look. The two <see cref="WaitUntilAsync"/> probes are the corroboration the peak alone cannot give — the
+    /// same probe with the same bound must NOT see a second ask while the first is open, and MUST see it once the
+    /// first is answered.
+    /// </para>
+    /// <para>Neutralize: delete <c>_missedPromptGate</c>'s wait/release from <c>AskThenRunMissedAsync</c> → both
+    /// asks enter before either resolves, the peak becomes 2 and the negative probe reds.</para>
+    /// </summary>
+    [Fact]
+    public async Task ExecuteOnceAsync_TwoLateJobs_NeverOpensTwoDialogsAtOnce()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var jobs = new FakeJobService();
+        // Seeded oldest-first, the order the real GetDueJobsAsync returns (ORDER BY NextFireAt ASC).
+        var first = new ScheduledJob
+        {
+            Name = "late-1", Query = "q", Recurrence = RecurrenceType.Daily, Kind = ScheduledJobKind.AgentTask,
+            TimeOfDay = TimeOnly.MinValue, NextFireAt = DateTime.Now.AddMinutes(-25)
+        };
+        var second = new ScheduledJob
+        {
+            Name = "late-2", Query = "q", Recurrence = RecurrenceType.Daily, Kind = ScheduledJobKind.AgentTask,
+            TimeOfDay = TimeOnly.MinValue, NextFireAt = DateTime.Now.AddMinutes(-20)
+        };
+        jobs.SeedDue(first);
+        jobs.SeedDue(second);
+
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        var notifications = new FakeNotificationSurface
+        {
+            PendingAsk = new TaskCompletionSource<bool?>(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
+            notifications, launcher, NewSettings(), Substitute.For<IAgentRunService>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        var probe = TimeSpan.FromSeconds(1);
+        Assert.True(await WaitUntilAsync(() => notifications.AskCount >= 1, probe, ct));   // premise: one is open
+        Assert.False(await WaitUntilAsync(() => notifications.AskCount >= 2, probe, ct));  // the other is queued
+        Assert.Equal([first.Id], notifications.AskedJobIds);   // and it is the FIRST due job that got the dialog
+
+        // Answering the open dialog "skip" releases the permit; the queued job's own ask then reads the same
+        // already-completed answer, so both are asked and both skip — one at a time.
+        notifications.PendingAsk.SetResult(false);
+        Assert.True(await WaitUntilAsync(() => notifications.AskCount >= 2, probe, ct));   // the control
+        await SettleAsync(bg, ct);
+
+        Assert.Equal(1, notifications.PeakConcurrentAsks);   // the mechanism: never two dialogs at once
+        Assert.Equal(2, notifications.AskCount);
+        Assert.Equal([first.Id, second.Id], notifications.AskedJobIds);
+        Assert.Equal(2, jobs.Advanced.Count);                // and neither late job was silently stranded
+        await launcher.DidNotReceive().LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// The other half of the tick's new shape (T0-2): the dialog no longer gates the DEVICE, but it must still
+    /// gate ITS OWN job. Nothing may be dispatched, launched, advanced or marked for the late job while its prompt
+    /// is unanswered — the answer is the whole decision, and "run it anyway because we stopped waiting" would be
+    /// an unattended run the user never authorised.
+    /// <para>
+    /// The positive control is at the end: the same job, the same service, once the human says yes, IS launched.
+    /// Without it, every assertion here would also pass on a service that dropped late jobs on the floor.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task MissedRunDialog_StillGatesItsOwnJob()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var jobs = new FakeJobService();
+        var late = new ScheduledJob
+        {
+            Name = "late", Query = "q", Recurrence = RecurrenceType.Daily, Kind = ScheduledJobKind.AgentTask,
+            TimeOfDay = TimeOnly.MinValue, NextFireAt = DateTime.Now.AddMinutes(-20)
+        };
+        jobs.SeedDue(late);
+
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        launcher.LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new HeadlessRunHandle(Guid.NewGuid(), Guid.NewGuid(), Task.CompletedTask));
+
+        var notifications = new FakeNotificationSurface
+        {
+            PendingAsk = new TaskCompletionSource<bool?>(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
+            notifications, launcher, NewSettings(), Substitute.For<IAgentRunService>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
+        Assert.Equal(1, notifications.AskCount);
+
+        // The window the whole item opens: the tick is over, the dialog is not. Probed rather than sampled, so a
+        // dispatch that merely had not been scheduled yet cannot pass for a dispatch that was refused.
+        Assert.False(await WaitUntilAsync(
+            () => jobs.Dispatched.Count > 0 || jobs.Advanced.Count > 0, TimeSpan.FromSeconds(1), ct));
+        await launcher.DidNotReceive().LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>());
+        Assert.Empty(jobs.Failed);
+        Assert.Empty(jobs.Completed);
+
+        notifications.PendingAsk.SetResult(true);
+        await SettleAsync(bg, ct);
+
+        await launcher.Received(1).LaunchAsync(
+            Arg.Is<HeadlessRunRequest>(r => r.TriggerRef == late.Id), Arg.Any<CancellationToken>());
+        Assert.Equal([late.Id], jobs.Dispatched);
+    }
+
+    /// <summary>
+    /// REVIEW FIX. The dedup entry must survive until the OCCURRENCE IS SPENT, not until the answer arrives — the
+    /// gap between those two is a window that exists only because T0-2 moved the ask off the tick, and in it the
+    /// row is still inside the due window with nothing in <c>_pendingMissedPrompts</c> to stop a re-ask. On "yes"
+    /// that gap spans a provider resolve, a settings read and the whole launch (stub chat, run row, workspace)
+    /// before <c>MoveScheduleOnAsync</c> writes, so a 30 s tick lands in it easily.
+    /// <para>
+    /// Held open here deterministically rather than by timing: tick 2 runs only once <c>LaunchAsync</c> has been
+    /// ENTERED, which is provably inside the window. Every other door is open at that moment —
+    /// <c>AnyExecutingRunForTriggerAsync</c> is false because no run row exists yet, <c>NextFireAt</c> has not
+    /// moved so the job is still due, and <c>lateBy</c> is still past the grace period. The dedup set is the only
+    /// thing that can refuse, which is what makes this an observation of it.
+    /// </para>
+    /// <para>Neutralize: move the clear back out of <c>AskThenRunMissedAsync</c>'s <c>finally</c> to just after the
+    /// answer → the second tick raises a second dialog and launches a second run of the same goal, and both
+    /// assertions red (<c>AskedJobIds</c> holds the id twice).</para>
+    /// </summary>
+    [Fact]
+    public async Task ATickWhileAnAnsweredMissedRunIsStillLaunching_DoesNotAskAgain()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var jobs = new FakeJobService();
+        var late = new ScheduledJob
+        {
+            Name = "late", Query = "q", Recurrence = RecurrenceType.Daily, Kind = ScheduledJobKind.AgentTask,
+            TimeOfDay = TimeOnly.MinValue, NextFireAt = DateTime.Now.AddMinutes(-20)
+        };
+        jobs.SeedDue(late);
+
+        var runId = Guid.NewGuid();
+        var launchEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var launchGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        launcher.LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ => HeldLaunchAsync());
+
+        async Task<HeadlessRunHandle> HeldLaunchAsync()
+        {
+            launchEntered.TrySetResult();
+            await launchGate.Task;
+            return new HeadlessRunHandle(runId, Guid.NewGuid(), Task.CompletedTask);
+        }
+
+        // Stubbed Completed so the drain's bookkeeping takes the success arm: an unstubbed GetAsync returns null,
+        // which the continuation reads as a failed run and books a strike this test is not about.
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>())
+            .Returns(new AgentRun { Id = runId, TriggerRef = late.Id, State = AgentRunState.Completed });
+
+        var notifications = new FakeNotificationSurface
+        {
+            PendingAsk = new TaskCompletionSource<bool?>(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
+            notifications, launcher, NewSettings(), runs,
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
+        Assert.True(await WaitUntilAsync(() => notifications.AskCount == 1, TimeSpan.FromSeconds(5), ct));
+
+        notifications.PendingAsk.SetResult(true);                          // the human says "run it" …
+        await launchEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);   // … and the launch is now in flight
+
+        // The window: a tick, with the answered job's occurrence still unspent.
+        await bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
+        Assert.False(await WaitUntilAsync(() => notifications.AskCount >= 2, TimeSpan.FromSeconds(1), ct));
+
+        launchGate.SetResult();
+        await SettleAsync(bg, ct);
+
+        // The mechanism, recorded rather than sampled: one dialog for this job across both ticks, and one run.
+        Assert.Equal([late.Id], notifications.AskedJobIds);
+        await launcher.Received(1).LaunchAsync(
+            Arg.Is<HeadlessRunRequest>(r => r.TriggerRef == late.Id), Arg.Any<CancellationToken>());
+        Assert.Equal([late.Id], jobs.Dispatched);
+    }
+
+    /// <summary>
+    /// The shutdown arm the off-tick ask needs (T0-2). An unanswered <c>AskUserToRunMissedAsync</c> is a
+    /// <c>TaskCompletionSource</c> that a click completes and nothing else does, so a tracked dispatch waiting on
+    /// it would outlive the app: <c>StopAsync</c> would report it in flight forever, and any drain would hang.
+    /// The wait therefore takes the tick's token — in production the <c>BackgroundService</c> stopping token that
+    /// <c>base.StopAsync</c> cancels.
+    /// <para>
+    /// Note what is NOT claimed: the dialog itself is not closed (nothing here can), and the job stays deduped —
+    /// abandoning is not answering, so nothing is dispatched and nothing is advanced.
+    /// </para>
+    /// <para>Neutralize: drop the <c>.WaitAsync(ct)</c> from the ask → the drain eats <see cref="SettleAsync"/>'s
+    /// full 30 s and times out.</para>
+    /// </summary>
+    [Fact]
+    public async Task MissedRunAsk_ThatIsNeverAnswered_IsAbandonedAtShutdown_SoTheDrainCompletes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var jobs = new FakeJobService();
+        var late = new ScheduledJob
+        {
+            Name = "late", Query = "q", Recurrence = RecurrenceType.Daily, Kind = ScheduledJobKind.AgentTask,
+            TimeOfDay = TimeOnly.MinValue, NextFireAt = DateTime.Now.AddMinutes(-20)
+        };
+        jobs.SeedDue(late);
+
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        var notifications = new FakeNotificationSurface
+        {
+            PendingAsk = new TaskCompletionSource<bool?>(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
+            notifications, launcher, NewSettings(), Substitute.For<IAgentRunService>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        // Stands in for the stopping token ExecuteAsync hands the tick.
+        using var stopping = new CancellationTokenSource();
+        await bg.ExecuteOnceAsync(stopping.Token).WaitAsync(TimeSpan.FromSeconds(10), ct);
+        Assert.Equal(1, notifications.AskCount);
+
+        stopping.Cancel();                 // = base.StopAsync cancelling the stopping token
+        await SettleAsync(bg, ct);         // completes: the abandoned ask is no longer pending, and did not fault
+
+        Assert.False(notifications.PendingAsk.Task.IsCompleted);   // the human still never answered
+        Assert.Empty(jobs.Dispatched);
+        Assert.Empty(jobs.Advanced);
+        Assert.Empty(jobs.Failed);
+        await launcher.DidNotReceive().LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -945,6 +1209,14 @@ public class ScheduledJobBackgroundServiceTests
         // for a turn (restoring an inline await reds this as a TimeoutException), and the second turn QUEUES on
         // the leg's single permit rather than running concurrently — the serialization this leg always had, now
         // waited inside the dispatched work instead of in the tick.
+        //
+        // The serialization half is a RECORDED state fact (FakeRunner.PeakConcurrent), not a sample of RunCount
+        // at a moment of our choosing. That distinction is the whole point: nothing awaits between
+        // `_researchSlots.WaitAsync` and `runner.RunAsync`, so deleting the permit reds the peak deterministically
+        // (job 2 would enter the runner inline, on the tick itself) — whereas a RunCount sample stops being
+        // evidence the moment the dispatch is queued instead of inlined, which the neighbouring pool work is
+        // about to do. The two probes are corroboration: the same helper with the same bound must NOT see a
+        // second entry while turn 1 is held, and MUST see one once it is released.
         var ct = TestContext.Current.CancellationToken;
         var hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var jobs = new FakeJobService();
@@ -963,17 +1235,18 @@ public class ScheduledJobBackgroundServiceTests
 
         await bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
 
-        var deadline = DateTime.UtcNow.AddSeconds(5);
-        while (runner.RunCount == 0 && DateTime.UtcNow < deadline)
-            await Task.Delay(10, ct);
-
-        Assert.Equal(1, runner.RunCount);         // turn 1 is in flight, turn 2 is queued behind the permit
+        var probe = TimeSpan.FromSeconds(1);
+        Assert.True(await WaitUntilAsync(() => runner.RunCount >= 1, probe, ct));    // premise: turn 1 is in flight
+        Assert.False(await WaitUntilAsync(() => runner.RunCount >= 2, probe, ct));   // turn 2 is behind the permit
         Assert.Equal(2, jobs.Dispatched.Count);   // yet BOTH occurrences were already spent at dispatch time
         Assert.Empty(jobs.Completed);
 
         hold.SetResult();
+        // The control for the negative above: the SAME probe, the same bound, now does observe the entry.
+        Assert.True(await WaitUntilAsync(() => runner.RunCount >= 2, probe, ct));
         await SettleAsync(bg, ct);
 
+        Assert.Equal(1, runner.PeakConcurrent);   // the mechanism: the two turns never overlapped, ever
         Assert.Equal(2, runner.RunCount);
         Assert.Equal(2, jobs.Completed.Count);
     }
@@ -1009,6 +1282,134 @@ public class ScheduledJobBackgroundServiceTests
         Assert.Equal("run-me", runner.LastRequest!.Prompt);
         Assert.Equal([dispatched.Id], jobs.Dispatched);
         Assert.Empty(jobs.Failed);   // a skipped occurrence is not a job-health signal either
+    }
+
+    /// <summary>
+    /// T0-1(b). A scheduled run that parked at its budget and was later CONTINUED by a human used to book
+    /// nothing at all: the launch path books from a continuation on its handle, and <c>ResumeAsync</c> hands out
+    /// no handle — so the job's health columns missed the outcome with no crash involved (the premise
+    /// <c>D5PausePremiseTests</c> pins). This is the callback that closes it.
+    /// <para>
+    /// The booking must carry NO schedule write: that occurrence was spent when it was first dispatched, and a
+    /// resume that advanced the schedule again would skip an occurrence of a recurring job — which is exactly
+    /// what reusing <c>MarkRunCompleteAsync</c> here would have done, so the three empty lists below are the
+    /// load-bearing half of this fact, not decoration.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task AResumedScheduledRun_ThatCompletes_BooksTheJobOutcome_WithoutAdvancingTheSchedule()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var jobs = new FakeJobService();
+        var job = NewDueJob();
+        job.Kind = ScheduledJobKind.AgentTask;
+        jobs.SeedDue(job);
+
+        var runId = Guid.NewGuid();
+        var chatId = Guid.NewGuid();
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = runId, ChatId = chatId, TriggerRef = job.Id, State = AgentRunState.Completed,
+        });
+
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        var notifications = new FakeNotificationSurface();
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
+            notifications, launcher, NewSettings(), runs, NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        // No tick at all: the resume is a dispatch of its own, and the service must book it without any
+        // occurrence ever coming due.
+        launcher.ResumedRunSettled += Raise.EventWith(new ResumedRunSettledEventArgs(runId, chatId));
+        await SettleAsync(bg, ct);
+
+        var booking = Assert.Single(jobs.Bookings);
+        Assert.Equal(job.Id, booking.JobId);
+        Assert.Equal(chatId, booking.EntryId);
+        Assert.True(booking.Succeeded);
+        Assert.Equal(1, notifications.SuccessCount);
+        Assert.Equal(chatId, notifications.LastSuccessChatId);
+
+        // The mechanism: booked through the health-only write, and through NOTHING that moves the schedule.
+        Assert.Empty(jobs.Completed);    // MarkRunCompleteAsync recomputes NextFireAt — must not be used here
+        Assert.Empty(jobs.Dispatched);
+        Assert.Empty(jobs.Advanced);
+        Assert.Empty(jobs.Failed);
+    }
+
+    /// <summary>
+    /// All THREE declines <c>BookResumedRunAsync</c> documents, plus the control that proves the probe can see a
+    /// booking at all — this suite has shipped negatives from probes that watched nothing, so every leg goes in
+    /// one fact with one fake. A null <c>TriggerRef</c> is not a scheduled firing (a user's detached run, or a
+    /// child run — 07 D7); a row that is PARKED AGAIN did not settle, and booking it would burn a strike on work
+    /// the user can still continue; a row that is EXECUTING belongs to a newer dispatch that re-claimed it while
+    /// this one was unwinding, and booking it would call <c>MarkFiringOutcomeAsync(succeeded: false)</c> and toast
+    /// a failure for a run that is still going. The raiser cannot tell any of them apart from a real settle, which
+    /// is why it fires unconditionally and the decision lives in the handler.
+    /// <para>Neutralize the third leg specifically: drop <c>|| AgentRunStates.IsExecuting(run.State)</c> from
+    /// <c>BookResumedRunAsync</c> → the <c>executing</c> raise books a false outcome and reds both
+    /// <see cref="Assert.Empty{T}(System.Collections.Generic.IEnumerable{T})"/> on <c>Bookings</c> and the
+    /// <c>FailureCount</c> below.</para>
+    /// </summary>
+    [Fact]
+    public async Task AResumedRunThatIsNotASettledFiring_BooksNothing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var jobs = new FakeJobService();
+        var job = NewDueJob();
+        job.Kind = ScheduledJobKind.AgentTask;
+        jobs.SeedDue(job);
+
+        var detached = Guid.NewGuid();
+        var reparked = Guid.NewGuid();
+        var executing = Guid.NewGuid();
+        var settled = Guid.NewGuid();
+        var chatId = Guid.NewGuid();
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(detached, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = detached, ChatId = chatId, TriggerRef = null, State = AgentRunState.Completed,
+        });
+        runs.GetAsync(reparked, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = reparked, ChatId = chatId, TriggerRef = job.Id, State = AgentRunState.WaitingForInput,
+        });
+        // Running is the plainest state that satisfies AgentRunStates.IsExecuting: not parked, not terminal.
+        runs.GetAsync(executing, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = executing, ChatId = chatId, TriggerRef = job.Id, State = AgentRunState.Running,
+        });
+        runs.GetAsync(settled, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = settled, ChatId = chatId, TriggerRef = job.Id, State = AgentRunState.Failed,
+        });
+
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        var notifications = new FakeNotificationSurface();
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
+            notifications, launcher, NewSettings(), runs, NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        launcher.ResumedRunSettled += Raise.EventWith(new ResumedRunSettledEventArgs(detached, chatId));
+        launcher.ResumedRunSettled += Raise.EventWith(new ResumedRunSettledEventArgs(reparked, chatId));
+        launcher.ResumedRunSettled += Raise.EventWith(new ResumedRunSettledEventArgs(executing, chatId));
+        await SettleAsync(bg, ct);
+
+        Assert.Empty(jobs.Bookings);
+        Assert.Equal(0, notifications.SuccessCount);
+        Assert.Equal(0, notifications.FailureCount);
+
+        // The control: the SAME service, the same fake, a run that really did settle — so the three negatives
+        // above are about the decision and not about a callback that never fires.
+        launcher.ResumedRunSettled += Raise.EventWith(new ResumedRunSettledEventArgs(settled, chatId));
+        await SettleAsync(bg, ct);
+
+        var booking = Assert.Single(jobs.Bookings);
+        Assert.Equal(job.Id, booking.JobId);
+        Assert.False(booking.Succeeded);
+        Assert.Equal(1, notifications.FailureCount);
+        Assert.Empty(jobs.Failed);   // and still not through MarkRunFailedAsync, which would retire the job
     }
 
     private sealed class FakeJobService : IScheduledJobService
@@ -1079,6 +1480,21 @@ public class ScheduledJobBackgroundServiceTests
             return Task.CompletedTask;
         }
 
+        /// <summary>
+        /// Health-only bookings (T0-1). Recorded rather than thrown, and kept apart from
+        /// <see cref="Completed"/>/<see cref="Failed"/> because the whole point of the new write is that it does
+        /// NOT do what those two do to the schedule — a fact that could not tell them apart could not show that
+        /// a resumed run booked its outcome without advancing anything.
+        /// </summary>
+        public List<(Guid JobId, DateTime FiredAt, Guid? EntryId, bool Succeeded)> Bookings { get; } = new();
+
+        public Task MarkFiringOutcomeAsync(Guid id, DateTime firedAt, Guid? resultEntryId, bool succeeded)
+        {
+            Bookings.Add((id, firedAt, resultEntryId, succeeded));
+            // Deliberately does NOT touch NextFireAt: the real write touches neither the schedule nor Status.
+            return Task.CompletedTask;
+        }
+
         // Mirror the real service, which serves both names from ONE write: NextFireAt moves to the next
         // occurrence and NOTHING else — no failure counter, no Status, no LastFiredAt.
         private void MoveOffOccurrence(Guid id)
@@ -1120,12 +1536,51 @@ public class ScheduledJobBackgroundServiceTests
         public Task UpsertFromSyncAsync(ScheduledJob job) => throw new NotImplementedException();
     }
 
+    /// <summary>
+    /// Records the most callers that were ever inside an <see cref="Enter"/>/<see cref="Exit"/> pair at the same
+    /// time. Shared by <see cref="FakeRunner"/> and <see cref="FakeNotificationSurface"/> (research turns and
+    /// missed-run dialogs respectively), which each pin a concurrency-of-1 leg the same way: the peak is the
+    /// recorded fact that a sample of a running count cannot give, because an overlap that happened at ANY point
+    /// in the test is still in the peak afterwards, whereas a count sample stops being evidence the moment the
+    /// second entrant is merely queued rather than concurrent. Interlocked throughout, not <c>++</c>: the whole
+    /// point is the case where two callers are inside at once, and a read-then-write would let one overwrite the
+    /// other's raise.
+    /// </summary>
+    private sealed class PeakConcurrencyTracker
+    {
+        private int _current;
+        private int _peak;
+
+        public int Peak => Volatile.Read(ref _peak);
+
+        public void Enter()
+        {
+            var live = Interlocked.Increment(ref _current);
+            var peak = Volatile.Read(ref _peak);
+            while (live > peak)
+            {
+                var seen = Interlocked.CompareExchange(ref _peak, live, peak);
+                if (seen == peak) break;
+                peak = seen;
+            }
+        }
+
+        public void Exit() => Interlocked.Decrement(ref _current);
+    }
+
     private sealed class FakeRunner : IBackgroundAssistantTurnRunner
     {
         private int _runCount;
+        private readonly PeakConcurrencyTracker _tracker = new();
 
         /// <summary>Volatile because the research leg now runs the turn on a dispatched task, not on the tick.</summary>
         public int RunCount => Volatile.Read(ref _runCount);
+
+        /// <summary>
+        /// The most turns that were ever inside <see cref="RunAsync"/> at the same time — the recorded fact that
+        /// pins <c>ScheduledJobBackgroundService._researchSlots</c>. See <see cref="PeakConcurrencyTracker"/>.
+        /// </summary>
+        public int PeakConcurrent => _tracker.Peak;
 
         public BackgroundTurnResult Result { get; set; } = new(Guid.NewGuid(), true, null);
         public string? ThrowMessage { get; set; }
@@ -1137,18 +1592,33 @@ public class ScheduledJobBackgroundServiceTests
         public Task<BackgroundTurnResult> RunAsync(BackgroundTurnRequest request, CancellationToken ct)
         {
             var n = Interlocked.Increment(ref _runCount);
+            // Entry is recorded HERE, before the hold and before the throw — a count taken after the body would
+            // read 1 even for two genuinely simultaneous turns. Deliberately still returns (rather than awaits)
+            // below: ThrowMessage must keep throwing SYNCHRONOUSLY, because eight other tests share this fake.
+            _tracker.Enter();
             LastRequest = request;
             if (ThrowMessage is not null)
+            {
+                _tracker.Exit();
                 throw new InvalidOperationException(ThrowMessage);
+            }
             if (n == 1 && HoldFirstRun is { } hold)
-                return AfterAsync(hold);
+                return AfterAsync(hold);   // exits when the hold releases, not now
+            _tracker.Exit();
             return Task.FromResult(Result);
         }
 
         private async Task<BackgroundTurnResult> AfterAsync(TaskCompletionSource hold)
         {
-            await hold.Task;
-            return Result;
+            try
+            {
+                await hold.Task;
+                return Result;
+            }
+            finally
+            {
+                _tracker.Exit();
+            }
         }
     }
 
@@ -1162,11 +1632,27 @@ public class ScheduledJobBackgroundServiceTests
 
     private sealed class FakeNotificationSurface : IScheduledJobNotificationSurface
     {
+        private int _askCount;
+        private readonly PeakConcurrencyTracker _tracker = new();
+
         public int SuccessCount { get; private set; }
         public int FailureCount { get; private set; }
         public Guid? LastSuccessChatId { get; private set; }
         public bool? AskAnswer { get; set; } = false;
-        public int AskCount { get; private set; }
+
+        /// <summary>Interlocked since T0-2: the ask runs on a dispatched task, and two late jobs are two of them.</summary>
+        public int AskCount => Volatile.Read(ref _askCount);
+
+        /// <summary>
+        /// The most asks that were ever outstanding at the same time — the recorded fact that pins
+        /// <c>ScheduledJobBackgroundService._missedPromptGate</c>, because the real host has the same shape of
+        /// limit (<c>ContentDialogHost</c> shows ONE dialog). See <see cref="PeakConcurrencyTracker"/>.
+        /// </summary>
+        public int PeakConcurrentAsks => _tracker.Peak;
+
+        /// <summary>Which jobs were asked about, in order, so a test can tell WHOSE dialog is open.</summary>
+        public List<Guid> AskedJobIds { get; } = new();
+
         public TaskCompletionSource<bool?>? PendingAsk { get; set; }
 
         public void NotifySuccess(ScheduledJob job, Guid chatId, string chatTitle)
@@ -1179,9 +1665,25 @@ public class ScheduledJobBackgroundServiceTests
 
         public Task<bool?> AskUserToRunMissedAsync(ScheduledJob job, DateTime scheduledFireAt)
         {
-            AskCount++;
-            if (PendingAsk is not null) return PendingAsk.Task;
+            Interlocked.Increment(ref _askCount);
+            _tracker.Enter();
+            lock (AskedJobIds) AskedJobIds.Add(job.Id);
+            if (PendingAsk is not null) return AfterAsync(PendingAsk.Task);
+            _tracker.Exit();
             return Task.FromResult(AskAnswer);
+        }
+
+        /// <summary>An ask is outstanding until its task resolves — that is what "a dialog is open" means.</summary>
+        private async Task<bool?> AfterAsync(Task<bool?> pending)
+        {
+            try
+            {
+                return await pending;
+            }
+            finally
+            {
+                _tracker.Exit();
+            }
         }
     }
 

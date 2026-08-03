@@ -1,4 +1,5 @@
 using System.IO;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -159,6 +160,10 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     /// <param name="stream">Trailing and defaulted (Batch 08 G4): replaces <see cref="Drive"/> so a fact can
     /// hold a run INSIDE a step (the state a pause is legal from) instead of only inside the planner. Handed the
     /// step's own token.</param>
+    /// <param name="settingsService">Trailing and defaulted (T1-1): the run pool is live-resizable off
+    /// <c>ISettingsService.SettingsChanged</c>, and a substitute cannot RAISE that event without reflection
+    /// tricks. Pass a <see cref="MutableSettingsService"/> to drive a real save. Supersedes
+    /// <paramref name="appSettings"/> when both are given.</param>
     private (HeadlessRunLauncher Launcher, FakePlanner Planner) BuildLauncher(
         Func<Task>? onPlan = null, bool nullDefaultProvider = false, ToolProbe? probe = null,
         AppSettings? appSettings = null, FakeVerifier? verifier = null,
@@ -166,7 +171,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Persona? rosterPersona = null, AiProvider? rosterProvider = null,
         IRunSteeringStore? steering = null,
         Func<CancellationToken, IAsyncEnumerable<ChatStreamItem>>? stream = null,
-        IExecutingRunStore? executing = null)
+        IExecutingRunStore? executing = null,
+        ISettingsService? settingsService = null)
     {
         // Trailing-optional and defaulted to the shared field, so every existing call site is untouched. The
         // one fact that overrides it needs a SEAM between the resume's RegisterDispatch and RunAsync, and
@@ -211,8 +217,17 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             providers.GetProviderAsync(rosterProvider.Id).Returns(rosterProvider);
         var titles = Substitute.For<IChatTitleService>();
         titles.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((string?)null);
-        var settings = Substitute.For<ISettingsService>();
-        settings.GetSettingsAsync().Returns(appSettings ?? new AppSettings());
+        ISettingsService settings;
+        if (settingsService is not null)
+        {
+            settings = settingsService;
+        }
+        else
+        {
+            var settingsSub = Substitute.For<ISettingsService>();
+            settingsSub.GetSettingsAsync().Returns(appSettings ?? new AppSettings());
+            settings = settingsSub;
+        }
 
         var services = new ServiceCollection();
         services.AddLogging();
@@ -579,6 +594,180 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             try { Directory.Delete(Path.Combine(_runsBase, h.RunId.ToString()), true); } catch { }
     }
 
+    /// <summary>
+    /// An <see cref="ISettingsService"/> whose stored document can be replaced and whose
+    /// <c>SettingsChanged</c> can therefore actually be RAISED — through <c>SaveSettingsAsync</c>, i.e. the same
+    /// call the settings ViewModel makes when a slider moves. A substitute cannot raise an event without a
+    /// reflection helper; a four-member interface is cheaper to implement than to trick.
+    /// </summary>
+    private sealed class MutableSettingsService : ISettingsService
+    {
+        public MutableSettingsService(AppSettings initial) => Current = initial;
+
+        public event EventHandler<AppSettings>? SettingsChanged;
+
+        public AppSettings Current { get; private set; }
+
+        public Task<AppSettings> GetSettingsAsync() => Task.FromResult(Current);
+
+        public Task SaveSettingsAsync(AppSettings settings)
+        {
+            Current = settings;
+            SettingsChanged?.Invoke(this, settings);
+            return Task.CompletedTask;
+        }
+
+        public Task SaveDraftAsync(string? draftText) => Task.CompletedTask;
+
+        public Task<string?> GetDraftAsync() => Task.FromResult<string?>(null);
+    }
+
+    /// <summary>Wait, bounded, for the planner to hold <paramref name="expected"/> runs at once.</summary>
+    private static async Task WaitForConcurrencyAsync(FakePlanner planner, int expected)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (planner.Concurrent < expected && DateTime.UtcNow < deadline)
+            await Task.Delay(20, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task LaunchAsync_AppliesTheConfiguredPoolWidthOnColdStart_WithoutASettingsChangeEvent()
+    {
+        // T1-1 COLD START. Nothing in this fact saves settings, so SettingsChanged never fires and the ONLY
+        // thing that can apply the configured width is the Resize at the top of LaunchCoreAsync — which is the
+        // arm a live-resize-by-event-only implementation would leave broken until the user re-saved. On the
+        // pre-T1-1 tree the pool was compiled at 2 and the third run stayed slot-starved for the whole hold.
+        var release = new TaskCompletionSource();
+        var (launcher, planner) = BuildLauncher(
+            onPlan: () => release.Task,
+            appSettings: new AppSettings { MaxParallelBackgroundRuns = 3 });
+
+        var handles = new List<HeadlessRunHandle>();
+        foreach (var goal in new[] { "a", "b", "c", "d" })
+            handles.Add(await launcher.LaunchAsync(
+                new HeadlessRunRequest(goal, AgentRunTrigger.User), TestContext.Current.CancellationToken));
+
+        await WaitForConcurrencyAsync(planner, 3);
+
+        // THREE, not two: the configured width reached the pool. And the 4th is still queued, so the width is
+        // the setting rather than "no cap at all".
+        Assert.Equal(3, planner.Concurrent);
+        Assert.True(planner.MaxConcurrent <= 3, $"MaxConcurrent was {planner.MaxConcurrent}");
+
+        release.SetResult();
+        await Task.WhenAll(handles.Select(h => h.Completion))
+            .WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
+        Assert.True(planner.MaxConcurrent <= 3, $"MaxConcurrent was {planner.MaxConcurrent}");
+
+        foreach (var h in handles)
+            try { Directory.Delete(Path.Combine(_runsBase, h.RunId.ToString()), true); } catch { }
+    }
+
+    [Fact]
+    public async Task SettingsChanged_RaisingTheCap_StartsAQueuedRun()
+    {
+        // T1-1's live half: the setting takes effect WITHOUT an app restart, and specifically for a run that is
+        // ALREADY QUEUED — the run the user is trying to unblock. The lazy Resize on the dispatch paths cannot
+        // reach it (that run's LaunchCoreAsync already returned), so only the SettingsChanged subscription can.
+        var release = new TaskCompletionSource();
+        var settings = new MutableSettingsService(new AppSettings { MaxParallelBackgroundRuns = 2 });
+        var (launcher, planner) = BuildLauncher(onPlan: () => release.Task, settingsService: settings);
+
+        var handles = new List<HeadlessRunHandle>();
+        foreach (var goal in new[] { "a", "b", "c" })
+            handles.Add(await launcher.LaunchAsync(
+                new HeadlessRunRequest(goal, AgentRunTrigger.User), TestContext.Current.CancellationToken));
+
+        await WaitForConcurrencyAsync(planner, 2);
+
+        // PRE-STATE, and it is what makes this fact about the event rather than about the cold-start Resize:
+        // the pool is 2 wide here, so the third run is queued and nothing but a widening can admit it.
+        Assert.Equal(2, planner.Concurrent);
+
+        await settings.SaveSettingsAsync(new AppSettings { MaxParallelBackgroundRuns = 3 });
+        await WaitForConcurrencyAsync(planner, 3);
+
+        // Nothing finished — no run has been released from the planner yet — so the third run is inside the
+        // planner because the raise handed it a permit.
+        Assert.Equal(3, planner.Concurrent);
+
+        release.SetResult();
+        await Task.WhenAll(handles.Select(h => h.Completion))
+            .WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
+
+        foreach (var h in handles)
+            try { Directory.Delete(Path.Combine(_runsBase, h.RunId.ToString()), true); } catch { }
+    }
+
+    /// <summary>
+    /// The launcher's own parent pool (<c>_slots</c>). T1-3's ordering is only observable from outside if a test
+    /// can hold the HEAD of the pool's admission chain, and only a ticket the launcher did not issue can do that —
+    /// so the fact below needs the exact instance the dispatch waits on. Deliberately reflection rather than an
+    /// internal accessor on the launcher: this fails loudly (a null deref) if the field is renamed, which is
+    /// cheaper than production surface that exists for one test.
+    /// </summary>
+    private static RunSlotPool SlotPoolOf(HeadlessRunLauncher launcher) =>
+        (RunSlotPool)typeof(HeadlessRunLauncher)
+            .GetField("_slots", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(launcher)!;
+
+    [Fact]
+    public async Task LaunchAsync_QueuesItsSlotWaitBehindTheTicketTakenBeforeIt()
+    {
+        // T1-3 through the REAL launcher: the slot wait runs as the first statement of a detached Task.Run, so
+        // the only thing that can carry launch order into the pool is a ticket taken on the launching thread
+        // BEFORE that Task.Run. Here the test holds a ticket issued before the launch, and the launched run must
+        // queue behind it — with a permit sitting free the whole time.
+        var ct = TestContext.Current.CancellationToken;
+        var gate = new TaskCompletionSource();
+        var planCalls = 0;
+        // Run A sails through; every later run holds inside the planner, which is how "B started" is observable.
+        var (launcher, planner) = BuildLauncher(
+            onPlan: () => Interlocked.Increment(ref planCalls) == 1 ? Task.CompletedTask : gate.Task,
+            appSettings: new AppSettings { MaxParallelBackgroundRuns = 1 });
+
+        var a = await launcher.LaunchAsync(new HeadlessRunRequest("a", AgentRunTrigger.User), ct);
+        await a.Completion.WaitAsync(TimeSpan.FromSeconds(20), ct);
+
+        var pool = SlotPoolOf(launcher);
+        // The width the setting asked for — which also proves the reflected field is the pool the launch used.
+        Assert.Equal(1, pool.Width);
+
+        // A PERMIT IS FREE, taken and handed straight back. Without this the negative assertion below would pass
+        // on a tree with no ticket chain at all, because a saturated pool explains it just as well — the
+        // assertion-observed-the-default shape.
+        var probe = pool.WaitAsync(CancellationToken.None);
+        Assert.True(probe.IsCompleted, "the pool should be idle after run A settled");
+        pool.Release();
+
+        // Hold the head of the chain. Production never does this (see RunSlotPool.TakeTicket's caller contract);
+        // it is the only way to occupy a place in the queue that the launcher must be seen to queue behind.
+        var head = pool.TakeTicket();
+
+        var b = await launcher.LaunchAsync(new HeadlessRunRequest("b", AgentRunTrigger.User), ct);
+
+        // B's dispatch task is running and the pool is idle, yet B has not started: its ticket was issued after
+        // `head`, so its wait is not even ENQUEUED yet. Bounded, because "has not happened" has no state to read;
+        // the positive half below is what makes this a mechanism fact rather than a slow tree.
+        await Task.Delay(300, ct);
+        Assert.Equal(0, planner.Concurrent);
+        Assert.Equal(1, planCalls);
+
+        // Use the head ticket exactly as a dispatch does — wait, then release — which hands the chain on.
+        await pool.WaitAsync(head, ct).WaitAsync(TimeSpan.FromSeconds(5), ct);
+        pool.Release();
+
+        await WaitForConcurrencyAsync(planner, 1);
+        Assert.Equal(1, planner.Concurrent);
+        Assert.Equal(2, planCalls);
+
+        gate.SetResult();
+        await b.Completion.WaitAsync(TimeSpan.FromSeconds(20), ct);
+
+        foreach (var h in new[] { a, b })
+            try { Directory.Delete(Path.Combine(_runsBase, h.RunId.ToString()), true); } catch { }
+    }
+
     [Fact]
     public async Task Stop_DuringInFlightRun_SettlesRun_NeverRunning()
     {
@@ -913,6 +1102,76 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
         Assert.False(probe.Executed);
         Assert.Contains("not granted", probe.GateResult ?? string.Empty);
+
+        try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
+    }
+
+    /// <summary>
+    /// T0-1(b). <c>ResumeAsync</c> returns a bool and hands nobody a task, so the only way a subscriber can learn
+    /// that a resumed dispatch finished is this event — which is why a scheduled run that parked at its budget
+    /// and was later continued TO COMPLETION never booked its outcome onto the job, with no crash involved.
+    /// <para>
+    /// The ORDERING leg is the other half. The raise sits at the very END of the dispatch's <c>finally</c>,
+    /// deliberately after <c>_slots.Release()</c> — bookkeeping must never be able to strand the shared
+    /// concurrency slot, the same rule the composer bracket beside it already follows. The slot itself is
+    /// private, so what is asserted is its neighbour: the composer bracket, released one line after the slot, is
+    /// ALREADY CLOSED when the handler runs. Move the raise above the release (or into the try) and this reds.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task ResumeAsync_RaisesResumedRunSettled_AfterReleasingTheSlot()
+    {
+        var (launcher, _) = BuildLauncher();
+        var parked = await ParkRunWithPendingStepAsync(policyJson: null);
+
+        var raised = new List<ResumedRunSettledEventArgs>();
+        Guid? bracketedChatAtRaise = null;
+        launcher.ResumedRunSettled += (_, e) =>
+        {
+            raised.Add(e);
+            bracketedChatAtRaise = _executing.GetChatId(e.RunId);
+        };
+
+        Assert.True(await launcher.ResumeAsync(parked.Id, ct: TestContext.Current.CancellationToken));
+        await AwaitRunSettledAsync(launcher, parked.Id);
+
+        var only = Assert.Single(raised);
+        Assert.Equal(parked.Id, only.RunId);
+        Assert.Equal(parked.ChatId, only.ChatId);
+        Assert.Null(bracketedChatAtRaise);
+
+        try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
+    }
+
+    /// <summary>
+    /// The event is NOT conditional on a terminal state: here the resumed run enters the orchestrator, hits a
+    /// tool it was not granted and PARKS AGAIN, and the raise still happens. That is deliberate — the launcher
+    /// cannot distinguish "re-parked before starting" from "ran, then parked again", so it reports every arm and
+    /// the subscriber's state check decides (see <c>ScheduledJobBackgroundService.BookResumedRunAsync</c>).
+    /// Suppressing the raise on non-terminal arms would silently lose the case where the orchestrator DID run.
+    /// </summary>
+    [Fact]
+    public async Task ResumeAsync_RaisesResumedRunSettled_OnTheReParkArmToo()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = BuildLauncher(probe: probe);
+
+        var raised = new List<ResumedRunSettledEventArgs>();
+        launcher.ResumedRunSettled += (_, e) => raised.Add(e);
+
+        // An envelope with no grants and no policy: the resumed run reaches write_file and parks to ask.
+        var parked = await ParkRunWithPendingStepAsync(
+            HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.Schedule));
+
+        Assert.True(await launcher.ResumeAsync(parked.Id, ct: ct));
+        await AwaitRunParkedForApprovalAsync(launcher, parked.Id, "write_file");
+
+        var only = Assert.Single(raised);
+        Assert.Equal(parked.Id, only.RunId);
+        // Non-vacuity: the run really is non-terminal, so the raise above happened on the park arm and not on a
+        // run that quietly completed instead.
+        Assert.Equal(AgentRunState.WaitingForInput, (await _runs.GetAsync(parked.Id, ct))!.State);
 
         try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
     }

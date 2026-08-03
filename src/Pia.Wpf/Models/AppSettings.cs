@@ -254,6 +254,49 @@ public class AppSettings
     public int ScheduledMaxReplans { get; set; } = 2;
     public int ScheduledWallClockMinutes { get; set; } = 45;
 
+    /// <summary>
+    /// T1-1 — how many unattended agent runs this device EXECUTES at once (<c>HeadlessRunLauncher</c>'s parent
+    /// slot pool). A width, not a budget: it bounds execution, not dispatch, so N due jobs still create N run
+    /// rows and N workspaces immediately and the surplus queues on a slot. Queue time is not charged against a
+    /// run's wall clock (the <c>RunContext</c> stopwatch starts after the slot is acquired).
+    /// <para>
+    /// Live-resizable: <c>HeadlessRunLauncher</c> applies this on every settings save, so raising it starts a
+    /// queued run without an app restart and lowering it takes effect as in-flight runs finish (it never
+    /// preempts one). Read through <see cref="GetMaxParallelBackgroundRuns"/>, never raw.
+    /// </para>
+    /// <para>
+    /// Local-only: absent from <c>SyncSettings</c>, like every other <c>Agent*</c>/<c>Scheduled*</c> knob —
+    /// concurrency a device can sustain is a property OF THE DEVICE, so syncing it would push a workstation's
+    /// width onto a laptop. Separate from the CHILD pool, which stays fixed at 2 per delegating parent and has
+    /// deliberately no setting (see <c>HeadlessRunLauncher._childSlots</c> for why the two must not merge).
+    /// </para>
+    /// </summary>
+    public int MaxParallelBackgroundRuns { get; set; } = DefaultParallelBackgroundRuns;
+
+    public const int MinParallelBackgroundRuns = 1;
+
+    /// <summary>
+    /// Ceiling on <see cref="MaxParallelBackgroundRuns"/>. Not a guess about hardware — it is the number
+    /// beyond which the honest bound is a per-provider request throttle rather than a run count (that ships at
+    /// the HTTP layer, T1-2, and is NOT in place yet), so the cap stays somewhere a single provider key can
+    /// still be expected to survive.
+    /// </summary>
+    public const int MaxParallelBackgroundRunsCap = 8;
+
+    /// <summary>Two, i.e. the width the pool was hard-coded to before it became configurable.</summary>
+    public const int DefaultParallelBackgroundRuns = 2;
+
+    /// <summary>
+    /// The configured run-pool width, clamped on READ. The clamp is load-bearing, not decorative: a
+    /// hand-edited (or defaulted-to-zero, on a document written by an older build) <c>0</c> would build a pool
+    /// with no permits and nothing in the process that could ever release one — every background run would
+    /// queue forever, with no error anywhere. Same principle as
+    /// <see cref="GetAgentPersonaRoster"/> (clamp where the value is USED, so a bad file cannot break the
+    /// invariant), applied to a scalar rather than a collection.
+    /// </summary>
+    public int GetMaxParallelBackgroundRuns() =>
+        Math.Clamp(MaxParallelBackgroundRuns, MinParallelBackgroundRuns, MaxParallelBackgroundRunsCap);
+
     // Sandboxed folder the assistant's file tool may read/write/delete in. The memory vault lives
     // under it (<folder>\Vault), so it is always set after first run; file-tool enablement is the
     // separate AssistantFileToolsEnabled flag (clearing the folder no longer disables the tools).

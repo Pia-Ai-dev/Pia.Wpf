@@ -35,7 +35,12 @@ public class NamingConventionTests
             "Calculator", "Resolver", "Surface", "Buffer", "Builder", "Composer", "Store", "Runner",
             "Indexer", "Watcher", "Renderer", "Clusterer", "Extractor",
             "Planner", "Orchestrator", "Verifier", "Launcher", "Executor", "Context",
-            "Provisioner", "Session", "Resampler",
+            // "Reconciler" joins the list for the same reason Provisioner/Session/Resampler did: it is an
+            // ordinary domain noun for a service named after what it DOES (ScheduledFiringReconciler — book the
+            // firings the job rows and the run rows disagree about), not an exemption for a misnamed class.
+            // "Pool" is the same kind of noun one level down: a named concurrency primitive (RunSlotPool — hand
+            // out the run slots), which is what "Buffer" and "Store" above already are.
+            "Provisioner", "Session", "Resampler", "Reconciler", "Pool",
         };
 
         var serviceTypes = Types.InAssembly(PiaAssembly)
