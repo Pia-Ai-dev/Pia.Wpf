@@ -58,6 +58,12 @@ public static class ViewModelLocator
         if (sender is not FrameworkElement element)
             return;
 
+        // Unsubscribed unconditionally, INCLUDING on the skip path below, so the FIRST Loaded is the only one
+        // that ever decides. Staying subscribed to re-check later would look more forgiving and is strictly
+        // worse: it would keep a handler alive that could assign on some later Loaded whose DataContext was
+        // momentarily null, which is the one outcome that cannot be undone (a local value beats an inherited
+        // one forever — pinned). The first Loaded is safe to trust because the host's context is already in
+        // place at template application, measured on the real ContentPresenter.
         element.Loaded -= OnElementLoaded;
 
         // Never overwrite a DataContext something else supplied. All eight views carrying this property are

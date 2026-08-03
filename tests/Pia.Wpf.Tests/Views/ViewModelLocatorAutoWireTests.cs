@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using Pia.Navigation;
 using Pia.ViewModels;
 using Xunit;
@@ -37,13 +38,26 @@ namespace Pia.Tests.Views;
 /// place, which is what makes the check mean what it says.
 /// </para>
 /// <para>
-/// <b>What is measured here and what is analogy.</b> The views are constructed through their real
-/// <c>App.xaml</c> template, and the host is a <c>Grid</c> carrying a <c>DataContext</c>, parented AFTER
-/// construction — the same property-system situation the production <c>ContentPresenter</c> creates
-/// (inherited <c>DataContext</c>, parent link made after the template's content exists) and the same order.
-/// What it does not reproduce is the presenter's own Content → <c>DataContext</c> step, which is upstream of
-/// everything under test, and it deliberately does no layout: <c>Measure</c>/<c>Arrange</c> on a shared,
-/// never-torn-down host is the hazard the other files in this folder document at length.
+/// <b>What is measured and what is synthesised.</b> Two host shapes appear here, on purpose. Most facts
+/// construct the view through its real <c>App.xaml</c> template and host it in a <c>Grid</c> carrying a
+/// <c>DataContext</c>, parented AFTER construction — the same property-system situation a
+/// <c>ContentPresenter</c> creates, in the same order, with no layout at all. ONE fact uses the real host — a
+/// <c>ContentPresenter</c> with the template and a <c>Content</c> object, <c>Measure</c>d so the template is
+/// applied — because the guard reads <c>DataContext</c> at <c>Loaded</c> and is sound only if the host's
+/// context is already there by then, which is a claim about the production host rather than about an analogy
+/// of it. <c>Measure</c> is confined to that one fact and to <c>HistoryView</c>, whose code-behind is a bare
+/// <c>InitializeComponent()</c>.
+/// </para>
+/// <para>
+/// The one step no fact here performs is the <c>Loaded</c> BROADCAST: the framework raises it only under a
+/// <c>PresentationSource</c> — a <c>Window</c> on the shared, never-torn-down host, which every file in this
+/// folder refuses to open. <c>Loaded</c> is raised directly on the element instead (it is a DIRECT routed
+/// event, so nothing below the view sees it either), and what makes that substitution honest is the ordering:
+/// the <c>ContentPresenter</c> fact measures that the context is in place at template application, and the
+/// framework can only broadcast <c>Loaded</c> to an element that is already in the tree — i.e. strictly after
+/// that. The opposite ordering is pinned too, in
+/// <see cref="AResolutionThatWentFirst_WOULD_BlockAContextThatArrivesAfterIt"/>, because it is the one that
+/// would hurt.
 /// </para>
 /// </summary>
 [Collection("WpfApplicationStatic")]
@@ -79,10 +93,19 @@ public class ViewModelLocatorAutoWireTests
         Assert.Equal(viewModel, ViewModelLocator.GetViewModelType(view));
 
     [Fact]
-    public void TheNamingConvention_ResolvesNothing_ForATypeThatIsNotAView() =>
-        // The other half of a convention keyed on a suffix: TodoPanelControl is a real view-side type in the
-        // same namespace that must map to nothing rather than to a mangled name.
+    public void TheNamingConvention_ResolvesNothing_ForTheViewSideTypesThatDoNotUseIt()
+    {
+        // The other half of a convention keyed on a suffix, and the fact that BOUNDS this fix: it reaches the
+        // eight above and nothing else.
+        //  · TodoPanelControl does not end in "View" — it must map to nothing rather than to a mangled name.
+        //  · SettingsViews.GeneralView is one of the six children SettingsView hosts with
+        //    DataContext="{Binding GeneralVm}". It does not carry the attached property, and its ViewModel is
+        //    Pia.ViewModels.GeneralSettingsViewModel — NOT Pia.ViewModels.SettingsViews.GeneralViewModel,
+        //    which is what the convention asks for. So the convention answers null for all six either way,
+        //    and no re-hosted settings tab can be a consequence of fixing it.
         Assert.Null(ViewModelLocator.GetViewModelType(typeof(Pia.Views.TodoPanelControl)));
+        Assert.Null(ViewModelLocator.GetViewModelType(typeof(Pia.Views.SettingsViews.GeneralView)));
+    }
 
     [Theory]
     [MemberData(nameof(AutoWiredViews))]
@@ -172,6 +195,95 @@ public class ViewModelLocatorAutoWireTests
         Assert.Equal(
             "lone=<resolved HistoryViewModel> asked=[HistoryViewModel] | " +
             "hosted=<host's own DataContext> asked=[]", observed);
+    }
+
+    [Fact]
+    public void TheProductionHost_HasAlreadySuppliedTheDataContext_BeforeLoadedIsReached()
+    {
+        // The reachability question the guard rests on, executed rather than reasoned about: the guard reads
+        // DataContext at Loaded, so it is only sound if the host's context is ALREADY there by then. Here the
+        // host is the real thing rather than an analogy — a ContentPresenter with the App.xaml template and a
+        // Content object, which is what MainWindow's NavigationContentPresenter becomes once
+        // MainWindowViewModel.CurrentView is set. Measure() applies the template (creating the view, firing
+        // the attached property) and parents it; it raises NO Loaded, because that needs a PresentationSource,
+        // i.e. a Window on the shared host — which is the one thing every file in this folder refuses to open.
+        // So the Loaded broadcast is the single step still synthesised, and the framework only ever broadcasts
+        // it to elements already IN the tree measured here.
+        var observed = WpfStaHost.Run(() =>
+        {
+            var probe = new RecordingProvider();
+            ViewModelLocator.Initialize(probe);
+            try
+            {
+                var hostContext = new object();
+                var presenter = new ContentPresenter
+                {
+                    ContentTemplate = (DataTemplate)Application.Current.Resources[
+                        new DataTemplateKey(typeof(HistoryViewModel))],
+                    Content = hostContext,
+                };
+                presenter.Measure(new Size(1000, 1000));
+
+                var child = VisualTreeHelper.GetChildrenCount(presenter) == 1
+                    ? VisualTreeHelper.GetChild(presenter, 0) as FrameworkElement
+                    : null;
+                if (child is null)
+                    return "<the presenter produced no single FrameworkElement child>";
+
+                var atTemplateApplication = Describe(child.DataContext, hostContext);
+                RaiseLoaded(child);
+
+                return $"child={child.GetType().FullName} " +
+                       $"autoWired={ViewModelLocator.GetAutoWireViewModel(child)} " +
+                       $"atTemplateApplication={atTemplateApplication} " +
+                       $"afterLoaded={Describe(child.DataContext, hostContext)} asked=[{probe.Report}]";
+            }
+            finally
+            {
+                ViewModelLocator.Initialize(null!);
+            }
+        });
+
+        Assert.Equal(
+            "child=Pia.Views.HistoryView autoWired=True " +
+            "atTemplateApplication=<host's own DataContext> afterLoaded=<host's own DataContext> asked=[]",
+            observed);
+    }
+
+    [Fact]
+    public void AResolutionThatWentFirst_WOULD_BlockAContextThatArrivesAfterIt()
+    {
+        // The ordering the deferral exists to keep out of reach, pinned rather than assumed away — because
+        // "the guard reads a state that is transiently wrong" is the exact shape that has bitten this branch
+        // four times. A locally assigned DataContext beats an inherited one FOREVER: if a Loaded ever reached
+        // one of the eight before its host had supplied a context, the view would keep the provider's object
+        // and the host's would be ignored from then on. The fact above is what puts that out of reach on the
+        // only path that instantiates them; this one says what the cost would be if a future host reordered it,
+        // so nobody has to rediscover it.
+        var observed = WpfStaHost.Run(() =>
+        {
+            var probe = new RecordingProvider();
+            ViewModelLocator.Initialize(probe);
+            try
+            {
+                var view = LoadHistoryView();
+                RaiseLoaded(view);
+                var beforeHosting = Describe(view.DataContext, null);
+
+                var hostContext = new object();
+                var host = new Grid { DataContext = hostContext };
+                host.Children.Add(view);
+
+                return $"beforeHosting={beforeHosting} afterHosting={Describe(view.DataContext, hostContext)}";
+            }
+            finally
+            {
+                ViewModelLocator.Initialize(null!);
+            }
+        });
+
+        Assert.Equal(
+            "beforeHosting=<resolved HistoryViewModel> afterHosting=<resolved HistoryViewModel>", observed);
     }
 
     private static FrameworkElement LoadHistoryView() =>
