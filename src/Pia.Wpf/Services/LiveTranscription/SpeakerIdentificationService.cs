@@ -183,11 +183,23 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
         lock (_lock)
         {
             string? internalId = null;
+            var targetTaken = false;
             foreach (var (id, label) in _displayLabels)
             {
-                if (label == oldLabel) { internalId = id; break; }
+                if (label == oldLabel && internalId is null) internalId = id;
+                else if (label == newLabel) targetTaken = true;
             }
             if (internalId is null) return false;
+
+            // Collision guard: two internal ids must NEVER share one display label. Without this, a
+            // rename onto a label that another cluster already carries silently aliased two different
+            // voices onto one identity — and because the consent map is keyed by display label, the
+            // second voice inherited the first one's consent state.
+            if (targetTaken)
+            {
+                _logger.LogWarning("Speaker rename refused: the target display label is already in use");
+                return false;
+            }
 
             _displayLabels[internalId] = newLabel;
             // The new label is a user-typed name → sensitive.
