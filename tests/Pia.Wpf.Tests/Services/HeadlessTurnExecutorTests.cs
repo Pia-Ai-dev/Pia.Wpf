@@ -633,22 +633,26 @@ public sealed class HeadlessTurnExecutorTests
         var parked = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.WaitingForInput, parked!.State);
 
-        // The parked transcript is DURABLE: goal + one reply per completed step.
+        // The parked transcript is DURABLE: goal + one reply per completed step + T2-18's grace turn, which
+        // spends one tool-free wrap-up round before the park and persists it here (a park never reaches
+        // EndRunAsync, so a wrap-up not written at pause time would never be written at all).
         var afterPause = await h.Chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
-        Assert.Equal(3, afterPause!.Messages.Count);
+        Assert.Equal(4, afterPause!.Messages.Count);
         Assert.Equal("the goal", afterPause.Messages[0].Content);
         Assert.Equal("reply 1", afterPause.Messages[1].Content);
         Assert.Equal("reply 2", afterPause.Messages[2].Content);
+        Assert.Equal("reply 3", afterPause.Messages[3].Content); // the grace turn's wrap-up
 
-        // Cost control: exactly ONE chat write per completed step (no per-token/per-round rewrites) and
-        // no terminal write on the pause path.
-        Assert.Equal(2, h.Chats.SaveCalls - savesBeforeRun);
+        // Cost control: exactly ONE chat write per TURN (no per-token/per-round rewrites) and no terminal
+        // write on the pause path. Three turns here — two steps and the grace turn.
+        Assert.Equal(3, h.Chats.SaveCalls - savesBeforeRun);
 
         // The interim rows carry the SAME Ids the step slices point at (R3 — stable Guids, not ordinals).
         var doneSteps = parked.Plan.Where(s => s.Status == AgentStepStatus.Done).OrderBy(s => s.Ordinal).ToList();
         Assert.Equal(2, doneSteps.Count);
         Assert.Equal(afterPause.Messages[1].Id, doneSteps[0].FirstMessageId);
         Assert.Equal(afterPause.Messages[2].Id, doneSteps[1].LastMessageId);
+        // All FOUR rows, wrap-up included: the resume must append to them, not replace them.
         var preservedIds = afterPause.Messages.Select(m => m.Id).ToList();
 
         // ---- resume: a FRESH executor (new DI scope), same run, fresh budget ----
@@ -660,11 +664,12 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Equal(AgentRunState.Completed, final!.State);
 
         // D2: the resume LOADED the existing rows and appended — it neither erased nor duplicated them.
+        // "reply 3" is the pre-pause wrap-up; the resumed run's own two steps are turns 4 and 5.
         var afterResume = await h.Chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
-        Assert.Equal(5, afterResume!.Messages.Count);
-        Assert.Equal(new[] { "the goal", "reply 1", "reply 2", "reply 3", "reply 4" },
+        Assert.Equal(6, afterResume!.Messages.Count);
+        Assert.Equal(new[] { "the goal", "reply 1", "reply 2", "reply 3", "reply 4", "reply 5" },
             afterResume.Messages.Select(m => m.Content).ToArray());
-        Assert.Equal(preservedIds, afterResume.Messages.Take(3).Select(m => m.Id).ToList());
+        Assert.Equal(preservedIds, afterResume.Messages.Take(4).Select(m => m.Id).ToList());
         Assert.Single(await h.Chats.GetAllIdsAsync(TestContext.Current.CancellationToken));
     }
 
@@ -751,7 +756,9 @@ public sealed class HeadlessTurnExecutorTests
         var parked = await h.Chats.GetAsync(chatId, TestContext.Current.CancellationToken);
         Assert.Equal("A nice earlier title", parked!.Title);
         Assert.Equal("projects/alpha", parked.WorkingDirectory);
-        Assert.Equal(2, parked.Messages.Count); // pre-existing goal row + the one step reply
+        // Pre-existing goal row + the one step reply + T2-18's grace-turn wrap-up, which is itself an interim
+        // save and therefore subject to the same title/working-directory rule.
+        Assert.Equal(3, parked.Messages.Count);
     }
 
     [Fact]
@@ -859,11 +866,15 @@ public sealed class HeadlessTurnExecutorTests
     }
 
     [Fact]
-    public async Task Merge_IsNotASecondWrite_SaveCallsPerParkedTwoStepRunIsStillTwo()
+    public async Task Merge_IsNotASecondWrite_SaveCallsPerParkedRunIsOnePerTurn()
     {
         // The cost guard for W2b: if the merge were ever implemented as "write, merge, re-write", the write
-        // count would double. It must be one read + one write inside a single gate hold, so the per-step
+        // count would double. It must be one read + one write inside a single gate hold, so the per-turn
         // write cost is unchanged. SaveCalls counts BOTH save seams (see CountingChatService).
+        //
+        // THREE, not two, since T2-18: two steps plus the grace turn spent before the budget park. The
+        // invariant this guards is one write per TURN — which is why the number moved when a turn was added
+        // and the name no longer carries it.
         using var h = new DurabilityHarness();
         var run = await h.NewRunAsync("the goal");
         var planner = new FakePlanner(Steps(4));
@@ -873,7 +884,7 @@ public sealed class HeadlessTurnExecutorTests
         await h.Orchestrator(planner).RunAsync(run, h.NewExecutor(), h.Persona, h.Provider, budget,
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(2, h.Chats.SaveCalls - savesBefore);
+        Assert.Equal(3, h.Chats.SaveCalls - savesBefore);
     }
 
     [Fact]

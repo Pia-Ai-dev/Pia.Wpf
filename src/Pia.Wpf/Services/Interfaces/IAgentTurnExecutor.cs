@@ -225,4 +225,32 @@ public interface IAgentTurnExecutor
     /// carry the state, and finalizing here would erase pre-existing rows).
     /// </summary>
     Task OnPausedAsync(AgentRun run, RunContext ctx, CancellationToken ct);
+
+    /// <summary>
+    /// T2-18 — the GRACE TURN: one final, TOOL-FREE turn spent just before a BUDGET park, so the run leaves a
+    /// readable "here is where I got to" instead of stopping mid-plan with no closing word. Returns the turn's
+    /// result so the orchestrator can bill it and extend the run's transcript range, or <see langword="null"/>
+    /// for "this executor spends no grace turn".
+    /// <para>
+    /// It spends a provider round AFTER the budget was exceeded, and that is the deliberate trade rather than an
+    /// oversight: exactly one round, tool-free (so it cannot write files or call anything past the cap), bounded
+    /// by its own short timeout at the call site, and it must never prevent the park — the orchestrator wraps it
+    /// so a fault, a timeout or an already-cancelled token still parks the run.
+    /// </para>
+    /// <para>
+    /// DEFAULTED to "no grace turn", which is the only default-interface member in this codebase and is here for
+    /// the reason every trailing-and-defaulted constructor parameter on this spine gives: twelve types implement
+    /// this interface (two production, ten hand-written test fakes), the correct behaviour for all but one of
+    /// them is to do nothing, and a required member would edit a dozen files to write <c>return null</c> in each.
+    /// This is an optional enhancement, not an authority question — the members that MUST be answered out loud
+    /// (see <c>ToolGateInput.CanPark</c>) are required precisely because they are not this.
+    /// </para>
+    /// <para>
+    /// <c>LiveTurnExecutor</c> keeps the default on purpose: an interactive run's transcript is on screen and the
+    /// person watched it stop, so a wrap-up buys nothing there — and posting a model turn through the UI at pause
+    /// time would race the session release <see cref="OnPausedAsync"/> exists to do.
+    /// </para>
+    /// </summary>
+    Task<StepTurnResult?> RunGraceTurnAsync(AgentRun run, RunContext ctx, CancellationToken ct)
+        => Task.FromResult<StepTurnResult?>(null);
 }

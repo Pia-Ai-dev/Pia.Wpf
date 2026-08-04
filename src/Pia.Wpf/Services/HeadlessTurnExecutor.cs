@@ -324,6 +324,34 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     public Task<StepTurnResult> RunSingleTurnFallbackAsync(AgentRun run, RunContext ctx, CancellationToken ct) =>
         RunExchangeStepAsync(ctx.Goal, persistInterim: false, ct, TimelineScope(stepId: null));
 
+    /// <summary>
+    /// T2-18 — the grace turn. One TOOL-FREE round through the same exchange engine, so the parked run's chat
+    /// ends with a wrap-up a person can read hours later instead of trailing off after the last step.
+    /// <para>
+    /// <c>toolFree: true</c> is load-bearing, not tidiness: the run has just been told its budget is spent, and a
+    /// turn that could still call <c>write_file</c> would make the cap advisory. <c>persistInterim: true</c> is
+    /// equally load-bearing — a park never reaches <see cref="EndRunAsync"/>, so a wrap-up that was not written
+    /// here would never be written at all. <c>stepId: null</c>: it belongs to the run, not to a step, exactly
+    /// like the R10 degrade turn.
+    /// </para>
+    /// </summary>
+    public async Task<StepTurnResult?> RunGraceTurnAsync(AgentRun run, RunContext ctx, CancellationToken ct) =>
+        await RunExchangeStepAsync(GraceTurnInstruction, persistInterim: true, ct,
+                TimelineScope(stepId: null), persona: null, offerStepResultTool: false, toolFree: true)
+            .ConfigureAwait(false);
+
+    /// <summary>
+    /// The grace turn's instruction. Deliberately not localized, like <c>AgentStepTools.UndetailedFailure</c>:
+    /// it is model-facing, and this executor has no <c>ILocalizationService</c> at all. It says NO TOOLS out loud
+    /// as well as withholding them, because a model told only implicitly tends to try anyway and burn the round
+    /// on a refusal.
+    /// </summary>
+    private const string GraceTurnInstruction =
+        "This run has reached its budget (step cap or wall clock), so no further steps will run right now and it "
+        + "is about to pause until a person continues it. Write a short wrap-up for whoever reads this later: "
+        + "what you actually accomplished, what is still outstanding, and anything they need to know to pick it "
+        + "up. Do not call any tools — just write the summary.";
+
     /// <summary>The per-step audit sink, or null when no store was injected (⇒ record nothing).</summary>
     private AgentTimelineScope? TimelineScope(Guid? stepId) =>
         _timelineService is null ? null : new AgentTimelineScope(_timelineService, _runId, stepId);
@@ -332,9 +360,11 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// the R10 degrade turn passes and what an executor built without a resolver always uses.</param>
     /// <param name="offerStepResultTool">hermes #9: offer <c>emit_step_result</c> on this turn. True only for
     /// <see cref="ExecuteStepAsync"/>; the R10 degrade turn leaves it false.</param>
+    /// <param name="toolFree">T2-18: send NO tools at all. Only <see cref="RunGraceTurnAsync"/> passes true —
+    /// that turn happens after the budget is spent, so it must not be able to act.</param>
     private async Task<StepTurnResult> RunExchangeStepAsync(
         string instruction, bool persistInterim, CancellationToken ct, AgentTimelineScope? timeline = null,
-        StepPersonaSetup? persona = null, bool offerStepResultTool = false)
+        StepPersonaSetup? persona = null, bool offerStepResultTool = false, bool toolFree = false)
     {
         var p = persona ?? _runDefault;
 
@@ -353,7 +383,12 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // AssignedPersonaId gets the tool on ITS setup. Augmenting _runDefault/_setup instead would silently
         // withhold the tool from exactly the steps that resolved their own persona, and every such step would
         // fall back to the text heuristic forever with nothing failing.
-        var turnSetup = offerStepResultTool ? AgentStepTools.WithStepResultTool(p.TurnSetup) : p.TurnSetup;
+        // T2-18: the tool-free variant strips the list rather than relying on the prompt — AiClientService
+        // computes hasTools from `tools is { Count: > 0 }`, so a null list means no tools and no tool handler
+        // reach the provider at all. Checked FIRST so the two flags cannot be combined into a grace turn that
+        // is offered emit_step_result.
+        var turnSetup = toolFree ? p.TurnSetup with { Tools = null }
+            : offerStepResultTool ? AgentStepTools.WithStepResultTool(p.TurnSetup) : p.TurnSetup;
         // Armed IFF offered — derived from the resolved list rather than from offerStepResultTool, so a setup
         // that could not take the tool (SupportsTools=false: no tools and no handler reach the provider) lands
         // on the unconfirmed fallback instead of waiting for a claim that can never arrive.

@@ -277,6 +277,17 @@ public sealed class AgentRunOrchestrator
                 {
                     if (ctx.StepBudgetExceeded || ctx.WallClockExceeded) // R5: both checks, never silent
                     {
+                        // T2-18: ONE tool-free wrap-up turn before the park, so the chat a person opens hours
+                        // later ends with "here is where I got to" instead of the last step's output. Before
+                        // PinRange, because its messages belong in the run's transcript slice; it cannot stop
+                        // the park (see SafeGraceTurn).
+                        if (await SafeGraceTurn(executor, run, ctx, cts.Token).ConfigureAwait(false) is { } grace)
+                        {
+                            await SafeAddUsage(run.Id, grace.Usage, CancellationToken.None).ConfigureAwait(false);
+                            if (grace.FirstMessageId != Guid.Empty) runFirst ??= grace.FirstMessageId;
+                            if (grace.LastMessageId != Guid.Empty) runLast = grace.LastMessageId;
+                        }
+
                         await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
                         await SafePause(run.Id, cts.Token,
                             reason: ctx.WallClockExceeded ? "wall-clock" : "step-cap").ConfigureAwait(false);
@@ -669,6 +680,51 @@ public sealed class AgentRunOrchestrator
     // (I1) — updates ledger totals + wall-clock and raises RunChanged. Step usage goes through
     // SafeRecordStep instead (per-step entry). Skips a null usage so a fake/no-usage provider path adds
     // no spurious ledger write.
+    /// <summary>
+    /// T2-18: the grace turn, failure-isolated and time-boxed. Returns null when there was no turn to have —
+    /// because the executor spends none (the interface default, which is what the live executor keeps), because
+    /// the run is already cancelled, or because the attempt failed.
+    /// <para>
+    /// Three properties, each of which a park depends on:
+    /// </para>
+    /// <list type="bullet">
+    /// <item>A THROW STILL PARKS. This is a courtesy round on a run that is stopping either way; letting a
+    /// provider error escape here would turn a clean budget park into an unhandled fault in the drain loop.</item>
+    /// <item>NOT ON AN ALREADY-CANCELLED TOKEN. At shutdown (or after a cascade cancel) <c>cts.Token</c> is
+    /// already down, and spending a round on a provider that is about to be abandoned delays the park for
+    /// nothing. Checked rather than left to the provider call's own cancellation, so the intent is visible.</item>
+    /// <item>BOUNDED SEPARATELY, at <see cref="GraceTurnBudget"/>. A run's per-request timeout can be five
+    /// minutes; a wrap-up nobody asked for must not hold a park open that long, and the run row staying
+    /// <c>Running</c> in the meantime is what the bound really protects (a scheduled job's bookkeeping reads that
+    /// row). The linked source cancels the turn only — the run's own token is untouched.</item>
+    /// </list>
+    /// </summary>
+    private async Task<StepTurnResult?> SafeGraceTurn(
+        IAgentTurnExecutor executor, AgentRun run, RunContext ctx, CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested)
+            return null;
+
+        try
+        {
+            using var graceCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            graceCts.CancelAfter(GraceTurnBudget);
+            var result = await executor.RunGraceTurnAsync(run, ctx, graceCts.Token).ConfigureAwait(false);
+            if (result is not null)
+                _logger.LogInformation("Budget park: grace turn produced a wrap-up for {RunId}", run.Id);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            // Includes the OperationCanceledException from the bound above. The park is the point; this was not.
+            _logger.LogWarning(ex, "Budget-park grace turn failed for {RunId}; parking without a wrap-up", run.Id);
+            return null;
+        }
+    }
+
+    /// <summary>Bound on the T2-18 grace turn — see <see cref="SafeGraceTurn"/> for why it is not the run's.</summary>
+    private static readonly TimeSpan GraceTurnBudget = TimeSpan.FromSeconds(90);
+
     private async Task SafeAddUsage(Guid runId, UsageDetails? usage, CancellationToken ct)
     {
         if (usage is null) return;

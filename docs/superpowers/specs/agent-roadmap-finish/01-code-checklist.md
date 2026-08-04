@@ -178,11 +178,25 @@ assumed absent.
 - [ ] **T2-G4 — a one-page trust-model doc.** State plainly that MCP stdio subprocesses run with full user
   privileges *entirely outside* `SafeFolderPath`, and that containment is per-chokepoint, not per-process.
   hermes §5 and #18. Written: [`../agent-roadmap/17-trust-model.md`](../agent-roadmap/17-trust-model.md).
-- [ ] **T2-18 — the Nice tier**, one line each, all independent: grace turn on budget pause; quiet mode for
-  monitor jobs; per-job run-history list; `ILogger.BeginScope(runId/stepId)` correlation plus a small
-  release-mode redacting sink as a backstop for tool *output* (hermes §8¹'s "no redaction today" is false —
-  [`../agent-roadmap/17-trust-model.md`](../agent-roadmap/17-trust-model.md) §4; a sink may still earn its place
-  as defence in depth, but not on that ground).
+- [ ] **T2-18 — the Nice tier**, one line each, all independent. Split into its five parts, because they land
+  separately:
+  - [x] **Grace turn on budget pause.** Built: `IAgentTurnExecutor.RunGraceTurnAsync` — one TOOL-FREE wrap-up
+    turn spent at the budget park, so a parked chat ends with "here is where I got to" instead of the last
+    step's output. `HeadlessTurnExecutor` implements it through the existing exchange engine with
+    `toolFree: true` (the cap must not become advisory) and `persistInterim: true` (a park never reaches
+    `EndRunAsync`, so a wrap-up not written there is never written); the orchestrator calls it through
+    `SafeGraceTurn`, which bills the round run-level, extends the transcript range, bounds it at 90 s
+    separately from the run's own timeout, skips it on an already-cancelled token, and **parks anyway if it
+    throws**. It is the codebase's FIRST default-interface member, and deliberately: twelve types implement
+    that interface, the right answer for eleven of them (`LiveTurnExecutor` included — its transcript is on
+    screen) is to spend nothing, and the members that must be answered out loud are required precisely because
+    they are not this. Three existing durability facts moved by exactly one turn and one save, and say so.
+  - [ ] **Quiet mode for monitor jobs.**
+  - [ ] **Per-job run-history list.**
+  - [ ] **`ILogger.BeginScope(runId/stepId)` correlation.**
+  - [ ] **A small release-mode redacting sink as a backstop for tool *output*** (hermes §8¹'s "no redaction
+    today" is false — [`../agent-roadmap/17-trust-model.md`](../agent-roadmap/17-trust-model.md) §4; a sink may
+    still earn its place as defence in depth, but not on that ground).
 
 ---
 
