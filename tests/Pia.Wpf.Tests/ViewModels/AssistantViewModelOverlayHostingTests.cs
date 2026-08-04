@@ -132,6 +132,17 @@ public class AssistantViewModelOverlayHostingTests
 
         _settings.GetSettingsAsync().Returns(new AppSettings());
         _directService.GetVoiceStats().Returns(Array.Empty<SpeakerVoiceStats>());
+        // StartFreshChat (hit by the summarize hand-off) calls SetWorkingDirectory on whatever
+        // this returns, so it must be a real ChatSession rather than the substitute default null.
+        _manager.GetOrCreateActiveForNewChat().Returns(_ => new ChatSession(
+            Substitute.For<ITokenMapService>(),
+            Substitute.For<IAiClientService>(),
+            Substitute.For<IPluginService>(),
+            Substitute.For<IActionCardBuilder>(),
+            Substitute.For<IToolPermissionService>(),
+            Substitute.For<ILocalizationService>(),
+            NullLogger.Instance,
+            _ => false));
 
         var meeting = new MeetingAttendeeViewModel(
             _meetingService,

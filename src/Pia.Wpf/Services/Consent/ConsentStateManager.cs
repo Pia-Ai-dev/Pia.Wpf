@@ -186,14 +186,25 @@ public sealed class ConsentStateManager : IConsentStateManager
 
     private void Raise(string label, ConsentState oldState, ConsentState newState, string? extractedName)
     {
-        try
+        var handler = StateChanged;
+        if (handler is null) return;
+
+        var args = new ConsentStateChangedEventArgs(label, oldState, newState, extractedName);
+
+        // Invoke each subscriber independently: a plain `handler.Invoke(...)` is one multicast
+        // call, so a throwing subscriber would stop .NET from ever reaching the ones after it in
+        // the invocation list, even with this whole call wrapped in try/catch.
+        foreach (var subscriber in handler.GetInvocationList())
         {
-            StateChanged?.Invoke(this, new ConsentStateChangedEventArgs(label, oldState, newState, extractedName));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "ConsentStateChanged subscriber threw");
-            _logger.SensitiveDebug("ConsentStateChanged subscriber threw for label {Label}", label);
+            try
+            {
+                ((EventHandler<ConsentStateChangedEventArgs>)subscriber).Invoke(this, args);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ConsentStateChanged subscriber threw");
+                _logger.SensitiveDebug("ConsentStateChanged subscriber threw for label {Label}", label);
+            }
         }
     }
 }
