@@ -327,9 +327,24 @@ ENTRY assembly — `Pia.Wpf.Tests` — giving `IOException: Cannot locate resour
 even though the `.ico` really is a `<Resource>` in `Pia.Wpf`. **A fix was attempted and then REVERTED**:
 assigning `Application.ResourceAssembly` in `WpfStaHost` did not take (it was already latched, and the
 `is null` test that guarded it is itself a read, which is what latches it), and modifying the shared
-never-torn-down host for one view was not worth the risk to eight green files. **`FirstRunWizardWindow` and
+never-torn-down host for one view was not worth the risk to eight green files. ~~**`FirstRunWizardWindow` and
 everything under `Views/WizardSteps/` therefore remain manual-smoke debt**, and this batch neither shortens
-nor lengthens Rank 1 for them._
+nor lengthens Rank 1 for them.~~ **FIXED 2026-08-04, outside the batch sequence** (a live-app bug report, not
+a numbered batch): the same defect this row names was also live in the shipped app, not just the test host,
+via a user bug report of a transient "An unexpected error occurred" popup at startup. Two SEPARATE call sites
+carry the identical latent defect (not necessarily in the same session — whichever one's pack URI resolves
+first decides which throw, if any, actually surfaces): `TrayIconService`'s tray icon, unguarded during
+`App.OnStartup`, would throw the identical `IOException` through `DispatcherUnhandledException` and abort the
+rest of that `async void` startup; `ThemeService`'s four theme/token dictionaries carry the same defect but
+inside a catch that only logs, so that path fails silently rather than popping up. The fix is not the
+reverted one: instead of mutating `Application.ResourceAssembly`, every call site now qualifies the pack URI
+itself — `pack://application:,,,/Pia.Wpf;component/…` instead of `pack://application:,,,/…` — so resolution
+never consults that ambient static. Eight literal call sites across five files changed: `MainWindow.xaml`,
+`FirstRunWizardWindow.xaml`,
+`WizardSteps/WelcomeStep.xaml`'s persona `ImageBrush`, `TrayIconService.cs`, and `ThemeService.cs`'s four
+theme paths. `FirstRunWizardWindowParseTests` (new) reproduced the exact `IOException` red before the fix and
+is green after — WpfStaHost's own DispatcherUnhandledException handler (`e.Handled = true`, no MessageBox)
+is why this never surfaced as a visible popup under the test host, only as this row's parse failure._
 
 _**A `src/` finding, reported and deliberately NOT fixed.** `ViewModelLocator.GetViewModelType` is
 `viewName.Replace(".Views.", ".ViewModels.").Replace("View", "ViewModel")`, and the second `Replace` hits
@@ -1289,10 +1304,13 @@ and a `Pump()` to `SystemIdle` before every bound read.
    compile), `RemindersView`, `SettingsView`, `TodoPanelControl`, `TodoView`, `VoiceModeOverlay`.~~
    **NARROWED AGAIN 2026-08-02 by [Batch 15](15-view-coverage-completion.md), and edited in place per this
    file's habit: ELEVEN of those twelve now carry a parse fact**, so the struck list above is history and the
-   remainder is ONE — **`FirstRunWizardWindow`**, which is not merely undone but currently **unparseable under
+   ~~remainder is ONE — **`FirstRunWizardWindow`**, which is not merely undone but currently **unparseable under
    the test host**: its `Icon="pack://application:,,,/…"` is an authority-only pack URI, which resolves
    against `Application.ResourceAssembly`, which latches to the entry assembly (`Pia.Wpf.Tests`). It and
-   everything under `Views/WizardSteps/` stay manual-smoke debt. Note also that the twelve were never a set of
+   everything under `Views/WizardSteps/` stay manual-smoke debt.~~ **FIXED 2026-08-04** (see the Row 12 note
+   above): `FirstRunWizardWindowParseTests` now carries the twelfth parse fact — **TWELVE of twelve**, and
+   `Views/WizardSteps/` is unblocked with it, since every step is a logical child `FirstRunWizardWindow`
+   constructs eagerly regardless of which one is visible. Note also that the twelve were never a set of
    ONE shape: seven are hosted by an `App.xaml` `DataTemplate`, two by a bound `DataContext` inside
    `AssistantView`, one (`TodoPanelControl`) by a **code**-assigned re-root its ctor installs, one
    (`NavigationSidebarView`) by inheritance from `MainWindow` and through item collections that are not

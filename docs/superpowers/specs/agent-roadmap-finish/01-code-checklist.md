@@ -285,12 +285,18 @@ about itself.
 - The jobs-list load is a knowing N+1; an unknown `ScheduledJobStatus` is rendered inert and not normalised.
 
 **View coverage** (00-OVERVIEW "Opened by Batch 13/14" + the 2026-08-02 addendum)
-- `FirstRunWizardWindow` and everything under `Views/WizardSteps/` are **unparseable** under the shared STA
+- ~~`FirstRunWizardWindow` and everything under `Views/WizardSteps/` are **unparseable** under the shared STA
   host: an authority-only pack URI resolves against `Application.ResourceAssembly`, which latches to the test
-  assembly. A fix was attempted and **reverted on evidence**. Manual-smoke debt, not work.
+  assembly. A fix was attempted and **reverted on evidence**. Manual-smoke debt, not work.~~ **FIXED
+  2026-08-04**: every authority-only pack URI in `src/` (not just this one) now qualifies the assembly by name
+  — `pack://application:,,,/Pia.Wpf;component/…` — instead of relying on `Application.ResourceAssembly`. That
+  static was also behind a live user-reported popup in the shipped app (`TrayIconService`'s tray icon, thrown
+  unguarded during `App.OnStartup`) and, separately, a silent theme-swap failure (`ThemeService`, caught and
+  only logged) — two independent instances the test host could never have shown either way. Not the reverted
+  fix — no static mutation. `FirstRunWizardWindowParseTests` parses the window and its `WizardSteps/` clean.
 - The residue is now a set of *shapes*, not files: `DataTemplate` content, `Style.Triggers`, bindings carrying
   `RelativeSource`/`ElementName`/explicit `Source`, `loc:Str` reached through `Content=`/`ToolTip=`/`Header=`,
-  and everything under `Dialogs/`, `Dialogs/Overlay/`, `WizardSteps/`, `Views/Controls/`.
+  and everything under `Dialogs/`, `Dialogs/Overlay/`, `Views/Controls/` — `WizardSteps/` cleared 2026-08-04.
 - Batch 14 Q1 (the walker's `Resolves` should be tri-state), Q3, the fifth `AncestorType=ItemsControl` binding
   at `AssistantView.xaml:221`, and `ResolvePathType` not checking settability.
 

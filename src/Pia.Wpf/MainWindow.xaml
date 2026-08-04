@@ -14,7 +14,7 @@
                   xmlns:loc="clr-namespace:Pia.Localization"
                   mc:Ignorable="d"
                   Title="{Binding WindowTitle}"
-                  Icon="pack://application:,,,/Resources/Icons/Pia.ico"
+                  Icon="pack://application:,,,/Pia.Wpf;component/Resources/Icons/Pia.ico"
                   Height="600"
                   Width="900"
                   MinHeight="400"

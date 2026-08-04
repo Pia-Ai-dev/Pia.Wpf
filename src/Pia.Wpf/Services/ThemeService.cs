@@ -13,10 +13,10 @@ public class ThemeService : IThemeService
 
     private const string RegistryPath = @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
     private const string ThemeValueName = "AppsUseLightTheme";
-    private const string DarkThemePath = "pack://application:,,,/Resources/Themes/Dark.xaml";
-    private const string LightThemePath = "pack://application:,,,/Resources/Themes/Light.xaml";
-    private const string PiaTokensDarkPath = "pack://application:,,,/Resources/Theme/PiaTokens.Dark.xaml";
-    private const string PiaTokensLightPath = "pack://application:,,,/Resources/Theme/PiaTokens.Light.xaml";
+    private const string DarkThemePath = "pack://application:,,,/Pia.Wpf;component/Resources/Themes/Dark.xaml";
+    private const string LightThemePath = "pack://application:,,,/Pia.Wpf;component/Resources/Themes/Light.xaml";
+    private const string PiaTokensDarkPath = "pack://application:,,,/Pia.Wpf;component/Resources/Theme/PiaTokens.Dark.xaml";
+    private const string PiaTokensLightPath = "pack://application:,,,/Pia.Wpf;component/Resources/Theme/PiaTokens.Light.xaml";
 
     private AppTheme _currentAppliedTheme = AppTheme.System;
     private ResourceDictionary? _currentCustomTheme;

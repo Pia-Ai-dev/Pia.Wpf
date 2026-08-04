@@ -75,7 +75,7 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
         SetParentWindow(_trayHostWindow);
 
         Icon = new BitmapImage(
-            new Uri("pack://application:,,,/Resources/Icons/Pia.ico"));
+            new Uri("pack://application:,,,/Pia.Wpf;component/Resources/Icons/Pia.ico"));
         TooltipText = _localizationService["Tray_Tooltip"];
 
         var contextMenu = new ContextMenu();

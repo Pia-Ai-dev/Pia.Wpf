@@ -47,7 +47,7 @@
                  VerticalAlignment="Center"
                  HorizontalAlignment="Center">
           <Ellipse.Fill>
-            <ImageBrush ImageSource="pack://application:,,,/Resources/Images/Pia_Persona.png"
+            <ImageBrush ImageSource="pack://application:,,,/Pia.Wpf;component/Resources/Images/Pia_Persona.png"
                         Stretch="UniformToFill" />
           </Ellipse.Fill>
         </Ellipse>
