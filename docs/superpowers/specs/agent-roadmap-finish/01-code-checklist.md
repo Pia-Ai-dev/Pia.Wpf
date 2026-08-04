@@ -148,11 +148,12 @@ assumed absent.
   **hermes #14's third clause — "drop the per-run cap" — is REJECTED by design, not outstanding:** the 500-row
   cap plus a single truncation marker is deliberate. Do not list it as work.
 - [x] **T2-17a — a grounding digest in the plan turn: THE FILES LISTING ONLY.** Built:
-  `AgentPlanner.TryBuildGroundingAsync` (`:327`) resolves the folder the run's file tools actually use —
+  `AgentPlanner.TryBuildGroundingAsync` (`:336`) resolves the folder the run's file tools actually use —
   `ctx.WorkspaceRoot` → ambient → the settings folder, then narrowed by `ctx.WorkingSubpath`, the ladder Batch 06
-  B3 established — and `ListWorkingFolder` (`:390`) renders a capped, `SandboxIgnore`-filtered top-level listing
-  (an empty folder still says so). It is resolved once per plan (`:152`) and folded into the single USER message
-  (`:698`), never the System prompt: these are file names out of the user's own folder and
+  B3 established — and `ListWorkingFolder` (`:399`) renders a capped, `SandboxIgnore`-filtered top-level listing
+  (an empty folder still says so; past the separate SCAN cap it says "and more" with no number, because a count
+  the walk could not finish is a claim it cannot make). It is resolved once per plan (`:161`) and folded into the
+  single USER message (`:733`), never the System prompt: these are file names out of the user's own folder and
   `TokenizeMessages` rewrites user text only. Mirrors `AgentVerifier`'s artifact probe — time-boxed off-thread
   walk, failure-isolated, names never above `SensitiveDebug`. No usable folder ⇒ nothing appended ⇒ the prompt is
   byte-identical to before. Plan turn only, not the replan (which already carries the completed steps and their
