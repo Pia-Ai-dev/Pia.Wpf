@@ -1213,7 +1213,15 @@ Decide the headless consent model:
 
 ## 18. Parallel job execution — plan (post–Milestone B)
 
-**Status:** planned, not built. Milestone B introduced the first real concurrency knob — the
+**Status: BUILT (2026-08-04).** All five design points below have shipped — the scheduler's serializing
+`_runLock` is gone (§18.3.1), the launcher pool is the user-set `MaxParallelBackgroundRuns` (§18.3.2, T1-1),
+the per-provider throttle §18.4 names as the precondition for widening it is in place at the `AiClientService`
+layer (§18.3.3, T1-2, `ProviderRequestThrottle`), admission is oldest-due-first (§18.3.4, T1-3) and the
+`Research`/`SingleTurn` leg keeping its own small permit is ratified rather than open (§18.3.5, T1-4). The
+sections below are left as WRITTEN, not rewritten: the worklist and what each item actually became live in
+[`agent-roadmap-finish/01-code-checklist.md`](agent-roadmap-finish/01-code-checklist.md), Tier 1.
+
+**Original status (kept for provenance):** planned, not built. Milestone B introduced the first real concurrency knob — the
 `HeadlessRunLauncher`'s shared `SemaphoreSlim(2)` — but the **scheduler** still runs jobs strictly
 serially: `ScheduledJobBackgroundService` holds a single `_runLock` across each job (research and agent
 alike) and, for agent jobs, additionally `await`s the run's `Completion` before releasing it. So today at

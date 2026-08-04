@@ -27,9 +27,9 @@ list of what was *seamed, not built*. Checked line by line, all six are now buil
 | Out-of-folder per-run workspace + promotion | Batch 06 |
 | Plan editability / live steering (nudge/pause/resume) | Batch 08 |
 
-**§18 (Parallel job execution) is the only section of the plan still labelled "planned, not built"** — and all
-of it shipped on 2026-08-04 except the per-provider throttle (T1-2), which is still open. That is Tier 1
-below.
+**§18 (Parallel job execution) was the last section of the plan still labelled "planned, not built".** All of it
+has now shipped, T1-2 included, and §18's status line in the plan says so. Tier 1 below records what each of its
+five design points actually became.
 
 Everything else on this list comes from two places that are *not* the plan: the
 [`hermes-comparison.md`](../agent-roadmap/hermes-comparison.md) §5/§7 review, and defects opened by batches as
