@@ -74,6 +74,15 @@ public sealed class AgentPlanner : IAgentPlanner
     private const int MaxGroundingNameChars = 120;
 
     /// <summary>
+    /// How many directory entries the walk will LOOK AT before giving up. Separate from
+    /// <see cref="MaxGroundingEntries"/>, which bounds what is SENT: the count in the block ("… and N more") is
+    /// only honest if the scan saw everything, so the two caps have to be distinguishable — past this one the
+    /// block says "and more" with no number. Generous, because the walk is one enumeration with no per-entry
+    /// syscall and the time box is the real protection.
+    /// </summary>
+    private const int MaxGroundingScan = 5_000;
+
+    /// <summary>
     /// Time box for the working-folder walk, matching <c>AgentVerifier</c>'s artifact probe: the folder can be a
     /// dead network share, and an orientation block is never worth delaying a plan for.
     /// </summary>
@@ -411,40 +420,66 @@ public sealed class AgentPlanner : IAgentPlanner
         var ignore = SandboxIgnore.ForRoot(root);
         var directories = new List<string>();
         var files = new List<string>();
+        var kept = 0;
+        var scanned = 0;
+        var scanTruncated = false;
 
-        foreach (var entry in Directory.EnumerateFileSystemEntries(root))
+        // FileSystemInfo, not a path string: the OS enumeration already carries the attributes, so
+        // directory-ness costs no second syscall per entry (a per-entry Directory.Exists on a folder with
+        // thousands of files is most of the time this walk spends).
+        foreach (var entry in new DirectoryInfo(root).EnumerateFileSystemInfos())
         {
-            var name = Path.GetFileName(entry);
+            if (++scanned > MaxGroundingScan)
+            {
+                // Hard stop on a pathological folder. It makes the count below UNKNOWABLE, which is why the
+                // rendering does not print one on this path — see the guard there.
+                scanTruncated = true;
+                break;
+            }
+
+            var name = entry.Name;
             if (string.IsNullOrEmpty(name))
                 continue;
 
-            var isDirectory = Directory.Exists(entry);
+            var isDirectory = entry.Attributes.HasFlag(FileAttributes.Directory);
             if (ignore.IsIgnored(name, isDirectory))
                 continue;
 
-            if (isDirectory) directories.Add(name + "/");
-            else files.Add(name);
-
-            if (directories.Count + files.Count > MaxGroundingEntries * 4)
-                break; // hard stop on a pathological folder; the cap below still decides what is SENT
+            // Names are kept only up to the cap; everything past it is COUNTED and dropped, so a folder with ten
+            // thousand files costs a bounded list rather than ten thousand strings — and the count stays exact.
+            kept++;
+            if (kept <= MaxGroundingEntries)
+            {
+                if (isDirectory) directories.Add(name + "/");
+                else files.Add(name);
+            }
         }
 
         directories.Sort(StringComparer.OrdinalIgnoreCase);
         files.Sort(StringComparer.OrdinalIgnoreCase);
 
-        var total = directories.Count + files.Count;
         var sb = new StringBuilder();
         sb.AppendLine(GroundingFenceOpen);
-        if (total == 0)
+        if (kept == 0)
         {
-            sb.AppendLine("(the folder is empty — nothing has been written yet)");
+            sb.AppendLine(scanTruncated
+                // Every entry the scan saw was ignored, and it did not see them all: "empty" would be a false
+                // statement about the folder.
+                ? "(nothing listable was found in the first entries scanned)"
+                : "(the folder is empty — nothing has been written yet)");
         }
         else
         {
-            foreach (var name in directories.Concat(files).Take(MaxGroundingEntries))
+            foreach (var name in directories.Concat(files))
                 sb.AppendLine($"  {Truncate(name, MaxGroundingNameChars)}");
-            if (total > MaxGroundingEntries)
-                sb.AppendLine($"  … and {total - MaxGroundingEntries} more (use list_files to see the rest)");
+
+            // The count is only printed when the scan ran to completion. With the scan truncated it would be the
+            // number of entries LOOKED AT minus the cap — a specific, wrong number in a model-facing prompt,
+            // which is the one thing a grounding block must never contain.
+            if (scanTruncated)
+                sb.AppendLine("  … and more (use list_files to see the rest)");
+            else if (kept > MaxGroundingEntries)
+                sb.AppendLine($"  … and {kept - MaxGroundingEntries} more (use list_files to see the rest)");
         }
         sb.Append(GroundingFenceClose);
         return sb.ToString();

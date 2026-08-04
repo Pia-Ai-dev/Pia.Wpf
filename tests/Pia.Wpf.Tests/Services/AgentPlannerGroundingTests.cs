@@ -247,6 +247,26 @@ public sealed class AgentPlannerGroundingTests : IDisposable
     }
 
     /// <summary>
+    /// The count is a CLAIM, so it may only be printed when the walk actually saw everything. Past the scan cap
+    /// the block says "and more" with no number — the earlier shape reported (entries looked at − the cap), which
+    /// on a folder of ten thousand files was a specific, wrong number in a model-facing prompt.
+    /// </summary>
+    [Fact]
+    public async Task PastTheScanCap_TheBlockSaysMore_WithoutAWrongNumber()
+    {
+        // Above the scan cap (5,000) — the only way to reach the truncated arm.
+        for (var i = 0; i < 5_050; i++)
+            File.WriteAllText(Path.Combine(_tmpDir, $"f-{i:0000}.md"), "x");
+        ReturnsPlan();
+
+        await Planner().PlanAsync(Goal, Ctx(), Persona(), Provider(), Ct);
+
+        Assert.Contains("… and more (use list_files", LastUserPrompt);
+        Assert.DoesNotContain("… and 5", LastUserPrompt);   // no count at all on this path
+        Assert.Contains(FenceClose, LastUserPrompt);         // and the block is still well-formed
+    }
+
+    /// <summary>
     /// The digest must not advertise what the file tools would refuse to show: it applies the SAME
     /// <c>SandboxIgnore</c> matcher <c>list_files</c> does.
     /// </summary>
