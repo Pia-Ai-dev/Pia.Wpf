@@ -178,7 +178,7 @@ assumed absent.
 - [ ] **T2-G4 — a one-page trust-model doc.** State plainly that MCP stdio subprocesses run with full user
   privileges *entirely outside* `SafeFolderPath`, and that containment is per-chokepoint, not per-process.
   hermes §5 and #18. Written: [`../agent-roadmap/17-trust-model.md`](../agent-roadmap/17-trust-model.md).
-- [ ] **T2-18 — the Nice tier**, one line each, all independent. Split into its five parts, because they land
+- [x] **T2-18 — the Nice tier**, one line each, all independent. Split into its five parts, because they landed
   separately:
   - [x] **Grace turn on budget pause.** Built: `IAgentTurnExecutor.RunGraceTurnAsync` — one TOOL-FREE wrap-up
     turn spent at the budget park, so a parked chat ends with "here is where I got to" instead of the last
@@ -221,9 +221,17 @@ assumed absent.
     Why it matters now: T1-1/T1-2 let several unattended runs interleave their lines in one file, where
     "Round 1/10 starting" otherwise belongs to no run. **Scope state is IDs ONLY** — it reaches a release log
     verbatim, and the compile-time-erased `Sensitive*` family stays the only route for user content.
-  - [ ] **A small release-mode redacting sink as a backstop for tool *output*** (hermes §8¹'s "no redaction
-    today" is false — [`../agent-roadmap/17-trust-model.md`](../agent-roadmap/17-trust-model.md) §4; a sink may
-    still earn its place as defence in depth, but not on that ground).
+  - [x] **A small release-mode backstop for tool *output*.** Built as a LENGTH CAP, not as redaction:
+    `LogMessageCapLoggerProvider` (`Logging/`) caps one formatted line at 2000 chars in RELEASE only, composed
+    inside the scope renderer so the run/step prefix survives truncation (which keeps the head). **hermes §8¹'s
+    "no redaction today" stays false and this does not change it** — user content leaves release logs by
+    COMPILATION ([`../agent-roadmap/17-trust-model.md`](../agent-roadmap/17-trust-model.md) §4: the `Sensitive*`
+    family is `[Conditional("DEBUG")]`, so in release there is no string to redact). What this covers is the
+    residue erasure cannot: a line that is NOT `Sensitive*`-gated and carries a payload anyway — ours by mistake,
+    or a third party's. Hence a content-AGNOSTIC bound: metadata lines are short, dumped payloads are not. It
+    touches neither the exception (so a stack trace is never truncated), nor the state (a structured sink still
+    sees the original values), nor DEBUG builds (the cap is unlimited there, since that log is the thing being
+    diagnosed). The cap is a constructor parameter so truncation is exercised in either configuration.
 
 ---
 
