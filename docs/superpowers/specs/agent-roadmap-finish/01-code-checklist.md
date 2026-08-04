@@ -147,9 +147,26 @@ assumed absent.
   SanitizeCallId` bounds the provider's raw `CallId` to a tool-identifier charset before it reaches the table.
   **hermes #14's third clause — "drop the per-run cap" — is REJECTED by design, not outstanding:** the 500-row
   cap plus a single truncation marker is deliberate. Do not list it as work.
-- [ ] **T2-17a — a grounding digest in the plan turn.** hermes #17 asks for tool names, a files listing and
-  memory hits injected into `BuildPlanMessages`. Verified absent: the signature at `AgentPlanner.cs:483` takes
-  goal, persona, `firm`, analysis and roster only.
+- [x] **T2-17a — a grounding digest in the plan turn: THE FILES LISTING ONLY.** Built:
+  `AgentPlanner.TryBuildGroundingAsync` (`:327`) resolves the folder the run's file tools actually use —
+  `ctx.WorkspaceRoot` → ambient → the settings folder, then narrowed by `ctx.WorkingSubpath`, the ladder Batch 06
+  B3 established — and `ListWorkingFolder` (`:390`) renders a capped, `SandboxIgnore`-filtered top-level listing
+  (an empty folder still says so). It is resolved once per plan (`:152`) and folded into the single USER message
+  (`:698`), never the System prompt: these are file names out of the user's own folder and
+  `TokenizeMessages` rewrites user text only. Mirrors `AgentVerifier`'s artifact probe — time-boxed off-thread
+  walk, failure-isolated, names never above `SensitiveDebug`. No usable folder ⇒ nothing appended ⇒ the prompt is
+  byte-identical to before. Plan turn only, not the replan (which already carries the completed steps and their
+  declared artifacts).
+  **Built inside the planner, not passed in from the orchestrator as this checklist's own grounding note
+  suggested** — the digest needs only `RunContext` (already a `PlanAsync` argument) and `ISettingsService`
+  (already a field), so a new parameter and the orchestrator's dozen positional test constructions buy nothing.
+  **hermes #17's other two ingredients are NOT built, and not for effort:** a run's real tool set is per-run
+  (envelope grants × persona `ToolScope` × plugin routes) and assembled behind `IAgentTurnExecutor`, which
+  exposes no roster — listing whatever tools this process happens to hold would name capabilities the gate then
+  refuses, and a plan built on tools that do not run is worse than one built on none; memory hits need a recall
+  dependency plus an embedding round-trip per plan and a policy for putting the user's memory text in a prompt,
+  which is a decision, not plumbing. Both reasons are recorded at `AgentPlanner.cs:327` so the next reader does
+  not re-derive them as oversights.
 - [x] **T2-G1 — live telemetry seam.** Fixed: `IRunObserver` (`IRunObserver.cs`) is a bystander on
   `IAgentTimelineService.Emit`'s accepted events. Zero registrations is the supported default — MS.DI resolves
   `IEnumerable<IRunObserver>` to an empty sequence — so a future OTel exporter or file trace adds itself

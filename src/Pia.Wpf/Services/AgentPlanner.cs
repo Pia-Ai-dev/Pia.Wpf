@@ -1,8 +1,10 @@
 using System.ComponentModel;
+using System.IO;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Pia.Infrastructure;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
@@ -59,6 +61,28 @@ public sealed class AgentPlanner : IAgentPlanner
     /// regression this optimization is forbidden to cause.
     /// </summary>
     private const int MaxAnalysisChars = 4000;
+
+    /// <summary>
+    /// T2-17a caps. Entry count first: the digest is an ORIENTATION block, and a plan turn that sends two
+    /// hundred file names has stopped grounding the model and started burying the goal — the same reliability
+    /// argument <see cref="MaxAnalysisChars"/> makes, applied to a listing (this turn passes no
+    /// <c>contextBudget</c>, so nothing downstream would compact it). The name cap bounds one absurdly long
+    /// file name rather than the block.
+    /// </summary>
+    private const int MaxGroundingEntries = 40;
+
+    private const int MaxGroundingNameChars = 120;
+
+    /// <summary>
+    /// Time box for the working-folder walk, matching <c>AgentVerifier</c>'s artifact probe: the folder can be a
+    /// dead network share, and an orientation block is never worth delaying a plan for.
+    /// </summary>
+    private static readonly TimeSpan GroundingBudget = TimeSpan.FromSeconds(2);
+
+    private const string GroundingFenceOpen =
+        "--- Already in the working folder this run reads and writes (top level; use list_files for more) ---";
+
+    private const string GroundingFenceClose = "--- end of working folder ---";
 
     private static readonly AITool EmitPlanTool = AIFunctionFactory.Create(
         EmitPlanSchema, "emit_plan",
@@ -123,14 +147,18 @@ public sealed class AgentPlanner : IAgentPlanner
         // model can only be held to the list it was actually shown.
         var roster = await TryGetRosterAsync(ct).ConfigureAwait(false);
 
-        var (steps, planUsage) = await TryCaptureAsync(BuildPlanMessages(goal, persona, firm: false, analysis, roster), provider, ct).ConfigureAwait(false);
+        // T2-17a: the grounding digest, resolved once and reused by the firm retry (it is a fact about the
+        // disk, not about what the model said, so re-reading it would only cost another directory walk).
+        var grounding = await TryBuildGroundingAsync(ctx, ct).ConfigureAwait(false);
+
+        var (steps, planUsage) = await TryCaptureAsync(BuildPlanMessages(goal, persona, firm: false, analysis, roster, grounding), provider, ct).ConfigureAwait(false);
         usage = AgentTurnUsage.Sum(usage, planUsage);
 
         if (steps is null)
         {
             // The firm retry REUSES the one analysis: the retry exists because the model wrote prose
             // instead of calling emit_plan, which a second reasoning turn would not fix and would pay for.
-            var (retried, retryUsage) = await TryCaptureAsync(BuildPlanMessages(goal, persona, firm: true, analysis, roster), provider, ct).ConfigureAwait(false); // R10 retry once
+            var (retried, retryUsage) = await TryCaptureAsync(BuildPlanMessages(goal, persona, firm: true, analysis, roster, grounding), provider, ct).ConfigureAwait(false); // R10 retry once
             steps = retried;
             usage = AgentTurnUsage.Sum(usage, retryUsage); // I1: the retry's rounds were paid for too
         }
@@ -266,6 +294,165 @@ public sealed class AgentPlanner : IAgentPlanner
             return (null, null);               // the throw lost the usage; there is nothing to accrue
         }
     }
+
+    /// <summary>
+    /// T2-17a — the grounding digest folded into the plan turn: WHAT IS ALREADY IN THE RUN'S WORKING FOLDER.
+    /// Returns null when there is nothing honest to say, in which case the plan prompt is byte-identical to the
+    /// pre-T2-17a one.
+    /// <para>
+    /// hermes #17 asks for three ingredients — tool names, a files listing and memory hits. <b>This builds the
+    /// files listing only, and the other two are NOT deferred for effort but for accuracy.</b> A run's real tool
+    /// set is per-run (the launch envelope's grants × the persona's <c>ToolScope</c> × the plugin routes) and is
+    /// assembled behind <c>IAgentTurnExecutor</c>, which exposes no roster; listing the tools this process
+    /// HAPPENS to have loaded would name capabilities the gate then refuses, and a plan built on tools that do
+    /// not run is worse than a plan built on none. Memory hits need a recall — a new dependency here plus an
+    /// embedding round-trip per plan — and, more to the point, a decision about injecting the user's own memory
+    /// text into a prompt, which is a policy question rather than plumbing. Both are recorded as such rather
+    /// than implied by this method's name.
+    /// </para>
+    /// <para>
+    /// Built HERE rather than passed in from <c>AgentRunOrchestrator</c>: this needs exactly
+    /// <see cref="RunContext"/> (which <see cref="PlanAsync"/> already receives) and
+    /// <see cref="ISettingsService"/> (which this type already holds), so a new <c>PlanAsync</c> parameter and
+    /// the orchestrator's dozen positional test constructions buy nothing. Same owner shape as
+    /// <c>AgentVerifier.TryBuildArtifactFactsAsync</c>, whose artifact probe this method deliberately mirrors:
+    /// same root resolution, same time box, same failure isolation, same "names never leave DEBUG" rule.
+    /// </para>
+    /// <para>
+    /// PLAN ONLY, never the replan — the same asymmetry, and the same reason, as the reasoning turn: a replan
+    /// already carries the completed-step summaries (including the artifacts those steps declared), so it has
+    /// better evidence about the folder than a fresh listing, and a replan can run <c>MaxReplans</c> times.
+    /// </para>
+    /// </summary>
+    private async Task<string?> TryBuildGroundingAsync(RunContext ctx, CancellationToken ct)
+    {
+        Task<string?>? listing = null;
+        try
+        {
+            // ctx FIRST, ambient second, settings last — the ladder AgentVerifier's probe uses (Batch 06 B3).
+            // At plan time BeginRunAsync has already run (the orchestrator calls it before PlanAsync), so an
+            // isolated run's ctx.WorkspaceRoot is set and this describes the folder the STEPS will write into
+            // rather than the settings folder they will not.
+            var ambientRoot = ctx.WorkspaceRoot ?? TaskAmbient.Current?.WorkspaceRoot;
+            var configured = ambientRoot ?? (await _settings.GetSettingsAsync().ConfigureAwait(false)).AssistantFilesFolder;
+            if (string.IsNullOrWhiteSpace(configured))
+                return null;
+
+            var workingSubpath = ctx.WorkingSubpath;
+
+            // Off the caller's thread and time-boxed, for the reason the artifact probe is: the folder can be a
+            // slow or dead network share, and a hung stat must never hold up a plan turn. Root resolution is
+            // INSIDE the box on purpose — Directory.Exists/Canonicalize on a dead UNC path is the call that
+            // blocks, for the SMB connect timeout.
+            listing = Task.Run(() => ListWorkingFolder(configured, workingSubpath), CancellationToken.None);
+            var text = await listing.WaitAsync(GroundingBudget, ct).ConfigureAwait(false);
+            if (text is null)
+                return null;
+
+            // Counts at Information, NAMES only in DEBUG: a file name is user content (03 §3), and this is the
+            // one method in the planner that handles a whole folder of them.
+            _logger.LogInformation("Plan grounding digest: {Chars} chars of working-folder listing.", text.Length);
+            _logger.SensitiveDebug("Plan grounding digest:\n{Digest}", text);
+            return text;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw; // a genuine run cancel is never a degrade
+        }
+        catch (Exception ex)
+        {
+            // Includes WaitAsync's TimeoutException. Observe the abandoned walk's fault so a slow or faulting
+            // enumeration cannot surface later as an unobserved task exception.
+            if (listing is not null)
+                _ = listing.ContinueWith(static t => _ = t.Exception, CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default);
+            _logger.LogWarning("Plan grounding digest failed ({Error}); planning without it.", ex.GetType().Name);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The fenced listing block, or null when the folder does not exist. Static and logger-free ON PURPOSE:
+    /// every string in here is a file name, i.e. user content, so this code cannot log one even by accident —
+    /// the same construction <c>AgentVerifier.ProbeDeclarations</c> uses. Runs on a pool thread.
+    /// <para>
+    /// TOP LEVEL ONLY, and ignore-filtered through <see cref="SandboxIgnore.ForRoot"/> — the same matcher
+    /// <c>list_files</c> applies, so the digest cannot advertise a <c>node_modules</c> or <c>.git</c> the file
+    /// tools would refuse to show. A recursive walk would be both unbounded on a cloned repo and the wrong
+    /// grain: this is an orientation block, and <c>list_files</c> is the tool that exists for going deeper.
+    /// </para>
+    /// <para>
+    /// An EMPTY folder still returns a block. "There is nothing here yet" is exactly the fact that stops a plan
+    /// whose first step is "update the existing report", so it is worth the two lines it costs.
+    /// </para>
+    /// </summary>
+    private static string? ListWorkingFolder(string configured, string? workingSubpath)
+    {
+        var full = Path.GetFullPath(configured);
+        if (!Directory.Exists(full))
+            return null;
+        var root = SafeFolderPath.Canonicalize(full);
+
+        // Mirror of FilesToolHandler.ResolveEffectiveRoot (which GitToolHandler and AgentVerifier's probe each
+        // duplicate as well): a chat scoped to a working subpath reads and writes UNDER it, so listing the base
+        // root would describe a folder the run does not use. Fail-safe in the same direction as all three: a
+        // subpath that escapes containment or does not exist falls back to the base root and never widens past
+        // it. Consolidating the four copies would mean editing two gated tool handlers plus the verifier's
+        // probe — a bigger and riskier change than this item, and the containment itself lives in
+        // SafeFolderPath, which all four call.
+        if (!string.IsNullOrWhiteSpace(workingSubpath)
+            && SafeFolderPath.TryResolveInsideAllowingAbsolute(root, workingSubpath, out var narrowed)
+            && Directory.Exists(narrowed))
+        {
+            root = narrowed;
+        }
+
+        var ignore = SandboxIgnore.ForRoot(root);
+        var directories = new List<string>();
+        var files = new List<string>();
+
+        foreach (var entry in Directory.EnumerateFileSystemEntries(root))
+        {
+            var name = Path.GetFileName(entry);
+            if (string.IsNullOrEmpty(name))
+                continue;
+
+            var isDirectory = Directory.Exists(entry);
+            if (ignore.IsIgnored(name, isDirectory))
+                continue;
+
+            if (isDirectory) directories.Add(name + "/");
+            else files.Add(name);
+
+            if (directories.Count + files.Count > MaxGroundingEntries * 4)
+                break; // hard stop on a pathological folder; the cap below still decides what is SENT
+        }
+
+        directories.Sort(StringComparer.OrdinalIgnoreCase);
+        files.Sort(StringComparer.OrdinalIgnoreCase);
+
+        var total = directories.Count + files.Count;
+        var sb = new StringBuilder();
+        sb.AppendLine(GroundingFenceOpen);
+        if (total == 0)
+        {
+            sb.AppendLine("(the folder is empty — nothing has been written yet)");
+        }
+        else
+        {
+            foreach (var name in directories.Concat(files).Take(MaxGroundingEntries))
+                sb.AppendLine($"  {Truncate(name, MaxGroundingNameChars)}");
+            if (total > MaxGroundingEntries)
+                sb.AppendLine($"  … and {total - MaxGroundingEntries} more (use list_files to see the rest)");
+        }
+        sb.Append(GroundingFenceClose);
+        return sb.ToString();
+    }
+
+    /// <summary>Head-kept truncation, matching <c>RunContext.SetNudge</c>'s shape.</summary>
+    private static string Truncate(string value, int cap) =>
+        value.Length <= cap ? value : value[..cap] + "…";
 
     /// <summary>
     /// The reason-then-emit gate, cheapest test first. <see cref="AiProvider.SupportsToolCalling"/> is in
@@ -481,7 +668,8 @@ public sealed class AgentPlanner : IAgentPlanner
         : "general assistant";
 
     private static List<ChatMessage> BuildPlanMessages(
-        string goal, Persona persona, bool firm, string? analysis, IReadOnlyList<Persona> roster)
+        string goal, Persona persona, bool firm, string? analysis, IReadOnlyList<Persona> roster,
+        string? grounding = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine(persona.SystemPrompt);
@@ -502,6 +690,13 @@ public sealed class AgentPlanner : IAgentPlanner
         var user = analysis is null
             ? goal
             : $"{goal}\n\n--- Your analysis of this goal (use it; do not restate it) ---\n{analysis}\n--- end of analysis ---";
+
+        // T2-17a: the grounding digest goes on the USER message for the SAME reason, and it is the stronger
+        // case of the two — these are FILE NAMES out of the user's own assistant folder, so in the System
+        // prompt they would ship past TokenizeMessages verbatim with tokenization ON. Appended after the
+        // analysis, still inside the one user message, so the request shape stays [System, User].
+        if (grounding is not null)
+            user = $"{user}\n\n{grounding}";
 
         return new List<ChatMessage>
         {
