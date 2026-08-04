@@ -208,7 +208,19 @@ assumed absent.
     1 failed") with the firings themselves as its tooltip, hidden entirely for a job that has never fired, read
     failure-isolated so it cannot cost the list. SETTLED only — a parked firing has no settle instant and is
     still live — and a child run's null `TriggerRef` keeps a fan-out out of its parent job's history, both pinned.
-  - [ ] **`ILogger.BeginScope(runId/stepId)` correlation.**
+  - [x] **`ILogger.BeginScope(runId/step ordinal)` correlation — and the sink that makes it visible.** The
+    literal item would have shipped DEAD, and that is the finding: the file sink is `NReco.Logging.File`, whose
+    assembly contains **zero** references to `ISupportExternalScope`/`IExternalScopeProvider` and whose
+    `FormatLogEntry` cannot reach a scope — so `BeginScope(runId)` allocates and is discarded before it reaches
+    `pia-*.log`, the one file a user attaches to a support request. Built: `ScopeRenderingLoggerProvider`
+    (`Logging/`) wraps the file provider and prefixes every line with the scopes open on the writing async flow,
+    registered by hand in `Bootstrapper.cs` in place of `AddFile`. The stack is `AsyncLocal` and STATIC, so a run
+    scope opened by the orchestrator also labels the lines a tool handler writes through its own category — which
+    is most of the log. `AgentRunOrchestrator.RunAsync` opens `run {RunId}`; each step nests `step {StepOrdinal}`
+    (the ordinal, because that is what the plan, the panel and the audit table show) around the executor call.
+    Why it matters now: T1-1/T1-2 let several unattended runs interleave their lines in one file, where
+    "Round 1/10 starting" otherwise belongs to no run. **Scope state is IDs ONLY** — it reaches a release log
+    verbatim, and the compile-time-erased `Sensitive*` family stays the only route for user content.
   - [ ] **A small release-mode redacting sink as a backstop for tool *output*** (hermes §8¹'s "no redaction
     today" is false — [`../agent-roadmap/17-trust-model.md`](../agent-roadmap/17-trust-model.md) §4; a sink may
     still earn its place as defence in depth, but not on that ground).

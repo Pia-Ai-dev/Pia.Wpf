@@ -116,6 +116,14 @@ public sealed class AgentRunOrchestrator
         bool resume = false,
         string? nudge = null)
     {
+        // T2-18: EVERY line this dispatch writes — from this loop, from the planner and verifier it awaits, and
+        // from the tool handlers inside a step turn — carries the run id. That is what makes a log readable at
+        // all now that T1-1/T1-2 let several unattended runs execute at once and interleave their lines in one
+        // file. IDs ONLY in a scope: whatever it stringifies to reaches a RELEASE log verbatim
+        // (ScopeRenderingLoggerProvider states the rule; the goal, paths and tool arguments stay on the
+        // compile-time-erased SensitiveDebug family).
+        using var runScope = _logger.BeginScope("run {RunId}", run.Id);
+
         // R13: link the run CTS from the caller's token. Interactive passes session.Cts.Token, so
         // ChatSession.Cancel() (which cancels session.Cts) propagates to the run + in-flight step.
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(externalToken);
@@ -394,7 +402,20 @@ public sealed class AgentRunOrchestrator
                     await SafeSetStepStatus(step.Id, AgentStepStatus.Running, cts.Token).ConfigureAwait(false);
                     inflightStepId = step.Id; // D1: what the catch(OCE) arm has to restore (see the hoist above)
 
-                    var r = await executor.ExecuteStepAsync(run, step, ctx, cts.Token).ConfigureAwait(false); // critical path
+                    // T2-18: nested inside the run scope, so a step turn's lines read "[run … step N]". The
+                    // ORDINAL, not the step id: it is what the plan, the panel and the audit table all show, and
+                    // so it is what a person matches a log line against.
+                    //
+                    // It brackets the EXECUTOR CALL only, not the rest of this iteration. That call is where the
+                    // lines come from — the model exchange, the tool dispatch, every gate decision inside it —
+                    // while the bookkeeping below already names its own {StepId}/{RunId}. Widening the scope over
+                    // the whole block would re-indent a hundred lines of load-bearing ordering for no line that
+                    // is not already attributable.
+                    StepTurnResult r;
+                    using (_logger.BeginScope("step {StepOrdinal}", step.Ordinal))
+                    {
+                        r = await executor.ExecuteStepAsync(run, step, ctx, cts.Token).ConfigureAwait(false); // critical path
+                    }
 
                     // ---- Batch 08 D1: USER PAUSE, tested BEFORE the step is recorded and BEFORE r.Cancelled ----
                     // Ordering is the whole design and it is deliberate in three ways.

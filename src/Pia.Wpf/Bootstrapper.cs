@@ -311,20 +311,28 @@ public static class Bootstrapper
                 "Pia", "Logs");
             Directory.CreateDirectory(logDirectory);
 
-            builder.AddFile(Path.Combine(logDirectory, "pia.log"), options =>
+            var fileOptions = new FileLoggerOptions
             {
-                options.Append = true;
-                options.MinLevel = IsDevMode ? LogLevel.Debug : LogLevel.Information;
-                options.FileSizeLimitBytes = 10 * 1024 * 1024; // 10 MB per file
-                options.MaxRollingFiles = 7;                    // Keep 7 days
-                options.FormatLogFileName = name =>
+                Append = true,
+                MinLevel = IsDevMode ? LogLevel.Debug : LogLevel.Information,
+                FileSizeLimitBytes = 10 * 1024 * 1024, // 10 MB per file
+                MaxRollingFiles = 7,                    // Keep 7 days
+                FormatLogFileName = name =>
                 {
                     var ext = Path.GetExtension(name);
                     var baseName = Path.GetFileNameWithoutExtension(name);
                     var dir = Path.GetDirectoryName(name);
                     return Path.Combine(dir!, $"{baseName}-{DateTime.Now:yyyy-MM-dd}{ext}");
-                };
-            });
+                },
+            };
+
+            // T2-18: registered by hand rather than through NReco's AddFile extension, because the provider is
+            // WRAPPED. NReco has no scope support whatsoever (no ISupportExternalScope, no IExternalScopeProvider,
+            // and FormatLogEntry cannot reach one), so ILogger.BeginScope(runId) would compile and be discarded
+            // before it reached the file a user attaches to a support request. ScopeRenderingLoggerProvider is what
+            // makes the run/step scope visible there. Nothing else about the sink changes.
+            builder.Services.AddSingleton<ILoggerProvider>(_ => new ScopeRenderingLoggerProvider(
+                new FileLoggerProvider(Path.Combine(logDirectory, "pia.log"), fileOptions)));
         });
 
         // Infrastructure
