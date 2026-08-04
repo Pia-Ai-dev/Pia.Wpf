@@ -187,10 +187,12 @@ assumed absent.
     `EndRunAsync`, so a wrap-up not written there is never written); the orchestrator calls it through
     `SafeGraceTurn`, which bills the round run-level, extends the transcript range, bounds it at 90 s
     separately from the run's own timeout, skips it on an already-cancelled token, and **parks anyway if it
-    throws**. It is the codebase's FIRST default-interface member, and deliberately: twelve types implement
-    that interface, the right answer for eleven of them (`LiveTurnExecutor` included — its transcript is on
-    screen) is to spend nothing, and the members that must be answered out loud are required precisely because
-    they are not this. Three existing durability facts moved by exactly one turn and one save, and say so.
+    throws**. It is the codebase's FIRST default-interface member, and deliberately: that interface is
+    implemented by both executors plus a hand-written fake in most orchestrator test files, and the right answer
+    for all of them but `HeadlessTurnExecutor` — `LiveTurnExecutor` included, since its transcript is on screen —
+    is to spend nothing. The members that must be answered out loud are required precisely because they are not
+    this one. The durability facts that pin per-turn save counts moved by exactly one turn and one save, and say
+    so where the number is.
   - [x] **Quiet mode for monitor jobs.** Built: `ScheduledJob.QuietOnSuccess` + a `QuietOnSuccess` column
     (`SqliteContext.cs`, `DEFAULT 0` so no existing job is quieted by a migration), honoured at ONE chokepoint —
     `ScheduledJobNotificationSurface.NotifySuccess`, which both producers come through — and authored by a
