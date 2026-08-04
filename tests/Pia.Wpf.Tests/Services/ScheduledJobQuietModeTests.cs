@@ -51,6 +51,21 @@ public sealed class ScheduledJobQuietModeTests : IDisposable
         Assert.False((await _jobs.GetAsync(job.Id))!.QuietOnSuccess);
     }
 
+    /// <summary>
+    /// A job can be created QUIET, not only edited into it. The jobs editor is one panel with one checkbox for
+    /// both actions, so a create path that dropped the flag produced a notifying job with no error and no hint
+    /// that the choice was lost — which is what the first cut of this item did.
+    /// </summary>
+    [Fact]
+    public async Task AJobCanBeCreatedQuiet()
+    {
+        var job = await _jobs.CreateAsync("Monitor", "check the feed", RecurrenceType.Daily,
+            new TimeOnly(9, 0), quietOnSuccess: true);
+
+        Assert.True(job.QuietOnSuccess);                             // the returned object
+        Assert.True((await _jobs.GetAsync(job.Id))!.QuietOnSuccess);  // and the row it wrote
+    }
+
     [Fact]
     public async Task QuietMode_RoundTripsThroughTheDatabase()
     {

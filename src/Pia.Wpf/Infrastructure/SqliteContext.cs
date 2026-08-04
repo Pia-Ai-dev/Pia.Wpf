@@ -54,9 +54,13 @@ public class SqliteContext : IDisposable
         {
             _connection = new SqliteConnection(_connectionString);
             _connection.Open();
-            ApplyConnectionPragmas(_connection);
-            // T2-13b: BEFORE EnsureSchema, and once per process — see CheckIntegrity for both reasons.
+            // T2-13b, and the ORDER of these three is the item. `Open()` does not read page 1, so it succeeds
+            // even on a file that is not a database; the FIRST statement that reads the header is the first one
+            // that can throw. That statement must be the integrity check, or the one damage class that makes a
+            // file unopenable is the only class the diagnostic can never report — see CheckIntegrity.
+            ApplyBusyTimeout(_connection);
             CheckIntegrity(_connection);
+            ApplyWalJournal(_connection);
             EnsureSchema();
         }
         else if (_connection.State != System.Data.ConnectionState.Open)
@@ -88,8 +92,20 @@ public class SqliteContext : IDisposable
     /// WHY BEFORE <see cref="EnsureSchema"/>: the check is READ-ONLY and <see cref="EnsureSchema"/> is not. It
     /// issues DDL, conditional <c>ALTER TABLE</c>s, a seed <c>INSERT</c>, an FTS table drop-and-recreate and a
     /// backfill inside a transaction — so on a damaged file the first thing this process would otherwise do is
-    /// WRITE to it, which can turn a recoverable image into a worse one and buries the diagnosis under whatever
-    /// cryptic error the DDL happens to throw. Diagnose first, then modify.
+    /// WRITE to it, and the diagnosis would arrive as whatever cryptic error the DDL happened to throw.
+    /// Diagnose first, then modify. Measured, so the claim is bounded rather than sweeping: on a file with an
+    /// INTERIOR page destroyed but a readable header, <c>CREATE TABLE IF NOT EXISTS</c> succeeds and grows the
+    /// file — that is the class this ordering protects. On a file whose HEADER is unreadable SQLite refuses to
+    /// write at all (the bytes come back identical), so there the ordering buys the diagnosis, not the
+    /// integrity of the image.
+    /// </para>
+    /// <para>
+    /// WHY BEFORE <see cref="ApplyWalJournal"/> TOO, which is the sharper half of the same rule and was WRONG in
+    /// the first cut of this item: <c>Open()</c> does not read page 1, so the WAL pragma is the first statement
+    /// that touches the file, and on a header-damaged database IT throws (error 26/11). With the check
+    /// downstream of it, the damage class that makes a file unopenable was the one class this diagnostic could
+    /// never report: <see cref="IntegrityStatus"/> stayed null and not one line reached the log. Only
+    /// <see cref="ApplyBusyTimeout"/> may precede the check, because it reads nothing.
     /// </para>
     /// <para>
     /// WHY IT NEVER THROWS, and why NO REPAIR IS ATTEMPTED. Throwing here would take the whole app down for a
@@ -156,16 +172,7 @@ public class SqliteContext : IDisposable
     }
 
     /// <summary>
-    /// Set on the shared connection's FIRST open, before <see cref="EnsureSchema"/> runs a single statement.
-    /// <para>
-    /// <c>journal_mode=WAL</c> is a PERSISTENT PER-FILE setting, so applying it where the file is first
-    /// opened also covers every dedicated connection to the same file (<c>AgentRunService</c>,
-    /// <c>FlowPersistenceStore</c>, <c>IngestStateStore</c>, <c>AssistantChatService</c>). It is what makes a
-    /// second writer survivable at all: in the default rollback-journal mode a write transaction holds
-    /// RESERVED from its first write and EXCLUSIVE through COMMIT, so any write from another connection
-    /// during that window fails IMMEDIATELY with "database is locked" — and WAL additionally lets this
-    /// connection's READERS proceed while another connection's writer is mid-transaction.
-    /// </para>
+    /// Set on the shared connection's FIRST open, before anything touches the FILE.
     /// <para>
     /// <c>busy_timeout</c> is PER-CONNECTION and must therefore be set on every handle separately (the
     /// dedicated stores each set their own). Without it here, moving the chat store onto its own connection
@@ -174,16 +181,42 @@ public class SqliteContext : IDisposable
     /// MemoryService, ReminderService, ScheduledJobService, KanbanColumnService, PersonaService,
     /// PluginService, HistoryService, VaultIndexer, LintService) — none of which handles it.
     /// </para>
+    /// <para>
+    /// T2-13b: split out of the WAL pragma and hoisted ABOVE the integrity check on purpose. This one sets a
+    /// connection-level timeout and reads nothing off the disk, so it cannot fail on a damaged file — which
+    /// makes it the only statement that may safely precede the check, and it is worth preceding it: without a
+    /// busy timeout the check would fail instantly against any other process holding the write lock.
+    /// </para>
     /// </summary>
-    private static void ApplyConnectionPragmas(SqliteConnection connection)
+    private static void ApplyBusyTimeout(SqliteConnection connection)
+    {
+        using var busy = connection.CreateCommand();
+        busy.CommandText = "PRAGMA busy_timeout=3000;";
+        busy.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// <c>journal_mode=WAL</c> is a PERSISTENT PER-FILE setting, so applying it where the file is first
+    /// opened also covers every dedicated connection to the same file (<c>AgentRunService</c>,
+    /// <c>FlowPersistenceStore</c>, <c>IngestStateStore</c>, <c>AssistantChatService</c>). It is what makes a
+    /// second writer survivable at all: in the default rollback-journal mode a write transaction holds
+    /// RESERVED from its first write and EXCLUSIVE through COMMIT, so any write from another connection
+    /// during that window fails IMMEDIATELY with "database is locked" — and WAL additionally lets this
+    /// connection's READERS proceed while another connection's writer is mid-transaction.
+    /// <para>
+    /// T2-13b: this is the first statement of the open sequence that READS the file, which is why the
+    /// integrity check now runs before it rather than after. Measured, on Microsoft.Data.Sqlite 10.0.9: on a
+    /// file whose header is unreadable (a truncated restore, a sync-conflict stub) <c>Open()</c> still
+    /// succeeds and THIS pragma is what throws — SQLite error 26 "file is not a database" or 11 "database disk
+    /// image is malformed". With the check downstream of it, that whole damage class produced no verdict and
+    /// no log line at all.
+    /// </para>
+    /// </summary>
+    private static void ApplyWalJournal(SqliteConnection connection)
     {
         using var journal = connection.CreateCommand();
         journal.CommandText = "PRAGMA journal_mode=WAL;";
         journal.ExecuteNonQuery();
-
-        using var busy = connection.CreateCommand();
-        busy.CommandText = "PRAGMA busy_timeout=3000;";
-        busy.ExecuteNonQuery();
     }
 
     private void EnsureSchema()

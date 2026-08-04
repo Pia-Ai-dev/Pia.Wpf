@@ -401,7 +401,7 @@ public partial class ScheduledJobsSettingsViewModel : UiThreadViewModel
             {
                 var created = await _jobs.CreateAsync(EditName.Trim(), EditQuery.Trim(), EditRecurrence,
                     timeOfDay, specificDate: specificDate, providerId: EditProvider?.Id,
-                    grantedTools: grants, kind: EditKind);
+                    grantedTools: grants, kind: EditKind, quietOnSuccess: EditQuietOnSuccess);
 
                 _logger.LogInformation("Created scheduled job {Id} from settings ({Kind})", created.Id, EditKind);
                 _logger.SensitiveDebug("Created scheduled job {Id} name: {Name} goal: {Goal}",

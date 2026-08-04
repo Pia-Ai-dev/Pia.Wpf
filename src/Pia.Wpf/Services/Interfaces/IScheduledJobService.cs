@@ -7,7 +7,11 @@ public interface IScheduledJobService
     Task<ScheduledJob> CreateAsync(string name, string query, RecurrenceType recurrence, TimeOnly timeOfDay,
         DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null, DateTime? specificDate = null,
         Guid? providerId = null, IReadOnlyCollection<string>? grantedTools = null,
-        ScheduledJobKind kind = ScheduledJobKind.Research);
+        ScheduledJobKind kind = ScheduledJobKind.Research,
+        // T2-18 quiet mode. It belongs on CREATE and not only on UPDATE because the jobs editor is ONE panel
+        // with one checkbox for both: without this, ticking "Quiet" while creating a job produced a job that
+        // notifies, with no error and no hint that the choice was dropped.
+        bool quietOnSuccess = false);
 
     Task<IReadOnlyList<ScheduledJob>> GetAllAsync();
     Task<IReadOnlyList<ScheduledJob>> GetActiveAsync();

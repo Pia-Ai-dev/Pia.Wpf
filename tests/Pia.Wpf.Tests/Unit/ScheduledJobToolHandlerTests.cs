@@ -339,7 +339,7 @@ public class ScheduledJobToolHandlerTests
             TimeOnly timeOfDay, DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null,
             DateTime? specificDate = null, Guid? providerId = null,
             IReadOnlyCollection<string>? grantedTools = null,
-            ScheduledJobKind kind = ScheduledJobKind.Research)
+            ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false)
         {
             var job = new ScheduledJob
             {

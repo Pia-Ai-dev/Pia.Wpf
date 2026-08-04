@@ -156,6 +156,39 @@ public class SqliteContextIntegrityTests : IDisposable
         Assert.Equal(1, logger.Integrity(LogLevel.Error));
     }
 
+    /// <summary>
+    /// THE damage class the first cut of this item could not report, and the reason the check now runs before the
+    /// WAL pragma rather than after it. A file whose HEADER is unreadable still OPENS — <c>sqlite3_open_v2</c>
+    /// does not read page 1 — so the first statement that touches the file is the one that throws. When that was
+    /// <c>PRAGMA journal_mode=WAL</c>, the check never executed: no status, and not one line in the support log
+    /// for the file most in need of the diagnosis.
+    /// <para>
+    /// <c>GetConnection()</c> is still expected to throw here (nothing can use such a file); what is asserted is
+    /// that it says WHY first.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void AFileThatIsNotADatabaseAtAll_IsStillDiagnosed()
+    {
+        var path = NewDbPath("garbage.db");
+        File.WriteAllBytes(path, Enumerable.Range(0, 8192).Select(i => (byte)(i % 251)).ToArray());
+
+        var logger = new RecordingLogger();
+        using var ctx = new SqliteContext(path, logger);
+        try
+        {
+            ctx.GetConnection();
+        }
+        catch
+        {
+            // Expected: the WAL pragma (or the schema pass) cannot proceed on this file. The point is the order.
+        }
+
+        Assert.Equal(1, logger.Integrity(LogLevel.Warning)); // "could not run", with the SQLite error attached
+        Assert.Null(ctx.IntegrityStatus);                    // no verdict is claimed — none could be reached
+        Assert.Equal(0, logger.Integrity(LogLevel.Information));
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_tmpDir, recursive: true); } catch { /* temp dir */ }

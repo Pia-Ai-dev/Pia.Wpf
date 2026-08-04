@@ -406,6 +406,50 @@ public sealed class AgentRunGraceTurnTests
     }
 
     /// <summary>
+    /// A grace turn that produced NOTHING must not be announced as a wrap-up. The headless executor's exchange
+    /// engine turns a cancellation (including this feature's own 90 s bound) and a provider fault into a
+    /// RETURNED failure result rather than a throw, so the orchestrator's null check is always false there —
+    /// reading it as "there is a wrap-up" put a false statement in the support log of the very run it describes.
+    /// </summary>
+    [Fact]
+    public async Task AGraceTurnThatFailed_IsNotLoggedAsAWrapUp()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var (planner, profile) = TwoStepBudget();
+        var logger = new CapturingLogger<AgentRunOrchestrator>();
+        // What a cancelled or faulted exchange actually returns: non-null, not succeeded, no text.
+        var exec = new ParkingExecutor
+        {
+            GraceResult = new StepTurnResult(false, true, "cancelled", string.Empty, null, Guid.Empty, Guid.Empty),
+        };
+
+        var orchestrator = new AgentRunOrchestrator(h.Runs, planner, new FakeVerifier(), logger);
+        await orchestrator.RunAsync(run, exec, Persona(), Provider(), profile, Ct);
+
+        var lines = logger.Entries.Select(e => e.Message).ToList();
+        Assert.Contains(lines, l => l.Contains("grace turn produced no wrap-up"));
+        Assert.DoesNotContain(lines, l => l.Contains("grace turn produced a wrap-up"));
+        Assert.Equal(AgentRunState.WaitingForInput, (await h.Runs.GetAsync(run.Id, Ct))!.State);
+    }
+
+    /// <summary>The positive half, so the line above is not simply never emitted.</summary>
+    [Fact]
+    public async Task AGraceTurnThatSpoke_IsLoggedAsAWrapUp()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var (planner, profile) = TwoStepBudget();
+        var logger = new CapturingLogger<AgentRunOrchestrator>();
+        var exec = new ParkingExecutor { GraceResult = Ok("here is where I got to") };
+
+        var orchestrator = new AgentRunOrchestrator(h.Runs, planner, new FakeVerifier(), logger);
+        await orchestrator.RunAsync(run, exec, Persona(), Provider(), profile, Ct);
+
+        Assert.Contains(logger.Entries.Select(e => e.Message), l => l.Contains("grace turn produced a wrap-up"));
+    }
+
+    /// <summary>
     /// A user pause is NOT a budget park, and it must not spend a round: the person is right there, and they
     /// asked the run to stop now.
     /// </summary>

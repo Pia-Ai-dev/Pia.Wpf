@@ -731,8 +731,22 @@ public sealed class AgentRunOrchestrator
             using var graceCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             graceCts.CancelAfter(GraceTurnBudget);
             var result = await executor.RunGraceTurnAsync(run, ctx, graceCts.Token).ConfigureAwait(false);
-            if (result is not null)
+            if (result is null)
+                return null;
+
+            // The log line reads the RESULT, not its null-ness, and that distinction is not pedantry: the
+            // headless executor's exchange engine converts a cancellation (this method's own 90 s bound) and a
+            // provider fault into a RETURNED failure result rather than a throw, so `result is not null` is
+            // always true there. Logging "produced a wrap-up" off that would announce a wrap-up for a turn the
+            // bound cut off — a false statement in the support log of the run it is describing.
+            if (result.Succeeded && !string.IsNullOrWhiteSpace(result.VisibleText))
                 _logger.LogInformation("Budget park: grace turn produced a wrap-up for {RunId}", run.Id);
+            else
+                _logger.LogInformation(
+                    "Budget park: grace turn produced no wrap-up for {RunId} (succeeded={Succeeded}, cancelled={Cancelled})",
+                    run.Id, result.Succeeded, result.Cancelled);
+
+            // Returned either way: a failed turn still spent its tokens, and I1 says a paid round is accrued.
             return result;
         }
         catch (Exception ex)

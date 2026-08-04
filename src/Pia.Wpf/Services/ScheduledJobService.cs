@@ -66,7 +66,7 @@ public class ScheduledJobService : IScheduledJobService
     public async Task<ScheduledJob> CreateAsync(string name, string query, RecurrenceType recurrence, TimeOnly timeOfDay,
         DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null, DateTime? specificDate = null,
         Guid? providerId = null, IReadOnlyCollection<string>? grantedTools = null,
-        ScheduledJobKind kind = ScheduledJobKind.Research)
+        ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false)
     {
         var now = DateTime.Now;
         var job = new ScheduledJob
@@ -82,6 +82,7 @@ public class ScheduledJobService : IScheduledJobService
             SpecificDate = specificDate,
             GrantedTools = grantedTools?.ToList() ?? [],
             ProviderId = providerId,
+            QuietOnSuccess = quietOnSuccess, // T2-18
             CreatedAt = now,
             UpdatedAt = now,
             OwnerDeviceId = await ResolveLocalDeviceIdAsync()

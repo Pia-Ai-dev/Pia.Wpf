@@ -265,7 +265,30 @@ public class ScheduledJobsSettingsViewModelTests
             Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(),
             specificDate: null,
             providerId: Arg.Any<Guid?>(), grantedTools: Arg.Any<IReadOnlyCollection<string>>(),
-            kind: Arg.Any<ScheduledJobKind>());
+            kind: Arg.Any<ScheduledJobKind>(), quietOnSuccess: Arg.Any<bool>());
+    }
+
+    /// <summary>
+    /// T2-18: the editor is ONE panel for create and edit, so the quiet checkbox has to reach BOTH service
+    /// calls. It reached only the update one at first, which silently created notifying jobs from a ticked box.
+    /// </summary>
+    [Fact]
+    public async Task CreatingAQuietJob_PassesTheFlagThrough()
+    {
+        var (vm, service, _) = CreateSut();
+        await vm.RefreshAsync();
+
+        vm.StartCreateCommand.Execute(null);
+        vm.EditName = "Monitor";
+        vm.EditQuery = "check the feed";
+        vm.EditQuietOnSuccess = true;
+
+        await vm.SaveCommand.ExecuteAsync(null);
+
+        await service.Received(1).CreateAsync("Monitor", "check the feed", Arg.Any<RecurrenceType>(),
+            Arg.Any<TimeOnly>(), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(),
+            Arg.Any<DateTime?>(), Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<string>>(),
+            Arg.Any<ScheduledJobKind>(), quietOnSuccess: true);
     }
 
     [Fact]

@@ -867,7 +867,7 @@ public sealed class D5PausePremiseTests : IDisposable
             TimeOnly timeOfDay, DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null,
             DateTime? specificDate = null, Guid? providerId = null,
             IReadOnlyCollection<string>? grantedTools = null,
-            ScheduledJobKind kind = ScheduledJobKind.Research) => throw new NotImplementedException();
+            ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false) => throw new NotImplementedException();
 
         public Task<IReadOnlyList<ScheduledJob>> GetAllAsync() => throw new NotImplementedException();
         public Task<IReadOnlyList<ScheduledJob>> GetActiveAsync() => throw new NotImplementedException();
