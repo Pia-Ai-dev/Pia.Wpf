@@ -48,7 +48,16 @@ public class DiRegistrationTests
             .And().AreInterfaces()
             .GetTypes();
 
-        var allInterfaces = serviceInterfaces.Concat(e2eeInterfaces).Concat(meetingAttendeeInterfaces);
+        // The consent interfaces (direct transcription's session-scoped consent core) live in their own
+        // namespace (Pia.Services.Consent) — enumerate them explicitly for the same reason as
+        // meetingAttendeeInterfaces above: otherwise an unregistered consent interface would fail
+        // silently at runtime instead of in this test.
+        var consentInterfaces = Types.InAssembly(PiaAssembly)
+            .That().ResideInNamespace(ConsentNamespace)
+            .And().AreInterfaces()
+            .GetTypes();
+
+        var allInterfaces = serviceInterfaces.Concat(e2eeInterfaces).Concat(meetingAttendeeInterfaces).Concat(consentInterfaces);
 
         // INativeHotkeyService is created by INativeHotkeyServiceFactory, not registered directly.
         // IPluginToolHandler implementations are created by PluginService based on plugin kind.

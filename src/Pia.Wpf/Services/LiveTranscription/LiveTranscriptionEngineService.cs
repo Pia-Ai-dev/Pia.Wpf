@@ -177,7 +177,7 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
                 "Engine done: {Speaker} {Ms}ms text='{Text}' (len={Len})",
                 _speaker, sw.ElapsedMilliseconds, Truncate(text, 60), text.Length);
 
-            var utt = new TranscriptUtterance(_speaker, text, DateTimeOffset.Now, speakerLabel, segmentId);
+            var utt = new TranscriptUtterance(_speaker, text, DateTimeOffset.Now, speakerLabel, segmentId, samples.Length / 16000.0);
             await _sink.WriteAsync(utt, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { /* shutdown */ }

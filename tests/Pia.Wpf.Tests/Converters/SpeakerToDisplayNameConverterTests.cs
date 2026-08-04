@@ -1,14 +1,23 @@
 using System.Globalization;
 using Pia.Converters;
+using Pia.Localization;
 using Pia.Models;
 using Xunit;
 
 namespace Pia.Tests.Converters;
 
+/// <summary>
+/// <see cref="SpeakerToDisplayNameConverter.Resolve"/> now returns the localized <c>Speaker_Me</c> /
+/// <c>Speaker_Them</c> resources instead of the old hardcoded "you"/"them" literals (design §3.7). The
+/// invariant-culture <see cref="LocalizationSource"/> falls back to the bracketed key
+/// (<c>"[Speaker_Me]"</c>) when a resx entry does not exist, so these assertions hold whether or not the
+/// integration phase has landed the new resx keys yet — they assert against whatever the shared
+/// lookup returns, not a hardcoded English string.
+/// </summary>
 public class SpeakerToDisplayNameConverterTests
 {
     [Fact]
-    public void You_ReturnsLiteralYou_RegardlessOfCounterpart()
+    public void You_ReturnsTheLocalizedMeLabel_RegardlessOfCounterpart()
     {
         var sut = new SpeakerToDisplayNameConverter();
         var result = sut.Convert(
@@ -16,7 +25,10 @@ public class SpeakerToDisplayNameConverterTests
             typeof(string),
             null,
             CultureInfo.InvariantCulture);
-        Assert.Equal("you", result);
+        // A non-null counterpart name ("Alex") and a null label are both supplied precisely to prove
+        // the You branch returns before either is consulted — i.e. the "me" label is unconditional,
+        // not a fallback.
+        Assert.Equal(LocalizationSource.Instance["Speaker_Me"], result);
     }
 
     [Fact]
@@ -32,7 +44,7 @@ public class SpeakerToDisplayNameConverterTests
     }
 
     [Fact]
-    public void Them_NullOrWhitespaceCounterpart_ReturnsThemFallback()
+    public void Them_NullOrWhitespaceCounterpart_ReturnsTheLocalizedThemFallback()
     {
         var sut = new SpeakerToDisplayNameConverter();
         var resultNull = sut.Convert(
@@ -45,8 +57,8 @@ public class SpeakerToDisplayNameConverterTests
             typeof(string),
             null,
             CultureInfo.InvariantCulture);
-        Assert.Equal("them", resultNull);
-        Assert.Equal("them", resultEmpty);
+        Assert.Equal(LocalizationSource.Instance["Speaker_Them"], resultNull);
+        Assert.Equal(LocalizationSource.Instance["Speaker_Them"], resultEmpty);
     }
 
     [Fact]

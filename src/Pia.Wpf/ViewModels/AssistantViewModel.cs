@@ -116,6 +116,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     [ObservableProperty]
     private bool _isMeetingAttendeeVisible;
 
+    public DirectTranscriptionViewModel DirectTranscription { get; }
+
+    [ObservableProperty]
+    private bool _isDirectTranscriptionVisible;
+
     [ObservableProperty]
     private string _suggestionReminder = string.Empty;
 
@@ -201,6 +206,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IAsyncRelayCommand<BitmapSource> HandleImagePastedCommand { get; }
     public IRelayCommand RemoveAttachmentCommand { get; }
     public IAsyncRelayCommand ToggleMeetingAttendeeCommand { get; }
+    public IAsyncRelayCommand ToggleDirectTranscriptionCommand { get; }
 
     public AssistantViewModel(
         ILogger<AssistantViewModel> logger,
@@ -223,6 +229,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ISuggestionService suggestionService,
         IAssistantChatService chatService,
         MeetingAttendeeViewModel meetingAttendee,
+        DirectTranscriptionViewModel directTranscription,
         IAssistantPromptComposer promptComposer,
         IProviderCapabilityService providerCapabilityService,
         IAgentRunService agentRunService,
@@ -269,6 +276,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _suggestionService = suggestionService;
         _chatService = chatService;
         MeetingAttendee = meetingAttendee;
+        DirectTranscription = directTranscription;
         _promptComposer = promptComposer;
         _providerCapabilityService = providerCapabilityService;
         _agentRunService = agentRunService;
@@ -305,6 +313,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         HandleImagePastedCommand = new AsyncRelayCommand<BitmapSource>(ExecuteHandleImagePasted);
         RemoveAttachmentCommand = new RelayCommand(() => PendingAttachment = null);
         ToggleMeetingAttendeeCommand = new AsyncRelayCommand(ExecuteToggleMeetingAttendee);
+        ToggleDirectTranscriptionCommand = new AsyncRelayCommand(ExecuteToggleDirectTranscription);
 
         _ttsService.IsPlayingChanged += OnTtsPlayingChanged;
         _personaService.PersonasChanged += OnPersonasChanged;
@@ -313,6 +322,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         MeetingAttendee.CloseRequested += OnMeetingAttendeeCloseRequested;
         MeetingAttendee.SummarizeRequested += OnMeetingAttendeeSummarizeRequested;
         MeetingAttendee.OpenSettingsRequested += OnMeetingAttendeeOpenSettingsRequested;
+        DirectTranscription.CloseRequested += OnDirectTranscriptionCloseRequested;
+        DirectTranscription.SummarizeRequested += OnDirectTranscriptionSummarizeRequested;
 
         ChatTitleChip = new ChatTitleChipViewModel(
             _chatService,
@@ -690,6 +701,14 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             return;
         }
 
+        // Direct transcription and meeting-attendee both own the local audio stack, so only one may be
+        // open at a time — opening this one closes the other first.
+        if (IsDirectTranscriptionVisible)
+        {
+            await DirectTranscription.StopAsync();
+            IsDirectTranscriptionVisible = false;
+        }
+
         // Pre-fill the editable assistant display name from settings (or the auto-built default) before
         // the overlay appears, so the join form shows the right value the moment it opens.
         await MeetingAttendee.PrepareForDisplayAsync();
@@ -700,6 +719,52 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         // The overlay's close (X) button raises CloseRequested; stop the session and hide the overlay.
         _ = ExecuteToggleMeetingAttendee();
+    }
+
+    private async Task ExecuteToggleDirectTranscription()
+    {
+        // Mirrors ExecuteToggleMeetingAttendee: hiding stops any in-progress session, showing warms up
+        // the service first. Direct transcription and the meeting attendee share the local audio stack
+        // (mic + system loopback), so only one overlay may be open at a time.
+        if (IsDirectTranscriptionVisible)
+        {
+            await DirectTranscription.StopAsync();
+            IsDirectTranscriptionVisible = false;
+            return;
+        }
+
+        if (IsMeetingAttendeeVisible)
+        {
+            await MeetingAttendee.StopAsync();
+            IsMeetingAttendeeVisible = false;
+        }
+
+        await DirectTranscription.PrepareForDisplayAsync();
+        IsDirectTranscriptionVisible = true;
+    }
+
+    private void OnDirectTranscriptionCloseRequested(object? sender, EventArgs e)
+    {
+        // The overlay's close (X) button raises CloseRequested; stop the session and hide the overlay.
+        // Routed through the COMMAND, not the method: AsyncRelayCommand refuses to run while a previous
+        // execution is still in flight, so clicking X and then the toolbar toggle cannot start two
+        // overlapping hide bodies (two StopAsync calls racing each other inside StopReaderAsync, which
+        // nulls its reader CTS/task without synchronization).
+        if (ToggleDirectTranscriptionCommand.CanExecute(null))
+            ToggleDirectTranscriptionCommand.Execute(null);
+    }
+
+    private void OnDirectTranscriptionSummarizeRequested(object? sender, string prompt)
+    {
+        // "Summarize with assistant" on the post-session transcript: hide the overlay so the chat (where
+        // the summary streams) is revealed, open a fresh chat so the summary stands on its own, then send
+        // the prompt. Mirrors OnMeetingAttendeeSummarizeRequested; do NOT log the prompt — it carries the
+        // (sensitive) transcript.
+        IsDirectTranscriptionVisible = false;
+        StartFreshChat();
+        PendingAttachment = null;
+        InputText = prompt;
+        SendMessageCommand.Execute(null);
     }
 
     private void OnMeetingAttendeeSummarizeRequested(object? sender, string prompt)
@@ -1739,6 +1804,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         MeetingAttendee.SummarizeRequested -= OnMeetingAttendeeSummarizeRequested;
         MeetingAttendee.OpenSettingsRequested -= OnMeetingAttendeeOpenSettingsRequested;
         MeetingAttendee.Dispose();
+        DirectTranscription.CloseRequested -= OnDirectTranscriptionCloseRequested;
+        DirectTranscription.SummarizeRequested -= OnDirectTranscriptionSummarizeRequested;
+        DirectTranscription.Dispose();
         _ttsService.Stop();
         _ttsService.IsPlayingChanged -= OnTtsPlayingChanged;
         _personaService.PersonasChanged -= OnPersonasChanged;

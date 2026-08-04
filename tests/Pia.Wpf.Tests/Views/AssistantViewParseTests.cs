@@ -453,6 +453,15 @@ public class AssistantViewParseTests
             NullLogger<MeetingAttendeeViewModel>.Instance,
             new InlineUiDispatcher());
 
+        var directTranscription = new DirectTranscriptionViewModel(
+            Substitute.For<IDirectTranscriptionService>(),
+            settings,
+            Substitute.For<ILocalizationService>(),
+            Substitute.For<IFileDialogService>(),
+            Substitute.For<IDialogService>(),
+            NullLogger<DirectTranscriptionViewModel>.Instance,
+            new InlineUiDispatcher());
+
         return new AssistantViewModel(
             NullLogger<AssistantViewModel>.Instance,
             Substitute.For<IAiClientService>(),
@@ -474,6 +483,7 @@ public class AssistantViewParseTests
             Substitute.For<ISuggestionService>(),
             Substitute.For<IAssistantChatService>(),
             meeting,
+            directTranscription,
             Substitute.For<IAssistantPromptComposer>(),
             Substitute.For<IProviderCapabilityService>(),
             Substitute.For<IAgentRunService>(),

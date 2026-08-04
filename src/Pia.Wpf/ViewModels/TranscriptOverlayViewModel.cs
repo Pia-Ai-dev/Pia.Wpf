@@ -334,6 +334,34 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         });
     }
 
+    /// <summary>
+    /// Withdraws a speaker from the in-memory transcript entirely (direct-transcription §3.3
+    /// revocation): removes every journal entry and bubble carrying <paramref name="speakerLabel"/>
+    /// (ordinal match), releases its palette slot so a later re-consent starts from a fresh color, and
+    /// rebuilds the bubble collection from what remains. A blank label is a no-op. Unlike
+    /// <see cref="RelabelSpeaker"/> (which rewrites a label in place), this removes the speaker's
+    /// contribution entirely — the shape revocation needs, that renaming does not provide.
+    /// </summary>
+    protected void RemoveSpeaker(string speakerLabel)
+    {
+        if (string.IsNullOrWhiteSpace(speakerLabel)) return;
+
+        DispatchToUi(() =>
+        {
+            try
+            {
+                _journal.RemoveAll(entry => string.Equals(entry.Label, speakerLabel, StringComparison.Ordinal));
+                _speakerColorIndex.Remove(speakerLabel);
+                RebuildBubblesFromJournal();
+            }
+            catch (Exception ex)
+            {
+                // Never log the label: post-grant it can be the extracted personal name.
+                _logger.LogError(ex, "Failed to remove speaker from transcript");
+            }
+        });
+    }
+
     // ---- IsRunning → command refresh -------------------------------------------------------------
 
     partial void OnIsRunningChanged(bool value)
@@ -394,7 +422,11 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         }
     }
 
-    internal string BuildMarkdown()
+    /// <summary>
+    /// Virtual so <c>DirectTranscriptionViewModel</c> can prepend YAML front matter and a voice-stats
+    /// block ahead of the same bubble rendering the Teams attendee uses unchanged.
+    /// </summary>
+    internal virtual string BuildMarkdown()
     {
         var sb = new StringBuilder();
         sb.Append("# ").Append(_localizationService[TitleKey])

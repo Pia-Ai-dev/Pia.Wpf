@@ -92,4 +92,42 @@
   <data name="MeetingAttendee_Summarize" xml:space="preserve"><value>Summarize with assistant</value></data>
   <data name="MeetingAttendee_SummaryPrompt" xml:space="preserve"><value>Please summarize the following meeting transcript. Your meeting-attendee feature joined a Microsoft Teams meeting on my behalf as "{0}" and transcribed it locally on {1}. Give a brief overview, the key discussion points, decisions made, and any action items with their owners where mentioned.</value></data>
   <data name="MeetingAttendee_SummaryPrompt_Attendees" xml:space="preserve"><value>Participants seen in the meeting (use these names to attribute the speakers, who appear in the transcript as "Speaker 1", "Speaker 2", etc.):</value></data>
+  <data name="DirectTrans_ToggleButton_Tooltip" xml:space="preserve"><value>Live transcription with consent</value></data>
+  <data name="DirectTrans_Title" xml:space="preserve"><value>Live Transcription</value></data>
+  <data name="DirectTrans_Close" xml:space="preserve"><value>Close</value></data>
+  <data name="DirectTrans_Start" xml:space="preserve"><value>Start</value></data>
+  <data name="DirectTrans_Stop" xml:space="preserve"><value>Stop</value></data>
+  <data name="DirectTrans_Resume" xml:space="preserve"><value>Resume</value></data>
+  <data name="DirectTrans_Save" xml:space="preserve"><value>Save</value></data>
+  <data name="DirectTrans_SaveAndSummarize" xml:space="preserve"><value>Save &amp; Summarize</value></data>
+  <data name="DirectTrans_SaveDialog_Title" xml:space="preserve"><value>Save transcript</value></data>
+  <data name="DirectTrans_SaveDialog_Filter" xml:space="preserve"><value>Markdown files (*.md)|*.md</value></data>
+  <data name="DirectTrans_Status_Idle" xml:space="preserve"><value>Idle</value></data>
+  <data name="DirectTrans_Status_Preparing" xml:space="preserve"><value>Preparing…</value></data>
+  <data name="DirectTrans_Status_Starting" xml:space="preserve"><value>Starting…</value></data>
+  <data name="DirectTrans_Status_Listening" xml:space="preserve"><value>Listening…</value></data>
+  <data name="DirectTrans_Status_Stopping" xml:space="preserve"><value>Stopping…</value></data>
+  <data name="DirectTrans_Status_Error" xml:space="preserve"><value>Something went wrong</value></data>
+  <data name="DirectTrans_Disclaimer_Title" xml:space="preserve"><value>Before you start</value></data>
+  <data name="DirectTrans_Disclaimer_Body" xml:space="preserve"><value>This transcribes your microphone and this device's system audio, entirely on this device. Nothing is sent anywhere. Everyone speaking into your microphone appears as "me" in the transcript.</value></data>
+  <data name="DirectTrans_Disclaimer_ConsentExplainer" xml:space="preserve"><value>People on the other side (system audio) are not transcribed until they say a consent sentence naming Pia — until then their speech is only checked for that sentence, then discarded.</value></data>
+  <data name="DirectTrans_Disclaimer_CrossTalkLimitation" xml:space="preserve"><value>Note: overlapping speech (cross-talk) can occasionally be misattributed to the wrong speaker.</value></data>
+  <data name="DirectTrans_Disclaimer_ShortUtteranceLimitation" xml:space="preserve"><value>Very short remarks (under about 1.5 seconds) are dropped and never transcribed, consented or not.</value></data>
+  <data name="DirectTrans_Disclaimer_ConsentSentence_Heading" xml:space="preserve"><value>A participant can say, for example:</value></data>
+  <data name="DirectTrans_Disclaimer_ConsentSentence_En" xml:space="preserve"><value>My name is [Name] and I accept that Pia is recording this conversation.</value></data>
+  <data name="DirectTrans_Disclaimer_ConsentSentence_De" xml:space="preserve"><value>Mein Name ist [Name] und ich bin einverstanden, dass Pia dieses Gespräch aufzeichnet.</value></data>
+  <data name="DirectTrans_Disclaimer_ConsentSentence_Fr" xml:space="preserve"><value>Je m’appelle [Nom] et j’accepte que Pia enregistre cette conversation.</value></data>
+  <data name="DirectTrans_Disclaimer_Accept" xml:space="preserve"><value>I have informed everyone present and I'm ready to start</value></data>
+  <data name="DirectTrans_Stats_Toggle_Tooltip" xml:space="preserve"><value>Voice statistics</value></data>
+  <data name="DirectTrans_Stats_Title" xml:space="preserve"><value>Speaking time</value></data>
+  <data name="DirectTrans_Chip_AwaitingConsent" xml:space="preserve"><value>awaiting consent</value></data>
+  <data name="DirectTrans_Chip_Consented" xml:space="preserve"><value>consented</value></data>
+  <data name="DirectTrans_Chip_Revoked" xml:space="preserve"><value>revoked</value></data>
+  <data name="DirectTrans_RenameSpeaker_MenuItem" xml:space="preserve"><value>Rename speaker</value></data>
+  <data name="DirectTrans_RenameSpeaker_Title" xml:space="preserve"><value>Rename speaker</value></data>
+  <data name="DirectTrans_RenameSpeaker_Prompt" xml:space="preserve"><value>New name for {0}:</value></data>
+  <data name="DirectTrans_RevokeSpeaker_MenuItem" xml:space="preserve"><value>Revoke consent</value></data>
+  <data name="DirectTrans_SummaryPrompt" xml:space="preserve"><value>Please summarize the following transcript from a direct-transcription session recorded on {0}.</value></data>
+  <data name="Speaker_Me" xml:space="preserve"><value>me</value></data>
+  <data name="Speaker_Them" xml:space="preserve"><value>them</value></data>
 </root>

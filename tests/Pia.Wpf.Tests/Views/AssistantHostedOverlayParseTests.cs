@@ -25,6 +25,15 @@ public class AssistantHostedOverlayParseTests
     private const int MinimumMeetingAttendeePaths = 13;
 
     /// <summary>
+    /// Floor, not a count: this project cannot execute a markup-compile pass (macOS), so this is a manual
+    /// lower bound counted from the non-templated bindings in DirectTranscriptionOverlay.xaml (header,
+    /// disclaimer panel, footer) — deliberately conservative since <see cref="BindingPathWalker"/> only
+    /// walks the logical tree, not DataTemplate content (the consent-chip and bubble templates' bindings
+    /// do not count toward this floor).
+    /// </summary>
+    private const int MinimumDirectTranscriptionPaths = 15;
+
+    /// <summary>
     /// The root type for an overlay, read off the hosting ViewModel's property. <c>VoiceMode</c> is declared
     /// <c>VoiceModeViewModel?</c>; there is nothing to unwrap, because the annotation is metadata and
     /// <c>PropertyType</c> is the reference type itself.
@@ -52,7 +61,16 @@ public class AssistantHostedOverlayParseTests
     }
 
     [Fact]
-    public void BothOverlays_AreHostedOnTheDataContextPathTheirWalksReflectTheirRootsOff()
+    public void DirectTranscriptionOverlay_EveryBindingPath_ResolvesOnDirectTranscriptionViewModel()
+    {
+        var root = RootOf(nameof(AssistantViewModel.DirectTranscription));
+        Assert.Equal(typeof(DirectTranscriptionViewModel), root);
+
+        AssertWalks(() => new Pia.Views.DirectTranscriptionOverlay(), root, MinimumDirectTranscriptionPaths);
+    }
+
+    [Fact]
+    public void AllOverlays_AreHostedOnTheDataContextPathTheirWalksReflectTheirRootsOff()
     {
         // Batch 14 review D1, applied to two more sites: repoint AssistantView.xaml:574 from
         // {Binding VoiceMode} to {Binding MeetingAttendee} and every path in VoiceModeOverlay is dead at
@@ -61,7 +79,8 @@ public class AssistantHostedOverlayParseTests
         {
             var assistant = new Pia.Views.AssistantView();
             return BindingPathWalker.FindLogical<FrameworkElement>(assistant)
-                .Where(e => e is Pia.Views.VoiceModeOverlay or Pia.Views.MeetingAttendeeOverlay)
+                .Where(e => e is Pia.Views.VoiceModeOverlay or Pia.Views.MeetingAttendeeOverlay
+                    or Pia.Views.DirectTranscriptionOverlay)
                 .Select(e => $"{e.GetType().Name}=" +
                     (BindingPathWalker.BoundPath(e, FrameworkElement.DataContextProperty)
                         ?? "<no DataContext binding>"))
@@ -70,10 +89,13 @@ public class AssistantHostedOverlayParseTests
 
         // NON-VACUITY first: a per-site check over an empty walk passes over nothing, and the logical walk is
         // exactly the thing that could stop reaching them.
-        Assert.Equal(2, observed.Length);
+        Assert.Equal(3, observed.Length);
         Assert.Contains($"{nameof(Pia.Views.VoiceModeOverlay)}={nameof(AssistantViewModel.VoiceMode)}", observed);
         Assert.Contains(
             $"{nameof(Pia.Views.MeetingAttendeeOverlay)}={nameof(AssistantViewModel.MeetingAttendee)}", observed);
+        Assert.Contains(
+            $"{nameof(Pia.Views.DirectTranscriptionOverlay)}={nameof(AssistantViewModel.DirectTranscription)}",
+            observed);
     }
 
     private static void AssertWalks(Func<DependencyObject> construct, Type root, int floor)

@@ -577,6 +577,23 @@ public static class Bootstrapper
         services.AddSingleton<Services.MeetingAttendee.IDefaultBrowserResolver, Services.MeetingAttendee.DefaultBrowserResolver>();
         services.AddSingleton<Services.MeetingAttendee.IMeetingAttendeeService, Services.MeetingAttendee.MeetingAttendeeService>();
 
+        // Direct transcription (in-session voice consent + live capture). Session-scoped consent
+        // only (owner decision D-3/D-4): no persistent voice-profile store, no evidence retention worker.
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<Services.Consent.IConsentStateManager, Services.Consent.ConsentStateManager>();
+        services.AddSingleton<Services.Consent.INamedConsentClassifier, Services.Consent.NamedConsentClassifier>();
+        // Constructing this does NOT touch the disk: the assistant view is built at startup and
+        // transitively resolves this singleton, so the file (and its directory) are created on the first
+        // audit event instead — a launch that never opens direct transcription leaves nothing behind.
+        services.AddSingleton<Services.Consent.IConsentAuditLog>(sp =>
+            Services.Consent.JsonlConsentAuditLog.CreateForSession(
+                sp.GetRequiredService<ILogger<Services.Consent.JsonlConsentAuditLog>>()));
+        services.AddSingleton<Services.Consent.IConsentEvidenceStore>(sp => new Services.Consent.ConsentEvidenceStore(
+            Services.Consent.ConsentEvidenceStore.DefaultRootDirectory,
+            sp.GetRequiredService<DpapiHelper>(),
+            sp.GetRequiredService<ILogger<Services.Consent.ConsentEvidenceStore>>()));
+        services.AddSingleton<IDirectTranscriptionService, Services.LiveTranscription.DirectTranscriptionService>();
+
         // In-app toasts are re-implemented over Flow (design §7), retiring the hand-rolled Border toast.
         services.AddSingleton<INotificationService, Services.Flow.FlowNotificationService>();
 
@@ -663,6 +680,7 @@ public static class Bootstrapper
         services.AddScoped<HistoryViewModel>();
         services.AddScoped<AssistantViewModel>();
         services.AddScoped<MeetingAttendeeViewModel>();
+        services.AddScoped<DirectTranscriptionViewModel>();
         services.AddScoped<AssistantHistoryViewModel>();
         services.AddScoped<MemoryViewModel>();
         services.AddScoped<RemindersViewModel>();
