@@ -125,14 +125,17 @@ assumed absent.
   CARD (`ActionCardBuilder.cs:67`) and both grant-offer rules, because a card offering "Always allow" for a tool
   the floor will never auto-run is a button that does nothing.
 - [x] **T2-13b — SQLite integrity-check on open.** Fixed: `SqliteContext.CheckIntegrity`
-  (`SqliteContext.cs:118`) runs `PRAGMA integrity_check(1)` once, on the shared connection's first open only
-  (`:59`), and records the answer on `IntegrityStatus` (`:79`) beside an Information/Error log line — the support
+  (`SqliteContext.cs:134`) runs `PRAGMA integrity_check(1)` once, on the shared connection's first open only
+  (`:62`), and records the answer on `IntegrityStatus` (`:83`) beside an Information/Error log line — the support
   log is the surface, the property is what a test (and a future affordance) can read without a second full scan.
-  **BEFORE `EnsureSchema`, and that ordering is the item:** the check is read-only while `EnsureSchema` issues
-  DDL, conditional `ALTER`s, a seed `INSERT` and an FTS drop-and-rebuild, so on a damaged file this process would
-  otherwise WRITE first and bury the diagnosis under whatever the DDL happened to throw.
-  `SqliteContextIntegrityTests` pins that by damaging a page and asserting the diagnosis lands even when the
-  schema pass then throws. **"repair" is deliberately NOT attempted, and that is the finding, not an omission:**
+  **The ORDER is the item, and it is stricter than "before `EnsureSchema`":** `Open()` does not read page 1, so
+  the first statement that touches the file is the first that can throw — and with the check downstream of
+  `PRAGMA journal_mode=WAL` the one damage class that makes a file unopenable was the only class it could never
+  report (a review pass found this; a header-damaged file produced no verdict and no log line at all). The
+  sequence is now `busy_timeout` → check → WAL → schema: `busy_timeout` reads nothing, so it cannot fail on a
+  damaged file, and it gives the check its 3 s tolerance. `SqliteContextIntegrityTests` drives both an
+  interior-page-damaged database (diagnosis lands even though the schema pass then throws) and a file that is not
+  a database at all. **"repair" is deliberately NOT attempted, and that is the finding, not an omission:**
   SQLite's own remedy is a dump-and-reload — a decision about the user's history, not something to do silently at
   startup — and the one in-place move, `REINDEX`, is a write to the very file we have just established cannot be
   reasoned about, triggered by string-matching SQLite's diagnostic prose. Cost measured rather than assumed:
@@ -197,7 +200,9 @@ assumed absent.
   - [x] **Quiet mode for monitor jobs.** Built: `ScheduledJob.QuietOnSuccess` + a `QuietOnSuccess` column
     (`SqliteContext.cs`, `DEFAULT 0` so no existing job is quieted by a migration), honoured at ONE chokepoint —
     `ScheduledJobNotificationSurface.NotifySuccess`, which both producers come through — and authored by a
-    checkbox in the jobs editor (`AssistantView.xaml`, en/de/fr). **SUCCESS ONLY: `NotifyFailure` ignores it by
+    checkbox in the jobs editor (`AssistantView.xaml`, en/de/fr) that reaches BOTH service calls — the editor is
+    one panel for create and edit, and a review pass caught the create path dropping the flag silently.
+    **SUCCESS ONLY: `NotifyFailure` ignores it by
     design**, because a monitor that silently stops working is worse than one that is noisy. It suppresses the
     PUSH, not the record: the chat is still written and the job row still carries `LastFiredAt`. Device-local —
     absent from `SyncScheduledJob` and from `UpsertFromSyncAsync`'s SET list, so a pull cannot switch a
