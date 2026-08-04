@@ -397,6 +397,29 @@ public class SqliteContext : IDisposable
                 ResultChars         INTEGER NULL,
                 DurationMs          INTEGER NULL,
                 CreatedAt           TEXT    NOT NULL,
+                -- ---- gated-call correlation (T2-14). ALL FIVE NULLABLE: an existing user's rows keep every
+                -- value they had and read back NULL here, which SchemaVersion disambiguates (a v1 row never
+                -- recorded these; a v2 row with NULL genuinely had none). Still METADATA ONLY.
+                -- Provider-side correlation token for one gated call (FunctionCallContent.CallId), so a row
+                -- lines up with the provider round-trip in a log. Shape- and length-bounded by
+                -- AgentTimelineScope.SanitizeCallId (tool-identifier charset, 128 chars) on every arm, which is
+                -- what keeps an argument, a path or a JSON blob out of it — not a promise that the value is
+                -- unreadable. NULL when the provider gave none.
+                ToolCallId          TEXT    NULL,
+                -- The provider tool-loop counter (1-based, as every log line in that loop prints it), carried
+                -- from AiClientService through the tool-handler dispatch context. NULL on the synthetic
+                -- truncation marker, which belongs to no round.
+                Round               INTEGER NULL,
+                -- Monotonic per STEP, allocated in memory in the same critical section as Seq (which is per
+                -- RUN). NULL when StepId is NULL (run-level turn, truncation marker): an ordinal without a
+                -- step would invent one, and Seq already orders those rows.
+                StepOrdinal         INTEGER NULL,
+                -- The instant the authorization question was posed (policy consulted, or the card shown to a
+                -- human) and the instant it was answered. Timestamps CARRIED to the single write-once row,
+                -- never a second row. DecidedAt is NULL while a decision is genuinely still pending (the
+                -- unattended ParkedForApproval row); both are NULL on the unrouted arm, which asked no gate.
+                RequestedAt         TEXT    NULL,
+                DecidedAt           TEXT    NULL,
                 FOREIGN KEY (RunId) REFERENCES AgentRuns(Id) ON DELETE CASCADE
             );
 
@@ -729,6 +752,63 @@ public class SqliteContext : IDisposable
         {
             using var addCol = _connection.CreateCommand();
             addCol.CommandText = "ALTER TABLE AssistantChats ADD COLUMN WorkingDirectory TEXT";
+            addCol.ExecuteNonQuery();
+        }
+
+        // AgentTimelineEvents gained gated-call correlation columns (T2-14). Fresh databases already have them
+        // from the CREATE TABLE above, so these PRAGMA checks short-circuit and no ALTER is issued. All five
+        // are NULLABLE with no default: an existing user's rows keep every value they had, and a NULL means
+        // "this build did not record it" (a SchemaVersion 1 row) rather than a lost fact. One PRAGMA pass for
+        // all five rather than five passes, because they always arrive together.
+        var hasToolCallId = false;
+        var hasRound = false;
+        var hasStepOrdinal = false;
+        var hasRequestedAt = false;
+        var hasDecidedAt = false;
+        using (var p = _connection!.CreateCommand())
+        {
+            p.CommandText = "PRAGMA table_info(AgentTimelineEvents)";
+            using var r = p.ExecuteReader();
+            while (r.Read())
+            {
+                switch (r.GetString(1))
+                {
+                    case "ToolCallId": hasToolCallId = true; break;
+                    case "Round": hasRound = true; break;
+                    case "StepOrdinal": hasStepOrdinal = true; break;
+                    case "RequestedAt": hasRequestedAt = true; break;
+                    case "DecidedAt": hasDecidedAt = true; break;
+                }
+            }
+        }
+        if (!hasToolCallId)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AgentTimelineEvents ADD COLUMN ToolCallId TEXT NULL";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasRound)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AgentTimelineEvents ADD COLUMN Round INTEGER NULL";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasStepOrdinal)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AgentTimelineEvents ADD COLUMN StepOrdinal INTEGER NULL";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasRequestedAt)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AgentTimelineEvents ADD COLUMN RequestedAt TEXT NULL";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasDecidedAt)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AgentTimelineEvents ADD COLUMN DecidedAt TEXT NULL";
             addCol.ExecuteNonQuery();
         }
     }

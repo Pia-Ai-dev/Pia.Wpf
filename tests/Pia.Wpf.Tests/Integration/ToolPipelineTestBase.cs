@@ -186,7 +186,7 @@ public abstract class ToolPipelineTestBase
 
         await foreach (var item in _aiClientService.GetChatCompletionWithToolsAsync(
             messages, provider, tools,
-            async toolCall => await HandleToolCallAsync(toolCall, toolCalls),
+            async (toolCall, _) => await HandleToolCallAsync(toolCall, toolCalls),
             cancellationToken: cancellationToken))
         {
             if (item is TextDelta td)

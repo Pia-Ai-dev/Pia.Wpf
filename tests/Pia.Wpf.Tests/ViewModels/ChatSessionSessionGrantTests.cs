@@ -397,20 +397,20 @@ public sealed class ChatSessionSessionGrantTests
     {
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(),
                 Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
                 contextBudget: Arg.Any<AgentContextBudget?>())
-            .Returns(ci => Stream(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), toolNames));
+            .Returns(ci => Stream(ci.ArgAt<ToolCallHandler?>(3), toolNames));
     }
 
     private static async IAsyncEnumerable<ChatStreamItem> Stream(
-        Func<FunctionCallContent, Task<object?>>? handler, string[] toolNames)
+        ToolCallHandler? handler, string[] toolNames)
     {
         if (handler is not null)
         {
             var i = 0;
             foreach (var name in toolNames)
-                await handler(new FunctionCallContent($"call-{i++}", name, new Dictionary<string, object?>()));
+                await handler(new FunctionCallContent($"call-{i++}", name, new Dictionary<string, object?>()), new ToolDispatchContext(1));
         }
 
         yield return new TextDelta("Done.");

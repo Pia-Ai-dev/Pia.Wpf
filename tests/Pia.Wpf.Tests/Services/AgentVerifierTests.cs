@@ -73,10 +73,10 @@ public sealed class AgentVerifierTests : IDisposable
     // Drives one verify turn: invokes the captured toolHandler with a synthetic emit_verdict call
     // (when emitArgs is set) then yields Finished carrying usage — the loop drains the whole stream.
     private static async IAsyncEnumerable<ChatStreamItem> VerdictStream(
-        Func<FunctionCallContent, Task<object?>>? handler, Dictionary<string, object?>? emitArgs, UsageDetails? usage)
+        ToolCallHandler? handler, Dictionary<string, object?>? emitArgs, UsageDetails? usage)
     {
         if (handler is not null && emitArgs is not null)
-            await handler(new FunctionCallContent(Guid.NewGuid().ToString(), "emit_verdict", emitArgs));
+            await handler(new FunctionCallContent(Guid.NewGuid().ToString(), "emit_verdict", emitArgs), new ToolDispatchContext(1));
         await Task.Yield();
         yield return new Finished(usage, "test-model");
     }
@@ -88,13 +88,13 @@ public sealed class AgentVerifierTests : IDisposable
     {
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 var messages = ci.ArgAt<IList<ChatMessage>>(0);
                 _systemPrompts.Add(messages[0].Text ?? string.Empty);
                 _userPrompts.Add(messages[1].Text ?? string.Empty); // Batch 08 F11: the executed-step listing
-                return VerdictStream(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), emitArgs, usage);
+                return VerdictStream(ci.ArgAt<ToolCallHandler?>(3), emitArgs, usage);
             });
     }
 
@@ -117,7 +117,7 @@ public sealed class AgentVerifierTests : IDisposable
         Assert.Empty(result.Missing);
         _ai.Received(1).GetChatCompletionWithToolsAsync(
             Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-            Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>());
+            Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -142,7 +142,7 @@ public sealed class AgentVerifierTests : IDisposable
         Assert.True(result.Passed); // degrade → accept
         _ai.Received(2).GetChatCompletionWithToolsAsync(
             Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-            Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>());
+            Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>());
     }
 
     [Fact]

@@ -275,7 +275,7 @@ public class AiClientServiceContextLengthDiagnosisTests
             [new ChatMessage(ChatRole.User, GoalText)],
             provider,
             tools: [AIFunctionFactory.Create(() => "ok", "ping", "A test tool.")],
-            toolHandler: _ => Task.FromResult<object?>("done"),
+            toolHandler: (_, _) => Task.FromResult<object?>("done"),
             mode: null,
             cancellationToken: TestContext.Current.CancellationToken,
             contextBudget: new AgentContextBudget(8_000, 2_000)))

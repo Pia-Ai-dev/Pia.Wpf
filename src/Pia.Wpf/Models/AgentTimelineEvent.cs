@@ -61,6 +61,26 @@ public enum AgentTimelineOutcome
 /// captured on the other side of that wrapper.</param>
 /// <param name="ResultChars">Length of the tool result as the handler returned it — again pre-tokenization.
 /// Null when the tool did not run, or returned a non-string.</param>
+/// <param name="ToolCallId">The provider's own correlation token for this call
+/// (<c>FunctionCallContent.CallId</c>), so a row lines up with the provider round-trip in a log. Metadata
+/// only BECAUSE it is shape- and length-bounded by <c>AgentTimelineScope.SanitizeCallId</c> — the raw string
+/// is provider-JSON-authored on EVERY arm (unlike the tool NAME, which is model-authored on the unrouted arm
+/// alone), so it is sanitized everywhere. Null when the provider gave none, or when the arm asked no gate.</param>
+/// <param name="Round">The provider tool-loop round this call was dispatched in, 1-BASED to match every log
+/// line in <c>AiClientService.GetChatCompletionWithToolsAsync</c>'s loop. Null on the synthetic truncation
+/// marker, which belongs to no round, and on any surface that does not carry a dispatch context.</param>
+/// <param name="StepOrdinal">Monotonic per STEP — <see cref="Seq"/>'s per-run sibling. Service-assigned in
+/// the same critical section as <see cref="Seq"/>, so a caller-built row carries null and the service fills
+/// it. Stays null when <see cref="StepId"/> is null (the planner-degrade run-level turn, the truncation
+/// marker): a shared null-bucket counter would invent a step that does not exist, and <see cref="Seq"/>
+/// already orders those rows.</param>
+/// <param name="RequestedAt">When the authorization question was POSED — the instant before the policy
+/// resolver was consulted, or the instant an action card became visible to a human. Null on the unrouted arm,
+/// which consulted no gate.</param>
+/// <param name="DecidedAt">When that question was ANSWERED. Null while a decision is genuinely still pending:
+/// the unattended park writes its row immediately (so the run's audit trail records that it stopped to ask)
+/// and the human's answer arrives later as a resume that writes a FRESH row. It is never back-filled —
+/// back-filling would break the write-once model this record's remarks describe.</param>
 public sealed record AgentTimelineEvent(
     Guid Id,
     Guid RunId,
@@ -76,8 +96,19 @@ public sealed record AgentTimelineEvent(
     int? ArgsChars,
     int? ResultChars,
     long? DurationMs,
-    DateTime CreatedAt)
+    DateTime CreatedAt,
+    string? ToolCallId,
+    int? Round,
+    long? StepOrdinal,
+    DateTime? RequestedAt,
+    DateTime? DecidedAt)
 {
-    /// <summary>Row shape version, so a future shape change is detectable rather than misread.</summary>
-    public int SchemaVersion { get; init; } = 1;
+    /// <summary>
+    /// Row shape version, so a future shape change is detectable rather than misread. <b>2</b> since T2-14
+    /// widened the row with the five correlation columns; the DDL still says <c>DEFAULT 1</c> deliberately,
+    /// because a row an older build wrote genuinely IS a v1 row. That is what makes a NULL
+    /// <see cref="ToolCallId"/> readable: on a v1 row it means "never recorded", on a v2 row "the provider
+    /// gave none". Nothing branches on it — it exists so the distinction is recoverable, not so code forks.
+    /// </summary>
+    public int SchemaVersion { get; init; } = 2;
 }

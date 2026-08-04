@@ -56,7 +56,7 @@ public sealed class HeadlessTurnExecutorTests
         var ai = Substitute.For<IAiClientService>();
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
                 contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(_ => Drive("reply"));
 
@@ -173,13 +173,13 @@ public sealed class HeadlessTurnExecutorTests
         var ai = Substitute.For<IAiClientService>();
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
                 contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci =>
             {
                 capturedTools = ci.ArgAt<IList<AITool>?>(2);
                 capturedProvider = ci.ArgAt<AiProvider>(1);
-                return DriveWithTool(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), toolCalls);
+                return DriveWithTool(ci.ArgAt<ToolCallHandler?>(3), toolCalls);
             });
 
         var executed = false;
@@ -261,9 +261,9 @@ public sealed class HeadlessTurnExecutorTests
         var ai = Substitute.For<IAiClientService>();
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
                 contextBudget: Arg.Any<AgentContextBudget?>())
-            .Returns(ci => DriveWithTool(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), toolCalls));
+            .Returns(ci => DriveWithTool(ci.ArgAt<ToolCallHandler?>(3), toolCalls));
 
         var executed = false;
         var plugins = Substitute.For<IPluginService>();
@@ -338,9 +338,9 @@ public sealed class HeadlessTurnExecutorTests
         var ai = Substitute.For<IAiClientService>();
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
                 contextBudget: Arg.Any<AgentContextBudget?>())
-            .Returns(ci => DriveWithTool(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), toolCalls));
+            .Returns(ci => DriveWithTool(ci.ArgAt<ToolCallHandler?>(3), toolCalls));
 
         var plugins = Substitute.For<IPluginService>();
         plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
@@ -398,11 +398,11 @@ public sealed class HeadlessTurnExecutorTests
     }
 
     private static async IAsyncEnumerable<ChatStreamItem> DriveWithTool(
-        Func<FunctionCallContent, Task<object?>>? handler, IReadOnlyList<FunctionCallContent> toolCalls)
+        ToolCallHandler? handler, IReadOnlyList<FunctionCallContent> toolCalls)
     {
         if (handler is not null)
             foreach (var call in toolCalls)
-                await handler(call);
+                await handler(call, new ToolDispatchContext(1));
         await Task.Yield();
         yield return new TextDelta("reply");
         yield return new Finished(null, "test-model");
@@ -551,7 +551,7 @@ public sealed class HeadlessTurnExecutorTests
             // One distinct reply per step turn, so the persisted transcript is order-verifiable.
             Ai.GetChatCompletionWithToolsAsync(
                     Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                    Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                    Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
                     contextBudget: Arg.Any<AgentContextBudget?>())
                 .Returns(_ =>
                 {
@@ -925,7 +925,7 @@ public sealed class HeadlessTurnExecutorTests
 
         h.Ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
                 contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci =>
             {
@@ -969,7 +969,7 @@ public sealed class HeadlessTurnExecutorTests
         var captured = new List<List<ChatMessage>>();
         h.Ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
                 contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci =>
             {
@@ -1139,7 +1139,7 @@ public sealed class HeadlessTurnExecutorTests
         var captured = new List<(List<ChatMessage>, AiProvider)>();
         h.Ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
                 contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci =>
             {

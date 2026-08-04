@@ -56,7 +56,7 @@ public sealed class ChatSessionGoldenTranscriptTests
     {
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(_ => factory());
     }
 
@@ -78,19 +78,19 @@ public sealed class ChatSessionGoldenTranscriptTests
     {
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
-                var handler = ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3);
+                var handler = ci.ArgAt<ToolCallHandler?>(3);
                 return ToolThenTextStream(handler, toolName, finalText);
             });
     }
 
     private static async IAsyncEnumerable<ChatStreamItem> ToolThenTextStream(
-        Func<FunctionCallContent, Task<object?>>? handler, string toolName, string finalText)
+        ToolCallHandler? handler, string toolName, string finalText)
     {
         if (handler is not null)
-            await handler(new FunctionCallContent("call-1", toolName, new Dictionary<string, object?>()));
+            await handler(new FunctionCallContent("call-1", toolName, new Dictionary<string, object?>()), new ToolDispatchContext(1));
         yield return new TextDelta(finalText);
         yield return new Finished(null, "m");
         await Task.Yield();

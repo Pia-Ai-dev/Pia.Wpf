@@ -18,6 +18,13 @@ internal sealed class RecordingTimelineService : IAgentTimelineService
     private readonly List<AgentTimelineEvent> _rows = [];
     private long _seq;
 
+    /// <summary>
+    /// <c>StepOrdinal</c>'s allocator, mirroring <c>AgentTimelineService</c>'s: per STEP, and no entry (so no
+    /// ordinal) for a run-level row. Present because the real service assigns this column, not the gate — a
+    /// fake that left it null would make every gate assertion about it read null and look like a gate bug.
+    /// </summary>
+    private readonly Dictionary<Guid, long> _stepSeq = [];
+
     /// <summary>Drives the failure-isolation fact: a broken bookkeeping store must not fail a step.</summary>
     public bool ThrowOnEmit { get; set; }
 
@@ -32,7 +39,17 @@ internal sealed class RecordingTimelineService : IAgentTimelineService
             throw new InvalidOperationException("the timeline store is broken");
 
         lock (_gate)
-            _rows.Add(e with { Seq = ++_seq });
+        {
+            long? stepOrdinal = null;
+            if (e.StepId is { } stepId && e.Kind == AgentTimelineEventKind.ToolCall)
+            {
+                _stepSeq.TryGetValue(stepId, out var last);
+                stepOrdinal = last + 1;
+                _stepSeq[stepId] = stepOrdinal.Value;
+            }
+
+            _rows.Add(e with { Seq = ++_seq, StepOrdinal = stepOrdinal });
+        }
     }
 
     public Task<IReadOnlyList<AgentTimelineEvent>> GetForRunAsync(Guid runId, CancellationToken ct = default)

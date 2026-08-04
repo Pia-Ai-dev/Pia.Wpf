@@ -658,7 +658,7 @@ public sealed class D5PausePremiseTests : IDisposable
         var ai = Substitute.For<IAiClientService>();
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci => stream is not null
                 ? stream(ci.ArgAt<IList<ChatMessage>>(0), ci.ArgAt<CancellationToken>(6))
                 : Drive());

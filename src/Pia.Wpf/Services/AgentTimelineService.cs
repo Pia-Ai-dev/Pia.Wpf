@@ -53,6 +53,15 @@ namespace Pia.Services;
 /// <b>Metadata only</b> — see <see cref="AgentTimelineEvent"/>. No column can hold an argument, a result or a
 /// path, and the log lines here carry ids, counts, a tool name and an exception TYPE, nothing else.
 /// </para>
+/// <para>
+/// <b>THREE chains, not two</b> (T2-G1). Alongside <c>_writeTail</c> (the SQLite writer) there is
+/// <see cref="_observerTail"/>, a second serial chain that notifies <see cref="IRunObserver"/>s. Both are
+/// ENQUEUED under <see cref="_gate"/> in the same critical section that allocated <c>Seq</c>, which is what
+/// gives observers exactly the table's order; both EXECUTE off it. They are kept separate on purpose: chaining
+/// notifications onto <c>_writeTail</c> would let one blocking observer stall the audit INSERTs, hang
+/// <c>DrainAsync</c> and trip <c>Dispose</c>'s 2 s bound — the audit trail held hostage by a bystander.
+/// <c>Dispose</c> therefore waits on <c>_writeTail</c> ONLY.
+/// </para>
 /// </summary>
 public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
 {
@@ -73,6 +82,41 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
     private SqliteConnection? _connection;
     private Task _writeTail = Task.CompletedTask;
 
+    /// <summary>
+    /// The registered bystanders, materialized once. An ARRAY rather than the injected
+    /// <c>IEnumerable&lt;&gt;</c> so the notify path cannot re-enumerate a lazy sequence (MS.DI's
+    /// <c>IEnumerable&lt;T&gt;</c> is already an array, but a test or a future decorator's need not be) and so
+    /// the zero-observer check is a field read.
+    /// </summary>
+    private readonly IRunObserver[] _observers;
+
+    /// <summary>
+    /// The observer notification chain. Guarded by <see cref="_gate"/> exactly as <c>_writeTail</c> is, and
+    /// deliberately NOT the same chain — see the class remarks. Never awaited by <c>Dispose</c>: shutdown must
+    /// not be hostage to a stuck observer, whose documented consequence is that a queued notification may run
+    /// after <c>Dispose</c> returns. That is harmless because notification touches no connection and no slot.
+    /// </summary>
+    private Task _observerTail = Task.CompletedTask;
+
+    /// <summary>Count of notifications ENQUEUED (one per accepted event, not one per observer). Guarded by
+    /// <see cref="_gate"/>. Exists for the tests, which would otherwise have to prove a negative with a
+    /// <c>Task.Delay</c>.</summary>
+    private long _notifyDispatches;
+
+    /// <summary>
+    /// Set while an observer callback is on the stack, so an observer that calls back into <see cref="Emit"/>
+    /// gets its row written and capped as usual but produces NO further notification. What this prevents is an
+    /// unbounded notification chain, NOT a deadlock: notification runs holding no lock, and a re-entrant
+    /// <c>ContinueWith</c> would merely queue behind the callback that scheduled it.
+    /// <para>
+    /// <c>AsyncLocal</c> rather than <c>[ThreadStatic]</c> because an observer is free to <c>await</c>
+    /// internally, which moves it to another thread; the flag has to follow the logical call, and the
+    /// continuation's <c>ExecutionContext</c> is restored on exit so the value cannot leak to the pool thread's
+    /// next work item.
+    /// </para>
+    /// </summary>
+    private static readonly AsyncLocal<bool> _inNotify = new();
+
     /// <summary>Volatile so the fast path can check it without serializing against the writer.</summary>
     private volatile bool _disposed;
 
@@ -84,15 +128,37 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
         public int Count;
         public bool CapNoted;
 
+        /// <summary>
+        /// <c>StepOrdinal</c>'s allocator: the last value handed out per STEP, keyed by <c>StepId</c>.
+        /// Incremented inside the SAME <c>lock (_gate)</c> critical section as <see cref="NextSeq"/> — that
+        /// shared lock is the whole reason a step's ordinals are monotonic and gap-free.
+        /// <para>
+        /// Rows with a NULL <c>StepId</c> get NO entry here and NO ordinal: a shared null-bucket counter would
+        /// invent a step that does not exist, and <c>Seq</c> already orders run-level rows. Lives inside the
+        /// slot so <c>PruneOlderThanAsync</c>'s <c>_slots.Clear()</c> drops it with everything else and the
+        /// re-seed reconstructs it from <c>MAX(StepOrdinal)</c> — a per-step dictionary hanging off the
+        /// SERVICE would survive that clear holding counts the table no longer backs.
+        /// </para>
+        /// </summary>
+        public readonly Dictionary<Guid, long> StepSeq = [];
+
         /// <summary>The seed query threw. The slot is still cached (so the segment keeps a usable sequence) but
         /// it is NOT trusted: the next emit re-attempts the aggregate.</summary>
         public bool SeedFailed;
     }
 
-    public AgentTimelineService(SqliteContext context, ILogger<AgentTimelineService> logger)
+    /// <param name="observers">The telemetry bystanders (T2-G1). OPTIONAL with an empty default: zero
+    /// registrations is the normal state, MS.DI injects an empty sequence for it, and leaving the parameter
+    /// defaulted keeps every direct <c>new AgentTimelineService(ctx, logger)</c> in the suites compiling.
+    /// Never a "default no-op observer" — the whole point is that no observers costs no work.</param>
+    public AgentTimelineService(
+        SqliteContext context,
+        ILogger<AgentTimelineService> logger,
+        IEnumerable<IRunObserver>? observers = null)
     {
         _connectionString = context.ConnectionString;
         _logger = logger;
+        _observers = observers?.ToArray() ?? [];
 
         // Force the shared context to open + run EnsureSchema (which creates AgentTimelineEvents) BEFORE our
         // dedicated connection ever opens — same reason AgentRunService does it at composition time.
@@ -150,6 +216,16 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
                         ResultChars = null,
                         DurationMs = null,
                         CreatedAt = DateTime.UtcNow,
+                        // The marker is NOT a tool call, so it inherits none of the correlation fields the
+                        // capped event happened to carry. Spelled out because the compiler cannot catch a
+                        // `with` block that silently keeps a field: a marker claiming round 4 and the last
+                        // real call's CallId would read as a gated call that never happened. StepOrdinal is
+                        // nulled alongside StepId for the same reason, and no per-step counter is touched.
+                        ToolCallId = null,
+                        Round = null,
+                        StepOrdinal = null,
+                        RequestedAt = null,
+                        DecidedAt = null,
                     };
                     _logger.LogInformation(
                         "Timeline cap reached for run {RunId} after {Max} events; later events are dropped",
@@ -157,7 +233,18 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
                 }
                 else
                 {
-                    row = e with { Seq = ++slot.NextSeq };
+                    // Seq (per RUN) and StepOrdinal (per STEP) are allocated together, under the one lock, so
+                    // a step's ordinals cannot interleave or gap. A run-level row (StepId null) takes Seq
+                    // only — see RunSlot.StepSeq for why there is no null bucket.
+                    long? stepOrdinal = null;
+                    if (e.StepId is { } stepId)
+                    {
+                        slot.StepSeq.TryGetValue(stepId, out var lastForStep);
+                        stepOrdinal = lastForStep + 1;
+                        slot.StepSeq[stepId] = stepOrdinal.Value;
+                    }
+
+                    row = e with { Seq = ++slot.NextSeq, StepOrdinal = stepOrdinal };
                 }
 
                 slot.Count++;
@@ -170,12 +257,60 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
                     CancellationToken.None,
                     TaskContinuationOptions.None,
                     TaskScheduler.Default);
+
+                // T2-G1: the bystanders, ENQUEUED here — under the same lock, in the same order the table gets
+                // — and EXECUTED on their own chain. With no observers registered this is a field read and
+                // nothing else: no delegate, no Task, no ContinueWith. Notifying `row` and not `e` matters:
+                // `row` is what the INSERT above carries, service-assigned Seq and StepOrdinal included.
+                if (_observers.Length > 0 && !_inNotify.Value)
+                {
+                    _notifyDispatches++;
+                    _observerTail = _observerTail.ContinueWith(
+                        _ => Notify(row),
+                        CancellationToken.None,
+                        TaskContinuationOptions.None,
+                        TaskScheduler.Default);
+                }
             }
         }
         catch (Exception ex)
         {
             // Failure isolation: emitting an audit event can never fail a step.
             _logger.LogWarning(ex, "Timeline emit failed for run {RunId} tool {ToolName}", e.RunId, e.ToolName);
+        }
+    }
+
+    /// <summary>
+    /// The observer chain's body (T2-G1). Runs on a pool thread holding NEITHER lock, so an observer may call
+    /// back into <see cref="Emit"/> without deadlocking.
+    /// <para>
+    /// Each callback is individually try/caught: one throwing observer must not cost the row (already queued
+    /// on the other chain), the run, or the NEXT observer. The log line carries the observer's type, the run id
+    /// and the seq — plus the exception type via <c>ILogger</c> — and nothing from the event, because the row
+    /// being metadata is not a licence to start logging its contents.
+    /// </para>
+    /// </summary>
+    private void Notify(AgentTimelineEvent row)
+    {
+        _inNotify.Value = true;
+        try
+        {
+            foreach (var observer in _observers)
+            {
+                try
+                {
+                    observer.OnTimelineEvent(row);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Timeline observer {Observer} threw for run {RunId} seq {Seq}",
+                        observer.GetType().Name, row.RunId, row.Seq);
+                }
+            }
+        }
+        finally
+        {
+            _inNotify.Value = false;
         }
     }
 
@@ -197,10 +332,12 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
                 cmd.CommandText = """
                     INSERT INTO AgentTimelineEvents
                         (Id, SchemaVersion, RunId, StepId, Seq, Kind, Surface, Decision, Outcome,
-                         ToolName, ToolClass, PluginId, ArgsChars, ResultChars, DurationMs, CreatedAt)
+                         ToolName, ToolClass, PluginId, ArgsChars, ResultChars, DurationMs, CreatedAt,
+                         ToolCallId, Round, StepOrdinal, RequestedAt, DecidedAt)
                     VALUES
                         (@Id, @SchemaVersion, @RunId, @StepId, @Seq, @Kind, @Surface, @Decision, @Outcome,
-                         @ToolName, @ToolClass, @PluginId, @ArgsChars, @ResultChars, @DurationMs, @CreatedAt);
+                         @ToolName, @ToolClass, @PluginId, @ArgsChars, @ResultChars, @DurationMs, @CreatedAt,
+                         @ToolCallId, @Round, @StepOrdinal, @RequestedAt, @DecidedAt);
                     """;
                 cmd.Parameters.AddWithValue("@Id", row.Id.ToString());
                 cmd.Parameters.AddWithValue("@SchemaVersion", row.SchemaVersion);
@@ -218,6 +355,13 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
                 cmd.Parameters.AddWithValue("@ResultChars", (object?)row.ResultChars ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@DurationMs", (object?)row.DurationMs ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@CreatedAt", row.CreatedAt.ToString("O"));
+                cmd.Parameters.AddWithValue("@ToolCallId", (object?)row.ToolCallId ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@Round", (object?)row.Round ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@StepOrdinal", (object?)row.StepOrdinal ?? DBNull.Value);
+                // "O" round-trip on write + DateTimeStyles.RoundtripKind on read, exactly as CreatedAt does,
+                // so the three instants on a row are comparable without a format caveat.
+                cmd.Parameters.AddWithValue("@RequestedAt", (object?)row.RequestedAt?.ToString("O") ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@DecidedAt", (object?)row.DecidedAt?.ToString("O") ?? DBNull.Value);
                 cmd.ExecuteNonQuery();
             }
         }
@@ -251,17 +395,47 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
             lock (_ioGate)
             {
                 using var cmd = Connection().CreateCommand();
-                cmd.CommandText =
-                    "SELECT COALESCE(MAX(Seq), 0), COUNT(*) FROM AgentTimelineEvents WHERE RunId = @RunId;";
+                // GROUPED BY StepId so ONE aggregate seeds the run value AND every per-step ordinal. Still one
+                // indexed scan per RUN — IX_AgentTimelineEvents_RunId(RunId, Seq) — not one query per step:
+                // grouping turns a single row into a handful, it does not add I/O.
+                cmd.CommandText = """
+                    SELECT StepId, COALESCE(MAX(Seq), 0), COALESCE(MAX(StepOrdinal), 0), COUNT(*)
+                    FROM AgentTimelineEvents
+                    WHERE RunId = @RunId
+                    GROUP BY StepId;
+                    """;
                 cmd.Parameters.AddWithValue("@RunId", runId.ToString());
                 using var reader = cmd.ExecuteReader();
-                if (reader.Read())
+
+                // The run's values are folded ACROSS the groups: MAX for Seq (the largest of the per-group
+                // maxima is the run's maximum) but SUM for Count — Math.Max per group would seed the run's
+                // count with its biggest STEP, and a run at 500 rows spread over five steps would then keep
+                // emitting past the cap.
+                long maxSeq = 0;
+                var totalRows = 0;
+                while (reader.Read())
                 {
-                    // Math.Max, not assignment, for the retry case above: the reconciled value must never move
-                    // the sequence BACKWARDS over rows this segment already emitted.
-                    slot.NextSeq = Math.Max(slot.NextSeq, reader.GetInt64(0));
-                    slot.Count = Math.Max(slot.Count, reader.GetInt32(1));
+                    maxSeq = Math.Max(maxSeq, reader.GetInt64(1));
+                    totalRows += reader.GetInt32(3);
+
+                    // The NULL-StepId group (run-level turns, truncation markers) contributes to the run
+                    // values above and gets no StepSeq entry: those rows carry no ordinal to continue.
+                    if (reader.IsDBNull(0)) continue;
+
+                    var stepId = Guid.Parse(reader.GetString(0));
+                    var persisted = reader.GetInt64(2);
+                    // Math.Max per STEP for exactly the reason the run value uses it: on a retry this slot may
+                    // already have handed out ordinals from its in-memory sequence, and rows carrying them may
+                    // not have been written yet. The reconciled value must never move a step BACKWARDS.
+                    slot.StepSeq[stepId] = slot.StepSeq.TryGetValue(stepId, out var inMemory)
+                        ? Math.Max(inMemory, persisted)
+                        : persisted;
                 }
+
+                // Math.Max, not assignment, for the retry case above: the reconciled value must never move
+                // the sequence BACKWARDS over rows this segment already emitted.
+                slot.NextSeq = Math.Max(slot.NextSeq, maxSeq);
+                slot.Count = Math.Max(slot.Count, totalRows);
 
                 slot.SeedFailed = false;
             }
@@ -301,7 +475,8 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
                 using var cmd = Connection().CreateCommand();
                 cmd.CommandText = """
                     SELECT Id, SchemaVersion, RunId, StepId, Seq, Kind, Surface, Decision, Outcome,
-                           ToolName, ToolClass, PluginId, ArgsChars, ResultChars, DurationMs, CreatedAt
+                           ToolName, ToolClass, PluginId, ArgsChars, ResultChars, DurationMs, CreatedAt,
+                           ToolCallId, Round, StepOrdinal, RequestedAt, DecidedAt
                     FROM AgentTimelineEvents
                     WHERE RunId = @RunId
                     ORDER BY Seq;
@@ -372,6 +547,42 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
         }
     }
 
+    /// <summary>
+    /// The same barrier for the OBSERVER chain (T2-G1), mirroring <see cref="DrainAsync"/> so no observer test
+    /// needs a <c>Task.Delay</c>. Separate from <see cref="DrainAsync"/> for the same reason the chains are
+    /// separate: a test that wants "the row landed" must not be made to wait on a bystander.
+    /// </summary>
+    internal Task ObserverDrainAsync()
+    {
+        lock (_gate)
+        {
+            return _observerTail;
+        }
+    }
+
+    /// <summary>
+    /// How many notifications have been ENQUEUED — one per accepted event, regardless of observer count, and
+    /// zero when none are registered. The observable half of "no observers costs nothing": a test can assert
+    /// this stayed at 0 while the rows still landed, which no timing-based check could.
+    /// </summary>
+    internal long NotifyDispatches
+    {
+        get { lock (_gate) { return _notifyDispatches; } }
+    }
+
+    /// <summary>
+    /// The "O" round-trip format read back with its matching style, shared by <see cref="Map"/>'s three instant
+    /// columns (<c>CreatedAt</c>, <c>RequestedAt</c>, <c>DecidedAt</c>) so all three parse identically instead
+    /// of three inlined copies of the same two arguments.
+    /// </summary>
+    private static DateTime ParseTimestamp(string value) =>
+        DateTime.Parse(value, null, System.Globalization.DateTimeStyles.RoundtripKind);
+
+    /// <summary>
+    /// Reader indexes are hardcoded POSITIONS in <c>GetForRunAsync</c>'s SELECT list, so the five T2-14
+    /// columns were appended at its END (16..20): inserting one mid-list would silently shift every later
+    /// read and mis-type the row. Keep the two lists in the same order.
+    /// </summary>
     private static AgentTimelineEvent Map(SqliteDataReader r) => new(
         Id: Guid.Parse(r.GetString(0)),
         RunId: Guid.Parse(r.GetString(2)),
@@ -389,7 +600,12 @@ public sealed class AgentTimelineService : IAgentTimelineService, IDisposable
         ArgsChars: r.IsDBNull(12) ? null : r.GetInt32(12),
         ResultChars: r.IsDBNull(13) ? null : r.GetInt32(13),
         DurationMs: r.IsDBNull(14) ? null : r.GetInt64(14),
-        CreatedAt: DateTime.Parse(r.GetString(15), null, System.Globalization.DateTimeStyles.RoundtripKind))
+        CreatedAt: ParseTimestamp(r.GetString(15)),
+        ToolCallId: r.IsDBNull(16) ? null : r.GetString(16),
+        Round: r.IsDBNull(17) ? null : r.GetInt32(17),
+        StepOrdinal: r.IsDBNull(18) ? null : r.GetInt64(18),
+        RequestedAt: r.IsDBNull(19) ? null : ParseTimestamp(r.GetString(19)),
+        DecidedAt: r.IsDBNull(20) ? null : ParseTimestamp(r.GetString(20)))
     {
         SchemaVersion = r.GetInt32(1),
     };

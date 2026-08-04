@@ -152,7 +152,7 @@ public class TokenizingAiClientService : IAiClientService
         IList<ChatMessage> messages,
         AiProvider provider,
         IList<AITool>? tools = null,
-        Func<FunctionCallContent, Task<object?>>? toolHandler = null,
+        ToolCallHandler? toolHandler = null,
         string? mode = null,
         Guid? managedPersonaId = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default,
@@ -289,9 +289,12 @@ public class TokenizingAiClientService : IAiClientService
         return result;
     }
 
-    private Func<FunctionCallContent, Task<object?>> WrapToolHandler(Func<FunctionCallContent, Task<object?>> handler)
+    private ToolCallHandler WrapToolHandler(ToolCallHandler handler)
     {
-        return async toolCall =>
+        // ctx is RELAYED, never re-created and never `default`. This decorator sits between the tool loop and
+        // the real gate for every tokenization-enabled user, so passing `default` here would persist Round = 0
+        // on exactly those installs — and be invisible to any test that leaves tokenization off.
+        return async (toolCall, ctx) =>
         {
             // Detokenize string arguments on write operations
             if (IsWriteOperation(toolCall.Name))
@@ -300,7 +303,7 @@ public class TokenizingAiClientService : IAiClientService
                 DetokenizeToolCallArguments(toolCall);
             }
 
-            var result = await handler(toolCall);
+            var result = await handler(toolCall, ctx);
             if (result is null)
                 return null;
 

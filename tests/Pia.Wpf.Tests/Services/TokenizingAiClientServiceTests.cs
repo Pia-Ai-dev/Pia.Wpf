@@ -48,7 +48,7 @@ public class TokenizingAiClientServiceTests
         var inner = Substitute.For<IAiClientService>();
         inner.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(_ => Stream(
                 new ReasoningDelta("thinking out loud"),
                 new TextDelta("the answer"),
@@ -93,14 +93,14 @@ public class TokenizingAiClientServiceTests
         // Regression: WrapToolHandler used to tokenize only STRING tool results, so an object result
         // (recall's RecallResult, a read_topic body, a raw read_source transcript) was JSON-serialized
         // downstream with REAL PII. It must now serialize the object to its wire JSON and tokenize it.
-        Func<FunctionCallContent, Task<object?>>? capturedHandler = null;
+        ToolCallHandler? capturedHandler = null;
         var inner = Substitute.For<IAiClientService>();
         inner.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
-                capturedHandler = ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3);
+                capturedHandler = ci.ArgAt<ToolCallHandler?>(3);
                 return Stream(new Finished(null, "gpt-5"));
             });
 
@@ -120,8 +120,16 @@ public class TokenizingAiClientServiceTests
         TokenMapAmbient.Current = tokenMap;
         try
         {
-            Func<FunctionCallContent, Task<object?>> objectResultHandler =
-                _ => Task.FromResult<object?>(new { Name = "John Smith", Note = "topic hit" });
+            // T2-14: the decorator must RELAY the dispatch context, not re-create it. It sits between the tool
+            // loop and the real gate for every tokenization-enabled user, so a `handler(toolCall, default)`
+            // would persist Round = 0 on exactly those installs — and would be invisible to any test that
+            // leaves tokenization off, which is why this fact lives in the ENABLED test rather than its own.
+            ToolDispatchContext? seenByInnerHandler = null;
+            ToolCallHandler objectResultHandler = (_, ctx) =>
+            {
+                seenByInnerHandler = ctx;
+                return Task.FromResult<object?>(new { Name = "John Smith", Note = "topic hit" });
+            };
 
             await foreach (var _ in sut.GetChatCompletionWithToolsAsync(
                 new List<ChatMessage> { new(ChatRole.User, "hi") },
@@ -132,13 +140,18 @@ public class TokenizingAiClientServiceTests
             }
 
             Assert.NotNull(capturedHandler);
+            // A round the DEFAULT would not produce: `default(ToolDispatchContext).Round` is 0, so a decorator
+            // that dropped the context reads back 0 here rather than 7.
             var toolResult = await capturedHandler!(
-                new FunctionCallContent("id", "recall", new Dictionary<string, object?>()));
+                new FunctionCallContent("id", "recall", new Dictionary<string, object?>()), new ToolDispatchContext(7));
 
             // The object was serialized to JSON and tokenized — a string, PII masked.
             var str = Assert.IsType<string>(toolResult);
             Assert.Contains("[Person_1]", str);
             Assert.DoesNotContain("John Smith", str);
+
+            Assert.NotNull(seenByInnerHandler);
+            Assert.Equal(7, seenByInnerHandler!.Value.Round);
         }
         finally
         {
@@ -158,7 +171,7 @@ public class TokenizingAiClientServiceTests
         var inner = Substitute.For<IAiClientService>();
         inner.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
                 contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci =>
             {
@@ -209,7 +222,7 @@ public class TokenizingAiClientServiceTests
         var inner = Substitute.For<IAiClientService>();
         inner.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
                 contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci =>
             {

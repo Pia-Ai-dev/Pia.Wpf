@@ -257,7 +257,7 @@ public class AiIngestSynthesisServiceTests
         public Task<ChatResponse> GetChatResponseAsync(IList<ChatMessage> messages, AiProvider provider, IList<AITool>? tools = null, string? mode = null, Guid? managedPersonaId = null, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
 
-        public IAsyncEnumerable<ChatStreamItem> GetChatCompletionWithToolsAsync(IList<ChatMessage> messages, AiProvider provider, IList<AITool>? tools = null, Func<FunctionCallContent, Task<object?>>? toolHandler = null, string? mode = null, Guid? managedPersonaId = null, CancellationToken cancellationToken = default, AgentContextBudget? contextBudget = null)
+        public IAsyncEnumerable<ChatStreamItem> GetChatCompletionWithToolsAsync(IList<ChatMessage> messages, AiProvider provider, IList<AITool>? tools = null, ToolCallHandler? toolHandler = null, string? mode = null, Guid? managedPersonaId = null, CancellationToken cancellationToken = default, AgentContextBudget? contextBudget = null)
             => throw new NotImplementedException();
 
         public Task<bool> TestToolCallingAsync(AiProvider provider, CancellationToken cancellationToken = default) => throw new NotImplementedException();
@@ -279,7 +279,7 @@ public class AiIngestSynthesisServiceTests
         public Task<ChatResponse> GetChatResponseAsync(IList<ChatMessage> messages, AiProvider provider, IList<AITool>? tools = null, string? mode = null, Guid? managedPersonaId = null, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
 
-        public IAsyncEnumerable<ChatStreamItem> GetChatCompletionWithToolsAsync(IList<ChatMessage> messages, AiProvider provider, IList<AITool>? tools = null, Func<FunctionCallContent, Task<object?>>? toolHandler = null, string? mode = null, Guid? managedPersonaId = null, CancellationToken cancellationToken = default, AgentContextBudget? contextBudget = null)
+        public IAsyncEnumerable<ChatStreamItem> GetChatCompletionWithToolsAsync(IList<ChatMessage> messages, AiProvider provider, IList<AITool>? tools = null, ToolCallHandler? toolHandler = null, string? mode = null, Guid? managedPersonaId = null, CancellationToken cancellationToken = default, AgentContextBudget? contextBudget = null)
             => throw new NotImplementedException();
 
         public Task<bool> TestToolCallingAsync(AiProvider provider, CancellationToken cancellationToken = default) => throw new NotImplementedException();

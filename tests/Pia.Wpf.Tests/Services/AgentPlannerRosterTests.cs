@@ -69,10 +69,10 @@ public sealed class AgentPlannerRosterTests
     }
 
     private static async IAsyncEnumerable<ChatStreamItem> PlanStream(
-        Func<FunctionCallContent, Task<object?>>? handler, Dictionary<string, object?>? emitArgs)
+        ToolCallHandler? handler, Dictionary<string, object?>? emitArgs)
     {
         if (handler is not null && emitArgs is not null)
-            await handler(new FunctionCallContent(Guid.NewGuid().ToString(), "emit_plan", emitArgs));
+            await handler(new FunctionCallContent(Guid.NewGuid().ToString(), "emit_plan", emitArgs), new ToolDispatchContext(1));
         await Task.Yield();
         yield return new Finished(null, "test-model");
     }
@@ -104,13 +104,13 @@ public sealed class AgentPlannerRosterTests
     {
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 var messages = ci.ArgAt<IList<ChatMessage>>(0);
                 _systemPrompts.Add(messages[0].Text ?? string.Empty);
                 _userPrompts.Add(messages[1].Text ?? string.Empty);
-                return PlanStream(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), emitArgs);
+                return PlanStream(ci.ArgAt<ToolCallHandler?>(3), emitArgs);
             });
     }
 

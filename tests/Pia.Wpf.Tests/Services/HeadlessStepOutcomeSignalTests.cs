@@ -48,7 +48,7 @@ public sealed class HeadlessStepOutcomeSignalTests
 
         h.Drive(async handler =>
         {
-            await handler!(Emit(succeeded: false, summary: "the source spreadsheet is missing"));
+            await handler!(Emit(succeeded: false, summary: "the source spreadsheet is missing"), new ToolDispatchContext(1));
             return eloquent;
         });
 
@@ -75,7 +75,7 @@ public sealed class HeadlessStepOutcomeSignalTests
 
         h.Drive(async handler =>
         {
-            await handler!(Emit(succeeded: true, summary: "moved the files", artifact: "out/report.md"));
+            await handler!(Emit(succeeded: true, summary: "moved the files", artifact: "out/report.md"), new ToolDispatchContext(1));
             return string.Empty; // no TextDelta whatsoever
         });
 
@@ -144,7 +144,7 @@ public sealed class HeadlessStepOutcomeSignalTests
         h.Drive(async handler =>
         {
             await handler!(new FunctionCallContent("c1", AgentStepTools.EmitStepResultToolName,
-                new Dictionary<string, object?> { ["summary"] = "no succeeded key at all" }));
+                new Dictionary<string, object?> { ["summary"] = "no succeeded key at all" }), new ToolDispatchContext(1));
             return "I did the thing.";
         });
 
@@ -236,7 +236,7 @@ public sealed class HeadlessStepOutcomeSignalTests
 
         h.Drive(async handler =>
         {
-            await handler!(Emit(succeeded: true, summary: "ok"));
+            await handler!(Emit(succeeded: true, summary: "ok"), new ToolDispatchContext(1));
             return "done";
         });
         await h.DispatchAsync(ct);
@@ -294,7 +294,7 @@ public sealed class HeadlessStepOutcomeSignalTests
         private readonly IAssistantPromptComposer _composer;
         private readonly BackgroundAssistantTurnRunner _engine;
         private readonly IAiClientService _ai;
-        private Func<Func<FunctionCallContent, Task<object?>>?, Task<string>> _drive = _ => Task.FromResult("ok");
+        private Func<ToolCallHandler?, Task<string>> _drive = _ => Task.FromResult("ok");
         private StepPersonaResolver? _stepPersonas;
 
         public Harness()
@@ -336,12 +336,12 @@ public sealed class HeadlessStepOutcomeSignalTests
 
             _ai.GetChatCompletionWithToolsAsync(
                     Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                    Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(),
+                    Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(),
                     cancellationToken: Arg.Any<CancellationToken>(), contextBudget: Arg.Any<AgentContextBudget?>())
                 .Returns(ci =>
                 {
                     LastTools = ci.ArgAt<IList<AITool>?>(2);
-                    return Stream(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3));
+                    return Stream(ci.ArgAt<ToolCallHandler?>(3));
                 });
         }
 
@@ -372,7 +372,7 @@ public sealed class HeadlessStepOutcomeSignalTests
 
         /// <summary>Sets what the model does inside the exchange: optionally call the tool handler, then
         /// return the visible text it leaves behind (empty string = no TextDelta at all).</summary>
-        public void Drive(Func<Func<FunctionCallContent, Task<object?>>?, Task<string>> drive) => _drive = drive;
+        public void Drive(Func<ToolCallHandler?, Task<string>> drive) => _drive = drive;
 
         /// <summary>
         /// Puts one roster persona in place with a turn setup of its OWN — a distinct tool list carrying a
@@ -397,13 +397,13 @@ public sealed class HeadlessStepOutcomeSignalTests
             return specialist;
         }
 
-        private async IAsyncEnumerable<ChatStreamItem> Stream(Func<FunctionCallContent, Task<object?>>? handler)
+        private async IAsyncEnumerable<ChatStreamItem> Stream(ToolCallHandler? handler)
         {
-            Func<FunctionCallContent, Task<object?>>? recording = handler is null
+            ToolCallHandler? recording = handler is null
                 ? null
-                : async call =>
+                : async (call, ctx) =>
                 {
-                    var reply = await handler(call);
+                    var reply = await handler(call, ctx);
                     ToolReplies.Add(reply);
                     return reply;
                 };

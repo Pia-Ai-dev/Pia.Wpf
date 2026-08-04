@@ -95,7 +95,7 @@ public sealed class AgentVerifier : IAgentVerifier
         List<ChatMessage> messages, AiProvider provider, CancellationToken ct)
     {
         EmitVerdictArgs? captured = null;
-        Func<FunctionCallContent, Task<object?>> toolHandler = call =>
+        ToolCallHandler toolHandler = (call, _) =>
         {
             if (string.Equals(call.Name, "emit_verdict", StringComparison.Ordinal))
             {

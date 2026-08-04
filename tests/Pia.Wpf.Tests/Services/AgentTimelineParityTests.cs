@@ -39,9 +39,83 @@ public sealed class AgentTimelineParityTests
         Assert.Equal(live.Kind, headless.Kind);
         Assert.Equal(live.ResultChars, headless.ResultChars);
 
+        // ---- T2-14: the five correlation columns are parity facts too. A column populated on one surface and
+        // NULL on the other is a silent bug, and the only thing that catches it is asserting BOTH here.
+        // The provider's call id (the Drive helpers both dispatch `new FunctionCallContent("call-1", …)`) —
+        // recorded on both surfaces, not just the unrouted one.
+        Assert.Equal("call-1", live.ToolCallId);
+        Assert.Equal(live.ToolCallId, headless.ToolCallId);
+        // 1-based: both Drive helpers stand in for the loop's FIRST round, and both gates read it off the
+        // dispatch context rather than counting anything themselves.
+        Assert.Equal(1, live.Round);
+        Assert.Equal(live.Round, headless.Round);
+        // A policy-approved call HAS been asked and answered on both surfaces, so neither instant is null.
+        Assert.NotNull(live.RequestedAt);
+        Assert.NotNull(live.DecidedAt);
+        Assert.NotNull(headless.RequestedAt);
+        Assert.NotNull(headless.DecidedAt);
+        // >=, never >: both gates bracket a ToolAutonomy.Resolve call that takes far less than
+        // DateTime.UtcNow's ~1 ms resolution, so the two instants are normally EQUAL.
+        Assert.True(live.DecidedAt >= live.RequestedAt);
+        Assert.True(headless.DecidedAt >= headless.RequestedAt);
+        Assert.True(live.CreatedAt >= live.DecidedAt);
+        Assert.True(headless.CreatedAt >= headless.DecidedAt);
+
         // …and the one thing that MUST differ.
         Assert.Equal(ToolGateSurface.Interactive, live.Surface);
         Assert.Equal(ToolGateSurface.Unattended, headless.Surface);
+    }
+
+    /// <summary>
+    /// The unrouted arm's stamps, on BOTH surfaces: NULL/NULL, because routing missed and NO gate was ever
+    /// consulted — there was no question, so there is no time-to-answer. The CALL ID is still recorded, which
+    /// is the difference from <c>ToolName</c>: <c>CallId</c> is provider-authored on every arm.
+    /// </summary>
+    [Fact]
+    public async Task AnUnroutedCallRecordsNoGateTiming_ButStillRecordsTheCallId()
+    {
+        var live = await RecordLiveAsync(policy: null, BuiltInPluginDefaults.FilesPluginId, pending: null);
+        var headless = await RecordHeadlessAsync(policy: null, pending: null);
+
+        Assert.Equal(ToolGateDecision.UnknownTool, live.Decision);
+        Assert.Null(live.RequestedAt);
+        Assert.Null(live.DecidedAt);
+        Assert.Null(headless.RequestedAt);
+        Assert.Null(headless.DecidedAt);
+
+        Assert.Equal("call-1", live.ToolCallId);
+        Assert.Equal("call-1", headless.ToolCallId);
+        Assert.Equal(1, live.Round);
+        Assert.Equal(1, headless.Round);
+    }
+
+    [Theory]
+    // Real provider shapes survive UNMODIFIED. Both halves of this theory matter: a charset too TIGHT silently
+    // nulls the column for every user of that provider, which no "it rejects junk" test would notice.
+    [InlineData("call_abc123", "call_abc123")]            // OpenAI
+    [InlineData("toolu_01ABCdefGHIjkl", "toolu_01ABCdefGHIjkl")] // Anthropic
+    [InlineData("chatcmpl-tool-9f2", "chatcmpl-tool-9f2")]
+    [InlineData("f47ac10b-58cc-4372-a567-0e02b2c3d479", "f47ac10b-58cc-4372-a567-0e02b2c3d479")] // bare GUID
+    [InlineData("mcp.github:call.7", "mcp.github:call.7")]
+    // …and anything outside a correlation-id shape becomes NULL, not a sentinel: the column is nullable and
+    // "no usable correlation id" is exactly what null means there.
+    [InlineData("""{"path":"C:/Users/marco/Therapy notes.md"}""", null)]
+    [InlineData("call 1", null)]
+    [InlineData("", null)]
+    [InlineData("   ", null)]
+    [InlineData(null, null)]
+    public void SanitizeCallIdKeepsProviderIdsAndNullsEverythingElse(string? input, string? expected)
+    {
+        Assert.Equal(expected, AgentTimelineScope.SanitizeCallId(input));
+    }
+
+    [Fact]
+    public void SanitizeCallIdBoundsTheLength()
+    {
+        // Same size hazard as the tool name: nothing in this process validates a provider-supplied CallId, so
+        // an unbounded one is an audit-table growth vector. 128 is generous against every real shape above.
+        Assert.Null(AgentTimelineScope.SanitizeCallId(new string('a', 129)));
+        Assert.Equal(new string('a', 128), AgentTimelineScope.SanitizeCallId(new string('a', 128)));
     }
 
     /// <summary>
@@ -119,9 +193,9 @@ public sealed class AgentTimelineParityTests
             .Returns(Route(pending));
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(),
                 Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(), contextBudget: Arg.Any<AgentContextBudget?>())
-            .Returns(ci => Drive(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), toolName));
+            .Returns(ci => Drive(ci.ArgAt<ToolCallHandler?>(3), toolName));
 
         var session = new ChatSession(
             Substitute.For<ITokenMapService>(), ai, plugins, cards, permissions, loc, NullLogger.Instance, _ => true);
@@ -151,8 +225,8 @@ public sealed class AgentTimelineParityTests
             .Returns(Route(pending));
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
-            .Returns(ci => Drive(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), toolName));
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(ci => Drive(ci.ArgAt<ToolCallHandler?>(3), toolName));
 
         ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();
         var runner = new BackgroundAssistantTurnRunner(
@@ -191,10 +265,10 @@ public sealed class AgentTimelineParityTests
     };
 
     private static async IAsyncEnumerable<ChatStreamItem> Drive(
-        Func<FunctionCallContent, Task<object?>>? handler, string toolName)
+        ToolCallHandler? handler, string toolName)
     {
         if (handler is not null)
-            await handler(new FunctionCallContent("call-1", toolName, new Dictionary<string, object?> { ["path"] = "a.md" }));
+            await handler(new FunctionCallContent("call-1", toolName, new Dictionary<string, object?> { ["path"] = "a.md" }), new ToolDispatchContext(1));
 
         yield return new TextDelta("Done.");
         yield return new Finished(null, "test-model");

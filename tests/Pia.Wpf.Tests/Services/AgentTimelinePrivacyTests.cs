@@ -126,8 +126,8 @@ public sealed class AgentTimelinePrivacyTests : IDisposable
 
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
-            .Returns(ci => Drive(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3)));
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(ci => Drive(ci.ArgAt<ToolCallHandler?>(3)));
 
         ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();
         return new BackgroundAssistantTurnRunner(
@@ -136,13 +136,18 @@ public sealed class AgentTimelinePrivacyTests : IDisposable
             NullLogger<BackgroundAssistantTurnRunner>.Instance);
     }
 
-    private static async IAsyncEnumerable<ChatStreamItem> Drive(Func<FunctionCallContent, Task<object?>>? handler)
+    private static async IAsyncEnumerable<ChatStreamItem> Drive(ToolCallHandler? handler)
     {
         if (handler is not null)
         {
             // The ARGUMENTS carry the canary too — this is the half a hash column would leak.
-            await handler(new FunctionCallContent("call-1", "write_file",
-                new Dictionary<string, object?> { ["path"] = $"C:/Users/marco/{Canary}.md", ["content"] = Canary }));
+            // So does the CALL ID (T2-14): it is copied out of provider JSON and nothing in this process
+            // validates it, so a provider — or a proxy in front of one — that echoed model text into it would
+            // put free text in a metadata-only column. Poisoning it here makes the every-column sweep below
+            // cover ToolCallId for free, and proves SanitizeCallId sits on the PERSISTED path rather than
+            // only on a unit-tested helper. A path-shaped id fails the charset check, so it stores NULL.
+            await handler(new FunctionCallContent($"C:/Users/marco/{Canary}.md", "write_file",
+                new Dictionary<string, object?> { ["path"] = $"C:/Users/marco/{Canary}.md", ["content"] = Canary }), new ToolDispatchContext(1));
         }
 
         yield return new TextDelta("done");

@@ -131,6 +131,15 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         Assert.Equal(AgentTimelineOutcome.NotExecuted, row.Outcome);
         Assert.Equal(ToolGateSurface.Unattended, row.Surface);
 
+        // T2-14, the SAME story told by the two timestamps: the run genuinely ASKED (RequestedAt is real) and
+        // nobody has answered (DecidedAt is null). This is the one arm in either gate that writes a null
+        // DecidedAt, and it is the guard against a reflexive `decidedAt: DateTime.UtcNow` on every emit —
+        // which would claim a decision was made at the instant the run stopped to ask for one. The answer,
+        // when it comes, arrives as a resume that writes a FRESH GrantedByName row; this row is never
+        // back-filled, because the write model is one row after the outcome is known.
+        Assert.NotNull(row.RequestedAt);
+        Assert.Null(row.DecidedAt);
+
         await launcher.StopAsync(CancellationToken.None);
     }
 
@@ -1071,10 +1080,10 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         var ai = Substitute.For<IAiClientService>();
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(),
                 cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci => DriveWithToolCall(
-                ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), probe, secondToolName,
+                ci.ArgAt<ToolCallHandler?>(3), probe, secondToolName,
                 faultAfterFirstCall));
 
         var plugins = Substitute.For<IPluginService>();
@@ -1142,13 +1151,13 @@ public sealed class UnattendedApprovalParkTests : IDisposable
     }
 
     private static async IAsyncEnumerable<ChatStreamItem> DriveWithToolCall(
-        Func<FunctionCallContent, Task<object?>>? handler, ToolProbe probe, string? secondToolName = null,
+        ToolCallHandler? handler, ToolProbe probe, string? secondToolName = null,
         bool faultAfterFirstCall = false)
     {
         await Task.Yield();
         if (handler is not null)
         {
-            probe.Record(await handler(new FunctionCallContent("call-1", probe.ToolName, new Dictionary<string, object?>())));
+            probe.Record(await handler(new FunctionCallContent("call-1", probe.ToolName, new Dictionary<string, object?>()), new ToolDispatchContext(1)));
 
             // The exchange dies on a LATER round than the one that parked. Thrown from inside the stream
             // because that is where a real transport error, a timeout and a truncation all surface.
@@ -1158,7 +1167,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
             // A model that keeps going after being told the run is parking. Round-tripped through the SAME
             // handler, because that is the only way the store's first-wins rule is observable.
             if (secondToolName is not null)
-                probe.Record(await handler(new FunctionCallContent("call-2", secondToolName, new Dictionary<string, object?>())));
+                probe.Record(await handler(new FunctionCallContent("call-2", secondToolName, new Dictionary<string, object?>()), new ToolDispatchContext(1)));
         }
 
         // TEXT STILL FLOWS. Every park fact in this file therefore discriminates on the RUN's state, never on

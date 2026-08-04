@@ -308,7 +308,7 @@ public sealed class AgentPlanner : IAgentPlanner
         List<ChatMessage> messages, AiProvider provider, CancellationToken ct)
     {
         PlanStepArg[]? captured = null;
-        Func<FunctionCallContent, Task<object?>> toolHandler = call =>
+        ToolCallHandler toolHandler = (call, _) =>
         {
             if (string.Equals(call.Name, "emit_plan", StringComparison.Ordinal))
             {

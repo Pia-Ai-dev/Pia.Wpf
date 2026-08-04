@@ -142,15 +142,49 @@ public class AiClientServiceInStepCompactionTests
     }
 
     /// <summary>
+    /// The dispatch context's round is 1-BASED, observed on the REAL loop.
+    /// <para>
+    /// This fact lives in this file — whose other facts are about compaction — because
+    /// <see cref="RunToolLoopAsync"/> is the only harness in the tree that drives
+    /// <c>AiClientService</c>'s tool loop for more than one round. Every other suite hand-feeds a
+    /// <c>new ToolDispatchContext(1)</c> from its own driver, so it can only assert its own literal back, and
+    /// the sole production construction (<c>new ToolDispatchContext(round + 1)</c>) was therefore unpinned:
+    /// both plausible regressions kept the whole suite green.
+    /// </para>
+    /// <para>
+    /// The EXACT sequence is asserted, because that is what discriminates: passing the 0-based <c>round</c>
+    /// gives <c>[0, 1]</c> and a constant gives <c>[1, 1]</c>. No budget is supplied — compaction has nothing
+    /// to do with the round number, and the small request keeps this fact independent of the fixture size the
+    /// compaction facts need.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task TheDispatchContextCarriesTheOneBasedRound()
+    {
+        var rounds = new List<int>();
+
+        await RunToolLoopAsync(
+            [new ChatMessage(ChatRole.User, "go")],
+            contextBudget: null,
+            toolRounds: 2,
+            observedRounds: rounds);
+
+        Assert.Equal(new[] { 1, 2 }, rounds.ToArray());
+    }
+
+    /// <summary>
     /// Drives the real service through <paramref name="toolRounds"/> tool-calling rounds followed by a final
     /// text answer, and returns the message list handed to the provider on each round (snapshotted at call
     /// time, because the service mutates and reassigns one list).
     /// </summary>
+    /// <param name="observedRounds">Collects <c>ToolDispatchContext.Round</c> as the loop dispatches, in
+    /// dispatch order. The tool handler is the only place that value is observable at all.</param>
     private static async Task<List<List<ChatMessage>>> RunToolLoopAsync(
         List<ChatMessage> request,
         AgentContextBudget? contextBudget,
         int toolRounds,
-        int toolResultTokens = 10)
+        int toolResultTokens = 10,
+        List<int>? observedRounds = null)
     {
         var sent = new List<List<ChatMessage>>();
         var round = 0;
@@ -199,7 +233,11 @@ public class AiClientServiceInStepCompactionTests
             request,
             provider,
             tools: null,
-            toolHandler: _ => Task.FromResult<object?>(Bulk(toolResultTokens)),
+            toolHandler: (_, dispatch) =>
+            {
+                observedRounds?.Add(dispatch.Round);
+                return Task.FromResult<object?>(Bulk(toolResultTokens));
+            },
             mode: null,
             cancellationToken: TestContext.Current.CancellationToken,
             contextBudget: contextBudget))

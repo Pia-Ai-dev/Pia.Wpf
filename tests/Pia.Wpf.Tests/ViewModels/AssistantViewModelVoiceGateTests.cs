@@ -99,7 +99,7 @@ public sealed class AssistantViewModelVoiceGateTests
         _plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
             .Returns(((object?)"read-result", (PluginToolCall?)null));
 
-        Assert.Equal("read-result", await vm.HandleVoiceModeToolCall(Call("query_todos")));
+        Assert.Equal("read-result", await vm.HandleVoiceModeToolCall(Call("query_todos"), new ToolDispatchContext(1)));
     }
 
     [Fact]
@@ -112,7 +112,7 @@ public sealed class AssistantViewModelVoiceGateTests
         _permissions.IsAutoApproveEligible("create_todo").Returns(true);
 
         var vm = Build();
-        Assert.Equal("write-done", await vm.HandleVoiceModeToolCall(Call("create_todo")));
+        Assert.Equal("write-done", await vm.HandleVoiceModeToolCall(Call("create_todo"), new ToolDispatchContext(1)));
         Assert.True(executed);
     }
 
@@ -134,7 +134,7 @@ public sealed class AssistantViewModelVoiceGateTests
         _plugins.IsMcpTool("create_todo").Returns(true);
 
         var vm = Build();
-        var result = Assert.IsType<string>(await vm.HandleVoiceModeToolCall(Call("create_todo")));
+        var result = Assert.IsType<string>(await vm.HandleVoiceModeToolCall(Call("create_todo"), new ToolDispatchContext(1)));
 
         Assert.False(executed);
         Assert.StartsWith("Denied:", result);
@@ -150,7 +150,7 @@ public sealed class AssistantViewModelVoiceGateTests
         _permissions.IsGranted(pluginId, "write_file").Returns(false);
 
         var vm = Build();
-        var result = Assert.IsType<string>(await vm.HandleVoiceModeToolCall(Call("write_file")));
+        var result = Assert.IsType<string>(await vm.HandleVoiceModeToolCall(Call("write_file"), new ToolDispatchContext(1)));
 
         Assert.False(executed);
         Assert.Contains("voice mode cannot show an approval card", result);
@@ -171,7 +171,7 @@ public sealed class AssistantViewModelVoiceGateTests
         _permissions.IsGranted(pluginId, toolName).Returns(true);
 
         var vm = Build(new AppSettings { AgentRunAutoApproveBuiltInWrites = true });
-        var result = Assert.IsType<string>(await vm.HandleVoiceModeToolCall(Call(toolName)));
+        var result = Assert.IsType<string>(await vm.HandleVoiceModeToolCall(Call(toolName), new ToolDispatchContext(1)));
 
         Assert.False(executed);
         Assert.StartsWith("Denied:", result);
@@ -188,7 +188,7 @@ public sealed class AssistantViewModelVoiceGateTests
         _permissions.IsGranted(pluginId, "create_issue").Returns(true);
 
         var vm = Build();
-        Assert.Equal("write-done", await vm.HandleVoiceModeToolCall(Call("create_issue")));
+        Assert.Equal("write-done", await vm.HandleVoiceModeToolCall(Call("create_issue"), new ToolDispatchContext(1)));
         Assert.True(executed);
     }
 
@@ -200,7 +200,7 @@ public sealed class AssistantViewModelVoiceGateTests
         ArrangeWrite("write_file", "files", pluginId, () => executed = true);
 
         var vm = Build(new AppSettings { AgentRunAutoApproveBuiltInWrites = true });
-        Assert.Equal("write-done", await vm.HandleVoiceModeToolCall(Call("write_file")));
+        Assert.Equal("write-done", await vm.HandleVoiceModeToolCall(Call("write_file"), new ToolDispatchContext(1)));
         Assert.True(executed);
     }
 
@@ -214,7 +214,7 @@ public sealed class AssistantViewModelVoiceGateTests
         _permissions.IsGranted(pluginId, "purge_records").Returns(true);
 
         var vm = Build();
-        var result = Assert.IsType<string>(await vm.HandleVoiceModeToolCall(Call("purge_records")));
+        var result = Assert.IsType<string>(await vm.HandleVoiceModeToolCall(Call("purge_records"), new ToolDispatchContext(1)));
 
         Assert.False(executed);
         Assert.Contains("destructive external", result);
@@ -228,6 +228,6 @@ public sealed class AssistantViewModelVoiceGateTests
         // look like an arrangement while being indistinguishable from no arrangement at all.
         var vm = Build();
 
-        Assert.Equal("Unknown tool: nope", await vm.HandleVoiceModeToolCall(Call("nope")));
+        Assert.Equal("Unknown tool: nope", await vm.HandleVoiceModeToolCall(Call("nope"), new ToolDispatchContext(1)));
     }
 }

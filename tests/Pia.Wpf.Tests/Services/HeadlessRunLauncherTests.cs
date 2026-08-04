@@ -185,12 +185,12 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var ai = Substitute.For<IAiClientService>();
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci => stream is not null
                 ? stream(ci.ArgAt<CancellationToken>(6))
                 : probe is null
                     ? Drive()
-                    : DriveWithToolCall(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), probe));
+                    : DriveWithToolCall(ci.ArgAt<ToolCallHandler?>(3), probe));
 
         var plugins = Substitute.For<IPluginService>();
         if (probe is not null)
@@ -272,11 +272,11 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     }
 
     private static async IAsyncEnumerable<ChatStreamItem> DriveWithToolCall(
-        Func<FunctionCallContent, Task<object?>>? handler, ToolProbe probe)
+        ToolCallHandler? handler, ToolProbe probe)
     {
         await Task.Yield();
         if (handler is not null)
-            probe.Record(await handler(new FunctionCallContent("call-1", probe.ToolName, new Dictionary<string, object?>())));
+            probe.Record(await handler(new FunctionCallContent("call-1", probe.ToolName, new Dictionary<string, object?>()), new ToolDispatchContext(1)));
         yield return new TextDelta("reply");
         yield return new Finished(null, "test-model");
     }

@@ -1616,8 +1616,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// gate can be tested without standing up a whole voice turn.
     /// </para>
     /// </summary>
-    internal async Task<object?> HandleVoiceModeToolCall(FunctionCallContent toolCall)
+    /// <param name="context">Unused, and that is the design: this method is a <c>ToolCallHandler</c> so the
+    /// loop can dispatch to it, but a voice turn belongs to no run and emits no timeline row (see
+    /// <c>IAgentTimelineService</c>'s scope remarks), so there is nowhere for the round to be recorded.</param>
+    internal async Task<object?> HandleVoiceModeToolCall(FunctionCallContent toolCall, ToolDispatchContext context)
     {
+        _ = context;
         _logger.LogInformation("Voice mode tool call: {ToolName}", toolCall.Name);
 
         var routeResult = await _pluginService.RouteToolCallAsync(toolCall);

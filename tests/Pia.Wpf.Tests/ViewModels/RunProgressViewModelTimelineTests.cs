@@ -294,7 +294,8 @@ public sealed class RunProgressViewModelTimelineTests
         ArgsChars: 12,
         ResultChars: 20,
         DurationMs: 5,
-        CreatedAt: DateTime.UtcNow);
+        CreatedAt: DateTime.UtcNow,
+        ToolCallId: null, Round: null, StepOrdinal: null, RequestedAt: null, DecidedAt: null);
 
     /// <summary>Runs Post callbacks inline so the projection is observable synchronously.</summary>
     private sealed class InlineSyncContext : SynchronizationContext

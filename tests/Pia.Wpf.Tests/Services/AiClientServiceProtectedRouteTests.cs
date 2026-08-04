@@ -84,7 +84,7 @@ public class AiClientServiceProtectedRouteTests
             new List<ChatMessage> { new(ChatRole.User, "hi") },
             provider,
             tools: null,
-            toolHandler: _ => Task.FromResult<object?>("done")))
+            toolHandler: (_, _) => Task.FromResult<object?>("done")))
         {
             items.Add(item);
         }

@@ -63,8 +63,18 @@ public class DiRegistrationTests
         // namespace and escaped the sweep entirely.)
         var factoryCreated = new HashSet<string> { "INativeHotkeyService", "IPluginToolHandler", "IOptimizeFastPathHandle", "IMeetingSession", "IAgentTurnExecutor" };
 
+        // A SECOND, differently-named exemption, because these are not factory-created — they are
+        // OPTIONAL-PLURAL extension points whose correct default is ZERO implementations. The consumer injects
+        // IEnumerable<T>, MS.DI synthesizes the empty sequence, and that empty sequence IS the registration.
+        // Registering a no-op placeholder just to satisfy the sweep above would invert the design: IRunObserver
+        // (T2-G1) exists so that a future OTel/file-trace consumer can be added additively, and zero of them
+        // must cost the emit path nothing. Kept apart from factoryCreated so neither comment has to lie about
+        // the other's members.
+        var optionalEnumerable = new HashSet<string> { "IRunObserver" };
+
         var unregistered = allInterfaces
             .Where(i => !factoryCreated.Contains(i.Name))
+            .Where(i => !optionalEnumerable.Contains(i.Name))
             .Where(i => !registeredServiceTypes.Contains(i))
             .Select(i => i.Name)
             .ToList();

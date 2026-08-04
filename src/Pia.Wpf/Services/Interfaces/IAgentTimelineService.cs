@@ -57,7 +57,8 @@ public interface IAgentTimelineService
 /// This is how the run and step ids reach a gate, and the alternatives were rejected for concrete reasons.
 /// <c>TaskAmbient.TaskContext.TaskId</c> is the CHAT id for interactive turns and the RUN id for agent steps —
 /// one field, two meanings, no discriminator, and never a step id. The single tool-dispatch line
-/// (<c>AiClientService</c>'s <c>await toolHandler(toolCall)</c>) has no decision and no ids in scope, and
+/// (<c>AiClientService</c>'s <c>await toolHandler(toolCall, new ToolDispatchContext(round + 1))</c>) has no
+/// decision and no ids in scope, and
 /// emitting there would file the planner's and verifier's <c>emit_plan</c>/<c>emit_verdict</c> capture
 /// closures as tool calls. A mutable "current step" slot on the orchestrator would be cross-thread mutable
 /// state guarding an audit trail — the interactive gate runs on the UI thread, the orchestrator loop does not.
@@ -110,6 +111,46 @@ public sealed class AgentTimelineScope
     }
 
     /// <summary>
+    /// The provider's correlation token to persist for a gated call, for <c>ToolCallId</c>. Returns
+    /// <c>null</c> — not a sentinel — for anything outside a correlation-id shape, because the column is
+    /// NULLABLE and "no usable correlation id" is exactly what null means there. (Contrast
+    /// <see cref="SanitizeUnroutedToolName"/>, whose column is NOT NULL, so it must answer with a string.)
+    /// <para>
+    /// Applied on EVERY arm, unlike the tool-name sanitizer. The tool NAME is model-authored on the unrouted
+    /// arm alone — a routed name is a key from the plugin service's own route table, so rewriting it would be
+    /// a regression on the good path. <c>CallId</c> has no such good path: it is copied out of provider JSON
+    /// on every arm and nothing in this process validates it, so a provider (or a proxy in front of one) that
+    /// echoes model text into it would otherwise put an UNBOUNDED string in a metadata-only column.
+    /// </para>
+    /// <para>
+    /// The charset is the same tool-identifier shape the name check uses, which real provider ids fit:
+    /// <c>call_abc123</c> (OpenAI), <c>toolu_01ABCdef</c> (Anthropic), <c>chatcmpl-tool-9f2</c>, a bare GUID.
+    /// The 128-char bound is generous against every one of those and still far short of a payload.
+    /// </para>
+    /// <para>
+    /// <b>What this does and does NOT guarantee.</b> It makes the value SHAPE- and LENGTH-bounded; it does not
+    /// make readable text impossible. The permitted charset is base64url-minus-padding, so
+    /// <c>Therapy_notes_2026.md</c> passes through unchanged. What the bound buys is that no path separator, no
+    /// space, no quote and no brace survives, and nothing longer than 128 characters does — enough that a
+    /// serialized argument, a JSON blob or a full path cannot land here, which is the property the audit
+    /// table's "metadata only" contract needs. Claiming more than that would hand a future reviewer a
+    /// guarantee this code does not make.
+    /// </para>
+    /// </summary>
+    public static string? SanitizeCallId(string? callId)
+    {
+        if (string.IsNullOrWhiteSpace(callId) || callId.Length > 128) return null;
+
+        foreach (var c in callId)
+        {
+            if (!char.IsAsciiLetterOrDigit(c) && c != '_' && c != '.' && c != ':' && c != '-')
+                return null;
+        }
+
+        return callId;
+    }
+
+    /// <summary>
     /// The LENGTH of a tool call's arguments, for <c>ArgsChars</c>. The serialized form exists only inside
     /// this method: it is measured and discarded, never stored and never logged. Shared by both gates so the
     /// number means the same thing on either surface. Returns null rather than throwing — a bookkeeping
@@ -134,7 +175,20 @@ public sealed class AgentTimelineScope
     /// Record one gated tool call. Fills the ids, the row id, the timestamp and
     /// <see cref="AgentTimelineEventKind.ToolCall"/>; the caller supplies the decision vocabulary. Never
     /// throws — the service's <c>Emit</c> is the failure boundary and this adds one of its own.
+    /// <para>
+    /// <b>Why the four correlation parameters are REQUIRED</b> (T2-14) while argsChars/resultChars/durationMs
+    /// stayed optional: with a default, a gate arm that simply forgot <c>requestedAt:</c> would persist NULL
+    /// silently and read back as "this arm asked no gate" — a false audit statement no test would notice.
+    /// Required, the omission is a compile error at the exact call site that needs review. It also makes the
+    /// unrouted arms' positional 7th argument (<c>argsChars</c>) a type error rather than a mis-bind.
+    /// <c>StepOrdinal</c> is deliberately NOT here: like <c>Seq</c> it is service-assigned.
+    /// </para>
     /// </summary>
+    /// <param name="toolCallId">Raw <c>FunctionCallContent.CallId</c> — sanitized HERE, once, so no gate can
+    /// forget to. Pass it through unmodified; <see cref="SanitizeCallId"/> is the boundary.</param>
+    /// <param name="round">The 1-based provider tool-loop round, from the handler's dispatch context.</param>
+    /// <param name="requestedAt">When the authorization question was posed; null if none was.</param>
+    /// <param name="decidedAt">When it was answered; null while genuinely still pending (the unattended park).</param>
     public void Emit(
         ToolGateSurface surface,
         string toolName,
@@ -142,6 +196,10 @@ public sealed class AgentTimelineScope
         Guid? pluginId,
         ToolGateDecision decision,
         AgentTimelineOutcome outcome,
+        string? toolCallId,
+        int? round,
+        DateTime? requestedAt,
+        DateTime? decidedAt,
         int? argsChars = null,
         int? resultChars = null,
         long? durationMs = null)
@@ -163,7 +221,12 @@ public sealed class AgentTimelineScope
                 ArgsChars: argsChars,
                 ResultChars: resultChars,
                 DurationMs: durationMs,
-                CreatedAt: DateTime.UtcNow));
+                CreatedAt: DateTime.UtcNow,
+                ToolCallId: SanitizeCallId(toolCallId),
+                Round: round,
+                StepOrdinal: null, // assigned by the service, like Seq
+                RequestedAt: requestedAt,
+                DecidedAt: decidedAt));
         }
         catch
         {

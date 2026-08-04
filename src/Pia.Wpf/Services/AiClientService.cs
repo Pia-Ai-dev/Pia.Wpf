@@ -123,7 +123,7 @@ public class AiClientService : IAiClientService
             IList<Microsoft.Extensions.AI.ChatMessage> messages,
             AiProvider provider,
             IList<AITool>? tools = null,
-            Func<FunctionCallContent, Task<object?>>? toolHandler = null,
+            ToolCallHandler? toolHandler = null,
             string? mode = null,
             Guid? managedPersonaId = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default,
@@ -398,8 +398,18 @@ public class AiClientService : IAiClientService
                 // Process tool calls
                 foreach (var toolCall in toolCalls)
                 {
-                    _logger.LogDebug("Invoking tool handler for {ToolName} (callId={CallId})", toolCall.Name, toolCall.CallId);
-                    var result = await toolHandler(toolCall);
+                    // No CallId on this line. It is copied verbatim out of provider JSON and nothing in this
+                    // process validates it — the premise AgentTimelineScope.SanitizeCallId is built on — so a
+                    // provider or proxy that echoes model text into it would put free text in a release support
+                    // log through a plain LogDebug (level is runtime-configurable, so it is not a gate). The id
+                    // is still available in DEBUG on the SensitiveDebug line a few lines up, which logs it
+                    // alongside the args for the same call.
+                    _logger.LogDebug("Invoking tool handler for {ToolName}", toolCall.Name);
+                    // The ONE construction site of a ToolDispatchContext. `round + 1` so the number a gate
+                    // persists is the same one every log line in this loop prints — `round` is 0-based only as
+                    // a `for` counter, and an audit row that said "round 0" while the log said "round 1/10"
+                    // would cost whoever correlates them a wrong conclusion before an off-by-one.
+                    var result = await toolHandler(toolCall, new ToolDispatchContext(round + 1));
                     var resultPreview = result?.ToString() ?? "<null>";
                     _logger.SensitiveDebug("Tool {ToolName} handler result ({Length} chars): {Preview}",
                         toolCall.Name, resultPreview.Length, Truncate(resultPreview, 500));

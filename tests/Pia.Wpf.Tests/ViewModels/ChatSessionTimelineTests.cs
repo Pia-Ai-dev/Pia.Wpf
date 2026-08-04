@@ -190,6 +190,260 @@ public sealed class ChatSessionTimelineTests
         Assert.Equal(ToolGateDecision.CardCancelled, row.Decision);
         Assert.NotEqual(ToolGateDecision.DeclinedByUser, row.Decision);
         Assert.Equal(AgentTimelineOutcome.NotExecuted, row.Outcome);
+
+        // T2-14: BOTH stamps land on the cancelled path, which is what the `finally` around
+        // WaitForUserDecisionAsync is for. The cancel arrives as a TaskCanceledException, so a DecidedAt
+        // assigned after a SUCCESSFUL await would be null here and the row would read "still pending" for a
+        // question that is definitively over. This is the whole of "including timeout": there is no approval
+        // timer in this tree, so a card that ends without an answer ends as a cancellation, and this row is
+        // what says how long the question had been open when the turn died.
+        Assert.NotNull(row.RequestedAt);
+        Assert.NotNull(row.DecidedAt);
+        Assert.True(row.DecidedAt >= row.RequestedAt);
+        Assert.True(row.CreatedAt >= row.DecidedAt);
+    }
+
+    /// <summary>
+    /// The PROMPTED accept arm's stamps. Separate from the cancelled fact above because it runs through
+    /// <c>ExecuteAndReport</c>, which is shared with the AutoRun bypass: the two authorities carry DIFFERENT
+    /// pairs (the card's instants vs. the policy resolver's), and only driving both proves the prompted arm is
+    /// not silently reading the policy pair.
+    /// <para>
+    /// Ordering is asserted with <c>&lt;=</c>, never <c>&lt;</c>. The card here is pre-resolved so
+    /// <c>WaitForUserDecisionAsync</c> returns immediately, and <c>DateTime.UtcNow</c> has ~1 ms resolution on
+    /// Windows — the two instants are normally EQUAL, and a strict comparison would be a wall-clock flake
+    /// rather than a fact. What is asserted is the state: both stamps present, correctly ordered.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task APromptedCardRecordsWhenItWasShownAndWhenItWasAnswered()
+    {
+        var filesId = BuiltInPluginDefaults.FilesPluginId;
+        _permissions.IsAutoApproveEligible("write_file").Returns(false);
+        var pending = Pending("write_file", "files", filesId);
+        var card = NewCard("write_file", filesId);
+        card.AllowOnceCommand.Execute(null);
+
+        ArrangeRoutes(new() { ["write_file"] = pending }, new() { ["write_file"] = card });
+        ArrangeStream(["write_file"]);
+
+        await CreateSession().RunStepTurnAsync(
+            Spec(), new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
+
+        var row = Assert.Single(_timeline.Rows);
+        Assert.Equal(ToolGateDecision.ApprovedOnce, row.Decision); // the prompted arm, not the bypass
+        Assert.NotNull(row.RequestedAt);
+        Assert.NotNull(row.DecidedAt);
+        Assert.True(row.DecidedAt >= row.RequestedAt);
+        Assert.True(row.CreatedAt >= row.DecidedAt);
+        // The correlation pair rides along on this arm too.
+        Assert.Equal("call-0", row.ToolCallId);
+        Assert.Equal(1, row.Round);
+    }
+
+    /// <summary>
+    /// THE DISCRIMINATING FACT for the prompted arm: its two instants must straddle the HUMAN's answer, not
+    /// the policy resolver's.
+    /// <para>
+    /// <b>Why the two facts above cannot prove this.</b> Both gates take a policy pair
+    /// (<c>askedAt</c>/<c>resolvedAt</c>) around <c>ToolAutonomy.Resolve</c>, and the card arms take their own
+    /// (<c>cardShownAt</c>/<c>cardDecidedAt</c>). Substituting the policy pair into a card arm — an easy
+    /// copy-paste from the AutoRun line a few arms up — leaves both pairs non-null and correctly ordered, so
+    /// <c>NotNull</c> and <c>&gt;=</c> assertions pass either way. Verified by mutation: swapping the decline
+    /// arm to the policy pair left the ENTIRE suite green before this test existed.
+    /// </para>
+    /// <para>
+    /// <b>The anchor, and why comparing the pair to ITSELF is not enough.</b> The obvious assertion —
+    /// <c>DecidedAt &gt; RequestedAt</c> — does NOT discriminate, and that was verified by mutation rather
+    /// than assumed: the policy pair brackets a <c>ToolAutonomy.Resolve</c> whose input expression makes
+    /// several substitute calls, which is sometimes enough to tick <c>DateTime.UtcNow</c>, so the substituted
+    /// arm passed that assertion intermittently. The reliable discriminator is a THIRD instant the test owns:
+    /// <c>afterResolve</c>, captured when the gate builds the card, which is provably after <c>resolvedAt</c>
+    /// and before <c>cardShownAt</c>.
+    /// </para>
+    /// <para>
+    /// <b>Why a strict comparison is deterministic here</b>, when it would be a coin flip anywhere else in
+    /// this batch: the hook then blocks for <see cref="GapMs"/> ms before returning, so <c>cardShownAt</c> is
+    /// forced tens of milliseconds past <c>afterResolve</c> — far beyond <c>DateTime.UtcNow</c>'s ~1 ms
+    /// Windows resolution. The policy pair is taken entirely BEFORE the card is built, so it can never be
+    /// after <c>afterResolve</c>. The gap CAUSES the ordering; it is not raced against, and nothing here
+    /// compares an elapsed time to a threshold.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task APromptedCardsInstantsStraddleTheHumansAnswer_NotThePolicyResolver()
+    {
+        var filesId = BuiltInPluginDefaults.FilesPluginId;
+        _permissions.IsAutoApproveEligible("write_file").Returns(false);
+        var pending = Pending("write_file", "files", filesId);
+        var card = NewCard("write_file", filesId);
+
+        var afterResolve = ArrangeLateAnsweredCard(pending, card, c => c.DeclineCommand.Execute(null));
+        ArrangeStream(["write_file"]);
+
+        await CreateSession().RunStepTurnAsync(
+            Spec(), new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
+
+        var row = Assert.Single(_timeline.Rows);
+        Assert.Equal(ToolGateDecision.DeclinedByUser, row.Decision); // the `default:` arm, prompted and answered
+        Assert.NotNull(row.RequestedAt);
+        Assert.NotNull(row.DecidedAt);
+
+        // THE assertions. Both instants are after the resolver had already answered, which is only true of the
+        // CARD's pair — substitute the policy pair in and both go red.
+        Assert.True(
+            row.RequestedAt > afterResolve(),
+            $"RequestedAt must be the instant the CARD was shown, not the policy resolver's; got {row.RequestedAt:O} vs anchor {afterResolve():O}");
+        Assert.True(
+            row.DecidedAt > afterResolve(),
+            $"DecidedAt must be the instant the HUMAN answered; got {row.DecidedAt:O} vs anchor {afterResolve():O}");
+        Assert.True(row.DecidedAt >= row.RequestedAt);
+        Assert.True(row.CreatedAt >= row.DecidedAt);
+    }
+
+    /// <summary>Milliseconds the card build is held open, to force the ordering the two facts below assert.</summary>
+    private const int GapMs = 60;
+
+    /// <summary>
+    /// Arranges a prompted card that is answered only AFTER the gate has shown it, and returns a getter for
+    /// the anchor instant — captured as the gate builds the card, i.e. strictly after the policy resolver
+    /// answered and strictly before <c>cardShownAt</c> is taken.
+    /// </summary>
+    private Func<DateTime> ArrangeLateAnsweredCard(
+        PluginToolCall pending, ActionCardInfo card, Action<ActionCardInfo> answer)
+    {
+        var anchor = DateTime.MinValue;
+        ArrangeRoutes(
+            new Dictionary<string, PluginToolCall>(StringComparer.Ordinal) { [pending.ToolName] = pending },
+            new Dictionary<string, ActionCardInfo>(StringComparer.Ordinal) { [pending.ToolName] = card },
+            onCardBuilt: built =>
+            {
+                anchor = DateTime.UtcNow;
+                // Held SYNCHRONOUSLY, so cardShownAt (taken right after Build returns) is forced past the
+                // anchor. Answered after the same gap again, so DecidedAt is forced past cardShownAt. The gate
+                // blocks on WaitForUserDecisionAsync until the command fires, so the turn cannot finish early
+                // and there is nothing to race.
+                Thread.Sleep(GapMs);
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(GapMs);
+                    answer(built);
+                });
+            });
+        return () => anchor;
+    }
+
+    /// <summary>
+    /// The same discriminator on the prompted ACCEPT path, which reaches the emit through
+    /// <c>ExecuteAndReport</c> — the local function the AutoRun bypass ALSO calls, with the other pair. That
+    /// sharing is why the two instants are explicit parameters there rather than captured locals, and this is
+    /// what holds the two authorities apart.
+    /// </summary>
+    [Fact]
+    public async Task APromptedAcceptStampsTheCardsInstants_NotThePolicyResolvers()
+    {
+        var filesId = BuiltInPluginDefaults.FilesPluginId;
+        _permissions.IsAutoApproveEligible("write_file").Returns(false);
+        var pending = Pending("write_file", "files", filesId);
+        var card = NewCard("write_file", filesId);
+
+        var afterResolve = ArrangeLateAnsweredCard(pending, card, c => c.AllowOnceCommand.Execute(null));
+        ArrangeStream(["write_file"]);
+
+        await CreateSession().RunStepTurnAsync(
+            Spec(), new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
+
+        var row = Assert.Single(_timeline.Rows);
+        Assert.Equal(ToolGateDecision.ApprovedOnce, row.Decision);
+        Assert.Equal(AgentTimelineOutcome.Ok, row.Outcome);
+        Assert.True(
+            row.RequestedAt > afterResolve(),
+            $"ExecuteAndReport must receive the CARD's pair on this arm, not the resolver's; got RequestedAt={row.RequestedAt:O} vs anchor {afterResolve():O}");
+        Assert.True(
+            row.DecidedAt > afterResolve(),
+            $"ExecuteAndReport must receive the CARD's pair on this arm, not the resolver's; got DecidedAt={row.DecidedAt:O} vs anchor {afterResolve():O}");
+        Assert.True(row.DecidedAt >= row.RequestedAt);
+    }
+
+    /// <summary>
+    /// The control for the two facts above, and the guard in the OTHER direction: the AutoRun bypass must
+    /// carry the POLICY's pair. Nobody was asked, so its interval is the resolver's, and it must NOT pick up a
+    /// card instant — the bypass renders a resolved card too, so a naive "use cardShownAt everywhere" would
+    /// still compile and still produce plausible timestamps.
+    /// </summary>
+    [Fact]
+    public async Task TheAutoRunBypassStampsThePolicyResolversInstants()
+    {
+        var todoId = BuiltInPluginDefaults.TodoPluginId;
+        var ran = ArrangeAutoApproved("create_todo", todoId, "todo");
+        ArrangeStream(["create_todo"]);
+
+        await CreateSession().RunStepTurnAsync(
+            Spec(), new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
+
+        Assert.True(ran());
+        var row = Assert.Single(_timeline.Rows);
+        Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, row.Decision);
+        Assert.NotNull(row.RequestedAt);
+        Assert.NotNull(row.DecidedAt);
+        // >=, not >: this pair brackets a few comparisons and is normally EQUAL. Nothing here forces a gap,
+        // and asserting one would be the wall-clock flake the batch avoids.
+        Assert.True(row.DecidedAt >= row.RequestedAt);
+        Assert.True(row.CreatedAt >= row.DecidedAt);
+    }
+
+    /// <summary>
+    /// The run-level turn (no step) still gets a row, and it carries NO <c>StepOrdinal</c> — an ordinal without
+    /// a step would invent one.
+    /// <para>
+    /// This half alone would be vacuous: the gate hardcodes <c>StepOrdinal: null</c> (the column is
+    /// service-assigned, like <c>Seq</c>), so the null asserted here is also what a sink that never assigned an
+    /// ordinal at all would produce. Its control is
+    /// <see cref="AStepTurnsRowsCarryAPerStepOrdinal"/>, which drives the same tool through a step turn and
+    /// reads a NON-null ordinal off the same sink. The pair is what makes either one a fact.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task ARunLevelTurnRecordsNoStepOrdinal()
+    {
+        var ran = ArrangeAutoApproved("create_todo", BuiltInPluginDefaults.TodoPluginId, "todo");
+        ArrangeStream(["create_todo"]);
+
+        await CreateSession().RunStepTurnAsync(
+            Spec(runLevel: true), new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
+
+        Assert.True(ran());
+        var runLevel = Assert.Single(_timeline.Rows);
+        Assert.Null(runLevel.StepId);
+        Assert.Null(runLevel.StepOrdinal);
+    }
+
+    /// <summary>
+    /// The control for <see cref="ARunLevelTurnRecordsNoStepOrdinal"/>: a STEP turn's rows do get an ordinal,
+    /// and it counts within the step. Asserted as the exact sequence, so a sink that handed out one shared
+    /// counter — or the same value twice — goes red rather than merely non-null.
+    /// <para>
+    /// The mechanism under test here is <see cref="RecordingTimelineService"/>'s allocator MIRRORING the real
+    /// one, not the real one itself (<c>AgentTimelineServiceTests.Emit_AllocatesStepOrdinal_PerStepNotPerRun</c>
+    /// owns that against SQLite). It is worth pinning because every gate assertion about this column in this
+    /// suite reads it through the fake: a fake that quietly stopped assigning ordinals would make a future
+    /// "the gate lost the step ordinal" bug indistinguishable from correct behaviour.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task AStepTurnsRowsCarryAPerStepOrdinal()
+    {
+        var ran = ArrangeAutoApproved("create_todo", BuiltInPluginDefaults.TodoPluginId, "todo");
+        ArrangeStream(["create_todo", "create_todo"]);
+
+        await CreateSession().RunStepTurnAsync(
+            Spec(), new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
+
+        Assert.True(ran());
+        var rows = _timeline.Rows;
+        Assert.Equal(2, rows.Count);
+        Assert.All(rows, r => Assert.Equal(_stepId, r.StepId));
+        Assert.Equal(new long?[] { 1, 2 }, rows.Select(r => r.StepOrdinal).ToArray());
     }
 
     // ---- T-EMIT-5 ----
@@ -305,7 +559,9 @@ public sealed class ChatSessionTimelineTests
     private ChatSession CreateSession() => new(
         _tokenMap, _ai, _plugins, _cards, _permissions, _loc, NullLogger.Instance, _ => true);
 
-    private StepTurnSpec Spec() => new(
+    /// <param name="runLevel">Drives the planner-degrade RUN-LEVEL turn — a scope with no step id, whose rows
+    /// carry no <c>StepOrdinal</c>. The default is the ordinary step turn every other fact here uses.</param>
+    private StepTurnSpec Spec(bool runLevel = false) => new(
         RunId: _runId,
         Ordinal: 0,
         Intent: "do the thing",
@@ -319,7 +575,7 @@ public sealed class ChatSessionTimelineTests
         TokenizationEnabled: false,
         // The SCOPE carries the step id; the record has no StepId field of its own (it was written by one
         // executor and read by nobody, so a spec-level value could silently disagree with the scope's).
-        Timeline: new AgentTimelineScope(_timeline, _runId, _stepId));
+        Timeline: new AgentTimelineScope(_timeline, _runId, runLevel ? null : _stepId));
 
     private static AiProvider TestProvider => new()
     {
@@ -372,8 +628,13 @@ public sealed class ChatSessionTimelineTests
         return () => ran;
     }
 
+    /// <param name="onCardBuilt">Invoked as the gate BUILDS a card, i.e. after the policy resolver has already
+    /// answered and immediately before the card is shown. It is the only hook in this suite that can act
+    /// between those two instants, which is what
+    /// <see cref="APromptedCardsInstantsStraddleTheHumansAnswer_NotThePolicyResolver"/> needs.</param>
     private void ArrangeRoutes(
-        Dictionary<string, PluginToolCall> pendings, Dictionary<string, ActionCardInfo> cards)
+        Dictionary<string, PluginToolCall> pendings, Dictionary<string, ActionCardInfo> cards,
+        Action<ActionCardInfo>? onCardBuilt = null)
     {
         _plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
@@ -384,7 +645,12 @@ public sealed class ChatSessionTimelineTests
                     : null;
             });
         _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<ToolGateDecision?>(), Arg.Any<ToolClass?>())
-            .Returns(ci => cards[ci.ArgAt<PluginToolCall>(0).ToolName]);
+            .Returns(ci =>
+            {
+                var built = cards[ci.ArgAt<PluginToolCall>(0).ToolName];
+                onCardBuilt?.Invoke(built);
+                return built;
+            });
     }
 
     /// <summary>Drives the handler once per tool name, in order, then closes the stream.</summary>
@@ -392,13 +658,13 @@ public sealed class ChatSessionTimelineTests
     {
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(),
                 Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(), contextBudget: Arg.Any<AgentContextBudget?>())
-            .Returns(ci => Stream(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), toolNames, arguments));
+            .Returns(ci => Stream(ci.ArgAt<ToolCallHandler?>(3), toolNames, arguments));
     }
 
     private static async IAsyncEnumerable<ChatStreamItem> Stream(
-        Func<FunctionCallContent, Task<object?>>? handler, string[] toolNames, IDictionary<string, object?>? arguments)
+        ToolCallHandler? handler, string[] toolNames, IDictionary<string, object?>? arguments)
     {
         if (handler is not null)
         {
@@ -406,7 +672,7 @@ public sealed class ChatSessionTimelineTests
             foreach (var name in toolNames)
             {
                 await handler(new FunctionCallContent(
-                    $"call-{i++}", name, arguments ?? new Dictionary<string, object?>()));
+                    $"call-{i++}", name, arguments ?? new Dictionary<string, object?>()), new ToolDispatchContext(1));
             }
         }
 

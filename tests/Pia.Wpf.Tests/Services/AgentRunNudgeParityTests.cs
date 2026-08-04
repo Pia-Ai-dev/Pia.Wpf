@@ -74,7 +74,7 @@ public sealed class AgentRunNudgeParityTests
         List<ChatMessage>? sent = null;
         _liveAi.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 sent = [.. ci.ArgAt<IList<ChatMessage>>(0)];
@@ -184,7 +184,7 @@ public sealed class AgentRunNudgeParityTests
         List<ChatMessage>? sent = null;
         h.Ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(),
                 cancellationToken: Arg.Any<CancellationToken>(), contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci =>
             {
@@ -212,10 +212,10 @@ public sealed class AgentRunNudgeParityTests
         },
     };
 
-    private static async IAsyncEnumerable<ChatStreamItem> PlanStream(Func<FunctionCallContent, Task<object?>>? handler)
+    private static async IAsyncEnumerable<ChatStreamItem> PlanStream(ToolCallHandler? handler)
     {
         if (handler is not null)
-            await handler(new FunctionCallContent(Guid.NewGuid().ToString(), "emit_plan", PlanArgs()));
+            await handler(new FunctionCallContent(Guid.NewGuid().ToString(), "emit_plan", PlanArgs()), new ToolDispatchContext(1));
         await Task.Yield();
         yield return new Finished(null, "test-model");
     }
@@ -223,10 +223,10 @@ public sealed class AgentRunNudgeParityTests
     private static Dictionary<string, object?> VerdictArgs() =>
         new() { ["passed"] = true, ["reason"] = "ok", ["missing"] = Array.Empty<object?>() };
 
-    private static async IAsyncEnumerable<ChatStreamItem> VerdictStream(Func<FunctionCallContent, Task<object?>>? handler)
+    private static async IAsyncEnumerable<ChatStreamItem> VerdictStream(ToolCallHandler? handler)
     {
         if (handler is not null)
-            await handler(new FunctionCallContent(Guid.NewGuid().ToString(), "emit_verdict", VerdictArgs()));
+            await handler(new FunctionCallContent(Guid.NewGuid().ToString(), "emit_verdict", VerdictArgs()), new ToolDispatchContext(1));
         await Task.Yield();
         yield return new Finished(null, "test-model");
     }
@@ -237,11 +237,11 @@ public sealed class AgentRunNudgeParityTests
         List<ChatMessage>? sent = null;
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 sent = [.. ci.ArgAt<IList<ChatMessage>>(0)];
-                return VerdictStream(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3));
+                return VerdictStream(ci.ArgAt<ToolCallHandler?>(3));
             });
         var settings = Substitute.For<ISettingsService>();
         settings.GetSettingsAsync().Returns(Task.FromResult(new AppSettings()));
@@ -261,11 +261,11 @@ public sealed class AgentRunNudgeParityTests
         List<ChatMessage>? sent = null;
         ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 sent = [.. ci.ArgAt<IList<ChatMessage>>(0)];
-                return PlanStream(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3));
+                return PlanStream(ci.ArgAt<ToolCallHandler?>(3));
             });
         var handler = Substitute.For<IAiProviderHandler>();
         handler.ProviderType.Returns(AiProviderType.OpenAI);

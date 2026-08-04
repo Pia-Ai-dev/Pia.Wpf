@@ -568,7 +568,7 @@ public sealed class ChatSession : IDisposable
 
         await foreach (var item in _aiClientService.GetChatCompletionWithToolsAsync(
             chatMessages, provider, tools,
-            supportsTools ? toolCall => HandleToolCallWithStatus(toolCall, assistantMessage, tokenizationEnabled, policy, timeline) : null,
+            supportsTools ? (toolCall, ctx) => HandleToolCallWithStatus(toolCall, assistantMessage, tokenizationEnabled, ctx, policy, timeline) : null,
             nameof(WindowMode.Assistant),
             personaId,
             cancellationToken: token,
@@ -913,10 +913,10 @@ public sealed class ChatSession : IDisposable
 
     private async Task<object?> HandleToolCallWithStatus(
         FunctionCallContent toolCall, AssistantMessage message, bool tokenizationEnabled,
-        RunAutonomyPolicy? policy = null, AgentTimelineScope? timeline = null)
+        ToolDispatchContext dispatch, RunAutonomyPolicy? policy = null, AgentTimelineScope? timeline = null)
     {
         message.StatusText = _actionCardBuilder.ResolveStatusText(toolCall.Name);
-        var result = await HandleToolCall(toolCall, message, tokenizationEnabled, policy, timeline);
+        var result = await HandleToolCall(toolCall, message, tokenizationEnabled, dispatch, policy, timeline);
         message.StatusText = _localizationService["Msg_Assistant_StatusThinking"];
         return result;
     }
@@ -939,9 +939,12 @@ public sealed class ChatSession : IDisposable
     /// means today's behaviour, byte for byte.</param>
     /// <param name="timeline">The step's audit sink (Batch 03), from <c>StepTurnSpec.Timeline</c>. Null on the
     /// ordinary interactive turn path, which has no run to attach a row to — so that path emits nothing.</param>
+    /// <param name="dispatch">What the tool LOOP knows and this gate cannot derive (T2-14): the 1-based round.
+    /// Recorded on the audit row so a support log's "Round 3/10" line and the row for the call it dispatched
+    /// can be lined up. Not optional and not nullable — every call into this gate comes from the loop.</param>
     private async Task<object?> HandleToolCall(
         FunctionCallContent toolCall, AssistantMessage message, bool tokenizationEnabled,
-        RunAutonomyPolicy? policy = null, AgentTimelineScope? timeline = null)
+        ToolDispatchContext dispatch, RunAutonomyPolicy? policy = null, AgentTimelineScope? timeline = null)
     {
         // Every log line in this method names the tool through THIS local, never toolCall.Name directly. These
         // lines run BEFORE routing, so they are reachable with a model-authored name that no route will ever
@@ -1005,8 +1008,13 @@ public sealed class ChatSession : IDisposable
             // flood: the round loop is bounded and the model gets the error text back. No plugin and no
             // class, because there is no route to derive either from. The NAME is model-authored on this arm
             // alone, so it is the one arm that sanitizes (see SanitizeUnroutedToolName).
+            // NULL/NULL for the two instants: routing missed, so no gate was ever consulted and there was no
+            // question to time. The CALL ID is still recorded — it is provider-authored on every arm, unlike
+            // the name — so an unrouted call can still be matched to the provider round-trip that made it.
             timeline?.Emit(ToolGateSurface.Interactive, loggedName, ToolClass.Unknown, pluginId: null,
-                ToolGateDecision.UnknownTool, AgentTimelineOutcome.NotExecuted, argsChars);
+                ToolGateDecision.UnknownTool, AgentTimelineOutcome.NotExecuted,
+                toolCallId: toolCall.CallId, round: dispatch.Round, requestedAt: null, decidedAt: null,
+                argsChars);
             return "Unknown tool.";
         }
 
@@ -1046,6 +1054,13 @@ public sealed class ChatSession : IDisposable
             // grant only where the card was entitled to offer one, and the card computes this with the SAME
             // function (ActionCardBuilder.IsSessionGrantable), so the two cannot drift.
             var sessionOfferable = ToolAutonomy.IsSessionGrantOfferable(tool);
+            // T2-14: the POLICY question, bracketed. These two are RequestedAt/DecidedAt for the arm the policy
+            // itself answered — the AutoRun bypass below. They are usually EQUAL: Resolve is a few comparisons
+            // and DateTime.UtcNow has ~1 ms resolution on Windows (the same reason Seq is not a timestamp), so
+            // nothing may assert strict ordering on them. The prompted arm does NOT use them; it takes its own
+            // pair around the card, because "when was the question posed" there means "when could the human see
+            // it", which is a different instant by however long they took to look.
+            var askedAt = DateTime.UtcNow;
             var verdict = ToolAutonomy.Resolve(new ToolGateInput(
                 ToolGateSurface.Interactive, tool, toolClass,
                 IsAllowlisted: allowlisted,
@@ -1059,6 +1074,7 @@ public sealed class ChatSession : IDisposable
                 // hermes #16: this surface already HAS a human — it shows the action card. Parking the whole
                 // run to ask the same question through a Flow item would be strictly worse than the card.
                 CanPark: false));
+            var resolvedAt = DateTime.UtcNow;
 
             // The accepted/auto-approved success path: execute, fire ToolSucceeded, re-init the
             // memory token map, return the result. Shared by AllowOnce, AlwaysAllow, and bypass.
@@ -1067,7 +1083,14 @@ public sealed class ChatSession : IDisposable
             // Execute() call is bracketed for the timeline: ResolveSuccessTitle and the ToolSucceeded
             // subscribers run afterwards, and recording a fault in either as "the tool failed" would be a
             // false audit statement.
-            async Task<object?> ExecuteAndReport(ToolGateDecision decision)
+            //
+            // requestedAt/decidedAt are PARAMETERS, not captured locals, precisely because this local function
+            // is shared by two different authorities: the AutoRun bypass (answered by the policy, askedAt /
+            // resolvedAt) and the three accept arms of the card (answered by a person, cardShownAt /
+            // cardDecidedAt). Captured mutable locals would have the bypass silently read whatever the card
+            // path had not yet assigned, and a wrong-but-plausible timestamp survives a green suite.
+            async Task<object?> ExecuteAndReport(
+                ToolGateDecision decision, DateTime? requestedAt, DateTime? decidedAt)
             {
                 var startedAt = Stopwatch.GetTimestamp();
                 object? actionResult;
@@ -1078,14 +1101,20 @@ public sealed class ChatSession : IDisposable
                 catch
                 {
                     timeline?.Emit(ToolGateSurface.Interactive, tool, toolClass, pluginId,
-                        decision, AgentTimelineOutcome.Error, argsChars, resultChars: null,
+                        decision, AgentTimelineOutcome.Error,
+                        toolCallId: toolCall.CallId, round: dispatch.Round,
+                        requestedAt: requestedAt, decidedAt: decidedAt,
+                        argsChars, resultChars: null,
                         durationMs: AgentTimelineScope.ElapsedMs(startedAt));
                     // Rethrow: what a throwing tool does to the turn is untouched by this batch.
                     throw;
                 }
 
                 timeline?.Emit(ToolGateSurface.Interactive, tool, toolClass, pluginId,
-                    decision, AgentTimelineOutcome.Ok, argsChars,
+                    decision, AgentTimelineOutcome.Ok,
+                    toolCallId: toolCall.CallId, round: dispatch.Round,
+                    requestedAt: requestedAt, decidedAt: decidedAt,
+                    argsChars,
                     resultChars: (actionResult as string)?.Length, durationMs: AgentTimelineScope.ElapsedMs(startedAt));
 
                 _logger.LogInformation("Executed {ToolName} action successfully", tool);
@@ -1120,7 +1149,8 @@ public sealed class ChatSession : IDisposable
                 message.ActionCards.Add(autoCard);
                 _logger.LogInformation("Auto-approved {ToolName} ({Decision}, plugin {PluginId})",
                     tool, verdict.Decision, pluginId);
-                return await ExecuteAndReport(verdict.Decision);
+                // The POLICY answered this one; no human was asked, so the card's pair would be meaningless.
+                return await ExecuteAndReport(verdict.Decision, askedAt, resolvedAt);
             }
 
             // ToolGateOutcome.Refuse is UNREACHABLE on the interactive surface (pinned by
@@ -1130,8 +1160,23 @@ public sealed class ChatSession : IDisposable
             // The AUTHORITATIVE class goes to BOTH cards, not just the auto-approved one: the prompted card's
             // button set has to agree with the gate that just resolved it (04 D4).
             var card = _actionCardBuilder.Build(pendingAction, tokenizationEnabled, toolClass: toolClass);
+            // T2-14: RequestedAt for the PROMPTED arm is the instant the question became visible to a person —
+            // i.e. the instant the card joins the bound collection — not the instant the policy was consulted
+            // above. Taken immediately before the Add so the interval (DecidedAt - RequestedAt) is "how long
+            // the human was asked for", which is the only reading of it that is useful.
+            var cardShownAt = DateTime.UtcNow;
             message.ActionCards.Add(card);
 
+            // Stamped in the `finally` below rather than after a successful await, so the CANCELLED path
+            // (TaskCanceledException: LLM timeout, new chat, retry, scope dispose) carries it too. That is the
+            // whole of "including timeout" for this tree: VERIFIED there is no approval timer —
+            // ActionCardInfo.WaitForUserDecisionAsync() is `=> _tcs.Task` with no timeout, and no
+            // ApprovalTimeout setting or constant exists anywhere in src. So no new ToolGateDecision member was
+            // added (it would be a persisted, append-only int for a state that cannot occur); the way a gate
+            // decision ends without an answer today is CardCancelled, and stamping here makes the row say how
+            // long the question had been open when the turn died. DateTime? not DateTime: the local is assigned
+            // on every path out of the try, but the compiler cannot prove it for a local function's closure.
+            DateTime? cardDecidedAt = null;
             ToolDecision decision;
             // A cancelled card (new chat / retry / scope dispose) is mapped to ToolDecision.Decline below,
             // and recording THAT as "the user declined" would be a false audit statement. The flag survives
@@ -1150,16 +1195,25 @@ public sealed class ChatSession : IDisposable
             }
             finally
             {
+                cardDecidedAt = DateTime.UtcNow;
+
                 // Back to Running for the next tool/segment (the turn is still in flight).
                 if (State == ChatState.WaitingForTool)
                     SetState(ChatState.Running);
             }
 
+            // Passed on as-is, with NO `?? DateTime.UtcNow` fallback. Every arm below is reached only after the
+            // finally ran, so in practice it is never null — but a fallback would MANUFACTURE an instant if
+            // that ever stopped being true, and a fabricated "decided at" on an audit row is worse than an
+            // honest NULL. It also keeps the stamp observable: neutralize the finally and the row goes null,
+            // which is what the prompted-card tests watch.
+            var answeredAt = cardDecidedAt;
+
             switch (decision)
             {
                 case ToolDecision.AllowOnce:
                     _logger.LogInformation("User allowed {ToolName} action once", tool);
-                    return await ExecuteAndReport(ToolGateDecision.ApprovedOnce);
+                    return await ExecuteAndReport(ToolGateDecision.ApprovedOnce, cardShownAt, answeredAt);
 
                 // hermes #15 THE MIDDLE TIER. Execute now and remember for the rest of this app session —
                 // nothing is written to AppSettings, so the grant dies with the process and appears in no
@@ -1176,12 +1230,12 @@ public sealed class ChatSession : IDisposable
                         _permissions.GrantForSession(pluginId, tool);
                         _logger.LogInformation(
                             "User granted session approval for {ToolName} (plugin {PluginId})", tool, pluginId);
-                        return await ExecuteAndReport(ToolGateDecision.ApprovedForSession);
+                        return await ExecuteAndReport(ToolGateDecision.ApprovedForSession, cardShownAt, answeredAt);
                     }
 
                     _logger.LogInformation(
                         "Session approval not offerable for {ToolName}; executing once instead", tool);
-                    return await ExecuteAndReport(ToolGateDecision.ApprovedOnce);
+                    return await ExecuteAndReport(ToolGateDecision.ApprovedOnce, cardShownAt, answeredAt);
 
                 case ToolDecision.AlwaysAllow:
                     // Defensive: never grant a non-offerable tool even if its card somehow
@@ -1192,13 +1246,18 @@ public sealed class ChatSession : IDisposable
                         await _permissions.GrantAsync(pluginId, tool);
                         _logger.LogInformation("User granted standing approval for {ToolName} (plugin {PluginId})", tool, pluginId);
                     }
-                    return await ExecuteAndReport(ToolGateDecision.ApprovedAlways);
+                    return await ExecuteAndReport(ToolGateDecision.ApprovedAlways, cardShownAt, answeredAt);
 
                 default:
                     _logger.LogInformation("User declined {ToolName} action", tool);
                     timeline?.Emit(ToolGateSurface.Interactive, tool, toolClass, pluginId,
                         cardCancelled ? ToolGateDecision.CardCancelled : ToolGateDecision.DeclinedByUser,
-                        AgentTimelineOutcome.NotExecuted, argsChars);
+                        AgentTimelineOutcome.NotExecuted,
+                        toolCallId: toolCall.CallId, round: dispatch.Round,
+                        // BOTH stamps land on the cancelled path too, because the finally assigned the second
+                        // one: a CardCancelled row therefore says how long the question had been open.
+                        requestedAt: cardShownAt, decidedAt: answeredAt,
+                        argsChars);
                     return $"User declined the {tool} operation. Do not retry. Ask the user what they would like to do instead.";
             }
         }

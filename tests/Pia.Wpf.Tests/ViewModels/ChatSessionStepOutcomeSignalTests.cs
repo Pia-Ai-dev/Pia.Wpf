@@ -79,24 +79,24 @@ public sealed class ChatSessionStepOutcomeSignalTests
 
     /// <summary>Arranges the AI client to run <paramref name="drive"/> against the session's tool handler and
     /// then stream whatever text it returns (empty string = no TextDelta at all).</summary>
-    private void ArrangeExchange(Func<Func<FunctionCallContent, Task<object?>>?, Task<string>> drive)
+    private void ArrangeExchange(Func<ToolCallHandler?, Task<string>> drive)
     {
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(),
                 cancellationToken: Arg.Any<CancellationToken>(), contextBudget: Arg.Any<AgentContextBudget?>())
-            .Returns(ci => Stream(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), drive));
+            .Returns(ci => Stream(ci.ArgAt<ToolCallHandler?>(3), drive));
     }
 
     private async IAsyncEnumerable<ChatStreamItem> Stream(
-        Func<FunctionCallContent, Task<object?>>? handler,
-        Func<Func<FunctionCallContent, Task<object?>>?, Task<string>> drive)
+        ToolCallHandler? handler,
+        Func<ToolCallHandler?, Task<string>> drive)
     {
-        Func<FunctionCallContent, Task<object?>>? recording = handler is null
+        ToolCallHandler? recording = handler is null
             ? null
-            : async call =>
+            : async (call, ctx) =>
             {
-                var reply = await handler(call);
+                var reply = await handler(call, ctx);
                 _toolReplies.Add(reply);
                 return reply;
             };
@@ -122,7 +122,7 @@ public sealed class ChatSessionStepOutcomeSignalTests
             + "written. Below is the text I would have published.";
         ArrangeExchange(async handler =>
         {
-            await handler!(Emit(succeeded: false, summary: "the target folder is read-only"));
+            await handler!(Emit(succeeded: false, summary: "the target folder is read-only"), new ToolDispatchContext(1));
             return eloquent;
         });
 
@@ -164,7 +164,7 @@ public sealed class ChatSessionStepOutcomeSignalTests
     {
         ArrangeExchange(async handler =>
         {
-            await handler!(Emit(succeeded: true, summary: "renamed the columns", artifact: "data/clean.csv"));
+            await handler!(Emit(succeeded: true, summary: "renamed the columns", artifact: "data/clean.csv"), new ToolDispatchContext(1));
             return string.Empty; // no TextDelta whatsoever
         });
 
@@ -226,7 +226,7 @@ public sealed class ChatSessionStepOutcomeSignalTests
     {
         ArrangeExchange(async handler =>
         {
-            await handler!(Emit(succeeded: true, summary: "all good"));
+            await handler!(Emit(succeeded: true, summary: "all good"), new ToolDispatchContext(1));
             throw new InvalidOperationException("boom");
         });
 
@@ -255,7 +255,7 @@ public sealed class ChatSessionStepOutcomeSignalTests
             .Returns(((object?, PluginToolCall?)?)null);
         ArrangeExchange(async handler =>
         {
-            await handler!(Emit(succeeded: false, summary: "should not be believed"));
+            await handler!(Emit(succeeded: false, summary: "should not be believed"), new ToolDispatchContext(1));
             return "some text";
         });
 
@@ -293,7 +293,7 @@ public sealed class ChatSessionStepOutcomeSignalTests
 
         ArrangeExchange(async handler =>
         {
-            await handler!(Emit(succeeded: true, summary: "step one is fine"));
+            await handler!(Emit(succeeded: true, summary: "step one is fine"), new ToolDispatchContext(1));
             return "first";
         });
         var step = await session.RunStepTurnAsync(
@@ -305,7 +305,7 @@ public sealed class ChatSessionStepOutcomeSignalTests
         _toolReplies.Clear();
         ArrangeExchange(async handler =>
         {
-            await handler!(Emit(succeeded: false, summary: "leaked into the next turn"));
+            await handler!(Emit(succeeded: false, summary: "leaked into the next turn"), new ToolDispatchContext(1));
             return "second";
         });
         var user = new AssistantMessage(ChatRole.User, "hi");
@@ -335,7 +335,7 @@ public sealed class ChatSessionStepOutcomeSignalTests
     {
         ArrangeExchange(async handler =>
         {
-            await handler!(Emit(succeeded: false, summary: "blocked"));
+            await handler!(Emit(succeeded: false, summary: "blocked"), new ToolDispatchContext(1));
             return "text";
         });
 

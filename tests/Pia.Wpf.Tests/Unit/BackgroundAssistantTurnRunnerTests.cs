@@ -62,8 +62,8 @@ public class BackgroundAssistantTurnRunnerTests
 
             Ai.GetChatCompletionWithToolsAsync(
                     Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                    Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
-                .Returns(ci => Drive(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), toolCalls, answer));
+                    Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+                .Returns(ci => Drive(ci.ArgAt<ToolCallHandler?>(3), toolCalls, answer));
 
             ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();
 
@@ -74,7 +74,7 @@ public class BackgroundAssistantTurnRunnerTests
         }
 
         private async IAsyncEnumerable<ChatStreamItem> Drive(
-            Func<FunctionCallContent, Task<object?>>? handler,
+            ToolCallHandler? handler,
             IReadOnlyList<FunctionCallContent> toolCalls,
             string answer)
         {
@@ -82,7 +82,7 @@ public class BackgroundAssistantTurnRunnerTests
             {
                 foreach (var call in toolCalls)
                 {
-                    var returned = await handler(call);
+                    var returned = await handler(call, new ToolDispatchContext(1));
                     HandlerResults.Add((call.Name, returned));
                 }
             }

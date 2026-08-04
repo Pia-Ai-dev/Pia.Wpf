@@ -86,11 +86,11 @@ public sealed class AgentPlannerTests
     // (when emitArgs is set) then yields Finished — the loop drains the whole stream (R6). The usage
     // rides on the yielded Finished item, which is the ONLY place a provider reports it (I1).
     private static async IAsyncEnumerable<ChatStreamItem> PlanStream(
-        Func<FunctionCallContent, Task<object?>>? handler, Dictionary<string, object?>? emitArgs,
+        ToolCallHandler? handler, Dictionary<string, object?>? emitArgs,
         UsageDetails? usage = null)
     {
         if (handler is not null && emitArgs is not null)
-            await handler(new FunctionCallContent(Guid.NewGuid().ToString(), "emit_plan", emitArgs));
+            await handler(new FunctionCallContent(Guid.NewGuid().ToString(), "emit_plan", emitArgs), new ToolDispatchContext(1));
         await Task.Yield();
         yield return new Finished(usage, "test-model");
     }
@@ -121,13 +121,13 @@ public sealed class AgentPlannerTests
     {
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 var messages = ci.ArgAt<IList<ChatMessage>>(0);
                 _systemPrompts.Add(messages[0].Text ?? string.Empty);
                 _userPrompts.Add(messages[1].Text ?? string.Empty);
-                return PlanStream(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), emitArgs, usage);
+                return PlanStream(ci.ArgAt<ToolCallHandler?>(3), emitArgs, usage);
             });
     }
 
@@ -172,7 +172,7 @@ public sealed class AgentPlannerTests
     {
         _ai.Received(count).GetChatCompletionWithToolsAsync(
             Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-            Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>());
+            Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>());
     }
 
     [Fact]

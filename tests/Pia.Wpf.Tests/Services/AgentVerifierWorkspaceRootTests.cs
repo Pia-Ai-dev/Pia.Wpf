@@ -59,10 +59,10 @@ public sealed class AgentVerifierWorkspaceRootTests : IDisposable
     private string LastPrompt => _systemPrompts[^1];
 
     private static async IAsyncEnumerable<ChatStreamItem> VerdictStream(
-        Func<FunctionCallContent, Task<object?>>? handler, Dictionary<string, object?>? emitArgs, UsageDetails? usage)
+        ToolCallHandler? handler, Dictionary<string, object?>? emitArgs, UsageDetails? usage)
     {
         if (handler is not null && emitArgs is not null)
-            await handler(new FunctionCallContent(Guid.NewGuid().ToString(), "emit_verdict", emitArgs));
+            await handler(new FunctionCallContent(Guid.NewGuid().ToString(), "emit_verdict", emitArgs), new ToolDispatchContext(1));
         await Task.Yield();
         yield return new Finished(usage, "test-model");
     }
@@ -74,11 +74,11 @@ public sealed class AgentVerifierWorkspaceRootTests : IDisposable
     {
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 _systemPrompts.Add(ci.ArgAt<IList<ChatMessage>>(0)[0].Text ?? string.Empty);
-                return VerdictStream(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), emitArgs, usage);
+                return VerdictStream(ci.ArgAt<ToolCallHandler?>(3), emitArgs, usage);
             });
     }
 

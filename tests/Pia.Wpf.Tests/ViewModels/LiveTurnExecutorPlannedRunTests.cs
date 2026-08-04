@@ -117,7 +117,7 @@ public sealed class LiveTurnExecutorPlannedRunTests
     private void ReturnsStream(Func<CancellationToken, IAsyncEnumerable<ChatStreamItem>> factory) =>
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci => factory((CancellationToken)ci[6]));
 
     private static async IAsyncEnumerable<ChatStreamItem> Stream(params ChatStreamItem[] items)
@@ -311,8 +311,8 @@ public sealed class LiveTurnExecutorPlannedRunTests
 
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
-            .Returns(ci => StreamWithToolCall(ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), "write_file"));
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(ci => StreamWithToolCall(ci.ArgAt<ToolCallHandler?>(3), "write_file"));
 
         var live = BuildLiveExecutor(
             session, _ => false,
@@ -343,10 +343,10 @@ public sealed class LiveTurnExecutorPlannedRunTests
     }
 
     private static async IAsyncEnumerable<ChatStreamItem> StreamWithToolCall(
-        Func<FunctionCallContent, Task<object?>>? handler, string toolName)
+        ToolCallHandler? handler, string toolName)
     {
         if (handler is not null)
-            await handler(new FunctionCallContent("call-1", toolName, new Dictionary<string, object?>()));
+            await handler(new FunctionCallContent("call-1", toolName, new Dictionary<string, object?>()), new ToolDispatchContext(1));
 
         yield return new TextDelta("reply");
         yield return new Finished(null, "m");
@@ -770,7 +770,7 @@ public sealed class LiveTurnExecutorPlannedRunTests
         var captured = new List<(string, SynchronizationContext?)>();
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 var messages = ci.ArgAt<IList<ChatMessage>>(0);

@@ -344,7 +344,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         await foreach (var item in _aiClient.GetChatCompletionWithToolsAsync(
             messages, provider,
             setup.SupportsTools ? setup.Tools : null,
-            setup.SupportsTools ? toolCall => HandleToolCallAsync(toolCall, grantedWrites, policy, timeline, outcomeStore, approvals) : null,
+            setup.SupportsTools ? (toolCall, ctx) => HandleToolCallAsync(toolCall, grantedWrites, ctx, policy, timeline, outcomeStore, approvals) : null,
             nameof(WindowMode.Assistant), setup.PersonaId,
             cancellationToken: ct, contextBudget: contextBudget))
         {
@@ -385,8 +385,13 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
     /// writes (tools that return a pending action) run only if explicitly granted to this job — with one
     /// FLOOR no grant can lift: a destructive EXTERNAL (MCP) tool never runs unattended (B2).
     /// </summary>
+    /// <param name="dispatch">What the tool LOOP knows and this gate cannot derive (T2-14): the 1-based round,
+    /// persisted on every row this gate writes. The interactive twin takes the same parameter for the same
+    /// reason, and the two must stay in step — a column populated on one surface and NULL on the other is a
+    /// silent parity bug (AgentTimelineParityTests holds them together).</param>
     private async Task<object?> HandleToolCallAsync(
-        FunctionCallContent toolCall, HashSet<string> grantedWrites, RunAutonomyPolicy? policy = null,
+        FunctionCallContent toolCall, HashSet<string> grantedWrites, ToolDispatchContext dispatch,
+        RunAutonomyPolicy? policy = null,
         AgentTimelineScope? timeline = null, StepOutcomeStore? outcomeStore = null,
         ToolApprovalStore? approvals = null)
     {
@@ -417,8 +422,12 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             var loggedName = AgentTimelineScope.SanitizeUnroutedToolName(toolCall.Name);
             _logger.LogWarning("Background turn: no handler for tool {ToolName}", loggedName);
             _logger.SensitiveDebug("Unrouted tool call name: {ToolName}", toolCall.Name);
+            // Parity with the interactive unrouted arm, including the NULL/NULL instants: no gate was consulted,
+            // so there was no question to time. The provider-authored CallId is still recorded.
             timeline?.Emit(ToolGateSurface.Unattended, loggedName, ToolClass.Unknown, pluginId: null,
-                ToolGateDecision.UnknownTool, AgentTimelineOutcome.NotExecuted, argsChars);
+                ToolGateDecision.UnknownTool, AgentTimelineOutcome.NotExecuted,
+                toolCallId: toolCall.CallId, round: dispatch.Round, requestedAt: null, decidedAt: null,
+                argsChars);
             return "Unknown tool.";
         }
 
@@ -464,6 +473,11 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             // is true for the BUILT-IN file tool, and an explicit grant for a built-in delete is the user's own
             // auditable decision, so it still executes.
             var toolClass = ToolClassifier.Classify(pending.PluginName, IsExternalTool(pending.ToolName));
+            // T2-14: the POLICY question, bracketed. There is no human on this surface, so unlike the
+            // interactive twin these two are the ONLY pair — every arm below that got an answer uses them.
+            // Usually EQUAL (Resolve is a few comparisons, DateTime.UtcNow is ~1 ms), so nothing may assert
+            // strict ordering.
+            var askedAt = DateTime.UtcNow;
             var verdict = ToolAutonomy.Resolve(new ToolGateInput(
                 ToolGateSurface.Unattended, pending.ToolName, toolClass,
                 // No allowlist unattended: there is no user to have curated it, and IToolPermissionService is
@@ -484,6 +498,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 // once per run (root run + a real step turn) and hands the answer down in the store; a null
                 // store — every SingleTurn background call — is false, i.e. the pre-#16 hard denial.
                 CanPark: approvals?.CanPark == true));
+            var resolvedAt = DateTime.UtcNow;
 
             switch (verdict.Outcome)
             {
@@ -501,13 +516,19 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                     catch
                     {
                         timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
-                            verdict.Decision, AgentTimelineOutcome.Error, argsChars, resultChars: null,
+                            verdict.Decision, AgentTimelineOutcome.Error,
+                            toolCallId: toolCall.CallId, round: dispatch.Round,
+                            requestedAt: askedAt, decidedAt: resolvedAt,
+                            argsChars, resultChars: null,
                             durationMs: AgentTimelineScope.ElapsedMs(startedAt));
                         throw;
                     }
 
                     timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
-                        verdict.Decision, AgentTimelineOutcome.Ok, argsChars,
+                        verdict.Decision, AgentTimelineOutcome.Ok,
+                        toolCallId: toolCall.CallId, round: dispatch.Round,
+                        requestedAt: askedAt, decidedAt: resolvedAt,
+                        argsChars,
                         resultChars: (executed as string)?.Length,
                         durationMs: AgentTimelineScope.ElapsedMs(startedAt));
                     return executed;
@@ -530,8 +551,17 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                     // second pending decision.
                     if (parked)
                     {
+                        // THE ONE ARM WITH A NULL DecidedAt (T2-14). RequestedAt is real — the run genuinely
+                        // asked — but nobody has answered yet, and nobody will answer THIS row: the human's
+                        // answer arrives later as a resume that re-runs the step from the top and writes a
+                        // FRESH GrantedByName row. Back-filling this one would break the write-once model
+                        // AgentTimelineEvent's remarks describe, and a `decidedAt: DateTime.UtcNow` here would
+                        // claim a decision was made at the instant the run stopped to ask for one.
                         timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
-                            verdict.Decision, AgentTimelineOutcome.NotExecuted, argsChars);
+                            verdict.Decision, AgentTimelineOutcome.NotExecuted,
+                            toolCallId: toolCall.CallId, round: dispatch.Round,
+                            requestedAt: askedAt, decidedAt: null,
+                            argsChars);
                     }
                     return $"Paused: '{pending.ToolName}' needs a person's approval, and this run has asked for one. "
                            + "It did NOT run. Stop now and produce no further tool calls — the run will be "
@@ -539,17 +569,25 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
 
                 case ToolGateOutcome.Refuse when verdict.Decision == ToolGateDecision.DeniedDestructiveFloor:
                     _logger.LogWarning("Background turn refused granted destructive external tool {ToolName}", pending.ToolName);
+                    // The policy DID answer — with a refusal — so both instants are real.
                     timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
-                        verdict.Decision, AgentTimelineOutcome.NotExecuted, argsChars);
+                        verdict.Decision, AgentTimelineOutcome.NotExecuted,
+                        toolCallId: toolCall.CallId, round: dispatch.Round,
+                        requestedAt: askedAt, decidedAt: resolvedAt,
+                        argsChars);
                     return $"Denied: '{pending.ToolName}' is a destructive external (MCP) tool and never runs unattended, "
                            + "even when granted. Do not retry.";
 
                 default:
                     _logger.LogInformation("Background turn denied ungranted write tool {ToolName}", pending.ToolName);
                     // verdict.Decision rather than a literal, so the persisted reason is always the one the
-                    // shared resolver actually returned (DeniedNotGranted on this surface today).
+                    // shared resolver actually returned (DeniedNotGranted on this surface today). A denial is
+                    // an ANSWER, so both instants are real here too — only the park leaves DecidedAt null.
                     timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
-                        verdict.Decision, AgentTimelineOutcome.NotExecuted, argsChars);
+                        verdict.Decision, AgentTimelineOutcome.NotExecuted,
+                        toolCallId: toolCall.CallId, round: dispatch.Round,
+                        requestedAt: askedAt, decidedAt: resolvedAt,
+                        argsChars);
                     return $"Denied: '{pending.ToolName}' is a write action not granted to this background job. Do not retry.";
             }
         }

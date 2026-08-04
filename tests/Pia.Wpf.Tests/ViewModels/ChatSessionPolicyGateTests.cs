@@ -60,10 +60,10 @@ public sealed class ChatSessionPolicyGateTests
     };
 
     private static async IAsyncEnumerable<ChatStreamItem> StreamWithToolCall(
-        Func<FunctionCallContent, Task<object?>>? handler, string toolName, Action<object?> capture)
+        ToolCallHandler? handler, string toolName, Action<object?> capture)
     {
         if (handler is not null)
-            capture(await handler(new FunctionCallContent("call-1", toolName, new Dictionary<string, object?>())));
+            capture(await handler(new FunctionCallContent("call-1", toolName, new Dictionary<string, object?>()), new ToolDispatchContext(1)));
 
         yield return new TextDelta("Done.");
         await Task.Yield();
@@ -76,9 +76,9 @@ public sealed class ChatSessionPolicyGateTests
         _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<ToolGateDecision?>(), Arg.Any<ToolClass?>()).Returns(card);
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<Func<FunctionCallContent, Task<object?>>?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci => StreamWithToolCall(
-                ci.ArgAt<Func<FunctionCallContent, Task<object?>>?>(3), toolName, capture));
+                ci.ArgAt<ToolCallHandler?>(3), toolName, capture));
     }
 
     private static PluginToolCall Pending(string toolName, string pluginName, Guid pluginId, Action onExecute) =>
