@@ -1,16 +1,22 @@
+using System.Diagnostics;
 using System.IO;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
 
 namespace Pia.Infrastructure;
 
 public class SqliteContext : IDisposable
 {
     private readonly string _connectionString;
+    private readonly ILogger<SqliteContext>? _logger;
     private SqliteConnection? _connection;
     private bool _disposed;
 
-    public SqliteContext()
-        : this(DefaultDbPath())
+    /// <param name="logger">Optional and defaulted so the sixty-odd hand-constructed test sites stay
+    /// source-compatible; DI supplies the real one. Null ⇒ the integrity check still RUNS and still records
+    /// <see cref="IntegrityStatus"/>, it just says nothing in the log.</param>
+    public SqliteContext(ILogger<SqliteContext>? logger = null)
+        : this(DefaultDbPath(), logger)
     {
     }
 
@@ -18,13 +24,14 @@ public class SqliteContext : IDisposable
     /// Opens the database at an explicit path. Tests pass a temp file so they
     /// never read or write the user's real history.db.
     /// </summary>
-    public SqliteContext(string dbPath)
+    public SqliteContext(string dbPath, ILogger<SqliteContext>? logger = null)
     {
         var directory = Path.GetDirectoryName(dbPath);
         if (!string.IsNullOrEmpty(directory))
             Directory.CreateDirectory(directory);
 
         _connectionString = $"Data Source={dbPath}";
+        _logger = logger;
     }
 
     /// <summary>
@@ -48,6 +55,8 @@ public class SqliteContext : IDisposable
             _connection = new SqliteConnection(_connectionString);
             _connection.Open();
             ApplyConnectionPragmas(_connection);
+            // T2-13b: BEFORE EnsureSchema, and once per process — see CheckIntegrity for both reasons.
+            CheckIntegrity(_connection);
             EnsureSchema();
         }
         else if (_connection.State != System.Data.ConnectionState.Open)
@@ -56,6 +65,94 @@ public class SqliteContext : IDisposable
         }
 
         return _connection;
+    }
+
+    /// <summary>
+    /// The result of this process's one integrity check: <c>"ok"</c>, the FIRST problem SQLite reported
+    /// (truncated), or <see langword="null"/> when the check has not run or could not run.
+    /// <para>
+    /// The support log is the real surface — this property exists so a test can assert the outcome without
+    /// parsing a log line, and so a future "your history file is damaged" affordance has something to read that
+    /// is not a second full scan.
+    /// </para>
+    /// </summary>
+    public string? IntegrityStatus { get; private set; }
+
+    /// <summary>The one healthy answer <c>PRAGMA integrity_check</c> gives.</summary>
+    private const string IntegrityOk = "ok";
+
+    /// <summary>
+    /// hermes #13's second half (T2-13b): does this database still open cleanly? Runs exactly once, on the
+    /// shared connection's FIRST open.
+    /// <para>
+    /// WHY BEFORE <see cref="EnsureSchema"/>: the check is READ-ONLY and <see cref="EnsureSchema"/> is not. It
+    /// issues DDL, conditional <c>ALTER TABLE</c>s, a seed <c>INSERT</c>, an FTS table drop-and-recreate and a
+    /// backfill inside a transaction — so on a damaged file the first thing this process would otherwise do is
+    /// WRITE to it, which can turn a recoverable image into a worse one and buries the diagnosis under whatever
+    /// cryptic error the DDL happens to throw. Diagnose first, then modify.
+    /// </para>
+    /// <para>
+    /// WHY IT NEVER THROWS, and why NO REPAIR IS ATTEMPTED. Throwing here would take the whole app down for a
+    /// database whose damage may be one index — today the user keeps every feature that does not touch the
+    /// broken page. And SQLite's own remedy for a malformed image is a dump-and-reload, i.e. a decision about
+    /// the user's own history that must not be made silently at startup; the one in-place move available,
+    /// <c>REINDEX</c>, is a WRITE to a file we have just established we cannot reason about — the exact thing
+    /// the ordering above exists to avoid — and it would have to be triggered by string-matching SQLite's
+    /// diagnostic prose. So this reports, loudly and once, and leaves the choice to a person.
+    /// </para>
+    /// <para>
+    /// <c>integrity_check(1)</c>, not the bare form: on a healthy database the work is identical (a full scan),
+    /// but on a damaged one the analysis quits at the first error instead of walking the whole file to build a
+    /// wall of text nobody reads.
+    /// </para>
+    /// <para>
+    /// COST, measured rather than assumed: <b>11.6 ms on a real 1.02 MB <c>history.db</c></b> — and the scan is
+    /// linear in FILE SIZE, so roughly 12 ms per MB. That is free at the size this file actually reaches today
+    /// and would be SECONDS of startup on a several-hundred-MB profile (the embedding blobs in <c>Memories</c>
+    /// and <c>Chunks</c> are what could get it there). If that ever arrives, the cheaper trade is
+    /// <c>PRAGMA quick_check</c>, measured at 2.4 ms on the same file: it skips the index-content cross-checks,
+    /// i.e. gives up exactly the class of damage most likely to be found here, which is why it is not the
+    /// default now.
+    /// </para>
+    /// </summary>
+    private void CheckIntegrity(SqliteConnection connection)
+    {
+        try
+        {
+            var started = Stopwatch.GetTimestamp();
+            using var command = connection.CreateCommand();
+            command.CommandText = "PRAGMA integrity_check(1);";
+            var result = command.ExecuteScalar() as string;
+            var elapsedMs = (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+
+            if (string.IsNullOrWhiteSpace(result))
+            {
+                // No row at all is not "ok" and not a failure either — it is a build/provider surprise, and
+                // claiming either would be inventing a fact.
+                IntegrityStatus = null;
+                _logger?.LogWarning("History database integrity check returned no result");
+                return;
+            }
+
+            // Structural text only (page and row numbers, table and index names — never row CONTENT), so it is
+            // release-loggable; bounded anyway, because a support log is not the place for an unbounded string.
+            IntegrityStatus = result.Length <= 200 ? result : result[..200] + "…";
+
+            if (string.Equals(result, IntegrityOk, StringComparison.OrdinalIgnoreCase))
+                _logger?.LogInformation("History database integrity check passed in {ElapsedMs} ms", elapsedMs);
+            else
+                _logger?.LogError(
+                    "History database integrity check FAILED after {ElapsedMs} ms: {Problem}. The check does not "
+                    + "stop the open; anything that reads the damaged pages may still fail",
+                    elapsedMs, IntegrityStatus);
+        }
+        catch (Exception ex)
+        {
+            // Including the case the check itself cannot complete on a badly damaged file. Never fail the open:
+            // this is a diagnostic, and a diagnostic that can brick the app is worse than no diagnostic.
+            IntegrityStatus = null;
+            _logger?.LogWarning(ex, "History database integrity check could not run");
+        }
     }
 
     /// <summary>

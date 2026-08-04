@@ -124,8 +124,20 @@ assumed absent.
   `readOnlyHint:true`+`destructiveHint:true` pair, in `McpToolAnnotationHintTests`. The same flag widens the
   CARD (`ActionCardBuilder.cs:67`) and both grant-offer rules, because a card offering "Always allow" for a tool
   the floor will never auto-run is a button that does nothing.
-- [ ] **T2-13b — SQLite integrity-check / repair-on-open.** WAL + `busy_timeout` shipped with Batch 10; there is
-  no `PRAGMA integrity_check` anywhere in `src/`. hermes #13's second half.
+- [x] **T2-13b — SQLite integrity-check on open.** Fixed: `SqliteContext.CheckIntegrity`
+  (`SqliteContext.cs:118`) runs `PRAGMA integrity_check(1)` once, on the shared connection's first open only
+  (`:59`), and records the answer on `IntegrityStatus` (`:79`) beside an Information/Error log line — the support
+  log is the surface, the property is what a test (and a future affordance) can read without a second full scan.
+  **BEFORE `EnsureSchema`, and that ordering is the item:** the check is read-only while `EnsureSchema` issues
+  DDL, conditional `ALTER`s, a seed `INSERT` and an FTS drop-and-rebuild, so on a damaged file this process would
+  otherwise WRITE first and bury the diagnosis under whatever the DDL happened to throw.
+  `SqliteContextIntegrityTests` pins that by damaging a page and asserting the diagnosis lands even when the
+  schema pass then throws. **"repair" is deliberately NOT attempted, and that is the finding, not an omission:**
+  SQLite's own remedy is a dump-and-reload — a decision about the user's history, not something to do silently at
+  startup — and the one in-place move, `REINDEX`, is a write to the very file we have just established cannot be
+  reasoned about, triggered by string-matching SQLite's diagnostic prose. Cost measured rather than assumed:
+  11.6 ms on a real 1.02 MB `history.db`, linear in file size, with `quick_check` (2.4 ms on the same file) named
+  in the code as the trade if a large profile ever makes it a visible startup delay.
 - [x] **T2-14 — gated-call correlation.** Fixed: `ToolCallId`, `StepOrdinal`, `RequestedAt` and `DecidedAt`
   joined `AgentTimelineEvents` (`AgentTimelineEvent.cs`), all nullable so a pre-existing `SchemaVersion 1` row
   reads as "never recorded" rather than a lost fact on a `SchemaVersion 2` row. `Round` is carried from
