@@ -1036,6 +1036,10 @@
   <data name="Settings_ScheduledJobs_Field_GrantedTools" xml:space="preserve"><value>Outils d'écriture autorisés (séparés par des virgules)</value></data>
   <data name="Settings_ScheduledJobs_Field_QuietOnSuccess" xml:space="preserve"><value>Discret : aucune notification en cas de succès</value></data>
   <data name="Settings_ScheduledJobs_Field_QuietOnSuccess_Hint" xml:space="preserve"><value>Pour les tâches de surveillance qui signalent surtout « aucun changement ». Les échecs sont toujours notifiés et le chat de résultat est toujours enregistré.</value></data>
+  <data name="Settings_ScheduledJobs_RecentRuns" xml:space="preserve"><value>{0} dernières exécutions : {1} ok, {2} en échec</value></data>
+  <data name="Settings_ScheduledJobs_RunState_Completed" xml:space="preserve"><value>Terminée</value></data>
+  <data name="Settings_ScheduledJobs_RunState_Failed" xml:space="preserve"><value>Échouée</value></data>
+  <data name="Settings_ScheduledJobs_RunState_Cancelled" xml:space="preserve"><value>Annulée</value></data>
   <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Fournisseur par défaut</value></data>
   <data name="Settings_ScheduledJobs_NextRun" xml:space="preserve"><value>Prochaine exécution</value></data>
   <data name="Settings_ScheduledJobs_LastRun" xml:space="preserve"><value>Dernière exécution</value></data>

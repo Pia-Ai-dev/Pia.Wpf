@@ -322,6 +322,7 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
         public Task<bool> ChatHasPlannedRunAsync(Guid chatId, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task<bool> AnyExecutingRunForTriggerAsync(Guid triggerRef, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task<IReadOnlyList<ScheduledFiringOutcome>> GetLatestSettledFiringsAsync(CancellationToken ct = default) => throw new InvalidOperationException("boom");
+        public Task<IReadOnlyList<ScheduledFiringOutcome>> GetFiringsForTriggerAsync(Guid triggerRef, int limit, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task ReplaceStepsAsync(Guid runId, IReadOnlyList<AgentStep> steps, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task<PlanMutationResult> ApplyPlanMutationAsync(Guid runId, IReadOnlyList<PlanStepEdit> pendingSteps, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task<AgentStep?> NextPendingStepAsync(Guid runId, CancellationToken ct = default) => throw new InvalidOperationException("boom");

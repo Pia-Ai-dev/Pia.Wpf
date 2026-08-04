@@ -588,6 +588,14 @@
                           <TextBlock Text="{Binding NextFireAt, StringFormat=g}"
                                      Style="{StaticResource PiaSettingsDescriptionStyle}"/>
                         </StackPanel>
+                        <!-- T2-18 per-job run history: the summary is the visible line, the firings themselves
+                             are the tooltip. Hidden entirely when nothing has been recorded, so a job that has
+                             never fired says nothing rather than "0 runs". -->
+                        <TextBlock Text="{Binding RecentRunsSummary}"
+                                   ToolTip="{Binding RecentRunsDetail}"
+                                   Style="{StaticResource PiaSettingsDescriptionStyle}"
+                                   Margin="0,4,0,0"
+                                   Visibility="{Binding HasRecentRuns, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                         <TextBlock Text="{loc:Str Settings_ScheduledJobs_NotOwnedHere}"
                                    Style="{StaticResource PiaSettingsDescriptionStyle}"
                                    FontStyle="Italic"

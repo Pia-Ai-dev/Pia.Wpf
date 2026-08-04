@@ -84,6 +84,8 @@ public class ScheduledJobsRowTemplateTests
         ToggleLabel = "Disable",
         GrantedTools = string.Empty,
         QuietOnSuccess = false,
+        RecentRunsSummary = "Last 5 runs: 4 ok, 1 failed",
+        RecentRunsDetail = "02/08/2026 09:00 - Completed",
         OwnedByThisDevice = true,
     };
 
@@ -105,6 +107,10 @@ public class ScheduledJobsRowTemplateTests
         ToggleLabel = "Enable",
         GrantedTools = string.Empty,
         QuietOnSuccess = false,
+        // T2-18: nothing recorded, which is what drives HasRecentRuns -> Collapsed -- the direction
+        // Visibility cannot reach by default (hazard 8).
+        RecentRunsSummary = string.Empty,
+        RecentRunsDetail = string.Empty,
         OwnedByThisDevice = false,
     };
 
@@ -141,7 +147,7 @@ public class ScheduledJobsRowTemplateTests
 
         (int ButtonCount, string? Name, string? Query, string? Kind, string? Recurrence, string? Status,
             string? NextFireAt, string NotOwnedVisibility, string? ToggleLabel, bool ToggleEnabled,
-            bool RunNowEnabled) a, b;
+            bool RunNowEnabled, string? RecentRuns, string RecentRunsVisibility, string? RecentRunsToolTip) a, b;
 
         try
         {
@@ -219,11 +225,20 @@ public class ScheduledJobsRowTemplateTests
         Assert.True(a.RunNowEnabled);
         Assert.False(b.ToggleEnabled);
         Assert.False(b.RunNowEnabled);
+
+        // Paths 11-13 (T2-18), the per-job run history: the summary text, its tooltip (the firings themselves)
+        // and the visibility the empty summary drives. Row B's Collapsed is the half that can ONLY be reached
+        // through the binding, since Visibility defaults to Visible.
+        Assert.Equal("Last 5 runs: 4 ok, 1 failed", a.RecentRuns);
+        Assert.Equal("02/08/2026 09:00 - Completed", a.RecentRunsToolTip);
+        Assert.Equal("Visible", a.RecentRunsVisibility);
+        Assert.Equal("Collapsed", b.RecentRunsVisibility);
     }
 
     private static (int ButtonCount, string? Name, string? Query, string? Kind, string? Recurrence,
         string? Status, string? NextFireAt, string NotOwnedVisibility, string? ToggleLabel, bool ToggleEnabled,
-        bool RunNowEnabled) Observe(FrameworkElement row)
+        bool RunNowEnabled, string? RecentRuns, string RecentRunsVisibility, string? RecentRunsToolTip)
+        Observe(FrameworkElement row)
     {
         var texts = FindElements<TextBlock>(row).ToList();
         var buttons = FindElements<ButtonBase>(row).ToList();
@@ -232,6 +247,8 @@ public class ScheduledJobsRowTemplateTests
             texts.Single(tb => BindingPathWalker.PathOf(tb, TextBlock.TextProperty) == path).Text;
 
         var notOwned = texts.Single(tb => BindingPathWalker.PathOf(tb, UIElement.VisibilityProperty) == "OwnedByThisDevice");
+        // T2-18: located by its own Visibility path, so it can never be confused with the not-owned line.
+        var recentRuns = texts.Single(tb => BindingPathWalker.PathOf(tb, UIElement.VisibilityProperty) == "HasRecentRuns");
         var toggle = buttons.Single(b => BindingPathWalker.PathOf(b, ButtonBase.CommandProperty) == "DataContext.ToggleEnabledCommand");
         var runNow = buttons.Single(b => BindingPathWalker.PathOf(b, ButtonBase.CommandProperty) == "DataContext.RunNowCommand");
 
@@ -254,7 +271,10 @@ public class ScheduledJobsRowTemplateTests
             notOwned.Visibility.ToString(),
             toggle.Content?.ToString(),
             toggle.IsEnabled,
-            runNow.IsEnabled);
+            runNow.IsEnabled,
+            recentRuns.Text,
+            recentRuns.Visibility.ToString(),
+            recentRuns.ToolTip?.ToString());
     }
 
     [Fact]

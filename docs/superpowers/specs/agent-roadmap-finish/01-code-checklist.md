@@ -199,7 +199,15 @@ assumed absent.
     PUSH, not the record: the chat is still written and the job row still carries `LastFiredAt`. Device-local —
     absent from `SyncScheduledJob` and from `UpsertFromSyncAsync`'s SET list, so a pull cannot switch a
     monitor's notifications back on (pinned by a test that lands a pull and re-reads the flag).
-  - [ ] **Per-job run-history list.**
+  - [x] **Per-job run-history list.** Built as a QUERY, not a table: `IAgentRunService.GetFiringsForTriggerAsync`
+    seeks the existing `IX_AgentRuns_TriggerRef` and returns a job's recent settled firings newest-first. **The
+    run rows already ARE the history** — both job kinds stamp `TriggerRef = job.Id` (the agent leg at launch, the
+    research leg inside `BackgroundAssistantTurnRunner`), and `LastResultEntryId`, the single pointer this
+    replaces, is overwritten every firing precisely because it was never meant to accumulate; a second store
+    would be a copy that could disagree. Consumed by the jobs list: a one-line summary ("Last 5 runs: 4 ok,
+    1 failed") with the firings themselves as its tooltip, hidden entirely for a job that has never fired, read
+    failure-isolated so it cannot cost the list. SETTLED only — a parked firing has no settle instant and is
+    still live — and a child run's null `TriggerRef` keeps a fan-out out of its parent job's history, both pinned.
   - [ ] **`ILogger.BeginScope(runId/stepId)` correlation.**
   - [ ] **A small release-mode redacting sink as a backstop for tool *output*** (hermes §8¹'s "no redaction
     today" is false — [`../agent-roadmap/17-trust-model.md`](../agent-roadmap/17-trust-model.md) §4; a sink may

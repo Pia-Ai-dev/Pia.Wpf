@@ -846,6 +846,53 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         }
     }
 
+    /// <summary>
+    /// T2-18. Seeks <c>IX_AgentRuns_TriggerRef</c> and orders by the same <c>CompletedAt</c> TEXT column the
+    /// aggregate above relies on — chronological because every writer stamps it
+    /// <c>DateTime.UtcNow.ToString("O")</c> (fixed width, zero-padded, always <c>Z</c>), which is the property
+    /// that makes a string sort an instant sort. No <c>GROUP BY</c> here: this is the LIST, not the latest.
+    /// </summary>
+    private static readonly string FiringsForTriggerSql =
+        """
+        SELECT TriggerRef, Id, ChatId, State, CompletedAt
+        FROM AgentRuns
+        WHERE TriggerRef=@Trigger AND CompletedAt IS NOT NULL AND State IN (
+        """
+        + string.Join(",", SettledStates) + ") ORDER BY CompletedAt DESC LIMIT @Limit";
+
+    public Task<IReadOnlyList<ScheduledFiringOutcome>> GetFiringsForTriggerAsync(
+        Guid triggerRef, int limit, CancellationToken ct = default)
+    {
+        // Clamped rather than trusted: this reaches SQL as a LIMIT, and a caller passing 0 or a negative would
+        // silently return nothing (SQLite treats a negative limit as "no limit", which is the opposite mistake).
+        var take = Math.Clamp(limit, 1, 100);
+
+        lock (_gate)
+        {
+            if (_disposed) return Task.FromResult<IReadOnlyList<ScheduledFiringOutcome>>(Array.Empty<ScheduledFiringOutcome>());
+
+            var list = new List<ScheduledFiringOutcome>();
+            using var cmd = Connection().CreateCommand();
+            cmd.CommandText = FiringsForTriggerSql;
+            cmd.Parameters.AddWithValue("@Trigger", triggerRef.ToString());
+            cmd.Parameters.AddWithValue("@Limit", take);
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                list.Add(new ScheduledFiringOutcome(
+                    triggerRef, // the WHERE already pinned it; re-parsing the column would only add a failure mode
+                    Guid.Parse(reader.GetString(1)),
+                    Guid.Parse(reader.GetString(2)),
+                    // Same parse+normalize as above: the stored string is UTC, DateTime.Parse hands back a
+                    // LOCAL-kind value, and this record promises UTC.
+                    DateTime.Parse(reader.GetString(4)).ToUniversalTime(),
+                    (AgentRunState)reader.GetInt32(3)));
+            }
+
+            return Task.FromResult<IReadOnlyList<ScheduledFiringOutcome>>(list);
+        }
+    }
+
     public Task ReplaceStepsAsync(Guid runId, IReadOnlyList<AgentStep> steps, CancellationToken ct = default)
     {
         lock (_gate)

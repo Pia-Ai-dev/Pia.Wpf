@@ -1043,6 +1043,10 @@
   <data name="Settings_ScheduledJobs_Field_GrantedTools" xml:space="preserve"><value>Allowed write tools (comma separated)</value></data>
   <data name="Settings_ScheduledJobs_Field_QuietOnSuccess" xml:space="preserve"><value>Quiet: no notification when it succeeds</value></data>
   <data name="Settings_ScheduledJobs_Field_QuietOnSuccess_Hint" xml:space="preserve"><value>For monitor jobs that mostly report "nothing changed". Failures still notify, and the result chat is always saved.</value></data>
+  <data name="Settings_ScheduledJobs_RecentRuns" xml:space="preserve"><value>Last {0} runs: {1} ok, {2} failed</value></data>
+  <data name="Settings_ScheduledJobs_RunState_Completed" xml:space="preserve"><value>Completed</value></data>
+  <data name="Settings_ScheduledJobs_RunState_Failed" xml:space="preserve"><value>Failed</value></data>
+  <data name="Settings_ScheduledJobs_RunState_Cancelled" xml:space="preserve"><value>Cancelled</value></data>
   <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Default provider</value></data>
   <data name="Settings_ScheduledJobs_NextRun" xml:space="preserve"><value>Next run</value></data>
   <data name="Settings_ScheduledJobs_LastRun" xml:space="preserve"><value>Last run</value></data>

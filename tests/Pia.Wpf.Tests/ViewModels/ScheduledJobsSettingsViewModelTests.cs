@@ -27,6 +27,12 @@ public class ScheduledJobsSettingsViewModelTests
 
     private static (ScheduledJobsSettingsViewModel Vm, IScheduledJobService Jobs, IScheduledJobRunner Runner)
         CreateSut(params ScheduledJob[] jobs)
+        => CreateSut(runs: null, jobs);
+
+    /// <param name="runs">T2-18's run-history source, or null for the pre-T2-18 surface (no history line) —
+    /// which is what every fact written before this axis existed means.</param>
+    private static (ScheduledJobsSettingsViewModel Vm, IScheduledJobService Jobs, IScheduledJobRunner Runner)
+        CreateSut(IAgentRunService? runs, params ScheduledJob[] jobs)
     {
         var service = Substitute.For<IScheduledJobService>();
         service.GetAllAsync().Returns(jobs);
@@ -38,7 +44,7 @@ public class ScheduledJobsSettingsViewModelTests
         var runner = Substitute.For<IScheduledJobRunner>();
 
         return (new ScheduledJobsSettingsViewModel(service, runner, providers, Localizer(),
-            NullLogger<SettingsViewModel>.Instance), service, runner);
+            NullLogger<SettingsViewModel>.Instance, runs), service, runner);
     }
 
     private static ScheduledJob NewJob(ScheduledJobStatus status = ScheduledJobStatus.Active) => new()
@@ -50,6 +56,66 @@ public class ScheduledJobsSettingsViewModelTests
         NextFireAt = DateTime.Now.AddHours(4),
         Status = status,
     };
+
+    /// <summary>
+    /// T2-18: the per-job run history reaches the row. The summary counts a CANCELLED firing with the failed
+    /// ones — the line answers "is this job working?", and a cancelled firing did not deliver either — while the
+    /// detail keeps every state apart.
+    /// </summary>
+    [Fact]
+    public async Task TheRunHistoryReachesTheRow_WithCancelledCountedAsNotOk()
+    {
+        var job = NewJob();
+        var runs = Substitute.For<IAgentRunService>();
+        var settled = new DateTime(2026, 8, 4, 7, 0, 0, DateTimeKind.Utc);
+        runs.GetFiringsForTriggerAsync(job.Id, Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(
+        [
+            new ScheduledFiringOutcome(job.Id, Guid.NewGuid(), Guid.NewGuid(), settled, AgentRunState.Completed),
+            new ScheduledFiringOutcome(job.Id, Guid.NewGuid(), Guid.NewGuid(), settled.AddHours(-1), AgentRunState.Failed),
+            new ScheduledFiringOutcome(job.Id, Guid.NewGuid(), Guid.NewGuid(), settled.AddHours(-2), AgentRunState.Cancelled),
+        ]);
+        var (vm, _, _) = CreateSut(runs, job);
+
+        await vm.RefreshAsync();
+
+        var row = Assert.Single(vm.Jobs);
+        Assert.True(row.HasRecentRuns);
+        Assert.Equal("Settings_ScheduledJobs_RecentRuns:3,1,2", row.RecentRunsSummary);
+        Assert.Equal(3, row.RecentRunsDetail.Split(Environment.NewLine).Length);
+        Assert.Contains("Settings_ScheduledJobs_RunState_Cancelled", row.RecentRunsDetail);
+    }
+
+    /// <summary>
+    /// A history read that throws must not cost the jobs list: the row renders without the line. Same rule as
+    /// the load's own catch one level up.
+    /// </summary>
+    [Fact]
+    public async Task AFailingHistoryRead_LeavesTheRowIntact()
+    {
+        var job = NewJob();
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetFiringsForTriggerAsync(Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns<IReadOnlyList<ScheduledFiringOutcome>>(_ => throw new InvalidOperationException("db"));
+        var (vm, _, _) = CreateSut(runs, job);
+
+        await vm.RefreshAsync();
+
+        var row = Assert.Single(vm.Jobs);
+        Assert.Equal("Nightly digest", row.Name);
+        Assert.False(row.HasRecentRuns);
+        Assert.Empty(row.RecentRunsSummary);
+    }
+
+    /// <summary>No run service at all — the pre-T2-18 row, which is what the other facts in this file build.</summary>
+    [Fact]
+    public async Task WithNoRunService_TheRowCarriesNoHistory()
+    {
+        var (vm, _, _) = CreateSut(NewJob());
+
+        await vm.RefreshAsync();
+
+        Assert.False(Assert.Single(vm.Jobs).HasRecentRuns);
+    }
 
     [Fact]
     public async Task AnUnrecognisedStatus_RendersAsUnknownAndIsInert()

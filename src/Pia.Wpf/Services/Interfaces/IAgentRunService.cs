@@ -340,6 +340,26 @@ public interface IAgentRunService
     /// </summary>
     Task<IReadOnlyList<ScheduledFiringOutcome>> GetLatestSettledFiringsAsync(CancellationToken ct = default);
 
+    /// <summary>
+    /// T2-18 — ONE job's recent settled firings, newest first, capped at <paramref name="limit"/>. The per-job
+    /// run history the scheduler UI shows.
+    /// <para>
+    /// There is no history TABLE and deliberately so: the run rows already ARE the history. Every firing of
+    /// either job kind stamps <c>TriggerRef = job.Id</c> (the agent leg at launch, the research leg inside
+    /// <c>BackgroundAssistantTurnRunner</c>), the column is indexed, and <c>ScheduledJobs.LastResultEntryId</c> —
+    /// the single most-recent pointer this replaces — is overwritten on every firing precisely because it was
+    /// never meant to accumulate. A second store would be a copy of these rows that could disagree with them.
+    /// </para>
+    /// <para>
+    /// SETTLED only, the same predicate and the same reason as <see cref="GetLatestSettledFiringsAsync"/>: a
+    /// PARKED firing has no settle instant to order or label it by, and it is still live — the run panel, not a
+    /// history list, is where a run waiting for a human belongs. A child run carries a null <c>TriggerRef</c>
+    /// (07 D7), so a fan-out's descendants are never listed as firings of their parent's job.
+    /// </para>
+    /// </summary>
+    Task<IReadOnlyList<ScheduledFiringOutcome>> GetFiringsForTriggerAsync(
+        Guid triggerRef, int limit, CancellationToken ct = default);
+
     // Steps: API present in 1.1, exercised in 1.2 (Planned).
     Task ReplaceStepsAsync(Guid runId, IReadOnlyList<AgentStep> steps, CancellationToken ct = default);
 

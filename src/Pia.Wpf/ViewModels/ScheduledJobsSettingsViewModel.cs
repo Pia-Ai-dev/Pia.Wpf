@@ -31,6 +31,13 @@ public partial class ScheduledJobsSettingsViewModel : UiThreadViewModel
     private readonly ILocalizationService _localization;
     private readonly ILogger<SettingsViewModel> _logger;
 
+    /// <summary>
+    /// T2-18: the per-job run history comes from the RUN rows (`AgentRuns.TriggerRef`), not from a second
+    /// store. TRAILING and DEFAULTED like every dependency this surface has gained: null ⇒ no history line,
+    /// which is the pre-T2-18 row exactly, and which is what keeps the hand-written test constructions valid.
+    /// </summary>
+    private readonly IAgentRunService? _runs;
+
     public ObservableCollection<ScheduledJobRow> Jobs { get; } = [];
 
     /// <summary>Provider choices for the editor. The leading entry is the "use the default" null row.</summary>
@@ -124,8 +131,10 @@ public partial class ScheduledJobsSettingsViewModel : UiThreadViewModel
         IScheduledJobRunner runner,
         IProviderService providers,
         ILocalizationService localization,
-        ILogger<SettingsViewModel> logger)
+        ILogger<SettingsViewModel> logger,
+        IAgentRunService? runs = null)
     {
+        _runs = runs;
         _jobs = jobs;
         _runner = runner;
         _providers = providers;
@@ -161,7 +170,8 @@ public partial class ScheduledJobsSettingsViewModel : UiThreadViewModel
                 var providerName = job.ProviderId is { } id
                     ? providers.FirstOrDefault(p => p.Id == id)?.Name
                     : null;
-                rows.Add(BuildRow(job, providerName, await _jobs.IsOwnedByThisDeviceAsync(job.Id)));
+                rows.Add(BuildRow(job, providerName, await _jobs.IsOwnedByThisDeviceAsync(job.Id),
+                    await LoadRecentFiringsAsync(job.Id)));
             }
 
             PostOrRun(() =>
@@ -191,7 +201,69 @@ public partial class ScheduledJobsSettingsViewModel : UiThreadViewModel
         }
     }
 
-    private ScheduledJobRow BuildRow(ScheduledJob job, string? providerName, bool ownedHere)
+    /// <summary>
+    /// T2-18: this job's recent settled firings, or an empty list when there is no run service (the
+    /// pre-T2-18 shape) or the read fails. Failure-isolated on purpose: a history line is decoration, and the
+    /// jobs list must still render without it — the same rule the load's own catch states one level up.
+    /// <para>
+    /// It joins the load's KNOWN N+1 (one `IsOwnedByThisDeviceAsync` per job) rather than introducing one:
+    /// the query seeks `IX_AgentRuns_TriggerRef` and returns at most <see cref="RecentFiringsShown"/> rows.
+    /// </para>
+    /// </summary>
+    private async Task<IReadOnlyList<ScheduledFiringOutcome>> LoadRecentFiringsAsync(Guid jobId)
+    {
+        if (_runs is null) return [];
+        try
+        {
+            return await _runs.GetFiringsForTriggerAsync(jobId, RecentFiringsShown);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not read the run history for scheduled job {Id}", jobId);
+            return [];
+        }
+    }
+
+    /// <summary>How many firings the history line covers. Five is a glance, not an audit — the run panel and the
+    /// chat list are where a full history belongs.</summary>
+    private const int RecentFiringsShown = 5;
+
+    /// <summary>
+    /// T2-18: the one-line history a person reads at a glance — "3 ok, 1 failed" over the last few firings.
+    /// Empty string when nothing is recorded, so the row renders no line rather than a zero.
+    /// <para>
+    /// <c>Completed</c> is the only success; <c>Failed</c> and <c>Cancelled</c> are counted together as "failed"
+    /// deliberately, because this line answers "is this job working?" and a cancelled firing did not deliver
+    /// either. The DETAIL below keeps them apart for whoever wants the difference.
+    /// </para>
+    /// </summary>
+    private string BuildRecentRunsSummary(IReadOnlyList<ScheduledFiringOutcome> firings)
+    {
+        if (firings.Count == 0) return string.Empty;
+        var ok = firings.Count(f => f.State == AgentRunState.Completed);
+        return _localization.Format(
+            "Settings_ScheduledJobs_RecentRuns", firings.Count, ok, firings.Count - ok);
+    }
+
+    /// <summary>
+    /// The list itself, one line per firing, newest first — the tooltip behind the summary. Instants are shown
+    /// LOCAL: the record carries UTC (deliberately, so nothing compares it to a local column by accident) and
+    /// every other time on this surface is local.
+    /// </summary>
+    private string BuildRecentRunsDetail(IReadOnlyList<ScheduledFiringOutcome> firings)
+    {
+        if (firings.Count == 0) return string.Empty;
+        return string.Join(Environment.NewLine, firings.Select(f =>
+        {
+            var state = Enum.IsDefined(f.State)
+                ? _localization[$"Settings_ScheduledJobs_RunState_{f.State}"]
+                : ((int)f.State).ToString();
+            return $"{f.SettledAtUtc.ToLocalTime():g} — {state}";
+        }));
+    }
+
+    private ScheduledJobRow BuildRow(ScheduledJob job, string? providerName, bool ownedHere,
+        IReadOnlyList<ScheduledFiringOutcome> recentFirings)
     {
         // An UNKNOWN status is a real possibility, not defensive padding: ScheduledJobStatus crosses the sync
         // wire as an int and SyncMapper casts it back with no Enum.IsDefined check, so a newer peer's ordinal
@@ -229,6 +301,8 @@ public partial class ScheduledJobsSettingsViewModel : UiThreadViewModel
             ProviderName = providerName,
             GrantedTools = string.Join(", ", job.GrantedTools),
             QuietOnSuccess = job.QuietOnSuccess,
+            RecentRunsSummary = BuildRecentRunsSummary(recentFirings),
+            RecentRunsDetail = BuildRecentRunsDetail(recentFirings),
             OwnedByThisDevice = ownedHere,
         };
     }
@@ -500,6 +574,15 @@ public sealed class ScheduledJobRow
 
     /// <summary>T2-18: this job's successes are not announced (device-local; failures still are).</summary>
     public required bool QuietOnSuccess { get; init; }
+
+    /// <summary>T2-18: "N runs: X ok, Y failed" over the last few firings; empty when none are recorded.</summary>
+    public required string RecentRunsSummary { get; init; }
+
+    /// <summary>T2-18: the firings themselves, one per line, newest first — the tooltip behind the summary.</summary>
+    public required string RecentRunsDetail { get; init; }
+
+    /// <summary>Drives the history line's visibility without a null-to-visibility converter.</summary>
+    public bool HasRecentRuns => !string.IsNullOrEmpty(RecentRunsSummary);
 
     /// <summary>Only the owner device may advance a job, so "run now" is unavailable elsewhere.</summary>
     public required bool OwnedByThisDevice { get; init; }

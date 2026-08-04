@@ -54,7 +54,10 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         IAssistantFolderRelocationService folderRelocationService,
         IWorkingDirectoryService workingDirectoryService,
         IScheduledJobService scheduledJobService,
-        IScheduledJobRunner scheduledJobRunner)
+        IScheduledJobRunner scheduledJobRunner,
+        // T2-18: the per-job run history the jobs list shows. The run rows ARE the history (AgentRuns.TriggerRef),
+        // so this is a read of an existing store, not a new one.
+        IAgentRunService agentRunService)
     {
         _logger = logger;
 
@@ -66,7 +69,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
         var toolPermissionsVm = new ToolPermissionsSettingsViewModel(toolPermissionService, pluginService, logger);
         var meetingVm = new MeetingSettingsViewModel(logger, settingsService, localizationService);
-        var scheduledJobsVm = new ScheduledJobsSettingsViewModel(scheduledJobService, scheduledJobRunner, providerService, localizationService, logger);
+        var scheduledJobsVm = new ScheduledJobsSettingsViewModel(scheduledJobService, scheduledJobRunner, providerService, localizationService, logger, agentRunService);
         AssistantVm = new AssistantSettingsViewModel(ProvidersVm, PersonasVm, toolPermissionsVm, meetingVm, scheduledJobsVm, logger, settingsService, assistantChatService, dialogService, localizationService, folderRelocationService, workingDirectoryService, personaService);
 
         var privacyVm = new PrivacySettingsViewModel(logger, settingsService);
