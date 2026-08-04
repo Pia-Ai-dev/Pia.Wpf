@@ -27,8 +27,9 @@ list of what was *seamed, not built*. Checked line by line, all six are now buil
 | Out-of-folder per-run workspace + promotion | Batch 06 |
 | Plan editability / live steering (nudge/pause/resume) | Batch 08 |
 
-**§18 (Parallel job execution) is the only section of the plan still labelled "planned, not built"** — and half
-of it shipped on 2026-08-03. That is Tier 1 below.
+**§18 (Parallel job execution) is the only section of the plan still labelled "planned, not built"** — and all
+of it shipped on 2026-08-04 except the per-provider throttle (T1-2), which is still open. That is Tier 1
+below.
 
 Everything else on this list comes from two places that are *not* the plan: the
 [`hermes-comparison.md`](../agent-roadmap/hermes-comparison.md) §5/§7 review, and defects opened by batches as
@@ -48,20 +49,19 @@ git, always.
 Both are the residue of hermes #2. They are the only items on this whole page that are known-wrong behaviour
 rather than unbuilt scope.
 
-- [ ] **T0-1 — a crashed scheduled firing never reconciles its job row.** `FailInterruptedRunsAsync`
-  (`AgentRunService.cs:569`) settles crash-recoverable runs to `Cancelled` and touches only
-  `AgentRuns`/`AgentSteps`. Now that the schedule advances at *dispatch* time, a recurring job silently fails
-  to increment `ConsecutiveFailures` and a **one-off reads `Status == Completed` with `LastFiredAt` null
-  forever**, having produced nothing. **The fix is already sketched and the sketch is the point:** a
-  startup **health-only** reconcile joining `ScheduledJobs` → `AgentRuns` on the now-indexed `TriggerRef`.
-  Two constraints it must respect — the dispatch-time write must not change, and `MarkRunFailedAsync` cannot be
-  reused because it recomputes `NextFireAt`, which dispatch already advanced. Cost: a new non-advancing write on
-  `IScheduledJobService` plus a matching edit in every hand-written fake. **Batch-sized, on the riskiest surface
-  in that sweep** — not a tail-end patch. Source: 00-OVERVIEW 2026-08-03 addendum (hermes #2 paragraph).
-  UI symptom to observe meanwhile: `02-ui-check-plan.md` **H7-6**.
-- [ ] **T0-2 — the tick is still held hostage by an unanswered dialog.** No longer by run completion, but two
-  due jobs and one unanswered grace/late-run prompt still dispatch neither. Pre-existing; fixing it changes
-  `ExecuteOnceAsync`'s contract. Source: same addendum.
+- [x] **T0-1 — a crashed scheduled firing never reconciled its job row.** Fixed: a startup health-only
+  reconcile (`ScheduledFiringReconciler`/`IScheduledFiringReconciler.cs`) joins `ScheduledJobs` → `AgentRuns`
+  on the indexed `TriggerRef` via `AgentRunService.GetLatestSettledFiringsAsync`, and books the health columns
+  through a new non-advancing member, `IScheduledJobService.MarkFiringOutcomeAsync`, without recomputing
+  `NextFireAt` (dispatch already advanced it). This checklist's original reason for not reusing
+  `MarkRunFailedAsync` was wrong — it recomputes `NextFireAt` only on the recurring branch; the real
+  objection, recorded at `IScheduledJobService.cs:129`-`:134`, is that on a one-off it would overwrite
+  dispatch's `Status='Completed'` with `'Failed'` and burn a strike on a job that will never fire again. A
+  parked-then-resumed run is covered too, via `IHeadlessRunLauncher.ResumedRunSettled`.
+  UI symptom to re-check: `02-ui-check-plan.md` **H7-6**.
+- [x] **T0-2 — the tick was held hostage by an unanswered dialog.** Fixed: the missed-run ask moved off the
+  tick into its own tracked task (`ScheduledJobBackgroundService.AskThenRunMissedAsync`), gated so two late
+  jobs cannot open two dialogs on the one host, and cancelled on shutdown.
 
 ---
 
@@ -71,22 +71,24 @@ rather than unbuilt scope.
 bookkeeping moved into a continuation (`ScheduledJobBackgroundService.BookkeepAgentRunAsync`), so the launcher
 pool really is the bound it claims to be.
 
-- [ ] **T1-1 — `MaxParallelBackgroundRuns` setting** (default 2, clamp 1..8) over `HeadlessRunLauncher._slots`,
-  surfaced beside the scheduled-budget knobs. **It must stay a separate number from `_childSlots`**, which is
-  fixed at 2 by a settled decision recorded in its own doc comment (`HeadlessRunLauncher.cs:66`–`:75`) — the
-  child pool mirrors the parent pool so a delegating build's worst case on a provider is a fixed 2+2.
+- [x] **T1-1 — `MaxParallelBackgroundRuns` setting** (default 2, clamp 1..8), live-resizable via a new
+  `RunSlotPool` (`RunSlotPool.cs`) wrapping `HeadlessRunLauncher`'s slots: widening admits queued waiters at
+  once, narrowing never preempts an in-flight run. `_childSlots` stays fixed at 2, unaffected by this setting
+  — the child pool mirrors the parent pool by separate construction, not by sharing this number
+  (`HeadlessRunLauncher.cs:66`–`:75`).
 - [ ] **T1-2 — per-provider throttle** (a keyed semaphore). §18.4 states the dependency plainly: raising
-  parallelism above 1 is only safe *with* this in place.
-- [ ] **T1-3 — fairness: admit due jobs oldest-`NextFireAt`-first**, and a job that cannot get a slot waits its
-  turn rather than being skipped. Read what `GetDueJobsAsync`' SQL already orders by before writing anything.
-- [ ] **T1-4 — ratify or revisit `Research`/`SingleTurn`.** §18.3(5) left this open; the tree has already taken
-  option (b) **with a stated reason**, so this is a ratification, not a design gap. `_researchSlots(1,1)` is one
-  permit because that is the concurrency the leg already had, and its doc comment
-  (`ScheduledJobBackgroundService.cs:67`–`:77`) corrects hermes #2 on the way: `BackgroundAssistantTurnRunner`
-  never touches `IHeadlessRunLauncher`, so "bounded only by the launcher slot semaphore" is **false for this
-  leg** — dropping the old lock without this permit would have turned N due research jobs into N concurrent
-  provider turns. If you do move it behind the shared pool, §18.3(5)'s precondition stands: the SingleTurn path
-  must first gain workspace handling consistent with §17.2.
+  parallelism above 1 is only safe *with* this in place. Still open; `AppSettings.cs:280`-`:281` names this
+  explicitly as not yet in place.
+- [x] **T1-3 — fairness: admit due jobs oldest-`NextFireAt`-first.** Narrower than this checklist framed it:
+  nothing was ever dropped, and `GetDueJobsAsync`'s SQL already ordered `NextFireAt ASC`. What was lost sat
+  between launch and queue — both dispatch paths waited inside a detached `Task.Run`, so arrival order was
+  thread-pool scheduling, not enqueue order. Fixed by taking a ticket synchronously on the launching thread, so
+  creation order equals enqueue order.
+- [x] **T1-4 — ratified: `Research`/`SingleTurn` keeps its own `_researchSlots(1,1)` permit**, not the shared
+  launcher pool. §18.3(5) left this open; the tree had already taken option (b) with a stated reason, so this
+  is a ratification pinned by a peak-concurrency test, not a design gap
+  (`ScheduledJobBackgroundService.cs:67`–`:77`). Moving it behind the shared pool still needs the SingleTurn
+  path to gain workspace handling consistent with §17.2 first — that precondition stands, unchanged.
 
 ---
 
@@ -101,17 +103,22 @@ assumed absent.
   `ToolPermissionService.cs:88`–`:96`.
 - [ ] **T2-13b — SQLite integrity-check / repair-on-open.** WAL + `busy_timeout` shipped with Batch 10; there is
   no `PRAGMA integrity_check` anywhere in `src/`. hermes #13's second half.
-- [ ] **T2-14 — gated-call correlation.** `toolCallId` + a per-step ordinal on `AgentTimelineEvents`, and
-  `requestedAt`/`decidedAt` (including timeout) per gated call. Recording `Round` belongs here too and costs a
-  change to the tool-handler delegate signature (six closures). **hermes #14's third clause — "drop the per-run
-  cap" — is REJECTED by design, not outstanding:** the 500-row cap plus a single truncation marker is
-  deliberate. Do not list it as work.
+- [x] **T2-14 — gated-call correlation.** Fixed: `ToolCallId`, `StepOrdinal`, `RequestedAt` and `DecidedAt`
+  joined `AgentTimelineEvents` (`AgentTimelineEvent.cs`), all nullable so a pre-existing `SchemaVersion 1` row
+  reads as "never recorded" rather than a lost fact on a `SchemaVersion 2` row. `Round` is carried from
+  `AiClientService`'s tool loop through a new `ToolDispatchContext`, replacing the tool-dispatch callback's
+  bare `Func<FunctionCallContent, Task<object?>>` with a named `ToolCallHandler` delegate
+  (`IAiClientService.cs`) so a future dispatch-context need costs no further churn. `AgentTimelineScope.
+  SanitizeCallId` bounds the provider's raw `CallId` to a tool-identifier charset before it reaches the table.
+  **hermes #14's third clause — "drop the per-run cap" — is REJECTED by design, not outstanding:** the 500-row
+  cap plus a single truncation marker is deliberate. Do not list it as work.
 - [ ] **T2-17a — a grounding digest in the plan turn.** hermes #17 asks for tool names, a files listing and
   memory hits injected into `BuildPlanMessages`. Verified absent: the signature at `AgentPlanner.cs:483` takes
   goal, persona, `firm`, analysis and roster only.
-- [ ] **T2-G1 — live telemetry seam.** Route Batch 03's emission through a small in-proc **fail-open**
-  `IRunObserver`, so one event stream serves both the audit table and a future OTel/file-trace consumer. No
-  `IRunObserver` exists in `src/`. hermes §5.
+- [x] **T2-G1 — live telemetry seam.** Fixed: `IRunObserver` (`IRunObserver.cs`) is a bystander on
+  `IAgentTimelineService.Emit`'s accepted events. Zero registrations is the supported default — MS.DI resolves
+  `IEnumerable<IRunObserver>` to an empty sequence — so a future OTel exporter or file trace adds itself
+  additively in `Bootstrapper.cs` without becoming a second writer on the audit table. hermes §5.
 - [ ] **T2-G2 — aggregate cross-run usage view** ("what did this month cost me"). **Tokens and active time only,
   never money** — the 2026-07-30 pricing withdrawal is settled and applies here.
 - [ ] **T2-G3 — `AgentRunTrigger.Event` is reserved and owned by no batch.** A design note is the minimum ask.
