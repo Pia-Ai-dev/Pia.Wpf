@@ -111,11 +111,17 @@ public sealed class RunSlotPool
     /// <remarks>
     /// UNORDERED: the caller takes whatever position in the queue the thread it happens to run on gets it. A
     /// caller that queues from inside a detached <c>Task.Run</c> — i.e. every dispatch — wants
-    /// <see cref="WaitAsync(Ticket, CancellationToken)"/> instead, and since T1-3 this overload has NO production
-    /// caller at all (only the pool's own tests). That is deliberate and worth keeping true: on a pool whose
-    /// chain is live, mixing the two is not a graceful degrade but a HANG — a dispatch that switched back to this
-    /// overload would leave its ticket unsignalled and stall every later ticket of the pool (measured: doing
-    /// exactly that hangs the resume path's fact in HeadlessRunLauncherTests).
+    /// <see cref="WaitAsync(Ticket, CancellationToken)"/> instead.
+    /// <para>
+    /// THE RULE, and it is PER-INSTANCE, not per-overload: never mix ticketed and unticketed waits on ONE pool.
+    /// On a pool whose chain is live that is not a graceful degrade but a HANG — a dispatch that switched back
+    /// to this overload would leave its ticket unsignalled and stall every later ticket of the pool (measured:
+    /// doing exactly that hangs the resume path's fact in HeadlessRunLauncherTests). Between T1-3 and T1-2 this
+    /// remark said the overload had no production caller at all; that is no longer true and the rule above is
+    /// what it was protecting. T1-2's <c>ProviderRequestThrottle</c> calls it on its OWN per-provider pools,
+    /// which never issue a ticket, so <see cref="_lastEnqueued"/> stays completed there and no chain exists to
+    /// stall. <c>HeadlessRunLauncher</c>'s two pools remain ticket-only.
+    /// </para>
     /// </remarks>
     public Task WaitAsync(CancellationToken ct) => _semaphore.WaitAsync(ct);
 

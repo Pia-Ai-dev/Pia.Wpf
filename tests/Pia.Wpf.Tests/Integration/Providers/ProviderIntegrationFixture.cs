@@ -52,6 +52,7 @@ internal sealed class ProviderIntegrationFixture
             settingsService,
             new AiProviderHandlerResolver(handlers),
             authService,
-            NullLogger<AiClientService>.Instance);
+            NullLogger<AiClientService>.Instance,
+            new ProviderRequestThrottle(settingsService, NullLogger<ProviderRequestThrottle>.Instance));
     }
 }

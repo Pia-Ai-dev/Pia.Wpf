@@ -277,14 +277,61 @@ public class AppSettings
 
     /// <summary>
     /// Ceiling on <see cref="MaxParallelBackgroundRuns"/>. Not a guess about hardware — it is the number
-    /// beyond which the honest bound is a per-provider request throttle rather than a run count (that ships at
-    /// the HTTP layer, T1-2, and is NOT in place yet), so the cap stays somewhere a single provider key can
-    /// still be expected to survive.
+    /// beyond which the honest bound is a per-provider request throttle rather than a run count. That throttle
+    /// has since SHIPPED (T1-2, <see cref="MaxParallelRequestsPerProvider"/>, applied in
+    /// <c>AiClientService</c>), so this cap is no longer the only thing standing between a wide run pool and a
+    /// provider stampede; it stays where it is because a run count is still the number a person reasons about.
     /// </summary>
     public const int MaxParallelBackgroundRunsCap = 8;
 
     /// <summary>Two, i.e. the width the pool was hard-coded to before it became configurable.</summary>
     public const int DefaultParallelBackgroundRuns = 2;
+
+    /// <summary>
+    /// T1-2 — how many requests this device may have IN FLIGHT against ONE provider at once (plan §18.3
+    /// item 3, the dependency §18.4 names for raising <see cref="MaxParallelBackgroundRuns"/> above 1).
+    /// Enforced in <c>AiClientService</c> around each outbound round-trip via
+    /// <c>IProviderRequestThrottle</c>, keyed on <c>AiProvider.Id</c>: requests to DIFFERENT providers never
+    /// queue behind each other.
+    /// <para>
+    /// The default is deliberately chosen so an install that never touches a setting behaves as it did:
+    /// <see cref="DefaultParallelRequestsPerProvider"/> is 4, and the default run pool
+    /// (<see cref="DefaultParallelBackgroundRuns"/> = 2) plus the person typing in the chat window is 3
+    /// concurrent requests at worst. It bites only where it is meant to — a widened run pool, or a fan-out
+    /// adding <c>HeadlessRunLauncher</c>'s fixed 2 children per delegating parent, all on the same provider.
+    /// </para>
+    /// <para>
+    /// Live-resizable with no restart: the throttle applies this value on every acquire. Read through
+    /// <see cref="GetMaxParallelRequestsPerProvider"/>, never raw — a hand-edited <c>0</c> would otherwise
+    /// build a pool with no permits and hang every request on that provider forever, the same failure
+    /// <see cref="GetMaxParallelBackgroundRuns"/>'s clamp exists to prevent.
+    /// </para>
+    /// <para>
+    /// Local-only and JSON-only: absent from <c>SyncSettings</c> like every other concurrency knob (what a
+    /// device can sustain is a property OF THE DEVICE), and deliberately given no settings-page row in this
+    /// pass — the number a user should be reasoning about is the run pool, and a second concurrency box beside
+    /// it would invite tuning the wrong one.
+    /// </para>
+    /// </summary>
+    public int MaxParallelRequestsPerProvider { get; set; } = DefaultParallelRequestsPerProvider;
+
+    public const int MinParallelRequestsPerProvider = 1;
+
+    /// <summary>
+    /// Ceiling on <see cref="MaxParallelRequestsPerProvider"/>, and the hard cap of every pool the throttle
+    /// builds. Sized to sit above the worst case the other knobs can produce — a full
+    /// <see cref="MaxParallelBackgroundRunsCap"/> run pool where every run has delegated its fixed 2 children,
+    /// plus an interactive turn — so raising it further is a decision about the PROVIDER's rate limit rather
+    /// than about making Pia's own concurrency reachable.
+    /// </summary>
+    public const int MaxParallelRequestsPerProviderCap = 24;
+
+    /// <summary>Four — see <see cref="MaxParallelRequestsPerProvider"/> for why that is a no-op by default.</summary>
+    public const int DefaultParallelRequestsPerProvider = 4;
+
+    /// <summary>The configured per-provider request width, clamped on READ (see the property for why).</summary>
+    public int GetMaxParallelRequestsPerProvider() =>
+        Math.Clamp(MaxParallelRequestsPerProvider, MinParallelRequestsPerProvider, MaxParallelRequestsPerProviderCap);
 
     /// <summary>
     /// The configured run-pool width, clamped on READ. The clamp is load-bearing, not decorative: a

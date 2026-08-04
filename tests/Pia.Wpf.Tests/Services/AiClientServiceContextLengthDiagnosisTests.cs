@@ -259,7 +259,8 @@ public class AiClientServiceContextLengthDiagnosisTests
             settings,
             new AiProviderHandlerResolver([handler]),
             Substitute.For<IAuthService>(),
-            logger);
+            logger,
+            new ProviderRequestThrottle(settings, NullLogger<ProviderRequestThrottle>.Instance));
 
         var provider = new AiProvider
         {

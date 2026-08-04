@@ -76,9 +76,22 @@ pool really is the bound it claims to be.
   once, narrowing never preempts an in-flight run. `_childSlots` stays fixed at 2, unaffected by this setting
   — the child pool mirrors the parent pool by separate construction, not by sharing this number
   (`HeadlessRunLauncher.cs:66`–`:75`).
-- [ ] **T1-2 — per-provider throttle** (a keyed semaphore). §18.4 states the dependency plainly: raising
-  parallelism above 1 is only safe *with* this in place. Still open; `AppSettings.cs:280`-`:281` names this
-  explicitly as not yet in place.
+- [x] **T1-2 — per-provider throttle.** Fixed: `IProviderRequestThrottle`/`ProviderRequestThrottle.cs` keys one
+  live-resizable `RunSlotPool` per `AiProvider.Id` — no new identity field was needed — and `AiClientService`
+  takes a permit around every outbound round-trip through one helper, `AcquireProviderPermitAsync`
+  (`AiClientService.cs:69`). PER ROUND, not per call: the tool loop's streaming round holds it from the stream
+  start to the enumerator's disposal (`:250`, released `:344`), its non-streaming twin releases before it yields
+  (`:358`), and `GetChatResponseAsync` (`:539`), `SendRequestAsync` (`:689`) and `StreamChatCompletionAsync`
+  (`:753`) are single round-trips. **The release point is the load-bearing part** (`:464`): a permit held across
+  the tool dispatch would be held across an interactive approval card, so one open dialog would stop every
+  background run on that provider. The three `Test*` probes are deliberately excluded — a "Test" button that
+  queues behind two background runs reads as a hung dialog. Setting: `MaxParallelRequestsPerProvider`
+  (`AppSettings.cs:316`, default 4, clamp 1..24), JSON-only by decision, and chosen so an install that never
+  touched a setting is unaffected (default pool 2 + one person typing = 3). **Queue time is charged against the
+  request timeout**, so the exception stays `LlmTimeoutException` but its message and log line say the timeout
+  elapsed in the queue and nothing was sent. Two stale comments were corrected in the same change:
+  `AppSettings.cs:281` (which said this was not in place) and `RunSlotPool.cs:116` (whose "no production caller"
+  remark is now stated as the per-INSTANCE rule it was protecting — throttle pools never take tickets).
 - [x] **T1-3 — fairness: admit due jobs oldest-`NextFireAt`-first.** Narrower than this checklist framed it:
   nothing was ever dropped, and `GetDueJobsAsync`'s SQL already ordered `NextFireAt ASC`. What was lost sat
   between launch and queue — both dispatch paths waited inside a detached `Task.Run`, so arrival order was

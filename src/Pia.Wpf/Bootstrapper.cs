@@ -394,6 +394,10 @@ public static class Bootstrapper
         services.AddSingleton<IAiProviderHandler, PiaCloudProviderHandler>();
         services.AddSingleton<AiProviderHandlerResolver>();
 
+        // T1-2: the per-provider request bound. SINGLETON while AiClientService is transient — the keyed
+        // semaphore is the device-wide bound, so a per-request instance would throttle nothing.
+        services.AddSingleton<IProviderRequestThrottle, ProviderRequestThrottle>();
+
         // AI Client (decorator applies PII tokenization transparently)
         services.AddTransient<AiClientService>();
         services.AddTransient<IAiClientService>(sp =>

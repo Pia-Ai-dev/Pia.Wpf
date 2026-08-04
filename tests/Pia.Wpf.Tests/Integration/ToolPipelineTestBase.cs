@@ -142,7 +142,11 @@ public abstract class ToolPipelineTestBase
             settingsService,
             new AiProviderHandlerResolver(handlers),
             authService,
-            NullLogger<AiClientService>.Instance);
+            NullLogger<AiClientService>.Instance,
+            // T1-2: the REAL throttle, not a stub — its default width (4) is wider than anything a pipeline
+            // test drives, so it queues nothing here, and using it means these tests exercise the permit
+            // bracket rather than routing around it.
+            new ProviderRequestThrottle(settingsService, NullLogger<ProviderRequestThrottle>.Instance));
     }
 
     protected AiProvider CreateTestProvider()

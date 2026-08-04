@@ -39,8 +39,10 @@ public class NamingConventionTests
             // ordinary domain noun for a service named after what it DOES (ScheduledFiringReconciler — book the
             // firings the job rows and the run rows disagree about), not an exemption for a misnamed class.
             // "Pool" is the same kind of noun one level down: a named concurrency primitive (RunSlotPool — hand
-            // out the run slots), which is what "Buffer" and "Store" above already are.
-            "Provisioner", "Session", "Resampler", "Reconciler", "Pool",
+            // out the run slots), which is what "Buffer" and "Store" above already are. "Throttle" joins it for
+            // the identical reason (T1-2's ProviderRequestThrottle — hand out the per-provider request permits);
+            // suffixing either one "…Service" would name the layer instead of the thing.
+            "Provisioner", "Session", "Resampler", "Reconciler", "Pool", "Throttle",
         };
 
         var serviceTypes = Types.InAssembly(PiaAssembly)

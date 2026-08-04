@@ -218,7 +218,8 @@ public class AiClientServiceInStepCompactionTests
             settings,
             new AiProviderHandlerResolver([handler]),
             Substitute.For<IAuthService>(),
-            NullLogger<AiClientService>.Instance);
+            NullLogger<AiClientService>.Instance,
+            new ProviderRequestThrottle(settings, NullLogger<ProviderRequestThrottle>.Instance));
 
         var provider = new AiProvider
         {

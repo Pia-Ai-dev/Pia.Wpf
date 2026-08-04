@@ -30,14 +30,20 @@ public class AiClientService : IAiClientService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<AiClientService> _logger;
     private readonly ISettingsService _settingsService;
+    private readonly IProviderRequestThrottle _throttle;
 
+    /// <param name="throttle">T1-2, the per-provider request bound. REQUIRED, not defaulted: this type is
+    /// transient and hand-constructed in five test sites, and a nullable "no throttle" would make forgetting
+    /// the registration a silent loss of the one thing §18.4 requires before the run pool may widen. The
+    /// compiler asking the question at every construction site is the point.</param>
     public AiClientService(
         DpapiHelper dpapiHelper,
         IHttpClientFactory httpClientFactory,
         ISettingsService settingsService,
         AiProviderHandlerResolver handlers,
         IAuthService authService,
-        ILogger<AiClientService> logger)
+        ILogger<AiClientService> logger,
+        IProviderRequestThrottle throttle)
     {
         _dpapiHelper = dpapiHelper;
         _httpClientFactory = httpClientFactory;
@@ -45,6 +51,39 @@ public class AiClientService : IAiClientService
         _handlers = handlers;
         _authService = authService;
         _logger = logger;
+        _throttle = throttle;
+    }
+
+    /// <summary>
+    /// T1-2: take this provider's request permit, waited on the SAME linked token as the request itself.
+    /// <para>
+    /// Consequence, named rather than left to fall out of the token plumbing: queue time is charged against the
+    /// request timeout, so a narrow throttle can time a request out that was never sent. The exception TYPE
+    /// stays <see cref="LlmTimeoutException"/> — every catch, retry and UI path downstream must keep behaving
+    /// as it does — but the MESSAGE and the log line say the timeout elapsed in the queue. A support log that
+    /// said "the provider timed out" for a request this device never made would cost whoever reads it a wrong
+    /// conclusion before they found the real one, which is exactly the failure the run-panel's pause-reason
+    /// constants exist to prevent.
+    /// </para>
+    /// </summary>
+    private async Task<IDisposable> AcquireProviderPermitAsync(
+        AiProvider provider, TimeSpan timeout,
+        CancellationTokenSource timeoutCts, CancellationToken callerToken, CancellationToken linkedToken)
+    {
+        try
+        {
+            return await _throttle.AcquireAsync(provider, linkedToken);
+        }
+        catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !callerToken.IsCancellationRequested)
+        {
+            _logger.LogWarning(
+                "Provider {ProviderName}: the {Seconds}s timeout elapsed while QUEUED for a per-provider request permit — nothing was sent",
+                provider.Name, timeout.TotalSeconds);
+            throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds,
+                $"The request to provider '{provider.Name}' was never sent: the {timeout.TotalSeconds}s timeout "
+                + "elapsed while it was queued behind other requests to the same provider "
+                + "(MaxParallelRequestsPerProvider).");
+        }
     }
 
     public async Task<string> GeneratePromptViaPiaCloudAsync(
@@ -206,85 +245,103 @@ public class AiClientService : IAiClientService
                 IAsyncEnumerator<ChatResponseUpdate>? enumerator = null;
                 var hasFirst = false;
 
+                // T1-2: PER ROUND, and released the moment this round's stream is exhausted — see the permit
+                // block's own comment below for why it must not span the tool dispatch further down.
+                var permit = await AcquireProviderPermitAsync(
+                    provider, timeout, timeoutCts, cancellationToken, linkedCts.Token);
                 try
                 {
-                    var stream = chatClient.GetStreamingResponseAsync(workingMessages, options, linkedCts.Token);
-                    enumerator = stream.GetAsyncEnumerator(linkedCts.Token);
-                    hasFirst = await enumerator.MoveNextAsync();
-                }
-                catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-                {
-                    _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out at stream start (round {Round}) after {Seconds}s", provider.Name, round + 1, timeout.TotalSeconds);
-                    if (enumerator != null) await enumerator.DisposeAsync();
-                    throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
-                }
-                catch (Exception ex) when (useTools && round == 0 && IsToolNotSupportedError(ex))
-                {
-                    // Diagnosis only, and FIRST so the real cause outranks the line below: the filter above
-                    // says true for essentially any 400, so a context overflow arrives here dressed as a
-                    // tool-support problem. The retry itself is unchanged either way.
-                    LogContextLengthRejection(ex, provider, round, workingMessages.Count, contextBudget);
-                    _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled during streaming, retrying without tools", provider.Name);
-                    options = providerHandler.CreateChatOptions(provider, hasTools: false);
-                    useTools = false;
-                    if (enumerator != null) await enumerator.DisposeAsync();
-
                     try
                     {
-                        var retryStream = chatClient.GetStreamingResponseAsync(workingMessages, options, linkedCts.Token);
-                        enumerator = retryStream.GetAsyncEnumerator(linkedCts.Token);
+                        var stream = chatClient.GetStreamingResponseAsync(workingMessages, options, linkedCts.Token);
+                        enumerator = stream.GetAsyncEnumerator(linkedCts.Token);
                         hasFirst = await enumerator.MoveNextAsync();
                     }
                     catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
                     {
-                        _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out on tool-disabled retry after {Seconds}s", provider.Name, timeout.TotalSeconds);
+                        _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out at stream start (round {Round}) after {Seconds}s", provider.Name, round + 1, timeout.TotalSeconds);
                         if (enumerator != null) await enumerator.DisposeAsync();
                         throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
                     }
-                }
-
-                // Yield tokens outside try-catch (yield is allowed in try-finally)
-                try
-                {
-                    if (hasFirst)
+                    catch (Exception ex) when (useTools && round == 0 && IsToolNotSupportedError(ex))
                     {
-                        while (true)
+                        // Diagnosis only, and FIRST so the real cause outranks the line below: the filter above
+                        // says true for essentially any 400, so a context overflow arrives here dressed as a
+                        // tool-support problem. The retry itself is unchanged either way.
+                        LogContextLengthRejection(ex, provider, round, workingMessages.Count, contextBudget);
+                        _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled during streaming, retrying without tools", provider.Name);
+                        options = providerHandler.CreateChatOptions(provider, hasTools: false);
+                        useTools = false;
+                        if (enumerator != null) await enumerator.DisposeAsync();
+
+                        try
                         {
-                            var current = enumerator!.Current;
-                            updates.Add(current);
-                            if (!string.IsNullOrEmpty(current.Text))
-                            {
-                                yield return new TextDelta(current.Text);
-                            }
-
-                            // The `reasoning` scalar (OpenRouter) only rides text-less chunks, so
-                            // skip the raw-representation round-trip whenever this chunk already
-                            // carries visible text — avoids serializing every content delta.
-                            foreach (var reasoning in ExtractReasoning(
-                                current.Contents, current.RawRepresentation,
-                                attemptRawExtraction: string.IsNullOrEmpty(current.Text)))
-                            {
-                                yield return reasoning;
-                            }
-
-                            bool hasNext;
-                            try
-                            {
-                                hasNext = await enumerator.MoveNextAsync();
-                            }
-                            catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-                            {
-                                _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out mid-stream (round {Round}) after {Seconds}s", provider.Name, round + 1, timeout.TotalSeconds);
-                                throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
-                            }
-
-                            if (!hasNext) break;
+                            // Deliberately under the SAME permit: the tool-disabled retry is the same logical
+                            // round-trip re-attempted, so re-queueing it behind other requests would let a
+                            // provider that rejects tools cost this round two waits instead of one.
+                            var retryStream = chatClient.GetStreamingResponseAsync(workingMessages, options, linkedCts.Token);
+                            enumerator = retryStream.GetAsyncEnumerator(linkedCts.Token);
+                            hasFirst = await enumerator.MoveNextAsync();
                         }
+                        catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                        {
+                            _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out on tool-disabled retry after {Seconds}s", provider.Name, timeout.TotalSeconds);
+                            if (enumerator != null) await enumerator.DisposeAsync();
+                            throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
+                        }
+                    }
+
+                    // Yield tokens outside try-catch (yield is allowed in try-finally)
+                    try
+                    {
+                        if (hasFirst)
+                        {
+                            while (true)
+                            {
+                                var current = enumerator!.Current;
+                                updates.Add(current);
+                                if (!string.IsNullOrEmpty(current.Text))
+                                {
+                                    yield return new TextDelta(current.Text);
+                                }
+
+                                // The `reasoning` scalar (OpenRouter) only rides text-less chunks, so
+                                // skip the raw-representation round-trip whenever this chunk already
+                                // carries visible text — avoids serializing every content delta.
+                                foreach (var reasoning in ExtractReasoning(
+                                    current.Contents, current.RawRepresentation,
+                                    attemptRawExtraction: string.IsNullOrEmpty(current.Text)))
+                                {
+                                    yield return reasoning;
+                                }
+
+                                bool hasNext;
+                                try
+                                {
+                                    hasNext = await enumerator.MoveNextAsync();
+                                }
+                                catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                                {
+                                    _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out mid-stream (round {Round}) after {Seconds}s", provider.Name, round + 1, timeout.TotalSeconds);
+                                    throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
+                                }
+
+                                if (!hasNext) break;
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        if (enumerator != null) await enumerator.DisposeAsync();
                     }
                 }
                 finally
                 {
-                    if (enumerator != null) await enumerator.DisposeAsync();
+                    // The permit is held for the WHOLE stream, because that is how long the HTTP request is
+                    // open — that, and not the wall-clock of the method, is what a provider rate-limits on.
+                    // The yields above sit inside a try/FINALLY (never a try/catch), which is what keeps this
+                    // legal in an async iterator.
+                    permit.Dispose();
                 }
 
                 response = updates.ToChatResponse();
@@ -295,32 +352,39 @@ public class AiClientService : IAiClientService
             }
             else
             {
-                // Non-streaming path: fetch entire response at once
-                try
+                // Non-streaming path: fetch entire response at once.
+                // T1-2: the permit brackets the round-trip ONLY, and is released before the yields below —
+                // whatever the consumer does with the text is not this provider's concurrency.
+                using (await AcquireProviderPermitAsync(
+                    provider, timeout, timeoutCts, cancellationToken, linkedCts.Token))
                 {
-                    response = await chatClient.GetResponseAsync(workingMessages, options, linkedCts.Token);
-                }
-                catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-                {
-                    _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out (round {Round}) after {Seconds}s", provider.Name, round + 1, timeout.TotalSeconds);
-                    throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
-                }
-                catch (Exception ex) when (useTools && round == 0 && IsToolNotSupportedError(ex))
-                {
-                    // Same ordering as the streaming path above, for the same reason: name the real cause
-                    // before the tool-support line. Diagnosis only; the retry below is untouched.
-                    LogContextLengthRejection(ex, provider, round, workingMessages.Count, contextBudget);
-                    _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled, retrying without tools", provider.Name);
-                    options = providerHandler.CreateChatOptions(provider, hasTools: false);
-                    useTools = false;
                     try
                     {
                         response = await chatClient.GetResponseAsync(workingMessages, options, linkedCts.Token);
                     }
                     catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
                     {
-                        _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out on tool-disabled retry after {Seconds}s", provider.Name, timeout.TotalSeconds);
+                        _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out (round {Round}) after {Seconds}s", provider.Name, round + 1, timeout.TotalSeconds);
                         throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
+                    }
+                    catch (Exception ex) when (useTools && round == 0 && IsToolNotSupportedError(ex))
+                    {
+                        // Same ordering as the streaming path above, for the same reason: name the real cause
+                        // before the tool-support line. Diagnosis only; the retry below is untouched.
+                        LogContextLengthRejection(ex, provider, round, workingMessages.Count, contextBudget);
+                        _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled, retrying without tools", provider.Name);
+                        options = providerHandler.CreateChatOptions(provider, hasTools: false);
+                        useTools = false;
+                        try
+                        {
+                            // Same permit as the first attempt — see the streaming twin for why.
+                            response = await chatClient.GetResponseAsync(workingMessages, options, linkedCts.Token);
+                        }
+                        catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                        {
+                            _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out on tool-disabled retry after {Seconds}s", provider.Name, timeout.TotalSeconds);
+                            throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
+                        }
                     }
                 }
 
@@ -395,7 +459,14 @@ public class AiClientService : IAiClientService
                     workingMessages.Add(msg);
                 }
 
-                // Process tool calls
+                // Process tool calls.
+                //
+                // T1-2, and this is the property the per-ROUND permit exists for: NO provider permit is held
+                // here. This loop can block for as long as a human takes to answer an approval card (the
+                // interactive gate awaits the card inside the handler) or for as long as a tool takes to run,
+                // and a permit held across it would mean one open dialog stops every background run on that
+                // provider. The next round re-queues from the top of the loop, which is correct: it is a new
+                // round-trip.
                 foreach (var toolCall in toolCalls)
                 {
                     // No CallId on this line. It is copied verbatim out of provider JSON and nothing in this
@@ -463,15 +534,21 @@ public class AiClientService : IAiClientService
                 options.Tools = [.. tools!];
             }
 
-            try
+            // T1-2: one round-trip, one permit — this method is a single-shot request (AgentPlanner's plan and
+            // AgentVerifier's critic turns), so the whole method body IS the round-trip.
+            using (await AcquireProviderPermitAsync(
+                provider, timeout, timeoutCts, cancellationToken, linkedCts.Token))
             {
-                return await chatClient.GetResponseAsync(messages, options, linkedCts.Token);
-            }
-            catch (Exception ex) when (useTools && IsToolNotSupportedError(ex))
-            {
-                _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled, retrying without tools", provider.Name);
-                options = handler.CreateChatOptions(provider, hasTools: false);
-                return await chatClient.GetResponseAsync(messages, options, linkedCts.Token);
+                try
+                {
+                    return await chatClient.GetResponseAsync(messages, options, linkedCts.Token);
+                }
+                catch (Exception ex) when (useTools && IsToolNotSupportedError(ex))
+                {
+                    _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled, retrying without tools", provider.Name);
+                    options = handler.CreateChatOptions(provider, hasTools: false);
+                    return await chatClient.GetResponseAsync(messages, options, linkedCts.Token);
+                }
             }
         }
         catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
@@ -607,11 +684,17 @@ public class AiClientService : IAiClientService
 
             var options = handler.CreateChatOptions(provider, hasTools: false);
 
-            var response = await chatClient.GetResponseAsync(
-                messages,
-                options,
-                cancellationToken: linkedCts.Token
-            );
+            // T1-2: single-shot, so the permit brackets exactly this call.
+            ChatResponse response;
+            using (await AcquireProviderPermitAsync(
+                provider, timeout, timeoutCts, cancellationToken, linkedCts.Token))
+            {
+                response = await chatClient.GetResponseAsync(
+                    messages,
+                    options,
+                    cancellationToken: linkedCts.Token
+                );
+            }
 
             var text = response.Text ?? string.Empty;
             _logger.LogDebug("SendRequestAsync: received response, length={Length}, finishReason={FinishReason}",
@@ -664,6 +747,12 @@ public class AiClientService : IAiClientService
             provider, apiKey, httpClient, mode, managedPersonaId: null, linkedCts.Token);
         var options = handler.CreateChatOptions(provider, hasTools: false);
 
+        // T1-2: this tool-free stream (SuggestionService) is one round-trip that stays open for the length of
+        // the stream, so the permit is taken here and released in the outer finally that disposes the
+        // enumerator — the same bracket the tool loop's streaming round uses.
+        var permit = await AcquireProviderPermitAsync(
+            provider, timeout, timeoutCts, cancellationToken, linkedCts.Token);
+
         IAsyncEnumerator<ChatResponseUpdate>? enumerator = null;
         try
         {
@@ -703,9 +792,16 @@ public class AiClientService : IAiClientService
         finally
         {
             if (enumerator != null) await enumerator.DisposeAsync();
+            permit.Dispose();
         }
     }
 
+    // The three Test* probes below and the two PiaCloud REST helpers above are deliberately NOT throttled
+    // (T1-2). The probes are one-shot connectivity checks a person just clicked in Settings or the first-run
+    // wizard: making a "Test" button queue behind two background runs would read as a hung dialog, and one
+    // extra request is not what a rate limit trips on. The PiaCloud REST helpers
+    // (GeneratePromptViaPiaCloudAsync / OptimizeViaPiaCloudAsync) have no AiProvider in scope at all — they
+    // call Pia Cloud's own endpoints, so there is no provider key to bound.
     public async Task TestPiaCloudConnectionAsync(CancellationToken cancellationToken = default)
     {
         var settings = await _settingsService.GetSettingsAsync();
