@@ -377,7 +377,7 @@ public class ScheduledJobToolHandlerTests
             RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null, DayOfWeek? dayOfWeek = null,
             int? dayOfMonth = null, int? month = null, Guid? providerId = null,
             IReadOnlyCollection<string>? grantedTools = null,
-            DateTime? specificDate = null, ScheduledJobKind? kind = null)
+            DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null)
         {
             Updated.Add(id);
             LastUpdatedGrants = grantedTools;

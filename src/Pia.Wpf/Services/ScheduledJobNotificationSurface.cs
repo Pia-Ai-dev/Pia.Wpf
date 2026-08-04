@@ -52,6 +52,20 @@ public sealed class ScheduledJobNotificationSurface : IScheduledJobNotificationS
 
     public void NotifySuccess(ScheduledJob job, Guid chatId, string chatTitle)
     {
+        // T2-18 QUIET MODE, and THIS is the chokepoint on purpose: both producers of a success notification
+        // (ScheduledJobBackgroundService's agent and research legs) come through here, so the flag is honoured
+        // once instead of at each call site. It suppresses the PUSH, not the record — the run's chat is written
+        // either way and the job row still carries LastFiredAt/LastResultEntryId, so a quiet monitor is
+        // findable, just not announced.
+        //
+        // NOTIFYFAILURE DOES NOT CHECK THIS. A monitor that breaks silently is worse than one that is noisy:
+        // "do not tell me when it worked" is not "hide it when it stops working".
+        if (job.QuietOnSuccess)
+        {
+            _logger.LogInformation("Scheduled job {Id} succeeded quietly (notifications suppressed)", job.Id);
+            return;
+        }
+
         EnsureToastActivationRegistered();
 
         // Publish to Flow first (the canonical in-app surface, replacing the retired Border toast).

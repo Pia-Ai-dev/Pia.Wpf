@@ -689,6 +689,14 @@
                 <ui:TextBox Text="{Binding EditGrantedTools, UpdateSourceTrigger=PropertyChanged}"
                             Margin="0,2,0,8"/>
 
+                <!-- T2-18 quiet mode. The label says SUCCESS out loud: failures always notify. -->
+                <CheckBox Content="{loc:Str Settings_ScheduledJobs_Field_QuietOnSuccess}"
+                          IsChecked="{Binding EditQuietOnSuccess, Mode=TwoWay}"
+                          Margin="0,2,0,4"/>
+                <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_QuietOnSuccess_Hint}"
+                           Style="{StaticResource PiaSettingsDescriptionStyle}"
+                           Margin="0,0,0,8"/>
+
                 <StackPanel Orientation="Horizontal">
                   <ui:Button Content="{loc:Str Settings_ScheduledJobs_Save}"
                              Appearance="Primary"

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:element name="root" msdata:IsDataSet="true">
@@ -1034,6 +1034,8 @@
   <data name="Settings_ScheduledJobs_Field_Date" xml:space="preserve"><value>Datum</value></data>
   <data name="Settings_ScheduledJobs_Field_Provider" xml:space="preserve"><value>Anbieter</value></data>
   <data name="Settings_ScheduledJobs_Field_GrantedTools" xml:space="preserve"><value>Erlaubte Schreib-Tools (durch Komma getrennt)</value></data>
+  <data name="Settings_ScheduledJobs_Field_QuietOnSuccess" xml:space="preserve"><value>Leise: keine Benachrichtigung bei Erfolg</value></data>
+  <data name="Settings_ScheduledJobs_Field_QuietOnSuccess_Hint" xml:space="preserve"><value>Für Überwachungsaufträge, die meist „keine Änderung“ melden. Fehler werden weiterhin gemeldet, und der Ergebnis-Chat wird immer gespeichert.</value></data>
   <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Standardanbieter</value></data>
   <data name="Settings_ScheduledJobs_NextRun" xml:space="preserve"><value>Nächste Ausführung</value></data>
   <data name="Settings_ScheduledJobs_LastRun" xml:space="preserve"><value>Letzte Ausführung</value></data>

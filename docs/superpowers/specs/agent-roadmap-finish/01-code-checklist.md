@@ -191,7 +191,14 @@ assumed absent.
     that interface, the right answer for eleven of them (`LiveTurnExecutor` included — its transcript is on
     screen) is to spend nothing, and the members that must be answered out loud are required precisely because
     they are not this. Three existing durability facts moved by exactly one turn and one save, and say so.
-  - [ ] **Quiet mode for monitor jobs.**
+  - [x] **Quiet mode for monitor jobs.** Built: `ScheduledJob.QuietOnSuccess` + a `QuietOnSuccess` column
+    (`SqliteContext.cs`, `DEFAULT 0` so no existing job is quieted by a migration), honoured at ONE chokepoint —
+    `ScheduledJobNotificationSurface.NotifySuccess`, which both producers come through — and authored by a
+    checkbox in the jobs editor (`AssistantView.xaml`, en/de/fr). **SUCCESS ONLY: `NotifyFailure` ignores it by
+    design**, because a monitor that silently stops working is worse than one that is noisy. It suppresses the
+    PUSH, not the record: the chat is still written and the job row still carries `LastFiredAt`. Device-local —
+    absent from `SyncScheduledJob` and from `UpsertFromSyncAsync`'s SET list, so a pull cannot switch a
+    monitor's notifications back on (pinned by a test that lands a pull and re-reads the flag).
   - [ ] **Per-job run-history list.**
   - [ ] **`ILogger.BeginScope(runId/stepId)` correlation.**
   - [ ] **A small release-mode redacting sink as a backstop for tool *output*** (hermes §8¹'s "no redaction

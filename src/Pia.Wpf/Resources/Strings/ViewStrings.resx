@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:element name="root" msdata:IsDataSet="true">
@@ -1041,6 +1041,8 @@
   <data name="Settings_ScheduledJobs_Field_Date" xml:space="preserve"><value>Date</value></data>
   <data name="Settings_ScheduledJobs_Field_Provider" xml:space="preserve"><value>Provider</value></data>
   <data name="Settings_ScheduledJobs_Field_GrantedTools" xml:space="preserve"><value>Allowed write tools (comma separated)</value></data>
+  <data name="Settings_ScheduledJobs_Field_QuietOnSuccess" xml:space="preserve"><value>Quiet: no notification when it succeeds</value></data>
+  <data name="Settings_ScheduledJobs_Field_QuietOnSuccess_Hint" xml:space="preserve"><value>For monitor jobs that mostly report "nothing changed". Failures still notify, and the result chat is always saved.</value></data>
   <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Default provider</value></data>
   <data name="Settings_ScheduledJobs_NextRun" xml:space="preserve"><value>Next run</value></data>
   <data name="Settings_ScheduledJobs_LastRun" xml:space="preserve"><value>Last run</value></data>

@@ -83,6 +83,7 @@ public class ScheduledJobsRowTemplateTests
         IsEnabled = true,
         ToggleLabel = "Disable",
         GrantedTools = string.Empty,
+        QuietOnSuccess = false,
         OwnedByThisDevice = true,
     };
 
@@ -103,6 +104,7 @@ public class ScheduledJobsRowTemplateTests
         IsEnabled = false,
         ToggleLabel = "Enable",
         GrantedTools = string.Empty,
+        QuietOnSuccess = false,
         OwnedByThisDevice = false,
     };
 

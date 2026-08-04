@@ -143,10 +143,11 @@ public class ScheduledJobService : IScheduledJobService
         RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null,
         DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null,
         Guid? providerId = null, IReadOnlyCollection<string>? grantedTools = null,
-        DateTime? specificDate = null, ScheduledJobKind? kind = null)
+        DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null)
     {
         var existing = await GetAsync(id) ?? throw new InvalidOperationException($"ScheduledJob {id} not found");
 
+        if (quietOnSuccess is not null) existing.QuietOnSuccess = quietOnSuccess.Value; // T2-18
         if (name is not null) existing.Name = name;
         if (query is not null) existing.Query = query;
         if (recurrence is not null) existing.Recurrence = recurrence.Value;
@@ -195,7 +196,7 @@ public class ScheduledJobService : IScheduledJobService
             SET Name=@Name, Query=@Query, Kind=@Kind, Recurrence=@Recurrence, TimeOfDay=@TimeOfDay,
                 DayOfWeek=@DayOfWeek, DayOfMonth=@DayOfMonth, Month=@Month, SpecificDate=@SpecificDate,
                 GrantedTools=@GrantedTools, ProviderId=@ProviderId, NextFireAt=@NextFireAt,
-                Status=@Status, UpdatedAt=@UpdatedAt
+                Status=@Status, UpdatedAt=@UpdatedAt, QuietOnSuccess=@QuietOnSuccess
             WHERE Id=@Id
             """;
         command.Parameters.AddWithValue("@Id", existing.Id.ToString());
@@ -214,6 +215,7 @@ public class ScheduledJobService : IScheduledJobService
         command.Parameters.AddWithValue("@NextFireAt", existing.NextFireAt.ToString("O"));
         command.Parameters.AddWithValue("@Status", existing.Status.ToString());
         command.Parameters.AddWithValue("@UpdatedAt", existing.UpdatedAt.ToString("O"));
+        command.Parameters.AddWithValue("@QuietOnSuccess", existing.QuietOnSuccess ? 1 : 0);
 
         await command.ExecuteNonQueryAsync();
         _logger.LogInformation("Updated scheduled job {Id} ({Status})", id, existing.Status);
@@ -638,10 +640,10 @@ public class ScheduledJobService : IScheduledJobService
             INSERT INTO ScheduledJobs
             (Id, Name, Query, Kind, GrantedTools, ProviderId, Recurrence, TimeOfDay,
              DayOfWeek, DayOfMonth, Month, SpecificDate, NextFireAt, Status, CreatedAt, UpdatedAt,
-             LastFiredAt, LastResultEntryId, ConsecutiveFailures, OwnerDeviceId)
+             LastFiredAt, LastResultEntryId, ConsecutiveFailures, OwnerDeviceId, QuietOnSuccess)
             VALUES (@Id, @Name, @Query, @Kind, @GrantedTools, @ProviderId, @Recurrence, @TimeOfDay,
                     @DayOfWeek, @DayOfMonth, @Month, @SpecificDate, @NextFireAt, @Status, @CreatedAt, @UpdatedAt,
-                    @LastFiredAt, @LastResultEntryId, @ConsecutiveFailures, @OwnerDeviceId)
+                    @LastFiredAt, @LastResultEntryId, @ConsecutiveFailures, @OwnerDeviceId, @QuietOnSuccess)
             """;
         AddJobParameters(command, job);
         await command.ExecuteNonQueryAsync();
@@ -666,7 +668,7 @@ public class ScheduledJobService : IScheduledJobService
         command.CommandText = $"""
             SELECT Id, Name, Query, Kind, GrantedTools, ProviderId, Recurrence, TimeOfDay,
                    DayOfWeek, DayOfMonth, Month, SpecificDate, NextFireAt, Status, CreatedAt, UpdatedAt,
-                   LastFiredAt, LastResultEntryId, ConsecutiveFailures, OwnerDeviceId
+                   LastFiredAt, LastResultEntryId, ConsecutiveFailures, OwnerDeviceId, QuietOnSuccess
             FROM ScheduledJobs
             {whereOrOrder}
             """;
@@ -702,6 +704,9 @@ public class ScheduledJobService : IScheduledJobService
         command.Parameters.AddWithValue("@LastResultEntryId", job.LastResultEntryId.HasValue ? (object)job.LastResultEntryId.Value.ToString() : DBNull.Value);
         command.Parameters.AddWithValue("@ConsecutiveFailures", job.ConsecutiveFailures);
         command.Parameters.AddWithValue("@OwnerDeviceId", job.OwnerDeviceId.HasValue ? (object)job.OwnerDeviceId.Value.ToString() : DBNull.Value);
+        // T2-18. Bound here rather than in UpsertFromSyncAsync on purpose: a job IMPORTED from a peer starts
+        // un-quieted on this device (its default), and a later pull cannot reset a choice made here.
+        command.Parameters.AddWithValue("@QuietOnSuccess", job.QuietOnSuccess ? 1 : 0);
     }
 
     private static ScheduledJob MapJob(SqliteDataReader r) => new()
@@ -725,7 +730,8 @@ public class ScheduledJobService : IScheduledJobService
         LastFiredAt = r.IsDBNull(16) ? null : DateTime.Parse(r.GetString(16)),
         LastResultEntryId = r.IsDBNull(17) ? null : Guid.Parse(r.GetString(17)),
         ConsecutiveFailures = r.GetInt32(18),
-        OwnerDeviceId = r.IsDBNull(19) ? null : Guid.Parse(r.GetString(19))
+        OwnerDeviceId = r.IsDBNull(19) ? null : Guid.Parse(r.GetString(19)),
+        QuietOnSuccess = !r.IsDBNull(20) && r.GetInt32(20) != 0, // T2-18
     };
 
     private static string SerializeGrantedTools(IReadOnlyCollection<string> grantedTools) =>

@@ -49,7 +49,10 @@ public interface IScheduledJobService
         RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null,
         DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null,
         Guid? providerId = null, IReadOnlyCollection<string>? grantedTools = null,
-        DateTime? specificDate = null, ScheduledJobKind? kind = null);
+        DateTime? specificDate = null, ScheduledJobKind? kind = null,
+        // T2-18 quiet mode. Trailing, defaulted and NULLABLE like every other member here: null means "leave it
+        // as it is", so a caller that does not know about the flag cannot clear it.
+        bool? quietOnSuccess = null);
 
     Task DeleteAsync(Guid id);
 

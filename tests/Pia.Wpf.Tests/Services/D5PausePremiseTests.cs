@@ -877,7 +877,7 @@ public sealed class D5PausePremiseTests : IDisposable
             RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null, DayOfWeek? dayOfWeek = null,
             int? dayOfMonth = null, int? month = null, Guid? providerId = null,
             IReadOnlyCollection<string>? grantedTools = null,
-            DateTime? specificDate = null, ScheduledJobKind? kind = null) => throw new NotImplementedException();
+            DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null) => throw new NotImplementedException();
 
         public Task<bool> IsOwnedByThisDeviceAsync(Guid id) => Task.FromResult(true);
         public Task DeleteAsync(Guid id) => throw new NotImplementedException();

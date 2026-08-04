@@ -222,7 +222,10 @@ public class ScheduledJobsSettingsViewModelTests
         await service.Received(1).UpdateAsync(job.Id, Arg.Any<string>(), Arg.Any<string>(),
             Arg.Any<RecurrenceType?>(), Arg.Any<TimeOnly?>(), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(),
             Arg.Any<int?>(), Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<string>>(),
-            specificDate: target, kind: Arg.Any<ScheduledJobKind?>());
+            specificDate: target, kind: Arg.Any<ScheduledJobKind?>(),
+            // T2-18: the editor sends this on every save (its checkbox is part of the same form), so the
+            // matcher has to name it — NSubstitute matches on the whole argument list.
+            quietOnSuccess: Arg.Any<bool?>());
     }
 
     [Fact]

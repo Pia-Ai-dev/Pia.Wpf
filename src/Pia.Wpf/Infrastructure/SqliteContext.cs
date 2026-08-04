@@ -314,7 +314,10 @@ public class SqliteContext : IDisposable
                 LastResultEntryId TEXT NULL,
                 ConsecutiveFailures INTEGER NOT NULL DEFAULT 0,
                 OwnerDeviceId TEXT NULL,
-                GrantedTools TEXT NOT NULL DEFAULT '[]'
+                GrantedTools TEXT NOT NULL DEFAULT '[]',
+                -- T2-18 quiet mode. Device-local like the three execution-state columns above it: absent from
+                -- SyncScheduledJob and from UpsertFromSyncAsync's SET list, so a pull cannot reset it.
+                QuietOnSuccess INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE INDEX IF NOT EXISTS IX_ScheduledJobs_NextFireAt ON ScheduledJobs(NextFireAt, Status);
@@ -652,6 +655,7 @@ public class SqliteContext : IDisposable
         var hasJobUpdatedAt = false;
         var hasOwnerDeviceId = false;
         var hasGrantedTools = false;
+        var hasQuietOnSuccess = false;
         using (var p = _connection!.CreateCommand())
         {
             p.CommandText = "PRAGMA table_info(ScheduledJobs)";
@@ -662,6 +666,7 @@ public class SqliteContext : IDisposable
                 if (col == "UpdatedAt") hasJobUpdatedAt = true;
                 else if (col == "OwnerDeviceId") hasOwnerDeviceId = true;
                 else if (col == "GrantedTools") hasGrantedTools = true;
+                else if (col == "QuietOnSuccess") hasQuietOnSuccess = true;
             }
         }
         if (!hasJobUpdatedAt)
@@ -683,6 +688,14 @@ public class SqliteContext : IDisposable
         {
             using var addCol = _connection.CreateCommand();
             addCol.CommandText = "ALTER TABLE ScheduledJobs ADD COLUMN GrantedTools TEXT NOT NULL DEFAULT '[]'";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasQuietOnSuccess)
+        {
+            // T2-18: DEFAULT 0, so every job an existing profile already has keeps notifying — quiet mode is
+            // something a person turns on, never something a migration decides for them.
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE ScheduledJobs ADD COLUMN QuietOnSuccess INTEGER NOT NULL DEFAULT 0";
             addCol.ExecuteNonQuery();
         }
 

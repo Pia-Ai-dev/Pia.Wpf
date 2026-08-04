@@ -1521,7 +1521,7 @@ public class ScheduledJobBackgroundServiceTests
             RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null, DayOfWeek? dayOfWeek = null,
             int? dayOfMonth = null, int? month = null, Guid? providerId = null,
             IReadOnlyCollection<string>? grantedTools = null,
-            DateTime? specificDate = null, ScheduledJobKind? kind = null) => throw new NotImplementedException();
+            DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null) => throw new NotImplementedException();
 
         /// <summary>Drives the run-now owner refusal. True by default, which is the ordinary case (a job this
         /// device owns, or a legacy row with a null owner).</summary>

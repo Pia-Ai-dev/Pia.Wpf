@@ -66,6 +66,25 @@ public class ScheduledJob
     public int ConsecutiveFailures { get; set; }
 
     /// <summary>
+    /// T2-18 — QUIET MODE for a monitor job (hermes's <c>[SILENT]</c> analog): suppress the notification a
+    /// SUCCESSFUL firing would raise. An hourly "has anything changed?" job that answers "no" every time is
+    /// exactly the job whose Flow card and Windows toast are noise.
+    /// <para>
+    /// SUCCESS ONLY, deliberately. A monitor that stops working silently is worse than one that is noisy, so
+    /// <c>IScheduledJobNotificationSurface.NotifyFailure</c> ignores this flag entirely — "do not tell me when it
+    /// worked" is a different request from "hide it when it breaks". The run still produces its chat either way;
+    /// what is suppressed is the push, not the record.
+    /// </para>
+    /// <para>
+    /// LOCAL-ONLY: absent from <c>SyncScheduledJob</c> and from <c>UpsertFromSyncAsync</c>'s SET list, like
+    /// <c>LastFiredAt</c>/<c>ConsecutiveFailures</c>/<c>LastResultEntryId</c> — whether a device pushes a toast is
+    /// a property of that DEVICE's notification surface, and adding it to the wire would need the server DTO
+    /// anyway. A pull therefore cannot reset it.
+    /// </para>
+    /// </summary>
+    public bool QuietOnSuccess { get; set; }
+
+    /// <summary>
     /// Device that owns the firing schedule. Only the owner device runs the job; other devices
     /// see it in the UI and (after sync) see the resulting history but never trigger a run.
     /// Null on legacy rows created before sync was wired — those stay device-local on whichever

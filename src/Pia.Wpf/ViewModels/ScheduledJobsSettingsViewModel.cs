@@ -105,6 +105,14 @@ public partial class ScheduledJobsSettingsViewModel : UiThreadViewModel
     [ObservableProperty]
     private string _editGrantedTools = string.Empty;
 
+    /// <summary>
+    /// T2-18 quiet mode: suppress the SUCCESS notification (Flow card + Windows toast) this job would raise.
+    /// Failures still notify — see <c>ScheduledJob.QuietOnSuccess</c>. Device-local, so it is not part of what
+    /// syncs with the job.
+    /// </summary>
+    [ObservableProperty]
+    private bool _editQuietOnSuccess;
+
     /// <summary>Drives the date row's visibility: a specific date means nothing for a recurring job.</summary>
     public bool EditorWantsSpecificDate => EditRecurrence == RecurrenceType.Once;
 
@@ -220,6 +228,7 @@ public partial class ScheduledJobsSettingsViewModel : UiThreadViewModel
             ProviderId = job.ProviderId,
             ProviderName = providerName,
             GrantedTools = string.Join(", ", job.GrantedTools),
+            QuietOnSuccess = job.QuietOnSuccess,
             OwnedByThisDevice = ownedHere,
         };
     }
@@ -235,6 +244,7 @@ public partial class ScheduledJobsSettingsViewModel : UiThreadViewModel
         EditTimeOfDay = "09:00";
         EditSpecificDate = null;
         EditGrantedTools = string.Empty;
+        EditQuietOnSuccess = false;
         EditProvider = ProviderChoices.FirstOrDefault();
         StatusMessage = null;
         IsEditorOpen = true;
@@ -253,6 +263,7 @@ public partial class ScheduledJobsSettingsViewModel : UiThreadViewModel
         EditTimeOfDay = row.TimeOfDay.ToString("HH\\:mm");
         EditSpecificDate = row.SpecificDate;
         EditGrantedTools = row.GrantedTools;
+        EditQuietOnSuccess = row.QuietOnSuccess;
         EditProvider = ProviderChoices.FirstOrDefault(p => p.Id == row.ProviderId)
                        ?? ProviderChoices.FirstOrDefault();
         StatusMessage = null;
@@ -305,7 +316,8 @@ public partial class ScheduledJobsSettingsViewModel : UiThreadViewModel
                     providerId: EditProvider?.Id,
                     grantedTools: grants,
                     specificDate: specificDate,
-                    kind: EditKind);
+                    kind: EditKind,
+                    quietOnSuccess: EditQuietOnSuccess);
 
                 _logger.LogInformation("Updated scheduled job {Id} from settings", id);
                 _logger.SensitiveDebug("Updated scheduled job {Id} name: {Name} goal: {Goal}",
@@ -485,6 +497,9 @@ public sealed class ScheduledJobRow
     public Guid? ProviderId { get; init; }
     public string? ProviderName { get; init; }
     public required string GrantedTools { get; init; }
+
+    /// <summary>T2-18: this job's successes are not announced (device-local; failures still are).</summary>
+    public required bool QuietOnSuccess { get; init; }
 
     /// <summary>Only the owner device may advance a job, so "run now" is unavailable elsewhere.</summary>
     public required bool OwnedByThisDevice { get; init; }
