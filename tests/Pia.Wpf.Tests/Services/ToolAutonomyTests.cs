@@ -36,8 +36,13 @@ public class ToolAutonomyTests
         // hermes #15. Defaulted like the rest, so the AXIS is what the exhaustive facts below must add
         // explicitly — a defaulted parameter silently keeps a matrix green while it stops covering the new
         // dimension, which is the failure mode this branch has been bitten by four times.
-        bool sessionGrant = false)
-        => new(surface, toolName, toolClass, allowlisted, sessionGrant, standingGrant, namedGrant, policy, canPark);
+        bool sessionGrant = false,
+        // T2-7b. Defaulted for the same reason and with the same caveat: false is "no MCP server declared
+        // anything", which is what every fact written before this axis existed meant, so the whole matrix below
+        // keeps asserting the NAME rule. The declaration's own facts pass it explicitly.
+        bool serverDeclaredDestructive = false)
+        => new(surface, toolName, toolClass, serverDeclaredDestructive, allowlisted, sessionGrant, standingGrant,
+               namedGrant, policy, canPark);
 
     /// <summary>
     /// T-FLOOR-1. A single Fact with nested loops rather than a ~3.5k-case Theory: the assertion is the same

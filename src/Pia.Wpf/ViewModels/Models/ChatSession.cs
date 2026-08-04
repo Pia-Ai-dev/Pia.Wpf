@@ -1047,13 +1047,17 @@ public sealed class ChatSession : IDisposable
             // ineligible tool (write_file, a destructive MCP tool) cannot auto-bypass.
             var allowlisted = _permissions.IsAutoApproveEligible(tool);
             var toolClass = ToolClassifier.Classify(pendingAction.PluginName, IsExternalTool(tool));
+            // T2-7b: hoisted beside the other two tool facts. False for every built-in handler's pending action
+            // (there is no server to have declared anything), true only where an MCP server sent
+            // ToolAnnotations.DestructiveHint.
+            var serverDestructive = pendingAction.ServerDeclaredDestructive;
             // Held as a local because the AlwaysAllow branch below needs the same answer the card's button set
             // was built from: an AlwaysAllow on a non-offerable tool executes once and persists NO grant.
-            var offerable = ToolAutonomy.IsStandingGrantOfferable(toolClass, tool, allowlisted);
+            var offerable = ToolAutonomy.IsStandingGrantOfferable(toolClass, tool, allowlisted, serverDestructive);
             // hermes #15, the same hoist for the same reason: the AllowForSession branch below must mint a
             // grant only where the card was entitled to offer one, and the card computes this with the SAME
             // function (ActionCardBuilder.IsSessionGrantable), so the two cannot drift.
-            var sessionOfferable = ToolAutonomy.IsSessionGrantOfferable(tool);
+            var sessionOfferable = ToolAutonomy.IsSessionGrantOfferable(tool, serverDestructive);
             // T2-14: the POLICY question, bracketed. These two are RequestedAt/DecidedAt for the arm the policy
             // itself answered — the AutoRun bypass below. They are usually EQUAL: Resolve is a few comparisons
             // and DateTime.UtcNow has ~1 ms resolution on Windows (the same reason Seq is not a timestamp), so
@@ -1063,6 +1067,10 @@ public sealed class ChatSession : IDisposable
             var askedAt = DateTime.UtcNow;
             var verdict = ToolAutonomy.Resolve(new ToolGateInput(
                 ToolGateSurface.Interactive, tool, toolClass,
+                // T2-7b: interactively a server-declared-destructive external tool hits the floor, which on
+                // THIS surface suppresses auto-approval and still shows the card — a human may still click
+                // "Allow once", which is the historic semantics and is deliberately not tightened.
+                ServerDeclaredDestructive: serverDestructive,
                 IsAllowlisted: allowlisted,
                 // hermes #15: the PROCESS-scoped middle tier, read from the grant set's owner exactly like the
                 // persisted one below it. This is the lookup that makes the second call of a session-granted

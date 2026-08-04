@@ -110,10 +110,20 @@ pool really is the bound it claims to be.
 Not defects. Recommendations and named gaps that no batch has taken. Verified absent on 2026-08-03 rather than
 assumed absent.
 
-- [ ] **T2-7b — consume MCP `ToolAnnotations.DestructiveHint` / `ReadOnlyHint`**, in the **more-restricted
-  direction only** (a server must not be able to declare itself safe). The name-stem heuristic half of hermes #7
-  shipped; this half needs the hint plumbed out of `McpPluginToolHandler`. Documented as a future upgrade at
-  `ToolPermissionService.cs:88`–`:96`.
+- [x] **T2-7b — consume MCP `ToolAnnotations`.** Fixed: `McpPluginToolHandler.IsServerDeclaredDestructive`
+  (`:177`) reads the hint off the tool the name lookup already resolved (`:116`) and it travels as
+  `PluginToolCall.ServerDeclaredDestructive` (`IPluginToolHandler.cs:29`) to a new REQUIRED member of
+  `ToolGateInput` (`ToolAutonomy.cs:58`) — required, so a fourth gate cannot be added without answering whether
+  it knows what the server declared. One line consumes it (`ToolAutonomy.cs:169`): `IsDeleteLike` gained an
+  OR-ed second argument (`ToolPermissionService.cs:102`), so the declaration reaches the floor, the policy arm,
+  the session tier and the park at once. **Only an explicit `DestructiveHint == true` counts — deliberately NOT
+  the spec's "null ⇒ assume true" default**, which would reclassify every tool of every annotation-less server
+  as delete-like and refuse all unattended MCP. `ReadOnlyHint` IS consumed, and the consumption is that it
+  cannot move the answer: `false` says only what Pia already assumes (every MCP call is a write), and `true` is
+  the self-declaration of safety the item forbids honouring — pinned, with the contradictory
+  `readOnlyHint:true`+`destructiveHint:true` pair, in `McpToolAnnotationHintTests`. The same flag widens the
+  CARD (`ActionCardBuilder.cs:67`) and both grant-offer rules, because a card offering "Always allow" for a tool
+  the floor will never auto-run is a button that does nothing.
 - [ ] **T2-13b — SQLite integrity-check / repair-on-open.** WAL + `busy_timeout` shipped with Batch 10; there is
   no `PRAGMA integrity_check` anywhere in `src/`. hermes #13's second half.
 - [x] **T2-14 — gated-call correlation.** Fixed: `ToolCallId`, `StepOrdinal`, `RequestedAt` and `DecidedAt`

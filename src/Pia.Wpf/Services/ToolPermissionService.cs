@@ -88,17 +88,22 @@ public class ToolPermissionService : IToolPermissionService
     /// <para>
     /// This is a NAME HEURISTIC, not a boundary: it cannot see what a server-defined tool actually does,
     /// and the built-in destructive tools are excluded from auto-approval by the allowlist regardless.
-    /// The real containment lives in the gates that consult it. Future upgrade: MCP exposes
-    /// <c>ToolAnnotations.DestructiveHint</c>/<c>ReadOnlyHint</c> on <c>McpClientTool.ProtocolTool</c>,
-    /// which could override this heuristic in the MORE-restricted direction only (a server must not be
-    /// able to declare itself safe) — but nothing plumbs it out of <c>McpPluginToolHandler</c> today, so
-    /// there is no reachable hint to consume from here.
+    /// The real containment lives in the gates that consult it.
+    /// </para>
+    /// <para>
+    /// T2-7b: it is no longer name-ONLY. <paramref name="serverDeclaredDestructive"/> is the MCP server's own
+    /// <c>ToolAnnotations.DestructiveHint</c>, plumbed out of <c>McpPluginToolHandler</c> (which is where the
+    /// direction of trust is argued) through <c>PluginToolCall</c> to every caller that has one. It is ORed in,
+    /// so it can only ever widen this predicate — a hint can add a tool to the destructive set and nothing
+    /// about it can remove one. Callers with no hint (the create-time grant filter, the card's git rules, every
+    /// built-in handler) leave it at its default and get exactly the pre-T2-7b answer.
     /// </para>
     /// </summary>
-    public static bool IsDeleteLike(string? toolName)
-        => toolName is not null
-           && (toolName.Equals("forget", StringComparison.OrdinalIgnoreCase)
-               || DestructiveStems.Any(stem => toolName.Contains(stem, StringComparison.OrdinalIgnoreCase)));
+    public static bool IsDeleteLike(string? toolName, bool serverDeclaredDestructive = false)
+        => serverDeclaredDestructive
+           || (toolName is not null
+               && (toolName.Equals("forget", StringComparison.OrdinalIgnoreCase)
+                   || DestructiveStems.Any(stem => toolName.Contains(stem, StringComparison.OrdinalIgnoreCase))));
 
     /// <summary>
     /// True for a <see cref="IsDeleteLike"/> name that is NOT one of our built-in destructive tools, i.e. a

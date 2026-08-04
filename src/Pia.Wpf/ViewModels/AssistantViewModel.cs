@@ -1642,6 +1642,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             var allowlisted = _permissions.IsAutoApproveEligible(tool);
             var verdict = ToolAutonomy.Resolve(new ToolGateInput(
                 ToolGateSurface.Voice, tool, toolClass,
+                // T2-7b: voice has no card either, so a server-declared-destructive external tool is refused
+                // outright here like a delete-named one — and the refusal below already speaks the reason.
+                ServerDeclaredDestructive: pendingAction.ServerDeclaredDestructive,
                 IsAllowlisted: allowlisted,
                 // hermes #15: the honest lookup, even though the resolver does not honour a session grant on
                 // THIS surface — the input stays a fact about the user's grants and the reason voice is

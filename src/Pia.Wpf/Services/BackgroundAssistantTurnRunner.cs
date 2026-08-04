@@ -480,6 +480,10 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             var askedAt = DateTime.UtcNow;
             var verdict = ToolAutonomy.Resolve(new ToolGateInput(
                 ToolGateSurface.Unattended, pending.ToolName, toolClass,
+                // T2-7b: this is the surface where the server's declaration bites hardest — a declared-
+                // destructive external tool hits the FLOOR and is refused outright, with no park, exactly as a
+                // delete-NAMED one already was. There is no human here to weigh it against the card.
+                ServerDeclaredDestructive: pending.ServerDeclaredDestructive,
                 // No allowlist unattended: there is no user to have curated it, and IToolPermissionService is
                 // injected nowhere in this file. That is today's behaviour restated, not a regression.
                 IsAllowlisted: false,

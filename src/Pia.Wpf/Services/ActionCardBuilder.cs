@@ -59,7 +59,13 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         // hermes #15 moved the git trio into ToolPermissionService.IsWorkDiscarding so this card rule and
         // ToolAutonomy.IsSessionGrantOfferable share ONE definition — a gate that could mint a session grant
         // for a tool this card refuses to offer one for would be a gate wider than its own UI.
-        var isDelete = ToolPermissionService.IsDeleteLike(pendingAction.ToolName);
+        // T2-7b: the MCP server's own DestructiveHint widens `isDelete` here exactly as it does in the gate, so
+        // one declaration reaches all three things this line feeds — the warning text below, IsDestructive
+        // (which renders the warning at all) and IsAutoApprovable's `&& !isDestructive`. A card that offered a
+        // one-click standing grant for a tool the gate's floor will never auto-run is a button that does
+        // nothing.
+        var isDelete = ToolPermissionService.IsDeleteLike(
+            pendingAction.ToolName, pendingAction.ServerDeclaredDestructive);
         var isGitDestructive = ToolPermissionService.IsWorkDiscarding(pendingAction.ToolName);
         var isDestructive = isDelete || isGitDestructive;
 
@@ -131,14 +137,16 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             // be offered a one-click standing grant here. The asymmetry is intentional; the gate is the floor,
             // the card is allowed to be stricter about what it OFFERS.
             IsAutoApprovable = ToolAutonomy.IsStandingGrantOfferable(
-                    resolvedClass, pendingAction.ToolName, _permissions.IsAutoApproveEligible(pendingAction.ToolName))
+                    resolvedClass, pendingAction.ToolName, _permissions.IsAutoApproveEligible(pendingAction.ToolName),
+                    pendingAction.ServerDeclaredDestructive)
                 && !isDestructive,
             // hermes #15. The SAME function the gate mints with (ToolAutonomy.IsSessionGrantOfferable, via
             // ChatSession's `sessionOfferable` hoist), and no `&& !isDestructive` beside it: that rule already
             // excludes both halves of isDestructive — IsDeleteLike and IsWorkDiscarding — so repeating the
             // exclusion here would only invite the two to drift. Wider than IsAutoApprovable on purpose:
             // write_file is the tool a user approves forty times a session and can never "always allow".
-            IsSessionGrantable = ToolAutonomy.IsSessionGrantOfferable(pendingAction.ToolName),
+            IsSessionGrantable = ToolAutonomy.IsSessionGrantOfferable(
+                pendingAction.ToolName, pendingAction.ServerDeclaredDestructive),
             IsAutoApproved = autoApproved,
             IsDestructive = isDestructive,
             WarningText = warningText,

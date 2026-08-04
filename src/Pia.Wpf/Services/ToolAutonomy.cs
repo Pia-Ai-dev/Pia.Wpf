@@ -13,6 +13,18 @@ namespace Pia.Services;
 /// <param name="Surface">Which gate is asking.</param>
 /// <param name="ToolName">The tool name, as the model called it.</param>
 /// <param name="ToolClass">From <see cref="ToolClassifier.Classify"/>, route-first.</param>
+/// <param name="ServerDeclaredDestructive">
+/// T2-7b. <c>PluginToolCall.ServerDeclaredDestructive</c> — the MCP server's own
+/// <c>ToolAnnotations.DestructiveHint</c>, which widens <see cref="ToolPermissionService.IsDeleteLike"/> for
+/// this one call and can never narrow it.
+/// <para>
+/// DELIBERATELY NOT DEFAULTED, for the same reason <see cref="CanPark"/> and <see cref="HasSessionGrant"/> are
+/// not: it breaks all three <see cref="ToolAutonomy.Resolve"/> call sites at compile time, so a fourth gate
+/// cannot be added without answering "does this surface know what the server declared?" out loud. A surface
+/// with no pending action to read it from must pass <c>false</c> and say so, rather than inherit a default that
+/// silently discards the one hint an MCP server can send us.
+/// </para>
+/// </param>
 /// <param name="IsAllowlisted"><c>ToolPermissionService.IsAutoApproveEligible(name)</c>.</param>
 /// <param name="HasSessionGrant">
 /// hermes #15. <c>ISessionToolGrantStore.IsGranted(pluginId, name)</c> — the PROCESS-scoped middle tier,
@@ -41,6 +53,9 @@ public readonly record struct ToolGateInput(
     ToolGateSurface Surface,
     string ToolName,
     ToolClass ToolClass,
+    // T2-7b. Positioned with the other two facts about the TOOL rather than among the membership bools, and
+    // not defaulted — see the param docs above.
+    bool ServerDeclaredDestructive,
     bool IsAllowlisted,
     // DELIBERATELY NOT DEFAULTED either, and for the same reason CanPark is not: hermes #15 adds a way for a
     // call to be authorized, so a gate that does not answer "does this surface honour a session grant?" out
@@ -78,9 +93,16 @@ public static class ToolAutonomy
     /// <see cref="ToolClass.External"/> standing in for <c>IsMcpTool</c>. The card and the gate now compute it
     /// with this same function, so they cannot drift apart again.
     /// </summary>
-    public static bool IsStandingGrantOfferable(ToolClass toolClass, string toolName, bool isAllowlisted)
+    /// <param name="serverDeclaredDestructive">T2-7b, threaded here and not only into <see cref="Resolve"/>:
+    /// the floor already refuses to AUTO-RUN a server-declared-destructive external tool, but without this the
+    /// card would still offer "Always allow" for it and persist a grant the floor then ignores forever — a
+    /// button that does nothing, which is exactly the card-vs-gate drift 04 D4/D5 collapsed into one
+    /// function.</param>
+    public static bool IsStandingGrantOfferable(
+        ToolClass toolClass, string toolName, bool isAllowlisted, bool serverDeclaredDestructive = false)
         => isAllowlisted
-           || (toolClass == ToolClass.External && !ToolPermissionService.IsDeleteLike(toolName));
+           || (toolClass == ToolClass.External
+               && !ToolPermissionService.IsDeleteLike(toolName, serverDeclaredDestructive));
 
     /// <summary>
     /// hermes #15. May this tool be offered — and honoured — as a SESSION grant? Used by the card to decide
@@ -121,8 +143,12 @@ public static class ToolAutonomy
     /// UNATTENDED is narrower still; see the session arm in <see cref="Resolve"/>.)
     /// </para>
     /// </summary>
-    public static bool IsSessionGrantOfferable(string toolName)
-        => !ToolPermissionService.IsDeleteLike(toolName)
+    /// <param name="serverDeclaredDestructive">T2-7b. The first exclusion below is "no destructive tool of any
+    /// class", and a server that declares its own tool destructive is naming exactly that — so the middle tier
+    /// must not be the one place the declaration is ignored, or "Allow for this session" would be the widest
+    /// authority on offer for the tool the server itself flagged.</param>
+    public static bool IsSessionGrantOfferable(string toolName, bool serverDeclaredDestructive = false)
+        => !ToolPermissionService.IsDeleteLike(toolName, serverDeclaredDestructive)
            && !ToolPermissionService.IsWorkDiscarding(toolName)
            && !ToolPermissionService.IsAuthorityAuthoring(toolName);
 
@@ -137,7 +163,10 @@ public static class ToolAutonomy
     /// </summary>
     public static ToolGateVerdict Resolve(in ToolGateInput input)
     {
-        var isDeleteLike = ToolPermissionService.IsDeleteLike(input.ToolName);
+        // T2-7b: ONE line, and deliberately this one. Every branch below reads `isDeleteLike` — the floor, the
+        // policy arm, the session tier (through IsSessionGrantOfferable) and the park — so widening it here is
+        // what makes the server's declaration reach all of them at once, instead of four places to keep in step.
+        var isDeleteLike = ToolPermissionService.IsDeleteLike(input.ToolName, input.ServerDeclaredDestructive);
 
         // FLOOR (M3) — a destructive EXTERNAL (MCP) tool. Interactively this suppresses auto-approval only:
         // a human is looking at the card and may still click "Allow once", which is today's semantics and is
@@ -194,7 +223,7 @@ public static class ToolAutonomy
         if (input.HasSessionGrant
             && input.Surface != ToolGateSurface.Voice
             && (input.Surface != ToolGateSurface.Unattended || input.ToolClass != ToolClass.External)
-            && IsSessionGrantOfferable(input.ToolName))
+            && IsSessionGrantOfferable(input.ToolName, input.ServerDeclaredDestructive))
         {
             return new ToolGateVerdict(ToolGateOutcome.AutoRun, ToolGateDecision.AutoApprovedSessionGrant);
         }
@@ -202,7 +231,8 @@ public static class ToolAutonomy
         // A persisted "always allow" the user clicked. Interactive and voice only (the unattended gate has
         // no persisted-grant concept and passes false).
         if (input.HasStandingGrant
-            && IsStandingGrantOfferable(input.ToolClass, input.ToolName, input.IsAllowlisted))
+            && IsStandingGrantOfferable(
+                input.ToolClass, input.ToolName, input.IsAllowlisted, input.ServerDeclaredDestructive))
         {
             return new ToolGateVerdict(ToolGateOutcome.AutoRun, ToolGateDecision.AutoApprovedStandingGrant);
         }
