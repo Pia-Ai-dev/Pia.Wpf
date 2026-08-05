@@ -135,6 +135,38 @@ public sealed class FlowPersistenceStoreTests : IDisposable
     }
 
     [Fact]
+    public void OpenParkedRunAction_RoundTrips_Unchanged()
+    {
+        // 18 G3 review fix: the appended OpenParkedRun action must persist → reconstruct with
+        // Kind/RunId/Label intact, distinct from OpenRunAction (FlowPersistenceStore.ReconstructAction).
+        var store = Store();
+        var runId = Guid.NewGuid();
+        var item = new FlowItem
+        {
+            Id = Guid.NewGuid(),
+            CreatedAt = DateTimeOffset.Now,
+            Severity = FlowSeverity.ActionRequired,
+            Source = FlowSource.AgentRun,
+            Title = "Agent run",
+            Body = "Waiting for you to clarify the goal",
+            DedupKey = "run-3",
+            Lifetime = FlowLifetime.Persistent,
+            IsRead = false,
+            Action = new OpenParkedRunAction(runId, "Open run"),
+            Durable = true,
+        };
+
+        store.Upsert(item);
+        var only = Assert.Single(store.ReadAll());
+
+        Assert.Equal(FlowSource.AgentRun, only.Source);
+        var action = Assert.IsType<OpenParkedRunAction>(only.Action);
+        Assert.Equal(FlowActionKind.OpenParkedRun, action.Kind);
+        Assert.Equal(runId, action.RunId);
+        Assert.Equal("Open run", action.Label);
+    }
+
+    [Fact]
     public void Upsert_SameId_Replaces()
     {
         var store = Store();

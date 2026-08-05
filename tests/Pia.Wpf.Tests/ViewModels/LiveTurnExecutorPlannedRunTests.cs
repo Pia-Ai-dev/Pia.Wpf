@@ -7,9 +7,12 @@ using Pia.Helpers;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
+using Pia.Services.Flow;
 using Pia.Services.Interfaces;
+using Pia.Services.Providers;
 using Pia.Shared.Models;
 using Pia.Tests.Services;
+using Pia.ViewModels;
 using Pia.ViewModels.Models;
 using Xunit;
 
@@ -394,6 +397,77 @@ public sealed class LiveTurnExecutorPlannedRunTests
         Assert.DoesNotContain(ChatState.Error, states);
         Assert.Equal(ChatState.Idle, session.State); // OnPausedAsync released the session
         Assert.Null(session.Cts);
+    }
+
+    /// <summary>
+    /// 18 G3 adversarial review, finding 1: <c>AgentRunOrchestrator.SafePostClarificationQuestionAsync</c>
+    /// posts the plan turn's clarification question straight to <see cref="IAssistantChatService"/>, behind
+    /// this session's back — and a store write is not a screen update, so the question never rendered at the
+    /// moment it was asked, and this session's OWN next full-replace persist
+    /// (<c>ChatSessionManager.PersistAsync</c>, a plain replace off <c>session.Messages</c> that never
+    /// learned about that row) would silently delete it. <c>MirrorClarificationQuestionAsync</c> closes both
+    /// halves: the question lands in <c>session.Messages</c> immediately (asserted here directly, the same
+    /// way <see cref="PlannedRun_ParkedAtBudget_PersistsPerStep_WithoutTurnCompletedOrTerminalSettle"/> asserts
+    /// the per-step interim persist), and the next persist WRITES it forward instead of erasing it (asserted
+    /// by replaying that exact full-replace write and confirming the row survives).
+    /// </summary>
+    [Fact]
+    public async Task PlannedRun_DeclinesTheGoal_MirrorsTheQuestionIntoTheLiveSession_AndSurvivesTheNextPersist()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("ggg");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(PlanResult.Decline("what do you mean by ggg?"));
+
+        var session = CreateSession();
+        var (_, placeholder) = SeedSessionForPlannedRun(session, "ggg");
+
+        var live = BuildLiveExecutor(session, _ => false);
+        var orchestrator = new AgentRunOrchestrator(
+            h.Runs, planner, new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance, chats: h.Chats);
+
+        await orchestrator.RunAsync(run, live, Persona(), Provider(), RunProfile.Interactive, session.Cts!.Token);
+
+        var parked = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.WaitingForInput, parked!.State);
+        Assert.Equal(AgentRunOrchestrator.NeedsGoalReason, RunPauseEnvelope.ReadReason(parked));
+
+        // THE FIX: the question is visible in the live session RIGHT NOW — before this fix nothing appended
+        // it, and the transcript would have stayed [user goal] + the removed placeholder forever.
+        Assert.DoesNotContain(placeholder, session.Messages);
+        var posted = Assert.Single(session.Messages, m => !m.IsUser);
+        Assert.Equal("what do you mean by ggg?", posted.Content);
+        Assert.Equal(ChatState.Idle, session.State); // OnPausedAsync released the session (a park is not terminal)
+
+        // ONE ROW, NOT TWO LOOK-ALIKES (18 G6 review fix). The durable write and this mirrored copy are the
+        // same chat message, so they share the id the orchestrator minted for the pair. That is not tidiness:
+        // a chat row's id is its only stable identity, and it is the key
+        // ChatSessionManager.PullClarificationRowsAsync uses to tell a stored row the session already holds
+        // from one it is missing. Were the mirror to mint its own, that pull — which runs on exactly this
+        // state, a session whose run is parked asking — would treat the stored copy as new and render the
+        // question TWICE. Read BEFORE the replay below, which would otherwise mask it.
+        var beforeReplay = await h.Chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
+        Assert.Equal(posted.Id, Assert.Single(beforeReplay!.Messages, m => m.Role == "assistant").Id);
+
+        // Replay this session's OWN next full-replace persist (ChatSessionManager.PersistAsync's exact
+        // shape: a plain SaveAsync off session.Messages, no merge) and confirm the question SURVIVES it —
+        // before this fix it was never in session.Messages, so this replace would have deleted the DB row
+        // the orchestrator wrote directly.
+        await h.Chats.SaveAsync(new SyncAssistantChat
+        {
+            Id = run.ChatId,
+            SchemaVersion = 1,
+            Title = "t",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            LastAccessedAt = DateTime.UtcNow,
+            WindowMode = WindowMode.Assistant.ToString(),
+            Messages = [.. session.Messages.Select(AssistantMessageMapper.ToDto)],
+        }, TestContext.Current.CancellationToken);
+
+        var stored = await h.Chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
+        Assert.Contains(stored!.Messages, m => m.Role == "assistant" && m.Content == "what do you mean by ggg?");
+        Assert.Contains(stored.Messages, m => m.Role == "user" && m.Content == "ggg");
     }
 
     [Fact]
@@ -889,5 +963,228 @@ public sealed class LiveTurnExecutorPlannedRunTests
 
         Assert.Equal(1, resolveSeen);
         Assert.NotSame(ui, contextAtResolve);
+    }
+
+    // ---------------------------------------------------------------------------------------------------
+    // Batch 18 D7/G6 — the INTERACTIVE path, measured rather than inferred.
+    //
+    // The owner recorded D7's premise as UNTESTED: "interactive should work the same way" was reasoned from
+    // shared code, not observed. Spec §7 G6 therefore opens with "begin this group by reproducing the defect
+    // interactively", because building on an unobserved symptom is how a group ships something that fixes
+    // nothing. These facts are that measurement, and the answer they record is: the interactive Planned path
+    // DOES inherit 18 G2 for free — a declining plan turn parks it with no steps, exactly as the headless one
+    // is parked (GoalGroundingReproTests) — because ChatSessionManager's interactive Planned branch reaches
+    // the SAME AgentPlanner through the SAME AgentRunOrchestrator. What is not free is everything the live
+    // session then has to do, which is the rest of this section and ChatSessionManagerTests' G6 block.
+    //
+    // The doubles stop at IAiClientService, exactly as GoalGroundingReproTests argues: the whole subject is
+    // what a PLAN TURN does with a goal it cannot ground, and a fake planner would let the test choose the
+    // outcome it is supposed to be measuring. Real AgentPlanner, real orchestrator, real SQLite, real
+    // ChatSession, real LiveTurnExecutor — only the provider is stubbed.
+    // ---------------------------------------------------------------------------------------------------
+
+    /// <summary>The observed repro's goal, verbatim (spec §0: typed <c>ggg</c>, then run).</summary>
+    private const string ThinGoal = "ggg";
+
+    /// <summary>
+    /// The model's question. USER-DERIVED PAYLOAD in production (CLAUDE.md: <c>SensitiveDebug</c> only) — a
+    /// test literal here, and nothing in this file logs it.
+    /// </summary>
+    private const string ModelQuestion = "what do u mean with ggg?";
+
+    /// <summary>
+    /// Provider exchanges this fixture served during a run. Non-vacuity for the decline facts twice over: it
+    /// proves the plan turn really happened, and — because a declined plan creates no steps — that its value
+    /// is <c>1</c> proves no STEP turn ran either, i.e. nothing was fabricated and executed.
+    /// </summary>
+    private int _providerTurns;
+
+    /// <summary>
+    /// Every provider turn answers with an <c>emit_plan</c> call that DECLINES: the model calls the tool
+    /// exactly once, as the plan prompt demands, and uses it to say it cannot ground the goal.
+    /// <para>
+    /// The member names are WIRE literals for the reason <c>GoalGroundingReproTests</c> gives: they are what a
+    /// provider actually sends, so a renamed schema member has to break here rather than silently re-bind.
+    /// </para>
+    /// </summary>
+    private void ProviderDeclinesEveryPlanTurn(string? question = ModelQuestion)
+    {
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(),
+                cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                Interlocked.Increment(ref _providerTurns);
+                return DeclineStream(ci.ArgAt<ToolCallHandler?>(3), question);
+            });
+    }
+
+    private static async IAsyncEnumerable<ChatStreamItem> DeclineStream(ToolCallHandler? handler, string? question)
+    {
+        if (handler is not null)
+        {
+            await handler(
+                new FunctionCallContent(Guid.NewGuid().ToString(), "emit_plan", new Dictionary<string, object?>
+                {
+                    ["cannotGround"] = true,
+                    ["question"] = question,
+                    ["steps"] = null,
+                }),
+                new ToolDispatchContext(1));
+        }
+
+        await Task.Yield();
+        yield return new Finished(null, "test-model");
+    }
+
+    /// <summary>
+    /// The run-progress panel over this harness's REAL run store, built under an inline
+    /// <see cref="SynchronizationContext"/> — the VM captures one at construction and <c>Post</c>s its
+    /// projection through it (G3), so a pool-backed context would let the assertions race the projection.
+    /// Restores whatever context was installed, exactly as <see cref="BuildLiveExecutor"/> does.
+    /// </summary>
+    private RunProgressViewModel BuildPanel(Harness h, Guid runId)
+    {
+        var prev = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        try
+        {
+            return new RunProgressViewModel(
+                h.Runs, runId, _loc, Substitute.For<IAgentRunResumeService>(), NullLogger.Instance);
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(prev);
+        }
+    }
+
+    /// <summary>Runs Post callbacks inline so a marshaled projection is observable synchronously.</summary>
+    private sealed class InlineSyncContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback d, object? state) => d(state);
+
+        public override void Send(SendOrPostCallback d, object? state) => d(state);
+    }
+
+    /// <summary>The REAL planner over this fixture's stubbed provider client.</summary>
+    private AgentPlanner RealPlanner()
+    {
+        _settingsService.GetSettingsAsync().Returns(_ => Task.FromResult(_appSettings));
+        var handler = Substitute.For<IAiProviderHandler>();
+        handler.ProviderType.Returns(AiProviderType.OpenAI); // must match Provider()'s, or the resolver throws
+        handler.DropsReasoningEffortWithTools.Returns(false);
+        return new AgentPlanner(
+            _ai, new AiProviderHandlerResolver([handler]), _settingsService, NullLogger<AgentPlanner>.Instance);
+    }
+
+    /// <summary>
+    /// Drives ONE interactive Planned run whose plan turn declines, through the real chain, and hands back the
+    /// row as it was left. Shared by the two facts below so both speak about the same real park rather than
+    /// about two differently-stubbed approximations of one.
+    /// </summary>
+    private async Task<(AgentRun Parked, ChatSession Session, AssistantMessage Placeholder)> RunDeclinedInteractiveAsync(
+        Harness h, string goal = ThinGoal)
+    {
+        var run = await h.NewRunAsync(goal);
+        var session = CreateSession();
+        var (_, placeholder) = SeedSessionForPlannedRun(session, goal);
+        ProviderDeclinesEveryPlanTurn();
+
+        var live = BuildLiveExecutor(session, _ => false);
+        var orchestrator = new AgentRunOrchestrator(
+            h.Runs, RealPlanner(), new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance, chats: h.Chats);
+
+        await orchestrator.RunAsync(run, live, Persona(), Provider(), RunProfile.Interactive, session.Cts!.Token);
+
+        var parked = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.NotNull(parked);
+        return (parked!, session, placeholder);
+    }
+
+    /// <summary>
+    /// <b>18 D7/G6 acceptance fact 1 — the interactive premise.</b> An interactive Planned run whose plan turn
+    /// declines the goal parks at <see cref="AgentRunState.WaitingForInput"/> with the <c>needs-goal</c> token
+    /// and CREATES NO STEPS, and the live session it was launched from is left USABLE: back to
+    /// <see cref="ChatState.Idle"/> with its CTS disposed (so Send re-enables), the model's question rendered
+    /// in the transcript, and no terminal settle — a park is not a completion.
+    /// <para>
+    /// <b>What this adds over <c>GoalGroundingReproTests</c>' §8.1 fact</b>, which asserts the same park
+    /// against a recording executor double: everything on the LIVE side of the seam. The interactive path is
+    /// the one where a wedged session is user-visible — a run that parked without releasing
+    /// <c>IsStreaming</c> leaves a dead Send button and no way to answer the question at all — and it is the
+    /// half D7's premise was never measured on.
+    /// </para>
+    /// <para>
+    /// <c>_providerTurns == 1</c> is the load-bearing count. One turn means the plan turn ran (so nothing
+    /// below is vacuous), that the FIRM RETRY was short-circuited (a decline is not silence — implementer
+    /// decision 2), and that no step turn ever ran, i.e. nothing was fabricated and executed on the way here.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task InteractivePlannedRun_PlanTurnDeclines_ParksNeedsGoal_NoSteps_AndLeavesTheSessionUsable()
+    {
+        using var h = new Harness();
+
+        var (parked, session, placeholder) = await RunDeclinedInteractiveAsync(h);
+
+        Assert.Equal(1, _providerTurns);
+
+        // The park itself, on the row the panel and the Flow surface both read.
+        Assert.Equal(AgentRunState.WaitingForInput, parked.State);
+        Assert.Equal(AgentRunOrchestrator.NeedsGoalReason, RunPauseEnvelope.ReadReason(parked));
+        Assert.Empty(parked.Plan);          // "…and creates no steps" (§8.1), read back out of SQLite
+        Assert.Null(parked.CompletedAt);    // a park is not terminal (guardrail 5)
+
+        // The LIVE half — what only this path can assert.
+        Assert.DoesNotContain(placeholder, session.Messages);   // BeginRunAsync removed the streaming placeholder
+        var posted = Assert.Single(session.Messages, m => !m.IsUser);
+        Assert.Equal(ModelQuestion, posted.Content);            // 18 G3's mirror put the question on screen
+        Assert.Equal(ChatState.Idle, session.State);            // OnPausedAsync released the session…
+        Assert.Null(session.Cts);                               // …and disposed the run CTS, so Send re-enables
+    }
+
+    /// <summary>
+    /// <b>18 D7/G6 acceptance fact 2 — the two surfaces on THIS path are the panel and the chat, not the card
+    /// and the chat.</b> Spec §4.5: <c>AgentRunNotificationSurface.cs:176-178</c> suppresses the Flow card for
+    /// exactly the chat the user is watching in the foreground, BY DESIGN — its comment says the run-progress
+    /// panel "already reflects the state (incl. the WaitingForInput Continue button)". So a G6 that assumed
+    /// "parked ⇒ card" would ship a feature whose only actionable surface is invisible in its normal case.
+    /// <para>
+    /// Both halves are asserted against the SAME real parked row, which is the point: the card is suppressed
+    /// AND the panel names the reason and offers Continue. If a later change made the panel fall back to the
+    /// budget wording (the Batch 08 F19 defect restated), this run would tell the user it "stopped at its
+    /// budget" while nothing else on screen said otherwise.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task InteractiveNeedsGoalPark_PublishesNoFlowCardForTheWatchedChat_ButThePanelNamesItAndOffersContinue()
+    {
+        using var h = new Harness();
+        var (parked, _, _) = await RunDeclinedInteractiveAsync(h);
+
+        // Surface half: the assistant window is in the foreground AND this run's chat is the active session —
+        // R18's exact condition, which is the NORMAL case for an interactive run.
+        var flow = Substitute.For<IFlowService>();
+        var windows = Substitute.For<IWindowManagerService>();
+        windows.IsInForeground(WindowMode.Assistant).Returns(true);
+        windows.ActiveAssistantChatId.Returns(parked.ChatId);
+        var surface = new AgentRunNotificationSurface(
+            h.Runs, flow, windows, h.Chats, _loc, NullLogger<AgentRunNotificationSurface>.Instance);
+
+        await surface.HandleRunStateAsync(parked.Id, AgentRunState.WaitingForInput);
+
+        flow.DidNotReceiveWithAnyArgs().Publish(default!);
+
+        // Panel half: the same row, projected by the VM the interactive chat embeds. _loc echoes the key it is
+        // indexed with, so this is an assertion about WHICH key — token-keyed, never the question text.
+        var panel = BuildPanel(h, parked.Id);
+        await panel.RefreshAsync();
+
+        Assert.Equal(RunProgressState.WaitingForInput, panel.State);
+        Assert.Equal("Run_Activity_NeedsGoal", panel.CurrentActivity);
+        Assert.DoesNotContain(ModelQuestion, panel.CurrentActivity);  // §4.4: no user content on a surface label
+        Assert.True(panel.CanContinue);
+        panel.Dispose();
     }
 }

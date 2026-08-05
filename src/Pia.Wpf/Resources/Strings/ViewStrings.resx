@@ -97,6 +97,7 @@
   <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Send (Enter)</value></data>
   <data name="Assistant_RunInBackground_Tooltip" xml:space="preserve"><value>Run in background</value></data>
   <data name="Assistant_BackgroundRunActive_Hint" xml:space="preserve"><value>A background run is writing to this chat. Sending resumes when it finishes.</value></data>
+  <data name="Assistant_GoalTooShort_Hint" xml:space="preserve"><value>This looks too short to run as a goal. Add a few more words so it can be planned.</value></data>
   <data name="Assistant_RunInBackground_Failed" xml:space="preserve"><value>Couldn't start the background run: {0}</value></data>
   <data name="Assistant_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Toggle todo panel</value></data>
   <!-- Research View -->
@@ -922,6 +923,8 @@
   <data name="Run_Activity_UserPaused" xml:space="preserve"><value>You paused this run</value></data>
   <data name="Run_Activity_ResumeInterrupted" xml:space="preserve"><value>The continuation did not start — continue again when you are ready</value></data>
   <data name="Run_Activity_WaitingForToolApproval" xml:space="preserve"><value>Waiting for your approval to use {0}</value></data>
+  <data name="Run_Activity_NeedsGoal" xml:space="preserve"><value>Waiting for you to clarify the goal in the chat</value></data>
+  <data name="Run_Activity_NeedsInput" xml:space="preserve"><value>Waiting for your answer in the chat</value></data>
   <data name="Run_Action_Continue" xml:space="preserve"><value>Continue</value></data>
   <!-- Batch 08 G8: the header Pause button and its in-flight label. -->
   <data name="Run_Action_Pause" xml:space="preserve"><value>Pause</value></data>
@@ -1014,6 +1017,8 @@
   <data name="Flow_Run_UserPaused" xml:space="preserve"><value>You paused this run. Continue?</value></data>
   <data name="Flow_Run_ResumeInterrupted" xml:space="preserve"><value>The continuation did not start. Continue?</value></data>
   <data name="Flow_Run_ToolApproval" xml:space="preserve"><value>This run needs your approval to use {0}. Continue to allow it.</value></data>
+  <data name="Flow_Run_NeedsGoal" xml:space="preserve"><value>This run couldn't tell what you wanted — open it to answer.</value></data>
+  <data name="Flow_Run_NeedsInput" xml:space="preserve"><value>This run needs your input to keep going — open it to answer.</value></data>
   <data name="Flow_Action_ContinueRun" xml:space="preserve"><value>Continue run</value></data>
   <data name="Assistant_Regenerate_Shorten" xml:space="preserve"><value>Shorter</value></data>
   <data name="Assistant_Regenerate_Detailed" xml:space="preserve"><value>More detailed</value></data>

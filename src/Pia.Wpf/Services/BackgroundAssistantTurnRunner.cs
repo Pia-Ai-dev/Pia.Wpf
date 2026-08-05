@@ -332,7 +332,12 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         // hermes #16. Non-null ONLY when the caller owns a run loop that can park it at WaitingForInput — i.e.
         // an agent step. Null (the background single-turn path) resolves CanPark: false and keeps the hard
         // denial exactly as it was.
-        ToolApprovalStore? approvals = null)
+        ToolApprovalStore? approvals = null,
+        // 18 D3 (G5). Non-null ONLY on a real agent STEP turn, exactly like outcomeStore — it is what arms the
+        // pre-route interception of request_user_input below, so the background single-turn path (which passes
+        // nothing) still treats a hallucinated request_user_input as the unknown tool it is. Its CanAsk carries
+        // owner Q1's refusal for a delegated run.
+        UserInputRequestStore? userInput = null)
     {
         var textBuffer = new StringBuilder();
         int? tokens = null;
@@ -344,7 +349,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         await foreach (var item in _aiClient.GetChatCompletionWithToolsAsync(
             messages, provider,
             setup.SupportsTools ? setup.Tools : null,
-            setup.SupportsTools ? (toolCall, ctx) => HandleToolCallAsync(toolCall, grantedWrites, ctx, policy, timeline, outcomeStore, approvals) : null,
+            setup.SupportsTools ? (toolCall, ctx) => HandleToolCallAsync(toolCall, grantedWrites, ctx, policy, timeline, outcomeStore, approvals, userInput) : null,
             nameof(WindowMode.Assistant), setup.PersonaId,
             cancellationToken: ct, contextBudget: contextBudget))
         {
@@ -393,7 +398,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         FunctionCallContent toolCall, HashSet<string> grantedWrites, ToolDispatchContext dispatch,
         RunAutonomyPolicy? policy = null,
         AgentTimelineScope? timeline = null, StepOutcomeStore? outcomeStore = null,
-        ToolApprovalStore? approvals = null)
+        ToolApprovalStore? approvals = null, UserInputRequestStore? userInput = null)
     {
         // emit_step_result (hermes #9): PRE-ROUTE special case, the unattended twin of ChatSession's
         // suggest_agent_mode seam and placed for the same reason — the tool has no plugin and no route, so
@@ -404,6 +409,20 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             && string.Equals(toolCall.Name, AgentStepTools.EmitStepResultToolName, StringComparison.Ordinal))
         {
             return outcomeStore.Record(toolCall.Arguments);
+        }
+
+        // request_user_input (18 D3/G5): the THIRD pre-route special case, for the same structural reason as the
+        // two above — no plugin, no GUID, no route — and gated on the SINK for the same reason: the background
+        // single-turn path is never offered this tool, so a model that invents the name there must still get the
+        // honest "Unknown tool." answer. Its INTERACTIVE twin lives at ChatSession.HandleToolCall and the two must
+        // stay in step. Never gated for approval — asking a question writes nothing and touches nothing outside
+        // this step's sink; whether the run may ask AT ALL is CanAsk (owner Q1), answered inside Record.
+        // The question is USER-DERIVED PAYLOAD: it is never logged here at any level (CLAUDE.md); the store keeps
+        // it and only the orchestrator's SensitiveDebug ever renders it.
+        if (userInput is not null
+            && string.Equals(toolCall.Name, AgentStepTools.RequestUserInputToolName, StringComparison.Ordinal))
+        {
+            return userInput.Record(toolCall.Arguments);
         }
 
         // MCP flows through the same grant gate as a built-in write: the Phase-2 MCP handler returns a
@@ -463,6 +482,25 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                        + $"'{pending.ToolName}' was NOT executed either — nothing more happens in this step. "
                        + "Stop now and produce no further tool calls; the run will be resumed from this step "
                        + "once someone answers.";
+            }
+
+            // ---- 18 G5 CONTAINMENT: an ASK stops the exchange too, for the identical at-most-once reason ----
+            // The guard above is hermes #16's, and its argument transfers verbatim: AiClientService walks the
+            // REMAINING FunctionCallContents of the same round and then continues to the next round, so a string
+            // asking the model to stop is not a control-flow construct. A step that asked is ABANDONED — no
+            // transcript append, no interim persist, the row back to Pending — and then RE-RUNS from the top on
+            // resume, so a granted, side-effecting call made after the ask would execute TWICE for one planned
+            // step. That is an at-most-once violation, not merely wasted work.
+            // The attempt is not recorded anywhere: unlike the park above there is no ParkedCalls to increment
+            // (the ask's counts are about ASKS, not about withheld calls), and no audit row is written, so the
+            // panel never shows a decision that did not happen.
+            if (userInput?.Question is not null)
+            {
+                _logger.LogInformation(
+                    "Background turn withheld {ToolName}: the run is stopping to ask the user", pending.ToolName);
+                return $"Not run: this run is stopping to ask the person your question, so '{pending.ToolName}' "
+                       + "was NOT executed — nothing more happens in this step. Stop now and produce no further "
+                       + "tool calls; this step runs again from the beginning once someone answers.";
             }
 
             // 04 D5: ONE resolver, shared with the interactive gate. The destructive-external FLOOR (B2) is

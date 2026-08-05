@@ -172,6 +172,104 @@ public static class AgentStepTools
         tools is not null && tools.Any(t => string.Equals(t.Name, EmitStepResultToolName, StringComparison.Ordinal));
 
     /// <summary>
+    /// <b>18 D3 (G5), owner Q5.</b> The MID-PLAN ASK tool — the second step-turn tool, pinned by both
+    /// interception seams and by the schema below.
+    /// <para>
+    /// <b>SCOPED EXACTLY LIKE <see cref="EmitStepResultToolName"/>: step turns only, appended per-executor,
+    /// intercepted PRE-ROUTE in both handlers.</b> The argument is the one this file already makes at length for
+    /// <c>emit_step_result</c> (see the class remarks above) and it is CITED rather than re-derived, per owner Q5:
+    /// <c>AssistantPromptComposer.PrepareTurn</c> builds the tool list for EVERY turn shape in the app and its
+    /// only narrowing axes are turn-shape blind, so scoping there would leak this tool into chat, voice, MCP and
+    /// @-command turns — turns with no run to park, no step to abandon and no chat surface expecting a question.
+    /// Both executors therefore append it at their own single choke point, where the step's persona has already
+    /// been resolved.
+    /// </para>
+    /// <para>
+    /// TWO executors need it or the interactive path silently lacks it (18 D7): <c>HeadlessTurnExecutor</c> and
+    /// <c>LiveTurnExecutor</c>/<c>ChatSession</c>. Like the sibling it has no plugin, no GUID and no
+    /// <c>_toolNameRoutes</c> entry, so <c>RouteToolCallAsync</c> never sees it and no
+    /// <c>ToolGateDecision.UnknownTool</c> timeline row is emitted for it.
+    /// </para>
+    /// </summary>
+    public const string RequestUserInputToolName = "request_user_input";
+
+    /// <summary>
+    /// <b>Owner Q1 — a mid-plan ask is REFUSED for a DELEGATED step</b> (a run with a non-null
+    /// <c>ParentRunId</c>). Same predicate, verbatim, as <c>HeadlessRunLauncher.CanParkForApproval</c>
+    /// (<c>HeadlessRunLauncher.cs:191</c>) — but the REASONS do not line up, and the difference is worth stating
+    /// because a reader who assumes they do will relax the wrong one later.
+    /// <para>
+    /// <b>The precedent's PRIMARY reason does NOT transfer.</b> There, a park ACQUIRES authority: the human's
+    /// Continue adds a grant the run did not launch with, so allowing it on a child would be the one path by which
+    /// a delegate ends up wider than its delegator (hermes #8's subset rule). A QUESTION grants nothing. The run
+    /// comes back with a sentence in its context and exactly the authority it launched with, so that argument has
+    /// nothing to say here.
+    /// </para>
+    /// <para>
+    /// <b>It is the SUPPORTING reason that carries this one: a parked child has nowhere to ask.</b>
+    /// <c>AgentRunNotificationSurface.cs:170-171</c> returns before publishing for any run with a
+    /// <c>ParentRunId</c>, because a Continue card carrying the CHILD's run id is "a transition nothing supports"
+    /// — a child is only ever re-dispatched by its parent's fan-out. So a child that asked would sit at
+    /// <c>WaitingForInput</c> with no card, and its parent would re-park behind it under
+    /// <c>AgentRunOrchestrator.ChildrenParkedReason</c>: a run stuck on a question nobody was asked. Spec §4.5
+    /// names this the sharpest unsolved corner in the batch, and it is settled here in the narrowest of the three
+    /// directions it offered.
+    /// </para>
+    /// <para>
+    /// <b>The block is not swallowed by refusing.</b> A blocked child declares <c>succeeded=false</c> through
+    /// <c>emit_step_result</c>, its parent's fan-out reads that as a failed child and replans — an existing,
+    /// tested path — and <see cref="UserInputRequestStore.RefusedForDelegatedStep"/> is the tool result that
+    /// tells the model exactly that.
+    /// </para>
+    /// </summary>
+    public static bool CanRequestUserInput(Guid? parentRunId) => parentRunId is null;
+
+    /// <summary>
+    /// The mid-plan ask tool. Built per step rather than cached in a static, for the reason
+    /// <see cref="BuildEmitStepResultTool"/> gives.
+    /// <para>
+    /// <b>THIS DESCRIPTION IS THE ONLY BOUND ON HOW OFTEN A RUN PARKS.</b> 18 D4 is "model declares, no cap" — the
+    /// owner was shown the stall risk (spec §5: an unattended run can be stalled indefinitely, one question at a
+    /// time) and chose it, so there is no per-run limit anywhere in this batch and adding one re-opens a settled
+    /// decision. That makes these words load-bearing rather than advisory, and §2 is the reason to be pessimistic
+    /// about them: <c>emit_step_result</c>'s description already tells the model that prose is not a report, in
+    /// plain words, and the model in the repro ignored it. A description is a request.
+    /// </para>
+    /// <para>
+    /// So the text states the COST rather than only the rule — the step is abandoned and re-run, the wait may be
+    /// hours — and it names the cheaper channel (<c>emit_step_result</c> with <c>succeeded=false</c>) for the case
+    /// that is almost always the right one. "Only park for critical mid plan questions" is 18 D3's own wording,
+    /// and it is what the second paragraph is trying to buy.
+    /// </para>
+    /// </summary>
+    internal static AITool BuildRequestUserInputTool() =>
+        AIFunctionFactory.Create(
+            (
+                [Description("The one question to ask. The person cannot see this step, so make it self-contained: say what you need and why, in a single question they can answer in one reply.")]
+                string question) => "ok",
+            RequestUserInputToolName,
+            "Stop this run and ask the person who started it one question, then wait for their answer. Nobody is "
+            + "watching this run, so a question you merely write in your reply is never read and never answered — "
+            + "this tool is the only way to reach them. "
+            + "USE IT ONLY WHEN YOU ARE GENUINELY BLOCKED on something you cannot settle yourself: a fact only "
+            + "they have, or a choice between options with materially different outcomes you could not undo. If "
+            + "you can make a reasonable assumption and state it, do that instead. "
+            + "WHAT IT COSTS: calling this ABANDONS the current step. Everything you did in it is discarded, the "
+            + "run stops until somebody answers — which may be hours — and the step then runs again from the "
+            + "beginning. Do not call it to confirm an approach, to report progress, or to ask permission for work "
+            + "you were already asked to do. "
+            + "IF THE STEP IS SIMPLY BLOCKED and the plan could route around it, call emit_step_result with "
+            + "succeeded=false and say what blocked you. That keeps the run moving and is almost always the right "
+            + "choice.");
+
+    /// <summary>Whether a resolved tool list carries the ask tool — i.e. whether THIS turn's run is allowed to
+    /// stop and ask. The executors derive <see cref="UserInputRequestStore.CanAsk"/> from this rather than from a
+    /// second flag, so "offered" and "accepted" cannot drift apart — the same discipline
+    /// <see cref="OffersStepResultTool"/> enforces for the declaration sink.</summary>
+    public static bool OffersRequestUserInputTool(IEnumerable<AITool>? tools) =>
+        tools is not null && tools.Any(t => string.Equals(t.Name, RequestUserInputToolName, StringComparison.Ordinal));
+
+    /// <summary>
     /// Returns <paramref name="setup"/> with the declaration tool appended, on a COPY of the tool list.
     /// <para>
     /// The copy is the point: an executor's <c>AssistantTurnSetup</c> is resolved once and cached for the
@@ -184,12 +282,37 @@ public static class AgentStepTools
     /// such a step lands on the unconfirmed fallback, which is exactly right.
     /// </para>
     /// </summary>
-    public static AssistantTurnSetup WithStepResultTool(AssistantTurnSetup setup)
+    public static AssistantTurnSetup WithStepResultTool(AssistantTurnSetup setup) =>
+        AppendTool(setup, BuildEmitStepResultTool());
+
+    /// <summary>
+    /// <b>18 G5.</b> Returns <paramref name="setup"/> with the mid-plan ask tool appended, on a COPY of the tool
+    /// list — for both reasons <see cref="WithStepResultTool"/> gives (a cached run setup must not be mutated, and
+    /// a <c>SupportsTools=false</c> setup is returned untouched because there is nothing to offer it to).
+    /// <para>
+    /// A SECOND method rather than a flag on the one above, because the two tools are offered under DIFFERENT
+    /// conditions: <c>emit_step_result</c> is offered on every step turn, and this one is withheld from a
+    /// delegated step (<see cref="CanRequestUserInput"/>). Folding them together would either offer the ask to a
+    /// child or withhold the declaration from one, and the second of those is the worse failure — a child that
+    /// cannot declare an outcome falls back to the text heuristic forever.
+    /// </para>
+    /// </summary>
+    public static AssistantTurnSetup WithRequestUserInputTool(AssistantTurnSetup setup) =>
+        AppendTool(setup, BuildRequestUserInputTool());
+
+    /// <summary>
+    /// Shared tail for <see cref="WithStepResultTool"/> and <see cref="WithRequestUserInputTool"/>: append ONE
+    /// tool to a COPY of <paramref name="setup"/>'s tool list, or return <paramref name="setup"/> untouched when
+    /// it cannot take tools at all. Not a reason to fold the two callers into one method with a flag — they stay
+    /// separate because they are offered under DIFFERENT conditions (see <see cref="WithRequestUserInputTool"/>'s
+    /// own remarks) — only the mechanical append is shared.
+    /// </summary>
+    private static AssistantTurnSetup AppendTool(AssistantTurnSetup setup, AITool tool)
     {
         if (!setup.SupportsTools)
             return setup;
 
-        var tools = new List<AITool>(setup.Tools ?? []) { BuildEmitStepResultTool() };
+        var tools = new List<AITool>(setup.Tools ?? []) { tool };
         return setup with { Tools = tools };
     }
 }

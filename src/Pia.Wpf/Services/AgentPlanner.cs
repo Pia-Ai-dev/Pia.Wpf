@@ -18,7 +18,10 @@ namespace Pia.Services;
 /// that drains the whole stream — because that loop has no handler-driven early exit, a plan turn
 /// costs ≥1 extra provider round after the ack (§16 R6). On no-call it retries once with a firmer
 /// instruction; on still-no-call or a semantically invalid plan it signals a SingleTurn fallback
-/// rather than a degenerate 1-step Planned run (§16 R10). Provider usage is summed off the drained
+/// rather than a degenerate 1-step Planned run (§16 R10). <b>18 D1 layer 2:</b> a plan turn may instead
+/// DECLINE the goal through <c>emit_plan</c>'s own <c>cannotGround</c>/<c>question</c> members, which returns
+/// <c>PlanResult.Decline</c> — a third outcome, never the R10 degrade (spec §4.2) — and short-circuits the firm
+/// retry, because that retry exists for silence and a decline is not silence. Provider usage is summed off the drained
 /// <see cref="Finished"/> items and surfaced on <see cref="PlanResult.Usage"/> — on the degrade paths
 /// too, where the rounds were still paid for — so the orchestrator accrues it run-level (I1).
 /// <para>
@@ -93,8 +96,36 @@ public sealed class AgentPlanner : IAgentPlanner
 
     private const string GroundingFenceClose = "--- end of working folder ---";
 
+    /// <summary>
+    /// <c>emit_plan</c> as the PLAN turn ships it — <see cref="EmitPlanSchema"/>, i.e. carrying 18 D1 layer 2's
+    /// <c>cannotGround</c>/<c>question</c> members. <see cref="EmitRevisedPlanTool"/> says why a REPLAN turn is
+    /// sent a different one.
+    /// </summary>
     private static readonly AITool EmitPlanTool = AIFunctionFactory.Create(
         EmitPlanSchema, "emit_plan",
+        "Emit the ordered plan of steps to accomplish the goal, or decline it when the goal cannot be grounded.");
+
+    /// <summary>
+    /// <c>emit_plan</c> as the REPLAN turn ships it: <see cref="EmitRevisedPlanSchema"/>, the pre-18 shape with
+    /// no decline members at all.
+    /// <para>
+    /// <b>Layer 2's plan-turn scoping has to be enforced in the SCHEMA and not only in the prompt, because the
+    /// schema is what the model reads.</b> One shared tool would advertise <c>cannotGround</c> — under a
+    /// description that says "never invent steps for a goal you do not understand" — on every replan turn, where
+    /// <see cref="ReplanAsync"/> does not honour it: the flag would be dropped, the resulting no-steps turn would
+    /// hit the replan's firm retry (whose text, "You did not call emit_plan", is false of a model that just did),
+    /// and a second decline would degrade the replan, which <c>TryReplanAfterFailureAsync</c> turns into a FAILED
+    /// run. Offering a tool member only on the turns that honour it is the same discipline
+    /// <c>AgentStepTools</c> applies per-executor to <c>emit_step_result</c> (StepOutcomeSignal.cs:117-134).
+    /// </para>
+    /// <para>
+    /// Same tool NAME on purpose: the two are never sent on the same turn, the capture handler matches
+    /// <c>emit_plan</c>, and renaming the tool on the replan turn would be a provider-visible change to a path
+    /// this batch has no business touching.
+    /// </para>
+    /// </summary>
+    private static readonly AITool EmitRevisedPlanTool = AIFunctionFactory.Create(
+        EmitRevisedPlanSchema, "emit_plan",
         "Emit the ordered plan of steps to accomplish the goal.");
 
     /// <param name="personas">The Batch 07 roster source, as a factory invoked once per plan (see
@@ -116,8 +147,56 @@ public sealed class AgentPlanner : IAgentPlanner
         _personas = personas;
     }
 
-    [Description("Emit the ordered plan of steps to accomplish the goal.")]
+    /// <summary>
+    /// The <c>emit_plan</c> argument schema. <b>18 D1 layer 2 added the two trailing members, and they are what
+    /// makes declining SAYABLE</b> (spec §1.2: the pre-18 schema was five step members, all about HOW to do the
+    /// work, none about WHETHER the work is understood — so a model handed <c>"ggg"</c> that invented four steps
+    /// was complying, not misbehaving).
+    /// <para>
+    /// <b>Why a MEMBER of emit_plan and not prose or a second tool</b> (implementer decision 1): prose is
+    /// indistinguishable from the no-call case, so it would hit the firm retry — §2's whole finding is that the
+    /// failure mode is the ABSENCE of a call; and a second tool would contradict this prompt's own "Call the
+    /// emit_plan tool exactly once". A member keeps the model calling one tool once, which the prompt already
+    /// demands.
+    /// </para>
+    /// <para>
+    /// <paramref name="steps"/> became OPTIONAL here (defaulted ⇒ not required in the generated JSON schema)
+    /// because a declining turn has none to give. A turn that omits it WITHOUT declining is unchanged: that is
+    /// still "no plan", which is the firm retry then the R10 degrade. A defaulted tool parameter is the shipped
+    /// shape already — <c>AgentStepTools.BuildEmitStepResultTool</c>'s <c>artifact_ref</c> is one — and nothing
+    /// here sends a STRICT schema, so dropping <c>steps</c> out of <c>required</c> is not a provider-contract
+    /// change.
+    /// </para>
+    /// <para>
+    /// <b>The default is <c>null!</c> and the annotation stays NON-nullable, which is measured rather than
+    /// stylistic.</b> <c>AIFunctionFactory</c> (Microsoft.Extensions.AI 10.6.0, the pinned version) propagates a
+    /// parameter's nullable annotation INTO the array's ITEM schema: written <c>PlanStepArg[]? steps = null</c>
+    /// the tool goes out as <c>steps: {type:["array","null"], items:{type:["object","null"],
+    /// title:{type:["string","null"]}, intent:{type:["string","null"]}}}</c> — i.e. it starts telling every model
+    /// that a step's title and intent may be null, which the pre-18 schema forbade and which
+    /// <see cref="ValidatePlan"/> rejects straight into the R10 degrade. The suppressed default emits the
+    /// item schema byte-identical to pre-18 (<c>items:{type:"object", title:{type:"string"}, …}</c>) while still
+    /// dropping <c>steps</c> out of top-level <c>required</c> — which is the only part of the loosening this batch
+    /// wanted. Pinned by <c>AgentPlannerTests.PlanAsync_PlanTool_OffersTheDecline_ButKeepsTheStepItemsStrict</c>.
+    /// </para>
+    /// </summary>
+    [Description("Emit the ordered plan of steps to accomplish the goal, or decline it when the goal cannot be grounded.")]
     private static string EmitPlanSchema(
+        [Description("The ordered steps, each with a short title, an intent, and an optional expected artifact. Omit only when cannotGround is true.")]
+        PlanStepArg[] steps = null!,
+        [Description("Set true ONLY if the goal is too unclear to plan at all. Then omit steps and put what you need to know in question — never invent steps for a goal you do not understand.")]
+        bool cannotGround = false,
+        [Description("The one thing you need the user to clarify. Required when cannotGround is true; leave out otherwise.")]
+        string? question = null) => "";
+
+    /// <summary>
+    /// The <c>emit_plan</c> argument schema for a REPLAN turn: the pre-18 single-member shape, unchanged, with
+    /// <c>steps</c> required and no decline members. <see cref="EmitRevisedPlanTool"/> carries the reason this is
+    /// a second method rather than a flag on the one above; <see cref="ReplanAsync"/> carries the reason a replan
+    /// does not join layer 2 at all.
+    /// </summary>
+    [Description("Emit the ordered plan of steps to accomplish the goal.")]
+    private static string EmitRevisedPlanSchema(
         [Description("The ordered steps, each with a short title, an intent, and an optional expected artifact.")]
         PlanStepArg[] steps) => "";
 
@@ -141,16 +220,40 @@ public sealed class AgentPlanner : IAgentPlanner
         // load-bearing, not a record of intent. A group of ONE is not a fan-out and runs in-process.
         [property: Description("Optional: steps that can run at the same time, independently, share one number")] int? ParallelGroup = null);
 
-    private sealed record EmitPlanArgs(PlanStepArg[]? Steps);
+    /// <summary>
+    /// The captured <c>emit_plan</c> arguments. <see cref="PlanJson"/> is <c>JsonSerializerDefaults.Web</c>, so
+    /// the wire names <c>steps</c> / <c>cannotGround</c> / <c>question</c> bind case-insensitively and any member
+    /// the model invents is skipped rather than throwing.
+    /// </summary>
+    private sealed record EmitPlanArgs(PlanStepArg[]? Steps, bool CannotGround = false, string? Question = null);
+
+    /// <summary>
+    /// What ONE plan turn said, plus what it cost. A record rather than a widening tuple because the turn now
+    /// carries three independent facts (steps / declined / question) and a four-tuple at two call sites is where
+    /// the positional mistake gets made.
+    /// </summary>
+    private sealed record PlanTurn(PlanStepArg[]? Steps, bool CannotGround, string? Question, UsageDetails? Usage);
 
     public async Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
     {
+        // 18 D2 — THE ANSWER HALF OF THE CLARIFICATION LOOP. A run that declined this goal, parked `needs-goal`
+        // and was then answered comes back through THIS method (18 G4 makes the orchestrator's `if (!resume)`
+        // conditional so it can), and re-asking a question the user already answered is the one outcome that
+        // would make the whole loop useless. So every place this method shows the model "the goal" it shows the
+        // goal PLUS what the user has since said — the reasoning turn included, because an analysis written
+        // against the unanswered goal would then ride the constrained turn's user message and pull it back
+        // towards declining.
+        // Fenced, on the USER message, and read off the run's own persisted column rather than the transient
+        // nudge — RunContext.AppendClarifications carries both reasons. Returns `goal` UNCHANGED when nothing is
+        // recorded, which is every launch, so no existing plan prompt moves by a byte.
+        var answeredGoal = ctx.AppendClarifications(goal);
+
         // Optional free-form reasoning turn BEFORE the constrained one. It sends tools: null, so
         // AiClientService computes hasTools:false (SupportsToolCalling && tools is {Count:>0}) and the
         // handler sends the configured reasoning effort — on the handlers that drop effort under tools this
         // is the ONLY way a plan turn reasons at anything but the model default. Its tokens are part of the
         // plan's cost, so they are summed in on every path below (I1).
-        var (analysis, usage) = await TryReasonAsync(goal, persona, provider, ct).ConfigureAwait(false);
+        var (analysis, usage) = await TryReasonAsync(answeredGoal, persona, provider, ct).ConfigureAwait(false);
 
         // Resolved ONCE per plan, before the turns, and reused for the prompt AND the name→id mapping — the
         // model can only be held to the list it was actually shown.
@@ -160,24 +263,64 @@ public sealed class AgentPlanner : IAgentPlanner
         // disk, not about what the model said, so re-reading it would only cost another directory walk).
         var grounding = await TryBuildGroundingAsync(ctx, ct).ConfigureAwait(false);
 
-        var (steps, planUsage) = await TryCaptureAsync(BuildPlanMessages(goal, persona, firm: false, analysis, roster, grounding), provider, ct).ConfigureAwait(false);
-        usage = AgentTurnUsage.Sum(usage, planUsage);
+        var turn = await TryCaptureAsync(BuildPlanMessages(answeredGoal, persona, firm: false, analysis, roster, grounding), provider, EmitPlanTool, ct).ConfigureAwait(false);
+        usage = AgentTurnUsage.Sum(usage, turn.Usage);
 
-        if (steps is null)
+        // 18 D1 layer 2 — A DECLINE SHORT-CIRCUITS THE FIRM RETRY (implementer decision 2). The retry below
+        // exists for SILENCE: its text is "You did not call emit_plan. You MUST respond by calling the emit_plan
+        // tool now — do not write prose", and a model that declined DID call emit_plan, exactly once, as the
+        // prompt demands. Routing a decline through it would burn a second provider turn on EVERY decline and
+        // turn the firm instruction into a way to bully a declining model into fabricating a plan — spec §4.2
+        // names that failure by name.
+        // Checked BEFORE `Steps is null`, because a declining turn legitimately carries no steps: without the
+        // flag the two are indistinguishable, and that indistinguishability IS the defect this batch closes.
+        // Checked before ValidatePlan too, so an explicit decline WINS over any steps that came with it — a
+        // self-contradicting turn is answered by asking the user, never by executing a plan the model disowned
+        // in the same breath (that discard of the model's own statement is §0's whole finding).
+        if (turn.CannotGround)
+            return Declined(turn, usage);
+
+        if (turn.Steps is null)
         {
             // The firm retry REUSES the one analysis: the retry exists because the model wrote prose
             // instead of calling emit_plan, which a second reasoning turn would not fix and would pay for.
-            var (retried, retryUsage) = await TryCaptureAsync(BuildPlanMessages(goal, persona, firm: true, analysis, roster, grounding), provider, ct).ConfigureAwait(false); // R10 retry once
-            steps = retried;
-            usage = AgentTurnUsage.Sum(usage, retryUsage); // I1: the retry's rounds were paid for too
+            var retried = await TryCaptureAsync(BuildPlanMessages(answeredGoal, persona, firm: true, analysis, roster, grounding), provider, EmitPlanTool, ct).ConfigureAwait(false); // R10 retry once
+            usage = AgentTurnUsage.Sum(usage, retried.Usage); // I1: the retry's rounds were paid for too
+            // A model that stayed silent first and declined second has still declined — the retry asked for a
+            // tool call and got one. The prompt keeps offering the decline on the firm turn for exactly this
+            // reason (see BuildPlanMessages), so honouring it here is what stops the retry from converting
+            // silence into fabrication.
+            if (retried.CannotGround)
+                return Declined(retried, usage);
+            turn = retried;
         }
 
-        if (steps is null || !ValidatePlan(steps, ctx.MaxSteps))
+        if (turn.Steps is null || !ValidatePlan(turn.Steps, ctx.MaxSteps))
         {
             _logger.LogInformation("Planner degrade → SingleTurn fallback (no valid emit_plan).");
             return PlanResult.Fallback with { Usage = usage }; // still accrue the tokens spent
         }
-        return new PlanResult(BuildSteps(steps, roster), false, usage);
+        return new PlanResult(BuildSteps(turn.Steps, roster), false, usage);
+    }
+
+    /// <summary>
+    /// The DECLINE outcome (18 D1 layer 2), logged once and returned with the turns' spend attached (I1 — a
+    /// declining turn cost the same provider rounds as any other).
+    /// <para>
+    /// <b>The question never reaches a plain log line.</b> It is model-generated text derived from the user's
+    /// own goal, i.e. payload under CLAUDE.md's privacy rule and under spec §4.6's closing note, so it goes out
+    /// on <see cref="LoggingExtensions.SensitiveDebug"/> — <c>[Conditional("DEBUG")]</c>, so both the call and
+    /// its argument evaluation are erased from the release IL. What stays on <c>LogInformation</c> is app-owned
+    /// and has to be readable in a support log: that a decline happened at all, and whether it came worded.
+    /// </para>
+    /// </summary>
+    private PlanResult Declined(PlanTurn turn, UsageDetails? usage)
+    {
+        _logger.LogInformation(
+            "Planner DECLINED the goal as ungroundable — no steps emitted, run will park for clarification (question present={Present}).",
+            turn.Question is not null);
+        _logger.SensitiveDebug("Planner clarification question: {Question}", turn.Question);
+        return PlanResult.Decline(turn.Question) with { Usage = usage };
     }
 
     public async Task<PlanResult> ReplanAsync(RunContext ctx, string? failure, Persona persona, AiProvider provider, CancellationToken ct)
@@ -192,12 +335,24 @@ public sealed class AgentPlanner : IAgentPlanner
         // failure silently strip every persona assignment for the rest of the run.
         var roster = await TryGetRosterAsync(ct).ConfigureAwait(false);
 
-        var (steps, usage) = await TryCaptureAsync(BuildReplanMessages(ctx, failure, persona, firm: false, roster), provider, ct).ConfigureAwait(false);
+        // 18 D1 layer 2 is a PLAN-TIME contract and this method deliberately does not join it — on BOTH channels
+        // the model can see, not just the prompt: BuildReplanMessages never offers the decline AND the turn ships
+        // EmitRevisedPlanTool, whose schema has no cannotGround/question members at all (that tool's own doc has
+        // the reason offering it here would be actively harmful). So a decline is off-contract on a replan turn,
+        // and if a model invents the member anyway it is read as what it looks like on the wire — a turn with no
+        // steps, i.e. today's firm retry then degrade, because the code below reads `turn.Steps` only.
+        // The asymmetry is the same one the reasoning turn above documents: a replan already has a goal the model
+        // planned once, plus the completed steps and the failure detail, so "I cannot ground this" is not the
+        // question a failing step raises; and its degrade lands on the replan budget rather than on the R10
+        // chat turn, so §4.2's "worst available branch" argument does not apply to it either.
+        var turn = await TryCaptureAsync(BuildReplanMessages(ctx, failure, persona, firm: false, roster), provider, EmitRevisedPlanTool, ct).ConfigureAwait(false);
+        var steps = turn.Steps;
+        var usage = turn.Usage;
         if (steps is null)
         {
-            var (retried, retryUsage) = await TryCaptureAsync(BuildReplanMessages(ctx, failure, persona, firm: true, roster), provider, ct).ConfigureAwait(false);
-            steps = retried;
-            usage = AgentTurnUsage.Sum(usage, retryUsage);
+            var retried = await TryCaptureAsync(BuildReplanMessages(ctx, failure, persona, firm: true, roster), provider, EmitRevisedPlanTool, ct).ConfigureAwait(false);
+            steps = retried.Steps;
+            usage = AgentTurnUsage.Sum(usage, retried.Usage);
         }
 
         if (steps is null || !ValidatePlan(steps, ctx.MaxSteps))
@@ -524,12 +679,22 @@ public sealed class AgentPlanner : IAgentPlanner
     /// Runs one planning turn, capturing the final <c>emit_plan</c> args (last-write-wins) while
     /// draining the whole stream (R6); sums <see cref="Finished.Usage"/> across the drained items so
     /// the plan turn's ≥2 rounds reach the run ledger (I1 — they used to be discarded here).
-    /// Returns (null, usage) when the model emitted no <c>emit_plan</c> call.
+    /// A turn on which the model emitted no <c>emit_plan</c> call comes back with
+    /// <see cref="PlanTurn.Steps"/> null and <see cref="PlanTurn.CannotGround"/> false — the "silence" the firm
+    /// retry exists for, which 18 D1 layer 2 now has to be distinguishable from a decline.
     /// </summary>
-    private async Task<(PlanStepArg[]? Steps, UsageDetails? Usage)> TryCaptureAsync(
-        List<ChatMessage> messages, AiProvider provider, CancellationToken ct)
+    /// <param name="tool">The <c>emit_plan</c> variant this turn offers — <see cref="EmitPlanTool"/> on a plan
+    /// turn, <see cref="EmitRevisedPlanTool"/> on a replan turn. A PARAMETER rather than the one static, because
+    /// the decline members are part of the plan turn's contract only and the schema is what the model reads (see
+    /// <see cref="EmitRevisedPlanTool"/>). The capture below stays common to both: it parses whatever came back,
+    /// so a model that invents <c>cannotGround</c> on a turn that never offered it is still parsed — and
+    /// <see cref="ReplanAsync"/>, which reads only <see cref="PlanTurn.Steps"/>, still ignores it.</param>
+    private async Task<PlanTurn> TryCaptureAsync(
+        List<ChatMessage> messages, AiProvider provider, AITool tool, CancellationToken ct)
     {
         PlanStepArg[]? captured = null;
+        var cannotGround = false;
+        string? question = null;
         ToolCallHandler toolHandler = (call, _) =>
         {
             if (string.Equals(call.Name, "emit_plan", StringComparison.Ordinal))
@@ -537,7 +702,13 @@ public sealed class AgentPlanner : IAgentPlanner
                 try
                 {
                     var json = JsonSerializer.Serialize(call.Arguments ?? new Dictionary<string, object?>());
-                    captured = JsonSerializer.Deserialize<EmitPlanArgs>(json, PlanJson)?.Steps; // last-write-wins
+                    var args = JsonSerializer.Deserialize<EmitPlanArgs>(json, PlanJson); // last-write-wins
+                    captured = args?.Steps;
+                    cannotGround = args?.CannotGround ?? false;
+                    // Blank normalizes to null so one nullness test answers "was a question worded?" everywhere
+                    // downstream — a decline carrying "" would otherwise read as worded and be posted as an
+                    // empty question. The FLAG survives a blank question (PlanResult.Decline says why).
+                    question = string.IsNullOrWhiteSpace(args?.Question) ? null : args!.Question!.Trim();
                 }
                 catch (Exception ex)
                 {
@@ -551,7 +722,7 @@ public sealed class AgentPlanner : IAgentPlanner
 
         UsageDetails? usage = null;
         await foreach (var item in _ai.GetChatCompletionWithToolsAsync(
-            messages, provider, [EmitPlanTool], toolHandler, mode: null, cancellationToken: ct).ConfigureAwait(false))
+            messages, provider, [tool], toolHandler, mode: null, cancellationToken: ct).ConfigureAwait(false))
         {
             // Drain the whole stream; the plan itself is captured in the handler, but the USAGE only
             // ever surfaces on the yielded Finished items — mirror the verifier and keep it (I1).
@@ -562,7 +733,7 @@ public sealed class AgentPlanner : IAgentPlanner
         if (captured is not null)
             _logger.SensitiveDebug("Planner captured {Count} step(s): {Titles}",
                 captured.Length, string.Join(" | ", captured.Select(s => s.Title)));
-        return (captured, usage);
+        return new PlanTurn(captured, cannotGround, question, usage);
     }
 
     /// <summary>Semantic validation (§13.3): non-empty; ≤ MaxSteps; every step has a title+intent; no duplicate titles.</summary>
@@ -712,7 +883,23 @@ public sealed class AgentPlanner : IAgentPlanner
         sb.AppendLine("You are decomposing the user's goal into an ordered, minimal plan of concrete steps.");
         sb.AppendLine("Call the emit_plan tool exactly once with the ordered steps. Each step needs a short title and an intent (what it accomplishes); include an expectedArtifact when there is a concrete deliverable.");
         sb.AppendLine("Keep the plan tight — only the steps genuinely needed to accomplish the goal.");
+        // 18 D1 layer 2, and per spec §1.2 THE CHEAPEST CORRECT CHANGE IS TO MAKE DECLINING SAYABLE rather than
+        // to make the instruction sterner. The three lines above are the contract that produced the repro: a
+        // model handed "ggg" was told to decompose the goal, told to call emit_plan exactly once, and given a
+        // schema with no way to say "I cannot ground this" — so four invented steps were compliance.
+        // The second sentence is the FALSE-POSITIVE guard, and it is the same fact G1's layer 1 ships for
+        // itself: a gate that refuses goals the model could have planned is worse than no gate, because the
+        // user's recourse is a question they did not need to answer.
+        // On the SYSTEM message with the rest of the contract — app-owned instruction text, never user content,
+        // so TokenizeMessages has nothing to do here (the analysis and the grounding digest ride the USER
+        // message for the opposite reason, see below).
+        sb.AppendLine("If the goal is too unclear to plan at all, do NOT invent steps: call emit_plan with cannotGround set to true and question set to the one thing you need the user to clarify.");
+        sb.AppendLine("Only do that when you genuinely cannot tell what is being asked — a goal you can plan, however terse, gets a plan.");
         AppendRoster(sb, roster);
+        // Kept VERBATIM. A decline never reaches this turn (PlanAsync short-circuits it), so this text still
+        // addresses only the case it was written for: a turn on which the model called nothing. The decline
+        // offer above is deliberately still present on the firm turn — a model that wrote prose the first time
+        // must be able to decline on the second instead of fabricating.
         if (firm)
             sb.AppendLine("You did not call emit_plan. You MUST respond by calling the emit_plan tool now — do not write prose.");
 

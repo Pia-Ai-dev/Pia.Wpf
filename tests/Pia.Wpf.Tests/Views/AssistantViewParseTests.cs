@@ -65,6 +65,11 @@ public class AssistantViewParseTests
     private const string HintText =
         "A background run is writing to this chat. Sending resumes when it finishes.";
 
+    /// <summary>18 D1 layer 1's composer hint (Assistant_GoalTooShort_Hint), same resx source as
+    /// <see cref="HintText"/> above.</summary>
+    private const string GoalTooShortHintText =
+        "This looks too short to run as a goal. Add a few more words so it can be planned.";
+
     [Fact]
     public void ComposerHint_Parses_AndTracksForeignRunActive()
     {
@@ -117,6 +122,64 @@ public class AssistantViewParseTests
         Assert.True(found,
             $"No TextBlock in the parsed AssistantView renders '{HintText}'. Either the view failed to " +
             "parse, or the loc:Str key Assistant_BackgroundRunActive_Hint no longer resolves.");
+        Assert.Equal(Visibility.Collapsed, before);
+        Assert.Equal(Visibility.Visible, after);
+    }
+
+    /// <summary>
+    /// 18 D1 layer 1's composer hint, same shape as <see cref="ComposerHint_Parses_AndTracksForeignRunActive"/>
+    /// above (and for the same reason: a wrong Binding path on a composer hint fails silently, and this test
+    /// is what caught that class of regression the first time). Sets
+    /// <see cref="AssistantViewModel.GoalTooShortHintVisible"/> directly rather than <c>InputText</c> — this
+    /// harness must never touch <c>InputText</c> (see <see cref="CreateAssistantViewModel"/>'s prohibitions),
+    /// and the ObservableProperty is exactly what the XAML binds to, so setting it directly is the more
+    /// faithful unit here, not a shortcut.
+    /// </summary>
+    [Fact]
+    public void ComposerHint_Parses_AndTracksGoalTooShortHintVisible()
+    {
+        AssistantViewModel? vm = null;
+        AssistantView? view = null;
+        TextBlock? hint = null;
+        bool found;
+        Visibility? before, after;
+        try
+        {
+            WpfStaHost.Run(() =>
+            {
+                vm = CreateAssistantViewModel();
+                view = new AssistantView { DataContext = vm };
+                return 0;
+            });
+            WpfStaHost.Pump();
+
+            (found, before) = WpfStaHost.Run(() =>
+            {
+                hint = FindTextBlocks(view!).FirstOrDefault(tb => tb.Text == GoalTooShortHintText);
+                return (hint is not null, hint?.Visibility);
+            });
+
+            WpfStaHost.Run(() =>
+            {
+                vm!.GoalTooShortHintVisible = true;
+                return 0;
+            });
+            WpfStaHost.Pump();
+
+            after = WpfStaHost.Run(() => hint?.Visibility);
+        }
+        finally
+        {
+            WpfStaHost.Run(() =>
+            {
+                vm?.Dispose();
+                return 0;
+            });
+        }
+
+        Assert.True(found,
+            $"No TextBlock in the parsed AssistantView renders '{GoalTooShortHintText}'. Either the view " +
+            "failed to parse, or the loc:Str key Assistant_GoalTooShort_Hint no longer resolves.");
         Assert.Equal(Visibility.Collapsed, before);
         Assert.Equal(Visibility.Visible, after);
     }

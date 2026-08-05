@@ -190,6 +190,43 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     /// </summary>
     private static bool CanParkForApproval(Guid? parentRunId) => parentRunId is null;
 
+    /// <summary>
+    /// <b>18 D2.</b> Which token to re-park with when a resume claimed the row and then never reached the
+    /// orchestrator: normally <see cref="ResumeInterruptedReason"/> (Batch 08 F19's diagnostic — "a resume that
+    /// claimed and then died", distinct from the park it interrupted), but the ORIGINAL token when that token
+    /// was <see cref="AgentRunOrchestrator.NeedsGoalReason"/>.
+    /// <para>
+    /// The exception exists because 18 D2 made the token load-bearing for CONTROL FLOW rather than only for
+    /// copy. Every other reason keys a card body and a panel line, so overwriting it costs a slightly wrong
+    /// sentence. Overwriting <c>needs-goal</c> costs the run: the next resume would fail condition (a) of
+    /// <c>AgentRunOrchestrator.TryEnterClarificationRePlanAsync</c>, skip the planning block, drain the zero
+    /// step rows it has and settle <c>Completed</c> — reporting a goal it never planned as done. The user's
+    /// answer would already be persisted and never used.
+    /// </para>
+    /// <para>
+    /// <b>18 G5 settled the sibling token, and joined it to the exception for a DIFFERENT reason.</b> Overwriting
+    /// <see cref="AgentRunOrchestrator.NeedsInputReason"/> costs no control flow at all — a <c>needs-input</c>
+    /// resume must not re-plan, and <c>resume-interrupted</c> does not re-plan either, so
+    /// <c>TryEnterClarificationRePlanAsync</c> behaves identically both ways. What it costs is the ANSWER
+    /// PIPELINE: <see cref="ResumeAsync"/>'s <c>AppendClarificationAsync</c> gate keys on these two tokens, so a
+    /// run whose token was replaced would silently stop PERSISTING the user's replies while its chat still showed
+    /// an unanswered question — and 18 D4 permits a run to ask any number of times, which is exactly when that
+    /// loss compounds. The card and panel copy staying right ("waiting for your answer", not "a resume was
+    /// interrupted") is the smaller, secondary reason.
+    /// </para>
+    /// <para>
+    /// The cost of the exception, stated so it is a trade rather than an oversight: Batch 08 F19's diagnostic is
+    /// lost for these two tokens. A resume that claimed and then died is indistinguishable, on the row, from one
+    /// that never started — for clarification parks only, and the log line at the catch site still records it.
+    /// </para>
+    /// </summary>
+    private static string InterruptedReasonFor(string? parkReason) => parkReason switch
+    {
+        AgentRunOrchestrator.NeedsGoalReason => AgentRunOrchestrator.NeedsGoalReason,
+        AgentRunOrchestrator.NeedsInputReason => AgentRunOrchestrator.NeedsInputReason,
+        _ => ResumeInterruptedReason,
+    };
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAssistantChatService _chatService;
     private readonly IAgentRunService _agentRunService;
@@ -584,10 +621,16 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         // already read at the top of this method. Null for every other park, and for a tool-approval park
         // whose envelope did not survive: a resume that cannot read the question grants nothing extra and the
         // run simply parks again on the same tool, which is the fail-closed direction.
-        var approvedTool = run.State == AgentRunState.WaitingForInput
-            && RunPauseEnvelope.ReadReason(run) == AgentRunOrchestrator.ToolApprovalReason
-                ? RunPauseEnvelope.ReadApprovalTool(run)
-                : null;
+        // 18 D2 rides the SAME pre-claim read, for the same reason and one method later in the argument: the
+        // orchestrator's `if (!resume)` guard now has to know WHY this run parked (a `needs-goal` park re-plans,
+        // every other park does not), and the token is in the very ExtraJson the claim below is about to NULL.
+        // Read once here, used twice: for hermes #16's tool below and for RunAsync's parkReason at the dispatch.
+        // Null for a run that is not parked at WaitingForInput, and for an unreadable envelope — which lands on
+        // the conservative side, i.e. 08 D1's original "a resume never re-plans".
+        var parkReason = run.State == AgentRunState.WaitingForInput ? RunPauseEnvelope.ReadReason(run) : null;
+        var approvedTool = parkReason == AgentRunOrchestrator.ToolApprovalReason
+            ? RunPauseEnvelope.ReadApprovalTool(run)
+            : null;
 
         var claimed = run.State switch
         {
@@ -599,6 +642,30 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         {
             _logger.LogInformation("Resume: run {RunId} not claimable (already resumed/not parked)", runId);
             return false;
+        }
+
+        // 18 D2 / owner Q3 — PERSIST THE ANSWER BEFORE ANYTHING ELSE CAN FAIL. On a clarification park the
+        // nudge IS the user's answer to the question the run asked (both resume origins hand their typed text
+        // down that one parameter), but a nudge is scope-to-dispatch and never persisted (Batch 08 D4) — so an
+        // answer that only rode it would be lost by the next park, and 18 D4 permits repeated parks, which is
+        // exactly when that loss shows. The column accumulates; the run's Goal is untouched.
+        //
+        // FAILURE-ISOLATED IN ITS OWN TRY, deliberately not the big one below: that block's catch re-parks the
+        // run, and the token it writes is what decides whether the next resume re-plans AND whether the next
+        // resume records an answer at all — see InterruptedReasonFor, which preserves BOTH clarification tokens
+        // for exactly those two reasons. Losing an answer degrades to "the model asks again"; losing the token
+        // degrades to a run that drains nothing and settles Completed.
+        if (parkReason is AgentRunOrchestrator.NeedsGoalReason or AgentRunOrchestrator.NeedsInputReason
+            && !string.IsNullOrWhiteSpace(nudge))
+        {
+            // The answer text never reaches a log line here — AppendClarificationAsync logs the count and puts
+            // the text on SensitiveDebug. This line carries the app-owned token only.
+            try { await _agentRunService.AppendClarificationAsync(run.Id, nudge, ct).ConfigureAwait(false); }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Resume: could not record the clarification answer for run {RunId} "
+                    + "(reason {Reason}) — the run resumes without it", run.Id, parkReason);
+            }
         }
 
         // The run is now CAS'd WaitingForInput→Running (the claim raised RunChanged(Running), retracting the
@@ -796,8 +863,12 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                     // i.e. before this line, which is why ChatSessionManager keeps its ActiveRunId-matched
                     // term as well as reading this index.
                     _executingRuns.Register(run.ChatId, run.Id);
-                    await orchestrator.RunAsync(run, executor, persona, provider, budget, runCts.Token, resume: true, nudge: nudge)
-                        .ConfigureAwait(false); // resume:true → no re-plan, drains the Pending remainder (D1)
+                    // 18 D2: parkReason carries the PRE-CLAIM token down to the orchestrator's planning guard,
+                    // which is the only way it can get there (the claim above NULLed the envelope it came from).
+                    await orchestrator.RunAsync(run, executor, persona, provider, budget, runCts.Token,
+                            resume: true, nudge: nudge, parkReason: parkReason)
+                        .ConfigureAwait(false); // resume:true → drains the Pending remainder (08 D1); re-plans
+                                                // ONLY for a needs-goal park with no step rows (18 D2)
                 }
                 catch (OperationCanceledException)
                 {
@@ -805,7 +876,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                     // the claim, so re-park it (rather than leave it dangling Running) — it stays resumable.
                     if (!started)
                     {
-                        try { await _agentRunService.PauseAsync(run.Id, ResumeInterruptedReason, CancellationToken.None).ConfigureAwait(false); }
+                        try { await _agentRunService.PauseAsync(run.Id, InterruptedReasonFor(parkReason), CancellationToken.None).ConfigureAwait(false); }
                         catch (Exception ex) { _logger.LogWarning(ex, "Failed to re-park interrupted resume {RunId}", run.Id); }
                     }
                 }
@@ -822,7 +893,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                         // Faulted before entering the orchestrator (e.g. slot wait, scope/executor construction) —
                         // the run was CAS'd to Running but no loop is attached. Re-park it so it stays resumable
                         // rather than dangling Running (guardrail 1/3).
-                        try { await _agentRunService.PauseAsync(run.Id, ResumeInterruptedReason, CancellationToken.None).ConfigureAwait(false); }
+                        try { await _agentRunService.PauseAsync(run.Id, InterruptedReasonFor(parkReason), CancellationToken.None).ConfigureAwait(false); }
                         catch (Exception px) { _logger.LogWarning(px, "Failed to re-park interrupted resume {RunId}", run.Id); }
                     }
                 }
@@ -861,7 +932,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             // Pre-dispatch failure (settings/persona/provider resolve, workspace create) after the CAS win.
             // Re-park so the run leaves Running and stays resumable; report the resume did not start.
             _logger.LogError(ex, "Resume of run {RunId} failed before dispatch; re-parking", runId);
-            try { await _agentRunService.PauseAsync(runId, ResumeInterruptedReason, CancellationToken.None).ConfigureAwait(false); }
+            try { await _agentRunService.PauseAsync(runId, InterruptedReasonFor(parkReason), CancellationToken.None).ConfigureAwait(false); }
             catch (Exception px) { _logger.LogWarning(px, "Failed to re-park run {RunId} after pre-dispatch resume failure", runId); }
             return false;
         }

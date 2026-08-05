@@ -27,6 +27,16 @@ public sealed class AgentRunOrchestratorTests
     private static StepTurnResult Fail(string err) => new(false, false, err, string.Empty, null, Guid.NewGuid(), Guid.NewGuid());
     private static StepTurnResult Cancel() => new(false, true, "cancelled", string.Empty, null, Guid.NewGuid(), Guid.NewGuid());
 
+    /// <summary>
+    /// 18 G5: a step that called <c>request_user_input</c>. Shaped exactly as the real executors return it — the
+    /// step did not finish, so no text and no message ids, and <c>Succeeded</c> is the plain false a
+    /// didn't-finish step carries. Every fact below that needs a DIFFERENT surrounding shape (an ask that also
+    /// declared failure, an ask that also parked for approval) builds it with <c>with { … }</c>, so the one place
+    /// the ask member is named stays here.
+    /// </summary>
+    private static StepTurnResult Ask(string question) =>
+        new(false, false, null, string.Empty, null, Guid.Empty, Guid.Empty, UserInputQuestion: question);
+
     private static List<AgentStep> MakeSteps(params (string Title, string Intent)[] steps)
     {
         var result = new List<AgentStep>();
@@ -180,6 +190,7 @@ public sealed class AgentRunOrchestratorTests
         public Task FailAsync(Guid runId, string? error, bool cancelled = false, CancellationToken ct = default) => _inner.FailAsync(runId, error, cancelled, ct);
         public Task PauseAsync(Guid runId, string? reason, CancellationToken ct = default, string? approvalTool = null) => _inner.PauseAsync(runId, reason, ct, approvalTool);
         public Task UpdatePolicyJsonAsync(Guid runId, string? policyJson, CancellationToken ct = default) => _inner.UpdatePolicyJsonAsync(runId, policyJson, ct);
+        public Task<IReadOnlyList<string>> AppendClarificationAsync(Guid runId, string? answer, CancellationToken ct = default) => _inner.AppendClarificationAsync(runId, answer, ct);
         public Task<bool> TryBeginResumeAsync(Guid runId, CancellationToken ct = default) => _inner.TryBeginResumeAsync(runId, ct);
         public Task<bool> TryPauseUserAsync(Guid runId, CancellationToken ct = default) => _inner.TryPauseUserAsync(runId, ct);
         public Task<bool> TryResumeFromPauseAsync(Guid runId, CancellationToken ct = default) => _inner.TryResumeFromPauseAsync(runId, ct);
@@ -884,6 +895,46 @@ public sealed class AgentRunOrchestratorTests
         Assert.False(exec.EndFailed);
     }
 
+    // ---- 18 D1 layer 2: the orchestrator's DECLINE branch (spec §8.1/§8.2/§8.3 at this seam) ----
+
+    /// <summary>
+    /// The routing fact, isolated from the planner: given <c>PlanResult.Decline</c>, the loop parks
+    /// <c>needs-goal</c> with no steps, never calls <c>RunSingleTurnFallbackAsync</c> (§8.2), and still bills the
+    /// plan turn (§8.3). <c>GoalGroundingReproTests</c> proves the same three facts end-to-end through the REAL
+    /// planner and the provider wire; this one proves they belong to THIS branch, so a planner change cannot make
+    /// them pass or fail for the wrong reason.
+    /// <para>
+    /// The reason token is asserted as a WIRE literal off <c>ExtraJson</c>, like the step-cap and wall-clock park
+    /// facts above: the panel and the Flow surface read that string, and an assertion against the constant could
+    /// not catch the constant itself being renamed.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Run_PlannerDeclinesTheGoal_ParksNeedsGoal_NoSteps_NoFallback_AndBillsThePlanTurn()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("ggg");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(PlanResult.Decline("what do you mean by that?") with { Usage = Usage(31, 7) });
+        var exec = new RecordingExecutor(_ => Ok());
+
+        await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        Assert.False(exec.FallbackCalled); // §8.2, on the CALL — the R10 degrade is the worst branch here (§4.2)
+        Assert.Empty(exec.Executed);
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.WaitingForInput, final!.State);
+        Assert.Contains("needs-goal", final.ExtraJson ?? string.Empty);
+        Assert.Empty(final.Plan);
+        Assert.Null(final.CompletedAt);   // a park is not terminal…
+        Assert.False(exec.EndCalled);     // …so the terminal bracket does not fire…
+        Assert.True(exec.PausedCalled);   // …and the non-terminal release hook does (guardrail 5)
+        var (input, output, perStep) = Ledger(final);
+        Assert.Equal(31, input);           // §8.3: the branch sits AFTER the I1 accrual, not in front of it
+        Assert.Equal(7, output);
+        Assert.Equal(0, perStep);
+    }
+
     // ---- E2: a resumed run's critic/replan must see the PRE-PAUSE work, not only the post-resume slice ----
 
     private static List<AgentStep> MakeStepsWithArtifacts(params (string Title, string Intent, string? Artifact)[] steps)
@@ -1242,5 +1293,139 @@ public sealed class AgentRunOrchestratorTests
         Assert.Equal(AgentRunState.Completed,
             (await h.Runs.GetAsync(noRoot.Id, TestContext.Current.CancellationToken))!.State);
         Assert.Empty(workspaces.Promoted);
+    }
+
+    // ============================================================================================
+    // 18 G5 — the MID-PLAN ASK park, at the loop level. The end-to-end facts (a real model call
+    // through a real executor, the delegated refusal, the containment guard) live in MidPlanAskTests;
+    // what only THIS harness can show is what the drain loop does to the surrounding PLAN.
+    // ============================================================================================
+
+    /// <summary>
+    /// <b>WHAT HAPPENS TO A PARTIALLY EXECUTED PLAN — the territory spec §7 G5 says no existing resume path
+    /// covers.</b> Step A completed; step B asked. The loop parks the run <c>needs-input</c>, and the two rows
+    /// end in DIFFERENT states: A stays <c>Done</c> (its work is kept and must not be re-run) and B goes back to
+    /// <c>Pending</c> (it did not finish, so the resume re-runs it from the top).
+    /// <para>
+    /// Recording B as <c>Failed</c> instead — which is what would happen if the ask were folded into the outcome
+    /// bool, i.e. if 18 D6 had gone the other way — would be silently destructive: <c>Failed</c> is a status
+    /// <c>NextPendingStepAsync</c> cannot see AND <c>KeepDoneAsync</c> drops, so the resumed run would lose the
+    /// very step that asked the question, while the panel still showed it.
+    /// </para>
+    /// <para>
+    /// The step that asked is NOT a step failure: the replanner is never called. A run that replanned here would
+    /// throw away the question and re-decompose the goal behind the user's back.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task AStepThatAsks_ParksNeedsInput_KeepsDoneSteps_AndGivesTheAskingStepBack()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2")), false));
+        var exec = new RecordingExecutor(step => step.Intent == "s2" ? Ask("which cluster?") : Ok());
+
+        await h.BuildOrchestrator(planner).RunAsync(
+            run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.WaitingForInput, final!.State);
+        Assert.Contains("needs-input", final.ExtraJson ?? string.Empty, StringComparison.Ordinal);
+        Assert.Null(final.CompletedAt); // a park is NOT terminal (guardrail 5)
+
+        Assert.Equal(AgentStepStatus.Done, final.Plan.Single(s => s.Title == "A").Status);
+        Assert.Equal(AgentStepStatus.Pending, final.Plan.Single(s => s.Title == "B").Status);
+
+        Assert.Equal(0, planner.ReplanCalls); // an ask is not a failure
+        Assert.True(exec.PausedCalled);       // the NON-terminal release hook…
+        Assert.False(exec.EndCalled);         // …and never the terminal one
+    }
+
+    /// <summary>
+    /// <b>18 D6, asserted where it would break first.</b> A step that asks AND declares
+    /// <c>emit_step_result{succeeded:false}</c> in the same exchange — the common real shape, because a model
+    /// that stops to ask usually explains itself through the declaration tool too — still parks. It does NOT
+    /// take the step-failure replan branch.
+    /// <para>
+    /// This is why the ask rides its own member rather than the outcome bool: <c>Succeeded:false</c> here is
+    /// TRUE and correct, and reading it as an ordinary failure would burn a replan on a step that is only
+    /// waiting. Same reason hermes #16 keeps <c>ApprovalRequiredTool</c> out of <c>Succeeded</c>.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task AStepThatAsksAndAlsoDeclaresFailure_StillParks_AndNeverReplans()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
+        planner.Replans.Enqueue(new PlanResult(MakeSteps(("R", "revised")), false)); // armed: silence is a CHOICE
+        var exec = new RecordingExecutor(_ => Ask("which cluster?") with
+        {
+            Succeeded = false,
+            Error = "blocked on the target cluster",
+            Outcome = new StepOutcomeClaim(false, "blocked on the target cluster", null),
+        });
+
+        await h.BuildOrchestrator(planner).RunAsync(
+            run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.WaitingForInput, final!.State);
+        Assert.Equal(0, planner.ReplanCalls);
+        Assert.Equal(AgentStepStatus.Pending, final.Plan.Single().Status);
+    }
+
+    /// <summary>
+    /// <b>PRECEDENCE.</b> A step that both parked for a tool approval (hermes #16) and asked a question answers
+    /// the APPROVAL first: that is the call which actually stopped the exchange, and re-asking costs nothing on
+    /// the resumed step. Merging the two branches, or ordering them the other way, would leave a human staring
+    /// at a question while the tool decision the run is really blocked on goes unasked.
+    /// </summary>
+    [Fact]
+    public async Task WhenAStepBothParksForApprovalAndAsks_TheApprovalWins()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
+        var exec = new RecordingExecutor(_ => Ask("which cluster?") with { ApprovalRequiredTool = "write_file" });
+
+        await h.BuildOrchestrator(planner).RunAsync(
+            run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.WaitingForInput, final!.State);
+        Assert.Contains("tool-approval", final.ExtraJson ?? string.Empty, StringComparison.Ordinal);
+        Assert.DoesNotContain("needs-input", final.ExtraJson ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The tokens an abandoned step really spent are BILLED, run-level (<c>stepId: null</c>) — a step that will
+    /// re-run must not carry a per-step ledger entry for the attempt that did not finish. The same treatment the
+    /// user-pause and approval-park branches give, restated here because a park that billed nothing would make an
+    /// asking run look free.
+    /// </summary>
+    [Fact]
+    public async Task AnAskingStepsTokensAreBilledRunLevel()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
+        var exec = new RecordingExecutor(_ => Ask("which cluster?") with
+        {
+            Usage = new UsageDetails { InputTokenCount = 30, OutputTokenCount = 12 },
+        });
+
+        await h.BuildOrchestrator(planner).RunAsync(
+            run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        var (input, output, perStep) = Ledger(final!);
+        Assert.Equal(30, input);
+        Assert.Equal(12, output);
+        Assert.Equal(0, perStep); // …and NO per-step entry for the attempt that will run again
     }
 }

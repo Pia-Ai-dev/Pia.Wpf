@@ -198,6 +198,30 @@ public interface IAgentRunService
     Task UpdatePolicyJsonAsync(Guid runId, string? policyJson, CancellationToken ct = default);
 
     /// <summary>
+    /// <b>18 D2 / owner Q3.</b> Append ONE user answer to the run's accumulated clarification answers
+    /// (<c>AgentRuns.ClarificationsJson</c>) and return the list as it now stands, oldest-first. A blank answer
+    /// appends nothing and returns the existing list — the Flow Continue card carries no text input at all
+    /// (spec §4.3), so a resume with nothing typed is the normal case rather than an error.
+    /// <para>
+    /// APPEND, not replace, and that is the whole reason this is its own method: 18 D4 puts no cap on how many
+    /// times a run may park and ask, so a second park must not lose the answer to the first. The
+    /// read-modify-write happens inside ONE service-gate hold, so two callers racing on the same run (a panel
+    /// Continue and a Flow ContinueRun) cannot each read the same list and write over each other's answer.
+    /// </para>
+    /// <para>
+    /// It has to be a durable column and not the pause envelope: <see cref="TryBeginResumeAsync"/> and its
+    /// sibling <see cref="TryResumeFromPauseAsync"/> both <c>SET ExtraJson=NULL</c> on the claim, so an answer
+    /// parked there would be destroyed by the very resume that delivers it. The run's <c>Goal</c> is
+    /// deliberately NOT modified — the panel keeps showing what the user typed.
+    /// </para>
+    /// <para>
+    /// SENSITIVE: <paramref name="answer"/> is user-typed content. Implementations log the resulting COUNT, and
+    /// the text only via <c>SensitiveDebug</c>.
+    /// </para>
+    /// </summary>
+    Task<IReadOnlyList<string>> AppendClarificationAsync(Guid runId, string? answer, CancellationToken ct = default);
+
+    /// <summary>
     /// Atomically CAS-claim a parked run for resume: <see cref="AgentRunState.WaitingForInput"/> →
     /// <see cref="AgentRunState.Running"/>. Returns <c>true</c> iff THIS caller won the claim (guardrail 2
     /// — never two loops on one run). A non-WaitingForInput run returns <c>false</c> and is a no-op.

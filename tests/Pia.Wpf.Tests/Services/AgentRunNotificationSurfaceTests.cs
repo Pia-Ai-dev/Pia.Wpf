@@ -30,11 +30,15 @@ public sealed class AgentRunNotificationSurfaceTests
     private AgentRunNotificationSurface Create() =>
         new(_runs, _flow, _windows, _chats, _loc, NullLogger<AgentRunNotificationSurface>.Instance);
 
-    private Guid SetupRun(Guid runId, RunShape shape, Guid? chatId = null, Guid? parentRunId = null)
+    private Guid SetupRun(
+        Guid runId, RunShape shape, Guid? chatId = null, Guid? parentRunId = null, string? extraJson = null)
     {
         var chat = chatId ?? Guid.NewGuid();
         _runs.GetAsync(runId, Arg.Any<CancellationToken>())
-            .Returns(new AgentRun { Id = runId, RunShape = shape, ChatId = chat, ParentRunId = parentRunId });
+            .Returns(new AgentRun
+            {
+                Id = runId, RunShape = shape, ChatId = chat, ParentRunId = parentRunId, ExtraJson = extraJson,
+            });
         return chat;
     }
 
@@ -63,6 +67,11 @@ public sealed class AgentRunNotificationSurfaceTests
     // moment earlier, it also overwrote who paused it. The row still parks WaitingForInput and stays
     // resumable; only the wording was a lie.
     [InlineData("resume-interrupted", "Flow_Run_ResumeInterrupted")]
+    // 18 D5/Q4: two NEW tokens, one per resume behaviour (plan-time vs. mid-plan), each with its own key —
+    // never the question. See NeedsClarificationPark_CardIsTokenKeyed_AndRoutesToTheRun below for the §8.6
+    // fact that a FULL published card's Title/Body carry none of the model's question text either.
+    [InlineData("needs-goal", "Flow_Run_NeedsGoal")]
+    [InlineData("needs-input", "Flow_Run_NeedsInput")]
     [InlineData("step-cap", "Flow_Run_WaitingAtBudget")]
     [InlineData("wall-clock", "Flow_Run_WaitingAtBudget")]
     [InlineData(null, "Flow_Run_WaitingAtBudget")]
@@ -246,6 +255,43 @@ public sealed class AgentRunNotificationSurfaceTests
             d.Lifetime.IsPersistent &&
             d.RequestDurable &&
             d.Action is ContinueRunAction));
+    }
+
+    /// <summary>
+    /// <b>SPEC §8.6.</b> A needs-goal/needs-input card's Title and Body are the token-keyed localized strings
+    /// and contain NONE of the question text. <c>_loc</c> echoes whatever key it is indexed with (ctor setup
+    /// above), so a Body that were ever composed from the model's question — rather than looked up by the
+    /// reason token alone — would fail the exact-equality assertion below; this is the observable half of
+    /// §4.4's rule the spec asks for, made concrete on a run whose <c>ExtraJson</c> carries only the reason
+    /// token (implementer decision 4: <c>RunPauseEnvelope</c> never carries the question at all, so there is
+    /// nothing for a card built from this run row to leak even if it tried).
+    /// <para>
+    /// <b>Also pins §4.4's "routes there".</b> Every OTHER park reason's card fires
+    /// <see cref="ContinueRunAction"/> — an immediate out-of-band resume with no answer to carry, which is
+    /// correct for a budget/approval/children park. These two reasons have no answer for Continue to carry
+    /// either (the answer lives in the chat 18 G3 posts the question into), so their card action is
+    /// <see cref="OpenRunAction"/> instead — it navigates to the run's chat rather than firing a blind resume.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData("needs-goal", "Flow_Run_NeedsGoal")]
+    [InlineData("needs-input", "Flow_Run_NeedsInput")]
+    public async Task NeedsClarificationPark_CardIsTokenKeyed_AndRoutesToTheRun(string reason, string expectedKey)
+    {
+        var runId = Guid.NewGuid();
+        SetupRun(runId, RunShape.Planned, extraJson: $$"""{"paused":true,"reason":"{{reason}}"}""");
+        _windows.IsInForeground(WindowMode.Assistant).Returns(false);
+
+        await Create().HandleRunStateAsync(runId, AgentRunState.WaitingForInput);
+
+        _flow.Received(1).Publish(Arg.Is<FlowItemDraft>(d =>
+            d.Severity == FlowSeverity.ActionRequired &&
+            d.Title == "Flow_Run_Title" &&   // generic, never the run's Goal (§4.4)
+            d.Body == expectedKey &&         // exact match: nothing appended, so no question could ride along
+            // OpenParkedRunAction, NOT OpenRunAction (review fix): opening the run resolves nothing, so this
+            // card must NOT retract on open the way a terminal/ContinueRunAction card does — see
+            // FlowItemViewModelTests for the retract-vs-mark-read behavioural fact.
+            d.Action is OpenParkedRunAction));
     }
 
     [Fact]

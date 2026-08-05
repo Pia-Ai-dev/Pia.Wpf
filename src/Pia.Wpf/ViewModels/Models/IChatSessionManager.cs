@@ -42,6 +42,13 @@ public interface IChatSessionManager
     /// Resolves persona/provider/prompt, adds the user + assistant messages, and runs the loop.
     /// <paramref name="regenerationInstruction"/> (optional) is injected AI-side for a styled
     /// regeneration (e.g. "make it shorter") without changing the displayed user bubble.
+    /// <para>
+    /// <b>ONE case is not a turn at all (18 D7/G6).</b> If <paramref name="session"/>'s attached run is parked
+    /// asking the user a question (<c>needs-goal</c> / <c>needs-input</c>), this call posts
+    /// <paramref name="userText"/> as the ANSWER and resumes that run instead of starting a turn — the caller
+    /// sees the same <c>Task</c> either way and needs no branch of its own. A regeneration, a send carrying an
+    /// attachment, and every other park reason are unaffected; see the implementation's own doc for why each.
+    /// </para>
     /// </summary>
     Task StartTurnAsync(
         ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction = null,

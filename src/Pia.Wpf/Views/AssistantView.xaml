@@ -530,6 +530,17 @@
                      TextWrapping="Wrap"
                      Foreground="{DynamicResource TextSubtleBrush}"
                      Visibility="{Binding ForeignRunActive, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+          <!-- 18 D1 layer 1 composer hint: Run in background is a dead button on blatant-junk input
+               (GoalPreflight.IsRefused), and a dead button with no reason gives the user no recourse. Bound to
+               GoalTooShortHintVisible alone, which is already false for the streaming and empty-composer
+               disabled states (AssistantViewModel.OnPropertyChanged), so it never doubles up with those. -->
+          <TextBlock Text="{loc:Str Assistant_GoalTooShort_Hint}"
+                     Margin="2,6,0,0"
+                     FontSize="12"
+                     TextWrapping="Wrap"
+                     Foreground="{DynamicResource TextSubtleBrush}"
+                     Visibility="{Binding GoalTooShortHintVisible, Converter={StaticResource BooleanToVisibilityConverter}}" />
         </StackPanel>
       </Border>
     </Border>

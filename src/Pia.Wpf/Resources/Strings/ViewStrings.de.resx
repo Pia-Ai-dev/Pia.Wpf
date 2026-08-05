@@ -97,6 +97,7 @@
   <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Senden (Eingabe)</value></data>
   <data name="Assistant_RunInBackground_Tooltip" xml:space="preserve"><value>Im Hintergrund ausführen</value></data>
   <data name="Assistant_BackgroundRunActive_Hint" xml:space="preserve"><value>Eine Hintergrundausführung schreibt in diesen Chat. Senden ist wieder möglich, sobald sie fertig ist.</value></data>
+  <data name="Assistant_GoalTooShort_Hint" xml:space="preserve"><value>Das ist als Ziel zu kurz, um ausgeführt zu werden. Ergänze ein paar Wörter, damit es sich planen lässt.</value></data>
   <data name="Assistant_RunInBackground_Failed" xml:space="preserve"><value>Hintergrundausführung konnte nicht gestartet werden: {0}</value></data>
   <data name="Settings_Agent_Tab" xml:space="preserve"><value>Agentenläufe</value></data>
   <data name="Settings_Agent_Section_Description" xml:space="preserve"><value>Grenzen, an denen eine Agent-Ausführung stoppt, damit sie nie außer Kontrolle gerät. Eine Ausführung, die ein Limit erreicht, pausiert und wartet auf dich – du kannst sie im Ausführungsbereich fortsetzen.</value></data>
@@ -953,6 +954,8 @@
   <data name="Run_Activity_UserPaused" xml:space="preserve"><value>Sie haben diese Ausführung pausiert</value></data>
   <data name="Run_Activity_ResumeInterrupted" xml:space="preserve"><value>Die Fortsetzung wurde nicht gestartet – setzen Sie erneut fort, wenn Sie bereit sind</value></data>
   <data name="Run_Activity_WaitingForToolApproval" xml:space="preserve"><value>Wartet auf Ihre Freigabe für {0}</value></data>
+  <data name="Run_Activity_NeedsGoal" xml:space="preserve"><value>Wartet darauf, dass Sie das Ziel im Chat klären</value></data>
+  <data name="Run_Activity_NeedsInput" xml:space="preserve"><value>Wartet auf Ihre Antwort im Chat</value></data>
   <data name="Run_Action_Continue" xml:space="preserve"><value>Fortsetzen</value></data>
   <data name="Run_Action_Pause" xml:space="preserve"><value>Pausieren</value></data>
   <data name="Run_Action_Pausing" xml:space="preserve"><value>Wird pausiert…</value></data>
@@ -1007,6 +1010,8 @@
   <data name="Flow_Run_UserPaused" xml:space="preserve"><value>Sie haben diese Ausführung pausiert. Fortsetzen?</value></data>
   <data name="Flow_Run_ResumeInterrupted" xml:space="preserve"><value>Die Fortsetzung wurde nicht gestartet. Fortsetzen?</value></data>
   <data name="Flow_Run_ToolApproval" xml:space="preserve"><value>Dieser Lauf benötigt Ihre Freigabe für {0}. Fortsetzen, um sie zu erteilen.</value></data>
+  <data name="Flow_Run_NeedsGoal" xml:space="preserve"><value>Dieser Lauf konnte nicht erkennen, was Sie meinten – öffnen Sie ihn, um zu antworten.</value></data>
+  <data name="Flow_Run_NeedsInput" xml:space="preserve"><value>Dieser Lauf benötigt Ihre Eingabe, um fortzufahren – öffnen Sie ihn, um zu antworten.</value></data>
   <data name="Flow_Action_ContinueRun" xml:space="preserve"><value>Ausführung fortsetzen</value></data>
   <data name="Assistant_Regenerate_Shorten" xml:space="preserve"><value>Kürzer</value></data>
   <data name="Assistant_Regenerate_Detailed" xml:space="preserve"><value>Ausführlicher</value></data>

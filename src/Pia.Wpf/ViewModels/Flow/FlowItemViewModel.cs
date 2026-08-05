@@ -185,6 +185,14 @@ public partial class FlowItemViewModel : ObservableObject
                     _windowManager.ShowAgentRun(run.RunId);
                     RetractByKey();
                     break;
+                case OpenParkedRunAction parked:
+                    // 18 G3 review fix: navigate WITHOUT resolving the park — see OpenParkedRunAction's doc.
+                    // Mirrors OpenTodoAction's own precedent (navigate, MarkRead, let the underlying state
+                    // change do the retracting) rather than OpenRunAction's retract-on-open, which would
+                    // delete the only durable trace of a still-parked run the moment it is merely viewed.
+                    _windowManager.ShowAgentRun(parked.RunId);
+                    _flow.MarkRead(_item.Id);
+                    break;
                 case ContinueRunAction cont:
                     // Resume out-of-band (no foreground chat to navigate to). CAS in the resume service
                     // makes a double invoke a no-op; drop the WaitingForInput card immediately (the surface

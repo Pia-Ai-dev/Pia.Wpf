@@ -14,8 +14,18 @@ public interface IAgentRunSteeringService
     /// loop to interrupt).
     /// <para>
     /// The pausable set is EXPLICIT and never a range (D7). <c>Planning</c> is excluded on purpose: a resume
-    /// runs <c>RunAsync(resume: true)</c>, which skips planning entirely, so a run paused mid-plan would come
-    /// back with no plan, drain zero steps and settle <c>Completed</c> having done nothing.
+    /// runs <c>RunAsync(resume: true)</c>, which skips planning, so a run paused mid-plan would come back with
+    /// no plan, drain zero steps and settle <c>Completed</c> having done nothing.
+    /// </para>
+    /// <para>
+    /// <b>18 D2 narrowed that premise without changing this conclusion.</b> A resume now re-plans for exactly
+    /// one park reason — <c>needs-goal</c> with zero step rows
+    /// (<c>AgentRunOrchestrator.TryEnterClarificationRePlanAsync</c>) — so "skips planning" is no longer true
+    /// of EVERY resume. It is still true of every resume a USER PAUSE can produce: this method's pause writes
+    /// the <c>user-paused</c> token, which fails that guard's first condition, so a run paused mid-plan would
+    /// still come back with no plan. Stated rather than left implicit, because the next reader deciding
+    /// whether <c>Planning</c> may join the set above must not reason from a sentence the code stopped
+    /// supporting.
     /// </para>
     /// <para>
     /// D6: a <c>WaitingForChildren</c> parent CASCADES — its own request is recorded and every non-terminal

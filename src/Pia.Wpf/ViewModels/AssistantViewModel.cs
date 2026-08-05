@@ -96,6 +96,17 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     [ObservableProperty]
     private bool _foreignRunActive;
 
+    /// <summary>
+    /// 18 D1 layer 1: true exactly when <see cref="RunInBackgroundCommand"/> is disabled BECAUSE
+    /// <see cref="GoalPreflight.IsRefused"/> refused the typed goal — never for the streaming or
+    /// empty-composer disabled states, which have their own (silent) reasons and would be a misleading hint
+    /// here. Recomputed in <see cref="OnPropertyChanged"/> alongside the command's own CanExecuteChanged, so
+    /// it can never drift from the gate it explains. Mirrors the shape of <see cref="ForeignRunActive"/>'s
+    /// composer hint (Assistant_BackgroundRunActive_Hint).
+    /// </summary>
+    [ObservableProperty]
+    private bool _goalTooShortHintVisible;
+
     [ObservableProperty]
     private bool _hasMessages;
 
@@ -683,6 +694,14 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             RunInBackgroundCommand.NotifyCanExecuteChanged();
         }
 
+        // 18 D1 layer 1 hint: recomputed alongside the command above, from the same HasCandidateGoalText
+        // gate, so it can never show for the streaming or empty-composer disabled states (only for a
+        // non-empty, non-streaming goal that GoalPreflight.IsRefused actually refuses).
+        if (e.PropertyName is nameof(InputText) or nameof(IsStreaming))
+        {
+            GoalTooShortHintVisible = HasCandidateGoalText() && GoalPreflight.IsRefused(InputText);
+        }
+
         if (e.PropertyName is nameof(IsStreaming) or nameof(IsVoiceModeActive))
         {
             EnterVoiceModeCommand.NotifyCanExecuteChanged();
@@ -813,11 +832,19 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         !IsStreaming && !ForeignRunActive
         && (!string.IsNullOrWhiteSpace(InputText) || PendingAttachment is not null);
 
+    // 18 D1 layer 1: the one condition CanExecuteRunInBackground and the GoalTooShortHintVisible recompute
+    // in OnPropertyChanged share — not streaming, and real (non-whitespace) text — factored here once so
+    // the gate and the hint that explains it cannot drift out of sync with each other.
+    private bool HasCandidateGoalText() => !IsStreaming && !string.IsNullOrWhiteSpace(InputText);
+
     // "Run in background" detaches the typed goal and (this milestone) ignores attachments, so unlike
     // Send it requires real text — never enable on an attachment-only composer. Deliberately NOT gated on
     // ForeignRunActive: it launches into a NEW chat id and never writes this chat.
+    // 18 D1 layer 1: also dead on blatant-junk goals (GoalPreflight.IsRefused) so a run is never created,
+    // let alone planned, for input nobody could read as an attempt at a goal. See that type's doc for why
+    // the predicate is deliberately narrower than the planner's own decline (layer 2, §10.1).
     private bool CanExecuteRunInBackground() =>
-        !IsStreaming && !string.IsNullOrWhiteSpace(InputText);
+        HasCandidateGoalText() && !GoalPreflight.IsRefused(InputText);
 
     private async Task ExecuteSendMessage()
     {

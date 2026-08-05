@@ -20,6 +20,8 @@ namespace Pia.Services;
 /// <c>Goal</c>/step <c>Title</c>/<c>Intent</c> are user content — logged only via
 /// <c>SensitiveDebug</c>, never at Information (CLAUDE.md / §12.7). <c>PolicyJson</c> is an opaque
 /// launch envelope: stored/returned verbatim, never parsed here and never logged beyond its presence.
+/// 18 D2's <c>ClarificationsJson</c> is BOTH at once — opaque to this service (<c>RunClarifications</c>
+/// owns the shape) and user content (the answers the user typed), so it is logged as a COUNT only.
 /// </para>
 /// <para>
 /// The ledger's <c>wallClockMs</c> is the run's accumulated ACTIVE time (segments opened at
@@ -372,6 +374,53 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         return Task.CompletedTask;
     }
 
+    /// <inheritdoc />
+    public Task<IReadOnlyList<string>> AppendClarificationAsync(Guid runId, string? answer, CancellationToken ct = default)
+    {
+        IReadOnlyList<string> answers;
+        lock (_gate)
+        {
+            if (_disposed) return Task.FromResult<IReadOnlyList<string>>([]);
+
+            // THE WHOLE READ-MODIFY-WRITE IS INSIDE ONE _gate HOLD, and that is the point of the method rather
+            // than an UpdateClarificationsJsonAsync the caller could compose out of GetAsync + a write. 18 D4
+            // allows a run to park and ask repeatedly, and both resume origins (the panel's Continue and a Flow
+            // ContinueRun) can fire on the same run: two callers each doing read-then-write outside the gate
+            // would both see the same list and the second write would silently drop the first answer.
+            // Single-connection + _gate is what makes this atomic, exactly as it makes the CAS claims atomic.
+            using var read = Connection().CreateCommand();
+            read.CommandText = "SELECT ClarificationsJson FROM AgentRuns WHERE Id=@Id";
+            read.Parameters.AddWithValue("@Id", runId.ToString());
+            var existing = read.ExecuteScalar();
+            // No row (a deleted run) reads as no document, appends nothing, and answers empty — the same
+            // no-op-on-a-missing-id shape UpdatePolicyJsonAsync above has.
+            if (existing is null)
+                return Task.FromResult<IReadOnlyList<string>>([]);
+
+            var current = existing as string;
+            var updated = RunClarifications.Append(current, answer);
+            if (updated is null)
+                return Task.FromResult(RunClarifications.Read(current)); // blank answer: nothing to write (§4.3)
+
+            using var cmd = Connection().CreateCommand();
+            cmd.CommandText = "UPDATE AgentRuns SET ClarificationsJson=@Clarifications, UpdatedAt=@Now WHERE Id=@Id";
+            cmd.Parameters.AddWithValue("@Clarifications", ToParam(updated));
+            cmd.Parameters.AddWithValue("@Now", DateTime.UtcNow.ToString("O"));
+            cmd.Parameters.AddWithValue("@Id", runId.ToString());
+            cmd.ExecuteNonQuery();
+            answers = RunClarifications.Read(updated);
+        }
+
+        // COUNT only. The answers are user-typed content (CLAUDE.md), so the text goes out on the erased
+        // SensitiveDebug below and never on this line — which is the one a user may attach to a support mail.
+        // Deliberately NO RunChanged: this write neither changes the run's state nor anything the panel renders
+        // (the Goal column is untouched by design), and raising the event would republish a Flow card for a run
+        // that is mid-resume.
+        _logger.LogInformation("Run {RunId} recorded a clarification answer (total={Count})", runId, answers.Count);
+        _logger.SensitiveDebug("Run {RunId} clarification answers: {Answers}", runId, string.Join(" | ", answers));
+        return Task.FromResult(answers);
+    }
+
     public Task<bool> TryBeginResumeAsync(Guid runId, CancellationToken ct = default)
     {
         int affected;
@@ -425,9 +474,12 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
             //                        sees AnyParked).
             //   Verifying          — the critic's provider call is as interruptible as a step's.
             //   WaitingForChildren — a pause that lands before the un-park CAS.
-            // Planning is DELIBERATELY excluded: a resume runs RunAsync(resume: true), which skips planning
-            // entirely, so a run paused mid-plan would come back with NO plan, drain zero steps and settle
-            // Completed having done nothing.
+            // Planning is DELIBERATELY excluded: a resume runs RunAsync(resume: true), which skips planning,
+            // so a run paused mid-plan would come back with NO plan, drain zero steps and settle Completed
+            // having done nothing. 18 D2 narrowed that premise — a resume re-plans for exactly one park
+            // reason, `needs-goal` with zero step rows — but not this conclusion: the CAS below writes the
+            // `user-paused` token, which fails that guard's first condition, so a user pause mid-plan still
+            // comes back with no plan. See IAgentRunSteeringService.PauseAsync for the same note.
             //
             // NO CompletedAt — that is the whole difference between a pause and FailAsync, which stamps one
             // unconditionally. A pause must leave a RESUMABLE run, and a non-null CompletedAt says finished.
@@ -1185,9 +1237,13 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
 
     // ---- helpers (all invoked under _gate) ----
 
+    // 18 D2: ClarificationsJson is APPENDED at the end rather than slotted in beside PolicyJson/LedgerJson where
+    // the table declares it — MapRun reads by ORDINAL, so inserting a column mid-list would silently re-index
+    // every field after it.
     private const string RunColumns =
         "Id, SchemaVersion, ChatId, RunShape, State, TriggerKind, TriggerRef, ParentRunId, OwnerDeviceId, " +
-        "Goal, FirstMessageId, LastMessageId, PolicyJson, LedgerJson, CreatedAt, UpdatedAt, StartedAt, CompletedAt, ExtraJson";
+        "Goal, FirstMessageId, LastMessageId, PolicyJson, LedgerJson, CreatedAt, UpdatedAt, StartedAt, CompletedAt, ExtraJson, " +
+        "ClarificationsJson";
 
     private const string StepColumns =
         "Id, RunId, Ordinal, Title, Intent, Status, ExpectedArtifact, AssignedPersonaId, DependsOnJson, " +
@@ -1214,6 +1270,9 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         StartedAt = r.IsDBNull(16) ? null : DateTime.Parse(r.GetString(16)).ToUniversalTime(),
         CompletedAt = r.IsDBNull(17) ? null : DateTime.Parse(r.GetString(17)).ToUniversalTime(),
         ExtraJson = r.IsDBNull(18) ? null : r.GetString(18),
+        // 18 D2 — see RunColumns for why this is last. Opaque here: RunClarifications owns the shape, exactly
+        // as HeadlessRunLauncher owns PolicyJson's.
+        ClarificationsJson = r.IsDBNull(19) ? null : r.GetString(19),
     };
 
     private static AgentStep MapStep(SqliteDataReader r) => new()
