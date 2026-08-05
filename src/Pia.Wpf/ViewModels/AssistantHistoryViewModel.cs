@@ -343,6 +343,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         try
         {
             await _chatService.DeleteAsync(row.Id);
+            AbandonActiveSessionIfDeleted(row.Id);
             Chats.Remove(row);
             SelectedChat = null;
             RebuildGroups();
@@ -370,6 +371,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         try
         {
             await _chatService.DeleteAsync(row.Id);
+            AbandonActiveSessionIfDeleted(row.Id);
             Chats.Remove(row);
             if (ReferenceEquals(SelectedChat, row))
                 SelectedChat = null;
@@ -396,6 +398,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         {
             var deleted = await _chatService.DeleteAllAsync();
             _logger.LogInformation("Deleted all assistant chats ({Count})", deleted.Count);
+            AbandonActiveSessionIfDeleted(_chatSessionManager.ActiveSession?.Id);
             SelectedChat = null;
             Chats.Clear();
             RebuildGroups();
@@ -407,6 +410,18 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
                 _localizationService["Msg_Error"],
                 _localizationService.Format("Msg_AssistantHistory_DeleteAllFailed", ex.Message));
         }
+    }
+
+    /// <summary>Deleting the open chat: swap the assistant view to a fresh session, cancelling
+    /// first so the turn's terminal persist cannot resurrect the deleted row.</summary>
+    private void AbandonActiveSessionIfDeleted(Guid? deletedChatId)
+    {
+        var active = _chatSessionManager.ActiveSession;
+        if (deletedChatId is null || active?.Id != deletedChatId) return;
+
+        var inheritedDir = active.WorkingDirectory;
+        active.Cancel();
+        _chatSessionManager.GetOrCreateActiveForNewChat().SetWorkingDirectory(inheritedDir);
     }
 
     private bool CanExecuteExport() => SelectedChatDetail is not null && !IsLoading;

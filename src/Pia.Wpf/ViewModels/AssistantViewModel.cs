@@ -976,8 +976,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         await _chatSessionManager.ActivateAsync(chatId);
     }
 
-    /// <summary>Quick-delete a chat from the title-chip flyout: confirm, then delete (ChatsChanged
-    /// refreshes the flyout). Mirrors the history view's confirmation wording.</summary>
+    /// <summary>Quick-delete from the title-chip flyout; deleting the open chat moves to a fresh one.</summary>
     private async Task DeleteChatFromChipAsync(Guid chatId)
     {
         var confirmed = await _dialogService.ShowConfirmationDialogAsync(
@@ -985,8 +984,19 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             _localizationService["Msg_History_ConfirmDeleteMessage"]);
         if (!confirmed) return;
 
+        // Capture before the swap: StartFreshChat re-points ActiveSession.
+        var deletesOpenChat = _chatSessionManager.ActiveSession?.Id == chatId;
+        var inheritedDir = deletesOpenChat ? _chatSessionManager.ActiveSession?.WorkingDirectory : null;
+
         await _chatService.DeleteAsync(chatId);
         _logger.LogInformation("Deleted assistant chat {ChatId} from title-chip flyout", chatId);
+
+        if (!deletesOpenChat) return;
+
+        // Cancel the deleted chat's turn: its terminal persist would resurrect the deleted row.
+        RevokeAnyPendingPause();
+        _chatSessionManager.ActiveSession?.Cancel();
+        StartFreshChat(inheritedDir);
     }
 
     private void NavigateToAssistantHistory()
