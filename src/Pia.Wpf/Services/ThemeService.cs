@@ -23,6 +23,9 @@ public class ThemeService : IThemeService
     private ResourceDictionary? _currentPiaTokens;
     private bool _isMonitoring = false;
 
+    /// <inheritdoc />
+    public event EventHandler? ThemeChanged;
+
     public ThemeService(ILogger<ThemeService> logger)
     {
         _logger = logger;
@@ -104,6 +107,10 @@ public class ThemeService : IThemeService
         ApplicationThemeManager.Apply(wpfUiTheme);
         ApplyCustomTheme(theme);
         ApplyPiaTokens(theme);
+
+        // Raised LAST, once every dictionary is in place, so a handler that re-resolves a brush by key gets the
+        // new theme's value and not a half-swapped one.
+        ThemeChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void ApplyCustomTheme(AppTheme theme)
@@ -158,4 +165,5 @@ public class ThemeService : IThemeService
             _logger.LogError(ex, "Failed to apply Pia {Theme} tokens", theme);
         }
     }
+
 }

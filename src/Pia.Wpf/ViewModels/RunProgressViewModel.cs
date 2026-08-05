@@ -1,4 +1,4 @@
-using System.Collections.Immutable;
+﻿using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -71,6 +71,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private readonly IRunWorkspaceService? _workspaces;
     private readonly IPersonaService? _personaService;
     private readonly IAgentRunSteeringService? _steering;
+    private readonly IThemeService? _themeService;
     private readonly ILogger _logger;
     private bool _disposed;
 
@@ -525,8 +526,13 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         // Batch 08 D1/§5.4 — LAST again, same discipline. Null ⇒ CanPause is always false ⇒ no Pause button,
         // i.e. the panel is byte-for-byte the pre-Batch-08 one. AssistantViewModel.cs constructs this VM
         // positionally, which is exactly why every one of these keeps landing at the tail.
-        IAgentRunSteeringService? steering = null)
+        IAgentRunSteeringService? steering = null,
+        // Theme-awareness — LAST again, same trailing-and-defaulted discipline as the five above. Null means the
+        // panel never re-resolves its brushes, i.e. exactly the pre-fix behaviour. See RefreshThemeBrushes for why
+        // a notification is the only mechanism that works here.
+        IThemeService? themeService = null)
     {
+        _themeService = themeService;
         _timelineService = timelineService;
         _workspaces = workspaces;
         _personaService = personaService;
@@ -540,6 +546,8 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         // Captured on the construction (UI) thread; may be null in a headless test → run inline.
         _uiContext = SynchronizationContext.Current ?? new SynchronizationContext();
         _runService.RunChanged += OnRunChanged;
+        if (_themeService is not null)
+            _themeService.ThemeChanged += OnThemeChanged;
         RefreshAsync().SafeFireAndForget(_logger); // initial projection
     }
 
@@ -550,6 +558,42 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         // _childRunIds is an immutable snapshot for a reason; see its declaration.
         if (e.RunId != _runId && !_childRunIds.Contains(e.RunId)) return;
         RefreshAsync().SafeFireAndForget(_logger);   // the read may run off-thread; Project marshals (G3)
+    }
+
+    private void OnThemeChanged(object? sender, EventArgs e) =>
+        _uiContext.Post(_ => RefreshThemeBrushes(), null);
+
+    /// <summary>
+    /// Ask every brush binding on the card to resolve again, because a theme swap cannot reach the ones a converter
+    /// produced.
+    /// <para>
+    /// <b>Why this is needed at all.</b> A dozen-odd colours here come from converters that resolve a theme brush
+    /// by key: the band's tint, its hairline, the card outline, every state and status foreground, the progress
+    /// strip, the decision pills. A converter re-runs only when its SOURCE VALUE changes, so what it returned is a
+    /// snapshot of the outgoing theme — and the swap cannot fix that snapshot in place, because WPF freezes
+    /// freezables once their dictionary is owned. Both in-place recolouring and a <c>DynamicResource</c> colour on
+    /// the brush were measured and are dead ends. Re-raising the source property is what makes the converters run
+    /// again, and it is safe precisely BECAUSE nothing about the run changed: <c>[NotifyPropertyChangedFor]</c>
+    /// chains fire from the generated setters, never from a manual raise.
+    /// </para>
+    /// <para>
+    /// The rows are visited one by one because their brush bindings read <c>Status</c> / <c>Severity</c> /
+    /// <c>State</c> off the ROW, so a raise on this VM would not reach them.
+    /// </para>
+    /// </summary>
+    private void RefreshThemeBrushes()
+    {
+        OnPropertyChanged(nameof(State));
+        OnPropertyChanged(nameof(TimelineExceptionSeverity));
+
+        foreach (var row in Steps) row.RefreshThemeBrushes();
+        foreach (var row in Timeline) row.RefreshThemeBrushes();
+        foreach (var pill in DecisionPills) pill.RefreshThemeBrushes();
+        foreach (var child in Children)
+        {
+            child.RefreshThemeBrushes();
+            foreach (var row in child.Timeline) row.RefreshThemeBrushes();
+        }
     }
 
     /// <summary>Re-reads the run and projects it onto the bound collections on the UI thread.</summary>
@@ -1808,6 +1852,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         if (_disposed) return;
         _disposed = true;
         _runService.RunChanged -= OnRunChanged;
+        // The theme service is a singleton and outlives this VM, so a leaked handler would keep a whole projected
+        // run, and every row in it, alive for the process's life.
+        if (_themeService is not null)
+            _themeService.ThemeChanged -= OnThemeChanged;
     }
 
     // Mirrors AgentRunService's private Ledger/StepLedger DTOs (camelCase JSON).
@@ -1874,6 +1922,9 @@ public sealed partial class ChildRunRowViewModel : ObservableObject
     public string TokensLabel => (InputTokens + OutputTokens).ToString("N0");
 
     public bool HasTokens => InputTokens + OutputTokens > 0;
+
+    /// <summary>See <c>RunProgressViewModel.RefreshThemeBrushes</c>.</summary>
+    internal void RefreshThemeBrushes() => OnPropertyChanged(nameof(State));
 
     /// <summary>Whether this child will still change. Drives the parent's "N of M finished" count only.</summary>
     public bool IsFinished => State is RunProgressState.Completed or RunProgressState.TruncatedCompleted
@@ -2020,6 +2071,14 @@ public sealed partial class StepRowViewModel : ObservableObject
     /// </summary>
     public bool IsMutable => Status == AgentStepStatus.Pending;
 
+    /// <summary>Re-raise what this row's brush bindings read from, so their converters resolve against the new
+    /// theme. See <c>RunProgressViewModel.RefreshThemeBrushes</c> for why a raise is the only mechanism.</summary>
+    internal void RefreshThemeBrushes()
+    {
+        OnPropertyChanged(nameof(Status));
+        OnPropertyChanged(nameof(IsRunning));
+    }
+
     partial void OnStatusChanged(AgentStepStatus value)
     {
         OnPropertyChanged(nameof(IsRunning));
@@ -2091,6 +2150,9 @@ public sealed class TimelineRowViewModel : ObservableObject
     /// <summary>Set on the first row BELOW the exception block, which draws the rule that separates the two
     /// halves — cheaper than a separator item, which the trace's row-shape guard would have to allow for.</summary>
     public bool ShowGroupSeparator { get; init; }
+
+    /// <summary>See <c>RunProgressViewModel.RefreshThemeBrushes</c>.</summary>
+    internal void RefreshThemeBrushes() => OnPropertyChanged(nameof(Severity));
 }
 
 /// <summary>One decision category's count on the trace's summary row. Init-only and rebuilt with the rows it
@@ -2105,4 +2167,7 @@ public sealed class DecisionPillViewModel : ObservableObject
     /// <summary>Drives the pill's weight — an exception category reads semibold, a routine one regular, which is
     /// half of what makes the summary row scannable at a glance rather than a row of equal chips.</summary>
     public bool IsException => Severity != RunDecisionSeverity.Routine;
+
+    /// <summary>See <c>RunProgressViewModel.RefreshThemeBrushes</c>.</summary>
+    internal void RefreshThemeBrushes() => OnPropertyChanged(nameof(Severity));
 }
