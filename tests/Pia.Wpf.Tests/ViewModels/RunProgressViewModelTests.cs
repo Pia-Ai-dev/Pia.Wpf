@@ -346,9 +346,7 @@ public sealed class RunProgressViewModelTests : IDisposable
     // fell through to the budget arm, so a Continue that never started announced itself as "Stopped at
     // budget" — and for a run the user had paused by hand a moment earlier, that also overwrote who paused it.
     [InlineData("resume-interrupted", "Run_Activity_ResumeInterrupted")]
-    // 18 D5/§4.5: on the INTERACTIVE path the Flow card is suppressed for the chat the user is watching
-    // (R18), so this line is the ONLY surface for these two reasons there — token-keyed, never the model's
-    // question (which 18 G3 posts into the chat transcript itself, not into this label).
+    // On the interactive path this label is the only surface for these two reasons — token-keyed, never the model's question.
     [InlineData("needs-goal", "Run_Activity_NeedsGoal")]
     [InlineData("needs-input", "Run_Activity_NeedsInput")]
     [InlineData("step-cap", "Run_Activity_WaitingAtBudget")]

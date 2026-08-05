@@ -84,14 +84,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// </summary>
     private bool _canPark;
 
-    /// <summary>
-    /// 18 D3 (G5) / owner Q1: may this run stop MID-PLAN and ask the person a question? Captured per run in
-    /// <see cref="BeginRunAsync"/> from the row's <c>ParentRunId</c> through
-    /// <see cref="AgentStepTools.CanRequestUserInput"/> — false for a DELEGATED run, whose park no surface would
-    /// ever show. Distinct from <see cref="_canPark"/> on purpose: the two happen to agree today because both
-    /// reduce to "root run", but they answer different questions and their reasons do not transfer (see the
-    /// predicate's own doc).
-    /// </summary>
+    /// <summary>Whether this run may pause mid-plan to ask the user a question; false for a delegated run.</summary>
     private bool _canAskUser;
 
     /// <summary>
@@ -244,12 +237,8 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // bracket here would leave the exchange with no ambient. Setting it around each exchange keeps the
         // run-stable TaskId live where it is read (§16 R9).
         _runId = run.Id;
-        // 18 G5 / owner Q1: run-stable, and read from the ROW rather than seeded through Initialize the way
-        // hermes #16's _canPark is. That is deliberate — the launcher answers _canPark because a park's scope is
-        // an AUTHORITY question the launcher owns (it resolves the grant envelope), whereas "may this run reach a
-        // person at all" is a plain structural fact about the row, and the LIVE executor has to answer the same
-        // question with no launcher in sight. One predicate (AgentStepTools.CanRequestUserInput) read off the same
-        // member on both paths is what keeps the two executors from diverging.
+        // Read directly from the row, unlike _canPark (seeded by the launcher) — this is a structural fact,
+        // not a grant.
         _canAskUser = AgentStepTools.CanRequestUserInput(run.ParentRunId);
         _tokenMap = _tokenMapFactory();
         if (_tokenizationEnabled)
@@ -278,18 +267,8 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // nulled by a resumed run's saves.
         _existingTitle = chat?.Title;
         _existingWorkingDirectory = chat?.WorkingDirectory;
-        // The question this predicate answers is "has the GOAL ever been written into this chat?", and the
-        // answer is "yes iff the transcript OPENS with a user row" — every writer that puts the goal there
-        // puts it FIRST (this method's own fresh-launch seed below; the interactive path's own send, whose
-        // chat began with a user turn). 18 G4 review, finding 1: an earlier form of this test asked whether
-        // the chat contained a user row ANYWHERE, which reads a `needs-goal` park the user answered IN THE
-        // CHAT (18 G6's composer path: ChatSessionManager.TryAnswerParkedRunAsync persists the answer as a
-        // user row BEFORE it calls ResumeAsync) as "the goal is already in the transcript" — it is not: that
-        // chat is [assistant question, user answer] and the goal has never been written into it at all,
-        // because a decline returns before this executor's per-step persist could. Ordering is load-bearing
-        // and real: AssistantChatService reads message rows `ORDER BY Ordinal ASC`.
-        // (Inline rather than hoisted into a local: the null-state of `chat` has to flow into the body below,
-        // and the compiler does not carry it through a bool variable.)
+        // Checks that the FIRST message is a user row, not just any — a parked run's chat can open with the
+        // assistant's clarification question instead of the goal.
         if (chat is { Messages.Count: > 0 }
             && string.Equals(chat.Messages[0].Role, "user", StringComparison.OrdinalIgnoreCase))
         {
@@ -303,15 +282,8 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         }
         else
         {
-            // Fresh launch (stub chat is empty), OR a needs-goal park whose chat opens with the plan turn's
-            // clarification question (18 G3's AgentRunOrchestrator.SafePostClarificationQuestionAsync posts
-            // that BEFORE any step ever ran, so a decline's chat never got the goal written into it — a
-            // decline returns before this executor's own per-step persist could). "Messages.Count > 0" alone
-            // used to be mistaken for "the goal is already in the transcript" — true before 18 G3, false the
-            // moment a chat can open with an assistant row — and a resumed run's model context opened on the
-            // model's OWN question with no record of what was asked. Seed the goal here exactly as the
-            // true-fresh-launch case always did, THEN carry forward whatever the chat already holds (the
-            // question, and the user's answer when they typed it in the chat) so it still reads in order.
+            // Fresh launch, or a park whose chat opens with the clarification question rather than the goal:
+            // seed the goal first, then carry forward whatever the chat already holds so it still reads in order.
             var goalMsgId = Guid.NewGuid();
             _messages.Add(new ChatMessage(ChatRole.User, ctx.Goal));
             _persisted.Add(new SyncAssistantChatMessage
@@ -436,21 +408,16 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // is offered emit_step_result.
         var turnSetup = toolFree ? p.TurnSetup with { Tools = null }
             : offerStepResultTool ? AgentStepTools.WithStepResultTool(p.TurnSetup) : p.TurnSetup;
-        // 18 D3 (G5): the SECOND step-turn tool, appended at this same choke point and for the same reason (owner
-        // Q5 — see AgentStepTools' class remarks; the scoping argument is cited, not re-derived). Gated on
-        // offerStepResultTool so the R10 degrade turn and the grace turn never see it: neither owns an AgentStep
-        // row, so there is nothing for the orchestrator to put back to Pending and nothing to re-run on resume.
-        // And gated on _canAskUser so a DELEGATED run is not offered a park no surface would show it (owner Q1).
+        // Gated on offerStepResultTool (the degrade/grace turns own no AgentStep row to park) and on
+        // _canAskUser so a delegated run is not offered a park no surface would show.
         if (offerStepResultTool && _canAskUser)
             turnSetup = AgentStepTools.WithRequestUserInputTool(turnSetup);
         // Armed IFF offered — derived from the resolved list rather than from offerStepResultTool, so a setup
         // that could not take the tool (SupportsTools=false: no tools and no handler reach the provider) lands
         // on the unconfirmed fallback instead of waiting for a claim that can never arrive.
         var outcomeStore = AgentStepTools.OffersStepResultTool(turnSetup.Tools) ? new StepOutcomeStore() : null;
-        // Armed on the SAME condition as the declaration sink — "this is a real step turn on a tool-capable
-        // setup" — but carrying CanAsk derived from the resolved list, so a delegated run still INTERCEPTS the
-        // call (no ToolGateDecision.UnknownTool row, and the model gets a redirect to emit_step_result rather
-        // than "Unknown tool."). See UserInputRequestStore's remarks for why this deviates from armed-iff-offered.
+        // A delegated run still intercepts request_user_input (redirecting to emit_step_result) rather than
+        // falling through to "Unknown tool.", so CanAsk is derived from the resolved list, not from _canAskUser.
         var userInput = outcomeStore is null
             ? null
             : new UserInputRequestStore(AgentStepTools.OffersRequestUserInputTool(turnSetup.Tools));
@@ -552,28 +519,8 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
                     ApprovalRequiredTool: parkedBeforeFault);
             }
 
-            // 18 G5: AN ASK SURVIVES A FAULT THAT HAPPENS AFTER IT, for the same reason the park above does and
-            // with one difference worth stating. #16's reason is that the gate had already written a
-            // ParkedForApproval audit row, so a plain failure made the persisted state contradict itself; there is
-            // no such row here. What carries this arm instead is that the attempt is DISCARDED either way — the
-            // text is dropped and the step row goes back to Pending — so a fault and a park end in the same place
-            // except that parking keeps the QUESTION, which is the only thing the attempt durably produced.
-            // AFTER the approval check above, never merged with it: if both happened, the tool the human must
-            // answer is what actually stopped the exchange (#16's containment returns before any further gate
-            // decision), and re-asking is free on the resumed step.
-            //
-            // THE ESCAPE HATCH FROM A PERSISTENT FAULT, because #16's does NOT transfer verbatim: its resume
-            // GRANTS the tool, so the next attempt cannot park on it again, whereas an answer grants nothing.
-            // The hatch here is this arm's own condition — it fires only when THIS attempt asked. The resumed
-            // attempt runs with the user's answer fenced into its instruction (HeadlessRunLauncher.ResumeAsync
-            // hands the typed text down as the dispatch nudge; ExecuteStepAsync composes it via
-            // ctx.AppendNudge), so a model that has been answered and does not ask again falls straight through
-            // to the `ex.Message` return below and the fault surfaces as an ordinary step failure — replan,
-            // then Fail. What is left over is a model that re-asks a question it was already answered, and that
-            // stalls a run IDENTICALLY WITH NO FAULT AT ALL: it is 18 D4's accepted risk (spec §5, "model
-            // declares, no cap"), not something this arm creates. Deleting the arm would not remove that stall
-            // — it would only lose the question on the ordinary transient fault, which is the case it exists
-            // for. Both directions are pinned by MidPlanAskTests' fault pair.
+            // A fault after an ask still returns the question instead of the error, mirroring the approval-park
+            // arm above — the attempt is discarded either way, so losing the question here would strand it.
             if (userInput?.Question is not null)
             {
                 _logger.LogInformation(
@@ -613,20 +560,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
                 ApprovalRequiredTool: parkedTool);
         }
 
-        // ---- 18 D3 (G5): the step ASKED the user a mid-plan question ----
-        // Same slot, same shape and the same three reasons as the approval park directly above — the step did not
-        // finish, so its text is discarded (a half-written reply in the transcript would tell the resumed step it
-        // had already done the work) and its usage is carried out to be billed run-level.
-        //
-        // AFTER the approval arm, never before it: a step can do both, and what the human must answer first is the
-        // tool the run is waiting on. AHEAD of the step-success decision below, and not &&-ed with it, for the
-        // reason the approval arm gives — a model that asks very often ALSO declares emit_step_result{false} in
-        // the same breath, and reading that as an ordinary failure would burn a replan on a step that is waiting.
-        // 18 D6 restated: the declaration and the ask are two channels, and this branch is why the outcome bool
-        // did not need a third value.
-        //
-        // No cap (18 D4). The counts on the line below are the OBSERVABILITY half of spec §5 — "make the
-        // behaviour observable rather than capped" — and they are app-owned scalars, never the question.
+        // ---- the step ASKED the user a mid-plan question ----
+        // Checked ahead of the step-success decision below, not &&-ed with it: a model that asks often also
+        // declares emit_step_result{false} in the same breath, and that must not be read as an ordinary failure.
         if (userInput?.Question is not null)
         {
             _logger.LogInformation(
@@ -638,10 +574,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
                 UserInputQuestion: userInput.Question);
         }
 
-        // A delegated step that TRIED to ask (owner Q1). App-owned counts only; the model already got
-        // UserInputRequestStore.RefusedForDelegatedStep back, pointing it at emit_step_result. Logged rather than
-        // silent because "a child kept trying to reach a person" is exactly the evidence a later decision about
-        // propagating the ask to the parent would need.
+        // Logged (not silent) so a delegated run that keeps trying to reach a person leaves a trace.
         if (userInput is { CanAsk: false, RefusedCalls: > 0 })
         {
             _logger.LogInformation(

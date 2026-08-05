@@ -98,10 +98,8 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
         AgentRunOrchestrator.ToolApprovalReason => "Flow_Run_ToolApproval",
         AgentRunOrchestrator.ChildrenParkedReason => "Flow_Run_ChildrenParked",
         AgentRunService.ChildrenInterruptedReason => "Flow_Run_ChildrenInterrupted",
-        // 18 D5/§4.4: the run Goal and the model's clarification question are SENSITIVE and never reach this
-        // item — only the reason token may. The body routes the user to the chat, which is where 18 G3 posts
-        // the question itself (SafePostClarificationQuestionAsync). Two tokens, two keys, because the two
-        // RESUME differently (18 Q4) even though today's copy for them reads the same shape as every other arm.
+        // The clarification question itself is sensitive and never reaches this item — only the reason token
+        // may. Two tokens because the two resumes differ, even though the copy today reads the same.
         AgentRunOrchestrator.NeedsGoalReason => "Flow_Run_NeedsGoal",
         AgentRunOrchestrator.NeedsInputReason => "Flow_Run_NeedsInput",
         // Batch 08 G2. Telling a user who pressed Pause that the run "stopped at its budget" would send them
@@ -129,11 +127,8 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
     internal static string PausedBody(ILocalizationService localization, AgentRun run) =>
         PausedBody(localization, run, RunPauseEnvelope.ReadReason(run));
 
-    /// <summary>
-    /// 18 G3: overload that takes an already-read <paramref name="reason"/>, for the one caller
-    /// (<see cref="HandleRunStateAsync"/>) that also branches the card's Action on that same token — so the
-    /// envelope's <c>ExtraJson</c> is parsed once per publish, not twice.
-    /// </summary>
+    /// <summary>Overload taking an already-read <paramref name="reason"/>, so the caller that also branches
+    /// on it parses the envelope's <c>ExtraJson</c> once per publish, not twice.</summary>
     private static string PausedBody(ILocalizationService localization, AgentRun run, string? reason)
     {
         var key = PausedBodyKey(reason);
@@ -192,19 +187,11 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
 
         if (AgentRunStates.IsParked(state))
         {
-            // 18 D5/§4.4: a needs-goal/needs-input park has NO answer for "Continue" to carry — every other
-            // reason's ContinueRunAction resumes the run out-of-band with nothing typed, which is correct for
-            // a budget/approval/children park (there is nothing more to say) but wrong here, because the
-            // answer lives in the run's OWN CHAT (18 G3 posts the question there), never on this card. So
-            // these two reasons get an action that ROUTES to the run instead of firing a blind resume —
-            // "the card only says a run is waiting, and routes there" is §4.4's own wording for exactly this.
-            // Every other reason is unchanged.
-            //
-            // 18 G3 review fix: OpenParkedRunAction, NOT OpenRunAction, even though both navigate to the same
-            // place — see that type's doc. Opening the run resolves nothing (it is still WaitingForInput
-            // right after the click), so retracting on open — OpenRunAction's behaviour, correct for a
-            // terminal card and for ContinueRunAction's actual resume — would delete the only durable trace
-            // of a still-parked run the moment the user looks and looks away without answering.
+            // A needs-goal/needs-input park has no answer for "Continue" to carry — the answer lives in the
+            // run's own chat — so these two reasons route there instead of firing a blind resume. They use
+            // OpenParkedRunAction rather than OpenRunAction because opening the run resolves nothing (it is
+            // still WaitingForInput right after the click), so retracting on open would delete the only
+            // durable trace of a still-parked run.
             var reason = RunPauseEnvelope.ReadReason(run);
             var needsAnswerElsewhere = reason == AgentRunOrchestrator.NeedsGoalReason
                 || reason == AgentRunOrchestrator.NeedsInputReason;
@@ -220,9 +207,8 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
                 // entirely — so it is safe to key the body on it, and announcing a child's park or a restart as
                 // "stopped at its budget" sends the user to raise budgets that were never reached.
                 // hermes #16 added a FOURTH reason and it is the first one that names something: an approval
-                // park's body carries the tool the Continue button is about to grant. 18 added a FIFTH and
-                // SIXTH — see the Action split above; their body still keys off the same token like every
-                // other arm, and the model's own question text is NEVER in it (§8.6).
+                // park's body carries the tool the Continue button is about to grant. The two reasons added by
+                // the Action split above still key off the same token, and the model's own question is never in it.
                 Body = PausedBody(_localizationService, run, reason),
                 DedupKey = runId.ToString(),
                 Lifetime = FlowLifetime.Persistent,

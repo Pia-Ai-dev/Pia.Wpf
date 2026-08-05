@@ -65,8 +65,7 @@ public class AssistantViewParseTests
     private const string HintText =
         "A background run is writing to this chat. Sending resumes when it finishes.";
 
-    /// <summary>18 D1 layer 1's composer hint (Assistant_GoalTooShort_Hint), same resx source as
-    /// <see cref="HintText"/> above.</summary>
+    /// <summary>Composer hint for a too-short goal (Assistant_GoalTooShort_Hint), same resx source as <see cref="HintText"/> above.</summary>
     private const string GoalTooShortHintText =
         "This looks too short to run as a goal. Add a few more words so it can be planned.";
 
@@ -126,15 +125,7 @@ public class AssistantViewParseTests
         Assert.Equal(Visibility.Visible, after);
     }
 
-    /// <summary>
-    /// 18 D1 layer 1's composer hint, same shape as <see cref="ComposerHint_Parses_AndTracksForeignRunActive"/>
-    /// above (and for the same reason: a wrong Binding path on a composer hint fails silently, and this test
-    /// is what caught that class of regression the first time). Sets
-    /// <see cref="AssistantViewModel.GoalTooShortHintVisible"/> directly rather than <c>InputText</c> — this
-    /// harness must never touch <c>InputText</c> (see <see cref="CreateAssistantViewModel"/>'s prohibitions),
-    /// and the ObservableProperty is exactly what the XAML binds to, so setting it directly is the more
-    /// faithful unit here, not a shortcut.
-    /// </summary>
+    /// <summary>Sets <see cref="AssistantViewModel.GoalTooShortHintVisible"/> directly rather than <c>InputText</c> — this harness must never touch <c>InputText</c> (see <see cref="CreateAssistantViewModel"/>), and the ObservableProperty is exactly what the XAML binds to.</summary>
     [Fact]
     public void ComposerHint_Parses_AndTracksGoalTooShortHintVisible()
     {

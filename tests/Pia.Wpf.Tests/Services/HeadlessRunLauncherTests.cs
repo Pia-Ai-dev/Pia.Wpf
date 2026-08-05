@@ -317,13 +317,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         return run;
     }
 
-    /// <summary>
-    /// Persist a stub chat + a parked (<c>WaitingForInput</c>) Planned run with NO step rows and the given
-    /// pause reason — the shape 18 D2's <c>needs-goal</c> park leaves behind, because the decline branch
-    /// returns before <c>SafeReplaceSteps</c> ever runs. The reason is a LITERAL at the call sites for the
-    /// same reason <c>"tool-approval"</c> is one above: these facts are about the WIRE value a parked row
-    /// carries and this launcher reads back off it.
-    /// </summary>
+    /// <summary>Persists a stub chat and a parked (<c>WaitingForInput</c>) Planned run with no step rows and the given pause reason.</summary>
     private async Task<AgentRun> ParkRunWithNoStepsAsync(string reason)
     {
         var ct = TestContext.Current.CancellationToken;
@@ -501,9 +495,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         // executed anything. Assert.Single is the non-vacuity control.
         Assert.Single(verifier.SeenWorkspaceRoots);
         Assert.Equal(expected, verifier.SeenWorkspaceRoots[0]);
-        // Pins 08 D1 as AMENDED by 18 D2: this run parked `step-cap`, so the launcher hands that token down
-        // and the orchestrator's guard fails condition (a) — no re-plan. The one flavour that DOES re-plan is
-        // the fact below, and the two together are what keep the guard from collapsing into either constant.
+        // This run parked on `step-cap`, not `needs-goal`, so the resume must not re-plan.
         Assert.Null(planner.PlanContext);
 
         try { Directory.Delete(expected, true); } catch { }
@@ -1247,23 +1239,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         try { Directory.Delete(Path.Combine(_runsBase, run.Id.ToString()), true); } catch { }
     }
 
-    /// <summary>
-    /// <b>18 D2, THE PRODUCTION WIRE — the one thing that makes the orchestrator's re-plan guard reachable at
-    /// all.</b> <c>AgentRunClarificationResumeTests</c> pins the guard by calling <c>RunAsync(parkReason:)</c>
-    /// directly; nothing there goes through THIS method, and the hand-off it depends on is fragile in a
-    /// specific way: <c>RunPauseEnvelope.ReadReason</c> has to run BEFORE the claim, because both claims
-    /// <c>SET ExtraJson=NULL</c>. Move that read below the claim — the tidy-up every other read in this method
-    /// invites — and <c>parkReason</c> is null on every resume, no <c>needs-goal</c> park ever re-plans again,
-    /// and each one drains its zero step rows and settles <c>Completed</c>: the exact pathology 18 D2 exists
-    /// to remove, with nothing red anywhere else.
-    /// <para>
-    /// Three links in one fact, because they only mean anything together: the pre-claim READ, the
-    /// <c>parkReason</c> HAND-OFF to <c>RunAsync</c>, and the answer that rode the resume being PERSISTED
-    /// (<c>AppendClarificationAsync</c>, also pre-dispatch) and then SEEDED onto the context the re-plan
-    /// runs with. <c>FakePlanner.PlanContext</c> is null unless <c>PlanAsync</c> was really entered, which is
-    /// the non-vacuity control: a resume that skipped planning cannot pass this.
-    /// </para>
-    /// </summary>
+    /// <summary>Exercises the real <c>ResumeAsync</c> wire (unlike <c>AgentRunClarificationResumeTests</c>, which calls <c>RunAsync(parkReason:)</c> directly) — the pause reason must be read before the claim nulls the pause envelope, or a needs-goal resume would silently stop re-planning.</summary>
     [Fact]
     public async Task Resume_NeedsGoalPark_RePlans_AndThePlanTurnSeesTheAnswerThatRodeTheResume()
     {
@@ -1282,34 +1258,13 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var final = await _runs.GetAsync(parked.Id, ct);
         Assert.Equal(AgentRunState.Completed, final!.State);
         Assert.Single(final.Plan);                                                     // the re-plan was written
-        Assert.Equal("g", final.Goal);                                                 // owner Q3: never rewritten
+        Assert.Equal("g", final.Goal);                                                 // never rewritten
         Assert.Equal(new[] { answer }, RunClarifications.Read(final.ClarificationsJson)); // durable beside it
 
         try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
     }
 
-    /// <summary>
-    /// <b>18 D2 — a resume that claimed the row and then died must not overwrite the token the NEXT resume
-    /// needs.</b> The claim has already NULLed the pause envelope, so this re-park is the only thing that
-    /// writes it back; for every other reason it writes Batch 08 F19's <c>resume-interrupted</c> diagnostic
-    /// ("a resume that claimed and then died"), which costs a slightly wrong sentence on the card. For
-    /// <c>needs-goal</c> it would cost the RUN: the next resume fails condition (a), skips the planning block,
-    /// drains its zero step rows and settles <c>Completed</c> — reporting a goal it never planned as done,
-    /// with the user's answer already persisted and never used.
-    /// <para>
-    /// <b>18 G5 joined <c>needs-input</c> to the exception, for a different reason.</b> That token costs no
-    /// control flow — neither it nor <c>resume-interrupted</c> re-plans — but <c>ResumeAsync</c>'s
-    /// <c>AppendClarificationAsync</c> gate keys on the two clarification tokens, so a run whose token was
-    /// replaced would silently stop PERSISTING the user's replies while its chat still showed an unanswered
-    /// question. 18 D4 lets a run ask any number of times, which is when that loss compounds.
-    /// </para>
-    /// <para>
-    /// The failure is injected the way <see cref="Resume_PreDispatchFailure_ReParksRun_ReturnsFalse"/> injects
-    /// it (no resolvable provider ⇒ a throw after the CAS win, before the dispatch), and the InlineData rows are
-    /// the discrimination: delete <c>InterruptedReasonFor</c> and the two clarification rows red while the
-    /// budget one stays green.
-    /// </para>
-    /// </summary>
+    /// <summary>A resume that claims the row and then dies before dispatch must re-park with the reason the next resume needs — <c>needs-goal</c>/<c>needs-input</c> preserve their own token (losing it would silently drop re-planning or answer persistence), other reasons get the generic <c>resume-interrupted</c> diagnostic.</summary>
     [Theory]
     [InlineData("needs-goal", "needs-goal")]
     [InlineData("needs-input", "needs-input")]

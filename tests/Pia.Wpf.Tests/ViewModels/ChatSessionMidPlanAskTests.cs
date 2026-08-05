@@ -9,28 +9,7 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// <b>Batch 18 G5 on the LIVE path (18 D7, owner Q5).</b> <c>LiveTurnExecutor</c> makes no step decision of its
-/// own — it delegates to <c>ChatSession.RunStepTurnAsync</c> — so the interactive half of the mid-plan ask has to
-/// be driven here, exactly as hermes #9's was in <c>ChatSessionStepOutcomeSignalTests</c> beside this file.
-/// <para>
-/// <b>Why this file exists at all.</b> There are TWO executors, and a tool wired into only one of them leaves the
-/// interactive path silently without it. 18 D7 records the interactive symptom as INFERRED from shared code
-/// rather than observed, which makes "interactive works the same way" a claim that has to be measured rather than
-/// assumed. The scoping half (which turn shapes are OFFERED the tool) is
-/// <c>LiveTurnExecutorStepToolScopeTests</c>; this file is the interception and the result.
-/// </para>
-/// <para>
-/// <b>Neutralize</b> the headline facts by deleting the <c>_userInputRequest</c> pre-route arm in
-/// <c>ChatSession.HandleToolCall</c> — the call then routes, dead-ends at "Unknown tool.", and
-/// <c>UserInputQuestion</c> comes back null, so the run would never park. Deleting the tool instead reds
-/// everything and proves nothing.
-/// </para>
-/// <para>
-/// net10.0-windows cannot execute on macOS — these tests are written, not run; execution is deferred to
-/// Windows/CI.
-/// </para>
-/// </summary>
+/// <summary><c>LiveTurnExecutor</c> delegates step decisions to <c>ChatSession.RunStepTurnAsync</c>, so the interactive half of the mid-plan ask is driven here; <c>LiveTurnExecutorStepToolScopeTests</c> covers which turn shapes are offered the tool.</summary>
 public sealed class ChatSessionMidPlanAskTests
 {
     private const string TheQuestion = "Which cluster should I deploy to?";
@@ -58,12 +37,7 @@ public sealed class ChatSessionMidPlanAskTests
     private ChatSession CreateSession() => new(
         _tokenMap, _ai, _plugins, _cards, _permissions, _loc, NullLogger.Instance, _ => true);
 
-    /// <summary>
-    /// A step spec shaped as <c>LiveTurnExecutor.BuildSpec</c> would have produced it. <paramref name="canAsk"/>
-    /// is the OWNER Q1 axis: the ask tool is appended for a root run and withheld for a delegated one — and
-    /// <c>emit_step_result</c> is present either way, because the store that intercepts the ask is armed from
-    /// THAT tool's presence ("this is a real step turn") while its <c>CanAsk</c> comes from the ask tool's.
-    /// </summary>
+    /// <summary>A step spec shaped as <c>LiveTurnExecutor.BuildSpec</c> would produce it; <paramref name="canAsk"/> controls whether the ask tool is appended (root run) or withheld (delegated step).</summary>
     private static StepTurnSpec Spec(bool isStepTurn = true, bool canAsk = true)
     {
         var setup = new AssistantTurnSetup(
@@ -123,11 +97,7 @@ public sealed class ChatSessionMidPlanAskTests
 
     // ---- the headline ----
 
-    /// <summary>
-    /// An interactive step that calls <c>request_user_input</c> carries the question out on
-    /// <c>StepTurnResult.UserInputQuestion</c>, which is what the orchestrator parks on. The model is told the
-    /// run is stopping, and — 18 D6 — the OUTCOME members are untouched by the ask.
-    /// </summary>
+    /// <summary>An interactive step that calls <c>request_user_input</c> carries the question out on <c>StepTurnResult.UserInputQuestion</c>, which is what the orchestrator parks on.</summary>
     [Fact]
     public async Task AStepThatAsks_CarriesTheQuestionOutOnTheResult()
     {
@@ -142,18 +112,11 @@ public sealed class ChatSessionMidPlanAskTests
 
         Assert.Equal(TheQuestion, result.UserInputQuestion);
         Assert.Contains(UserInputRequestStore.Accepted, _toolReplies.Select(r => r as string));
-        // 18 D6: no third outcome. The step declared nothing, so Outcome stays null and the run's Done/Failed
-        // mapping is exactly what it was — the ask rides its own member.
+        // The step declared nothing, so Outcome stays null — the ask rides its own member.
         Assert.Null(result.Outcome);
     }
 
-    /// <summary>
-    /// <b>GUARD, and the reason the sink exists at all.</b> A turn that was never offered the tool — an ordinary
-    /// chat turn, or any non-step turn — routes a hallucinated <c>request_user_input</c> the ordinary way and
-    /// gets the honest "Unknown tool." answer, with no question captured. This is the fact that makes the choke
-    /// point per-executor instead of in <c>AssistantPromptComposer.PrepareTurn</c> (owner Q5): a composer-level
-    /// tool would leak the ask into chat, voice, MCP and @-command turns, none of which has a run to park.
-    /// </summary>
+    /// <summary>The ask tool is scoped per-executor, not composer-wide, so a turn never offered it just routes a hallucinated <c>request_user_input</c> as an ordinary unknown tool call.</summary>
     [Fact]
     public async Task ATurnThatWasNotOfferedTheTool_StillRoutesTheNameAndFindsNothing()
     {
@@ -176,16 +139,7 @@ public sealed class ChatSessionMidPlanAskTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// <b>OWNER Q1 on the live path, at the sink.</b> A DELEGATED step's call is still INTERCEPTED — no routing,
-    /// no "Unknown tool.", no <c>UnknownTool</c> audit row — and answered with the redirect to
-    /// <c>emit_step_result</c>. No question comes out, so nothing parks.
-    /// <para>
-    /// This is where this store deliberately diverges from <c>StepOutcomeStore</c>'s armed-iff-offered rule. That
-    /// rule protects NON-step turns (the fact above); on a step turn the tool is part of the vocabulary and is
-    /// merely refused, and a refusal that names the working channel is strictly better than a dead end.
-    /// </para>
-    /// </summary>
+    /// <summary>A delegated step's ask is still intercepted and redirected to <c>emit_step_result</c>, not routed as unknown and not parked.</summary>
     [Fact]
     public async Task ADelegatedStepsAsk_IsInterceptedAndRedirected_NotRoutedAndNotParked()
     {
@@ -209,12 +163,7 @@ public sealed class ChatSessionMidPlanAskTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// <b>CONTAINMENT, and it bites harder here than on the unattended surface.</b> A write the model requests
-    /// AFTER the ask does not reach the gate at all — so no ACTION CARD is raised. Without the guard a human
-    /// would be asked to approve a write belonging to a step that is already being thrown away, and approving it
-    /// would execute a side effect the resumed step then performs a SECOND time. At-most-once, not tidiness.
-    /// </summary>
+    /// <summary>A write requested after the ask must not reach the approval gate — approving it would let the resumed step execute the side effect a second time.</summary>
     [Fact]
     public async Task AWriteRequestedAfterTheAsk_NeverReachesTheGate()
     {
@@ -241,19 +190,13 @@ public sealed class ChatSessionMidPlanAskTests
 
         Assert.Equal(TheQuestion, result.UserInputQuestion);
         Assert.Empty(_executed);
-        // ALL FOUR parameters matched, including the two optional ones: the production call site passes
-        // `toolClass:`, so a DidNotReceive written against the two-argument shape would match nothing and pass
-        // whether or not a card was ever built.
+        // Matches all four parameters (incl. the two optional ones) — the production call passes toolClass,
+        // so a two-argument match would pass vacuously.
         _cards.DidNotReceive().Build(
             Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<ToolGateDecision?>(), Arg.Any<ToolClass?>());
     }
 
-    /// <summary>
-    /// <b>GUARD</b>. The sink is DISARMED when the step turn ends, proven with an ORDINARY chat turn — the only
-    /// caller that can observe a leak, since a second step turn re-assigns the field on entry and would pass
-    /// either way. A session outlives the run that borrowed it, so a leaked sink would let a later chat turn
-    /// swallow a hallucinated <c>request_user_input</c> instead of answering "Unknown tool.".
-    /// </summary>
+    /// <summary>The sink is disarmed when the step turn ends, so a later ordinary chat turn still routes a hallucinated <c>request_user_input</c> instead of swallowing it.</summary>
     [Fact]
     public async Task TheSinkIsDisarmedAfterTheStep_SoALaterChatTurnStillRoutesTheName()
     {

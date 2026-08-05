@@ -191,26 +191,7 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
             return Task.CompletedTask;
         });
 
-    /// <summary>
-    /// 18 D5 fix (see the interface doc for the full defect this closes): the orchestrator already wrote this
-    /// question straight to <c>IAssistantChatService</c>, behind this session's back, and a store write is not
-    /// a screen update — so without this override the question would not render at the moment it was asked,
-    /// and this session's own next <c>PersistAsync</c> (a full replace off <c>Messages</c>, which never learned
-    /// about that row) would silently delete it. <c>ChatSessionManager</c>'s
-    /// <c>PullClarificationRowsAsync</c> would eventually catch it — it is the same fix for the parks a
-    /// HEADLESS dispatch raises — but this override is the direct, synchronous one for the dispatch that owns
-    /// the session, and it is what makes the first question deterministic. Appended with the SAME
-    /// persona attribution a step reply carries, then <see cref="ChatSession.RequestPersist"/> — the identical
-    /// E2 pattern <see cref="ExecuteStepAsync"/> uses for its own per-step durability — so the question becomes
-    /// part of <c>Messages</c> and the next full replace writes it forward instead of erasing it.
-    /// <para>
-    /// Built on the id-carrying <see cref="AssistantMessage"/> constructor, never the id-minting one: this copy
-    /// must BE the row the durable write made, or <c>ChatSessionManager</c>'s pull of foreign rows would see a
-    /// stored id the session does not hold and append the same question a second time. The timestamp is local
-    /// <c>now</c>, matching what <c>AssistantMessageMapper.FromDto</c> would produce for the stored row within
-    /// the same beat.
-    /// </para>
-    /// </summary>
+    /// <summary>Mirrors a clarification question the orchestrator wrote directly to storage into this session's own transcript, so it renders immediately and survives the next full-replace persist.</summary>
     public Task MirrorClarificationQuestionAsync(
         AgentRun run, RunContext ctx, Persona persona, Guid messageId, string question, CancellationToken ct) =>
         PostAsync(() =>
@@ -244,13 +225,8 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
         if (offerStepResultTool)
             turnSetup = AgentStepTools.WithStepResultTool(turnSetup);
 
-        // 18 D3 (G5) / owner Q5 — the SECOND step-turn tool, appended at this same choke point and for the same
-        // reasons, so the interactive path is not silently the one without it (18 D7: "interactive should work the
-        // same way"). Gated on offerStepResultTool so the R10 degrade turn never sees it (no AgentStep row ⇒
-        // nothing to put back to Pending), and on CanRequestUserInput so a DELEGATED run is not offered a park no
-        // surface would show it (owner Q1). run.ParentRunId is null for every interactive run today — the fan-out
-        // dispatches children headlessly — but this reads the row rather than assuming that, because "no live run
-        // is ever a child" is a property of another file's dispatch choices, not of this one.
+        // Gated on offerStepResultTool (so the R10 degrade turn never sees it) and on CanRequestUserInput so a
+        // delegated run is not offered a park no surface would show.
         if (offerStepResultTool && AgentStepTools.CanRequestUserInput(run.ParentRunId))
             turnSetup = AgentStepTools.WithRequestUserInputTool(turnSetup);
 

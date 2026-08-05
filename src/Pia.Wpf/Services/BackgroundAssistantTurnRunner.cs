@@ -333,10 +333,9 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         // an agent step. Null (the background single-turn path) resolves CanPark: false and keeps the hard
         // denial exactly as it was.
         ToolApprovalStore? approvals = null,
-        // 18 D3 (G5). Non-null ONLY on a real agent STEP turn, exactly like outcomeStore — it is what arms the
-        // pre-route interception of request_user_input below, so the background single-turn path (which passes
-        // nothing) still treats a hallucinated request_user_input as the unknown tool it is. Its CanAsk carries
-        // owner Q1's refusal for a delegated run.
+        // Non-null ONLY on a real agent step turn, exactly like outcomeStore — it is what arms the pre-route
+        // interception of request_user_input below, so the background single-turn path (which passes nothing)
+        // still treats a hallucinated request_user_input as the unknown tool it is.
         UserInputRequestStore? userInput = null)
     {
         var textBuffer = new StringBuilder();
@@ -411,14 +410,9 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             return outcomeStore.Record(toolCall.Arguments);
         }
 
-        // request_user_input (18 D3/G5): the THIRD pre-route special case, for the same structural reason as the
-        // two above — no plugin, no GUID, no route — and gated on the SINK for the same reason: the background
-        // single-turn path is never offered this tool, so a model that invents the name there must still get the
-        // honest "Unknown tool." answer. Its INTERACTIVE twin lives at ChatSession.HandleToolCall and the two must
-        // stay in step. Never gated for approval — asking a question writes nothing and touches nothing outside
-        // this step's sink; whether the run may ask AT ALL is CanAsk (owner Q1), answered inside Record.
-        // The question is USER-DERIVED PAYLOAD: it is never logged here at any level (CLAUDE.md); the store keeps
-        // it and only the orchestrator's SensitiveDebug ever renders it.
+        // request_user_input: a third pre-route special case, the same shape as emit_step_result above — no
+        // plugin, no route. Its interactive twin lives at ChatSession.HandleToolCall; the two must stay in step.
+        // The question is user-derived payload — it is never logged here; the store's SensitiveDebug renders it.
         if (userInput is not null
             && string.Equals(toolCall.Name, AgentStepTools.RequestUserInputToolName, StringComparison.Ordinal))
         {
@@ -484,16 +478,9 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                        + "once someone answers.";
             }
 
-            // ---- 18 G5 CONTAINMENT: an ASK stops the exchange too, for the identical at-most-once reason ----
-            // The guard above is hermes #16's, and its argument transfers verbatim: AiClientService walks the
-            // REMAINING FunctionCallContents of the same round and then continues to the next round, so a string
-            // asking the model to stop is not a control-flow construct. A step that asked is ABANDONED — no
-            // transcript append, no interim persist, the row back to Pending — and then RE-RUNS from the top on
-            // resume, so a granted, side-effecting call made after the ask would execute TWICE for one planned
-            // step. That is an at-most-once violation, not merely wasted work.
-            // The attempt is not recorded anywhere: unlike the park above there is no ParkedCalls to increment
-            // (the ask's counts are about ASKS, not about withheld calls), and no audit row is written, so the
-            // panel never shows a decision that did not happen.
+            // An ask stops the exchange too, for the same at-most-once reason as the park above: a step that
+            // asked is abandoned and re-runs from the top on resume, so a later side-effecting call in the same
+            // round would otherwise execute twice for one planned step.
             if (userInput?.Question is not null)
             {
                 _logger.LogInformation(

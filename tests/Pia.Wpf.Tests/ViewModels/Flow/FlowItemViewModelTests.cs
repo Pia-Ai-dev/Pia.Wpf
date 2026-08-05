@@ -179,14 +179,7 @@ public class FlowItemViewModelTests
         flow.Received(1).Retract(runId.ToString()); // RetractByKey — DedupKey present
     }
 
-    /// <summary>
-    /// 18 G3 review fix. Opening a needs-goal/needs-input card must NOT retract it — unlike
-    /// <see cref="ExecuteAction_OpenRun_ShowsAgentRun_ThenRetractsByKey"/>, whose retract-on-open is safe
-    /// because that card is either terminal (nothing to come back to) or immediately superseded, opening a
-    /// parked run resolves nothing: the run is still WaitingForInput right after the click. Retracting here
-    /// would delete the only durable trace of it the moment the user glances at it and looks away. Mirrors
-    /// <c>OpenTodoAction</c>'s own "navigate + MarkRead" shape.
-    /// </summary>
+    /// <summary>Opening a needs-goal/needs-input card must not retract it — the run is still WaitingForInput right after the click, so retracting would delete its only durable trace.</summary>
     [Fact]
     public void ExecuteAction_OpenParkedRun_ShowsAgentRun_MarksReadButDoesNotRetract()
     {

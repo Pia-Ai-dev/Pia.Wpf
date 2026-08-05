@@ -61,43 +61,12 @@ public sealed class AgentRunOrchestrator
     /// </summary>
     internal const string ToolApprovalReason = "tool-approval";
 
-    /// <summary>
-    /// <b>18 D1 layer 2 / D2.</b> The pause <c>reason</c> written when the PLAN TURN declined the goal: the model
-    /// called <c>emit_plan</c> and used it to say it could not ground what was asked, so the run parks at
-    /// <see cref="AgentRunState.WaitingForInput"/> with zero step rows and asks, instead of executing a plan it
-    /// disowned in the same breath. A user answer resumes it into re-planning (D2) — 18 G4's
-    /// <see cref="TryEnterClarificationRePlanAsync"/>, the guard that breaks Batch 08's D1 "a resume must NOT
-    /// re-plan" for this token and no other.
-    /// <para>
-    /// A named constant for the reason the vocabulary's other tokens are: adding one OBLIGES an arm in
-    /// <c>RunProgressViewModel.DescribePause</c> and in <c>AgentRunNotificationSurface.PausedBodyKey</c>, and a
-    /// literal cannot carry that obligation. <b>18 G3</b> owns both arms plus their three resx entries — landed
-    /// alongside this constant, so there is no window where the token exists but falls back to the BUDGET
-    /// wording (the Batch 08 F19 defect, restated, is exactly that window for a token added without its arms).
-    /// </para>
-    /// <para>
-    /// This is 18's PLAN-TIME token. <see cref="NeedsInputReason"/> is a SECOND one for the mid-plan ask (18
-    /// D3, G5) rather than a shared token (owner Q4) — not copy: the two RESUME differently. A
-    /// <c>needs-goal</c> park has no persisted steps and must re-plan; a <c>needs-input</c> park has a partially
-    /// executed plan and must not, and §4.1's whole risk is that one guard has to tell them apart at runtime.
-    /// </para>
-    /// </summary>
+    /// <summary>Pause reason when the plan turn declined to ground the goal; parks with zero step rows, and a
+    /// resume with this reason re-plans instead of draining (see <see cref="TryEnterClarificationRePlanAsync"/>).</summary>
     internal const string NeedsGoalReason = "needs-goal";
 
-    /// <summary>
-    /// <b>18 D3/D4/Q4.</b> The pause <c>reason</c> a MID-PLAN ask (18 G5's <c>request_user_input</c> tool) writes
-    /// when a step declares the question critical enough to park for — see the ask branch of the drain loop, which
-    /// is this token's only writer. Declared alongside <see cref="NeedsGoalReason"/> because the two are different
-    /// RESUME behaviours read by the SAME guard (§4.1 — re-plan only when the park is <see cref="NeedsGoalReason"/>
-    /// AND no step rows exist), so a consistency pass over the pause vocabulary can check both arms together.
-    /// <b>18 G3</b> gives this token its card and panel arms (<c>Flow_Run_NeedsInput</c> /
-    /// <c>Run_Activity_NeedsInput</c>) rather than letting it fall back to the BUDGET wording, which is Batch 08
-    /// F19's defect restated: telling a user their run stopped at a budget it never reached.
-    /// <para>
-    /// No cap on how many times a run may write this reason (D4, "model declares, no cap") — an implementer who
-    /// finds themselves adding one has re-opened a settled decision; see spec §5.
-    /// </para>
-    /// </summary>
+    /// <summary>Pause reason when a step mid-plan asks the user a question; unlike <see cref="NeedsGoalReason"/>,
+    /// resuming this one does not re-plan — it drains the remaining steps.</summary>
     internal const string NeedsInputReason = "needs-input";
 
     /// <summary>What a settled child's step reports when its answer could not be read. Says the work ran
@@ -147,25 +116,9 @@ public sealed class AgentRunOrchestrator
     /// nudged) and a resume that supplies none identical to the pre-Batch-08 loop. Scoped to THIS dispatch only
     /// — a fresh <see cref="RunContext"/> is built below on every call, so a nudge never survives a second
     /// resume that does not repeat it.</param>
-    /// <param name="parkReason">
-    /// <b>18 D2.</b> WHY the run this dispatch is resuming was parked — the pause token
-    /// (<see cref="NeedsGoalReason"/>, <see cref="NeedsInputReason"/>, <c>"step-cap"</c>, …) as read from the row
-    /// BEFORE the resume claim. Meaningful only when <paramref name="resume"/> is true; ignored on a launch.
-    /// <para>
-    /// A PARAMETER rather than something this loop reads for itself, and that is forced, not stylistic: the token
-    /// lives in the pause envelope in <c>AgentRuns.ExtraJson</c>, and both resume claims
-    /// (<c>AgentRunService.TryBeginResumeAsync</c> :387 and <c>TryResumeFromPauseAsync</c> :487) <c>SET
-    /// ExtraJson=NULL</c> deliberately, so by the time a dispatch exists the answer is gone. It has to be read
-    /// pre-claim by the caller and handed down. <c>HeadlessRunLauncher.ResumeAsync</c> already does exactly this
-    /// for hermes #16's approved tool (GetAsync :572 → <c>RunPauseEnvelope.ReadReason</c> :588 → claim :594);
-    /// this rides the same read.
-    /// </para>
-    /// <para>
-    /// TRAILING and DEFAULTED like every other dependency this loop has gained. <c>null</c> ⇒ "the caller cannot
-    /// say why this run parked" ⇒ the pre-18 behaviour (never re-plan on a resume), which is the conservative
-    /// direction: <c>08 D1</c>'s invariant is only broken where the reason is positively known.
-    /// </para>
-    /// </param>
+    /// <param name="parkReason">Why the run parked before this resume; must be read by the caller pre-claim,
+    /// since the resume claim clears the pause envelope's <c>ExtraJson</c>. Null keeps the never-re-plan-on-resume
+    /// behavior.</param>
     public async Task RunAsync(
         AgentRun run,
         IAgentTurnExecutor executor,
@@ -244,40 +197,11 @@ public sealed class AgentRunOrchestrator
             if (resume)
                 await SafeSeedResumeContext(run.Id, ctx, cts.Token).ConfigureAwait(false);
 
-            // 08 D1, AS AMENDED BY 18 D2 — read both halves; the second one narrows the first rather than
-            // replacing it, and a reader who takes either alone will get this wrong.
-            //
-            // 08 D1 (unchanged, and still the rule for every resume flavour that existed before 18): a resume
-            // must NOT re-plan. ReplaceStepsAsync writes the plan verbatim and does not preserve Done steps, so
-            // re-planning here would wipe the persisted Done+Pending steps and re-run the whole goal from
-            // scratch. On such a resume we skip Planning/PlanAsync/ReplaceSteps and drop straight into the outer
-            // verify/drain loop, which re-queries the persisted Pending remainder (R2) and runs only the steps
-            // that had not completed before the pause.
-            //
-            // 18 D2 (the ONE flavour that does re-plan): a run that parked `needs-goal` never got a plan at all
-            // — the plan turn declined the goal and asked the user a question, so the decline branch below
-            // returned BEFORE SafeReplaceSteps. Its answer arrives with the resume, and dropping such a run into
-            // the drain loop is not merely unhelpful: measured (AgentRunResumeNoRePlanPremiseTests), it drains
-            // nothing, passes the critic on an empty completed-step list and settles COMPLETED — i.e. it answers
-            // the user's clarification by declaring their goal done. So this flavour re-enters the planning
-            // block, with the answers seeded into ctx (18 G4).
-            //
-            // TWO CONDITIONS, both required, because spec §4.1 is explicit that either alone is a weaker
-            // guarantee than 08 D1's author relied on:
-            //   (a) the park reason is exactly NeedsGoalReason — NOT NeedsInputReason, whose run parked
-            //       MID-plan with steps in flight and must keep 08 D1 verbatim; and
-            //   (b) the run has ZERO persisted step rows, re-read from the store rather than trusted off the
-            //       passed-in snapshot. This is the condition that makes the invariant's stated hazard
-            //       structurally unreachable: with no rows to preserve, "ReplaceStepsAsync does not preserve
-            //       Done steps" has nothing to destroy.
-            // A null reason (the caller could not read one, e.g. any pre-18 call site) fails (a) and keeps the
-            // old behaviour — see the parkReason parameter doc for why the token cannot be recovered here.
-            //
-            // What re-entering means, stated so nobody has to infer it: this is the WHOLE planning block, not a
-            // special-cased second plan. A re-plan that declines again parks again (18 D4 puts no cap on that);
-            // one that degrades takes R10 exactly as a launch would; one that succeeds writes its plan over the
-            // zero rows condition (b) just proved were there. The only thing different from a launch is that
-            // ctx now carries the user's answers.
+            // A resume must NOT re-plan: ReplaceStepsAsync writes the plan verbatim and does not preserve Done
+            // steps, so re-planning would wipe the persisted Done+Pending steps and re-run the goal from scratch.
+            // The one exception is a run parked with NeedsGoalReason and zero persisted step rows — it never got
+            // a plan (the decline branch below returns before SafeReplaceSteps), so draining it would settle the
+            // run Completed without ever answering the user's clarification.
             var rePlanAfterClarification = resume
                 && await TryEnterClarificationRePlanAsync(run.Id, ctx, parkReason, cts.Token).ConfigureAwait(false);
 
@@ -287,57 +211,38 @@ public sealed class AgentRunOrchestrator
 
                 var plan = await _planner.PlanAsync(ctx.Goal, ctx, persona, provider, cts.Token).ConfigureAwait(false);
                 // I1: the plan turn's rounds (≥2, doubled by the firm retry) are real spend — accrue
-                // them run-level BEFORE branching, so neither the degrade path nor 18's decline path below
+                // them run-level BEFORE branching, so neither the degrade path nor the decline path below
                 // can drop them.
                 await SafeAddUsage(run.Id, plan.Usage, cts.Token).ConfigureAwait(false);
 
-                // 18 D1 layer 2 / D2 — the plan turn DECLINED the goal. Both sides of this branch's position
-                // are load-bearing:
-                //  • AFTER the SafeAddUsage above (I1). A declining turn spent the same provider rounds as any
-                //    other plan turn, and standing here rather than before the accrual is what makes spec §8.3
-                //    true for free instead of by a second call.
-                //  • BEFORE the R10 branch below, and it must NEVER fall into it. RunSingleTurnFallbackAsync
-                //    sends the goal as ONE ordinary chat turn and makes whatever comes back the run's result —
-                //    for a goal nobody could ground that is the worst branch available (§4.2), and it is exactly
-                //    what turned the observed "ggg" repro into a Completed run.
+                // Must run BEFORE the R10 single-turn fallback below: falling into that fallback would send
+                // an ungroundable goal as one ordinary chat turn and settle the run Completed regardless.
                 if (plan.CannotGroundGoal)
                 {
-                    // No PinRange and no SafeReplaceSteps: nothing ran and there is nothing to write. ZERO step
-                    // rows is the §8.1 fact, and it is also what lets 18 G4 tell this park from a mid-plan one.
+                    // No PinRange/SafeReplaceSteps: nothing ran, so the run keeps zero step rows, which is
+                    // what lets a resume tell this park apart from a mid-plan one.
                     //
-                    // The QUESTION is model-generated text derived from the user's goal — payload under
-                    // CLAUDE.md, so it is logged ONCE, at the capture site, through AgentPlanner's
-                    // SensitiveDebug. Never add it to a line here: LogInformation carries app-owned facts only
-                    // (the run id, the token, whether a question was worded).
+                    // The question is user-derived content already logged via SensitiveDebug in AgentPlanner;
+                    // don't log it again here — only app-owned facts (run id, token, whether one was worded).
                     _logger.LogInformation(
                         "Run {RunId}: the plan turn declined the goal as ungroundable → parking {Reason} with no steps "
                         + "(question present={Present})",
                         run.Id, NeedsGoalReason, plan.ClarificationQuestion is not null);
 
-                    // The same non-terminal park the budget cap and the children park use — same state, same
-                    // resume claim — differing only in the reason token, which is the whole point of reusing it
-                    // (the ToolApprovalReason precedent at SafeRequestApproval).
+                    // Same non-terminal park as the budget cap, differing only by the reason token.
                     await SafePause(run.Id, cts.Token, reason: NeedsGoalReason).ConfigureAwait(false);
-                    // Deliberately NO SafeEndRun and no SafeComplete/SafeFail: a park is not terminal
-                    // (guardrail 5). OnPausedAsync is the non-terminal release hook — for a Live run only it
-                    // clears the session's IsStreaming, so without it the foreground chat sits wedged Running
-                    // with a disabled Send; Headless no-ops. The run waits for TryBeginResumeAsync.
+                    // No SafeEndRun/SafeComplete/SafeFail: a park is not terminal. OnPausedAsync clears
+                    // IsStreaming for a live session — skip it and the chat sits wedged Running with Send
+                    // disabled.
                     await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
 
-                    // 18 D5 — the CHAT half of "both surfaces": the CARD half is the token-keyed
-                    // AgentRunNotificationSurface.PausedBody the pause above already makes reachable (§4.4
-                    // forbids the question there). One call does the durable write AND the live mirror under a
-                    // single minted message id — see the method doc for why that id must not be minted twice,
-                    // and for the D5 defect (a store write is not a screen update) the mirror half closes. A
-                    // blank question is a no-op all the way down, not a fabricated placeholder.
+                    // Posts the question into the run's chat and mirrors it live under one minted message id;
+                    // a blank question is a no-op, not a fabricated placeholder.
                     await PostAndMirrorClarificationQuestionAsync(executor, run, ctx, persona, plan.ClarificationQuestion)
                         .ConfigureAwait(false);
-                    //
-                    // THE OTHER END OF THIS PARK is 18 G4, now landed: TryEnterClarificationRePlanAsync lets a
-                    // resume of THIS run re-enter the planning block (the two conditions are stated there), and
-                    // the answer it plans with is persisted in AgentRuns.ClarificationsJson — its own column,
-                    // because the resume claim NULLs ExtraJson. Note what makes that guard's condition (b) true:
-                    // this branch returns with no SafeReplaceSteps, so the run has ZERO step rows.
+
+                    // A resume re-enters planning via TryEnterClarificationRePlanAsync; the answer persists in
+                    // AgentRuns.ClarificationsJson since the resume claim nulls ExtraJson.
                     return;
                 }
 
@@ -639,73 +544,37 @@ public sealed class AgentRunOrchestrator
                         return;
                     }
 
-                    // ---- 18 D3 (G5): THE MID-PLAN ASK PARK ----
-                    // The step called `request_user_input` and declared itself blocked on something only the
-                    // person who started the run can settle. Same slot, same four moves and the same reasons as
-                    // the approval park directly above — plus three that are specific to this branch.
+                    // The step called request_user_input, blocking on something only the run's owner can
+                    // answer. Checked AFTER the approval park above (never merged with it) and NOT &&-ed with
+                    // r.Succeeded/r.Cancelled, since a step that stops to ask often also reports
+                    // succeeded:false in the same exchange.
                     //
-                    // (1) AFTER the approval park, never merged with it. A step can do both, and what a human
-                    //     must answer first is the TOOL the run is waiting on: the executor's own containment
-                    //     stops the exchange the moment either happens, so whichever came first is what actually
-                    //     stopped it, and re-asking costs nothing on the resumed step.
-                    // (2) NOT &&-ed with r.Succeeded or r.Cancelled, for the reason (3) gives above: a step that
-                    //     stops to ask very often ALSO declares emit_step_result{succeeded:false} in the same
-                    //     exchange, and reading that as an ordinary step failure would burn a replan on a step
-                    //     that is only waiting. 18 D6 restated from the loop's side — the outcome bool needed no
-                    //     third value because this is a separate channel with its own branch.
-                    // (3) WHAT HAPPENS TO THE STEP THAT WAS IN FLIGHT, stated out loud because no existing
-                    //     resume path re-enters a PARTIALLY EXECUTED step: its row goes back to Pending, its
-                    //     usage is billed run-level (stepId: null, so a step that will re-run carries no per-step
-                    //     ledger entry for the attempt that did not finish), and its TEXT is discarded — the
-                    //     headless executor returns before the transcript append and before the interim persist
-                    //     exactly as it does for an approval park, so nothing tells the resumed attempt it had
-                    //     already done the work. On resume the step therefore runs AGAIN FROM THE TOP, and any
-                    //     side effect it had already committed is a side effect it may repeat; that is why both
-                    //     tool handlers refuse to execute a pending write once the ask is recorded. The
-                    //     interactive path keeps its reply on screen (see ChatSession's note) because the person
-                    //     watched it arrive.
-                    //
-                    // THE OTHER END OF THIS PARK is 18 G4's TryEnterClarificationRePlanAsync, which does NOT
-                    // re-plan for NeedsInputReason: this run has a persisted plan with Done and Pending rows, and
-                    // 08 D1's stated hazard (ReplaceStepsAsync does not preserve Done steps) applies to it in
-                    // full. The resume drops into the drain loop and re-queries the Pending remainder (R2) —
-                    // which now includes the step this branch just gave back.
-                    //
-                    // NO CAP (18 D4, spec §5): the owner was shown the stall risk and chose "model declares, no
-                    // cap". The observability half is the line below plus the executor's own counts — one
-                    // Information record per park, run-scoped, so repeat parks are countable from a support log
-                    // without any of them being prevented. Counting is not capping.
+                    // The step's row goes back to Pending and re-runs from the top on resume, so any side
+                    // effect it already committed may repeat; tool handlers refuse a pending write once the ask
+                    // is recorded. A NeedsInputReason resume does not re-plan (unlike NeedsGoalReason): this run
+                    // already has Done/Pending step rows to preserve.
                     if (r.UserInputQuestion is { } question)
                     {
                         await SafeSetStepStatus(step.Id, AgentStepStatus.Pending, CancellationToken.None).ConfigureAwait(false);
                         await SafeAddUsage(run.Id, r.Usage, CancellationToken.None).ConfigureAwait(false);
                         await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
 
-                        // App-owned facts ONLY — the run id, the step ordinal, the token. The question is
-                        // model-generated text derived from the user's goal, i.e. payload under CLAUDE.md, and it
-                        // reaches exactly one logger call in this file: the SensitiveDebug below, which is
-                        // [Conditional("DEBUG")] and so is erased from the release IL along with its argument.
-                        // (GoalClarificationLoggingRuleTests scans this file for precisely that.)
+                        // App-owned facts only; the question itself is user content and only ever reaches the
+                        // SensitiveDebug call below, which is compiled out of Release.
                         _logger.LogInformation(
                             "Run {RunId}: step {StepOrdinal} asked the user for input → parking {Reason}; the step "
                             + "returns to Pending and re-runs from the start on resume",
                             run.Id, step.Ordinal, NeedsInputReason);
                         _logger.SensitiveDebug("Mid-plan clarification question: {Question}", question);
 
-                        // CancellationToken.None, matching SafeRequestApproval rather than the budget SafePause:
-                        // the step that asked may well have left cts.Token cancelled behind it, and a park that
-                        // does not reach the row leaves the run dangling Running — unresumable, with the person's
-                        // question never asked.
+                        // CancellationToken.None: the step's own token may already be cancelled, and a park
+                        // that doesn't reach the row leaves the run stuck Running, unresumable.
                         await SafePause(run.Id, CancellationToken.None, reason: NeedsInputReason).ConfigureAwait(false);
                         // Non-terminal executor release (guardrail 5): NOT SafeEndRun — same as every other park.
                         await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
 
-                        // 18 D5 — the CHAT half of "both surfaces", reusing 18 G3's path rather than forking a
-                        // second one: the SAME call the plan-time decline makes, so the durable write, the live
-                        // mirror and the one-id rule cannot drift between the two parks. The CARD half is the
-                        // token-keyed AgentRunNotificationSurface.PausedBody the pause above already makes
-                        // reachable — §4.4 forbids the question there, and §4.5's :170 filter is exactly why owner
-                        // Q1 refuses this park to a delegated run in the first place.
+                        // Reuses the same post-and-mirror call the plan-time decline makes, so the two parks
+                        // can't drift apart.
                         await PostAndMirrorClarificationQuestionAsync(executor, run, ctx, persona, question)
                             .ConfigureAwait(false);
                         return;
@@ -914,41 +783,14 @@ public sealed class AgentRunOrchestrator
         catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (resume context seed) failed for {RunId}", runId); }
     }
 
-    /// <summary>
-    /// <b>18 D2 — the guard that breaks <c>08 D1</c>, and the seed that makes breaking it worth anything.</b>
-    /// Answers "does THIS resume re-enter the planning block?", and on a yes also loads the user's accumulated
-    /// clarification answers into <paramref name="ctx"/> so the re-plan is given what the last one was missing.
-    /// The two jobs are one method on purpose: a re-plan that ran without the answers would re-ask the question
-    /// the user just answered, which is the one outcome that makes the whole loop useless, and splitting them
-    /// would let a later edit skip the seed without the guard noticing.
-    /// <para>
-    /// The two conditions are the ones the call site's comment states (<c>needs-goal</c> AND zero step rows).
-    /// The reason token is checked FIRST and short-circuits, so no resume that is not a clarification park pays
-    /// for a database read it cannot use — which is every resume the app makes today.
-    /// </para>
-    /// <para>
-    /// The step-row count is re-read from the STORE rather than taken from the <c>AgentRun</c> the caller passed.
-    /// That snapshot was read pre-claim by <c>HeadlessRunLauncher.ResumeAsync</c> (it has to be — see the
-    /// <c>parkReason</c> parameter doc), so it is by construction a picture of the run from before this dispatch
-    /// existed, and the whole point of condition (b) is to be the authoritative answer to "is there anything here
-    /// that ReplaceStepsAsync could destroy?".
-    /// </para>
-    /// <para>
-    /// Failure-isolated (guardrail 1), and the direction is deliberate: a read fault answers <c>false</c>, i.e.
-    /// today's behaviour, because breaking a shipped invariant on a condition this method could NOT establish is
-    /// worse than not breaking it. The run then behaves exactly as it does on the branch this batch inherited.
-    /// </para>
-    /// <para>
-    /// The answers are USER CONTENT (owner Q3): the count goes on the plain line, the text only on
-    /// <c>SensitiveDebug</c>, and none of it is ever written into the pause envelope
-    /// (<see cref="RunPauseEnvelope"/>'s doc licenses a consumer to log every member it carries).
-    /// </para>
-    /// </summary>
+    /// <summary>Whether a resume should re-enter planning instead of draining: true only when the park reason
+    /// is <see cref="NeedsGoalReason"/> and the run has zero persisted step rows, in which case this also seeds
+    /// the user's accumulated clarification answers into <paramref name="ctx"/>.</summary>
     private async Task<bool> TryEnterClarificationRePlanAsync(
         Guid runId, RunContext ctx, string? parkReason, CancellationToken ct)
     {
-        // Condition (a). NeedsInputReason is deliberately NOT accepted here: 18 G5's mid-plan ask parks a run
-        // whose plan is half executed, and re-planning THAT is the exact hazard 08 D1 was written about.
+        // NeedsInputReason is deliberately not accepted here: that park has a half-executed plan, and
+        // re-planning it is the hazard the resume guard above exists to avoid.
         if (parkReason != NeedsGoalReason)
             return false;
 
@@ -958,14 +800,12 @@ public sealed class AgentRunOrchestrator
             if (persisted is null)
                 return false; // the row is gone underneath the dispatch — nothing to plan for
 
-            // Condition (b). Every status counts, not just Pending: the claim being defended is "there is
-            // nothing here to overwrite", and a Done or Skipped row is precisely what must not be overwritten.
+            // Every step status counts, not just Pending — a Done or Skipped row is exactly what must not be
+            // overwritten.
             if (persisted.Plan.Count > 0)
             {
-                // Reachable, and worth a line rather than a silent false: it means a run carrying the
-                // `needs-goal` token also carries step rows, which the decline branch never writes — so either a
-                // later batch started writing steps before that park, or two parks got crossed. The run keeps
-                // 08 D1's behaviour either way.
+                // Reachable in principle: a needs-goal park should never carry step rows, since the decline
+                // branch returns before SafeReplaceSteps.
                 _logger.LogWarning(
                     "Run {RunId} resumed with reason {Reason} but has {Count} persisted step row(s) — NOT re-planning "
                     + "(18 D2 requires both conditions)", runId, parkReason, persisted.Plan.Count);
@@ -974,12 +814,9 @@ public sealed class AgentRunOrchestrator
 
             var answers = RunClarifications.Read(persisted.ClarificationsJson);
             ctx.SetClarifications(answers);
-            // COUNT only on the plain line — the answers themselves are what the user typed.
-            // ZERO is a legitimate value and the run still re-plans: the Flow Continue card carries no text input
-            // at all (spec §4.3), so pressing it is an answerless resume. Re-planning an unanswered goal costs one
-            // plan turn and, on 18 D4's no-cap rule, simply parks again with the same question — which is the
-            // right outcome, and strictly better than the alternative this branch replaces (settling Completed
-            // having done nothing).
+            // Count only on the plain line; the answers themselves are user content, logged only via
+            // SensitiveDebug below. Zero answers is legitimate — the run still re-plans rather than settling
+            // Completed having done nothing.
             _logger.LogInformation(
                 "Run {RunId} resumed with reason {Reason} and no step rows → RE-PLANNING (18 D2, breaking 08 D1's "
                 + "bare resume guard on purpose) with {Count} recorded clarification answer(s)",
@@ -1681,26 +1518,9 @@ public sealed class AgentRunOrchestrator
         catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (pause) failed for {RunId}", runId); }
     }
 
-    /// <summary>
-    /// 18 D5 — the CHAT half of a clarification park, as ONE call for BOTH parks: the plan turn's decline
-    /// (<see cref="NeedsGoalReason"/>, 18 G3) and the mid-plan ask (<see cref="NeedsInputReason"/>, 18 G5).
-    /// <para>
-    /// <b>The whole reason this is a method and not two call sites is the ID.</b> The durable write and the live
-    /// mirror are the SAME chat message, so its id is minted ONCE, here, and handed to both. A chat row's id is
-    /// its only stable identity and it is the key <c>ChatSessionManager.PullClarificationRowsAsync</c> uses to
-    /// decide which stored rows a live session is still missing — two ids for one question would make the
-    /// mirrored copy look like a row the session had never seen, and the pull would render the question TWICE.
-    /// That invariant used to be restated at each park (18 G6 review fix); a third caller inheriting only half of
-    /// it is exactly the double-render defect, so the cross-group pass folded both sites into this one.
-    /// </para>
-    /// <para>
-    /// <b>Order is load-bearing: durable FIRST, mirror second, never the reverse.</b> The mirror hands the row to
-    /// whatever live transcript the executor holds, and the interface doc's "never a race" note depends on the
-    /// store already carrying it. <see cref="HeadlessTurnExecutor"/> keeps the no-op interface default because it
-    /// holds no live transcript — the SECOND and later parks of one run are dispatched headlessly (every resume
-    /// path is), and those reach the screen through the manager's pull named above, not through this hook.
-    /// </para>
-    /// </summary>
+    /// <summary>Mints one message id and passes it to both the durable post and the live mirror below (in that
+    /// order), since a live session's pull keys on the id to decide which stored rows it's missing — two ids for
+    /// one question would render it twice.</summary>
     private async Task PostAndMirrorClarificationQuestionAsync(
         IAgentTurnExecutor executor, AgentRun run, RunContext ctx, Persona persona, string? question)
     {
@@ -1709,51 +1529,15 @@ public sealed class AgentRunOrchestrator
         await SafeMirrorClarificationQuestion(executor, run, ctx, persona, questionId, question).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// 18 D5 — the DURABLE half of the pair above, shared by BOTH clarification parks. One
-    /// path, not two — a second copy would be two places to keep the id-minting, the merge discipline and the
-    /// blank-question no-op in step. It posts the question into the run's OWN chat as an assistant message, so a
-    /// person who opens this run later reads WHY it is waiting, not just that it is. The CARD half is
-    /// <see cref="AgentRunNotificationSurface.PausedBody"/>, which stays token-keyed on purpose — §4.4 says the
-    /// run Goal and the pause reason are the only things that item may ever carry, and a model-generated
-    /// question is neither. There is also no <see cref="Models.Flow.FlowAction"/> that carries a typed answer
-    /// (§4.3), so the card could not collect a reply even if it showed the question. The chat already has a
-    /// composer, and a headless run already owns a real chat row to post into (<c>HeadlessRunLauncher.cs</c>
-    /// mints <c>chatId</c> and persists a stub before the run row even exists).
-    /// <para>
-    /// A blank <paramref name="question"/> is a no-op, not a fabricated placeholder.
-    /// <see cref="PlanResult.Decline"/> documents that a model may declare it cannot ground the goal without
-    /// wording a question at all, and this method only ever relays what the model actually wrote — inventing
-    /// filler text would put words in the model's mouth nobody asked it to say. The decline is still visible on
-    /// the OTHER two surfaces (the card and the panel activity line) either way, and the app-owned fact that a
-    /// decline came unworded is already on the plain <c>LogInformation</c> line the caller writes just above
-    /// this call.
-    /// </para>
-    /// <para>
-    /// <see cref="IAssistantChatService.SaveMergedAsync"/>, not a blind <c>SaveAsync</c> replace: it re-reads
-    /// the stored message rows under its own write-gate hold and merges back anything this call's one-message
-    /// snapshot does not carry, so the post can never DELETE another writer's row. On the <c>needs-goal</c> path
-    /// that is belt-and-braces — it runs at PLAN TIME, before <c>SafeReplaceSteps</c> and before any step turn
-    /// exists, so nothing durable is at risk — but 18 G5's mid-plan park calls it after N steps have each written
-    /// their own reply, and there the merge is what stops one question from erasing the whole transcript. Same
-    /// one-writer discipline <see cref="HeadlessTurnExecutor"/>'s own per-step persist uses.
-    /// </para>
-    /// <para>
-    /// Failure-isolated (guardrail 1) and <c>CancellationToken.None</c>, matching <see cref="SafeOnPaused"/>: a
-    /// park that already committed to the run row must not lose its explanation because the caller's token
-    /// happened to be cancelled in the same beat. The QUESTION itself is model-generated text derived from the
-    /// user's goal — payload under CLAUDE.md — but writing it into the chat's own message row is not a log
-    /// write; the only line this method logs carries the run id and the chat id, never the content.
-    /// </para>
-    /// </summary>
-    /// <param name="messageId">The chat-row id to write this question under — minted by
-    /// <see cref="PostAndMirrorClarificationQuestionAsync"/>, the only caller, because the live mirror that
-    /// follows must use the SAME one. That method's doc has the why.</param>
+    /// <summary>Posts the clarification question into the run's own chat as an assistant message, using
+    /// <see cref="IAssistantChatService.SaveMergedAsync"/> rather than a blind replace so a concurrent writer's
+    /// rows are never dropped. A blank <paramref name="question"/> is a no-op, not a fabricated placeholder.</summary>
+    /// <param name="messageId">Must match the id the caller's live mirror uses for the same question.</param>
     private async Task SafePostClarificationQuestionAsync(
         AgentRun run, Persona persona, Guid messageId, string? question)
     {
         if (_chats is null || string.IsNullOrWhiteSpace(question))
-            return; // Batch 07 G10 default (no chat service wired) or a decline that worded no question (see above)
+            return; // no chat service wired, or a decline that worded no question
 
         try
         {
@@ -2058,16 +1842,10 @@ public sealed class AgentRunOrchestrator
         catch (Exception ex) { _logger.LogWarning(ex, "Executor OnPaused failed for run {RunId}", run.Id); }
     }
 
-    /// <summary>
-    /// 18 D5 fix — see <see cref="IAgentTurnExecutor.MirrorClarificationQuestionAsync"/>'s doc for the defect
-    /// this closes (a LIVE session never sees the question <see cref="SafePostClarificationQuestionAsync"/>
-    /// already wrote durably). Blank-question no-op mirrors that method's own (a decline may word no
-    /// question at all — nothing to mirror). Failure-isolated (guardrail 1) and <c>CancellationToken.None</c>,
-    /// same as <see cref="SafeOnPaused"/>: a park that already committed must not lose its explanation because
-    /// the caller's token happened to be cancelled in the same beat.
-    /// </summary>
-    /// <param name="messageId">The id <see cref="SafePostClarificationQuestionAsync"/> just wrote this question
-    /// under. Passed through so the live copy IS that row rather than a look-alike — see the call site.</param>
+    /// <summary>Mirrors the clarification question into any live transcript the executor holds, so a live
+    /// session sees it without waiting on a later pull of the durable row.</summary>
+    /// <param name="messageId">Must be the same id <see cref="SafePostClarificationQuestionAsync"/> wrote this
+    /// question under, so the live copy is that row rather than a look-alike.</param>
     private async Task SafeMirrorClarificationQuestion(
         IAgentTurnExecutor executor, AgentRun run, RunContext ctx, Persona persona, Guid messageId, string? question)
     {

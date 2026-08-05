@@ -159,31 +159,10 @@ public sealed record StepTurnResult(
     string? ApprovalRequiredTool = null,
 
     /// <summary>
-    /// <b>18 D3 (G5).</b> The question this step asked through <c>request_user_input</c>, or null (every other
-    /// step, and every step of a DELEGATED run, which is refused the tool — owner Q1,
-    /// <see cref="AgentStepTools.CanRequestUserInput"/>).
-    /// <para>
-    /// <b>This is NOT a third outcome, and 18 D6 is why that distinction is load-bearing.</b>
-    /// <see cref="Succeeded"/> stays a bool and <see cref="Outcome"/> stays the record of the model's own
-    /// <c>emit_step_result</c> verdict; this is an APPENDED member of exactly the shape
-    /// <see cref="ApprovalRequiredTool"/> already set (hermes #16) for exactly the same kind of event — "the step
-    /// did not finish and the run must park". An implementer who finds themselves widening the outcome bool
-    /// instead should stop and re-read spec §2/§3 D6: <c>emit_step_result</c>'s description already told the model
-    /// prose is not a report and the model ignored it, so the failure mode is the ABSENCE of a call and a new
-    /// enum member on a tool nobody called would have fixed nothing.
-    /// </para>
-    /// <para>
-    /// Non-null means the step DID NOT FINISH and must not be recorded: the orchestrator puts its row back to
-    /// <c>Pending</c>, bills the tokens run-level, parks the run at <c>WaitingForInput</c> with the
-    /// <c>needs-input</c> token and posts this question into the run's own chat. Deliberately NOT folded into
-    /// <see cref="Succeeded"/>/<see cref="Cancelled"/>, for the reason <see cref="ApprovalRequiredTool"/> gives:
-    /// a step that stopped to ask very often ALSO declares <c>emit_step_result{succeeded:false}</c> in the same
-    /// exchange, and reading that as an ordinary failure would burn a replan on a step that is merely waiting.
-    /// </para>
-    /// <para>
-    /// SENSITIVE — model-generated text derived from the user's goal, so <c>SensitiveDebug</c> only (CLAUDE.md).
-    /// Capped and trimmed at capture time by <see cref="UserInputRequestStore.Record"/>.
-    /// </para>
+    /// The question this step asked through <c>request_user_input</c>, or null. Deliberately not folded into
+    /// <see cref="Succeeded"/>/<see cref="Cancelled"/>: a step that stopped to ask often also reports failure,
+    /// and treating that as an ordinary failure would burn a replan on a step that is merely waiting.
+    /// Model-generated content — <c>SensitiveDebug</c> only.
     /// </summary>
     string? UserInputQuestion = null);
 
@@ -285,45 +264,13 @@ public interface IAgentTurnExecutor
         => Task.FromResult<StepTurnResult?>(null);
 
     /// <summary>
-    /// 18 D5 fix — mirror the plan turn's clarification question into whatever LIVE, UI-bound copy of the
-    /// transcript this executor holds, so the question renders immediately in a chat the user may already have
-    /// open and survives that session's next full-replace persist.
-    /// <para>
-    /// <see cref="AgentRunOrchestrator"/> ALWAYS writes the question durably through
-    /// <see cref="IAssistantChatService"/> itself first (its own <c>SafePostClarificationQuestionAsync</c>,
-    /// awaited to completion before this hook ever runs) — that write is what a person reading the chat cold
-    /// (app closed and reopened) sees, and it is unconditionally correct for every executor, so this hook is
-    /// never the ONLY place the question is written.
-    /// </para>
-    /// <para>
-    /// It exists only for an executor that ALSO holds a live, UI-bound copy of the transcript that direct store
-    /// write cannot reach. <b>Headless keeps the default</b>: it has no session, and its own accumulating
-    /// transcript (<c>_persisted</c>) is reloaded fresh from the store at the top of every run segment
-    /// (<c>BeginRunAsync</c>) — so the direct store write above is already the whole story for it.
-    /// <b><c>LiveTurnExecutor</c> overrides it</b>: without the override the direct write above would sit in
-    /// the store, invisible on screen, until the session's OWN next turn ran <c>PersistAsync</c> — a full
-    /// replace off <c>session.Messages</c> that never learned about the row and would therefore silently
-    /// delete it.
-    /// </para>
-    /// <para>
-    /// <b>This hook is NOT the whole live story, and must not be mistaken for it.</b> It fires only on the park
-    /// this dispatch raises, and only the FIRST park of an interactive run is dispatched by a live executor:
-    /// every resume in the app goes through <c>HeadlessRunLauncher</c>, so the second and later questions of
-    /// the same run are written by <c>HeadlessTurnExecutor</c>, which keeps the default no-op here. What
-    /// renders those is <c>ChatSessionManager.PullClarificationRowsAsync</c>, which pulls the rows a foreign
-    /// dispatch wrote into a live session while its run sits parked asking. The two are kept from
-    /// double-rendering the same question by the orchestrator minting ONE message id and handing it to the
-    /// durable write and to this hook, so the mirrored copy IS the stored row rather than a look-alike.
-    /// </para>
-    /// <para>
-    /// Appending here and requesting a persist is a redundant round trip for the row the direct write already
-    /// made durable, never a race with it: this hook only ever runs AFTER that write has been awaited, so the
-    /// session's subsequent full replace simply re-writes the same content the direct write already committed.
-    /// </para>
+    /// Mirrors a clarification question into this executor's own live transcript copy, if it has one — the
+    /// durable write already happened before this hook runs. Headless has no live copy and keeps the default
+    /// no-op; <c>LiveTurnExecutor</c> overrides it so the question renders immediately instead of waiting for
+    /// the session's next persist.
     /// </summary>
-    /// <param name="messageId">The chat-row id the durable write just used. An implementer MUST adopt it for
-    /// its live copy rather than minting one: the id is a chat row's only stable identity, and it is what the
-    /// manager's pull keys on to tell a row the session already has from one it is missing.</param>
+    /// <param name="messageId">The row id the durable write already used; implementations must reuse it rather
+    /// than minting a new one.</param>
     Task MirrorClarificationQuestionAsync(
         AgentRun run, RunContext ctx, Persona persona, Guid messageId, string question, CancellationToken ct)
         => Task.CompletedTask;

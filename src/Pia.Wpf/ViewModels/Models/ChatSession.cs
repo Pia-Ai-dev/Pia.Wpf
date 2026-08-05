@@ -90,18 +90,7 @@ public sealed class ChatSession : IDisposable
     /// </summary>
     private StepOutcomeStore? _stepOutcomeStore;
 
-    /// <summary>
-    /// 18 D3 (G5) — the interactive twin of <see cref="_stepOutcomeStore"/> for <c>request_user_input</c>, armed
-    /// and disarmed in exactly the same places and for exactly the same reason: non-null is the gate on the
-    /// pre-route interception, and it must be back to null before an ordinary <see cref="RunTurnAsync"/> chat turn
-    /// runs, or a hallucinated <c>request_user_input</c> on a chat turn would be swallowed instead of answered
-    /// "Unknown tool.". A session runs at most one turn at a time, so one field is enough.
-    /// <para>
-    /// A NON-NULL store does not mean the run may ask — <see cref="UserInputRequestStore.CanAsk"/> does (owner
-    /// Q1). The two are separate because a DELEGATED step should still intercept the call and be told which
-    /// channel to use instead, rather than dead-ending at "Unknown tool.".
-    /// </para>
-    /// </summary>
+    /// <summary>The interactive twin of <see cref="_stepOutcomeStore"/> for <c>request_user_input</c>; non-null is the gate on the pre-route interception.</summary>
     private UserInputRequestStore? _userInputRequest;
 
     /// <summary>Raised on every real state transition (no-op on unchanged value).</summary>
@@ -721,11 +710,7 @@ public sealed class ChatSession : IDisposable
             : null;
         _stepOutcomeStore = outcomeStore;
 
-        // 18 D3 (G5). Armed on the SAME condition as the declaration sink — "this is a real step turn on a
-        // tool-capable setup" — with CanAsk derived from the resolved list rather than from a second flag, so
-        // "offered" (LiveTurnExecutor.BuildSpec appended it) and "accepted" (this store records it) cannot drift.
-        // See UserInputRequestStore's remarks for why a delegated step still gets a store: it intercepts the call
-        // and answers with the redirect to emit_step_result instead of dead-ending at "Unknown tool.".
+        // Armed on the same condition as the declaration sink above, so "offered" and "accepted" cannot drift.
         var userInputStore = outcomeStore is null
             ? null
             : new UserInputRequestStore(AgentStepTools.OffersRequestUserInputTool(spec.Tools));
@@ -809,7 +794,7 @@ public sealed class ChatSession : IDisposable
             // Disarm before anything else can run a turn on this session — the verdict is read from the
             // method-local `outcomeStore` below, so this loses nothing.
             _stepOutcomeStore = null;
-            // 18 G5: same disarm, same reason, same beat. Read below from the method-local `userInputStore`.
+            // Same disarm, same reason, same beat. Read below from the method-local `userInputStore`.
             _userInputRequest = null;
         }
 
@@ -848,30 +833,18 @@ public sealed class ChatSession : IDisposable
         if (claim is not null)
             _logger.SensitiveDebug("Step outcome summary: {Summary} artifact: {Artifact}", claim.Summary, claim.ArtifactRef);
 
-        // ---- 18 D3 (G5): did this step ASK the user a mid-plan question? ----
-        // Gated on !cancelled ONLY, deliberately narrower than the claim gate above. A cancel is the user's own
-        // call about the whole run and outranks the run's request for their attention (the precedence hermes #16
-        // set, and Batch 08 before it). A TIMEOUT / TRUNCATION / crash does not: the attempt is discarded either
-        // way and the step re-runs from the top, so the only thing the attempt durably produced is the question —
-        // dropping it would lose the one signal the model managed to send. The headless twin
-        // (HeadlessTurnExecutor's catch arm) keeps the ask across a fault for the same reason.
-        //
-        // NOT folded into `succeeded`/`error` (18 D6): the outcome bool stays what emit_step_result declared, and
-        // the orchestrator's own branch returns before SafeRecordStep, so this member is what carries the park.
+        // A cancel outranks the run's own question, but a timeout/truncation/crash should not discard it.
         var askedQuestion = cancelled ? null : userInputStore?.Question;
         if (askedQuestion is not null)
         {
-            // App-owned counts only — the QUESTION itself never reaches a plain logger line (CLAUDE.md); it rides
-            // SensitiveDebug at the orchestrator, which is the one place it is rendered.
+            // Counts only — the question text itself is never logged at this level.
             _logger.LogInformation(
                 "Agent step asked the user for input on run {RunId} step {StepOrdinal}: asks={Asks} refused={Refused}",
                 spec.RunId, spec.Ordinal, userInputStore!.AcceptedCalls, userInputStore.RefusedCalls);
         }
         else if (userInputStore is { CanAsk: false, RefusedCalls: > 0 })
         {
-            // Owner Q1: a DELEGATED step tried to ask and was redirected to emit_step_result. Logged rather than
-            // silent because "a child kept trying to reach a person" is the evidence any later decision about
-            // propagating the ask upward would need.
+            // A delegated step tried to ask and was redirected to emit_step_result instead.
             _logger.LogInformation(
                 "Agent step on run {RunId} step {StepOrdinal} refused {Refused} mid-plan ask(s) on a delegated step",
                 spec.RunId, spec.Ordinal, userInputStore.RefusedCalls);
@@ -904,10 +877,7 @@ public sealed class ChatSession : IDisposable
             FirstMessageId: id,
             LastMessageId: id,
             Outcome: claim,
-            // 18 G5. Unlike the headless twin this arm does NOT blank VisibleText or drop the transcript row: an
-            // interactive step's reply is already on screen and already persisted (LiveTurnExecutor's per-step
-            // RequestPersist), and erasing what a watching person just read would be a worse lie than letting the
-            // resumed step produce a second reply beneath it.
+            // Unlike the headless twin, does not blank VisibleText: the reply is already on screen and persisted.
             UserInputQuestion: askedQuestion);
     }
 
@@ -1049,14 +1019,7 @@ public sealed class ChatSession : IDisposable
             return outcomeStore.Record(toolCall.Arguments);
         }
 
-        // request_user_input (18 D3/G5): the THIRD pre-route special case, for the same structural reason as the
-        // two above — no plugin, no GUID, no _toolNameRoutes entry, so routing would miss it, log a warning, emit
-        // a ToolGateDecision.UnknownTool audit row and answer "Unknown tool.". Gated on the SINK, not on the name
-        // alone: an ordinary chat turn is never offered this tool, so a model that invents the name there must
-        // still get the honest unknown-tool answer. Whether the run may ask AT ALL is CanAsk (owner Q1), answered
-        // inside Record — a delegated step is intercepted here and redirected to emit_step_result rather than
-        // dead-ended. Its unattended twin lives at BackgroundAssistantTurnRunner.HandleToolCallAsync and must stay
-        // in step with this one. The question is USER-DERIVED PAYLOAD and is never logged here at any level.
+        // request_user_input: gated on the sink so a delegated step is redirected to emit_step_result instead of dead-ending; the question is never logged here.
         if (_userInputRequest is { } userInputStore
             && string.Equals(toolCall.Name, AgentStepTools.RequestUserInputToolName, StringComparison.Ordinal))
         {
@@ -1110,14 +1073,7 @@ public sealed class ChatSession : IDisposable
         // For write operations, show inline action card.
         if (pendingAction is not null)
         {
-            // ---- 18 G5 CONTAINMENT: an ASK stops the exchange, it does not merely advise it ----
-            // The unattended twin of this guard is BackgroundAssistantTurnRunner's, and hermes #16's argument for
-            // it transfers unchanged: a string telling the model to stop is not a control-flow construct, so
-            // without this every call the model makes AFTER the run decided to park still reaches the gate. Here
-            // that is worse than wasted work in a way it is NOT on the unattended surface — this branch raises an
-            // ACTION CARD, so a human would be asked to approve a write for a step that is already being thrown
-            // away, and approving it would execute a side effect the resumed step then performs a SECOND time.
-            // Returning before the card is what keeps a planned step at-most-once.
+            // An ask stops the exchange: otherwise a write called after the park would raise a card whose approval would re-execute once the step re-runs.
             if (_userInputRequest?.Question is not null)
             {
                 _logger.LogInformation(

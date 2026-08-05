@@ -673,35 +673,13 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Single(await h.Chats.GetAllIdsAsync(TestContext.Current.CancellationToken));
     }
 
-    /// <summary>
-    /// 18 G3 adversarial review, finding 2: <c>AgentRunOrchestrator.SafePostClarificationQuestionAsync</c>
-    /// posts ONLY the plan turn's clarification question into a <c>needs-goal</c> park's chat — a decline
-    /// returns before this executor's own per-step persist ever runs, so the goal itself never reaches that
-    /// chat row. Before this fix, <see cref="BeginRunAsync"/>'s resume-seed heuristic read "the chat has rows"
-    /// as "the goal is already in the transcript" (true before 18 G3, false the moment a chat can hold an
-    /// assistant-only row) and a resumed run's model context opened on the model's OWN question with no
-    /// record of what was asked.
-    /// <para>
-    /// This is the PANEL/Flow answer shape: the user pressed Continue (or typed into the panel's nudge box),
-    /// so nothing was appended to the chat and it still holds exactly one assistant row. The sibling fact
-    /// below is the CHAT-composer shape, where the answer is itself a user row.
-    /// </para>
-    /// <para>
-    /// Drives <see cref="HeadlessTurnExecutor.BeginRunAsync"/> and
-    /// <see cref="HeadlessTurnExecutor.ExecuteStepAsync"/> directly (the same style as
-    /// <see cref="BeginRunAsync_PublishesTheWorkspaceRootOntoTheRunContext"/>) rather than through the
-    /// orchestrator's resume path: what is under test is the executor's own SEEDING contract, and going
-    /// through 18 G4's re-plan would put a whole planner and drain loop between the seed and the assertion.
-    /// </para>
-    /// </summary>
+    /// <summary>A <c>needs-goal</c> park's chat holds only the model's clarification question, never the goal — so a resumed run must seed the goal into the model context even though the stored chat doesn't contain it.</summary>
     [Fact]
     public async Task NeedsGoalResume_ChatHoldsOnlyTheQuestion_ButTheModelContextStillStatesTheGoal()
     {
         using var h = new DurabilityHarness();
         var run = await h.NewRunAsync("do something with ggg");
 
-        // Exactly what SafePostClarificationQuestionAsync leaves behind for a needs-goal park: one assistant
-        // row, the model's question, and nothing else — never the goal.
         var sent = await SeedChatAndRunOneStepAsync(h, run, "do something with ggg",
             Row("assistant", "what do you mean by ggg?"));
 
@@ -711,33 +689,13 @@ public sealed class HeadlessTurnExecutorTests
         Assert.True(questionIndex >= 0, "the model's own question must still be carried forward");
         Assert.True(goalIndex < questionIndex, "the goal must precede the question it was asked about");
 
-        // The seeded goal is also durable now (it feeds _persisted, not only _messages), so the NEXT full
-        // replace (this step's own interim persist) writes it into the stored chat going forward.
+        // The seeded goal is also durable now, so the next full persist writes it into the stored chat too.
         var persistedAfter = await h.Chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
         Assert.Contains(persistedAfter!.Messages, m => m.Role == "user" && m.Content == "do something with ggg");
         Assert.Contains(persistedAfter.Messages, m => m.Role == "assistant" && m.Content == "what do you mean by ggg?");
     }
 
-    /// <summary>
-    /// 18 G4 adversarial review, finding 1 — the OTHER answer surface, and the one the fix above did not
-    /// cover. When the user answers a <c>needs-goal</c> park in the CHAT COMPOSER (18 G6:
-    /// <c>ChatSessionManager.TryAnswerParkedRunAsync</c> adds the answer as a <c>ChatRole.User</c> row and
-    /// AWAITS <c>AppendAnswerDurablyAsync</c> before it calls <c>ResumeAsync</c>), the chat this executor
-    /// reads back is <c>[assistant question, user answer]</c> — a transcript that contains a user row and
-    /// still does not contain the GOAL, because a decline returns before any per-step persist.
-    /// <para>
-    /// A seed test of the form "does the chat contain a user row anywhere" therefore passes the panel case
-    /// and fails this one: it would take the resume branch, and every step turn of the re-planned run would
-    /// run on the model's own question plus the reply, with the goal stated nowhere — and the goal would
-    /// never reach the stored transcript either, so a person reading the chat later would not see it. The
-    /// predicate asks whether the transcript OPENS with a user row instead; here it opens with the question.
-    /// </para>
-    /// <para>
-    /// <b>Neutralize:</b> change <c>BeginRunAsync</c>'s <c>chat.Messages[0]</c> test back to
-    /// <c>chat.Messages.Any(...)</c> → the goal assertion below reds while the fact above stays green, which
-    /// is exactly the asymmetry that made this reachable.
-    /// </para>
-    /// </summary>
+    /// <summary>When the answer arrives as a chat-composer user row, the transcript still opens with the model's question rather than a user row, so the resume-seed check must test what the chat opens with, not merely whether it contains any user row.</summary>
     [Fact]
     public async Task NeedsGoalResume_AnsweredInTheChat_StillStatesTheGoal_AndKeepsTheAnswer()
     {
@@ -754,7 +712,6 @@ public sealed class HeadlessTurnExecutorTests
         Assert.True(goalIndex >= 0, "the goal must reach the model context even when the answer is a user row");
         Assert.True(questionIndex >= 0, "the model's own question must still be carried forward");
         Assert.True(answerIndex >= 0, "the user's typed answer must still be carried forward");
-        // Chronological, and it is the whole story: goal, the question it provoked, the answer.
         Assert.True(goalIndex < questionIndex && questionIndex < answerIndex,
             "the three rows must read in the order they happened");
 
@@ -763,12 +720,7 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Contains(persistedAfter.Messages, m => m.Role == "user" && m.Content == "I mean the nightly export job");
     }
 
-    /// <summary>
-    /// The CONTROL for the two facts above, and what keeps them from being "always seed the goal": an
-    /// ordinary resume — a chat that OPENS with the goal, because this executor's own fresh launch wrote it
-    /// there — must not gain a second copy of it. Duplicating the goal on every resume would grow the
-    /// transcript once per park and re-state the goal to the model as if it were a new instruction.
-    /// </summary>
+    /// <summary>Guards against always seeding the goal: an ordinary resume, whose chat already opens with the goal, must not gain a second copy of it.</summary>
     [Fact]
     public async Task OrdinaryResume_ChatAlreadyOpensWithTheGoal_DoesNotSeedItTwice()
     {
@@ -794,10 +746,7 @@ public sealed class HeadlessTurnExecutorTests
         Timestamp = DateTime.UtcNow,
     };
 
-    /// <summary>
-    /// Puts <paramref name="rows"/> into the run's chat, begins a FRESH executor on it (a new DI scope —
-    /// exactly what a real resume gets) and runs one step, returning the messages that reached the provider.
-    /// </summary>
+    /// <summary>Seeds the chat, then begins a fresh executor on a new DI scope — matching what a real resume gets — and returns the messages that reached the provider for one step.</summary>
     private static async Task<List<ChatMessage>> SeedChatAndRunOneStepAsync(
         DurabilityHarness h, AgentRun run, string goal, params SyncAssistantChatMessage[] rows)
     {

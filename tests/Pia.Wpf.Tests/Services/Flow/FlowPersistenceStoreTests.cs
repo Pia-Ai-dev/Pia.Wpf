@@ -137,8 +137,7 @@ public sealed class FlowPersistenceStoreTests : IDisposable
     [Fact]
     public void OpenParkedRunAction_RoundTrips_Unchanged()
     {
-        // 18 G3 review fix: the appended OpenParkedRun action must persist → reconstruct with
-        // Kind/RunId/Label intact, distinct from OpenRunAction (FlowPersistenceStore.ReconstructAction).
+        // Must reconstruct as its own type, distinct from OpenRunAction.
         var store = Store();
         var runId = Guid.NewGuid();
         var item = new FlowItem

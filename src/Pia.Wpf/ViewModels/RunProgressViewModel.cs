@@ -690,10 +690,8 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             _localization.Format("Run_Activity_WaitingForToolApproval", RunPauseEnvelope.ReadApprovalTool(run) ?? string.Empty),
         AgentRunOrchestrator.ChildrenParkedReason => _localization["Run_Activity_ChildrenParked"],
         AgentRunService.ChildrenInterruptedReason => _localization["Run_Activity_ChildrenInterrupted"],
-        // 18 D5/§4.4/§4.5: on the INTERACTIVE path (D7/G6) the card is suppressed for the chat the user is
-        // watching (:176-178), so this panel line is the ONLY surface for those two reasons — it must not be
-        // treated as garnish. Token-keyed only, same as every other arm: the question itself lives in the chat
-        // message 18 G3 posts (AgentRunOrchestrator.SafePostClarificationQuestionAsync), never here.
+        // On the interactive path the card is suppressed for the watched chat, so this panel line is the only
+        // surface for these two reasons; the question text itself lives in the chat message, never here.
         AgentRunOrchestrator.NeedsGoalReason => _localization["Run_Activity_NeedsGoal"],
         AgentRunOrchestrator.NeedsInputReason => _localization["Run_Activity_NeedsInput"],
         AgentRunService.UserPausedReason => _localization["Run_Activity_UserPaused"],

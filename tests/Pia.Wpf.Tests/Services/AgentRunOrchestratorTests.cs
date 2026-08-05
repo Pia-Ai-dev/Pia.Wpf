@@ -27,13 +27,7 @@ public sealed class AgentRunOrchestratorTests
     private static StepTurnResult Fail(string err) => new(false, false, err, string.Empty, null, Guid.NewGuid(), Guid.NewGuid());
     private static StepTurnResult Cancel() => new(false, true, "cancelled", string.Empty, null, Guid.NewGuid(), Guid.NewGuid());
 
-    /// <summary>
-    /// 18 G5: a step that called <c>request_user_input</c>. Shaped exactly as the real executors return it — the
-    /// step did not finish, so no text and no message ids, and <c>Succeeded</c> is the plain false a
-    /// didn't-finish step carries. Every fact below that needs a DIFFERENT surrounding shape (an ask that also
-    /// declared failure, an ask that also parked for approval) builds it with <c>with { … }</c>, so the one place
-    /// the ask member is named stays here.
-    /// </summary>
+    /// <summary>A step that called <c>request_user_input</c>: shaped like the real executors return it — no text or message ids, since the step did not finish.</summary>
     private static StepTurnResult Ask(string question) =>
         new(false, false, null, string.Empty, null, Guid.Empty, Guid.Empty, UserInputQuestion: question);
 
@@ -895,20 +889,9 @@ public sealed class AgentRunOrchestratorTests
         Assert.False(exec.EndFailed);
     }
 
-    // ---- 18 D1 layer 2: the orchestrator's DECLINE branch (spec §8.1/§8.2/§8.3 at this seam) ----
+    // ---- the orchestrator's DECLINE branch ----
 
-    /// <summary>
-    /// The routing fact, isolated from the planner: given <c>PlanResult.Decline</c>, the loop parks
-    /// <c>needs-goal</c> with no steps, never calls <c>RunSingleTurnFallbackAsync</c> (§8.2), and still bills the
-    /// plan turn (§8.3). <c>GoalGroundingReproTests</c> proves the same three facts end-to-end through the REAL
-    /// planner and the provider wire; this one proves they belong to THIS branch, so a planner change cannot make
-    /// them pass or fail for the wrong reason.
-    /// <para>
-    /// The reason token is asserted as a WIRE literal off <c>ExtraJson</c>, like the step-cap and wall-clock park
-    /// facts above: the panel and the Flow surface read that string, and an assertion against the constant could
-    /// not catch the constant itself being renamed.
-    /// </para>
-    /// </summary>
+    /// <summary>Given <c>PlanResult.Decline</c>, the loop parks <c>needs-goal</c> with no steps, never calls <c>RunSingleTurnFallbackAsync</c>, and still bills the plan turn.</summary>
     [Fact]
     public async Task Run_PlannerDeclinesTheGoal_ParksNeedsGoal_NoSteps_NoFallback_AndBillsThePlanTurn()
     {
@@ -920,7 +903,7 @@ public sealed class AgentRunOrchestratorTests
 
         await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
 
-        Assert.False(exec.FallbackCalled); // §8.2, on the CALL — the R10 degrade is the worst branch here (§4.2)
+        Assert.False(exec.FallbackCalled); // the no-plan degrade is the worst branch here, never taken for a decline
         Assert.Empty(exec.Executed);
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.WaitingForInput, final!.State);
@@ -930,7 +913,7 @@ public sealed class AgentRunOrchestratorTests
         Assert.False(exec.EndCalled);     // …so the terminal bracket does not fire…
         Assert.True(exec.PausedCalled);   // …and the non-terminal release hook does (guardrail 5)
         var (input, output, perStep) = Ledger(final);
-        Assert.Equal(31, input);           // §8.3: the branch sits AFTER the I1 accrual, not in front of it
+        Assert.Equal(31, input);           // the branch sits AFTER the usage accrual, not in front of it
         Assert.Equal(7, output);
         Assert.Equal(0, perStep);
     }
@@ -1295,28 +1278,9 @@ public sealed class AgentRunOrchestratorTests
         Assert.Empty(workspaces.Promoted);
     }
 
-    // ============================================================================================
-    // 18 G5 — the MID-PLAN ASK park, at the loop level. The end-to-end facts (a real model call
-    // through a real executor, the delegated refusal, the containment guard) live in MidPlanAskTests;
-    // what only THIS harness can show is what the drain loop does to the surrounding PLAN.
-    // ============================================================================================
+    // ---- the MID-PLAN ASK park, at the loop level (end-to-end facts live in MidPlanAskTests) ----
 
-    /// <summary>
-    /// <b>WHAT HAPPENS TO A PARTIALLY EXECUTED PLAN — the territory spec §7 G5 says no existing resume path
-    /// covers.</b> Step A completed; step B asked. The loop parks the run <c>needs-input</c>, and the two rows
-    /// end in DIFFERENT states: A stays <c>Done</c> (its work is kept and must not be re-run) and B goes back to
-    /// <c>Pending</c> (it did not finish, so the resume re-runs it from the top).
-    /// <para>
-    /// Recording B as <c>Failed</c> instead — which is what would happen if the ask were folded into the outcome
-    /// bool, i.e. if 18 D6 had gone the other way — would be silently destructive: <c>Failed</c> is a status
-    /// <c>NextPendingStepAsync</c> cannot see AND <c>KeepDoneAsync</c> drops, so the resumed run would lose the
-    /// very step that asked the question, while the panel still showed it.
-    /// </para>
-    /// <para>
-    /// The step that asked is NOT a step failure: the replanner is never called. A run that replanned here would
-    /// throw away the question and re-decompose the goal behind the user's back.
-    /// </para>
-    /// </summary>
+    /// <summary>A partially executed plan where step B asks: the loop parks <c>needs-input</c>, keeps A as <c>Done</c>, and returns B to <c>Pending</c> so a resume re-runs it — recording B as <c>Failed</c> instead would lose it, since <c>NextPendingStepAsync</c> and <c>KeepDoneAsync</c> don't see failed steps. The replanner is never called.</summary>
     [Fact]
     public async Task AStepThatAsks_ParksNeedsInput_KeepsDoneSteps_AndGivesTheAskingStepBack()
     {
@@ -1342,17 +1306,7 @@ public sealed class AgentRunOrchestratorTests
         Assert.False(exec.EndCalled);         // …and never the terminal one
     }
 
-    /// <summary>
-    /// <b>18 D6, asserted where it would break first.</b> A step that asks AND declares
-    /// <c>emit_step_result{succeeded:false}</c> in the same exchange — the common real shape, because a model
-    /// that stops to ask usually explains itself through the declaration tool too — still parks. It does NOT
-    /// take the step-failure replan branch.
-    /// <para>
-    /// This is why the ask rides its own member rather than the outcome bool: <c>Succeeded:false</c> here is
-    /// TRUE and correct, and reading it as an ordinary failure would burn a replan on a step that is only
-    /// waiting. Same reason hermes #16 keeps <c>ApprovalRequiredTool</c> out of <c>Succeeded</c>.
-    /// </para>
-    /// </summary>
+    /// <summary>A step that asks AND declares <c>emit_step_result{succeeded:false}</c> in the same exchange still parks, never taking the step-failure replan branch — the ask rides its own member rather than the outcome bool, same reason <c>ApprovalRequiredTool</c> stays out of <c>Succeeded</c>.</summary>
     [Fact]
     public async Task AStepThatAsksAndAlsoDeclaresFailure_StillParks_AndNeverReplans()
     {
@@ -1377,12 +1331,7 @@ public sealed class AgentRunOrchestratorTests
         Assert.Equal(AgentStepStatus.Pending, final.Plan.Single().Status);
     }
 
-    /// <summary>
-    /// <b>PRECEDENCE.</b> A step that both parked for a tool approval (hermes #16) and asked a question answers
-    /// the APPROVAL first: that is the call which actually stopped the exchange, and re-asking costs nothing on
-    /// the resumed step. Merging the two branches, or ordering them the other way, would leave a human staring
-    /// at a question while the tool decision the run is really blocked on goes unasked.
-    /// </summary>
+    /// <summary>A step that both parks for a tool approval and asks a question answers the approval first — that is the call which actually stopped the exchange, and re-asking costs nothing on the resumed step.</summary>
     [Fact]
     public async Task WhenAStepBothParksForApprovalAndAsks_TheApprovalWins()
     {
@@ -1401,12 +1350,7 @@ public sealed class AgentRunOrchestratorTests
         Assert.DoesNotContain("needs-input", final.ExtraJson ?? string.Empty, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// The tokens an abandoned step really spent are BILLED, run-level (<c>stepId: null</c>) — a step that will
-    /// re-run must not carry a per-step ledger entry for the attempt that did not finish. The same treatment the
-    /// user-pause and approval-park branches give, restated here because a park that billed nothing would make an
-    /// asking run look free.
-    /// </summary>
+    /// <summary>Tokens an abandoned step spent are billed run-level (<c>stepId: null</c>) — a step that will re-run must not carry a per-step ledger entry for the attempt that did not finish.</summary>
     [Fact]
     public async Task AnAskingStepsTokensAreBilledRunLevel()
     {

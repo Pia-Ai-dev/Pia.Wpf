@@ -15,8 +15,7 @@ public enum FlowActionKind
     OpenRun,
     // Appended (G2). Resumes a budget-paused (WaitingForInput) agent run out-of-band.
     ContinueRun,
-    // Appended (18 G3 review fix). Opens a run parked on needs-goal/needs-input WITHOUT resolving the
-    // park — see OpenParkedRunAction's doc for why this cannot share OpenRun's Kind.
+    // Opens a run parked on needs-goal/needs-input without resolving the park.
     OpenParkedRun,
 }
 
@@ -59,30 +58,7 @@ public sealed record ContinueRunAction(Guid RunId, string Label) : FlowAction(La
     public override Guid? EntityId => RunId;
 }
 
-/// <summary>
-/// 18 G3 review fix. Open a run parked on <c>needs-goal</c>/<c>needs-input</c> (via
-/// <c>IWindowManagerService.ShowAgentRun</c>) WITHOUT retracting the card — deliberately NOT
-/// <see cref="OpenRunAction"/>, even though both navigate to the same place, because the two differ in
-/// what the click RESOLVES.
-/// <para>
-/// <see cref="OpenRunAction"/>'s click is safe to retract-on-open in both its uses: a TERMINAL card (the run
-/// already finished, nothing to come back to) and <see cref="ContinueRunAction"/>'s click actually RESUMES
-/// the run, so the retract is an optimistic removal of a state the click itself is about to change (and a
-/// failed resume re-parks, which re-publishes a fresh card). Opening a needs-goal/needs-input run resolves
-/// NOTHING — the run is still <c>WaitingForInput</c> after the click, exactly as before it, and the answer is
-/// typed in the chat this action merely navigates to. Retracting here (the defect this type fixes) would
-/// delete the only durable trace of a still-parked run the moment the user glances at it and looks away
-/// without answering, leaving it discoverable only by finding its chat by hand.
-/// </para>
-/// <para>
-/// The card still clears itself once the park actually resolves: <c>AgentRunNotificationSurface</c> records
-/// this publish exactly like every other <c>WaitingForInput</c> one (<c>_waitingPublished</c>), so the
-/// existing <c>RetractWaiting</c> path fires on the eventual →Running transition, and the terminal publish's
-/// shared <c>DedupKey</c> supersedes it if the run instead fails/cancels. <see cref="FlowItemViewModel"/>
-/// mirrors <see cref="OpenTodoAction"/>'s own precedent for this exact shape: navigate, then
-/// <c>IFlowService.MarkRead</c> rather than retract, and let the underlying state change do the retracting.
-/// </para>
-/// </summary>
+/// <summary>Opens a run parked on <c>needs-goal</c>/<c>needs-input</c> without retracting the card — unlike <see cref="OpenRunAction"/>, this click resolves nothing, so the card must stay until the park actually clears.</summary>
 public sealed record OpenParkedRunAction(Guid RunId, string Label) : FlowAction(Label)
 {
     public override FlowActionKind Kind => FlowActionKind.OpenParkedRun;

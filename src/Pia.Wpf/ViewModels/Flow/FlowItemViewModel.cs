@@ -186,10 +186,8 @@ public partial class FlowItemViewModel : ObservableObject
                     RetractByKey();
                     break;
                 case OpenParkedRunAction parked:
-                    // 18 G3 review fix: navigate WITHOUT resolving the park — see OpenParkedRunAction's doc.
-                    // Mirrors OpenTodoAction's own precedent (navigate, MarkRead, let the underlying state
-                    // change do the retracting) rather than OpenRunAction's retract-on-open, which would
-                    // delete the only durable trace of a still-parked run the moment it is merely viewed.
+                    // Navigate without retracting: retracting here would delete the only durable trace of a
+                    // still-parked run the moment it is merely viewed. Let the state change retract it instead.
                     _windowManager.ShowAgentRun(parked.RunId);
                     _flow.MarkRead(_item.Id);
                     break;

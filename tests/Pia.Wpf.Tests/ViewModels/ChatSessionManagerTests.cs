@@ -33,12 +33,6 @@ public class ChatSessionManagerTests
     private readonly IProviderCapabilityService _capability = Substitute.For<IProviderCapabilityService>();
     private readonly IHeadlessRunLauncher _headlessLauncher = Substitute.For<IHeadlessRunLauncher>();
     private readonly IWindowManagerService _windowManager = Substitute.For<IWindowManagerService>();
-
-    /// <summary>
-    /// 18 D7/G6: the ONE resume entry point an answer typed into the composer must reach. Substituted rather
-    /// than real because G6's contract stops here — that the answer arrives as this call's nudge — and what a
-    /// <c>needs-goal</c> resume then does with it is 18 G4's, pinned by G4's own tests.
-    /// </summary>
     private readonly IAgentRunResumeService _resumeService = Substitute.For<IAgentRunResumeService>();
 
     /// <summary>
@@ -1667,15 +1661,9 @@ public class ChatSessionManagerTests
         Assert.False(steering.RecordPauseRequest(runId));
     }
 
-    // ---- 18 D1 layer 1: StartBackgroundRunAsync re-checks GoalPreflight, not only the composer's
-    // CanExecuteRunInBackground gate -------------------------------------------------------------------
+    // ---- StartBackgroundRunAsync re-checks GoalPreflight, not only the composer's CanExecuteRunInBackground gate ----
 
-    /// <summary>
-    /// Spec §7 G1: the launcher-boundary half of the two-site gate. Same predicate as
-    /// <c>AssistantViewModel.CanExecuteRunInBackground</c>, checked here too so a blatant-junk goal creates
-    /// no run — no run row, no workspace, no model turn spent — even if a future caller reaches this method
-    /// directly instead of through the (already-gated) button.
-    /// </summary>
+    /// <summary>Same predicate as <c>AssistantViewModel.CanExecuteRunInBackground</c>, re-checked here so a caller that bypasses the button still gets no run.</summary>
     [Fact]
     public async Task StartBackgroundRunAsync_RefusesBlatantJunk_NeverReachesTheLauncher()
     {
@@ -1686,10 +1674,7 @@ public class ChatSessionManagerTests
         await _headlessLauncher.DidNotReceive().LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// §8.5's false-positive fact, pinned at this second site too: a legitimately terse, multi-word goal is
-    /// never refused, so it reaches the launcher exactly as it did before this batch.
-    /// </summary>
+    /// <summary>A legitimately terse, multi-word goal is never refused.</summary>
     [Fact]
     public async Task StartBackgroundRunAsync_ALegitimatelyTerseGoal_ReachesTheLauncher()
     {
@@ -1702,29 +1687,12 @@ public class ChatSessionManagerTests
             Arg.Any<CancellationToken>());
     }
 
-    // ---- 18 D7/G6: answering a parked run's question in the LIVE COMPOSER -----------------------------
-    //
-    // The defect these pin: 18 D5 puts the model's clarification question into the run's own chat, and on the
-    // interactive path that chat is a live session the user is looking at. Before G6 their typed reply went
-    // where any typed text goes — StartTurnAsync's ordinary chat turn — so the model answered the answer, the
-    // parked run was never resumed, and it sat WaitingForInput forever with its question already answered on
-    // screen. §4.5's `:176-178` filter means there is not even a Flow card to fall back on for that chat.
-    //
-    // The doubles stop at IAgentRunResumeService on purpose: G6's contract is "the answer reaches the ONE
-    // resume entry point with the answer as its nudge", and what that resume then does with it (append to
-    // AgentRuns.ClarificationsJson, re-plan) is 18 G4's, pinned by G4's own tests.
+    // ---- answering a parked run's question in the live composer ----
 
-    /// <summary>The parked-for-clarification pause envelope, as a WIRE literal. Same discipline as
-    /// <c>GoalGroundingReproTests</c>: these tokens are what a parked row actually carries and what every
-    /// surface reads, so a test spelling them off the constant could not catch the constant changing.</summary>
+    /// <summary>The pause envelope as a wire literal (not the production constant), so a drift in the wire format would fail this test.</summary>
     private static string PauseEnvelope(string reason) => $$"""{"paused":true,"reason":"{{reason}}"}""";
 
-    /// <summary>
-    /// The manager plus 18 G6's resume seam. A THIRD builder rather than a defaulted parameter on
-    /// <see cref="CreateSut"/>, for the reason <see cref="CreateIsolatingSut"/> gives: that one passes the ctor
-    /// positionally and omits every trailing optional, and keeping it that way is what proves the new ctor
-    /// parameter is source-compatible with the hand-constructed production call sites.
-    /// </summary>
+    /// <summary>A third builder, mirroring <see cref="CreateIsolatingSut"/>, so <see cref="CreateSut"/>'s positional call keeps proving ctor compatibility.</summary>
     private ChatSessionManager CreateResumingSut()
     {
         SynchronizationContext.SetSynchronizationContext(new InlineSynchronizationContext());
@@ -1744,15 +1712,10 @@ public class ChatSessionManagerTests
             resumeService: _resumeService);
     }
 
-    /// <summary>
-    /// Attaches a run to <paramref name="session"/> and makes the run store answer for it. The row is what
-    /// every surface in this batch reads (panel line, Flow body, and now the composer), so the fixture writes
-    /// a REAL envelope rather than stubbing a "parked" bool that nothing in production consults.
-    /// </summary>
+    /// <summary>Writes a real pause envelope rather than stubbing a "parked" bool, since nothing in production reads such a bool.</summary>
     private Guid AttachParkedRun(ChatSession session, string reason, AgentRunState state = AgentRunState.WaitingForInput)
     {
-        // Identity first, so the run's ChatId is the session's own id exactly as it is in production (the
-        // interactive Planned branch awaits a persist before CreateAsync, for the AgentRuns FK).
+        // Identity first, so ChatId matches the session's id, as production requires for the AgentRuns FK.
         var chatId = session.Id ?? Guid.NewGuid();
         if (session.Id is null)
             session.SetIdentity(chatId, DateTime.UtcNow, null, null, false);
@@ -1768,11 +1731,7 @@ public class ChatSessionManagerTests
             ExtraJson = PauseEnvelope(reason),
         });
 
-        // The STORED chat as it stands at answer time: the goal, and the question 18 G3 posted into it. Stubbed
-        // because the answer is made durable by the APPEND-ONLY save, which re-reads this row — without it the
-        // manager takes its no-stored-row fallback and the merge fact below would be about nothing. The two
-        // rows are also what makes that fact readable: the snapshot handed to SaveMergedAsync carries ONE
-        // message while the store holds two, which is the whole point of an append that cannot delete.
+        // Stubbed because the append-only save re-reads this stored row before merging in the answer.
         var now = DateTime.UtcNow;
         _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(new SyncAssistantChat
         {
@@ -1795,24 +1754,7 @@ public class ChatSessionManagerTests
         return runId;
     }
 
-    /// <summary>
-    /// <b>18 D7/G6, the fact this group exists for.</b> With the session's run parked because it ASKED the user
-    /// something, the composer's next send is the ANSWER: it reaches the ONE resume entry point
-    /// (<c>IAgentRunResumeService</c> — the same call <c>RunProgressViewModel.Continue</c> makes, so the panel
-    /// and the composer cannot diverge on what answering does) carrying the typed text as the nudge, and NO
-    /// turn starts.
-    /// <para>
-    /// Both reason tokens, because owner Q4 made them two (<c>needs-goal</c> at plan time, <c>needs-input</c>
-    /// mid-plan) and a composer that answered only one of them would leave 18 G5's mid-plan ask unanswerable on
-    /// exactly the path D7 is about.
-    /// </para>
-    /// <para>
-    /// The "no turn started" half is asserted three ways because it is the half that regresses silently: no
-    /// persona/provider resolution (turn SETUP never began), no streaming assistant placeholder in the
-    /// transcript, and no per-turn CTS. Any one of them alone would still pass if the manager both answered
-    /// AND started a turn.
-    /// </para>
-    /// </summary>
+    /// <summary>The composer's next send while parked reaches <c>IAgentRunResumeService</c> as the answer — the same call <c>RunProgressViewModel.Continue</c> makes — and starts no ordinary turn.</summary>
     [Theory]
     [InlineData("needs-goal")]
     [InlineData("needs-input")]
@@ -1827,8 +1769,7 @@ public class ChatSessionManagerTests
 
         await _resumeService.Received(1).ResumeAsync(runId, "the printed catalogue", Arg.Any<CancellationToken>());
 
-        // The answer is in the transcript as the user's own row — and it is the ONLY new row: no streaming
-        // assistant placeholder means StartTurnAsync's ordinary path never ran.
+        // The only new row, and it has no streaming placeholder — the ordinary path never ran.
         var posted = Assert.Single(session.Messages);
         Assert.True(posted.IsUser);
         Assert.Equal("the printed catalogue", posted.Content);
@@ -1837,22 +1778,7 @@ public class ChatSessionManagerTests
         await _personas.DidNotReceiveWithAnyArgs().ResolveActiveAsync(default, default);
     }
 
-    /// <summary>
-    /// <b>How the answer is made durable, and when.</b> Two facts in one, because they are one decision.
-    /// <para>
-    /// <b>The APPEND-ONLY save, never the full replace.</b> After the first answer this run resumes HEADLESS,
-    /// and a headless dispatch writes this same chat — per-step replies this live session does not hold.
-    /// <c>PullClarificationRowsAsync</c> does not close that gap and is not meant to: it runs only while the
-    /// run sits parked ASKING, so rows written while the run EXECUTES stay unknown here. So a replace off
-    /// <c>session.Messages</c> would delete exactly the run's own work. <c>SaveMergedAsync</c> merges the stored rows back under one
-    /// hold of the write gate; the snapshot carries the ONE new row, which is what makes it an honest use of
-    /// an append-only writer.
-    /// </para>
-    /// <para>
-    /// <b>BEFORE the resume is dispatched</b>, so an app kill mid-resume cannot lose the one thing the run is
-    /// waiting for.
-    /// </para>
-    /// </summary>
+    /// <summary>Merges the answer via an append-only save — never a full replace, which would delete rows a headless resume already wrote — before dispatching the resume.</summary>
     [Fact]
     public async Task StartTurnAsync_RunParkedForClarification_MergesTheAnswerIn_BeforeDispatchingTheResume()
     {
@@ -1873,24 +1799,11 @@ public class ChatSessionManagerTests
             _resumeService.ResumeAsync(runId, "the printed catalogue", Arg.Any<CancellationToken>());
         });
 
-        // The negative half, and the one that regresses silently: no full replace ran on this path at all.
+        // No full replace ran on this path at all.
         await _chatService.DidNotReceive().SaveAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// <b>The session's existing "busy" lever does the gating, and G6 adds no second one.</b> The answer
-    /// dispatches the resume UNATTENDED (every resume path in the app goes through <c>HeadlessRunLauncher</c>),
-    /// so the resumed run is a foreign writer against this chat — and the flag that already exists for exactly
-    /// that, <see cref="ChatSession.ForeignRunActive"/>, is what closes the composer while it re-plans. Pinned
-    /// here because the alternative design — a new session-level "waiting for an answer" state beside
-    /// <see cref="ChatState.WaitingForTool"/> — is the one that would have had to reproduce this by hand and
-    /// then drift from it.
-    /// <para>
-    /// The ownership retire that makes it work is the shipped one: <c>_ownRunIds</c> drops the run at its
-    /// first non-executing state, i.e. at the park, so by the time this event arrives the run is treated as
-    /// what it now is.
-    /// </para>
-    /// </summary>
+    /// <summary>The resumed run reuses <see cref="ChatSession.ForeignRunActive"/> to close the composer, rather than a new "waiting for an answer" state.</summary>
     [Fact]
     public async Task StartTurnAsync_AfterAnswering_TheResumedRunClosesTheComposerThroughForeignRunActive()
     {
@@ -1902,19 +1815,13 @@ public class ChatSessionManagerTests
         await sut.StartTurnAsync(session, "the printed catalogue", null);
         Assert.False(session.ForeignRunActive); // still parked at this instant: the CAS has not raised yet
 
-        // What TryBeginResumeAsync raises the moment it claims the row (from a pool thread in production; the
-        // fixture's inline context makes the manager's marshalled handler observable straight away).
+        // Raised from a pool thread in production; the inline context makes it observable synchronously here.
         _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Running));
 
         Assert.True(session.ForeignRunActive);
     }
 
-    /// <summary>
-    /// <b>The narrowness fact, and the one most likely to be broken by a "simplification".</b> Only the two
-    /// reasons that ASKED THE USER SOMETHING consume the send. A budget park did not ask anything — its
-    /// Continue button resumes with nothing typed, which is correct for it — so a send while a run sits at
-    /// <c>step-cap</c> is the ordinary chat turn it has always been, and the run stays parked.
-    /// </summary>
+    /// <summary>Only a park that asked something (not a budget park) consumes the send as an answer.</summary>
     [Fact]
     public async Task StartTurnAsync_RunParkedAtBudget_StartsAnOrdinaryTurn_AndNeverResumes()
     {
@@ -1933,23 +1840,14 @@ public class ChatSessionManagerTests
 
         await _resumeService.DidNotReceive().ResumeAsync(
             Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
-        // Non-vacuity: an ordinary turn really did start (setup resolved, and the streaming placeholder is
-        // in the transcript beside the user message).
+        // Non-vacuity: an ordinary turn really did start (setup resolved, placeholder added).
         await _personas.Received(1).ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>());
-        // [user text] + the assistant placeholder the ordinary path pre-adds. Asserted by COUNT rather than
-        // by the placeholder still being IsStreaming: the turn below is fire-and-forget, so its completion
-        // can clear that flag before this line runs.
+        // Asserted by count, not IsStreaming: the fire-and-forget turn may already have cleared that flag.
         Assert.Equal(2, session.Messages.Count);
         Assert.False(session.Messages[1].IsUser);
     }
 
-    /// <summary>
-    /// The belt-and-braces half of the same narrowness: a run that is EXECUTING is never answered, even if a
-    /// stale pause envelope is still on the row. Production reads the reason only when the state is
-    /// <see cref="AgentRunState.WaitingForInput"/> — today the resume claim NULLs <c>ExtraJson</c> so the
-    /// envelope cannot outlive the park, and this fact is what keeps that true if a future writer ever leaves
-    /// one behind.
-    /// </summary>
+    /// <summary>A stale pause envelope on an executing (non-<see cref="AgentRunState.WaitingForInput"/>) run is never read as an answer.</summary>
     [Fact]
     public async Task StartTurnAsync_RunNotParked_WithAStaleEnvelope_IsNeverAnswered()
     {
@@ -1963,14 +1861,7 @@ public class ChatSessionManagerTests
             Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Two sends that are NOT answers even while the run is parked asking, each for its own reason (see
-    /// <c>ChatSessionManager.TryAnswerParkedRunAsync</c>'s doc). A REGENERATION re-runs an existing assistant
-    /// message and says nothing new, so reading it as an answer would resume a run off a button pressed to
-    /// restyle a reply. A send carrying an ATTACHMENT stays an ordinary turn because a resume carries a text
-    /// nudge and nothing else, so consuming it here would silently discard the image — and the run stays
-    /// parked and visibly so, which is recoverable, whereas a dropped attachment is not.
-    /// </summary>
+    /// <summary>A regeneration or an attachment send is never read as the answer, so as not to resume off a restyle click or silently drop the attachment.</summary>
     [Fact]
     public async Task StartTurnAsync_RegenerationOrAttachment_IsNeverReadAsTheAnswer()
     {
@@ -1985,13 +1876,7 @@ public class ChatSessionManagerTests
             Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// Guardrail 1 at this seam. The send is already committed to the transcript by the time the resume is
-    /// dispatched, so a failing resume must surface as a log line and a still-parked run — the panel's
-    /// Continue button is the retry — never as an exception out of the send command, which is awaited by
-    /// <c>AssistantViewModel.ExecuteSendMessage</c>. A resume that merely returns <c>false</c> (lost CAS) is
-    /// the same story without the throw.
-    /// </summary>
+    /// <summary>Guardrail 1: a throwing (or false-returning) resume must not fail the send; it surfaces as a still-parked run instead.</summary>
     [Fact]
     public async Task StartTurnAsync_ResumeThrows_DoesNotFailTheSend_AndKeepsTheAnswerInTheTranscript()
     {
@@ -2008,12 +1893,7 @@ public class ChatSessionManagerTests
         Assert.Null(session.Cts); // and still no turn was started behind it
     }
 
-    /// <summary>
-    /// The no-resume-service degrade, which is what keeps <see cref="CreateSut"/>'s positional ctor call (and
-    /// every hand-constructed production one) source-compatible: with the trailing optional omitted, a parked
-    /// run's chat behaves exactly as it did before this batch — an ordinary turn — rather than swallowing the
-    /// send into a resume that cannot happen.
-    /// </summary>
+    /// <summary>With no resume service wired (the <see cref="CreateSut"/> case), a parked run's chat just gets an ordinary turn.</summary>
     [Fact]
     public async Task StartTurnAsync_NoResumeServiceWired_ParkedRunStillGetsAnOrdinaryTurn()
     {
@@ -2032,29 +1912,18 @@ public class ChatSessionManagerTests
 
         await _resumeService.DidNotReceive().ResumeAsync(
             Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
-        // [user text] + the assistant placeholder the ordinary path pre-adds. Asserted by COUNT rather than
-        // by the placeholder still being IsStreaming: the turn below is fire-and-forget, so its completion
-        // can clear that flag before this line runs.
+        // Asserted by count, not IsStreaming: the fire-and-forget turn may already have cleared that flag.
         Assert.Equal(2, session.Messages.Count);
         Assert.False(session.Messages[1].IsUser);
     }
 
-    // ---- 18 D7/G6 review fix: a LIVE session learns what a HEADLESS resume wrote --------------------
-    //
-    // The defect these pin, and it is the one that made the group's second acceptance fact only half true:
-    // the composer's answer resumes the run through the ONE resume entry point, which is HeadlessRunLauncher
-    // — every resume in the app is headless. So from the SECOND park onward the question is written by
-    // HeadlessTurnExecutor, which keeps MirrorClarificationQuestionAsync's no-op default because it holds no
-    // session. The row reached the store and nothing put it on screen, while the panel line beside it said to
-    // answer "in the chat" and §4.5's :176-178 filter denied that chat a Flow card. 18 D4 puts no cap on how
-    // many times a run may ask, so the second park is a normal case, not an edge.
+    // ---- a live session learns what a headless resume wrote ----
 
     /// <summary>A stored chat row, as a foreign writer left it.</summary>
     private static SyncAssistantChatMessage StoredRow(Guid id, string role, string content) =>
         new() { Id = id, Role = role, Content = content, Timestamp = DateTime.UtcNow };
 
-    /// <summary>A live transcript row. Built on the id-carrying ctor because every fact below turns on
-    /// whether the session and the store agree about a row's identity.</summary>
+    /// <summary>A live transcript row, with an explicit id since these facts test id-based dedup between session and store.</summary>
     private static AssistantMessage LiveRow(Guid id, bool user, string content) =>
         new(id, user ? Microsoft.Extensions.AI.ChatRole.User : Microsoft.Extensions.AI.ChatRole.Assistant,
             content, DateTime.Now);
@@ -2076,12 +1945,7 @@ public class ChatSessionManagerTests
         });
     }
 
-    /// <summary>
-    /// <b>The fix, stated as the user sees it: the SECOND question renders.</b> The session holds the first
-    /// exchange (goal, question, answer); the store holds those same three rows plus the question the
-    /// headless re-plan asked. The pull appends exactly the missing one, in stored order, and touches nothing
-    /// it already had.
-    /// </summary>
+    /// <summary>The pull appends exactly the rows missing from the session, in stored order, and leaves the rest untouched.</summary>
     [Fact]
     public async Task PullClarificationRows_RunParkedAsking_RendersTheQuestionAHeadlessResumeWrote()
     {
@@ -2110,14 +1974,7 @@ public class ChatSessionManagerTests
         Assert.Equal("which catalogue — 2024 or 2025?", pulled.Content);
     }
 
-    /// <summary>
-    /// The idempotence half, and the reason the orchestrator mints ONE message id for the durable write and
-    /// the live mirror (pinned from the other end by
-    /// <c>LiveTurnExecutorPlannedRunTests.PlannedRun_DeclinesTheGoal_MirrorsTheQuestionIntoTheLiveSession_AndSurvivesTheNextPersist</c>).
-    /// The pull keys on the message id, so a session that already holds the row adds nothing — which is what
-    /// makes it safe to run on EVERY chat write while the run is parked, including the run's own re-post and
-    /// this session's own answer.
-    /// </summary>
+    /// <summary>The pull keys on message id, so a row the session already holds is never appended twice.</summary>
     [Fact]
     public async Task PullClarificationRows_ARowTheSessionAlreadyHolds_IsNeverRenderedTwice()
     {
@@ -2137,13 +1994,7 @@ public class ChatSessionManagerTests
         Assert.Equal(2, session.Messages.Count);
     }
 
-    /// <summary>
-    /// <b>The narrowness fact.</b> The pull runs on exactly the state the composer answers in — the attached
-    /// run parked because it ASKED (<c>needs-goal</c>/<c>needs-input</c>), the two keyed off the SAME reader —
-    /// so the chat can never show a question the composer will not answer, nor answer one it never showed. A
-    /// budget park asked nothing, so its chat keeps pre-18 behaviour to the byte: nothing appended, and the
-    /// stored chat is not even re-read.
-    /// </summary>
+    /// <summary>A budget park (which asked nothing) leaves the chat untouched and never re-reads the store.</summary>
     [Fact]
     public async Task PullClarificationRows_RunParkedAtBudget_ChangesNothing_AndNeverReadsTheChat()
     {
@@ -2161,16 +2012,7 @@ public class ChatSessionManagerTests
         await _chatService.DidNotReceive().GetAsync(chatId, Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// The WIRING, which is the half a direct call cannot prove: the pull is reached from
-    /// <see cref="IAssistantChatService.ChatsChanged"/>, and that event is the trigger precisely because it is
-    /// raised AFTER the write it announces is durable — a pull driven by the run's own park event would race
-    /// the question write, since the orchestrator parks the row and only THEN posts the question.
-    /// <para>
-    /// Bounded poll rather than a bare assert: the handler marshals and then goes off-thread for the store
-    /// read, so the raise returns before the append. It fails by timeout, never by hanging.
-    /// </para>
-    /// </summary>
+    /// <summary>The pull is wired to <see cref="IAssistantChatService.ChatsChanged"/> — raised after the write is durable — rather than to the run's own park event, which would race the question write.</summary>
     [Fact]
     public async Task ChatsChanged_ForAWatchedChatWhoseRunIsAsking_ReachesThePull()
     {

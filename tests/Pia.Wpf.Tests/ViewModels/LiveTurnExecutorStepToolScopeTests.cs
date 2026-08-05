@@ -166,18 +166,12 @@ public sealed class LiveTurnExecutorStepToolScopeTests
         Assert.Contains(_lastTools!, t => t.Name == "specialist_only_tool"); // the step really re-resolved
         Assert.True(AgentStepTools.OffersStepResultTool(_lastTools),
             "a step running on its own persona must still be offered emit_step_result");
-        // 18 G5 rides the same choke point, so the same guard covers it: a specialist step that could declare an
-        // outcome but could not ASK would be the one shape where the two tools silently disagree.
+        // A specialist step that could declare an outcome but not ask would be where the two tools disagree.
         Assert.True(AgentStepTools.OffersRequestUserInputTool(_lastTools),
             "a step running on its own persona must still be offered request_user_input");
     }
 
-    // ============================================================================================
-    // 18 G5 (D3/D7, owner Q5) — the SAME scoping question for the mid-plan ask tool. It matters most
-    // on THIS path: the interactive symptom was recorded by the owner as inferred rather than
-    // observed (18 D7), so "interactive should work the same way" is only true if BuildSpec really
-    // offers it here too. Dropping the augmentation line COMPILES.
-    // ============================================================================================
+    // The mid-plan ask tool must be scoped by BuildSpec the same way emit_step_result is.
 
     private static AgentRun ChildRun() =>
         new() { Id = Guid.NewGuid(), ChatId = Guid.NewGuid(), Goal = "the goal", ParentRunId = Guid.NewGuid() };
@@ -200,17 +194,7 @@ public sealed class LiveTurnExecutorStepToolScopeTests
             "the session's cached tool list must not have been mutated");
     }
 
-    /// <summary>
-    /// <b>OWNER Q1 on the live path.</b> A step of a DELEGATED run is not offered the ask tool — while still
-    /// being offered <c>emit_step_result</c>, which is the channel a blocked child is redirected to. The second
-    /// assertion is the load-bearing one: withholding BOTH would strand every delegated step on the pre-hermes-#9
-    /// text heuristic, which is a strictly worse failure than not being able to ask.
-    /// <para>
-    /// No live run is a child today (the fan-out dispatches children headlessly), so this measures a property of
-    /// <c>BuildSpec</c> rather than a shape production reaches — which is exactly why it is worth pinning: the day
-    /// that changes, nothing else would notice.
-    /// </para>
-    /// </summary>
+    /// <summary>A delegated step is not offered the ask tool but keeps <c>emit_step_result</c> — withholding both would strand it on the older text-heuristic fallback, which is worse than not being able to ask.</summary>
     [Fact]
     public async Task ADelegatedStep_IsNotOfferedTheAskTool_ButKeepsTheDeclarationTool()
     {
@@ -226,9 +210,7 @@ public sealed class LiveTurnExecutorStepToolScopeTests
             "a delegated step must still be able to DECLARE the block it may not ask about");
     }
 
-    /// <summary>The R10 planner-degrade turn owns no <c>AgentStep</c> row, so there is nothing to put back to
-    /// Pending and nothing for a resume to re-run — it is deliberately not offered the ask tool either, matching
-    /// both the declaration tool above it and the headless executor.</summary>
+    /// <summary>The planner-degrade turn owns no <c>AgentStep</c> row, so it is not offered the ask tool either, matching the declaration tool above it and the headless executor.</summary>
     [Fact]
     public async Task TheFallbackTurn_IsNotOfferedTheAskTool()
     {

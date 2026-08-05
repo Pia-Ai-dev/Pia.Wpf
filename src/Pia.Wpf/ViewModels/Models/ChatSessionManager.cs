@@ -68,19 +68,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     /// </summary>
     private readonly IRunSteeringStore? _runSteering;
 
-    /// <summary>
-    /// 18 D7/G6: the ONE resume entry point (<c>IAgentRunResumeService</c>, i.e. <c>HeadlessRunLauncher</c>), so
-    /// an answer typed into the live composer re-enters a parked run through exactly the path the run-progress
-    /// panel's Continue button and the Flow <c>ContinueRun</c> card already use. Deliberately NOT a second
-    /// resume of its own: a fork would have to re-derive the CAS claim, the fresh <c>RunContext</c> budget grant,
-    /// the ledger preservation and the slot/workspace re-acquire, and the two would drift apart at the first of
-    /// those that changed.
-    /// <para>
-    /// Null ⇒ an answer cannot resume, so <see cref="TryAnswerParkedRunAsync"/> declines and the send is the
-    /// ordinary chat turn it was before this batch — the same trailing-and-defaulted degrade as the four
-    /// dependencies above, which is what keeps the hand-constructed test call sites source-compatible.
-    /// </para>
-    /// </summary>
+    /// <summary>Resume entry point for an answer typed into the composer; null means the send falls back to an ordinary chat turn.</summary>
     private readonly IAgentRunResumeService? _resumeService;
 
     private readonly SynchronizationContext _syncContext;
@@ -168,10 +156,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // with (§5.3 producer 3). Trailing and defaulted for the same reason as the three above — null means
         // "a live run cannot be paused", which is the pre-Batch-08 behaviour, not a broken manager.
         IRunSteeringStore? steering = null,
-        // 18 D7/G6: the single resume entry point an answer typed into the live composer re-enters a parked run
-        // through (see the field). Trailing and defaulted for the same reason as the four above — null means
-        // "an answer starts an ordinary chat turn", which is the pre-18 behaviour, not a broken manager. The
-        // container injects it because it is registered (Bootstrapper maps it onto HeadlessRunLauncher).
+        // Null means an answer starts an ordinary chat turn instead of resuming a parked run.
         IAgentRunResumeService? resumeService = null)
     {
         _logger = logger;
@@ -209,29 +194,12 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // composer can refuse to start a second full-chat writer. Unsubscribed in Dispose.
         _agentRunService.RunChanged += OnAgentRunChanged;
 
-        // 18 D7/G6: the FIRST subscriber in the app that refreshes an open session's transcript from the store
-        // (see PullClarificationRowsAsync for the defect and for how narrow it is kept). Unsubscribed in
-        // Dispose, for the same reason the run handler is — the chat service is a singleton and outlives this
-        // scoped manager.
+        // Unsubscribed in Dispose, for the same reason the run handler is — the chat service is a singleton
+        // and outlives this scoped manager.
         _chatService.ChatsChanged += OnChatsChanged;
     }
 
-    /// <summary>
-    /// 18 D7/G6: a chat row was written. If it is a chat this window has OPEN and its run is parked asking the
-    /// user something, pull whatever the run wrote into the live transcript — the run's question is otherwise
-    /// durable and invisible (see <see cref="PullClarificationRowsAsync"/>).
-    /// <para>
-    /// Raised off the UI thread (<c>AssistantChatService</c> raises it after releasing its write gate, from
-    /// whatever thread wrote), so the work is marshaled like <see cref="OnAgentRunChanged"/>'s. Nothing but the
-    /// kind test and the post happens on the RAISING thread — that service's own doc names subscribers who
-    /// "do slow work on the raising thread" as a known cost, and this one deliberately is not another.
-    /// Fire-and-forget with the manager's own logger: a fault here must never propagate back into the writer's
-    /// call stack (guardrail 1), which on this event is a run's own persist.
-    /// </para>
-    /// <para>
-    /// A DELETION is ignored: this pull only ever adds rows, and a chat whose row is gone has nothing to add.
-    /// </para>
-    /// </summary>
+    /// <summary>Pulls a parked run's question into this window's live transcript if the written chat is open here; deletions are ignored since this only ever adds rows.</summary>
     private void OnChatsChanged(object? sender, AssistantChatChangedEventArgs e)
     {
         if (e.Kind != AssistantChatChangeKind.Upserted)
@@ -694,14 +662,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction = null,
         bool planned = false)
     {
-        // 18 D7/G6 — THE INTERACTIVE HALF OF D5, and it must run BEFORE anything below mutates the session:
-        // when this session's attached run is parked asking the user a question, the next send is that ANSWER,
-        // not a new turn. Placed at this one choke point rather than in AssistantViewModel because every
-        // send-shaped entry in the app funnels through here (Send, the suggest_agent_mode card, the
-        // programmatic StartPlannedTurnAsync), the same defence-in-depth reasoning 18 D1 layer 1 gives for
-        // re-checking the goal in StartBackgroundRunAsync instead of trusting the button's CanExecute alone.
-        // UI-affine like every other await on this path (no ConfigureAwait(false)): the continuation must resume
-        // on the UI thread, because the fall-through below mutates session.Messages and flips ChatState.
+        // Must run before anything below mutates the session: if the attached run is parked asking the user
+        // a question, this send is that answer, not a new turn.
         if (await TryAnswerParkedRunAsync(session, userText, attachment, regenerationInstruction))
             return;
 
@@ -997,80 +959,17 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     }
 
     /// <summary>
-    /// <b>18 D7/G6 — the interactive answer path.</b> When this session's attached run is parked at
-    /// <see cref="AgentRunState.WaitingForInput"/> because it ASKED THE USER SOMETHING
-    /// (<see cref="AgentRunOrchestrator.NeedsGoalReason"/> at plan time, or
-    /// <see cref="AgentRunOrchestrator.NeedsInputReason"/> mid-plan — owner Q4's two tokens), the composer's
-    /// next send is the ANSWER: it is appended to the transcript and handed to the run's resume, and NO new
-    /// turn starts. Returns <c>true</c> when it consumed the send, <c>false</c> for every other case — in which
-    /// <see cref="StartTurnAsync"/> continues exactly as it did before this batch.
+    /// When the attached run is parked waiting on a question it asked the user, treats this send as the answer
+    /// (appended to the transcript, handed to the run's resume) instead of starting a new turn.
     /// <para>
-    /// The Chat/Agent lever (<c>planned</c>) is deliberately not consulted: a send while the run is asking is
-    /// an answer whichever shape the lever would have given a NEW turn, and launching a second Planned run into
-    /// this chat while the first one waits for this very text is never what the user meant.
-    /// </para>
-    /// <para>
-    /// <b>Why this exists at all.</b> 18 D5 puts the question in the run's own chat, and on the INTERACTIVE
-    /// path that chat is a LIVE session the user is looking at. Before this method the user's reply went where
-    /// any typed text goes — <see cref="StartTurnAsync"/>'s ordinary chat turn — so the model answered the
-    /// answer, the parked run was never resumed, and the run sat WaitingForInput forever with its question
-    /// already answered on screen. §4.5's <c>:176-178</c> filter means there is not even a Flow card to fall
-    /// back on for the chat the user is actively watching (by design: "the run-progress panel already reflects
-    /// the state"), so on this path the two surfaces of D5 are the PANEL and this composer.
-    /// </para>
-    /// <para>
-    /// <b>Its other half is <see cref="PullClarificationRowsAsync"/>, and neither works alone.</b> This method
-    /// consumes the answer; that one renders the QUESTION for every park after the first, because the resume
-    /// this method fires is headless and a headless dispatch has no live transcript to mirror into. Both key
-    /// on the same <see cref="ReadClarificationParkReasonAsync"/>, so the chat shows a question exactly when
-    /// the composer will treat the next send as its answer — the pair can never half-arrive.
-    /// </para>
-    /// <para>
-    /// <b>The park is read off the RUN ROW, and this deliberately adds no session-level "waiting for an answer"
-    /// concept.</b> The session already has one waiting concept — <see cref="ChatState.WaitingForTool"/>, which
-    /// an action card puts it in — and it is the wrong shape twice over: it implies
-    /// <see cref="ChatSession.IsStreaming"/> (<c>ChatSession.IsStreaming => State is Running or
-    /// WaitingForTool</c>), i.e. Send DISABLED, which is the exact opposite of what a question needs; and its
-    /// answer is a click on a card, not typed text. Adding a THIRD flag beside it is how two "this session is
-    /// waiting on something" concepts come to disagree, so there is exactly one authority here: the row's own
-    /// pause envelope, read the same way <c>RunProgressViewModel.DescribePause</c> and
-    /// <c>AgentRunNotificationSurface.PausedBodyKey</c> read it. The session's existing levers keep doing their
-    /// existing jobs — <c>IsStreaming</c> blocks a send while the run executes, and
-    /// <see cref="ChatSession.ForeignRunActive"/> blocks one while the RESUMED (headless, foreign) dispatch
-    /// writes this chat.
-    /// </para>
-    /// <para>
-    /// <b>Executor-agnostic on purpose.</b> It keys on the attached run row, not on
-    /// <see cref="_ownRunIds"/>, so it also answers a run this session never launched: a background run's chat
-    /// opened from the Flow card ("open it to answer") re-attaches through
-    /// <see cref="RestoreActiveRunAsync"/> — which deliberately leaves the parked path open — and then answers
-    /// in the composer exactly like an interactive one. That is §4.4's chat surface for the card path, not an
-    /// accident of scope.
-    /// </para>
-    /// <para>
-    /// <b>Three sends are NOT answers</b>, each for its own reason. A REGENERATION
-    /// (<paramref name="regenerationInstruction"/> non-null) re-runs an existing assistant message and says
-    /// nothing new, so reading it as an answer would resume a run off a button the user pressed to change a
-    /// reply's style. A send carrying an ATTACHMENT is left as an ordinary turn because a resume carries a text
-    /// nudge and nothing else (<see cref="IAgentRunResumeService.ResumeAsync"/>), so consuming it here would
-    /// silently discard the image the user chose to attach; the run stays parked and VISIBLY so (the panel line
-    /// plus its Continue button), which is recoverable, whereas a dropped attachment is not. And a blank send
-    /// answers nothing. Every OTHER park reason — the budget cap, <c>tool-approval</c>, a user pause,
-    /// <c>children-parked</c> — also falls through: none of them asked the user a question, and for those the
-    /// pre-18 behaviour (an ordinary chat turn alongside the parked run) is what the panel's Continue button
-    /// already assumes.
-    /// </para>
-    /// <para>
-    /// <b>The answer is user content</b> (CLAUDE.md privacy rule), so it never reaches a log line here — not
-    /// even a truncated one. What is logged is app-owned: the ids and the reason TOKEN, which
-    /// <c>RunPauseEnvelope</c> documents as safe to log.
+    /// A regeneration, an attachment, or a blank send are never treated as an answer: a regeneration re-runs an
+    /// existing reply, and a resume carries only a text nudge so an attachment would be silently dropped.
     /// </para>
     /// </summary>
     private async Task<bool> TryAnswerParkedRunAsync(
         ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction)
     {
-        // Ordered cheapest-first so an ordinary chat turn — no attached run — costs one null test and never
-        // touches the run store. This method is on the hot path of EVERY send.
+        // Ordered cheapest-first: an ordinary chat turn (no attached run) never touches the run store.
         if (_resumeService is null || session.ActiveRunId is not { } runId
             || regenerationInstruction is not null || attachment is not null
             || string.IsNullOrWhiteSpace(userText))
@@ -1081,16 +980,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         if (await ReadClarificationParkReasonAsync(runId) is not { } reason)
             return false;
 
-        // The answer becomes a real user row in the run's OWN chat: it is what the user said, it is what the
-        // next reader of this transcript needs to see under the question, and the question itself is already in
-        // these same Messages so the pair reads as one exchange — put there by LiveTurnExecutor's mirror on
-        // this run's FIRST park, and by PullClarificationRowsAsync on every park a headless resume raised
-        // after it.
         var answer = new AssistantMessage(ChatRole.User, userText);
         session.Messages.Add(answer);
 
-        // AWAITED, and BEFORE the resume: the answer must be durable before a dispatch that writes this same
-        // chat starts, or an app kill mid-resume loses the one thing the run is waiting for.
+        // Awaited before the resume: the answer must be durable before a dispatch writes this same chat, or an
+        // app kill mid-resume loses the one thing the run is waiting for.
         await AppendAnswerDurablyAsync(session, answer);
 
         _logger.LogInformation(
@@ -1099,15 +993,13 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
         try
         {
-            // The SAME call the panel's Continue button makes (RunProgressViewModel.Continue passes its
-            // NudgeText the same way), so the two surfaces of D5 cannot diverge on what answering does. G4 owns
-            // what a needs-goal resume then does with it — re-plan with the answer beside the goal.
+            // The same call the panel's Continue button makes, so the two surfaces cannot diverge on what
+            // answering does.
             if (!await _resumeService.ResumeAsync(runId, userText))
             {
-                // Not an error and not a lost answer that needs inventing a recovery UI: false means THIS call
-                // did not win the CAS, i.e. the run was claimed by the panel/Flow/another window a beat earlier
-                // or is no longer parked. The answer is already in the transcript, the panel still shows the
-                // run's real state, and the user's next send is decided by the row again.
+                // False means this call did not win the CAS (already claimed elsewhere, or no longer parked),
+                // not an error: the answer is already in the transcript and the panel still shows the run's
+                // real state.
                 _logger.LogWarning(
                     "Run {RunId}: the answer typed in chat did not start a resume (already claimed, or no longer parked)",
                     runId);
@@ -1115,9 +1007,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         }
         catch (Exception ex)
         {
-            // Same isolation as the read above: the send is already committed to the transcript, so a failing
-            // resume must surface as a log line and a still-parked run (the panel's Continue is the retry), not
-            // as an exception out of the send command.
+            // The send is already committed to the transcript, so a failing resume surfaces as a log line and
+            // a still-parked run, not an exception out of the send command.
             _logger.LogWarning(ex, "Run {RunId}: resuming from the chat composer failed", runId);
         }
 
@@ -1125,32 +1016,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     }
 
     /// <summary>
-    /// <b>18 D7/G6 — "is this run parked because it ASKED THE USER SOMETHING?", the one predicate both halves
-    /// of the interactive path key on.</b> Returns the pause token (<c>needs-goal</c> / <c>needs-input</c>)
-    /// when it is, <c>null</c> for every other run state and every other park reason.
-    /// <para>
-    /// ONE reader for two callers on purpose. <see cref="TryAnswerParkedRunAsync"/> uses it to decide that the
-    /// next send is an ANSWER, and <see cref="PullClarificationRowsAsync"/> uses it to decide that a foreign
-    /// write into this chat is a QUESTION worth rendering. Those two must agree exactly, or the chat shows a
-    /// question the composer will not answer, or answers one it never showed.
-    /// </para>
-    /// <para>
-    /// The STATE test is belt-and-braces beside the token test, not redundant: the resume claim NULLs
-    /// <c>ExtraJson</c> (<c>AgentRunService.TryBeginResumeAsync</c>, deliberately, "so the claim does not
-    /// retain stale pause state"), so a claimed run reads no reason at all — but asserting the state as well is
-    /// what keeps this narrow if a future writer ever leaves an envelope behind on a non-parked row.
-    /// </para>
-    /// <para>
-    /// <b>Read on a POOL thread</b> (<c>Task.Run</c>), the rule <see cref="RestoreActiveRunAsync"/> states for
-    /// this same store: <see cref="IAgentRunService"/> is a synchronous, lock-holding store, and a live
-    /// headless run holding that lock must never stall the UI. This one is on the hot path of every send from
-    /// a chat that carries a run, so it is the last place to block the dispatcher. UI-affine afterwards (no
-    /// <c>ConfigureAwait(false)</c>): both callers mutate <c>session.Messages</c> in the continuation.
-    /// </para>
-    /// <para>
-    /// Failure-isolated (guardrail 1): a read fault answers <c>null</c>, i.e. the pre-18 behaviour — an
-    /// ordinary chat turn, and no pull — never a lost send.
-    /// </para>
+    /// Returns the pause reason token when the run is parked waiting on a question it asked the user, null
+    /// otherwise. Shared by both callers so they always agree on when the run is asking.
     /// </summary>
     private async Task<string?> ReadClarificationParkReasonAsync(Guid runId)
     {
@@ -1172,60 +1039,16 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     }
 
     /// <summary>
-    /// <b>18 D7/G6 review fix — the other half of the answer loop: a live session learns what the run wrote
-    /// while it was not looking.</b>
-    /// <para>
-    /// <b>The defect.</b> The composer's answer resumes the run through the ONE resume entry point, which is
-    /// <c>HeadlessRunLauncher</c> — every resume in the app is headless, by design. So from the SECOND park
-    /// onward the run's question is written by <c>HeadlessTurnExecutor</c>, which keeps
-    /// <see cref="IAgentTurnExecutor.MirrorClarificationQuestionAsync"/>'s no-op default because it holds no
-    /// session. The question reached the store and nothing put it on screen: nothing subscribed
-    /// <see cref="IAssistantChatService.ChatsChanged"/> to refresh an open session's
-    /// <see cref="ChatSession.Messages"/>. The user was then looking at a panel line that says to answer
-    /// <i>in the chat</i>, a chat with no question in it, and — because §4.5's <c>:176-178</c> filter
-    /// suppresses the Flow card for exactly the chat they are watching — no third surface either. 18 D4 puts
-    /// no cap on how many times a run may ask, so a second park is a normal case, not an edge.
-    /// </para>
-    /// <para>
-    /// <b>Why <see cref="IAssistantChatService.ChatsChanged"/> is the trigger and not
-    /// <c>RunChanged</c>.</b> It is raised AFTER the write it announces is durable, so a pull off it can never
-    /// read the store before the question is in it. The run-state event cannot say that: the orchestrator
-    /// parks the row (raising <c>RunChanged</c>) and only THEN posts the question, so a pull driven by the
-    /// park would race the write it exists to render.
-    /// </para>
-    /// <para>
-    /// <b>Deliberately narrow.</b> It runs only while the session's attached run sits parked ASKING
-    /// (<see cref="ReadClarificationParkReasonAsync"/> — the same predicate that decides the composer's next
-    /// send is the answer, so the chat shows the question exactly in the state where the composer will answer
-    /// it), and only while the session is not running a turn of its own. Every other chat in the app keeps
-    /// pre-18 behaviour to the byte. It is APPEND-ONLY and keyed on the message id: it never removes, never
-    /// reorders and never rewrites a row the session already holds, so a message the user deleted in this
-    /// session cannot come back through it once that deletion has persisted.
-    /// </para>
-    /// <para>
-    /// <b>It also closes the delete hazard the mirror opened.</b> Once the row is in <c>Messages</c>, the
-    /// session's own next full-replace <see cref="PersistAsync"/> writes it FORWARD instead of erasing it —
-    /// the same reason <c>LiveTurnExecutor</c> mirrors the first question rather than trusting the direct
-    /// write.
-    /// </para>
-    /// <para>
-    /// Failure-isolated at every step (guardrail 1): this is bookkeeping behind a run, and a store fault must
-    /// leave the session exactly as it was rather than fail anything the user did.
-    /// </para>
+    /// Refreshes an open session's transcript with rows a headless resume wrote while parked asking the user
+    /// something, since a headless dispatch has no live session to mirror its question into directly.
+    /// Append-only and keyed on message id, so it can never resurrect a row the user deleted.
     /// </summary>
     internal async Task PullClarificationRowsAsync(Guid chatId)
     {
         if (_disposed)
             return;
 
-        // The session this chat is open in, if any. Cheapest test first: no live session ⇒ nothing to render
-        // into, and the store already holds the row for whenever the chat IS opened (ActivateAsync hydrates
-        // from it).
-        //
-        // Matched over _allSessions, the same set OnAgentRunChanged walks, rather than the _sessions
-        // dictionary: a session's own SetIdentity is the authority on which chat it is, and keying it into the
-        // dictionary is separate bookkeeping done at first-turn start. Scanning the set cannot disagree with
-        // the session, and there is at most a handful of them per window.
+        // The session this chat is open in, if any; no live session means nothing to render into.
         var session = _allSessions.FirstOrDefault(s => s.Id == chatId);
         if (session is null || session.ActiveRunId is not { } runId || session.IsStreaming)
             return;
@@ -1247,9 +1070,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         if (chat is null)
             return;
 
-        // Re-checked after the two awaits: the session may have started a turn, been re-identified or been
-        // disposed while this was off-thread, and appending into any of those is how a "refresh" becomes a
-        // duplicate or a crash.
+        // Re-checked after the two awaits: the session may have changed state while this was off-thread.
         if (_disposed || session.IsStreaming || session.Id != chatId)
             return;
 
@@ -1265,8 +1086,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
         if (added > 0)
         {
-            // Ids, a count and the app-owned park token. The rows themselves are the model's question and the
-            // run's own replies — user-derived payload, never on a log line (CLAUDE.md).
+            // The row contents are user-derived payload and never go on a log line (Privacy-First Logging).
             _logger.LogInformation(
                 "Chat {ChatId}: pulled {Count} row(s) written by run {RunId} while it was parked {Reason}",
                 chatId, added, runId, reason);
@@ -1274,29 +1094,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     }
 
     /// <summary>
-    /// Makes ONE appended message durable WITHOUT the full-replace persist — the append-only save
-    /// (<see cref="IAssistantChatService.SaveMergedAsync"/>), for the reason that method exists.
-    /// <para>
-    /// <b>Why <see cref="PersistAsync"/> is the wrong call at this one site.</b> It replaces the stored rows
-    /// with a snapshot of <see cref="ChatSession.Messages"/>, and after the FIRST answer this run resumes
-    /// HEADLESS — a foreign writer against this same chat, whose per-step replies this live session does not
-    /// hold. <see cref="PullClarificationRowsAsync"/> deliberately does not close that gap: it runs only while
-    /// the run sits parked ASKING, so rows written while the run EXECUTES are still unknown here, by design.
-    /// A replace would therefore DELETE exactly the run's own work. <c>SaveMergedAsync</c> re-reads the
-    /// stored rows and merges back everything this one-message snapshot does not carry, all under one hold of
-    /// the store's write gate, so this append can never delete another writer's row — the same call, for the
-    /// same reason, as the orchestrator's own question post and the headless executor's per-step write.
-    /// </para>
-    /// <para>
-    /// The snapshot carries ONE message, not the whole session, which is what makes this an honest use of an
-    /// APPEND-ONLY writer: sending the full list would merge back rows the user had deleted or truncated in
-    /// this session (Regenerate/Delete replay through <c>SaveAsync</c> precisely so they stay deleted).
-    /// </para>
-    /// <para>
-    /// Falls back to <see cref="PersistAsync"/> when there is nothing to merge with — no chat id, or the
-    /// stored row is gone (its chat was deleted underneath the run). Failure-isolated: this is bookkeeping on
-    /// a send the user already made, so a store fault must not throw out of the send command.
-    /// </para>
+    /// Persists one appended message via the append-only merge save rather than a full-replace persist, so it
+    /// can never clobber rows a concurrent headless resume already wrote to the same chat.
     /// </summary>
     private async Task AppendAnswerDurablyAsync(ChatSession session, AssistantMessage answer)
     {
@@ -1327,8 +1126,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                 WindowMode = chat.WindowMode,
                 ProviderId = chat.ProviderId,
                 WorkingDirectory = chat.WorkingDirectory,
-                // The SAME message instance that went into session.Messages, so it keeps its Id: a later
-                // full-replace persist from this session then updates that row instead of duplicating it.
+                // Same message instance as session.Messages, so a later full-replace persist updates this row
+                // instead of duplicating it.
                 Messages = [AssistantMessageMapper.ToDto(answer)],
             });
         }
@@ -1551,20 +1350,15 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     /// to <see cref="StartTurnAsync"/> — it never touches the interactive session/CTS/active-run state
     /// (G-6); the launcher runs it on a fresh DI scope with its own CTS.
     /// <para>
-    /// 18 D1 layer 1: re-checked here via <see cref="GoalPreflight"/>, not only at the composer's
-    /// <c>CanExecuteRunInBackground</c> gate, so a blatant-junk goal creates no run even if a future caller
-    /// reaches this method directly instead of through the (already-gated) button. Same predicate, same
-    /// home — not re-derived here.
+    /// Re-checked here via <see cref="GoalPreflight"/>, not only at the composer's gate, so a blatant-junk
+    /// goal creates no run even if a future caller reaches this method directly.
     /// </para>
     /// </summary>
     public Task StartBackgroundRunAsync(string goal)
     {
         if (GoalPreflight.IsRefused(goal))
         {
-            // This branch only fires for a caller that bypasses the composer's CanExecuteRunInBackground
-            // gate — the goal itself is user content and stays out of this line (Privacy-First Logging),
-            // but the refusal token is app-owned, so it still gets one line rather than being silently
-            // indistinguishable from a successful launch.
+            // The goal itself is user content and stays out of this line (Privacy-First Logging).
             _logger.LogInformation("StartBackgroundRunAsync refused by 18 D1 layer 1 (goal preflight)");
             return Task.CompletedTask;
         }
@@ -1584,8 +1378,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // would keep a disposed window's sessions alive and post to a dead SynchronizationContext.
         _agentRunService.RunChanged -= OnAgentRunChanged;
 
-        // 18 D7/G6: beside it and for the identical reason — the chat service is a singleton too, and this
-        // handler reaches into _allSessions, which the loop below is about to tear down.
+        // Same reason — the chat service is a singleton too, and this handler reaches into _allSessions,
+        // which the loop below is about to tear down.
         _chatService.ChatsChanged -= OnChatsChanged;
 
         // The manager owns session teardown — cancel every session's Cts + pending

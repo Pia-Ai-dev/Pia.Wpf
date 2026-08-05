@@ -12,16 +12,7 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// 18 D1 layer 1 (spec §7 G1), at the <see cref="AssistantViewModel"/> composer boundary: the
-/// <c>RunInBackgroundCommand</c>'s own gate now also refuses blatant junk (<see cref="GoalPreflight.IsRefused"/>),
-/// and <see cref="AssistantViewModel.GoalTooShortHintVisible"/> is the reason the user sees for the dead
-/// button — a copy of the shape <c>AssistantViewModelLeverTests</c>'s <c>ForeignRunActive</c> facts already
-/// pin for the sibling composer hint (Assistant_BackgroundRunActive_Hint). Same builder shape: the VM is
-/// constructed off any thread with a stub <see cref="System.Threading.SynchronizationContext"/>, and setting
-/// <c>InputText</c> here is safe because no View is ever constructed in this file (the AtCommand autocomplete
-/// hazard <c>AssistantViewParseTests</c> documents is a real-Dispatcher/behavior-attached-to-the-View concern).
-/// </summary>
+/// <summary><see cref="AssistantViewModel.RunInBackgroundCommand"/>'s gate refuses blatant junk goals (<see cref="GoalPreflight.IsRefused"/>), with <see cref="AssistantViewModel.GoalTooShortHintVisible"/> as the reason shown for the dead button.</summary>
 public class AssistantViewModelGoalPreflightTests
 {
     private AssistantViewModel CreateSut()
@@ -101,8 +92,7 @@ public class AssistantViewModelGoalPreflightTests
     [InlineData("Write the release notes for v2")]
     public void RunInBackground_StaysEnabled_ForALegitimatelyTerseGoal(string goal)
     {
-        // §8.5's false-positive fact: layer 1 must never refuse a real, if short, goal — a dead button here
-        // gives the user no recourse.
+        // Layer 1 must never refuse a real, if short, goal — a dead button here gives the user no recourse.
         var vm = CreateSut();
         vm.InputText = goal;
 
@@ -125,9 +115,7 @@ public class AssistantViewModelGoalPreflightTests
     [Fact]
     public void GoalTooShortHint_NeverShows_ForTheEmptyComposerDisabledState()
     {
-        // The exact mistake the ForeignRunActive precedent's comment warns against: an empty composer is
-        // already a disabled RunInBackgroundCommand for an unrelated reason (no real text at all), so the
-        // "goal too short" hint must not also render for it.
+        // An empty composer is already disabled for an unrelated reason, so the goal-too-short hint must not also render.
         var vm = CreateSut();
         vm.InputText = string.Empty;
 
@@ -138,7 +126,7 @@ public class AssistantViewModelGoalPreflightTests
     [Fact]
     public void GoalTooShortHint_NeverShows_WhileStreaming()
     {
-        // Same mistake, the other disabled axis: streaming already explains the dead button.
+        // Same idea, the other disabled axis: streaming already explains the dead button.
         var vm = CreateSut();
         vm.InputText = "ggg";
         Assert.True(vm.GoalTooShortHintVisible);

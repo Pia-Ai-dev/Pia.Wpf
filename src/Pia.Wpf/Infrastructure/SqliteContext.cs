@@ -465,12 +465,8 @@ public class SqliteContext : IDisposable
                 LastMessageId       TEXT    NULL,
                 PolicyJson          TEXT    NULL,
                 LedgerJson          TEXT    NULL,
-                -- 18 D2 / owner Q3: the answers the user gave to this run's clarification questions, as a JSON
-                -- array of strings (Pia.Services.RunClarifications owns the shape). NOT a member of the pause
-                -- envelope in ExtraJson, and that is forced rather than preferred: both resume claims
-                -- (TryBeginResumeAsync / TryResumeFromPauseAsync) SET ExtraJson=NULL, so an answer kept there
-                -- would be destroyed by the very resume that carries it. Same nullable-TEXT shape as PolicyJson
-                -- and LedgerJson above; MigrateSchema adds it to existing databases.
+                -- Answers to this run's clarification questions, as a JSON array of strings. Not part of
+                -- ExtraJson because both resume claims SET ExtraJson=NULL, which would destroy an answer kept there.
                 ClarificationsJson  TEXT    NULL,
                 CreatedAt           TEXT    NOT NULL,
                 UpdatedAt           TEXT    NOT NULL,
@@ -962,11 +958,7 @@ public class SqliteContext : IDisposable
             addCol.ExecuteNonQuery();
         }
 
-        // 18 D2 / owner Q3: AgentRuns gained ClarificationsJson — the answers a user gave to the run's
-        // clarification questions. Fresh databases already have it from the CREATE TABLE above, so this PRAGMA
-        // check short-circuits and no ALTER is issued. NULLABLE with no default, like the PolicyJson/LedgerJson
-        // columns it sits beside: on an existing user's row NULL means "this run was never asked anything",
-        // which is exactly true of every run that predates this batch.
+        // Fresh databases already have ClarificationsJson from the CREATE TABLE above, so this short-circuits.
         var hasClarificationsJson = false;
         using (var p = _connection!.CreateCommand())
         {

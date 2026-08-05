@@ -18,14 +18,9 @@ public interface IAgentRunSteeringService
     /// no plan, drain zero steps and settle <c>Completed</c> having done nothing.
     /// </para>
     /// <para>
-    /// <b>18 D2 narrowed that premise without changing this conclusion.</b> A resume now re-plans for exactly
-    /// one park reason — <c>needs-goal</c> with zero step rows
-    /// (<c>AgentRunOrchestrator.TryEnterClarificationRePlanAsync</c>) — so "skips planning" is no longer true
-    /// of EVERY resume. It is still true of every resume a USER PAUSE can produce: this method's pause writes
-    /// the <c>user-paused</c> token, which fails that guard's first condition, so a run paused mid-plan would
-    /// still come back with no plan. Stated rather than left implicit, because the next reader deciding
-    /// whether <c>Planning</c> may join the set above must not reason from a sentence the code stopped
-    /// supporting.
+    /// A resume now re-plans for one park reason — <c>needs-goal</c> with zero step rows — so "skips planning"
+    /// is no longer true of every resume in general, but it stays true of every resume a USER PAUSE produces:
+    /// this method's pause writes the <c>user-paused</c> token, which fails that guard's condition.
     /// </para>
     /// <para>
     /// D6: a <c>WaitingForChildren</c> parent CASCADES — its own request is recorded and every non-terminal

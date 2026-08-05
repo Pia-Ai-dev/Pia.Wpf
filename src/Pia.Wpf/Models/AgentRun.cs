@@ -53,22 +53,7 @@ public sealed class AgentRun
     /// </summary>
     public string? LedgerJson { get; set; }
 
-    /// <summary>
-    /// 18 D2 / owner Q3: the answers the user has given to this run's clarification questions, as a JSON array
-    /// of strings, oldest-first. Accumulates across parks (18 D4 puts no cap on asking, so a second park must
-    /// not lose the first answer). Null until the run has parked and been answered once.
-    /// <para>
-    /// SENSITIVE (user content) — log the COUNT, never the text; the text goes out only via
-    /// <c>SensitiveDebug</c>. <c>Pia.Services.RunClarifications</c> owns the shape; the run service reads and
-    /// writes it as an opaque string, the same discipline <see cref="PolicyJson"/> has.
-    /// </para>
-    /// <para>
-    /// Its own column rather than a member of the pause envelope in <see cref="ExtraJson"/>, and that is FORCED:
-    /// both resume claims <c>SET ExtraJson=NULL</c>, so an answer kept there would be destroyed by the very
-    /// resume that carries it. <see cref="Goal"/> is deliberately left untouched — the panel shows the user what
-    /// they typed.
-    /// </para>
-    /// </summary>
+    /// <summary>The user's answers to this run's clarification questions, as a JSON array of strings, oldest-first; SENSITIVE, log the count only. Its own column rather than part of <see cref="ExtraJson"/> because both resume claims SET ExtraJson=NULL, which would destroy an answer kept there.</summary>
     public string? ClarificationsJson { get; set; }
 
     public DateTime CreatedAt { get; set; }

@@ -13,46 +13,13 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// <b>Batch 18 G5 — THE MID-PLAN ASK (18 D3/D4/D6, owner Q1/Q5), driven end to end.</b> A step that is genuinely
-/// blocked on something only a person can settle now has a channel: <c>request_user_input</c> parks the run at
-/// <c>WaitingForInput</c> with the <c>needs-input</c> token and puts the question in the run's own chat.
-/// <para>
-/// <b>Why a new tool and not a third <c>emit_step_result</c> outcome (18 D6).</b> Spec §2: the tool's own
-/// description ALREADY tells the model that explaining a failure in prose is not a failure report, and the model
-/// in the repro wrote prose anyway. The failure mode is the ABSENCE of a call, so another enum member on a tool
-/// nobody called would have changed nothing. Every fact below is about a DIFFERENTLY SHAPED channel; none of them
-/// touches the outcome bool, and <c>StepOutcomeSignalTests</c> / <c>HeadlessStepOutcomeSignalTests</c> stay green
-/// unchanged, which is the negative half of D6.
-/// </para>
-/// <para>
-/// <b>NO CAP is asserted anywhere, deliberately.</b> 18 D4 is "model declares, no cap" — the owner was shown the
-/// stall risk (spec §5: an unattended run can be stalled indefinitely, one question at a time) and chose it. What
-/// this file pins instead is that the tool's DESCRIPTION carries the weight and that repeat asks are COUNTED, so a
-/// cap can later be a measured follow-up. Counting is not capping.
-/// </para>
-/// <para>
-/// Real everything below the AI client — real SQLite run + chat stores, real <c>HeadlessRunLauncher</c>,
-/// <c>AgentRunOrchestrator</c>, <c>HeadlessTurnExecutor</c> and <c>BackgroundAssistantTurnRunner</c>. Only the
-/// provider stream, the plugin route and the planner are doubles; the park is a decision made between those and
-/// nothing else would be exercised by faking the layers in between. The harness is
-/// <c>UnattendedApprovalParkTests</c>' verbatim, because this park reuses that park's machinery and a divergent
-/// fixture would be measuring a different thing.
-/// </para>
-/// <para>
-/// net10.0-windows cannot execute on macOS — these tests are written, not run; execution is deferred to
-/// Windows/CI.
-/// </para>
-/// </summary>
+/// <summary>Covers <c>request_user_input</c> parking a run mid-plan; real run/chat stores, doubles only at the provider/plugin/planner boundary.</summary>
 public sealed class MidPlanAskTests : IDisposable
 {
-    /// <summary>The mid-plan park token as a LITERAL, matching <c>AgentRunClarificationResumeTests</c>'
-    /// discipline: this fact is about the WIRE value a parked row carries and a resume reads back off it, so a
-    /// test that referenced <c>AgentRunOrchestrator.NeedsInputReason</c> could not catch the constant changing.</summary>
+    /// <summary>Literal, not <c>AgentRunOrchestrator.NeedsInputReason</c>, so a wire-value regression on the constant itself would still be caught.</summary>
     private const string NeedsInputReason = "needs-input";
 
-    /// <summary>The model's question. USER-DERIVED PAYLOAD: a literal here, and nothing in this file logs it —
-    /// production may only put text like this through <c>SensitiveDebug</c> (CLAUDE.md).</summary>
+    /// <summary>User-derived payload: kept as a literal, and never logged directly (production routes this through <c>SensitiveDebug</c>).</summary>
     private const string TheQuestion = "Which cluster should I deploy to — staging or production?";
 
     private readonly string _dir;
@@ -81,24 +48,7 @@ public sealed class MidPlanAskTests : IDisposable
         try { Directory.Delete(_dir, true); } catch { /* best effort */ }
     }
 
-    // ================================================================= acceptance fact 1: the park
-
-    /// <summary>
-    /// <b>THE HEADLINE (spec §8, fact 1).</b> A step turn that calls <c>request_user_input</c> parks the run at
-    /// <c>WaitingForInput</c> with the <c>needs-input</c> token, and the QUESTION reaches the run's own chat.
-    /// <para>
-    /// The step is back at <c>Pending</c>, not recorded Failed — that is the difference between "blocked, waiting"
-    /// and "failed, replan", and getting it wrong would burn a replan on a step that is only waiting. The run is
-    /// NOT terminal (<c>CompletedAt</c> stays null), which is what keeps the startup sweep and the scheduled-job
-    /// striker from booking it as a finished run.
-    /// </para>
-    /// <para>
-    /// <b>Neutralize:</b> delete the <c>r.UserInputQuestion</c> branch in <c>AgentRunOrchestrator</c>'s drain loop
-    /// → the step records normally and the run settles Completed, and every assertion here reds. Note that the
-    /// model's text still flows in both worlds (the fake stream always yields a reply), so nothing here can pass
-    /// on "the step produced nothing".
-    /// </para>
-    /// </summary>
+    /// <summary>A step calling <c>request_user_input</c> parks the run <c>WaitingForInput</c> with the step back at <c>Pending</c> (not Failed) so a resume doesn't burn a replan on a step that only waited.</summary>
     [Fact]
     public async Task AStepThatCallsRequestUserInput_ParksTheRunNeedsInput_AndTheQuestionReachesTheChat()
     {
@@ -113,36 +63,26 @@ public sealed class MidPlanAskTests : IDisposable
         var run = await GetRunAsync(handle.RunId);
         Assert.Equal(AgentRunState.WaitingForInput, run.State);
         Assert.Equal(NeedsInputReason, PauseMember(run, "reason"));
-        // The envelope carries the TOKEN ONLY (implementer decision 4): no question member, so every member it
-        // holds stays app-owned and loggable, exactly as RunPauseEnvelope's own doc licenses.
+        // The envelope carries the token only, never the question, so it stays safe to log.
         Assert.Null(PauseMember(run, "question"));
         Assert.Null(PauseMember(run, "tool"));
         Assert.Null(run.CompletedAt);
 
-        // The step is resumable, not consumed: a Continue must find it again, or the resume would drain an empty
-        // remainder and settle the run Completed with the work never done.
+        // Resumable, not consumed: a Continue must find the step again rather than draining an empty remainder.
         var pending = await _runs.NextPendingStepAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(pending);
         Assert.Equal(AgentStepStatus.Pending, pending!.Status);
 
-        // 18 D5's CHAT half. §4.4 forbids the question on the Flow card, so the chat is the only surface that may
-        // carry it — and a headless run already owns a real chat row for exactly this.
+        // The question goes to chat, never the Flow card.
         var chat = await _chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
         Assert.NotNull(chat);
         Assert.Contains(chat!.Messages, m => m.Content == TheQuestion);
 
-        // The model was told, and told to stop — not left to guess whether the ask landed.
         Assert.Equal(UserInputRequestStore.Accepted, probe.AskResults.Single());
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// The interception is PRE-ROUTE (owner Q5): <c>RouteToolCallAsync</c> never sees <c>request_user_input</c>,
-    /// so no <c>ToolGateDecision.UnknownTool</c> audit row is written for it. Without the short-circuit the model
-    /// would get "Unknown tool.", the run would never park, AND the timeline would carry a row telling the user
-    /// their run called a tool that does not exist — the same three-part failure the <c>emit_step_result</c> seam
-    /// exists to avoid, which is why that seam's argument is cited rather than re-derived.
-    /// </summary>
+    /// <summary>The interception is pre-route: <c>RouteToolCallAsync</c> never sees <c>request_user_input</c>, so no <c>UnknownTool</c> audit row is written for it.</summary>
     [Fact]
     public async Task TheAskIsInterceptedBeforeRouting_SoNoUnknownToolRowIsWritten()
     {
@@ -160,12 +100,7 @@ public sealed class MidPlanAskTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// The step turn really is OFFERED the tool, on the same list that carries <c>emit_step_result</c> — the
-    /// per-executor choke point owner Q5 chose over <c>AssistantPromptComposer.PrepareTurn</c>. Non-vacuous
-    /// against the fact above: a run could park because the fake stream calls the name regardless of whether the
-    /// tool was offered, so "the model parked" does not prove "the model was allowed to".
-    /// </summary>
+    /// <summary>The step turn is actually offered the tool, on the same list as <c>emit_step_result</c> — parking alone doesn't prove the tool was offered, since the fake stream calls it regardless.</summary>
     [Fact]
     public async Task AStepTurnIsOfferedBothStepTools()
     {
@@ -183,26 +118,7 @@ public sealed class MidPlanAskTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    // ================================================================= acceptance fact 3: the delegated refusal
-
-    /// <summary>
-    /// <b>OWNER Q1 (spec §8, fact 3): the tool is REFUSED on a DELEGATED step</b> — a run with a non-null
-    /// <c>ParentRunId</c>. It is not offered, the call is still intercepted (so no "Unknown tool." dead end), the
-    /// model is handed a redirect, and the child does NOT park.
-    /// <para>
-    /// <b>Why refusal is the right answer here and not merely convenient.</b>
-    /// <c>AgentRunNotificationSurface.cs:170-171</c> filters child runs out of the Flow publish, because a
-    /// Continue card carrying the CHILD's run id is "a transition nothing supports". A child that asked would sit
-    /// at <c>WaitingForInput</c> with no card, and its parent would re-park behind it under
-    /// <c>ChildrenParkedReason</c> — a run stuck on a question nobody was asked. Note this is the PRECEDENT'S
-    /// SUPPORTING reason: <c>HeadlessRunLauncher.CanParkForApproval</c>'s primary one (a park ACQUIRES authority,
-    /// so a delegate would end up wider than its delegator) does not transfer, because a question grants nothing.
-    /// </para>
-    /// <para>
-    /// <b>Neutralize:</b> make <c>AgentStepTools.CanRequestUserInput</c> return true unconditionally → the child
-    /// parks <c>needs-input</c> and the state assertions red.
-    /// </para>
-    /// </summary>
+    /// <summary>On a delegated step (non-null <c>ParentRunId</c>) the tool is refused: not offered, the call is still intercepted, and the child does not park — a child parking has no Flow card to surface it.</summary>
     [Fact]
     public async Task ADelegatedStep_IsRefusedTheAsk_AndTheRunDoesNotPark()
     {
@@ -215,33 +131,16 @@ public sealed class MidPlanAskTests : IDisposable
         await AwaitSettledAsync(child.Id);
 
         var run = await GetRunAsync(child.Id);
-        // The claim is "did not park", asserted on the STATE and the envelope rather than on "no question in the
-        // chat" — a park that failed to post would also leave the chat empty, and the two are different bugs.
         Assert.NotEqual(AgentRunState.WaitingForInput, run.State);
         Assert.Null(PauseMember(run, "reason"));
 
-        // Not offered…
         Assert.False(AgentStepTools.OffersRequestUserInputTool(probe.OfferedTools));
-        // …but still INTERCEPTED, so the model gets a usable answer instead of "Unknown tool." and no
-        // UnknownTool audit row is written for a tool this build knows perfectly well.
         Assert.Equal(UserInputRequestStore.RefusedForDelegatedStep, probe.AskResults.Single());
         Assert.DoesNotContain(_timeline.Rows, r => r.Decision == ToolGateDecision.UnknownTool);
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// <b>The other half of fact 3: refusing the ask must not SWALLOW the block.</b> The same delegated step
-    /// declares <c>succeeded=false</c> through <c>emit_step_result</c> — which is exactly what
-    /// <see cref="UserInputRequestStore.RefusedForDelegatedStep"/> tells it to do — and that lands as a real
-    /// declared step failure carrying the model's own reason.
-    /// <para>
-    /// This is deliberately measured on the CHILD's own row rather than by standing up a fan-out: what a parent
-    /// does with a failed child is <c>AgentRunOrchestratorFanOutTests.AFailedChildFeedsTheOrdinaryReplanPath</c>'s
-    /// fact and has been tested since Batch 07. Duplicating it here would re-measure someone else's path; what G5
-    /// owes is proof that its refusal leaves that path REACHABLE, which is the step status and the failure reason
-    /// below.
-    /// </para>
-    /// </summary>
+    /// <summary>Refusing the ask must not swallow the block: the delegated step declares <c>succeeded=false</c> through <c>emit_step_result</c>, so the failure still reaches the run.</summary>
     [Fact]
     public async Task ARefusedDelegatedStep_StillSurfacesItsBlockAsADeclaredStepFailure()
     {
@@ -255,25 +154,12 @@ public sealed class MidPlanAskTests : IDisposable
 
         var run = await GetRunAsync(child.Id);
         Assert.Equal(AgentRunState.Failed, run.State);
-        // The model's OWN words reached the run's failure reason — the channel the refusal pointed it at really
-        // carries the block, rather than the block dying inside a tool result nobody reads. Read off the raw
-        // envelope, where AgentRunService.FailAsync serializes it as `{"error":…}`.
+        // The model's own words reach the run's failure reason, not a tool result nobody reads.
         Assert.Contains("target cluster", PauseMember(run, "error") ?? string.Empty, StringComparison.Ordinal);
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    // ================================================================= containment and repeat asks
-
-    /// <summary>
-    /// <b>AN ASK STOPS THE EXCHANGE, it does not merely advise it.</b> A granted, side-effecting call the model
-    /// makes AFTER the ask does not run. hermes #16 wrote this guard for the approval park and its argument
-    /// transfers verbatim: <c>AiClientService</c> walks the remaining calls of the same round and then continues
-    /// to the next round, so a string asking the model to stop is not a control-flow construct.
-    /// <para>
-    /// It is an AT-MOST-ONCE fact, not a tidiness one. The asking step is abandoned and re-runs from the top on
-    /// resume, so a write executed after the ask would be performed TWICE for one planned step.
-    /// </para>
-    /// </summary>
+    /// <summary>A granted, side-effecting call the model makes after the ask does not run — the asking step is abandoned and re-runs from the top on resume, so it would otherwise execute twice.</summary>
     [Fact]
     public async Task AGrantedWriteAfterTheAsk_DoesNotRun()
     {
@@ -281,7 +167,6 @@ public sealed class MidPlanAskTests : IDisposable
         var launcher = Build(probe);
 
         var handle = await launcher.LaunchAsync(
-            // GRANTED, so nothing but the containment guard can stop it: without the guard this call auto-runs.
             new HeadlessRunRequest("ship it", AgentRunTrigger.Schedule, GrantedWrites: ["write_file"]),
             TestContext.Current.CancellationToken);
         await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
@@ -291,12 +176,7 @@ public sealed class MidPlanAskTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// A SECOND ask in the same step does not move the question. The park carries one question and that question
-    /// is what the person reads, so it must be the one that actually stopped the run — a later call is one the
-    /// model made after being told the run was parking. (Same first-wins rule, and the same reasoning,
-    /// <c>ToolApprovalStore.PendingToolName</c> uses.)
-    /// </summary>
+    /// <summary>A second ask in the same step does not move the question — first wins, since the later call happens after the run was already told it is parking.</summary>
     [Fact]
     public async Task ASecondAskInTheSameStep_DoesNotMoveTheQuestion()
     {
@@ -316,16 +196,7 @@ public sealed class MidPlanAskTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// <b>18 D4 as a POSITIVE fact, in the one place it could be misread as a defect.</b> A run that already
-    /// parked once, was answered, and asks AGAIN parks again — there is no per-run limit anywhere, by owner
-    /// decision. The second question reaches the chat beside the first, and the user's first answer is preserved
-    /// (18 G4's <c>ClarificationsJson</c>), so a second park is a continuation rather than a reset.
-    /// <para>
-    /// Written so that ADDING a cap would red it. Spec §5 records the stall risk this accepts; it is the
-    /// decision, not an oversight, and this test is where a future implementer will find that out.
-    /// </para>
-    /// </summary>
+    /// <summary>A run that already parked once and was answered can ask again and park again — deliberately, there is no per-run cap.</summary>
     [Fact]
     public async Task ARunMayParkToAskMoreThanOnce_ThereIsNoCap()
     {
@@ -338,7 +209,6 @@ public sealed class MidPlanAskTests : IDisposable
         await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.WaitingForInput, (await GetRunAsync(handle.RunId)).State);
 
-        // The user answers; the step re-runs and the model asks a different question.
         probe.NextQuestion = "and which branch?";
         Assert.True(await launcher.ResumeAsync(
             handle.RunId, "the staging cluster", TestContext.Current.CancellationToken));
@@ -348,39 +218,17 @@ public sealed class MidPlanAskTests : IDisposable
         Assert.Equal(AgentRunState.WaitingForInput, run.State);
         Assert.Equal(NeedsInputReason, PauseMember(run, "reason"));
 
-        // Polled rather than read once: the park writes the ROW before it posts the question (SafePause →
-        // SafeOnPaused → the chat write), and a resume hands back no completion task to await, so reading the
-        // chat the instant the row parks is a real race.
+        // Polled: the park writes the row before it posts the question, so reading the chat immediately is a race.
         await AwaitChatMessageAsync(run.ChatId, "and which branch?");
         var chat = await _chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
         Assert.Contains(chat!.Messages, m => m.Content == TheQuestion);
 
-        // The FIRST answer survived the second park — 18 G4's dedicated column, not ExtraJson (which the resume
-        // claim NULLs). Without it the model would be re-grounded from scratch on every park.
+        // The first answer survives the second park, in its own column rather than ExtraJson (which the resume claim nulls).
         Assert.Contains("staging cluster", ClarificationsJson(run.Id) ?? string.Empty, StringComparison.Ordinal);
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    // ================================================================= the fault pair (both directions)
-
-    /// <summary>
-    /// <b>AN ASK SURVIVES A FAULT THAT HAPPENS AFTER IT</b> (<c>HeadlessTurnExecutor</c>'s catch arm). The step
-    /// asks and the provider stream then throws later in the same exchange: the run PARKS with the question
-    /// rather than failing, because the attempt is discarded either way and the question is the only thing it
-    /// durably produced. hermes #16 built this containment for the approval park; G5 gives the ask the same one.
-    /// <para>
-    /// The fault is not laundered into a success and it is not lost: the run is non-terminal
-    /// (<c>CompletedAt</c> null), the pause envelope carries the token and nothing else, and the exception
-    /// itself is on the executor's <c>LogError</c> one line above the arm — this park has no <c>error</c> member
-    /// precisely because it is a park, and the orchestrator's ask branch returns before anything reads
-    /// <c>StepTurnResult.Error</c>.
-    /// </para>
-    /// <para>
-    /// <b>Neutralize:</b> delete the arm (the reviewer's "one <c>if</c> to delete") → the step returns
-    /// <c>ex.Message</c>, the run fails, and the person never sees the question their run stopped on. The next
-    /// test is the other half of the pair and is what stops "keep the ask" from meaning "bury the fault".
-    /// </para>
-    /// </summary>
+    /// <summary>If the provider stream asks and then throws later in the same exchange, the run parks with the question rather than failing — the attempt is discarded either way and the question is the only durable result.</summary>
     [Fact]
     public async Task AFaultAfterTheAsk_KeepsTheQuestion_AndParksInsteadOfFailing()
     {
@@ -403,25 +251,7 @@ public sealed class MidPlanAskTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// <b>THE ESCAPE HATCH the arm above rests on, pinned so nobody has to take it on trust.</b> A persistent
-    /// post-ask fault cannot loop forever, because the arm fires only when THIS attempt asked — and the resumed
-    /// attempt is not the same attempt: <c>ResumeAsync</c> passes the user's typed answer down as the dispatch
-    /// nudge and <c>ExecuteStepAsync</c> fences it into the step instruction, so a model that has been answered
-    /// has no reason to ask again. This fixture models exactly that turn (answered, silent, same fault) and the
-    /// run FAILS with the provider's own message.
-    /// <para>
-    /// It is the difference from hermes #16, whose hatch is structural (the resume GRANTS the tool, so the next
-    /// attempt cannot park on it). An answer grants nothing, so the hatch here is the arm's condition instead —
-    /// which is why it is worth a test rather than a comment. What remains uncovered by design is a model that
-    /// re-asks a question it was already answered; that stalls a run identically WITH NO FAULT AT ALL and is 18
-    /// D4's accepted risk (spec §5), not a defect of this arm.
-    /// </para>
-    /// <para>
-    /// <b>Neutralize:</b> make the fault arm unconditional (drop <c>userInput?.Question is not null</c>, keeping
-    /// the last question the store ever held) → the resumed step parks again instead of failing and this reds.
-    /// </para>
-    /// </summary>
+    /// <summary>A persistent post-ask fault cannot loop forever: the park-on-fault arm only fires when the current attempt itself asked, so a resumed, answered attempt that faults again fails outright.</summary>
     [Fact]
     public async Task AnAnsweredStepThatFaultsWithoutAskingAgain_FailsWithTheProviderError()
     {
@@ -434,8 +264,6 @@ public sealed class MidPlanAskTests : IDisposable
         await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.WaitingForInput, (await GetRunAsync(handle.RunId)).State);
 
-        // The user answers. The re-run step now carries that answer in its instruction, so the model stops
-        // asking — while the fault stays exactly as deterministic as it was.
         probe.Ask = false;
         Assert.True(await launcher.ResumeAsync(
             handle.RunId, "the staging cluster", TestContext.Current.CancellationToken));
@@ -443,8 +271,6 @@ public sealed class MidPlanAskTests : IDisposable
 
         var run = await GetRunAsync(handle.RunId);
         Assert.Equal(AgentRunState.Failed, run.State);
-        // Verbatim, off the raw envelope: `ex.Message` reached the step result, the replan degraded, and
-        // SafeFail wrote it. The fault is reported to the user rather than buried under a repeated question.
         Assert.Equal("provider connection reset", PauseMember(run, "error"));
         await launcher.StopAsync(CancellationToken.None);
     }
@@ -488,9 +314,7 @@ public sealed class MidPlanAskTests : IDisposable
         Assert.Fail($"Run {runId} never re-parked (state {(await _runs.GetAsync(runId, ct))!.State}).");
     }
 
-    /// <summary>Poll until the run's chat carries <paramref name="content"/>. Needed only where no completion
-    /// task is available to await (a resume returns a bool), because the park writes the run row BEFORE it posts
-    /// the question.</summary>
+    /// <summary>Poll until the run's chat carries <paramref name="content"/> — needed because the park writes the run row before it posts the question.</summary>
     private async Task AwaitChatMessageAsync(Guid chatId, string content)
     {
         var ct = TestContext.Current.CancellationToken;
@@ -516,7 +340,7 @@ public sealed class MidPlanAskTests : IDisposable
             : null;
     }
 
-    /// <summary>The run's accumulated clarification answers, straight off the column (18 G4).</summary>
+    /// <summary>The run's accumulated clarification answers, straight off the column.</summary>
     private string? ClarificationsJson(Guid runId)
     {
         using var cmd = _ctx.GetConnection().CreateCommand();
@@ -568,53 +392,41 @@ public sealed class MidPlanAskTests : IDisposable
 
     // ---------------------------------------------------------------- doubles
 
-    /// <summary>
-    /// Drives one step turn's tool calls and records what came back. Every knob is off by default, so the
-    /// headline fact runs the simplest possible shape: one <c>request_user_input</c> call and a reply.
-    /// </summary>
+    /// <summary>Drives one step turn's tool calls and records what came back; every knob is off by default.</summary>
     private sealed class AskProbe
     {
-        /// <summary>The question the NEXT step turn asks. Settable so a second park can ask something different
-        /// and the two can be told apart in the chat.</summary>
+        /// <summary>The question the next step turn asks; settable so a second park can ask something different.</summary>
         public string NextQuestion { get; set; } = TheQuestion;
 
-        /// <summary>A SECOND ask in the same turn — the first-wins fact. Null ⇒ one ask.</summary>
+        /// <summary>A second ask in the same turn — the first-wins fact. Null ⇒ one ask.</summary>
         public string? SecondQuestion { get; set; }
 
-        /// <summary>Whether the turn calls <c>request_user_input</c> at all. False models the attempt AFTER the
-        /// question was answered — the turn the fault arm's escape hatch depends on.</summary>
+        /// <summary>Whether the turn calls <c>request_user_input</c> at all; false models an attempt after the question was already answered.</summary>
         public bool Ask { get; set; } = true;
 
-        /// <summary>When set, the provider stream THROWS with this message once the turn's tool calls are done —
-        /// "a fault later in the same exchange". Null ⇒ the turn completes normally.</summary>
+        /// <summary>When set, the provider stream throws with this message once the turn's tool calls are done. Null ⇒ completes normally.</summary>
         public string? FaultMessage { get; set; }
 
-        /// <summary>A tool the model calls AFTER the ask — the containment fact. Null ⇒ no follow-up call.</summary>
+        /// <summary>A tool the model calls after the ask — the containment fact. Null ⇒ no follow-up call.</summary>
         public string? FollowUpTool { get; set; }
 
-        /// <summary>When set, the turn also declares <c>emit_step_result{succeeded:false}</c> with this summary —
-        /// the channel a refused delegated step is redirected to.</summary>
+        /// <summary>When set, the turn also declares <c>emit_step_result{succeeded:false}</c> with this summary.</summary>
         public string? DeclareFailureAfterAsk { get; set; }
 
         /// <summary>What the ask interception handed back, in call order.</summary>
         public List<string?> AskResults { get; } = [];
 
-        /// <summary>The tool list this step turn was OFFERED — the scoping half.</summary>
+        /// <summary>The tool list this step turn was offered.</summary>
         public IList<AITool>? OfferedTools { get; set; }
 
-        /// <summary>Every name that reached <c>RouteToolCallAsync</c> — a pre-route interception must appear in
-        /// neither this nor the timeline.</summary>
+        /// <summary>Every name that reached <c>RouteToolCallAsync</c> — a pre-route interception must appear in neither this nor the timeline.</summary>
         public List<string> RoutedNames { get; } = [];
 
         /// <summary>Every name that actually reached <c>Execute()</c>.</summary>
         public List<string> ExecutedNames { get; } = [];
     }
 
-    /// <summary>
-    /// Plans exactly ONE real step. Deliberately not <c>PlanResult.Fallback</c>: the R10 degrade turn creates no
-    /// <c>AgentStep</c> row, so it is not offered either step tool at all — a run has to reach the drain loop
-    /// before there is anything to put back to Pending.
-    /// </summary>
+    /// <summary>Plans exactly one real step; not offered either step tool until a run reaches the drain loop.</summary>
     private sealed class OneStepPlanner : IAgentPlanner
     {
         public Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
@@ -622,8 +434,7 @@ public sealed class MidPlanAskTests : IDisposable
                 [new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "S0", Intent = "do it", Status = AgentStepStatus.Pending }],
                 FallBackToSingleTurn: false));
 
-        // A step that ASKED must never reach the replanner — an ask is not a failure. If it did, this returning
-        // Fallback would settle the run terminally and the park facts above would red loudly.
+        // A step that asked must never reach the replanner — an ask is not a failure.
         public Task<PlanResult> ReplanAsync(RunContext ctx, string? failure, Persona persona, AiProvider provider, CancellationToken ct)
             => Task.FromResult(PlanResult.Fallback);
     }
@@ -685,8 +496,7 @@ public sealed class MidPlanAskTests : IDisposable
         services.AddSingleton<IAgentVerifier>(new FakeVerifier());
         services.AddSingleton<Func<ITokenMapService>>(_ => () => Substitute.For<ITokenMapService>());
         services.AddSingleton<IExecutingRunStore>(_executing);
-        // REAL audit wiring: "no UnknownTool row for the ask" is one of the facts, and a decision nobody records
-        // is a decision nobody can check.
+        // Real audit wiring, since "no UnknownTool row for the ask" is one of the facts under test.
         services.AddSingleton<IAgentTimelineService>(_timeline);
         services.AddTransient<BackgroundAssistantTurnRunner>();
         services.AddTransient<HeadlessTurnExecutor>();
@@ -711,8 +521,7 @@ public sealed class MidPlanAskTests : IDisposable
                     new ToolDispatchContext(1)) as string);
             }
 
-            // A model that keeps going after being told the run is parking. Round-tripped through the SAME
-            // handler, because that is the only way first-wins and the containment guard are observable.
+            // Round-tripped through the same handler, since that is the only way first-wins is observable.
             if (probe.SecondQuestion is not null)
             {
                 probe.AskResults.Add(await handler(
@@ -741,14 +550,10 @@ public sealed class MidPlanAskTests : IDisposable
             }
         }
 
-        // THE FAULT, thrown out of the enumeration itself: RunExchangeAsync does not catch, so it lands in
-        // HeadlessTurnExecutor's catch exactly as a dropped provider connection does — after whatever the turn
-        // already did, which is the whole point of the pair of tests that use this.
+        // Thrown out of the enumeration itself, so it lands in HeadlessTurnExecutor's catch like a dropped connection.
         if (probe.FaultMessage is not null)
             throw new InvalidOperationException(probe.FaultMessage);
 
-        // TEXT STILL FLOWS. Every fact here therefore discriminates on the RUN's state, never on "the step
-        // produced nothing" — neutralising the ask leaves this reply exactly where it was.
         yield return new TextDelta("reply");
         yield return new Finished(null, "test-model");
     }

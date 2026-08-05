@@ -189,28 +189,10 @@ public sealed class RunContext
     /// persisted plan, so accumulating would keep listing rows a later mutation dropped.</summary>
     public void SetSkippedTitles(IReadOnlyList<string> titles) => SkippedTitles = titles;
 
-    /// <summary>
-    /// <b>18 D2 / owner Q3:</b> what the user has ANSWERED when this run parked and asked, oldest-first.
-    /// <para>
-    /// Deliberately NOT folded into <see cref="Goal"/>, which is get-only for a reason and stays exactly what the
-    /// user typed: the run panel and <c>ChildRunRowViewModel</c> render <c>AgentRun.Goal</c> directly, so
-    /// rewriting it would change, in front of the user, the sentence they use to recognise their own run.
-    /// </para>
-    /// <para>
-    /// Also deliberately NOT the <see cref="Nudge"/>. The nudge is scope-to-dispatch and never persisted
-    /// (Batch 08 D4), so an answer that only rode it would be lost by the next park — and 18 D4 allows a run to
-    /// park and ask repeatedly, which is exactly when that loss would show. These come off the run's own
-    /// <c>ClarificationsJson</c> column, seeded once per dispatch by the orchestrator.
-    /// </para>
-    /// <para>
-    /// Empty on every path that is not a resume into re-planning, so a plan prompt built without them is byte
-    /// for byte the one built before this batch.
-    /// </para>
-    /// </summary>
+    /// <summary>What the user answered when this run parked and asked, oldest-first. Not folded into <see cref="Goal"/> (would rewrite the user's own text) or <see cref="Nudge"/> (never persisted, so a repeat park would lose it).</summary>
     public IReadOnlyList<string> Clarifications { get; private set; } = [];
 
-    /// <summary>Replaces (never appends to) <see cref="Clarifications"/> — each seed is a fresh read of the
-    /// persisted column, which already accumulates, so appending here would list the same answer twice.</summary>
+    /// <summary>Replaces (never appends to) <see cref="Clarifications"/> — the persisted column already accumulates, so appending here would double-list.</summary>
     public void SetClarifications(IReadOnlyList<string> answers) => Clarifications = answers;
 
     private const string ClarificationFenceOpen =
@@ -218,13 +200,7 @@ public sealed class RunContext
 
     private const string ClarificationFenceClose = "--- end of the user's clarifications ---";
 
-    /// <summary>
-    /// Appends the fenced clarification answers to a USER-role message's text, and like
-    /// <see cref="AppendNudge"/> that role is the whole point: these are the user's own keystrokes, and
-    /// <c>TokenizingAiClientService.TokenizeMessages</c> rewrites only <c>ChatRole.User</c> text — folded into a
-    /// System prompt they would ship the user's raw words past the tokenizer even with tokenization ON.
-    /// Returns <paramref name="userText"/> unchanged when there is nothing recorded, so callers never branch.
-    /// </summary>
+    /// <summary>Appends fenced clarification answers to a user-role message's text — user role matters because the tokenizer only rewrites <c>ChatRole.User</c> text. No-op when nothing is recorded.</summary>
     public string AppendClarifications(string userText)
     {
         if (Clarifications.Count == 0)

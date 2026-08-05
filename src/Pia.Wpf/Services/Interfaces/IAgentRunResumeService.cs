@@ -15,24 +15,12 @@ public interface IAgentRunResumeService
     /// <c>RunContext</c> budget grant, the persisted ledger preserved, and the run's slot + workspace
     /// re-acquired. Returns <c>true</c> iff THIS call started the resume.
     /// </summary>
-    /// <param name="nudge">Batch 08 D4: an optional steering note for THIS resume dispatch. Rides only
+    /// <param name="nudge">An optional steering note for THIS resume dispatch. Rides only
     /// <c>ChatRole.User</c> messages (the step instruction, the critic, the replan) and never a System prompt.
-    /// <para>
-    /// <b>Transient — EXCEPT on a clarification park (18 D2 / owner Q3), where it is the user's ANSWER and is
-    /// persisted.</b> Batch 08's rule still holds everywhere else: the note is scoped to this dispatch and is
-    /// not present on a later resume unless that call supplies it again. But when the run is parked with
-    /// <c>needs-goal</c> or <c>needs-input</c>, this parameter carries the reply to the question the run
-    /// asked, and an answer that only rode a transient note would be lost by the next park — which 18 D4
-    /// permits any number of. So the implementation appends it to <c>AgentRuns.ClarificationsJson</c>
-    /// (pre-claim, since the claim NULLs <c>ExtraJson</c> and with it the token that identifies the park), it
-    /// accumulates across parks, and every later plan turn of that run sees it. The run's <c>Goal</c> is not
-    /// modified.
-    /// </para>
-    /// <para>
-    /// What a caller must take from that: on a clarification park this text is DURABLE USER CONTENT. Pass
-    /// what the user actually typed, and treat it under the privacy rules that implies — never a log line
-    /// outside <c>Sensitive*</c>. On every other park it is the transient note Batch 08 documented.
-    /// </para>
-    /// </param>
+    /// Transient in general — not persisted, and not present on a later resume unless supplied again — except
+    /// on a clarification park (<c>needs-goal</c>/<c>needs-input</c>), where it is the user's answer and IS
+    /// persisted (appended to <c>AgentRuns.ClarificationsJson</c>, accumulating across parks) so later plan
+    /// turns see it. On a clarification park this is durable user content — log only via
+    /// <c>Sensitive*</c>.</param>
     Task<bool> ResumeAsync(Guid runId, string? nudge = null, CancellationToken ct = default);
 }
