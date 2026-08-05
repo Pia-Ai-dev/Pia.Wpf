@@ -1,27 +1,25 @@
 # Pia.Wpf — Forward Plans
 
-These docs are implementation plans for follow-on work that came out of the
-visual refresh (see `docs/handoff/`). Phase 1 + Phase 2 of the visual refresh
-shipped; the UI controls for the surfaces below exist (under
-`src/Pia.Wpf/Controls/Chat/`) but their **data producers** are not wired yet.
+Open implementation plans only. When a plan here is fully implemented, delete
+it and update this list. (The chat-surface plans below came out of the visual
+refresh, see `docs/handoff/`: the receiving UI controls already exist under
+`src/Pia.Wpf/Controls/Chat/`, the data producers are the remaining work.)
 
-| Plan | Status | Rough effort |
-| --- | --- | --- |
-| [stats-summary.md](stats-summary.md) | shipped | ~2h |
-| [suggestion-chips.md](suggestion-chips.md) | shipped | 0.5–1d |
-| [source-chips.md](source-chips.md) | not started | ~1d |
-| [callouts.md](callouts.md) | not started | ~1d |
-| [assistant-chat-history.md](assistant-chat-history.md) | not started | ~3–5d |
-
-Each plan is self-contained: it states what the surface is, lists the
-producer changes by file, names the symbols to add, and ends with an
-acceptance test you can run from chat. Pick whichever one you're closest
-to needing — they don't depend on each other.
+| Plan | Status |
+| --- | --- |
+| [callouts.md](callouts.md) | not started — `PiaCallout` control exists; Markdig parser + producer wiring missing |
+| [source-chips.md](source-chips.md) | not started — `PiaSourceChip` control exists; tool-result plumbing missing (web citations already feed `Sources` via a separate path) |
+| [2026-06-07-memory-vault-migration-open-questions.md](2026-06-07-memory-vault-migration-open-questions.md) | open — legacy `Memories` table retirement, live sync cut-over to vault files, lint scheduling, parser frontmatter fidelity |
+| [2026-06-25-meeting-browser-feature-deepdive.md](2026-06-25-meeting-browser-feature-deepdive.md) | deferred |
+| [2026-06-25-meeting-browser-implementation-plan.md](2026-06-25-meeting-browser-implementation-plan.md) | deferred |
+| [2026-07-04-sync-transfer-optimization.md](2026-07-04-sync-transfer-optimization.md) | phases 1–4 done; phase 5 ship sequencing (submodule bump + shim cleanup) open |
+| [2026-07-04-sync-transfer-optimization-implementation-plan.md](2026-07-04-sync-transfer-optimization-implementation-plan.md) | same |
+| [2026-07-06-ingest-plugin-server-sync-followup.md](2026-07-06-ingest-plugin-server-sync-followup.md) | open — server seeding for ingest plugin GUID …007 |
 
 ## Conventions assumed by these plans
 
 - The receiving UI control already exists in `Controls/Chat/` and binds
-  to properties on `Pia.Models.AssistantMessage` (Phase 2 commit).
+  to properties on `Pia.Models.AssistantMessage`.
 - Add **only** additive properties to `AssistantMessage` — never break
   existing serialization or rendering paths.
 - Honor the privacy logging rules (`CLAUDE.md` "Privacy-First Logging"):

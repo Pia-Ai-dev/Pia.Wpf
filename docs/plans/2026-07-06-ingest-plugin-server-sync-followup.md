@@ -4,7 +4,7 @@ Copy the block below into a new session started with BOTH repos available (clien
 
 ---
 
-We added a **client-only** built-in "ingest" tool-pack plugin to the Pia WPF client in commit `e0e9f5b` on branch `feature/meeting_attendee` (see `docs/plans/2026-07-06-ingest-tool-surfacing.md`). Its well-known GUID is `10000000-0000-0000-0000-000000000007`. Unlike the other built-in plugins (`…001`–`…006`), this GUID is **not** in the server seed data — `BuiltInPluginDefaults` comments say the other GUIDs "match server seed data", but …007 does not yet.
+We added a **client-only** built-in "ingest" tool-pack plugin to the Pia WPF client in commit `e0e9f5b` on branch `feature/meeting_attendee`. Its well-known GUID is `10000000-0000-0000-0000-000000000007`. Unlike the other built-in plugins (`…001`–`…006`), this GUID is **not** in the server seed data — `BuiltInPluginDefaults` comments say the other GUIDs "match server seed data", but …007 does not yet.
 
 **Concern to resolve:** when a user toggles the ingest plugin, `PluginService.SetPluginEnabledAsync` (src/Pia.Wpf/Services/Plugins/PluginService.cs) queues a `SyncPluginPreference` for GUID …007. That queue is peek-not-drained (`GetPendingPreferenceChanges`) and only cleared by `ClearPreferenceChangesAfterSuccessfulPush` after a **successful** push. If the server's plugin-preference sync path rejects a preference that references an unknown plugin id (FK violation, 400, or a whole-request failure), the push fails and the ENTIRE preference queue can wedge — blocking preference sync for all plugins, not just ingest.
 

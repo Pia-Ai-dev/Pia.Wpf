@@ -3,7 +3,6 @@
 - **Status:** Normative. This is the cross-repo contract.
 - **`schemaVersion`:** `1`
 - **Applies to:** Pia.Wpf (C#), Pia.Mac (Swift/PiaKit), Pia sync server (format-agnostic).
-- **Source plans:** [`2026-06-07-memory-vault-migration-design.md`](../plans/2026-06-07-memory-vault-migration-design.md), [`2026-06-07-memory-vault-migration-implementation.md`](../plans/2026-06-07-memory-vault-migration-implementation.md)
 
 This document is the single authoritative description of the on-disk vault format. Both clients
 implement it identically; the server never parses it. **A developer with zero prior context must be

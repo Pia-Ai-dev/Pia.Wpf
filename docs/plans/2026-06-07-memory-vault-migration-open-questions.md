@@ -3,7 +3,7 @@
 - **Date:** 2026-06-07
 - **Branch:** `feature/memory_update` (off `feature/personas`)
 - **Status:** WPF track of the memory-vault migration is **implemented and compile-verified**; this doc lists everything deferred / undecided so a fresh session can pick up without prior context.
-- **Source plans:** [`2026-06-07-memory-vault-migration-design.md`](2026-06-07-memory-vault-migration-design.md), [`2026-06-07-memory-vault-migration-implementation.md`](2026-06-07-memory-vault-migration-implementation.md). **Format contract:** [`../specs/memory-vault-format-v1.md`](../specs/memory-vault-format-v1.md).
+- **Format contract:** [`../specs/memory-vault-format-v1.md`](../specs/memory-vault-format-v1.md).
 
 ---
 

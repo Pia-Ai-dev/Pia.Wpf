@@ -15,9 +15,8 @@ namespace Pia.Services;
 
 /// <summary>
 /// Pushes local assistant chats to the Pia cloud and pulls remote updates on
-/// startup. See docs/server/assistant-chat-history.md §4 and
-/// docs/plans/assistant-chat-history.md §Sync. Best-effort: any failure logs
-/// and is swallowed; the local store remains authoritative.
+/// startup. See docs/server/assistant-chat-history.md §4. Best-effort: any
+/// failure logs and is swallowed; the local store remains authoritative.
 /// </summary>
 public sealed class AssistantChatSyncService : BackgroundService
 {
