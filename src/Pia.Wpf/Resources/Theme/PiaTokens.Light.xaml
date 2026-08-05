@@ -31,6 +31,16 @@
   <!-- Sunk surface (JSON viewer, related cards, embed-meta tiles) -->
   <Color x:Key="SurfaceSunkColor">#FFF7F9FC</Color>
 
+  <!-- Signal-band palette (run-progress card). The band tints and their hairlines carry ALPHA rather than a
+       pre-flattened hex so the same token reads correctly over the card surface and over the sunk surface. -->
+  <Color x:Key="TextGhostColor">#FFC3CBD9</Color>
+  <Color x:Key="BandAccentColor">#242563EB</Color>
+  <Color x:Key="AccentBorderSoftColor">#2E2563EB</Color>
+  <Color x:Key="AccentBorderColor">#592563EB</Color>
+  <Color x:Key="SuccessBorderColor">#330F8662</Color>
+  <Color x:Key="DangerBorderColor">#4DE11D48</Color>
+  <Color x:Key="WarnBorderColor">#40B45309</Color>
+
   <!-- Memory type palette -->
   <Color x:Key="TypeProfileBgColor">#FFF0E7FE</Color>
   <Color x:Key="TypeProfileFgColor">#FF6D28D9</Color>
@@ -95,6 +105,14 @@
   <SolidColorBrush x:Key="DiffSeparatorBgBrush"  Color="{StaticResource DiffSeparatorBgColor}"/>
 
   <SolidColorBrush x:Key="SurfaceSunkBrush"     Color="{StaticResource SurfaceSunkColor}"/>
+
+  <SolidColorBrush x:Key="TextGhostBrush"        Color="{StaticResource TextGhostColor}"/>
+  <SolidColorBrush x:Key="BandAccentBrush"       Color="{StaticResource BandAccentColor}"/>
+  <SolidColorBrush x:Key="AccentBorderSoftBrush" Color="{StaticResource AccentBorderSoftColor}"/>
+  <SolidColorBrush x:Key="AccentBorderBrush"     Color="{StaticResource AccentBorderColor}"/>
+  <SolidColorBrush x:Key="SuccessBorderBrush"    Color="{StaticResource SuccessBorderColor}"/>
+  <SolidColorBrush x:Key="DangerBorderBrush"     Color="{StaticResource DangerBorderColor}"/>
+  <SolidColorBrush x:Key="WarnBorderBrush"       Color="{StaticResource WarnBorderColor}"/>
 
   <SolidColorBrush x:Key="TypeProfileBgBrush"     Color="{StaticResource TypeProfileBgColor}"/>
   <SolidColorBrush x:Key="TypeProfileFgBrush"     Color="{StaticResource TypeProfileFgColor}"/>

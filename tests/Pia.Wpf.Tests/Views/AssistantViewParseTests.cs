@@ -1,6 +1,7 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Controls.Assistant;
@@ -383,7 +384,7 @@ public class AssistantViewParseTests
         Guid boundPersonaId;
         string? boundEmoji, boundAccent;
         Visibility boundVisibility;
-        string[] texts;
+        string titleText;
         try
         {
             WpfStaHost.Run(() =>
@@ -415,11 +416,19 @@ public class AssistantViewParseTests
             });
             WpfStaHost.Pump();
 
-            (boundPersonaId, boundEmoji, boundAccent, boundVisibility, texts) = WpfStaHost.Run(() =>
+            (boundPersonaId, boundEmoji, boundAccent, boundVisibility, titleText) = WpfStaHost.Run(() =>
             {
                 var avatar = BindingPathWalker.FindLogical<PiaPersonaAvatar>(row!).Single();
+
+                // The title is INLINE content now (a Title Run followed by a PersonaSuffix Run, so the persona is
+                // what the ellipsis eats first), and TextBlock.Text reads "" for a TextBlock whose content came
+                // from Inlines — so reading Text here would silently stop observing the title at all. Located by
+                // its FontWeight path, which is the one binding unique to the read-mode title row, and read
+                // through its Runs.
+                var title = FindTextBlocks(row!)
+                    .Single(tb => BindingPathWalker.PathOf(tb, TextBlock.FontWeightProperty) == "Status");
                 return (avatar.PersonaId, avatar.Emoji, avatar.AccentColor, avatar.Visibility,
-                    FindTextBlocks(row!).Select(tb => tb.Text).ToArray());
+                    string.Concat(title.Inlines.OfType<Run>().Select(r => r.Text)));
             });
         }
         finally
@@ -443,8 +452,10 @@ public class AssistantViewParseTests
         // HasPersona → Visibility, i.e. the avatar is actually shown for an attributed step.
         Assert.Equal(Visibility.Visible, boundVisibility);
 
-        // A non-vacuity anchor for the walk itself, and the row's own Title path while we are here.
-        Assert.Contains("Draft the release summary", texts);
+        // EXACT equality, over the title's inline content. This is the row's own Title path AND the adjacency
+        // invariant the markup declares in one assertion: a whitespace-separated pair of Runs would render
+        // "Draft the release summary " with a trailing space, and a misspelt Title path would render "".
+        Assert.Equal("Draft the release summary", titleText);
     }
 
     /// <summary>ViewStrings.resx (neutral = EN), same reasoning as <see cref="HintText"/>.</summary>

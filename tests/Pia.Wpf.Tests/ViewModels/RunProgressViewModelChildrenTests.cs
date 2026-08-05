@@ -223,11 +223,15 @@ public sealed class RunProgressViewModelChildrenTests
             .OrderBy(n => n, StringComparer.Ordinal)
             .ToArray();
 
+        // The exact-set form is what forces every addition through this assertion. The signal-band redesign adds
+        // two: HasTokens and TokensLabel, which are a RENDER of InputTokens + OutputTokens (both already listed)
+        // and say nothing new about the child run — in particular nothing about what it touched, which is the
+        // property this fact protects.
         Assert.Equal(
             new[]
             {
-                "HasNoTimeline", "HasTimelineReadError", "InputTokens", "IsExpanded", "IsFinished",
-                "OutputTokens", "RunId", "State", "Timeline", "Title",
+                "HasNoTimeline", "HasTimelineReadError", "HasTokens", "InputTokens", "IsExpanded", "IsFinished",
+                "OutputTokens", "RunId", "State", "Timeline", "Title", "TokensLabel",
             },
             actual);
     }

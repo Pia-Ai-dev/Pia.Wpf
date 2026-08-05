@@ -4,6 +4,7 @@ using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Converters;
 using Pia.Helpers;
 using Pia.Models;
 using Pia.Services;
@@ -30,6 +31,22 @@ public enum RunProgressState
     /// with the spinner LIT (children are working) and offers no Continue: the run is not parked for the
     /// user, and <c>TryBeginResumeAsync</c> would not accept it anyway.</summary>
     WaitingForChildren,
+}
+
+/// <summary>
+/// How loudly one tool decision has to read on the audit surface. The five user-facing decision categories
+/// collapse to three, because the only question the reader has is "does this need me?": <c>Awaiting</c> does,
+/// <c>Refused</c> explains a step that did less than it was asked to, and everything else is bookkeeping.
+/// <para>
+/// Awaiting is deliberately its own tier and NOT folded into <see cref="Refused"/>: it renders in the warning
+/// palette, never the danger one, because the call was not turned down — it is waiting for an answer.
+/// </para>
+/// </summary>
+public enum RunDecisionSeverity
+{
+    Routine,
+    Awaiting,
+    Refused,
 }
 
 /// <summary>
@@ -70,6 +87,9 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanContinue))]
     [NotifyPropertyChangedFor(nameof(CanPause))]
+    // The visibility halves of the same two buttons (see ShowDenyButton for why each button needs a pair).
+    [NotifyPropertyChangedFor(nameof(ShowContinueButton))]
+    [NotifyPropertyChangedFor(nameof(ShowPauseButton))]
     [NotifyPropertyChangedFor(nameof(ShowPauseFirstNote))]
     [NotifyPropertyChangedFor(nameof(CanMutatePlan))]
     [NotifyCanExecuteChangedFor(nameof(ContinueCommand))]
@@ -103,6 +123,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// <summary>True while the run is parked asking to use a named tool — the one pause where a person's
     /// question has a yes AND a no, so the one offering Deny beside Continue.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowDenyButton))]
     [NotifyCanExecuteChangedFor(nameof(DeclineToolCommand))]
     private bool _isToolApprovalPause;
 
@@ -112,12 +133,33 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     public bool CanDeclineTool => IsToolApprovalPause && !IsResuming;
 
+    /// <summary>
+    /// The band's action slot is driven by a pair of predicates per button, never one: <c>Show…</c> answers
+    /// "does this state offer the action" and gates VISIBILITY, while <c>Can…</c> adds the in-flight term and
+    /// gates <c>CanExecute</c>, i.e. ENABLEDNESS. One predicate for both would collapse the button the instant it
+    /// is pressed — which re-lays out the whole band (the action column is <c>Auto</c> beside a <c>*</c> text
+    /// column), removes the only acknowledgement that the click registered, and makes
+    /// <see cref="PauseLabel"/>'s "Pausing…" state unrenderable, since it would only ever be pushed to a
+    /// collapsed element. The in-flight window is not a flicker: <see cref="IsPausing"/> stays true until
+    /// <see cref="Project"/> observes the run actually leaving the pausable state.
+    /// </summary>
+    public bool ShowDenyButton => IsToolApprovalPause;
+
     /// <summary>The budget-pause Continue affordance, widened by Batch 08 D1 item 8 to the user-pause state
     /// too: <see cref="RunProgressState.Paused"/> is the CAS's own target, and both states offer the identical
     /// Continue command (<see cref="IAgentRunResumeService.ResumeAsync"/> claims either via the row's own
     /// state). Trips nothing per Ground E, and the <c>!IsTerminal</c> form this could also be written as would
     /// red <c>RunProgressViewModelChildrenTests.cs</c>'s WaitingForChildren fact — this two-member set does not.</summary>
-    public bool CanContinue => (State is RunProgressState.WaitingForInput or RunProgressState.Paused) && !IsResuming;
+    public bool CanContinue => IsResumableState && !IsResuming;
+
+    /// <summary>Extracted so <see cref="CanContinue"/> and <see cref="ShowContinueButton"/> cannot drift into two
+    /// different state sets — the pair discipline is documented on <see cref="ShowDenyButton"/>.</summary>
+    private bool IsResumableState => State is RunProgressState.WaitingForInput or RunProgressState.Paused;
+
+    /// <summary>See <see cref="ShowDenyButton"/>: visibility is the state gate, enabledness the in-flight one.
+    /// The steering note rides on this too, so a resume in flight does not yank the box out from under a note the
+    /// user is still reading (<c>Continue()</c> keeps <see cref="NudgeText"/> unless the resume actually started).</summary>
+    public bool ShowContinueButton => IsResumableState;
 
     /// <summary>True while a user pause request is in flight — gates the Pause button against a double-click
     /// the same way <see cref="IsResuming"/> gates Continue. Cleared only once <see cref="Project"/> observes
@@ -146,10 +188,17 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// <para><c>_steering is not null</c> is the trailing-optional guard: a build with no steering service
     /// injected renders exactly the pre-Batch-08 panel (no Pause button, ever).</para>
     /// </summary>
-    public bool CanPause =>
+    public bool CanPause => IsPausableState && !IsPausing;
+
+    /// <summary>Extracted so <see cref="CanPause"/> and <see cref="ShowPauseButton"/> cannot drift into two
+    /// different state sets; the pair discipline is documented on <see cref="ShowDenyButton"/>.</summary>
+    private bool IsPausableState =>
         _steering is not null
-        && (State is RunProgressState.Running or RunProgressState.WaitingForChildren)
-        && !IsPausing;
+        && (State is RunProgressState.Running or RunProgressState.WaitingForChildren);
+
+    /// <summary>See <see cref="ShowDenyButton"/>. This is the half that makes <see cref="PauseLabel"/>'s
+    /// "Pausing…" reachable: the button stays on screen, disabled, for the whole in-flight window.</summary>
+    public bool ShowPauseButton => IsPausableState;
 
     /// <summary><c>Run_Action_Pausing</c> while a request is in flight, <c>Run_Action_Pause</c>
     /// otherwise. Notified from <see cref="OnIsPausingChanged"/> rather than a
@@ -229,6 +278,58 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<StepRowViewModel> Steps { get; } = [];
 
+    /// <summary>
+    /// The signal band's second line: the state name, the run's position in its plan and its elapsed time,
+    /// composed by <see cref="ComposeSubLine"/>. Separate from <see cref="CurrentActivity"/> (which is the
+    /// band's LEAD line) because the two answer different questions — "what is it doing" and "where is it".
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSubLine))]
+    private string? _subLine;
+
+    public bool HasSubLine => !string.IsNullOrEmpty(SubLine);
+
+    /// <summary>
+    /// The same row instances <see cref="Steps"/> holds, wrapped so the whole-plan progress strip can bind to
+    /// its own source. A wrapper and not a second collection on purpose: a copy would need its own diffing pass
+    /// and could disagree with the list about a step's status, and the strip is the one element that must be
+    /// right even when the list below it is windowed.
+    /// </summary>
+    public ReadOnlyObservableCollection<StepRowViewModel> PlanSegments { get; }
+
+    /// <summary>The strip is a LIVE instrument: it shows where the work is, so a parked or settled run drops it
+    /// (the band's sub-line carries the position instead).</summary>
+    [ObservableProperty]
+    private bool _showProgressSegments;
+
+    /// <summary>Placeholder rows while the planner is still writing the plan, so the card does not jump in
+    /// height the moment the plan lands.</summary>
+    [ObservableProperty]
+    private bool _showPlanSkeleton;
+
+    /// <summary>
+    /// Above this many steps the list windows to the running step ±1 and the rest fold away. The card lives
+    /// inside a chat transcript, so it may not grow without bound and it may not introduce an inner scrollbar.
+    /// </summary>
+    private const int StepWindowLimit = 7;
+
+    /// <summary>Latched by <see cref="ExpandStepWindowCommand"/> and never reset: a user who asked to see the
+    /// whole plan does not want it re-folded under them on the next step transition.</summary>
+    [ObservableProperty]
+    private bool _isStepWindowExpanded;
+
+    [ObservableProperty]
+    private int _earlierFoldCount;
+
+    [ObservableProperty]
+    private int _laterFoldCount;
+
+    [ObservableProperty]
+    private string? _earlierFoldLabel;
+
+    [ObservableProperty]
+    private string? _laterFoldLabel;
+
     [ObservableProperty]
     private long _totalInputTokens;
 
@@ -275,6 +376,38 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private bool _hasTimelineReadError;
 
     /// <summary>
+    /// One pill per non-empty decision category, exceptions first — the summary that turns the trace from a log
+    /// dump into an audit. Rebuilt with the rows, so it can never disagree with them.
+    /// </summary>
+    public ObservableCollection<DecisionPillViewModel> DecisionPills { get; } = [];
+
+    /// <summary>"{n} calls" on the collapsed header, or null before the trace has ever been read.</summary>
+    [ObservableProperty]
+    private string? _timelineCallsLabel;
+
+    /// <summary>
+    /// The one count that has to be legible WITHOUT expanding: a parked or refused call. Null when the trace
+    /// holds none (and before the first read), so the badge simply is not there rather than reading "0".
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasTimelineExceptionBadge))]
+    private string? _timelineExceptionBadge;
+
+    public bool HasTimelineExceptionBadge => !string.IsNullOrEmpty(TimelineExceptionBadge);
+
+    /// <summary>Which palette <see cref="TimelineExceptionBadge"/> renders in.</summary>
+    [ObservableProperty]
+    private RunDecisionSeverity _timelineExceptionSeverity;
+
+    /// <summary>
+    /// Guards the ONE trace read this VM does outside a user expand. A settled run's trace cannot change again,
+    /// so reading it once is enough — and it is what lets the collapsed header say "1 awaiting approval" about a
+    /// run that ended parked, which is the whole point of surfacing the count there. Deliberately NOT a read on
+    /// every <c>RunChanged</c>: ~500 emits per run may not reach the projection path (see <see cref="Timeline"/>).
+    /// </summary>
+    private bool _settledTraceRead;
+
+    /// <summary>
     /// Batch 06 G4 / plan D3: a settled run whose isolated workspace still holds files nobody promoted —
     /// usually a FAILED or CANCELLED run, because a clean one promotes automatically before it is marked
     /// Completed. <b>Not only those</b>: a clean copy-mode run whose promotion hit a CONFLICT keeps its
@@ -283,6 +416,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanPublish))]
+    [NotifyPropertyChangedFor(nameof(ShowPublishButton))]
     [NotifyCanExecuteChangedFor(nameof(PublishCommand))]
     private bool _hasUnpublishedFiles;
 
@@ -317,6 +451,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     public bool CanPublish => HasUnpublishedFiles && !IsPublishing;
 
+    /// <summary>See <see cref="ShowDenyButton"/>: the offer stands (and the button stays on screen, disabled)
+    /// while a publish is in flight — the files really are still in the workspace until it lands.</summary>
+    public bool ShowPublishButton => HasUnpublishedFiles;
+
     /// <summary>
     /// The run's delegated CHILD runs (Batch 07 D17), one row each, refreshed in place on every projection.
     /// Empty for every ordinary run — a build with no persona roster never produces one.
@@ -332,6 +470,11 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private bool _hasChildren;
+
+    /// <summary>The sub-agents section's own disclosure. Unlike the trace's, expanding it reads nothing — each
+    /// CHILD row owns its trace load — so this is presentation state and nothing else.</summary>
+    [ObservableProperty]
+    private bool _isChildrenExpanded;
 
     /// <summary>The "N of M finished" line, or null when this run delegated nothing.</summary>
     [ObservableProperty]
@@ -393,6 +536,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         _localization = localization;
         _resumeService = resumeService;
         _logger = logger;
+        PlanSegments = new ReadOnlyObservableCollection<StepRowViewModel>(Steps);
         // Captured on the construction (UI) thread; may be null in a headless test → run inline.
         _uiContext = SynchronizationContext.Current ?? new SynchronizationContext();
         _runService.RunChanged += OnRunChanged;
@@ -453,6 +597,16 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         // would pay for it dozens of times per run to answer a question only a settled run can be asked.
         if (_workspaces is not null && IsTerminal(run.State))
             await LoadWorkspaceOutcomeAsync().ConfigureAwait(false);
+
+        // The settled run's trace, ONCE — the same terminal-only shape the workspace read above uses, and for a
+        // sharper reason: this one is latched, because a run that will not change again cannot record another
+        // decision. It is what puts the exception count on the collapsed header of a run the user is reading
+        // back out of chat history. A live run's header stays quiet until the first expand, by design.
+        if (_timelineService is not null && !_settledTraceRead && IsTerminal(run.State))
+        {
+            _settledTraceRead = true;
+            await LoadTimelineAsync().ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -661,6 +815,188 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             ApplyPerStepLedger(ledger);
             OnPropertyChanged(nameof(LedgerSummary));
         }
+
+        // LAST, deliberately: all three read the step list, the child rows and the ledger this projection just
+        // wrote, so composing them earlier would render the PREVIOUS projection's numbers under this one's state.
+        ShowPlanSkeleton = State == RunProgressState.Planning && Steps.Count == 0;
+        ShowProgressSegments = Steps.Count > 0
+            && State is RunProgressState.Running or RunProgressState.WaitingForChildren;
+        ApplyStepWindow();
+        SubLine = ComposeSubLine();
+    }
+
+    /// <summary>
+    /// The band's sub-line. Assembled from small localized fragments joined by a middle dot rather than one
+    /// format string per state: the separator is punctuation, not grammar, so a translator never has to carry a
+    /// clause they cannot see the value of, and a fragment whose value is missing (no ledger yet, no plan yet)
+    /// simply drops out instead of rendering "step 0 of 0".
+    /// </summary>
+    private string? ComposeSubLine()
+    {
+        var total = Steps.Count;
+        var parts = new List<string>();
+
+        switch (State)
+        {
+            case RunProgressState.Completed:
+            case RunProgressState.TruncatedCompleted:
+                if (total > 0) parts.Add(_localization.Format("Run_Sub_Steps", SettledStepCount, total));
+                if (WallClockMs > 0) parts.Add(FormatSeconds(WallClockMs));
+                // Only the CLEAN finish spends a clause on the token figure. The truncated card already carries a
+                // reason chip beside its label, and a third number there reads as noise over the one fact that
+                // matters — that the result is not what was asked for.
+                var tokens = TotalInputTokens + TotalOutputTokens;
+                if (State == RunProgressState.Completed && tokens > 0)
+                    parts.Add(_localization.Format("Run_Sub_Tokens", tokens.ToString("N0")));
+                break;
+
+            case RunProgressState.Failed:
+                // StoppedStepOrdinal, not CurrentStepOrdinal: a run that failed with every step already settled
+                // (the verify pass rejected the result) has no step to point at, and CurrentStepOrdinal's
+                // all-settled fallback would have the card claim "Stopped at step 4 of 4" over a plan that
+                // finished all four. Fall back to the plain step tally instead.
+                if (StoppedStepOrdinal > 0 && total > 0)
+                    parts.Add(_localization.Format("Run_Sub_StoppedAtStep", StoppedStepOrdinal, total));
+                else if (total > 0)
+                    parts.Add(_localization.Format("Run_Sub_Steps", SettledStepCount, total));
+                else
+                    parts.Add(StateName);
+                if (WallClockMs > 0) parts.Add(FormatSeconds(WallClockMs));
+                break;
+
+            case RunProgressState.WaitingForChildren:
+                // The children's progress replaces the step position here: the parent's own plan is parked, and
+                // "step 3 of 4" beside a spinner would claim work this run is not doing.
+                parts.Add(StateName);
+                if (ChildrenNote is { } childrenNote) parts.Add(childrenNote);
+                if (WallClockMs > 0) parts.Add(_localization.Format("Run_Sub_Elapsed", FormatSeconds(WallClockMs)));
+                break;
+
+            case RunProgressState.Paused:
+                // No elapsed time: a paused run's clock is not moving, and a frozen number invites the reader to
+                // wonder whether the panel is stale. The invitation to edit the plan takes the slot instead.
+                parts.Add(StateName);
+                if (CurrentStepOrdinal > 0 && total > 0)
+                    parts.Add(_localization.Format("Run_Sub_Step", CurrentStepOrdinal, total));
+                parts.Add(_localization["Run_Sub_PlanEditable"]);
+                break;
+
+            default: // Planning / Running / WaitingForInput
+                parts.Add(StateName);
+                if (CurrentStepOrdinal > 0 && total > 0)
+                    parts.Add(_localization.Format("Run_Sub_Step", CurrentStepOrdinal, total));
+                if (WallClockMs > 0) parts.Add(_localization.Format("Run_Sub_Elapsed", FormatSeconds(WallClockMs)));
+                break;
+        }
+
+        return parts.Count == 0 ? null : string.Join(" · ", parts);
+    }
+
+    /// <summary>Resolved through the label converter's own mapping rather than a second copy of it — a copy is
+    /// how a state ends up named one thing in the band's lead line and another in its sub-line.</summary>
+    private string StateName => _localization[RunStateToLabelConverter.LabelKey(State)];
+
+    /// <summary>Whole-and-a-bit seconds, in the current culture — the ledger strip's own format, so the two
+    /// surfaces never print the same elapsed time two ways.</summary>
+    private static string FormatSeconds(long milliseconds) => $"{milliseconds / 1000.0:0.#}s";
+
+    private int SettledStepCount =>
+        Steps.Count(r => r.Status is AgentStepStatus.Done or AgentStepStatus.Failed or AgentStepStatus.Skipped);
+
+    /// <summary>
+    /// The 1-based step the run is ON, or 0 when the plan is empty. Running wins, then Failed (a failed run
+    /// stopped AT that step, which is what the band says), then the first step still to come.
+    /// </summary>
+    private int CurrentStepOrdinal
+    {
+        get
+        {
+            for (var i = 0; i < Steps.Count; i++)
+                if (Steps[i].Status == AgentStepStatus.Running) return i + 1;
+            for (var i = 0; i < Steps.Count; i++)
+                if (Steps[i].Status == AgentStepStatus.Failed) return i + 1;
+            for (var i = 0; i < Steps.Count; i++)
+                if (Steps[i].Status == AgentStepStatus.Pending) return i + 1;
+            return Steps.Count;
+        }
+    }
+
+    /// <summary>The 1-based step a stopped run stopped AT, or 0 when there is no such step — every row already
+    /// settled, which is what a verify-pass failure over a completed plan looks like. Distinct from
+    /// <see cref="CurrentStepOrdinal"/> precisely because that one has to answer for a LIVE run and therefore
+    /// falls back to the last step; here a fallback would be a false claim.</summary>
+    private int StoppedStepOrdinal
+    {
+        get
+        {
+            for (var i = 0; i < Steps.Count; i++)
+                if (Steps[i].Status is AgentStepStatus.Failed or AgentStepStatus.Running) return i + 1;
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Fold a long plan down to the running step ±1, with a summary row at each end. The card is pinned above a
+    /// chat transcript, so an unbounded list would push the conversation off screen and an inner scrollbar would
+    /// trap the transcript's own wheel events.
+    /// <para>
+    /// A PAUSED run is never windowed: that is the one state whose per-row buttons can rewrite the plan, and
+    /// hiding the rows a user paused in order to edit would be the panel working against them.
+    /// </para>
+    /// </summary>
+    private void ApplyStepWindow()
+    {
+        var total = Steps.Count;
+        if (IsStepWindowExpanded || CanMutatePlan || total <= StepWindowLimit)
+        {
+            foreach (var row in Steps) row.IsWindowedOut = false;
+            EarlierFoldCount = 0;
+            LaterFoldCount = 0;
+            EarlierFoldLabel = null;
+            LaterFoldLabel = null;
+            return;
+        }
+
+        var anchor = Math.Max(CurrentStepOrdinal - 1, 0);
+        var first = Math.Max(0, anchor - 1);
+        var last = Math.Min(total - 1, anchor + 1);
+
+        // A fold that would hide exactly ONE step folds nothing: the fold row is as tall as the row it replaces,
+        // so it buys no height, it costs the reader the step's title, and it is the only case where the count
+        // reaches 1 — which every locale's plural copy would then get wrong ("1 earlier steps").
+        if (first == 1) first = 0;
+        if (total - 1 - last == 1) last = total - 1;
+
+        for (var i = 0; i < total; i++)
+            Steps[i].IsWindowedOut = i < first || i > last;
+
+        EarlierFoldCount = first;
+        LaterFoldCount = total - 1 - last;
+
+        // Two variants per end, and the qualifier is claimed only when it is TRUE: "all done" over a fold that
+        // hides a failed or skipped step is the panel telling the user the run went better than it did.
+        if (EarlierFoldCount == 0)
+            EarlierFoldLabel = null;
+        else if (Steps.Take(first).All(r => r.Status == AgentStepStatus.Done))
+            EarlierFoldLabel = _localization.Format("Run_Plan_Fold_Earlier", EarlierFoldCount);
+        else
+            EarlierFoldLabel = _localization.Format("Run_Plan_Fold_EarlierMixed", EarlierFoldCount);
+
+        if (LaterFoldCount == 0)
+            LaterFoldLabel = null;
+        else if (Steps.Skip(last + 1).All(r => r.Status == AgentStepStatus.Pending))
+            LaterFoldLabel = _localization.Format("Run_Plan_Fold_Later", LaterFoldCount);
+        else
+            LaterFoldLabel = _localization.Format("Run_Plan_Fold_LaterMixed", LaterFoldCount);
+    }
+
+    /// <summary>Unfold the whole plan in place. One-way (see <see cref="IsStepWindowExpanded"/>) — the fold rows
+    /// disappear with the fold, so there is no button left to re-collapse it and none is offered.</summary>
+    [RelayCommand]
+    private void ExpandStepWindow()
+    {
+        IsStepWindowExpanded = true;
+        ApplyStepWindow();
     }
 
     // R12 mapping. Verifying intentionally folds into Running here (keeps the spinner lit) while
@@ -698,11 +1034,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     // The pause vocabulary, like the truncation vocabulary above, is a fixed set of APP-OWNED tokens written by
     // the run loop and the startup reconcile — never user content. An unknown or absent reason keeps the budget
     // wording, because that is what every pause the loop itself writes actually is ("step-cap"/"wall-clock").
-    // Batch 08 G2: the "user" arm is not reachable TODAY — ComputeActivity returns null for Paused (the state
-    // chip already carries it), so a user-paused run renders no activity line at all. It is added anyway
-    // because the alternative is a latent "Stopped at budget" the day someone makes the line render for
-    // Paused, and it is deliberately NOT mapped to the existing Run_State_Paused chip label: a mapping arm
-    // that borrows a string written for another control reads fine and breaks on the next copy edit.
+    // Batch 08 G2's "user" arm is reachable now: ComputeActivity routes Paused here too, because the band's lead
+    // line is the only place a paused run can say who paused it. It is deliberately NOT mapped to the existing
+    // Run_State_Paused label: a mapping arm that borrows a string written for another control reads fine and
+    // breaks on the next copy edit.
     // hermes #16 takes the RUN, not just the reason: the approval arm has to name the tool, and a resx KEY
     // cannot carry one. Every other arm ignores the extra argument.
     private string DescribePause(AgentRun run) => RunPauseEnvelope.ReadReason(run) switch
@@ -744,7 +1079,12 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         // would sensibly raise its own budgets in Settings to prevent a recurrence, changing nothing.
         AgentRunState.WaitingForInput => DescribePause(run),
         AgentRunState.WaitingForChildren => _localization["Run_Activity_WaitingForChildren"], // 07 G8
-        _ => null, // Paused / terminal — the state chip already carries it
+        // A user-paused run says so in words. It used to say nothing here because the old header's state chip was
+        // the only carrier; the band's lead line is now the carrier, and a blank lead beside a Continue button
+        // would leave the reader guessing whether the run stopped itself or they did. This is the change the
+        // "user" arm of DescribePause was written in advance for.
+        AgentRunState.Paused => DescribePause(run),
+        _ => null, // terminal — the band's own state name is the lead line there
     };
 
     /// <summary>
@@ -862,6 +1202,11 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     {
         row.EditTitle = row.Title;
         row.EditIntent = row.Intent;
+        // The editor replaces the row, so the row's own position is the only thing left saying WHICH step is being
+        // edited. Computed at open time and not re-derived: submitting THIS row's edit closes the editor, so the
+        // number can only drift if a reorder lands on ANOTHER row while this one is open — cosmetic, and cheaper
+        // to accept than a live ordinal on every row.
+        row.EditorEyebrow = _localization.Format("Run_Plan_Editor_Eyebrow", Steps.IndexOf(row) + 1);
         row.IsEditing = true;
     }
 
@@ -1063,23 +1408,38 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             try
             {
                 Timeline.Clear();
+                DecisionPills.Clear();
                 IsTimelineTruncated = false;
                 TimelineNote = null;
                 HasTimelineReadError = readFailed;
 
-                foreach (var row in rows ?? [])
+                // A statement about the TRACE, not a tool call — a note, never a row, and read out before the
+                // ordering below so it cannot land in the middle of the table.
+                if ((rows ?? []).Any(r => r.Kind == AgentTimelineEventKind.TraceTruncated))
                 {
-                    if (row.Kind == AgentTimelineEventKind.TraceTruncated)
-                    {
-                        // A statement about the TRACE, not a tool call — surfaced as a note, never as a row.
-                        IsTimelineTruncated = true;
-                        TimelineNote = _localization.Format("Run_Timeline_Truncated", AgentTimelineService.MaxEventsPerRun);
-                        continue;
-                    }
-
-                    Timeline.Add(Project(row));
+                    IsTimelineTruncated = true;
+                    TimelineNote = _localization.Format("Run_Timeline_Truncated", AgentTimelineService.MaxEventsPerRun);
                 }
 
+                // EXCEPTIONS FIRST, then everything else — each half newest-first. The store hands rows back in
+                // (RunId, Seq) order, i.e. oldest first, so one Reverse gives both halves their order at once.
+                // This is what turns the trace from a log dump into an audit: the two rows that need a person
+                // are at the top whether they happened first or five hundred calls ago.
+                var events = (rows ?? [])
+                    .Where(r => r.Kind != AgentTimelineEventKind.TraceTruncated)
+                    .Reverse()
+                    .ToList();
+                var exceptions = events.Where(e => Severity(e.Decision) != RunDecisionSeverity.Routine).ToList();
+                var routine = events.Where(e => Severity(e.Decision) == RunDecisionSeverity.Routine).ToList();
+
+                for (var i = 0; i < exceptions.Count; i++)
+                    Timeline.Add(Project(exceptions[i], showGroupSeparator: false));
+                for (var i = 0; i < routine.Count; i++)
+                    // The rule under the exception block, drawn by the FIRST row below it so the table needs no
+                    // separate separator item (which would be a row the reflection guard has to allow for).
+                    Timeline.Add(Project(routine[i], showGroupSeparator: i == 0 && exceptions.Count > 0));
+
+                ApplyDecisionSummary(events);
                 HasNoTimeline = !readFailed && Timeline.Count == 0;
             }
             finally
@@ -1091,7 +1451,61 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         return done.Task;
     }
 
-    private TimelineRowViewModel Project(AgentTimelineEvent row) => new()
+    /// <summary>
+    /// The collapsed header's call count and exception badge, plus one pill per non-empty decision category.
+    /// Zero-count categories are omitted rather than shown as "0 denied": a category that did not happen is not
+    /// a fact about this run.
+    /// </summary>
+    private void ApplyDecisionSummary(IReadOnlyList<AgentTimelineEvent> events)
+    {
+        TimelineCallsLabel = events.Count > 0 ? _localization.Format("Run_Timeline_Calls", events.Count) : null;
+
+        // Exceptions first, in the order a reader has to act on them. Written as an explicit list, not driven off
+        // the decision enum, because the ORDER is the point and enum order is not it.
+        var categories = new (string LabelKey, string PillKey, RunDecisionSeverity Severity)[]
+        {
+            ("Run_Timeline_Decision_AwaitingApproval", "Run_Timeline_Pill_AwaitingApproval", RunDecisionSeverity.Awaiting),
+            ("Run_Timeline_Decision_Denied", "Run_Timeline_Pill_Denied", RunDecisionSeverity.Refused),
+            ("Run_Timeline_Decision_Blocked", "Run_Timeline_Pill_Blocked", RunDecisionSeverity.Refused),
+            ("Run_Timeline_Decision_Approved", "Run_Timeline_Pill_Approved", RunDecisionSeverity.Routine),
+            ("Run_Timeline_Decision_AutoApproved", "Run_Timeline_Pill_AutoApproved", RunDecisionSeverity.Routine),
+            ("Run_Timeline_Decision_Unknown", "Run_Timeline_Pill_Unknown", RunDecisionSeverity.Routine),
+        };
+
+        TimelineExceptionBadge = null;
+        TimelineExceptionSeverity = RunDecisionSeverity.Routine;
+
+        foreach (var (labelKey, pillKey, severity) in categories)
+        {
+            var count = events.Count(e => DecisionLabelKey(e.Decision) == labelKey);
+            if (count == 0) continue;
+
+            var text = _localization.Format(pillKey, count);
+            DecisionPills.Add(new DecisionPillViewModel { Text = text, Severity = severity });
+
+            // The badge is the FIRST exception category with a count — awaiting outranks refused because it is
+            // the one the reader can still do something about.
+            if (severity != RunDecisionSeverity.Routine && TimelineExceptionBadge is null)
+            {
+                TimelineExceptionBadge = text;
+                TimelineExceptionSeverity = severity;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The render severity of one decision, derived from <see cref="DecisionLabelKey"/> rather than from a second
+    /// switch over <see cref="ToolGateDecision"/>: two mappings over the same eleven ordinals is how a decision
+    /// ends up labelled "Denied" and painted in the routine grey.
+    /// </summary>
+    internal static RunDecisionSeverity Severity(ToolGateDecision decision) => DecisionLabelKey(decision) switch
+    {
+        "Run_Timeline_Decision_AwaitingApproval" => RunDecisionSeverity.Awaiting,
+        "Run_Timeline_Decision_Denied" or "Run_Timeline_Decision_Blocked" => RunDecisionSeverity.Refused,
+        _ => RunDecisionSeverity.Routine,
+    };
+
+    private TimelineRowViewModel Project(AgentTimelineEvent row, bool showGroupSeparator) => new()
     {
         ToolName = row.ToolName,
         DecisionLabel = _localization[DecisionLabelKey(row.Decision)],
@@ -1102,6 +1516,8 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             ? _localization.Format("Run_Timeline_Step", Steps.IndexOf(Steps.First(s => s.StepId == stepId)) + 1)
             : null,
         TimeLabel = row.CreatedAt.ToLocalTime().ToString("t"),
+        Severity = Severity(row.Decision),
+        ShowGroupSeparator = showGroupSeparator,
     };
 
     /// <summary>
@@ -1226,12 +1642,14 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             row.PersonaId = persona.Id;
             row.PersonaEmoji = persona.Emoji;
             row.PersonaAccent = persona.AccentColor;
+            row.PersonaName = persona.Name;
         }
         else
         {
             row.PersonaId = Guid.Empty;
             row.PersonaEmoji = null;
             row.PersonaAccent = null;
+            row.PersonaName = null;
         }
     }
 
@@ -1332,13 +1750,20 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                 row.Timeline.Clear();
                 row.HasTimelineReadError = readFailed;
 
-                foreach (var e in rows ?? [])
-                {
-                    if (e.Kind == AgentTimelineEventKind.TraceTruncated)
-                        continue; // the note belongs to the parent's own expander; a child row stays one list
+                // the truncation marker's note belongs to the parent's own expander; a child row stays one list
+                var events = (rows ?? [])
+                    .Where(e => e.Kind != AgentTimelineEventKind.TraceTruncated)
+                    .Reverse()
+                    .ToList();
+                var exceptions = events.Where(e => Severity(e.Decision) != RunDecisionSeverity.Routine).ToList();
+                var routine = events.Where(e => Severity(e.Decision) == RunDecisionSeverity.Routine).ToList();
 
-                    row.Timeline.Add(Project(e));
-                }
+                // Same exception-first ordering as the parent's trace: a child that parked for approval is
+                // exactly as easy to miss at the bottom of a child's list as at the bottom of the parent's.
+                foreach (var e in exceptions)
+                    row.Timeline.Add(Project(e, showGroupSeparator: false));
+                for (var i = 0; i < routine.Count; i++)
+                    row.Timeline.Add(Project(routine[i], showGroupSeparator: i == 0 && exceptions.Count > 0));
 
                 row.HasNoTimeline = !readFailed && row.Timeline.Count == 0;
             }
@@ -1434,10 +1859,21 @@ public sealed partial class ChildRunRowViewModel : ObservableObject
     private RunProgressState _state;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TokensLabel))]
+    [NotifyPropertyChangedFor(nameof(HasTokens))]
     private long _inputTokens;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TokensLabel))]
+    [NotifyPropertyChangedFor(nameof(HasTokens))]
     private long _outputTokens;
+
+    /// <summary>Input PLUS output, matching <see cref="StepRowViewModel.TokensLabel"/> exactly. The two render in
+    /// visually identical mono columns on the same card, so the card must not print two different measures of the
+    /// same word — a child's input-only figure read as its total and understated every delegated run.</summary>
+    public string TokensLabel => (InputTokens + OutputTokens).ToString("N0");
+
+    public bool HasTokens => InputTokens + OutputTokens > 0;
 
     /// <summary>Whether this child will still change. Drives the parent's "N of M finished" count only.</summary>
     public bool IsFinished => State is RunProgressState.Completed or RunProgressState.TruncatedCompleted
@@ -1508,6 +1944,21 @@ public sealed partial class StepRowViewModel : ObservableObject
     private string? _personaAccent; // #RRGGBB straight into HexToBrushConverter; null ⇒ no accent ring
 
     /// <summary>
+    /// The persona's name, appended to the title as "· {name}" so the delegation is readable and not only
+    /// hoverable. SETTABLE for the reason the three fields above are (see <see cref="PersonaId"/>). SENSITIVE:
+    /// a persona is user-authored, so this is bound to UI only and never logged, exactly like
+    /// <see cref="Title"/>.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PersonaSuffix))]
+    private string? _personaName;
+
+    /// <summary>Rendered as a second Run inside the title's TextBlock, so the persona is the FIRST thing the
+    /// ellipsis eats — the step's own title has to survive a narrow card. Null renders as a zero-width Run, which
+    /// is why the row needs no "has a suffix" companion bool.</summary>
+    public string? PersonaSuffix => string.IsNullOrEmpty(PersonaName) ? null : $" · {PersonaName}";
+
+    /// <summary>
     /// True only when this step was genuinely delegated to a resolvable persona. Deliberately NOT a
     /// fallback to "the run persona": <c>AgentRun</c> has no persona column, so that value is not
     /// resolvable from the run row, and resolving "whatever persona is active right now" would be a guess
@@ -1523,12 +1974,42 @@ public sealed partial class StepRowViewModel : ObservableObject
     private AgentStepStatus _status;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TokensLabel))]
+    [NotifyPropertyChangedFor(nameof(HasTokens))]
     private long _inputTokens;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TokensLabel))]
+    [NotifyPropertyChangedFor(nameof(HasTokens))]
     private long _outputTokens;
 
+    /// <summary>What the step COST, input plus output — the same arithmetic the header ledger does, so the
+    /// column and the ledger cannot be read as two different measures of the same run.</summary>
+    public string TokensLabel => (InputTokens + OutputTokens).ToString("N0");
+
+    public bool HasTokens => InputTokens + OutputTokens > 0;
+
     public bool IsRunning => Status == AgentStepStatus.Running;
+
+    /// <summary>The row draws its own 7px ring for Pending and its own pulsing dot for Running; only the other
+    /// three statuses use a glyph from the icon set. Three mutually exclusive bools rather than one status
+    /// converter per element: the shapes differ in SIZE, not just in colour, and a size converter would be a
+    /// fourth mapping over the same five statuses.</summary>
+    public bool IsPending => Status == AgentStepStatus.Pending;
+
+    public bool HasStatusGlyph => Status is AgentStepStatus.Done or AgentStepStatus.Failed or AgentStepStatus.Skipped;
+
+    public bool IsSkipped => Status == AgentStepStatus.Skipped;
+
+    /// <summary>
+    /// Folded away by the plan window (<c>RunProgressViewModel.ApplyStepWindow</c>) — the row stays in
+    /// <c>Steps</c> so the progress strip, the ledger and the trace's step attribution all keep seeing it.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsInWindow))]
+    private bool _isWindowedOut;
+
+    public bool IsInWindow => !IsWindowedOut;
 
     /// <summary>
     /// Batch 08 D3: gates the row's five plan-mutation buttons' <c>IsEnabled</c> — a settled step (Done,
@@ -1539,7 +2020,13 @@ public sealed partial class StepRowViewModel : ObservableObject
     /// </summary>
     public bool IsMutable => Status == AgentStepStatus.Pending;
 
-    partial void OnStatusChanged(AgentStepStatus value) => OnPropertyChanged(nameof(IsRunning));
+    partial void OnStatusChanged(AgentStepStatus value)
+    {
+        OnPropertyChanged(nameof(IsRunning));
+        OnPropertyChanged(nameof(IsPending));
+        OnPropertyChanged(nameof(HasStatusGlyph));
+        OnPropertyChanged(nameof(IsSkipped));
+    }
 
     /// <summary>True while this row's inline editor (Title/Intent) is open. Batch 08 D3: inline, never a
     /// dialog — the panel is embedded in a chat.</summary>
@@ -1555,6 +2042,11 @@ public sealed partial class StepRowViewModel : ObservableObject
     /// <summary>The editor's working copy of <see cref="Intent"/>, same discipline as <see cref="EditTitle"/>.</summary>
     [ObservableProperty]
     private string? _editIntent;
+
+    /// <summary>"Editing step {n}" — the editor replaces the row, so this is the only thing left on screen saying
+    /// WHICH step is being edited. Written by <c>RunProgressViewModel.EditStep</c>, which is the only opener.</summary>
+    [ObservableProperty]
+    private string? _editorEyebrow;
 
     public static StepRowViewModel From(AgentStep step) => new()
     {
@@ -1589,4 +2081,28 @@ public sealed class TimelineRowViewModel : ObservableObject
     public string? StepLabel { get; init; }
 
     public string TimeLabel { get; init; } = string.Empty;
+
+    /// <summary>How loudly the row reads. Metadata about the DECISION, not about the call's target — the two
+    /// properties below are presentation, which is why they are allowed past the no-payload guard.</summary>
+    public RunDecisionSeverity Severity { get; init; }
+
+    public bool IsException => Severity != RunDecisionSeverity.Routine;
+
+    /// <summary>Set on the first row BELOW the exception block, which draws the rule that separates the two
+    /// halves — cheaper than a separator item, which the trace's row-shape guard would have to allow for.</summary>
+    public bool ShowGroupSeparator { get; init; }
+}
+
+/// <summary>One decision category's count on the trace's summary row. Init-only and rebuilt with the rows it
+/// summarizes, so it raises nothing — it derives <c>ObservableObject</c> only because the repo's MVVM rule
+/// requires every <c>*ViewModel</c> to, exactly as <see cref="TimelineRowViewModel"/> does. No payload either.</summary>
+public sealed class DecisionPillViewModel : ObservableObject
+{
+    public string Text { get; init; } = string.Empty;
+
+    public RunDecisionSeverity Severity { get; init; }
+
+    /// <summary>Drives the pill's weight — an exception category reads semibold, a routine one regular, which is
+    /// half of what makes the summary row scannable at a glance rather than a row of equal chips.</summary>
+    public bool IsException => Severity != RunDecisionSeverity.Routine;
 }

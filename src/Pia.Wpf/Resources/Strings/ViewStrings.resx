@@ -978,6 +978,26 @@
   <data name="Run_Timeline_Decision_AwaitingApproval" xml:space="preserve"><value>Awaiting approval</value></data>
   <data name="Run_Timeline_Decision_Unknown" xml:space="preserve"><value>Unknown</value></data>
   <data name="Run_Timeline_Outcome_Failed" xml:space="preserve"><value>failed</value></data>
+  <data name="Run_Sub_Step" xml:space="preserve"><value>step {0} of {1}</value></data>
+  <data name="Run_Sub_Steps" xml:space="preserve"><value>{0} of {1} steps</value></data>
+  <data name="Run_Sub_StoppedAtStep" xml:space="preserve"><value>Stopped at step {0} of {1}</value></data>
+  <data name="Run_Sub_Elapsed" xml:space="preserve"><value>{0} elapsed</value></data>
+  <data name="Run_Sub_Tokens" xml:space="preserve"><value>{0} tokens</value></data>
+  <data name="Run_Sub_PlanEditable" xml:space="preserve"><value>you can change the plan now</value></data>
+  <data name="Run_Step_Now" xml:space="preserve"><value>now</value></data>
+  <data name="Run_Step_Skipped" xml:space="preserve"><value>skipped</value></data>
+  <data name="Run_Plan_Fold_Earlier" xml:space="preserve"><value>{0} earlier steps — all done</value></data>
+  <data name="Run_Plan_Fold_EarlierMixed" xml:space="preserve"><value>{0} earlier steps</value></data>
+  <data name="Run_Plan_Fold_Later" xml:space="preserve"><value>{0} later steps — pending</value></data>
+  <data name="Run_Plan_Fold_LaterMixed" xml:space="preserve"><value>{0} later steps</value></data>
+  <data name="Run_Plan_Editor_Eyebrow" xml:space="preserve"><value>Editing step {0}</value></data>
+  <data name="Run_Timeline_Calls" xml:space="preserve"><value>{0} call(s)</value></data>
+  <data name="Run_Timeline_Pill_AwaitingApproval" xml:space="preserve"><value>{0} awaiting approval</value></data>
+  <data name="Run_Timeline_Pill_Denied" xml:space="preserve"><value>{0} denied</value></data>
+  <data name="Run_Timeline_Pill_Blocked" xml:space="preserve"><value>{0} blocked</value></data>
+  <data name="Run_Timeline_Pill_Approved" xml:space="preserve"><value>{0} approved</value></data>
+  <data name="Run_Timeline_Pill_AutoApproved" xml:space="preserve"><value>{0} auto-approved</value></data>
+  <data name="Run_Timeline_Pill_Unknown" xml:space="preserve"><value>{0} unknown</value></data>
   <data name="Settings_Agent_Tab" xml:space="preserve"><value>Agent runs</value></data>
   <data name="Settings_Agent_Section_Description" xml:space="preserve"><value>Limits an Agent run stops at, so it never runs away. A run that reaches a limit pauses and waits for you — you can continue it from the run panel.</value></data>
   <data name="Settings_Agent_MaxSteps_Label" xml:space="preserve"><value>Maximum steps</value></data>

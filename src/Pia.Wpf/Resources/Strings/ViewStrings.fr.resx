@@ -1004,6 +1004,26 @@
   <data name="Run_Timeline_Decision_AwaitingApproval" xml:space="preserve"><value>En attente d'autorisation</value></data>
   <data name="Run_Timeline_Decision_Unknown" xml:space="preserve"><value>Inconnu</value></data>
   <data name="Run_Timeline_Outcome_Failed" xml:space="preserve"><value>échec</value></data>
+  <data name="Run_Sub_Step" xml:space="preserve"><value>étape {0} sur {1}</value></data>
+  <data name="Run_Sub_Steps" xml:space="preserve"><value>{0} sur {1} étape(s)</value></data>
+  <data name="Run_Sub_StoppedAtStep" xml:space="preserve"><value>Arrêtée à l'étape {0} sur {1}</value></data>
+  <data name="Run_Sub_Elapsed" xml:space="preserve"><value>{0} écoulée(s)</value></data>
+  <data name="Run_Sub_Tokens" xml:space="preserve"><value>{0} jeton(s)</value></data>
+  <data name="Run_Sub_PlanEditable" xml:space="preserve"><value>vous pouvez modifier le plan maintenant</value></data>
+  <data name="Run_Step_Now" xml:space="preserve"><value>en cours</value></data>
+  <data name="Run_Step_Skipped" xml:space="preserve"><value>ignorée</value></data>
+  <data name="Run_Plan_Fold_Earlier" xml:space="preserve"><value>{0} étapes précédentes — toutes terminées</value></data>
+  <data name="Run_Plan_Fold_EarlierMixed" xml:space="preserve"><value>{0} étapes précédentes</value></data>
+  <data name="Run_Plan_Fold_Later" xml:space="preserve"><value>{0} étapes suivantes — en attente</value></data>
+  <data name="Run_Plan_Fold_LaterMixed" xml:space="preserve"><value>{0} étapes suivantes</value></data>
+  <data name="Run_Plan_Editor_Eyebrow" xml:space="preserve"><value>Modification de l'étape {0}</value></data>
+  <data name="Run_Timeline_Calls" xml:space="preserve"><value>{0} appel(s)</value></data>
+  <data name="Run_Timeline_Pill_AwaitingApproval" xml:space="preserve"><value>{0} en attente d'autorisation</value></data>
+  <data name="Run_Timeline_Pill_Denied" xml:space="preserve"><value>{0} refusé(s)</value></data>
+  <data name="Run_Timeline_Pill_Blocked" xml:space="preserve"><value>{0} bloqué(s)</value></data>
+  <data name="Run_Timeline_Pill_Approved" xml:space="preserve"><value>{0} autorisé(s)</value></data>
+  <data name="Run_Timeline_Pill_AutoApproved" xml:space="preserve"><value>{0} autorisé(s) automatiquement</value></data>
+  <data name="Run_Timeline_Pill_Unknown" xml:space="preserve"><value>{0} inconnu(s)</value></data>
   <data name="Flow_Run_Title" xml:space="preserve"><value>Exécution d'agent</value></data>
   <data name="Flow_Run_Completed" xml:space="preserve"><value>Terminé — appuyez pour consulter</value></data>
   <data name="Flow_Run_Failed" xml:space="preserve"><value>Terminé avec une erreur</value></data>
