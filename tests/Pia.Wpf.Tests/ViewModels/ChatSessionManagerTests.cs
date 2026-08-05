@@ -1687,6 +1687,19 @@ public class ChatSessionManagerTests
             Arg.Any<CancellationToken>());
     }
 
+    /// <summary>The working subpath reaches the launcher request verbatim, so a detached run provisions its workspace from the same source root the live turn path would.</summary>
+    [Fact]
+    public async Task StartBackgroundRunAsync_CarriesTheWorkingSubpath_IntoTheLauncherRequest()
+    {
+        var sut = CreateSut();
+
+        await sut.StartBackgroundRunAsync("Fix the build", "Playground/Demo");
+
+        await _headlessLauncher.Received(1).LaunchAsync(
+            Arg.Is<HeadlessRunRequest>(r => r.WorkingSubpath == "Playground/Demo"),
+            Arg.Any<CancellationToken>());
+    }
+
     // ---- answering a parked run's question in the live composer ----
 
     /// <summary>The pause envelope as a wire literal (not the production constant), so a drift in the wire format would fail this test.</summary>
@@ -1947,7 +1960,7 @@ public class ChatSessionManagerTests
 
     /// <summary>The pull appends exactly the rows missing from the session, in stored order, and leaves the rest untouched.</summary>
     [Fact]
-    public async Task PullClarificationRows_RunParkedAsking_RendersTheQuestionAHeadlessResumeWrote()
+    public async Task PullMissingTranscriptRows_RunParkedAsking_RendersTheQuestionAHeadlessResumeWrote()
     {
         var sut = CreateResumingSut();
         var session = sut.GetOrCreateActiveForNewChat();
@@ -1965,7 +1978,7 @@ public class ChatSessionManagerTests
             StoredRow(a1Id, "user", "the printed catalogue"),
             StoredRow(q2Id, "assistant", "which catalogue — 2024 or 2025?"));
 
-        await sut.PullClarificationRowsAsync(chatId);
+        await sut.PullMissingTranscriptRowsAsync(chatId);
 
         Assert.Equal(4, session.Messages.Count);
         var pulled = session.Messages[3];
@@ -1976,7 +1989,7 @@ public class ChatSessionManagerTests
 
     /// <summary>The pull keys on message id, so a row the session already holds is never appended twice.</summary>
     [Fact]
-    public async Task PullClarificationRows_ARowTheSessionAlreadyHolds_IsNeverRenderedTwice()
+    public async Task PullMissingTranscriptRows_ARowTheSessionAlreadyHolds_IsNeverRenderedTwice()
     {
         var sut = CreateResumingSut();
         var session = sut.GetOrCreateActiveForNewChat();
@@ -1988,25 +2001,48 @@ public class ChatSessionManagerTests
         session.Messages.Add(LiveRow(q1Id, false, "what do you mean by ggg?"));
         StoreChat(chatId, StoredRow(goalId, "user", "ggg"), StoredRow(q1Id, "assistant", "what do you mean by ggg?"));
 
-        await sut.PullClarificationRowsAsync(chatId);
-        await sut.PullClarificationRowsAsync(chatId); // twice: the event fires on every write, not once per park
+        await sut.PullMissingTranscriptRowsAsync(chatId);
+        await sut.PullMissingTranscriptRowsAsync(chatId); // twice: the event fires on every write, not once per park
 
         Assert.Equal(2, session.Messages.Count);
     }
 
-    /// <summary>A budget park (which asked nothing) leaves the chat untouched and never re-reads the store.</summary>
+    /// <summary>A headless dispatch that asked nothing (budget park) still renders its store-written rows into the open chat.</summary>
     [Fact]
-    public async Task PullClarificationRows_RunParkedAtBudget_ChangesNothing_AndNeverReadsTheChat()
+    public async Task PullMissingTranscriptRows_RunParkedAtBudget_RendersStoreWrittenRows()
     {
         var sut = CreateResumingSut();
         var session = sut.GetOrCreateActiveForNewChat();
         AttachParkedRun(session, "step-cap");
         var chatId = session.Id!.Value;
 
+        var goalId = Guid.NewGuid();
+        var stepId = Guid.NewGuid();
+        session.Messages.Add(LiveRow(goalId, true, "ggg"));
+        StoreChat(chatId,
+            StoredRow(goalId, "user", "ggg"),
+            StoredRow(stepId, "assistant", "a row the headless dispatch wrote to the store"));
+
+        await sut.PullMissingTranscriptRowsAsync(chatId);
+
+        Assert.Equal(2, session.Messages.Count);
+        Assert.Equal(stepId, session.Messages[1].Id);
+    }
+
+    /// <summary>A streaming session's live executor owns the transcript — the pull never reads the store into it.</summary>
+    [Fact]
+    public async Task PullMissingTranscriptRows_SessionStreaming_NeverReadsTheChat()
+    {
+        var sut = CreateResumingSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        AttachParkedRun(session, "step-cap");
+        session.SetState(ChatState.Running);
+        var chatId = session.Id!.Value;
+
         session.Messages.Add(LiveRow(Guid.NewGuid(), true, "ggg"));
         StoreChat(chatId, StoredRow(Guid.NewGuid(), "assistant", "a row the session has never seen"));
 
-        await sut.PullClarificationRowsAsync(chatId);
+        await sut.PullMissingTranscriptRowsAsync(chatId);
 
         Assert.Single(session.Messages);
         await _chatService.DidNotReceive().GetAsync(chatId, Arg.Any<CancellationToken>());

@@ -381,6 +381,20 @@
             </StackPanel>
 
             <StackPanel Margin="0,0,0,20">
+              <TextBlock Text="{loc:Str Settings_Agent_MaxToolRounds_Label}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <Slider HorizontalAlignment="Left" Width="400"
+                      Minimum="1" Maximum="20"
+                      TickFrequency="1" IsSnapToTickEnabled="True"
+                      Value="{Binding MaxToolRoundsPerStep, Mode=TwoWay}"/>
+              <TextBlock Text="{Binding MaxToolRoundsDisplay}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+              <TextBlock Text="{loc:Str Settings_Agent_MaxToolRounds_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap" Margin="0,2,0,0"/>
+            </StackPanel>
+
+            <StackPanel Margin="0,0,0,20">
               <TextBlock Text="{loc:Str Settings_Agent_WallClock_Label}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
               <Slider HorizontalAlignment="Left" Width="400"

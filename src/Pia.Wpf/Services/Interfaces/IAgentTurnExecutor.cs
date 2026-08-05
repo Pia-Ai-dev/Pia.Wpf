@@ -15,7 +15,7 @@ public sealed record RunProfile(int MaxSteps, int MaxReplans, TimeSpan WallClock
 
     // Bounds a user-configured budget (Assistant settings) into a sane envelope. A zero/negative
     // step or wall-clock would terminate a run immediately (never a clean run), so clamp to floors.
-    public const int MinSteps = 1, MaxStepsCap = 48, MinReplans = 0, MaxReplansCap = 5, MinWallClockMinutes = 1, MaxWallClockMinutes = 120;
+    public const int MinSteps = 1, MaxStepsCap = 48, MinReplans = 0, MaxReplansCap = 5, MinWallClockMinutes = 1, MaxWallClockMinutes = 120, MinToolRounds = 1, MaxToolRoundsCap = 20;
 
     /// <summary>Build an interactive profile from user-configured budget values, clamped to safe bounds.</summary>
     public static RunProfile FromBudget(int maxSteps, int maxReplans, int wallClockMinutes) => new(

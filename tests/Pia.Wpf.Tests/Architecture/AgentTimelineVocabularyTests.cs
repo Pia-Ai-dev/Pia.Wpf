@@ -33,6 +33,9 @@ public class AgentTimelineVocabularyTests
         // is written only where the grant is minted: the interactive card.
         ToolGateDecision.AutoApprovedSessionGrant,  // either surface, AutoRun (verdict.Decision)
         ToolGateDecision.ApprovedForSession,        // interactive card, AllowForSession
+        // The deny beside a tool-approval park: the unattended gate's DeniedForRun Refuse arm writes it on
+        // the re-run call a declined resume refuses.
+        ToolGateDecision.DeniedForRun,
     ];
 
     /// <summary>
@@ -135,6 +138,7 @@ public class AgentTimelineVocabularyTests
             ["ParkedForApproval"] = 12,
             ["AutoApprovedSessionGrant"] = 13,
             ["ApprovedForSession"] = 14,
+            ["DeniedForRun"] = 15,
         }, Enum.GetValues<ToolGateDecision>());
     }
 

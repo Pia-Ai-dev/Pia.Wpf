@@ -264,15 +264,14 @@ public class AssistantViewModelLeverTests
     }
 
     [Fact]
-    public void RunInBackground_StaysEnabled_WhileAForeignRunIsExecuting()
+    public void RunInBackground_Disabled_WhileAForeignRunIsExecuting()
     {
-        // "Run in background" launches into a NEW chat id and never writes this chat, so it is not a second
-        // writer and must not be gated.
+        // The button never offers more than Send: a foreign run disables Send, so it disables this too.
         var vm = CreateSut();
         vm.InputText = "a different goal";
         vm.ForeignRunActive = true;
 
-        Assert.True(vm.RunInBackgroundCommand.CanExecute(null));
+        Assert.False(vm.RunInBackgroundCommand.CanExecute(null));
     }
 
     [Fact]

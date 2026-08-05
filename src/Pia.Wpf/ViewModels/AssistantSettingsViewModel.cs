@@ -243,9 +243,13 @@ public partial class AssistantSettingsViewModel : ObservableObject
     [ObservableProperty]
     private int _agentWallClockMinutes = 20;
 
+    [ObservableProperty]
+    private int _maxToolRoundsPerStep = 10;
+
     public string AgentMaxStepsDisplay => _localizationService.Format("Settings_Agent_MaxSteps_Value", AgentMaxSteps);
     public string AgentMaxReplansDisplay => _localizationService.Format("Settings_Agent_MaxReplans_Value", AgentMaxReplans);
     public string AgentWallClockDisplay => _localizationService.Format("Settings_Agent_WallClock_Value", AgentWallClockMinutes);
+    public string MaxToolRoundsDisplay => _localizationService.Format("Settings_Agent_MaxToolRounds_Value", MaxToolRoundsPerStep);
 
     partial void OnAgentMaxStepsChanged(int value)
     {
@@ -271,6 +275,15 @@ public partial class AssistantSettingsViewModel : ObservableObject
         var clamped = Math.Clamp(value, RunProfile.MinWallClockMinutes, RunProfile.MaxWallClockMinutes);
         if (clamped != value) { AgentWallClockMinutes = clamped; return; }
         OnPropertyChanged(nameof(AgentWallClockDisplay));
+        SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
+    partial void OnMaxToolRoundsPerStepChanged(int value)
+    {
+        if (_isLoading) return;
+        var clamped = Math.Clamp(value, RunProfile.MinToolRounds, RunProfile.MaxToolRoundsCap);
+        if (clamped != value) { MaxToolRoundsPerStep = clamped; return; }
+        OnPropertyChanged(nameof(MaxToolRoundsDisplay));
         SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
@@ -455,6 +468,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         AgentMaxSteps = Math.Clamp(settings.AgentMaxSteps, RunProfile.MinSteps, RunProfile.MaxStepsCap);
         AgentMaxReplans = Math.Clamp(settings.AgentMaxReplans, RunProfile.MinReplans, RunProfile.MaxReplansCap);
         AgentWallClockMinutes = Math.Clamp(settings.AgentWallClockMinutes, RunProfile.MinWallClockMinutes, RunProfile.MaxWallClockMinutes);
+        MaxToolRoundsPerStep = Math.Clamp(settings.MaxToolRoundsPerStep, RunProfile.MinToolRounds, RunProfile.MaxToolRoundsCap);
         AgentPlanReasoningTurnEnabled = settings.AgentPlanReasoningTurnEnabled;
         AgentRunAutoApproveBuiltInWrites = settings.AgentRunAutoApproveBuiltInWrites;
 
@@ -481,6 +495,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(AgentMaxStepsDisplay));
         OnPropertyChanged(nameof(AgentMaxReplansDisplay));
         OnPropertyChanged(nameof(AgentWallClockDisplay));
+        OnPropertyChanged(nameof(MaxToolRoundsDisplay));
         OnPropertyChanged(nameof(ScheduledMaxStepsDisplay));
         OnPropertyChanged(nameof(ScheduledMaxReplansDisplay));
         OnPropertyChanged(nameof(ScheduledWallClockDisplay));
@@ -618,6 +633,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         settings.AgentMaxSteps = AgentMaxSteps;
         settings.AgentMaxReplans = AgentMaxReplans;
         settings.AgentWallClockMinutes = AgentWallClockMinutes;
+        settings.MaxToolRoundsPerStep = MaxToolRoundsPerStep;
         settings.AgentPlanReasoningTurnEnabled = AgentPlanReasoningTurnEnabled;
         settings.AgentRunAutoApproveBuiltInWrites = AgentRunAutoApproveBuiltInWrites;
         settings.ScheduledMaxSteps = ScheduledMaxSteps;

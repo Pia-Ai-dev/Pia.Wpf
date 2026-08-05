@@ -336,7 +336,10 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         // Non-null ONLY on a real agent step turn, exactly like outcomeStore — it is what arms the pre-route
         // interception of request_user_input below, so the background single-turn path (which passes nothing)
         // still treats a hallucinated request_user_input as the unknown tool it is.
-        UserInputRequestStore? userInput = null)
+        UserInputRequestStore? userInput = null,
+        // The run's envelope denial list (a tool-approval park's Deny, persisted on resume). Null — the
+        // single-turn path and every pre-denial caller — resolves HasNamedDenial: false at the gate.
+        HashSet<string>? deniedWrites = null)
     {
         var textBuffer = new StringBuilder();
         int? tokens = null;
@@ -348,7 +351,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         await foreach (var item in _aiClient.GetChatCompletionWithToolsAsync(
             messages, provider,
             setup.SupportsTools ? setup.Tools : null,
-            setup.SupportsTools ? (toolCall, ctx) => HandleToolCallAsync(toolCall, grantedWrites, ctx, policy, timeline, outcomeStore, approvals, userInput) : null,
+            setup.SupportsTools ? (toolCall, ctx) => HandleToolCallAsync(toolCall, grantedWrites, ctx, policy, timeline, outcomeStore, approvals, userInput, deniedWrites) : null,
             nameof(WindowMode.Assistant), setup.PersonaId,
             cancellationToken: ct, contextBudget: contextBudget))
         {
@@ -397,7 +400,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         FunctionCallContent toolCall, HashSet<string> grantedWrites, ToolDispatchContext dispatch,
         RunAutonomyPolicy? policy = null,
         AgentTimelineScope? timeline = null, StepOutcomeStore? outcomeStore = null,
-        ToolApprovalStore? approvals = null, UserInputRequestStore? userInput = null)
+        ToolApprovalStore? approvals = null, UserInputRequestStore? userInput = null,
+        HashSet<string>? deniedWrites = null)
     {
         // emit_step_result (hermes #9): PRE-ROUTE special case, the unattended twin of ChatSession's
         // suggest_agent_mode seam and placed for the same reason — the tool has no plugin and no route, so
@@ -520,6 +524,10 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 // Persisted "always allow" grants are an INTERACTIVE concept and have never applied here.
                 HasStandingGrant: false,
                 IsNamedGrant: grantedWrites.Contains(pending.ToolName),
+                // The run-scoped denial list a tool-approval park's Deny wrote into the envelope; the
+                // resolver's denial tier sits above the park, so a declined tool is refused with "adapt"
+                // instead of re-parking. Null (single-turn path) reads as no denials.
+                HasNamedDenial: deniedWrites?.Contains(pending.ToolName) == true,
                 // The run's autonomy policy, from the launch envelope (or restored from it on resume). Null
                 // for the SingleTurn background path, which has no plan and no policy — today's behaviour.
                 Policy: policy,
@@ -606,6 +614,19 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                         argsChars);
                     return $"Denied: '{pending.ToolName}' is a destructive external (MCP) tool and never runs unattended, "
                            + "even when granted. Do not retry.";
+
+                // The run asked to use this tool, a person DECLINED it, and the resume carried that denial in
+                // the envelope. The step re-runs from the top, so the model hears the answer and adapts — the
+                // denial tier in Resolve refuses instead of parking, or this run would re-ask a settled question.
+                case ToolGateOutcome.Refuse when verdict.Decision == ToolGateDecision.DeniedForRun:
+                    _logger.LogInformation("Background turn refused tool {ToolName} the user declined for this run", pending.ToolName);
+                    timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
+                        verdict.Decision, AgentTimelineOutcome.NotExecuted,
+                        toolCallId: toolCall.CallId, round: dispatch.Round,
+                        requestedAt: askedAt, decidedAt: resolvedAt,
+                        argsChars);
+                    return $"Denied: the person declined the use of '{pending.ToolName}' for this run. Do not retry it; "
+                           + "finish the step without it, or explain in your reply why the step is impossible without it.";
 
                 default:
                     _logger.LogInformation("Background turn denied ungranted write tool {ToolName}", pending.ToolName);

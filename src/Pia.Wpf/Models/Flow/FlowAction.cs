@@ -17,6 +17,9 @@ public enum FlowActionKind
     ContinueRun,
     // Opens a run parked on needs-goal/needs-input without resolving the park.
     OpenParkedRun,
+    // A tool-approval park: the link resumes (approves) like ContinueRun, and the card's decision bar
+    // derives Allow/Deny buttons from this kind — the one park whose question has both answers.
+    ToolApprovalRun,
 }
 
 /// <summary>
@@ -62,6 +65,18 @@ public sealed record ContinueRunAction(Guid RunId, string Label) : FlowAction(La
 public sealed record OpenParkedRunAction(Guid RunId, string Label) : FlowAction(Label)
 {
     public override FlowActionKind Kind => FlowActionKind.OpenParkedRun;
+    public override Guid? EntityId => RunId;
+}
+
+/// <summary>
+/// A run parked asking to use a tool. The text link approves (resume), exactly like
+/// <see cref="ContinueRunAction"/>; the kind additionally tells the card to render an Allow/Deny decision
+/// bar — declining resumes with the tool recorded as denied, so the re-run step adapts. Id-carrying →
+/// re-derivable/durable.
+/// </summary>
+public sealed record ToolApprovalRunAction(Guid RunId, string Label) : FlowAction(Label)
+{
+    public override FlowActionKind Kind => FlowActionKind.ToolApprovalRun;
     public override Guid? EntityId => RunId;
 }
 

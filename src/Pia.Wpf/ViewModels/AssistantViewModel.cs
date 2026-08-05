@@ -96,9 +96,14 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     [ObservableProperty]
     private bool _foreignRunActive;
 
-    /// <summary>True only when <see cref="RunInBackgroundCommand"/> is disabled because <see cref="GoalPreflight.IsRefused"/> refused the typed goal, never for the streaming or empty-composer disabled states.</summary>
+    /// <summary>True only when, in agent mode, <see cref="GoalPreflight.IsRefused"/> refuses the typed goal; appears one idle second after typing, hides immediately.</summary>
     [ObservableProperty]
     private bool _goalTooShortHintVisible;
+
+    /// <summary>Idle time before the goal-too-short hint may appear; internal so tests can zero it.</summary>
+    internal TimeSpan GoalTooShortHintDebounce { get; set; } = TimeSpan.FromSeconds(1);
+
+    private int _goalHintGeneration;
 
     [ObservableProperty]
     private bool _hasMessages;
@@ -687,10 +692,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             RunInBackgroundCommand.NotifyCanExecuteChanged();
         }
 
-        // Recomputed from the same HasCandidateGoalText gate as the command above, so it can't drift from it.
-        if (e.PropertyName is nameof(InputText) or nameof(IsStreaming))
+        if (e.PropertyName is nameof(InputText) or nameof(IsStreaming) or nameof(AgentModeEnabled))
         {
-            GoalTooShortHintVisible = HasCandidateGoalText() && GoalPreflight.IsRefused(InputText);
+            RefreshGoalTooShortHint();
         }
 
         if (e.PropertyName is nameof(IsStreaming) or nameof(IsVoiceModeActive))
@@ -826,12 +830,41 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // Factored out so the gate below and the hint that explains it cannot drift out of sync.
     private bool HasCandidateGoalText() => !IsStreaming && !string.IsNullOrWhiteSpace(InputText);
 
-    // "Run in background" detaches the typed goal and (this milestone) ignores attachments, so unlike
-    // Send it requires real text — never enable on an attachment-only composer. Deliberately NOT gated on
-    // ForeignRunActive: it launches into a NEW chat id and never writes this chat.
-    // Also dead on blatant-junk goals so a run is never created, let alone planned.
+    private bool GoalTooShortHolds() =>
+        AgentModeEnabled && HasCandidateGoalText() && GoalPreflight.IsRefused(InputText);
+
+    // The hint appears one idle second after the last keystroke so it never pops mid-typing, but hides
+    // immediately. A generation counter supersedes the pending delay: cancelling a Task.Delay per keystroke
+    // would throw a first-chance TaskCanceledException into the debug output on every keypress.
+    private void RefreshGoalTooShortHint()
+    {
+        var generation = ++_goalHintGeneration;
+        if (!GoalTooShortHolds())
+        {
+            GoalTooShortHintVisible = false;
+            return;
+        }
+
+        if (GoalTooShortHintVisible)
+            return;
+
+        _ = ShowGoalTooShortHintDebouncedAsync(generation);
+    }
+
+    private async Task ShowGoalTooShortHintDebouncedAsync(int generation)
+    {
+        await Task.Delay(GoalTooShortHintDebounce);
+        _uiDispatcher.PostOrRun(() =>
+        {
+            if (generation == _goalHintGeneration)
+                GoalTooShortHintVisible = GoalTooShortHolds();
+        });
+    }
+
+    // Never offers more than Send: the same availability gate, plus real text (it ignores attachments,
+    // unlike Send) and a non-refused goal, so a run is never created from blatant junk.
     private bool CanExecuteRunInBackground() =>
-        HasCandidateGoalText() && !GoalPreflight.IsRefused(InputText);
+        CanExecuteSendMessage() && HasCandidateGoalText() && !GoalPreflight.IsRefused(InputText);
 
     private async Task ExecuteSendMessage()
     {
@@ -864,7 +897,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         InputText = string.Empty;
         try
         {
-            await _chatSessionManager.StartBackgroundRunAsync(userText);
+            // The detached run inherits the composer chat's working directory, mirroring the live turn path.
+            await _chatSessionManager.StartBackgroundRunAsync(
+                userText, _chatSessionManager.ActiveSession?.WorkingDirectory);
         }
         catch (Exception ex)
         {
@@ -1743,6 +1778,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 HasStandingGrant: _permissions.IsGranted(pendingAction.PluginId, tool),
                 // Voice has no per-job grant list and no run envelope; the policy is the settings preset.
                 IsNamedGrant: false,
+                // The denial list lives in a run envelope; a voice turn has no run.
+                HasNamedDenial: false,
                 Policy: RunAutonomyPolicy.FromSettings(settings),
                 // hermes #16: a voice turn is not a run — there is no row to park, no Continue card that would
                 // reach the speaker, and the refusal below is already spoken back as a remedy.
@@ -1836,6 +1873,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _personaService.PersonasChanged -= OnPersonasChanged;
         _personaService.ManagedPersonaWithdrawn -= OnManagedPersonaWithdrawn;
         PropertyChanged -= OnPropertyChanged;
+        _goalHintGeneration++;
 
         // Unsubscribe only — the manager owns session lifetime and tears them down
         // (cancelling each Cts + pending action cards) when the window scope disposes.

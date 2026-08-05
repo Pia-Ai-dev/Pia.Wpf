@@ -104,6 +104,9 @@
   <data name="Settings_Agent_MaxSteps_Label" xml:space="preserve"><value>Étapes maximales</value></data>
   <data name="Settings_Agent_MaxSteps_Value" xml:space="preserve"><value>{0} étapes</value></data>
   <data name="Settings_Agent_MaxSteps_Description" xml:space="preserve"><value>Combien d'étapes une exécution peut effectuer avant de s'arrêter.</value></data>
+  <data name="Settings_Agent_MaxToolRounds_Label" xml:space="preserve"><value>Nombre maximal de tours d'outils par étape</value></data>
+  <data name="Settings_Agent_MaxToolRounds_Value" xml:space="preserve"><value>{0} tours d'outils</value></data>
+  <data name="Settings_Agent_MaxToolRounds_Description" xml:space="preserve"><value>Combien de fois le modèle peut appeler des outils et se reconsulter au sein d'une même étape.</value></data>
   <data name="Settings_Agent_WallClock_Label" xml:space="preserve"><value>Limite de temps</value></data>
   <data name="Settings_Agent_WallClock_Value" xml:space="preserve"><value>{0} min</value></data>
   <data name="Settings_Agent_WallClock_Description" xml:space="preserve"><value>Combien de temps une exécution peut durer avant de s'arrêter.</value></data>
@@ -957,6 +960,8 @@
   <data name="Run_Activity_NeedsGoal" xml:space="preserve"><value>En attente que vous précisiez l'objectif dans le chat</value></data>
   <data name="Run_Activity_NeedsInput" xml:space="preserve"><value>En attente de votre réponse dans le chat</value></data>
   <data name="Run_Action_Continue" xml:space="preserve"><value>Continuer</value></data>
+  <data name="Run_Action_Approve" xml:space="preserve"><value>Autoriser</value></data>
+  <data name="Run_Action_Deny" xml:space="preserve"><value>Refuser</value></data>
   <data name="Run_Action_Pause" xml:space="preserve"><value>Mettre en pause</value></data>
   <data name="Run_Action_Pausing" xml:space="preserve"><value>Mise en pause…</value></data>
   <data name="Run_Action_Publish" xml:space="preserve"><value>Publier les fichiers</value></data>

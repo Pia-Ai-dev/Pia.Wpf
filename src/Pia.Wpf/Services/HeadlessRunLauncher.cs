@@ -396,6 +396,9 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         var policy = childPolicyJson is null
             ? RunAutonomyPolicy.FromSettings(settings)
             : TryRestorePolicy(childPolicyJson, _logger);
+        // A fresh launch has no denials; a child inherits its parent's (NarrowForChild carried them into the
+        // child envelope). Restored with the same reader a resume uses — one source of truth per dispatch.
+        var denied = childPolicyJson is null ? null : TryRestoreDeniedWritesEnvelope(childPolicyJson);
 
         var run = await _agentRunService.CreateAsync(new AgentRunCreateRequest(
             chatId, RunShape.Planned, req.Trigger, req.TriggerRef, req.OwnerDeviceId, Goal: req.Goal,
@@ -429,7 +432,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             // bounded copy) and its symmetric teardown. It NEVER throws and returns null for "no isolation",
             // so the FailAsync settle below is unreachable on this path — see B16 for why that is the
             // intended outcome (degrade rather than fail an unattended run) and why the block stays anyway.
-            runRoot = (await _workspaces.ProvisionAsync(run.Id, workingSubpath: null, ct).ConfigureAwait(false))?.Root;
+            runRoot = (await _workspaces.ProvisionAsync(run.Id, req.WorkingSubpath, ct).ConfigureAwait(false))?.Root;
         }
         else
         {
@@ -518,7 +521,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                 // canPark (hermes #16): a ROOT run may stop and ask a human for a promptable capability it was
                 // not granted; a CHILD run may not, and hard-denies exactly as before. See CanParkForApproval.
                 executor.Initialize(workspaceRoot: runRoot, grants, provider, policy,
-                    canPark: CanParkForApproval(parentRunId));
+                    canPark: CanParkForApproval(parentRunId), deniedWrites: denied);
                 started = true;
 
                 // A2: open the composer bracket. Deliberately HERE and not before `_slots.WaitAsync` above:
@@ -579,7 +582,8 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     /// <inheritdoc />
     public event EventHandler<ResumedRunSettledEventArgs>? ResumedRunSettled;
 
-    public async Task<bool> ResumeAsync(Guid runId, string? nudge = null, CancellationToken ct = default)
+    public async Task<bool> ResumeAsync(
+        Guid runId, string? nudge = null, CancellationToken ct = default, bool declineToolApproval = false)
     {
         var run = await _agentRunService.GetAsync(runId, ct).ConfigureAwait(false);
         if (run is null) { _logger.LogWarning("Resume: run {RunId} not found", runId); return false; }
@@ -602,6 +606,14 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         var approvedTool = parkReason == AgentRunOrchestrator.ToolApprovalReason
             ? RunPauseEnvelope.ReadApprovalTool(run)
             : null;
+
+        // A decline answers a tool-approval park only; on any other park there is no question to say "no" to,
+        // and claiming the CAS anyway would turn a budget pause into a denied-tool resume.
+        if (declineToolApproval && approvedTool is null)
+        {
+            _logger.LogInformation("Decline: run {RunId} is not parked on a tool-approval question", runId);
+            return false;
+        }
 
         var claimed = run.State switch
         {
@@ -668,6 +680,10 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             // whose fallback is a floor the run can work with.
             var policy = TryRestorePolicy(run.PolicyJson, _logger);
 
+            // The denial list this run already carries (empty for a never-declined envelope, unlike the grant
+            // floor: a missing denial narrows nothing). The decline branch below appends to it.
+            var denied = TryRestoreDeniedWritesEnvelope(run.PolicyJson);
+
             // ---- hermes #16: APPLY THE HUMAN'S DECISION TO THE CALL THAT PARKED THE RUN ----
             // Continue IS the approval. The run stopped and asked "may I use <tool>?", the card said so, and
             // the only affordance it carries is the button the user just pressed — so pressing it grants that
@@ -685,7 +701,33 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             // park on tool A, be granted A, park on B, be granted B but lose A, park on A again — a livelock
             // paced by a human clicking Continue. The write is failure-isolated: a fault leaves the run with
             // its launch envelope, i.e. it re-parks and asks again, never runs ungranted.
-            if (approvedTool is not null && !grants.Contains(approvedTool, StringComparer.OrdinalIgnoreCase))
+            if (declineToolApproval && approvedTool is not null)
+            {
+                // Decline is a DECISION, not the absence of approval: the refusal is persisted onto the
+                // envelope so the re-run step's call resolves DeniedForRun ("adapt") instead of parking a
+                // second time on the same settled question. Same persist discipline as the widening below —
+                // only over a readable envelope, failure-isolated, applied to THIS dispatch either way.
+                var deniedNow = denied.Contains(approvedTool, StringComparer.OrdinalIgnoreCase)
+                    ? denied.ToList()
+                    : denied.Append(approvedTool).ToList();
+                if (envelopeWasReadable)
+                {
+                    try
+                    {
+                        await _agentRunService.UpdatePolicyJsonAsync(
+                                run.Id, SerializeGrantEnvelope(grants, run.TriggerKind, policy, deniedNow), ct)
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Could not persist the denied tool for run {RunId}", run.Id);
+                    }
+                }
+
+                denied = deniedNow;
+                _logger.LogInformation("Resume: run {RunId} declined tool {ToolName} for this run", run.Id, approvedTool);
+            }
+            else if (approvedTool is not null && !grants.Contains(approvedTool, StringComparer.OrdinalIgnoreCase))
             {
                 var widened = grants.Append(approvedTool).ToList();
                 // ONLY over a document this build actually read. `grants` may be the resume FLOOR
@@ -818,7 +860,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                     // left behind. A separate literal from the launch call on purpose — the two have drifted
                     // before, so each has its own regression fact.
                     executor.Initialize(workspaceRoot: runRoot, grants, provider, policy,
-                        canPark: CanParkForApproval(run.ParentRunId));
+                        canPark: CanParkForApproval(run.ParentRunId), deniedWrites: denied);
                     started = true;
                     // A2: same bracket, same reasoning as the launch path — after the slot wait, before the
                     // executor can write. TryBeginResumeAsync already raised RunChanged(Running) at the CAS,
@@ -899,6 +941,13 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
             return false;
         }
     }
+
+    /// <summary>
+    /// The deny beside a tool-approval park's approve: resumes the run with the parked tool recorded in its
+    /// envelope's denial list, so the re-run step hears "declined — adapt" instead of re-parking.
+    /// </summary>
+    public Task<bool> DeclineAsync(Guid runId, CancellationToken ct = default) =>
+        ResumeAsync(runId, nudge: null, ct, declineToolApproval: true);
 
     /// <summary>
     /// App shutdown: cancel every dispatch and wait, bounded, for them to unwind.
@@ -1212,8 +1261,10 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     /// </summary>
     /// <param name="policy">The run's autonomy policy, or null. Null OMITS the member entirely (not
     /// <c>"policy":null</c>), so a policy-less document is byte-identical to a pre-Batch-04 one.</param>
+    /// <param name="deniedWrites">Tools declined for this run on a tool-approval park, or null (omitted).</param>
     internal static string SerializeGrantEnvelope(
-        IReadOnlyCollection<string> grants, AgentRunTrigger trigger, RunAutonomyPolicy? policy = null)
+        IReadOnlyCollection<string> grants, AgentRunTrigger trigger, RunAutonomyPolicy? policy = null,
+        IReadOnlyCollection<string>? deniedWrites = null)
         => JsonSerializer.Serialize(
             new GrantEnvelope
             {
@@ -1223,6 +1274,9 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
                 Policy = policy is null
                     ? null
                     : new PolicyDto { AutoApproveClasses = policy.AutoApproveClasses.Select(c => c.ToString()).ToList() },
+                DeniedWrites = deniedWrites is null or { Count: 0 }
+                    ? null
+                    : deniedWrites.ToList(),
             },
             GrantEnvelopeJsonOptions);
 
@@ -1250,7 +1304,7 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     /// does at create time. The execution gates are untouched and still the only boundary.
     /// </para>
     /// </summary>
-    internal static (IReadOnlyList<string> Grants, RunAutonomyPolicy? Policy) NarrowForChild(
+    internal static (IReadOnlyList<string> Grants, IReadOnlyList<string> Denied, RunAutonomyPolicy? Policy) NarrowForChild(
         string? parentPolicyJson, ILogger? logger = null)
     {
         var inherited = TryRestoreGrantEnvelope(parentPolicyJson) ?? [];
@@ -1261,7 +1315,9 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         if (grants.Count != inherited.Count)
             logger?.LogInformation("Child run grants dropped {DroppedCount} delete-like names the parent held", inherited.Count - grants.Count);
 
-        return (grants, TryRestorePolicy(parentPolicyJson, logger));
+        // Denials pass through UNFILTERED: a denial is a narrowing, so a child keeping the parent's declines
+        // can never widen it, and dropping them would let a delegate re-ask what the parent's person settled.
+        return (grants, TryRestoreDeniedWritesEnvelope(parentPolicyJson), TryRestorePolicy(parentPolicyJson, logger));
     }
 
     /// <summary>
@@ -1283,10 +1339,10 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     internal static string TrySerializeChildEnvelope(
         string? parentPolicyJson, AgentRunTrigger trigger, ILogger? logger = null)
     {
-        var (grants, policy) = NarrowForChild(parentPolicyJson, logger);
+        var (grants, denied, policy) = NarrowForChild(parentPolicyJson, logger);
         try
         {
-            return SerializeGrantEnvelope(grants, trigger, policy);
+            return SerializeGrantEnvelope(grants, trigger, policy, denied);
         }
         catch (Exception ex)
         {
@@ -1407,6 +1463,35 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
     }
 
     /// <summary>
+    /// Read the run-scoped denial list a Decline persisted into the envelope. Returns EMPTY — never the grant
+    /// floor's mirror — for an absent/unreadable envelope or an absent member: a denial is a narrowing, and
+    /// losing it on a corrupt envelope re-parks the tool (asks again) instead of running something ungranted.
+    /// Never throws.
+    /// </summary>
+    internal static IReadOnlyList<string> TryRestoreDeniedWritesEnvelope(string? policyJson)
+    {
+        if (string.IsNullOrWhiteSpace(policyJson))
+            return [];
+
+        try
+        {
+            var envelope = JsonSerializer.Deserialize<GrantEnvelope>(policyJson, GrantEnvelopeJsonOptions);
+            if (envelope is null || envelope.V != GrantEnvelopeVersion || envelope.DeniedWrites is null)
+                return [];
+
+            return envelope.DeniedWrites
+                .Where(d => !string.IsNullOrWhiteSpace(d))
+                .Select(d => d.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (Exception)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>
     /// The launch-grant envelope persisted on <c>AgentRuns.PolicyJson</c>. Private to this file
     /// (see <see cref="SerializeGrantEnvelope"/>); camelCase on the wire like the rest of this codebase.
     /// </summary>
@@ -1429,6 +1514,14 @@ public sealed class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeS
         /// </summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public PolicyDto? Policy { get; set; }
+
+        /// <summary>
+        /// Tools a person DECLINED for this run on a tool-approval park. ADDITIVE at <c>v:1</c> like
+        /// <see cref="Policy"/> — an absent member reads back as no denials, so a pre-denial document is
+        /// unchanged. A denial is a NARROWING, so unlike the grant list an unreadable envelope restores none.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<string>? DeniedWrites { get; set; }
     }
 
     /// <summary>

@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows;
@@ -28,6 +29,7 @@ public partial class AssistantView : UserControl
 
     private AssistantViewModel? ViewModel => DataContext as AssistantViewModel;
     private bool _autoScroll = true;
+    private ObservableCollection<AssistantMessage>? _subscribedMessages;
 
     public AssistantView()
     {
@@ -41,7 +43,8 @@ public partial class AssistantView : UserControl
     {
         if (ViewModel is not null)
         {
-            ViewModel.Messages.CollectionChanged += OnMessagesCollectionChanged;
+            ViewModel.PropertyChanged += OnViewModelPropertyChanged;
+            SubscribeMessages(ViewModel.Messages);
         }
 
         MessageScrollViewer.ScrollChanged += OnMessageScrollChanged;
@@ -52,14 +55,39 @@ public partial class AssistantView : UserControl
     {
         if (ViewModel is not null)
         {
-            // Unsubscribe from all message PropertyChanged events
-            foreach (var message in ViewModel.Messages)
-            {
-                message.PropertyChanged -= OnMessagePropertyChanged;
-            }
-            ViewModel.Messages.CollectionChanged -= OnMessagesCollectionChanged;
+            ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            SubscribeMessages(null);
         }
         MessageScrollViewer.ScrollChanged -= OnMessageScrollChanged;
+    }
+
+    // The VM re-points Messages when the manager's async activation completes after this view loaded;
+    // tracking the instance here keeps auto-scroll and the per-message streaming hooks on the live one.
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(AssistantViewModel.Messages))
+            SubscribeMessages(ViewModel?.Messages);
+    }
+
+    private void SubscribeMessages(ObservableCollection<AssistantMessage>? messages)
+    {
+        if (ReferenceEquals(_subscribedMessages, messages))
+            return;
+
+        if (_subscribedMessages is not null)
+        {
+            _subscribedMessages.CollectionChanged -= OnMessagesCollectionChanged;
+            foreach (var message in _subscribedMessages)
+                message.PropertyChanged -= OnMessagePropertyChanged;
+        }
+
+        _subscribedMessages = messages;
+        if (messages is not null)
+        {
+            messages.CollectionChanged += OnMessagesCollectionChanged;
+            foreach (var message in messages)
+                message.PropertyChanged += OnMessagePropertyChanged;
+        }
     }
 
     private void OnMessageScrollChanged(object sender, ScrollChangedEventArgs e)

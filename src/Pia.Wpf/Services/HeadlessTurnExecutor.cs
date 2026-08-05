@@ -43,6 +43,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     private readonly List<ChatMessage> _messages = new();
     private readonly List<SyncAssistantChatMessage> _persisted = new();
     private readonly HashSet<string> _grantedWrites = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _deniedWrites = new(StringComparer.OrdinalIgnoreCase);
     private AssistantTurnSetup _setup = default!;
     private Persona _persona = default!;
     private AiProvider _provider = default!;
@@ -156,12 +157,15 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// <param name="canPark">hermes #16: may this run stop and ask a human for a promptable capability it was
     /// not granted, instead of hard-denying it? See <see cref="_canPark"/>. Trailing and defaulted to FALSE,
     /// which is the pre-#16 behaviour — a caller that forgets it gets the safe answer.</param>
+    /// <param name="deniedWrites">Tools a person declined for this run on a tool-approval park; the unattended
+    /// gate refuses them with "adapt" instead of re-parking. Null/empty = no denials.</param>
     public void Initialize(
         string? workspaceRoot,
         IReadOnlyCollection<string> grantedWrites,
         AiProvider? providerOverride = null,
         RunAutonomyPolicy? policy = null,
-        bool canPark = false)
+        bool canPark = false,
+        IReadOnlyCollection<string>? deniedWrites = null)
     {
         _workspaceRoot = workspaceRoot;
         _providerOverride = providerOverride;
@@ -170,6 +174,10 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         _grantedWrites.Clear();
         foreach (var w in grantedWrites)
             _grantedWrites.Add(w);
+        _deniedWrites.Clear();
+        if (deniedWrites is not null)
+            foreach (var w in deniedWrites)
+                _deniedWrites.Add(w);
     }
 
     public async Task BeginRunAsync(AgentRun run, RunContext ctx, CancellationToken ct)
@@ -482,7 +490,8 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             // calls and tool results accumulate over up to 10 rounds.
             exchange = await _engine.RunExchangeAsync(request, p.Provider, turnSetup, _grantedWrites, ct,
                     onUsage: null, contextBudget: contextBudget, policy: _policy, timeline: timeline,
-                    outcomeStore: outcomeStore, approvals: approvals, userInput: userInput)
+                    outcomeStore: outcomeStore, approvals: approvals, userInput: userInput,
+                    deniedWrites: _deniedWrites)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)

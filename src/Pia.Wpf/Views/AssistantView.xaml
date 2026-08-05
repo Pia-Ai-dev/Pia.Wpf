@@ -282,6 +282,13 @@
               </ui:Button>
             </StackPanel>
           </Border>
+          <!-- Explains the dead Run-in-background button; above the box so the composer's bottom edge stays put. -->
+          <TextBlock Text="{loc:Str Assistant_GoalTooShort_Hint}"
+                     Margin="2,0,0,6"
+                     FontSize="12"
+                     TextWrapping="Wrap"
+                     Foreground="{DynamicResource TextSubtleBrush}"
+                     Visibility="{Binding GoalTooShortHintVisible, Converter={StaticResource BooleanToVisibilityConverter}}" />
           <Grid>
             <ui:TextBox x:Name="InputTextBox"
                         FontFamily="{StaticResource EmojiCapableFontFamily}"
@@ -499,14 +506,15 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
               </Grid.ColumnDefinitions>
-              <!-- Run in background: Agent mode only. Detaches the goal as a headless run. -->
+              <!-- Run in background: Agent mode only. Green, not Send's blue, so the two sends never read
+                   as one control; the tooltip names what the icon detaches. -->
               <ui:Button Grid.Column="0"
                          Command="{Binding RunInBackgroundCommand}"
-                         Appearance="Secondary"
+                         Appearance="Success"
                          Padding="10,4" Margin="0,0,4,0"
                          ToolTip="{loc:Str Assistant_RunInBackground_Tooltip}"
                          Visibility="{Binding AgentModeEnabled, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <ui:SymbolIcon Symbol="ArrowExport24" FontSize="16" />
+                <ui:SymbolIcon Symbol="WindowNew20" FontSize="16" />
               </ui:Button>
               <!-- Send -->
               <ui:Button Grid.Column="1"
@@ -531,13 +539,6 @@
                      Foreground="{DynamicResource TextSubtleBrush}"
                      Visibility="{Binding ForeignRunActive, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
-          <!-- Explains why Run in background is disabled on blatant-junk input, so the dead button isn't unexplained. -->
-          <TextBlock Text="{loc:Str Assistant_GoalTooShort_Hint}"
-                     Margin="2,6,0,0"
-                     FontSize="12"
-                     TextWrapping="Wrap"
-                     Foreground="{DynamicResource TextSubtleBrush}"
-                     Visibility="{Binding GoalTooShortHintVisible, Converter={StaticResource BooleanToVisibilityConverter}}" />
         </StackPanel>
       </Border>
     </Border>

@@ -73,6 +73,9 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(ShowPauseFirstNote))]
     [NotifyPropertyChangedFor(nameof(CanMutatePlan))]
     [NotifyCanExecuteChangedFor(nameof(ContinueCommand))]
+    // DeclineToolCommand is deliberately NOT here: its answer keys off IsToolApprovalPause (set in Project
+    // on the same RunChanged that moves State), and notifying it on a bare State flip that leaves the park
+    // reason untouched would raise CanExecuteChanged over an unchanged answer.
     [NotifyCanExecuteChangedFor(nameof(PauseCommand))]
     // Batch 08 F4. EVERY command gated on CanMutatePlan must be listed here, and EditStepCommand was the one
     // that was not: CommunityToolkit's RelayCommand has no CommandManager integration, so CanExecuteChanged
@@ -94,7 +97,20 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanContinue))]
     [NotifyCanExecuteChangedFor(nameof(ContinueCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DeclineToolCommand))]
     private bool _isResuming;
+
+    /// <summary>True while the run is parked asking to use a named tool — the one pause where a person's
+    /// question has a yes AND a no, so the one offering Deny beside Continue.</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(DeclineToolCommand))]
+    private bool _isToolApprovalPause;
+
+    /// <summary>The tool the parked run asked to use; the approval copy names it.</summary>
+    [ObservableProperty]
+    private string? _approvalToolName;
+
+    public bool CanDeclineTool => IsToolApprovalPause && !IsResuming;
 
     /// <summary>The budget-pause Continue affordance, widened by Batch 08 D1 item 8 to the user-pause state
     /// too: <see cref="RunProgressState.Paused"/> is the CAS's own target, and both states offer the identical
@@ -624,6 +640,15 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         TruncationNote = IsTruncated ? DescribeTruncation(truncation.Reason) : null;
         SyncSteps(run.Plan);
         CurrentActivity = ComputeActivity(run);
+
+        // The deny beside Continue exists only for a tool-approval park — the one pause whose question a
+        // person can answer "no". Read here, not in the XAML, so the button and the activity line agree.
+        var approvalTool = run.State == AgentRunState.WaitingForInput
+            && RunPauseEnvelope.ReadReason(run) == AgentRunOrchestrator.ToolApprovalReason
+            ? RunPauseEnvelope.ReadApprovalTool(run)
+            : null;
+        IsToolApprovalPause = approvalTool is not null;
+        ApprovalToolName = approvalTool;
         if (children is not null)
             SyncChildren(children);
 
@@ -754,6 +779,29 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Run {RunId} resume failed from panel", _runId);
+        }
+        finally
+        {
+            IsResuming = false;
+        }
+    }
+
+    /// <summary>
+    /// The deny beside Continue on a tool-approval park: resumes the run with the parked tool recorded in
+    /// its denial list, so the re-run step hears "declined — adapt" instead of re-parking. Same double-click
+    /// gate as <see cref="Continue"/>; the CAS in the resume service is the hard guard.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanDeclineTool))]
+    private async Task DeclineTool()
+    {
+        IsResuming = true;
+        try
+        {
+            await _resumeService.DeclineAsync(_runId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run {RunId} decline failed from panel", _runId);
         }
         finally
         {
@@ -1074,8 +1122,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         ToolGateDecision.ApprovedOnce or ToolGateDecision.ApprovedAlways
             or ToolGateDecision.ApprovedForSession
             => "Run_Timeline_Decision_Approved",
+        // DeniedForRun is the deny beside a tool-approval park: a person said no to this row.
         ToolGateDecision.DeclinedByUser or ToolGateDecision.CardCancelled
             or ToolGateDecision.DeniedNotGranted or ToolGateDecision.UnknownTool
+            or ToolGateDecision.DeniedForRun
             => "Run_Timeline_Decision_Denied",
         ToolGateDecision.DeniedDestructiveFloor => "Run_Timeline_Decision_Blocked",
         // hermes #16. Its own category, not folded into Denied: the call was not denied, it is WAITING — and

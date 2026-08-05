@@ -40,6 +40,11 @@
           <ui:Button Content="{loc:Str Run_Action_Continue}" Command="{Binding ContinueCommand}"
                      Appearance="Primary" Padding="10,3" Margin="0,0,8,0" FontSize="12"
                      Visibility="{Binding CanContinue, Converter={StaticResource BooleanToVisibilityConverter}}" />
+          <!-- The deny beside Continue, only on a tool-approval park: the one pause whose question has a
+               "no". Declining resumes the run with the tool recorded as denied; the re-run step adapts. -->
+          <ui:Button Content="{loc:Str Run_Action_Deny}" Command="{Binding DeclineToolCommand}"
+                     Appearance="Secondary" Padding="10,3" Margin="0,0,8,0" FontSize="12"
+                     Visibility="{Binding CanDeclineTool, Converter={StaticResource BooleanToVisibilityConverter}}" />
           <!-- Batch 06 / plan D3: a failed or cancelled run's work is still in its workspace, so the panel
                offers to publish it rather than promoting behind the user's back. A clean run never shows
                this — it promoted before it was marked complete. Same visibility/CanExecute shape as

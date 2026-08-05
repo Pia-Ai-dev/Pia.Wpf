@@ -18,6 +18,11 @@ namespace Pia.Services.Interfaces;
 /// an explicitly EMPTY collection means no write grants at all and is honoured as such.
 /// </param>
 /// <param name="Budget">Budget envelope; null = the scheduled budget from settings.</param>
+/// <param name="WorkingSubpath">
+/// The originating chat's working subpath, narrowing the run workspace's source root exactly as
+/// <c>IRunWorkspaceService.ProvisionAsync</c> narrows it for live turns; null = the whole assistant
+/// files folder (scheduled jobs, callers with no chat).
+/// </param>
 public sealed record HeadlessRunRequest(
     string Goal,
     AgentRunTrigger Trigger,
@@ -25,7 +30,8 @@ public sealed record HeadlessRunRequest(
     Guid? OwnerDeviceId = null,
     Guid? ProviderId = null,
     IReadOnlyCollection<string>? GrantedWrites = null,
-    RunProfile? Budget = null)
+    RunProfile? Budget = null,
+    string? WorkingSubpath = null)
 {
     /// <summary>
     /// The write grants an unattended run receives when the request names none (A1). Deliberately

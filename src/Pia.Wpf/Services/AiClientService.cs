@@ -202,7 +202,11 @@ public class AiClientService : IAiClientService
                 provider.SupportsToolCalling, tools?.Count ?? 0);
         }
 
-        const int maxToolRounds = 10;
+        // Clamped here as well, not only in the settings UI, so a hand-edited settings file can neither
+        // starve a step (0 rounds = the model may never call a tool) nor run an unbounded loop.
+        var settings = await _settingsService.GetSettingsAsync();
+        var maxToolRounds = Math.Clamp(
+            settings.MaxToolRoundsPerStep, RunProfile.MinToolRounds, RunProfile.MaxToolRoundsCap);
         var workingMessages = new List<Microsoft.Extensions.AI.ChatMessage>(messages);
 
         for (var round = 0; round < maxToolRounds; round++)

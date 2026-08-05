@@ -55,8 +55,10 @@ public interface IChatSessionManager
     /// <summary>
     /// Detach the goal as an unattended headless Planned run (no live session). Additive to
     /// <see cref="StartTurnAsync"/> — the interactive path is untouched (G-6).
+    /// <paramref name="workingSubpath"/> narrows the run's workspace source root exactly as the live
+    /// turn path does; null provisions from the whole assistant files folder.
     /// </summary>
-    Task StartBackgroundRunAsync(string goal);
+    Task StartBackgroundRunAsync(string goal, string? workingSubpath = null);
 
     /// <summary>Live state for <paramref name="chatId"/>, or <see cref="ChatState.Idle"/> if not live.</summary>
     ChatState GetState(Guid chatId);

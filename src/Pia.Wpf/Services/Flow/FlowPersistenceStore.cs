@@ -198,6 +198,7 @@ public sealed class FlowPersistenceStore : IFlowPersistenceStore, IDisposable
         FlowActionKind.OpenRun => new OpenRunAction(entityId, label),
         FlowActionKind.ContinueRun => new ContinueRunAction(entityId, label),
         FlowActionKind.OpenParkedRun => new OpenParkedRunAction(entityId, label),
+        FlowActionKind.ToolApprovalRun => new ToolApprovalRunAction(entityId, label),
         _ => null, // Invoke is never persisted.
     };
 

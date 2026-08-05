@@ -199,14 +199,14 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         _chatService.ChatsChanged += OnChatsChanged;
     }
 
-    /// <summary>Pulls a parked run's question into this window's live transcript if the written chat is open here; deletions are ignored since this only ever adds rows.</summary>
+    /// <summary>Pulls store-written rows (a parked run's question, a headless dispatch's step replies) into this window's live transcript if the written chat is open here; deletions are ignored since this only ever adds rows.</summary>
     private void OnChatsChanged(object? sender, AssistantChatChangedEventArgs e)
     {
         if (e.Kind != AssistantChatChangeKind.Upserted)
             return;
 
         var chatId = e.Id;
-        _syncContext.Post(_ => PullClarificationRowsAsync(chatId).SafeFireAndForget(_logger), null);
+        _syncContext.Post(_ => PullMissingTranscriptRowsAsync(chatId).SafeFireAndForget(_logger), null);
     }
 
     /// <summary>
@@ -1015,10 +1015,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         return true;
     }
 
-    /// <summary>
-    /// Returns the pause reason token when the run is parked waiting on a question it asked the user, null
-    /// otherwise. Shared by both callers so they always agree on when the run is asking.
-    /// </summary>
+    /// <summary>Returns the pause reason token when the run is parked waiting on a question it asked the user, null otherwise.</summary>
     private async Task<string?> ReadClarificationParkReasonAsync(Guid runId)
     {
         AgentRun? run;
@@ -1039,21 +1036,20 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     }
 
     /// <summary>
-    /// Refreshes an open session's transcript with rows a headless resume wrote while parked asking the user
-    /// something, since a headless dispatch has no live session to mirror its question into directly.
-    /// Append-only and keyed on message id, so it can never resurrect a row the user deleted.
+    /// Refreshes an open session's transcript with rows a headless dispatch wrote to the store (a parked
+    /// run's question, a background or resumed run's step replies), since a headless dispatch has no live
+    /// session to mirror its writes into directly. Append-only and keyed on message id, so it can never
+    /// resurrect a row the user deleted or double-add one a live turn already holds.
     /// </summary>
-    internal async Task PullClarificationRowsAsync(Guid chatId)
+    internal async Task PullMissingTranscriptRowsAsync(Guid chatId)
     {
         if (_disposed)
             return;
 
         // The session this chat is open in, if any; no live session means nothing to render into.
         var session = _allSessions.FirstOrDefault(s => s.Id == chatId);
+        // A streaming session's live executor owns its transcript — never pull into it.
         if (session is null || session.ActiveRunId is not { } runId || session.IsStreaming)
-            return;
-
-        if (await ReadClarificationParkReasonAsync(runId) is not { } reason)
             return;
 
         SyncAssistantChat? chat;
@@ -1063,14 +1059,14 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to re-read chat {ChatId} to render a parked run's question", chatId);
+            _logger.LogWarning(ex, "Failed to re-read chat {ChatId} to render a run's store-written rows", chatId);
             return;
         }
 
         if (chat is null)
             return;
 
-        // Re-checked after the two awaits: the session may have changed state while this was off-thread.
+        // Re-checked after the await: the session may have changed state while this was off-thread.
         if (_disposed || session.IsStreaming || session.Id != chatId)
             return;
 
@@ -1088,8 +1084,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         {
             // The row contents are user-derived payload and never go on a log line (Privacy-First Logging).
             _logger.LogInformation(
-                "Chat {ChatId}: pulled {Count} row(s) written by run {RunId} while it was parked {Reason}",
-                chatId, added, runId, reason);
+                "Chat {ChatId}: pulled {Count} row(s) written to the store by run {RunId} while the chat was open",
+                chatId, added, runId);
         }
     }
 
@@ -1354,7 +1350,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     /// goal creates no run even if a future caller reaches this method directly.
     /// </para>
     /// </summary>
-    public Task StartBackgroundRunAsync(string goal)
+    public Task StartBackgroundRunAsync(string goal, string? workingSubpath = null)
     {
         if (GoalPreflight.IsRefused(goal))
         {
@@ -1363,7 +1359,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             return Task.CompletedTask;
         }
 
-        return _headlessRunLauncher.LaunchAsync(new HeadlessRunRequest(goal, AgentRunTrigger.User));
+        return _headlessRunLauncher.LaunchAsync(
+            new HeadlessRunRequest(goal, AgentRunTrigger.User, WorkingSubpath: workingSubpath));
     }
 
     public void Dispose()

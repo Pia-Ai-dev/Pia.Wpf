@@ -49,7 +49,7 @@ public class HeadlessRunLauncherChildRunTests
                            ?? HeadlessRunRequest.DefaultGrantedWrites;
         var parentPolicy = HeadlessRunLauncher.TryRestorePolicy(parentPolicyJson);
 
-        var (childGrants, childPolicy) = HeadlessRunLauncher.NarrowForChild(parentPolicyJson);
+        var (childGrants, _, childPolicy) = HeadlessRunLauncher.NarrowForChild(parentPolicyJson);
 
         Assert.All(childGrants, g => Assert.Contains(g, parentGrants, StringComparer.OrdinalIgnoreCase));
         Assert.All(
@@ -80,15 +80,31 @@ public class HeadlessRunLauncherChildRunTests
     [Fact]
     public void TheContainmentTheoryIsNotVacuous()
     {
-        var (grants, _) = HeadlessRunLauncher.NarrowForChild(
+        var (grants, _, _) = HeadlessRunLauncher.NarrowForChild(
             """{"v":1,"grantedWrites":["write_file"],"trigger":"Schedule"}""");
         Assert.Equal("write_file", Assert.Single(grants));
 
-        var (_, policy) = HeadlessRunLauncher.NarrowForChild(
+        var (_, _, policy) = HeadlessRunLauncher.NarrowForChild(
             """{"v":1,"grantedWrites":[],"trigger":"Schedule","policy":{"autoApproveClasses":["Files","Todo"]}}""");
         Assert.NotNull(policy);
         Assert.True(policy!.Covers(ToolClass.Files));
         Assert.True(policy.Covers(ToolClass.Todo));
+    }
+
+    /// <summary>
+    /// The parent's denials pass to the child verbatim and survive the child envelope's round-trip: a denial
+    /// is a narrowing, so dropping it would let the delegate re-ask what the parent's person settled.
+    /// </summary>
+    [Fact]
+    public void ParentDenialsPassToTheChildVerbatim()
+    {
+        const string parent = """{"v":1,"grantedWrites":[],"trigger":"Schedule","deniedWrites":["git_commit"]}""";
+
+        var (_, denied, _) = HeadlessRunLauncher.NarrowForChild(parent);
+        Assert.Equal("git_commit", Assert.Single(denied));
+
+        var childJson = HeadlessRunLauncher.TrySerializeChildEnvelope(parent, AgentRunTrigger.Schedule);
+        Assert.Equal("git_commit", Assert.Single(HeadlessRunLauncher.TryRestoreDeniedWritesEnvelope(childJson)));
     }
 
     /// <summary>
@@ -107,7 +123,7 @@ public class HeadlessRunLauncherChildRunTests
     [InlineData("""{"v":1,"policy":{"autoApproveClasses":["Files"]}}""")]
     public void AnUnreadableParentEnvelopeYieldsNoChildGrants_NotTheDefaultAndNotTheFloor(string? parentPolicyJson)
     {
-        var (grants, policy) = HeadlessRunLauncher.NarrowForChild(parentPolicyJson);
+        var (grants, _, policy) = HeadlessRunLauncher.NarrowForChild(parentPolicyJson);
 
         Assert.Empty(grants);
         Assert.Null(policy);
@@ -131,11 +147,11 @@ public class HeadlessRunLauncherChildRunTests
         // The parent really does hold both — otherwise this test would pass on a broken reader.
         Assert.Equal(new[] { "write_file", "delete_file" }, HeadlessRunLauncher.TryRestoreGrantEnvelope(parent));
 
-        var (grants, _) = HeadlessRunLauncher.NarrowForChild(parent);
+        var (grants, _, _) = HeadlessRunLauncher.NarrowForChild(parent);
         Assert.Equal("write_file", Assert.Single(grants));
 
         // A destructive MCP-shaped name the heuristic catches by stem, not by allowlist.
-        var (byStem, _) = HeadlessRunLauncher.NarrowForChild(
+        var (byStem, _, _) = HeadlessRunLauncher.NarrowForChild(
             """{"v":1,"grantedWrites":["write_file","acme_purge_bucket"],"trigger":"Schedule"}""");
         Assert.Equal("write_file", Assert.Single(byStem));
     }

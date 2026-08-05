@@ -251,6 +251,82 @@ public class FlowItemViewModelTests
         flow.Received(1).Retract(runId.ToString()); // RetractByKey — DedupKey present
     }
 
+    private static FlowItem ToolApprovalItem(Guid runId)
+        => new()
+        {
+            Id = Guid.NewGuid(),
+            CreatedAt = DateTimeOffset.UtcNow,
+            Severity = FlowSeverity.ActionRequired,
+            Source = FlowSource.AgentRun,
+            Title = "Agent run",
+            Body = "",
+            DedupKey = runId.ToString(),
+            Lifetime = FlowLifetime.Persistent,
+            Action = new ToolApprovalRunAction(runId, "Continue run"),
+        };
+
+    /// <summary>A tool-approval card carries the approve/deny pair the park's question has — derived from
+    /// the persisted action kind, so the bar survives a reload exactly like the link does.</summary>
+    [Fact]
+    public void Bind_ToolApprovalItem_DerivesDenyAndApproveDecisions()
+    {
+        var vm = Create(out _, out _, out var loc);
+        loc["Run_Action_Deny"].Returns("Deny");
+        loc["Run_Action_Approve"].Returns("Allow");
+        vm.Bind(ToolApprovalItem(Guid.NewGuid()));
+
+        Assert.True(vm.HasDecisions);
+        Assert.Equal(2, vm.Decisions.Count);
+
+        var deny = vm.Decisions[0];
+        Assert.Equal("Deny", deny.Label);
+        Assert.Equal(DecisionEmphasis.Default, deny.Emphasis);
+        Assert.Same(vm.DeclineRunCommand, deny.Command);
+
+        var approve = vm.Decisions[1];
+        Assert.Equal("Allow", approve.Label);
+        Assert.Equal(DecisionEmphasis.Primary, approve.Emphasis);
+        Assert.Same(vm.ApproveRunCommand, approve.Command);
+    }
+
+    [Fact]
+    public async Task ApproveRunCommand_ResumesTheRun_ThenRetracts()
+    {
+        var flow = Substitute.For<IFlowService>();
+        var resume = Substitute.For<IAgentRunResumeService>();
+        var vm = new FlowItemViewModel(
+            flow, Substitute.For<IReminderService>(), Substitute.For<IWindowManagerService>(),
+            Substitute.For<INavigationService>(), Substitute.For<ILocalizationService>(), resume,
+            NullLogger<FlowItemViewModel>.Instance);
+        var runId = Guid.NewGuid();
+        vm.Bind(ToolApprovalItem(runId));
+
+        await vm.ApproveRunCommand.ExecuteAsync(null);
+
+        await resume.Received(1).ResumeAsync(runId, Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<bool>());
+        await resume.DidNotReceive().DeclineAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        flow.Received(1).Retract(runId.ToString());
+    }
+
+    [Fact]
+    public async Task DeclineRunCommand_DeclinesTheTool_ThenRetracts()
+    {
+        var flow = Substitute.For<IFlowService>();
+        var resume = Substitute.For<IAgentRunResumeService>();
+        var vm = new FlowItemViewModel(
+            flow, Substitute.For<IReminderService>(), Substitute.For<IWindowManagerService>(),
+            Substitute.For<INavigationService>(), Substitute.For<ILocalizationService>(), resume,
+            NullLogger<FlowItemViewModel>.Instance);
+        var runId = Guid.NewGuid();
+        vm.Bind(ToolApprovalItem(runId));
+
+        await vm.DeclineRunCommand.ExecuteAsync(null);
+
+        await resume.Received(1).DeclineAsync(runId, Arg.Any<CancellationToken>());
+        await resume.DidNotReceive().ResumeAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<bool>());
+        flow.Received(1).Retract(runId.ToString());
+    }
+
     [Fact]
     public async Task SnoozeCommand_SnoozesReminderThenDismissesCard()
     {

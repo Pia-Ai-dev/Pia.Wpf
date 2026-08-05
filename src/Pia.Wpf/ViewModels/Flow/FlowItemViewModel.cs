@@ -78,7 +78,8 @@ public partial class FlowItemViewModel : ObservableObject
     /// <summary>True when the card shows a chat-state chip; the chip then replaces the prose body.</summary>
     public bool HasChatState => State is not null;
 
-    /// <summary>Decision buttons derived from the item's source (design §5); empty for non-reminder sources.</summary>
+    /// <summary>Decision buttons derived from the item (design §5): reminders from the source, tool-approval
+    /// run parks from the action kind; empty otherwise.</summary>
     public IReadOnlyList<DecisionButton> Decisions => _decisions ??= BuildDecisions();
 
     /// <summary>True when the card carries decisions — drives hiding the hover-✕ (design §5).</summary>
@@ -88,12 +89,15 @@ public partial class FlowItemViewModel : ObservableObject
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SnoozeCommand))]
     [NotifyCanExecuteChangedFor(nameof(DoneCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ApproveRunCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DeclineRunCommand))]
     private bool _isBusy;
 
     /// <summary>(Re)binds the wrapped item, raising PropertyChanged for every passthrough plus the decision props.</summary>
     public void Bind(FlowItem item)
     {
         _item = item;
+        _decisions = null; // re-derived per item; a rebind may change source AND action kind
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(Body));
         OnPropertyChanged(nameof(Severity));
@@ -108,6 +112,27 @@ public partial class FlowItemViewModel : ObservableObject
 
     private DecisionButton[] BuildDecisions()
     {
+        // A tool-approval park is the one run question with a yes AND a no: the persisted action kind is
+        // what marks it (reminders derive from the source instead), so the bar survives a reload.
+        if (_item.Action is ToolApprovalRunAction)
+        {
+            return new[]
+            {
+                new DecisionButton
+                {
+                    Label = _localizationService["Run_Action_Deny"],
+                    Emphasis = DecisionEmphasis.Default,
+                    Command = DeclineRunCommand,
+                },
+                new DecisionButton
+                {
+                    Label = _localizationService["Run_Action_Approve"],
+                    Emphasis = DecisionEmphasis.Primary,
+                    Command = ApproveRunCommand,
+                },
+            };
+        }
+
         if (_item.Source != FlowSource.Reminder)
             return Array.Empty<DecisionButton>();
 
@@ -137,6 +162,41 @@ public partial class FlowItemViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanDecide))]
     private Task Done()
         => RunReminderDecision("done", id => _reminderService.DismissAsync(id));
+
+    /// <summary>The Approve bar button on a tool-approval card: the same resume the text link fires; the
+    /// CAS in the resume service makes Approve+link races a no-op.</summary>
+    [RelayCommand(CanExecute = nameof(CanDecide))]
+    private async Task ApproveRun()
+        => await RunToolApprovalDecision("approve", id => _resumeService.ResumeAsync(id));
+
+    /// <summary>The Deny bar button on a tool-approval card: resumes with the tool recorded as denied, so
+    /// the re-run step hears "declined — adapt" instead of re-parking.</summary>
+    [RelayCommand(CanExecute = nameof(CanDecide))]
+    private async Task DeclineRun()
+        => await RunToolApprovalDecision("deny", id => _resumeService.DeclineAsync(id));
+
+    /// <summary>Shared gate/retract shape of the two run-decision buttons; <paramref name="operation"/> is a
+    /// constant for the log, the run id comes off the persisted action.</summary>
+    private async Task RunToolApprovalDecision(string operation, Func<Guid, Task> decide)
+    {
+        if (_item.Action is not ToolApprovalRunAction approval)
+            return;
+
+        IsBusy = true;
+        try
+        {
+            await decide(approval.RunId);
+            RetractByKey();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Flow {Operation} failed for item {Id}", operation, _item.Id);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
 
     /// <summary>
     /// Runs a reminder decision: gate re-entrancy via <see cref="IsBusy"/>, dismiss the card on
@@ -196,6 +256,12 @@ public partial class FlowItemViewModel : ObservableObject
                     // makes a double invoke a no-op; drop the WaitingForInput card immediately (the surface
                     // also retracts on the resulting Running/terminal RunChanged — a gone key is a no-op).
                     _resumeService.ResumeAsync(cont.RunId).SafeFireAndForget(_logger);
+                    RetractByKey();
+                    break;
+                case ToolApprovalRunAction approval:
+                    // The text link keeps the historic one-click approve; the card's decision bar offers
+                    // the same approve plus a deny. Same CAS/retract shape as ContinueRunAction.
+                    _resumeService.ResumeAsync(approval.RunId).SafeFireAndForget(_logger);
                     RetractByKey();
                     break;
                 case OpenTodoAction:

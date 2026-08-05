@@ -35,6 +35,12 @@ namespace Pia.Services;
 /// <param name="HasStandingGrant"><c>IToolPermissionService.IsGranted(pluginId, name)</c>. False where there
 /// is no persisted-grant concept (the unattended gate).</param>
 /// <param name="IsNamedGrant"><c>grantedWrites.Contains(name)</c>. False where there is no grant list.</param>
+/// <param name="HasNamedDenial">
+/// <c>deniedWrites.Contains(name)</c> — the run-scoped denial list a tool-approval park's Deny button writes
+/// into the envelope. False where there is no denial list (every surface but the unattended one). Deliberately
+/// NOT defaulted, like <see cref="CanPark"/>: a gate that never reads the denial list must say so at compile
+/// time, not inherit a silent false that re-parks a tool a human just declined.
+/// </param>
 /// <param name="Policy">The run's autonomy policy, or null for "today's behaviour".</param>
 /// <param name="CanPark">
 /// hermes #16. May THIS run stop and ask a human instead of refusing? Caller knowledge, exactly like the
@@ -63,6 +69,7 @@ public readonly record struct ToolGateInput(
     bool HasSessionGrant,
     bool HasStandingGrant,
     bool IsNamedGrant,
+    bool HasNamedDenial,
     RunAutonomyPolicy? Policy,
     // DELIBERATELY NOT DEFAULTED. A positional member with no default breaks all three Resolve call sites at
     // compile time, which is the property this record was given (04 D7) and the reason a fourth gate cannot be
@@ -177,6 +184,15 @@ public static class ToolAutonomy
                 ? new ToolGateVerdict(ToolGateOutcome.Prompt, ToolGateDecision.Unknown)
                 : new ToolGateVerdict(ToolGateOutcome.Refuse, ToolGateDecision.DeniedDestructiveFloor);
         }
+
+        // PER-RUN HUMAN DENIAL — the person answered "no" for THIS run on a tool-approval park, and that
+        // beats every auto-approval below the floor (policy, grants, named grant): a settings toggle or a
+        // grant list must not re-approve what a human just declined. Above the floor is pointless — the
+        // floor only answers destructive EXTERNAL tools, which a denial can never reach (they park-refuse
+        // before a question exists). Refuse, not Park: the question was already asked and answered; asking
+        // again would livelock the run on a decision that will not change.
+        if (input.HasNamedDenial)
+            return new ToolGateVerdict(ToolGateOutcome.Refuse, ToolGateDecision.DeniedForRun);
 
         // POLICY — additive over classes, and NEVER over a delete-like name (04 D6). This is strictly
         // stronger than the floor above, which is external-only: ToolClass.Files holds both write_file and

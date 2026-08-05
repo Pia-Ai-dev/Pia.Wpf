@@ -40,9 +40,12 @@ public class ToolAutonomyTests
         // T2-7b. Defaulted for the same reason and with the same caveat: false is "no MCP server declared
         // anything", which is what every fact written before this axis existed meant, so the whole matrix below
         // keeps asserting the NAME rule. The declaration's own facts pass it explicitly.
-        bool serverDeclaredDestructive = false)
+        bool serverDeclaredDestructive = false,
+        // The run-scoped denial list (a tool-approval park's Deny). Defaulted like the rest; the ordering facts
+        // below pass it explicitly.
+        bool namedDenial = false)
         => new(surface, toolName, toolClass, serverDeclaredDestructive, allowlisted, sessionGrant, standingGrant,
-               namedGrant, policy, canPark);
+               namedGrant, namedDenial, policy, canPark);
 
     /// <summary>
     /// T-FLOOR-1. A single Fact with nested loops rather than a ~3.5k-case Theory: the assertion is the same
@@ -68,11 +71,12 @@ public class ToolAutonomyTests
         // authorized, so "no value of the inputs reaches an auto-approval past the floor" is only still an
         // exhaustive claim if the session grant is part of the value space.
         foreach (var sessionGrant in new[] { false, true })
+        foreach (var namedDenial in new[] { false, true })
         {
             var verdict = ToolAutonomy.Resolve(Input(
                 surface, name, toolClass, policy,
                 allowlisted: allowlisted, standingGrant: granted, namedGrant: named, canPark: canPark,
-                sessionGrant: sessionGrant));
+                sessionGrant: sessionGrant, namedDenial: namedDenial));
 
             // The M3 FLOOR: a delete-like EXTERNAL tool never auto-runs, whatever the policy says and
             // however it was granted.
@@ -93,17 +97,43 @@ public class ToolAutonomyTests
             // multi-call grant would be authorizing deletions the user never saw.
             var sessionBroken = verdict.Decision == ToolGateDecision.AutoApprovedSessionGrant;
 
-            if (floorBroken || policyBroken || parkBroken || sessionBroken)
+            // The denial tier is a REFUSE-only arm: a declined tool never auto-runs, whatever else is granted.
+            var denialBroken = namedDenial && verdict.Outcome == ToolGateOutcome.AutoRun;
+
+            if (floorBroken || policyBroken || parkBroken || sessionBroken || denialBroken)
             {
                 violations.Add(
                     $"{surface}/{toolClass}/{name}/policy={(policy is null ? "none" : string.Join('+', policy.AutoApproveClasses))}"
                     + $"/granted={granted}/allowlisted={allowlisted}/named={named}/canPark={canPark}"
-                    + $"/session={sessionGrant}"
+                    + $"/session={sessionGrant}/denied={namedDenial}"
                     + $" => {verdict.Outcome} {verdict.Decision}");
             }
         }
 
         Assert.Empty(violations);
+    }
+
+    /// <summary>
+    /// A run-scoped denial is the person's newest answer: it refuses where the settings policy covers the
+    /// class AND a named grant authorizes the call, and it refuses instead of re-parking a settled question.
+    /// The same input without the denial auto-runs — the control keeps the fact honest about WHICH arm spoke.
+    /// <para>Neutralize: move the <c>HasNamedDenial</c> arm below the policy, grant or park arms → red.</para>
+    /// </summary>
+    [Fact]
+    public void NamedDenial_Refuses_AheadOfPolicyGrantsAndPark()
+    {
+        var denied = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "git_commit", ToolClass.Git, EveryClassPolicy,
+            namedGrant: true, canPark: true, namedDenial: true));
+
+        Assert.Equal(ToolGateOutcome.Refuse, denied.Outcome);
+        Assert.Equal(ToolGateDecision.DeniedForRun, denied.Decision);
+
+        var granted = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "git_commit", ToolClass.Git, EveryClassPolicy,
+            namedGrant: true, canPark: true));
+
+        Assert.Equal(ToolGateOutcome.AutoRun, granted.Outcome);
     }
 
     /// <summary>

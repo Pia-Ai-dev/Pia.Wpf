@@ -37,7 +37,7 @@ public class McpToolAnnotationHintTests
         bool canPark = false)
         => new(surface, BenignExternalTool, ToolClass.External, serverDeclaredDestructive,
                IsAllowlisted: false, HasSessionGrant: sessionGrant, HasStandingGrant: standingGrant,
-               IsNamedGrant: namedGrant, Policy: policy, CanPark: canPark);
+               IsNamedGrant: namedGrant, HasNamedDenial: false, Policy: policy, CanPark: canPark);
 
     // ---- the extraction: which annotation shapes count ------------------------------------------------
 
@@ -184,7 +184,7 @@ public class McpToolAnnotationHintTests
             ToolGateSurface.Unattended, "delete_everything", ToolClass.External,
             ServerDeclaredDestructive: false,
             IsAllowlisted: false, HasSessionGrant: false, HasStandingGrant: false,
-            IsNamedGrant: true, Policy: null, CanPark: false));
+            IsNamedGrant: true, HasNamedDenial: false, Policy: null, CanPark: false));
 
         Assert.Equal(ToolGateOutcome.Refuse, verdict.Outcome);
         Assert.Equal(ToolGateDecision.DeniedDestructiveFloor, verdict.Decision);

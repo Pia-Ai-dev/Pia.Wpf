@@ -212,9 +212,13 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
                 Body = PausedBody(_localizationService, run, reason),
                 DedupKey = runId.ToString(),
                 Lifetime = FlowLifetime.Persistent,
-                Action = needsAnswerElsewhere
-                    ? new OpenParkedRunAction(runId, _localizationService["Flow_Action_OpenRun"])
-                    : new ContinueRunAction(runId, _localizationService["Flow_Action_ContinueRun"]),
+                // A tool-approval park carries the Approve/Deny decision bar: the card re-derives it from
+                // this action kind, and the link itself keeps the historic one-click approve.
+                Action = reason == AgentRunOrchestrator.ToolApprovalReason
+                    ? new ToolApprovalRunAction(runId, _localizationService["Flow_Action_ContinueRun"])
+                    : needsAnswerElsewhere
+                        ? new OpenParkedRunAction(runId, _localizationService["Flow_Action_OpenRun"])
+                        : new ContinueRunAction(runId, _localizationService["Flow_Action_ContinueRun"]),
                 RequestDurable = true,
             });
 

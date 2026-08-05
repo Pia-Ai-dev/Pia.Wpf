@@ -1,3 +1,5 @@
+using System;
+using System.Threading;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
@@ -103,10 +105,12 @@ public class AssistantViewModelGoalPreflightTests
     public void GoalTooShortHint_IsVisible_OnlyForBlatantJunk()
     {
         var vm = CreateSut();
+        vm.GoalTooShortHintDebounce = TimeSpan.Zero;
+        vm.AgentModeEnabled = true;
         Assert.False(vm.GoalTooShortHintVisible);
 
         vm.InputText = "ggg";
-        Assert.True(vm.GoalTooShortHintVisible);
+        WaitUntilTrue(() => vm.GoalTooShortHintVisible);
 
         vm.InputText = "Fix CI";
         Assert.False(vm.GoalTooShortHintVisible);
@@ -117,6 +121,8 @@ public class AssistantViewModelGoalPreflightTests
     {
         // An empty composer is already disabled for an unrelated reason, so the goal-too-short hint must not also render.
         var vm = CreateSut();
+        vm.GoalTooShortHintDebounce = TimeSpan.Zero;
+        vm.AgentModeEnabled = true;
         vm.InputText = string.Empty;
 
         Assert.False(vm.RunInBackgroundCommand.CanExecute(null));
@@ -128,12 +134,42 @@ public class AssistantViewModelGoalPreflightTests
     {
         // Same idea, the other disabled axis: streaming already explains the dead button.
         var vm = CreateSut();
+        vm.GoalTooShortHintDebounce = TimeSpan.Zero;
+        vm.AgentModeEnabled = true;
         vm.InputText = "ggg";
-        Assert.True(vm.GoalTooShortHintVisible);
+        WaitUntilTrue(() => vm.GoalTooShortHintVisible);
 
         vm.IsStreaming = true;
 
         Assert.False(vm.RunInBackgroundCommand.CanExecute(null));
         Assert.False(vm.GoalTooShortHintVisible);
     }
+
+    [Fact]
+    public void GoalTooShortHint_NeverShows_InChatMode()
+    {
+        // The hint explains the dead Run-in-background button, which only exists in agent mode.
+        var vm = CreateSut();
+        vm.GoalTooShortHintDebounce = TimeSpan.Zero;
+        vm.InputText = "ggg";
+
+        Thread.Sleep(50);
+        Assert.False(vm.GoalTooShortHintVisible);
+    }
+
+    [Fact]
+    public void GoalTooShortHint_IsDebounced_OneSecondAfterTheLastKeystroke()
+    {
+        var vm = CreateSut();
+        vm.AgentModeEnabled = true;
+        vm.InputText = "ggg";
+
+        // Showing is deferred, so the hint must not pop the moment typing starts.
+        Assert.False(vm.GoalTooShortHintVisible);
+
+        WaitUntilTrue(() => vm.GoalTooShortHintVisible);
+    }
+
+    private static void WaitUntilTrue(Func<bool> condition) =>
+        Assert.True(SpinWait.SpinUntil(() => condition(), TimeSpan.FromSeconds(3)));
 }

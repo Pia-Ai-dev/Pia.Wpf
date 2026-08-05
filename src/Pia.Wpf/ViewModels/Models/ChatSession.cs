@@ -1125,6 +1125,9 @@ public sealed class ChatSession : IDisposable
                 HasSessionGrant: _permissions.IsGrantedForSession(pluginId, tool),
                 HasStandingGrant: _permissions.IsGranted(pluginId, tool),
                 IsNamedGrant: false,
+                // A run-scoped denial list is an UNATTENDED-envelope concept; the card this surface shows
+                // IS the human decision, so there is nothing persisted to look up.
+                HasNamedDenial: false,
                 Policy: policy,
                 // hermes #16: this surface already HAS a human — it shows the action card. Parking the whole
                 // run to ask the same question through a Flow item would be strictly worse than the card.

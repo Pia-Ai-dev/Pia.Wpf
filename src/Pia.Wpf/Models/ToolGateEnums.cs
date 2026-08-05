@@ -100,6 +100,14 @@ public enum ToolGateDecision
     /// user cannot tell from it whether a permanent grant exists.
     /// </summary>
     ApprovedForSession = 14,
+
+    /// <summary>
+    /// The person DECLINED this tool for this run on a tool-approval park (the deny beside the park's
+    /// approve). The run resumed with the name in its envelope's denied list, so the re-run call is refused
+    /// with "adapt" instead of parking a second time. Distinct from <see cref="DeclinedByUser"/> — that one
+    /// records an interactive card click; this one records a run-scoped decision persisted on the envelope.
+    /// </summary>
+    DeniedForRun = 15,
 }
 
 /// <summary>

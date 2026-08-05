@@ -22,5 +22,16 @@ public interface IAgentRunResumeService
     /// persisted (appended to <c>AgentRuns.ClarificationsJson</c>, accumulating across parks) so later plan
     /// turns see it. On a clarification park this is durable user content — log only via
     /// <c>Sensitive*</c>.</param>
-    Task<bool> ResumeAsync(Guid runId, string? nudge = null, CancellationToken ct = default);
+    /// <param name="declineToolApproval">True when this resume carries a DENY for the tool a tool-approval
+    /// park asked about: the tool is recorded in the envelope's denial list instead of being granted, and the
+    /// re-run step is refused with "adapt". False (the Continue path) keeps the hermes-#16 widening.</param>
+    Task<bool> ResumeAsync(Guid runId, string? nudge = null, CancellationToken ct = default, bool declineToolApproval = false);
+
+    /// <summary>
+    /// The deny beside a tool-approval park's approve: resumes the run with the parked tool recorded in its
+    /// envelope's denial list, so the re-run step hears "declined — adapt" instead of re-parking. Returns
+    /// <c>false</c> when the run is not parked on a tool-approval question (a budget park has nothing to
+    /// decline) or when the CAS is lost.
+    /// </summary>
+    Task<bool> DeclineAsync(Guid runId, CancellationToken ct = default);
 }

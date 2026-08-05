@@ -109,6 +109,60 @@ public sealed class RunProgressViewModelSteeringTests
     }
 
     /// <summary>
+    /// The deny beside Continue exists only for a tool-approval park: the panel names the parked tool and
+    /// the Decline command reaches the resume service's denial path (resume-with-denial), not ResumeAsync.
+    /// </summary>
+    [Fact]
+    public async Task ToolApprovalPark_OffersDeny_NamingTheParkedTool()
+    {
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = _runId,
+            ChatId = Guid.NewGuid(),
+            RunShape = RunShape.Planned,
+            State = AgentRunState.WaitingForInput,
+            ExtraJson = """{"paused":true,"reason":"tool-approval","tool":"git_commit"}""",
+        });
+        var vm = CreateVm();
+
+        await vm.RefreshAsync();
+
+        Assert.True(vm.IsToolApprovalPause);
+        Assert.Equal("git_commit", vm.ApprovalToolName);
+        Assert.True(vm.DeclineToolCommand.CanExecute(null));
+
+        await vm.DeclineToolCommand.ExecuteAsync(null);
+
+        await _resume.Received(1).DeclineAsync(_runId, Arg.Any<CancellationToken>());
+        await _resume.DidNotReceive().ResumeAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<bool>());
+        vm.Dispose();
+    }
+
+    /// <summary>A budget park has no yes/no question — no Deny, and Continue stays the only affordance.</summary>
+    [Fact]
+    public async Task BudgetPark_OffersNoDeny()
+    {
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = _runId,
+            ChatId = Guid.NewGuid(),
+            RunShape = RunShape.Planned,
+            State = AgentRunState.WaitingForInput,
+            ExtraJson = """{"paused":true,"reason":"step-cap"}""",
+        });
+        var vm = CreateVm();
+
+        await vm.RefreshAsync();
+
+        Assert.False(vm.IsToolApprovalPause);
+        Assert.Null(vm.ApprovalToolName);
+        Assert.False(vm.CanDeclineTool);
+        Assert.False(vm.DeclineToolCommand.CanExecute(null));
+        Assert.True(vm.CanContinue);
+        vm.Dispose();
+    }
+
+    /// <summary>
     /// Privacy (hazard 1). <see cref="RunProgressViewModel.Pause"/> logs nothing at all on the happy path —
     /// this drives the FAILURE arm, the only one that logs, and asserts the resulting line carries the run id
     /// and NEVER the run's Goal or the in-flight step's Title, both bound onto this VM (the step title drives
