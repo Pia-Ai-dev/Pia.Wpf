@@ -1,7 +1,60 @@
-# Batch 18 — Goal grounding & mid-run clarification
+# Batch 18 — Goal grounding & mid-run clarification — ✅ SHIPPED
 
-**Spec only. No code was written or changed in the session that produced this file.** Every `src/` reference
-below was re-read at `139b377d` (the tip of `feature/agent-run-spine`), not carried over from an earlier note.
+**Phase 3 · `feature/agent-run-spine` · `e3938d7` (single commit)**
+
+This file is now **half design record, half build record.** §0–§6 describe the problem and the seams as they
+were *before* the build and are left as written — deleting the reasoning would invite someone to re-litigate
+choices that were made with a reason. §7 and §10 have been updated in place with what shipped and what the
+owner answered. The build record is the table under "What shipped" immediately below.
+
+> **Build:** `dotnet build -t:Rebuild -p:EnableWindowsTargeting=true` → **0 Warnung(en) / 0 Fehler**, and the
+> same under `-c Release`. Measured on the finished tree, then re-measured after the line-ending normalisation
+> that followed it. The baseline before the batch was also 0/0, so no warning is inherited or excused.
+>
+> **Tests: WRITTEN, NOT EXECUTED.** `net10.0-windows` tests cannot run on macOS, which is where this batch was
+> built. What was verified is that the whole suite *compiles* in both configurations. **Nine new test classes
+> have never been executed on any platform** — `GoalGroundingReproTests`, `AgentRunResumeNoRePlanPremiseTests`,
+> `AgentRunClarificationResumeTests`, `MidPlanAskTests`, `UserInputRequestSignalTests`,
+> `ChatSessionMidPlanAskTests`, `GoalClarificationLoggingRuleTests`, `GoalPreflightTests`,
+> `AssistantViewModelGoalPreflightTests` — and thirteen existing classes gained unexecuted facts. No pass/fail
+> is claimed anywhere in this file. The first Windows/CI run is the first real signal; the highest-risk
+> classes to watch are named in the "What CI gates on" note below.
+
+**The original spec's framing, kept:** *Spec only. No code was written or changed in the session that produced
+this file.* Every `src/` reference below was re-read at `139b377d` (the tip of `feature/agent-run-spine`), not
+carried over from an earlier note. **`src/` and `tests/` were still byte-identical to `139b377d` when the
+build session opened**, so every line number in §6 was re-verified and held, with one drift:
+`CanExecuteRunInBackground` was at `:819-820`, not `:818-819`.
+
+---
+
+## What shipped
+
+| Group | What landed | Note |
+|---|---|---|
+| **G1** | `GoalPreflight` — refuses a goal with **no whitespace AND ≤ 8 chars**, plus `Assistant_GoalTooShort_Hint` in the composer | A conjunction, so any multi-word goal passes unconditionally. Layer 1 is deliberately narrower than layer 2 and its comment says so (§10.1) |
+| **G2** | `emit_plan` gains a decline member; a **third** `PlanResult` outcome; orchestrator routing | The decline **short-circuits the firm retry** — see §10 Q&A below. Never reaches `RunSingleTurnFallbackAsync` (§8.2) |
+| **G3** | `needs-goal` + `needs-input` tokens, 4 loc keys × 3 resx, token-keyed card body, panel activity strings, question posted to the run's chat | `RunPauseEnvelope` gained **no** `ReadPauseQuestion` sibling — §4.6's argument beat §6's suggestion |
+| **G4** | The `if (!resume)` guard becomes reason-aware; `AgentRuns.ClarificationsJson` column + `MigrateSchema` entry | The `:186` comment **amended in this same commit**, per §4.1. `Goal` column left exactly as the user typed it |
+| **G5** | `request_user_input` — step turns only, pre-route intercept in **both** executors, **refused for delegated steps** | No cap (`18 D4`). `emit_step_result`'s outcome bool untouched (`18 D6`), verified across the whole diff |
+| **G6** | The interactive path, opened by reproducing the defect **as a test** | Targets the run-progress **panel**, not the Flow card — §4.5's `:176-178` filter suppresses the card for exactly the chat being watched |
+
+**Two premise-pinning test classes landed ahead of the code that relies on them**, following Batch 08 G1's
+precedent, and one of them changed the plan:
+`AgentRunResumeNoRePlanPremiseTests` **measured that `08 D1` read literally was already false** — a
+`resume: true` dispatch reaches `ReplanAsync` *and* `ReplaceStepsAsync` today on a failed verdict. The
+invariant constrains the **planning block**, not the planner. It also pinned what a zero-step resume does
+today: it drains nothing, passes the critic on an empty completed-step list, and settles **Completed** — i.e.
+it would answer the user's clarification by declaring their goal done. Both facts are now cited in the amended
+`:186` comment. This is exactly the value the spec predicted at §7 G4 from a premise that had been *read*
+rather than measured.
+
+**What CI gates on, highest risk first:** (1) `MidPlanAskTests` and `ChatSessionMidPlanAskTests` — end-to-end
+through real SQLite + the real launcher + the real orchestrator on polling helpers;
+`ARunMayParkToAskMoreThanOnce_ThereIsNoCap` makes the strongest assumption in the batch. (2)
+`AgentRunClarificationResumeTests.AnExistingDatabase_GainsClarificationsJson_AndKeepsItsRuns`, which depends on
+`ALTER TABLE … DROP COLUMN` behaviour in this Microsoft.Data.Sqlite build. (3) The §8.4 conjunction — this
+batch's central behavioural claim. (4) The WPF/STA classes.
 
 **The `#` is `18` because it is the next free file ID in this folder, not because Batches 16 and 17 exist** —
 `16-event-trigger-design-note.md` and `17-trust-model.md` are not batches, and per
@@ -335,11 +388,26 @@ the member name, not the number.**
 
 ---
 
-## 7. Work groups
+## 7. Work groups — ✅ all six shipped in `e3938d7`
 
-Ordered so the half that closes the observed repro lands first and can be judged alone (§2). Sizes are
-deliberately absent — no group here has been built, and this folder does not carry size estimates for unbuilt
-work.
+**What each one actually landed is the "What shipped" table at the top of this file.** The group text below is
+kept as written, because it is what the build was judged against.
+
+Two things the build settled that this section left open, recorded here so the next reader does not think they
+were overlooked:
+
+- **§4.2's firm-retry question: a decline short-circuits the firm retry.** `BuildPlanMessages(firm: true)`
+  says *"You did not call emit_plan. You MUST respond by calling the emit_plan tool now — do not write
+  prose."* A model that declined **via** `emit_plan` did call it. Routing a decline through the retry would
+  burn a turn on every decline *and* is precisely the failure §4.2 names — "turning the firm retry into a way
+  to bully a declining model into fabricating". The retry exists for **silence**, and a decline is not silence.
+- **The decline rides `emit_plan` as an added member**, not prose and not a second tool. Prose is
+  indistinguishable from the no-call case and would hit the firm retry (§2: the failure mode *is* the absence
+  of a call); a second tool contradicts the plan prompt's own "call `emit_plan` exactly once". A member keeps
+  the model calling one tool once, which the prompt already demands.
+
+The order below was kept — the half that closes the observed repro landed first and was judged alone (§2).
+Sizes were deliberately absent and are left absent; this folder does not retrofit estimates onto built work.
 
 - **G1 — the local pre-flight (D1 layer 1).** A refusal at the composer/launcher boundary with an inline
   hint, no run created, no model turn spent. Ship it *with* its own false-positive fact: a test that a
@@ -423,10 +491,24 @@ It shortens nothing.
 
 ---
 
-## 10. Open questions for the implementation session
+## 10. Open questions — ✅ ALL SETTLED before the build started
 
-Not blocking, all for the owner or for the implementer to settle with a reason written down. None is answered
-here, and none should be answered by guessing at build time.
+**Every question below was answered by the owner in Phase 0 of the build session, before any code was
+written.** The original text of each is kept, with the answer and its consequence appended. One question the
+spec did not have — the delegated-child hole of §4.5 — was raised first and settled first, because choosing
+after the tool was built would have meant building it twice; it is recorded as Q0.
+
+**Q0 (§4.5, the sharpest unsolved corner). The mid-plan ask is REFUSED for delegated steps.** A blocked child
+declares `succeeded=false` via `emit_step_result` and the parent replans — an existing, tested path. This
+mirrors the shipped precedent the spec did not cite: `HeadlessRunLauncher.cs:170-191`,
+`CanParkForApproval(Guid? parentRunId) => parentRunId is null`, where hermes #16 answered the *same* question
+for the approval park. The precedent transfers only **half**: its primary reason (an approval park *acquires
+authority*, so a delegate would end up wider than its delegator) does **not** apply to a question, which
+acquires nothing. It is the *supporting* reason that carries — a parked child has nowhere to ask, so its
+parent re-parks behind it under `ChildrenParkedReason`, "a run stuck on a question nobody was asked". G5's
+comment states this split rather than inheriting the precedent wholesale.
+
+The five below are the spec's own, plus §10.6.
 
 1. **What layer 1 actually tests (D1).** Length? Single token with no whitespace? Non-alphabetic ratio? The
    two layers can disagree about "too thin" — that was named as this option's cost when the owner chose it,
@@ -448,3 +530,45 @@ here, and none should be answered by guessing at build time.
    analyzer, or a review-checklist line. §8.6 explains why it cannot be a sink test. The grep route is cheaper
    and this batch touches few call sites; an analyzer is only worth it if the same rule is wanted repo-wide,
    which is a bigger decision than this batch.
+
+### The answers, and what each cost
+
+1. **Layer 1 tests `no whitespace` AND `≤ 8 chars`** — a conjunction. Chosen *because* it is a conjunction:
+   any multi-word goal passes unconditionally, so "Fix CI" and "Ship it" can never be refused and the
+   false-positive fact of §8.5 is **structural rather than tuned**. `ggg` is refused; `aaaaaaaaaaaa` is not,
+   and catching it is layer 2's job. That asymmetry is written into the predicate's comment, as §10.1 asked.
+2. **The answer persists BESIDE the goal, in a new `AgentRuns.ClarificationsJson` column** — accumulating, so
+   the second park does not lose the first answer (`18 D4` permits unlimited parks). The `Goal` column is
+   **not** modified, so the panel and `ChildRunRowViewModel` keep showing what the user typed.
+   **This could not be `ExtraJson`, and the reason was found during Phase 0, not at build time:**
+   `TryBeginResumeAsync` (`AgentRunService.cs:387`) and its sibling (`:487`) both `SET ExtraJson=NULL` on the
+   resume claim, deliberately, so anything kept there is destroyed by the very resume that carries the answer.
+   A dedicated column also keeps user content out of `RunPauseEnvelope`, whose doc licenses a consumer to
+   **log** every member — see §4.6's closing note.
+   *Recorded, not hidden:* `RunClarifications.MaxAnswers = 8` is enforced destructively at write time, so a run
+   parked more than eight times permanently loses its earliest answers. It is **not** a cap on asking, so
+   `18 D4` holds — but it is a data decision the owner may want to revisit.
+3. **Two tokens**, `needs-goal` and `needs-input`. They are different resume behaviours and G4's guard reads
+   the token to tell them apart. Each got its own card body *and* its own panel activity string; the
+   cross-group pass confirmed all seven tokens in the pause vocabulary now have both, in the same order, in
+   both switches — a token with a card body but no panel string would be a user-visible gap on the interactive
+   path, where §4.5's `:176-178` filter makes the panel the only surface.
+4. **`request_user_input`, step turns only.** Scoping is `StepOutcomeSignal.cs:117-134`'s argument applied
+   unchanged and cited, not re-derived: `AssistantPromptComposer.PrepareTurn`'s only narrowing axes are
+   turn-shape blind, so scoping there would leak the tool into chat, voice, MCP and @-command turns. It is
+   appended per-executor at the choke point where the step's persona is already resolved, and intercepted
+   pre-route in **both** executors — a tool added to only one would silently lack it on the other path.
+5. **Never terminal — matching today, and adding no lifecycle rule.** The startup sweep is
+   `WHERE State < @Terminal` with `@Terminal = WaitingForInput(3)` (`AgentRunService.cs:591-594`), so a parked
+   run **already** survives every restart indefinitely; the shipped tool-approval park has exactly this
+   property. A `needs-goal` park is strictly cheaper than that one because it holds zero step rows. So this
+   batch inherits the debt rather than introducing it, and `10-durability-and-lifecycle.md` still owns it.
+6. **An Architecture source-scan test**, `GoalClarificationLoggingRuleTests` — not a sink test (§8.6 explains
+   why one is vacuous) and not an analyzer (repo-wide is a bigger decision than this batch). The precedent it
+   copies already existed: `RunWorkspaceRuleTests.cs:15` resolves `src/Pia.Wpf` off `AppContext.BaseDirectory`
+   and reads the source. **Its limits are known and recorded rather than assumed:** the body extractor counts
+   parentheses without skipping string literals, so a message template containing an unbalanced `)` would
+   truncate the scanned body and hide a leak. That was *measured* — 0 of the 134 plain `Log*` call sites in the
+   scanned files are affected today — so nothing is currently hidden, but the guard is narrower than it looks.
+   It is also blind to a payload renamed to a non-matching identifier, and to a logger receiver not named
+   `_logger`.
