@@ -808,7 +808,8 @@ public sealed class AgentRunOrchestrator
                 // branch returns before SafeReplaceSteps.
                 _logger.LogWarning(
                     "Run {RunId} resumed with reason {Reason} but has {Count} persisted step row(s) — NOT re-planning "
-                    + "(18 D2 requires both conditions)", runId, parkReason, persisted.Plan.Count);
+                    + "(re-planning a resume requires both the needs-goal reason and zero step rows)",
+                    runId, parkReason, persisted.Plan.Count);
                 return false;
             }
 
@@ -818,15 +819,15 @@ public sealed class AgentRunOrchestrator
             // SensitiveDebug below. Zero answers is legitimate — the run still re-plans rather than settling
             // Completed having done nothing.
             _logger.LogInformation(
-                "Run {RunId} resumed with reason {Reason} and no step rows → RE-PLANNING (18 D2, breaking 08 D1's "
-                + "bare resume guard on purpose) with {Count} recorded clarification answer(s)",
+                "Run {RunId} resumed with reason {Reason} and no step rows → RE-PLANNING (a deliberate exception "
+                + "to the usual resume-must-not-re-plan rule) with {Count} recorded clarification answer(s)",
                 runId, parkReason, answers.Count);
             _logger.SensitiveDebug("Run {RunId} re-plans with clarifications: {Answers}", runId, string.Join(" | ", answers));
             return true;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Run bookkeeping (18 D2 re-plan check) failed for {RunId} — keeping 08 D1", runId);
+            _logger.LogWarning(ex, "Run bookkeeping for the re-plan-on-resume check failed for {RunId} — falling back to no re-plan", runId);
             return false;
         }
     }

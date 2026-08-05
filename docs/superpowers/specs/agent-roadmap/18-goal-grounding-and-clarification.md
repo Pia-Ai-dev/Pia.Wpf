@@ -11,14 +11,33 @@ owner answered. The build record is the table under "What shipped" immediately b
 > same under `-c Release`. Measured on the finished tree, then re-measured after the line-ending normalisation
 > that followed it. The baseline before the batch was also 0/0, so no warning is inherited or excused.
 >
-> **Tests: WRITTEN, NOT EXECUTED.** `net10.0-windows` tests cannot run on macOS, which is where this batch was
-> built. What was verified is that the whole suite *compiles* in both configurations. **Nine new test classes
-> have never been executed on any platform** — `GoalGroundingReproTests`, `AgentRunResumeNoRePlanPremiseTests`,
-> `AgentRunClarificationResumeTests`, `MidPlanAskTests`, `UserInputRequestSignalTests`,
-> `ChatSessionMidPlanAskTests`, `GoalClarificationLoggingRuleTests`, `GoalPreflightTests`,
-> `AssistantViewModelGoalPreflightTests` — and thirteen existing classes gained unexecuted facts. No pass/fail
-> is claimed anywhere in this file. The first Windows/CI run is the first real signal; the highest-risk
-> classes to watch are named in the "What CI gates on" note below.
+> **Tests: WRITTEN, NOT EXECUTED (at build time).** `net10.0-windows` tests cannot run on macOS, which is where
+> this batch was built. What was verified there is that the whole suite *compiles* in both configurations. The
+> first Windows/CI run is recorded immediately below.
+>
+> **✅ First Windows run, 2026-08-05, at `9de00a49`.** `dotnet build -t:Rebuild` clean in both Debug and Release:
+> **0 Warning(s) / 0 Error(s)** (this machine's MSBuild emits English, not the `Warnung(en)` quoted above — read
+> the line, don't grep for a fixed string). The nine never-executed classes: **94 total / 0 failed / 0 errors /
+> 0 skipped**, including the three named as highest risk in the "What CI gates on" note below —
+> `AgentRunClarificationResumeTests.AnExistingDatabase_GainsClarificationsJson_AndKeepsItsRuns` (the `ALTER
+> TABLE … DROP COLUMN` behaviour on this Microsoft.Data.Sqlite build), `MidPlanAskTests.
+> ARunMayParkToAskMoreThanOnce_ThereIsNoCap`, and `GoalClarificationLoggingRuleTests` (confirmed it enumerates a
+> non-zero file list — 5 files — rather than passing vacuously on an empty scan). Full suite with the standard
+> gate command (`--filter-not-namespace "Pia.Wpf.Tests.Integration.Providers"`): **3620 total / 0 failed / 1
+> skipped** on the first run; a second run showed **1 failed** —
+> `AssistantChatConcurrencyTests.DeleteAllAsync_WithAnotherConnectionCommittingThroughout_Completes`, a
+> pre-existing test with zero diff on that file since before `e3938d7d` (not this batch's code), whose own
+> comment already documents its assertion as probabilistic (`committed > 0` racing a microsecond window); 4/4
+> green re-run in isolation immediately after. Not a regression.
+>
+> **One gap this run found, not yet fixed.** The CLAUDE.md "no batch/decision IDs in code" rule this batch's
+> own trim commit (`9de00a49`) added is violated by code that same commit's sweep left untouched: three
+> always-on (`LogInformation`/`LogWarning`, not `SensitiveDebug`) log message strings in
+> `AgentRunOrchestrator.cs` embedding `18 D2`/`08 D1` literally — so they reach
+> `%LOCALAPPDATA%\Pia\Logs\pia-*.log` on every affected resume — one more in `ChatSessionManager.cs`
+> (`"StartBackgroundRunAsync refused by 18 D1 layer 1"`), and one `<!-- -->` comment in `AssistantView.xaml`
+> citing `18 D1`. The trim swept `//` and `///` comments only; log-message string literals and XAML comments
+> were out of its scope.
 
 **The original spec's framing, kept:** *Spec only. No code was written or changed in the session that produced
 this file.* Every `src/` reference below was re-read at `139b377d` (the tip of `feature/agent-run-spine`), not

@@ -1359,7 +1359,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         if (GoalPreflight.IsRefused(goal))
         {
             // The goal itself is user content and stays out of this line (Privacy-First Logging).
-            _logger.LogInformation("StartBackgroundRunAsync refused by 18 D1 layer 1 (goal preflight)");
+            _logger.LogInformation("StartBackgroundRunAsync refused by the goal preflight check");
             return Task.CompletedTask;
         }
 
