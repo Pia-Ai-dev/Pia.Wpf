@@ -13,7 +13,7 @@
         behaviors:FileDropBehavior.AcceptedExtensions=".txt,.md,.markdown,.text,.csv,.json,.log,.html,.htm,.xml"
         behaviors:FileDropBehavior.FilesDroppedCommand="{Binding AddSourceFilesCommand}">
     <!-- Card content; blurred while a file is dragged over, mirroring the Assistant composer. -->
-    <Border>
+    <Border Padding="14,12">
       <Border.Style>
         <Style TargetType="Border" BasedOn="{StaticResource PiaCardStyle}">
           <Style.Triggers>
@@ -28,13 +28,11 @@
           </Style.Triggers>
         </Style>
       </Border.Style>
-    <!-- The sources list can outgrow the pane; the ScrollViewer sizes to content (still vertically
-         centered when small) and only then scrolls. -->
+    <!-- Content is anchored top-left: the ScrollViewer fills the card and only scrolls when the list
+         outgrows it, so nothing ever renders outside the card. -->
     <ScrollViewer VerticalScrollBarVisibility="Auto"
-                  HorizontalScrollBarVisibility="Disabled"
-                  VerticalAlignment="Center">
-      <StackPanel HorizontalAlignment="Stretch"
-                  MaxWidth="560">
+                  HorizontalScrollBarVisibility="Disabled">
+      <StackPanel HorizontalAlignment="Stretch">
         <TextBlock Text="{loc:Str Memory_VaultOverview_Title}"
                    FontSize="14"
                    FontWeight="SemiBold"
