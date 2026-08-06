@@ -983,6 +983,8 @@
   <data name="Run_Sub_StoppedAtStep" xml:space="preserve"><value>Stopped at step {0} of {1}</value></data>
   <data name="Run_Sub_Elapsed" xml:space="preserve"><value>{0} elapsed</value></data>
   <data name="Run_Sub_Tokens" xml:space="preserve"><value>{0} tokens</value></data>
+  <data name="Run_Duration_MinSec" xml:space="preserve"><value>{0} min {1} s</value></data>
+  <data name="Run_Duration_HourMin" xml:space="preserve"><value>{0} h {1} min</value></data>
   <data name="Run_Sub_PlanEditable" xml:space="preserve"><value>you can change the plan now</value></data>
   <data name="Run_Step_Now" xml:space="preserve"><value>now</value></data>
   <data name="Run_Step_Skipped" xml:space="preserve"><value>skipped</value></data>
@@ -991,7 +993,6 @@
   <data name="Run_Plan_Fold_Later" xml:space="preserve"><value>{0} later steps — pending</value></data>
   <data name="Run_Plan_Fold_LaterMixed" xml:space="preserve"><value>{0} later steps</value></data>
   <data name="Run_Plan_Editor_Eyebrow" xml:space="preserve"><value>Editing step {0}</value></data>
-  <data name="Run_Timeline_Calls" xml:space="preserve"><value>{0} call(s)</value></data>
   <data name="Run_Timeline_Pill_AwaitingApproval" xml:space="preserve"><value>{0} awaiting approval</value></data>
   <data name="Run_Timeline_Pill_Denied" xml:space="preserve"><value>{0} denied</value></data>
   <data name="Run_Timeline_Pill_Blocked" xml:space="preserve"><value>{0} blocked</value></data>

@@ -41,6 +41,8 @@ public sealed class OpenAiProviderHandler : IAiProviderHandler
         var http = new HttpClient(
             new OpenAiReasoningSummaryFallbackHandler(_logger) { InnerHandler = tail },
             disposeHandler: true);
+        // AiClientService's per-call timeoutCts owns the bound; the 100s HttpClient default would fire first.
+        http.Timeout = Timeout.InfiniteTimeSpan;
 
 #pragma warning disable OPENAI001
         var client = new ResponsesClient(
@@ -49,6 +51,8 @@ public sealed class OpenAiProviderHandler : IAiProviderHandler
             {
                 Endpoint = new Uri(provider.Endpoint),
                 Transport = new HttpClientPipelineTransport(http),
+                // The per-call timeoutCts owns the bound; the SDK's 100s network default would fire first.
+                NetworkTimeout = Timeout.InfiniteTimeSpan,
             }).AsIChatClient(model);
 #pragma warning restore OPENAI001
 

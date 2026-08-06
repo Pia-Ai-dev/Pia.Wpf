@@ -36,6 +36,8 @@ public sealed class OpenRouterProviderHandler : IAiProviderHandler
             InnerHandler = new HttpClientHandler(),
         };
         var http = new HttpClient(rewrite, disposeHandler: true);
+        // AiClientService's per-call timeoutCts owns the bound; the 100s HttpClient default would fire first.
+        http.Timeout = Timeout.InfiniteTimeSpan;
         http.DefaultRequestHeaders.Add("X-Title", "Pia");
         http.DefaultRequestHeaders.Add("HTTP-Referer", "https://github.com/Pia-Ai-dev/Pia.Wpf");
 
@@ -46,6 +48,8 @@ public sealed class OpenRouterProviderHandler : IAiProviderHandler
             {
                 Endpoint = new Uri(provider.Endpoint),
                 Transport = new HttpClientPipelineTransport(http),
+                // The per-call timeoutCts owns the bound; the SDK's 100s network default would fire first.
+                NetworkTimeout = Timeout.InfiniteTimeSpan,
             }).AsIChatClient();
 
         return Task.FromResult(client);

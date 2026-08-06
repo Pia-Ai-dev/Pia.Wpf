@@ -423,9 +423,10 @@ public sealed class ChatSession : IDisposable
                 Message = localizedMessage,
             });
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            // User cancelled — not an error; settle to Idle and surface the cancelled snackbar.
+            // User cancelled — not an error; settle to Idle and surface the cancelled snackbar. The token
+            // guard keeps a transport cancellation (an HTTP timeout escaped conversion) off this arm.
             RunFailed?.Invoke(this, new RunFailedEventArgs
             {
                 Kind = RunFailureKind.Generic,
@@ -757,7 +758,9 @@ public sealed class ChatSession : IDisposable
                 : assistantMessage.Content + "\n\n" + notice;
             error = notice;
         }
-        catch (OperationCanceledException)
+        // The token guard keeps a transport cancellation (an HTTP timeout escaped conversion) off this
+        // arm: only a fired step token counts as a user/host cancel.
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             cancelled = true;
             error = "cancelled";

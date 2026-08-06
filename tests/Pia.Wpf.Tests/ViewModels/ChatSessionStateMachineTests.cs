@@ -85,9 +85,10 @@ public class ChatSessionStateMachineTests
     }
 
     private static async IAsyncEnumerable<ChatStreamItem> ThrowingStream(
-        Exception ex, [EnumeratorCancellation] CancellationToken ct = default)
+        Exception ex, Action? beforeThrow = null, [EnumeratorCancellation] CancellationToken ct = default)
     {
         await Task.Yield();
+        beforeThrow?.Invoke();
         throw ex;
 #pragma warning disable CS0162
         yield break;
@@ -208,12 +209,13 @@ public class ChatSessionStateMachineTests
     [Fact]
     public async Task Cancellation_EndsInIdle_NotError()
     {
+        var session = CreateSession();
+        // Models a user stop: the session CTS fires mid-stream (the Stop button's Cancel()), then the
+        // exchange aborts — only a FIRED token classifies the OCE as a cancel, not a transport fault.
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
                 Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
-            .Returns(_ => ThrowingStream(new OperationCanceledException()));
-
-        var session = CreateSession();
+            .Returns(_ => ThrowingStream(new OperationCanceledException(), () => session.Cancel()));
 
         await session.RunTurnAsync(BuildRequest(session), CancellationToken.None);
 

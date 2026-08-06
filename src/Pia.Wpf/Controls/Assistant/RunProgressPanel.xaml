@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="Pia.Controls.Assistant.RunProgressPanel"
+<UserControl x:Class="Pia.Controls.Assistant.RunProgressPanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
@@ -74,6 +74,35 @@
       </Setter>
     </Style>
 
+    <!-- The band's own disclosure: folds everything below the signal band, which keeps the actions. Checked =
+         open, mirroring the section headers' chevron direction. -->
+    <Style x:Key="RunCardCollapseStyle" TargetType="ToggleButton">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="4" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ToggleButton">
+            <Border x:Name="Bd" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}"
+                    CornerRadius="4">
+              <ui:SymbolIcon x:Name="Chevron" Symbol="ChevronUp24" FontSize="12"
+                             Foreground="{DynamicResource TextMutedBrush}" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="False">
+                <Setter TargetName="Chevron" Property="Symbol" Value="ChevronDown24" />
+              </Trigger>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
     <!-- One of the five plan-mutation verbs. A settled row keeps all five, greyed, so the row's shape does not
          shift as steps finish. -->
     <Style x:Key="RunVerbButtonStyle" TargetType="Button">
@@ -139,13 +168,25 @@
     <StackPanel>
 
       <!-- ==================== Region A · the signal band ==================== -->
-      <Border Padding="14,12" BorderThickness="0,0,0,1" CornerRadius="12,12,0,0"
+      <Border Padding="14,12" BorderThickness="0,0,0,1"
               Background="{Binding State, Converter={StaticResource RunStateToBandBg}}"
               BorderBrush="{Binding State, Converter={StaticResource RunStateToBandBorder}}">
+        <Border.Style>
+          <Style TargetType="Border">
+            <Setter Property="CornerRadius" Value="12,12,0,0" />
+            <Style.Triggers>
+              <!-- Collapsed, the band IS the card's bottom edge and takes the full radius. -->
+              <DataTrigger Binding="{Binding IsCardExpanded}" Value="False">
+                <Setter Property="CornerRadius" Value="12" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
         <Grid>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
@@ -230,555 +271,574 @@
                        FontSize="{StaticResource RunMetaSize}" FontWeight="SemiBold"
                        Visibility="{Binding ShowPublishButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
           </StackPanel>
+
+          <!-- The card's disclosure, last in the band so the actions keep their slot beside the text. -->
+          <ToggleButton Grid.Column="4" Style="{StaticResource RunCardCollapseStyle}"
+                        IsChecked="{Binding IsCardExpanded}" Margin="6,0,0,0" />
         </Grid>
       </Border>
 
-      <!-- ==================== Region B · whole-plan progress strip ==================== -->
-      <!-- Bound to PlanSegments, not Steps: the strip is the ONE element that shows the entire plan even when the
-           list below it is windowed, so it must not inherit the list's per-row folding. -->
-      <ItemsControl ItemsSource="{Binding PlanSegments}" Margin="14,10,14,0"
-                    Visibility="{Binding ShowProgressSegments, Converter={StaticResource BooleanToVisibilityConverter}}">
-        <ItemsControl.ItemsPanel>
-          <ItemsPanelTemplate>
-            <UniformGrid Rows="1" />
-          </ItemsPanelTemplate>
-        </ItemsControl.ItemsPanel>
-        <ItemsControl.ItemTemplate>
-          <DataTemplate>
-            <Border Height="3" CornerRadius="2" Margin="0,0,3,0"
-                    Style="{StaticResource RunPulseStyle}"
-                    Background="{Binding Status, Converter={StaticResource StepStatusToSegmentBrush}}" />
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
+      <!-- The body: everything the band's chevron folds. The band keeps the actions, so a collapsed card is
+           still pausable / resumable. -->
+      <StackPanel Visibility="{Binding IsCardExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
 
-      <!-- Skeleton rows while the planner is still writing, so the card does not jump in height when the plan
-           lands. Only ever visible in Planning, and only before the first step exists. -->
-      <StackPanel Margin="14,14,14,14"
-                  Visibility="{Binding ShowPlanSkeleton, Converter={StaticResource BooleanToVisibilityConverter}}">
-        <Border Height="9" Width="220" HorizontalAlignment="Left" CornerRadius="4" Margin="0,0,0,7"
-                Background="{DynamicResource SurfaceMutedBrush}" />
-        <Border Height="9" Width="150" HorizontalAlignment="Left" CornerRadius="4" Margin="0,0,0,7"
-                Background="{DynamicResource SurfaceMutedBrush}" />
-        <Border Height="9" Width="185" HorizontalAlignment="Left" CornerRadius="4"
-                Background="{DynamicResource SurfaceMutedBrush}" />
-      </StackPanel>
-
-      <!-- ==================== Region D · steering note ==================== -->
-      <!-- Batch 08 D4. Offered only while a resume is available — CanContinue covers both the budget-paused and
-           the user-paused case. SENSITIVE (user content): bound only, never logged; Continue() carries it to the
-           resume service and this panel never does. -->
-      <Border Margin="14,12,14,4" Padding="10,9" CornerRadius="7" BorderThickness="1"
-              Background="{DynamicResource PiaAccentSoftBrush}"
-              BorderBrush="{DynamicResource AccentBorderBrush}"
-              Visibility="{Binding ShowContinueButton, Converter={StaticResource BooleanToVisibilityConverter}}">
-        <StackPanel>
-          <TextBlock Text="{loc:Str Run_Nudge_Label}" Margin="0,0,0,6"
-                     FontSize="{StaticResource RunMicroSize}" FontWeight="SemiBold"
-                     Foreground="{DynamicResource PiaAccentBrush}" />
-          <ui:TextBox Text="{Binding NudgeText, UpdateSourceTrigger=PropertyChanged}"
-                      PlaceholderText="{loc:Str Run_Nudge_Placeholder}" PlaceholderEnabled="True"
-                      MinHeight="30" FontSize="12" TextWrapping="Wrap" AcceptsReturn="True" />
-          <TextBlock Text="{loc:Str Run_Nudge_Scope_Note}" Margin="0,5,0,0"
-                     FontSize="10.5" TextWrapping="Wrap"
-                     Foreground="{DynamicResource TextMutedBrush}" />
-        </StackPanel>
-      </Border>
-
-      <!-- ==================== Region C · the plan ==================== -->
-      <StackPanel Margin="14,9,14,12">
-        <!-- Fold row. A long plan windows to the running step ±1 so the card cannot push the transcript off
-             screen; clicking either fold unfolds the whole list in place. -->
-        <Button Style="{StaticResource RunFoldRowStyle}" Command="{Binding ExpandStepWindowCommand}"
-                Visibility="{Binding EarlierFoldCount, Converter={StaticResource IntToVisibilityConverter}}">
-          <StackPanel Orientation="Horizontal">
-            <ui:SymbolIcon Symbol="MoreVertical24" FontSize="12" Width="16" Margin="0,0,9,0"
-                           VerticalAlignment="Center"
-                           Foreground="{DynamicResource TextSubtleBrush}" />
-            <TextBlock Text="{Binding EarlierFoldLabel}" VerticalAlignment="Center"
-                       FontSize="{StaticResource RunMetaSize}"
-                       Foreground="{DynamicResource TextMutedBrush}" />
-          </StackPanel>
-        </Button>
-
-        <ItemsControl ItemsSource="{Binding Steps}">
+        <!-- ==================== Region B · whole-plan progress strip ==================== -->
+        <!-- Bound to PlanSegments, not Steps: the strip is the ONE element that shows the entire plan even when the
+             list below it is windowed, so it must not inherit the list's per-row folding. -->
+        <ItemsControl ItemsSource="{Binding PlanSegments}" Margin="14,10,14,0"
+                      Visibility="{Binding ShowProgressSegments, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <UniformGrid Rows="1" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate>
-              <!-- The running row carries a 2px accent bar and a soft wash; a settled row dims only while the
-                   plan is editable, so the rows that cannot be changed recede without the list moving. -->
-              <Border Padding="7,0,0,0" Margin="-9,0,0,1" BorderThickness="2,0,0,0"
-                      Background="{Binding IsRunning, Converter={StaticResource BoolToRunningRowBrushConverter}}"
-                      Visibility="{Binding IsInWindow, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <Border.Style>
-                  <Style TargetType="Border">
-                    <Setter Property="BorderBrush" Value="Transparent" />
-                    <Style.Triggers>
-                      <DataTrigger Binding="{Binding IsRunning}" Value="True">
-                        <Setter Property="BorderBrush" Value="{DynamicResource PiaAccentBrush}" />
-                      </DataTrigger>
-                      <MultiDataTrigger>
-                        <MultiDataTrigger.Conditions>
-                          <Condition Binding="{Binding IsMutable}" Value="False" />
-                          <Condition Binding="{Binding DataContext.CanMutatePlan, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                     Value="True" />
-                        </MultiDataTrigger.Conditions>
-                        <Setter Property="Opacity" Value="0.55" />
-                      </MultiDataTrigger>
-                    </Style.Triggers>
-                  </Style>
-                </Border.Style>
-                <StackPanel>
-                  <!-- Read mode. Replaced in place by the editor below while this row is being edited. -->
-                  <Grid MinHeight="28"
-                        Visibility="{Binding IsEditing, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="Auto" />
-                      <ColumnDefinition Width="Auto" />
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
-                    <!-- Three mutually exclusive status marks in one 16px cell: a hollow ring for Pending, a
-                         pulsing dot for Running, a glyph for the three settled statuses. They differ in SIZE, so
-                         they are separate elements rather than one icon with a colour converter. -->
-                    <Grid Grid.Column="0" Width="16" Margin="0,0,9,0" VerticalAlignment="Center">
-                      <Ellipse Width="7" Height="7" StrokeThickness="1.5"
-                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                               Stroke="{DynamicResource TextGhostBrush}"
-                               Visibility="{Binding IsPending, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                      <Ellipse Width="8" Height="8" HorizontalAlignment="Center" VerticalAlignment="Center"
-                               Style="{StaticResource RunPulseStyle}"
-                               Fill="{DynamicResource PiaAccentBrush}"
-                               Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                      <ui:SymbolIcon FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                     Symbol="{Binding Status, Converter={StaticResource StepStatusToGlyphConverter}}"
-                                     Foreground="{Binding Status, Converter={StaticResource StepStatusToBrushConverter}}"
-                                     Visibility="{Binding HasStatusGlyph, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                    </Grid>
-
-                    <chat:PiaPersonaAvatar Grid.Column="1" Width="20" Height="20" Margin="0,0,9,0"
-                                           VerticalAlignment="Center"
-                                           PersonaId="{Binding PersonaId}"
-                                           Emoji="{Binding PersonaEmoji}"
-                                           AccentColor="{Binding PersonaAccent}"
-                                           Visibility="{Binding HasPersona, Converter={StaticResource BooleanToVisibilityConverter}}" />
-
-                    <!-- The persona name rides in the SAME TextBlock as the title, after it, so it is the first
-                         thing the ellipsis eats — the step's own title has to survive a narrow card. The two Runs
-                         MUST stay adjacent with no whitespace between them: XAML would collapse an intervening
-                         newline into a real space, and an unattributed row's rendered text would then end in one. -->
-                    <TextBlock Grid.Column="2" VerticalAlignment="Center"
-                               FontSize="{StaticResource RunBodySize}"
-                               TextTrimming="CharacterEllipsis"
-                               FontWeight="{Binding Status, Converter={StaticResource StepStatusToTitleWeightConverter}}"
-                               Foreground="{Binding Status, Converter={StaticResource StepStatusToTitleBrush}}"><Run Text="{Binding Title, Mode=OneWay}" /><Run Text="{Binding PersonaSuffix, Mode=OneWay}" Foreground="{DynamicResource TextSubtleBrush}" /></TextBlock>
-
-                    <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="9,0,0,0"
-                                VerticalAlignment="Center">
-                      <!-- Read-mode trailing: the "now" marker, the step's token cost, or "skipped". Hidden while
-                           the plan is editable, where the five verbs take the slot instead. -->
-                      <StackPanel Orientation="Horizontal"
-                                  Visibility="{Binding DataContext.CanMutatePlan, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-                        <Border MinWidth="34" Height="16" CornerRadius="8" Padding="6,0"
-                                VerticalAlignment="Center"
-                                Background="{DynamicResource BandAccentBrush}"
-                                Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}">
-                          <TextBlock Text="{loc:Str Run_Step_Now}" FontSize="9.5" FontWeight="SemiBold"
-                                     HorizontalAlignment="Center" VerticalAlignment="Center"
-                                     Foreground="{DynamicResource PiaAccentBrush}" />
-                        </Border>
-                        <TextBlock Text="{Binding TokensLabel}" VerticalAlignment="Center"
-                                   FontSize="{StaticResource RunMicroSize}"
-                                   FontFamily="{DynamicResource PiaMonoFont}"
-                                   Foreground="{DynamicResource TextGhostBrush}"
-                                   Visibility="{Binding HasTokens, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                        <TextBlock Text="{loc:Str Run_Step_Skipped}" VerticalAlignment="Center"
-                                   FontSize="{StaticResource RunMicroSize}"
-                                   Foreground="{DynamicResource TextSubtleBrush}"
-                                   Visibility="{Binding IsSkipped, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                      </StackPanel>
-
-                      <!-- Batch 08 D3: the five plan-mutation verbs, hidden entirely while the run is live
-                           (CanMutatePlan, read off the ItemsControl's own DataContext — the VM). A settled step
-                           keeps all five VISIBLE but individually disabled (IsMutable) rather than dropping them,
-                           so the row's shape does not shift as steps finish.
-
-                           Batch 08 F15, so the repaint is not read as a bug: a SKIPPED row sorts with the settled
-                           work, so the NEXT mutation moves it up above the still-pending rows. Cosmetic only — a
-                           skipped step never drains — and deliberately not fixed; see ApplyPlanMutationAsync's
-                           prefix comment for the four-sided change it would take. -->
-                      <StackPanel Orientation="Horizontal"
-                                  Visibility="{Binding DataContext.CanMutatePlan, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <Button Style="{StaticResource RunVerbButtonStyle}" Margin="0,0,2,0"
-                                ToolTip="{loc:Str Run_Plan_Action_Edit}"
-                                IsEnabled="{Binding IsMutable}"
-                                Command="{Binding DataContext.EditStepCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                CommandParameter="{Binding}">
-                          <ui:SymbolIcon Symbol="Edit24" FontSize="11" />
-                        </Button>
-                        <Button Style="{StaticResource RunVerbButtonStyle}" Margin="0,0,2,0"
-                                ToolTip="{loc:Str Run_Plan_Action_Insert}"
-                                IsEnabled="{Binding IsMutable}"
-                                Command="{Binding DataContext.InsertStepBelowCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                CommandParameter="{Binding}">
-                          <ui:SymbolIcon Symbol="Add24" FontSize="11" />
-                        </Button>
-                        <Button Style="{StaticResource RunVerbButtonStyle}" Margin="0,0,2,0"
-                                ToolTip="{loc:Str Run_Plan_Action_MoveUp}"
-                                IsEnabled="{Binding IsMutable}"
-                                Command="{Binding DataContext.MoveStepUpCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                CommandParameter="{Binding}">
-                          <ui:SymbolIcon Symbol="ChevronUp24" FontSize="10" />
-                        </Button>
-                        <Button Style="{StaticResource RunVerbButtonStyle}" Margin="0,0,2,0"
-                                ToolTip="{loc:Str Run_Plan_Action_MoveDown}"
-                                IsEnabled="{Binding IsMutable}"
-                                Command="{Binding DataContext.MoveStepDownCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                CommandParameter="{Binding}">
-                          <ui:SymbolIcon Symbol="ChevronDown24" FontSize="10" />
-                        </Button>
-                        <Button Style="{StaticResource RunVerbButtonStyle}"
-                                ToolTip="{loc:Str Run_Plan_Action_Skip}"
-                                IsEnabled="{Binding IsMutable}"
-                                Command="{Binding DataContext.SkipStepCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                CommandParameter="{Binding}">
-                          <ui:SymbolIcon Symbol="Prohibited24" FontSize="11" />
-                        </Button>
-                      </StackPanel>
-                    </StackPanel>
-                  </Grid>
-
-                  <!-- Batch 08 D3: the inline editor — embedded, never a dialog (the panel lives inside a chat).
-                       Title/Intent only; every other column of the row (Ordinal, persona, ExtraJson) is carried
-                       forward verbatim by the service and untouched by an edit.
-                       The footer buttons sit DIRECTLY in the editor's grid rather than in a nested row panel, so
-                       the element two logical levels above Save is this Border — the one carrying the editor's
-                       whole visibility. A nested footer panel would put an unbound panel in that position. -->
-                  <Border Margin="0,2,0,3" Padding="9,8" CornerRadius="7" BorderThickness="1"
-                          Background="{DynamicResource SurfaceSunkBrush}"
-                          BorderBrush="{DynamicResource AccentBorderBrush}"
-                          Visibility="{Binding IsEditing, Converter={StaticResource BooleanToVisibilityConverter}}">
-                    <Grid>
-                      <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                      </Grid.ColumnDefinitions>
-                      <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                      </Grid.RowDefinitions>
-                      <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,6"
-                                 Text="{Binding EditorEyebrow}" FontSize="10.5" FontWeight="SemiBold"
-                                 TextTrimming="CharacterEllipsis"
-                                 Foreground="{DynamicResource TextMutedBrush}" />
-                      <!-- Batch 08 F7: both boxes carried no label and no placeholder, so nothing told the user
-                           which one the model actually receives — and it is the SECOND one (both executors build
-                           the step turn from Intent alone; neither reads Title). -->
-                      <ui:TextBox Grid.Row="1" Grid.ColumnSpan="2" Margin="0,0,0,5"
-                                  Text="{Binding EditTitle, UpdateSourceTrigger=PropertyChanged}"
-                                  PlaceholderText="{loc:Str Run_Plan_Edit_Title}" PlaceholderEnabled="True"
-                                  FontSize="12" />
-                      <ui:TextBox Grid.Row="2" Grid.ColumnSpan="2" Margin="0,0,0,7" MinHeight="44"
-                                  Text="{Binding EditIntent, UpdateSourceTrigger=PropertyChanged}"
-                                  PlaceholderText="{loc:Str Run_Plan_Edit_Intent}" PlaceholderEnabled="True"
-                                  FontSize="{StaticResource RunMetaSize}" TextWrapping="Wrap" AcceptsReturn="True" />
-                      <ui:Button Grid.Row="3" Grid.Column="0" HorizontalAlignment="Right" Margin="0,0,6,0"
-                                 Content="{loc:Str Common_Cancel}" Appearance="Transparent"
-                                 Padding="10,5" FontSize="{StaticResource RunMetaSize}"
-                                 Command="{Binding DataContext.CancelStepEditCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                 CommandParameter="{Binding}" />
-                      <ui:Button Grid.Row="3" Grid.Column="1"
-                                 Content="{loc:Str Common_Save}" Appearance="Primary"
-                                 Padding="12,5" FontSize="{StaticResource RunMetaSize}" FontWeight="SemiBold"
-                                 Command="{Binding DataContext.SaveStepEditCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                 CommandParameter="{Binding}" />
-                    </Grid>
-                  </Border>
-                </StackPanel>
-              </Border>
+              <Border Height="3" CornerRadius="2" Margin="0,0,3,0"
+                      Style="{StaticResource RunPulseStyle}"
+                      Background="{Binding Status, Converter={StaticResource StepStatusToSegmentBrush}}" />
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
 
-        <Button Style="{StaticResource RunFoldRowStyle}" Command="{Binding ExpandStepWindowCommand}"
-                Visibility="{Binding LaterFoldCount, Converter={StaticResource IntToVisibilityConverter}}">
-          <StackPanel Orientation="Horizontal">
-            <ui:SymbolIcon Symbol="MoreVertical24" FontSize="12" Width="16" Margin="0,0,9,0"
-                           VerticalAlignment="Center"
-                           Foreground="{DynamicResource TextSubtleBrush}" />
-            <TextBlock Text="{Binding LaterFoldLabel}" VerticalAlignment="Center"
-                       FontSize="{StaticResource RunMetaSize}"
+        <!-- Skeleton rows while the planner is still writing, so the card does not jump in height when the plan
+             lands. Only ever visible in Planning, and only before the first step exists. -->
+        <StackPanel Margin="14,14,14,14"
+                    Visibility="{Binding ShowPlanSkeleton, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <Border Height="9" Width="220" HorizontalAlignment="Left" CornerRadius="4" Margin="0,0,0,7"
+                  Background="{DynamicResource SurfaceMutedBrush}" />
+          <Border Height="9" Width="150" HorizontalAlignment="Left" CornerRadius="4" Margin="0,0,0,7"
+                  Background="{DynamicResource SurfaceMutedBrush}" />
+          <Border Height="9" Width="185" HorizontalAlignment="Left" CornerRadius="4"
+                  Background="{DynamicResource SurfaceMutedBrush}" />
+        </StackPanel>
+
+        <!-- ==================== Region D · steering note ==================== -->
+        <!-- Batch 08 D4. Offered only while a resume is available — CanContinue covers both the budget-paused and
+             the user-paused case. SENSITIVE (user content): bound only, never logged; Continue() carries it to the
+             resume service and this panel never does. -->
+        <Border Margin="14,12,14,4" Padding="10,9" CornerRadius="7" BorderThickness="1"
+                Background="{DynamicResource PiaAccentSoftBrush}"
+                BorderBrush="{DynamicResource AccentBorderBrush}"
+                Visibility="{Binding ShowContinueButton, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <StackPanel>
+            <TextBlock Text="{loc:Str Run_Nudge_Label}" Margin="0,0,0,6"
+                       FontSize="{StaticResource RunMicroSize}" FontWeight="SemiBold"
+                       Foreground="{DynamicResource PiaAccentBrush}" />
+            <ui:TextBox Text="{Binding NudgeText, UpdateSourceTrigger=PropertyChanged}"
+                        PlaceholderText="{loc:Str Run_Nudge_Placeholder}" PlaceholderEnabled="True"
+                        MinHeight="30" FontSize="12" TextWrapping="Wrap" AcceptsReturn="True" />
+            <TextBlock Text="{loc:Str Run_Nudge_Scope_Note}" Margin="0,5,0,0"
+                       FontSize="10.5" TextWrapping="Wrap"
                        Foreground="{DynamicResource TextMutedBrush}" />
           </StackPanel>
-        </Button>
+        </Border>
 
-        <!-- Conditional note lines, all quiet on an ordinary run.
-             (1) the standing offer, while a settled run's files are still in its workspace;
-             (2) the result of a publish the user asked for;
-             (3) plan D5b — in worktree mode NOTHING is copied and the branch IS the deliverable, so the panel
-                 must say where the output is or the honest user question is "where is my file?". -->
-        <TextBlock Style="{StaticResource RunNoteLineStyle}" Margin="0,7,0,3"
-                   Text="{loc:Str Run_Publish_Pending}"
-                   Visibility="{Binding ShowPublishButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
-        <TextBlock Style="{StaticResource RunNoteLineStyle}" Text="{Binding PublishNote}"
-                   Visibility="{Binding PublishNote, Converter={StaticResource NullToVisibilityConverter}}" />
-        <TextBlock Style="{StaticResource RunNoteLineStyle}" Text="{Binding OutputBranchNote}"
-                   Visibility="{Binding HasOutputBranch, Converter={StaticResource BooleanToVisibilityConverter}}" />
-
-        <!-- Batch 08 D3: "the UI can require a pause first" — stated as a note, never a silently-frozen plan.
-             Batch 08 F12: gated on ShowPauseFirstNote (== CanPause), NOT on CanMutatePlan inverted. The inverse
-             form rendered in EVERY state except Paused: a run parked at its budget showed "Pause the run to
-             change its plan." with no Pause button to press, and a Completed/Failed run kept nagging forever.
-             An instruction is only honest while the button it names is on screen. -->
-        <TextBlock Style="{StaticResource RunNoteLineStyle}" Text="{loc:Str Run_Plan_Note_PauseFirst}"
-                   Visibility="{Binding ShowPauseFirstNote, Converter={StaticResource BooleanToVisibilityConverter}}" />
-        <!-- The last plan mutation's REJECTION, cleared by the VM on the next successful mutation. Warning
-             palette: it is something the user asked for that did not happen. -->
-        <TextBlock Style="{StaticResource RunWarnLineStyle}" Text="{Binding PlanMutationNote}"
-                   Visibility="{Binding PlanMutationNote, Converter={StaticResource NullToVisibilityConverter}}" />
-        <!-- Batch 08 F6: a pause the service REFUSED. Separate from PlanMutationNote because that one is wiped by
-             every projection that is not Paused, which is every projection a refused pause can be followed by. -->
-        <TextBlock Style="{StaticResource RunWarnLineStyle}" Text="{Binding PauseNote}"
-                   Visibility="{Binding PauseNote, Converter={StaticResource NullToVisibilityConverter}}" />
-      </StackPanel>
-
-      <!-- ==================== Regions E + F · the audit sections ==================== -->
-      <!-- One container for both so the card's bottom corners are rounded by whichever section is last, without
-           either of them having to know whether the other is on screen. -->
-      <Border Background="{DynamicResource SurfaceSunkBrush}" BorderThickness="0,1,0,0"
-              CornerRadius="0,0,12,12"
-              BorderBrush="{DynamicResource BorderBrush_}">
-        <StackPanel>
-          <!-- Audit timeline (Batch 03): read-only, collapsed, re-read from the store on EVERY expand. Metadata
-               only — the store holds no tool args, results or paths, so there is nothing here to reveal. Every
-               StaticResource and DynamicResource inside the row templates below is already used earlier in this
-               file, deliberately: an unresolved one throws at TEMPLATE INSTANTIATION, i.e. the first time a user
-               opens a section, which no test in the suite reaches. That is also why the empty state binds the
-               VM's own HasNoTimeline bool instead of introducing an inverse converter. -->
-          <ToggleButton Style="{StaticResource RunSectionHeaderStyle}"
-                        IsChecked="{Binding IsTimelineExpanded}">
+        <!-- ==================== Region C · the plan ==================== -->
+        <StackPanel Margin="14,9,14,12">
+          <!-- Fold row. A long plan windows to the running step ±1 so the card cannot push the transcript off
+               screen; clicking either fold unfolds the whole list in place. -->
+          <Button Style="{StaticResource RunFoldRowStyle}" Command="{Binding ExpandStepWindowCommand}"
+                  Visibility="{Binding EarlierFoldCount, Converter={StaticResource IntToVisibilityConverter}}">
             <StackPanel Orientation="Horizontal">
-              <TextBlock Text="{loc:Str Run_Timeline_Header}" VerticalAlignment="Center"
-                         FontSize="12" FontWeight="SemiBold"
+              <ui:SymbolIcon Symbol="MoreVertical24" FontSize="12" Width="16" Margin="0,0,9,0"
+                             VerticalAlignment="Center"
+                             Foreground="{DynamicResource TextSubtleBrush}" />
+              <TextBlock Text="{Binding EarlierFoldLabel}" VerticalAlignment="Center"
+                         FontSize="{StaticResource RunMetaSize}"
                          Foreground="{DynamicResource TextMutedBrush}" />
-              <TextBlock Text="{Binding TimelineCallsLabel}" Margin="8,0,0,0" VerticalAlignment="Center"
-                         FontSize="{StaticResource RunMicroSize}"
-                         Foreground="{DynamicResource TextMutedBrush}" />
-              <!-- The one count that must be legible without expanding: a call the run is parked on, or one that
-                   was refused. -->
-              <Border Margin="8,0,0,0" Padding="6,3" CornerRadius="4" VerticalAlignment="Center"
-                      Background="{Binding TimelineExceptionSeverity, Converter={StaticResource DecisionSeverityToBrushBg}}"
-                      Visibility="{Binding HasTimelineExceptionBadge, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <TextBlock Text="{Binding TimelineExceptionBadge}" FontSize="10.5" FontWeight="SemiBold"
-                           Foreground="{Binding TimelineExceptionSeverity, Converter={StaticResource DecisionSeverityToBrushFg}}" />
-              </Border>
             </StackPanel>
-          </ToggleButton>
+          </Button>
 
-          <StackPanel Margin="14,0,14,13"
-                      Visibility="{Binding IsTimelineExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <!-- Decision summary: one pill per category that actually occurred, exceptions first. This is what
-                 turns the section from a log dump into an audit — the shape of what happened, before the rows. -->
-            <ItemsControl ItemsSource="{Binding DecisionPills}" Margin="0,0,0,10">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <WrapPanel />
-                </ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <Border Margin="0,0,6,4" Padding="9,4" CornerRadius="12" BorderThickness="1"
-                          Background="{Binding Severity, Converter={StaticResource DecisionSeverityToBrushBg}}"
-                          BorderBrush="{Binding Severity, Converter={StaticResource DecisionSeverityToBrushBorder}}">
-                    <TextBlock Text="{Binding Text}" FontSize="{StaticResource RunMicroSize}"
-                               FontWeight="{Binding IsException, Converter={StaticResource BoolToFontWeightConverter}}"
-                               Foreground="{Binding Severity, Converter={StaticResource DecisionSeverityToBrushFg}}" />
-                  </Border>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-
-            <!-- The rule that caps the table. Bound to the row count so it does not hang under an empty or
-                 unreadable trace, where the note above it is the whole content. -->
-            <Border Height="1" Background="{DynamicResource BorderBrush_}"
-                    Visibility="{Binding Timeline.Count, Converter={StaticResource IntToVisibilityConverter}}" />
-            <ItemsControl ItemsSource="{Binding Timeline}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <!-- Four columns: time, step attribution, tool (+ a "failed" suffix), decision. The suffix is
-                       its own TextBlock and not a Run inside the tool name: on an audit surface an errored call
-                       must not render byte-identically to a successful one, and the two are separately coloured.
-                       Both StepLabel and OutcomeSuffix are null on the ordinary row and a null Text is a
-                       zero-width TextBlock, so neither needs a converter. -->
+          <ItemsControl x:Name="StepsList" ItemsSource="{Binding Steps}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <!-- The running row carries a 2px accent bar and a soft wash; a settled row dims only while the
+                     plan is editable, so the rows that cannot be changed recede without the list moving. -->
+                <Border Padding="7,0,0,0" Margin="-9,0,0,1" BorderThickness="2,0,0,0"
+                        Background="{Binding IsRunning, Converter={StaticResource BoolToRunningRowBrushConverter}}"
+                        Visibility="{Binding ShowInList, Converter={StaticResource BooleanToVisibilityConverter}}">
+                  <Border.Style>
+                    <Style TargetType="Border">
+                      <Setter Property="BorderBrush" Value="Transparent" />
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                          <Setter Property="BorderBrush" Value="{DynamicResource PiaAccentBrush}" />
+                        </DataTrigger>
+                        <MultiDataTrigger>
+                          <MultiDataTrigger.Conditions>
+                            <Condition Binding="{Binding IsMutable}" Value="False" />
+                            <Condition Binding="{Binding DataContext.CanMutatePlan, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                       Value="True" />
+                          </MultiDataTrigger.Conditions>
+                          <Setter Property="Opacity" Value="0.55" />
+                        </MultiDataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </Border.Style>
                   <StackPanel>
-                    <!-- The rule under the exception block, drawn by the first row below it. -->
-                    <Border Height="1" Margin="0,3,0,3" Background="{DynamicResource BorderBrush_}"
-                            Visibility="{Binding ShowGroupSeparator, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                    <Grid MinHeight="24">
+                    <!-- Read mode. Replaced in place by the editor below while this row is being edited. -->
+                    <Grid MinHeight="28"
+                          Visibility="{Binding IsEditing, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
                       <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="56" />
-                        <ColumnDefinition Width="74" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                       </Grid.ColumnDefinitions>
-                      <TextBlock Grid.Column="0" Text="{Binding TimeLabel}" VerticalAlignment="Center"
-                                 FontSize="{StaticResource RunMetaSize}"
-                                 FontFamily="{DynamicResource PiaMonoFont}"
-                                 Foreground="{DynamicResource TextSubtleBrush}" />
-                      <TextBlock Grid.Column="1" Text="{Binding StepLabel}" VerticalAlignment="Center"
-                                 FontSize="{StaticResource RunMetaSize}"
+
+                      <!-- Three mutually exclusive status marks in one 16px cell: a hollow ring for Pending, a
+                           pulsing dot for Running, a glyph for the three settled statuses. They differ in SIZE, so
+                           they are separate elements rather than one icon with a colour converter. -->
+                      <Grid Grid.Column="0" Width="16" Margin="0,0,9,0" VerticalAlignment="Center">
+                        <Ellipse Width="7" Height="7" StrokeThickness="1.5"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center"
+                                 Stroke="{DynamicResource TextGhostBrush}"
+                                 Visibility="{Binding IsPending, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <Ellipse Width="8" Height="8" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                 Style="{StaticResource RunPulseStyle}"
+                                 Fill="{DynamicResource PiaAccentBrush}"
+                                 Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <ui:SymbolIcon FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Symbol="{Binding Status, Converter={StaticResource StepStatusToGlyphConverter}}"
+                                       Foreground="{Binding Status, Converter={StaticResource StepStatusToBrushConverter}}"
+                                       Visibility="{Binding HasStatusGlyph, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                      </Grid>
+
+                      <chat:PiaPersonaAvatar Grid.Column="1" Width="20" Height="20" Margin="0,0,9,0"
+                                             VerticalAlignment="Center"
+                                             PersonaId="{Binding PersonaId}"
+                                             Emoji="{Binding PersonaEmoji}"
+                                             AccentColor="{Binding PersonaAccent}"
+                                             Visibility="{Binding HasPersona, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+                      <!-- The persona name rides in the SAME TextBlock as the title, after it, so it is the first
+                           thing the ellipsis eats — the step's own title has to survive a narrow card. The two Runs
+                           MUST stay adjacent with no whitespace between them: XAML would collapse an intervening
+                           newline into a real space, and an unattributed row's rendered text would then end in one. -->
+                      <TextBlock Grid.Column="2" VerticalAlignment="Center"
+                                 FontSize="{StaticResource RunBodySize}"
                                  TextTrimming="CharacterEllipsis"
-                                 Foreground="{DynamicResource TextMutedBrush}" />
-                      <TextBlock Grid.Column="2" Text="{Binding ToolName}" VerticalAlignment="Center"
-                                 FontSize="{StaticResource RunMetaSize}"
-                                 FontFamily="{DynamicResource PiaMonoFont}"
-                                 TextTrimming="CharacterEllipsis"
-                                 Foreground="{DynamicResource TextMutedBrush}" />
-                      <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="10,0,0,0"
+                                 FontWeight="{Binding Status, Converter={StaticResource StepStatusToTitleWeightConverter}}"
+                                 Foreground="{Binding Status, Converter={StaticResource StepStatusToTitleBrush}}"><Run Text="{Binding Title, Mode=OneWay}" /><Run Text="{Binding PersonaSuffix, Mode=OneWay}" Foreground="{DynamicResource TextSubtleBrush}" /></TextBlock>
+
+                      <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="9,0,0,0"
                                   VerticalAlignment="Center">
-                        <TextBlock Text="{Binding OutcomeSuffix}" Margin="0,0,8,0" VerticalAlignment="Center"
-                                   FontSize="{StaticResource RunMetaSize}"
-                                   Foreground="{DynamicResource PiaDangerBrush}" />
-                        <TextBlock Text="{Binding DecisionLabel}" VerticalAlignment="Center"
-                                   FontSize="{StaticResource RunMetaSize}"
-                                   FontWeight="{Binding IsException, Converter={StaticResource BoolToFontWeightConverter}}"
-                                   Foreground="{Binding Severity, Converter={StaticResource DecisionSeverityToBrushFg}}" />
-                      </StackPanel>
-                    </Grid>
-                  </StackPanel>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-
-            <!-- The trace's three sub-states, all mutually exclusive with the table above. The truncation note
-                 sits UNDER the rows and behind a dashed rule, because it is a statement about the table (it was
-                 cut short), not one of the decisions in it. -->
-            <StackPanel Margin="0,7,0,0"
-                        Visibility="{Binding IsTimelineTruncated, Converter={StaticResource BooleanToVisibilityConverter}}">
-              <Line X1="0" X2="1" Stretch="Fill" StrokeThickness="1" StrokeDashArray="3 3" Margin="0,0,0,7"
-                    Stroke="{DynamicResource BorderBrush_}" />
-              <TextBlock Style="{StaticResource RunTraceNoteStyle}" Text="{Binding TimelineNote}" />
-            </StackPanel>
-            <TextBlock Style="{StaticResource RunTraceNoteStyle}" Text="{loc:Str Run_Timeline_Empty}"
-                       Visibility="{Binding HasNoTimeline, Converter={StaticResource BooleanToVisibilityConverter}}" />
-            <!-- "Could not be read" is NOT the empty state: a read that faulted must never render as the
-                 positive claim that the run recorded no decisions. Warning palette, for the same reason. -->
-            <TextBlock Style="{StaticResource RunTraceNoteStyle}" Text="{loc:Str Run_Timeline_ReadFailed}"
-                       Foreground="{DynamicResource WarnBrush}"
-                       Visibility="{Binding HasTimelineReadError, Converter={StaticResource BooleanToVisibilityConverter}}" />
-          </StackPanel>
-
-          <!-- Sub-agents (Batch 07 D17): the delegated child runs, each expanding to ITS OWN trace. Two per-run
-               views side by side and never one interleaved list — Seq is monotonic only within a run id, each
-               child has its own 500-event cap, and CreatedAt is explicitly rejected as an ordering source, so a
-               merged timeline needs a new cross-run key and is its own work. Hidden on an ordinary run. -->
-          <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource BorderBrush_}"
-                  Visibility="{Binding HasChildren, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <StackPanel>
-              <ToggleButton Style="{StaticResource RunSectionHeaderStyle}"
-                            IsChecked="{Binding IsChildrenExpanded}">
-                <StackPanel Orientation="Horizontal">
-                  <TextBlock Text="{loc:Str Run_Children_Header}" VerticalAlignment="Center"
-                             FontSize="12" FontWeight="SemiBold"
-                             Foreground="{DynamicResource TextMutedBrush}" />
-                  <TextBlock Text="{Binding ChildrenNote}" Margin="8,0,0,0" VerticalAlignment="Center"
-                             FontSize="{StaticResource RunMicroSize}"
-                             Foreground="{DynamicResource TextMutedBrush}" />
-                </StackPanel>
-              </ToggleButton>
-
-              <ItemsControl ItemsSource="{Binding Children}" Margin="14,0,14,11"
-                            Visibility="{Binding IsChildrenExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <StackPanel>
-                      <ToggleButton Style="{StaticResource RunSectionHeaderStyle}" Padding="0,6"
-                                    IsChecked="{Binding IsExpanded}">
-                        <Grid>
-                          <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                          </Grid.ColumnDefinitions>
-                          <TextBlock Grid.Column="0" Margin="0,0,9,0" VerticalAlignment="Center"
-                                     FontSize="{StaticResource RunMicroSize}" FontWeight="SemiBold"
-                                     Text="{Binding State, Converter={StaticResource RunStateToLabelConverter}}"
-                                     Foreground="{Binding State, Converter={StaticResource RunStateToBrushConverter}}" />
-                          <TextBlock Grid.Column="1" Text="{Binding Title}" VerticalAlignment="Center"
-                                     FontSize="{StaticResource RunMetaSize}"
-                                     TextTrimming="CharacterEllipsis"
-                                     Foreground="{DynamicResource TextMutedBrush}" />
-                          <TextBlock Grid.Column="2" Margin="9,0,0,0" VerticalAlignment="Center"
+                        <!-- Read-mode trailing: the "now" marker, the step's token cost, or "skipped". Hidden while
+                             the plan is editable, where the five verbs take the slot instead. -->
+                        <StackPanel Orientation="Horizontal"
+                                    Visibility="{Binding DataContext.CanMutatePlan, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                          <Border MinWidth="34" Height="16" CornerRadius="8" Padding="6,0"
+                                  VerticalAlignment="Center"
+                                  Background="{DynamicResource BandAccentBrush}"
+                                  Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <TextBlock Text="{loc:Str Run_Step_Now}" FontSize="9.5" FontWeight="SemiBold"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource PiaAccentBrush}" />
+                          </Border>
+                          <TextBlock Text="{Binding TokensLabel}" VerticalAlignment="Center"
                                      FontSize="{StaticResource RunMicroSize}"
                                      FontFamily="{DynamicResource PiaMonoFont}"
                                      Foreground="{DynamicResource TextGhostBrush}"
-                                     Text="{Binding TokensLabel}"
                                      Visibility="{Binding HasTokens, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                        </Grid>
-                      </ToggleButton>
-                      <StackPanel Margin="16,0,0,4"
-                                  Visibility="{Binding IsExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <TextBlock Style="{StaticResource RunTraceNoteStyle}"
-                                   Text="{loc:Str Run_Children_Timeline_Empty}"
-                                   Visibility="{Binding HasNoTimeline, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                        <!-- "Could not be read" is NOT the empty state, for the reason the parent's own trace
-                             records: a read that faulted must never render as a positive claim about the run. -->
-                        <TextBlock Style="{StaticResource RunTraceNoteStyle}"
-                                   Text="{loc:Str Run_Timeline_ReadFailed}"
-                                   Foreground="{DynamicResource WarnBrush}"
-                                   Visibility="{Binding HasTimelineReadError, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                        <ItemsControl ItemsSource="{Binding Timeline}">
-                          <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                              <!-- The parent's trace row minus the step-attribution column: a child's events
-                                   carry the CHILD's step ids, which are not in the parent's projected plan, so
-                                   StepLabel is null on every one of them by construction. -->
-                              <StackPanel>
-                                <Border Height="1" Margin="0,3,0,3"
-                                        Background="{DynamicResource BorderBrush_}"
-                                        Visibility="{Binding ShowGroupSeparator, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                <Grid MinHeight="24">
-                                  <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="56" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                  </Grid.ColumnDefinitions>
-                                  <TextBlock Grid.Column="0" Text="{Binding TimeLabel}" VerticalAlignment="Center"
-                                             FontSize="{StaticResource RunMetaSize}"
-                                             FontFamily="{DynamicResource PiaMonoFont}"
-                                             Foreground="{DynamicResource TextSubtleBrush}" />
-                                  <TextBlock Grid.Column="1" Text="{Binding ToolName}" VerticalAlignment="Center"
-                                             FontSize="{StaticResource RunMetaSize}"
-                                             FontFamily="{DynamicResource PiaMonoFont}"
-                                             TextTrimming="CharacterEllipsis"
-                                             Foreground="{DynamicResource TextMutedBrush}" />
-                                  <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="10,0,0,0"
-                                              VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding OutcomeSuffix}" Margin="0,0,8,0"
-                                               VerticalAlignment="Center"
-                                               FontSize="{StaticResource RunMetaSize}"
-                                               Foreground="{DynamicResource PiaDangerBrush}" />
-                                    <TextBlock Text="{Binding DecisionLabel}" VerticalAlignment="Center"
-                                               FontSize="{StaticResource RunMetaSize}"
-                                               FontWeight="{Binding IsException, Converter={StaticResource BoolToFontWeightConverter}}"
-                                               Foreground="{Binding Severity, Converter={StaticResource DecisionSeverityToBrushFg}}" />
-                                  </StackPanel>
-                                </Grid>
-                              </StackPanel>
-                            </DataTemplate>
-                          </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                          <TextBlock Text="{loc:Str Run_Step_Skipped}" VerticalAlignment="Center"
+                                     FontSize="{StaticResource RunMicroSize}"
+                                     Foreground="{DynamicResource TextSubtleBrush}"
+                                     Visibility="{Binding IsSkipped, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        </StackPanel>
+
+                        <!-- Batch 08 D3: the five plan-mutation verbs, hidden entirely while the run is live
+                             (CanMutatePlan, read off the ItemsControl's own DataContext — the VM). A settled step
+                             keeps all five VISIBLE but individually disabled (IsMutable) rather than dropping them,
+                             so the row's shape does not shift as steps finish.
+
+                             Batch 08 F15, so the repaint is not read as a bug: a SKIPPED row sorts with the settled
+                             work, so the NEXT mutation moves it up above the still-pending rows. Cosmetic only — a
+                             skipped step never drains — and deliberately not fixed; see ApplyPlanMutationAsync's
+                             prefix comment for the four-sided change it would take. -->
+                        <StackPanel Orientation="Horizontal"
+                                    Visibility="{Binding DataContext.CanMutatePlan, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={StaticResource BooleanToVisibilityConverter}}">
+                          <Button Style="{StaticResource RunVerbButtonStyle}" Margin="0,0,2,0"
+                                  ToolTip="{loc:Str Run_Plan_Action_Edit}"
+                                  IsEnabled="{Binding IsMutable}"
+                                  Command="{Binding DataContext.EditStepCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                  CommandParameter="{Binding}">
+                            <ui:SymbolIcon Symbol="Edit24" FontSize="11" />
+                          </Button>
+                          <Button Style="{StaticResource RunVerbButtonStyle}" Margin="0,0,2,0"
+                                  ToolTip="{loc:Str Run_Plan_Action_Insert}"
+                                  IsEnabled="{Binding IsMutable}"
+                                  Command="{Binding DataContext.InsertStepBelowCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                  CommandParameter="{Binding}">
+                            <ui:SymbolIcon Symbol="Add24" FontSize="11" />
+                          </Button>
+                          <Button Style="{StaticResource RunVerbButtonStyle}" Margin="0,0,2,0"
+                                  ToolTip="{loc:Str Run_Plan_Action_MoveUp}"
+                                  IsEnabled="{Binding IsMutable}"
+                                  Command="{Binding DataContext.MoveStepUpCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                  CommandParameter="{Binding}">
+                            <ui:SymbolIcon Symbol="ChevronUp24" FontSize="10" />
+                          </Button>
+                          <Button Style="{StaticResource RunVerbButtonStyle}" Margin="0,0,2,0"
+                                  ToolTip="{loc:Str Run_Plan_Action_MoveDown}"
+                                  IsEnabled="{Binding IsMutable}"
+                                  Command="{Binding DataContext.MoveStepDownCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                  CommandParameter="{Binding}">
+                            <ui:SymbolIcon Symbol="ChevronDown24" FontSize="10" />
+                          </Button>
+                          <Button Style="{StaticResource RunVerbButtonStyle}"
+                                  ToolTip="{loc:Str Run_Plan_Action_Skip}"
+                                  IsEnabled="{Binding IsMutable}"
+                                  Command="{Binding DataContext.SkipStepCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                  CommandParameter="{Binding}">
+                            <ui:SymbolIcon Symbol="Prohibited24" FontSize="11" />
+                          </Button>
+                        </StackPanel>
                       </StackPanel>
+                    </Grid>
+
+                    <!-- Batch 08 D3: the inline editor — embedded, never a dialog (the panel lives inside a chat).
+                         Title/Intent only; every other column of the row (Ordinal, persona, ExtraJson) is carried
+                         forward verbatim by the service and untouched by an edit.
+                         The footer buttons sit DIRECTLY in the editor's grid rather than in a nested row panel, so
+                         the element two logical levels above Save is this Border — the one carrying the editor's
+                         whole visibility. A nested footer panel would put an unbound panel in that position. -->
+                    <Border Margin="0,2,0,3" Padding="9,8" CornerRadius="7" BorderThickness="1"
+                            Background="{DynamicResource SurfaceSunkBrush}"
+                            BorderBrush="{DynamicResource AccentBorderBrush}"
+                            Visibility="{Binding IsEditing, Converter={StaticResource BooleanToVisibilityConverter}}">
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                          <RowDefinition Height="Auto" />
+                          <RowDefinition Height="Auto" />
+                          <RowDefinition Height="Auto" />
+                          <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,6"
+                                   Text="{Binding EditorEyebrow}" FontSize="10.5" FontWeight="SemiBold"
+                                   TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource TextMutedBrush}" />
+                        <!-- Batch 08 F7: both boxes carried no label and no placeholder, so nothing told the user
+                             which one the model actually receives — and it is the SECOND one (both executors build
+                             the step turn from Intent alone; neither reads Title). -->
+                        <ui:TextBox Grid.Row="1" Grid.ColumnSpan="2" Margin="0,0,0,5"
+                                    Text="{Binding EditTitle, UpdateSourceTrigger=PropertyChanged}"
+                                    PlaceholderText="{loc:Str Run_Plan_Edit_Title}" PlaceholderEnabled="True"
+                                    FontSize="12" />
+                        <ui:TextBox Grid.Row="2" Grid.ColumnSpan="2" Margin="0,0,0,7" MinHeight="44"
+                                    Text="{Binding EditIntent, UpdateSourceTrigger=PropertyChanged}"
+                                    PlaceholderText="{loc:Str Run_Plan_Edit_Intent}" PlaceholderEnabled="True"
+                                    FontSize="{StaticResource RunMetaSize}" TextWrapping="Wrap" AcceptsReturn="True" />
+                        <ui:Button Grid.Row="3" Grid.Column="0" HorizontalAlignment="Right" Margin="0,0,6,0"
+                                   Content="{loc:Str Common_Cancel}" Appearance="Transparent"
+                                   Padding="10,5" FontSize="{StaticResource RunMetaSize}"
+                                   Command="{Binding DataContext.CancelStepEditCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                   CommandParameter="{Binding}" />
+                        <ui:Button Grid.Row="3" Grid.Column="1"
+                                   Content="{loc:Str Common_Save}" Appearance="Primary"
+                                   Padding="12,5" FontSize="{StaticResource RunMetaSize}" FontWeight="SemiBold"
+                                   Command="{Binding DataContext.SaveStepEditCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                   CommandParameter="{Binding}" />
+                      </Grid>
+                    </Border>
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <Button Style="{StaticResource RunFoldRowStyle}" Command="{Binding ExpandStepWindowCommand}"
+                  Visibility="{Binding LaterFoldCount, Converter={StaticResource IntToVisibilityConverter}}">
+            <StackPanel Orientation="Horizontal">
+              <ui:SymbolIcon Symbol="MoreVertical24" FontSize="12" Width="16" Margin="0,0,9,0"
+                             VerticalAlignment="Center"
+                             Foreground="{DynamicResource TextSubtleBrush}" />
+              <TextBlock Text="{Binding LaterFoldLabel}" VerticalAlignment="Center"
+                         FontSize="{StaticResource RunMetaSize}"
+                         Foreground="{DynamicResource TextMutedBrush}" />
+            </StackPanel>
+          </Button>
+
+          <!-- The plan's last row, below its own fold: a windowed run still shows the step it is working
+               toward. A second ItemsControl (not a ContentControl) so the row's ItemsControl-ancestor bindings
+               resolve; it rides the SAME template instance as the list above. -->
+          <ItemsControl ItemsSource="{Binding LastStepView}"
+                        ItemTemplate="{Binding ItemTemplate, ElementName=StepsList}"
+                        Visibility="{Binding HasLastStepRow, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+          <!-- Conditional note lines, all quiet on an ordinary run.
+               (1) the standing offer, while a settled run's files are still in its workspace;
+               (2) the result of a publish the user asked for;
+               (3) plan D5b — in worktree mode NOTHING is copied and the branch IS the deliverable, so the panel
+                   must say where the output is or the honest user question is "where is my file?". -->
+          <TextBlock Style="{StaticResource RunNoteLineStyle}" Margin="0,7,0,3"
+                     Text="{loc:Str Run_Publish_Pending}"
+                     Visibility="{Binding ShowPublishButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
+          <TextBlock Style="{StaticResource RunNoteLineStyle}" Text="{Binding PublishNote}"
+                     Visibility="{Binding PublishNote, Converter={StaticResource NullToVisibilityConverter}}" />
+          <TextBlock Style="{StaticResource RunNoteLineStyle}" Text="{Binding OutputBranchNote}"
+                     Visibility="{Binding HasOutputBranch, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+          <!-- Batch 08 D3: "the UI can require a pause first" — stated as a note, never a silently-frozen plan.
+               Batch 08 F12: gated on ShowPauseFirstNote (== CanPause), NOT on CanMutatePlan inverted. The inverse
+               form rendered in EVERY state except Paused: a run parked at its budget showed "Pause the run to
+               change its plan." with no Pause button to press, and a Completed/Failed run kept nagging forever.
+               An instruction is only honest while the button it names is on screen. -->
+          <TextBlock Style="{StaticResource RunNoteLineStyle}" Text="{loc:Str Run_Plan_Note_PauseFirst}"
+                     Visibility="{Binding ShowPauseFirstNote, Converter={StaticResource BooleanToVisibilityConverter}}" />
+          <!-- The last plan mutation's REJECTION, cleared by the VM on the next successful mutation. Warning
+               palette: it is something the user asked for that did not happen. -->
+          <TextBlock Style="{StaticResource RunWarnLineStyle}" Text="{Binding PlanMutationNote}"
+                     Visibility="{Binding PlanMutationNote, Converter={StaticResource NullToVisibilityConverter}}" />
+          <!-- Batch 08 F6: a pause the service REFUSED. Separate from PlanMutationNote because that one is wiped by
+               every projection that is not Paused, which is every projection a refused pause can be followed by. -->
+          <TextBlock Style="{StaticResource RunWarnLineStyle}" Text="{Binding PauseNote}"
+                     Visibility="{Binding PauseNote, Converter={StaticResource NullToVisibilityConverter}}" />
+        </StackPanel>
+
+        <!-- ==================== Regions E + F · the audit sections ==================== -->
+        <!-- One container for both so the card's bottom corners are rounded by whichever section is last, without
+             either of them having to know whether the other is on screen. -->
+        <Border Background="{DynamicResource SurfaceSunkBrush}" BorderThickness="0,1,0,0"
+                CornerRadius="0,0,12,12"
+                BorderBrush="{DynamicResource BorderBrush_}">
+          <StackPanel>
+            <!-- Audit timeline (Batch 03): read-only, collapsed, re-read from the store on EVERY expand. Metadata
+                 only — the store holds no tool args, results or paths, so there is nothing here to reveal. Every
+                 StaticResource and DynamicResource inside the row templates below is already used earlier in this
+                 file, deliberately: an unresolved one throws at TEMPLATE INSTANTIATION, i.e. the first time a user
+                 opens a section, which no test in the suite reaches. That is also why the empty state binds the
+                 VM's own HasNoTimeline bool instead of introducing an inverse converter. -->
+            <ToggleButton Style="{StaticResource RunSectionHeaderStyle}"
+                          IsChecked="{Binding IsTimelineExpanded}">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="{loc:Str Run_Timeline_Header}" VerticalAlignment="Center"
+                           FontSize="12" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextMutedBrush}" />
+                <!-- The decision summary rides in the header so it is legible collapsed; the bare "N call(s)"
+                     count it replaces told the reader less than the categories themselves. -->
+                <ItemsControl Grid.Column="1" ItemsSource="{Binding DecisionPills}" Margin="8,0,0,0"
+                              VerticalAlignment="Center">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <WrapPanel />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Border Margin="0,1,6,1" Padding="9,3" CornerRadius="12" BorderThickness="1"
+                              Background="{Binding Severity, Converter={StaticResource DecisionSeverityToBrushBg}}"
+                              BorderBrush="{Binding Severity, Converter={StaticResource DecisionSeverityToBrushBorder}}">
+                        <TextBlock Text="{Binding Text}" FontSize="{StaticResource RunMicroSize}"
+                                   FontWeight="{Binding IsException, Converter={StaticResource BoolToFontWeightConverter}}"
+                                   Foreground="{Binding Severity, Converter={StaticResource DecisionSeverityToBrushFg}}" />
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <!-- The one count that must be legible without expanding: a call the run is parked on, or one that
+                     was refused. -->
+                <Border Grid.Column="2" Margin="8,0,0,0" Padding="6,3" CornerRadius="4" VerticalAlignment="Center"
+                        Background="{Binding TimelineExceptionSeverity, Converter={StaticResource DecisionSeverityToBrushBg}}"
+                        Visibility="{Binding HasTimelineExceptionBadge, Converter={StaticResource BooleanToVisibilityConverter}}">
+                  <TextBlock Text="{Binding TimelineExceptionBadge}" FontSize="10.5" FontWeight="SemiBold"
+                             Foreground="{Binding TimelineExceptionSeverity, Converter={StaticResource DecisionSeverityToBrushFg}}" />
+                </Border>
+              </Grid>
+            </ToggleButton>
+
+            <StackPanel Margin="14,0,14,13"
+                        Visibility="{Binding IsTimelineExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
+              <!-- The rule that caps the table. Bound to the row count so it does not hang under an empty or
+                   unreadable trace, where the note above it is the whole content. -->
+              <Border Height="1" Background="{DynamicResource BorderBrush_}"
+                      Visibility="{Binding Timeline.Count, Converter={StaticResource IntToVisibilityConverter}}" />
+              <ItemsControl ItemsSource="{Binding Timeline}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <!-- Four columns: time, step attribution, tool (+ a "failed" suffix), decision. The suffix is
+                         its own TextBlock and not a Run inside the tool name: on an audit surface an errored call
+                         must not render byte-identically to a successful one, and the two are separately coloured.
+                         Both StepLabel and OutcomeSuffix are null on the ordinary row and a null Text is a
+                         zero-width TextBlock, so neither needs a converter. -->
+                    <StackPanel>
+                      <!-- The rule under the exception block, drawn by the first row below it. -->
+                      <Border Height="1" Margin="0,3,0,3" Background="{DynamicResource BorderBrush_}"
+                              Visibility="{Binding ShowGroupSeparator, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                      <Grid MinHeight="24">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="56" />
+                          <ColumnDefinition Width="74" />
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{Binding TimeLabel}" VerticalAlignment="Center"
+                                   FontSize="{StaticResource RunMetaSize}"
+                                   FontFamily="{DynamicResource PiaMonoFont}"
+                                   Foreground="{DynamicResource TextSubtleBrush}" />
+                        <TextBlock Grid.Column="1" Text="{Binding StepLabel}" VerticalAlignment="Center"
+                                   FontSize="{StaticResource RunMetaSize}"
+                                   TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource TextMutedBrush}" />
+                        <TextBlock Grid.Column="2" Text="{Binding ToolName}" VerticalAlignment="Center"
+                                   FontSize="{StaticResource RunMetaSize}"
+                                   FontFamily="{DynamicResource PiaMonoFont}"
+                                   TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource TextMutedBrush}" />
+                        <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="10,0,0,0"
+                                    VerticalAlignment="Center">
+                          <TextBlock Text="{Binding OutcomeSuffix}" Margin="0,0,8,0" VerticalAlignment="Center"
+                                     FontSize="{StaticResource RunMetaSize}"
+                                     Foreground="{DynamicResource PiaDangerBrush}" />
+                          <TextBlock Text="{Binding DecisionLabel}" VerticalAlignment="Center"
+                                     FontSize="{StaticResource RunMetaSize}"
+                                     FontWeight="{Binding IsException, Converter={StaticResource BoolToFontWeightConverter}}"
+                                     Foreground="{Binding Severity, Converter={StaticResource DecisionSeverityToBrushFg}}" />
+                        </StackPanel>
+                      </Grid>
                     </StackPanel>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
+
+              <!-- The trace's three sub-states, all mutually exclusive with the table above. The truncation note
+                   sits UNDER the rows and behind a dashed rule, because it is a statement about the table (it was
+                   cut short), not one of the decisions in it. -->
+              <StackPanel Margin="0,7,0,0"
+                          Visibility="{Binding IsTimelineTruncated, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <Line X1="0" X2="1" Stretch="Fill" StrokeThickness="1" StrokeDashArray="3 3" Margin="0,0,0,7"
+                      Stroke="{DynamicResource BorderBrush_}" />
+                <TextBlock Style="{StaticResource RunTraceNoteStyle}" Text="{Binding TimelineNote}" />
+              </StackPanel>
+              <TextBlock Style="{StaticResource RunTraceNoteStyle}" Text="{loc:Str Run_Timeline_Empty}"
+                         Visibility="{Binding HasNoTimeline, Converter={StaticResource BooleanToVisibilityConverter}}" />
+              <!-- "Could not be read" is NOT the empty state: a read that faulted must never render as the
+                   positive claim that the run recorded no decisions. Warning palette, for the same reason. -->
+              <TextBlock Style="{StaticResource RunTraceNoteStyle}" Text="{loc:Str Run_Timeline_ReadFailed}"
+                         Foreground="{DynamicResource WarnBrush}"
+                         Visibility="{Binding HasTimelineReadError, Converter={StaticResource BooleanToVisibilityConverter}}" />
             </StackPanel>
-          </Border>
-        </StackPanel>
-      </Border>
+
+            <!-- Sub-agents (Batch 07 D17): the delegated child runs, each expanding to ITS OWN trace. Two per-run
+                 views side by side and never one interleaved list — Seq is monotonic only within a run id, each
+                 child has its own 500-event cap, and CreatedAt is explicitly rejected as an ordering source, so a
+                 merged timeline needs a new cross-run key and is its own work. Hidden on an ordinary run. -->
+            <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource BorderBrush_}"
+                    Visibility="{Binding HasChildren, Converter={StaticResource BooleanToVisibilityConverter}}">
+              <StackPanel>
+                <ToggleButton Style="{StaticResource RunSectionHeaderStyle}"
+                              IsChecked="{Binding IsChildrenExpanded}">
+                  <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{loc:Str Run_Children_Header}" VerticalAlignment="Center"
+                               FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextMutedBrush}" />
+                    <TextBlock Text="{Binding ChildrenNote}" Margin="8,0,0,0" VerticalAlignment="Center"
+                               FontSize="{StaticResource RunMicroSize}"
+                               Foreground="{DynamicResource TextMutedBrush}" />
+                  </StackPanel>
+                </ToggleButton>
+
+                <ItemsControl ItemsSource="{Binding Children}" Margin="14,0,14,11"
+                              Visibility="{Binding IsChildrenExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <StackPanel>
+                        <ToggleButton Style="{StaticResource RunSectionHeaderStyle}" Padding="0,6"
+                                      IsChecked="{Binding IsExpanded}">
+                          <Grid>
+                            <Grid.ColumnDefinitions>
+                              <ColumnDefinition Width="Auto" />
+                              <ColumnDefinition Width="*" />
+                              <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Margin="0,0,9,0" VerticalAlignment="Center"
+                                       FontSize="{StaticResource RunMicroSize}" FontWeight="SemiBold"
+                                       Text="{Binding State, Converter={StaticResource RunStateToLabelConverter}}"
+                                       Foreground="{Binding State, Converter={StaticResource RunStateToBrushConverter}}" />
+                            <TextBlock Grid.Column="1" Text="{Binding Title}" VerticalAlignment="Center"
+                                       FontSize="{StaticResource RunMetaSize}"
+                                       TextTrimming="CharacterEllipsis"
+                                       Foreground="{DynamicResource TextMutedBrush}" />
+                            <TextBlock Grid.Column="2" Margin="9,0,0,0" VerticalAlignment="Center"
+                                       FontSize="{StaticResource RunMicroSize}"
+                                       FontFamily="{DynamicResource PiaMonoFont}"
+                                       Foreground="{DynamicResource TextGhostBrush}"
+                                       Text="{Binding TokensLabel}"
+                                       Visibility="{Binding HasTokens, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                          </Grid>
+                        </ToggleButton>
+                        <StackPanel Margin="16,0,0,4"
+                                    Visibility="{Binding IsExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
+                          <TextBlock Style="{StaticResource RunTraceNoteStyle}"
+                                     Text="{loc:Str Run_Children_Timeline_Empty}"
+                                     Visibility="{Binding HasNoTimeline, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                          <!-- "Could not be read" is NOT the empty state, for the reason the parent's own trace
+                               records: a read that faulted must never render as a positive claim about the run. -->
+                          <TextBlock Style="{StaticResource RunTraceNoteStyle}"
+                                     Text="{loc:Str Run_Timeline_ReadFailed}"
+                                     Foreground="{DynamicResource WarnBrush}"
+                                     Visibility="{Binding HasTimelineReadError, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                          <ItemsControl ItemsSource="{Binding Timeline}">
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate>
+                                <!-- The parent's trace row minus the step-attribution column: a child's events
+                                     carry the CHILD's step ids, which are not in the parent's projected plan, so
+                                     StepLabel is null on every one of them by construction. -->
+                                <StackPanel>
+                                  <Border Height="1" Margin="0,3,0,3"
+                                          Background="{DynamicResource BorderBrush_}"
+                                          Visibility="{Binding ShowGroupSeparator, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                  <Grid MinHeight="24">
+                                    <Grid.ColumnDefinitions>
+                                      <ColumnDefinition Width="56" />
+                                      <ColumnDefinition Width="*" />
+                                      <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding TimeLabel}" VerticalAlignment="Center"
+                                               FontSize="{StaticResource RunMetaSize}"
+                                               FontFamily="{DynamicResource PiaMonoFont}"
+                                               Foreground="{DynamicResource TextSubtleBrush}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding ToolName}" VerticalAlignment="Center"
+                                               FontSize="{StaticResource RunMetaSize}"
+                                               FontFamily="{DynamicResource PiaMonoFont}"
+                                               TextTrimming="CharacterEllipsis"
+                                               Foreground="{DynamicResource TextMutedBrush}" />
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="10,0,0,0"
+                                                VerticalAlignment="Center">
+                                      <TextBlock Text="{Binding OutcomeSuffix}" Margin="0,0,8,0"
+                                                 VerticalAlignment="Center"
+                                                 FontSize="{StaticResource RunMetaSize}"
+                                                 Foreground="{DynamicResource PiaDangerBrush}" />
+                                      <TextBlock Text="{Binding DecisionLabel}" VerticalAlignment="Center"
+                                                 FontSize="{StaticResource RunMetaSize}"
+                                                 FontWeight="{Binding IsException, Converter={StaticResource BoolToFontWeightConverter}}"
+                                                 Foreground="{Binding Severity, Converter={StaticResource DecisionSeverityToBrushFg}}" />
+                                    </StackPanel>
+                                  </Grid>
+                                </StackPanel>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                        </StackPanel>
+                      </StackPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </Border>
+
+      </StackPanel>
     </StackPanel>
   </Border>
 </UserControl>

@@ -31,7 +31,7 @@ public class AssistantViewModelLeverTests
     private readonly IPersonaService _personas = Substitute.For<IPersonaService>();
     private readonly IWorkingDirectoryService _workingDir = Substitute.For<IWorkingDirectoryService>();
 
-    private AssistantViewModel CreateSut()
+    private AssistantViewModel CreateSut(IAgentRunService? runs = null)
     {
         // ChatTitleChipViewModel (built in the ctor) requires a captured SynchronizationContext.
         if (System.Threading.SynchronizationContext.Current is null)
@@ -81,7 +81,7 @@ public class AssistantViewModelLeverTests
             directTranscription,
             Substitute.For<IAssistantPromptComposer>(),
             _capability,
-            Substitute.For<IAgentRunService>(),
+            runs ?? Substitute.For<IAgentRunService>(),
             Substitute.For<IAgentRunResumeService>(),
             _manager,
             _workingDir,
@@ -94,6 +94,13 @@ public class AssistantViewModelLeverTests
 
     private static Persona PersonaWith(PersonaToolScope scope) =>
         new() { Name = "Tester", SystemPrompt = "be helpful", ToolScope = scope };
+
+    /// <summary>Runs Post callbacks inline so the panel VM's projections land synchronously in these facts.</summary>
+    private sealed class InlineSyncContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback d, object? state) => d(state);
+        public override void Send(SendOrPostCallback d, object? state) => d(state);
+    }
 
     // ---- Default + toggle -> planned wiring -------------------------------------------------------
 
@@ -231,6 +238,50 @@ public class AssistantViewModelLeverTests
         await vm.EvaluateProviderWarningAsync();
 
         Assert.False(vm.WeakProviderWarningVisible);
+    }
+
+    // ---- Lever falls back to Chat when the active run settles ------------------------------------
+
+    [Fact]
+    public void ARunSettling_FlipsTheLeverBackToChat()
+    {
+        // A follow-up typed after a finished run must land in the conversation, not mint a fresh run that
+        // replaces the settled header — so the live-to-terminal transition resets the lever. The inline
+        // context makes the panel VM's projections synchronous, so the transition is observable by the assert.
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var runId = Guid.NewGuid();
+        var run = new AgentRun { Id = runId, State = AgentRunState.Running, Plan = [] };
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(run);
+
+        var vm = CreateSut(runs);
+        vm.SyncRunProgress(runId);
+        vm.AgentModeEnabled = true;
+
+        run.State = AgentRunState.Completed;
+        runs.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Completed, null));
+
+        Assert.False(vm.AgentModeEnabled);
+    }
+
+    [Fact]
+    public void AttachingToAnAlreadySettledRun_KeepsTheLever()
+    {
+        // The fallback is a TRANSITION, not a state: opening a chat whose run finished long ago (history)
+        // must not touch the lever the user set.
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var runId = Guid.NewGuid();
+        var run = new AgentRun { Id = runId, State = AgentRunState.Completed, Plan = [] };
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(run);
+
+        var vm = CreateSut(runs);
+        vm.SyncRunProgress(runId);
+        vm.AgentModeEnabled = true;
+
+        runs.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Completed, null));
+
+        Assert.True(vm.AgentModeEnabled);
     }
 
     // ---- W2c: Send is blocked while a FOREIGN (headless) run is executing in this chat ----

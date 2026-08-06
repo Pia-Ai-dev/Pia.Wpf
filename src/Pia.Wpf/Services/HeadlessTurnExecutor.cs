@@ -494,7 +494,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
                     deniedWrites: _deniedWrites)
                 .ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        // The token guard keeps a transport cancellation (an HTTP timeout escaped conversion) off this
+        // arm: only a fired run token counts as a host/user cancel.
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             return new StepTurnResult(false, true, "cancelled", string.Empty, null, Guid.Empty, Guid.Empty);
         }

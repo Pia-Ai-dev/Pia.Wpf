@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Pia.Models;
@@ -129,7 +129,72 @@ public sealed class RunProgressViewModelTimelineTests
             third => Assert.Equal("Run_Timeline_Pill_AutoApproved", third.Text));
         Assert.Equal("Run_Timeline_Pill_AwaitingApproval", vm.TimelineExceptionBadge);
         Assert.Equal(RunDecisionSeverity.Awaiting, vm.TimelineExceptionSeverity);
-        Assert.Equal("Run_Timeline_Calls", vm.TimelineCallsLabel);
+    }
+
+    /// <summary>
+    /// The live half of the tool-activity section: an event the watcher observed on THIS run triggers a trace
+    /// reload, so the header pills and the expanded table keep up with the calls the chat shows. The control
+    /// <see cref="TimelineIsNotLoadedByRunChanged"/> still holds — the reload is driven by the timeline's own
+    /// append stream, not by run projections.
+    /// </summary>
+    [Fact]
+    public async Task ATimelineEventOnALiveRun_TriggersAReload()
+    {
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = _runId,
+            State = AgentRunState.Running,
+            Plan = [],
+        });
+        var watcher = new RunTimelineWatcher();
+        var vm = CreateVm(watcher);
+        await vm.RefreshAsync();
+        await vm.TimelineLoadTask!; // the live run's priming read
+        await _timeline.Received(1).GetForRunAsync(_runId, Arg.Any<CancellationToken>());
+
+        watcher.OnTimelineEvent(Row(1, AgentTimelineEventKind.ToolCall, ToolGateDecision.ApprovedOnce));
+        await vm.TimelineLoadTask!;
+
+        await _timeline.Received(2).GetForRunAsync(_runId, Arg.Any<CancellationToken>());
+        vm.Dispose();
+    }
+
+    /// <summary>Control: events for ANOTHER run (the watcher is a process-wide singleton) must not read this
+    /// run's trace, and a settled run's frozen trace stops reloading altogether.</summary>
+    [Fact]
+    public async Task ForeignAndSettledRuns_DoNotReloadTheTrace()
+    {
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = _runId,
+            State = AgentRunState.Running,
+            Plan = [],
+        });
+        var watcher = new RunTimelineWatcher();
+        var vm = CreateVm(watcher);
+        await vm.RefreshAsync();
+        await vm.TimelineLoadTask!;
+
+        watcher.OnTimelineEvent(Row(1, AgentTimelineEventKind.ToolCall, ToolGateDecision.ApprovedOnce)
+            with { RunId = Guid.NewGuid() });
+        await Task.Yield();
+        await _timeline.Received(1).GetForRunAsync(_runId, Arg.Any<CancellationToken>());
+
+        // Settle the run: the terminal projection latches the trace (one last read), and later events read
+        // nothing because a settled trace cannot change again.
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = _runId,
+            State = AgentRunState.Completed,
+            Plan = [],
+        });
+        await vm.RefreshAsync();
+        await _timeline.Received(2).GetForRunAsync(_runId, Arg.Any<CancellationToken>());
+
+        watcher.OnTimelineEvent(Row(2, AgentTimelineEventKind.ToolCall, ToolGateDecision.ApprovedOnce));
+        await Task.Yield();
+        await _timeline.Received(2).GetForRunAsync(_runId, Arg.Any<CancellationToken>());
+        vm.Dispose();
     }
 
     /// <summary>
@@ -255,7 +320,9 @@ public sealed class RunProgressViewModelTimelineTests
         });
 
         var vm = CreateVm();
-        await vm.LoadTimelineAsync();
+        // The live run's priming read runs through the coalescing gate; await IT rather than loading a second
+        // time, which would race the prime's apply under the inline sync context.
+        await vm.TimelineLoadTask!;
 
         // Located by the label, not by index, for the reason AFailedOutcomeCarriesTheLocalizedSuffix records: the
         // table is no longer chronological, and this fact is about the attribution, not the row's position.
@@ -380,10 +447,11 @@ public sealed class RunProgressViewModelTimelineTests
         Assert.Empty(vm.Timeline);
     }
 
-    private RunProgressViewModel CreateVm()
+    private RunProgressViewModel CreateVm(ITimelineWatcher? watcher = null)
     {
         SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
-        return new RunProgressViewModel(_runs, _runId, _loc, _resume, NullLogger.Instance, _timeline);
+        return new RunProgressViewModel(_runs, _runId, _loc, _resume, NullLogger.Instance, _timeline,
+            timelineWatcher: watcher);
     }
 
     private AgentTimelineEvent Row(

@@ -495,12 +495,12 @@ public static class Bootstrapper
         // dedicated SQLite connection and a per-run Seq allocator, and a second instance would allocate
         // colliding sequence numbers for the same run.
         services.AddSingleton<IAgentTimelineService, AgentTimelineService>();
-        // NO IRunObserver registration, and that is the intended state (T2-G1). The service takes
-        // IEnumerable<IRunObserver>; MS.DI resolves it to an empty sequence with zero registrations, which IS
-        // the empty default set — a placeholder no-op observer would only buy the notification path work to do.
-        // A future consumer (OTel exporter, file trace, diagnostics pane) adds itself ADDITIVELY with
-        // services.AddSingleton<IRunObserver, X>() right here; never TryAdd, which would let the first
-        // registration silently exclude the second.
+        // The run panel live-updates its tool-activity section through this broker (T2-G1's first consumer).
+        // Further observers (OTel exporter, file trace) still register ADDITIVELY right here; never TryAdd,
+        // which would let the first registration silently exclude the second.
+        services.AddSingleton<RunTimelineWatcher>();
+        services.AddSingleton<ITimelineWatcher>(sp => sp.GetRequiredService<RunTimelineWatcher>());
+        services.AddSingleton<IRunObserver>(sp => sp.GetRequiredService<RunTimelineWatcher>());
         // Assistant turn collaborators (extracted from AssistantViewModel).
         services.AddTransient<IAssistantPromptComposer, AssistantPromptComposer>();
         services.AddTransient<IChatTitleService, ChatTitleService>();

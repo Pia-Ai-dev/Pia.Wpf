@@ -1397,4 +1397,71 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Equal("system for Pia", captured[0].Messages[0].Text);
         Assert.Equal(h.Provider.Id, captured[0].Provider.Id);
     }
+
+    // ---- Cancel classification: only a fired run token counts as a cancel ----
+
+    private static async IAsyncEnumerable<ChatStreamItem> ThrowStream(Exception ex)
+    {
+        await Task.Yield();
+        throw ex;
+#pragma warning disable CS0162
+        yield break;
+#pragma warning restore CS0162
+    }
+
+    private static void StubThrowing(DurabilityHarness h, Func<IAsyncEnumerable<ChatStreamItem>> stream)
+    {
+        h.Ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
+            .Returns(_ => stream());
+    }
+
+    [Fact]
+    public async Task TransportOce_TokenNotCancelled_SettlesFailedNotCancelled()
+    {
+        // The incident shape: a TaskCanceledException out of the transport (an HTTP-layer timeout) while
+        // the run token is still live. The step must FAIL — the run settles Failed after the replan
+        // degrades to Fallback — instead of reading as a user cancel and settling Cancelled.
+        using var h = new DurabilityHarness();
+        StubThrowing(h, () => ThrowStream(new TaskCanceledException("The operation was canceled.")));
+        var run = await h.NewRunAsync("the goal");
+
+        await h.Orchestrator(new FakePlanner(Steps(1)))
+            .RunAsync(run, h.NewExecutor(), h.Persona, h.Provider, RunProfile.Interactive,
+                TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.NotNull(final);
+        Assert.Equal(AgentRunState.Failed, final!.State);
+    }
+
+    [Fact]
+    public async Task UserCancelMidStep_SettlesCancelled()
+    {
+        // The other half of the distinction: when the run token actually fires mid-exchange (a user stop),
+        // the OCE stays a cancel and the run settles Cancelled exactly as before.
+        using var h = new DurabilityHarness();
+        using var userCts = new CancellationTokenSource();
+        StubThrowing(h, () => CancelThenThrow(userCts));
+        var run = await h.NewRunAsync("the goal");
+
+        await h.Orchestrator(new FakePlanner(Steps(1)))
+            .RunAsync(run, h.NewExecutor(), h.Persona, h.Provider, RunProfile.Interactive, userCts.Token);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.NotNull(final);
+        Assert.Equal(AgentRunState.Cancelled, final!.State);
+    }
+
+    private static async IAsyncEnumerable<ChatStreamItem> CancelThenThrow(CancellationTokenSource cts)
+    {
+        await Task.Yield();
+        cts.Cancel();
+        throw new OperationCanceledException("cancelled");
+#pragma warning disable CS0162
+        yield break;
+#pragma warning restore CS0162
+    }
 }

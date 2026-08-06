@@ -302,8 +302,8 @@ public class RunProgressPanelParseTests
         // both applied, rather than merely that some button exists somewhere.
         Assert.Equal(60, verbButtons);
 
-        // Two section headers (tool activity, sub-agents) plus one per child row.
-        Assert.Equal(3, sectionHeaders);
+        // Two section headers (tool activity, sub-agents), one per child row, and the band's collapse chevron.
+        Assert.Equal(4, sectionHeaders);
     }
 
     /// <summary>Visual, not logical: a <c>ControlTemplate</c>'s content only exists in the visual tree, which is

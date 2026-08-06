@@ -32,6 +32,8 @@ public sealed class AzureOpenAiProviderHandler : IAiProviderHandler
                 new AzureOpenAIClientOptions
                 {
                     Transport = new HttpClientPipelineTransport(httpClient),
+                    // The per-call timeoutCts owns the bound; the SDK's 100s network default would fire first.
+                    NetworkTimeout = Timeout.InfiniteTimeSpan,
                 })
             .GetChatClient(deployment)
             .AsIChatClient();

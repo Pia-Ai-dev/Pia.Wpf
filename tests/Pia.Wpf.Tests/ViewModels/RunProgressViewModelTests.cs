@@ -35,6 +35,8 @@ public sealed class RunProgressViewModelTests : IDisposable
         _runs = new AgentRunService(_ctx, NullLogger<AgentRunService>.Instance);
         _chats = new AssistantChatService(_ctx, _runs);
         _loc[Arg.Any<string>()].Returns(ci => (string)ci[0]); // echo the key so activity text is assertable
+        _loc.Format(Arg.Any<string>(), Arg.Any<object[]>())
+            .Returns(ci => $"{(string)ci[0]}|{string.Join(",", (object[])ci[1])}");
     }
 
     /// <summary>Runs Post callbacks inline so the projection is observable synchronously in tests.</summary>
@@ -137,7 +139,7 @@ public sealed class RunProgressViewModelTests : IDisposable
 
         Assert.Equal(10, vm.TotalInputTokens);
         Assert.Equal(4, vm.TotalOutputTokens);
-        Assert.Contains("14 Tokens", vm.LedgerSummary);
+        Assert.Contains("Run_Sub_Tokens|14", vm.LedgerSummary);
 
         vm.Dispose();
     }
@@ -437,7 +439,7 @@ public sealed class RunProgressViewModelTests : IDisposable
 
         await vm.RefreshAsync();
 
-        Assert.Equal("14 Tokens · 5s", vm.LedgerSummary);
+        Assert.Equal("Run_Sub_Tokens|14 · 5s", vm.LedgerSummary);
         Assert.DoesNotContain('$', vm.LedgerSummary);
         vm.Dispose();
     }
@@ -460,7 +462,7 @@ public sealed class RunProgressViewModelTests : IDisposable
         Assert.Equal(10, vm.TotalInputTokens);
         Assert.Equal(4, vm.TotalOutputTokens);
         Assert.Equal(5_000, vm.WallClockMs); // exact: GetAsync is a pure read, so no clock upgrade runs
-        Assert.Equal("14 Tokens · 5s", vm.LedgerSummary);
+        Assert.Equal("Run_Sub_Tokens|14 · 5s", vm.LedgerSummary);
         vm.Dispose();
     }
 

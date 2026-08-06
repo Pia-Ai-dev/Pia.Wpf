@@ -1,4 +1,4 @@
-﻿using System.Collections.Immutable;
+using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -72,6 +72,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private readonly IPersonaService? _personaService;
     private readonly IAgentRunSteeringService? _steering;
     private readonly IThemeService? _themeService;
+    private readonly ITimelineWatcher? _timelineWatcher;
     private readonly ILogger _logger;
     private bool _disposed;
 
@@ -112,6 +113,20 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     [NotifyCanExecuteChangedFor(nameof(MoveStepDownCommand))]
     [NotifyCanExecuteChangedFor(nameof(SkipStepCommand))]
     private RunProgressState _state;
+
+    /// <summary>Raised on the live-to-terminal State change only — a VM constructed over an already-settled
+    /// run never raises it, so the host composer's lever fallback cannot fire for history.</summary>
+    public event Action? RunSettled;
+
+    private bool _wasLive;
+
+    partial void OnStateChanged(RunProgressState value)
+    {
+        var terminal = value is RunProgressState.Completed or RunProgressState.TruncatedCompleted
+            or RunProgressState.Failed;
+        if (terminal && _wasLive) RunSettled?.Invoke();
+        _wasLive = !terminal;
+    }
 
     /// <summary>True while a resume is being launched — gates the Continue button against a double-click
     /// (the CAS in the resume service is the hard guard; this is the UI-visible affordance).</summary>
@@ -331,6 +346,21 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string? _laterFoldLabel;
 
+    /// <summary>The plan's last row, rendered BELOW its own fold while the window hides the tail — a run's
+    /// goal must not be one of the steps the fold swallows. Null whenever the list is not windowed (short
+    /// plan, paused, unfolded), then the list renders the row itself.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasLastStepRow))]
+    [NotifyPropertyChangedFor(nameof(LastStepView))]
+    private StepRowViewModel? _lastStepRow;
+
+    public bool HasLastStepRow => LastStepRow is not null;
+
+    /// <summary>One-element view over <see cref="LastStepRow"/>: the row below its fold rides its OWN
+    /// ItemsControl (sharing the list's template instance) so the row's ItemsControl-ancestor bindings keep
+    /// resolving — a ContentControl would break them.</summary>
+    public IEnumerable<StepRowViewModel> LastStepView => LastStepRow is null ? [] : [LastStepRow];
+
     [ObservableProperty]
     private long _totalInputTokens;
 
@@ -348,6 +378,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// keeps ~500 emits per run off the projection path.
     /// </summary>
     public ObservableCollection<TimelineRowViewModel> Timeline { get; } = [];
+
+    /// <summary>The band's chevron: folds everything below the signal band. Default open.</summary>
+    [ObservableProperty]
+    private bool _isCardExpanded = true;
 
     [ObservableProperty]
     private bool _isTimelineExpanded;
@@ -381,10 +415,6 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// dump into an audit. Rebuilt with the rows, so it can never disagree with them.
     /// </summary>
     public ObservableCollection<DecisionPillViewModel> DecisionPills { get; } = [];
-
-    /// <summary>"{n} calls" on the collapsed header, or null before the trace has ever been read.</summary>
-    [ObservableProperty]
-    private string? _timelineCallsLabel;
 
     /// <summary>
     /// The one count that has to be legible WITHOUT expanding: a parked or refused call. Null when the trace
@@ -506,10 +536,58 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         // while step 1 was still planning would keep rendering "no tool decisions were recorded" for the rest
         // of the session, because nothing else in this VM ever re-reads it (RunChanged deliberately does not),
         // AssistantViewModel.SyncRunProgress keeps the same VM for the run's whole life, and there is no
-        // refresh command. One indexed read per user click is the cheaper mistake.
-        var load = LoadTimelineAsync();
-        TimelineLoadTask = load;
-        load.SafeFireAndForget(_logger);
+        // refresh command. One indexed read per user click is the cheaper mistake. Routed through the same
+        // gate as the live reloads so two loads can never apply concurrently.
+        RequestTimelineReload();
+    }
+
+    /// <summary>The broker fires once per accepted event on a pool thread; at most one reload runs at a time
+    /// and events arriving mid-load mark it dirty for ONE follow-up — a burst costs two reads, not one per
+    /// call, which is what keeps the audit stream off the projection path.</summary>
+    private readonly object _timelineReloadGate = new();
+    private bool _timelineReloadRunning;
+    private bool _timelineReloadDirty;
+    private bool _liveTracePrimed;
+
+    private void OnTimelineAppended(Guid runId)
+    {
+        if (runId != _runId || _timelineService is null || _settledTraceRead) return;
+        RequestTimelineReload();
+    }
+
+    private void RequestTimelineReload()
+    {
+        lock (_timelineReloadGate)
+        {
+            if (_timelineReloadRunning)
+            {
+                _timelineReloadDirty = true;
+                return;
+            }
+
+            _timelineReloadRunning = true;
+        }
+
+        TimelineLoadTask = DrainTimelineReloadsAsync();
+        TimelineLoadTask.SafeFireAndForget(_logger);
+    }
+
+    private async Task DrainTimelineReloadsAsync()
+    {
+        while (true)
+        {
+            await LoadTimelineAsync();
+            lock (_timelineReloadGate)
+            {
+                if (!_timelineReloadDirty)
+                {
+                    _timelineReloadRunning = false;
+                    return;
+                }
+
+                _timelineReloadDirty = false;
+            }
+        }
     }
 
     public RunProgressViewModel(IAgentRunService runService, Guid runId, ILocalizationService localization,
@@ -530,9 +608,15 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         // Theme-awareness — LAST again, same trailing-and-defaulted discipline as the five above. Null means the
         // panel never re-resolves its brushes, i.e. exactly the pre-fix behaviour. See RefreshThemeBrushes for why
         // a notification is the only mechanism that works here.
-        IThemeService? themeService = null)
+        IThemeService? themeService = null,
+        // Live tool-activity — LAST again, same discipline. Null ⇒ the trace reads on expand and at settle only,
+        // i.e. the pre-live-panel behaviour; the pills then stay empty until the first expand.
+        ITimelineWatcher? timelineWatcher = null)
     {
         _themeService = themeService;
+        _timelineWatcher = timelineWatcher;
+        if (_timelineWatcher is not null)
+            _timelineWatcher.TimelineAppended += OnTimelineAppended;
         _timelineService = timelineService;
         _workspaces = workspaces;
         _personaService = personaService;
@@ -646,10 +730,21 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         // sharper reason: this one is latched, because a run that will not change again cannot record another
         // decision. It is what puts the exception count on the collapsed header of a run the user is reading
         // back out of chat history. A live run's header stays quiet until the first expand, by design.
-        if (_timelineService is not null && !_settledTraceRead && IsTerminal(run.State))
+        if (_timelineService is not null && !_settledTraceRead)
         {
-            _settledTraceRead = true;
-            await LoadTimelineAsync().ConfigureAwait(false);
+            if (IsTerminal(run.State))
+            {
+                _settledTraceRead = true;
+                RequestTimelineReload();
+                await TimelineLoadTask!.ConfigureAwait(false);
+            }
+            else if (!_liveTracePrimed)
+            {
+                // The pills ride in the always-visible section header now, so a live run gets one priming
+                // read; the broker's per-event reloads keep them current from there.
+                _liveTracePrimed = true;
+                RequestTimelineReload();
+            }
         }
     }
 
@@ -885,7 +980,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             case RunProgressState.Completed:
             case RunProgressState.TruncatedCompleted:
                 if (total > 0) parts.Add(_localization.Format("Run_Sub_Steps", SettledStepCount, total));
-                if (WallClockMs > 0) parts.Add(FormatSeconds(WallClockMs));
+                if (WallClockMs > 0) parts.Add(FormatDuration(WallClockMs));
                 // Only the CLEAN finish spends a clause on the token figure. The truncated card already carries a
                 // reason chip beside its label, and a third number there reads as noise over the one fact that
                 // matters — that the result is not what was asked for.
@@ -905,7 +1000,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                     parts.Add(_localization.Format("Run_Sub_Steps", SettledStepCount, total));
                 else
                     parts.Add(StateName);
-                if (WallClockMs > 0) parts.Add(FormatSeconds(WallClockMs));
+                if (WallClockMs > 0) parts.Add(FormatDuration(WallClockMs));
                 break;
 
             case RunProgressState.WaitingForChildren:
@@ -913,7 +1008,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                 // "step 3 of 4" beside a spinner would claim work this run is not doing.
                 parts.Add(StateName);
                 if (ChildrenNote is { } childrenNote) parts.Add(childrenNote);
-                if (WallClockMs > 0) parts.Add(_localization.Format("Run_Sub_Elapsed", FormatSeconds(WallClockMs)));
+                if (WallClockMs > 0) parts.Add(_localization.Format("Run_Sub_Elapsed", FormatDuration(WallClockMs)));
                 break;
 
             case RunProgressState.Paused:
@@ -929,7 +1024,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                 parts.Add(StateName);
                 if (CurrentStepOrdinal > 0 && total > 0)
                     parts.Add(_localization.Format("Run_Sub_Step", CurrentStepOrdinal, total));
-                if (WallClockMs > 0) parts.Add(_localization.Format("Run_Sub_Elapsed", FormatSeconds(WallClockMs)));
+                if (WallClockMs > 0) parts.Add(_localization.Format("Run_Sub_Elapsed", FormatDuration(WallClockMs)));
                 break;
         }
 
@@ -940,9 +1035,20 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// how a state ends up named one thing in the band's lead line and another in its sub-line.</summary>
     private string StateName => _localization[RunStateToLabelConverter.LabelKey(State)];
 
-    /// <summary>Whole-and-a-bit seconds, in the current culture — the ledger strip's own format, so the two
+    /// <summary>Whole-and-a-bit seconds under a minute, minutes and seconds above, hours and minutes past an
+    /// hour — "246,6s" made the reader do the arithmetic. The ledger strip uses the same helper, so the two
     /// surfaces never print the same elapsed time two ways.</summary>
-    private static string FormatSeconds(long milliseconds) => $"{milliseconds / 1000.0:0.#}s";
+    private string FormatDuration(long milliseconds)
+    {
+        var seconds = milliseconds / 1000.0;
+        if (seconds < 60) return $"{seconds:0.#}s";
+
+        var whole = (long)(milliseconds / 1000);
+        var minutes = whole / 60;
+        return minutes < 60
+            ? _localization.Format("Run_Duration_MinSec", minutes, whole % 60)
+            : _localization.Format("Run_Duration_HourMin", minutes / 60, minutes % 60);
+    }
 
     private int SettledStepCount =>
         Steps.Count(r => r.Status is AgentStepStatus.Done or AgentStepStatus.Failed or AgentStepStatus.Skipped);
@@ -993,11 +1099,16 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         var total = Steps.Count;
         if (IsStepWindowExpanded || CanMutatePlan || total <= StepWindowLimit)
         {
-            foreach (var row in Steps) row.IsWindowedOut = false;
+            foreach (var row in Steps)
+            {
+                row.IsWindowedOut = false;
+                row.RenderedOutside = false;
+            }
             EarlierFoldCount = 0;
             LaterFoldCount = 0;
             EarlierFoldLabel = null;
             LaterFoldLabel = null;
+            LastStepRow = null;
             return;
         }
 
@@ -1007,15 +1118,23 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
         // A fold that would hide exactly ONE step folds nothing: the fold row is as tall as the row it replaces,
         // so it buys no height, it costs the reader the step's title, and it is the only case where the count
-        // reaches 1 — which every locale's plural copy would then get wrong ("1 earlier steps").
+        // reaches 1 — which every locale's plural copy would then get wrong ("1 earlier steps"). The tail count
+        // excludes the always-visible last row.
         if (first == 1) first = 0;
-        if (total - 1 - last == 1) last = total - 1;
+        if (total - 2 - last == 1) last = total - 1;
 
+        // The last row never joins the fold: it renders BELOW its own fold row instead, so a windowed run still
+        // shows the step it is working toward.
+        var lastOutside = last < total - 1;
         for (var i = 0; i < total; i++)
-            Steps[i].IsWindowedOut = i < first || i > last;
+        {
+            Steps[i].IsWindowedOut = i < first || (i > last && i < total - 1);
+            Steps[i].RenderedOutside = lastOutside && i == total - 1;
+        }
+        LastStepRow = lastOutside ? Steps[total - 1] : null;
 
         EarlierFoldCount = first;
-        LaterFoldCount = total - 1 - last;
+        LaterFoldCount = lastOutside ? total - 2 - last : 0;
 
         // Two variants per end, and the qualifier is claimed only when it is TRUE: "all done" over a fold that
         // hides a failed or skipped step is the panel telling the user the run went better than it did.
@@ -1028,7 +1147,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
         if (LaterFoldCount == 0)
             LaterFoldLabel = null;
-        else if (Steps.Skip(last + 1).All(r => r.Status == AgentStepStatus.Pending))
+        else if (Steps.Skip(last + 1).Take(LaterFoldCount).All(r => r.Status == AgentStepStatus.Pending))
             LaterFoldLabel = _localization.Format("Run_Plan_Fold_Later", LaterFoldCount);
         else
             LaterFoldLabel = _localization.Format("Run_Plan_Fold_LaterMixed", LaterFoldCount);
@@ -1502,8 +1621,6 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// </summary>
     private void ApplyDecisionSummary(IReadOnlyList<AgentTimelineEvent> events)
     {
-        TimelineCallsLabel = events.Count > 0 ? _localization.Format("Run_Timeline_Calls", events.Count) : null;
-
         // Exceptions first, in the order a reader has to act on them. Written as an explicit list, not driven off
         // the decision enum, because the ORDER is the point and enum order is not it.
         var categories = new (string LabelKey, string PillKey, RunDecisionSeverity Severity)[]
@@ -1737,12 +1854,16 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             ? _localization.Format("Run_Children_Count", Children.Count(r => r.IsFinished), Children.Count)
             : null;
 
-        static void Apply(ChildRunRowViewModel row, AgentRun child)
+        // Not static: the token figure is localized, so the row's label needs the instance.
+        void Apply(ChildRunRowViewModel row, AgentRun child)
         {
             row.State = MapState(child, ReadTruncation(child).Truncated).Item1;
             var ledger = TryParseLedger(child.LedgerJson);
             row.InputTokens = ledger?.InputTokens ?? 0;
             row.OutputTokens = ledger?.OutputTokens ?? 0;
+            row.TokensLabel = row.InputTokens + row.OutputTokens > 0
+                ? TokensFigure(row.InputTokens + row.OutputTokens)
+                : null;
         }
     }
 
@@ -1829,8 +1950,14 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             if (row is null) continue;
             row.InputTokens = entry.InputTokens;
             row.OutputTokens = entry.OutputTokens;
+            row.TokensLabel = entry.InputTokens + entry.OutputTokens > 0
+                ? TokensFigure(entry.InputTokens + entry.OutputTokens)
+                : null;
         }
     }
+
+    /// <summary>The localized "N tokens" figure — the bare number alone read as an id, not a cost.</summary>
+    private string TokensFigure(long total) => _localization.Format("Run_Sub_Tokens", total.ToString("N0"));
 
     private static Ledger? TryParseLedger(string? json)
     {
@@ -1841,9 +1968,9 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     private string FormatLedger()
     {
-        var parts = new List<string> { $"{TotalInputTokens + TotalOutputTokens:N0} Tokens" };
+        var parts = new List<string> { TokensFigure(TotalInputTokens + TotalOutputTokens) };
         if (WallClockMs > 0)
-            parts.Add($"{WallClockMs / 1000.0:0.#}s");
+            parts.Add(FormatDuration(WallClockMs));
         return string.Join(" · ", parts);
     }
 
@@ -1852,6 +1979,8 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         if (_disposed) return;
         _disposed = true;
         _runService.RunChanged -= OnRunChanged;
+        if (_timelineWatcher is not null)
+            _timelineWatcher.TimelineAppended -= OnTimelineAppended;
         // The theme service is a singleton and outlives this VM, so a leaked handler would keep a whole projected
         // run, and every row in it, alive for the process's life.
         if (_themeService is not null)
@@ -1907,19 +2036,18 @@ public sealed partial class ChildRunRowViewModel : ObservableObject
     private RunProgressState _state;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(TokensLabel))]
     [NotifyPropertyChangedFor(nameof(HasTokens))]
     private long _inputTokens;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(TokensLabel))]
     [NotifyPropertyChangedFor(nameof(HasTokens))]
     private long _outputTokens;
 
-    /// <summary>Input PLUS output, matching <see cref="StepRowViewModel.TokensLabel"/> exactly. The two render in
-    /// visually identical mono columns on the same card, so the card must not print two different measures of the
-    /// same word — a child's input-only figure read as its total and understated every delegated run.</summary>
-    public string TokensLabel => (InputTokens + OutputTokens).ToString("N0");
+    /// <summary>The localized "N tokens" figure the owner composes from input PLUS output, matching
+    /// <see cref="StepRowViewModel.TokensLabel"/> exactly — the two render in visually identical mono columns
+    /// on the same card, so the card must not print two different measures of the same word.</summary>
+    [ObservableProperty]
+    private string? _tokensLabel;
 
     public bool HasTokens => InputTokens + OutputTokens > 0;
 
@@ -2025,18 +2153,18 @@ public sealed partial class StepRowViewModel : ObservableObject
     private AgentStepStatus _status;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(TokensLabel))]
     [NotifyPropertyChangedFor(nameof(HasTokens))]
     private long _inputTokens;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(TokensLabel))]
     [NotifyPropertyChangedFor(nameof(HasTokens))]
     private long _outputTokens;
 
-    /// <summary>What the step COST, input plus output — the same arithmetic the header ledger does, so the
-    /// column and the ledger cannot be read as two different measures of the same run.</summary>
-    public string TokensLabel => (InputTokens + OutputTokens).ToString("N0");
+    /// <summary>What the step COST as a localized "N tokens" figure, input plus output — the same arithmetic
+    /// the header ledger does, so the column and the ledger cannot be read as two different measures of the
+    /// same run. The owner composes it when the ledger lands; the bare number alone read as an id.</summary>
+    [ObservableProperty]
+    private string? _tokensLabel;
 
     public bool HasTokens => InputTokens + OutputTokens > 0;
 
@@ -2058,9 +2186,18 @@ public sealed partial class StepRowViewModel : ObservableObject
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsInWindow))]
+    [NotifyPropertyChangedFor(nameof(ShowInList))]
     private bool _isWindowedOut;
 
     public bool IsInWindow => !IsWindowedOut;
+
+    /// <summary>The plan's last row renders BELOW its own fold (the list copy hidden, the outside copy shown)
+    /// while the window hides the tail — see <c>RunProgressViewModel.ApplyStepWindow</c>.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowInList))]
+    private bool _renderedOutside;
+
+    public bool ShowInList => !IsWindowedOut && !RenderedOutside;
 
     /// <summary>
     /// Batch 08 D3: gates the row's five plan-mutation buttons' <c>IsEnabled</c> — a settled step (Done,

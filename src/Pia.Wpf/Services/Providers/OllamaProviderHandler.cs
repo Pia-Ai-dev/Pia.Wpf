@@ -31,6 +31,8 @@ public sealed class OllamaProviderHandler : IAiProviderHandler
             {
                 Endpoint = new Uri(provider.Endpoint),
                 Transport = new HttpClientPipelineTransport(httpClient),
+                // The per-call timeoutCts owns the bound; the SDK's 100s network default would fire first.
+                NetworkTimeout = Timeout.InfiniteTimeSpan,
             }).AsIChatClient();
 
         return Task.FromResult(client);

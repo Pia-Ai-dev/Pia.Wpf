@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
@@ -70,6 +70,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// as it did before this batch.</summary>
     private readonly IAgentRunSteeringService? _steering;
     private readonly IThemeService? _themeService;
+    private readonly ITimelineWatcher? _timelineWatcher;
     private bool _disposed;
     private bool _tokenizationEnabled;
     private bool _suggestionsEnabled = true;
@@ -268,7 +269,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // Handed on to the run panel VM only, so a theme switch reaches the colours its converters resolved by
         // key. Trailing and defaulted, same discipline as the four above; null means the panel keeps the
         // pre-fix behaviour and simply does not re-resolve them.
-        IThemeService? themeService = null)
+        IThemeService? themeService = null,
+        // Handed on to the run panel VM only, so its tool-activity section live-updates. Trailing and
+        // defaulted, same discipline; null means the panel reads its trace on expand and at settle only.
+        ITimelineWatcher? timelineWatcher = null)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -307,6 +311,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _runSteering = runSteering;
         _steering = steering;
         _themeService = themeService;
+        _timelineWatcher = timelineWatcher;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         RunInBackgroundCommand = new AsyncRelayCommand(ExecuteRunInBackground, CanExecuteRunInBackground);
@@ -442,16 +447,31 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private void OnForeignRunActiveChanged(object? sender, bool active) =>
         _uiDispatcher.Post(() => ForeignRunActive = active);
 
-    private void SyncRunProgress(Guid? runId)
+    // Internal so the lever facts can attach the panel to a stubbed run without a whole ChatSession.
+    internal void SyncRunProgress(Guid? runId)
     {
         if (_runProgress?.RunId == runId)
             return;
-        _runProgress?.Dispose(); // unsubscribes the prior RunChanged handler
+        if (_runProgress is not null)
+        {
+            _runProgress.RunSettled -= OnRunProgressSettled;
+            _runProgress.Dispose(); // unsubscribes the prior RunChanged handler
+        }
         _runProgress = runId is { } id
             ? new RunProgressViewModel(_agentRunService, id, _localizationService, _resumeService, _logger,
-                _agentTimelineService, _runWorkspaces, _personaService, _steering, _themeService)
+                _agentTimelineService, _runWorkspaces, _personaService, _steering, _themeService, _timelineWatcher)
             : null;
+        if (_runProgress is not null)
+            _runProgress.RunSettled += OnRunProgressSettled;
         ActiveRunProgress = _runProgress;
+    }
+
+    // A finished run must not silently arm the NEXT send as a fresh run: the lever falls back to Chat so a
+    // follow-up message lands in the conversation instead of replacing the settled header with a new one.
+    private void OnRunProgressSettled()
+    {
+        if (AgentModeEnabled)
+            AgentModeEnabled = false;
     }
 
     partial void OnMessagesChanged(ObservableCollection<AssistantMessage>? oldValue, ObservableCollection<AssistantMessage> newValue)

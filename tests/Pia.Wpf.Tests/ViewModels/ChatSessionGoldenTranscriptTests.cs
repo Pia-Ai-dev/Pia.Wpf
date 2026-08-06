@@ -96,9 +96,10 @@ public sealed class ChatSessionGoldenTranscriptTests
         await Task.Yield();
     }
 
-    private static async IAsyncEnumerable<ChatStreamItem> ThrowingStream(Exception ex, [EnumeratorCancellation] CancellationToken ct = default)
+    private static async IAsyncEnumerable<ChatStreamItem> ThrowingStream(Exception ex, Action? beforeThrow = null, [EnumeratorCancellation] CancellationToken ct = default)
     {
         await Task.Yield();
+        beforeThrow?.Invoke();
         throw ex;
 #pragma warning disable CS0162
         yield break;
@@ -223,8 +224,10 @@ public sealed class ChatSessionGoldenTranscriptTests
     [Fact]
     public async Task CancelMidStream_SettlesIdle_RaisesCancelledRunFailed()
     {
-        ReturnsStream(() => ThrowingStream(new OperationCanceledException("cancel")));
         var session = CreateSession();
+        // Models a user stop: the session CTS fires mid-stream (the Stop button's Cancel()), then the
+        // exchange aborts — only a FIRED token classifies the OCE as a cancel, not a transport fault.
+        ReturnsStream(() => ThrowingStream(new OperationCanceledException("cancel"), () => session.Cancel()));
         RunFailedEventArgs? failure = null;
         session.RunFailed += (_, e) => failure = e;
 

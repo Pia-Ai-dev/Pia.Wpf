@@ -54,6 +54,14 @@ public class AiClientService : IAiClientService
         _throttle = throttle;
     }
 
+    /// <summary>The per-method timeoutCts owns the request bound; HttpClient's 100s default would fire first and surface as a bare cancellation.</summary>
+    private HttpClient CreateAiHttpClient()
+    {
+        var client = _httpClientFactory.CreateClient();
+        client.Timeout = Timeout.InfiniteTimeSpan;
+        return client;
+    }
+
     /// <summary>
     /// T1-2: take this provider's request permit, waited on the SAME linked token as the request itself.
     /// <para>
@@ -102,7 +110,7 @@ public class AiClientService : IAiClientService
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, timeoutCts.Token);
 
-        var httpClient = _httpClientFactory.CreateClient();
+        var httpClient = CreateAiHttpClient();
 
         var requestBody = new { styleDescription };
 
@@ -184,7 +192,7 @@ public class AiClientService : IAiClientService
             cancellationToken, timeoutCts.Token);
 
         var providerHandler = _handlers.Get(provider.ProviderType);
-        var httpClient = _httpClientFactory.CreateClient();
+        var httpClient = CreateAiHttpClient();
         var chatClient = await providerHandler.CreateChatClientAsync(
             provider, apiKey, httpClient, mode, managedPersonaId, linkedCts.Token);
 
@@ -527,7 +535,7 @@ public class AiClientService : IAiClientService
         try
         {
             var handler = _handlers.Get(provider.ProviderType);
-            var httpClient = _httpClientFactory.CreateClient();
+            var httpClient = CreateAiHttpClient();
             var chatClient = await handler.CreateChatClientAsync(
                 provider, apiKey, httpClient, mode, managedPersonaId, linkedCts.Token);
 
@@ -583,7 +591,7 @@ public class AiClientService : IAiClientService
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, timeoutCts.Token);
 
-        var httpClient = _httpClientFactory.CreateClient();
+        var httpClient = CreateAiHttpClient();
 
         var requestBody = new
         {
@@ -677,7 +685,7 @@ public class AiClientService : IAiClientService
             _logger.SensitiveDebug("SendRequestAsync: provider name={Name}", provider.Name);
 
             var handler = _handlers.Get(provider.ProviderType);
-            var httpClient = _httpClientFactory.CreateClient();
+            var httpClient = CreateAiHttpClient();
             var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, linkedCts.Token);
 
             var messages = new[]
@@ -744,7 +752,7 @@ public class AiClientService : IAiClientService
             cancellationToken, timeoutCts.Token);
 
         var handler = _handlers.Get(provider.ProviderType);
-        var httpClient = _httpClientFactory.CreateClient();
+        var httpClient = CreateAiHttpClient();
         // No persona here on purpose: this tool-free stream serves SuggestionService, not an assistant
         // chat turn, so there is no selected persona whose resources should be unlocked.
         var chatClient = await handler.CreateChatClientAsync(
@@ -824,7 +832,7 @@ public class AiClientService : IAiClientService
 
         try
         {
-            var httpClient = _httpClientFactory.CreateClient();
+            var httpClient = CreateAiHttpClient();
 
             // Add JWT token if available
             if (!string.IsNullOrEmpty(settings.EncryptedAccessToken))
@@ -862,7 +870,7 @@ public class AiClientService : IAiClientService
             cancellationToken, timeoutCts.Token);
 
         var handler = _handlers.Get(provider.ProviderType);
-        var httpClient = _httpClientFactory.CreateClient();
+        var httpClient = CreateAiHttpClient();
         var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, linkedCts.Token);
 
         var messages = new List<Microsoft.Extensions.AI.ChatMessage>
@@ -901,7 +909,7 @@ public class AiClientService : IAiClientService
             cancellationToken, timeoutCts.Token);
 
         var handler = _handlers.Get(provider.ProviderType);
-        var httpClient = _httpClientFactory.CreateClient();
+        var httpClient = CreateAiHttpClient();
         var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, linkedCts.Token);
 
         var dummyTool = AIFunctionFactory.Create(() => "ok", "ping", "A test tool");
@@ -944,7 +952,7 @@ public class AiClientService : IAiClientService
             cancellationToken, timeoutCts.Token);
 
         var handler = _handlers.Get(provider.ProviderType);
-        var httpClient = _httpClientFactory.CreateClient();
+        var httpClient = CreateAiHttpClient();
         var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, linkedCts.Token);
 
         var pingTool = AIFunctionFactory.Create(() => "ok", "ping", "A test tool. Call it to confirm tool support.");

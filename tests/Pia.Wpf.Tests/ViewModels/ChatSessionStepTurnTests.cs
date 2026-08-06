@@ -67,9 +67,10 @@ public sealed class ChatSessionStepTurnTests
         }
     }
 
-    private static async IAsyncEnumerable<ChatStreamItem> ThrowingStream(Exception ex)
+    private static async IAsyncEnumerable<ChatStreamItem> ThrowingStream(Exception ex, Action? beforeThrow = null)
     {
         await Task.Yield();
+        beforeThrow?.Invoke();
         throw ex;
 #pragma warning disable CS0162
         yield break;
@@ -240,15 +241,36 @@ public sealed class ChatSessionStepTurnTests
     [Fact]
     public async Task RunStepTurn_Cancelled_ReturnsCancelledResult()
     {
-        ReturnsStream(() => ThrowingStream(new OperationCanceledException("cancelled")));
+        // Models a user stop: the step token fires FIRST, then the exchange aborts with an OCE.
+        using var cts = new CancellationTokenSource();
+        ReturnsStream(() => ThrowingStream(new OperationCanceledException("cancelled"), () => cts.Cancel()));
+
+        var session = CreateSession();
+        session.Messages.Add(new AssistantMessage(ChatRole.User, "goal"));
+
+        var result = await session.RunStepTurnAsync(Spec(tokenizationEnabled: false), new RunContext("goal", RunProfile.Interactive), cts.Token);
+
+        Assert.True(result.Cancelled);
+        Assert.False(result.Succeeded);
+        Assert.NotEqual(ChatState.Error, session.State);
+    }
+
+    [Fact]
+    public async Task RunStepTurn_TransportOce_TokenNotCancelled_ReturnsFailedNotCancelled()
+    {
+        // A TaskCanceledException out of the transport with the step token never cancelled — the shape an
+        // HTTP-layer timeout produces. It is a FAILURE, not a user stop: recording Cancelled would settle
+        // the run as cancelled with no replan and nothing telling the person what actually happened.
+        ReturnsStream(() => ThrowingStream(new TaskCanceledException("The operation was canceled.")));
 
         var session = CreateSession();
         session.Messages.Add(new AssistantMessage(ChatRole.User, "goal"));
 
         var result = await session.RunStepTurnAsync(Spec(tokenizationEnabled: false), new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
 
-        Assert.True(result.Cancelled);
+        Assert.False(result.Cancelled);
         Assert.False(result.Succeeded);
+        Assert.NotNull(result.Error);
         Assert.NotEqual(ChatState.Error, session.State);
     }
 }

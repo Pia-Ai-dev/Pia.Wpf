@@ -1009,6 +1009,8 @@
   <data name="Run_Sub_StoppedAtStep" xml:space="preserve"><value>Arrêtée à l'étape {0} sur {1}</value></data>
   <data name="Run_Sub_Elapsed" xml:space="preserve"><value>{0} écoulée(s)</value></data>
   <data name="Run_Sub_Tokens" xml:space="preserve"><value>{0} jeton(s)</value></data>
+  <data name="Run_Duration_MinSec" xml:space="preserve"><value>{0} min {1} s</value></data>
+  <data name="Run_Duration_HourMin" xml:space="preserve"><value>{0} h {1} min</value></data>
   <data name="Run_Sub_PlanEditable" xml:space="preserve"><value>vous pouvez modifier le plan maintenant</value></data>
   <data name="Run_Step_Now" xml:space="preserve"><value>en cours</value></data>
   <data name="Run_Step_Skipped" xml:space="preserve"><value>ignorée</value></data>
@@ -1017,7 +1019,6 @@
   <data name="Run_Plan_Fold_Later" xml:space="preserve"><value>{0} étapes suivantes — en attente</value></data>
   <data name="Run_Plan_Fold_LaterMixed" xml:space="preserve"><value>{0} étapes suivantes</value></data>
   <data name="Run_Plan_Editor_Eyebrow" xml:space="preserve"><value>Modification de l'étape {0}</value></data>
-  <data name="Run_Timeline_Calls" xml:space="preserve"><value>{0} appel(s)</value></data>
   <data name="Run_Timeline_Pill_AwaitingApproval" xml:space="preserve"><value>{0} en attente d'autorisation</value></data>
   <data name="Run_Timeline_Pill_Denied" xml:space="preserve"><value>{0} refusé(s)</value></data>
   <data name="Run_Timeline_Pill_Blocked" xml:space="preserve"><value>{0} bloqué(s)</value></data>

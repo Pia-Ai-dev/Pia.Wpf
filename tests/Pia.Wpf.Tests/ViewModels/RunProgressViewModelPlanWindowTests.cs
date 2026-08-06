@@ -46,8 +46,11 @@ public sealed class RunProgressViewModelPlanWindowTests
     }
 
     /// <summary>The band's own elapsed format, in the current culture — mirrored here rather than hardcoded so
-    /// these facts pin the FORMAT and not the test host's locale.</summary>
-    private static string Seconds(long milliseconds) => $"{milliseconds / 1000.0:0.#}s";
+    /// these facts pin the FORMAT and not the test host's locale. Above a minute the VM spends the localized
+    /// min/sec key, which the loc stub echoes with its arguments.</summary>
+    private static string Duration(long milliseconds) => milliseconds / 1000 < 60
+        ? $"{milliseconds / 1000.0:0.#}s"
+        : $"Run_Duration_MinSec|{milliseconds / 60000},{milliseconds / 1000 % 60}";
 
     /// <summary>A plan whose step at <paramref name="runningIndex"/> is Running, everything before it Done and
     /// everything after it Pending — the ordinary shape of a run in flight.</summary>
@@ -100,9 +103,10 @@ public sealed class RunProgressViewModelPlanWindowTests
     }
 
     /// <summary>
-    /// <b>REGRESSION.</b> One step over the limit and the list folds to the running step ±1. The three counts are
-    /// asserted together with the sum, because an off-by-one in either bound hides a step from the reader with no
-    /// other symptom: a fold row that says "4 later steps" over 5 hidden ones is worse than no fold row at all.
+    /// <b>REGRESSION.</b> One step over the limit and the list folds to the running step ±1 — EXCEPT the plan's
+    /// last row, which always stays visible (below its own fold) because a windowed run must keep showing the
+    /// step it is working toward. The three counts are asserted together with the sum, because an off-by-one in
+    /// either bound hides a step from the reader with no other symptom.
     /// </summary>
     [Fact]
     public async Task ALongPlanFoldsToTheRunningStepPlusMinusOne_AndTheFoldCountsAccountForEveryHiddenStep()
@@ -113,16 +117,23 @@ public sealed class RunProgressViewModelPlanWindowTests
         await vm.RefreshAsync();
 
         var visible = vm.Steps.Where(r => r.IsInWindow).ToList();
-        Assert.Equal(3, visible.Count);
-        Assert.Equal(["Step 6", "Step 7", "Step 8"], visible.Select(r => r.Title));
+        Assert.Equal(4, visible.Count);
+        Assert.Equal(["Step 6", "Step 7", "Step 8", "Step 12"], visible.Select(r => r.Title));
 
         Assert.Equal(5, vm.EarlierFoldCount);
-        Assert.Equal(4, vm.LaterFoldCount);
+        Assert.Equal(3, vm.LaterFoldCount);
         Assert.Equal(vm.Steps.Count, vm.EarlierFoldCount + visible.Count + vm.LaterFoldCount);
 
         // The qualified copy, because every folded step at each end really is Done / really is Pending.
         Assert.Equal("Run_Plan_Fold_Earlier|5", vm.EarlierFoldLabel);
-        Assert.Equal("Run_Plan_Fold_Later|4", vm.LaterFoldLabel);
+        Assert.Equal("Run_Plan_Fold_Later|3", vm.LaterFoldLabel);
+
+        // The last row rides outside the list: hidden in it, rendered below the fold, still "in window".
+        Assert.Same(vm.Steps[11], vm.LastStepRow);
+        Assert.True(vm.HasLastStepRow);
+        Assert.True(vm.Steps[11].RenderedOutside);
+        Assert.False(vm.Steps[11].ShowInList);
+        Assert.Single(vm.LastStepView);
         vm.Dispose();
     }
 
@@ -142,7 +153,7 @@ public sealed class RunProgressViewModelPlanWindowTests
         await vm.RefreshAsync();
 
         Assert.Equal("Run_Plan_Fold_EarlierMixed|5", vm.EarlierFoldLabel);
-        Assert.Equal("Run_Plan_Fold_Later|4", vm.LaterFoldLabel);   // the later end is untouched
+        Assert.Equal("Run_Plan_Fold_Later|3", vm.LaterFoldLabel);   // the later end is untouched
         vm.Dispose();
     }
 
@@ -155,9 +166,11 @@ public sealed class RunProgressViewModelPlanWindowTests
     /// <para>Neutralize: delete either absorption line in <c>ApplyStepWindow</c> → the corresponding leg reds.</para>
     /// </summary>
     [Theory]
-    // 8 steps, running at index 2: the earlier fold would hide step 1 alone, so it is absorbed and four rows show.
-    [InlineData(8, 2, 0, 4, 4)]
-    // …and mirrored at the far end: running at index 5 would leave step 8 alone after the window.
+    // 8 steps, running at index 2: the earlier fold would hide step 1 alone, so it is absorbed; the tail fold
+    // hides steps 5-7 while the always-visible last row rides outside the list (4 in it + 1 outside).
+    [InlineData(8, 2, 0, 5, 3)]
+    // …and mirrored at the far end: running at index 5 leaves the last step INSIDE the window, so no outside
+    // row and no tail fold at all.
     [InlineData(8, 5, 4, 4, 0)]
     public async Task AFoldThatWouldHideASingleStepIsAbsorbedIntoTheWindow(
         int count, int runningIndex, int expectedEarlier, int expectedVisible, int expectedLater)
@@ -284,7 +297,7 @@ public sealed class RunProgressViewModelPlanWindowTests
         // Built from the same culture-aware formats the VM uses: the test host runs under a German culture, and
         // "96,7s" / "70.137" are the CORRECT renderings there. A literal "96.7s" here would pin the machine, not
         // the behaviour.
-        Assert.Equal($"Run_State_Running · Run_Sub_Step|7,12 · Run_Sub_Elapsed|{Seconds(96700)}", vm.SubLine);
+        Assert.Equal($"Run_State_Running · Run_Sub_Step|7,12 · Run_Sub_Elapsed|{Duration(96700)}", vm.SubLine);
         Assert.True(vm.HasSubLine);
         vm.Dispose();
     }
@@ -306,7 +319,34 @@ public sealed class RunProgressViewModelPlanWindowTests
         // Three of four steps are Done and the fourth is still Running in the fixture, which is exactly why the
         // settled count is read off the ROWS: the sub-line reports what the plan actually shows.
         Assert.Equal(RunProgressState.Completed, vm.State);
-        Assert.Equal($"Run_Sub_Steps|3,4 · {Seconds(651700)} · Run_Sub_Tokens|{70137:N0}", vm.SubLine);
+        Assert.Equal($"Run_Sub_Steps|3,4 · {Duration(651700)} · Run_Sub_Tokens|{70137:N0}", vm.SubLine);
+        vm.Dispose();
+    }
+
+    /// <summary>
+    /// <b>REGRESSION.</b> A windowed run keeps its LAST step visible below the tail fold — the step the run is
+    /// working toward must not be one of the ones the fold swallows (readers experienced exactly that as the
+    /// last step "disappearing" mid-run and returning once the run settled). Unfolding returns the row to the
+    /// list and clears the outside slot.
+    /// </summary>
+    [Fact]
+    public async Task AWindowedRunKeepsItsLastStepBelowTheFold_AndExpandReturnsItToTheList()
+    {
+        StubPlan(count: 12, runningIndex: 2);
+
+        var vm = CreateVm();
+        await vm.RefreshAsync();
+
+        Assert.Same(vm.Steps[11], vm.LastStepRow);
+        Assert.False(vm.Steps[11].ShowInList);
+        Assert.Equal(7, vm.LaterFoldCount); // steps 4-10 hidden between the window and the last row
+
+        vm.ExpandStepWindowCommand.Execute(null);
+
+        Assert.Null(vm.LastStepRow);
+        Assert.False(vm.HasLastStepRow);
+        Assert.Empty(vm.LastStepView);
+        Assert.All(vm.Steps, r => Assert.True(r.ShowInList));
         vm.Dispose();
     }
 
@@ -323,7 +363,7 @@ public sealed class RunProgressViewModelPlanWindowTests
         var vm = CreateVm();
         await vm.RefreshAsync();
 
-        Assert.Equal($"Run_Sub_StoppedAtStep|2,4 · {Seconds(96700)}", vm.SubLine);
+        Assert.Equal($"Run_Sub_StoppedAtStep|2,4 · {Duration(96700)}", vm.SubLine);
         vm.Dispose();
     }
 }
