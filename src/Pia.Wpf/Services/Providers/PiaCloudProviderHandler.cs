@@ -34,6 +34,7 @@ public sealed class PiaCloudProviderHandler : IAiProviderHandler
         HttpClient httpClient,
         string? mode,
         Guid? managedPersonaId,
+        string? personaModelType,
         CancellationToken cancellationToken)
     {
         var settings = await _settingsService.GetSettingsAsync();
@@ -49,7 +50,7 @@ public sealed class PiaCloudProviderHandler : IAiProviderHandler
 
         // The chat client fetches a valid (refreshed) token per-request via the auth service,
         // and can force a refresh on 401 retry.
-        return new PiaCloudChatClient(httpClient, serverUrl, _authService.GetAccessTokenAsync, _logger, mode, managedPersonaId);
+        return new PiaCloudChatClient(httpClient, serverUrl, _authService.GetAccessTokenAsync, _logger, mode, managedPersonaId, personaModelType);
     }
 
     public ChatOptions CreateChatOptions(AiProvider provider, bool hasTools)

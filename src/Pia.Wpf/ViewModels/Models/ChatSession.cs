@@ -384,7 +384,7 @@ public sealed class ChatSession : IDisposable
             // The returned usage is discarded here (the single-turn path has no step ledger).
             await RunModelExchangeAsync(assistantMessage, chatMessages, provider, tools,
                 supportsTools, webSearchActive, tokenizationEnabled, token,
-                personaId: turnSetup.PersonaId);
+                personaId: turnSetup.PersonaId, personaModelType: turnSetup.ModelType);
 
             // Reached the end of the turn without an exception — matches today's
             // "followups run as the last line of try" gate.
@@ -528,7 +528,10 @@ public sealed class ChatSession : IDisposable
         // The turn's persona, sent as X-Pia-Persona. A parameter rather than a field because the two
         // callers source it differently: the interactive turn reads it off the AssistantTurnSetup, a
         // Planned step off its own per-step persona attribution.
-        Guid? personaId = null)
+        Guid? personaId = null,
+        // The persona's model-routing hint (metadata.pia_persona_type). Sourced the same way as
+        // personaId; a Planned step passes nothing and routes on the mode default.
+        string? personaModelType = null)
     {
         var rawBuffer = new StringBuilder();
         // Reasoning reaches us via two channels that never overlap for a given provider:
@@ -576,6 +579,7 @@ public sealed class ChatSession : IDisposable
             supportsTools ? (toolCall, ctx) => HandleToolCallWithStatus(toolCall, assistantMessage, tokenizationEnabled, ctx, policy, timeline) : null,
             nameof(WindowMode.Assistant),
             personaId,
+            personaModelType,
             cancellationToken: token,
             contextBudget: contextBudget))
         {

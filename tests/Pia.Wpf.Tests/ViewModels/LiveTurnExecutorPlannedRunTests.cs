@@ -121,7 +121,7 @@ public sealed class LiveTurnExecutorPlannedRunTests
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
                 Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
-            .Returns(ci => factory((CancellationToken)ci[6]));
+            .Returns(ci => factory((CancellationToken)ci[7]));
 
     private static async IAsyncEnumerable<ChatStreamItem> Stream(params ChatStreamItem[] items)
     {

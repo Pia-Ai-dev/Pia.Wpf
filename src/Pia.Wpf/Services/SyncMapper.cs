@@ -119,6 +119,7 @@ public class SyncMapper
         {
             Id = persona.Id,
             Archetype = persona.Archetype,
+            ModelType = persona.ModelType,
             Emoji = persona.Emoji,
             AccentColor = persona.AccentColor,
             ToolScope = (int)persona.ToolScope,
@@ -197,6 +198,9 @@ public class SyncMapper
             // a closed vocabulary (assistant|analyst|creative|visionary|explainer|custom) that the glyph and
             // label lookups index into, so a whitespace-only value would silently match nothing.
             Archetype = string.IsNullOrWhiteSpace(sync.Archetype) ? "custom" : sync.Archetype,
+            // Blank ⇒ null: the server falls through on unmapped/blank types, so a whitespace-only
+            // value must not round-trip as a routing key.
+            ModelType = string.IsNullOrWhiteSpace(sync.ModelType) ? null : sync.ModelType,
             Expertise = expertise ?? [],
             Emoji = sync.Emoji,
             AccentColor = sync.AccentColor,

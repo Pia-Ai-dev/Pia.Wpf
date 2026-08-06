@@ -175,7 +175,7 @@ public class TokenizingAiClientServiceTests
                 contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci =>
             {
-                seenByInner = ci.ArgAt<AgentContextBudget?>(7);
+                seenByInner = ci.ArgAt<AgentContextBudget?>(8);
                 return Stream(new Finished(null, "gpt-5"));
             });
 
@@ -226,7 +226,7 @@ public class TokenizingAiClientServiceTests
                 contextBudget: Arg.Any<AgentContextBudget?>())
             .Returns(ci =>
             {
-                observed.Add(ci.ArgAt<AgentContextBudget?>(7));
+                observed.Add(ci.ArgAt<AgentContextBudget?>(8));
                 return Stream(new Finished(null, "gpt-5"));
             });
 

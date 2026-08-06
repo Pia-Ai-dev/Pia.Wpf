@@ -22,6 +22,7 @@ public sealed class AzureOpenAiProviderHandler : IAiProviderHandler
         string? mode,
         // Ignored: this handler talks to a third-party provider, which has no server-side persona scope.
         Guid? managedPersonaId,
+        string? personaModelType,
         CancellationToken cancellationToken)
     {
         var deployment = provider.AzureDeploymentName ?? provider.ModelName ?? "gpt-4o-mini";

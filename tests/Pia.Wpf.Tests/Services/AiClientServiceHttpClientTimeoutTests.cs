@@ -31,7 +31,7 @@ public class AiClientServiceHttpClientTimeoutTests
         handler.ProviderType.Returns(AiProviderType.OpenAI);
         handler.CreateChatClientAsync(
                 Arg.Any<AiProvider>(), Arg.Any<string?>(), Arg.Any<HttpClient>(),
-                Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+                Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 captured = ci.ArgAt<HttpClient>(2);

@@ -173,6 +173,7 @@ public class AiClientService : IAiClientService
             ToolCallHandler? toolHandler = null,
             string? mode = null,
             Guid? managedPersonaId = null,
+            string? personaModelType = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default,
             AgentContextBudget? contextBudget = null)
     {
@@ -194,7 +195,7 @@ public class AiClientService : IAiClientService
         var providerHandler = _handlers.Get(provider.ProviderType);
         var httpClient = CreateAiHttpClient();
         var chatClient = await providerHandler.CreateChatClientAsync(
-            provider, apiKey, httpClient, mode, managedPersonaId, linkedCts.Token);
+            provider, apiKey, httpClient, mode, managedPersonaId, personaModelType, linkedCts.Token);
 
         var useTools = provider.SupportsToolCalling && tools is { Count: > 0 };
         var options = providerHandler.CreateChatOptions(provider, hasTools: useTools);
@@ -537,7 +538,7 @@ public class AiClientService : IAiClientService
             var handler = _handlers.Get(provider.ProviderType);
             var httpClient = CreateAiHttpClient();
             var chatClient = await handler.CreateChatClientAsync(
-                provider, apiKey, httpClient, mode, managedPersonaId, linkedCts.Token);
+                provider, apiKey, httpClient, mode, managedPersonaId, personaModelType: null, linkedCts.Token);
 
             var useTools = provider.SupportsToolCalling && tools is { Count: > 0 };
             var options = handler.CreateChatOptions(provider, hasTools: useTools);
@@ -686,7 +687,7 @@ public class AiClientService : IAiClientService
 
             var handler = _handlers.Get(provider.ProviderType);
             var httpClient = CreateAiHttpClient();
-            var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, linkedCts.Token);
+            var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, personaModelType: null, linkedCts.Token);
 
             var messages = new[]
             {
@@ -756,7 +757,7 @@ public class AiClientService : IAiClientService
         // No persona here on purpose: this tool-free stream serves SuggestionService, not an assistant
         // chat turn, so there is no selected persona whose resources should be unlocked.
         var chatClient = await handler.CreateChatClientAsync(
-            provider, apiKey, httpClient, mode, managedPersonaId: null, linkedCts.Token);
+            provider, apiKey, httpClient, mode, managedPersonaId: null, personaModelType: null, linkedCts.Token);
         var options = handler.CreateChatOptions(provider, hasTools: false);
 
         // T1-2: this tool-free stream (SuggestionService) is one round-trip that stays open for the length of
@@ -871,7 +872,7 @@ public class AiClientService : IAiClientService
 
         var handler = _handlers.Get(provider.ProviderType);
         var httpClient = CreateAiHttpClient();
-        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, linkedCts.Token);
+        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, personaModelType: null, linkedCts.Token);
 
         var messages = new List<Microsoft.Extensions.AI.ChatMessage>
         {
@@ -910,7 +911,7 @@ public class AiClientService : IAiClientService
 
         var handler = _handlers.Get(provider.ProviderType);
         var httpClient = CreateAiHttpClient();
-        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, linkedCts.Token);
+        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, personaModelType: null, linkedCts.Token);
 
         var dummyTool = AIFunctionFactory.Create(() => "ok", "ping", "A test tool");
         var messages = new List<Microsoft.Extensions.AI.ChatMessage>
@@ -953,7 +954,7 @@ public class AiClientService : IAiClientService
 
         var handler = _handlers.Get(provider.ProviderType);
         var httpClient = CreateAiHttpClient();
-        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, linkedCts.Token);
+        var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, personaModelType: null, linkedCts.Token);
 
         var pingTool = AIFunctionFactory.Create(() => "ok", "ping", "A test tool. Call it to confirm tool support.");
         var messages = new List<Microsoft.Extensions.AI.ChatMessage>

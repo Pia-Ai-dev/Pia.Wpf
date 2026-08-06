@@ -20,7 +20,13 @@ public sealed record AssistantTurnSetup(
     /// KBs/connectors. Null only when no persona was resolved. Trailing and defaulted so every existing
     /// construction site (all of which pass exactly the four members above) stays source-compatible.
     /// </summary>
-    Guid? PersonaId = null);
+    Guid? PersonaId = null,
+
+    /// <summary>
+    /// The persona's model-routing hint, sent as <c>metadata.pia_persona_type</c> on Pia Cloud chat
+    /// requests. Null ⇒ no persona-type routing. Same trailing-default rule as <see cref="PersonaId"/>.
+    /// </summary>
+    string? ModelType = null);
 
 /// <summary>
 /// Builds the persona-driven system prompt and resolves the tool set for an

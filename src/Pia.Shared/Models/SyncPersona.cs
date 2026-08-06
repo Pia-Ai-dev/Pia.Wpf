@@ -22,6 +22,7 @@ public class SyncPersona
 
     // Structural / config (always plaintext, even under E2EE).
     public string? Archetype { get; set; }            // "assistant" | "analyst" | "creative" | "visionary" | "explainer" | "custom" (default "custom")
+    public string? ModelType { get; set; }            // free-form routing type ("fast", "code", ...); null => no persona-type routing
     public string? Emoji { get; set; }
     public string? AccentColor { get; set; }          // "#RRGGBB"
     public int ToolScope { get; set; } = 2;           // 0 = none, 1 = read-only (reserved), 2 = full (default)

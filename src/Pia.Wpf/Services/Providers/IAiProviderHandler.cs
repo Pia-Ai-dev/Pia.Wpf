@@ -39,12 +39,17 @@ public interface IAiProviderHandler
     /// <param name="managedPersonaId">
     /// Only PiaCloudProviderHandler consumes this — third-party providers have no server-side persona scope.
     /// </param>
+    /// <param name="personaModelType">
+    /// The persona's model-routing hint. Only PiaCloudProviderHandler consumes this (it becomes
+    /// <c>metadata.pia_persona_type</c>); third-party providers route model-side, not server-side.
+    /// </param>
     Task<IChatClient> CreateChatClientAsync(
         AiProvider provider,
         string? apiKey,
         HttpClient httpClient,
         string? mode,
         Guid? managedPersonaId,
+        string? personaModelType,
         CancellationToken cancellationToken);
 
     ChatOptions CreateChatOptions(AiProvider provider, bool hasTools);

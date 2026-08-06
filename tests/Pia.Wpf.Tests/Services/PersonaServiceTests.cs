@@ -109,6 +109,33 @@ public class PersonaServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task AddAndUpdatePersona_RoundTripsModelType()
+    {
+        var added = await _service.AddPersonaAsync(new Persona
+        {
+            Name = "TEST_ModelType",
+            SystemPrompt = "You are a test persona.",
+            ModelType = "fast",
+            ToolScope = PersonaToolScope.Full,
+        });
+        _created.Add(added.Id);
+
+        var fetched = await _service.GetPersonaAsync(added.Id);
+        Assert.Equal("fast", fetched!.ModelType);
+
+        fetched.ModelType = null;
+        await _service.UpdatePersonaAsync(fetched);
+
+        // Clearing the hint persists as NULL — no persona-type routing — not as a stale value.
+        var cleared = await _service.GetPersonaAsync(added.Id);
+        Assert.Null(cleared!.ModelType);
+
+        // A persona that never set the hint reads back as null too.
+        var plain = await AddUserPersonaAsync("TEST_NoModelType");
+        Assert.Null((await _service.GetPersonaAsync(plain.Id))!.ModelType);
+    }
+
+    [Fact]
     public async Task UpdatePersonaAsync_BuiltIn_Throws()
     {
         var builtIn = (await _service.GetPersonasAsync()).First(p => p.IsBuiltIn);

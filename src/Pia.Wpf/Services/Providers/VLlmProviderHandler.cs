@@ -24,6 +24,7 @@ public sealed class VLlmProviderHandler : IAiProviderHandler
         string? mode,
         // Ignored: this handler talks to a third-party provider, which has no server-side persona scope.
         Guid? managedPersonaId,
+        string? personaModelType,
         CancellationToken cancellationToken)
     {
         // vLLM does not understand `reasoning_effort`. Thinking is toggled via

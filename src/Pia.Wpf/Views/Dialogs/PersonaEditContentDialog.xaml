@@ -118,9 +118,11 @@
                IsReadOnly="{Binding IsGenerating}"
                Margin="0,0,0,16" />
 
-      <!-- Archetype + Tool scope -->
+      <!-- Archetype + Model type + Tool scope -->
       <Grid Margin="0,0,0,16">
         <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="16" />
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="16" />
           <ColumnDefinition Width="*" />
@@ -132,6 +134,13 @@
                     HorizontalAlignment="Stretch" />
         </StackPanel>
         <StackPanel Grid.Column="2">
+          <TextBlock Text="{loc:Str Dialog_PersonaEdit_ModelType}" FontWeight="SemiBold" Margin="0,0,0,4" />
+          <ComboBox ItemsSource="{Binding ModelTypeOptions}"
+                    Text="{Binding ModelType, UpdateSourceTrigger=PropertyChanged}"
+                    IsEditable="True"
+                    HorizontalAlignment="Stretch" />
+        </StackPanel>
+        <StackPanel Grid.Column="4">
           <TextBlock Text="{loc:Str Dialog_PersonaEdit_ToolScope}" FontWeight="SemiBold" Margin="0,0,0,4" />
           <ComboBox ItemsSource="{Binding ToolScopeOptions}"
                     SelectedItem="{Binding ToolScope}"

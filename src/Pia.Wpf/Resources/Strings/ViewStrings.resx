@@ -627,6 +627,7 @@
   <data name="Dialog_PersonaEdit_OutputFormat" xml:space="preserve"><value>Output Format</value></data>
   <data name="Dialog_PersonaEdit_OutputFormatHint" xml:space="preserve"><value>How replies should be formatted (length, prose vs. lists, code). Leave blank for the default.</value></data>
   <data name="Dialog_PersonaEdit_Archetype" xml:space="preserve"><value>Archetype</value></data>
+  <data name="Dialog_PersonaEdit_ModelType" xml:space="preserve"><value>Model type</value></data>
   <data name="Dialog_PersonaEdit_Expertise" xml:space="preserve"><value>Expertise</value></data>
   <data name="Dialog_PersonaEdit_ExpertiseHint" xml:space="preserve"><value>Comma-separated domain tags</value></data>
   <data name="Dialog_PersonaEdit_Emoji" xml:space="preserve"><value>Emoji</value></data>

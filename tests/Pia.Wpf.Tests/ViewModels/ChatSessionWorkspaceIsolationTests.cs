@@ -97,7 +97,7 @@ public sealed class ChatSessionWorkspaceIsolationTests : IDisposable
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
                 Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
-            .Returns(ci => WriteThenText((CancellationToken)ci[6]));
+            .Returns(ci => WriteThenText((CancellationToken)ci[7]));
     }
 
     private async IAsyncEnumerable<ChatStreamItem> WriteThenText([EnumeratorCancellation] CancellationToken ct)

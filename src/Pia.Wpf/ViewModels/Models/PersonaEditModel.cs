@@ -52,6 +52,10 @@ public partial class PersonaEditModel : ObservableValidator
     [ObservableProperty]
     private string _archetype = "custom";
 
+    /// <summary>Free-form model-routing hint; blank ⇒ no persona-type routing.</summary>
+    [ObservableProperty]
+    private string _modelType = string.Empty;
+
     /// <summary>Comma-separated domain tags (round-tripped to <c>Persona.Expertise</c>).</summary>
     [ObservableProperty]
     private string _expertise = string.Empty;
@@ -82,6 +86,9 @@ public partial class PersonaEditModel : ObservableValidator
 
     public string[] ArchetypeOptions { get; } =
         ["assistant", "analyst", "creative", "visionary", "explainer", "custom"];
+
+    /// <summary>Suggestions for the editable model-type combo — a routing hint, not a closed vocabulary.</summary>
+    public string[] ModelTypeOptions { get; } = ["general", "fast", "code"];
 
     public PersonaToolScope[] ToolScopeOptions { get; } = Enum.GetValues<PersonaToolScope>();
 
@@ -205,6 +212,7 @@ public partial class PersonaEditModel : ObservableValidator
             Guardrails = persona.Guardrails ?? string.Empty,
             OutputFormat = persona.OutputFormat ?? string.Empty,
             Archetype = string.IsNullOrEmpty(persona.Archetype) ? "custom" : persona.Archetype,
+            ModelType = persona.ModelType ?? string.Empty,
             Expertise = persona.Expertise is { Count: > 0 } ? string.Join(", ", persona.Expertise) : string.Empty,
             Emoji = persona.Emoji ?? string.Empty,
             AccentColor = persona.AccentColor ?? string.Empty,
@@ -229,6 +237,7 @@ public partial class PersonaEditModel : ObservableValidator
             Guardrails = string.IsNullOrWhiteSpace(Guardrails) ? null : Guardrails.Trim(),
             OutputFormat = string.IsNullOrWhiteSpace(OutputFormat) ? null : OutputFormat.Trim(),
             Archetype = string.IsNullOrWhiteSpace(Archetype) ? "custom" : Archetype,
+            ModelType = string.IsNullOrWhiteSpace(ModelType) ? null : ModelType.Trim(),
             Expertise = ParseExpertise(Expertise),
             Emoji = string.IsNullOrWhiteSpace(Emoji) ? null : Emoji.Trim(),
             AccentColor = string.IsNullOrWhiteSpace(AccentColor) ? null : AccentColor.Trim(),

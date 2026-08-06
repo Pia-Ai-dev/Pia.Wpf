@@ -212,10 +212,10 @@ public class PersonaService : IPersonaService
                 insertCommand.CommandText = """
                     INSERT OR REPLACE INTO ManagedPersonas
                         (Id, Name, Tagline, SystemPrompt, Guardrails, Archetype, Expertise, Emoji, AccentColor,
-                         ToolScope, PreferredProviderId, ReasoningEffort, SchemaVersion, CreatedAt, UpdatedAt, OutputFormat)
+                         ToolScope, PreferredProviderId, ReasoningEffort, SchemaVersion, CreatedAt, UpdatedAt, OutputFormat, ModelType)
                     VALUES
                         (@Id, @Name, @Tagline, @SystemPrompt, @Guardrails, @Archetype, @Expertise, @Emoji, @AccentColor,
-                         @ToolScope, @PreferredProviderId, @ReasoningEffort, @SchemaVersion, @CreatedAt, @UpdatedAt, @OutputFormat)
+                         @ToolScope, @PreferredProviderId, @ReasoningEffort, @SchemaVersion, @CreatedAt, @UpdatedAt, @OutputFormat, @ModelType)
                     """;
                 AddPersonaParameters(insertCommand, persona);
                 await insertCommand.ExecuteNonQueryAsync();
@@ -314,10 +314,10 @@ public class PersonaService : IPersonaService
         command.CommandText = """
             INSERT OR REPLACE INTO Personas
                 (Id, Name, Tagline, SystemPrompt, Guardrails, Archetype, Expertise, Emoji, AccentColor,
-                 ToolScope, PreferredProviderId, ReasoningEffort, SchemaVersion, CreatedAt, UpdatedAt, OutputFormat)
+                 ToolScope, PreferredProviderId, ReasoningEffort, SchemaVersion, CreatedAt, UpdatedAt, OutputFormat, ModelType)
             VALUES
                 (@Id, @Name, @Tagline, @SystemPrompt, @Guardrails, @Archetype, @Expertise, @Emoji, @AccentColor,
-                 @ToolScope, @PreferredProviderId, @ReasoningEffort, @SchemaVersion, @CreatedAt, @UpdatedAt, @OutputFormat)
+                 @ToolScope, @PreferredProviderId, @ReasoningEffort, @SchemaVersion, @CreatedAt, @UpdatedAt, @OutputFormat, @ModelType)
             """;
 
         AddPersonaParameters(command, persona);
@@ -350,7 +350,8 @@ public class PersonaService : IPersonaService
             SET Name = @Name, Tagline = @Tagline, SystemPrompt = @SystemPrompt, Guardrails = @Guardrails,
                 OutputFormat = @OutputFormat, Archetype = @Archetype, Expertise = @Expertise, Emoji = @Emoji,
                 AccentColor = @AccentColor, ToolScope = @ToolScope, PreferredProviderId = @PreferredProviderId,
-                ReasoningEffort = @ReasoningEffort, SchemaVersion = @SchemaVersion, UpdatedAt = @UpdatedAt
+                ReasoningEffort = @ReasoningEffort, SchemaVersion = @SchemaVersion, UpdatedAt = @UpdatedAt,
+                ModelType = @ModelType
             WHERE Id = @Id
             """;
 
@@ -463,6 +464,7 @@ public class PersonaService : IPersonaService
         command.Parameters.AddWithValue("@Guardrails", persona.Guardrails is not null ? (object)persona.Guardrails : DBNull.Value);
         command.Parameters.AddWithValue("@OutputFormat", persona.OutputFormat is not null ? (object)persona.OutputFormat : DBNull.Value);
         command.Parameters.AddWithValue("@Archetype", persona.Archetype is not null ? (object)persona.Archetype : DBNull.Value);
+        command.Parameters.AddWithValue("@ModelType", persona.ModelType is not null ? (object)persona.ModelType : DBNull.Value);
         command.Parameters.AddWithValue("@Expertise", JsonSerializer.Serialize(persona.Expertise ?? []));
         command.Parameters.AddWithValue("@Emoji", persona.Emoji is not null ? (object)persona.Emoji : DBNull.Value);
         command.Parameters.AddWithValue("@AccentColor", persona.AccentColor is not null ? (object)persona.AccentColor : DBNull.Value);
@@ -475,8 +477,8 @@ public class PersonaService : IPersonaService
     }
 
     /// <summary>
-    /// The projection <see cref="MapPersona"/> reads BY ORDINAL (Id 0 … UpdatedAt 14, OutputFormat 15),
-    /// shared by all four persona SELECTs. One constant rather than four copies because
+    /// The projection <see cref="MapPersona"/> reads BY ORDINAL (Id 0 … UpdatedAt 14, OutputFormat 15,
+    /// ModelType 16), shared by all four persona SELECTs. One constant rather than four copies because
     /// <c>Personas</c> and <c>ManagedPersonas</c> are column-identical and that identity is the whole reason
     /// one reader serves both: a 17th column added to only three of the four SELECTs would make
     /// <see cref="MapPersona"/> throw <see cref="IndexOutOfRangeException"/> on every read from the table
@@ -484,7 +486,7 @@ public class PersonaService : IPersonaService
     /// </summary>
     private const string PersonaColumns = """
         Id, Name, Tagline, SystemPrompt, Guardrails, Archetype, Expertise, Emoji, AccentColor,
-        ToolScope, PreferredProviderId, ReasoningEffort, SchemaVersion, CreatedAt, UpdatedAt, OutputFormat
+        ToolScope, PreferredProviderId, ReasoningEffort, SchemaVersion, CreatedAt, UpdatedAt, OutputFormat, ModelType
         """;
 
     private static Persona MapPersona(SqliteDataReader reader)
@@ -500,6 +502,7 @@ public class PersonaService : IPersonaService
             // OutputFormat is appended last in the SELECT (index 15) to keep the other ordinals stable.
             OutputFormat = reader.IsDBNull(15) ? null : reader.GetString(15),
             Archetype = reader.IsDBNull(5) ? "custom" : reader.GetString(5),
+            ModelType = reader.IsDBNull(16) ? null : reader.GetString(16),
             Expertise = ParseExpertise(expertiseJson),
             Emoji = reader.IsDBNull(7) ? null : reader.GetString(7),
             AccentColor = reader.IsDBNull(8) ? null : reader.GetString(8),

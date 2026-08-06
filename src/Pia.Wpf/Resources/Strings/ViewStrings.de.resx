@@ -661,6 +661,7 @@
   <data name="Dialog_PersonaEdit_OutputFormat" xml:space="preserve"><value>Ausgabeformat</value></data>
   <data name="Dialog_PersonaEdit_OutputFormatHint" xml:space="preserve"><value>Wie Antworten formatiert werden (Länge, Fließtext vs. Listen, Code). Für die Standardvorgabe leer lassen.</value></data>
   <data name="Dialog_PersonaEdit_Archetype" xml:space="preserve"><value>Archetyp</value></data>
+  <data name="Dialog_PersonaEdit_ModelType" xml:space="preserve"><value>Modelltyp</value></data>
   <data name="Dialog_PersonaEdit_Expertise" xml:space="preserve"><value>Fachgebiete</value></data>
   <data name="Dialog_PersonaEdit_ExpertiseHint" xml:space="preserve"><value>Durch Kommas getrennte Themen-Tags</value></data>
   <data name="Dialog_PersonaEdit_Emoji" xml:space="preserve"><value>Emoji</value></data>

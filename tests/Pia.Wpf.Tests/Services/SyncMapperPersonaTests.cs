@@ -58,6 +58,7 @@ public class SyncMapperPersonaTests
         Guardrails = "Flag security concerns proactively.",
         OutputFormat = "- Lead with the answer.\n- Use code blocks for code.",
         Archetype = "analyst",
+        ModelType = "code",
         Expertise = ["C#", "Distributed Systems", "Security"],
         Emoji = "💻",
         AccentColor = "#00C853",
@@ -87,6 +88,7 @@ public class SyncMapperPersonaTests
         Assert.Equal(original.Expertise, sync.Expertise);
         // Structural fields stay plaintext in both modes.
         Assert.Equal("analyst", sync.Archetype);
+        Assert.Equal("code", sync.ModelType);
         Assert.Equal((int)PersonaToolScope.Full, sync.ToolScope);
         Assert.Equal(original.PreferredProviderId, sync.PreferredProviderId);
         Assert.Equal((int)ReasoningEffort.High, sync.ReasoningEffort);
@@ -101,6 +103,7 @@ public class SyncMapperPersonaTests
         Assert.Equal(original.OutputFormat, back.OutputFormat);
         Assert.Equal(original.Expertise, back.Expertise);
         Assert.Equal(original.Archetype, back.Archetype);
+        Assert.Equal(original.ModelType, back.ModelType);
         Assert.Equal(original.Emoji, back.Emoji);
         Assert.Equal(original.AccentColor, back.AccentColor);
         Assert.Equal(original.ToolScope, back.ToolScope);
@@ -132,6 +135,7 @@ public class SyncMapperPersonaTests
         // Structural fields remain plaintext even under E2EE.
         Assert.Equal(original.Id, sync.Id);
         Assert.Equal("analyst", sync.Archetype);
+        Assert.Equal("code", sync.ModelType);
         Assert.Equal("💻", sync.Emoji);
         Assert.Equal("#00C853", sync.AccentColor);
         Assert.Equal((int)PersonaToolScope.Full, sync.ToolScope);
@@ -149,6 +153,7 @@ public class SyncMapperPersonaTests
         Assert.Equal(original.OutputFormat, back.OutputFormat);
         Assert.Equal(original.Expertise, back.Expertise);
         Assert.Equal(original.Archetype, back.Archetype);
+        Assert.Equal(original.ModelType, back.ModelType);
         Assert.Equal(original.ToolScope, back.ToolScope);
         Assert.Equal(original.PreferredProviderId, back.PreferredProviderId);
         Assert.Equal(original.ReasoningEffort, back.ReasoningEffort);
@@ -269,6 +274,21 @@ public class SyncMapperPersonaTests
             var sync = mapper.ToSyncPersona(SamplePersona());
             sync.Archetype = archetype;
             Assert.Equal("custom", mapper.FromSyncPersona(sync).Archetype);
+        }
+    }
+
+    [Fact]
+    public void FromSyncPersona_BlankModelTypeVariants_AllMapToNull()
+    {
+        var mapper = PlainMapper();
+
+        // Blank is not a routing key: the server falls through on unmapped/blank types, so the client
+        // normalizes it away rather than round-tripping a whitespace value into metadata.
+        foreach (var modelType in new[] { null, "", "   ", "\t" })
+        {
+            var sync = mapper.ToSyncPersona(SamplePersona());
+            sync.ModelType = modelType;
+            Assert.Null(mapper.FromSyncPersona(sync).ModelType);
         }
     }
 

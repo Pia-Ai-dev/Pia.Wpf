@@ -352,7 +352,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             messages, provider,
             setup.SupportsTools ? setup.Tools : null,
             setup.SupportsTools ? (toolCall, ctx) => HandleToolCallAsync(toolCall, grantedWrites, ctx, policy, timeline, outcomeStore, approvals, userInput, deniedWrites) : null,
-            nameof(WindowMode.Assistant), setup.PersonaId,
+            nameof(WindowMode.Assistant), setup.PersonaId, setup.ModelType,
             cancellationToken: ct, contextBudget: contextBudget))
         {
             switch (item)

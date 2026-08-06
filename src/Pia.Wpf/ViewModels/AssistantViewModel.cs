@@ -1675,6 +1675,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             supportsTools ? HandleVoiceModeToolCall : null,
             nameof(WindowMode.Assistant),
             persona.Id,
+            persona.ModelType,
             cancellationToken: cancellationToken))
         {
             if (item is not TextDelta td)

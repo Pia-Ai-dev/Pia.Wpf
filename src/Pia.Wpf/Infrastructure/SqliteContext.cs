@@ -371,7 +371,8 @@ public class SqliteContext : IDisposable
                 SchemaVersion INTEGER NOT NULL DEFAULT 1,
                 CreatedAt TEXT NOT NULL,
                 UpdatedAt TEXT NOT NULL,
-                OutputFormat TEXT
+                OutputFormat TEXT,
+                ModelType TEXT
             );
 
             CREATE INDEX IF NOT EXISTS IX_Personas_UpdatedAt ON Personas(UpdatedAt);
@@ -404,7 +405,8 @@ public class SqliteContext : IDisposable
                 SchemaVersion INTEGER NOT NULL DEFAULT 1,
                 CreatedAt TEXT NOT NULL,
                 UpdatedAt TEXT NOT NULL,
-                OutputFormat TEXT
+                OutputFormat TEXT,
+                ModelType TEXT
             );
 
             CREATE TABLE IF NOT EXISTS AssistantChats (
@@ -816,7 +818,8 @@ public class SqliteContext : IDisposable
                     SchemaVersion INTEGER NOT NULL DEFAULT 1,
                     CreatedAt TEXT NOT NULL,
                     UpdatedAt TEXT NOT NULL,
-                    OutputFormat TEXT
+                    OutputFormat TEXT,
+                    ModelType TEXT
                 );
 
                 CREATE INDEX IF NOT EXISTS IX_Personas_UpdatedAt ON Personas(UpdatedAt);
@@ -855,7 +858,8 @@ public class SqliteContext : IDisposable
                     SchemaVersion INTEGER NOT NULL DEFAULT 1,
                     CreatedAt TEXT NOT NULL,
                     UpdatedAt TEXT NOT NULL,
-                    OutputFormat TEXT
+                    OutputFormat TEXT,
+                    ModelType TEXT
                 );
                 """;
             createManagedPersonas.ExecuteNonQuery();
@@ -879,6 +883,29 @@ public class SqliteContext : IDisposable
             using var addCol = _connection.CreateCommand();
             addCol.CommandText = "ALTER TABLE Personas ADD COLUMN OutputFormat TEXT";
             addCol.ExecuteNonQuery();
+        }
+
+        // Persona model-type routing hint, added after the persona tables shipped. Both persona tables
+        // stay column-identical (PersonaService shares one reader/writer across them), so one PRAGMA
+        // pass per table, same idiom as OutputFormat above.
+        foreach (var personaTable in new[] { "Personas", "ManagedPersonas" })
+        {
+            var hasModelType = false;
+            using (var p = _connection!.CreateCommand())
+            {
+                p.CommandText = $"PRAGMA table_info({personaTable})";
+                using var r = p.ExecuteReader();
+                while (r.Read())
+                {
+                    if (r.GetString(1) == "ModelType") { hasModelType = true; break; }
+                }
+            }
+            if (!hasModelType)
+            {
+                using var addCol = _connection.CreateCommand();
+                addCol.CommandText = $"ALTER TABLE {personaTable} ADD COLUMN ModelType TEXT";
+                addCol.ExecuteNonQuery();
+            }
         }
 
         // Per-chat working directory (relative to the assistant-files sandbox root), added after

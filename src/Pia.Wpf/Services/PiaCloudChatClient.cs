@@ -21,6 +21,7 @@ public sealed class PiaCloudChatClient : IChatClient
     private readonly string _chatUrl;
     private readonly string? _mode;
     private readonly Guid? _managedPersonaId;
+    private readonly string? _modelType;
     private readonly ILogger _logger;
     private readonly Func<bool, string?, Task<string?>> _tokenProvider;
 
@@ -34,12 +35,18 @@ public sealed class PiaCloudChatClient : IChatClient
     /// not: the server maps an id it does not recognise to null (deliberately no existence oracle), so no
     /// "is this managed?" check belongs on the chat path.
     /// </param>
-    public PiaCloudChatClient(HttpClient httpClient, string serverUrl, Func<bool, string?, Task<string?>> tokenProvider, ILogger logger, string? mode = null, Guid? managedPersonaId = null)
+    /// <param name="modelType">
+    /// The persona's model-routing hint, sent as <c>metadata.pia_persona_type</c> so the server can route
+    /// Assistant-mode chat to the group's catalog provider for that type. Null ⇒ the key is omitted
+    /// entirely (no empty <c>metadata</c> object on the wire).
+    /// </param>
+    public PiaCloudChatClient(HttpClient httpClient, string serverUrl, Func<bool, string?, Task<string?>> tokenProvider, ILogger logger, string? mode = null, Guid? managedPersonaId = null, string? modelType = null)
     {
         _httpClient = httpClient;
         _chatUrl = $"{serverUrl.TrimEnd('/')}/api/ai/chat";
         _mode = mode;
         _managedPersonaId = managedPersonaId;
+        _modelType = modelType;
         _logger = logger;
         _tokenProvider = tokenProvider;
     }
@@ -310,6 +317,9 @@ public sealed class PiaCloudChatClient : IChatClient
 
         if (options?.MaxOutputTokens is not null)
             body["max_tokens"] = options.MaxOutputTokens.Value;
+
+        if (_modelType is not null)
+            body["metadata"] = new JsonObject { ["pia_persona_type"] = _modelType };
 
         if (stream)
         {

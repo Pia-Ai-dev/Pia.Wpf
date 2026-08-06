@@ -25,6 +25,9 @@ public class Persona
     /// <summary>assistant | analyst | creative | visionary | explainer | custom. Default "custom".</summary>
     public string Archetype { get; set; } = "custom";
 
+    /// <summary>Free-form model-routing hint (≤ 50 chars, e.g. "fast", "code"); <c>null</c> ⇒ no persona-type routing.</summary>
+    public string? ModelType { get; set; }
+
     /// <summary>Domain tags (small list, ≤ 16).</summary>
     public List<string> Expertise { get; set; } = [];
 

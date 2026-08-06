@@ -155,6 +155,7 @@ public class TokenizingAiClientService : IAiClientService
         ToolCallHandler? toolHandler = null,
         string? mode = null,
         Guid? managedPersonaId = null,
+        string? personaModelType = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default,
         AgentContextBudget? contextBudget = null)
     {
@@ -168,7 +169,7 @@ public class TokenizingAiClientService : IAiClientService
         {
             _logger.LogDebug("Tokenization disabled, passing through tool completion");
             await foreach (var item in _inner.GetChatCompletionWithToolsAsync(
-                messages, provider, tools, toolHandler, mode, managedPersonaId, cancellationToken, contextBudget))
+                messages, provider, tools, toolHandler, mode, managedPersonaId, personaModelType, cancellationToken, contextBudget))
                 yield return item;
             yield break;
         }
@@ -186,7 +187,7 @@ public class TokenizingAiClientService : IAiClientService
         var reasoningIsBuffering = false;
 
         await foreach (var item in _inner.GetChatCompletionWithToolsAsync(
-            tokenizedMessages, provider, tools, wrappedHandler, mode, managedPersonaId, cancellationToken, contextBudget))
+            tokenizedMessages, provider, tools, wrappedHandler, mode, managedPersonaId, personaModelType, cancellationToken, contextBudget))
         {
             if (item is TextDelta td)
             {

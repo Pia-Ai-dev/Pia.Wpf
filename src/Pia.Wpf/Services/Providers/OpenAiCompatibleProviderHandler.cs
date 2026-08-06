@@ -29,6 +29,7 @@ public sealed class OpenAiCompatibleProviderHandler : IAiProviderHandler
         string? mode,
         // Ignored: this handler talks to a third-party provider, which has no server-side persona scope.
         Guid? managedPersonaId,
+        string? personaModelType,
         CancellationToken cancellationToken)
     {
         var client = new ChatClient(

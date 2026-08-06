@@ -158,7 +158,7 @@ public sealed class ChatSessionStepTurnTests
             .Returns(ci =>
             {
                 sent = [.. (IList<ChatMessage>)ci[0]];
-                relayed = (AgentContextBudget?)ci[7];
+                relayed = (AgentContextBudget?)ci[8];
                 return Stream(new TextDelta("done"), new Finished(null, "m"));
             });
 
@@ -210,7 +210,7 @@ public sealed class ChatSessionStepTurnTests
             .Returns(ci =>
             {
                 sent = [.. (IList<ChatMessage>)ci[0]];
-                relayed = (AgentContextBudget?)ci[7];
+                relayed = (AgentContextBudget?)ci[8];
                 return Stream(new TextDelta("done"), new Finished(null, "m"));
             });
 

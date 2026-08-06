@@ -24,6 +24,7 @@ public sealed class OpenRouterProviderHandler : IAiProviderHandler
         string? mode,
         // Ignored: this handler talks to a third-party provider, which has no server-side persona scope.
         Guid? managedPersonaId,
+        string? personaModelType,
         CancellationToken cancellationToken)
     {
         // Build a dedicated HttpClient stack with the rewrite handler so the

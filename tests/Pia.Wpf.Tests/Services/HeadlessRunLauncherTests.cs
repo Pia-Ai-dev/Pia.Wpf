@@ -187,7 +187,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
                 Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci => stream is not null
-                ? stream(ci.ArgAt<CancellationToken>(6))
+                ? stream(ci.ArgAt<CancellationToken>(7))
                 : probe is null
                     ? Drive()
                     : DriveWithToolCall(ci.ArgAt<ToolCallHandler?>(3), probe));

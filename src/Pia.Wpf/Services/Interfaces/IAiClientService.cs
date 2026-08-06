@@ -61,6 +61,12 @@ public interface IAiClientService
     /// call sites compiling — inserting it here shifts <paramref name="cancellationToken"/> and
     /// <paramref name="contextBudget"/>, so every positional call site was updated to name them.
     /// </param>
+    /// <param name="personaModelType">
+    /// The persona's model-routing hint, relayed to the Pia Cloud transport as
+    /// <c>metadata.pia_persona_type</c> so the server can route Assistant-mode chat to the group's
+    /// catalog provider for that type. Null ⇒ the key is omitted, which is what every caller without
+    /// a resolved persona passes. Ignored by every non-Pia-Cloud provider.
+    /// </param>
     /// <param name="contextBudget">
     /// Opt-in agent context budget. When non-null, the working message list is compacted between tool
     /// rounds so a long in-step tool loop cannot overflow the model's context window and fail the
@@ -74,6 +80,7 @@ public interface IAiClientService
         ToolCallHandler? toolHandler = null,
         string? mode = null,
         Guid? managedPersonaId = null,
+        string? personaModelType = null,
         CancellationToken cancellationToken = default,
         AgentContextBudget? contextBudget = null);
 
