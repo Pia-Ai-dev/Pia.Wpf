@@ -550,17 +550,18 @@ public sealed class ChatSession : IDisposable
                 assistantMessage.ThinkingContent = combined;
         }
 
-        // Time the "thinking" phase: from the first reasoning token to the first answer
-        // token (or stream end), surfaced as a localized "Thought for Ns" chip.
-        DateTime? reasoningStartedAt = null;
+        // Time the user-visible "thinking" phase: the live indicator is up from the moment
+        // the message streams, so the timer starts here (not at the first reasoning token)
+        // and the "Thought for Ns" chip survives turns whose provider forwarded no trace.
+        var reasoningStartedAt = DateTime.Now;
         var reasoningTimed = false;
 
         void StopReasoningTimer()
         {
-            if (reasoningStartedAt is { } startedAt && !reasoningTimed)
+            if (!reasoningTimed)
             {
                 reasoningTimed = true;
-                var seconds = Math.Max(1, (int)Math.Round((DateTime.Now - startedAt).TotalSeconds));
+                var seconds = Math.Max(1, (int)Math.Round((DateTime.Now - reasoningStartedAt).TotalSeconds));
                 var duration = seconds < 60 ? $"{seconds}s" : $"{seconds / 60}m {seconds % 60}s";
                 assistantMessage.ReasoningDurationLabel =
                     _localizationService.Format("Assistant_ThoughtForDuration", duration);
@@ -583,8 +584,6 @@ public sealed class ChatSession : IDisposable
                     rawBuffer.Append(td.Text);
                     var (visible, thinking) = StreamThinkTagParser.Parse(rawBuffer.ToString());
 
-                    if (!string.IsNullOrEmpty(thinking))
-                        reasoningStartedAt ??= DateTime.Now; // inline <think> reasoning
                     if (!string.IsNullOrEmpty(visible))
                         StopReasoningTimer(); // first answer token ends the thinking phase (set label first)
                     assistantMessage.Content = visible;
@@ -593,7 +592,6 @@ public sealed class ChatSession : IDisposable
                     break;
 
                 case ReasoningDelta rd:
-                    reasoningStartedAt ??= DateTime.Now;
                     reasoningBuffer.Append(rd.Text);
                     UpdateThinking();
                     break;

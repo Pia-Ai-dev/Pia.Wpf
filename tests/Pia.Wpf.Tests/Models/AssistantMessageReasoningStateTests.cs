@@ -44,13 +44,25 @@ public class AssistantMessageReasoningStateTests
     }
 
     [Fact]
-    public void NoReasoning_NeverShowsSummary()
+    public void NoReasoning_NoDuration_NeverShowsSummary()
     {
         var msg = NewAssistant();
         msg.Content = "the answer";
         msg.IsStreaming = false;
 
         Assert.False(msg.ShowReasoningSummary);
+        Assert.False(msg.ShowLiveReasoning);
+    }
+
+    [Fact]
+    public void DurationWithoutReasoning_ShowsSummary()
+    {
+        var msg = NewAssistant();
+        msg.Content = "the answer";
+        msg.IsStreaming = false;
+        msg.ReasoningDurationLabel = "Thought for 5s";
+
+        Assert.True(msg.ShowReasoningSummary);
         Assert.False(msg.ShowLiveReasoning);
     }
 
@@ -86,5 +98,6 @@ public class AssistantMessageReasoningStateTests
         raised.Clear();
         msg.ReasoningDurationLabel = "Thought for 3s";
         Assert.Contains(nameof(AssistantMessage.HasReasoningDuration), raised);
+        Assert.Contains(nameof(AssistantMessage.ShowReasoningSummary), raised);
     }
 }

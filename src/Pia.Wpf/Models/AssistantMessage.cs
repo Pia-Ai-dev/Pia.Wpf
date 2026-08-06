@@ -32,8 +32,7 @@ public partial class AssistantMessage : ObservableObject
     [ObservableProperty]
     private bool _isReasoningExpanded;
 
-    /// <summary>Localized "Thought for Ns" label, set once reasoning completes. Empty when the
-    /// turn produced no reasoning.</summary>
+    /// <summary>Localized "Thought for Ns" label, set when the thinking phase ends.</summary>
     [ObservableProperty]
     private string _reasoningDurationLabel = string.Empty;
 
@@ -94,9 +93,9 @@ public partial class AssistantMessage : ObservableObject
     /// <see cref="ThinkingContent"/>).</summary>
     public bool ShowLiveReasoning => IsStreaming && !HasContent;
 
-    /// <summary>Reasoning exists and the thinking phase is over — drives the collapsed
-    /// "Thought for Ns" toggle shown above the answer.</summary>
-    public bool ShowReasoningSummary => HasThinkingContent && !ShowLiveReasoning;
+    /// <summary>The thinking phase is over and left a duration or a trace — drives the
+    /// collapsed toggle shown above the answer.</summary>
+    public bool ShowReasoningSummary => (HasThinkingContent || HasReasoningDuration) && !ShowLiveReasoning;
 
     public bool HasAttachment => Attachment is not null;
 
@@ -131,6 +130,7 @@ public partial class AssistantMessage : ObservableObject
     partial void OnReasoningDurationLabelChanged(string value)
     {
         OnPropertyChanged(nameof(HasReasoningDuration));
+        OnPropertyChanged(nameof(ShowReasoningSummary));
     }
 
     partial void OnAttachmentChanged(ImageAttachment? value)

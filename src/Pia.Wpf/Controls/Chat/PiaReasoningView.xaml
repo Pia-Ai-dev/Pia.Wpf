@@ -45,12 +45,14 @@
 
     <!-- ===== SUMMARY: collapsed "Thought for Ns" toggle (answer present) ===== -->
     <StackPanel Visibility="{Binding ShowReasoningSummary, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <!-- Expandable toggle when a reasoning trace exists -->
       <ui:Button Click="Toggle_Click"
                  Appearance="Transparent"
                  Padding="2,2"
                  HorizontalAlignment="Left"
                  Cursor="Hand"
-                 ToolTip="{loc:Str Assistant_ShowReasoning}">
+                 ToolTip="{loc:Str Assistant_ShowReasoning}"
+                 Visibility="{Binding HasThinkingContent, Converter={StaticResource BooleanToVisibilityConverter}}">
         <StackPanel Orientation="Horizontal">
           <!-- Chevron: points right when collapsed, rotates down when expanded -->
           <Path Data="M 0,0 L 4,4 L 0,8"
@@ -93,6 +95,13 @@
                      Visibility="{Binding HasReasoningDuration, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
         </StackPanel>
       </ui:Button>
+
+      <!-- Duration-only (provider forwarded no trace): nothing to expand -->
+      <TextBlock Text="{Binding ReasoningDurationLabel}"
+                 FontSize="12"
+                 FontStyle="Italic"
+                 Foreground="{DynamicResource TextSubtleBrush}"
+                 Visibility="{Binding HasThinkingContent, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
 
       <!-- Expanded: full reasoning, indented, no heavy chrome -->
       <TextBlock Text="{Binding ThinkingContent}"

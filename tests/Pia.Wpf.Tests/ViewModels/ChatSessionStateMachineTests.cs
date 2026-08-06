@@ -135,6 +135,25 @@ public class ChatSessionStateMachineTests
     }
 
     [Fact]
+    public async Task NoReasoning_TurnStillTimesThinkingPhase()
+    {
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(new TextDelta("Hello!")));
+
+        var session = CreateSession();
+        await session.RunTurnAsync(BuildRequest(session), CancellationToken.None);
+
+        // The live indicator was up for the whole exchange, so the retrospective
+        // chip must show even though the provider forwarded no reasoning trace.
+        var message = session.Messages.Last(m => !m.IsUser);
+        Assert.False(message.HasThinkingContent);
+        Assert.True(message.HasReasoningDuration);
+        Assert.True(message.ShowReasoningSummary);
+    }
+
+    [Fact]
     public async Task InlineThinkTags_PopulateThinkingContent_AndAreStrippedFromVisibleText()
     {
         _ai.GetChatCompletionWithToolsAsync(
