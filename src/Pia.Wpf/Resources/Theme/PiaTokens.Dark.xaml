@@ -31,6 +31,15 @@
   <!-- Sunk surface -->
   <Color x:Key="SurfaceSunkColor">#FF0E1626</Color>
 
+  <!-- Signal-band palette (run-progress card) — see the light file for why these carry alpha. -->
+  <Color x:Key="TextGhostColor">#FF3E4A63</Color>
+  <Color x:Key="BandAccentColor">#385B8DEF</Color>
+  <Color x:Key="AccentBorderSoftColor">#3D5B8DEF</Color>
+  <Color x:Key="AccentBorderColor">#665B8DEF</Color>
+  <Color x:Key="SuccessBorderColor">#4D3DB48D</Color>
+  <Color x:Key="DangerBorderColor">#4DEF6E8A</Color>
+  <Color x:Key="WarnBorderColor">#4DE6A23C</Color>
+
   <!-- Memory type palette (translucent fills over the dark surface) -->
   <Color x:Key="TypeProfileBgColor">#3F6D28D9</Color>
   <Color x:Key="TypeProfileFgColor">#FFC4B5FD</Color>
@@ -95,6 +104,14 @@
   <SolidColorBrush x:Key="DiffSeparatorBgBrush"  Color="{StaticResource DiffSeparatorBgColor}"/>
 
   <SolidColorBrush x:Key="SurfaceSunkBrush"     Color="{StaticResource SurfaceSunkColor}"/>
+
+  <SolidColorBrush x:Key="TextGhostBrush"        Color="{StaticResource TextGhostColor}"/>
+  <SolidColorBrush x:Key="BandAccentBrush"       Color="{StaticResource BandAccentColor}"/>
+  <SolidColorBrush x:Key="AccentBorderSoftBrush" Color="{StaticResource AccentBorderSoftColor}"/>
+  <SolidColorBrush x:Key="AccentBorderBrush"     Color="{StaticResource AccentBorderColor}"/>
+  <SolidColorBrush x:Key="SuccessBorderBrush"    Color="{StaticResource SuccessBorderColor}"/>
+  <SolidColorBrush x:Key="DangerBorderBrush"     Color="{StaticResource DangerBorderColor}"/>
+  <SolidColorBrush x:Key="WarnBorderBrush"       Color="{StaticResource WarnBorderColor}"/>
 
   <SolidColorBrush x:Key="TypeProfileBgBrush"     Color="{StaticResource TypeProfileBgColor}"/>
   <SolidColorBrush x:Key="TypeProfileFgBrush"     Color="{StaticResource TypeProfileFgColor}"/>

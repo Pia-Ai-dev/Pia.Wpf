@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
@@ -69,6 +69,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// button can request a user pause. Null ⇒ <c>CanPause</c> is always false, i.e. the panel renders exactly
     /// as it did before this batch.</summary>
     private readonly IAgentRunSteeringService? _steering;
+    private readonly IThemeService? _themeService;
     private bool _disposed;
     private bool _tokenizationEnabled;
     private bool _suggestionsEnabled = true;
@@ -263,7 +264,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IRunSteeringStore? runSteering = null,
         // Batch 08 G8: handed on to the run panel VM only. Trailing and defaulted, same discipline; null ⇒ no
         // Pause button anywhere this VM constructs the panel.
-        IAgentRunSteeringService? steering = null)
+        IAgentRunSteeringService? steering = null,
+        // Handed on to the run panel VM only, so a theme switch reaches the colours its converters resolved by
+        // key. Trailing and defaulted, same discipline as the four above; null means the panel keeps the
+        // pre-fix behaviour and simply does not re-resolve them.
+        IThemeService? themeService = null)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -301,6 +306,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _permissions = permissions;
         _runSteering = runSteering;
         _steering = steering;
+        _themeService = themeService;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         RunInBackgroundCommand = new AsyncRelayCommand(ExecuteRunInBackground, CanExecuteRunInBackground);
@@ -443,7 +449,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _runProgress?.Dispose(); // unsubscribes the prior RunChanged handler
         _runProgress = runId is { } id
             ? new RunProgressViewModel(_agentRunService, id, _localizationService, _resumeService, _logger,
-                _agentTimelineService, _runWorkspaces, _personaService, _steering)
+                _agentTimelineService, _runWorkspaces, _personaService, _steering, _themeService)
             : null;
         ActiveRunProgress = _runProgress;
     }

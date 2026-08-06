@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics><meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/pia-web-design-system-c318bb24-a9a1-4093-9a89-ecb27a5c3ec5/assets/pia-ds.css">
+<script src="_ds/pia-web-design-system-c318bb24-a9a1-4093-9a89-ecb27a5c3ec5/_ds_bundle.js"></script>
+<style>
+body{margin:0;background:#F5F5F0;font-family:'Segoe UI',system-ui,sans-serif;color:#1C1917}
+a{color:#0078D4}a:hover{color:#005A9E}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{animation:spin 1.1s linear infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.pulse{animation:pulse 1.6s ease-in-out infinite}
+.lbl{font:600 10.5px/1 ui-monospace,Consolas,monospace;letter-spacing:.07em;text-transform:uppercase;color:#78716C;margin:0 0 8px}
+.note{font:11.5px/1.5 'Segoe UI',system-ui,sans-serif;color:#78716C;margin:8px 0 0;max-width:600px}
+</style></helmet>
+
+<div style="padding:40px 44px 60px">
+<div style="font:600 16px/1.3 'Segoe UI',system-ui,sans-serif;margin-bottom:6px">Signal band — state matrix</div>
+<div style="font:13px/1.6 'Segoe UI',system-ui,sans-serif;color:#44403C;max-width:760px;margin-bottom:30px">Every state of the run-progress card in the chosen direction. The band at the top is the single state carrier: its tint, its icon and its lead sentence change; everything below it is the same structure. Card width is illustrative (640px) — in the app it fills the transcript column.</div>
+
+<div style="display:flex;flex-wrap:wrap;gap:36px;align-items:flex-start">
+
+<div style="width:640px">
+<p class="lbl">1 · Planning</p>
+<div style="background:#fff;border:1px solid rgba(214,211,205,.9);border-radius:10px;box-shadow:0 1px 3px rgba(28,25,23,.06);overflow:hidden">
+<div style="background:rgba(28,25,23,.04);border-bottom:1px solid rgba(214,211,205,.9);padding:12px 14px;display:flex;align-items:center;gap:11px">
+<div class="spin" style="width:15px;height:15px;border:2px solid rgba(28,25,23,.15);border-top-color:#44403C;border-radius:50%;flex:none"></div>
+<div style="flex:1;min-width:0"><div style="font:15px/1.25 'Segoe UI',system-ui,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Building a plan…</div><div style="font:11.5px/1.4 'Segoe UI',system-ui,sans-serif;color:#78716C;margin-top:2px">Planning · 4.2s elapsed</div></div>
+</div>
+<div style="padding:14px;display:flex;flex-direction:column;gap:7px">
+<div style="height:9px;width:62%;background:rgba(214,211,205,.65);border-radius:4px" class="pulse"></div>
+<div style="height:9px;width:44%;background:rgba(214,211,205,.5);border-radius:4px"></div>
+<div style="height:9px;width:53%;background:rgba(214,211,205,.4);border-radius:4px"></div>
+</div>
+</div>
+<p class="note">No step list yet, no ledger, no actions. Skeleton rows so the card doesn't jump in height when the plan lands.</p>
+</div>
+
+<div style="width:640px">
+<p class="lbl">2 · Running</p>
+<div style="background:#fff;border:1px solid rgba(214,211,205,.9);border-radius:10px;box-shadow:0 1px 3px rgba(28,25,23,.06);overflow:hidden">
+<div style="background:rgba(0,120,212,.08);border-bottom:1px solid rgba(0,120,212,.18);padding:12px 14px;display:flex;align-items:center;gap:11px">
+<div class="spin" style="width:15px;height:15px;border:2px solid rgba(0,120,212,.25);border-top-color:#0078D4;border-radius:50%;flex:none"></div>
+<div style="flex:1;min-width:0"><div style="font:15px/1.25 'Segoe UI',system-ui,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Creating C# Console Application Project</div><div style="font:11.5px/1.4 'Segoe UI',system-ui,sans-serif;color:#005A9E;margin-top:2px">Running · step 2 of 4 · 96.7s elapsed</div></div>
+<button style="font:600 11.5px/1 'Segoe UI',system-ui,sans-serif;color:#005A9E;background:#fff;border:1px solid rgba(0,120,212,.4);border-radius:5px;padding:6px 13px;cursor:pointer;flex:none" style-hover="background:rgba(0,120,212,.06)">Pause</button>
+</div>
+<div style="display:flex;gap:3px;padding:10px 14px 0">
+<div style="height:3px;flex:1;background:#16A34A;border-radius:2px"></div><div class="pulse" style="height:3px;flex:1;background:#0078D4;border-radius:2px"></div><div style="height:3px;flex:1;background:rgba(214,211,205,.9);border-radius:2px"></div><div style="height:3px;flex:1;background:rgba(214,211,205,.9);border-radius:2px"></div>
+</div>
+<div style="padding:9px 14px 12px;display:flex;flex-direction:column;gap:1px">
+<div style="display:flex;gap:9px;align-items:center;height:28px"><div style="width:16px;text-align:center;font:12px/1 'Segoe UI',system-ui,sans-serif;color:#16A34A">✓</div><div style="flex:1;font:12.5px/1 'Segoe UI',system-ui,sans-serif;color:#78716C;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Initialize Git Repository</div><div style="font:11px/1 ui-monospace,Consolas,monospace;color:#D6D3D1">10,230</div></div>
+<div style="display:flex;gap:9px;align-items:center;height:30px;border-left:2px solid #0078D4;padding-left:7px;margin-left:-9px;background:rgba(0,120,212,.05)"><div style="width:16px;text-align:center"><div class="pulse" style="width:8px;height:8px;background:#0078D4;border-radius:50%;margin:0 auto"></div></div><div style="flex:1;font:600 12.5px/1 'Segoe UI',system-ui,sans-serif;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Create C# Console Application Project</div><div style="width:34px;height:16px;border-radius:8px;background:rgba(0,120,212,.15);display:flex;align-items:center;justify-content:center;font:600 9.5px/1 'Segoe UI',system-ui,sans-serif;color:#005A9E">now</div></div>
+<div style="display:flex;gap:9px;align-items:center;height:28px"><div style="width:16px;text-align:center"><div style="width:7px;height:7px;border:1.5px solid #D6D3D1;border-radius:50%;margin:0 auto"></div></div><div style="flex:1;font:12.5px/1 'Segoe UI',system-ui,sans-serif;color:#A8A29E;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Verify Project Structure</div></div>
+<div style="display:flex;gap:9px;align-items:center;height:28px"><div style="width:16px;text-align:center"><div style="width:7px;height:7px;border:1.5px solid #D6D3D1;border-radius:50%;margin:0 auto"></div></div><div style="flex:1;font:12.5px/1 'Segoe UI',system-ui,sans-serif;color:#A8A29E;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Commit Changes to Git</div></div>
+</div>
+<div style="border-top:1px solid rgba(214,211,205,.7);background:#FAFAF7;padding:9px 14px;display:flex;align-items:center;gap:8px">
+<div style="font:600 12px/1 'Segoe UI',system-ui,sans-serif;color:#44403C">Tool activity</div><div style="font:11px/1 'Segoe UI',system-ui,sans-serif;color:#78716C">17 calls</div>
+<div style="font:600 10.5px/1 'Segoe UI',system-ui,sans-serif;color:#B45309;background:rgba(180,83,9,.1);border-radius:4px;padding:3px 6px">2 awaiting</div>
+<div style="flex:1"></div><div style="font:11px/1 'Segoe UI',system-ui,sans-serif;color:#78716C">▾</div>
+</div>
+</div>
+<p class="note">Ledger is folded into the band's sub-line as elapsed time only; the token figure appears in the tooltip / on hover of the sub-line ("23,311 tokens · 96.7s"). Collapsed expander header carries the exception count, so a problem is visible without expanding.</p>
+</div>
+
+<div style="width:640px">
+<p class="lbl">3 · Tool activity expanded (the audit)</p>
+<div style="background:#fff;border:1px solid rgba(214,211,205,.9);border-radius:10px;box-shadow:0 1px 3px rgba(28,25,23,.06);overflow:hidden">
+<div style="border-bottom:1px solid rgba(214,211,205,.7);padding:11px 14px 13px;background:#FAFAF7">
+<div style="display:flex;align-items:center;gap:7px;margin-bottom:10px"><div style="font:600 12px/1 'Segoe UI',system-ui,sans-serif;color:#44403C">Tool activity</div><div style="flex:1"></div><div style="font:11px/1 'Segoe UI',system-ui,sans-serif;color:#78716C">▴ hide</div></div>
+<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+<div style="font:600 11px/1 'Segoe UI',system-ui,sans-serif;color:#B45309;background:rgba(180,83,9,.1);border:1px solid rgba(180,83,9,.25);border-radius:12px;padding:4px 9px">2 awaiting approval</div>
+<div style="font:600 11px/1 'Segoe UI',system-ui,sans-serif;color:#DC2626;background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.22);border-radius:12px;padding:4px 9px">1 denied</div>
+<div style="font:11px/1 'Segoe UI',system-ui,sans-serif;color:#78716C;background:#fff;border:1px solid rgba(214,211,205,.9);border-radius:12px;padding:4px 9px">14 auto-approved</div>
+</div>
+<div style="display:grid;grid-template-columns:56px 74px 1fr auto;gap:0 10px;font:11.5px/24px 'Segoe UI',system-ui,sans-serif;align-items:center">
+<div style="grid-column:1/-1;height:1px;background:rgba(214,211,205,.7)"></div>
+<div style="font-family:ui-monospace,Consolas,monospace;color:#A8A29E">13:03:40</div><div style="color:#78716C">Step 2</div><div style="font-family:ui-monospace,Consolas,monospace">dotnet_run</div><div style="font-weight:600;color:#B45309">Awaiting approval</div>
+<div style="font-family:ui-monospace,Consolas,monospace;color:#A8A29E">13:03:12</div><div style="color:#78716C">Step 2</div><div style="font-family:ui-monospace,Consolas,monospace">delete_file <span style="color:#DC2626">failed</span></div><div style="font-weight:600;color:#DC2626">Denied</div>
+<div style="grid-column:1/-1;height:1px;background:rgba(214,211,205,.7)"></div>
+<div style="font-family:ui-monospace,Consolas,monospace;color:#A8A29E">13:03:02</div><div style="color:#78716C">Step 2</div><div style="font-family:ui-monospace,Consolas,monospace;color:#44403C">write_file</div><div style="color:#A8A29E">Auto-approved</div>
+<div style="font-family:ui-monospace,Consolas,monospace;color:#A8A29E">13:02:14</div><div style="color:#78716C">Step 1</div><div style="font-family:ui-monospace,Consolas,monospace;color:#44403C">git_add</div><div style="color:#A8A29E">Auto-approved</div>
+<div style="font-family:ui-monospace,Consolas,monospace;color:#A8A29E">13:02:11</div><div style="color:#78716C">Step 1</div><div style="font-family:ui-monospace,Consolas,monospace;color:#44403C">git_init</div><div style="color:#A8A29E">Auto-approved</div>
+</div>
+</div>
+<div style="padding:11px 14px;display:flex;flex-direction:column;gap:9px;background:#FAFAF7">
+<div style="font:11.5px/1.45 'Segoe UI',system-ui,sans-serif;color:#78716C;border-top:1px dashed rgba(214,211,205,.9);padding-top:9px">Trace shortened — only the first 500 decisions were kept.</div>
+<div style="font:11.5px/1.45 'Segoe UI',system-ui,sans-serif;color:#78716C">No tool decisions were recorded for this run.</div>
+<div style="font:11.5px/1.45 'Segoe UI',system-ui,sans-serif;color:#B45309">The tool activity for this run could not be read.</div>
+</div>
+</div>
+<p class="note">Exceptions (Awaiting / Denied / Blocked) always sort above the rule; auto-approved rows follow in reverse time order and are visually recessive. The three sub-states below are alternatives to the table, never shown together — drawn here for reference.</p>
+</div>
+
+<div style="width:640px">
+<p class="lbl">4 · Waiting for you</p>
+<div style="background:#fff;border:1px solid rgba(0,120,212,.35);border-radius:10px;box-shadow:0 1px 3px rgba(28,25,23,.06);overflow:hidden">
+<div style="background:rgba(0,120,212,.12);border-bottom:1px solid rgba(0,120,212,.28);padding:12px 14px;display:flex;align-items:center;gap:11px">
+<div style="width:15px;height:15px;border-radius:50%;background:#0078D4;color:#fff;font:700 10px/15px 'Segoe UI',system-ui,sans-serif;text-align:center;flex:none">!</div>
+<div style="flex:1;min-width:0"><div style="font:600 15px/1.25 'Segoe UI',system-ui,sans-serif;color:#005A9E;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Stopped at budget — continue?</div><div style="font:11.5px/1.4 'Segoe UI',system-ui,sans-serif;color:#005A9E;margin-top:2px">Waiting for you · step 7 of 12 · 651.7s elapsed</div></div>
+<button style="font:600 11.5px/1 'Segoe UI',system-ui,sans-serif;color:#fff;background:#0078D4;border:1px solid #0078D4;border-radius:5px;padding:7px 15px;cursor:pointer;flex:none" style-hover="background:#106EBE">Continue</button>
+</div>
+<div style="margin:12px 14px 4px;border:1px solid rgba(0,120,212,.28);background:rgba(0,120,212,.05);border-radius:7px;padding:9px 10px">
+<div style="font:600 11px/1 'Segoe UI',system-ui,sans-serif;color:#005A9E;margin-bottom:6px">Note for the rest of this run</div>
+<div style="background:#fff;border:1px solid rgba(214,211,205,.9);border-radius:5px;padding:7px 8px;font:12px/1.4 'Segoe UI',system-ui,sans-serif;color:#A8A29E;min-height:30px">Optional — for example, keep the summary under 200 words</div>
+<div style="font:10.5px/1.4 'Segoe UI',system-ui,sans-serif;color:#78716C;margin-top:5px">Sent with every remaining step of this continuation. Not saved; does not survive a restart.</div>
+</div>
+<div style="padding:8px 14px 12px;display:flex;flex-direction:column;gap:1px">
+<div style="display:flex;align-items:center;gap:9px;height:24px"><div style="width:16px;text-align:center;font:11px/1 'Segoe UI',system-ui,sans-serif;color:#A8A29E">⋮</div><div style="flex:1;font:11.5px/1 'Segoe UI',system-ui,sans-serif;color:#78716C">6 earlier steps — all done</div></div>
+<div style="display:flex;gap:9px;align-items:center;height:30px"><div style="width:16px;text-align:center;font:12px/1 'Segoe UI',system-ui,sans-serif;color:#16A34A">✓</div><div style="width:20px;height:20px;border-radius:50%;background:#F5F5F0;border:1.5px solid #0078D4;display:flex;align-items:center;justify-content:center;font-size:11px;flex:none">🧭</div><div style="flex:1;font:12.5px/1 'Segoe UI',system-ui,sans-serif;color:#44403C;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Draft the migration notes <span style="color:#78716C">· Experienced Coder</span></div><div style="font:11px/1 ui-monospace,Consolas,monospace;color:#D6D3D1">11,237</div></div>
+<div style="display:flex;gap:9px;align-items:center;height:28px"><div style="width:16px;text-align:center"><div style="width:7px;height:7px;border:1.5px solid #D6D3D1;border-radius:50%;margin:0 auto"></div></div><div style="flex:1;font:12.5px/1 'Segoe UI',system-ui,sans-serif;color:#A8A29E;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Run the test suite</div></div>
+<div style="display:flex;align-items:center;gap:9px;height:24px"><div style="width:16px;text-align:center;font:11px/1 'Segoe UI',system-ui,sans-serif;color:#A8A29E">⋮</div><div style="flex:1;font:11.5px/1 'Segoe UI',system-ui,sans-serif;color:#78716C">4 later steps — pending</div></div>
+</div>
+</div>
+<p class="note">Accent band goes one step stronger than Running (12% tint, bordered card) because it is a blocking prompt. Continue is the primary button. Long plans window to the running step ±1 with fold rows.</p>
+</div>
+
+<div style="width:640px">
+<p class="lbl">5 · Paused — plan mutation</p>
+<div style="background:#fff;border:1px solid rgba(0,120,212,.35);border-radius:10px;box-shadow:0 1px 3px rgba(28,25,23,.06);overflow:hidden">
+<div style="background:rgba(0,120,212,.12);border-bottom:1px solid rgba(0,120,212,.28);padding:12px 14px;display:flex;align-items:center;gap:11px">
+<div style="width:15px;height:15px;border-radius:2px;border:2px solid #0078D4;box-sizing:border-box;flex:none;display:flex;gap:2px;align-items:center;justify-content:center"><div style="width:2px;height:6px;background:#0078D4"></div><div style="width:2px;height:6px;background:#0078D4"></div></div>
+<div style="flex:1;min-width:0"><div style="font:600 15px/1.25 'Segoe UI',system-ui,sans-serif;color:#005A9E">You paused this run</div><div style="font:11.5px/1.4 'Segoe UI',system-ui,sans-serif;color:#005A9E;margin-top:2px">Paused · step 2 of 4 · you can change the plan now</div></div>
+<button style="font:600 11.5px/1 'Segoe UI',system-ui,sans-serif;color:#fff;background:#0078D4;border:1px solid #0078D4;border-radius:5px;padding:7px 15px;cursor:pointer;flex:none" style-hover="background:#106EBE">Continue</button>
+</div>
+<div style="padding:10px 14px 12px;display:flex;flex-direction:column;gap:2px">
+<div style="display:flex;gap:9px;align-items:center;height:30px;opacity:.55"><div style="width:16px;text-align:center;font:12px/1 'Segoe UI',system-ui,sans-serif;color:#16A34A">✓</div><div style="flex:1;font:12.5px/1 'Segoe UI',system-ui,sans-serif;color:#78716C;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Initialize Git Repository</div><div style="display:flex;gap:2px"><div style="width:22px;height:20px;border:1px solid rgba(214,211,205,.9);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#D6D3D1">✎</div><div style="width:22px;height:20px;border:1px solid rgba(214,211,205,.9);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#D6D3D1">+</div><div style="width:22px;height:20px;border:1px solid rgba(214,211,205,.9);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#D6D3D1">▲</div><div style="width:22px;height:20px;border:1px solid rgba(214,211,205,.9);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#D6D3D1">▼</div><div style="width:22px;height:20px;border:1px solid rgba(214,211,205,.9);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#D6D3D1">⊘</div></div></div>
+<div style="border:1px solid rgba(0,120,212,.35);border-radius:7px;padding:8px 9px;background:#FAFAF7">
+<div style="font:600 10.5px/1 'Segoe UI',system-ui,sans-serif;color:#78716C;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Editing step 2</div>
+<div style="background:#fff;border:1px solid #0078D4;border-radius:5px;padding:6px 8px;font:12px/1.3 'Segoe UI',system-ui,sans-serif;margin-bottom:5px">Create C# Console Application Project</div>
+<div style="background:#fff;border:1px solid rgba(214,211,205,.9);border-radius:5px;padding:6px 8px;font:11.5px/1.45 'Segoe UI',system-ui,sans-serif;color:#44403C;height:44px">Run <span style="font-family:ui-monospace,Consolas,monospace">dotnet new console</span> in the working folder, target net8.0, and keep the default Program.cs.</div>
+<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:7px"><div style="font:11.5px/1 'Segoe UI',system-ui,sans-serif;color:#78716C;padding:5px 10px">Cancel</div><div style="font:600 11.5px/1 'Segoe UI',system-ui,sans-serif;color:#fff;background:#0078D4;border-radius:5px;padding:5px 12px">Save</div></div>
+</div>
+<div style="display:flex;gap:9px;align-items:center;height:30px"><div style="width:16px;text-align:center"><div style="width:7px;height:7px;border:1.5px solid #D6D3D1;border-radius:50%;margin:0 auto"></div></div><div style="flex:1;font:12.5px/1 'Segoe UI',system-ui,sans-serif;color:#44403C;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Verify Project Structure</div><div style="display:flex;gap:2px"><div style="width:22px;height:20px;border:1px solid rgba(214,211,205,.9);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#44403C;background:#fff">✎</div><div style="width:22px;height:20px;border:1px solid rgba(214,211,205,.9);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#44403C;background:#fff">+</div><div style="width:22px;height:20px;border:1px solid rgba(214,211,205,.9);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#44403C;background:#fff">▲</div><div style="width:22px;height:20px;border:1px solid rgba(214,211,205,.9);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#44403C;background:#fff">▼</div><div style="width:22px;height:20px;border:1px solid rgba(214,211,205,.9);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#44403C;background:#fff">⊘</div></div></div>
+<div style="font:11.5px/1.4 'Segoe UI',system-ui,sans-serif;color:#B45309;margin-top:5px">A step needs a title.</div>
+</div>
+</div>
+<p class="note">Settled rows keep the five buttons but disabled, so nothing shifts. Edit is inline: title field + "what the assistant should do" field, Save/Cancel right-aligned. Mutation results appear as one muted/warning line under the list.</p>
+</div>
+
+<div style="width:640px">
+<p class="lbl">6 · Completed / 7 · Completed but truncated / 8 · Failed</p>
+<div style="display:flex;flex-direction:column;gap:14px">
+<div style="background:#fff;border:1px solid rgba(214,211,205,.9);border-radius:10px;box-shadow:0 1px 3px rgba(28,25,23,.06);overflow:hidden">
+<div style="background:rgba(22,163,74,.08);border-bottom:1px solid rgba(22,163,74,.2);padding:12px 14px;display:flex;align-items:center;gap:11px">
+<div style="width:15px;height:15px;border-radius:50%;background:#16A34A;color:#fff;font:700 9px/15px 'Segoe UI',system-ui,sans-serif;text-align:center;flex:none">✓</div>
+<div style="flex:1;min-width:0"><div style="font:600 15px/1.25 'Segoe UI',system-ui,sans-serif;color:#15803D">Completed</div><div style="font:11.5px/1.4 'Segoe UI',system-ui,sans-serif;color:#78716C;margin-top:2px">4 of 4 steps · 651.7s · 70,137 tokens</div></div>
+</div>
+<div style="padding:9px 14px 11px;display:flex;flex-direction:column;gap:1px">
+<div style="display:flex;gap:9px;align-items:center;height:26px"><div style="width:16px;text-align:center;font:12px/1 'Segoe UI',system-ui,sans-serif;color:#16A34A">✓</div><div style="flex:1;font:12.5px/1 'Segoe UI',system-ui,sans-serif;color:#44403C;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Initialize Git Repository</div><div style="font:11px/1 ui-monospace,Consolas,monospace;color:#D6D3D1">10,230</div></div>
+<div style="display:flex;gap:9px;align-items:center;height:26px"><div style="width:16px;text-align:center;font:12px/1 'Segoe UI',system-ui,sans-serif;color:#16A34A">✓</div><div style="flex:1;font:12.5px/1 'Segoe UI',system-ui,sans-serif;color:#44403C;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Create C# Console Application Project</div><div style="font:11px/1 ui-monospace,Consolas,monospace;color:#D6D3D1">31,004</div></div>
+<div style="display:flex;gap:9px;align-items:center;height:26px"><div style="width:16px;text-align:center;font:12px/1 'Segoe UI',system-ui,sans-serif;color:#A8A29E">⊘</div><div style="flex:1;font:12.5px/1 'Segoe UI',system-ui,sans-serif;color:#A8A29E;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Verify Project Structure</div><div style="font:11px/1 'Segoe UI',system-ui,sans-serif;color:#A8A29E">skipped</div></div>
+<div style="display:flex;gap:9px;align-items:center;height:26px"><div style="width:16px;text-align:center;font:12px/1 'Segoe UI',system-ui,sans-serif;color:#16A34A">✓</div><div style="flex:1;font:12.5px/1 'Segoe UI',system-ui,sans-serif;color:#44403C;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Commit Changes to Git</div><div style="font:11px/1 ui-monospace,Consolas,monospace;color:#D6D3D1">28,903</div></div>
+</div>
+<div style="border-top:1px solid rgba(214,211,205,.7);background:#FAFAF7;padding:9px 14px;display:flex;align-items:center;gap:8px"><div style="font:600 12px/1 'Segoe UI',system-ui,sans-serif;color:#44403C">Tool activity</div><div style="font:11px/1 'Segoe UI',system-ui,sans-serif;color:#78716C">17 calls</div><div style="flex:1"></div><div style="font:11px/1 'Segoe UI',system-ui,sans-serif;color:#78716C">▾</div></div>
+</div>
+
+<div style="background:#fff;border:1px solid rgba(214,211,205,.9);border-radius:10px;box-shadow:0 1px 3px rgba(28,25,23,.06);overflow:hidden">
+<div style="background:rgba(28,25,23,.04);border-bottom:1px solid rgba(214,211,205,.9);padding:12px 14px;display:flex;align-items:center;gap:9px">
+<div style="width:15px;height:15px;border-radius:50%;border:2px solid #A8A29E;box-sizing:border-box;flex:none"></div>
+<div style="flex:1;min-width:0;display:flex;align-items:center;gap:8px"><div><div style="font:600 15px/1.25 'Segoe UI',system-ui,sans-serif;color:#78716C">Completed</div><div style="font:11.5px/1.4 'Segoe UI',system-ui,sans-serif;color:#78716C;margin-top:2px">7 of 12 steps · 651.7s</div></div><div style="font:11px/1 'Segoe UI',system-ui,sans-serif;color:#78716C;background:#F5F5F0;border:1px solid rgba(214,211,205,.9);border-radius:4px;padding:4px 7px">Stopped at budget</div></div>
+</div>
+<div style="padding:10px 14px 12px;font:11.5px/1.5 'Segoe UI',system-ui,sans-serif;color:#78716C">Result not verified. · 5 steps were never reached.</div>
+</div>
+
+<div style="background:#fff;border:1px solid rgba(220,38,38,.3);border-radius:10px;box-shadow:0 1px 3px rgba(28,25,23,.06);overflow:hidden">
+<div style="background:rgba(220,38,38,.07);border-bottom:1px solid rgba(220,38,38,.22);padding:12px 14px;display:flex;align-items:center;gap:11px">
+<div style="width:15px;height:15px;border-radius:50%;background:#DC2626;color:#fff;font:700 10px/15px 'Segoe UI',system-ui,sans-serif;text-align:center;flex:none">!</div>
+<div style="flex:1;min-width:0"><div style="font:600 15px/1.25 'Segoe UI',system-ui,sans-serif;color:#DC2626">Failed</div><div style="font:11.5px/1.4 'Segoe UI',system-ui,sans-serif;color:#78716C;margin-top:2px">Stopped at step 2 of 4 · 96.7s</div></div>
+<button style="font:600 11.5px/1 'Segoe UI',system-ui,sans-serif;color:#44403C;background:#fff;border:1px solid rgba(214,211,205,.9);border-radius:5px;padding:6px 13px;cursor:pointer;flex:none" style-hover="background:#FAFAF7">Publish files</button>
+</div>
+<div style="padding:10px 14px 12px;display:flex;flex-direction:column;gap:4px">
+<div style="display:flex;gap:9px;align-items:center;height:26px"><div style="width:16px;text-align:center;font:12px/1 'Segoe UI',system-ui,sans-serif;color:#16A34A">✓</div><div style="flex:1;font:12.5px/1 'Segoe UI',system-ui,sans-serif;color:#44403C">Initialize Git Repository</div><div style="font:11px/1 ui-monospace,Consolas,monospace;color:#D6D3D1">10,230</div></div>
+<div style="display:flex;gap:9px;align-items:center;height:26px"><div style="width:16px;text-align:center;font:12px/1 'Segoe UI',system-ui,sans-serif;color:#DC2626">✕</div><div style="flex:1;font:600 12.5px/1 'Segoe UI',system-ui,sans-serif;color:#1C1917">Create C# Console Application Project</div><div style="font:11px/1 ui-monospace,Consolas,monospace;color:#D6D3D1">1,204</div></div>
+<div style="font:11.5px/1.5 'Segoe UI',system-ui,sans-serif;color:#78716C;margin-top:4px">This run's files are still in its workspace. · Output is on branch <span style="font-family:ui-monospace,Consolas,monospace">run/console-app</span></div>
+<div style="font:11.5px/1.5 'Segoe UI',system-ui,sans-serif;color:#78716C">Published 3 file(s). 1 file was left alone because it changed while the run was working.</div>
+</div>
+</div>
+</div>
+<p class="note">Terminal states drop the spinner and the progress segments; the band keeps its tint so the card still reads at a glance in scrollback. Truncated reads "Completed" in muted grey with a separate reason chip — never red.</p>
+</div>
+
+</div>
+</div>
+
+</x-dc>
+</body>
+</html>

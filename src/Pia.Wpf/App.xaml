@@ -43,9 +43,24 @@
       <converters:ToolScopeToInverseVisibilityConverter x:Key="ToolScopeToInverseVisibilityConverter" />
       <converters:StepStatusToGlyphConverter x:Key="StepStatusToGlyphConverter" />
       <converters:StepStatusToBrushConverter x:Key="StepStatusToBrushConverter" />
+      <converters:StepStatusToBrushConverter x:Key="StepStatusToTitleBrush" Kind="Title" />
+      <converters:StepStatusToBrushConverter x:Key="StepStatusToSegmentBrush" Kind="Segment" />
+      <converters:StepStatusToTitleWeightConverter x:Key="StepStatusToTitleWeightConverter" />
+      <converters:BoolToFontWeightConverter x:Key="BoolToFontWeightConverter" />
       <converters:RunStateToLabelConverter x:Key="RunStateToLabelConverter" />
       <converters:RunStateToBrushConverter x:Key="RunStateToBrushConverter" />
       <converters:RunStateToSpinnerVisibilityConverter x:Key="RunStateToSpinnerVisibilityConverter" />
+      <converters:RunStateToStateIconVisibilityConverter x:Key="RunStateToStateIconVisibilityConverter" />
+      <converters:RunStateToIconConverter x:Key="RunStateToIconConverter" />
+      <converters:RunStateToIconFilledConverter x:Key="RunStateToIconFilledConverter" />
+      <converters:RunStateToBandBrushConverter x:Key="RunStateToBandBg" Kind="Background" />
+      <converters:RunStateToBandBrushConverter x:Key="RunStateToBandBorder" Kind="Border" />
+      <converters:RunStateToCardBorderBrushConverter x:Key="RunStateToCardBorderBrushConverter" />
+      <converters:RunStateToLeadWeightConverter x:Key="RunStateToLeadWeightConverter" />
+      <converters:RunStateToSubLineBrushConverter x:Key="RunStateToSubLineBrushConverter" />
+      <converters:DecisionSeverityToBrushConverter x:Key="DecisionSeverityToBrushFg" Kind="Foreground" />
+      <converters:DecisionSeverityToBrushConverter x:Key="DecisionSeverityToBrushBg" Kind="Background" />
+      <converters:DecisionSeverityToBrushConverter x:Key="DecisionSeverityToBrushBorder" Kind="Border" />
       <converters:BoolToRunningRowBrushConverter x:Key="BoolToRunningRowBrushConverter" />
       <converters:IdEqualsVisibilityConverter x:Key="IdEqualsVisibilityConverter" />
       <converters:ProviderTypeToVisibilityConverter x:Key="ProviderTypeToVisibilityConverter" />

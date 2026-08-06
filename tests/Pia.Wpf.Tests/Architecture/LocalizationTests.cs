@@ -4,6 +4,7 @@ using System.IO;
 using System.Resources;
 using System.Text.RegularExpressions;
 using Pia.Converters;
+using Pia.Models;
 using Pia.Resources.Strings;
 using Pia.Services.Interfaces;
 using Pia.ViewModels;
@@ -233,6 +234,50 @@ public class LocalizationTests
 
         Assert.True(missing.Count == 0,
             $"every plan-mutation error key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
+    }
+
+    /// <summary>
+    /// <b>GUARD</b>, the same shape as the two above and for the same reason: the run panel's decision-summary
+    /// pills format their key from a TABLE (<c>ApplyDecisionSummary</c>'s category list), so the literal never
+    /// appears immediately after <c>_localization.Format(</c> and none of this file's five regexes can see it.
+    /// Renaming or dropping one of these in the resx left the suite green and shipped a raw
+    /// <c>[Run_Timeline_Pill_Denied]</c> into the collapsed header's badge.
+    /// <para>
+    /// Written as an explicit list, deliberately: unlike the two guards above there is no enum to drive it off,
+    /// and the point is precisely that these six keys are reachable only through a variable.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void EveryDecisionPillKeyResolvesInAllThreeLocales()
+    {
+        string[] keys =
+        [
+            "Run_Timeline_Pill_AwaitingApproval",
+            "Run_Timeline_Pill_Denied",
+            "Run_Timeline_Pill_Blocked",
+            "Run_Timeline_Pill_Approved",
+            "Run_Timeline_Pill_AutoApproved",
+            "Run_Timeline_Pill_Unknown",
+        ];
+
+        var missing = new List<string>();
+        foreach (var culture in new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") })
+        {
+            var available = GetResourceKeysForCulture(ViewStrings.ResourceManager, culture);
+            foreach (var key in keys.Where(k => !available.Contains(k)))
+                missing.Add($"{culture.Name}: {key}");
+        }
+
+        Assert.True(missing.Count == 0,
+            $"every decision-pill key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
+
+        // …and one pill per user-facing decision category, so a sixth category added to DecisionLabelKey cannot
+        // quietly render with no pill at all.
+        var categories = Enum.GetValues<ToolGateDecision>()
+            .Select(RunProgressViewModel.DecisionLabelKey)
+            .Distinct()
+            .Count();
+        Assert.Equal(categories, keys.Length);
     }
 
     [Fact]

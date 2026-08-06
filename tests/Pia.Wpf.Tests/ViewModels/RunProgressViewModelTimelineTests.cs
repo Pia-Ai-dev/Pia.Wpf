@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging.Abstractions;
+﻿using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Pia.Models;
@@ -58,10 +58,100 @@ public sealed class RunProgressViewModelTimelineTests
         await vm.TimelineLoadTask!;
 
         await _timeline.Received(2).GetForRunAsync(_runId, Arg.Any<CancellationToken>());
+        // Both rows are routine, so they land in the trace's second block, which reads NEWEST FIRST — hence the
+        // seq-2 row above the seq-1 one. The ordering itself is pinned by
+        // TheTraceSortsExceptionsFirst_ThenTheRestNewestFirst; this fact only needs both rows to be there.
         Assert.Collection(vm.Timeline,
-            first => Assert.Equal("Run_Timeline_Decision_Approved", first.DecisionLabel),
-            second => Assert.Equal("Run_Timeline_Decision_AutoApproved", second.DecisionLabel));
+            first => Assert.Equal("Run_Timeline_Decision_AutoApproved", first.DecisionLabel),
+            second => Assert.Equal("Run_Timeline_Decision_Approved", second.DecisionLabel));
         Assert.False(vm.HasNoTimeline);
+    }
+
+    /// <summary>
+    /// <b>REGRESSION.</b> The trace's reading order: every row that needs a person first — Awaiting approval,
+    /// Denied, Blocked — then a rule, then the rest. Each block newest-first. A parked or refused call five
+    /// hundred rows deep in a chronological list is a call nobody sees, which is the defect this ordering exists
+    /// to remove.
+    /// <para>
+    /// The rule is carried by <c>ShowGroupSeparator</c> on the FIRST row below the exception block, and by no
+    /// other row — asserted on every row, not just that one, because a separator on the wrong row (or on all of
+    /// them) draws rules through the middle of the table.
+    /// </para>
+    /// <para>Neutralize: drop the <c>.Reverse()</c> in <c>ApplyTimelineAsync</c> → the two ordering legs red;
+    /// concatenate <c>routine</c> before <c>exceptions</c> → every leg reds.</para>
+    /// </summary>
+    [Fact]
+    public async Task TheTraceSortsExceptionsFirst_ThenTheRestNewestFirst()
+    {
+        _timeline.GetForRunAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new List<AgentTimelineEvent>
+        {
+            Row(1, AgentTimelineEventKind.ToolCall, ToolGateDecision.AutoApprovedPolicy),
+            Row(2, AgentTimelineEventKind.ToolCall, ToolGateDecision.ParkedForApproval),
+            Row(3, AgentTimelineEventKind.ToolCall, ToolGateDecision.AutoApprovedPolicy),
+            Row(4, AgentTimelineEventKind.ToolCall, ToolGateDecision.DeniedDestructiveFloor),
+        });
+
+        var vm = CreateVm();
+        await vm.LoadTimelineAsync();
+
+        Assert.Collection(vm.Timeline,
+            // Exceptions, newest first: the blocked call (seq 4) above the parked one (seq 2).
+            first =>
+            {
+                Assert.Equal("Run_Timeline_Decision_Blocked", first.DecisionLabel);
+                Assert.Equal(RunDecisionSeverity.Refused, first.Severity);
+                Assert.False(first.ShowGroupSeparator);
+            },
+            second =>
+            {
+                Assert.Equal("Run_Timeline_Decision_AwaitingApproval", second.DecisionLabel);
+                Assert.Equal(RunDecisionSeverity.Awaiting, second.Severity);
+                Assert.False(second.ShowGroupSeparator);
+            },
+            // …then the rule, drawn by the first routine row, and the routine block newest first (seq 3, seq 1).
+            third =>
+            {
+                Assert.Equal("Run_Timeline_Decision_AutoApproved", third.DecisionLabel);
+                Assert.Equal(RunDecisionSeverity.Routine, third.Severity);
+                Assert.True(third.ShowGroupSeparator);
+            },
+            fourth =>
+            {
+                Assert.Equal("Run_Timeline_Decision_AutoApproved", fourth.DecisionLabel);
+                Assert.False(fourth.ShowGroupSeparator);
+            });
+
+        // The summary beside the header: one pill per category that occurred, exceptions first, and the badge is
+        // the first exception category — awaiting outranks refused, because it is the one still answerable.
+        Assert.Collection(vm.DecisionPills,
+            first => Assert.Equal("Run_Timeline_Pill_AwaitingApproval", first.Text),
+            second => Assert.Equal("Run_Timeline_Pill_Blocked", second.Text),
+            third => Assert.Equal("Run_Timeline_Pill_AutoApproved", third.Text));
+        Assert.Equal("Run_Timeline_Pill_AwaitingApproval", vm.TimelineExceptionBadge);
+        Assert.Equal(RunDecisionSeverity.Awaiting, vm.TimelineExceptionSeverity);
+        Assert.Equal("Run_Timeline_Calls", vm.TimelineCallsLabel);
+    }
+
+    /// <summary>
+    /// The control for the fact above: with no exception rows at all, NO row draws the rule. Without this, a
+    /// separator that fired on the first row unconditionally would still pass the ordering fact.
+    /// </summary>
+    [Fact]
+    public async Task WithNoExceptions_NoRowDrawsTheGroupRule()
+    {
+        _timeline.GetForRunAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new List<AgentTimelineEvent>
+        {
+            Row(1, AgentTimelineEventKind.ToolCall, ToolGateDecision.AutoApprovedPolicy),
+            Row(2, AgentTimelineEventKind.ToolCall, ToolGateDecision.ApprovedOnce),
+        });
+
+        var vm = CreateVm();
+        await vm.LoadTimelineAsync();
+
+        Assert.Equal(2, vm.Timeline.Count);
+        Assert.All(vm.Timeline, r => Assert.False(r.ShowGroupSeparator));
+        Assert.All(vm.Timeline, r => Assert.False(r.IsException));
+        Assert.Null(vm.TimelineExceptionBadge);
     }
 
     [Fact]
@@ -137,8 +227,13 @@ public sealed class RunProgressViewModelTimelineTests
         var vm = CreateVm();
         await vm.LoadTimelineAsync();
 
-        Assert.Equal("Run_Timeline_Outcome_Failed", vm.Timeline[0].OutcomeSuffix);
-        Assert.Null(vm.Timeline[1].OutcomeSuffix);
+        // Located by the suffix itself rather than by index: the table is no longer chronological (exceptions
+        // first, then newest-first), and this fact is about the PROJECTION filling the column, not about where
+        // the row sits. Both legs stay — exactly one row carries the suffix and exactly one does not.
+        Assert.Equal(2, vm.Timeline.Count);
+        var failed = Assert.Single(vm.Timeline, r => r.OutcomeSuffix is not null);
+        Assert.Equal("Run_Timeline_Outcome_Failed", failed.OutcomeSuffix);
+        Assert.Single(vm.Timeline, r => r.OutcomeSuffix is null);
     }
 
     [Fact]
@@ -162,9 +257,13 @@ public sealed class RunProgressViewModelTimelineTests
         var vm = CreateVm();
         await vm.LoadTimelineAsync();
 
-        Assert.Equal("Run_Timeline_Step", vm.Timeline[0].StepLabel); // the stubbed Format echoes the key
+        // Located by the label, not by index, for the reason AFailedOutcomeCarriesTheLocalizedSuffix records: the
+        // table is no longer chronological, and this fact is about the attribution, not the row's position.
+        Assert.Equal(2, vm.Timeline.Count);
+        var attributed = Assert.Single(vm.Timeline, r => r.StepLabel is not null);
+        Assert.Equal("Run_Timeline_Step", attributed.StepLabel); // the stubbed Format echoes the key
         // A replanned-away step (here: a row with no step at all) stays unattributed rather than guessing.
-        Assert.Null(vm.Timeline[1].StepLabel);
+        Assert.Single(vm.Timeline, r => r.StepLabel is null);
     }
 
     [Theory]
@@ -248,6 +347,12 @@ public sealed class RunProgressViewModelTimelineTests
     {
         // A later FilePath / Arguments / ResultText property fails HERE, which is the point: the store holds
         // none of those, so the row must not invent a place to put them.
+        //
+        // The exact-set form is what forces every addition through this assertion, and the signal-band redesign is
+        // the first one to take it up: Severity, IsException and ShowGroupSeparator are PRESENTATION over the
+        // decision the row already carries — how loudly it reads, and whether it draws the rule that separates the
+        // exception block from the rest. None of them says anything new about the call, and in particular none of
+        // them names its target, which is the property this fact exists to protect.
         var actual = typeof(TimelineRowViewModel)
             .GetProperties()
             .Select(p => p.Name)
@@ -255,7 +360,11 @@ public sealed class RunProgressViewModelTimelineTests
             .ToArray();
 
         Assert.Equal(
-            new[] { "DecisionLabel", "OutcomeSuffix", "StepLabel", "TimeLabel", "ToolName" },
+            new[]
+            {
+                "DecisionLabel", "IsException", "OutcomeSuffix", "Severity", "ShowGroupSeparator",
+                "StepLabel", "TimeLabel", "ToolName",
+            },
             actual);
     }
 
