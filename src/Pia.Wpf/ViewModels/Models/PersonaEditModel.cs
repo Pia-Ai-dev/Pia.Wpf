@@ -52,9 +52,9 @@ public partial class PersonaEditModel : ObservableValidator
     [ObservableProperty]
     private string _archetype = "custom";
 
-    /// <summary>Free-form model-routing hint; blank ⇒ no persona-type routing.</summary>
+    /// <summary>Free-form model-routing hint; blank falls back to <see cref="Persona.DefaultModelType"/>.</summary>
     [ObservableProperty]
-    private string _modelType = string.Empty;
+    private string _modelType = Persona.DefaultModelType;
 
     /// <summary>Comma-separated domain tags (round-tripped to <c>Persona.Expertise</c>).</summary>
     [ObservableProperty]
@@ -212,7 +212,7 @@ public partial class PersonaEditModel : ObservableValidator
             Guardrails = persona.Guardrails ?? string.Empty,
             OutputFormat = persona.OutputFormat ?? string.Empty,
             Archetype = string.IsNullOrEmpty(persona.Archetype) ? "custom" : persona.Archetype,
-            ModelType = persona.ModelType ?? string.Empty,
+            ModelType = string.IsNullOrWhiteSpace(persona.ModelType) ? Persona.DefaultModelType : persona.ModelType,
             Expertise = persona.Expertise is { Count: > 0 } ? string.Join(", ", persona.Expertise) : string.Empty,
             Emoji = persona.Emoji ?? string.Empty,
             AccentColor = persona.AccentColor ?? string.Empty,
@@ -237,7 +237,7 @@ public partial class PersonaEditModel : ObservableValidator
             Guardrails = string.IsNullOrWhiteSpace(Guardrails) ? null : Guardrails.Trim(),
             OutputFormat = string.IsNullOrWhiteSpace(OutputFormat) ? null : OutputFormat.Trim(),
             Archetype = string.IsNullOrWhiteSpace(Archetype) ? "custom" : Archetype,
-            ModelType = string.IsNullOrWhiteSpace(ModelType) ? null : ModelType.Trim(),
+            ModelType = string.IsNullOrWhiteSpace(ModelType) ? Persona.DefaultModelType : ModelType.Trim(),
             Expertise = ParseExpertise(Expertise),
             Emoji = string.IsNullOrWhiteSpace(Emoji) ? null : Emoji.Trim(),
             AccentColor = string.IsNullOrWhiteSpace(AccentColor) ? null : AccentColor.Trim(),

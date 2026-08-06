@@ -502,7 +502,7 @@ public class PersonaService : IPersonaService
             // OutputFormat is appended last in the SELECT (index 15) to keep the other ordinals stable.
             OutputFormat = reader.IsDBNull(15) ? null : reader.GetString(15),
             Archetype = reader.IsDBNull(5) ? "custom" : reader.GetString(5),
-            ModelType = reader.IsDBNull(16) ? null : reader.GetString(16),
+            ModelType = NormalizeModelType(reader.IsDBNull(16) ? null : reader.GetString(16)),
             Expertise = ParseExpertise(expertiseJson),
             Emoji = reader.IsDBNull(7) ? null : reader.GetString(7),
             AccentColor = reader.IsDBNull(8) ? null : reader.GetString(8),
@@ -515,6 +515,10 @@ public class PersonaService : IPersonaService
             IsBuiltIn = false
         };
     }
+
+    // Blank is never a stored meaning: every persona routes with at least the default type.
+    private static string NormalizeModelType(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? Persona.DefaultModelType : value;
 
     private static List<string> ParseExpertise(string? json)
     {
@@ -541,6 +545,7 @@ public class PersonaService : IPersonaService
             Guardrails = p.Guardrails,
             OutputFormat = p.OutputFormat,
             Archetype = p.Archetype,
+            ModelType = Persona.DefaultModelType,
             Expertise = [.. p.Expertise],
             Emoji = p.Emoji,
             AccentColor = p.AccentColor,

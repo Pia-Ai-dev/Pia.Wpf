@@ -198,9 +198,9 @@ public class SyncMapper
             // a closed vocabulary (assistant|analyst|creative|visionary|explainer|custom) that the glyph and
             // label lookups index into, so a whitespace-only value would silently match nothing.
             Archetype = string.IsNullOrWhiteSpace(sync.Archetype) ? "custom" : sync.Archetype,
-            // Blank ⇒ null: the server falls through on unmapped/blank types, so a whitespace-only
-            // value must not round-trip as a routing key.
-            ModelType = string.IsNullOrWhiteSpace(sync.ModelType) ? null : sync.ModelType,
+            // Blank ⇒ the default type: every persona routes with at least "general", so a
+            // whitespace-only value must not round-trip as a routing key either.
+            ModelType = string.IsNullOrWhiteSpace(sync.ModelType) ? Persona.DefaultModelType : sync.ModelType,
             Expertise = expertise ?? [],
             Emoji = sync.Emoji,
             AccentColor = sync.AccentColor,

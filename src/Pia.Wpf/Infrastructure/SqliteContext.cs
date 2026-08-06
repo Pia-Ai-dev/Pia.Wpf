@@ -906,6 +906,16 @@ public class SqliteContext : IDisposable
                 addCol.CommandText = $"ALTER TABLE {personaTable} ADD COLUMN ModelType TEXT";
                 addCol.ExecuteNonQuery();
             }
+
+            // Backfill rows that predate the default: every persona routes with at least "general".
+            // Idempotent and cheap (both tables are tiny), so it runs on every startup rather than
+            // being gated on the ALTER above — a row can also arrive blank via an older client's push.
+            using (var backfill = _connection.CreateCommand())
+            {
+                backfill.CommandText =
+                    $"UPDATE {personaTable} SET ModelType = 'general' WHERE ModelType IS NULL OR TRIM(ModelType) = ''";
+                backfill.ExecuteNonQuery();
+            }
         }
 
         // Per-chat working directory (relative to the assistant-files sandbox root), added after

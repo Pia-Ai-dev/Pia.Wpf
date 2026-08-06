@@ -278,17 +278,17 @@ public class SyncMapperPersonaTests
     }
 
     [Fact]
-    public void FromSyncPersona_BlankModelTypeVariants_AllMapToNull()
+    public void FromSyncPersona_BlankModelTypeVariants_AllMapToDefault()
     {
         var mapper = PlainMapper();
 
-        // Blank is not a routing key: the server falls through on unmapped/blank types, so the client
-        // normalizes it away rather than round-tripping a whitespace value into metadata.
+        // Blank is not a routing key: every persona routes with at least the default type, so a
+        // whitespace-only value must not round-trip as a routing key either.
         foreach (var modelType in new[] { null, "", "   ", "\t" })
         {
             var sync = mapper.ToSyncPersona(SamplePersona());
             sync.ModelType = modelType;
-            Assert.Null(mapper.FromSyncPersona(sync).ModelType);
+            Assert.Equal(Persona.DefaultModelType, mapper.FromSyncPersona(sync).ModelType);
         }
     }
 

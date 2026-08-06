@@ -10,6 +10,9 @@ namespace Pia.Models;
 /// </summary>
 public class Persona
 {
+    /// <summary>The model type every persona falls back to when its <see cref="ModelType"/> is blank.</summary>
+    public const string DefaultModelType = "general";
+
     public Guid Id { get; set; } = Guid.NewGuid();
     public required string Name { get; set; }
     public string? Tagline { get; set; }
@@ -25,7 +28,8 @@ public class Persona
     /// <summary>assistant | analyst | creative | visionary | explainer | custom. Default "custom".</summary>
     public string Archetype { get; set; } = "custom";
 
-    /// <summary>Free-form model-routing hint (≤ 50 chars, e.g. "fast", "code"); <c>null</c> ⇒ no persona-type routing.</summary>
+    /// <summary>Free-form model-routing hint (≤ 50 chars, e.g. "fast", "code"). Blank is never kept:
+    /// every read path normalizes it to <see cref="DefaultModelType"/>.</summary>
     public string? ModelType { get; set; }
 
     /// <summary>Domain tags (small list, ≤ 16).</summary>

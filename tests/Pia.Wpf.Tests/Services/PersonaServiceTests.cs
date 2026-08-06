@@ -126,13 +126,22 @@ public class PersonaServiceTests : IDisposable
         fetched.ModelType = null;
         await _service.UpdatePersonaAsync(fetched);
 
-        // Clearing the hint persists as NULL — no persona-type routing — not as a stale value.
+        // A blanked hint reads back as the default type, not as a stale value and not as null.
         var cleared = await _service.GetPersonaAsync(added.Id);
-        Assert.Null(cleared!.ModelType);
+        Assert.Equal(Persona.DefaultModelType, cleared!.ModelType);
 
-        // A persona that never set the hint reads back as null too.
+        // A persona that never set the hint reads back as the default type too.
         var plain = await AddUserPersonaAsync("TEST_NoModelType");
-        Assert.Null((await _service.GetPersonaAsync(plain.Id))!.ModelType);
+        Assert.Equal(Persona.DefaultModelType, (await _service.GetPersonaAsync(plain.Id))!.ModelType);
+    }
+
+    [Fact]
+    public async Task BuiltInPersonas_HaveTheDefaultModelType()
+    {
+        var builtIns = (await _service.GetPersonasAsync()).Where(p => p.IsBuiltIn).ToList();
+
+        Assert.NotEmpty(builtIns);
+        Assert.All(builtIns, p => Assert.Equal(Persona.DefaultModelType, p.ModelType));
     }
 
     [Fact]
@@ -273,6 +282,18 @@ public class PersonaServiceTests : IDisposable
         Assert.True(stored[0].IsManaged);
         Assert.False(stored[0].IsBuiltIn);
         Assert.True(stored[0].IsReadOnly);
+    }
+
+    [Fact]
+    public async Task ManagedPersona_WithoutModelType_ReadsBackTheDefault()
+    {
+        // The managed wire DTO has no ModelType field, so every managed row lands in the store with a
+        // blank type; the read path must still hand chat a routable value.
+        await AddManagedPersonasAsync(NewManagedPersona("TEST_ManagedModelType"));
+
+        var stored = await _service.GetManagedPersonasAsync();
+
+        Assert.Equal(Persona.DefaultModelType, Assert.Single(stored).ModelType);
     }
 
     [Fact]
