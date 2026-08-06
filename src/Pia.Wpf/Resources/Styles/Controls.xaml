@@ -76,12 +76,14 @@
     <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
     <Setter Property="Padding" Value="14,6"/>
     <Setter Property="Margin" Value="0"/>
-    <Setter Property="Cursor" Value="Hand"/>
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="TabItem">
+          <!-- Hand cursor lives on the template Border, not the TabItem: Cursor is an
+               inheritable DP, so on the TabItem itself it leaks into the tab content. -->
           <Border x:Name="Bd"
                   Background="{TemplateBinding Background}"
+                  Cursor="Hand"
                   CornerRadius="6"
                   Padding="{TemplateBinding Padding}">
             <ContentPresenter x:Name="ContentSite"
