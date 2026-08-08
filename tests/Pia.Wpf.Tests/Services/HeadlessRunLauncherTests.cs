@@ -1285,6 +1285,87 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
     }
 
+    /// <summary>The claim arm: the two CAS sources are disjoint BY STATE, so a run that is in neither parked
+    /// state is not claimable at all — and the caller returns before touching slots or inflight.</summary>
+    [Fact]
+    public async Task Resume_OfARunInNeitherParkedState_IsNotClaimed_AndDispatchesNothing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (launcher, planner) = BuildLauncher();
+        var parked = await ParkRunWithPendingStepAsync(policyJson: null);
+        Assert.True(await _runs.TryBeginResumeAsync(parked.Id, ct)); // someone else claimed it first
+
+        Assert.False(await launcher.ResumeAsync(parked.Id, ct: ct));
+
+        // Never reached the orchestrator: the row still reads Running from the winning claim, and no
+        // re-park happened either — a lost claim must not write the row at all.
+        Assert.Equal(AgentRunState.Running, (await _runs.GetAsync(parked.Id, ct))!.State);
+        Assert.Null(planner.PlanContext);
+    }
+
+    /// <summary>The claim arm's decline guard: a decline answers a tool-approval park ONLY. On any other park
+    /// there is no question to say no to, and claiming the CAS anyway would turn a budget pause into a
+    /// denied-tool resume.</summary>
+    [Fact]
+    public async Task Decline_OfARunParkedAtItsBudget_IsRefused_AndLeavesTheRunParked()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (launcher, _) = BuildLauncher();
+        var parked = await ParkRunWithNoStepsAsync("step-cap");
+
+        Assert.False(await launcher.DeclineAsync(parked.Id, ct));
+
+        var after = await _runs.GetAsync(parked.Id, ct);
+        Assert.Equal(AgentRunState.WaitingForInput, after!.State);
+        Assert.Equal("step-cap", ReadPauseReason(after)); // the park it had, not a denied-tool resume
+    }
+
+    /// <summary>The decision arm: Continue IS the approval, so the parked tool joins the run's grants and is
+    /// PERSISTED — without that, a second park would restore the launch envelope and forget the first
+    /// approval.</summary>
+    [Fact]
+    public async Task Resume_OfAToolApprovalPark_WidensTheEnvelopeByTheParkedTool_AndPersistsIt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (launcher, _) = BuildLauncher();
+        // A readable envelope granting nothing: the widening may only be written back over one this build read.
+        var parked = await ParkRunWithPendingStepAsync(
+            HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.Schedule));
+        await _runs.PauseAsync(parked.Id, "tool-approval", ct, approvalTool: "delete_file");
+
+        Assert.True(await launcher.ResumeAsync(parked.Id, ct: ct));
+        await AwaitRunSettledAsync(launcher, parked.Id);
+
+        var grants = HeadlessRunLauncher.TryRestoreGrantEnvelope((await _runs.GetAsync(parked.Id, ct))!.PolicyJson);
+        Assert.NotNull(grants);
+        Assert.Equal(["delete_file"], grants!);
+
+        try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
+    }
+
+    /// <summary>The workspace arm is idempotent in both directions: with no provisioner it RE-CREATES the run's
+    /// own root when the launch's directory is gone, and hands the executor the canonicalized path.</summary>
+    [Fact]
+    public async Task Resume_WithNoProvisioner_ReCreatesTheRunsOwnWorkspaceRoot()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var verifier = new FakeVerifier();
+        var (launcher, _) = BuildLauncher(verifier: verifier);
+        var parked = await ParkRunWithPendingStepAsync(policyJson: null);
+        var expected = Path.Combine(_runsBase, parked.Id.ToString());
+        try { Directory.Delete(expected, true); } catch { }
+        Assert.False(Directory.Exists(expected));
+
+        Assert.True(await launcher.ResumeAsync(parked.Id, ct: ct));
+        await AwaitRunSettledAsync(launcher, parked.Id);
+
+        Assert.True(Directory.Exists(expected));
+        Assert.Single(verifier.SeenWorkspaceRoots); // non-vacuity: the resume really drained a step
+        Assert.Equal(SafeFolderPath.Canonicalize(expected), verifier.SeenWorkspaceRoots[0]);
+
+        try { Directory.Delete(expected, true); } catch { }
+    }
+
     [Fact]
     public async Task LaunchedRun_HoldsTheComposerBracket_WhileItExecutes_AndReleasesWhenItEnds()
     {

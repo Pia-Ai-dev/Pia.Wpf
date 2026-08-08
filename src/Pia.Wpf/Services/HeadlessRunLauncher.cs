@@ -556,62 +556,12 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     public async Task<bool> ResumeAsync(
         Guid runId, string? nudge = null, CancellationToken ct = default, bool declineToolApproval = false)
     {
-        var run = await _agentRunService.GetAsync(runId, ct).ConfigureAwait(false);
-        if (run is null) { _logger.LogWarning("Resume: run {RunId} not found", runId); return false; }
-
-        // Atomic claim FIRST (guardrail 2): a panel+Flow race or double-click → only one winner. On the
-        // lost path we return BEFORE touching _slots/_inflight/_runsByChat — no slot leak, no duplicate run.
-        //
-        // Batch 08: TWO claims now, disjoint by SOURCE STATE, chosen from the row we already read. An explicit
-        // dispatch, never a range (D7) and never "try one, then the other": a run whose state moved between the
-        // read and the CAS is not ours, and the loser's log line below says so. A budget park is
-        // WaitingForInput; a USER pause is Paused, and its claim also retires the pause envelope it consumed.
-        // hermes #16: READ THE QUESTION BEFORE ANSWERING IT. Both claims below clear ExtraJson, so the tool
-        // name a tool-approval park wrote is gone the instant one of them wins — it has to come off the row we
-        // already read at the top of this method. Null for every other park, and for a tool-approval park
-        // whose envelope did not survive: a resume that cannot read the question grants nothing extra and the
-        // run simply parks again on the same tool, which is the fail-closed direction.
-        // Read here, before the claim below NULLs the ExtraJson it lives in — the orchestrator's re-plan guard
-        // needs to know why this run parked, and this is the last point that can still tell it.
-        var parkReason = run.State == AgentRunState.WaitingForInput ? RunPauseEnvelope.ReadReason(run) : null;
-        var approvedTool = parkReason == AgentRunOrchestrator.ToolApprovalReason
-            ? RunPauseEnvelope.ReadApprovalTool(run)
-            : null;
-
-        // A decline answers a tool-approval park only; on any other park there is no question to say "no" to,
-        // and claiming the CAS anyway would turn a budget pause into a denied-tool resume.
-        if (declineToolApproval && approvedTool is null)
-        {
-            _logger.LogInformation("Decline: run {RunId} is not parked on a tool-approval question", runId);
+        var claim = await TryClaimForResumeAsync(runId, nudge, declineToolApproval, ct).ConfigureAwait(false);
+        if (claim is not { Run: { } run })
             return false;
-        }
 
-        var claimed = run.State switch
-        {
-            AgentRunState.WaitingForInput => await _agentRunService.TryBeginResumeAsync(runId, ct).ConfigureAwait(false),
-            AgentRunState.Paused => await _agentRunService.TryResumeFromPauseAsync(runId, ct).ConfigureAwait(false),
-            _ => false,
-        };
-        if (!claimed)
-        {
-            _logger.LogInformation("Resume: run {RunId} not claimable (already resumed/not parked)", runId);
-            return false;
-        }
-
-        // Persisted here, in its own try, before dispatch: the nudge is the user's answer on a clarification
-        // park but is otherwise scope-to-dispatch and never persisted, so it would be lost by the next park.
-        if (parkReason is AgentRunOrchestrator.NeedsGoalReason or AgentRunOrchestrator.NeedsInputReason
-            && !string.IsNullOrWhiteSpace(nudge))
-        {
-            // The answer text never reaches a log line here — only the reason token does; the text itself
-            // goes out on SensitiveDebug inside AppendClarificationAsync.
-            try { await _agentRunService.AppendClarificationAsync(run.Id, nudge, ct).ConfigureAwait(false); }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Resume: could not record the clarification answer for run {RunId} "
-                    + "(reason {Reason}) — the run resumes without it", run.Id, parkReason);
-            }
-        }
+        var parkReason = claim.ParkReason;
+        var approvedTool = claim.ApprovedTool;
 
         // The run is now CAS'd WaitingForInput→Running (the claim raised RunChanged(Running), retracting the
         // Flow card and disabling the panel Continue). Any failure between here and the orchestrator loop being
@@ -655,94 +605,9 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             // floor: a missing denial narrows nothing). The decline branch below appends to it.
             var denied = TryRestoreDeniedWritesEnvelope(run.PolicyJson);
 
-            // ---- hermes #16: APPLY THE HUMAN'S DECISION TO THE CALL THAT PARKED THE RUN ----
-            // Continue IS the approval. The run stopped and asked "may I use <tool>?", the card said so, and
-            // the only affordance it carries is the button the user just pressed — so pressing it grants that
-            // one named tool for this run and nothing else. Declining is not a second button: a run nobody
-            // continues stays parked, and Cancel already ends it.
-            //
-            // The pending CALL cannot be replayed — a park outlives the process, and the deferred action's
-            // Execute() delegate does not — so what is applied is the CAPABILITY. The step's row went back to
-            // Pending when the run parked, the drain loop re-runs it from the top, and the same tool call now
-            // resolves GrantedByName instead of parking. That is what makes the decision reach the pending
-            // call rather than merely unblocking the run.
-            //
-            // PERSISTED, not merely handed to this dispatch. Two tools, two parks: without persistence the
-            // second resume would restore the launch envelope and forget the first approval, so the run would
-            // park on tool A, be granted A, park on B, be granted B but lose A, park on A again — a livelock
-            // paced by a human clicking Continue. The write is failure-isolated: a fault leaves the run with
-            // its launch envelope, i.e. it re-parks and asks again, never runs ungranted.
-            if (declineToolApproval && approvedTool is not null)
-            {
-                // Decline is a DECISION, not the absence of approval: the refusal is persisted onto the
-                // envelope so the re-run step's call resolves DeniedForRun ("adapt") instead of parking a
-                // second time on the same settled question. Same persist discipline as the widening below —
-                // only over a readable envelope, failure-isolated, applied to THIS dispatch either way.
-                var deniedNow = denied.Contains(approvedTool, StringComparer.OrdinalIgnoreCase)
-                    ? denied.ToList()
-                    : denied.Append(approvedTool).ToList();
-                if (envelopeWasReadable)
-                {
-                    try
-                    {
-                        await _agentRunService.UpdatePolicyJsonAsync(
-                                run.Id, SerializeGrantEnvelope(grants, run.TriggerKind, policy, deniedNow), ct)
-                            .ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Could not persist the denied tool for run {RunId}", run.Id);
-                    }
-                }
-
-                denied = deniedNow;
-                _logger.LogInformation("Resume: run {RunId} declined tool {ToolName} for this run", run.Id, approvedTool);
-            }
-            else if (approvedTool is not null && !grants.Contains(approvedTool, StringComparer.OrdinalIgnoreCase))
-            {
-                var widened = grants.Append(approvedTool).ToList();
-                // ONLY over a document this build actually read. `grants` may be the resume FLOOR
-                // ({write_file}), which is a per-dispatch degrade for an absent/corrupt/foreign/future envelope
-                // and is deliberately WIDER than some launches — InteractiveEmptyEnvelopeJson exists as its own
-                // documented shape for exactly that reason. Serializing a fresh v:1 document on top of it would
-                // make the degrade the run's DURABLE record of its own authority: a run that never held
-                // write_file would come back holding it on every later resume, and because this method re-reads
-                // the row and hands PolicyJson to LaunchChildAsync, the next fan-out would narrow its children
-                // from the widened envelope instead of the real one. It would also overwrite a document a NEWER
-                // build wrote, which no build could then read back.
-                //
-                // On the floor path the grant is applied to THIS dispatch only (below), which is precisely what
-                // the Continue card promised. The livelock the persist exists to prevent needs a run that parks
-                // on two different tools; on an unreadable envelope re-parking and asking again is the
-                // fail-closed direction this method already takes when it cannot read the question at all.
-                if (envelopeWasReadable)
-                {
-                    try
-                    {
-                        await _agentRunService.UpdatePolicyJsonAsync(
-                                // The ROW's trigger, not the envelope's. GrantEnvelope.Trigger is provenance that
-                                // "never widens a grant", and the row is the authoritative copy of the same fact.
-                                run.Id, SerializeGrantEnvelope(widened, run.TriggerKind, policy), ct)
-                            .ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Could not persist the approved tool grant for run {RunId}", run.Id);
-                    }
-                }
-                else
-                {
-                    _logger.LogInformation(
-                        "Resume: run {RunId} granted {ToolName} for this dispatch only — its launch envelope is "
-                        + "not readable by this build, so the floor must not be written back over it",
-                        run.Id, approvedTool);
-                }
-
-                // Applied to THIS dispatch whether or not the persist landed: the human answered, and the
-                // question they answered was about the step that is about to re-run.
-                grants = widened;
-                _logger.LogInformation("Resume: run {RunId} granted approved tool {ToolName}", run.Id, approvedTool);
-            }
+            (grants, denied) = await ApplyToolApprovalDecisionAsync(
+                run, approvedTool, declineToolApproval, grants, denied, policy, envelopeWasReadable, ct)
+                .ConfigureAwait(false);
 
             // Budget is DELIBERATELY not restored: a FRESH budget envelope IS the "continue" grant
             // (guardrail 4) — that is the whole point of the pause. Only the write grants are restored.
@@ -758,30 +623,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             //
             // Deliberately the SAME contiguous block shape as the launch path, so the rule a later batch has
             // to add here — a resumed CHILD run must not provision at its own run id — is a local edit.
-            string? runRoot;
-            if (run.ParentRunId is { } parentId)
-            {
-                // Batch 07 §7.6 change 3, and the reason it is not optional: this method provisions at its OWN
-                // run id, and every child owns a stub chat — so a user opening a parked child's chat and
-                // pressing Continue would otherwise create a SECOND workspace at the child's id, diverging from
-                // the parent's and outliving it until the sweep. Resolve the PARENT's root instead, and only if
-                // it still exists: a parent that ran unisolated, or whose workspace is already gone, leaves the
-                // child writing the assistant folder — the same coherent degrade as a fresh child dispatch.
-                var parentRoot = _workspaces?.RootFor(parentId) ?? Path.Combine(_runsBaseDir, parentId.ToString());
-                runRoot = Directory.Exists(parentRoot) ? SafeFolderPath.Canonicalize(parentRoot) : null;
-            }
-            else if (_workspaces is not null)
-            {
-                // Idempotent by construction (G3 B11 step 2): a readable metadata document returns the same
-                // root, the same mode and the same provisionedAtUtc, which is what keeps the promote set
-                // from becoming "everything the workspace contains" after a park → resume.
-                runRoot = (await _workspaces.ProvisionAsync(run.Id, workingSubpath: null, ct).ConfigureAwait(false))?.Root;
-            }
-            else
-            {
-                runRoot = SafeFolderPath.Canonicalize(
-                    Directory.CreateDirectory(Path.Combine(_runsBaseDir, run.Id.ToString())).FullName);
-            }
+            var runRoot = await ResolveResumeWorkspaceRootAsync(run, ct).ConfigureAwait(false);
 
             var runCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownCts.Token);
 
@@ -811,93 +653,10 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             // did not take a ticket would jump the queue, being the one dispatch whose wait is not ordered
             // against anything. The PARENT pool's chain, matching the pool the wait below uses.
             var ticket = _slots.TakeTicket();
-            var completion = Task.Run(async () =>
-            {
-                var acquired = false;
-                var started = false;
-                try
-                {
-                    // Deliberately the PARENT pool even for a resumed child (Batch 07 §7.1): a resume is a USER
-                    // act, so nothing is awaiting this dispatch from inside another run's RunAsync, and the
-                    // nested-acquire deadlock that _childSlots exists to prevent cannot arise here.
-                    await _slots.WaitAsync(ticket, runCts.Token).ConfigureAwait(false); // re-acquire a slot (guardrail 6)
-                    acquired = true;
-
-                    using var scope = _scopeFactory.CreateScope();
-                    var executor = scope.ServiceProvider.GetRequiredService<HeadlessTurnExecutor>();
-                    var orchestrator = scope.ServiceProvider.GetRequiredService<AgentRunOrchestrator>();
-                    // Batch 06 G2, symmetric with the launch path: a resumed run re-enters the SAME isolated
-                    // workspace it was parked in, so the Pending remainder sees the work the pre-pause steps
-                    // left behind. A separate literal from the launch call on purpose — the two have drifted
-                    // before, so each has its own regression fact.
-                    executor.Initialize(workspaceRoot: runRoot, grants, provider, policy,
-                        canPark: CanParkForApproval(run.ParentRunId), deniedWrites: denied);
-                    started = true;
-                    // A2: same bracket, same reasoning as the launch path — after the slot wait, before the
-                    // executor can write. TryBeginResumeAsync already raised RunChanged(Running) at the CAS,
-                    // i.e. before this line, which is why ChatSessionManager keeps its ActiveRunId-matched
-                    // term as well as reading this index.
-                    _executingRuns.Register(run.ChatId, run.Id);
-                    // parkReason carries the pre-claim token down to the orchestrator's planning guard — the
-                    // only way it can get there, since the claim above already NULLed the envelope it came from.
-                    await orchestrator.RunAsync(run, executor, persona, provider, budget, runCts.Token,
-                            resume: true, nudge: nudge, parkReason: parkReason)
-                        .ConfigureAwait(false); // resume:true → drains the Pending remainder; re-plans only for
-                                                // a needs-goal park with no step rows
-                }
-                catch (OperationCanceledException)
-                {
-                    // Cancel during resume before entering the orchestrator: the run was CAS'd to Running by
-                    // the claim, so re-park it (rather than leave it dangling Running) — it stays resumable.
-                    if (!started)
-                    {
-                        try { await _agentRunService.PauseAsync(run.Id, InterruptedReasonFor(parkReason), CancellationToken.None).ConfigureAwait(false); }
-                        catch (Exception ex) { _logger.LogWarning(ex, "Failed to re-park interrupted resume {RunId}", run.Id); }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Resume of run {RunId} faulted", run.Id);
-                    if (started)
-                    {
-                        try { await _agentRunService.FailAsync(run.Id, ex.Message, cancelled: false, CancellationToken.None).ConfigureAwait(false); }
-                        catch (Exception fx) { _logger.LogWarning(fx, "Failed to settle faulted resume {RunId}", run.Id); }
-                    }
-                    else
-                    {
-                        // Faulted before entering the orchestrator (e.g. slot wait, scope/executor construction) —
-                        // the run was CAS'd to Running but no loop is attached. Re-park it so it stays resumable
-                        // rather than dangling Running (guardrail 1/3).
-                        try { await _agentRunService.PauseAsync(run.Id, InterruptedReasonFor(parkReason), CancellationToken.None).ConfigureAwait(false); }
-                        catch (Exception px) { _logger.LogWarning(px, "Failed to re-park interrupted resume {RunId}", run.Id); }
-                    }
-                }
-                finally
-                {
-                    if (acquired) _slots.Release();
-
-                    // A2: see the launch path (and the same after-the-slot ordering, for the same reason). A
-                    // resume dispatch that starts while the previous dispatch is still unwinding re-registers
-                    // the same key, so this release can close the NEWER bracket — fail-open, which is the
-                    // recoverable direction (a stale true is not recoverable).
-                    _executingRuns.Release(run.Id);
-                    RemoveInflight(run.Id, runCts);
-                    // Batch 08 D1: see the launch path's finally. The !started arms above re-park the row
-                    // themselves without entering the orchestrator, so an unconsumed request has to die here.
-                    _steering?.ReleaseDispatch(run.Id, steerCancel);
-                    runCts.Dispose();
-
-                    // T0-1(b): the resume path's substitute for a handle. LAST, and specifically AFTER the slot
-                    // release above — same rule as the composer bracket beside it, for the same reason: this is
-                    // bookkeeping, and a subscriber that blocks or throws must never be able to strand the
-                    // shared concurrency slot. Raised on EVERY arm, including the !started re-parks, because the
-                    // subscriber's state check is what tells a re-park apart from a settle; suppressing it here
-                    // would silently lose the case where the orchestrator DID run and settle. Swallowing is
-                    // deliberate — nothing in this finally has a caller to throw to.
-                    try { ResumedRunSettled?.Invoke(this, new ResumedRunSettledEventArgs(run.Id, run.ChatId)); }
-                    catch (Exception ex) { _logger.LogWarning(ex, "A ResumedRunSettled handler threw for run {RunId}", run.Id); }
-                }
-            }, CancellationToken.None);
+            var plan = new ResumeDispatchPlan(
+                run, persona, provider, budget, grants, policy, denied, runRoot, nudge, parkReason);
+            var completion = Task.Run(
+                () => RunResumedDispatchAsync(plan, runCts, ticket, steerCancel), CancellationToken.None);
 
             _inflight[run.Id] = (runCts, completion);
             return true;
@@ -911,6 +670,317 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             catch (Exception px) { _logger.LogWarning(px, "Failed to re-park run {RunId} after pre-dispatch resume failure", runId); }
             return false;
         }
+    }
+
+    /// <summary>What a won resume claim carries forward. Null from <see cref="TryClaimForResumeAsync"/> means the
+    /// claim was not made or was lost, and the caller must return false without touching slots or inflight.</summary>
+    private sealed record ResumeClaim(AgentRun Run, string? ParkReason, string? ApprovedTool);
+
+    /// <summary>The resolved state one resumed dispatch runs on, frozen at the moment the dispatch is queued.</summary>
+    private sealed record ResumeDispatchPlan(
+        AgentRun Run,
+        Persona Persona,
+        AiProvider Provider,
+        RunProfile Budget,
+        IReadOnlyList<string> Grants,
+        RunAutonomyPolicy? Policy,
+        IReadOnlyList<string> Denied,
+        string? RunRoot,
+        string? Nudge,
+        string? ParkReason);
+
+    /// <summary>
+    /// Atomic claim FIRST (guardrail 2): a panel+Flow race or double-click → only one winner. On the lost path
+    /// the caller returns BEFORE touching _slots/_inflight/_runsByChat — no slot leak, no duplicate run.
+    /// </summary>
+    /// <remarks>
+    /// Batch 08: TWO claims, disjoint by SOURCE STATE, chosen from the row already read. An explicit dispatch,
+    /// never a range (D7) and never "try one, then the other": a run whose state moved between the read and the
+    /// CAS is not ours, and the loser's log line says so. A budget park is WaitingForInput; a USER pause is
+    /// Paused, and its claim also retires the pause envelope it consumed.
+    /// </remarks>
+    private async Task<ResumeClaim?> TryClaimForResumeAsync(
+        Guid runId, string? nudge, bool declineToolApproval, CancellationToken ct)
+    {
+        var run = await _agentRunService.GetAsync(runId, ct).ConfigureAwait(false);
+        if (run is null) { _logger.LogWarning("Resume: run {RunId} not found", runId); return null; }
+
+        // hermes #16: READ THE QUESTION BEFORE ANSWERING IT. Both claims below clear ExtraJson, so the tool
+        // name a tool-approval park wrote is gone the instant one of them wins — it has to come off the row we
+        // already read at the top of this method. Null for every other park, and for a tool-approval park
+        // whose envelope did not survive: a resume that cannot read the question grants nothing extra and the
+        // run simply parks again on the same tool, which is the fail-closed direction.
+        // Read here, before the claim below NULLs the ExtraJson it lives in — the orchestrator's re-plan guard
+        // needs to know why this run parked, and this is the last point that can still tell it.
+        var parkReason = run.State == AgentRunState.WaitingForInput ? RunPauseEnvelope.ReadReason(run) : null;
+        var approvedTool = parkReason == AgentRunOrchestrator.ToolApprovalReason
+            ? RunPauseEnvelope.ReadApprovalTool(run)
+            : null;
+
+        // A decline answers a tool-approval park only; on any other park there is no question to say "no" to,
+        // and claiming the CAS anyway would turn a budget pause into a denied-tool resume.
+        if (declineToolApproval && approvedTool is null)
+        {
+            _logger.LogInformation("Decline: run {RunId} is not parked on a tool-approval question", runId);
+            return null;
+        }
+
+        var claimed = run.State switch
+        {
+            AgentRunState.WaitingForInput => await _agentRunService.TryBeginResumeAsync(runId, ct).ConfigureAwait(false),
+            AgentRunState.Paused => await _agentRunService.TryResumeFromPauseAsync(runId, ct).ConfigureAwait(false),
+            _ => false,
+        };
+        if (!claimed)
+        {
+            _logger.LogInformation("Resume: run {RunId} not claimable (already resumed/not parked)", runId);
+            return null;
+        }
+
+        // Persisted here, in its own try, before dispatch: the nudge is the user's answer on a clarification
+        // park but is otherwise scope-to-dispatch and never persisted, so it would be lost by the next park.
+        if (parkReason is AgentRunOrchestrator.NeedsGoalReason or AgentRunOrchestrator.NeedsInputReason
+            && !string.IsNullOrWhiteSpace(nudge))
+        {
+            // The answer text never reaches a log line here — only the reason token does; the text itself
+            // goes out on SensitiveDebug inside AppendClarificationAsync.
+            try { await _agentRunService.AppendClarificationAsync(run.Id, nudge, ct).ConfigureAwait(false); }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Resume: could not record the clarification answer for run {RunId} "
+                    + "(reason {Reason}) — the run resumes without it", run.Id, parkReason);
+            }
+        }
+
+        return new ResumeClaim(run, parkReason, approvedTool);
+    }
+
+    /// <summary>
+    /// hermes #16: apply the human's decision to the call that parked the run. Continue IS the approval — the run
+    /// stopped and asked "may I use <c>tool</c>?", and the only affordance the card carries is the button the user
+    /// just pressed, so pressing it grants that one named tool for this run and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// The pending CALL cannot be replayed — a park outlives the process, and the deferred action's Execute()
+    /// delegate does not — so what is applied is the CAPABILITY. The step's row went back to Pending when the run
+    /// parked, the drain loop re-runs it from the top, and the same tool call now resolves GrantedByName instead
+    /// of parking.
+    /// <para>
+    /// PERSISTED, not merely handed to this dispatch. Two tools, two parks: without persistence the second resume
+    /// would restore the launch envelope and forget the first approval, so the run would park on tool A, be
+    /// granted A, park on B, be granted B but lose A, park on A again — a livelock paced by a human clicking
+    /// Continue. The write is failure-isolated: a fault leaves the run with its launch envelope, i.e. it re-parks
+    /// and asks again, never runs ungranted.
+    /// </para>
+    /// </remarks>
+    private async Task<(IReadOnlyList<string> Grants, IReadOnlyList<string> Denied)> ApplyToolApprovalDecisionAsync(
+        AgentRun run, string? approvedTool, bool declineToolApproval,
+        IReadOnlyList<string> grants, IReadOnlyList<string> denied, RunAutonomyPolicy? policy,
+        bool envelopeWasReadable, CancellationToken ct)
+    {
+        if (declineToolApproval && approvedTool is not null)
+        {
+            // Decline is a DECISION, not the absence of approval: the refusal is persisted onto the
+            // envelope so the re-run step's call resolves DeniedForRun ("adapt") instead of parking a
+            // second time on the same settled question. Same persist discipline as the widening below —
+            // only over a readable envelope, failure-isolated, applied to THIS dispatch either way.
+            var deniedNow = denied.Contains(approvedTool, StringComparer.OrdinalIgnoreCase)
+                ? denied.ToList()
+                : denied.Append(approvedTool).ToList();
+            if (envelopeWasReadable)
+            {
+                try
+                {
+                    await _agentRunService.UpdatePolicyJsonAsync(
+                            run.Id, SerializeGrantEnvelope(grants, run.TriggerKind, policy, deniedNow), ct)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Could not persist the denied tool for run {RunId}", run.Id);
+                }
+            }
+
+            _logger.LogInformation("Resume: run {RunId} declined tool {ToolName} for this run", run.Id, approvedTool);
+            return (grants, deniedNow);
+        }
+
+        if (approvedTool is not null && !grants.Contains(approvedTool, StringComparer.OrdinalIgnoreCase))
+        {
+            var widened = grants.Append(approvedTool).ToList();
+            // ONLY over a document this build actually read. `grants` may be the resume FLOOR
+            // ({write_file}), which is a per-dispatch degrade for an absent/corrupt/foreign/future envelope
+            // and is deliberately WIDER than some launches — InteractiveEmptyEnvelopeJson exists as its own
+            // documented shape for exactly that reason. Serializing a fresh v:1 document on top of it would
+            // make the degrade the run's DURABLE record of its own authority: a run that never held
+            // write_file would come back holding it on every later resume, and because the resume path
+            // re-reads the row and hands PolicyJson to LaunchChildAsync, the next fan-out would narrow its
+            // children from the widened envelope instead of the real one. It would also overwrite a document
+            // a NEWER build wrote, which no build could then read back.
+            //
+            // On the floor path the grant is applied to THIS dispatch only, which is precisely what the
+            // Continue card promised. The livelock the persist exists to prevent needs a run that parks on two
+            // different tools; on an unreadable envelope re-parking and asking again is the fail-closed
+            // direction the claim already takes when it cannot read the question at all.
+            if (envelopeWasReadable)
+            {
+                try
+                {
+                    await _agentRunService.UpdatePolicyJsonAsync(
+                            // The ROW's trigger, not the envelope's. GrantEnvelope.Trigger is provenance that
+                            // "never widens a grant", and the row is the authoritative copy of the same fact.
+                            run.Id, SerializeGrantEnvelope(widened, run.TriggerKind, policy), ct)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Could not persist the approved tool grant for run {RunId}", run.Id);
+                }
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "Resume: run {RunId} granted {ToolName} for this dispatch only — its launch envelope is "
+                    + "not readable by this build, so the floor must not be written back over it",
+                    run.Id, approvedTool);
+            }
+
+            // Applied to THIS dispatch whether or not the persist landed: the human answered, and the
+            // question they answered was about the step that is about to re-run.
+            _logger.LogInformation("Resume: run {RunId} granted approved tool {ToolName}", run.Id, approvedTool);
+            return (widened, denied);
+        }
+
+        return (grants, denied);
+    }
+
+    /// <summary>
+    /// The workspace a resumed dispatch re-enters. Idempotent: the run's isolated workspace already exists from
+    /// the original launch (or is recreated). Returns the canonicalized path rather than discarding it — the
+    /// resumed dispatch hands this exact string to <c>Initialize</c>, and recomputing it from Path.Combine there
+    /// would give the executor a different string than launch does for the same directory (a link or an 8.3
+    /// component in the base dir), i.e. the two call sites would silently drift apart.
+    /// </summary>
+    private async Task<string?> ResolveResumeWorkspaceRootAsync(AgentRun run, CancellationToken ct)
+    {
+        if (run.ParentRunId is { } parentId)
+        {
+            // Batch 07 §7.6 change 3, and the reason it is not optional: this path provisions at its OWN
+            // run id, and every child owns a stub chat — so a user opening a parked child's chat and
+            // pressing Continue would otherwise create a SECOND workspace at the child's id, diverging from
+            // the parent's and outliving it until the sweep. Resolve the PARENT's root instead, and only if
+            // it still exists: a parent that ran unisolated, or whose workspace is already gone, leaves the
+            // child writing the assistant folder — the same coherent degrade as a fresh child dispatch.
+            var parentRoot = _workspaces?.RootFor(parentId) ?? Path.Combine(_runsBaseDir, parentId.ToString());
+            return Directory.Exists(parentRoot) ? SafeFolderPath.Canonicalize(parentRoot) : null;
+        }
+
+        if (_workspaces is not null)
+        {
+            // Idempotent by construction (G3 B11 step 2): a readable metadata document returns the same
+            // root, the same mode and the same provisionedAtUtc, which is what keeps the promote set
+            // from becoming "everything the workspace contains" after a park → resume.
+            return (await _workspaces.ProvisionAsync(run.Id, workingSubpath: null, ct).ConfigureAwait(false))?.Root;
+        }
+
+        return SafeFolderPath.Canonicalize(
+            Directory.CreateDirectory(Path.Combine(_runsBaseDir, run.Id.ToString())).FullName);
+    }
+
+    /// <summary>The resumed dispatch itself: re-acquire a slot, build the scope, and hand the run to the
+    /// orchestrator. Every exit re-parks or settles the row, so a claimed run never dangles Running.</summary>
+    private async Task RunResumedDispatchAsync(
+        ResumeDispatchPlan plan, CancellationTokenSource runCts, RunSlotPool.Ticket ticket, Action steerCancel)
+    {
+        var run = plan.Run;
+        var acquired = false;
+        var started = false;
+        try
+        {
+            // Deliberately the PARENT pool even for a resumed child (Batch 07 §7.1): a resume is a USER
+            // act, so nothing is awaiting this dispatch from inside another run's RunAsync, and the
+            // nested-acquire deadlock that _childSlots exists to prevent cannot arise here.
+            await _slots.WaitAsync(ticket, runCts.Token).ConfigureAwait(false); // re-acquire a slot (guardrail 6)
+            acquired = true;
+
+            using var scope = _scopeFactory.CreateScope();
+            var executor = scope.ServiceProvider.GetRequiredService<HeadlessTurnExecutor>();
+            var orchestrator = scope.ServiceProvider.GetRequiredService<AgentRunOrchestrator>();
+            // Batch 06 G2, symmetric with the launch path: a resumed run re-enters the SAME isolated
+            // workspace it was parked in, so the Pending remainder sees the work the pre-pause steps
+            // left behind. A separate literal from the launch call on purpose — the two have drifted
+            // before, so each has its own regression fact.
+            executor.Initialize(workspaceRoot: plan.RunRoot, plan.Grants, plan.Provider, plan.Policy,
+                canPark: CanParkForApproval(run.ParentRunId), deniedWrites: plan.Denied);
+            started = true;
+            // A2: same bracket, same reasoning as the launch path — after the slot wait, before the
+            // executor can write. TryBeginResumeAsync already raised RunChanged(Running) at the CAS,
+            // i.e. before this line, which is why ChatSessionManager keeps its ActiveRunId-matched
+            // term as well as reading this index.
+            _executingRuns.Register(run.ChatId, run.Id);
+            // ParkReason carries the pre-claim token down to the orchestrator's planning guard — the
+            // only way it can get there, since the claim already NULLed the envelope it came from.
+            await orchestrator.RunAsync(run, executor, plan.Persona, plan.Provider, plan.Budget, runCts.Token,
+                    resume: true, nudge: plan.Nudge, parkReason: plan.ParkReason)
+                .ConfigureAwait(false); // resume:true → drains the Pending remainder; re-plans only for
+                                        // a needs-goal park with no step rows
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancel during resume before entering the orchestrator: the run was CAS'd to Running by
+            // the claim, so re-park it (rather than leave it dangling Running) — it stays resumable.
+            if (!started)
+                await ReParkInterruptedResumeAsync(run.Id, plan.ParkReason).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Resume of run {RunId} faulted", run.Id);
+            if (started)
+            {
+                try { await _agentRunService.FailAsync(run.Id, ex.Message, cancelled: false, CancellationToken.None).ConfigureAwait(false); }
+                catch (Exception fx) { _logger.LogWarning(fx, "Failed to settle faulted resume {RunId}", run.Id); }
+            }
+            else
+            {
+                // Faulted before entering the orchestrator (e.g. slot wait, scope/executor construction) —
+                // the run was CAS'd to Running but no loop is attached. Re-park it so it stays resumable
+                // rather than dangling Running (guardrail 1/3).
+                await ReParkInterruptedResumeAsync(run.Id, plan.ParkReason).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            if (acquired) _slots.Release();
+
+            // A2: see the launch path (and the same after-the-slot ordering, for the same reason). A
+            // resume dispatch that starts while the previous dispatch is still unwinding re-registers
+            // the same key, so this release can close the NEWER bracket — fail-open, which is the
+            // recoverable direction (a stale true is not recoverable).
+            _executingRuns.Release(run.Id);
+            RemoveInflight(run.Id, runCts);
+            // Batch 08 D1: see the launch path's finally. The !started arms above re-park the row
+            // themselves without entering the orchestrator, so an unconsumed request has to die here.
+            _steering?.ReleaseDispatch(run.Id, steerCancel);
+            runCts.Dispose();
+
+            // T0-1(b): the resume path's substitute for a handle. LAST, and specifically AFTER the slot
+            // release above — same rule as the composer bracket beside it, for the same reason: this is
+            // bookkeeping, and a subscriber that blocks or throws must never be able to strand the
+            // shared concurrency slot. Raised on EVERY arm, including the !started re-parks, because the
+            // subscriber's state check is what tells a re-park apart from a settle; suppressing it here
+            // would silently lose the case where the orchestrator DID run and settle. Swallowing is
+            // deliberate — nothing in this finally has a caller to throw to.
+            try { ResumedRunSettled?.Invoke(this, new ResumedRunSettledEventArgs(run.Id, run.ChatId)); }
+            catch (Exception ex) { _logger.LogWarning(ex, "A ResumedRunSettled handler threw for run {RunId}", run.Id); }
+        }
+    }
+
+    /// <summary>Put a claimed-but-never-dispatched run back where it was, so it stays resumable rather than
+    /// dangling Running (guardrail 1/3).</summary>
+    private async Task ReParkInterruptedResumeAsync(Guid runId, string? parkReason)
+    {
+        try { await _agentRunService.PauseAsync(runId, InterruptedReasonFor(parkReason), CancellationToken.None).ConfigureAwait(false); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Failed to re-park interrupted resume {RunId}", runId); }
     }
 
     /// <summary>
