@@ -523,6 +523,7 @@ public class AiClientService : IAiClientService
         // the whole method and may already be spent after `maxToolRounds` round-trips plus tool dispatch
         // (which can block on a human approval card for an unbounded time).
         string? wrapUpText = null;
+        var wrapUpTruncated = false;
         if (!cancellationToken.IsCancellationRequested)
         {
             using var wrapUpTimeoutCts = new CancellationTokenSource(timeout);
@@ -552,6 +553,10 @@ public class AiClientService : IAiClientService
                     workingMessages, wrapUpOptions, wrapUpLinkedCts.Token);
 
                 wrapUpText = wrapUpResponse.Text;
+
+                // The wrap-up is the final answer now, so the badge follows its route; reset here and not
+                // before the call, because the skip and catch paths still display the tool rounds' text.
+                protectedRoute = false;
                 if (wrapUpResponse.AdditionalProperties is { } wrapUpProps
                     && wrapUpProps.ContainsKey(GuardrailMarker.AdditionalPropertyKey))
                 {
@@ -562,6 +567,8 @@ public class AiClientService : IAiClientService
                     if (wrapUpUsage.InputTokenCount is long wrapUpInput) { aggregatedInput += wrapUpInput; hasUsage = true; }
                     if (wrapUpUsage.OutputTokenCount is long wrapUpOutput) { aggregatedOutput += wrapUpOutput; hasUsage = true; }
                 }
+                // Recorded, not thrown: the catch below would swallow a throw here.
+                wrapUpTruncated = wrapUpResponse.FinishReason == Microsoft.Extensions.AI.ChatFinishReason.Length;
                 _logger.LogWarning("Tool-round wrap-up call produced {TextLen} chars of final text", wrapUpText?.Length ?? 0);
             }
             catch (Exception ex)
@@ -579,8 +586,19 @@ public class AiClientService : IAiClientService
             yield return new TextDelta(wrapUpText);
         }
 
+        // Before the throw below, not instead of it: this carries the aggregated usage and the flags, and
+        // the tokenizing decorator flushes its pending detokenize buffer on it.
         yield return BuildFinishedItem(
             provider, hasUsage, aggregatedInput, aggregatedOutput, protectedRoute, toolRoundsExhausted: true);
+
+        // A throw, not a flag, so a Planned step cannot accept the half answer as its output.
+        if (wrapUpTruncated)
+        {
+            var wrapUpPartial = wrapUpText?.Length ?? 0;
+            _logger.LogWarning("Tool-round wrap-up response truncated by token cap (finish_reason=length, partialChars={PartialChars})",
+                wrapUpPartial);
+            throw new LlmTruncatedException(provider.Name, wrapUpPartial);
+        }
     }
 
     public async Task<ChatResponse> GetChatResponseAsync(

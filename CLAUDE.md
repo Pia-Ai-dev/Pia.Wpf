@@ -37,11 +37,11 @@ A feature is not commit-ready until the build reports **`0 Warning(s)` and `0 Er
 
 ## Comment Discipline
 
-Default to no comment. A surviving comment or XML-doc `<summary>` gets **one short line** — never a multi-paragraph essay, never a `<para>` block. Only write one when the WHY is genuinely non-obvious from the code (a hidden constraint, an invariant, a workaround, a surprising side effect); never to restate WHAT the code does.
+Default to no comment. A surviving comment or XML-doc `<summary>` gets **one short line** — never a multi-paragraph essay, never a `<para>` block. Only write one when the WHY is genuinely non-obvious from the code (a hidden constraint, an invariant, a workaround, a surprising side effect); never to restate WHAT the code does. Then cut it as short as it will go: drop every clause the adjacent code already shows, and treat two wrapped lines as the ceiling.
 
 Never cite the originating task in code — no batch/decision/spec IDs (`18 D1`, `G3`, `§4.1`, `owner Q4`, `Batch 08 F19`, `(I1)`, ticket numbers). That belongs in the commit message, not the source, and rots the moment the plan doc is renumbered. If you catch yourself writing "per spec §…" or "18 Gx", delete the comment and state only the underlying fact in plain language.
 
-This applies to XML-doc as much as to `//` — a `<summary>` is not exempt from the one-line rule just because it's Intellisense-facing.
+This applies to XML-doc as much as to `//` — a `<summary>` is not exempt from the brevity rules above just because it's Intellisense-facing.
 
 ## Git Workflow
 
