@@ -63,11 +63,10 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         AgentRun? run = null;
         try
         {
-            // R1: the AgentRuns FK requires its AssistantChats parent row to exist first, and FK
-            // enforcement is ON. Persist a minimal stub chat up front so the FK target exists (it is
-            // finalized by the full SaveAsync on success, and left in place on empty/error so a Failed
-            // run's ChatId still resolves). Only then create the run. The stub save is the FK
-            // prerequisite, so — unlike the run bookkeeping below — it is allowed to propagate.
+            // The AgentRuns FK requires its AssistantChats parent row first, and FK enforcement is ON, so the
+            // stub chat is persisted up front and left in place on empty/error (a Failed run's ChatId still
+            // resolves). Being the FK prerequisite, this save is allowed to propagate — the run bookkeeping
+            // below is not.
             var stubTime = DateTime.UtcNow;
             await _chatService.SaveAsync(new SyncAssistantChat
             {
@@ -82,8 +81,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 Messages = [],
             }, ct);
 
-            // Run bookkeeping is best-effort and never fails the turn (§12.5). If creation is
-            // swallowed, every later run call is guarded by a null check so the turn proceeds run-less.
+            // Best-effort and never fails the turn: if creation is swallowed, every later run call is guarded
+            // by a null check so the turn proceeds run-less.
             try
             {
                 run = await _runService.CreateAsync(new AgentRunCreateRequest(
@@ -95,14 +94,11 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 _logger.LogWarning(ex, "Run bookkeeping (create) failed for chat {ChatId}", chatId);
             }
 
-            // A2: open the composer bracket for this SingleTurn run. This shape was gated NOWHERE before:
-            // ChatSessionManager matched runs by ChatSession.ActiveRunId and RestoreActiveRunAsync only ever
-            // attaches RunShape.Planned, so a user opening this chat from history mid-turn could Send — and the
-            // single SaveAsync below is a FULL REPLACE with no merge and no bound, so their message was deleted
-            // outright. Registered only once the run row exists: the handler-side release keys off RunChanged,
-            // which every `run is not null` guard below suppresses for a run-less turn, so a surrogate key
-            // could never be cleared and would strand a dead composer. A run-less turn therefore fails OPEN,
-            // which is the recoverable direction. Bookkeeping — a fault must never fail the turn (§12.5).
+            // Open the composer bracket: the SaveAsync below is a FULL REPLACE with no merge, so a user who
+            // opens this chat from history mid-turn and Sends would otherwise have their message deleted
+            // outright. Registered only once the run row exists — the release keys off RunChanged, which every
+            // `run is not null` guard suppresses for a run-less turn, so a surrogate key could never be cleared
+            // and would strand a dead composer. A run-less turn therefore fails OPEN, the recoverable direction.
             if (run is { } registeredRun)
             {
                 try { _executingRuns.Register(chatId, registeredRun.Id); }
@@ -125,7 +121,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 provider.ReasoningEffort = persona.ReasoningEffort.Value;
             }
 
-            // Headless path — no user to click the chip (R7) → never eligible.
+            // Headless path — no user to click the chip, so never eligible.
             var turnSetup = _promptComposer.PrepareTurn(persona, provider, [], tokenizationEnabled,
                 suggestAgentModeEligible: false);
 
@@ -150,13 +146,12 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 TokenMapAmbient.Current = tokenMap;
             }
 
-            // Set the task ambient around the run so the file tools key per-run state against a real
-            // task id (the deferred-from-1.1 fix — headless writes were previously scoped to
-            // Guid.Empty). TaskId = run.Id when bookkeeping created the run, else the chatId. §13.6.
+            // The file tools key per-run state against this id; without it headless writes all shared
+            // Guid.Empty. The run's id when bookkeeping created one, else the chat's.
             var previousTask = TaskAmbient.Current;
             TaskAmbient.Current = new TaskContext(run?.Id ?? chatId, WorkingSubpath: null, OnFileTouched: null);
 
-            // Accrue per-round usage into the run ledger (best-effort — §12.5), exactly as before.
+            // Accrue per-round usage into the run ledger; best-effort, never fails the turn.
             Func<UsageDetails, Task>? onUsage = null;
             if (run is { } createdRun)
             {
@@ -170,17 +165,12 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             ExchangeResult exchange;
             try
             {
-                // NO POLICY ARGUMENT, and that is a DECISION, not an oversight (Batch 04 §0.2 + review close).
-                // A SingleTurn scheduled job has no plan, no steps and no resume path, so it carries no launch
-                // envelope — and this batch deliberately did not give it one. The visible consequence is that
-                // AgentRunAutoApproveBuiltInWrites behaves differently for the two kinds of scheduled job: an
-                // AgentTask job (ScheduledJobBackgroundService → HeadlessRunLauncher) auto-approves the preset
-                // classes, while a Research job lands here and still answers "Denied: 'write_file' is a write
-                // action not granted to this background job" for the identical tool. The direction is
-                // RESTRICTIVE, so nothing unsafe follows; relaying the setting here would WIDEN an unattended
-                // surface, which is not a change to make on the back of a reviewer nit. If a later batch wants
-                // parity, the fix is to pass RunAutonomyPolicy.FromSettings(settings) here — with a test — and
-                // to say so in the settings copy, which today names agent runs and voice mode only.
+                // NO POLICY ARGUMENT, deliberately: a SingleTurn scheduled job has no plan, no steps and no
+                // resume path, so it carries no launch envelope. The consequence is that
+                // AgentRunAutoApproveBuiltInWrites reaches an AgentTask job but not one that lands here, which is
+                // the RESTRICTIVE direction — relaying the setting would WIDEN an unattended surface. Parity, if
+                // wanted, means passing RunAutonomyPolicy.FromSettings(settings) here and saying so in the
+                // settings copy, which today names agent runs and voice mode only.
                 exchange = await RunExchangeAsync(messages, provider, turnSetup, grantedWrites, ct, onUsage);
             }
             finally
@@ -207,7 +197,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             }
 
             var now = DateTime.UtcNow;
-            // R3: these stable message Ids delimit the run's transcript slice (First/LastMessageId).
+            // These stable Ids delimit the run's transcript slice (First/LastMessageId).
             var userMsgId = Guid.NewGuid();
             var assistantMsgId = Guid.NewGuid();
             var chat = new SyncAssistantChat
@@ -290,9 +280,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         }
         finally
         {
-            // A2: close the composer bracket on EVERY exit — success, empty response, cancel, fault. Idempotent
-            // with ChatSessionManager's release-on-RunChanged, which normally gets there first because
-            // CompleteAsync raises the terminal event before this finally runs. Never throws into the turn.
+            // Close the composer bracket on EVERY exit. Idempotent with ChatSessionManager's
+            // release-on-RunChanged, which normally gets there first. Never throws into the turn.
             if (run is { } bracketedRun)
             {
                 try { _executingRuns.Release(bracketedRun.Id); }
@@ -302,19 +291,14 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
     }
 
     /// <summary>
-    /// The reusable single-exchange engine (§13.6): build → <see cref="IAiClientService.GetChatCompletionWithToolsAsync"/>
-    /// → post-process (think-tag split + web-citation strip). Run-service-free and ambient-free — the
-    /// caller owns the token-map/task ambients and any run bookkeeping. The single-turn
-    /// <see cref="RunAsync"/> calls it once; <c>HeadlessTurnExecutor</c> calls it per step, accumulating
-    /// messages across steps. <paramref name="onUsage"/> is awaited on each round's <see cref="Finished"/>
-    /// (preserves the single-turn per-round ledger accrual); null for step turns (the orchestrator records
-    /// the step usage from the returned <see cref="ExchangeResult.Usage"/>).
-    /// <para>
-    /// <paramref name="contextBudget"/> is relayed to the AI client so the in-step tool loop can be
-    /// compacted between rounds. Agent step turns pass one; the background single-turn path
-    /// (<see cref="RunAsync"/>) leaves it null and is therefore bit-for-bit unchanged.
-    /// </para>
+    /// The reusable single-exchange engine: build → <see cref="IAiClientService.GetChatCompletionWithToolsAsync"/>
+    /// → post-process. Run-service-free and ambient-free — the caller owns the token-map/task ambients and any
+    /// run bookkeeping. <see cref="RunAsync"/> calls it once; <c>HeadlessTurnExecutor</c> calls it per step,
+    /// accumulating messages across steps.
     /// </summary>
+    /// <param name="onUsage"/>Awaited on each round's <see cref="Finished"/>, preserving the single-turn
+    /// per-round ledger accrual; null for step turns, where the orchestrator records the step usage from the
+    /// returned <see cref="ExchangeResult.Usage"/>.</param>
     public async Task<ExchangeResult> RunExchangeAsync(
         List<ChatMessage> messages,
         AiProvider provider,
@@ -325,13 +309,12 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         AgentContextBudget? contextBudget = null,
         RunAutonomyPolicy? policy = null,
         AgentTimelineScope? timeline = null,
-        // hermes #9. Non-null ONLY when the caller put emit_step_result in setup.Tools — i.e. an agent step.
-        // It is what arms the pre-route interception below, so the background single-turn path (which passes
-        // nothing) still treats a hallucinated emit_step_result as the unknown tool it is.
+        // Non-null ONLY when the caller put emit_step_result in setup.Tools — i.e. an agent step. It arms the
+        // pre-route interception below, so a hallucinated emit_step_result on the single-turn path (which
+        // passes nothing) is still the unknown tool it is.
         StepOutcomeStore? outcomeStore = null,
-        // hermes #16. Non-null ONLY when the caller owns a run loop that can park it at WaitingForInput — i.e.
-        // an agent step. Null (the background single-turn path) resolves CanPark: false and keeps the hard
-        // denial exactly as it was.
+        // Non-null ONLY when the caller owns a run loop that can park it at WaitingForInput. Null resolves
+        // CanPark: false, i.e. a hard denial.
         ToolApprovalStore? approvals = null,
         // Non-null ONLY on a real agent step turn, exactly like outcomeStore — it is what arms the pre-route
         // interception of request_user_input below, so the background single-turn path (which passes nothing)
@@ -390,12 +373,11 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
     /// <summary>
     /// Headless tool dispatch: reads (tools that return an immediate result) always run;
     /// writes (tools that return a pending action) run only if explicitly granted to this job — with one
-    /// FLOOR no grant can lift: a destructive EXTERNAL (MCP) tool never runs unattended (B2).
+    /// FLOOR no grant can lift: a destructive EXTERNAL (MCP) tool never runs unattended.
     /// </summary>
-    /// <param name="dispatch">What the tool LOOP knows and this gate cannot derive (T2-14): the 1-based round,
-    /// persisted on every row this gate writes. The interactive twin takes the same parameter for the same
-    /// reason, and the two must stay in step — a column populated on one surface and NULL on the other is a
-    /// silent parity bug (AgentTimelineParityTests holds them together).</param>
+    /// <param name="dispatch">What the tool LOOP knows and this gate cannot derive: the 1-based round,
+    /// persisted on every row this gate writes. The interactive twin takes it for the same reason — a column
+    /// populated on one surface and NULL on the other is a silent parity bug.</param>
     private async Task<object?> HandleToolCallAsync(
         FunctionCallContent toolCall, HashSet<string> grantedWrites, ToolDispatchContext dispatch,
         RunAutonomyPolicy? policy = null,
@@ -403,32 +385,26 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         ToolApprovalStore? approvals = null, UserInputRequestStore? userInput = null,
         HashSet<string>? deniedWrites = null)
     {
-        // emit_step_result (hermes #9): PRE-ROUTE special case, the unattended twin of ChatSession's
-        // suggest_agent_mode seam and placed for the same reason — the tool has no plugin and no route, so
-        // RouteToolCallAsync would miss it, emit a ToolGateDecision.UnknownTool audit row and hand the model
-        // "Unknown tool.". Short-circuiting here also keeps every other tool path byte-for-byte unchanged.
-        // Never gated: declaring an outcome writes nothing and touches nothing outside this step's sink.
+        // PRE-ROUTE: the tool has no plugin and no route, so routing would miss it, write an UnknownTool
+        // audit row and answer "Unknown tool.". Never gated — declaring an outcome writes nothing outside
+        // this step's sink.
         if (outcomeStore is not null
             && string.Equals(toolCall.Name, AgentStepTools.EmitStepResultToolName, StringComparison.Ordinal))
         {
             return outcomeStore.Record(toolCall.Arguments);
         }
 
-        // request_user_input: a third pre-route special case, the same shape as emit_step_result above — no
-        // plugin, no route. Its interactive twin lives at ChatSession.HandleToolCall; the two must stay in step.
-        // The question is user-derived payload — it is never logged here; the store's SensitiveDebug renders it.
+        // Same pre-route shape as emit_step_result. Its interactive twin lives at ChatSession.HandleToolCall
+        // and the two must stay in step. The question is user payload and is never logged here.
         if (userInput is not null
             && string.Equals(toolCall.Name, AgentStepTools.RequestUserInputToolName, StringComparison.Ordinal))
         {
             return userInput.Record(toolCall.Arguments);
         }
 
-        // MCP flows through the same grant gate as a built-in write: the Phase-2 MCP handler returns a
-        // deferred PluginToolCall (below), so an ungranted MCP call is denied by the pending-action branch
-        // and a granted NON-destructive one executes. No MCP-specific pre-check is needed here anymore.
-        // Length only, measured once and reused by every emit arm below (03 §3). Gated on the SINK for the same
-        // reason as the interactive twin: the SingleTurn background path passes no scope, and serializing a
-        // multi-megabyte argument dictionary to discard the number is pure waste on the most common path.
+        // Length only, measured once and reused by every emit arm below. Gated on the SINK: the single-turn
+        // path passes no scope, and serializing a multi-megabyte argument dictionary to discard the number
+        // would be pure waste on the most common path.
         var argsChars = timeline is null ? null : AgentTimelineScope.MeasureArgs(toolCall.Arguments);
 
         var route = await _pluginService.RouteToolCallAsync(toolCall);
@@ -454,22 +430,12 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
 
         if (pending is not null)
         {
-            // ---- hermes #16 CONTAINMENT: a park STOPS the exchange, it does not merely advise it ----
-            // The Park arm below answers the model with a string asking it to stop, but a string is not a
-            // control-flow construct: AiClientService walks the REMAINING FunctionCallContents of the same round
-            // in a sequential foreach and then continues to the next round, so without this guard every call the
-            // model makes AFTER the run has decided to park still reached Execute() — including the GRANTED,
-            // side-effecting ones, which resolve AutoRun and never look at `approvals` at all.
-            //
-            // That was an at-most-once violation, not just wasted work. The executor discards this step's whole
-            // attempt (no transcript append, no interim persist) and the orchestrator puts the row back to
-            // Pending, so the resumed step re-runs from the top with no record of the work — and does it a
-            // SECOND time. Pre-#16 the ungranted call was simply refused and the step ran to completion once.
-            //
-            // The attempt is still recorded in the store (never executed): Park's first-wins rule is what keeps
-            // the envelope naming the call that actually stopped the run, and ParkedCalls is what tells the log
-            // the model kept going. It returns false here by construction — PendingToolName is already set — so
-            // no second audit row is written and the panel never shows a queue of decisions that does not exist.
+            // A park STOPS the exchange rather than merely advising it. The Park arm's answer is only a string,
+            // and AiClientService walks the round's REMAINING calls and then continues to the next round — so
+            // without this guard a granted, side-effecting call made after the run decided to park still
+            // executed, and the step then re-ran from the top on resume and did it a SECOND time.
+            // The attempt is recorded but never executed; Park returns false here by construction, so no second
+            // audit row is written and the panel never shows a queue of decisions that does not exist.
             if (approvals?.PendingToolName is { } parkedFor)
             {
                 approvals.Park(pending.ToolName);
@@ -508,36 +474,30 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         ToolClass ToolClass, DateTime AskedAt, ToolGateVerdict Verdict, DateTime ResolvedAt);
 
     /// <summary>
-    /// 04 D5: ONE resolver, shared with the interactive gate. The destructive-external FLOOR (B2) is evaluated
-    /// inside Resolve BEFORE any policy or grant branch, so it stays unliftable: there is no user here to confirm
-    /// an irreversible action against a third-party system, and an MCP tool's name and effect are server-defined,
-    /// so a grant list authored days earlier (or a server that renamed its tools) is not informed consent. Scoped
-    /// to external tools ONLY — IsDeleteLike("delete_file") is true for the BUILT-IN file tool, and an explicit
-    /// grant for a built-in delete is the user's own auditable decision, so it still executes.
+    /// ONE resolver, shared with the interactive gate. The destructive-external FLOOR is evaluated inside it
+    /// before any policy or grant branch, so it stays unliftable: there is no user here to confirm an
+    /// irreversible action against a third-party system, and an MCP tool's name and effect are server-defined,
+    /// so a grant list authored days earlier is not informed consent. Scoped to EXTERNAL tools only — an
+    /// explicit grant for a built-in delete is the user's own auditable decision and still executes.
     /// </summary>
     private UnattendedGateResolution ResolveToolGate(
         PluginToolCall pending, HashSet<string> grantedWrites, RunAutonomyPolicy? policy,
         ToolApprovalStore? approvals, HashSet<string>? deniedWrites)
     {
         var toolClass = ToolClassifier.Classify(pending.PluginName, IsExternalTool(pending.ToolName));
-        // T2-14: the POLICY question, bracketed. There is no human on this surface, so unlike the
-        // interactive twin these two are the ONLY pair — every arm that got an answer uses them.
-        // Usually EQUAL (Resolve is a few comparisons, DateTime.UtcNow is ~1 ms), so nothing may assert
-        // strict ordering.
+        // The policy question, bracketed. No human on this surface, so unlike the interactive twin these are the
+        // ONLY pair — every answered arm uses them. Usually EQUAL, so nothing may assert strict ordering.
         var askedAt = DateTime.UtcNow;
         var verdict = ToolAutonomy.Resolve(new ToolGateInput(
             ToolGateSurface.Unattended, pending.ToolName, toolClass,
-            // T2-7b: this is the surface where the server's declaration bites hardest — a declared-
-            // destructive external tool hits the FLOOR and is refused outright, with no park, exactly as a
-            // delete-NAMED one already was. There is no human here to weigh it against the card.
+            // Where the server's declaration bites hardest: a declared-destructive external tool hits the FLOOR
+            // and is refused outright, with no park. There is no human here to weigh it against a card.
             ServerDeclaredDestructive: pending.ServerDeclaredDestructive,
             // No allowlist unattended: there is no user to have curated it, and IToolPermissionService is
             // injected nowhere in this file. That is today's behaviour restated, not a regression.
             IsAllowlisted: false,
-            // hermes #15: the PROCESS-scoped middle tier. It arrives on the same per-step store CanPark
-            // does, and for the same reason there is still no IToolPermissionService here: read ambiently,
-            // it would hand a CHILD run authority its parent narrowed away. A null store — every
-            // SingleTurn background call — and a store that may not park both answer false.
+            // The process-scoped middle tier, arriving on the per-step store rather than read ambiently:
+            // ambiently it would hand a CHILD run authority its parent narrowed away. A null store answers false.
             HasSessionGrant: approvals?.HasSessionGrant(pending.PluginId, pending.ToolName) == true,
             // Persisted "always allow" grants are an INTERACTIVE concept and have never applied here.
             HasStandingGrant: false,
@@ -549,9 +509,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             // The run's autonomy policy, from the launch envelope (or restored from it on resume). Null
             // for the SingleTurn background path, which has no plan and no policy — today's behaviour.
             Policy: policy,
-            // hermes #16: may this run stop and ask a human rather than refuse? The executor answers it
-            // once per run (root run + a real step turn) and hands the answer down in the store; a null
-            // store — every SingleTurn background call — is false, i.e. the pre-#16 hard denial.
+            // May this run stop and ask a human rather than refuse? The executor answers it once per run and
+            // hands the answer down in the store; a null store is false, i.e. a hard denial.
             CanPark: approvals?.CanPark == true));
 
         return new UnattendedGateResolution(toolClass, askedAt, verdict, DateTime.UtcNow);
@@ -601,15 +560,10 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                     durationMs: AgentTimelineScope.ElapsedMs(startedAt));
                 return executed;
 
-            // hermes #16 THE UNATTENDED APPROVAL PARK. The resolver has decided this call is one a human
-            // could legitimately approve, so the run stops and asks instead of denying. Nothing is
-            // executed here and nothing is granted here: the store carries the tool NAME out to the
-            // executor, the executor abandons the step, and the orchestrator parks the run at
-            // WaitingForInput with that name in its pause envelope. If the human presses Continue, the
-            // resume adds the name to the run's grants and the step re-runs from the top.
-            //
-            // The model is told, because it is still mid-exchange and about to be asked for more output:
-            // a plain "stop" beats letting it improvise a workaround for a call that is pending approval.
+            // The resolver decided a human could legitimately approve this call, so the run stops and asks
+            // instead of denying. Nothing is executed or granted here: the store carries the tool NAME out to
+            // the executor, which abandons the step, and the orchestrator parks the run naming it. The model is
+            // told because it is still mid-exchange — a plain "stop" beats letting it improvise a workaround.
             case ToolGateOutcome.Park:
                 var parked = approvals is not null && approvals.Park(pending.ToolName);
                 _logger.LogInformation(
@@ -619,12 +573,10 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 // second pending decision.
                 if (parked)
                 {
-                    // THE ONE ARM WITH A NULL DecidedAt (T2-14). RequestedAt is real — the run genuinely
-                    // asked — but nobody has answered yet, and nobody will answer THIS row: the human's
-                    // answer arrives later as a resume that re-runs the step from the top and writes a
-                    // FRESH GrantedByName row. Back-filling this one would break the write-once model
-                    // AgentTimelineEvent's remarks describe, and a `decidedAt: DateTime.UtcNow` here would
-                    // claim a decision was made at the instant the run stopped to ask for one.
+                    // THE ONE ARM WITH A NULL DecidedAt. RequestedAt is real — the run genuinely asked — but
+                    // nobody will answer THIS row: the human's answer arrives later as a resume that re-runs the
+                    // step and writes a fresh row. A timestamp here would claim a decision was made at the
+                    // instant the run stopped to ask for one.
                     timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
                         verdict.Decision, AgentTimelineOutcome.NotExecuted,
                         toolCallId: toolCall.CallId, round: dispatch.Round,
