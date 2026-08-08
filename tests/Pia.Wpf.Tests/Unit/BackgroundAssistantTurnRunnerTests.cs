@@ -95,7 +95,7 @@ public class BackgroundAssistantTurnRunnerTests
     private static FunctionCallContent Call(string name) =>
         new(Guid.NewGuid().ToString(), name, new Dictionary<string, object?>());
 
-    /// <summary>Batch 04: a pending action whose PLUGIN name is real, so ToolClassifier yields a real class.</summary>
+    /// <summary>a pending action whose PLUGIN name is real, so ToolClassifier yields a real class.</summary>
     private static PluginToolCall Pending(string toolName, string pluginName, Action onExecute) =>
         new(toolName, Guid.NewGuid(), pluginName, "desc", null, () =>
         {
@@ -353,8 +353,7 @@ public class BackgroundAssistantTurnRunnerTests
         Assert.True(executed);
     }
 
-    // ---- Batch 04: the per-run autonomy policy at the unattended gate -------------------------------------
-    //
+    // ---- the per-run autonomy policy at the unattended gate -------------------------------------
     // Driven through RunExchangeAsync, which is where the policy arrives (HeadlessTurnExecutor relays it from
     // Initialize, and the SingleTurn RunAsync path above passes none — that is why every fact above still
     // holds unchanged).
@@ -393,7 +392,7 @@ public class BackgroundAssistantTurnRunnerTests
     [Fact]
     public async Task PolicyCoveredClass_DoesNotCoverItsDeleteLikeSibling()
     {
-        // D6: ToolClass.Files holds write_file AND delete_file. A policy over Files must not hand an
+        // ToolClass.Files holds write_file AND delete_file. A policy over Files must not hand an
         // unattended run card-free delete_file — the M3 floor would not stop it (it is external-only).
         var h = new Harness();
         var executed = false;
@@ -508,7 +507,7 @@ public class BackgroundAssistantTurnRunnerTests
     [Fact]
     public async Task EmptyAnswer_ReturnsFailure_ButPersistsStubChat()
     {
-        // R1: even the empty path now leaves a stub AssistantChats row up front so the run's FK
+        // Even the empty path leaves a stub AssistantChats row up front so the run's FK
         // target (and thus a Failed run's ChatId) resolves. No assistant/user messages are written.
         var h = new Harness();
         var runner = h.Build([], answer: "");
@@ -525,7 +524,7 @@ public class BackgroundAssistantTurnRunnerTests
         await h.Runs.Received().FailAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
     }
 
-    // ---- Batch 03: the unattended gate records its decisions ----
+    // ---- the unattended gate records its decisions ----
 
     [Fact]
     public async Task UnattendedDecisionsAreRecorded()
@@ -537,11 +536,11 @@ public class BackgroundAssistantTurnRunnerTests
 
         var pendings = new Dictionary<string, PluginToolCall>(StringComparer.Ordinal)
         {
-            // granted by name → runs
+            // Granted by name → runs
             ["write_file"] = Pending("write_file", "files", () => { }),
-            // not granted → denied
+            // Not granted → denied
             ["update_todo"] = Pending("update_todo", "todo", () => { }),
-            // granted AND destructive AND external → the floor refuses it anyway
+            // Granted AND destructive AND external → the floor refuses it anyway
             ["mcp_delete_thing"] = Pending("mcp_delete_thing", "some-mcp-server", () => { }),
         };
         h.Plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())

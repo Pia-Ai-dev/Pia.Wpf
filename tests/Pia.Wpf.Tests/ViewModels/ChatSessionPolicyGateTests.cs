@@ -11,7 +11,7 @@ using Xunit;
 namespace Pia.Tests.ViewModels;
 
 /// <summary>
-/// Batch 04 at the INTERACTIVE gate. The policy arrives on <c>StepTurnSpec.Policy</c>, so these facts drive
+/// The autonomy policy at the INTERACTIVE gate. It arrives on <c>StepTurnSpec.Policy</c>, so these facts drive
 /// <c>RunStepTurnAsync</c> — the Planned-run path — rather than the ordinary <c>RunTurnAsync</c> turn, which
 /// carries no run and therefore no policy. That is why every fact in
 /// <see cref="ChatSessionStateMachineTests"/> still holds unchanged.

@@ -143,9 +143,9 @@ public sealed class AgentRunOrchestratorArmTests : IDisposable
 
         var settled = (await _runs.GetAsync(run.Id, ct))!;
         Assert.Equal(AgentRunState.Completed, settled.State);
-        // §13.2: EndRun runs BEFORE CompleteAsync, so no consumer sees a Completed run whose chat is unsaved.
+        // EndRun runs BEFORE CompleteAsync, so no consumer sees a Completed run whose chat is unsaved.
         Assert.True(executor.EndedRun);
-        // R3: the settle pins the transcript slice, so a run that executed steps never keeps a null range.
+        // The settle pins the transcript slice, so a run that executed steps never keeps a null range.
         Assert.NotNull(settled.FirstMessageId);
     }
 
