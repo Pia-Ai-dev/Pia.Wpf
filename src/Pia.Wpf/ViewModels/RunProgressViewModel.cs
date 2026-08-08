@@ -1189,7 +1189,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     // budget wording: that is exactly the lie this mapping removes — say "ended early" instead.
     private string DescribeTruncation(string? reason) => reason switch
     {
-        "unverified" => _localization["Run_Unverified"],                             // verify pass never passed
+        AgentRunOrchestrator.UnverifiedTruncationReason => _localization["Run_Unverified"], // verify pass never passed
         "budget" or "step-cap" or "wall-clock" => _localization["Run_StoppedAtBudget"], // pre-pause legacy rows
         _ => _localization["Run_EndedEarly"],
     };

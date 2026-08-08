@@ -69,6 +69,10 @@ public sealed class AgentRunOrchestrator
     /// resuming this one does not re-plan — it drains the remaining steps.</summary>
     internal const string NeedsInputReason = "needs-input";
 
+    /// <summary>The TRUNCATION reason written when the verify pass exhausted its replans — a different envelope
+    /// field from the pause reasons above, read back by <c>RunProgressViewModel.DescribeTruncation</c>.</summary>
+    internal const string UnverifiedTruncationReason = "unverified";
+
     /// <summary>What a settled child's step reports when its answer could not be read. Says the work ran
     /// elsewhere rather than implying the step produced nothing (the failure mode
     /// <c>CompletedStepSummary.FromEarlierSegment</c> exists for).</summary>
@@ -656,7 +660,7 @@ public sealed class AgentRunOrchestrator
                 await SafePromote(run, ctx, cts.Token).ConfigureAwait(false);
                 await SafeComplete(run.Id, cts.Token,
                     truncated: unverifiedTruncated,
-                    reason: unverifiedTruncated ? "unverified" : null).ConfigureAwait(false);
+                    reason: unverifiedTruncated ? UnverifiedTruncationReason : null).ConfigureAwait(false);
             }
             else
             {
