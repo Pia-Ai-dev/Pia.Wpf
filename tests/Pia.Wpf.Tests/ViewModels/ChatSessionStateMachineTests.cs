@@ -294,6 +294,42 @@ public class ChatSessionStateMachineTests
     }
 
     [Fact]
+    public async Task AtFiles_TrailingCommand_LeavesTheSentenceWithItsObject()
+    {
+        // Deleting the token left a message ending mid-phrase, which the model read back as a
+        // truncated request instead of an instruction about the file.
+        IList<ChatMessage>? captured = null;
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(ci => { captured = (IList<ChatMessage>)ci[0]; return Stream(new TextDelta("ok")); });
+
+        var session = CreateSession();
+        var user = new AssistantMessage(ChatRole.User, "please check if we already implemented the @Files:\"plan.md\"");
+        var assistant = new AssistantMessage(ChatRole.Assistant) { IsStreaming = true };
+        session.Messages.Add(user);
+        session.Messages.Add(assistant);
+
+        var request = new ChatTurnRequest
+        {
+            UserMessage = user,
+            AssistantMessage = assistant,
+            Provider = new AiProvider { Name = "Test", Endpoint = "http://localhost", ProviderType = AiProviderType.OpenAI },
+            TurnSetup = new AssistantTurnSetup("system", null, SupportsTools: true, WebSearchActive: false),
+            AtCommands = [new AtCommand { Domain = AtCommandDomain.Files, ItemTitle = "plan.md" }],
+            InjectedFileContext = "<attached_file path=\"plan.md\" total_lines=\"1\">\nplan\n</attached_file>",
+            TokenizationEnabled = false,
+        };
+
+        await session.RunTurnAsync(request, CancellationToken.None);
+
+        Assert.NotNull(captured);
+        var text = captured!.Single(m => m.Role == ChatRole.User).Text;
+        Assert.StartsWith("please check if we already implemented the plan.md", text);
+        Assert.DoesNotContain("@Files", text);
+    }
+
+    [Fact]
     public async Task ActionCard_TransitionsThroughWaitingForTool()
     {
         var pending = new PluginToolCall(

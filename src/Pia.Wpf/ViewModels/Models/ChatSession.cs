@@ -362,11 +362,11 @@ public sealed class ChatSession : IDisposable
                 var hasInjection = !string.IsNullOrEmpty(injectedFileContext) || !string.IsNullOrEmpty(regenerationInstruction);
                 if (msg == userMessage && (atCommands.Count > 0 || hasInjection))
                 {
-                    // Strip the @-command tokens (when present), then append any @Files content the
-                    // manager read at setup and/or a styled-regeneration instruction so the model sees
-                    // them inline. Injection is ephemeral — msg.Content (the persisted/displayed text)
-                    // is unchanged, so history never bloats and the user's bubble stays clean.
-                    var stripped = atCommands.Count > 0 ? AtCommandParser.StripCommands(msg.Content) : msg.Content;
+                    // Swap the @-command tokens for the items they name (when present), then append any
+                    // @Files content the manager read at setup and/or a styled-regeneration instruction so
+                    // the model sees them inline. Injection is ephemeral — msg.Content (the persisted/
+                    // displayed text) is unchanged, so history never bloats and the user's bubble stays clean.
+                    var stripped = atCommands.Count > 0 ? AtCommandParser.SubstituteCommands(msg.Content) : msg.Content;
                     var parts = new[] { stripped, injectedFileContext, regenerationInstruction }
                         .Where(p => !string.IsNullOrEmpty(p));
                     var visible = string.Join("\n\n", parts);

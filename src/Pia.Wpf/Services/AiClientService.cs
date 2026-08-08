@@ -24,6 +24,10 @@ public class AiClientService : IAiClientService
         @"^\s*<think\b[^>]*>[\s\S]*?</think>\s*",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    internal const string MalformedToolArgumentsResult =
+        "Error: The arguments for this tool call were not valid JSON, so the call was not run. " +
+        "Retry it with one complete JSON object of arguments, and emit each parallel tool call separately.";
+
     private readonly IAuthService _authService;
     private readonly DpapiHelper _dpapiHelper;
     private readonly AiProviderHandlerResolver _handlers;
@@ -482,6 +486,20 @@ public class AiClientService : IAiClientService
                 // round-trip.
                 foreach (var toolCall in toolCalls)
                 {
+                    // Arguments that didn't parse leave every parameter missing, so dispatching makes the tool
+                    // reject its own empty input — a verdict the model rereads as being about the arguments it
+                    // believes it sent, and reissues the identical call until the rounds run out.
+                    if (toolCall.Exception is not null)
+                    {
+                        _logger.LogWarning("Tool {ToolName} arguments could not be parsed; skipping dispatch", toolCall.Name);
+                        _logger.SensitiveDebug("Tool {ToolName} argument parse error: {Error}",
+                            toolCall.Name, toolCall.Exception.Message);
+                        workingMessages.Add(new Microsoft.Extensions.AI.ChatMessage(
+                            ChatRole.Tool,
+                            [new FunctionResultContent(toolCall.CallId, MalformedToolArgumentsResult)]));
+                        continue;
+                    }
+
                     // No CallId on this line. It is copied verbatim out of provider JSON and nothing in this
                     // process validates it — the premise AgentTimelineScope.SanitizeCallId is built on — so a
                     // provider or proxy that echoes model text into it would put free text in a release support

@@ -121,7 +121,7 @@ public sealed class PiaCloudChatClient : IChatClient
         using var reader = new StreamReader(stream);
 
         // Track tool call accumulation across deltas
-        var toolCallBuilders = new Dictionary<int, (string? Id, string? Name, StringBuilder Args)>();
+        var toolCallBuilders = new List<ToolCallBuilder>();
 
         string? line;
         while ((line = await reader.ReadLineAsync(cancellationToken)) is not null)
@@ -200,25 +200,26 @@ public sealed class PiaCloudChatClient : IChatClient
                 foreach (var tc in toolCalls)
                 {
                     if (tc is null) continue;
-                    var index = tc["index"]?.GetValue<int>() ?? 0;
-
-                    if (!toolCallBuilders.TryGetValue(index, out var builder))
-                    {
-                        builder = (null, null, new StringBuilder());
-                        toolCallBuilders[index] = builder;
-                    }
 
                     var id = tc["id"]?.GetValue<string>();
-                    if (id is not null) builder.Id = id;
-
+                    var index = tc["index"]?.GetValue<int>();
                     var funcNode = tc["function"];
                     var name = funcNode?["name"]?.GetValue<string>();
+
+                    // Call-opening deltas only — enough to see whether the wire separates parallel calls
+                    // (and so whether the proxy needs fixing too) without a line per argument fragment.
+                    if (id is not null || name is not null)
+                    {
+                        _logger.SensitiveDebug("PiaCloudChatClient: tool_call delta id={Id} index={Index} name={Name}",
+                            id, index, name);
+                    }
+
+                    var builder = ResolveToolCallBuilder(toolCallBuilders, id, index, name);
+                    if (id is not null) builder.Id = id;
                     if (name is not null) builder.Name = name;
 
                     var args = funcNode?["arguments"]?.GetValue<string>();
                     if (args is not null) builder.Args.Append(args);
-
-                    toolCallBuilders[index] = builder;
                 }
             }
 
@@ -265,35 +266,83 @@ public sealed class PiaCloudChatClient : IChatClient
         }
     }
 
-    private static IEnumerable<ChatResponseUpdate> EmitAccumulatedToolCalls(
-        Dictionary<int, (string? Id, string? Name, StringBuilder Args)> builders)
+    private sealed class ToolCallBuilder
     {
-        foreach (var (_, (id, name, args)) in builders)
-        {
-            if (name is null) continue;
+        public string? Id { get; set; }
+        public string? Name { get; set; }
+        public int? WireIndex { get; init; }
+        public StringBuilder Args { get; } = new();
+    }
 
-            IDictionary<string, object?>? arguments = null;
-            var argsStr = args.ToString();
-            if (!string.IsNullOrEmpty(argsStr))
-            {
-                try
-                {
-                    arguments = JsonSerializer.Deserialize<Dictionary<string, object?>>(
-                        argsStr, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                }
-                catch
-                {
-                    arguments = new Dictionary<string, object?> { ["raw"] = argsStr };
-                }
-            }
+    /// <summary>
+    /// A delta joins an existing call only on a matching id or index — keying on index alone folded every
+    /// parallel call from a provider that omits <c>index</c> into one accumulator, concatenating their args.
+    /// </summary>
+    private static ToolCallBuilder ResolveToolCallBuilder(
+        List<ToolCallBuilder> builders, string? id, int? index, string? name)
+    {
+        if (!string.IsNullOrEmpty(id))
+        {
+            var byId = builders.FirstOrDefault(b => b.Id == id);
+            if (byId is not null) return byId;
+            return Append(builders, id, index);
+        }
+
+        if (index is not null)
+        {
+            // Newest first: a stream that reuses index 0 for every call still routes each
+            // continuation delta to the call it opened.
+            var byIndex = builders.LastOrDefault(b => b.WireIndex == index);
+            if (byIndex is not null) return byIndex;
+            return Append(builders, id, index);
+        }
+
+        if (builders.Count > 0)
+        {
+            var last = builders[^1];
+            // With neither id nor index, a second, different name is the only call boundary the
+            // stream offers.
+            if (name is null || last.Name is null || last.Name == name) return last;
+        }
+
+        return Append(builders, id, index);
+
+        static ToolCallBuilder Append(List<ToolCallBuilder> builders, string? id, int? index)
+        {
+            var created = new ToolCallBuilder { Id = id, WireIndex = index };
+            builders.Add(created);
+            return created;
+        }
+    }
+
+    private static IEnumerable<ChatResponseUpdate> EmitAccumulatedToolCalls(List<ToolCallBuilder> builders)
+    {
+        foreach (var builder in builders)
+        {
+            if (builder.Name is null) continue;
 
             yield return new ChatResponseUpdate
             {
                 Role = ChatRole.Assistant,
-                Contents = [new FunctionCallContent(id ?? "", name, arguments)]
+                Contents = [BuildFunctionCall(builder.Id ?? "", builder.Name, builder.Args.ToString())]
             };
         }
     }
+
+    private static readonly JsonSerializerOptions ToolArgumentOptions = new() { PropertyNameCaseInsensitive = true };
+
+    /// <summary>
+    /// Unparseable arguments surface as <see cref="FunctionCallContent.Exception"/>, not a substitute
+    /// dictionary, so the tool loop can report a malformed call instead of running one with no parameters.
+    /// </summary>
+    private static FunctionCallContent BuildFunctionCall(string callId, string name, string? argsJson) =>
+        string.IsNullOrEmpty(argsJson)
+            ? new FunctionCallContent(callId, name, null)
+            : FunctionCallContent.CreateFromParsedArguments(argsJson, callId, name, ParseToolArguments);
+
+    private static IDictionary<string, object?> ParseToolArguments(string argsJson) =>
+        JsonSerializer.Deserialize<Dictionary<string, object?>>(argsJson, ToolArgumentOptions)
+            ?? new Dictionary<string, object?>();
 
     public object? GetService(Type serviceType, object? serviceKey = null) => null;
 
@@ -591,21 +640,7 @@ public sealed class PiaCloudChatClient : IChatClient
                 var name = funcNode?["name"]?.GetValue<string>() ?? "";
                 var argsStr = funcNode?["arguments"]?.GetValue<string>();
 
-                IDictionary<string, object?>? arguments = null;
-                if (!string.IsNullOrEmpty(argsStr))
-                {
-                    try
-                    {
-                        arguments = JsonSerializer.Deserialize<Dictionary<string, object?>>(
-                            argsStr, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                    }
-                    catch
-                    {
-                        arguments = new Dictionary<string, object?> { ["raw"] = argsStr };
-                    }
-                }
-
-                contents.Add(new FunctionCallContent(id, name, arguments));
+                contents.Add(BuildFunctionCall(id, name, argsStr));
             }
         }
 

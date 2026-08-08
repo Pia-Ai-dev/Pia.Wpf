@@ -188,14 +188,20 @@ public static partial class AtCommandParser
     }
 
     /// <summary>
-    /// Removes all @-commands from text, returning clean user message.
+    /// Replaces every @-command with the item title it names. Deleting the token instead cost a sentence
+    /// ending in one its object, so the model read the message back as truncated. A bare command is removed.
     /// </summary>
-    public static string StripCommands(string text)
+    public static string SubstituteCommands(string text)
     {
         if (string.IsNullOrWhiteSpace(text))
             return text;
 
-        var result = CommandPattern().Replace(text, "");
+        var result = CommandPattern().Replace(text, match =>
+        {
+            var content = match.Groups[1].Value;
+            var colonIndex = content.IndexOf(':');
+            return colonIndex < 0 ? string.Empty : content[(colonIndex + 1)..].Trim().Trim('"');
+        });
         // Clean up extra whitespace left behind
         result = Regex.Replace(result, @"  +", " ").Trim();
         return result;

@@ -226,34 +226,42 @@ public class AtCommandParserTests
         }
     }
 
-    // --- StripCommands ---
+    // --- SubstituteCommands ---
 
     [Fact]
-    public void StripCommands_RemovesCommandPreservesText()
+    public void SubstituteCommands_TitlelessCommand_RemovesCommandPreservesText()
     {
-        var result = AtCommandParser.StripCommands("@Memory remember I like coffee");
+        var result = AtCommandParser.SubstituteCommands("@Memory remember I like coffee");
         Assert.Equal("remember I like coffee", result);
     }
 
     [Fact]
-    public void StripCommands_RemovesDomainWithItem()
+    public void SubstituteCommands_DomainWithItem_LeavesTitleInPlace()
     {
-        var result = AtCommandParser.StripCommands("@Todo:Groceries add milk please");
-        Assert.Equal("add milk please", result);
+        var result = AtCommandParser.SubstituteCommands("@Todo:Groceries add milk please");
+        Assert.Equal("Groceries add milk please", result);
     }
 
     [Fact]
-    public void StripCommands_MultipleCommands_RemovesAll()
+    public void SubstituteCommands_MultipleCommands_SubstitutesAll()
     {
-        var result = AtCommandParser.StripCommands("@Memory check @Todo stuff");
+        var result = AtCommandParser.SubstituteCommands("@Memory check @Todo stuff");
         Assert.Equal("check stuff", result);
     }
 
     [Fact]
-    public void StripCommands_NoCommands_ReturnsOriginal()
+    public void SubstituteCommands_NoCommands_ReturnsOriginal()
     {
-        var result = AtCommandParser.StripCommands("just a normal message");
+        var result = AtCommandParser.SubstituteCommands("just a normal message");
         Assert.Equal("just a normal message", result);
+    }
+
+    [Fact]
+    public void SubstituteCommands_TrailingFileCommand_KeepsSentenceComplete()
+    {
+        var result = AtCommandParser.SubstituteCommands(
+            """please check if we already implemented the @Files:"PrioritizedActionPlan.md" """);
+        Assert.Equal("please check if we already implemented the PrioritizedActionPlan.md", result);
     }
 
     // --- Quoted multi-word titles ---
@@ -268,10 +276,10 @@ public class AtCommandParserTests
     }
 
     [Fact]
-    public void StripCommands_QuotedTitle_RemovesCommandPreservesText()
+    public void SubstituteCommands_QuotedTitle_LeavesUnquotedTitleInPlace()
     {
-        var result = AtCommandParser.StripCommands("""@Memory:"Favorite color" change to yellow""");
-        Assert.Equal("change to yellow", result);
+        var result = AtCommandParser.SubstituteCommands("""@Memory:"Favorite color" change to yellow""");
+        Assert.Equal("Favorite color change to yellow", result);
     }
 
     [Fact]
