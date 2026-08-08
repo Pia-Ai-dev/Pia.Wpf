@@ -601,4 +601,64 @@ public class BackgroundAssistantTurnRunnerTests
         Assert.True(executed, "the granted write must still run with no audit scope");
         Assert.Empty(timeline.Rows);
     }
+
+    /// <summary>
+    /// The gate-resolution arm, and the asymmetry against its interactive twin: there is NO allowlist step here.
+    /// write_file is auto-approve-eligible interactively, and unattended that buys it nothing — only a named
+    /// grant does. A 1 in ToolAutonomyRuleTests' allowlist column for this file would make four tools free on
+    /// every scheduled job, which is what this pins from the behavioural side.
+    /// </summary>
+    [Fact]
+    public async Task AnAllowlistEligibleTool_IsStillDeniedUnattended_WithoutANamedGrant()
+    {
+        var timeline = new Pia.Tests.Services.RecordingTimelineService();
+        var executed = false;
+        var h = new Harness();
+        h.Plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, (PluginToolCall?)Pending("write_file", "files", () => executed = true)));
+
+        var runner = h.Build([Call("write_file")]);
+        await runner.RunExchangeAsync(
+            [new ChatMessage(ChatRole.User, "go")], Provider(),
+            new AssistantTurnSetup("system", new List<AITool>(), SupportsTools: true, WebSearchActive: false),
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase), // no named grant
+            TestContext.Current.CancellationToken,
+            timeline: new Pia.Services.Interfaces.AgentTimelineScope(timeline, Guid.NewGuid(), Guid.NewGuid()));
+
+        Assert.False(executed);
+        var row = Assert.Single(timeline.Rows);
+        Assert.Equal(ToolGateDecision.DeniedNotGranted, row.Decision);
+        // The class still came from the classifier, so the refusal is recorded against a real class.
+        Assert.Equal(ToolClass.Files, row.ToolClass);
+    }
+
+    /// <summary>
+    /// The dispatch arm carries the gate's OWN pair of instants onto the row. Every answered arm gets both —
+    /// only the approval park leaves DecidedAt null, and there is no park in this turn.
+    /// </summary>
+    [Fact]
+    public async Task TheDispatchArmStampsBothInstantsFromTheGate()
+    {
+        var timeline = new Pia.Tests.Services.RecordingTimelineService();
+        var h = new Harness();
+        h.Plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, (PluginToolCall?)Pending("write_file", "files", () => { })));
+
+        var before = DateTime.UtcNow;
+        var runner = h.Build([Call("write_file")]);
+        await runner.RunExchangeAsync(
+            [new ChatMessage(ChatRole.User, "go")], Provider(),
+            new AssistantTurnSetup("system", new List<AITool>(), SupportsTools: true, WebSearchActive: false),
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "write_file" },
+            TestContext.Current.CancellationToken,
+            timeline: new Pia.Services.Interfaces.AgentTimelineScope(timeline, Guid.NewGuid(), Guid.NewGuid()));
+
+        var row = Assert.Single(timeline.Rows);
+        Assert.Equal(ToolGateDecision.GrantedByName, row.Decision);
+        Assert.NotNull(row.RequestedAt);
+        Assert.NotNull(row.DecidedAt);
+        // Both were taken around Resolve, so neither may predate the turn.
+        Assert.True(row.RequestedAt >= before);
+        Assert.True(row.DecidedAt >= row.RequestedAt);
+    }
 }

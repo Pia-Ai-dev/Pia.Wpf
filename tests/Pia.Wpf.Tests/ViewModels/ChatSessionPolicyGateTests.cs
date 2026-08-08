@@ -259,6 +259,53 @@ public sealed class ChatSessionPolicyGateTests
         }
     }
 
+    /// <summary>The gate-resolution arm: what it resolved reaches the bypass. The auto-run card is built from
+    /// the gate's OWN decision and class — not a bare `true` and not the card builder's guess — because the
+    /// resolved card line has to say which authority ran the call.</summary>
+    [Fact]
+    public async Task AutoRun_BuildsItsCardFromTheGatesOwnDecisionAndClass()
+    {
+        var pluginId = BuiltInPluginDefaults.TodoPluginId;
+        var card = NewCard("create_todo", pluginId);
+        var pending = Pending("create_todo", "todo", pluginId, () => { });
+
+        _permissions.IsAutoApproveEligible("create_todo").Returns(false);
+        _permissions.IsGranted(pluginId, "create_todo").Returns(false);
+        ArrangeToolCall("create_todo", pending, card, _ => { });
+
+        var session = CreateSession();
+        var result = await session.RunStepTurnAsync(
+            Spec(new RunAutonomyPolicy([ToolClass.Todo])),
+            new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
+
+        Assert.True(result.Succeeded, result.Error);
+        _cards.Received(1).Build(pending, false, ToolGateDecision.AutoApprovedPolicy, ToolClass.Todo);
+    }
+
+    /// <summary>The card-confirmation arm restores the state it borrowed: WaitingForTool is entered before the
+    /// wait and left in a finally, so the turn is Running again for the next tool of the same step.</summary>
+    [Fact]
+    public async Task AfterTheCardIsAnswered_TheSessionIsRunningAgain()
+    {
+        var pluginId = BuiltInPluginDefaults.FilesPluginId;
+        var card = NewCard("write_file", pluginId);
+        var pending = Pending("write_file", "files", pluginId, () => { });
+
+        ArrangeToolCall("write_file", pending, card, _ => { });
+
+        var session = CreateSession();
+        var turn = session.RunStepTurnAsync(
+            Spec(policy: null), new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
+
+        await WaitUntilAsync(() => card.IsPending);
+        Assert.Equal(ChatState.WaitingForTool, session.State);
+
+        card.AllowOnceCommand.Execute(null);
+        await turn;
+
+        Assert.NotEqual(ChatState.WaitingForTool, session.State);
+    }
+
     private static async Task WaitUntilAsync(Func<bool> predicate, int timeoutMs = 5000)
     {
         var start = Environment.TickCount64;

@@ -494,155 +494,183 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                        + "tool calls; this step runs again from the beginning once someone answers.";
             }
 
-            // 04 D5: ONE resolver, shared with the interactive gate. The destructive-external FLOOR (B2) is
-            // evaluated inside Resolve BEFORE any policy or grant branch, so it stays unliftable: there is no
-            // user here to confirm an irreversible action against a third-party system, and an MCP tool's name
-            // and effect are server-defined, so a grant list authored days earlier (or a server that renamed
-            // its tools) is not informed consent. Scoped to external tools ONLY — IsDeleteLike("delete_file")
-            // is true for the BUILT-IN file tool, and an explicit grant for a built-in delete is the user's own
-            // auditable decision, so it still executes.
-            var toolClass = ToolClassifier.Classify(pending.PluginName, IsExternalTool(pending.ToolName));
-            // T2-14: the POLICY question, bracketed. There is no human on this surface, so unlike the
-            // interactive twin these two are the ONLY pair — every arm below that got an answer uses them.
-            // Usually EQUAL (Resolve is a few comparisons, DateTime.UtcNow is ~1 ms), so nothing may assert
-            // strict ordering.
-            var askedAt = DateTime.UtcNow;
-            var verdict = ToolAutonomy.Resolve(new ToolGateInput(
-                ToolGateSurface.Unattended, pending.ToolName, toolClass,
-                // T2-7b: this is the surface where the server's declaration bites hardest — a declared-
-                // destructive external tool hits the FLOOR and is refused outright, with no park, exactly as a
-                // delete-NAMED one already was. There is no human here to weigh it against the card.
-                ServerDeclaredDestructive: pending.ServerDeclaredDestructive,
-                // No allowlist unattended: there is no user to have curated it, and IToolPermissionService is
-                // injected nowhere in this file. That is today's behaviour restated, not a regression.
-                IsAllowlisted: false,
-                // hermes #15: the PROCESS-scoped middle tier. It arrives on the same per-step store CanPark
-                // does, and for the same reason there is still no IToolPermissionService here: read ambiently,
-                // it would hand a CHILD run authority its parent narrowed away. A null store — every
-                // SingleTurn background call — and a store that may not park both answer false.
-                HasSessionGrant: approvals?.HasSessionGrant(pending.PluginId, pending.ToolName) == true,
-                // Persisted "always allow" grants are an INTERACTIVE concept and have never applied here.
-                HasStandingGrant: false,
-                IsNamedGrant: grantedWrites.Contains(pending.ToolName),
-                // The run-scoped denial list a tool-approval park's Deny wrote into the envelope; the
-                // resolver's denial tier sits above the park, so a declined tool is refused with "adapt"
-                // instead of re-parking. Null (single-turn path) reads as no denials.
-                HasNamedDenial: deniedWrites?.Contains(pending.ToolName) == true,
-                // The run's autonomy policy, from the launch envelope (or restored from it on resume). Null
-                // for the SingleTurn background path, which has no plan and no policy — today's behaviour.
-                Policy: policy,
-                // hermes #16: may this run stop and ask a human rather than refuse? The executor answers it
-                // once per run (root run + a real step turn) and hands the answer down in the store; a null
-                // store — every SingleTurn background call — is false, i.e. the pre-#16 hard denial.
-                CanPark: approvals?.CanPark == true));
-            var resolvedAt = DateTime.UtcNow;
-
-            switch (verdict.Outcome)
-            {
-                case ToolGateOutcome.AutoRun:
-                    _logger.LogInformation("Background turn executing {ToolName} ({Decision})",
-                        pending.ToolName, verdict.Decision);
-                    // Only Execute() is bracketed for the timeline; a fault anywhere else is not this tool's
-                    // outcome. The rethrow keeps a throwing tool's effect on the turn unchanged.
-                    var startedAt = System.Diagnostics.Stopwatch.GetTimestamp();
-                    object? executed;
-                    try
-                    {
-                        executed = await pending.Execute();
-                    }
-                    catch
-                    {
-                        timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
-                            verdict.Decision, AgentTimelineOutcome.Error,
-                            toolCallId: toolCall.CallId, round: dispatch.Round,
-                            requestedAt: askedAt, decidedAt: resolvedAt,
-                            argsChars, resultChars: null,
-                            durationMs: AgentTimelineScope.ElapsedMs(startedAt));
-                        throw;
-                    }
-
-                    timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
-                        verdict.Decision, AgentTimelineOutcome.Ok,
-                        toolCallId: toolCall.CallId, round: dispatch.Round,
-                        requestedAt: askedAt, decidedAt: resolvedAt,
-                        argsChars,
-                        resultChars: (executed as string)?.Length,
-                        durationMs: AgentTimelineScope.ElapsedMs(startedAt));
-                    return executed;
-
-                // hermes #16 THE UNATTENDED APPROVAL PARK. The resolver has decided this call is one a human
-                // could legitimately approve, so the run stops and asks instead of denying. Nothing is
-                // executed here and nothing is granted here: the store carries the tool NAME out to the
-                // executor, the executor abandons the step, and the orchestrator parks the run at
-                // WaitingForInput with that name in its pause envelope. If the human presses Continue, the
-                // resume adds the name to the run's grants and the step re-runs from the top.
-                //
-                // The model is told, because it is still mid-exchange and about to be asked for more output:
-                // a plain "stop" beats letting it improvise a workaround for a call that is pending approval.
-                case ToolGateOutcome.Park:
-                    var parked = approvals is not null && approvals.Park(pending.ToolName);
-                    _logger.LogInformation(
-                        "Background turn parked {ToolName} for human approval (first={First})", pending.ToolName, parked);
-                    // Audited only for the call that actually parked the run. A second parked call in the
-                    // same exchange changes nothing about the run and would otherwise write a row implying a
-                    // second pending decision.
-                    if (parked)
-                    {
-                        // THE ONE ARM WITH A NULL DecidedAt (T2-14). RequestedAt is real — the run genuinely
-                        // asked — but nobody has answered yet, and nobody will answer THIS row: the human's
-                        // answer arrives later as a resume that re-runs the step from the top and writes a
-                        // FRESH GrantedByName row. Back-filling this one would break the write-once model
-                        // AgentTimelineEvent's remarks describe, and a `decidedAt: DateTime.UtcNow` here would
-                        // claim a decision was made at the instant the run stopped to ask for one.
-                        timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
-                            verdict.Decision, AgentTimelineOutcome.NotExecuted,
-                            toolCallId: toolCall.CallId, round: dispatch.Round,
-                            requestedAt: askedAt, decidedAt: null,
-                            argsChars);
-                    }
-                    return $"Paused: '{pending.ToolName}' needs a person's approval, and this run has asked for one. "
-                           + "It did NOT run. Stop now and produce no further tool calls — the run will be "
-                           + "resumed from this step once someone answers.";
-
-                case ToolGateOutcome.Refuse when verdict.Decision == ToolGateDecision.DeniedDestructiveFloor:
-                    _logger.LogWarning("Background turn refused granted destructive external tool {ToolName}", pending.ToolName);
-                    // The policy DID answer — with a refusal — so both instants are real.
-                    timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
-                        verdict.Decision, AgentTimelineOutcome.NotExecuted,
-                        toolCallId: toolCall.CallId, round: dispatch.Round,
-                        requestedAt: askedAt, decidedAt: resolvedAt,
-                        argsChars);
-                    return $"Denied: '{pending.ToolName}' is a destructive external (MCP) tool and never runs unattended, "
-                           + "even when granted. Do not retry.";
-
-                // The run asked to use this tool, a person DECLINED it, and the resume carried that denial in
-                // the envelope. The step re-runs from the top, so the model hears the answer and adapts — the
-                // denial tier in Resolve refuses instead of parking, or this run would re-ask a settled question.
-                case ToolGateOutcome.Refuse when verdict.Decision == ToolGateDecision.DeniedForRun:
-                    _logger.LogInformation("Background turn refused tool {ToolName} the user declined for this run", pending.ToolName);
-                    timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
-                        verdict.Decision, AgentTimelineOutcome.NotExecuted,
-                        toolCallId: toolCall.CallId, round: dispatch.Round,
-                        requestedAt: askedAt, decidedAt: resolvedAt,
-                        argsChars);
-                    return $"Denied: the person declined the use of '{pending.ToolName}' for this run. Do not retry it; "
-                           + "finish the step without it, or explain in your reply why the step is impossible without it.";
-
-                default:
-                    _logger.LogInformation("Background turn denied ungranted write tool {ToolName}", pending.ToolName);
-                    // verdict.Decision rather than a literal, so the persisted reason is always the one the
-                    // shared resolver actually returned (DeniedNotGranted on this surface today). A denial is
-                    // an ANSWER, so both instants are real here too — only the park leaves DecidedAt null.
-                    timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
-                        verdict.Decision, AgentTimelineOutcome.NotExecuted,
-                        toolCallId: toolCall.CallId, round: dispatch.Round,
-                        requestedAt: askedAt, decidedAt: resolvedAt,
-                        argsChars);
-                    return $"Denied: '{pending.ToolName}' is a write action not granted to this background job. Do not retry.";
-            }
+            var gate = ResolveToolGate(pending, grantedWrites, policy, approvals, deniedWrites);
+            return await DispatchGateVerdictAsync(
+                pending, toolCall, dispatch, gate, timeline, approvals, argsChars);
         }
 
         return "Tool call handled.";
+    }
+
+    /// <summary>What the unattended gate decides. No allowlist and no card phase, unlike the interactive twin —
+    /// see <see cref="ResolveToolGate"/>.</summary>
+    private sealed record UnattendedGateResolution(
+        ToolClass ToolClass, DateTime AskedAt, ToolGateVerdict Verdict, DateTime ResolvedAt);
+
+    /// <summary>
+    /// 04 D5: ONE resolver, shared with the interactive gate. The destructive-external FLOOR (B2) is evaluated
+    /// inside Resolve BEFORE any policy or grant branch, so it stays unliftable: there is no user here to confirm
+    /// an irreversible action against a third-party system, and an MCP tool's name and effect are server-defined,
+    /// so a grant list authored days earlier (or a server that renamed its tools) is not informed consent. Scoped
+    /// to external tools ONLY — IsDeleteLike("delete_file") is true for the BUILT-IN file tool, and an explicit
+    /// grant for a built-in delete is the user's own auditable decision, so it still executes.
+    /// </summary>
+    private UnattendedGateResolution ResolveToolGate(
+        PluginToolCall pending, HashSet<string> grantedWrites, RunAutonomyPolicy? policy,
+        ToolApprovalStore? approvals, HashSet<string>? deniedWrites)
+    {
+        var toolClass = ToolClassifier.Classify(pending.PluginName, IsExternalTool(pending.ToolName));
+        // T2-14: the POLICY question, bracketed. There is no human on this surface, so unlike the
+        // interactive twin these two are the ONLY pair — every arm that got an answer uses them.
+        // Usually EQUAL (Resolve is a few comparisons, DateTime.UtcNow is ~1 ms), so nothing may assert
+        // strict ordering.
+        var askedAt = DateTime.UtcNow;
+        var verdict = ToolAutonomy.Resolve(new ToolGateInput(
+            ToolGateSurface.Unattended, pending.ToolName, toolClass,
+            // T2-7b: this is the surface where the server's declaration bites hardest — a declared-
+            // destructive external tool hits the FLOOR and is refused outright, with no park, exactly as a
+            // delete-NAMED one already was. There is no human here to weigh it against the card.
+            ServerDeclaredDestructive: pending.ServerDeclaredDestructive,
+            // No allowlist unattended: there is no user to have curated it, and IToolPermissionService is
+            // injected nowhere in this file. That is today's behaviour restated, not a regression.
+            IsAllowlisted: false,
+            // hermes #15: the PROCESS-scoped middle tier. It arrives on the same per-step store CanPark
+            // does, and for the same reason there is still no IToolPermissionService here: read ambiently,
+            // it would hand a CHILD run authority its parent narrowed away. A null store — every
+            // SingleTurn background call — and a store that may not park both answer false.
+            HasSessionGrant: approvals?.HasSessionGrant(pending.PluginId, pending.ToolName) == true,
+            // Persisted "always allow" grants are an INTERACTIVE concept and have never applied here.
+            HasStandingGrant: false,
+            IsNamedGrant: grantedWrites.Contains(pending.ToolName),
+            // The run-scoped denial list a tool-approval park's Deny wrote into the envelope; the
+            // resolver's denial tier sits above the park, so a declined tool is refused with "adapt"
+            // instead of re-parking. Null (single-turn path) reads as no denials.
+            HasNamedDenial: deniedWrites?.Contains(pending.ToolName) == true,
+            // The run's autonomy policy, from the launch envelope (or restored from it on resume). Null
+            // for the SingleTurn background path, which has no plan and no policy — today's behaviour.
+            Policy: policy,
+            // hermes #16: may this run stop and ask a human rather than refuse? The executor answers it
+            // once per run (root run + a real step turn) and hands the answer down in the store; a null
+            // store — every SingleTurn background call — is false, i.e. the pre-#16 hard denial.
+            CanPark: approvals?.CanPark == true));
+
+        return new UnattendedGateResolution(toolClass, askedAt, verdict, DateTime.UtcNow);
+    }
+
+    /// <summary>Act on the verdict. No card arm: there is no interactive surface here, so the four outcomes are
+    /// execute, park, refuse-by-floor/denial, and the ungranted-write denial.</summary>
+    private async Task<object?> DispatchGateVerdictAsync(
+        PluginToolCall pending, FunctionCallContent toolCall, ToolDispatchContext dispatch,
+        UnattendedGateResolution gate, AgentTimelineScope? timeline, ToolApprovalStore? approvals, int? argsChars)
+    {
+        var toolClass = gate.ToolClass;
+        var verdict = gate.Verdict;
+        var askedAt = gate.AskedAt;
+        var resolvedAt = gate.ResolvedAt;
+
+        switch (verdict.Outcome)
+        {
+            case ToolGateOutcome.AutoRun:
+                _logger.LogInformation("Background turn executing {ToolName} ({Decision})",
+                    pending.ToolName, verdict.Decision);
+                // Only Execute() is bracketed for the timeline; a fault anywhere else is not this tool's
+                // outcome. The rethrow keeps a throwing tool's effect on the turn unchanged.
+                var startedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+                object? executed;
+                try
+                {
+                    executed = await pending.Execute();
+                }
+                catch
+                {
+                    timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
+                        verdict.Decision, AgentTimelineOutcome.Error,
+                        toolCallId: toolCall.CallId, round: dispatch.Round,
+                        requestedAt: askedAt, decidedAt: resolvedAt,
+                        argsChars, resultChars: null,
+                        durationMs: AgentTimelineScope.ElapsedMs(startedAt));
+                    throw;
+                }
+
+                timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
+                    verdict.Decision, AgentTimelineOutcome.Ok,
+                    toolCallId: toolCall.CallId, round: dispatch.Round,
+                    requestedAt: askedAt, decidedAt: resolvedAt,
+                    argsChars,
+                    resultChars: (executed as string)?.Length,
+                    durationMs: AgentTimelineScope.ElapsedMs(startedAt));
+                return executed;
+
+            // hermes #16 THE UNATTENDED APPROVAL PARK. The resolver has decided this call is one a human
+            // could legitimately approve, so the run stops and asks instead of denying. Nothing is
+            // executed here and nothing is granted here: the store carries the tool NAME out to the
+            // executor, the executor abandons the step, and the orchestrator parks the run at
+            // WaitingForInput with that name in its pause envelope. If the human presses Continue, the
+            // resume adds the name to the run's grants and the step re-runs from the top.
+            //
+            // The model is told, because it is still mid-exchange and about to be asked for more output:
+            // a plain "stop" beats letting it improvise a workaround for a call that is pending approval.
+            case ToolGateOutcome.Park:
+                var parked = approvals is not null && approvals.Park(pending.ToolName);
+                _logger.LogInformation(
+                    "Background turn parked {ToolName} for human approval (first={First})", pending.ToolName, parked);
+                // Audited only for the call that actually parked the run. A second parked call in the
+                // same exchange changes nothing about the run and would otherwise write a row implying a
+                // second pending decision.
+                if (parked)
+                {
+                    // THE ONE ARM WITH A NULL DecidedAt (T2-14). RequestedAt is real — the run genuinely
+                    // asked — but nobody has answered yet, and nobody will answer THIS row: the human's
+                    // answer arrives later as a resume that re-runs the step from the top and writes a
+                    // FRESH GrantedByName row. Back-filling this one would break the write-once model
+                    // AgentTimelineEvent's remarks describe, and a `decidedAt: DateTime.UtcNow` here would
+                    // claim a decision was made at the instant the run stopped to ask for one.
+                    timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
+                        verdict.Decision, AgentTimelineOutcome.NotExecuted,
+                        toolCallId: toolCall.CallId, round: dispatch.Round,
+                        requestedAt: askedAt, decidedAt: null,
+                        argsChars);
+                }
+                return $"Paused: '{pending.ToolName}' needs a person's approval, and this run has asked for one. "
+                       + "It did NOT run. Stop now and produce no further tool calls — the run will be "
+                       + "resumed from this step once someone answers.";
+
+            case ToolGateOutcome.Refuse when verdict.Decision == ToolGateDecision.DeniedDestructiveFloor:
+                _logger.LogWarning("Background turn refused granted destructive external tool {ToolName}", pending.ToolName);
+                // The policy DID answer — with a refusal — so both instants are real.
+                timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
+                    verdict.Decision, AgentTimelineOutcome.NotExecuted,
+                    toolCallId: toolCall.CallId, round: dispatch.Round,
+                    requestedAt: askedAt, decidedAt: resolvedAt,
+                    argsChars);
+                return $"Denied: '{pending.ToolName}' is a destructive external (MCP) tool and never runs unattended, "
+                       + "even when granted. Do not retry.";
+
+            // The run asked to use this tool, a person DECLINED it, and the resume carried that denial in
+            // the envelope. The step re-runs from the top, so the model hears the answer and adapts — the
+            // denial tier in Resolve refuses instead of parking, or this run would re-ask a settled question.
+            case ToolGateOutcome.Refuse when verdict.Decision == ToolGateDecision.DeniedForRun:
+                _logger.LogInformation("Background turn refused tool {ToolName} the user declined for this run", pending.ToolName);
+                timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
+                    verdict.Decision, AgentTimelineOutcome.NotExecuted,
+                    toolCallId: toolCall.CallId, round: dispatch.Round,
+                    requestedAt: askedAt, decidedAt: resolvedAt,
+                    argsChars);
+                return $"Denied: the person declined the use of '{pending.ToolName}' for this run. Do not retry it; "
+                       + "finish the step without it, or explain in your reply why the step is impossible without it.";
+
+            default:
+                _logger.LogInformation("Background turn denied ungranted write tool {ToolName}", pending.ToolName);
+                // verdict.Decision rather than a literal, so the persisted reason is always the one the
+                // shared resolver actually returned (DeniedNotGranted on this surface today). A denial is
+                // an ANSWER, so both instants are real here too — only the park leaves DecidedAt null.
+                timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
+                    verdict.Decision, AgentTimelineOutcome.NotExecuted,
+                    toolCallId: toolCall.CallId, round: dispatch.Round,
+                    requestedAt: askedAt, decidedAt: resolvedAt,
+                    argsChars);
+                return $"Denied: '{pending.ToolName}' is a write action not granted to this background job. Do not retry.";
+        }
     }
 
     /// <summary>

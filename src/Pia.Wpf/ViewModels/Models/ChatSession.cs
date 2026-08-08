@@ -1098,56 +1098,10 @@ public sealed class ChatSession : IDisposable
                        + "tool calls; this step runs again from the beginning once someone answers.";
             }
 
-            var pluginId = pendingAction.PluginId;
-            var tool = pendingAction.ToolName;
-            // 04 D5: ONE resolver for both gates. The destructive-external FLOOR lives inside Resolve and is
-            // evaluated before any policy or grant branch, so no policy value can reach an auto-approval past
-            // it — it used to be this line and an independent expression in BackgroundAssistantTurnRunner,
-            // with no shared chokepoint. Grant lookups stay with their OWNERS and arrive as bools (D7): the
-            // three sets involved use three different comparers today and this batch changes none of them.
-            // Eligibility still comes from the SERVICE, never the card, so a forged/stale grant on an
-            // ineligible tool (write_file, a destructive MCP tool) cannot auto-bypass.
-            var allowlisted = _permissions.IsAutoApproveEligible(tool);
-            var toolClass = ToolClassifier.Classify(pendingAction.PluginName, IsExternalTool(tool));
-            // T2-7b: hoisted beside the other two tool facts. False for every built-in handler's pending action
-            // (there is no server to have declared anything), true only where an MCP server sent
-            // ToolAnnotations.DestructiveHint.
-            var serverDestructive = pendingAction.ServerDeclaredDestructive;
-            // Held as a local because the AlwaysAllow branch below needs the same answer the card's button set
-            // was built from: an AlwaysAllow on a non-offerable tool executes once and persists NO grant.
-            var offerable = ToolAutonomy.IsStandingGrantOfferable(toolClass, tool, allowlisted, serverDestructive);
-            // hermes #15, the same hoist for the same reason: the AllowForSession branch below must mint a
-            // grant only where the card was entitled to offer one, and the card computes this with the SAME
-            // function (ActionCardBuilder.IsSessionGrantable), so the two cannot drift.
-            var sessionOfferable = ToolAutonomy.IsSessionGrantOfferable(tool, serverDestructive);
-            // T2-14: the POLICY question, bracketed. These two are RequestedAt/DecidedAt for the arm the policy
-            // itself answered — the AutoRun bypass below. They are usually EQUAL: Resolve is a few comparisons
-            // and DateTime.UtcNow has ~1 ms resolution on Windows (the same reason Seq is not a timestamp), so
-            // nothing may assert strict ordering on them. The prompted arm does NOT use them; it takes its own
-            // pair around the card, because "when was the question posed" there means "when could the human see
-            // it", which is a different instant by however long they took to look.
-            var askedAt = DateTime.UtcNow;
-            var verdict = ToolAutonomy.Resolve(new ToolGateInput(
-                ToolGateSurface.Interactive, tool, toolClass,
-                // T2-7b: interactively a server-declared-destructive external tool hits the floor, which on
-                // THIS surface suppresses auto-approval and still shows the card — a human may still click
-                // "Allow once", which is the historic semantics and is deliberately not tightened.
-                ServerDeclaredDestructive: serverDestructive,
-                IsAllowlisted: allowlisted,
-                // hermes #15: the PROCESS-scoped middle tier, read from the grant set's owner exactly like the
-                // persisted one below it. This is the lookup that makes the second call of a session-granted
-                // tool card-free; without it the tier records a grant nothing ever reads.
-                HasSessionGrant: _permissions.IsGrantedForSession(pluginId, tool),
-                HasStandingGrant: _permissions.IsGranted(pluginId, tool),
-                IsNamedGrant: false,
-                // A run-scoped denial list is an UNATTENDED-envelope concept; the card this surface shows
-                // IS the human decision, so there is nothing persisted to look up.
-                HasNamedDenial: false,
-                Policy: policy,
-                // hermes #16: this surface already HAS a human — it shows the action card. Parking the whole
-                // run to ask the same question through a Flow item would be strictly worse than the card.
-                CanPark: false));
-            var resolvedAt = DateTime.UtcNow;
+            var gate = ResolveToolGate(pendingAction, policy);
+            var pluginId = gate.PluginId;
+            var tool = gate.Tool;
+            var toolClass = gate.ToolClass;
 
             // The accepted/auto-approved success path: execute, fire ToolSucceeded, re-init the
             // memory token map, return the result. Shared by AllowOnce, AlwaysAllow, and bypass.
@@ -1212,81 +1166,27 @@ public sealed class ChatSession : IDisposable
             // Bypass: an authorized tool auto-executes. Render a resolved auto-approved card FIRST (audit
             // trace, never silent) and log only the non-sensitive tool name, the decision enum and the plugin
             // id — never the arguments (CLAUDE.md privacy).
-            if (verdict.Outcome == ToolGateOutcome.AutoRun)
+            if (gate.Verdict.Outcome == ToolGateOutcome.AutoRun)
             {
                 // The DECISION, not a bare `true`: the card's resolved line has to say which authority ran this
                 // call, and the session tier is the one that must not be reported as a permanent grant.
                 var autoCard = _actionCardBuilder.Build(
-                    pendingAction, tokenizationEnabled, verdict.Decision, toolClass);
+                    pendingAction, tokenizationEnabled, gate.Verdict.Decision, toolClass);
                 // UI-affine loop: the continuation already runs on the UI thread.
                 message.ActionCards.Add(autoCard);
                 _logger.LogInformation("Auto-approved {ToolName} ({Decision}, plugin {PluginId})",
-                    tool, verdict.Decision, pluginId);
+                    tool, gate.Verdict.Decision, pluginId);
                 // The POLICY answered this one; no human was asked, so the card's pair would be meaningless.
-                return await ExecuteAndReport(verdict.Decision, askedAt, resolvedAt);
+                return await ExecuteAndReport(gate.Verdict.Decision, gate.AskedAt, gate.ResolvedAt);
             }
 
-            // ToolGateOutcome.Refuse is UNREACHABLE on the interactive surface (pinned by
-            // ToolAutonomyTests.InteractiveSurface_NeverRefuses) — a human is looking at the card. It
-            // deliberately falls through to the card rather than throwing: a throw here would fail the whole
-            // turn, and degrading toward the card is the safe direction if that ever changes.
-            // The AUTHORITATIVE class goes to BOTH cards, not just the auto-approved one: the prompted card's
-            // button set has to agree with the gate that just resolved it (04 D4).
-            var card = _actionCardBuilder.Build(pendingAction, tokenizationEnabled, toolClass: toolClass);
-            // T2-14: RequestedAt for the PROMPTED arm is the instant the question became visible to a person —
-            // i.e. the instant the card joins the bound collection — not the instant the policy was consulted
-            // above. Taken immediately before the Add so the interval (DecidedAt - RequestedAt) is "how long
-            // the human was asked for", which is the only reading of it that is useful.
-            var cardShownAt = DateTime.UtcNow;
-            message.ActionCards.Add(card);
+            var card = await ConfirmWithActionCardAsync(pendingAction, message, tokenizationEnabled, gate);
 
-            // Stamped in the `finally` below rather than after a successful await, so the CANCELLED path
-            // (TaskCanceledException: LLM timeout, new chat, retry, scope dispose) carries it too. That is the
-            // whole of "including timeout" for this tree: VERIFIED there is no approval timer —
-            // ActionCardInfo.WaitForUserDecisionAsync() is `=> _tcs.Task` with no timeout, and no
-            // ApprovalTimeout setting or constant exists anywhere in src. So no new ToolGateDecision member was
-            // added (it would be a persisted, append-only int for a state that cannot occur); the way a gate
-            // decision ends without an answer today is CardCancelled, and stamping here makes the row say how
-            // long the question had been open when the turn died. DateTime? not DateTime: the local is assigned
-            // on every path out of the try, but the compiler cannot prove it for a local function's closure.
-            DateTime? cardDecidedAt = null;
-            ToolDecision decision;
-            // A cancelled card (new chat / retry / scope dispose) is mapped to ToolDecision.Decline below,
-            // and recording THAT as "the user declined" would be a false audit statement. The flag survives
-            // the mapping so the decline arm can tell the two apart.
-            var cardCancelled = false;
-            SetState(ChatState.WaitingForTool);
-            try
-            {
-                decision = await card.WaitForUserDecisionAsync();
-            }
-            catch (TaskCanceledException)
-            {
-                _logger.LogInformation("Tool action cancelled for {ToolName}", tool);
-                cardCancelled = true;
-                decision = ToolDecision.Decline;
-            }
-            finally
-            {
-                cardDecidedAt = DateTime.UtcNow;
-
-                // Back to Running for the next tool/segment (the turn is still in flight).
-                if (State == ChatState.WaitingForTool)
-                    SetState(ChatState.Running);
-            }
-
-            // Passed on as-is, with NO `?? DateTime.UtcNow` fallback. Every arm below is reached only after the
-            // finally ran, so in practice it is never null — but a fallback would MANUFACTURE an instant if
-            // that ever stopped being true, and a fabricated "decided at" on an audit row is worse than an
-            // honest NULL. It also keeps the stamp observable: neutralize the finally and the row goes null,
-            // which is what the prompted-card tests watch.
-            var answeredAt = cardDecidedAt;
-
-            switch (decision)
+            switch (card.Decision)
             {
                 case ToolDecision.AllowOnce:
                     _logger.LogInformation("User allowed {ToolName} action once", tool);
-                    return await ExecuteAndReport(ToolGateDecision.ApprovedOnce, cardShownAt, answeredAt);
+                    return await ExecuteAndReport(ToolGateDecision.ApprovedOnce, card.ShownAt, card.DecidedAt);
 
                 // hermes #15 THE MIDDLE TIER. Execute now and remember for the rest of this app session —
                 // nothing is written to AppSettings, so the grant dies with the process and appears in no
@@ -1298,44 +1198,178 @@ public sealed class ChatSession : IDisposable
                 // then says ApprovedOnce, because that is what actually happened — writing ApprovedForSession
                 // for a grant that was not minted would make the timeline claim a tier the user does not have.
                 case ToolDecision.AllowForSession:
-                    if (sessionOfferable)
+                    if (gate.SessionOfferable)
                     {
                         _permissions.GrantForSession(pluginId, tool);
                         _logger.LogInformation(
                             "User granted session approval for {ToolName} (plugin {PluginId})", tool, pluginId);
-                        return await ExecuteAndReport(ToolGateDecision.ApprovedForSession, cardShownAt, answeredAt);
+                        return await ExecuteAndReport(ToolGateDecision.ApprovedForSession, card.ShownAt, card.DecidedAt);
                     }
 
                     _logger.LogInformation(
                         "Session approval not offerable for {ToolName}; executing once instead", tool);
-                    return await ExecuteAndReport(ToolGateDecision.ApprovedOnce, cardShownAt, answeredAt);
+                    return await ExecuteAndReport(ToolGateDecision.ApprovedOnce, card.ShownAt, card.DecidedAt);
 
                 case ToolDecision.AlwaysAllow:
                     // Defensive: never grant a non-offerable tool even if its card somehow
                     // surfaced the option — AlwaysAllow on a non-offerable tool degrades to
                     // AllowOnce (execute once, persist no grant).
-                    if (offerable)
+                    if (gate.Offerable)
                     {
                         await _permissions.GrantAsync(pluginId, tool);
                         _logger.LogInformation("User granted standing approval for {ToolName} (plugin {PluginId})", tool, pluginId);
                     }
-                    return await ExecuteAndReport(ToolGateDecision.ApprovedAlways, cardShownAt, answeredAt);
+                    return await ExecuteAndReport(ToolGateDecision.ApprovedAlways, card.ShownAt, card.DecidedAt);
 
                 default:
                     _logger.LogInformation("User declined {ToolName} action", tool);
                     timeline?.Emit(ToolGateSurface.Interactive, tool, toolClass, pluginId,
-                        cardCancelled ? ToolGateDecision.CardCancelled : ToolGateDecision.DeclinedByUser,
+                        card.Cancelled ? ToolGateDecision.CardCancelled : ToolGateDecision.DeclinedByUser,
                         AgentTimelineOutcome.NotExecuted,
                         toolCallId: toolCall.CallId, round: dispatch.Round,
                         // BOTH stamps land on the cancelled path too, because the finally assigned the second
                         // one: a CardCancelled row therefore says how long the question had been open.
-                        requestedAt: cardShownAt, decidedAt: answeredAt,
+                        requestedAt: card.ShownAt, decidedAt: card.DecidedAt,
                         argsChars);
                     return $"User declined the {tool} operation. Do not retry. Ask the user what they would like to do instead.";
             }
         }
 
         return "Tool call handled.";
+    }
+
+    /// <summary>What the interactive gate decides before a card is shown or a bypass runs.</summary>
+    private sealed record ToolGateResolution(
+        Guid PluginId,
+        string Tool,
+        ToolClass ToolClass,
+        bool Offerable,
+        bool SessionOfferable,
+        DateTime AskedAt,
+        ToolGateVerdict Verdict,
+        DateTime ResolvedAt);
+
+    /// <summary>The human's answer to one action card, and the two instants the audit row needs.</summary>
+    /// <param name="Cancelled">A cancelled card (new chat / retry / scope dispose) maps to
+    /// <see cref="ToolDecision.Decline"/>, and recording THAT as "the user declined" would be a false audit
+    /// statement — this survives the mapping so the decline arm can tell the two apart.</param>
+    private sealed record ActionCardOutcome(
+        ToolDecision Decision, bool Cancelled, DateTime ShownAt, DateTime? DecidedAt);
+
+    /// <summary>
+    /// 04 D5: ONE resolver for both gates. The destructive-external FLOOR lives inside Resolve and is evaluated
+    /// before any policy or grant branch, so no policy value can reach an auto-approval past it — it used to be
+    /// an expression here and an independent one in BackgroundAssistantTurnRunner, with no shared chokepoint.
+    /// Grant lookups stay with their OWNERS and arrive as bools (D7): the three sets involved use three
+    /// different comparers today. Eligibility comes from the SERVICE, never the card, so a forged/stale grant on
+    /// an ineligible tool (write_file, a destructive MCP tool) cannot auto-bypass.
+    /// </summary>
+    private ToolGateResolution ResolveToolGate(PluginToolCall pendingAction, RunAutonomyPolicy? policy)
+    {
+        var pluginId = pendingAction.PluginId;
+        var tool = pendingAction.ToolName;
+        var allowlisted = _permissions.IsAutoApproveEligible(tool);
+        var toolClass = ToolClassifier.Classify(pendingAction.PluginName, IsExternalTool(tool));
+        // T2-7b: hoisted beside the other two tool facts. False for every built-in handler's pending action
+        // (there is no server to have declared anything), true only where an MCP server sent
+        // ToolAnnotations.DestructiveHint.
+        var serverDestructive = pendingAction.ServerDeclaredDestructive;
+        // Carried because the AlwaysAllow branch needs the same answer the card's button set was built from:
+        // an AlwaysAllow on a non-offerable tool executes once and persists NO grant.
+        var offerable = ToolAutonomy.IsStandingGrantOfferable(toolClass, tool, allowlisted, serverDestructive);
+        // hermes #15, the same hoist for the same reason: the AllowForSession branch must mint a grant only
+        // where the card was entitled to offer one, and the card computes this with the SAME function
+        // (ActionCardBuilder.IsSessionGrantable), so the two cannot drift.
+        var sessionOfferable = ToolAutonomy.IsSessionGrantOfferable(tool, serverDestructive);
+        // T2-14: the POLICY question, bracketed. These two are RequestedAt/DecidedAt for the arm the policy
+        // itself answered — the AutoRun bypass. They are usually EQUAL: Resolve is a few comparisons and
+        // DateTime.UtcNow has ~1 ms resolution on Windows (the same reason Seq is not a timestamp), so nothing
+        // may assert strict ordering on them. The prompted arm does NOT use them; it takes its own pair around
+        // the card, because "when was the question posed" there means "when could the human see it", which is a
+        // different instant by however long they took to look.
+        var askedAt = DateTime.UtcNow;
+        var verdict = ToolAutonomy.Resolve(new ToolGateInput(
+            ToolGateSurface.Interactive, tool, toolClass,
+            // T2-7b: interactively a server-declared-destructive external tool hits the floor, which on
+            // THIS surface suppresses auto-approval and still shows the card — a human may still click
+            // "Allow once", which is the historic semantics and is deliberately not tightened.
+            ServerDeclaredDestructive: serverDestructive,
+            IsAllowlisted: allowlisted,
+            // hermes #15: the PROCESS-scoped middle tier, read from the grant set's owner exactly like the
+            // persisted one below it. This is the lookup that makes the second call of a session-granted
+            // tool card-free; without it the tier records a grant nothing ever reads.
+            HasSessionGrant: _permissions.IsGrantedForSession(pluginId, tool),
+            HasStandingGrant: _permissions.IsGranted(pluginId, tool),
+            IsNamedGrant: false,
+            // A run-scoped denial list is an UNATTENDED-envelope concept; the card this surface shows
+            // IS the human decision, so there is nothing persisted to look up.
+            HasNamedDenial: false,
+            Policy: policy,
+            // hermes #16: this surface already HAS a human — it shows the action card. Parking the whole
+            // run to ask the same question through a Flow item would be strictly worse than the card.
+            CanPark: false));
+
+        return new ToolGateResolution(
+            pluginId, tool, toolClass, offerable, sessionOfferable, askedAt, verdict, DateTime.UtcNow);
+    }
+
+    /// <summary>
+    /// Show the action card and wait for a person. Reached whenever the gate did not auto-run:
+    /// <see cref="ToolGateOutcome.Refuse"/> is UNREACHABLE on the interactive surface (pinned by
+    /// <c>ToolAutonomyTests.InteractiveSurface_NeverRefuses</c>) — a human is looking at the card — and it
+    /// deliberately falls through to the card rather than throwing, since a throw would fail the whole turn and
+    /// degrading toward the card is the safe direction if that ever changes.
+    /// </summary>
+    private async Task<ActionCardOutcome> ConfirmWithActionCardAsync(
+        PluginToolCall pendingAction, AssistantMessage message, bool tokenizationEnabled, ToolGateResolution gate)
+    {
+        // The AUTHORITATIVE class goes to BOTH cards, not just the auto-approved one: the prompted card's
+        // button set has to agree with the gate that just resolved it (04 D4).
+        var card = _actionCardBuilder.Build(pendingAction, tokenizationEnabled, toolClass: gate.ToolClass);
+        // T2-14: RequestedAt for the PROMPTED arm is the instant the question became visible to a person —
+        // i.e. the instant the card joins the bound collection — not the instant the policy was consulted.
+        // Taken immediately before the Add so the interval (DecidedAt - RequestedAt) is "how long the human was
+        // asked for", which is the only reading of it that is useful.
+        var shownAt = DateTime.UtcNow;
+        message.ActionCards.Add(card);
+
+        // Stamped in the `finally` below rather than after a successful await, so the CANCELLED path
+        // (TaskCanceledException: LLM timeout, new chat, retry, scope dispose) carries it too. That is the
+        // whole of "including timeout" for this tree: VERIFIED there is no approval timer —
+        // ActionCardInfo.WaitForUserDecisionAsync() is `=> _tcs.Task` with no timeout, and no
+        // ApprovalTimeout setting or constant exists anywhere in src. So no new ToolGateDecision member was
+        // added (it would be a persisted, append-only int for a state that cannot occur); the way a gate
+        // decision ends without an answer today is CardCancelled, and stamping here makes the row say how
+        // long the question had been open when the turn died.
+        DateTime? decidedAt = null;
+        ToolDecision decision;
+        var cancelled = false;
+        SetState(ChatState.WaitingForTool);
+        try
+        {
+            decision = await card.WaitForUserDecisionAsync();
+        }
+        catch (TaskCanceledException)
+        {
+            _logger.LogInformation("Tool action cancelled for {ToolName}", gate.Tool);
+            cancelled = true;
+            decision = ToolDecision.Decline;
+        }
+        finally
+        {
+            decidedAt = DateTime.UtcNow;
+
+            // Back to Running for the next tool/segment (the turn is still in flight).
+            if (State == ChatState.WaitingForTool)
+                SetState(ChatState.Running);
+        }
+
+        // Carried as-is, with NO `?? DateTime.UtcNow` fallback. Every caller arm is reached only after the
+        // finally ran, so in practice it is never null — but a fallback would MANUFACTURE an instant if that
+        // ever stopped being true, and a fabricated "decided at" on an audit row is worse than an honest NULL.
+        // It also keeps the stamp observable: neutralize the finally and the row goes null, which is what the
+        // prompted-card tests watch.
+        return new ActionCardOutcome(decision, cancelled, shownAt, decidedAt);
     }
 
     /// <summary>
