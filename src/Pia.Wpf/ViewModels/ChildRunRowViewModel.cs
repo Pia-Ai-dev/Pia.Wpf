@@ -3,14 +3,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace Pia.ViewModels;
 
-/// <summary>
-/// Read-only row for one delegated CHILD run (Batch 07 D17) — the drill-down target. <see cref="Title"/> is the
-/// child's goal and is SENSITIVE: bound to UI only, never logged, exactly like <c>StepRowViewModel.Title</c>.
-/// <para>
-/// Expanding a row loads THAT run's own trace, per run and never merged into the parent's — see
-/// <c>RunProgressViewModel.Children</c> for why interleaving is not implementable.
-/// </para>
-/// </summary>
+/// <summary>Read-only row for one delegated CHILD run — the drill-down target. Expanding a row loads THAT run's
+/// own trace, per run and never merged into the parent's.</summary>
 public sealed partial class ChildRunRowViewModel : ObservableObject
 {
     private readonly Action<ChildRunRowViewModel> _requestTimeline;
@@ -42,9 +36,8 @@ public sealed partial class ChildRunRowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(HasTokens))]
     private long _outputTokens;
 
-    /// <summary>The localized "N tokens" figure the owner composes from input PLUS output, matching
-    /// <see cref="StepRowViewModel.TokensLabel"/> exactly — the two render in visually identical mono columns
-    /// on the same card, so the card must not print two different measures of the same word.</summary>
+    /// <summary>Input PLUS output, matching <see cref="StepRowViewModel.TokensLabel"/> exactly — the two render
+    /// in visually identical mono columns on the same card, so they must not measure the word differently.</summary>
     [ObservableProperty]
     private string? _tokensLabel;
 
@@ -60,7 +53,6 @@ public sealed partial class ChildRunRowViewModel : ObservableObject
     [ObservableProperty]
     private bool _isExpanded;
 
-    /// <summary>This child run's own tool-decision trace. Loaded on each expand, like the parent's.</summary>
     public ObservableCollection<TimelineRowViewModel> Timeline { get; } = [];
 
     [ObservableProperty]
@@ -70,15 +62,15 @@ public sealed partial class ChildRunRowViewModel : ObservableObject
     private bool _hasTimelineReadError;
 
     /// <summary>The in-flight (or last) trace load, exposed so a fact can await the fire-and-forget the expand
-    /// starts rather than racing it — the same affordance the parent's <c>TimelineLoadTask</c> is.</summary>
+    /// starts rather than racing it.</summary>
     internal Task? TimelineLoadTask { get; set; }
 
     partial void OnIsExpandedChanged(bool value)
     {
         if (!value) return;
 
-        // Re-read on EVERY expand, for the reason the parent's own expander records: a trace read while the
-        // child was still working would otherwise keep claiming "nothing recorded" for the rest of the session.
+        // Re-read on EVERY expand: a trace read while the child was still working would otherwise keep claiming
+        // "nothing recorded" for the rest of the session.
         _requestTimeline(this);
     }
 }
