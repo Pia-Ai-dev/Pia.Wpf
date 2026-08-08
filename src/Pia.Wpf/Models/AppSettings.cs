@@ -172,7 +172,7 @@ public class AppSettings
     public int AgentWallClockMinutes { get; set; } = 20;
 
     // The model↔tool loop cap inside one step (AiClientService); shared by all run shapes, clamped at read.
-    public int MaxToolRoundsPerStep { get; set; } = 10;
+    public int MaxToolRoundsPerStep { get; set; } = 24;
 
     // Reason-then-emit planning. When true, a plan turn on a provider whose handler DROPS the configured
     // reasoning effort as soon as tools are attached (AzureOpenAI / Ollama / Mistral — see

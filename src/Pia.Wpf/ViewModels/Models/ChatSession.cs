@@ -468,8 +468,9 @@ public sealed class ChatSession : IDisposable
         {
             // Per-exchange cleanup (§13.5 step 2), shared with RunStepTurnAsync: empty-response
             // synthesis + IsStreaming=false + safety-net PII detokenize + ambient restore.
-            var emptyResponse = CleanupPerExchange(assistantMessage, tokenizationEnabled,
+            var emptyResponseMessage = CleanupPerExchange(assistantMessage, tokenizationEnabled,
                 token.IsCancellationRequested, previousAmbient, previousTask);
+            var emptyResponse = emptyResponseMessage is not null;
 
             // Per-run terminal finalize (§13.5 step 2) — stays inline in RunTurnAsync only.
             Cts?.Dispose();
@@ -489,13 +490,13 @@ public sealed class ChatSession : IDisposable
                     : ChatState.Idle);
             }
 
-            if (emptyResponse)
+            if (emptyResponseMessage is not null)
             {
                 RunFailed?.Invoke(this, new RunFailedEventArgs
                 {
                     Kind = RunFailureKind.Empty,
                     Title = _localizationService["Msg_Warning"],
-                    Message = _localizationService["Msg_Assistant_EmptyResponse"],
+                    Message = emptyResponseMessage,
                 });
             }
 
@@ -603,6 +604,7 @@ public sealed class ChatSession : IDisposable
 
                 case Finished finished:
                     assistantMessage.IsProtectedRoute = finished.Protected;
+                    assistantMessage.ToolRoundsExhausted = finished.ToolRoundsExhausted;
                     usage = finished.Usage;
                     ApplyStats(assistantMessage, finished, provider);
                     break;
@@ -624,25 +626,33 @@ public sealed class ChatSession : IDisposable
     /// <see cref="RunStepTurnAsync"/> run it. The per-run terminal finalize (Cts dispose / terminal
     /// state decision / empty snackbar / TurnCompleted) is NOT here — it stays inline in
     /// <see cref="RunTurnAsync"/> and is mirrored by the live executor's EndRunAsync (§16 R4).
-    /// Returns whether the empty-response placeholder was synthesized.
+    /// Returns the synthesized empty-response placeholder text, or null if the exchange produced content.
+    /// Callers reuse the returned text for their own snackbar/error surfaces instead of re-picking the
+    /// generic key, so a tool-rounds-exhausted turn reads consistently everywhere it is reported.
     /// </summary>
-    private bool CleanupPerExchange(
+    private string? CleanupPerExchange(
         AssistantMessage assistantMessage,
         bool tokenizationEnabled,
         bool cancelled,
         ITokenMapService? previousAmbient,
         TaskContext? previousTask)
     {
-        var emptyResponse = false;
+        string? emptyResponseMessage = null;
         // Don't fabricate empty-response text when the message pair was removed
         // (vision rejection) or the turn was cancelled (C1) — a cancelled turn must
         // not also report "empty" and raise a second snackbar over the Cancelled one.
         if (Messages.Contains(assistantMessage) && string.IsNullOrEmpty(assistantMessage.Content)
             && !cancelled)
         {
-            _logger.LogWarning("SendMessage completed but assistant response content is empty — tool calls may not have been processed or streaming yielded no visible text");
-            assistantMessage.Content = _localizationService["Msg_Assistant_EmptyResponse"];
-            emptyResponse = true;
+            // A tool-rounds-exhausted turn already got a tools-disabled wrap-up call in AiClientService —
+            // reaching here means even THAT came back with no text, so the generic "didn't respond" wording
+            // would be misleading; it did try; the round budget ran out on it.
+            emptyResponseMessage = assistantMessage.ToolRoundsExhausted
+                ? _localizationService["Msg_Assistant_ToolRoundsExhausted"]
+                : _localizationService["Msg_Assistant_EmptyResponse"];
+            _logger.LogWarning("SendMessage completed but assistant response content is empty — tool calls may not have been processed or streaming yielded no visible text (toolRoundsExhausted={ToolRoundsExhausted})",
+                assistantMessage.ToolRoundsExhausted);
+            assistantMessage.Content = emptyResponseMessage;
         }
 
         assistantMessage.IsStreaming = false;
@@ -656,7 +666,7 @@ public sealed class ChatSession : IDisposable
         TokenMapAmbient.Current = previousAmbient;
         TaskAmbient.Current = previousTask;
 
-        return emptyResponse;
+        return emptyResponseMessage;
     }
 
     /// <summary>
@@ -787,13 +797,13 @@ public sealed class ChatSession : IDisposable
         {
             // Shared per-exchange cleanup — clears IsStreaming + detokenizes PII + restores ambients (§16 R4).
             // NO per-run finalize (no Cts dispose, no terminal state decision, no snackbar, no TurnCompleted).
-            var empty = CleanupPerExchange(assistantMessage, spec.TokenizationEnabled,
+            var emptyResponseMessage = CleanupPerExchange(assistantMessage, spec.TokenizationEnabled,
                 ct.IsCancellationRequested, previousAmbient, previousTask);
-            emptyResponseSynthesized = empty;
-            if (empty)
+            emptyResponseSynthesized = emptyResponseMessage is not null;
+            if (emptyResponseMessage is not null)
             {
                 succeeded = false;
-                error ??= _localizationService["Msg_Assistant_EmptyResponse"];
+                error ??= emptyResponseMessage;
             }
 
             // Disarm before anything else can run a turn on this session — the verdict is read from the

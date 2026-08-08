@@ -384,7 +384,7 @@
               <TextBlock Text="{loc:Str Settings_Agent_MaxToolRounds_Label}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
               <Slider HorizontalAlignment="Left" Width="400"
-                      Minimum="1" Maximum="20"
+                      Minimum="1" Maximum="48"
                       TickFrequency="1" IsSnapToTickEnabled="True"
                       Value="{Binding MaxToolRoundsPerStep, Mode=TwoWay}"/>
               <TextBlock Text="{Binding MaxToolRoundsDisplay}"

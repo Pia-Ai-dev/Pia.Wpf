@@ -515,7 +515,72 @@ public class AiClientService : IAiClientService
         }
 
         _logger.LogWarning("Tool loop exhausted max rounds ({MaxRounds}) without final response", maxToolRounds);
-        yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput, protectedRoute);
+
+        // One last round-trip, TOOLS DISABLED, so the model cannot spend it on another call it has no
+        // room left to process and must instead answer from whatever it already gathered. Skipped when
+        // the caller already cancelled (a user Stop should not spend one more provider round), and given
+        // its OWN timeout linked only to the caller token — `timeoutCts`/`linkedCts` above were scoped to
+        // the whole method and may already be spent after `maxToolRounds` round-trips plus tool dispatch
+        // (which can block on a human approval card for an unbounded time).
+        string? wrapUpText = null;
+        if (!cancellationToken.IsCancellationRequested)
+        {
+            using var wrapUpTimeoutCts = new CancellationTokenSource(timeout);
+            using var wrapUpLinkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken, wrapUpTimeoutCts.Token);
+
+            if (contextBudget is { } wrapUpBudget)
+            {
+                workingMessages = await AgentContextCompactor
+                    .CompactAsync(workingMessages, wrapUpBudget, _logger, wrapUpLinkedCts.Token)
+                    .ConfigureAwait(false);
+            }
+
+            // The model has no other way to learn its tool-round budget just ran out — without this nudge
+            // it would still try another tool call, into a request that no longer offers any tools.
+            workingMessages.Add(new Microsoft.Extensions.AI.ChatMessage(ChatRole.User,
+                "You have reached the maximum number of tool-calling rounds allowed for this turn. Do not "
+                + "attempt another tool call — answer now with your best final response based on everything "
+                + "you have gathered so far."));
+
+            var wrapUpOptions = providerHandler.CreateChatOptions(provider, hasTools: false);
+            try
+            {
+                using var wrapUpPermit = await AcquireProviderPermitAsync(
+                    provider, timeout, wrapUpTimeoutCts, cancellationToken, wrapUpLinkedCts.Token);
+                var wrapUpResponse = await chatClient.GetResponseAsync(
+                    workingMessages, wrapUpOptions, wrapUpLinkedCts.Token);
+
+                wrapUpText = wrapUpResponse.Text;
+                if (wrapUpResponse.AdditionalProperties is { } wrapUpProps
+                    && wrapUpProps.ContainsKey(GuardrailMarker.AdditionalPropertyKey))
+                {
+                    protectedRoute = true;
+                }
+                if (wrapUpResponse.Usage is { } wrapUpUsage)
+                {
+                    if (wrapUpUsage.InputTokenCount is long wrapUpInput) { aggregatedInput += wrapUpInput; hasUsage = true; }
+                    if (wrapUpUsage.OutputTokenCount is long wrapUpOutput) { aggregatedOutput += wrapUpOutput; hasUsage = true; }
+                }
+                _logger.LogWarning("Tool-round wrap-up call produced {TextLen} chars of final text", wrapUpText?.Length ?? 0);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Tool-round wrap-up call failed for provider {ProviderName}", provider.Name);
+            }
+        }
+        else
+        {
+            _logger.LogWarning("Skipping tool-round wrap-up call: turn already cancelled");
+        }
+
+        if (!string.IsNullOrEmpty(wrapUpText))
+        {
+            yield return new TextDelta(wrapUpText);
+        }
+
+        yield return BuildFinishedItem(
+            provider, hasUsage, aggregatedInput, aggregatedOutput, protectedRoute, toolRoundsExhausted: true);
     }
 
     public async Task<ChatResponse> GetChatResponseAsync(
@@ -1121,7 +1186,7 @@ public class AiClientService : IAiClientService
         }
     }
 
-    private ChatStreamItem BuildFinishedItem(AiProvider provider, bool hasUsage, long aggregatedInput, long aggregatedOutput, bool protectedRoute)
+    private ChatStreamItem BuildFinishedItem(AiProvider provider, bool hasUsage, long aggregatedInput, long aggregatedOutput, bool protectedRoute, bool toolRoundsExhausted = false)
     {
         UsageDetails? usage = null;
         if (hasUsage)
@@ -1143,7 +1208,7 @@ public class AiClientService : IAiClientService
         var modelLabel = !string.IsNullOrWhiteSpace(provider.ModelName)
             ? provider.ModelName
             : provider.Name;
-        return new Finished(usage, modelLabel, protectedRoute);
+        return new Finished(usage, modelLabel, protectedRoute, toolRoundsExhausted);
     }
 
     /// <summary>

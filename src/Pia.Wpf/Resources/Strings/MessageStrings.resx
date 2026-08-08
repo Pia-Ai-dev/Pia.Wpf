@@ -79,6 +79,7 @@
   <data name="Msg_Assistant_ResponseTimedOut" xml:space="preserve"><value>Provider '{0}' did not respond within {1} seconds.</value></data>
   <data name="Msg_Assistant_ResponseTruncated" xml:space="preserve"><value>Provider '{0}' hit the output token limit before finishing. Try a shorter or more focused request, or split the work into smaller steps.</value></data>
   <data name="Msg_Assistant_EmptyResponse" xml:space="preserve"><value>The assistant did not provide a response. Please try again.</value></data>
+  <data name="Msg_Assistant_ToolRoundsExhausted" xml:space="preserve"><value>The assistant reached its tool-call limit before it could finish and didn't return a final answer. Try continuing the conversation, or raise the tool-round limit in Settings.</value></data>
   <data name="Msg_Assistant_ResponseFailed" xml:space="preserve"><value>Failed to get AI response: {0}</value></data>
   <data name="Msg_Assistant_StatusCheckingMemory" xml:space="preserve"><value>Checking memory...</value></data>
   <data name="Msg_Assistant_StatusCheckingReminders" xml:space="preserve"><value>Checking reminders...</value></data>
