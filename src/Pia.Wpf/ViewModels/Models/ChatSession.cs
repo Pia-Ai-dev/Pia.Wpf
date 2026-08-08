@@ -77,16 +77,12 @@ public sealed class ChatSession : IDisposable
     private bool _disposed;
 
     /// <summary>
-    /// hermes #9: the sink <see cref="HandleToolCall"/> writes an <c>emit_step_result</c> declaration into,
+    /// The sink <see cref="HandleToolCall"/> writes an <c>emit_step_result</c> declaration into,
     /// or null when no step turn is in flight. Set at the top of <see cref="RunStepTurnAsync"/> and cleared
     /// in its <c>finally</c>; the verdict is read from the METHOD-LOCAL sink afterwards, not from this field,
-    /// so the clear cannot lose the claim.
-    /// <para>
-    /// Non-null is the gate on the interception. It must be back to null before an ordinary
-    /// <see cref="RunTurnAsync"/> chat turn runs, or a hallucinated <c>emit_step_result</c> on a chat turn
-    /// would be silently swallowed instead of answered "Unknown tool.". A session runs at most one turn at a
-    /// time (<see cref="IsStreaming"/> guards the entry points), so one field is enough.
-    /// </para>
+    /// so the clear cannot lose the claim. Non-null gates the interception, so it must be back to null before
+    /// an ordinary chat turn runs or a hallucinated <c>emit_step_result</c> there would be swallowed instead of
+    /// answered "Unknown tool.".
     /// </summary>
     private StepOutcomeStore? _stepOutcomeStore;
 
@@ -107,11 +103,11 @@ public sealed class ChatSession : IDisposable
 
     /// <summary>
     /// Raised when an IN-FLIGHT (non-terminal) run wants the transcript so far made durable — the manager
-    /// answers it with the same <c>PersistAsync</c> the terminal path uses (E2). Deliberately NOT
+    /// answers it with the same <c>PersistAsync</c> the terminal path uses. Deliberately NOT
     /// <see cref="TurnCompleted"/>: a mid-run step is not a finished turn, so raising that instead would
     /// settle terminal state, fire follow-ups/TTS and present a parked run as complete (guardrail 5).
     /// The single-turn <see cref="RunTurnAsync"/> path never raises this — its terminal
-    /// <see cref="TurnCompleted"/> already persists, and its ordering must stay byte-stable (§16 R11).
+    /// <see cref="TurnCompleted"/> already persists, and its ordering must stay byte-stable.
     /// </summary>
     internal event EventHandler? PersistRequested;
 
@@ -152,7 +148,7 @@ public sealed class ChatSession : IDisposable
 
     /// <summary>
     /// The live (or most-recently-selected) Planned <see cref="Pia.Models.AgentRun"/> for this chat,
-    /// or null when the chat has no run to surface (§15.1). Set by the manager on the UI thread when a
+    /// or null when the chat has no run to surface. Set by the manager on the UI thread when a
     /// Planned turn starts; the active VM watches <see cref="ActiveRunChanged"/> to embed the run-progress panel.
     /// </summary>
     public Guid? ActiveRunId { get; private set; }
@@ -174,11 +170,8 @@ public sealed class ChatSession : IDisposable
     /// i.e. headlessly, on a run pool thread (W2). That executor is a second full-chat writer, so this
     /// session must not write: a live turn's full replace would delete the rows the run's steps produced, and
     /// the run's own model context never sees the user's message anyway, so the resulting conversation would
-    /// be garbled even if nothing were lost.
-    /// <para>
-    /// Set only for a re-attached (hydrated) run — a session that creates its own run has its own
-    /// <see cref="IsStreaming"/> to block Send, and setting this for it would be an interactive regression.
-    /// </para>
+    /// be garbled even if nothing were lost. Set only for a re-attached (hydrated) run — a session that creates
+    /// its own run has its own <see cref="IsStreaming"/> to block Send.
     /// </summary>
     public bool ForeignRunActive { get; private set; }
 
@@ -378,7 +371,7 @@ public sealed class ChatSession : IDisposable
                     chatMessages.Add(msg.ToChatMessage());
             }
 
-            // Stream consumption + tool loop (§13.5 step 1) — extracted so the Planned
+            // Stream consumption + tool loop — extracted so the Planned
             // step path (RunStepTurnAsync) can reuse the identical exchange body. It throws
             // on every provider/exception type; RunTurnAsync keeps today's catches verbatim.
             // The returned usage is discarded here (the single-turn path has no step ledger).
@@ -466,13 +459,13 @@ public sealed class ChatSession : IDisposable
         }
         finally
         {
-            // Per-exchange cleanup (§13.5 step 2), shared with RunStepTurnAsync: empty-response
+            // Per-exchange cleanup, shared with RunStepTurnAsync: empty-response
             // synthesis + IsStreaming=false + safety-net PII detokenize + ambient restore.
             var emptyResponseMessage = CleanupPerExchange(assistantMessage, tokenizationEnabled,
                 token.IsCancellationRequested, previousAmbient, previousTask);
             var emptyResponse = emptyResponseMessage is not null;
 
-            // Per-run terminal finalize (§13.5 step 2) — stays inline in RunTurnAsync only.
+            // Per-run terminal finalize — stays inline in RunTurnAsync only.
             Cts?.Dispose();
             Cts = null;
 
@@ -507,10 +500,10 @@ public sealed class ChatSession : IDisposable
     }
 
     /// <summary>
-    /// The shared model-exchange body (§13.5 step 1): stream consumption + the tool loop +
+    /// The shared model-exchange body: stream consumption + the tool loop +
     /// reasoning-timer + web-citation post-process. Both <see cref="RunTurnAsync"/> and
     /// <see cref="RunStepTurnAsync"/> call it. It <b>throws</b> on every exception type the
-    /// callers catch — the catch handlers are NOT part of this body (§16 R4). Returns the last
+    /// callers catch — the catch handlers are NOT part of this body. Returns the last
     /// <see cref="Finished"/> usage so the step path can populate its ledger; the single-turn
     /// path discards it (it already applies stats via <see cref="ApplyStats"/>).
     /// </summary>
@@ -621,11 +614,11 @@ public sealed class ChatSession : IDisposable
     }
 
     /// <summary>
-    /// The shared per-exchange cleanup (§13.5 step 2): empty-response synthesis, IsStreaming=false,
+    /// The shared per-exchange cleanup: empty-response synthesis, IsStreaming=false,
     /// safety-net PII detokenization, and ambient restore. Both <see cref="RunTurnAsync"/> and
     /// <see cref="RunStepTurnAsync"/> run it. The per-run terminal finalize (Cts dispose / terminal
     /// state decision / empty snackbar / TurnCompleted) is NOT here — it stays inline in
-    /// <see cref="RunTurnAsync"/> and is mirrored by the live executor's EndRunAsync (§16 R4).
+    /// <see cref="RunTurnAsync"/> and is mirrored by the live executor's EndRunAsync.
     /// Returns the synthesized empty-response placeholder text, or null if the exchange produced content.
     /// Callers reuse the returned text for their own snackbar/error surfaces instead of re-picking the
     /// generic key, so a tool-rounds-exhausted turn reads consistently everywhere it is reported.
@@ -670,7 +663,7 @@ public sealed class ChatSession : IDisposable
     }
 
     /// <summary>
-    /// Runs one act step-turn of a <see cref="RunShape.Planned"/> run (§13.7, §16 R4/R9). Builds
+    /// Runs one act step-turn of a <see cref="RunShape.Planned"/> run. Builds
     /// context from the visible transcript + an EPHEMERAL User-role step instruction (never added
     /// to <see cref="Messages"/> / persisted), creates a persona-attributed target
     /// <see cref="AssistantMessage"/>, runs <see cref="RunModelExchangeAsync"/> + the shared
@@ -678,11 +671,11 @@ public sealed class ChatSession : IDisposable
     /// <c>StepTurnResult(Succeeded=false, …)</c> — no <see cref="ChatState.Error"/>, no RunFailed
     /// snackbar, and NO per-run finalize (the orchestrator's EndRunAsync owns that). The run stays
     /// <see cref="ChatState.Running"/> across steps; a mid-step tool-approval WaitingForTool flap
-    /// inside <see cref="HandleToolCall"/> is the one exception and is R12-correct (§13.5.5).
+    /// inside <see cref="HandleToolCall"/> is the one exception, and correctly so.
     /// </summary>
     internal async Task<StepTurnResult> RunStepTurnAsync(StepTurnSpec spec, RunContext ctx, CancellationToken ct)
     {
-        // Persona-attributed VISIBLE target message — one assistant message per step (§13.7).
+        // Persona-attributed VISIBLE target message — one assistant message per step.
         var assistantMessage = new AssistantMessage(ChatRole.Assistant)
         {
             IsStreaming = true,
@@ -690,14 +683,14 @@ public sealed class ChatSession : IDisposable
         };
         Messages.Add(assistantMessage);
 
-        // Per-step ambients (§16 R9): TaskId = run-STABLE spec.RunId, but the TaskContext OBJECT is
+        // Per-step ambients: TaskId = run-STABLE spec.RunId, but the TaskContext OBJECT is
         // re-set per step so the touch sink targets THIS step's message. Token map ambient re-set too.
         var previousAmbient = TokenMapAmbient.Current;
         TokenMapAmbient.Current = TokenMap;
         var previousTask = TaskAmbient.Current;
         TaskAmbient.Current = new TaskContext(
             spec.RunId,
-            // Same one-narrowing rule as the run context (Batch 06 B6): an isolated run's workspace root
+            // Same one-narrowing rule as the run context: an isolated run's workspace root
             // already IS the narrowed root, so passing the subpath too would probe <runRoot>\<subpath>. The
             // ORDINARY interactive turn (RunTurnAsync) is a separate construction and keeps passing
             // WorkingDirectory unconditionally — only a Planned run's steps isolate.
@@ -709,12 +702,12 @@ public sealed class ChatSession : IDisposable
                     FileTouchKind.Updated => FileRefKind.Updated,
                     _ => FileRefKind.Read,
                 })),
-            // Batch 06 D4: confines this step's file tools to the run's workspace. The chip built just above
+            // Confines this step's file tools to the run's workspace. The chip built just above
             // therefore carries a path inside runs\<runId>, which is why opening one resolves through
             // RunWorkspaceRedirects once the run's work is promoted out (plan D8).
             spec.WorkspaceRoot);
 
-        // hermes #9. Armed IFF offered: the sink exists exactly when LiveTurnExecutor.BuildSpec put
+        // Armed IFF offered: the sink exists exactly when LiveTurnExecutor.BuildSpec put
         // emit_step_result in this step's tool list, derived from the list itself rather than from a second
         // flag so the two cannot drift. A step on a tool-less provider gets no sink and lands on the
         // unconfirmed fallback, which is right — it could never have declared anything.
@@ -795,7 +788,7 @@ public sealed class ChatSession : IDisposable
         }
         finally
         {
-            // Shared per-exchange cleanup — clears IsStreaming + detokenizes PII + restores ambients (§16 R4).
+            // Shared per-exchange cleanup — clears IsStreaming + detokenizes PII + restores ambients.
             // NO per-run finalize (no Cts dispose, no terminal state decision, no snackbar, no TurnCompleted).
             var emptyResponseMessage = CleanupPerExchange(assistantMessage, spec.TokenizationEnabled,
                 ct.IsCancellationRequested, previousAmbient, previousTask);
@@ -813,7 +806,7 @@ public sealed class ChatSession : IDisposable
             _userInputRequest = null;
         }
 
-        // ---- hermes #9: the step-success decision ----
+        // ---- The step-success decision ----
         // WAS: exception-absence (plus the empty-response downgrade above) — the live half of "the model
         // produced output, therefore the step worked". A step that ran, failed, and then explained its
         // failure in perfect prose threw nothing, so it recorded Done.
@@ -872,7 +865,7 @@ public sealed class ChatSession : IDisposable
             Succeeded: stepSucceeded,
             Cancelled: cancelled,
             Error: error,
-            // hermes #9: THE EMPTY-RESPONSE PLACEHOLDER IS NOT A RESULT. When the step declared success with no
+            // THE EMPTY-RESPONSE PLACEHOLDER IS NOT A RESULT. When the step declared success with no
             // visible text, the claim block above rightly flips `succeeded` back to true — but the localized
             // "The assistant did not return a response." that CleanupPerExchange synthesized is still sitting in
             // the message. It belongs there: it is UI text so the chat does not render a blank bubble. It does
@@ -899,14 +892,11 @@ public sealed class ChatSession : IDisposable
     /// <summary>
     /// Builds the model context for a step exchange: the system prompt + the full visible transcript
     /// so far (excluding the streaming target) + one trailing EPHEMERAL User-role step instruction.
-    /// The instruction message is a local — it is never added to <see cref="Messages"/> / persisted (§13.7).
-    /// <para>
-    /// The finished list is compacted against the provider's context budget so a long run cannot
-    /// overflow the window and fail a step. This is the LIVE half of executor parity — LiveTurnExecutor
-    /// builds no message list of its own (it only posts to <see cref="RunStepTurnAsync"/>), so the
-    /// parity seam lives here. Compaction returns a NEW list and never touches
-    /// <see cref="Messages"/>, so the displayed and persisted transcript is unaffected.
-    /// </para>
+    /// The instruction message is a local — it is never added to <see cref="Messages"/> / persisted.
+    /// The finished list is compacted against the provider's context budget so a long run cannot overflow the
+    /// window and fail a step; compaction returns a NEW list, so the displayed and persisted transcript is
+    /// unaffected. This is the LIVE half of executor parity — LiveTurnExecutor builds no message list of its
+    /// own, so the parity seam lives here.
     /// </summary>
     private async Task<List<ChatMessage>> BuildStepChatMessagesAsync(StepTurnSpec spec, RunContext ctx, AssistantMessage assistantMessage, CancellationToken ct)
     {
@@ -934,7 +924,7 @@ public sealed class ChatSession : IDisposable
                 instruction += $" Expected: {spec.ExpectedArtifact}";
         }
 
-        // Batch 08 D4: the ONLY place a user steering note may ride — a ChatRole.User message, never System.
+        // The ONLY place a user steering note may ride — a ChatRole.User message, never System.
         chatMessages.Add(new ChatMessage(ChatRole.User, ctx.AppendNudge(instruction)));
 
         // No ConfigureAwait(false) — this session is UI-thread-affine (see the class remarks), and the
@@ -979,12 +969,12 @@ public sealed class ChatSession : IDisposable
         };
     }
 
-    /// <param name="policy">The run's autonomy policy (Batch 04), from <c>StepTurnSpec.Policy</c>. Null on the
+    /// <param name="policy">The run's autonomy policy, from <c>StepTurnSpec.Policy</c>. Null on the
     /// ordinary interactive turn path (<see cref="RunTurnAsync"/>), which has no run — and null therefore
     /// means today's behaviour, byte for byte.</param>
-    /// <param name="timeline">The step's audit sink (Batch 03), from <c>StepTurnSpec.Timeline</c>. Null on the
+    /// <param name="timeline">The step's audit sink, from <c>StepTurnSpec.Timeline</c>. Null on the
     /// ordinary interactive turn path, which has no run to attach a row to — so that path emits nothing.</param>
-    /// <param name="dispatch">What the tool LOOP knows and this gate cannot derive (T2-14): the 1-based round.
+    /// <param name="dispatch">What the tool LOOP knows and this gate cannot derive: the 1-based round.
     /// Recorded on the audit row so a support log's "Round 3/10" line and the row for the call it dispatched
     /// can be lined up. Not optional and not nullable — every call into this gate comes from the loop.</param>
     private async Task<object?> HandleToolCall(
@@ -1003,15 +993,15 @@ public sealed class ChatSession : IDisposable
         Debug.WriteLine($"[Tool Args] {toolCall.Name}: {JsonSerializer.Serialize(toolCall.Arguments)}");
 #endif
 
-        // suggest_agent_mode (R7): pre-route special-case. RouteToolCallAsync would return null for this
+        // suggest_agent_mode: pre-route special-case. RouteToolCallAsync would return null for this
         // unknown tool and dead-end at "Unknown tool.", so intercept BEFORE routing. Records a typed chip
-        // on the streaming message + returns a short ack; never gated, always succeeds. G1: every other
+        // on the streaming message + returns a short ack; never gated, always succeeds; every other
         // tool path is byte-for-byte unchanged because this short-circuits before RouteToolCallAsync.
         if (string.Equals(toolCall.Name, "suggest_agent_mode", StringComparison.Ordinal))
         {
             var reason = ExtractStringArg(toolCall.Arguments, "reason") ?? string.Empty;
             _logger.SensitiveDebug("suggest_agent_mode reason: {Reason}", reason); // user/model content
-            // OQ2: idempotent — at most one chip per message even if the model calls twice.
+            // Idempotent — at most one chip per message even if the model calls twice.
             if (!message.HasAgentModeSuggestion)
             {
                 var goal = Messages.LastOrDefault(m => m.Role == ChatRole.User)?.Content ?? string.Empty;
@@ -1021,7 +1011,7 @@ public sealed class ChatSession : IDisposable
             return "Noted — offered Agent mode to the user.";
         }
 
-        // emit_step_result (hermes #9): the second pre-route special case, for the same structural reason as
+        // emit_step_result: the second pre-route special case, for the same structural reason as
         // the one above — no plugin, no GUID, no _toolNameRoutes entry, so routing would miss it, log a
         // warning, emit a ToolGateDecision.UnknownTool audit row and answer "Unknown tool.". Gated on the
         // SINK, not on the name alone: an ordinary chat turn is never offered this tool, so a model that
@@ -1041,7 +1031,7 @@ public sealed class ChatSession : IDisposable
             return userInputStore.Record(toolCall.Arguments);
         }
 
-        // Length only, measured once and reused by every emit arm below (03 §3 — the serialized arguments
+        // Length only, measured once and reused by every emit arm below — the serialized arguments
         // themselves never leave AgentTimelineScope.MeasureArgs). GATED ON THE SINK: measuring serializes the
         // whole argument dictionary, so on the ordinary interactive turn (timeline == null) it would materialize
         // a multi-megabyte write_file body on the UI thread and discard it — and "null means today's behaviour,
@@ -1106,7 +1096,7 @@ public sealed class ChatSession : IDisposable
             // The accepted/auto-approved success path: execute, fire ToolSucceeded, re-init the
             // memory token map, return the result. Shared by AllowOnce, AlwaysAllow, and bypass.
             //
-            // <paramref name="decision"/> is the audit reason this call was authorized (Batch 03). Only the
+            // <paramref name="decision"/> is the audit reason this call was authorized. Only the
             // Execute() call is bracketed for the timeline: ResolveSuccessTitle and the ToolSucceeded
             // subscribers run afterwards, and recording a fault in either as "the tool failed" would be a
             // false audit statement.
@@ -1188,7 +1178,7 @@ public sealed class ChatSession : IDisposable
                     _logger.LogInformation("User allowed {ToolName} action once", tool);
                     return await ExecuteAndReport(ToolGateDecision.ApprovedOnce, card.ShownAt, card.DecidedAt);
 
-                // hermes #15 THE MIDDLE TIER. Execute now and remember for the rest of this app session —
+                // THE MIDDLE TIER. Execute now and remember for the rest of this app session —
                 // nothing is written to AppSettings, so the grant dies with the process and appears in no
                 // revocable list (which is exactly what "for this session" promises).
                 //
@@ -1257,10 +1247,10 @@ public sealed class ChatSession : IDisposable
         ToolDecision Decision, bool Cancelled, DateTime ShownAt, DateTime? DecidedAt);
 
     /// <summary>
-    /// 04 D5: ONE resolver for both gates. The destructive-external FLOOR lives inside Resolve and is evaluated
+    /// ONE resolver for both gates. The destructive-external FLOOR lives inside Resolve and is evaluated
     /// before any policy or grant branch, so no policy value can reach an auto-approval past it — it used to be
     /// an expression here and an independent one in BackgroundAssistantTurnRunner, with no shared chokepoint.
-    /// Grant lookups stay with their OWNERS and arrive as bools (D7): the three sets involved use three
+    /// Grant lookups stay with their OWNERS and arrive as bools: the three sets involved use three
     /// different comparers today. Eligibility comes from the SERVICE, never the card, so a forged/stale grant on
     /// an ineligible tool (write_file, a destructive MCP tool) cannot auto-bypass.
     /// </summary>
@@ -1270,18 +1260,18 @@ public sealed class ChatSession : IDisposable
         var tool = pendingAction.ToolName;
         var allowlisted = _permissions.IsAutoApproveEligible(tool);
         var toolClass = ToolClassifier.Classify(pendingAction.PluginName, IsExternalTool(tool));
-        // T2-7b: hoisted beside the other two tool facts. False for every built-in handler's pending action
+        // Hoisted beside the other two tool facts. False for every built-in handler's pending action
         // (there is no server to have declared anything), true only where an MCP server sent
         // ToolAnnotations.DestructiveHint.
         var serverDestructive = pendingAction.ServerDeclaredDestructive;
         // Carried because the AlwaysAllow branch needs the same answer the card's button set was built from:
         // an AlwaysAllow on a non-offerable tool executes once and persists NO grant.
         var offerable = ToolAutonomy.IsStandingGrantOfferable(toolClass, tool, allowlisted, serverDestructive);
-        // hermes #15, the same hoist for the same reason: the AllowForSession branch must mint a grant only
+        // The same hoist for the same reason: the AllowForSession branch must mint a grant only
         // where the card was entitled to offer one, and the card computes this with the SAME function
         // (ActionCardBuilder.IsSessionGrantable), so the two cannot drift.
         var sessionOfferable = ToolAutonomy.IsSessionGrantOfferable(tool, serverDestructive);
-        // T2-14: the POLICY question, bracketed. These two are RequestedAt/DecidedAt for the arm the policy
+        // The policy question, bracketed. These two are RequestedAt/DecidedAt for the arm the policy
         // itself answered — the AutoRun bypass. They are usually EQUAL: Resolve is a few comparisons and
         // DateTime.UtcNow has ~1 ms resolution on Windows (the same reason Seq is not a timestamp), so nothing
         // may assert strict ordering on them. The prompted arm does NOT use them; it takes its own pair around
@@ -1290,12 +1280,12 @@ public sealed class ChatSession : IDisposable
         var askedAt = DateTime.UtcNow;
         var verdict = ToolAutonomy.Resolve(new ToolGateInput(
             ToolGateSurface.Interactive, tool, toolClass,
-            // T2-7b: interactively a server-declared-destructive external tool hits the floor, which on
+            // Interactively a server-declared-destructive external tool hits the floor, which on
             // THIS surface suppresses auto-approval and still shows the card — a human may still click
             // "Allow once", which is the historic semantics and is deliberately not tightened.
             ServerDeclaredDestructive: serverDestructive,
             IsAllowlisted: allowlisted,
-            // hermes #15: the PROCESS-scoped middle tier, read from the grant set's owner exactly like the
+            // The process-scoped middle tier, read from the grant set's owner exactly like the
             // persisted one below it. This is the lookup that makes the second call of a session-granted
             // tool card-free; without it the tier records a grant nothing ever reads.
             HasSessionGrant: _permissions.IsGrantedForSession(pluginId, tool),
@@ -1305,7 +1295,7 @@ public sealed class ChatSession : IDisposable
             // IS the human decision, so there is nothing persisted to look up.
             HasNamedDenial: false,
             Policy: policy,
-            // hermes #16: this surface already HAS a human — it shows the action card. Parking the whole
+            // This surface already HAS a human — it shows the action card. Parking the whole
             // run to ask the same question through a Flow item would be strictly worse than the card.
             CanPark: false));
 
@@ -1324,9 +1314,9 @@ public sealed class ChatSession : IDisposable
         PluginToolCall pendingAction, AssistantMessage message, bool tokenizationEnabled, ToolGateResolution gate)
     {
         // The AUTHORITATIVE class goes to BOTH cards, not just the auto-approved one: the prompted card's
-        // button set has to agree with the gate that just resolved it (04 D4).
+        // button set has to agree with the gate that just resolved it.
         var card = _actionCardBuilder.Build(pendingAction, tokenizationEnabled, toolClass: gate.ToolClass);
-        // T2-14: RequestedAt for the PROMPTED arm is the instant the question became visible to a person —
+        // RequestedAt for the PROMPTED arm is the instant the question became visible to a person —
         // i.e. the instant the card joins the bound collection — not the instant the policy was consulted.
         // Taken immediately before the Add so the interval (DecidedAt - RequestedAt) is "how long the human was
         // asked for", which is the only reading of it that is useful.
@@ -1379,19 +1369,14 @@ public sealed class ChatSession : IDisposable
     /// <para>
     /// A derivation fault returns <c>true</c>, which is fail-CLOSED for the FLOOR (a delete-like tool is then
     /// refused/carded) and fail-OPEN for GRANTABILITY: <c>External</c> also makes a non-delete-like BUILT-IN
-    /// pass <c>IsStandingGrantOfferable</c>, so a fault on <c>write_file</c> would let the card offer "Always
-    /// allow" and let the gate persist a grant the allowlist deliberately excludes. Stated rather than fixed:
-    /// the fix is a <c>routeKnown</c> signal threaded through <see cref="ToolGateInput"/>, and every
-    /// <c>_toolNameRoutes</c> mutation in <c>PluginService</c> is inside <c>lock (_handlers)</c> with
-    /// <c>IsMcpTool</c> a locked <c>TryGetValue</c>, so the only reachable throw is a null tool name — which
-    /// cannot reach here (the pending action supplied the name). Adding a second condition beside the resolver
-    /// in this file to close an unreachable path is the shape T-ARCH-1 exists to forbid.
+    /// grantable, so a fault on <c>write_file</c> would let the card offer "Always allow" and persist a grant
+    /// the allowlist deliberately excludes. Stated rather than fixed, because the route lookup's only reachable
+    /// throw is a null tool name, which cannot reach here — and adding a second condition beside the resolver
+    /// in this file is the exact shape the one-decision rule forbids.
     /// </para>
     /// <para>
-    /// 04 D8: the call this wraps used to be BARE here while the headless twin
-    /// (<c>BackgroundAssistantTurnRunner.IsExternalTool</c>) has had the guard since M3, so a throw
-    /// propagated out of the tool loop and failed the whole turn. Failure-isolated bookkeeping: reading a
-    /// classification must never fail a step.
+    /// The try/catch is not decoration: this call used to be bare here while the headless twin already had the
+    /// guard, so a throw propagated out of the tool loop and failed the whole turn.
     /// </para>
     /// </summary>
     private bool IsExternalTool(string toolName)
@@ -1443,7 +1428,7 @@ public sealed class ChatSession : IDisposable
     }
 
     /// <summary>
-    /// Window teardown / LRU retire. Batch 08 D1: this cancel deliberately does <b>not</b> revoke a pending
+    /// Window teardown / LRU retire. This cancel deliberately does <b>not</b> revoke a pending
     /// user-pause request (unlike Stop and clear-conversation, which do — <c>AssistantViewModel</c>). The
     /// reaper never retires a session with a turn in flight, so the reachable case is the window closing on a
     /// running Planned run, and there a pause request that is still unconsumed yielding a <c>Paused</c>,
