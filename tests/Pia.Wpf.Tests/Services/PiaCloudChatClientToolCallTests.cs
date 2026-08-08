@@ -105,9 +105,13 @@ public class PiaCloudChatClientToolCallTests
         var calls = await CollectToolCallsAsync(sse);
 
         Assert.Equal(2, calls.Count);
+        Assert.All(calls, c => Assert.Null(c.Exception));
         Assert.Equal("read_file", calls[0].Name);
         Assert.Equal("A.cs", Path(calls[0]));
         Assert.Equal("list_files", calls[1].Name);
+        // A wire that names no call ids still has to yield distinct ones: two tool_calls sharing an
+        // empty id, each with its own result, is a request providers answer with 400.
+        Assert.Distinct(calls.Select(c => c.CallId).ToList());
     }
 
     [Fact]

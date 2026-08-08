@@ -309,6 +309,9 @@ public sealed class PiaCloudChatClient : IChatClient
 
         static ToolCallBuilder Append(List<ToolCallBuilder> builders, string? id, int? index)
         {
+            // Splitting an id-less stream would otherwise give both calls the same empty CallId, which a
+            // provider rejects once they are echoed back with their results.
+            id ??= builders.Count > 0 ? $"pia_call_{builders.Count}" : null;
             var created = new ToolCallBuilder { Id = id, WireIndex = index };
             builders.Add(created);
             return created;
