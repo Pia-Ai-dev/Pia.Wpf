@@ -170,11 +170,7 @@ public sealed class AgentRunOrchestrator
         // R3: pin the run-level transcript slice off the STABLE step message Ids accrued so far.
         // Shared by every terminal path (success, truncation, cancel, fail) so a run that executed
         // steps never keeps a null range — symmetric with the clean-success path.
-        async Task PinRange()
-        {
-            if (runFirst is { } first)
-                await SafeRange(run.Id, first, runLast, cts.Token).ConfigureAwait(false);
-        }
+        Task PinRange() => PinRangeAsync(run.Id, runFirst, runLast, cts.Token);
 
         // Batch 08 D1 collision hardening 2 (no pause request may survive a DISPATCH boundary) used to be a
         // blind `_steering?.RevokePauseRequest(run.Id)` HERE, and Batch 08 F3 is what that cost. THE OWNERSHIP
@@ -223,64 +219,14 @@ public sealed class AgentRunOrchestrator
                 // an ungroundable goal as one ordinary chat turn and settle the run Completed regardless.
                 if (plan.CannotGroundGoal)
                 {
-                    // No PinRange/SafeReplaceSteps: nothing ran, so the run keeps zero step rows, which is
-                    // what lets a resume tell this park apart from a mid-plan one.
-                    //
-                    // The question is user-derived content already logged via SensitiveDebug in AgentPlanner;
-                    // don't log it again here — only app-owned facts (run id, token, whether one was worded).
-                    _logger.LogInformation(
-                        "Run {RunId}: the plan turn declined the goal as ungroundable → parking {Reason} with no steps "
-                        + "(question present={Present})",
-                        run.Id, NeedsGoalReason, plan.ClarificationQuestion is not null);
-
-                    // Same non-terminal park as the budget cap, differing only by the reason token.
-                    await SafePause(run.Id, cts.Token, reason: NeedsGoalReason).ConfigureAwait(false);
-                    // No SafeEndRun/SafeComplete/SafeFail: a park is not terminal. OnPausedAsync clears
-                    // IsStreaming for a live session — skip it and the chat sits wedged Running with Send
-                    // disabled.
-                    await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
-
-                    // Posts the question into the run's chat and mirrors it live under one minted message id;
-                    // a blank question is a no-op, not a fabricated placeholder.
-                    await PostAndMirrorClarificationQuestionAsync(executor, run, ctx, persona, plan.ClarificationQuestion)
-                        .ConfigureAwait(false);
-
-                    // A resume re-enters planning via TryEnterClarificationRePlanAsync; the answer persists in
-                    // AgentRuns.ClarificationsJson since the resume claim nulls ExtraJson.
+                    await ParkForUngroundableGoalAsync(
+                        executor, run, ctx, persona, plan.ClarificationQuestion, cts.Token).ConfigureAwait(false);
                     return;
                 }
 
                 if (plan.FallBackToSingleTurn) // R10
                 {
-                    var fr = await executor.RunSingleTurnFallbackAsync(run, ctx, cts.Token).ConfigureAwait(false);
-                    // The fallback turn owns no step row, so its usage has no SafeRecordStep to ride on —
-                    // accrue it run-level here or the whole degrade path bills as zero tokens (I1). Before
-                    // the branch: a cancelled/failed fallback turn spent its tokens just the same.
-                    await SafeAddUsage(run.Id, fr.Usage, cts.Token).ConfigureAwait(false);
-                    if (fr.Cancelled)
-                    {
-                        cancelled = true;
-                        await SafeFail(run.Id, fr.Error, cancelled: true).ConfigureAwait(false);
-                    }
-                    else if (!fr.Succeeded)
-                    {
-                        // R5/R10: a failed fallback turn is never presented as a clean Completed run.
-                        failed = true;
-                        await SafeFail(run.Id, fr.Error, cancelled: false).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        if (fr.FirstMessageId != Guid.Empty)
-                            await SafeRange(run.Id, fr.FirstMessageId, fr.LastMessageId, cts.Token).ConfigureAwait(false);
-                        // Batch 06 B8, the SECOND terminal path: this arm returns at the `return` below and
-                        // never reaches the terminal-settle block, and it settles Complete BEFORE EndRun —
-                        // the opposite order to the main path. Promotion still goes before CompleteAsync.
-                        // There is no verify on this arm at all (the planner degraded), so "promote what the
-                        // turn wrote" is the whole contract.
-                        await SafePromote(run, ctx, cts.Token).ConfigureAwait(false);
-                        await SafeComplete(run.Id, cts.Token).ConfigureAwait(false); // clean; zero steps recorded
-                    }
-                    await SafeEndRun(executor, run, ctx, cancelled, failed).ConfigureAwait(false);
+                    await RunDegradedSingleTurnAsync(executor, run, ctx, cts.Token).ConfigureAwait(false);
                     return;
                 }
 
@@ -339,29 +285,7 @@ public sealed class AgentRunOrchestrator
                 {
                     if (ctx.StepBudgetExceeded || ctx.WallClockExceeded) // R5: both checks, never silent
                     {
-                        // T2-18: ONE tool-free wrap-up turn before the park, so the chat a person opens hours
-                        // later ends with "here is where I got to" instead of the last step's output. Before
-                        // PinRange, because its messages belong in the run's transcript slice; it cannot stop
-                        // the park (see SafeGraceTurn).
-                        if (await SafeGraceTurn(executor, run, ctx, cts.Token).ConfigureAwait(false) is { } grace)
-                        {
-                            await SafeAddUsage(run.Id, grace.Usage, CancellationToken.None).ConfigureAwait(false);
-                            if (grace.FirstMessageId != Guid.Empty) runFirst ??= grace.FirstMessageId;
-                            if (grace.LastMessageId != Guid.Empty) runLast = grace.LastMessageId;
-                        }
-
-                        await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
-                        await SafePause(run.Id, cts.Token,
-                            reason: ctx.WallClockExceeded ? "wall-clock" : "step-cap").ConfigureAwait(false);
-                        // Pause is NOT terminal: deliberately NO SafeEndRun — Live must not settle
-                        // ChatState.Completed or raise TurnCompleted (guardrail 5), and Headless must not
-                        // persist-and-finalize here. But the executor still needs a NON-terminal release
-                        // hook: for a Live run, only EndRunAsync clears the session's IsStreaming, so
-                        // without this the foreground chat would be wedged Running forever (spinner +
-                        // disabled Send). OnPausedAsync settles the live session to Idle (no TurnCompleted,
-                        // no Completed/Error); Headless no-ops. The run sits WaitingForInput until
-                        // TryBeginResumeAsync claims it. Release the loop.
-                        await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
+                        await ParkAtBudgetAsync(executor, run, ctx, runFirst, runLast, cts.Token).ConfigureAwait(false);
                         return;
                     }
 
@@ -493,26 +417,8 @@ public sealed class AgentRunOrchestrator
                     //     inspects its token today, but passing None states the intent rather than relying on it.
                     if (_steering?.TryConsumePauseRequest(run.Id) == true)
                     {
-                        // Order fixed by D1 item 6 — a tidy-up reorder here breaks a scheduled job, because
-                        // ScheduledJobBackgroundService reads the row AFTER awaiting handle.Completion and books
-                        // anything not yet Paused/WaitingForInput as a FAILURE (a strike, and a `Once` job is
-                        // retired on the first one). The row must read Paused before this dispatch returns.
-                        await SafeSetStepStatus(step.Id, AgentStepStatus.Pending, CancellationToken.None).ConfigureAwait(false);
-                        // D2: the tokens the aborted step already spent are BILLED, run-level (stepId: null) —
-                        // no per-step entry for a step that will re-run. SafeAddUsage null-guards, so a cancel
-                        // arm that reports no usage (which is what both executors do today) bills nothing and
-                        // synthesizes nothing: no estimate, no fallback number, ever.
-                        await SafeAddUsage(run.Id, r.Usage, CancellationToken.None).ConfigureAwait(false);
-                        await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
-                        // The CAS may LOSE (another writer settled this run while the step unwound). Release the
-                        // executor and return either way: the row is not ours to correct, but the SESSION is —
-                        // the same split the fan-out's Abandoned arm makes, for the same reason. Falling through
-                        // to SafeRecordStep after a lost CAS would write Failed over the Pending we just set.
-                        await SafePauseUser(run.Id).ConfigureAwait(false);
-                        // Non-terminal executor release (guardrail 5): NOT SafeEndRun. Live must not settle
-                        // ChatState.Completed or raise TurnCompleted; OnPausedAsync drops the session to Idle so
-                        // Send re-enables while the run sits resumable. Headless no-ops.
-                        await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
+                        await ParkForUserPauseAsync(
+                            executor, run, ctx, step.Id, r.Usage, runFirst, runLast, cts.Token).ConfigureAwait(false);
                         return;
                     }
 
@@ -537,14 +443,9 @@ public sealed class AgentRunOrchestrator
                     //     did not finish.
                     if (r.ApprovalRequiredTool is { } approvalTool)
                     {
-                        await SafeSetStepStatus(step.Id, AgentStepStatus.Pending, CancellationToken.None).ConfigureAwait(false);
-                        await SafeAddUsage(run.Id, r.Usage, CancellationToken.None).ConfigureAwait(false);
-                        await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
-                        await SafeRequestApproval(run.Id, approvalTool).ConfigureAwait(false);
-                        // Non-terminal executor release (guardrail 5): NOT SafeEndRun. A park is not the end
-                        // of a run, and the Headless executor must not persist-and-finalize a chat whose last
-                        // step is going to run again.
-                        await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
+                        await ParkForToolApprovalAsync(
+                            executor, run, ctx, step.Id, r.Usage, approvalTool, runFirst, runLast, cts.Token)
+                            .ConfigureAwait(false);
                         return;
                     }
 
@@ -559,27 +460,8 @@ public sealed class AgentRunOrchestrator
                     // already has Done/Pending step rows to preserve.
                     if (r.UserInputQuestion is { } question)
                     {
-                        await SafeSetStepStatus(step.Id, AgentStepStatus.Pending, CancellationToken.None).ConfigureAwait(false);
-                        await SafeAddUsage(run.Id, r.Usage, CancellationToken.None).ConfigureAwait(false);
-                        await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
-
-                        // App-owned facts only; the question itself is user content and only ever reaches the
-                        // SensitiveDebug call below, which is compiled out of Release.
-                        _logger.LogInformation(
-                            "Run {RunId}: step {StepOrdinal} asked the user for input → parking {Reason}; the step "
-                            + "returns to Pending and re-runs from the start on resume",
-                            run.Id, step.Ordinal, NeedsInputReason);
-                        _logger.SensitiveDebug("Mid-plan clarification question: {Question}", question);
-
-                        // CancellationToken.None: the step's own token may already be cancelled, and a park
-                        // that doesn't reach the row leaves the run stuck Running, unresumable.
-                        await SafePause(run.Id, CancellationToken.None, reason: NeedsInputReason).ConfigureAwait(false);
-                        // Non-terminal executor release (guardrail 5): NOT SafeEndRun — same as every other park.
-                        await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
-
-                        // Reuses the same post-and-mirror call the plan-time decline makes, so the two parks
-                        // can't drift apart.
-                        await PostAndMirrorClarificationQuestionAsync(executor, run, ctx, persona, question)
+                        await ParkForUserInputAsync(
+                            executor, run, ctx, persona, step, r.Usage, question, runFirst, runLast, cts.Token)
                             .ConfigureAwait(false);
                         return;
                     }
@@ -641,31 +523,9 @@ public sealed class AgentRunOrchestrator
                 break;
             }
 
-            // ---- single terminal settle (SafeEndRun → SafeComplete, exactly once, every path) ----
-            if (!cancelled && !failed)
-            {
-                await PinRange().ConfigureAwait(false);
-                // §13.2 order: END the run (Live: settle terminal state; Headless: persist the chat) BEFORE
-                // marking it Completed — so no crash / RunChanged consumer observes a Completed run whose chat
-                // is not yet persisted (headless persists only in EndRunAsync). A verify-unverified run
-                // settles Completed+truncated reason "unverified".
-                await SafeEndRun(executor, run, ctx, cancelled, failed).ConfigureAwait(false);
-                // Batch 06 B8: promote BEFORE CompleteAsync. Verify has already run against the RUN ROOT
-                // (B3), so the artifacts it confirmed are the files being promoted; and no RunChanged
-                // consumer can observe a Completed run whose deliverables are still only in a workspace the
-                // sweep may delete (plan R4/R5) — which is what dissolves the "Completed but not yet
-                // promoted" window without a promotion-aware sweep. Failure-isolated: a promotion fault
-                // leaves the files in the workspace for the publish affordance to offer, and never fails an
-                // otherwise-successful run.
-                await SafePromote(run, ctx, cts.Token).ConfigureAwait(false);
-                await SafeComplete(run.Id, cts.Token,
-                    truncated: unverifiedTruncated,
-                    reason: unverifiedTruncated ? UnverifiedTruncationReason : null).ConfigureAwait(false);
-            }
-            else
-            {
-                await SafeEndRun(executor, run, ctx, cancelled, failed).ConfigureAwait(false);
-            }
+            await SettleTerminalAsync(
+                executor, run, ctx, cancelled, failed, unverifiedTruncated, runFirst, runLast, cts.Token)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -700,6 +560,234 @@ public sealed class AgentRunOrchestrator
             await SafeFail(run.Id, ex.Message, cancelled: false).ConfigureAwait(false);
             await SafeEndRun(executor, run, ctx, cancelled: false, failed: true).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// R3: pin the run-level transcript slice off the STABLE step message Ids accrued so far. Shared by every
+    /// terminal path (success, truncation, cancel, fail) so a run that executed steps never keeps a null range —
+    /// symmetric with the clean-success path.
+    /// </summary>
+    private async Task PinRangeAsync(Guid runId, Guid? runFirst, Guid runLast, CancellationToken ct)
+    {
+        if (runFirst is { } first)
+            await SafeRange(runId, first, runLast, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The plan turn declined the goal as ungroundable: park with NO steps, which is what lets a resume tell this
+    /// park apart from a mid-plan one, and ask the question.
+    /// </summary>
+    private async Task ParkForUngroundableGoalAsync(
+        IAgentTurnExecutor executor, AgentRun run, RunContext ctx, Persona persona,
+        string? clarificationQuestion, CancellationToken ct)
+    {
+        // No PinRange/SafeReplaceSteps: nothing ran, so the run keeps zero step rows.
+        //
+        // The question is user-derived content already logged via SensitiveDebug in AgentPlanner;
+        // don't log it again here — only app-owned facts (run id, token, whether one was worded).
+        _logger.LogInformation(
+            "Run {RunId}: the plan turn declined the goal as ungroundable → parking {Reason} with no steps "
+            + "(question present={Present})",
+            run.Id, NeedsGoalReason, clarificationQuestion is not null);
+
+        // Same non-terminal park as the budget cap, differing only by the reason token.
+        await SafePause(run.Id, ct, reason: NeedsGoalReason).ConfigureAwait(false);
+        // No SafeEndRun/SafeComplete/SafeFail: a park is not terminal. OnPausedAsync clears
+        // IsStreaming for a live session — skip it and the chat sits wedged Running with Send
+        // disabled.
+        await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
+
+        // Posts the question into the run's chat and mirrors it live under one minted message id;
+        // a blank question is a no-op, not a fabricated placeholder.
+        await PostAndMirrorClarificationQuestionAsync(executor, run, ctx, persona, clarificationQuestion)
+            .ConfigureAwait(false);
+
+        // A resume re-enters planning via TryEnterClarificationRePlanAsync; the answer persists in
+        // AgentRuns.ClarificationsJson since the resume claim nulls ExtraJson.
+    }
+
+    /// <summary>R10: the planner degraded, so the goal runs as ONE ordinary chat turn and the run settles here —
+    /// this arm never reaches the terminal-settle block.</summary>
+    private async Task RunDegradedSingleTurnAsync(
+        IAgentTurnExecutor executor, AgentRun run, RunContext ctx, CancellationToken ct)
+    {
+        var cancelled = false;
+        var failed = false;
+
+        var fr = await executor.RunSingleTurnFallbackAsync(run, ctx, ct).ConfigureAwait(false);
+        // The fallback turn owns no step row, so its usage has no SafeRecordStep to ride on —
+        // accrue it run-level here or the whole degrade path bills as zero tokens (I1). Before
+        // the branch: a cancelled/failed fallback turn spent its tokens just the same.
+        await SafeAddUsage(run.Id, fr.Usage, ct).ConfigureAwait(false);
+        if (fr.Cancelled)
+        {
+            cancelled = true;
+            await SafeFail(run.Id, fr.Error, cancelled: true).ConfigureAwait(false);
+        }
+        else if (!fr.Succeeded)
+        {
+            // R5/R10: a failed fallback turn is never presented as a clean Completed run.
+            failed = true;
+            await SafeFail(run.Id, fr.Error, cancelled: false).ConfigureAwait(false);
+        }
+        else
+        {
+            if (fr.FirstMessageId != Guid.Empty)
+                await SafeRange(run.Id, fr.FirstMessageId, fr.LastMessageId, ct).ConfigureAwait(false);
+            // Batch 06 B8, the SECOND terminal path: it settles Complete BEFORE EndRun — the opposite order
+            // to the main path. Promotion still goes before CompleteAsync. There is no verify on this arm at
+            // all (the planner degraded), so "promote what the turn wrote" is the whole contract.
+            await SafePromote(run, ctx, ct).ConfigureAwait(false);
+            await SafeComplete(run.Id, ct).ConfigureAwait(false); // clean; zero steps recorded
+        }
+        await SafeEndRun(executor, run, ctx, cancelled, failed).ConfigureAwait(false);
+    }
+
+    /// <summary>R5: the run reached its step cap or wall clock. Not terminal — it parks resumable.</summary>
+    private async Task ParkAtBudgetAsync(
+        IAgentTurnExecutor executor, AgentRun run, RunContext ctx,
+        Guid? runFirst, Guid runLast, CancellationToken ct)
+    {
+        // T2-18: ONE tool-free wrap-up turn before the park, so the chat a person opens hours
+        // later ends with "here is where I got to" instead of the last step's output. Before
+        // PinRange, because its messages belong in the run's transcript slice; it cannot stop
+        // the park (see SafeGraceTurn).
+        if (await SafeGraceTurn(executor, run, ctx, ct).ConfigureAwait(false) is { } grace)
+        {
+            await SafeAddUsage(run.Id, grace.Usage, CancellationToken.None).ConfigureAwait(false);
+            if (grace.FirstMessageId != Guid.Empty) runFirst ??= grace.FirstMessageId;
+            if (grace.LastMessageId != Guid.Empty) runLast = grace.LastMessageId;
+        }
+
+        await PinRangeAsync(run.Id, runFirst, runLast, ct).ConfigureAwait(false); // R3: keep the executed-so-far slice
+        await SafePause(run.Id, ct,
+            reason: ctx.WallClockExceeded ? "wall-clock" : "step-cap").ConfigureAwait(false);
+        // Pause is NOT terminal: deliberately NO SafeEndRun — Live must not settle
+        // ChatState.Completed or raise TurnCompleted (guardrail 5), and Headless must not
+        // persist-and-finalize here. But the executor still needs a NON-terminal release
+        // hook: for a Live run, only EndRunAsync clears the session's IsStreaming, so
+        // without this the foreground chat would be wedged Running forever (spinner +
+        // disabled Send). OnPausedAsync settles the live session to Idle (no TurnCompleted,
+        // no Completed/Error); Headless no-ops. The run sits WaitingForInput until
+        // TryBeginResumeAsync claims it.
+        await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The three moves every mid-step park makes before it writes its own park reason: the step goes back to
+    /// Pending, its spent tokens are billed RUN-level, and the executed-so-far slice is pinned.
+    /// </summary>
+    /// <remarks>
+    /// Pending rather than the Failed(3) an unconditional SafeRecordStep would write: that status is invisible to
+    /// <c>NextPendingStepAsync</c> AND dropped by <see cref="KeepDoneAsync"/>, so recording the abandoned step
+    /// would delete it from the resumed plan while the panel still showed it. Run-level usage (stepId: null) for
+    /// the matching reason — a step that will re-run must not carry a per-step ledger entry for the attempt that
+    /// did not finish. CancellationToken.None on both writes: the step's own token is typically already cancelled.
+    /// </remarks>
+    private async Task ReturnStepToPendingAsync(
+        Guid runId, Guid stepId, UsageDetails? usage, Guid? runFirst, Guid runLast, CancellationToken pinToken)
+    {
+        await SafeSetStepStatus(stepId, AgentStepStatus.Pending, CancellationToken.None).ConfigureAwait(false);
+        await SafeAddUsage(runId, usage, CancellationToken.None).ConfigureAwait(false);
+        await PinRangeAsync(runId, runFirst, runLast, pinToken).ConfigureAwait(false); // R3
+    }
+
+    /// <summary>Batch 08 D1: the user asked for a pause and this dispatch owns the request.</summary>
+    /// <remarks>
+    /// Order is fixed by D1 item 6 — a tidy-up reorder breaks a scheduled job, because
+    /// ScheduledJobBackgroundService reads the row AFTER awaiting handle.Completion and books anything not yet
+    /// Paused/WaitingForInput as a FAILURE (a strike, and a <c>Once</c> job is retired on the first one). The row
+    /// must read Paused before this dispatch returns.
+    /// </remarks>
+    private async Task ParkForUserPauseAsync(
+        IAgentTurnExecutor executor, AgentRun run, RunContext ctx, Guid stepId, UsageDetails? usage,
+        Guid? runFirst, Guid runLast, CancellationToken ct)
+    {
+        await ReturnStepToPendingAsync(run.Id, stepId, usage, runFirst, runLast, ct).ConfigureAwait(false);
+        // The CAS may LOSE (another writer settled this run while the step unwound). Release the
+        // executor and return either way: the row is not ours to correct, but the SESSION is —
+        // the same split the fan-out's Abandoned arm makes, for the same reason. Falling through
+        // to SafeRecordStep after a lost CAS would write Failed over the Pending we just set.
+        await SafePauseUser(run.Id).ConfigureAwait(false);
+        // Non-terminal executor release (guardrail 5): NOT SafeEndRun. Live must not settle
+        // ChatState.Completed or raise TurnCompleted; OnPausedAsync drops the session to Idle so
+        // Send re-enables while the run sits resumable. Headless no-ops.
+        await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
+    }
+
+    /// <summary>hermes #16: the step stopped on a capability a human could legitimately approve.</summary>
+    private async Task ParkForToolApprovalAsync(
+        IAgentTurnExecutor executor, AgentRun run, RunContext ctx, Guid stepId, UsageDetails? usage,
+        string approvalTool, Guid? runFirst, Guid runLast, CancellationToken ct)
+    {
+        await ReturnStepToPendingAsync(run.Id, stepId, usage, runFirst, runLast, ct).ConfigureAwait(false);
+        await SafeRequestApproval(run.Id, approvalTool).ConfigureAwait(false);
+        // Non-terminal executor release (guardrail 5): NOT SafeEndRun. A park is not the end
+        // of a run, and the Headless executor must not persist-and-finalize a chat whose last
+        // step is going to run again.
+        await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The step called request_user_input. The step's row goes back to Pending and re-runs from the top on resume,
+    /// so any side effect it already committed may repeat; tool handlers refuse a pending write once the ask is
+    /// recorded. A NeedsInputReason resume does not re-plan (unlike NeedsGoalReason): this run already has
+    /// Done/Pending step rows to preserve.
+    /// </summary>
+    private async Task ParkForUserInputAsync(
+        IAgentTurnExecutor executor, AgentRun run, RunContext ctx, Persona persona, AgentStep step,
+        UsageDetails? usage, string userInputQuestion, Guid? runFirst, Guid runLast, CancellationToken ct)
+    {
+        await ReturnStepToPendingAsync(run.Id, step.Id, usage, runFirst, runLast, ct).ConfigureAwait(false);
+
+        // App-owned facts only; the question itself is user content and only ever reaches the
+        // SensitiveDebug call below, which is compiled out of Release.
+        _logger.LogInformation(
+            "Run {RunId}: step {StepOrdinal} asked the user for input → parking {Reason}; the step "
+            + "returns to Pending and re-runs from the start on resume",
+            run.Id, step.Ordinal, NeedsInputReason);
+        _logger.SensitiveDebug("Mid-plan clarification question: {Question}", userInputQuestion);
+
+        // CancellationToken.None: the step's own token may already be cancelled, and a park
+        // that doesn't reach the row leaves the run stuck Running, unresumable.
+        await SafePause(run.Id, CancellationToken.None, reason: NeedsInputReason).ConfigureAwait(false);
+        // Non-terminal executor release (guardrail 5): NOT SafeEndRun — same as every other park.
+        await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
+
+        // Reuses the same post-and-mirror call the plan-time decline makes, so the two parks
+        // can't drift apart.
+        await PostAndMirrorClarificationQuestionAsync(executor, run, ctx, persona, userInputQuestion)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>The single terminal settle (SafeEndRun → SafeComplete, exactly once, every path).</summary>
+    private async Task SettleTerminalAsync(
+        IAgentTurnExecutor executor, AgentRun run, RunContext ctx, bool cancelled, bool failed,
+        bool unverifiedTruncated, Guid? runFirst, Guid runLast, CancellationToken ct)
+    {
+        if (cancelled || failed)
+        {
+            await SafeEndRun(executor, run, ctx, cancelled, failed).ConfigureAwait(false);
+            return;
+        }
+
+        await PinRangeAsync(run.Id, runFirst, runLast, ct).ConfigureAwait(false);
+        // §13.2 order: END the run (Live: settle terminal state; Headless: persist the chat) BEFORE
+        // marking it Completed — so no crash / RunChanged consumer observes a Completed run whose chat
+        // is not yet persisted (headless persists only in EndRunAsync). A verify-unverified run
+        // settles Completed+truncated reason "unverified".
+        await SafeEndRun(executor, run, ctx, cancelled, failed).ConfigureAwait(false);
+        // Batch 06 B8: promote BEFORE CompleteAsync. Verify has already run against the RUN ROOT
+        // (B3), so the artifacts it confirmed are the files being promoted; and no RunChanged
+        // consumer can observe a Completed run whose deliverables are still only in a workspace the
+        // sweep may delete (plan R4/R5) — which is what dissolves the "Completed but not yet
+        // promoted" window without a promotion-aware sweep. Failure-isolated: a promotion fault
+        // leaves the files in the workspace for the publish affordance to offer, and never fails an
+        // otherwise-successful run.
+        await SafePromote(run, ctx, ct).ConfigureAwait(false);
+        await SafeComplete(run.Id, ct,
+            truncated: unverifiedTruncated,
+            reason: unverifiedTruncated ? UnverifiedTruncationReason : null).ConfigureAwait(false);
     }
 
     /// <summary>
