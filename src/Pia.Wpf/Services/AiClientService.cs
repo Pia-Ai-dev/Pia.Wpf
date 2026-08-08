@@ -38,7 +38,7 @@ public class AiClientService : IAiClientService
 
     /// <param name="throttle">T1-2, the per-provider request bound. REQUIRED, not defaulted: this type is
     /// transient and hand-constructed in five test sites, and a nullable "no throttle" would make forgetting
-    /// the registration a silent loss of the one thing §18.4 requires before the run pool may widen. The
+    /// the registration a silent loss of the one thing requires before the run pool may widen. The
     /// compiler asking the question at every construction site is the point.</param>
     public AiClientService(
         DpapiHelper dpapiHelper,
@@ -67,8 +67,7 @@ public class AiClientService : IAiClientService
     }
 
     /// <summary>
-    /// T1-2: take this provider's request permit, waited on the SAME linked token as the request itself.
-    /// <para>
+    /// take this provider's request permit, waited on the SAME linked token as the request itself.
     /// Consequence, named rather than left to fall out of the token plumbing: queue time is charged against the
     /// request timeout, so a narrow throttle can time a request out that was never sent. The exception TYPE
     /// stays <see cref="LlmTimeoutException"/> — every catch, retry and UI path downstream must keep behaving
@@ -76,7 +75,6 @@ public class AiClientService : IAiClientService
     /// said "the provider timed out" for a request this device never made would cost whoever reads it a wrong
     /// conclusion before they found the real one, which is exactly the failure the run-panel's pause-reason
     /// constants exist to prevent.
-    /// </para>
     /// </summary>
     private async Task<IDisposable> AcquireProviderPermitAsync(
         AiProvider provider, TimeSpan timeout,
@@ -124,7 +122,7 @@ public class AiClientService : IAiClientService
         {
             using var response = await SendPiaCloudRequestAsync(
                 httpClient, $"{serverUrl}/api/ai/generate-prompt", json, mode,
-                // §7: the prompt-generation route has no connector plane and never reads X-Pia-Persona.
+                // The prompt-generation route has no connector plane and never reads X-Pia-Persona.
                 managedPersonaId: null, linkedCts.Token);
 
             var responseJson = await response.Content.ReadAsStringAsync(linkedCts.Token);
@@ -262,7 +260,7 @@ public class AiClientService : IAiClientService
                 IAsyncEnumerator<ChatResponseUpdate>? enumerator = null;
                 var hasFirst = false;
 
-                // T1-2: PER ROUND, and released the moment this round's stream is exhausted — see the permit
+                // PER ROUND, and released the moment this round's stream is exhausted — see the permit
                 // block's own comment below for why it must not span the tool dispatch further down.
                 var permit = await AcquireProviderPermitAsync(
                     provider, timeout, timeoutCts, cancellationToken, linkedCts.Token);
@@ -745,7 +743,7 @@ public class AiClientService : IAiClientService
                 options.Tools = [.. tools!];
             }
 
-            // T1-2: one round-trip, one permit — this method is a single-shot request (AgentPlanner's plan and
+            // One round-trip, one permit — this method is a single-shot request (AgentPlanner's plan and
             // AgentVerifier's critic turns), so the whole method body IS the round-trip.
             using (await AcquireProviderPermitAsync(
                 provider, timeout, timeoutCts, cancellationToken, linkedCts.Token))
@@ -808,7 +806,7 @@ public class AiClientService : IAiClientService
         {
             using var response = await SendPiaCloudRequestAsync(
                 httpClient, $"{serverUrl}/api/ai/optimize", json, mode,
-                // §7: /api/ai/optimize has no connector plane and never reads X-Pia-Persona.
+                // The optimize route has no connector plane and never reads X-Pia-Persona.
                 managedPersonaId: null, linkedCts.Token);
 
             var responseJson = await response.Content.ReadAsStringAsync(linkedCts.Token);
@@ -895,7 +893,7 @@ public class AiClientService : IAiClientService
 
             var options = handler.CreateChatOptions(provider, hasTools: false);
 
-            // T1-2: single-shot, so the permit brackets exactly this call.
+            // Single-shot, so the permit brackets exactly this call.
             ChatResponse response;
             using (await AcquireProviderPermitAsync(
                 provider, timeout, timeoutCts, cancellationToken, linkedCts.Token))
@@ -958,7 +956,7 @@ public class AiClientService : IAiClientService
             provider, apiKey, httpClient, mode, managedPersonaId: null, personaModelType: null, linkedCts.Token);
         var options = handler.CreateChatOptions(provider, hasTools: false);
 
-        // T1-2: this tool-free stream (SuggestionService) is one round-trip that stays open for the length of
+        // This tool-free stream (SuggestionService) is one round-trip that stays open for the length of
         // the stream, so the permit is taken here and released in the outer finally that disposes the
         // enumerator — the same bracket the tool loop's streaming round uses.
         var permit = await AcquireProviderPermitAsync(
@@ -1007,8 +1005,8 @@ public class AiClientService : IAiClientService
         }
     }
 
-    // The three Test* probes below and the two PiaCloud REST helpers above are deliberately NOT throttled
-    // (T1-2). The probes are one-shot connectivity checks a person just clicked in Settings or the first-run
+    // The three Test* probes below and the two PiaCloud REST helpers above are deliberately NOT
+    // throttled. The probes are one-shot connectivity checks a person just clicked in Settings or the first-run
     // wizard: making a "Test" button queue behind two background runs would read as a hung dialog, and one
     // extra request is not what a rate limit trips on. The PiaCloud REST helpers
     // (GeneratePromptViaPiaCloudAsync / OptimizeViaPiaCloudAsync) have no AiProvider in scope at all — they
@@ -1217,14 +1215,11 @@ public class AiClientService : IAiClientService
     /// <summary>
     /// True when <paramref name="ex"/> is a provider rejection whose body says the request exceeded the
     /// model's context window.
-    /// <para>
     /// WHY: <see cref="IsToolNotSupportedError"/> answers true for essentially ANY 400, so a context overflow
     /// at round 0 was reported as "retrying without tools" — the wrong top-line diagnosis for whoever reads a
     /// support log, on top of one wasted round trip that re-sends the same oversized list. This classifier
     /// exists ONLY to name the real cause in the log. It gates no control flow: the tool-disabled retry runs
     /// exactly as it did before, whatever this answers.
-    /// </para>
-    /// <para>
     /// Same defensive posture as its sibling: only the two exception types a provider adapter actually throws
     /// are considered, everything else is false. The status code is deliberately NOT re-checked — every call
     /// site sits inside a filter that has already established 400/404 via
@@ -1232,7 +1227,6 @@ public class AiClientService : IAiClientService
     /// <see cref="ClientResultException"/> that carries a body but no response (its <c>Status</c> is 0 then,
     /// measured). <c>internal</c> rather than <c>private</c> so the classification can be unit-tested directly
     /// through <c>InternalsVisibleTo</c>; it is the only new logic here.
-    /// </para>
     /// </summary>
     internal static bool IsContextLengthError(Exception ex)
     {
@@ -1264,11 +1258,9 @@ public class AiClientService : IAiClientService
     /// body, i.e. ahead of that body's "retrying without tools" warning — the ordering is the whole point, and
     /// nothing about the retry changes. It follows that the line only appears when <c>useTools</c> and
     /// <c>round == 0</c>, since that is the only condition reaching those catch bodies.
-    /// <para>
     /// Privacy: no message content, no goal text, and NOT the provider's raw error string — release logs get
     /// attached to support tickets. Counts, the round index and the configured budget only, and the provider
     /// TYPE rather than the user-named provider.
-    /// </para>
     /// </summary>
     private void LogContextLengthRejection(
         Exception ex, AiProvider provider, int round, int messageCount, AgentContextBudget? contextBudget)
@@ -1347,11 +1339,9 @@ public class AiClientService : IAiClientService
     /// <summary>
     /// POSTs to a Pia Cloud endpoint with a valid bearer token from the auth service, retrying
     /// once on 401 with a forced token refresh. Caller owns disposing the returned response.
-    /// <para>
     /// <paramref name="managedPersonaId"/> exists for a future non-streaming chat route. Both current
     /// callers (/api/ai/generate-prompt and /api/ai/optimize) pass null deliberately: only /api/ai/chat
     /// reads <c>X-Pia-Persona</c>, and the handoff's out-of-scope list forbids sending it on those two.
-    /// </para>
     /// </summary>
     private async Task<HttpResponseMessage> SendPiaCloudRequestAsync(
         HttpClient httpClient, string url, string jsonBody, string? mode, Guid? managedPersonaId,

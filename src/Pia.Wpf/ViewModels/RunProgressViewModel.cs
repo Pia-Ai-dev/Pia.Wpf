@@ -12,8 +12,8 @@ using Pia.Services.Interfaces;
 
 namespace Pia.ViewModels;
 
-/// <summary>View-facing run states (R12). The four rendered states, the distinct truncated-Completed
-/// variant, and — new in Phase 2 — the budget-pause WaitingForInput state (a "continue?" affordance)
+/// <summary>View-facing run states. The four rendered states, the distinct truncated-Completed
+/// variant, and — new in — the budget-pause WaitingForInput state (a "continue?" affordance)
 /// plus the reserved user-initiated Paused state. Verifying renders as the Running chip (via the
 /// MapState default) plus a "Checking the work…" current-activity line.</summary>
 public enum RunProgressState
@@ -26,7 +26,7 @@ public enum RunProgressState
     WaitingForInput, // budget-paused, awaiting the user's Continue
     Paused,          // reserved: user-initiated pause (Phase 4) — rendered, never driven this round
 
-    /// <summary>Batch 07: the parent of a fan-out, parked while its child runs work. Appended — this enum is
+    /// <summary>the parent of a fan-out, parked while its child runs work. Appended — this enum is
     /// a view-facing projection and is NEVER persisted, so appending costs nothing. Renders as its own chip
     /// with the spinner LIT (children are working) and offers no Continue: the run is not parked for the
     /// user, and <c>TryBeginResumeAsync</c> would not accept it anyway.</summary>
@@ -37,10 +37,8 @@ public enum RunProgressState
 /// How loudly one tool decision has to read on the audit surface. The five user-facing decision categories
 /// collapse to three, because the only question the reader has is "does this need me?": <c>Awaiting</c> does,
 /// <c>Refused</c> explains a step that did less than it was asked to, and everything else is bookkeeping.
-/// <para>
 /// Awaiting is deliberately its own tier and NOT folded into <see cref="Refused"/>: it renders in the warning
 /// palette, never the danger one, because the call was not turned down — it is waiting for an answer.
-/// </para>
 /// </summary>
 public enum RunDecisionSeverity
 {
@@ -50,10 +48,10 @@ public enum RunDecisionSeverity
 }
 
 /// <summary>
-/// Read-only projection of a live/selected <see cref="AgentRun"/> for the run-progress panel (§15.1/15.2).
+/// Read-only projection of a live/selected <see cref="AgentRun"/> for the run-progress panel.
 /// The FIRST consumer of <see cref="IAgentRunService.RunChanged"/> (dormant since 1.1): that event may fire
 /// off the UI thread (the orchestrator uses ConfigureAwait(false) + SafeFireAndForget), so every handler
-/// marshals to the captured UI <see cref="SynchronizationContext"/> before touching bound collections (G3).
+/// marshals to the captured UI <see cref="SynchronizationContext"/> before touching bound collections.
 /// Constructed on the UI thread by <see cref="AssistantViewModel"/>, not DI-registered (mirrors LiveTurnExecutor).
 /// </summary>
 public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
@@ -77,7 +75,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private bool _disposed;
 
     /// <summary>
-    /// Batch 07 §4.4: lazily loaded, once per VM, and left NULL (not an empty dictionary) on a faulted
+    /// lazily loaded, once per VM, and left NULL (not an empty dictionary) on a faulted
     /// read — a transient fault must not permanently blank every step's persona attribution for the run's
     /// whole life; the next <see cref="IAgentRunService.RunChanged"/> retries. A null persona service ⇒ this
     /// stays null forever ⇒ <see cref="ApplyPersonaAttribution"/> always renders "no persona", i.e. today's panel.
@@ -99,7 +97,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     // on the same RunChanged that moves State), and notifying it on a bare State flip that leaves the park
     // reason untouched would raise CanExecuteChanged over an unchanged answer.
     [NotifyCanExecuteChangedFor(nameof(PauseCommand))]
-    // Batch 08 F4. EVERY command gated on CanMutatePlan must be listed here, and EditStepCommand was the one
+    // EVERY command gated on CanMutatePlan must be listed here, and EditStepCommand was the one
     // that was not: CommunityToolkit's RelayCommand has no CommandManager integration, so CanExecuteChanged
     // fires only from an explicit notify and ButtonBase caches _canExecute until it arrives. A row realized
     // while the run was live hooked "Edit step" at CanExecute == false and never heard otherwise — so after a
@@ -161,7 +159,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// </summary>
     public bool ShowDenyButton => IsToolApprovalPause;
 
-    /// <summary>The budget-pause Continue affordance, widened by Batch 08 D1 item 8 to the user-pause state
+    /// <summary>The budget-pause Continue affordance, widened by D1 item 8 to the user-pause state
     /// too: <see cref="RunProgressState.Paused"/> is the CAS's own target, and both states offer the identical
     /// Continue command (<see cref="IAgentRunResumeService.ResumeAsync"/> claims either via the row's own
     /// state). Trips nothing per Ground E, and the <c>!IsTerminal</c> form this could also be written as would
@@ -174,7 +172,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     /// <summary>See <see cref="ShowDenyButton"/>: visibility is the state gate, enabledness the in-flight one.
     /// The steering note rides on this too, so a resume in flight does not yank the box out from under a note the
-    /// user is still reading (<c>Continue()</c> keeps <see cref="NudgeText"/> unless the resume actually started).</summary>
+    /// user is still reading (<c>Continue</c> keeps <see cref="NudgeText"/> unless the resume actually started).</summary>
     public bool ShowContinueButton => IsResumableState;
 
     /// <summary>True while a user pause request is in flight — gates the Pause button against a double-click
@@ -195,14 +193,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// and while <c>is</c> binds tighter than <c>&amp;&amp;</c> so the bare form does compile as
     /// <c>(State is A or B) &amp;&amp; …</c>, the unbracketed reading is exactly the kind a builder "fixes" by
     /// guessing — and the wrong guess yields a button visible on a terminal run.
-    /// <para>
-    /// Explicit set, never a range (D7): <see cref="RunProgressState.Running"/> covers real <c>Running</c>
-    /// AND <c>Verifying</c> (which folds into it in <see cref="MapState"/>); <c>Planning</c> is excluded per §1
-    /// D1 item 8 (a resume skips planning entirely); <see cref="RunProgressState.WaitingForChildren"/> is D6's
-    /// cascade.
-    /// </para>
-    /// <para><c>_steering is not null</c> is the trailing-optional guard: a build with no steering service
-    /// injected renders exactly the pre-Batch-08 panel (no Pause button, ever).</para>
+    /// Explicit set, never a range: <see cref="RunProgressState.Running"/> covers real <c>Running</c>
+    /// AND <c>Verifying</c> (which folds into it in <see cref="MapState"/>); <c>Planning</c> is excluded
+    /// because a resume skips planning entirely. <c>_steering is not null</c> is the trailing-optional guard:
+    /// a build with no steering service injected renders no Pause button at all.
     /// </summary>
     public bool CanPause => IsPausableState && !IsPausing;
 
@@ -224,8 +218,8 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     public string PauseLabel => IsPausing ? _localization["Run_Action_Pausing"] : _localization["Run_Action_Pause"];
 
     /// <summary>
-    /// Batch 08 D3/D4: every row-level plan mutation (edit/insert/reorder/skip) is refused unless the run is
-    /// PAUSED — one state, never a set and never a range (D7), matching
+    /// D3/every row-level plan mutation (edit/insert/reorder/skip) is refused unless the run is
+    /// PAUSED — one state, never a set and never a range, matching
     /// <see cref="IAgentRunService.ApplyPlanMutationAsync"/>'s own gate exactly. Gates each row command's
     /// <c>CanExecute</c> AND is bound directly in the row template (via <c>AncestorType=ItemsControl</c>) to
     /// hide the whole per-row button group while the run is live — <see cref="StepRowViewModel.IsMutable"/> is
@@ -235,19 +229,17 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     public bool CanMutatePlan => State == RunProgressState.Paused;
 
     /// <summary>
-    /// Batch 08 F12: gates the "Pause the run to change its plan." note. It used to be the INVERSE of
+    /// gates the "Pause the run to change its plan." note. It used to be the INVERSE of
     /// <see cref="CanMutatePlan"/>, which is true in every state except <c>Paused</c> — so a run that parked
     /// at its budget (<c>WaitingForInput</c>) showed the instruction next to a Continue button and no Pause
-    /// button to press, and a run that completed an hour ago carried it forever. The impl spec §13 8b states
+    /// button to press, and a run that completed an hour ago carried it forever. The impl spec 8b states
     /// the condition as "whenever the run is LIVE", and the panel already has the exact predicate for that:
     /// a run is live-and-steerable precisely when it offers a Pause button.
-    /// <para>
     /// Deliberately <c>=&gt; CanPause</c> rather than a second copy of its state set, so the note and the
     /// button it tells the user to press can never disagree — including the <see cref="IsPausing"/> term,
     /// which correctly hides the note while a pause is already in flight (there is nothing left to press).
     /// Both <c>_state</c> and <c>_isPausing</c> notify it, for the same reason both notify
     /// <see cref="CanPause"/>.
-    /// </para>
     /// </summary>
     public bool ShowPauseFirstNote => CanPause;
 
@@ -257,7 +249,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string? _planMutationNote;
 
-    /// <summary>Batch 08 F6: the muted line for a pause the service REFUSED — the same
+    /// <summary>the muted line for a pause the service REFUSED — the same
     /// <see cref="PublishNote"/> shape, and deliberately not <see cref="PlanMutationNote"/>, which
     /// <see cref="Project"/> wipes on any state but <c>Paused</c> (a refused pause is by definition a run that
     /// is still live, so that note would be erased before it rendered). Cleared by the next
@@ -274,7 +266,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// (<see cref="RunProgressState.WaitingForInput"/>) instead of truncating it, the only reason the
     /// current code produces is <c>"unverified"</c> (the verify pass exhausted its replans); the
     /// budget wording survives only for runs persisted before that change. Null when not truncated.
-    /// Always rendered MUTED, never in the danger brush (R5).
+    /// Always rendered MUTED, never in the danger brush.
     /// </summary>
     [ObservableProperty]
     private string? _truncationNote;
@@ -373,7 +365,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     public string LedgerSummary => FormatLedger();
 
     /// <summary>
-    /// Rows of the run's tool-decision trace (Batch 03). Loaded ON EACH EXPAND, and never on
+    /// Rows of the run's tool-decision trace. Loaded ON EACH EXPAND, and never on
     /// <c>RunChanged</c>: the timeline deliberately does not participate in live projection, which is what
     /// keeps ~500 emits per run off the projection path.
     /// </summary>
@@ -397,10 +389,8 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// uses <c>BooleanToVisibilityConverter</c>, and an unresolved <c>StaticResource</c> inside a
     /// <c>DataTemplate</c> throws at TEMPLATE INSTANTIATION — i.e. the first time a user expands this — which
     /// no test in the suite reaches.
-    /// <para>
     /// "Nothing was recorded" is a POSITIVE claim about the run, so it is only ever made about a read that
     /// SUCCEEDED. A read that faulted sets <see cref="HasTimelineReadError"/> instead.
-    /// </para>
     /// </summary>
     [ObservableProperty]
     private bool _hasNoTimeline = true;
@@ -439,7 +429,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private bool _settledTraceRead;
 
     /// <summary>
-    /// Batch 06 G4 / plan D3: a settled run whose isolated workspace still holds files nobody promoted —
+    /// G4 / plan a settled run whose isolated workspace still holds files nobody promoted —
     /// usually a FAILED or CANCELLED run, because a clean one promotes automatically before it is marked
     /// Completed. <b>Not only those</b>: a clean copy-mode run whose promotion hit a CONFLICT keeps its
     /// workspace too (the run's version of that file was deliberately not written and exists nowhere else), so
@@ -487,15 +477,13 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     public bool ShowPublishButton => HasUnpublishedFiles;
 
     /// <summary>
-    /// The run's delegated CHILD runs (Batch 07 D17), one row each, refreshed in place on every projection.
+    /// The run's delegated CHILD runs, one row each, refreshed in place on every projection.
     /// Empty for every ordinary run — a build with no persona roster never produces one.
-    /// <para>
     /// <b>NO MERGED TIMELINE, and this is not an omission.</b> Each row expands to load THAT run's own trace.
     /// The events cannot be interleaved: <c>Seq</c> is monotonic only WITHIN a run id, each child gets its own
     /// fresh <c>Seq</c> space and its own 500-event cap, and <c>CreatedAt</c> is explicitly rejected as an
     /// ordering source by the store's own schema comment. A single merged view needs a new cross-run ordering
     /// key, designed as its own work — do not "finish" this by sorting two runs' rows together.
-    /// </para>
     /// </summary>
     public ObservableCollection<ChildRunRowViewModel> Children { get; } = [];
 
@@ -592,16 +580,16 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     public RunProgressViewModel(IAgentRunService runService, Guid runId, ILocalizationService localization,
         IAgentRunResumeService resumeService, ILogger logger,
-        // Batch 03. Trailing and defaulted because this type is hand-constructed with a POSITIONAL argument
+        // Trailing and defaulted because this type is hand-constructed with a POSITIONAL argument
         // list in production and in its tests; null ⇒ the trace renders as empty and reads nothing.
         IAgentTimelineService? timelineService = null,
-        // Batch 06 G4, same discipline for the same reason — LAST, and defaulted. Null ⇒ no publish
+        // G4, same discipline for the same reason — LAST, and defaulted. Null ⇒ no publish
         // affordance and no branch line, i.e. the panel is byte-identical to the pre-Batch-06 one.
         IRunWorkspaceService? workspaces = null,
-        // Batch 07 G7, same discipline again — now LAST (06 took the 7th slot first). Null ⇒ _personas
+        // G7, same discipline again — now LAST. Null ⇒ _personas
         // never loads ⇒ every step row's HasPersona is false ⇒ the panel renders exactly as before this batch.
         IPersonaService? personaService = null,
-        // Batch 08 D1/§5.4 — LAST again, same discipline. Null ⇒ CanPause is always false ⇒ no Pause button,
+        // D1/ — LAST again, same discipline. Null ⇒ CanPause is always false ⇒ no Pause button,
         // i.e. the panel is byte-for-byte the pre-Batch-08 one. AssistantViewModel.cs constructs this VM
         // positionally, which is exactly why every one of these keeps landing at the tail.
         IAgentRunSteeringService? steering = null,
@@ -637,7 +625,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     private void OnRunChanged(object? sender, AgentRunChangedEventArgs e)
     {
-        // Batch 07 D17: a CHILD run's state changes are ours too, or the children list never live-updates —
+        // A CHILD run's state changes are ours too, or the children list never live-updates —
         // every child event would be dropped and the rows would freeze at whatever the first projection saw.
         // _childRunIds is an immutable snapshot for a reason; see its declaration.
         if (e.RunId != _runId && !_childRunIds.Contains(e.RunId)) return;
@@ -650,7 +638,6 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// <summary>
     /// Ask every brush binding on the card to resolve again, because a theme swap cannot reach the ones a converter
     /// produced.
-    /// <para>
     /// <b>Why this is needed at all.</b> A dozen-odd colours here come from converters that resolve a theme brush
     /// by key: the band's tint, its hairline, the card outline, every state and status foreground, the progress
     /// strip, the decision pills. A converter re-runs only when its SOURCE VALUE changes, so what it returned is a
@@ -659,11 +646,8 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// the brush were measured and are dead ends. Re-raising the source property is what makes the converters run
     /// again, and it is safe precisely BECAUSE nothing about the run changed: <c>[NotifyPropertyChangedFor]</c>
     /// chains fire from the generated setters, never from a manual raise.
-    /// </para>
-    /// <para>
     /// The rows are visited one by one because their brush bindings read <c>Status</c> / <c>Severity</c> /
     /// <c>State</c> off the ROW, so a raise on this VM would not reach them.
-    /// </para>
     /// </summary>
     private void RefreshThemeBrushes()
     {
@@ -686,7 +670,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         var run = await _runService.GetAsync(_runId);
         if (run is null) return;
 
-        // Batch 07 D17: read the children OFF the projection's UI hop, in their own guarded block, and hand the
+        // Read the children OFF the projection's UI hop, in their own guarded block, and hand the
         // list to Project so the whole projection is one UI-thread mutation. One indexed query
         // (IX_AgentRuns_ParentRunId) per RunChanged — cheaper than the workspace describe below, and unlike it
         // the answer changes while the run is live, so it cannot be deferred to a terminal state. A read fault
@@ -701,7 +685,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             _logger.LogWarning(ex, "Run {RunId} child runs could not be read", _runId);
         }
 
-        // Batch 07 §4.4: load the persona map ONCE per VM, before Project (which SyncSteps reads it from).
+        // Load the persona map ONCE per VM, before Project (which SyncSteps reads it from).
         // Off the projection's UI hop like the children read above — it is a full persona list, not an
         // indexed run query, and RunChanged fires far too often to pay for it more than once.
         if (_personas is null && _personaService is not null)
@@ -719,7 +703,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
         _uiContext.Post(_ => Project(run, children), null); // marshal the mutation to the UI thread (G3)
 
-        // Batch 06 G4: the workspace outcome is read in its OWN terminal-only branch, deliberately not folded
+        // The workspace outcome is read in its OWN terminal-only branch, deliberately not folded
         // into Project above. DescribeAsync does a file read plus a directory enumeration, and RunChanged
         // fires on every step, every state flip and every ledger write — putting that on the projection path
         // would pay for it dozens of times per run to answer a question only a settled run can be asked.
@@ -778,7 +762,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         await ApplyWorkspaceOutcomeAsync(outcome).ConfigureAwait(false);
     }
 
-    /// <summary>The ONE place the publish affordance's bound state is set, always on the UI thread (G3).</summary>
+    /// <summary>The ONE place the publish affordance's bound state is set, always on the UI thread.</summary>
     private Task ApplyWorkspaceOutcomeAsync(RunWorkspaceOutcome? outcome)
     {
         var done = new TaskCompletionSource();
@@ -821,27 +805,21 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// Publish what a settled run left in its workspace (plan D3, the "else offer to publish" half). Declining
     /// is doing nothing: the workspace is retained and then swept by the launcher's terminal retention rule,
     /// so an unanswered offer cannot pin a workspace forever.
-    /// <para>
-    /// <b>RETAINWORKSPACE IS OBEYED HERE, exactly as the automatic path obeys it</b> (Phase 3 consolidation).
+    /// <b>RETAINWORKSPACE IS OBEYED HERE, exactly as the automatic path obeys it</b> ( consolidation).
     /// The two paths are symmetric on purpose: a promotion that reports "the workspace still holds work I could
-    /// not move" — a copy-mode CONFLICT whose resolution kept the user's newer file (B7), or a worktree whose
+    /// not move" — a copy-mode CONFLICT whose resolution kept the user's newer file, or a worktree whose
     /// run-branch commit did not take — is the case where the workspace holds the ONLY copy of the run's
     /// version of a file, and tearing it down destroys it. Being user-initiated does not make that recoverable.
     /// The offer therefore STAYS STANDING on a retaining publish, and that is not a stale offer: the note above
     /// it says how many files were left alone, the workspace really does still hold them, and the offer is
     /// actionable — a user who moves their own copy aside turns the conflict into "destination missing" and the
     /// next click copies the run's version out.
-    /// </para>
-    /// <para>
     /// Worktree mode CAN reach here since the consolidation pass: a run whose branch never received a commit
     /// describes with <see cref="HasUnpublishedFiles"/> set, so the button appears and publishing RETRIES the
     /// commit (B15's "worktree mode offers no publish button" is no longer absolute — that was the arm with no
     /// recovery path at all).
-    /// </para>
-    /// <para>
     /// <see cref="RunPromotionResult.Skipped"/> is deliberately NOT surfaced: it is the byte-identical no-op
     /// case, and there is nothing to tell the user about a file that was already correct.
-    /// </para>
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanPublish))]
     private async Task Publish()
@@ -916,7 +894,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         if (State is not (RunProgressState.Running or RunProgressState.WaitingForChildren))
         {
             IsPausing = false;
-            // Batch 08 F6: "this run could not be paused" is only true of a run that is still in the states a
+            // "this run could not be paused" is only true of a run that is still in the states a
             // pause is offered from. Once it has left them the line has nothing left to describe, so it goes
             // with the button — one predicate, both clears.
             PauseNote = null;
@@ -1089,10 +1067,8 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// Fold a long plan down to the running step ±1, with a summary row at each end. The card is pinned above a
     /// chat transcript, so an unbounded list would push the conversation off screen and an inner scrollbar would
     /// trap the transcript's own wheel events.
-    /// <para>
     /// A PAUSED run is never windowed: that is the one state whose per-row buttons can rewrite the plan, and
     /// hiding the rows a user paused in order to edit would be the panel working against them.
-    /// </para>
     /// </summary>
     private void ApplyStepWindow()
     {
@@ -1174,7 +1150,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         AgentRunState.Cancelled => (RunProgressState.Failed, false),
         AgentRunState.WaitingForInput => (RunProgressState.WaitingForInput, false), // budget pause — offer Continue
         AgentRunState.Paused => (RunProgressState.Paused, false),                   // reserved user pause (Phase 4)
-        // 07 G8: an EXPLICIT arm, not the default. Falling through would render a delegating parent as the
+        // 07 an EXPLICIT arm, not the default. Falling through would render a delegating parent as the
         // plain Running chip and hide the fact that the work moved to its children. CanContinue stays false
         // (it is `State == WaitingForInput`), which is correct: this park is not a user affordance.
         AgentRunState.WaitingForChildren => (RunProgressState.WaitingForChildren, false),
@@ -1197,11 +1173,11 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     // The pause vocabulary, like the truncation vocabulary above, is a fixed set of APP-OWNED tokens written by
     // the run loop and the startup reconcile — never user content. An unknown or absent reason keeps the budget
     // wording, because that is what every pause the loop itself writes actually is ("step-cap"/"wall-clock").
-    // Batch 08 G2's "user" arm is reachable now: ComputeActivity routes Paused here too, because the band's lead
+    // G2's "user" arm is reachable now: ComputeActivity routes Paused here too, because the band's lead
     // line is the only place a paused run can say who paused it. It is deliberately NOT mapped to the existing
     // Run_State_Paused label: a mapping arm that borrows a string written for another control reads fine and
     // breaks on the next copy edit.
-    // hermes #16 takes the RUN, not just the reason: the approval arm has to name the tool, and a resx KEY
+    // takes the RUN, not just the reason: the approval arm has to name the tool, and a resx KEY
     // cannot carry one. Every other arm ignores the extra argument.
     private string DescribePause(AgentRun run) => RunPauseEnvelope.ReadReason(run) switch
     {
@@ -1218,7 +1194,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         AgentRunOrchestrator.NeedsGoalReason => _localization["Run_Activity_NeedsGoal"],
         AgentRunOrchestrator.NeedsInputReason => _localization["Run_Activity_NeedsInput"],
         AgentRunService.UserPausedReason => _localization["Run_Activity_UserPaused"],
-        // Batch 08 F19: a resume that claimed the row and then never reached the orchestrator. Reachable
+        // A resume that claimed the row and then never reached the orchestrator. Reachable
         // TODAY, unlike the "user" arm above — the re-park writes WaitingForInput, which is exactly the state
         // this mapping renders for — and it was announcing "Stopped at budget" for a run that had reached no
         // budget at all, including one the user had paused by hand a moment earlier.
@@ -1226,7 +1202,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         _ => _localization["Run_Activity_WaitingAtBudget"],
     };
 
-    // Current-activity line (D1): the active step's title while Running (falls back to a generic
+    // Current-activity line: the active step's title while Running (falls back to a generic
     // "working" note if no step is marked Running yet), a "building a plan" note while Planning, and
     // nothing on a terminal state (the header state chip already carries it).
     private string? ComputeActivity(AgentRun run) => run.State switch
@@ -1251,7 +1227,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     };
 
     /// <summary>
-    /// Batch 08 D4: an optional steering note typed while the run sits paused, carried into the NEXT dispatch
+    /// an optional steering note typed while the run sits paused, carried into the NEXT dispatch
     /// only and then cleared — never persisted (the scope-to-dispatch sub-choice, W7). SENSITIVE (user
     /// content): bound to the panel's TextBox, never logged. A null/blank value is inert — the box being 8b's
     /// job is what keeps this property here in 8a rather than idle.
@@ -1260,7 +1236,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private string? _nudgeText;
 
     /// <summary>
-    /// Resume a budget-paused OR user-paused run (§7.2 / Batch 08 D1 item 8's CanContinue widening). The
+    /// Resume a budget-paused OR user-paused run. The
     /// resume service CAS-claims internally by the row's own state, so a double-click or a panel+Flow race is
     /// safe; a real resume flips State→Running via RunChanged, which clears CanContinue. Carries
     /// <see cref="NudgeText"/> (null on an ordinary budget-continue) and clears it ONLY when
@@ -1313,26 +1289,22 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Batch 08 D1: request a USER pause of this run. Refused (a no-op) when no steering service was injected
-    /// — the trailing-optional guard, mirroring <see cref="Publish"/>'s <c>if (_workspaces is null) return;</c>
+    /// request a USER pause of this run. Refused (a no-op) when no steering service was injected
+    /// the trailing-optional guard, mirroring <see cref="Publish"/>'s <c>if (_workspaces is null) return;</c>
     /// rather than relying on <see cref="CanPause"/> alone, which only gates the bound button's
     /// <c>CanExecute</c> and is not a hard guard against a programmatic <c>ExecuteAsync</c>.
-    /// <para>
     /// <see cref="IAgentRunSteeringService.PauseAsync"/> writes no row and returns as soon as the intent is
     /// recorded and the cancel is fired — well before the run's own loop actually lands the row at
     /// <see cref="RunProgressState.Paused"/>. On an ACCEPTED pause <see cref="IsPausing"/> therefore does NOT
     /// clear in a <c>finally</c> here; it stays true until <see cref="Project"/> observes the run having left
     /// the state the pause was requested from (see that clearing site's own comment) — a pause that has been
     /// asked for but not yet landed must not re-enable the button.
-    /// </para>
-    /// <para>
-    /// <b>Batch 08 F6: a REFUSED pause is a different thing and is no longer treated as a slow one.</b> The
+    /// <b>a REFUSED pause is a different thing and is no longer treated as a slow one.</b> The
     /// <c>bool</c> used to be discarded, so every refusal — the run is not pausable, it is not dispatched in
     /// THIS process, the read faulted, or the service threw — left the button reading "Pausing…" and disabled
     /// for the VM's whole life, with nothing said and no way to retry. It is now the one case that clears
     /// <see cref="IsPausing"/> here and puts a muted line on the panel, because the request provably never
     /// existed: nothing is coming that <see cref="Project"/> could observe.
-    /// </para>
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanPause))]
     private async Task Pause()
@@ -1358,7 +1330,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>Opens <paramref name="row"/>'s inline editor, seeded from its CURRENT (persisted) Title/Intent
-    /// — never from a stale prior edit. Purely local state: no service call, so this needs no try/catch and
+    /// never from a stale prior edit. Purely local state: no service call, so this needs no try/catch and
     /// touches nothing but the one row.</summary>
     [RelayCommand(CanExecute = nameof(CanMutatePlan))]
     private void EditStep(StepRowViewModel row)
@@ -1380,17 +1352,15 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private void CancelStepEdit(StepRowViewModel row) => row.IsEditing = false;
 
     /// <summary>Submits the edited Title/Intent for <paramref name="row"/> as part of the FULL pending tail —
-    /// every other currently-Pending row rides along verbatim (D3: the service takes the complete list, never
+    /// every other currently-Pending row rides along verbatim (the service takes the complete list, never
     /// a diff). Closes the editor unconditionally: on success the re-projection shows the saved text, on
     /// rejection it shows the UNCHANGED persisted text plus <see cref="PlanMutationNote"/> explaining why —
     /// either way there is nothing left to edit.
-    /// <para>
     /// Refuses a row whose editor was never opened: <see cref="StepRowViewModel.EditTitle"/> defaults to
     /// <c>""</c>, so a Save reachable with no prior <see cref="EditStep"/> would submit a blank title as a
     /// genuine (rejected) mutation instead of doing nothing. Unreachable from the shipped markup — the Save
     /// button lives only inside the <c>IsEditing</c>-gated editor — but stated as a guard rather than left to
     /// that alone, since a command is a wider surface than the one button that happens to bind it today.
-    /// </para>
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanMutatePlan))]
     private async Task SaveStepEdit(StepRowViewModel row)
@@ -1453,7 +1423,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     /// <summary>Marks <paramref name="row"/> Skipped in the submitted tail — every other Pending row rides
     /// along unchanged. ONE-WAY: a skipped step joins the immutable prefix the moment this lands, so a later
-    /// mutation cannot un-skip it (D3).</summary>
+    /// mutation cannot un-skip it.</summary>
     [RelayCommand(CanExecute = nameof(CanMutatePlan))]
     private async Task SkipStep(StepRowViewModel row)
     {
@@ -1467,13 +1437,12 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         rows.Select(r => new PlanStepEdit(r.StepId, r.Title, r.Intent, r.ExpectedArtifact)).ToList();
 
     /// <summary>
-    /// The one call site every mutating verb shares (D3). ALWAYS re-projects — win or lose — so a fact can
+    /// The one call site every mutating verb shares. ALWAYS re-projects — win or lose — so a fact can
     /// await the mutation's full UI-visible effect instead of racing the fire-and-forget
     /// <see cref="RefreshAsync"/> that <see cref="OnRunChanged"/> would otherwise kick off on its own, and so
     /// the panel never shows a mutation that did not land. Privacy: titles never appear in the warning line,
     /// only the run id.
-    /// <para>
-    /// <b>Batch 08 F13: the note is set AFTER the refresh, never before it.</b> <see cref="Project"/> clears
+    /// <b>the note is set AFTER the refresh, never before it.</b> <see cref="Project"/> clears
     /// <see cref="PlanMutationNote"/> whenever the projected state is not <c>Paused</c>, so a note set first
     /// and refreshed second is wiped by its own refresh in exactly one case — and it is the case that most
     /// needs the note. <see cref="PlanMutationOutcome.NotPaused"/> means the row has already left
@@ -1482,7 +1451,6 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// the whole row-button group vanished with <c>CanMutatePlan</c>, and nothing said why. The other five
     /// outcomes are returned only after the service's own <c>Paused</c> gate, so they were never affected —
     /// which is why this is a one-line reorder rather than a freshness flag.
-    /// </para>
     /// </summary>
     private async Task ApplyStepEditsAsync(IReadOnlyList<PlanStepEdit> edits)
     {
@@ -1506,7 +1474,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// The rejection line for one <see cref="PlanMutationOutcome"/>. <c>internal</c> for Batch 08 F14:
+    /// The rejection line for one <see cref="PlanMutationOutcome"/>. <c>internal</c> for
     /// <c>LocalizationTests.AllCodeLocalizationKeys_MustExistInResources</c> scans for LITERAL keys
     /// (<c>_localization["…"]</c>), so five of the six keys below — every one except
     /// <c>Run_Plan_Error_WriteFailed</c>, which also appears as a literal in the <c>catch</c> above — were
@@ -1559,7 +1527,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// The ONE place this VM mutates the trace's bound state, and it always runs on the UI thread (G3) —
+    /// The ONE place this VM mutates the trace's bound state, and it always runs on the UI thread —
     /// including the null-service and read-failure arms, which used to assign straight from whatever thread
     /// the load happened to be on.
     /// </summary>
@@ -1689,7 +1657,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// </summary>
     internal static string DecisionLabelKey(ToolGateDecision decision) => decision switch
     {
-        // hermes #15's AutoApprovedSessionGrant folds in with the other standing authorities: from the
+        // 's AutoApprovedSessionGrant folds in with the other standing authorities: from the
         // panel's point of view the call ran without anyone being asked, which is what this category says.
         ToolGateDecision.AutoApprovedStandingGrant or ToolGateDecision.AutoApprovedPolicy
             or ToolGateDecision.GrantedByName or ToolGateDecision.AutoApprovedAllowlist
@@ -1705,7 +1673,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             or ToolGateDecision.DeniedForRun
             => "Run_Timeline_Decision_Denied",
         ToolGateDecision.DeniedDestructiveFloor => "Run_Timeline_Decision_Blocked",
-        // hermes #16. Its own category, not folded into Denied: the call was not denied, it is WAITING — and
+        // Its own category, not folded into Denied: the call was not denied, it is WAITING — and
         // a timeline that said "denied" for the one row the user is expected to answer would misreport the
         // reason their run stopped. Without this arm it lands on "unknown", which is no better.
         ToolGateDecision.ParkedForApproval => "Run_Timeline_Decision_AwaitingApproval",
@@ -1760,8 +1728,8 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             else
             {
                 existing.Status = step.Status; // move the highlight / update the glyph
-                // Batch 08 W12: an EDIT preserves the step Id, so this is the only branch that ever sees a
-                // rewritten Title/Intent/ExpectedArtifact — the row is never re-minted for those alone (R23).
+                // An EDIT preserves the step Id, so this is the only branch that ever sees a
+                // rewritten Title/Intent/ExpectedArtifact — the row is never re-minted for those alone.
                 existing.Title = step.Title;
                 existing.Intent = step.Intent;
                 existing.ExpectedArtifact = step.ExpectedArtifact;
@@ -1769,7 +1737,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             }
         }
 
-        // Batch 08 W12: reconcile ORDER as a SEPARATE pass, after the drop/insert/update pass above has
+        // Reconcile ORDER as a SEPARATE pass, after the drop/insert/update pass above has
         // settled every row's presence and content. The insert pass only ever INSERTS a brand-new row at its
         // plan index; it never MOVES an existing one, so a reorder that preserves every step's Id (which is
         // the whole point of a reorder — the settled prefix's ledger/timeline rows stay attached) would
@@ -1790,11 +1758,11 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Resolves a step row's avatar fields from <see cref="_personas"/> (Batch 07 §0.7/§4.3). SETTABLE on
+    /// Resolves a step row's avatar fields from <see cref="_personas"/>. SETTABLE on
     /// <see cref="StepRowViewModel"/>, not init-only: <see cref="RefreshAsync"/> is invoked from the
-    /// CONSTRUCTOR (R21/R22), so the first projection can land before the persona map has loaded — an
+    /// CONSTRUCTOR, so the first projection can land before the persona map has loaded — an
     /// init-only row minted on that pass would never be corrected, because rows are replaced only when
-    /// step IDS change (R23), never re-minted for a data change alone.
+    /// step IDS change, never re-minted for a data change alone.
     /// </summary>
     private void ApplyPersonaAttribution(StepRowViewModel row)
     {
@@ -1904,7 +1872,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         await ApplyChildTimelineAsync(row, rows, readFailed: false);
     }
 
-    /// <summary>The ONE place a child row's trace state is mutated, always on the UI thread (G3).</summary>
+    /// <summary>The ONE place a child row's trace state is mutated, always on the UI thread.</summary>
     private Task ApplyChildTimelineAsync(ChildRunRowViewModel row, IReadOnlyList<AgentTimelineEvent>? rows, bool readFailed)
     {
         var done = new TaskCompletionSource();
@@ -1915,7 +1883,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                 row.Timeline.Clear();
                 row.HasTimelineReadError = readFailed;
 
-                // the truncation marker's note belongs to the parent's own expander; a child row stays one list
+                // The truncation marker's note belongs to the parent's own expander; a child row stays one list
                 var events = (rows ?? [])
                     .Where(e => e.Kind != AgentTimelineEventKind.TraceTruncated)
                     .Reverse()

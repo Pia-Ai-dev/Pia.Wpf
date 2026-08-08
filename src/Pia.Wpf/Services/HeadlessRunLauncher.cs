@@ -13,11 +13,11 @@ namespace Pia.Services;
 
 /// <summary>
 /// Default <see cref="IHeadlessRunLauncher"/>. Detaches a goal as an unattended
-/// <see cref="RunShape.Planned"/> run (§17.1/17.5): stub-chat-first (G-3/R1), create the run, resolve
+/// <see cref="RunShape.Planned"/> run (/17.5): stub-chat-first (G-3/R1), create the run, resolve
 /// persona + provider, seed an isolated per-run workspace, and dispatch the orchestrator on a fresh DI
 /// scope with its own linked CTS. A shared <see cref="RunSlotPool"/> caps concurrency at a user-set,
-/// live-resizable width (T1-1); app shutdown cancels + bounded-awaits in-flight runs so none is left
-/// <see cref="AgentRunState.Running"/> (G-4).
+/// live-resizable width; app shutdown cancels + bounded-awaits in-flight runs so none is left
+/// <see cref="AgentRunState.Running"/>.
 /// </summary>
 public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeService, IDisposable
 {
@@ -26,8 +26,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// CAS-claimed the row and then never reached the orchestrator (cancelled or faulted in the slot wait,
     /// the scope build or the executor construction). Same closed, app-owned vocabulary as
     /// <c>"step-cap"</c> / <c>"wall-clock"</c> / <see cref="AgentRunService.ChildrenInterruptedReason"/>.
-    /// <para>
-    /// Batch 08 F19: this used to be a bare literal, which meant BOTH readers fell through to their budget
+    /// this used to be a bare literal, which meant BOTH readers fell through to their budget
     /// arm — so a run the USER paused, whose Continue then failed to start, came back announcing "Stopped at
     /// its budget" and invited them to raise budgets that were never reached. It is a named constant for the
     /// same reason the other three are: <see cref="AgentRunService.UserPausedReason"/>'s own doc states that
@@ -35,14 +34,12 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// <see cref="AgentRunNotificationSurface.PausedBodyKey"/>, and a literal cannot carry that obligation.
     /// The row still parks <c>WaitingForInput</c> and stays resumable — this was only ever the panel lying
     /// about WHY.
-    /// </para>
     /// </summary>
     internal const string ResumeInterruptedReason = "resume-interrupted";
 
     /// <summary>
     /// Concurrency cap shared by both producers (decision d). A run beyond the width queues on a slot.
-    /// <para>
-    /// T1-1: user-set and LIVE-RESIZABLE — <see cref="AppSettings.MaxParallelBackgroundRuns"/>, default
+    /// user-set and LIVE-RESIZABLE — <see cref="AppSettings.MaxParallelBackgroundRuns"/>, default
     /// <see cref="AppSettings.DefaultParallelBackgroundRuns"/> (the width this was hard-coded to), ceiling
     /// <see cref="AppSettings.MaxParallelBackgroundRunsCap"/>. Applied from TWO places on purpose:
     /// <see cref="OnSettingsChanged"/> covers a raise made WHILE runs are queued (nothing else would apply it
@@ -50,23 +47,18 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// <see cref="LaunchCoreAsync"/>/<see cref="ResumeAsync"/> covers cold start, where no save has happened
     /// this session and the event therefore never fires. Both are idempotent — <c>Resize</c> early-returns on
     /// an unchanged width — so the overlap costs a lock acquire, not a behaviour.
-    /// </para>
-    /// <para>
     /// It bounds EXECUTION, not DISPATCH: <see cref="LaunchCoreAsync"/> creates the stub chat, the run row and
     /// the workspace and RETURNS before the slot wait, so N due jobs still produce N run rows immediately.
-    /// </para>
-    /// <para>
-    /// T1-3: queued IN LAUNCH ORDER. Both dispatch paths take a <see cref="RunSlotPool.Ticket"/> on the calling
+    /// queued IN LAUNCH ORDER. Both dispatch paths take a <see cref="RunSlotPool.Ticket"/> on the calling
     /// thread and hand it to the ticketed wait, so the order the tick created its dispatches in (oldest-due-first)
     /// is the order they enqueue in, instead of whatever order the thread pool happens to start the detached
     /// bodies in. Not strict FIFO admission — see <see cref="RunSlotPool"/> for what is and is not claimed.
-    /// </para>
     /// </summary>
     private readonly RunSlotPool _slots =
         new(AppSettings.DefaultParallelBackgroundRuns, AppSettings.MaxParallelBackgroundRunsCap);
 
     /// <summary>
-    /// Concurrency cap for CHILD runs (Batch 07 D7) — deliberately a SECOND pool, and never
+    /// Concurrency cap for CHILD runs — deliberately a SECOND pool, and never
     /// <see cref="_slots"/>. A nested acquire on the shared pool DEADLOCKS, permanently: <see cref="_slots"/>
     /// is waited INSIDE the dispatch task and released only in the <c>finally</c> AFTER
     /// <c>orchestrator.RunAsync</c> RETURNS, so parents holding EVERY permit while each awaits a child that
@@ -74,18 +66,15 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// <see cref="_slots"/> is wide — and since T1-1 that width is a USER SETTING, so the deadlock is now
     /// reachable at every width, not just at 2. Nothing in the process can break it: <see cref="StopAsync"/>'s
     /// bounded 5-second wait times out and those runs dangle <c>Running</c> until the next startup sweep. Never
-    /// merge these two pools "for simplicity" (07 §7.1).
-    /// <para>
+    /// merge these two pools "for simplicity".
     /// Consequence, stated rather than hidden: effective provider concurrency doubles. That is why the
-    /// persona roster is the opt-in (07 D1) and why a delegating run's budget must still fit the envelope one
+    /// persona roster is the opt-in and why a delegating run's budget must still fit the envelope one
     /// scheduled job may occupy — a fan-out holds one of <see cref="_slots"/> for the parent's wall clock PLUS
     /// every descendant's (Phase 3 R15, and the halved child wall clock in the orchestrator's fan-out).
-    /// <b>Corrected (hermes #2):</b> that used to be far worse — <c>ScheduledJobBackgroundService</c> held a
+    /// <b>Corrected:</b> that used to be far worse — <c>ScheduledJobBackgroundService</c> held a
     /// single run lock across <c>await handle.Completion</c>, so a fan-out blocked every scheduled job on the
     /// device for that whole time. The scheduler now dispatches and bookkeeps in a continuation, so this pool
     /// really is the bound it claims to be, and one long fan-out costs the OTHER due jobs a slot, not the tick.
-    /// </para>
-    /// <para>
     /// WHY 2, and not wider: it is a fixed width rather than the width of a fan-out, so the worst case a
     /// delegating build can put on the provider is <b>a fixed 2 children per delegating parent, on top of a
     /// user-set parent pool</b> — a number that does not grow when a planner emits a 6-way group. (Until T1-1
@@ -96,20 +85,17 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// exactly that for more concurrent provider load and a longer <see cref="StopAsync"/> drain, and it must
     /// stay a SEPARATE number from <see cref="_slots"/> either way. It is deliberately not user-configurable:
     /// the setting T1-1 added sizes the PARENT pool only, and the depth guard (a child never delegates,
-    /// 07 §7.5) is what bounds the total rather than this cap.
-    /// </para>
-    /// <para>
-    /// T1-1: a <see cref="RunSlotPool"/> like <see cref="_slots"/>, but constructed with its HARD CAP equal to
+    /// 07 ) is what bounds the total rather than this cap.
+    /// a <see cref="RunSlotPool"/> like <see cref="_slots"/>, but constructed with its HARD CAP equal to
     /// its width, so "fixed at 2" is enforced by the type and not only by this comment — a stray
     /// <c>Resize</c> on the child pool clamps to 2 instead of widening it.
-    /// </para>
     /// </summary>
     private readonly RunSlotPool _childSlots = new(ChildSlotWidth, ChildSlotWidth);
 
     /// <summary>Fixed width of <see cref="_childSlots"/> — and, deliberately, also its hard cap.</summary>
     private const int ChildSlotWidth = 2;
 
-    /// <summary>Cancelled once at shutdown; every run CTS is linked to it (G-4).</summary>
+    /// <summary>Cancelled once at shutdown; every run CTS is linked to it.</summary>
     private readonly CancellationTokenSource _shutdownCts = new();
 
     private readonly ConcurrentDictionary<Guid, (CancellationTokenSource Cts, Task Task)> _inflight = new();
@@ -121,9 +107,9 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     private static readonly TimeSpan _workspaceMaxAge = TimeSpan.FromDays(30);
 
     /// <summary>
-    /// Retention floor for a run that has SETTLED (Batch 06 B12, plan D3's retention rule): an unanswered
+    /// Retention floor for a run that has SETTLED: an unanswered
     /// publish offer must not pin a workspace forever. A clean run's workspace is already gone — promotion
-    /// tears it down before the run is marked Completed (B8) — so this window really only serves the
+    /// tears it down before the run is marked Completed — so this window really only serves the
     /// failed/cancelled runs whose offer the user never answered. Anything NON-terminal keeps the 30-day
     /// floor above, because it may still be resumable. A judgement call, not a measurement: if seven days
     /// turns out to be short, it is one constant.
@@ -131,25 +117,22 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     private static readonly TimeSpan _terminalWorkspaceMaxAge = TimeSpan.FromDays(7);
 
     /// <summary>
-    /// Resume FLOOR (D1): the grant set a resume falls back to when the launch envelope is missing or
+    /// Resume FLOOR: the grant set a resume falls back to when the launch envelope is missing or
     /// unreadable. Deliberately the NARROWEST useful grant — never a destructive one — because a resume
     /// must never be able to widen what the launch actually granted.
     /// </summary>
     private static readonly string[] ResumeFloorGrants = ["write_file"];
 
     /// <summary>
-    /// hermes #16. May this run PARK a promptable-but-ungranted tool call and ask a human, instead of
+    /// May this run PARK a promptable-but-ungranted tool call and ask a human, instead of
     /// hard-denying it? Exactly one fact decides it, and it decides it for the whole run: a ROOT run may, a
     /// CHILD run may not.
-    /// <para>
     /// PRIMARY REASON — a child is a DELEGATE. <see cref="NarrowForChild"/> already states the rule this
     /// follows ("it does the work the parent asked for and it does not get to destroy anything"): a child
     /// receives a strict SUBSET of its parent's authority and can never acquire more, which is what
-    /// hermes #8 pins it to. An approval park ACQUIRES authority — the human's Continue adds a grant the run
+    /// pins it to. An approval park ACQUIRES authority — the human's Continue adds a grant the run
     /// did not launch with — so allowing it on a child would make the one path by which a delegate ends up
     /// wider than its delegator. The parent is where a widening request belongs, and the parent can make it.
-    /// </para>
-    /// <para>
     /// SUPPORTING — a parked child has nowhere to ask. <c>AgentRunNotificationSurface</c> filters child runs
     /// out of the Flow publish, because a Continue card carrying the CHILD's run id is "a transition nothing
     /// supports": a child is only ever re-dispatched by its parent's fan-out. A child that parked for
@@ -157,7 +140,6 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// re-park behind it under <c>ChildrenParkedReason</c> — a run stuck on a question nobody was asked.
     /// (Resuming a parked child by hand IS supported, so this is the supporting argument, not the load-bearing
     /// one.)
-    /// </para>
     /// </summary>
     private static bool CanParkForApproval(Guid? parentRunId) => parentRunId is null;
 
@@ -187,14 +169,14 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     private readonly string _runsBaseDir;
 
     /// <summary>
-    /// Owns BOTH workspace provisioning modes and their symmetric teardown (Batch 06 G3/plan D5). Trailing
+    /// Owns BOTH workspace provisioning modes and their symmetric teardown. Trailing
     /// and defaulted: null is the pre-Batch-06 shape — a bare <c>CreateDirectory</c> at launch and a plain
     /// recursive delete on cleanup — which is what the existing launcher suite exercises.
     /// </summary>
     private readonly IRunWorkspaceService? _workspaces;
 
     /// <summary>
-    /// Batch 08 D1: where each dispatch publishes its own cancel sink, so a user pause can interrupt the
+    /// where each dispatch publishes its own cancel sink, so a user pause can interrupt the
     /// in-flight step of a run THIS process is running and the run's loop can tell that interrupt from a Stop.
     /// Trailing and defaulted: null ⇒ nothing registers a sink, no pause request can ever be recorded against a
     /// run of this launcher, and every cancel is the pre-Batch-08 terminal cancel.
@@ -225,14 +207,14 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         _executingRuns = executingRuns;
         _logger = logger;
         // AssistantWorkspace.RunsRoot (not an inline Path.Combine) so the guard's carve-out
-        // (SensitivePathGuard.BuildAllowedExceptions) and this default can never drift apart (Batch 06 B1).
+        // (SensitivePathGuard.BuildAllowedExceptions) and this default can never drift apart.
         _runsBaseDir = runsBaseDirOverride ?? AssistantWorkspace.RunsRoot;
         _workspaces = workspaces;
         _steering = steering;
 
         // Decision c: delete a run's workspace when its chat (and, by FK cascade, its run) is deleted.
         _chatService.ChatsChanged += OnChatsChanged;
-        // T1-1: the run pool is live-resizable, and THIS is the arm that makes "live" mean anything — the lazy
+        // The run pool is live-resizable, and THIS is the arm that makes "live" mean anything — the lazy
         // Resize on the dispatch paths cannot help a run that is already queued, which is the one case a user
         // raising the cap is trying to fix. Deliberately NOT an initial read here: the ctor is synchronous and
         // GetSettingsAsync is not, so the width is picked up on the first launch (and on every save after).
@@ -240,14 +222,12 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     }
 
     /// <summary>
-    /// T1-1: apply a saved run-pool width immediately. Raising it releases the extra permits at once, so a run
+    /// apply a saved run-pool width immediately. Raising it releases the extra permits at once, so a run
     /// queued on a slot starts without waiting for an unrelated run to finish; lowering it absorbs permits as
     /// running dispatches finish and never preempts one (see <see cref="RunSlotPool"/>).
-    /// <para>
     /// Fires on EVERY settings save — the settings sliders save per tick — so the work here has to be trivial:
     /// <c>Resize</c> is synchronous, allocation-free and early-returns when the width is unchanged, and only the
     /// PARENT pool is ever resized (<see cref="_childSlots"/> has no setting, and merging the two deadlocks).
-    /// </para>
     /// </summary>
     private void OnSettingsChanged(object? sender, AppSettings e) => _slots.Resize(e.GetMaxParallelBackgroundRuns());
 
@@ -303,10 +283,10 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// request path entirely. Null ⇒ the ordinary launch resolution.</param>
     /// <param name="workspaceRootOverride">Non-null ⇒ SKIP <c>_workspaces.ProvisionAsync</c> entirely and pass
     /// this value straight to <c>executor.Initialize(workspaceRoot: …)</c>. A child run SHARES its parent's
-    /// workspace: Batch 06 B7 allows exactly ONE promotion per workspace, decided by a single
+    /// workspace: exactly ONE promotion is allowed per workspace, decided by a single
     /// <c>provisionedAtUtc</c>, and in worktree mode a per-child workspace would mean N <c>git worktree add</c>
-    /// calls and N branches per fan-out (06 §13.4 / 07 §7.6).</param>
-    /// <param name="personaIdOverride">A delegated step's assigned roster persona (07 D3/D5), which becomes the
+    /// calls and N branches per fan-out.</param>
+    /// <param name="personaIdOverride">A delegated step's assigned roster persona, which becomes the
     /// CHILD's run persona instead of the global per-mode one. Null ⇒ the ordinary resolution.</param>
     private async Task<HeadlessRunHandle> LaunchCoreAsync(
         HeadlessRunRequest req, Guid? parentRunId, RunSlotPool slots, string? childPolicyJson,
@@ -328,7 +308,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         var provider = await ResolveProviderAsync(req.ProviderId, persona).ConfigureAwait(false)
             ?? throw new InvalidOperationException("No provider configured for a headless agent run.");
 
-        // G-3/R1: the AgentRuns FK requires its AssistantChats parent row first, and FK enforcement is ON.
+        // The AgentRuns FK requires its AssistantChats parent row first, and FK enforcement is ON.
         // Persist a stub chat up front (awaited — allowed to propagate); the executor finalizes it once at
         // EndRunAsync. On any failure path the stub remains so a Failed run's ChatId still resolves.
         await _chatService.SaveAsync(new SyncAssistantChat
@@ -345,16 +325,16 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         }, ct).ConfigureAwait(false);
 
         // Resolve the write grants BEFORE the run row exists so the resolved set can be persisted with it
-        // (D1). A null GrantedWrites takes the narrow default; an explicitly EMPTY collection still means
+        // A null GrantedWrites takes the narrow default; an explicitly EMPTY collection still means
         // "no write grants at all" and is preserved as such (never re-widened to the default).
-        // A CHILD's envelope arrives ALREADY NARROWED from its parent's (G9) and must not be re-resolved from
+        // A CHILD's envelope arrives ALREADY NARROWED from its parent's and must not be re-resolved from
         // the request or from settings: both would widen it. Read it back through the same reader a resume uses
         // so the executor gets exactly what was persisted, i.e. one source of truth per dispatch.
         var policyJson = childPolicyJson ?? TrySerializeGrantEnvelope(
             req.GrantedWrites ?? HeadlessRunRequest.DefaultGrantedWrites,
             req.Trigger,
             // The autonomy policy is resolved from SETTINGS at launch — the launch never reads the envelope
-            // back, so there is nothing else to resolve it from (04 D9/D10). Off ⇒ null ⇒ the member is
+        // back, so there is nothing else to resolve it from. Off ⇒ null ⇒ the member is
             // omitted and the persisted document stays byte-identical to a pre-Batch-04 one.
             RunAutonomyPolicy.FromSettings(settings));
 
@@ -376,8 +356,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             PolicyJson: policyJson, ParentRunId: parentRunId), ct)
             .ConfigureAwait(false);
 
-        // The run's ISOLATED workspace under runs\<runId> (§17.2), carved out of SensitivePathGuard by
-        // AssistantWorkspace.RunsRoot (Batch 06 B1). Every file operation this run performs resolves against
+        // The run's ISOLATED workspace under runs\<runId>, carved out of SensitivePathGuard by
+        // AssistantWorkspace.RunsRoot. Every file operation this run performs resolves against
         // this directory (see the Initialize call below), so it holds the run's work — not merely scratch —
         // until a later group promotes it out; it is still auto-cleaned on chat delete / startup sweep.
         //
@@ -387,10 +367,10 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         string? runRoot;
         if (parentRunId is not null)
         {
-            // Batch 07 §7.6 change 1: a CHILD never provisions. It shares the parent's root verbatim — the
+            // A CHILD never provisions. It shares the parent's root verbatim — the
             // parent's own terminal settle promotes everything the whole fan-out wrote, exactly once.
             //
-            // The branch is on "is this a child", NOT on "is the override non-null" as §7.2's signature prose
+            // The branch is on "is this a child", NOT on "is the override non-null", as the signature prose
             // reads: a null override on a CHILD dispatch means the PARENT ran unisolated (06's no-isolation
             // degrade), and provisioning at the child's own id there would isolate a child whose parent is
             // writing the assistant folder — the two would then not even share a directory. Null propagates,
@@ -399,7 +379,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         }
         else if (_workspaces is not null)
         {
-            // Batch 06 G3: the provisioner owns both modes (worktree when the source root is a repo, else a
+            // The provisioner owns both modes (worktree when the source root is a repo, else a
             // bounded copy) and its symmetric teardown. It NEVER throws and returns null for "no isolation",
             // so the FailAsync settle below is unreachable on this path — see B16 for why that is the
             // intended outcome (degrade rather than fail an unattended run) and why the block stays anyway.
@@ -409,7 +389,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         {
             // Legacy path (no provisioner injected): the original create + canonicalize, so a link in the
             // path is not a hole. The run row already exists (Planning), so a workspace-setup failure here
-            // must settle it — otherwise the run dangles non-terminal until the next startup sweep (G-4).
+            // must settle it — otherwise the run dangles non-terminal until the next startup sweep.
             // A throw is still possible here, which is why this guard is kept rather than "restored" above.
             try
             {
@@ -433,14 +413,14 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         // command returning). Shutdown cancels every run; per-run cancel disposes this source.
         var runCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownCts.Token);
 
-        // Batch 08 D1: THIS dispatch's cancel sink. A local delegate rather than a lambda passed inline,
+        // THIS dispatch's cancel sink. A local delegate rather than a lambda passed inline,
         // because the same instance is the release token below (reference equality is what stops a finishing
         // dispatch from dropping a live resume's registration). Best-effort by design — a disposed source must
         // never break a pause or a cascade.
         Action steerCancel = () => { try { runCts.Cancel(); } catch { /* already disposed/cancelled */ } };
         _steering?.RegisterDispatch(run.Id, steerCancel);
 
-        // Batch 07 §7.6: teardown is keyed on WORKSPACE OWNERSHIP, not on run id. This index exists so
+        // Teardown is keyed on WORKSPACE OWNERSHIP, not on run id. This index exists so
         // OnChatsChanged can tear down the workspaces a chat's runs own — and a CHILD owns none: it writes its
         // parent's directory. Registering it would make deleting the child's stub chat call
         // TearDownWorkspaceAsync(childId), which in worktree mode is a `git worktree remove` and in either mode
@@ -462,7 +442,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             run.Id, chatId, req.Trigger, parentRunId is not null);
         _logger.SensitiveDebug("Headless run {RunId} goal: {Goal}", run.Id, req.Goal);
 
-        // T1-3: claim this dispatch's place in the pool's admission queue HERE, on the thread that decided the
+        // Claim this dispatch's place in the pool's admission queue HERE, on the thread that decided the
         // order — the scheduler tick awaits its launches oldest-due-first, and without a ticket that order is
         // lost because the slot wait below runs on a thread-pool thread. Deliberately the LAST statement before
         // Task.Run and nothing throwable in between: an unused ticket stalls the pool's chain (see TakeTicket).
@@ -482,20 +462,20 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
                 using var scope = _scopeFactory.CreateScope();
                 var executor = scope.ServiceProvider.GetRequiredService<HeadlessTurnExecutor>();
                 var orchestrator = scope.ServiceProvider.GetRequiredService<AgentRunOrchestrator>();
-                // Batch 06 G2: the run is confined to its own workspace. Every read/write/delete/list/search
+                // The run is confined to its own workspace. Every read/write/delete/list/search
                 // resolves against runRoot with full containment (no escape, no system paths) — the guard
-                // permits it because AssistantWorkspace.RunsRoot is an allowed island (B1), and the verifier
-                // probes the same root because BeginRunAsync publishes it onto the RunContext (B3). A NULL
+                // permits it because AssistantWorkspace.RunsRoot is an allowed island, and the verifier
+                // probes the same root because BeginRunAsync publishes it onto the RunContext. A NULL
                 // runRoot is the NO-ISOLATION degrade the provisioner falls back to (G3 F10): the run writes
                 // straight into the user's assistant files folder, which is what every build before G2 did.
                 //
-                // canPark (hermes #16): a ROOT run may stop and ask a human for a promptable capability it was
+                // canPark: a ROOT run may stop and ask a human for a promptable capability it was
                 // not granted; a CHILD run may not, and hard-denies exactly as before. See CanParkForApproval.
                 executor.Initialize(workspaceRoot: runRoot, grants, provider, policy,
                     canPark: CanParkForApproval(parentRunId), deniedWrites: denied);
                 started = true;
 
-                // A2: open the composer bracket. Deliberately HERE and not before `_slots.WaitAsync` above:
+                // Open the composer bracket. Deliberately HERE and not before `_slots.WaitAsync` above:
                 // the queue-wait window is FAIL-OPEN and that is correct, because the executor re-seeds from
                 // the persisted rows when the run begins (HeadlessTurnExecutor.BeginRunAsync), so a message
                 // landing before this run's first write is not lost — whereas covering the wait would disable
@@ -508,7 +488,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             catch (OperationCanceledException)
             {
                 // If we never entered the orchestrator (it settles its own terminal state), settle the
-                // run here so a queued-then-cancelled run is never left non-terminal (G-4).
+                // run here so a queued-then-cancelled run is never left non-terminal.
                 if (!started)
                 {
                     try { await _agentRunService.FailAsync(run.Id, "interrupted at shutdown", cancelled: true, CancellationToken.None).ConfigureAwait(false); }
@@ -518,7 +498,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Headless run {RunId} launcher task faulted", run.Id);
-                // Defense in depth (G-4): the orchestrator settles its own terminal state on every path today,
+                // Defense in depth: the orchestrator settles its own terminal state on every path today,
                 // but if a future refactor let RunAsync throw after we entered it, the run would dangle Running.
                 if (started)
                 {
@@ -530,14 +510,14 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             {
                 if (acquired) slots.Release();
 
-                // A2: close the composer bracket on EVERY exit, including the never-started paths (a no-op
+                // Close the composer bracket on EVERY exit, including the never-started paths (a no-op
                 // there). Deliberately AFTER the slot release: this is bookkeeping, and it must never be able
                 // to strand the shared concurrency slot. Idempotent with the release ChatSessionManager
                 // already did when the terminal RunChanged arrived — CompleteAsync raises that event before
                 // this finally runs, so either side may get here first.
                 _executingRuns.Release(run.Id);
                 RemoveInflight(run.Id, runCts);
-                // Batch 08 D1: drop this dispatch's sink AND any pause request it never consumed — the
+                // Drop this dispatch's sink AND any pause request it never consumed — the
                 // !started arm above settles the row itself and never enters the orchestrator, so nothing
                 // there would ever consume one. Ownership-guarded like RemoveInflight beside it, and for the
                 // same reason: a resume dispatch may already have registered its own sink.
@@ -576,11 +556,11 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             _slots.Resize(settings.GetMaxParallelBackgroundRuns());
             var persona = await _personaService.ResolveActiveAsync(
                 WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal).ConfigureAwait(false);
-            // persona/provider are NOT persisted on the run — resolve the current default (same as the launch
+            // Persona/provider are NOT persisted on the run — resolve the current default (same as the launch
             // path). Minor assumption: a resumed run may run on a different default provider than its origin.
             var provider = await ResolveProviderAsync(null, persona).ConfigureAwait(false)
                 ?? throw new InvalidOperationException("No provider configured to resume an agent run.");
-            // Restore the write grants the LAUNCH resolved from the run's own envelope (D1) — a resume must
+            // Restore the write grants the LAUNCH resolved from the run's own envelope — a resume must
             // never widen them, so a narrowly-granted scheduled job that parked at its budget does NOT come
             // back with write+delete over the user's real assistant-files folder. Missing/unreadable/foreign
             // envelope → the FLOOR ({write_file}, never delete_file), logged with the run id only.
@@ -595,7 +575,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
                 grants = ResumeFloorGrants;
             }
 
-            // The autonomy policy comes ONLY from the run's own envelope, never from settings (04 D10): a
+            // The autonomy policy comes ONLY from the run's own envelope, never from settings: a
             // settings flip between park and Continue must not widen a parked run. Absent/unreadable/absent
             // member ⇒ null ⇒ today's behaviour, which is the restrictive direction — unlike the grant list,
             // whose fallback is a floor the run can work with.
@@ -610,7 +590,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
                 .ConfigureAwait(false);
 
             // Budget is DELIBERATELY not restored: a FRESH budget envelope IS the "continue" grant
-            // (guardrail 4) — that is the whole point of the pause. Only the write grants are restored.
+            // that is the whole point of the pause. Only the write grants are restored.
             // The ledger is persisted and accrues across resumes (never reset).
             var budget = RunProfile.FromBudget(
                 settings.ScheduledMaxSteps, settings.ScheduledMaxReplans, settings.ScheduledWallClockMinutes);
@@ -627,7 +607,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
 
             var runCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownCts.Token);
 
-            // Batch 08 D1: this dispatch's cancel sink, same shape as the launch path. Registering OVERWRITES,
+            // This dispatch's cancel sink, same shape as the launch path. Registering OVERWRITES,
             // which is the point — a resume can start while the previous dispatch is still unwinding, and the
             // sink a pause must fire is the one belonging to the loop that is actually running.
             Action steerCancel = () => { try { runCts.Cancel(); } catch { /* already disposed/cancelled */ } };
@@ -690,12 +670,12 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         string? ParkReason);
 
     /// <summary>
-    /// Atomic claim FIRST (guardrail 2): a panel+Flow race or double-click → only one winner. On the lost path
+    /// Atomic claim FIRST: a panel+Flow race or double-click → only one winner. On the lost path
     /// the caller returns BEFORE touching _slots/_inflight/_runsByChat — no slot leak, no duplicate run.
     /// </summary>
     /// <remarks>
-    /// Batch 08: TWO claims, disjoint by SOURCE STATE, chosen from the row already read. An explicit dispatch,
-    /// never a range (D7) and never "try one, then the other": a run whose state moved between the read and the
+    /// TWO claims, disjoint by SOURCE STATE, chosen from the row already read. An explicit dispatch,
+    /// never a range and never "try one, then the other": a run whose state moved between the read and the
     /// CAS is not ours, and the loser's log line says so. A budget park is WaitingForInput; a USER pause is
     /// Paused, and its claim also retires the pause envelope it consumed.
     /// </remarks>
@@ -705,7 +685,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         var run = await _agentRunService.GetAsync(runId, ct).ConfigureAwait(false);
         if (run is null) { _logger.LogWarning("Resume: run {RunId} not found", runId); return null; }
 
-        // hermes #16: READ THE QUESTION BEFORE ANSWERING IT. Both claims below clear ExtraJson, so the tool
+        // READ THE QUESTION BEFORE ANSWERING IT. Both claims below clear ExtraJson, so the tool
         // name a tool-approval park wrote is gone the instant one of them wins — it has to come off the row we
         // already read at the top of this method. Null for every other park, and for a tool-approval park
         // whose envelope did not survive: a resume that cannot read the question grants nothing extra and the
@@ -756,7 +736,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     }
 
     /// <summary>
-    /// hermes #16: apply the human's decision to the call that parked the run. Continue IS the approval — the run
+    /// Apply the human's decision to the call that parked the run. Continue IS the approval — the run
     /// stopped and asked "may I use <c>tool</c>?", and the only affordance the card carries is the button the user
     /// just pressed, so pressing it grants that one named tool for this run and nothing else.
     /// </summary>
@@ -765,13 +745,11 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// delegate does not — so what is applied is the CAPABILITY. The step's row went back to Pending when the run
     /// parked, the drain loop re-runs it from the top, and the same tool call now resolves GrantedByName instead
     /// of parking.
-    /// <para>
     /// PERSISTED, not merely handed to this dispatch. Two tools, two parks: without persistence the second resume
     /// would restore the launch envelope and forget the first approval, so the run would park on tool A, be
     /// granted A, park on B, be granted B but lose A, park on A again — a livelock paced by a human clicking
     /// Continue. The write is failure-isolated: a fault leaves the run with its launch envelope, i.e. it re-parks
     /// and asks again, never runs ungranted.
-    /// </para>
     /// </remarks>
     private async Task<(IReadOnlyList<string> Grants, IReadOnlyList<string> Denied)> ApplyToolApprovalDecisionAsync(
         AgentRun run, string? approvedTool, bool declineToolApproval,
@@ -865,7 +843,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     {
         if (run.ParentRunId is { } parentId)
         {
-            // Batch 07 §7.6 change 3, and the reason it is not optional: this path provisions at its OWN
+            // Change 3, and the reason it is not optional: this path provisions at its OWN
             // run id, and every child owns a stub chat — so a user opening a parked child's chat and
             // pressing Continue would otherwise create a SECOND workspace at the child's id, diverging from
             // the parent's and outliving it until the sweep. Resolve the PARENT's root instead, and only if
@@ -877,7 +855,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
 
         if (_workspaces is not null)
         {
-            // Idempotent by construction (G3 B11 step 2): a readable metadata document returns the same
+            // Idempotent by construction: a readable metadata document returns the same
             // root, the same mode and the same provisionedAtUtc, which is what keeps the promote set
             // from becoming "everything the workspace contains" after a park → resume.
             return (await _workspaces.ProvisionAsync(run.Id, workingSubpath: null, ct).ConfigureAwait(false))?.Root;
@@ -897,7 +875,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         var started = false;
         try
         {
-            // Deliberately the PARENT pool even for a resumed child (Batch 07 §7.1): a resume is a USER
+            // Deliberately the PARENT pool even for a resumed child: a resume is a USER
             // act, so nothing is awaiting this dispatch from inside another run's RunAsync, and the
             // nested-acquire deadlock that _childSlots exists to prevent cannot arise here.
             await _slots.WaitAsync(ticket, runCts.Token).ConfigureAwait(false); // re-acquire a slot (guardrail 6)
@@ -906,14 +884,14 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             using var scope = _scopeFactory.CreateScope();
             var executor = scope.ServiceProvider.GetRequiredService<HeadlessTurnExecutor>();
             var orchestrator = scope.ServiceProvider.GetRequiredService<AgentRunOrchestrator>();
-            // Batch 06 G2, symmetric with the launch path: a resumed run re-enters the SAME isolated
+            // Symmetric with the launch path: a resumed run re-enters the SAME isolated
             // workspace it was parked in, so the Pending remainder sees the work the pre-pause steps
             // left behind. A separate literal from the launch call on purpose — the two have drifted
             // before, so each has its own regression fact.
             executor.Initialize(workspaceRoot: plan.RunRoot, plan.Grants, plan.Provider, plan.Policy,
                 canPark: CanParkForApproval(run.ParentRunId), deniedWrites: plan.Denied);
             started = true;
-            // A2: same bracket, same reasoning as the launch path — after the slot wait, before the
+            // Same bracket, same reasoning as the launch path — after the slot wait, before the
             // executor can write. TryBeginResumeAsync already raised RunChanged(Running) at the CAS,
             // i.e. before this line, which is why ChatSessionManager keeps its ActiveRunId-matched
             // term as well as reading this index.
@@ -923,7 +901,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             await orchestrator.RunAsync(run, executor, plan.Persona, plan.Provider, plan.Budget, runCts.Token,
                     resume: true, nudge: plan.Nudge, parkReason: plan.ParkReason)
                 .ConfigureAwait(false); // resume:true → drains the Pending remainder; re-plans only for
-                                        // a needs-goal park with no step rows
+                                        // A needs-goal park with no step rows
         }
         catch (OperationCanceledException)
         {
@@ -944,7 +922,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             {
                 // Faulted before entering the orchestrator (e.g. slot wait, scope/executor construction) —
                 // the run was CAS'd to Running but no loop is attached. Re-park it so it stays resumable
-                // rather than dangling Running (guardrail 1/3).
+                // rather than dangling Running.
                 await ReParkInterruptedResumeAsync(run.Id, plan.ParkReason).ConfigureAwait(false);
             }
         }
@@ -952,13 +930,13 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         {
             if (acquired) _slots.Release();
 
-            // A2: see the launch path (and the same after-the-slot ordering, for the same reason). A
+            // See the launch path (and the same after-the-slot ordering, for the same reason). A
             // resume dispatch that starts while the previous dispatch is still unwinding re-registers
             // the same key, so this release can close the NEWER bracket — fail-open, which is the
             // recoverable direction (a stale true is not recoverable).
             _executingRuns.Release(run.Id);
             RemoveInflight(run.Id, runCts);
-            // Batch 08 D1: see the launch path's finally. The !started arms above re-park the row
+            // See the launch path's finally. The !started arms above re-park the row
             // themselves without entering the orchestrator, so an unconsumed request has to die here.
             _steering?.ReleaseDispatch(run.Id, steerCancel);
             runCts.Dispose();
@@ -976,7 +954,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     }
 
     /// <summary>Put a claimed-but-never-dispatched run back where it was, so it stays resumable rather than
-    /// dangling Running (guardrail 1/3).</summary>
+    /// dangling Running.</summary>
     private async Task ReParkInterruptedResumeAsync(Guid runId, string? parkReason)
     {
         try { await _agentRunService.PauseAsync(runId, InterruptedReasonFor(parkReason), CancellationToken.None).ConfigureAwait(false); }
@@ -992,14 +970,12 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
 
     /// <summary>
     /// App shutdown: cancel every dispatch and wait, bounded, for them to unwind.
-    /// <para>
-    /// Batch 08 D1: this path deliberately does <b>not</b> revoke a pending pause request, unlike the four
+    /// this path deliberately does <b>not</b> revoke a pending pause request, unlike the four
     /// terminal-intent sites that do. It is the recoverable asymmetry — a run whose pause request is still
     /// unconsumed when the shutdown token fires comes back <see cref="AgentRunState.Paused"/> and RESUMABLE
     /// rather than <c>Cancelled</c>, which is the direction the user asked for and the only one that keeps the
     /// work. Asserted, not merely commented, by
     /// <c>HeadlessRunLauncherTests.Shutdown_DoesNotRevokeAPendingPause_SoTheRunComesBackResumable</c>.
-    /// </para>
     /// </summary>
     public async Task StopAsync(CancellationToken ct)
     {
@@ -1048,7 +1024,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
                 try
                 {
                     var run = await _agentRunService.GetAsync(runId, ct).ConfigureAwait(false);
-                    // Batch 06 B12 / plan D3's retention rule and plan R5's mitigation, in one predicate. A
+            // The retention rule and its mitigation, in one predicate. A
                     // run the DB no longer has goes immediately (unchanged). A SETTLED run keeps its
                     // workspace only long enough for the user to answer the publish offer. A state this
                     // build does not know falls through to the 30-day floor with everything non-terminal:
@@ -1065,9 +1041,9 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
                     await TearDownWorkspaceAsync(runId, ct).ConfigureAwait(false);
             }
 
-            // Second pass (Batch 06 G3): the loop above enumerates DIRECTORIES only, so a metadata document
+            // Second pass: the loop above enumerates DIRECTORIES only, so a metadata document
             // whose workspace is already gone is invisible to it — and in worktree mode that document is the
-            // only thing that knows which repository still carries a stale .git/worktrees/<id> registration
+            // only thing that knows which repository still carries a stale.git/worktrees/<id> registration
             // (plan R5).
             if (_workspaces is not null)
                 await _workspaces.SweepOrphanMetadataAsync(ct).ConfigureAwait(false);
@@ -1077,17 +1053,13 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// <summary>
     /// The run persona for one dispatch: the delegated step's ASSIGNED roster persona when there is one, else
     /// the global per-mode resolution every ordinary launch takes.
-    /// <para>
     /// Two narrowings, both mirroring <c>StepPersonaResolver</c> so the two seams agree. The id must still be on
     /// the CURRENT roster for the current operating mode — a plan outlives the setting that produced it (a
     /// replan, a resume, a roster the user has since edited), and an id the user has withdrawn is not this
     /// run's business even if it resolves. And it must still resolve to a persona: one deleted between plan and
     /// dispatch must not reach a prompt as a blank system message.
-    /// </para>
-    /// <para>
-    /// NEVER throws for the override's sake (guardrail 1): every arm ends at the per-mode resolution, which is
+    /// NEVER throws for the override's sake: every arm ends at the per-mode resolution, which is
     /// exactly the pre-fix behaviour. Ids and counts only in the logs — a persona NAME is user-named content.
-    /// </para>
     /// </summary>
     private async Task<Persona> ResolveRunPersonaAsync(Guid? personaIdOverride, AppSettings settings)
     {
@@ -1177,24 +1149,20 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// deleted under a LIVE writer: cancel the dispatch first AND WAIT FOR IT TO UNWIND. (Deleting the chat is
     /// an explicit user act that cascades the run row away, so the files going with it is the intent; racing a
     /// running step while doing it is not.)
-    /// <para>
-    /// Cancelling alone was not enough, and the gap was the whole of Batch 06 Lens A finding 4's reachable
+    /// Cancelling alone was not enough, and the gap was the whole of a reachable
     /// trigger: <c>Cancel()</c> returns immediately while the step is still inside a <c>write_file</c>, which is
     /// exactly when <c>git worktree remove</c> and a recursive delete BOTH fail. The task awaited here is the one
     /// <see cref="_inflight"/> has always held beside the CTS and nothing read.
-    /// </para>
-    /// <para>
     /// BOUNDED, and it tears down anyway on a timeout — that is the pre-existing behaviour, and a failed delete
     /// self-heals: the run row is gone by FK cascade, so the next startup sweep sees <c>run is null</c> and
     /// removes the workspace unconditionally. The dispatch task never faults (every path inside it is caught), so
     /// the catch-all is for a future refactor rather than for today.
-    /// </para>
     /// </summary>
     private async Task CancelThenTearDownWorkspaceAsync(Guid runId)
     {
         if (_inflight.TryGetValue(runId, out var entry))
         {
-            // Batch 08 D1, revocation site 3, and it must precede the cancel below: deleting the chat is
+        // Revocation site 3, and it must precede the cancel below: deleting the chat is
             // TERMINAL intent (the run row goes with it by FK cascade and its workspace is about to be
             // removed), so an unconsumed pause request must never be read by the unwinding loop as "the user
             // asked to pause". Paired with the cancel it guards rather than done unconditionally at the top —
@@ -1249,7 +1217,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// dispatched more than once over its life (launch → park → resume, and a resume can start while the
     /// previous dispatch is still unwinding its <c>finally</c>), so an unconditional
     /// <c>TryRemove(run.Id)</c> lets a finishing dispatch evict a LIVE one: shutdown would then neither
-    /// cancel nor await that run (G-4). The dispatch's CTS is its identity — it is created per dispatch and
+    /// cancel nor await that run. The dispatch's CTS is its identity — it is created per dispatch and
     /// disposed right after this call.
     /// </summary>
     private void RemoveInflight(Guid runId, CancellationTokenSource ownCts)
@@ -1307,7 +1275,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         if (_disposed) return;
         _disposed = true;
         _chatService.ChatsChanged -= OnChatsChanged;
-        // T1-1: beside the ChatsChanged unsubscribe and for the same reason — this launcher is a singleton, and
+        // Beside the ChatsChanged unsubscribe and for the same reason — this launcher is a singleton, and
         // a live handler on the settings service outlives it (in tests, it pins a per-test substitute).
         _settingsService.SettingsChanged -= OnSettingsChanged;
         _shutdownCts.Dispose();

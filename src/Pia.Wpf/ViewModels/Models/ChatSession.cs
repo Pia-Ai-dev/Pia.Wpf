@@ -1366,18 +1366,12 @@ public sealed class ChatSession : IDisposable
     /// Is this an external/MCP tool? Re-derived from the plugin SERVICE at the gate — the same source the
     /// unattended gate uses — never from a name pattern and never from the pending action, so a renamed or
     /// spoofed tool cannot talk its way out of the destructive-external floor.
-    /// <para>
-    /// A derivation fault returns <c>true</c>, which is fail-CLOSED for the FLOOR (a delete-like tool is then
-    /// refused/carded) and fail-OPEN for GRANTABILITY: <c>External</c> also makes a non-delete-like BUILT-IN
-    /// grantable, so a fault on <c>write_file</c> would let the card offer "Always allow" and persist a grant
-    /// the allowlist deliberately excludes. Stated rather than fixed, because the route lookup's only reachable
-    /// throw is a null tool name, which cannot reach here — and adding a second condition beside the resolver
-    /// in this file is the exact shape the one-decision rule forbids.
-    /// </para>
-    /// <para>
-    /// The try/catch is not decoration: this call used to be bare here while the headless twin already had the
-    /// guard, so a throw propagated out of the tool loop and failed the whole turn.
-    /// </para>
+    /// A fault returns <c>true</c>: fail-CLOSED for the FLOOR, but fail-OPEN for GRANTABILITY, since
+    /// <c>External</c> also makes a non-delete-like BUILT-IN grantable — so a fault on <c>write_file</c> would
+    /// let the card offer "Always allow". Stated rather than fixed, because the only reachable throw is a null
+    /// tool name, which cannot reach here, and a second condition beside the resolver in this file is the exact
+    /// shape the one-decision rule forbids. The try/catch itself is not decoration: this call used to be bare
+    /// while the headless twin already had the guard, so a throw failed the whole turn.
     /// </summary>
     private bool IsExternalTool(string toolName)
     {

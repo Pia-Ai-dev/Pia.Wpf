@@ -10,11 +10,11 @@ using Pia.Shared.Models;
 namespace Pia.Services;
 
 /// <summary>
-/// The plan → act → failure-only-replan → complete loop (§13.2). UI-agnostic — never captures a
+/// The plan → act → failure-only-replan → complete loop. UI-agnostic — never captures a
 /// <see cref="SynchronizationContext"/> and uses <c>ConfigureAwait(false)</c> throughout; each
-/// executor owns its own threading. Owns the run's linked <see cref="CancellationTokenSource"/>
-/// (R13), the ledger accrual, and a <see cref="RunContext"/>. Run state/ledger writes are
-/// failure-isolated (Safe* wrappers, §12.5/§13.10); planner-cannot-plan and executor crashes are
+/// executor owns its own threading. Owns the run's linked <see cref="CancellationTokenSource"/>,
+/// the ledger accrual, and a <see cref="RunContext"/>. Run state/ledger writes are
+/// failure-isolated (the Safe* wrappers); planner-cannot-plan and executor crashes are
 /// on the critical path and fail the run.
 /// </summary>
 public sealed class AgentRunOrchestrator
@@ -37,7 +37,7 @@ public sealed class AgentRunOrchestrator
 
     /// <summary>
     /// The pause <c>reason</c> written when a fan-out's CHILD parked at its own (halved) budget, so the parent
-    /// re-parks rather than failing (07 D13). An app-owned token from the same fixed vocabulary as
+    /// re-parks rather than failing. An app-owned token from the same fixed vocabulary as
     /// <c>"step-cap"</c> / <c>"wall-clock"</c> / <c>"children-interrupted"</c> — never user content, and read by
     /// the panel and the Flow surface, which is why it is a named constant rather than a literal: neither of them
     /// may announce this park as a budget stop, because none of the PARENT's budgets was reached.
@@ -45,19 +45,15 @@ public sealed class AgentRunOrchestrator
     internal const string ChildrenParkedReason = "children-parked";
 
     /// <summary>
-    /// hermes #16. The pause <c>reason</c> written when an unattended step hit a promptable capability the run
+    /// The pause <c>reason</c> written when an unattended step hit a promptable capability the run
     /// was not granted, and stopped to ask a human instead of hard-denying it.
-    /// <para>
     /// A named constant for the reason the vocabulary's other tokens are: adding one OBLIGES an arm in
     /// <c>RunProgressViewModel.DescribePause</c> and in <c>AgentRunNotificationSurface.PausedBodyKey</c>, and a
     /// literal cannot carry that obligation. Both fall back to the BUDGET wording, so a missing arm does not
     /// fail — it tells the user their run stopped at a budget it never reached, and sends them to Settings
-    /// instead of to the Continue button (the Batch 08 F19 defect, restated).
-    /// </para>
-    /// <para>
+    /// instead of to the Continue button (the F19 defect, restated).
     /// It is the ONE pause token whose envelope carries a second member: <c>tool</c>, the name the human is
     /// being asked to approve. Read back by <c>RunPauseEnvelope.ReadApprovalTool</c>.
-    /// </para>
     /// </summary>
     internal const string ToolApprovalReason = "tool-approval";
 
@@ -81,17 +77,17 @@ public sealed class AgentRunOrchestrator
     private static readonly JsonSerializerOptions LedgerJsonOptions =
         new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
-    /// <param name="workspaces">Batch 06 G4. TRAILING and DEFAULTED, like every dependency this batch adds:
+    /// <param name="workspaces">TRAILING and DEFAULTED, like every dependency this batch adds:
     /// this type is hand-constructed positionally in a dozen test sites, and a required parameter would break
     /// all of them at once. Null ⇒ no promotion, which is the pre-Batch-06 loop exactly.</param>
-    /// <param name="childLauncher">Batch 07 G10, trailing and defaulted for the same reason. Null ⇒ <b>no
+    /// <param name="childLauncher"> G10, trailing and defaulted for the same reason. Null ⇒ <b>no
     /// delegation, ever</b>: a plan's parallel groups are recorded and ignored, and every step runs in-process
     /// exactly as before. No DI cycle — the launcher is a singleton that resolves this type lazily from a
     /// per-run scope, so nothing is constructed twice.</param>
-    /// <param name="chats">Batch 07 G10, trailing and defaulted. Only used to read a settled child's answer back
+    /// <param name="chats"> G10, trailing and defaulted. Only used to read a settled child's answer back
     /// into the parent's context; null ⇒ the fan-out still works and the parent's replan/verify prompts see
     /// <see cref="DelegatedAnswerUnavailable"/> instead of the child's text.</param>
-    /// <param name="steering">Batch 08 G3. TRAILING and DEFAULTED, like every dependency this loop has gained:
+    /// <param name="steering">TRAILING and DEFAULTED, like every dependency this loop has gained:
     /// null ⇒ no pause request can ever be consumed ⇒ this loop is byte-for-byte the pre-Batch-08 one, which is
     /// what keeps a dozen positional test constructions unchanged. It is the DISCRIMINATOR that tells a user
     /// pause from a stop: without it every cancel is a stop, exactly as before.</param>
@@ -115,10 +111,10 @@ public sealed class AgentRunOrchestrator
         _steering = steering;
     }
 
-    /// <param name="nudge">Batch 08 D4. TRAILING and DEFAULTED, like every dependency this loop has gained:
+    /// <param name="nudge">TRAILING and DEFAULTED, like every dependency this loop has gained:
     /// null ⇒ <see cref="RunContext.Nudge"/> stays null for this dispatch, which is what keeps a launch (never
     /// nudged) and a resume that supplies none identical to the pre-Batch-08 loop. Scoped to THIS dispatch only
-    /// — a fresh <see cref="RunContext"/> is built below on every call, so a nudge never survives a second
+    /// a fresh <see cref="RunContext"/> is built below on every call, so a nudge never survives a second
     /// resume that does not repeat it.</param>
     /// <param name="parkReason">Why the run parked before this resume; must be read by the caller pre-claim,
     /// since the resume claim clears the pause envelope's <c>ExtraJson</c>. Null keeps the never-re-plan-on-resume
@@ -134,7 +130,7 @@ public sealed class AgentRunOrchestrator
         string? nudge = null,
         string? parkReason = null)
     {
-        // T2-18: EVERY line this dispatch writes — from this loop, from the planner and verifier it awaits, and
+        // EVERY line this dispatch writes — from this loop, from the planner and verifier it awaits, and
         // from the tool handlers inside a step turn — carries the run id. That is what makes a log readable at
         // all now that T1-1/T1-2 let several unattended runs execute at once and interleave their lines in one
         // file. IDs ONLY in a scope: whatever it stringifies to reaches a RELEASE log verbatim
@@ -142,8 +138,8 @@ public sealed class AgentRunOrchestrator
         // compile-time-erased SensitiveDebug family).
         using var runScope = _logger.BeginScope("run {RunId}", run.Id);
 
-        // R13: link the run CTS from the caller's token. Interactive passes session.Cts.Token, so
-        // ChatSession.Cancel() (which cancels session.Cts) propagates to the run + in-flight step.
+        // Link the run CTS from the caller's token. Interactive passes session.Cts.Token, so
+        // ChatSession.Cancel (which cancels session.Cts) propagates to the run + in-flight step.
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(externalToken);
         var ctx = new RunContext(run.Goal ?? string.Empty, profile);
         ctx.SetNudge(nudge); // Batch 08 D4: scope-to-dispatch — set before BeginRunAsync/SafeSeedResumeContext read ctx
@@ -152,13 +148,13 @@ public sealed class AgentRunOrchestrator
         Guid? runFirst = null;
         var runLast = Guid.Empty;
 
-        // Batch 08 D1: the step this loop currently has in flight, hoisted to RunAsync scope because `step` is
+        // The step this loop currently has in flight, hoisted to RunAsync scope because `step` is
         // scoped to the drain `while` below and is NOT in scope in the catch(OperationCanceledException) arm —
         // which is where a step that never returned (an OCE out of the persona resolve, or Live's second escape
         // hatch, both of which leave the row Running) has to be given back to the plan.
         Guid? inflightStepId = null;
 
-        // R3: on resume, seed the range from the persisted pre-pause slice so the terminal PinRange
+        // On resume, seed the range from the persisted pre-pause slice so the terminal PinRange
         // EXTENDS the run's transcript range rather than shrinking it to only the post-resume portion.
         // runFirst's ??= below then keeps this original first message; runLast advances to the latest.
         if (resume)
@@ -167,13 +163,13 @@ public sealed class AgentRunOrchestrator
             runLast = run.LastMessageId ?? Guid.Empty;
         }
 
-        // R3: pin the run-level transcript slice off the STABLE step message Ids accrued so far.
+        // Pin the run-level transcript slice off the STABLE step message Ids accrued so far.
         // Shared by every terminal path (success, truncation, cancel, fail) so a run that executed
         // steps never keeps a null range — symmetric with the clean-success path.
         Task PinRange() => PinRangeAsync(run.Id, runFirst, runLast, cts.Token);
 
-        // Batch 08 D1 collision hardening 2 (no pause request may survive a DISPATCH boundary) used to be a
-        // blind `_steering?.RevokePauseRequest(run.Id)` HERE, and Batch 08 F3 is what that cost. THE OWNERSHIP
+        // D1 collision hardening 2 (no pause request may survive a DISPATCH boundary) used to be a
+        // blind `_steering?.RevokePauseRequest(run.Id)` HERE, and F3 is what that cost. THE OWNERSHIP
         // RULE, one sentence: a pause request belongs to the dispatch whose cancel sink was registered when it
         // was recorded — the sink it actually fired. This loop cannot evaluate that rule. Its run id is the
         // only thing it knows, and a request against that id is EITHER one the superseded dispatch left behind
@@ -232,8 +228,8 @@ public sealed class AgentRunOrchestrator
 
                 await SafeReplaceSteps(run.Id, plan.Steps, cts.Token).ConfigureAwait(false);
             }
-            // resume: TryBeginResumeAsync already CAS'd State→Running; the drain loop re-sets Running per
-            // step. The persisted Pending remainder drives the loop — no re-plan, no step wipe (D1).
+            // Resume: TryBeginResumeAsync already CAS'd State→Running; the drain loop re-sets Running per
+            // step. The persisted Pending remainder drives the loop — no re-plan, no step wipe.
 
             var replans = 0;
             var unverifiedTruncated = false;
@@ -246,7 +242,7 @@ public sealed class AgentRunOrchestrator
             {
                 if (replans++ < profile.MaxReplans)
                 {
-                    // Batch 08 F16: tell the replanner what the USER removed, read fresh from the persisted
+                    // Tell the replanner what the USER removed, read fresh from the persisted
                     // plan. Seeded here rather than at the mutation or at resume-seed time because those are
                     // two places to keep in step with a third (a skip can land at any point while the run is
                     // paused, from the panel or from a second window) and the DB is the only record that sees
@@ -265,7 +261,7 @@ public sealed class AgentRunOrchestrator
                         await SafeReplaceSteps(run.Id, doneSteps.Concat(revisedSteps).ToList(), cts.Token).ConfigureAwait(false);
                         return true; // re-query picks up the revised steps (R2)
                     }
-                    // replan itself degraded to Fallback → the same terminal fail as an exhausted budget
+                    // Replan itself degraded to Fallback → the same terminal fail as an exhausted budget
                 }
 
                 failed = true;
@@ -279,7 +275,7 @@ public sealed class AgentRunOrchestrator
             // verify terminates as Completed+truncated "unverified", never loops forever).
             while (true)
             {
-                // R2: re-query the persisted Pending list each iteration — a foreach over a snapshot
+                // Re-query the persisted Pending list each iteration — a foreach over a snapshot
                 // would never run replanned steps.
                 while (await _runService.NextPendingStepAsync(run.Id, cts.Token).ConfigureAwait(false) is { } step)
                 {
@@ -289,7 +285,7 @@ public sealed class AgentRunOrchestrator
                         return;
                     }
 
-                    // Batch 07 D7/D11: a step the plan put in a PARALLEL GROUP is not executed in-process —
+                    // D7/a step the plan put in a PARALLEL GROUP is not executed in-process —
                     // the whole group is dispatched as sibling CHILD runs and awaited here. Null covers every
                     // ordinary step, which is every step of every plan a build with no persona roster produces
                     // (the planner only ever writes a parallelGroup when a roster is configured).
@@ -298,7 +294,7 @@ public sealed class AgentRunOrchestrator
                     {
                         if (children.Abandoned)
                         {
-                            // 07 G8: the un-park CAS lost — this run's row now belongs to another writer
+                            // 07 the un-park CAS lost — this run's row now belongs to another writer
                             // (cascade-cancelled, or re-parked by a startup reconcile in another process).
                             // Deliberately MINIMAL: no SafeFail, no PinRange, no promotion, no EndRun — every
                             // one of those writes a row whose terminal state we no longer own, which is the
@@ -321,12 +317,12 @@ public sealed class AgentRunOrchestrator
                             break;
                         }
 
-                        // Batch 08 D6: THE PARENT'S OWN TRANSITION. The cascade paused the children; this is
+                        // THE PARENT'S OWN TRANSITION. The cascade paused the children; this is
                         // where the parent's row follows them. Consuming the request is what picks between the
                         // two parks, and it is a consume rather than a peek for the same reason the in-process
                         // branch's is: a request is honoured exactly once.
                         //
-                        // UNCONDITIONAL, not nested inside the AnyParked arm (Batch 08 F2/F6). A request can
+                        // UNCONDITIONAL, not nested inside the AnyParked arm ( F2/F6). A request can
                         // reach this boundary with NOTHING parked, and used to be dropped on the floor when it
                         // did: the cascade never fires the parent's own token, so a fan-out whose children were
                         // outside the pausable set, or had already settled, or were dispatched entirely inside
@@ -344,7 +340,7 @@ public sealed class AgentRunOrchestrator
                         // parked arm did that per child): PinRange → the CAS → the non-terminal executor
                         // release → return. A lost CAS still releases the executor and returns — the row is not
                         // ours to correct, but the session is. AFTER the Cancelled check above, always: terminal
-                        // intent outranks a pause (§5.3), and it must keep outranking it here.
+                        // intent outranks a pause, and it must keep outranking it here.
                         if (children.PauseRequested || _steering?.TryConsumePauseRequest(run.Id) == true)
                         {
                             await PinRange().ConfigureAwait(false);
@@ -355,7 +351,7 @@ public sealed class AgentRunOrchestrator
 
                         if (children.AnyParked)
                         {
-                            // D13: a PARKED child is not a finished child. Its work is durable and resumable,
+                            // A PARKED child is not a finished child. Its work is durable and resumable,
                             // so failing the parent would throw it away and burn a replan. Re-park the parent
                             // through the existing budget-pause shape — its fan-out steps are still Pending, so
                             // one Continue on the parent re-dispatches the group (and cancels this generation
@@ -380,7 +376,7 @@ public sealed class AgentRunOrchestrator
                     await SafeSetStepStatus(step.Id, AgentStepStatus.Running, cts.Token).ConfigureAwait(false);
                     inflightStepId = step.Id; // D1: what the catch(OCE) arm has to restore (see the hoist above)
 
-                    // T2-18: nested inside the run scope, so a step turn's lines read "[run … step N]". The
+                    // Nested inside the run scope, so a step turn's lines read "[run … step N]". The
                     // ORDINAL, not the step id: it is what the plan, the panel and the audit table all show, and
                     // so it is what a person matches a log line against.
                     //
@@ -395,26 +391,26 @@ public sealed class AgentRunOrchestrator
                         r = await executor.ExecuteStepAsync(run, step, ctx, cts.Token).ConfigureAwait(false); // critical path
                     }
 
-                    // ---- Batch 08 D1: USER PAUSE, tested BEFORE the step is recorded and BEFORE r.Cancelled ----
+                    // ---- USER PAUSE, tested BEFORE the step is recorded and BEFORE r.Cancelled ----
                     // Ordering is the whole design and it is deliberate in three ways.
                     //
                     // (1) BEFORE SafeRecordStep. That call is UNCONDITIONAL and maps !Succeeded → Failed(3), a
-                    //     status invisible to NextPendingStepAsync AND dropped by KeepDoneAsync — so recording
-                    //     the aborted step would delete it from the resumed plan while the panel still showed
-                    //     it. It also writes the step's First/LastMessageId and its per-step ledger entry, and
-                    //     D2 says the aborted step's TEXT is discarded so the step re-runs clean. ctx.RecordStep
-                    //     is skipped for the same reason: it would burn a step against ctx.StepsExecuted and
-                    //     hand the critic a step that never finished.
+                    // status invisible to NextPendingStepAsync AND dropped by KeepDoneAsync — so recording
+                    // the aborted step would delete it from the resumed plan while the panel still showed
+                    // it. It also writes the step's First/LastMessageId and its per-step ledger entry, and
+                    // D2 says the aborted step's TEXT is discarded so the step re-runs clean. ctx.RecordStep
+                    // is skipped for the same reason: it would burn a step against ctx.StepsExecuted and
+                    // hand the critic a step that never finished.
                     // (2) NOT gated on r.Cancelled, and never &&-ed with it. On Live the pause releases a
-                    //     pending action card, which ChatSession maps to ToolDecision.Decline — the exchange
-                    //     CONTINUES and can return Succeeded:false, Cancelled:false, which would fall into the
-                    //     replan arm below: the user clicks Pause and the run replans. There is no scenario in
-                    //     which the request exists and a pause is not wanted (only the pause command writes it,
-                    //     and a request belonging to a superseded dispatch was dropped when this dispatch
-                    //     registered its sink — the F3 ownership rule), so the request alone decides.
+                    // pending action card, which ChatSession maps to ToolDecision.Decline — the exchange
+                    // CONTINUES and can return Succeeded:false, Cancelled:false, which would fall into the
+                    // replan arm below: the user clicks Pause and the run replans. There is no scenario in
+                    // which the request exists and a pause is not wanted (only the pause command writes it,
+                    // and a request belonging to a superseded dispatch was dropped when this dispatch
+                    // registered its sink — the F3 ownership rule), so the request alone decides.
                     // (3) CancellationToken.None throughout the branch: cts.Token is already cancelled by the
-                    //     sink that produced this abort. Neither SetStepStatusAsync nor SetRunMessageRangeAsync
-                    //     inspects its token today, but passing None states the intent rather than relying on it.
+                    // sink that produced this abort. Neither SetStepStatusAsync nor SetRunMessageRangeAsync
+                    // inspects its token today, but passing None states the intent rather than relying on it.
                     if (_steering?.TryConsumePauseRequest(run.Id) == true)
                     {
                         await ParkForUserPauseAsync(
@@ -422,25 +418,25 @@ public sealed class AgentRunOrchestrator
                         return;
                     }
 
-                    // ---- hermes #16: THE UNATTENDED APPROVAL PARK ----
+                    // ---- THE UNATTENDED APPROVAL PARK ----
                     // The step stopped on a capability a human could legitimately approve. Same slot, same
                     // order and the same four moves as the user pause above, for the same three reasons —
                     // and one more that is specific to this branch:
                     //
                     // (1) BEFORE SafeRecordStep, so the step goes back to Pending rather than being written
-                    //     Failed(3) — a status NextPendingStepAsync cannot see and KeepDoneAsync drops, i.e.
-                    //     the resumed run would silently lose the very step that asked the question.
+                    // Failed(3) — a status NextPendingStepAsync cannot see and KeepDoneAsync drops, i.e.
+                    // the resumed run would silently lose the very step that asked the question.
                     // (2) AFTER the user-pause branch, never merged with it. A user pause is a USER's
-                    //     terminal-ish intent and outranks the run's own request; if both are true the run
-                    //     parks as a user pause and the approval question is re-asked on the next attempt.
+                    // terminal-ish intent and outranks the run's own request; if both are true the run
+                    // parks as a user pause and the approval question is re-asked on the next attempt.
                     // (3) NOT &&-ed with r.Succeeded or r.Cancelled. A denied tool very often makes the model
-                    //     declare emit_step_result{succeeded:false}, and reading that as an ordinary step
-                    //     failure would burn a replan on a step that is only waiting. r.Cancelled is checked
-                    //     further down and cannot be true here: the executor returns the park BEFORE the
-                    //     cancelled arm can produce a result.
+                    // declare emit_step_result{succeeded:false}, and reading that as an ordinary step
+                    // failure would burn a replan on a step that is only waiting. r.Cancelled is checked
+                    // further down and cannot be true here: the executor returns the park BEFORE the
+                    // cancelled arm can produce a result.
                     // (4) The tokens the abandoned step spent are BILLED run-level (stepId: null), because a
-                    //     step that will re-run must not carry a per-step ledger entry for the attempt that
-                    //     did not finish.
+                    // step that will re-run must not carry a per-step ledger entry for the attempt that
+                    // did not finish.
                     if (r.ApprovalRequiredTool is { } approvalTool)
                     {
                         await ParkForToolApprovalAsync(
@@ -503,7 +499,7 @@ public sealed class AgentRunOrchestrator
                 if (verdict.Passed)
                     break; // accept → clean Complete below
 
-                // Verify FAIL → feed the SHARED replan budget (guardrail 3).
+                // Verify FAIL → feed the SHARED replan budget.
                 if (replans++ < profile.MaxReplans)
                 {
                     var revised = await _planner.ReplanAsync(ctx, BuildVerifyFailureReason(verdict), persona, provider, cts.Token).ConfigureAwait(false);
@@ -516,7 +512,7 @@ public sealed class AgentRunOrchestrator
                         await SafeReplaceSteps(run.Id, doneSteps.Concat(revisedSteps).ToList(), cts.Token).ConfigureAwait(false);
                         continue; // re-drain: re-enter the outer loop; NextPendingStepAsync picks up revised steps
                     }
-                    // replan itself degraded to Fallback → settle unverified, NOT Failed (steps genuinely ran)
+                    // Replan itself degraded to Fallback → settle unverified, NOT Failed (steps genuinely ran)
                 }
 
                 unverifiedTruncated = true; // replans exhausted OR replan degraded
@@ -529,7 +525,7 @@ public sealed class AgentRunOrchestrator
         }
         catch (OperationCanceledException)
         {
-            // Batch 08 D1, the SECOND pause site, and it is not redundant with the one in the drain loop: an
+            // D1, the SECOND pause site, and it is not redundant with the one in the drain loop: an
             // abort can leave the loop by THROWING rather than returning a result. Three reachable shapes —
             // an OCE out of the per-step persona resolve (awaited before either executor's exchange try/catch,
             // so the step stays Running(1)), Live's second escape hatch (its UI-thread post rethrows, so
@@ -546,7 +542,7 @@ public sealed class AgentRunOrchestrator
                 return;
             }
 
-            // R3: a cancel can now surface here from the in-flight verify turn (SafeVerify rethrows a
+            // A cancel can now surface here from the in-flight verify turn (SafeVerify rethrows a
             // genuine run cancel) — after the steps drained but before the terminal-settle PinRange. Pin
             // the executed-so-far slice first so a transcript-producing run never settles Cancelled with a
             // null range (mirrors the step-cancel path above; SetRunMessageRange ignores the cancelled ct).
@@ -563,7 +559,7 @@ public sealed class AgentRunOrchestrator
     }
 
     /// <summary>
-    /// R3: pin the run-level transcript slice off the STABLE step message Ids accrued so far. Shared by every
+    /// pin the run-level transcript slice off the STABLE step message Ids accrued so far. Shared by every
     /// terminal path (success, truncation, cancel, fail) so a run that executed steps never keeps a null range —
     /// symmetric with the clean-success path.
     /// </summary>
@@ -606,7 +602,7 @@ public sealed class AgentRunOrchestrator
         // AgentRuns.ClarificationsJson since the resume claim nulls ExtraJson.
     }
 
-    /// <summary>R10: the planner degraded, so the goal runs as ONE ordinary chat turn and the run settles here —
+    /// <summary>the planner degraded, so the goal runs as ONE ordinary chat turn and the run settles here —
     /// this arm never reaches the terminal-settle block.</summary>
     private async Task RunDegradedSingleTurnAsync(
         IAgentTurnExecutor executor, AgentRun run, RunContext ctx, CancellationToken ct)
@@ -616,7 +612,7 @@ public sealed class AgentRunOrchestrator
 
         var fr = await executor.RunSingleTurnFallbackAsync(run, ctx, ct).ConfigureAwait(false);
         // The fallback turn owns no step row, so its usage has no SafeRecordStep to ride on —
-        // accrue it run-level here or the whole degrade path bills as zero tokens (I1). Before
+        // accrue it run-level here or the whole degrade path bills as zero tokens. Before
         // the branch: a cancelled/failed fallback turn spent its tokens just the same.
         await SafeAddUsage(run.Id, fr.Usage, ct).ConfigureAwait(false);
         if (fr.Cancelled)
@@ -626,7 +622,7 @@ public sealed class AgentRunOrchestrator
         }
         else if (!fr.Succeeded)
         {
-            // R5/R10: a failed fallback turn is never presented as a clean Completed run.
+            // R5/a failed fallback turn is never presented as a clean Completed run.
             failed = true;
             await SafeFail(run.Id, fr.Error, cancelled: false).ConfigureAwait(false);
         }
@@ -634,7 +630,7 @@ public sealed class AgentRunOrchestrator
         {
             if (fr.FirstMessageId != Guid.Empty)
                 await SafeRange(run.Id, fr.FirstMessageId, fr.LastMessageId, ct).ConfigureAwait(false);
-            // Batch 06 B8, the SECOND terminal path: it settles Complete BEFORE EndRun — the opposite order
+            // B8, the SECOND terminal path: it settles Complete BEFORE EndRun — the opposite order
             // to the main path. Promotion still goes before CompleteAsync. There is no verify on this arm at
             // all (the planner degraded), so "promote what the turn wrote" is the whole contract.
             await SafePromote(run, ctx, ct).ConfigureAwait(false);
@@ -643,12 +639,12 @@ public sealed class AgentRunOrchestrator
         await SafeEndRun(executor, run, ctx, cancelled, failed).ConfigureAwait(false);
     }
 
-    /// <summary>R5: the run reached its step cap or wall clock. Not terminal — it parks resumable.</summary>
+    /// <summary>the run reached its step cap or wall clock. Not terminal — it parks resumable.</summary>
     private async Task ParkAtBudgetAsync(
         IAgentTurnExecutor executor, AgentRun run, RunContext ctx,
         Guid? runFirst, Guid runLast, CancellationToken ct)
     {
-        // T2-18: ONE tool-free wrap-up turn before the park, so the chat a person opens hours
+        // ONE tool-free wrap-up turn before the park, so the chat a person opens hours
         // later ends with "here is where I got to" instead of the last step's output. Before
         // PinRange, because its messages belong in the run's transcript slice; it cannot stop
         // the park (see SafeGraceTurn).
@@ -663,7 +659,7 @@ public sealed class AgentRunOrchestrator
         await SafePause(run.Id, ct,
             reason: ctx.WallClockExceeded ? "wall-clock" : "step-cap").ConfigureAwait(false);
         // Pause is NOT terminal: deliberately NO SafeEndRun — Live must not settle
-        // ChatState.Completed or raise TurnCompleted (guardrail 5), and Headless must not
+        // ChatState.Completed or raise TurnCompleted, and Headless must not
         // persist-and-finalize here. But the executor still needs a NON-terminal release
         // hook: for a Live run, only EndRunAsync clears the session's IsStreaming, so
         // without this the foreground chat would be wedged Running forever (spinner +
@@ -692,7 +688,7 @@ public sealed class AgentRunOrchestrator
         await PinRangeAsync(runId, runFirst, runLast, pinToken).ConfigureAwait(false); // R3
     }
 
-    /// <summary>Batch 08 D1: the user asked for a pause and this dispatch owns the request.</summary>
+    /// <summary>the user asked for a pause and this dispatch owns the request.</summary>
     /// <remarks>
     /// Order is fixed by D1 item 6 — a tidy-up reorder breaks a scheduled job, because
     /// ScheduledJobBackgroundService reads the row AFTER awaiting handle.Completion and books anything not yet
@@ -709,20 +705,20 @@ public sealed class AgentRunOrchestrator
         // the same split the fan-out's Abandoned arm makes, for the same reason. Falling through
         // to SafeRecordStep after a lost CAS would write Failed over the Pending we just set.
         await SafePauseUser(run.Id).ConfigureAwait(false);
-        // Non-terminal executor release (guardrail 5): NOT SafeEndRun. Live must not settle
+        // Non-terminal executor release: NOT SafeEndRun. Live must not settle
         // ChatState.Completed or raise TurnCompleted; OnPausedAsync drops the session to Idle so
         // Send re-enables while the run sits resumable. Headless no-ops.
         await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
     }
 
-    /// <summary>hermes #16: the step stopped on a capability a human could legitimately approve.</summary>
+    /// <summary>the step stopped on a capability a human could legitimately approve.</summary>
     private async Task ParkForToolApprovalAsync(
         IAgentTurnExecutor executor, AgentRun run, RunContext ctx, Guid stepId, UsageDetails? usage,
         string approvalTool, Guid? runFirst, Guid runLast, CancellationToken ct)
     {
         await ReturnStepToPendingAsync(run.Id, stepId, usage, runFirst, runLast, ct).ConfigureAwait(false);
         await SafeRequestApproval(run.Id, approvalTool).ConfigureAwait(false);
-        // Non-terminal executor release (guardrail 5): NOT SafeEndRun. A park is not the end
+        // Non-terminal executor release: NOT SafeEndRun. A park is not the end
         // of a run, and the Headless executor must not persist-and-finalize a chat whose last
         // step is going to run again.
         await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
@@ -751,7 +747,7 @@ public sealed class AgentRunOrchestrator
         // CancellationToken.None: the step's own token may already be cancelled, and a park
         // that doesn't reach the row leaves the run stuck Running, unresumable.
         await SafePause(run.Id, CancellationToken.None, reason: NeedsInputReason).ConfigureAwait(false);
-        // Non-terminal executor release (guardrail 5): NOT SafeEndRun — same as every other park.
+        // Non-terminal executor release: NOT SafeEndRun — same as every other park.
         await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
 
         // Reuses the same post-and-mirror call the plan-time decline makes, so the two parks
@@ -772,13 +768,13 @@ public sealed class AgentRunOrchestrator
         }
 
         await PinRangeAsync(run.Id, runFirst, runLast, ct).ConfigureAwait(false);
-        // §13.2 order: END the run (Live: settle terminal state; Headless: persist the chat) BEFORE
+        // Order: END the run (Live: settle terminal state; Headless: persist the chat) BEFORE
         // marking it Completed — so no crash / RunChanged consumer observes a Completed run whose chat
         // is not yet persisted (headless persists only in EndRunAsync). A verify-unverified run
         // settles Completed+truncated reason "unverified".
         await SafeEndRun(executor, run, ctx, cancelled, failed).ConfigureAwait(false);
-        // Batch 06 B8: promote BEFORE CompleteAsync. Verify has already run against the RUN ROOT
-        // (B3), so the artifacts it confirmed are the files being promoted; and no RunChanged
+        // Promote BEFORE CompleteAsync. Verify has already run against the RUN ROOT, so the
+        // artifacts it confirmed are the files being promoted; and no RunChanged
         // consumer can observe a Completed run whose deliverables are still only in a workspace the
         // sweep may delete (plan R4/R5) — which is what dissolves the "Completed but not yet
         // promoted" window without a promotion-aware sweep. Failure-isolated: a promotion fault
@@ -793,16 +789,14 @@ public sealed class AgentRunOrchestrator
     /// <summary>
     /// The steps a replan must CARRY FORWARD, re-ordinaled 0..k-1 with their ORIGINAL Ids preserved so
     /// <see cref="IAgentRunService.ReplaceStepsAsync"/> re-inserts them (it writes ordinals verbatim
-    /// and does not itself preserve anything — §F/§13.2 <c>KeepDone</c>).
-    /// <para>
-    /// The filter is Done OR <see cref="AgentStepStatus.Skipped"/> (Batch 08 D3): a skip is the USER's
+    /// and does not itself preserve anything — §F/ <c>KeepDone</c>).
+    /// The filter is Done OR <see cref="AgentStepStatus.Skipped"/>: a skip is the USER's
     /// decision about their own plan, so a later replan must not quietly re-add work they removed — and
     /// because this method's output is the whole surviving plan, a status left out here is DELETED from the
     /// run. <b>Deliberately different from <see cref="SafeSeedResumeContext"/>'s filter, which stays
     /// <c>== Done</c> and must not be "aligned" with this one:</b> that one builds the critic's list of
     /// completed work, and a skipped step never ran, so it has no result to report and no
     /// <c>ExpectedArtifact</c> worth probing.
-    /// </para>
     /// </summary>
     private async Task<List<AgentStep>> KeepDoneAsync(Guid runId, CancellationToken ct)
     {
@@ -819,7 +813,7 @@ public sealed class AgentRunOrchestrator
         return done;
     }
 
-    // Verify is failure-isolated: a crash/timeout degrades to ACCEPT (guardrail 1) so it never wedges
+    // Verify is failure-isolated: a crash/timeout degrades to ACCEPT so it never wedges
     // or fails an otherwise-successful run. EXCEPTION: a genuine run cancel (ct actually cancelled)
     // must PROPAGATE to the outer catch(OperationCanceledException) → SafeFail(cancelled) — not be
     // swallowed into an accept-then-Complete.
@@ -844,15 +838,13 @@ public sealed class AgentRunOrchestrator
     /// E2: rebuilds the pre-pause half of a resumed run's context from the persisted plan. Seeds the Done
     /// steps' title/intent/declared artifact and marks them as an earlier segment — their visible result
     /// text is NOT recoverable here (it lives in the chat transcript, not on the step row), so the prompts
-    /// say so instead of implying those steps never ran. Failure-isolated (guardrail 1): a read fault
+    /// say so instead of implying those steps never ran. Failure-isolated: a read fault
     /// leaves the run with the old partial picture rather than failing the resume.
-    /// <para>
     /// The filter is <c>== Done</c> and is DELIBERATELY narrower than <see cref="KeepDoneAsync"/>'s
-    /// <c>Done or Skipped</c> (Batch 08 D3) — do not "align" the two. This list becomes
+    /// <c>Done or Skipped</c> — do not "align" the two. This list becomes
     /// <c>ctx.CompletedSteps</c>, i.e. the work the critic judges and whose declared artifacts it probes on
     /// disk; a user-skipped step never executed, so presenting it as completed would invite a verdict about
     /// an artifact nothing was ever asked to produce.
-    /// </para>
     /// </summary>
     private async Task SafeSeedResumeContext(Guid runId, RunContext ctx, CancellationToken ct)
     {
@@ -925,16 +917,14 @@ public sealed class AgentRunOrchestrator
     }
 
     // Run-level usage accrual (stepId: null) for the loop's non-step turns — plan, replan and verify
-    // (I1) — updates ledger totals + wall-clock and raises RunChanged. Step usage goes through
+    // updates ledger totals + wall-clock and raises RunChanged. Step usage goes through
     // SafeRecordStep instead (per-step entry). Skips a null usage so a fake/no-usage provider path adds
     // no spurious ledger write.
     /// <summary>
-    /// T2-18: the grace turn, failure-isolated and time-boxed. Returns null when there was no turn to have —
+    /// the grace turn, failure-isolated and time-boxed. Returns null when there was no turn to have —
     /// because the executor spends none (the interface default, which is what the live executor keeps), because
     /// the run is already cancelled, or because the attempt failed.
-    /// <para>
     /// Three properties, each of which a park depends on:
-    /// </para>
     /// <list type="bullet">
     /// <item>A THROW STILL PARKS. This is a courtesy round on a run that is stopping either way; letting a
     /// provider error escape here would turn a clean budget park into an unhandled fault in the drain loop.</item>
@@ -1002,18 +992,15 @@ public sealed class AgentRunOrchestrator
         return reason; // fed into ReplanAsync's prompt — never logged (sensitive)
     }
 
-    // ---- Batch 07 D7: the fan-out (delegate a step group to sibling child runs and await them) ----
+    // ---- the fan-out (delegate a step group to sibling child runs and await them) ----
 
     /// <summary>How a fan-out settled, as the drain loop needs to see it. Never both parked and cancelled —
     /// the caller checks <paramref name="Cancelled"/> first, because a cascade cancel outranks a park.
-    /// <para>
     /// <paramref name="Abandoned"/> outranks everything: it means <c>TryEndChildWaitAsync</c> lost its CAS, so
-    /// this run's row is owned by another writer and this loop must stop WITHOUT writing to it (07 G8/D9).
-    /// </para>
-    /// <para>
+    /// this run's row is owned by another writer and this loop must stop WITHOUT writing to it.
     /// <paramref name="PauseRequested"/> means the fan-out found a user pause standing at its ENTRY and
     /// dispatched nothing — the request is ALREADY CONSUMED (honoured exactly once), so the caller parks the
-    /// parent without consuming again. Batch 08 F2.
+    /// parent without consuming again.
     /// </para></summary>
     private sealed record FanOutResult(
         bool AnyParked, bool AnyFailed, bool Cancelled, string? Error,
@@ -1023,18 +1010,14 @@ public sealed class AgentRunOrchestrator
     /// Dispatch <paramref name="step"/>'s whole parallel group as sibling CHILD runs, await every one of them,
     /// and settle each sibling step from the child's persisted row. Returns <c>null</c> when this step is NOT a
     /// fan-out, which is the overwhelmingly common case and means "run it in-process, exactly as before".
-    /// <para>
     /// Four independent reasons to decline, each one a degrade rather than a failure: no launcher was injected
     /// (⇒ delegation is off for the whole build), the step declares no <c>parallelGroup</c> (D11 — absence means
-    /// sequential), this run is ITSELF a child (§7.5's depth guard), or the group has fewer than two pending
+    /// sequential), this run is ITSELF a child ('s depth guard), or the group has fewer than two pending
     /// members (D11 — a group of one is not a fan-out; running it as a child would cost all of delegation and
     /// buy none of the parallelism).
-    /// </para>
-    /// <para>
     /// Every child interaction is failure-isolated. A launcher fault while dispatching sibling 3 of 4 marks
     /// sibling 3 failed and still awaits siblings 1–2: a dispatched child is never left unawaited, because that
     /// is precisely the orphan D16 exists to rule out.
-    /// </para>
     /// </summary>
     private async Task<FanOutResult?> TryFanOutAsync(
         AgentRun run, AgentStep step, RunContext ctx, RunProfile profile, CancellationTokenSource cts)
@@ -1045,7 +1028,7 @@ public sealed class AgentRunOrchestrator
         if (ParallelGroupOf(step) is not { } group)
             return null;
 
-        // Depth guard (§7.5), one line and structural: a run that is itself a child NEVER delegates. It bounds
+        // Depth guard, one line and structural: a run that is itself a child NEVER delegates. It bounds
         // the wall clock, the child-pool pressure and the scheduled run slot the fan-out holds to a single
         // level — a plan shaped like a tree would otherwise multiply R15 by its depth.
         if (run.ParentRunId is not null)
@@ -1054,7 +1037,7 @@ public sealed class AgentRunOrchestrator
         var siblings = await SafeSiblingGroupAsync(run.Id, group, cts.Token).ConfigureAwait(false);
         if (siblings.Count < 2)
         {
-            // Batch 08 F8. SafeCancelStaleChildrenAsync (inside FanOutCoreAsync) is the ONLY cleanup for a
+            // SafeCancelStaleChildrenAsync (inside FanOutCoreAsync) is the ONLY cleanup for a
             // previous child generation, and this early return used to skip straight past it — so a group that
             // has dropped below two PENDING members since it was last dispatched orphaned the whole generation
             // behind it. A Paused child is never swept (the startup reconcile's statement 1 is
@@ -1076,7 +1059,7 @@ public sealed class AgentRunOrchestrator
             return null;
         }
 
-        // ---- Batch 08 F2: from here on this run IS fanning out, and the row does not say so ----
+        // ---- from here on this run IS fanning out, and the row does not say so ----
         //
         // WaitingForChildren is not persisted until SafeBeginChildWait, AFTER the whole launch loop below, so
         // for the entire prologue the row reads Running and AgentRunSteeringService.PauseAsync used to fire the
@@ -1114,7 +1097,7 @@ public sealed class AgentRunOrchestrator
     /// <summary>
     /// The fan-out proper: supersede the previous generation, dispatch every sibling as a child run, await them
     /// all and settle each sibling step from the child's persisted row. Split out of
-    /// <see cref="TryFanOutAsync"/> only so the Batch 08 F2 fan-out mark can bracket it in a <c>finally</c>
+    /// <see cref="TryFanOutAsync"/> only so the F2 fan-out mark can bracket it in a <c>finally</c>
     /// without re-indenting the body; the four decline tests and that bracket are the caller's whole job.
     /// </summary>
     private async Task<FanOutResult> FanOutCoreAsync(
@@ -1155,9 +1138,9 @@ public sealed class AgentRunOrchestrator
                     parentRunId: run.Id,
                     parentPolicyJson: run.PolicyJson,
                     // 06 G1's RunContext member: the child runs INSIDE the parent's workspace and provisions
-                    // nothing (§7.6). Null ⇒ the parent runs unisolated and so does the child.
+                    // nothing. Null ⇒ the parent runs unisolated and so does the child.
                     parentWorkspaceRoot: ctx.WorkspaceRoot,
-                    // 07 D3/D5: the specialist the PLAN chose for this step becomes the child's run persona —
+                    // The specialist the PLAN chose for this step becomes the child's run persona —
                     // its system prompt, its provider and its reasoning effort. Dropping it here (a hard
                     // ProviderId: null and nothing else) made a fan-out behave exactly as if no roster were
                     // configured, while G7's panel still drew that specialist's avatar and accent ring on the
@@ -1203,7 +1186,7 @@ public sealed class AgentRunOrchestrator
             {
                 foreach (var d in dispatched)
                 {
-                    // Batch 08 §5.3 revocation 5: the parent's token fired for a TERMINAL reason (a chat
+                    // Revocation 5: the parent's token fired for a TERMINAL reason (a chat
                     // delete, app shutdown, Stop), so a pause request standing against a child must not turn
                     // this cascade into a park. Revoke BEFORE cancelling, always in that order — the child's
                     // loop reads the request when its step unwinds, so a cancel delivered first could be
@@ -1248,7 +1231,7 @@ public sealed class AgentRunOrchestrator
                     await RollUpChildUsageAsync(run.Id, child, cts.Token).ConfigureAwait(false);
                     break;
 
-                // Batch 08 D6 widened this arm to an EXPLICIT two-member set, never a range (D7) and never a
+                // D6 widened this arm to an EXPLICIT two-member set, never a range and never a
                 // null-tolerant pattern: a null child (a SafeGetRunAsync fault) must stay in `default:`, where a
                 // run whose state cannot be read is charged as a failure rather than silently treated as parked.
                 // Paused(4) is a CASCADE-paused child — the parent's own pause reached it — and it is parked in
@@ -1260,7 +1243,7 @@ public sealed class AgentRunOrchestrator
                 // Same two-member set as AgentRunStates.IsParked — kept as a literal case pattern here because
                 // a switch case label cannot invoke a method.
                 case AgentRunState.WaitingForInput or AgentRunState.Paused:
-                    // §0.9/D13: HeadlessRunHandle.Completion settles on a budget PAUSE too, which is not
+                    // /D13: HeadlessRunHandle.Completion settles on a budget PAUSE too, which is not
                     // terminality. Roll up NOTHING — the child will resume and its tokens are pushed once, from
                     // a terminal branch, which is what stops a resumed child being billed to its parent twice.
                     //
@@ -1281,7 +1264,7 @@ public sealed class AgentRunOrchestrator
         }
 
         // Checked BEFORE the un-park CAS: if the parent's own token fired while it waited (a chat delete, app
-        // shutdown, or ChatSession.Cancel()), this loop still owns the run and must settle it Cancelled
+        // shutdown, or ChatSession.Cancel), this loop still owns the run and must settle it Cancelled
         // itself — exactly like an in-process step that came back Cancelled. Ending the wait first would
         // briefly advertise the run as Running on its way to Cancelled for no gain.
         if (cts.IsCancellationRequested)
@@ -1291,7 +1274,7 @@ public sealed class AgentRunOrchestrator
         // from here writes this run's row — the parked arm calls PauseAsync, the failed arm may Fail it, the
         // clean arm sets Running per step — so this is the single place to establish that the row is still
         // OURS. A false means it is not: cascade-cancelled to Cancelled, or re-parked WaitingForInput by
-        // another process's startup reconcile. Continuing would resurrect a run somebody else settled (R11).
+        // another process's startup reconcile. Continuing would resurrect a run somebody else settled.
         if (parked && !await SafeTryEndChildWait(run.Id, cts.Token).ConfigureAwait(false))
             return new FanOutResult(AnyParked: false, AnyFailed: false, Cancelled: false, null, Abandoned: true);
 
@@ -1311,7 +1294,7 @@ public sealed class AgentRunOrchestrator
     /// Persist a settled sibling's outcome and fold it into the run context. <c>ctx.RecordStep</c> is what makes
     /// the sibling visible to a later replan and to the critic — skip it and a replan re-plans work that already
     /// ran. It also increments <c>StepsExecuted</c> once per sibling, which is correct: they ARE the run's steps.
-    /// The children's own internal steps count against their OWN budgets (D15); nesting the enforced budget
+    /// The children's own internal steps count against their OWN budgets; nesting the enforced budget
     /// would make a fan-out unpredictably fatal to the parent. That is the half of D15 that does NOT nest — the
     /// ephemeral per-dispatch budget, as against the persisted ledger, which does (see
     /// <see cref="RollUpChildUsageAsync"/>) — and T-FAN-16 pins it from both sides: one extra unit per child
@@ -1337,22 +1320,18 @@ public sealed class AgentRunOrchestrator
 
     /// <summary>
     /// A child's budget envelope: the parent's own, with the WALL CLOCK HALVED (clamped at
-    /// <see cref="RunProfile.MinWallClockMinutes"/>). Phase 3 R15 is the reason — a fan-out occupies one of
+    /// <see cref="RunProfile.MinWallClockMinutes"/>). R15 is the reason — a fan-out occupies one of
     /// <c>HeadlessRunLauncher</c>'s two run slots for the parent's wall clock PLUS every descendant's, so with
     /// two of them alive a third scheduled agent run waits. Halving keeps a fan-out roughly inside the envelope
     /// one scheduled job already occupies.
-    /// <para>
-    /// The stronger version of this argument is gone (hermes #2): the scheduler used to hold a single run lock
+    /// The stronger version of this argument is gone : the scheduler used to hold a single run lock
     /// from before the launch across <c>await handle.Completion</c>, so while a fan-out ran NO scheduled job of
     /// either kind could dispatch at all. It now dispatches without awaiting the run, which makes the launcher's
     /// slots the real bound — and leaves the halving justified by the slot it still holds.
-    /// </para>
-    /// <para>
-    /// Derived from the PARENT's profile rather than re-read from settings (which §7.5 suggested): the parent's
+    /// Derived from the PARENT's profile rather than re-read from settings (which suggested): the parent's
     /// profile already IS <c>RunProfile.FromBudget(settings.Scheduled*)</c> on the launch path, so this yields
     /// the same numbers without giving the orchestrator a settings dependency — and it also honours an explicit
     /// per-request budget, which a settings read would silently discard.
-    /// </para>
     /// </summary>
     private static RunProfile ChildProfile(RunProfile parent) => parent with
     {
@@ -1362,7 +1341,7 @@ public sealed class AgentRunOrchestrator
 
     /// <summary>
     /// The <c>{"parallelGroup":N}</c> marker the planner writes into <c>AgentStep.ExtraJson</c> when a plan
-    /// declares steps independent AND a persona roster is configured (D11). Swallowing by design: ANY parse
+    /// declares steps independent AND a persona roster is configured. Swallowing by design: ANY parse
     /// failure, a missing member or a non-integer value means <c>null</c> ⇒ sequential, i.e. today's behaviour.
     /// Precedent: <c>RunProgressViewModel.ReadTruncation</c>. <c>internal</c> so the reader's degrade rows can
     /// be pinned directly rather than only through a whole run.
@@ -1428,7 +1407,7 @@ public sealed class AgentRunOrchestrator
                 if (old.State is AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled)
                     continue;
 
-                // Batch 08 §5.3 revocation 4: a superseded generation settles TERMINAL. Revoke before
+                // Revocation 4: a superseded generation settles TERMINAL. Revoke before
                 // cancelling, so a pause the user asked for on a child of the PREVIOUS generation cannot make
                 // that child park instead — it would then be neither superseded nor re-dispatched.
                 _steering?.RevokePauseRequest(old.Id);
@@ -1439,7 +1418,7 @@ public sealed class AgentRunOrchestrator
                 // above WaitingForInput are never swept, on purpose (a parked run must survive a restart), so
                 // this settle is the only thing that stops it lingering with its own stub chat forever.
                 //
-                // Batch 08 D6: Paused(4) joins the set, EXPLICITLY and never as a range. A cascade-paused child
+                // Paused(4) joins the set, EXPLICITLY and never as a range. A cascade-paused child
                 // presents the identical shape — its dispatch has already returned, so it is not in _inflight
                 // and the CancelAsync above is a no-op against it — and it is reached the same way a restart
                 // reaches a budget-parked one. Without it every cascade-paused child of a re-dispatched fan-out
@@ -1501,16 +1480,12 @@ public sealed class AgentRunOrchestrator
     /// plan/replan/verify turns use), from a terminal branch only. Deliberately NOT a fourth
     /// <c>IAgentRunService</c> member: <c>AddUsageAsync</c> already refreshes the clock and raises
     /// <c>RunChanged</c>, and one more method on a 17-member interface would buy no new capability.
-    /// <para>
     /// TOKENS ONLY, never time. The parent's <c>WallClockMs</c> stays its own worked time and the children's is
     /// visible on the children, in the drill-down. And <c>stepId</c> stays null rather than the sibling's id
     /// because the parent ran NO turn for that step — a per-step entry would claim it spent tokens it never did.
-    /// </para>
-    /// <para>
     /// Idempotence is the CALLER's: a parent awaits each child exactly once and pushes only from a terminal
     /// branch. Stated loss: a crash between a child's settle and this push loses that roll-up. The child's own
     /// ledger still holds the truth — the parent's number is an aggregate convenience, not an accounting record.
-    /// </para>
     /// </summary>
     private async Task RollUpChildUsageAsync(Guid parentRunId, AgentRun child, CancellationToken ct)
     {
@@ -1560,7 +1535,7 @@ public sealed class AgentRunOrchestrator
         catch (Exception ex) { _logger.LogWarning(ex, "Fan-out: reading child run {RunId} failed", runId); return null; }
     }
 
-    // ---- Failure-isolated bookkeeping (§12.5/§13.10): never fail the run ----
+    // ---- Failure-isolated bookkeeping: never fail the run ----
 
     private async Task SafeSetState(Guid runId, AgentRunState state, CancellationToken ct)
     {
@@ -1603,7 +1578,7 @@ public sealed class AgentRunOrchestrator
         catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (complete) failed for {RunId}", runId); }
     }
 
-    // Budget pause: park the run WaitingForInput (non-terminal). Failure-isolated (guardrail 1) — a
+    // Budget pause: park the run WaitingForInput (non-terminal). Failure-isolated — a
     // pause bookkeeping error must never corrupt or wedge the run.
     private async Task SafePause(Guid runId, CancellationToken ct, string reason)
     {
@@ -1674,14 +1649,12 @@ public sealed class AgentRunOrchestrator
     }
 
     /// <summary>
-    /// hermes #16: park the run WaitingForInput for a HUMAN TOOL DECISION, naming the tool in the envelope.
+    /// Park the run WaitingForInput for a HUMAN TOOL DECISION, naming the tool in the envelope.
     /// The same non-terminal park the budget cap uses (same state, same Continue card, same resume claim) —
     /// only the reason token and the extra <c>tool</c> member differ, which is the whole point of reusing it.
-    /// <para>
     /// <c>CancellationToken.None</c>, unlike <see cref="SafePause"/>'s budget call: the step that parked may
     /// well have left <c>cts.Token</c> cancelled behind it, and a park that does not reach the row leaves the
     /// run dangling <c>Running</c> — unresumable, with the human's question never asked.
-    /// </para>
     /// </summary>
     private async Task SafeRequestApproval(Guid runId, string toolName)
     {
@@ -1697,19 +1670,16 @@ public sealed class AgentRunOrchestrator
     }
 
     /// <summary>
-    /// Batch 08 D1: park the run at <see cref="AgentRunState.Paused"/> for a USER pause, through the CAS and
-    /// never a blind write — a blind write would resurrect a run another writer already settled (R11), which is
+    /// park the run at <see cref="AgentRunState.Paused"/> for a USER pause, through the CAS and
+    /// never a blind write — a blind write would resurrect a run another writer already settled, which is
     /// the one way a pause could turn a Cancelled run back into a live one.
-    /// <para>
     /// <c>CancellationToken.None</c>: this runs on an already-cancelled token by construction (the pause fired
     /// it), and a pause that does not reach the row leaves the run dangling <c>Running</c> — unresumable.
     /// Failure-isolated like its neighbours, and it REPORTS the CAS result rather than swallowing it: a lost CAS
     /// is a normal outcome worth a log line, not a silent success.
-    /// </para>
     /// </summary>
     /// <summary>
-    /// Batch 08 F9: give every UNREPAIRED <c>Failed</c> step back to the plan when a user pause parks the run.
-    /// <para>
+    /// give every UNREPAIRED <c>Failed</c> step back to the plan when a user pause parks the run.
     /// A <c>Failed</c> row is only ever a transient: <c>TryReplanAfterFailureAsync</c> either writes a revised
     /// plan (and <c>KeepDoneAsync</c> drops the failed row on the way through) or exhausts its budget and
     /// settles the run terminally. A pause that lands DURING that replan — <c>_planner.ReplanAsync</c> is
@@ -1720,20 +1690,15 @@ public sealed class AgentRunOrchestrator
     /// <c>SafeSeedResumeContext</c> filters <c>== Done</c> so the critic is never told it failed. The resumed
     /// run drains the remainder and reports <b>Completed</b> over work that failed and was never repaired.
     /// Pre-Batch-08 that interleaving settled <c>Cancelled</c>, so the silent-success shape is new.
-    /// </para>
-    /// <para>
     /// Restoring the row to <c>Pending</c> is the cheap half of the review's fix and it is the half that
     /// changes the outcome: the resumed run RE-ATTEMPTS the step instead of reporting success over it, and if
     /// it fails again the replan budget of the new dispatch repairs it exactly as it would have. The expensive
     /// half — persisting the owed replan in the pause envelope and re-seeding <c>replans</c>/<c>ctx</c> from it
-    /// — buys a more faithful budget accounting and is not attempted here.
-    /// </para>
-    /// <para>
+    /// buys a more faithful budget accounting and is not attempted here.
     /// Called only after the CAS has WON, so a run another writer owns is never touched, and it covers all
     /// three park sites at once (the in-loop consume, the fan-out boundary, the throwing-abort arm) — the last
     /// of which is also where a fan-out generation's <c>Failed</c> sibling steps would otherwise be stranded
     /// unretried. Failure-isolated per step, like every other bookkeeping write on this path.
-    /// </para>
     /// </summary>
     private async Task RestoreUnrepairedFailedStepsAsync(Guid runId)
     {
@@ -1764,7 +1729,7 @@ public sealed class AgentRunOrchestrator
                 runId, restored);
     }
 
-    /// <summary>Batch 08 F16: the titles of this run's <c>Skipped</c> steps, or an empty list on any fault —
+    /// <summary>the titles of this run's <c>Skipped</c> steps, or an empty list on any fault —
     /// the replan prompt's "do not re-add these" block is an improvement to the prompt, never a reason to
     /// fail a run.</summary>
     private async Task<IReadOnlyList<string>> SafeSkippedTitlesAsync(Guid runId, CancellationToken ct)
@@ -1806,7 +1771,7 @@ public sealed class AgentRunOrchestrator
     }
 
     /// <summary>
-    /// Park the parent at <see cref="AgentRunState.WaitingForChildren"/> for the span of a fan-out (07 D9).
+    /// Park the parent at <see cref="AgentRunState.WaitingForChildren"/> for the span of a fan-out.
     /// Returns whether the park actually happened: unlike the other <c>Safe*</c> wrappers this one reports its
     /// own failure, because the un-park CAS is only meaningful if the park landed — a swallowed fault here
     /// followed by a CAS would read as "another writer owns this run" and abandon a perfectly healthy run.
@@ -1828,7 +1793,7 @@ public sealed class AgentRunOrchestrator
     }
 
     /// <summary>
-    /// End the child wait via the CAS (07 D9). A fault is reported as <c>true</c> — "assume the run is still
+    /// End the child wait via the CAS. A fault is reported as <c>true</c> — "assume the run is still
     /// ours" — deliberately: the caller's false arm ABANDONS the run without settling it, and doing that on a
     /// transient read error would leave a live run permanently un-terminated with no loop and no user
     /// affordance. A genuine lost CAS returns false through the normal path, not through this catch.
@@ -1851,23 +1816,21 @@ public sealed class AgentRunOrchestrator
     }
 
     /// <summary>
-    /// Promote the run's isolated workspace into its destination, then tear the workspace down (Batch 06 B8).
+    /// Promote the run's isolated workspace into its destination, then tear the workspace down.
     /// Only a CLEANLY drained run promotes automatically (plan D3, "Completed auto, else offer to publish"):
     /// this is only ever called from the two success arms, so a cancelled or failed run keeps its workspace
     /// and the panel offers to publish it. No-op when no workspace service was injected or the run has no
     /// workspace root — that is the pre-Batch-06 shape, and every existing orchestrator test hits it.
-    /// <para>
     /// Executor-agnostic on purpose: it reads <c>ctx.WorkspaceRoot</c>, which BOTH executors assign, so a
     /// promotion that only fired for headless runs would be a defect rather than a scoping choice.
-    /// Failure-isolated (guardrail 1): a fault logs and returns, and the files stay in the workspace.
-    /// </para>
+    /// Failure-isolated: a fault logs and returns, and the files stay in the workspace.
     /// </summary>
     private async Task SafePromote(AgentRun run, RunContext ctx, CancellationToken ct)
     {
         if (_workspaces is null || string.IsNullOrEmpty(ctx.WorkspaceRoot))
             return;
 
-        // 06 B7/§13.4: promotion is TERMINAL-ONLY and ONCE PER WORKSPACE, decided by one provisionedAtUtc in the
+        // 06 B7/: promotion is TERMINAL-ONLY and ONCE PER WORKSPACE, decided by one provisionedAtUtc in the
         // workspace metadata. A child run SHARES its parent's workspace and must never consume that promotion —
         // the parent's own terminal settle promotes everything the whole fan-out wrote. Worse than a double
         // promotion: SafePromote TEARS THE WORKSPACE DOWN after a successful promote, so the FIRST sibling to
@@ -1928,7 +1891,7 @@ public sealed class AgentRunOrchestrator
 
     private async Task SafeOnPaused(IAgentTurnExecutor executor, AgentRun run, RunContext ctx)
     {
-        // Non-terminal executor release on a budget pause (guardrail 1/5). Failure-isolated: a release
+        // Non-terminal executor release on a budget pause. Failure-isolated: a release
         // error must never wedge or corrupt a parked run. Uses CancellationToken.None so a cancelled
         // token does not skip settling the live session back to Idle.
         try { await executor.OnPausedAsync(run, ctx, CancellationToken.None).ConfigureAwait(false); }
