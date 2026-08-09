@@ -11,6 +11,30 @@ dotnet run --project src/Pia.Wpf/Pia.Wpf.csproj       # Run WPF client
 dotnet test                                            # Run all tests
 ```
 
+## Test Gate
+
+`dotnet test` with **no filter** is the gate. The bar is `failed: 0`.
+
+Live-provider tests are marked `[LiveApiFact]` / `[LiveApiTheory]` (xunit v3 `Explicit`), so the
+runner excludes them by default and reports them as `Not Run` — no caller-side flag is involved.
+Older docs quote `--filter-not-namespace "Pia.Wpf.Tests.Integration.Providers"`; that namespace no
+longer exists, and the flag is now a no-op you should drop rather than carry forward.
+
+```bash
+dotnet test                                                        # the gate
+dotnet test -- --explicit only --filter-namespace "Pia.Tests.Integration.Providers"   # opt into live APIs
+dotnet test -- --coverage --coverage-output-format cobertura       # coverage
+```
+
+Run the built exe directly for a faster loop, but note it takes xunit's **native** single-dash
+options (`-namespace-`, `-trait-`, `-explicit`, `-class`) and rejects the `--filter-*` forms:
+`tests/Pia.Wpf.Tests/bin/Debug/net10.0-windows10.0.17763.0/Pia.Wpf.Tests.exe`
+
+`Microsoft.Testing.Extensions.CodeCoverage` is pinned to **18.0.6** on purpose. 18.1.0+ needs
+`Microsoft.Testing.Platform` 2.x while xunit.v3 3.2.2 is on the 1.9.x line, and the resulting
+unification makes every `dotnet test` run die with a `TypeLoadException`. Revisit when xunit.v3 4.0
+ships.
+
 ## Zero-Warning Policy
 
 A feature is not commit-ready until the build reports **`0 Warning(s)` and `0 Error(s)` in both Debug and Release**. Warnings are blocking, not advisory.
