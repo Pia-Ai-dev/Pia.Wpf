@@ -21,8 +21,8 @@ public interface IToolPermissionService
     /// <summary>
     /// hermes #15. True if the user granted this exact (plugin, tool) for the rest of THIS APP SESSION — the
     /// middle tier, held in the process-scoped <see cref="ISessionToolGrantStore"/> and never persisted.
-    /// Independent of <see cref="IsGranted"/>: neither implies the other, and a session grant appears in
-    /// <see cref="List"/> nowhere because there is no durable row to list.
+    /// Independent of <see cref="IsGranted"/>: neither implies the other, and the tiers are listed separately
+    /// (<see cref="List"/> vs <see cref="ListSessionGrants"/>) because only one of them has a durable row.
     /// </summary>
     bool IsGrantedForSession(Guid pluginId, string toolName);
 
@@ -34,12 +34,21 @@ public interface IToolPermissionService
     /// </summary>
     void GrantForSession(Guid pluginId, string toolName);
 
+    /// <summary>Every live session grant, for the settings surface that lists all tiers in one place.</summary>
+    IReadOnlyList<ToolGrant> ListSessionGrants();
+
+    /// <summary>Forget a session grant. Synchronous and durable-state-free, like <see cref="GrantForSession"/>.</summary>
+    void RevokeSessionGrant(Guid pluginId, string toolName);
+
     Task GrantAsync(Guid pluginId, string toolName);
 
     Task RevokeAsync(Guid pluginId, string toolName);
 
     IReadOnlyList<ToolGrant> List();
 
-    /// <summary>Raised after a grant, revoke, or external settings change.</summary>
+    /// <summary>
+    /// Raised after a grant, revoke, or external settings change, in either tier — so a subscriber may be
+    /// called on a run thread, which is where a session grant is minted.
+    /// </summary>
     event EventHandler? Changed;
 }

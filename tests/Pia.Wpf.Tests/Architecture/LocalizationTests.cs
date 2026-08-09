@@ -6,8 +6,10 @@ using System.Text.RegularExpressions;
 using Pia.Converters;
 using Pia.Models;
 using Pia.Resources.Strings;
+using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.ViewModels;
+using Pia.ViewModels.Models;
 using Xunit;
 
 namespace Pia.Tests.Architecture;
@@ -239,6 +241,66 @@ public class LocalizationTests
             .Distinct()
             .Count();
         Assert.Equal(categories, keys.Length);
+    }
+
+    /// <summary>The mapping lives in a helper, so this file's literal-key regexes cannot see the keys it returns.</summary>
+    [Fact]
+    public void EveryAutoApprovedStatusKeyResolvesInAllThreeLocales()
+    {
+        var keys = Enum.GetValues<ToolGateDecision>()
+            .Select(d => ActionCardBuilder.AutoApprovedStatusKey(d))
+            .Distinct()
+            .ToList();
+
+        // The two tiers that used to fall through to "you always allow"; without them the sweep below is a
+        // check on three keys that already shipped.
+        Assert.Contains("ActionCard_AutoApprovedByAutonomy", keys);
+        Assert.Contains("ActionCard_AutoApprovedByRunGrant", keys);
+
+        var missing = new List<string>();
+        var cultures = new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") };
+        foreach (var culture in cultures)
+        {
+            var available = GetResourceKeysForCulture(ViewStrings.ResourceManager, culture);
+            foreach (var key in keys.Where(k => !available.Contains(k)))
+                missing.Add($"{culture.Name}: {key}");
+        }
+
+        Assert.True(missing.Count == 0,
+            $"every auto-approved status key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
+
+        // The card formats these with exactly one argument, so a translation carrying a {1} throws at render
+        // time rather than rendering wrong.
+        var placeholder = new Regex(@"\{(\d+)");
+        foreach (var culture in cultures)
+            foreach (var key in keys)
+                foreach (Match match in placeholder.Matches(ViewStrings.ResourceManager.GetString(key, culture)!))
+                    Assert.Equal("0", match.Groups[1].Value);
+    }
+
+    /// <summary>The mapping lives in a helper, so this file's literal-key regexes cannot see the keys it returns.</summary>
+    [Fact]
+    public void EveryToolGrantRestrictionReasonKeyResolvesInAllThreeLocales()
+    {
+        var keys = Enum.GetValues<ToolGrantRestriction>()
+            .Select(ToolCatalogRow.ReasonKeyFor)
+            .Where(k => k is not null)
+            .Distinct()
+            .ToList();
+
+        // One reason per restriction, less the offerable-at-both-tiers arm that shows no line at all.
+        Assert.Equal(Enum.GetValues<ToolGrantRestriction>().Length - 1, keys.Count);
+
+        var missing = new List<string>();
+        foreach (var culture in new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") })
+        {
+            var available = GetResourceKeysForCulture(ViewStrings.ResourceManager, culture);
+            foreach (var key in keys.Where(k => !available.Contains(k!)))
+                missing.Add($"{culture.Name}: {key}");
+        }
+
+        Assert.True(missing.Count == 0,
+            $"every tool-catalogue reason key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
     }
 
     [Fact]

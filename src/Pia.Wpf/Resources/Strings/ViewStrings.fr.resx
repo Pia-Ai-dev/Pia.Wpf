@@ -782,14 +782,31 @@
   <data name="ActionCard_AllowForSession" xml:space="preserve"><value>Autoriser cette session</value></data>
   <data name="ActionCard_AutoApproved" xml:space="preserve"><value>Approuvé automatiquement · {0} toujours autorisé</value></data>
   <data name="ActionCard_AutoApprovedForSession" xml:space="preserve"><value>Approuvé automatiquement · {0} autorisé pour cette session</value></data>
+  <data name="ActionCard_AutoApprovedByAutonomy" xml:space="preserve"><value>Approuvé automatiquement · l'autonomie de l'agent est activée pour ce type d'outil</value></data>
+  <data name="ActionCard_AutoApprovedByRunGrant" xml:space="preserve"><value>Approuvé automatiquement · cette exécution a reçu l'autorisation pour {0}</value></data>
   <data name="ActionCard_Manage" xml:space="preserve"><value>Gérer</value></data>
   <data name="Settings_Tab_ToolPermissions" xml:space="preserve"><value>Accès aux outils</value></data>
+  <data name="Settings_ToolPermissions_Page_Title" xml:space="preserve"><value>Ce qui s'exécute sans confirmation</value></data>
+  <data name="Settings_ToolPermissions_Page_Description" xml:space="preserve"><value>Pia demande confirmation avant qu'un outil ne modifie quoi que ce soit. Trois réponses sur cette carte évitent la confirmation suivante : « Autoriser une fois » ne couvre qu'un seul appel, « Autoriser cette session » vaut jusqu'à la fermeture de Pia, et « Toujours autoriser » est enregistré dans vos paramètres et répertorié ci-dessous. L'autonomie de l'agent est une quatrième source : tant qu'elle est activée, les exécutions d'agent et le mode vocal ignorent la confirmation pour les outils d'écriture de Pia.</value></data>
+  <data name="Settings_ToolPermissions_Autonomy_Section" xml:space="preserve"><value>Autonomie de l'agent</value></data>
+  <data name="Settings_ToolPermissions_Autonomy_Covers" xml:space="preserve"><value>Classes couvertes : notes et mémoire, tâches, rappels, tâches planifiées, fichiers.</value></data>
+  <data name="Settings_ToolPermissions_Session_Title" xml:space="preserve"><value>Autorisés jusqu'à la fermeture de Pia</value></data>
+  <data name="Settings_ToolPermissions_Session_Description" xml:space="preserve"><value>Outils que vous avez autorisés pour cette session. Rien n'est enregistré ici : tout disparaît au redémarrage de Pia. Oubliez une autorisation pour être à nouveau invité lors du prochain appel.</value></data>
   <data name="Settings_ToolPermissions_Title" xml:space="preserve"><value>Outils toujours autorisés</value></data>
   <data name="Settings_ToolPermissions_Description" xml:space="preserve"><value>Outils auxquels vous avez accordé une autorisation permanente de s'exécuter sans confirmation. Révoquez une autorisation pour être à nouveau invité lors du prochain appel.</value></data>
   <data name="ToolPermissions_Empty" xml:space="preserve"><value>Aucun outil n'est toujours autorisé. Lorsque vous choisissez « Toujours autoriser » pour un outil, il apparaît ici.</value></data>
   <data name="ToolPermissions_Revoke" xml:space="preserve"><value>Révoquer</value></data>
+  <data name="ToolPermissions_Forget" xml:space="preserve"><value>Oublier</value></data>
   <data name="ToolPermissions_Column_Plugin" xml:space="preserve"><value>Plugin :</value></data>
   <data name="ToolPermissions_Column_GrantedAt" xml:space="preserve"><value>Accordé :</value></data>
+  <data name="Settings_ToolPermissions_Catalog_Title" xml:space="preserve"><value>Tous les outils</value></data>
+  <data name="Settings_ToolPermissions_Catalog_Description" xml:space="preserve"><value>Autorisez un outil ici et Pia cesse de le demander, exactement comme si vous aviez choisi la même réponse sur une carte. Les outils qui demandent toujours confirmation sont également répertoriés, avec la raison.</value></data>
+  <data name="ToolCatalog_UntilClose" xml:space="preserve"><value>Jusqu'à la fermeture de Pia</value></data>
+  <data name="ToolCatalog_Always" xml:space="preserve"><value>Toujours</value></data>
+  <data name="ToolCatalog_Reason_SessionOnly" xml:space="preserve"><value>Ne peut être autorisé que jusqu'à la fermeture de Pia : une autorisation permanente est réservée aux outils externes et à quelques outils internes de création uniquement.</value></data>
+  <data name="ToolCatalog_Reason_Destructive" xml:space="preserve"><value>Demande toujours confirmation : cet outil détruit des données, et une carte ne peut pas répondre pour des appels que vous ne verrez jamais.</value></data>
+  <data name="ToolCatalog_Reason_WorkDiscarding" xml:space="preserve"><value>Demande toujours confirmation : cet outil peut supprimer du travail non validé.</value></data>
+  <data name="ToolCatalog_Reason_AuthorityAuthoring" xml:space="preserve"><value>Demande toujours confirmation : cet outil accorde des autorisations que des exécutions ultérieures sans surveillance utiliseraient.</value></data>
   <data name="ActionCard_CurrentValue" xml:space="preserve"><value>Valeur actuelle :</value></data>
   <data name="ActionCard_NewValue" xml:space="preserve"><value>Nouvelle valeur :</value></data>
   <data name="ActionCard_Category_Memory" xml:space="preserve"><value>Mémoire</value></data>
@@ -1047,6 +1064,7 @@
   <data name="Assistant_Export_Tooltip" xml:space="preserve"><value>Exporter</value></data>
   <data name="Assistant_OpenFolder_Tooltip" xml:space="preserve"><value>Ouvrir le dossier contenant</value></data>
   <data name="Assistant_OpenInCode_Tooltip" xml:space="preserve"><value>Ouvrir dans VS Code</value></data>
+  <data name="Assistant_MoreChips_Tooltip" xml:space="preserve"><value>Afficher les entrées restantes</value></data>
   <data name="Settings_ScheduledJobs_Section_Header" xml:space="preserve"><value>Tâches planifiées</value></data>
   <data name="Settings_ScheduledJobs_Section_Description" xml:space="preserve"><value>Tâches qui s'exécutent selon un calendrier, sur cet appareil. Chacune utilise les limites et le réglage d'approbation automatique ci-dessus — ils ne se définissent pas par tâche.</value></data>
   <data name="Settings_ScheduledJobs_Empty" xml:space="preserve"><value>Aucune tâche planifiée pour l'instant.</value></data>

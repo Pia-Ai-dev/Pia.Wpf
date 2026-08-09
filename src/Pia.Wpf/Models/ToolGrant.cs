@@ -1,7 +1,8 @@
 namespace Pia.Models;
 
 /// <summary>
-/// A standing "always allow" grant for a specific tool of a specific plugin.
+/// A grant for a specific tool of a specific plugin - standing (persisted) or session-scoped, depending on
+/// which store minted it.
 /// Keyed by <see cref="PluginId"/> + <see cref="ToolName"/> (never by tool name
 /// alone) so a tool name that rebinds to a different plugin across installs does
 /// not inherit the old owner's grant.

@@ -1179,8 +1179,8 @@ public sealed class ChatSession : IDisposable
                     return await ExecuteAndReport(ToolGateDecision.ApprovedOnce, card.ShownAt, card.DecidedAt);
 
                 // THE MIDDLE TIER. Execute now and remember for the rest of this app session —
-                // nothing is written to AppSettings, so the grant dies with the process and appears in no
-                // revocable list (which is exactly what "for this session" promises).
+                // nothing is written to AppSettings, so the grant dies with the process, or earlier if the
+                // user forgets it in settings.
                 //
                 // Defensive in the same shape the AlwaysAllow arm is, and it is the same class of hazard: the
                 // card is a UI hint and the gate is the authority, so a card that somehow surfaced the option

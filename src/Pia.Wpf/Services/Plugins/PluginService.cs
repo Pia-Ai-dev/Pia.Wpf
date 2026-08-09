@@ -246,6 +246,33 @@ public class PluginService : IPluginService
         }
     }
 
+    public IReadOnlyList<ToolCatalogEntry> GetToolCatalog()
+    {
+        lock (_handlers)
+        {
+            var entries = new List<ToolCatalogEntry>();
+            foreach (var handler in _handlers.Values)
+            {
+                // The same skip GetAllTools uses: a plugin the user turned off must contribute nothing grantable.
+                var config = _pluginConfigs.GetValueOrDefault(handler.PluginId);
+                if (config is not null && !IsPluginEnabled(config))
+                    continue;
+
+                foreach (var tool in handler.GetTools())
+                {
+                    entries.Add(new ToolCatalogEntry(
+                        handler.PluginId,
+                        handler.PluginName,
+                        tool.Name,
+                        tool.Description,
+                        IsMcpTool(tool.Name),
+                        handler.DeclaresDestructive(tool.Name)));
+                }
+            }
+            return entries;
+        }
+    }
+
     public string GetCombinedSystemPromptAdditions()
     {
         lock (_handlers)
@@ -611,6 +638,8 @@ public class PluginService : IPluginService
                 _pendingPrefs.Add(new SyncPluginPreference { PluginId = pluginId, IsEnabled = enabled });
             }
             _logger.LogInformation("Plugin {PluginId} enabled={Enabled}", pluginId, enabled);
+            // The tool catalogue skips disabled plugins, so without this it keeps the pre-toggle shape.
+            PluginsChanged?.Invoke(this, EventArgs.Empty);
         }
         return Task.CompletedTask;
     }

@@ -88,8 +88,7 @@ public enum ToolGateDecision
     /// middle tier between <see cref="ApprovedOnce"/> and the persisted
     /// <see cref="AutoApprovedStandingGrant"/>. Its own ordinal rather than a reuse of the standing one,
     /// because the two answer a question a user reading the timeline actually asks: a standing grant is in
-    /// their settings and can be revoked there, a session grant is gone at the next restart and appears in no
-    /// list at all.
+    /// their settings, a session grant is listed there too but is gone at the next restart.
     /// </summary>
     AutoApprovedSessionGrant = 13,
 

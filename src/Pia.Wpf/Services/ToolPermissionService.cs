@@ -47,6 +47,7 @@ public class ToolPermissionService : IToolPermissionService
         ReloadCache(settings.AlwaysAllowedTools);
 
         _settingsService.SettingsChanged += OnSettingsChanged;
+        _sessionGrants.Changed += OnSessionGrantsChanged;
     }
 
     public bool IsAutoApproveEligible(string toolName)
@@ -182,13 +183,16 @@ public class ToolPermissionService : IToolPermissionService
         => _sessionGrants.IsGranted(pluginId, toolName);
 
     /// <summary>
-    /// Record a session grant. NO settings write, NO <c>SaveSettingsAsync</c>, NO
-    /// <see cref="Changed"/> event: nothing durable changed, and raising Changed would tell the settings
-    /// grant list to refresh for a grant it can neither show nor revoke. Synchronous for the same reason —
-    /// there is nothing to await.
+    /// Record a session grant. No settings write and nothing to await; <see cref="Changed"/> still reaches the
+    /// settings list, which now shows this tier and can forget a row from it.
     /// </summary>
     public void GrantForSession(Guid pluginId, string toolName)
         => _sessionGrants.Grant(pluginId, toolName);
+
+    public IReadOnlyList<ToolGrant> ListSessionGrants() => _sessionGrants.List();
+
+    public void RevokeSessionGrant(Guid pluginId, string toolName)
+        => _sessionGrants.Revoke(pluginId, toolName);
 
     public async Task GrantAsync(Guid pluginId, string toolName)
     {
@@ -222,6 +226,10 @@ public class ToolPermissionService : IToolPermissionService
         var settings = _settingsService.GetSettingsAsync().GetAwaiter().GetResult();
         return settings.AlwaysAllowedTools.ToList();
     }
+
+    // Re-raised untouched so subscribers keep one subscription for all tiers; the store already raised this
+    // outside its lock, and the marshalling belongs to whoever is bound to it.
+    private void OnSessionGrantsChanged(object? sender, EventArgs e) => RaiseChanged();
 
     private void OnSettingsChanged(object? sender, AppSettings settings)
     {

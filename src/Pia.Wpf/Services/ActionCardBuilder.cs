@@ -155,16 +155,9 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             FilePath = Detokenize(pendingAction.TargetPath ?? "", detokenize),
             AcceptedStatusText = _localizationService.Format("ActionCard_Status_Accepted", title),
             DeclinedStatusText = _localizationService.Format("ActionCard_Status_Declined", title),
-            // The resolved sentence must name the tier that actually ran the call. Only the SESSION tier gets
-            // its own string, and only because it is the one authority that is NOT permanent and NOT listed:
-            // "you always allow X" for a call the user allowed for this session is false, and it sends them to
-            // Settings → Tool access looking for a grant that was never written (ToolPermissionService.List()
-            // returns AppSettings.AlwaysAllowedTools only). Everything else keeps the historic text.
-            AutoApprovedStatusText = _localizationService.Format(
-                autoApprovedAs == ToolGateDecision.AutoApprovedSessionGrant
-                    ? "ActionCard_AutoApprovedForSession"
-                    : "ActionCard_AutoApproved",
-                title),
+            // The resolved sentence must name the tier that ran the call: "you always allow X" is false for
+            // every tier but the standing grant, and sends the user hunting for a grant that was never written.
+            AutoApprovedStatusText = _localizationService.Format(AutoApprovedStatusKey(autoApprovedAs), title),
             DeclineLabel = _localizationService["ActionCard_Decline"],
             AllowOnceLabel = _localizationService["ActionCard_AllowOnce"],
             AlwaysAllowLabel = _localizationService["ActionCard_AlwaysAllow"],
@@ -182,6 +175,16 @@ public sealed class ActionCardBuilder : IActionCardBuilder
 
         return card;
     }
+
+    /// <summary>A helper, not an inline switch, so a localization test can enumerate the keys it returns.</summary>
+    internal static string AutoApprovedStatusKey(ToolGateDecision? decision) => decision switch
+    {
+        ToolGateDecision.AutoApprovedStandingGrant => "ActionCard_AutoApproved",
+        ToolGateDecision.AutoApprovedSessionGrant => "ActionCard_AutoApprovedForSession",
+        ToolGateDecision.AutoApprovedPolicy => "ActionCard_AutoApprovedByAutonomy",
+        ToolGateDecision.GrantedByName => "ActionCard_AutoApprovedByRunGrant",
+        _ => "ActionCard_AutoApproved",
+    };
 
     public string ResolveStatusText(string toolName) => toolName switch
     {

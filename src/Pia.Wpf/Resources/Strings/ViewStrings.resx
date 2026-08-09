@@ -748,14 +748,31 @@
   <data name="ActionCard_AllowForSession" xml:space="preserve"><value>Allow this session</value></data>
   <data name="ActionCard_AutoApproved" xml:space="preserve"><value>Auto-approved · you always allow {0}</value></data>
   <data name="ActionCard_AutoApprovedForSession" xml:space="preserve"><value>Auto-approved · you allowed {0} for this session</value></data>
+  <data name="ActionCard_AutoApprovedByAutonomy" xml:space="preserve"><value>Auto-approved · agent autonomy is on for this kind of tool</value></data>
+  <data name="ActionCard_AutoApprovedByRunGrant" xml:space="preserve"><value>Auto-approved · this run was granted {0}</value></data>
   <data name="ActionCard_Manage" xml:space="preserve"><value>Manage</value></data>
   <data name="Settings_Tab_ToolPermissions" xml:space="preserve"><value>Tool access</value></data>
+  <data name="Settings_ToolPermissions_Page_Title" xml:space="preserve"><value>What runs without asking</value></data>
+  <data name="Settings_ToolPermissions_Page_Description" xml:space="preserve"><value>Pia asks before a tool changes anything. Three answers on that card skip the next prompt: "Allow once" covers a single call, "Allow this session" lasts until Pia closes, and "Always allow" is kept in your settings and listed below. Agent autonomy is a fourth source: while it is on, agent runs and voice mode skip the prompt for Pia's own write tools.</value></data>
+  <data name="Settings_ToolPermissions_Autonomy_Section" xml:space="preserve"><value>Agent autonomy</value></data>
+  <data name="Settings_ToolPermissions_Autonomy_Covers" xml:space="preserve"><value>Covered classes: notes and memory, todos, reminders, scheduled jobs, files.</value></data>
+  <data name="Settings_ToolPermissions_Session_Title" xml:space="preserve"><value>Allowed until Pia closes</value></data>
+  <data name="Settings_ToolPermissions_Session_Description" xml:space="preserve"><value>Tools you allowed for this session. Nothing here is saved — all of it disappears when Pia restarts. Forget one to be asked again on the next call.</value></data>
   <data name="Settings_ToolPermissions_Title" xml:space="preserve"><value>Always-allowed tools</value></data>
   <data name="Settings_ToolPermissions_Description" xml:space="preserve"><value>Tools you have granted standing approval to run without confirmation. Revoke a grant to be prompted again on the next call.</value></data>
   <data name="ToolPermissions_Empty" xml:space="preserve"><value>No tools are always allowed. When you choose "Always allow" on a tool, it appears here.</value></data>
   <data name="ToolPermissions_Revoke" xml:space="preserve"><value>Revoke</value></data>
+  <data name="ToolPermissions_Forget" xml:space="preserve"><value>Forget</value></data>
   <data name="ToolPermissions_Column_Plugin" xml:space="preserve"><value>Plugin:</value></data>
   <data name="ToolPermissions_Column_GrantedAt" xml:space="preserve"><value>Granted:</value></data>
+  <data name="Settings_ToolPermissions_Catalog_Title" xml:space="preserve"><value>All tools</value></data>
+  <data name="Settings_ToolPermissions_Catalog_Description" xml:space="preserve"><value>Approve a tool here and Pia stops asking for it, exactly as if you had chosen the same answer on a card. Tools that always ask are listed too, with the reason.</value></data>
+  <data name="ToolCatalog_UntilClose" xml:space="preserve"><value>Until Pia closes</value></data>
+  <data name="ToolCatalog_Always" xml:space="preserve"><value>Always</value></data>
+  <data name="ToolCatalog_Reason_SessionOnly" xml:space="preserve"><value>Can only be allowed until Pia closes: a permanent grant is reserved for external tools and a few create-only built-ins.</value></data>
+  <data name="ToolCatalog_Reason_Destructive" xml:space="preserve"><value>Always asks: this tool destroys data, and one card cannot speak for calls you will never see.</value></data>
+  <data name="ToolCatalog_Reason_WorkDiscarding" xml:space="preserve"><value>Always asks: this tool can throw away uncommitted work.</value></data>
+  <data name="ToolCatalog_Reason_AuthorityAuthoring" xml:space="preserve"><value>Always asks: this tool grants permissions that later, unattended runs would use.</value></data>
   <data name="ActionCard_CurrentValue" xml:space="preserve"><value>Current value:</value></data>
   <data name="ActionCard_NewValue" xml:space="preserve"><value>New value:</value></data>
   <data name="ActionCard_Category_Memory" xml:space="preserve"><value>Memory</value></data>
@@ -1055,6 +1072,7 @@
   <data name="Assistant_Export_Tooltip" xml:space="preserve"><value>Export</value></data>
   <data name="Assistant_OpenFolder_Tooltip" xml:space="preserve"><value>Open containing folder</value></data>
   <data name="Assistant_OpenInCode_Tooltip" xml:space="preserve"><value>Open in VS Code</value></data>
+  <data name="Assistant_MoreChips_Tooltip" xml:space="preserve"><value>Show the remaining entries</value></data>
   <data name="Settings_ScheduledJobs_Section_Header" xml:space="preserve"><value>Scheduled jobs</value></data>
   <data name="Settings_ScheduledJobs_Section_Description" xml:space="preserve"><value>Jobs that run on a schedule, on this device. Each one runs under the limits and the auto-approval setting above — they are not set per job.</value></data>
   <data name="Settings_ScheduledJobs_Empty" xml:space="preserve"><value>No scheduled jobs yet.</value></data>

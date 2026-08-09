@@ -266,9 +266,7 @@
                      FontStyle="Italic"
                      VerticalAlignment="Center"
                      Foreground="{DynamicResource TextPlaceholderColorBrush}" />
-          <!-- Manage affordance: deep-links to the tool-permissions revocation surface.
-               Bound to the hosting message's ManageToolPermissionsCommand; only shown for
-               auto-approved (standing-grant) cards. -->
+          <!-- Manage affordance: deep-links to the tool-access page, on every auto-approved card. -->
           <ui:HyperlinkButton Content="{loc:Str ActionCard_Manage}"
                               FontSize="12"
                               Padding="6,0,0,0"

@@ -821,11 +821,10 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             // the interactive first-turn persist below is fire-and-forget and not safe before CreateAsync.
             await PersistAsync(session);
 
-            // D1 producer for the INTERACTIVE origin. An interactive run holds no standing write grant at
-            // all: every write_file goes through an action card the user clicks (write_file is not in the
-            // auto-approve allowlist — ChatSession's gate). A resume, however, runs UNATTENDED through
-            // HeadlessRunLauncher, and a run with no envelope falls back to the {write_file} resume floor —
-            // so parking would ESCALATE this run's authority to card-free writes with nobody watching.
+            // D1 producer for the INTERACTIVE origin. An interactive run holds no standing write grant at all.
+            // A resume, however, runs UNATTENDED through HeadlessRunLauncher, and a run with no envelope falls
+            // back to the {write_file} resume floor — so parking would ESCALATE this run's authority to
+            // card-free writes with nobody watching.
             // Persist the honoured-empty envelope instead: the resume restores "no write grants", which is
             // exactly what the launch had. Bookkeeping, so a serializer fault must not fail the turn
             // (guardrail 1); null degrades to the floor, which is the documented fallback.
@@ -911,8 +910,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             // the whole reason the registry carries a sink at all. A second linked CTS (D1's candidate (a))
             // cannot release a step blocked at ChatState.WaitingForTool — ChatSession awaits
             // ActionCardInfo.WaitForUserDecisionAsync(), which takes NO CancellationToken — and for an
-            // interactive Planned run the action card is the NORMAL path: write_file is not auto-approve
-            // eligible, so every write goes through a card the user clicks. Cancel() releases the pending cards
+            // interactive Planned run the action card is a normal path. Cancel() releases the pending cards
             // AND cancels session.Cts, which is the token the run below is linked from.
             // A local delegate, not an inline lambda, because the same instance is the release token: reference
             // equality is what stops this dispatch's unwind from dropping a resume's registration (hazard 7).

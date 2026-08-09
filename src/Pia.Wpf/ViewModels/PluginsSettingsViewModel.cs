@@ -19,6 +19,8 @@ public partial class PluginsSettingsViewModel : UiThreadViewModel
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly IPluginIconLoader _pluginIconLoader;
 
+    private bool _togglingPlugin;
+
     [ObservableProperty]
     private ObservableCollection<PluginItemViewModel> _plugins = [];
 
@@ -55,7 +57,13 @@ public partial class PluginsSettingsViewModel : UiThreadViewModel
         _pluginService.PluginsChanged += OnPluginsChanged;
     }
 
-    private void OnPluginsChanged(object? sender, EventArgs e) => _ = LoadPluginsAsync();
+    // A toggle raises PluginsChanged itself, and reloading here would detach the row the toggle is still
+    // writing its status onto.
+    private void OnPluginsChanged(object? sender, EventArgs e)
+    {
+        if (_togglingPlugin) return;
+        _ = LoadPluginsAsync();
+    }
 
     private void OnLoginStateChanged(object? sender, bool isLoggedIn)
     {
@@ -127,6 +135,7 @@ public partial class PluginsSettingsViewModel : UiThreadViewModel
 
         plugin.IsActivating = true;
         plugin.UpdateStatus("Checking...");
+        _togglingPlugin = true;
         try
         {
             await _pluginService.SetPluginEnabledAsync(plugin.Id, plugin.IsEnabled);
@@ -144,6 +153,7 @@ public partial class PluginsSettingsViewModel : UiThreadViewModel
         }
         finally
         {
+            _togglingPlugin = false;
             plugin.IsActivating = false;
         }
     }

@@ -782,14 +782,31 @@
   <data name="ActionCard_AllowForSession" xml:space="preserve"><value>Diese Sitzung zulassen</value></data>
   <data name="ActionCard_AutoApproved" xml:space="preserve"><value>Automatisch genehmigt · {0} immer zulassen</value></data>
   <data name="ActionCard_AutoApprovedForSession" xml:space="preserve"><value>Automatisch genehmigt · {0} für diese Sitzung zugelassen</value></data>
+  <data name="ActionCard_AutoApprovedByAutonomy" xml:space="preserve"><value>Automatisch genehmigt · Agenten-Autonomie ist für diese Art von Tool aktiviert</value></data>
+  <data name="ActionCard_AutoApprovedByRunGrant" xml:space="preserve"><value>Automatisch genehmigt · dieser Ausführung wurde {0} erlaubt</value></data>
   <data name="ActionCard_Manage" xml:space="preserve"><value>Verwalten</value></data>
   <data name="Settings_Tab_ToolPermissions" xml:space="preserve"><value>Tool-Zugriff</value></data>
+  <data name="Settings_ToolPermissions_Page_Title" xml:space="preserve"><value>Was ohne Nachfrage ausgeführt wird</value></data>
+  <data name="Settings_ToolPermissions_Page_Description" xml:space="preserve"><value>Pia fragt nach, bevor ein Tool etwas ändert. Drei Antworten auf dieser Karte überspringen die nächste Nachfrage: „Einmal zulassen“ gilt für einen einzigen Aufruf, „Diese Sitzung zulassen“ gilt, bis Pia geschlossen wird, und „Immer zulassen“ wird in Ihren Einstellungen gespeichert und unten aufgeführt. Die Agenten-Autonomie ist eine vierte Quelle: Solange sie aktiviert ist, überspringen Agentenausführungen und der Sprachmodus die Nachfrage für Pias eigene Schreibwerkzeuge.</value></data>
+  <data name="Settings_ToolPermissions_Autonomy_Section" xml:space="preserve"><value>Agenten-Autonomie</value></data>
+  <data name="Settings_ToolPermissions_Autonomy_Covers" xml:space="preserve"><value>Abgedeckte Klassen: Notizen und Gedächtnis, Aufgaben, Erinnerungen, geplante Aufträge, Dateien.</value></data>
+  <data name="Settings_ToolPermissions_Session_Title" xml:space="preserve"><value>Erlaubt, bis Pia geschlossen wird</value></data>
+  <data name="Settings_ToolPermissions_Session_Description" xml:space="preserve"><value>Tools, die Sie für diese Sitzung zugelassen haben. Nichts davon wird gespeichert – alles verschwindet beim Neustart von Pia. Vergessen Sie eine Erlaubnis, um beim nächsten Aufruf erneut gefragt zu werden.</value></data>
   <data name="Settings_ToolPermissions_Title" xml:space="preserve"><value>Immer erlaubte Tools</value></data>
   <data name="Settings_ToolPermissions_Description" xml:space="preserve"><value>Tools, denen Sie die dauerhafte Erlaubnis erteilt haben, ohne Bestätigung ausgeführt zu werden. Widerrufen Sie eine Erlaubnis, um beim nächsten Aufruf erneut gefragt zu werden.</value></data>
   <data name="ToolPermissions_Empty" xml:space="preserve"><value>Keine Tools sind immer erlaubt. Wenn Sie bei einem Tool „Immer zulassen“ wählen, erscheint es hier.</value></data>
   <data name="ToolPermissions_Revoke" xml:space="preserve"><value>Widerrufen</value></data>
+  <data name="ToolPermissions_Forget" xml:space="preserve"><value>Vergessen</value></data>
   <data name="ToolPermissions_Column_Plugin" xml:space="preserve"><value>Plugin:</value></data>
   <data name="ToolPermissions_Column_GrantedAt" xml:space="preserve"><value>Erteilt:</value></data>
+  <data name="Settings_ToolPermissions_Catalog_Title" xml:space="preserve"><value>Alle Tools</value></data>
+  <data name="Settings_ToolPermissions_Catalog_Description" xml:space="preserve"><value>Erlauben Sie ein Tool hier, und Pia fragt nicht mehr danach – genau so, als hätten Sie dieselbe Antwort auf einer Karte gewählt. Tools, die immer nachfragen, werden ebenfalls aufgeführt, mit Begründung.</value></data>
+  <data name="ToolCatalog_UntilClose" xml:space="preserve"><value>Bis Pia geschlossen wird</value></data>
+  <data name="ToolCatalog_Always" xml:space="preserve"><value>Immer</value></data>
+  <data name="ToolCatalog_Reason_SessionOnly" xml:space="preserve"><value>Kann nur bis zum Schließen von Pia erlaubt werden: Eine dauerhafte Erlaubnis ist externen Tools und wenigen rein anlegenden internen Tools vorbehalten.</value></data>
+  <data name="ToolCatalog_Reason_Destructive" xml:space="preserve"><value>Fragt immer nach: Dieses Tool zerstört Daten, und eine Karte kann nicht für Aufrufe sprechen, die Sie nie zu sehen bekommen.</value></data>
+  <data name="ToolCatalog_Reason_WorkDiscarding" xml:space="preserve"><value>Fragt immer nach: Dieses Tool kann nicht committete Arbeit verwerfen.</value></data>
+  <data name="ToolCatalog_Reason_AuthorityAuthoring" xml:space="preserve"><value>Fragt immer nach: Dieses Tool erteilt Berechtigungen, die spätere unbeaufsichtigte Ausführungen nutzen würden.</value></data>
   <data name="ActionCard_CurrentValue" xml:space="preserve"><value>Aktueller Wert:</value></data>
   <data name="ActionCard_NewValue" xml:space="preserve"><value>Neuer Wert:</value></data>
   <data name="ActionCard_Category_Memory" xml:space="preserve"><value>Erinnerung</value></data>
@@ -1047,6 +1064,7 @@
   <data name="Assistant_Export_Tooltip" xml:space="preserve"><value>Exportieren</value></data>
   <data name="Assistant_OpenFolder_Tooltip" xml:space="preserve"><value>Enthaltenden Ordner öffnen</value></data>
   <data name="Assistant_OpenInCode_Tooltip" xml:space="preserve"><value>In VS Code öffnen</value></data>
+  <data name="Assistant_MoreChips_Tooltip" xml:space="preserve"><value>Restliche Einträge anzeigen</value></data>
   <data name="Settings_ScheduledJobs_Section_Header" xml:space="preserve"><value>Geplante Aufträge</value></data>
   <data name="Settings_ScheduledJobs_Section_Description" xml:space="preserve"><value>Aufträge, die nach einem Zeitplan auf diesem Gerät laufen. Jeder läuft mit den Grenzen und der Auto-Freigabe von oben – beides wird nicht pro Auftrag festgelegt.</value></data>
   <data name="Settings_ScheduledJobs_Empty" xml:space="preserve"><value>Noch keine geplanten Aufträge.</value></data>

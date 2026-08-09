@@ -177,6 +177,12 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
     internal static bool IsServerDeclaredDestructive(ToolAnnotations? annotations) =>
         annotations?.DestructiveHint == true;
 
+    /// <summary>The same answer as above, per tool name and BEFORE any call, so a grant surface cannot offer a
+    /// tier the gate's floor would then ignore. An unknown name reads as "no hint", never as a declaration.</summary>
+    public bool DeclaresDestructive(string toolName) =>
+        IsServerDeclaredDestructive(
+            _tools.FirstOrDefault(t => t.Name == toolName)?.ProtocolTool.Annotations);
+
     public Task<object?> ExecutePendingActionAsync(PluginToolCall pendingAction)
     {
         // The deferred call built in HandleToolCallAsync — runs the real MCP invocation now that the

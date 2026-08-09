@@ -40,4 +40,7 @@ public interface IPluginToolHandler
     Task InitializeAsync(CancellationToken ct = default);
     Task ShutdownAsync();
     void ApplyServerMetadata(SyncPlugin plugin);
+
+    /// <summary>The server's own destructive declaration for one tool. False means "no hint": a built-in has none.</summary>
+    bool DeclaresDestructive(string toolName) => false;
 }

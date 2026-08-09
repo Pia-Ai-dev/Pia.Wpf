@@ -175,7 +175,7 @@ public class ToolPermissionServiceTests
         Assert.False(sut.IsGrantedForSession(PluginA, "WRITE_FILE"));
     }
 
-    /// <summary>No <c>Changed</c> event either: it drives the settings grant list, which can neither show nor revoke this tier.</summary>
+    /// <summary><c>Changed</c> does fire — the settings list shows this tier now — but nothing durable moves.</summary>
     [Fact]
     public void GrantForSession_TouchesNeitherAppSettingsNorTheStandingTier()
     {
@@ -188,8 +188,37 @@ public class ToolPermissionServiceTests
         Assert.Empty(appSettings.AlwaysAllowedTools);
         Assert.Empty(sut.List());
         Assert.False(sut.IsGranted(PluginA, "write_file"));
-        Assert.False(raised);
+        Assert.True(raised);
         settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
+    }
+
+    [Fact]
+    public void ListSessionGrants_ProjectsTheSessionTierOnly()
+    {
+        var (sut, _, _) = Create();
+
+        sut.GrantForSession(PluginA, "write_file");
+
+        var row = Assert.Single(sut.ListSessionGrants());
+        Assert.Equal(PluginA, row.PluginId);
+        Assert.Equal("write_file", row.ToolName);
+        Assert.Empty(sut.List());
+    }
+
+    [Fact]
+    public void RevokeSessionGrant_ForgetsItAndRaisesChanged()
+    {
+        var (sut, _, _) = Create();
+        sut.GrantForSession(PluginA, "write_file");
+
+        var raised = false;
+        sut.Changed += (_, _) => raised = true;
+
+        sut.RevokeSessionGrant(PluginA, "write_file");
+
+        Assert.False(sut.IsGrantedForSession(PluginA, "write_file"));
+        Assert.Empty(sut.ListSessionGrants());
+        Assert.True(raised);
     }
 
     /// <summary>The session IS the store instance; the shared <see cref="AppSettings"/> is what makes this about scope rather
@@ -210,7 +239,7 @@ public class ToolPermissionServiceTests
         Assert.True(next.IsGranted(PluginA, "create_todo"));
     }
 
-    /// <summary>A session grant has no revoke short of closing the app, which is what the button promises.</summary>
+    /// <summary>Revoking the standing grant leaves the session grant standing, and neither implies the other.</summary>
     [Fact]
     public async Task TheTwoTiersAreIndependent()
     {

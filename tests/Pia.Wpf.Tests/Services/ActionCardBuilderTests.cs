@@ -220,4 +220,37 @@ public class ActionCardBuilderTests
         Assert.NotEmpty(card.AutoApprovedStatusText);
         Assert.Equal(card.AutoApprovedStatusText, card.ResolvedStatusText);
     }
+
+    [Theory]
+    [InlineData(ToolGateDecision.AutoApprovedStandingGrant, "ActionCard_AutoApproved")]
+    [InlineData(ToolGateDecision.AutoApprovedSessionGrant, "ActionCard_AutoApprovedForSession")]
+    [InlineData(ToolGateDecision.AutoApprovedPolicy, "ActionCard_AutoApprovedByAutonomy")]
+    [InlineData(ToolGateDecision.GrantedByName, "ActionCard_AutoApprovedByRunGrant")]
+    [InlineData(ToolGateDecision.AutoApprovedAllowlist, "ActionCard_AutoApproved")]
+    public void Build_AutoApproved_NamesTheTierThatApproved(ToolGateDecision decision, string expectedKey)
+    {
+        var builder = CreateBuilder(out _, out _);
+
+        var card = builder.Build(Call("create_todo", "todo", "Create a todo"), detokenize: false, autoApprovedAs: decision);
+
+        // The title is spelled out rather than read off the card, so a wrong {0} cannot move both sides at once.
+        Assert.Equal("ActionCard_Action_Create ActionCard_Category_Todo", card.Title);
+        Assert.Equal($"{expectedKey}(ActionCard_Action_Create ActionCard_Category_Todo)", card.AutoApprovedStatusText);
+    }
+
+    [Fact]
+    public void Build_AutoApprovedByPolicy_DoesNotClaimAStandingGrant()
+    {
+        var builder = CreateBuilder(out _, out _);
+
+        // The reported defect: autonomy runs write_file, the card says "you always allow", and Tool access is
+        // blank because no standing grant was ever written. Equality, not a substring — the autonomy key
+        // CONTAINS the standing-grant key, so DoesNotContain would fail on the correct string.
+        var card = builder.Build(
+            Call("write_file", "files", "Write a file"), detokenize: false,
+            autoApprovedAs: ToolGateDecision.AutoApprovedPolicy);
+
+        Assert.Equal($"ActionCard_AutoApprovedByAutonomy({card.Title})", card.AutoApprovedStatusText);
+        Assert.NotEqual($"ActionCard_AutoApproved({card.Title})", card.AutoApprovedStatusText);
+    }
 }

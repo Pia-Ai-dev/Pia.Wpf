@@ -1,3 +1,5 @@
+using Pia.Models;
+
 namespace Pia.Services.Interfaces;
 
 /// <summary>
@@ -35,15 +37,22 @@ public interface ISessionToolGrantStore
     bool IsGranted(Guid pluginId, string toolName);
 
     /// <summary>
-    /// Record a session grant. Idempotent, and there is deliberately no revoke: the only way out is closing
-    /// the app, which is exactly the promise the button makes. A blank tool name is ignored — a grant on an
-    /// empty name would be a wildcard nothing could see.
-    /// <para>
-    /// Keyed on <c>(PluginId, ToolName)</c> with ORDINAL, CASE-SENSITIVE name equality — identical to
-    /// <c>ToolPermissionService</c>'s persisted grant keys, so this tier can never match a name the standing
-    /// tier would not. (The run-level <c>grantedWrites</c> set is <c>OrdinalIgnoreCase</c>; that third
-    /// comparer is documented on <c>ToolGateInput</c> and is not changed here.)
-    /// </para>
+    /// Record a session grant. Idempotent — a repeat keeps the original timestamp; a blank name is ignored.
+    /// The promise is "gone when Pia closes, or when you forget it in settings" (see <see cref="Revoke"/>).
+    /// Keyed ORDINAL and CASE-SENSITIVE like <c>ToolPermissionService</c>'s persisted keys, so this tier can
+    /// never match a name the standing tier would not.
     /// </summary>
     void Grant(Guid pluginId, string toolName);
+
+    /// <summary>Every live session grant, for the settings surface that lists them.</summary>
+    IReadOnlyList<ToolGrant> List();
+
+    /// <summary>Drop a session grant. A blank or unknown name is ignored; strictly narrows what may run.</summary>
+    void Revoke(Guid pluginId, string toolName);
+
+    /// <summary>
+    /// Raised after a grant or revoke that actually changed the set. Raised outside the store lock, so a
+    /// handler can run on whichever thread minted the grant.
+    /// </summary>
+    event EventHandler? Changed;
 }

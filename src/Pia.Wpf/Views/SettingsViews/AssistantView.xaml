@@ -8,6 +8,29 @@
              xmlns:loc="clr-namespace:Pia.Localization">
   <UserControl.Resources>
     <converters:EnumToLocalizedStringConverter x:Key="EnumToLocalizedStringConverter"/>
+
+    <!-- Shared by the standing and session grant rows; only the trailing button differs between them. -->
+    <DataTemplate x:Key="ToolGrantRowDetailsTemplate">
+      <StackPanel VerticalAlignment="Center">
+        <TextBlock FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextDefaultBrush}"
+                   Text="{Binding ToolName}"/>
+        <TextBlock FontSize="11"
+                   Foreground="{DynamicResource TextMutedBrush}"
+                   Margin="0,2,0,0">
+          <Run Text="{loc:Str ToolPermissions_Column_Plugin}"/>
+          <Run Text=" "/>
+          <Run Text="{Binding PluginName, Mode=OneWay}"/>
+        </TextBlock>
+        <TextBlock FontSize="11"
+                   Foreground="{DynamicResource TextSubtleBrush}"
+                   Margin="0,2,0,0">
+          <Run Text="{loc:Str ToolPermissions_Column_GrantedAt}"/>
+          <Run Text=" "/>
+          <Run Text="{Binding GrantedAt, StringFormat='{}{0:g}', Mode=OneWay}"/>
+        </TextBlock>
+      </StackPanel>
+    </DataTemplate>
   </UserControl.Resources>
   <Grid>
     <TabControl SelectedIndex="{Binding SelectedInnerTabIndex}" Style="{DynamicResource SettingsInnerTabControlStyle}">
@@ -167,6 +190,70 @@
       <TabItem Header="{loc:Str Settings_Tab_ToolPermissions}" Style="{DynamicResource SettingsInnerTabItemStyle}">
         <ScrollViewer VerticalScrollBarVisibility="Auto" DataContext="{Binding ToolPermissionsVm}">
           <StackPanel MaxWidth="640" HorizontalAlignment="Left">
+            <TextBlock Text="{loc:Str Settings_ToolPermissions_Page_Title}"
+                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                       FontSize="15"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,4"/>
+            <TextBlock Text="{loc:Str Settings_ToolPermissions_Page_Description}"
+                       Style="{StaticResource PiaSettingsDescriptionStyle}"
+                       Margin="0,0,0,16"/>
+
+            <TextBlock Text="{loc:Str Settings_ToolPermissions_Autonomy_Section}"
+                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                       Margin="0,0,0,4"/>
+            <StackPanel Margin="0,0,0,20">
+              <!-- The ScrollViewer re-roots at ToolPermissionsVm, but this switch lives on the parent VM and
+                   must stay ONE property with ONE save path, so it binds up past the re-root. -->
+              <CheckBox Content="{loc:Str Settings_Agent_AutoApproveBuiltInWrites}"
+                        IsChecked="{Binding DataContext.AgentRunAutoApproveBuiltInWrites, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=TwoWay}"/>
+              <TextBlock Text="{loc:Str Settings_Agent_AutoApproveBuiltInWrites_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         Margin="22,4,0,0"/>
+              <TextBlock Text="{loc:Str Settings_ToolPermissions_Autonomy_Covers}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         Margin="22,4,0,0"/>
+            </StackPanel>
+
+            <!-- Session tier: hidden entirely when empty rather than carrying its own empty state. -->
+            <StackPanel Margin="0,0,0,20"
+                        Visibility="{Binding HasSessionGrants, Converter={StaticResource BooleanToVisibilityConverter}}">
+              <TextBlock Text="{loc:Str Settings_ToolPermissions_Session_Title}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,0,0,4"/>
+              <TextBlock Text="{loc:Str Settings_ToolPermissions_Session_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         Margin="0,0,0,12"/>
+
+              <ItemsControl ItemsSource="{Binding SessionGrants}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Style="{StaticResource PiaSettingsCardStyle}"
+                            Padding="14,12"
+                            Margin="0,0,0,8">
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <ContentPresenter Grid.Column="0"
+                                          Content="{Binding}"
+                                          ContentTemplate="{StaticResource ToolGrantRowDetailsTemplate}"/>
+
+                        <ui:Button Grid.Column="1"
+                                   Content="{loc:Str ToolPermissions_Forget}"
+                                   Appearance="Secondary"
+                                   VerticalAlignment="Center"
+                                   Command="{Binding DataContext.ForgetSessionCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                   CommandParameter="{Binding}"/>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
             <TextBlock Text="{loc:Str Settings_ToolPermissions_Title}"
                        Style="{StaticResource PiaSettingsSectionLabelStyle}"
                        Margin="0,0,0,4"/>
@@ -193,25 +280,9 @@
                         <ColumnDefinition Width="Auto"/>
                       </Grid.ColumnDefinitions>
 
-                      <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                        <TextBlock FontWeight="SemiBold"
-                                   Foreground="{DynamicResource TextDefaultBrush}"
-                                   Text="{Binding ToolName}"/>
-                        <TextBlock FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="0,2,0,0">
-                          <Run Text="{loc:Str ToolPermissions_Column_Plugin}"/>
-                          <Run Text=" "/>
-                          <Run Text="{Binding PluginName, Mode=OneWay}"/>
-                        </TextBlock>
-                        <TextBlock FontSize="11"
-                                   Foreground="{DynamicResource TextSubtleBrush}"
-                                   Margin="0,2,0,0">
-                          <Run Text="{loc:Str ToolPermissions_Column_GrantedAt}"/>
-                          <Run Text=" "/>
-                          <Run Text="{Binding GrantedAt, StringFormat='{}{0:g}', Mode=OneWay}"/>
-                        </TextBlock>
-                      </StackPanel>
+                      <ContentPresenter Grid.Column="0"
+                                        Content="{Binding}"
+                                        ContentTemplate="{StaticResource ToolGrantRowDetailsTemplate}"/>
 
                       <ui:Button Grid.Column="1"
                                  Content="{loc:Str ToolPermissions_Revoke}"
@@ -225,6 +296,70 @@
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
+
+            <!-- Pre-approval catalogue. The toggles bind to the row's own state, never to a command through an
+                 ancestor, because the ancestor inside the group template is the INNER ItemsControl. -->
+            <ui:CardExpander IsExpanded="False"
+                             Margin="0,20,0,0"
+                             Visibility="{Binding HasCatalog, Converter={StaticResource BooleanToVisibilityConverter}}">
+              <ui:CardExpander.Header>
+                <StackPanel>
+                  <TextBlock Text="{loc:Str Settings_ToolPermissions_Catalog_Title}"
+                             Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                             Margin="0,0,0,4"/>
+                  <TextBlock Text="{loc:Str Settings_ToolPermissions_Catalog_Description}"
+                             Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+                </StackPanel>
+              </ui:CardExpander.Header>
+
+              <ItemsControl ItemsSource="{Binding ToolCatalog}"
+                            Margin="0,8,0,0">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <StackPanel Margin="0,0,0,14">
+                      <TextBlock Text="{Binding PluginName}"
+                                 FontWeight="SemiBold"
+                                 Foreground="{DynamicResource TextDefaultBrush}"
+                                 Margin="0,0,0,6"/>
+
+                      <ItemsControl ItemsSource="{Binding Tools}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate>
+                            <Grid Margin="0,0,0,10">
+                              <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                              </Grid.ColumnDefinitions>
+
+                              <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                                <TextBlock Text="{Binding ToolName}"
+                                           Foreground="{DynamicResource TextDefaultBrush}"/>
+                                <TextBlock Text="{Binding Reason}"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextSubtleBrush}"
+                                           Margin="0,2,0,0"
+                                           Visibility="{Binding HasReason, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                              </StackPanel>
+
+                              <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <CheckBox Content="{loc:Str ToolCatalog_UntilClose}"
+                                          IsChecked="{Binding AllowedForSession, Mode=TwoWay}"
+                                          IsEnabled="{Binding CanChangeSession}"
+                                          Margin="0,0,12,0"/>
+                                <CheckBox Content="{loc:Str ToolCatalog_Always}"
+                                          IsChecked="{Binding AllowedAlways, Mode=TwoWay}"
+                                          IsEnabled="{Binding CanChangeAlways}"/>
+                              </StackPanel>
+                            </Grid>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ui:CardExpander>
           </StackPanel>
         </ScrollViewer>
       </TabItem>
