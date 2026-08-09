@@ -1,5 +1,6 @@
 using Microsoft.Extensions.AI;
 using Pia.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 using ReasoningEffort = Pia.Models.ReasoningEffort;
 
@@ -32,7 +33,7 @@ public class VLlmProviderHandlerTests
         };
     }
 
-    [Fact]
+    [LiveApiFact]
     public async Task SendRequestAsync_ReturnsCompletion()
     {
         var provider = TryBuildProvider();
@@ -42,7 +43,7 @@ public class VLlmProviderHandlerTests
         Assert.False(string.IsNullOrWhiteSpace(result.Text));
     }
 
-    [Fact]
+    [LiveApiFact]
     public async Task StreamChatCompletionAsync_YieldsAtLeastOneDelta()
     {
         var provider = TryBuildProvider();
@@ -62,7 +63,7 @@ public class VLlmProviderHandlerTests
         Assert.True(any);
     }
 
-    [Theory]
+    [LiveApiTheory]
     [InlineData(ReasoningEffort.None)]
     [InlineData(ReasoningEffort.Minimal)]
     [InlineData(ReasoningEffort.Low)]

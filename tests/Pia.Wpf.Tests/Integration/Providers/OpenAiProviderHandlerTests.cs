@@ -1,5 +1,6 @@
 using Microsoft.Extensions.AI;
 using Pia.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 using ReasoningEffort = Pia.Models.ReasoningEffort;
 
@@ -30,7 +31,7 @@ public class OpenAiProviderHandlerTests
         };
     }
 
-    [Fact]
+    [LiveApiFact]
     public async Task SendRequestAsync_ReturnsCompletion()
     {
         var provider = TryBuildProvider();
@@ -42,7 +43,7 @@ public class OpenAiProviderHandlerTests
         Assert.False(string.IsNullOrWhiteSpace(result.Text));
     }
 
-    [Fact]
+    [LiveApiFact]
     public async Task StreamChatCompletionAsync_YieldsAtLeastOneDelta()
     {
         var provider = TryBuildProvider();
@@ -62,7 +63,7 @@ public class OpenAiProviderHandlerTests
         Assert.True(any);
     }
 
-    [Fact]
+    [LiveApiFact]
     public async Task TestStreamingAsync_ReturnsTrue()
     {
         var provider = TryBuildProvider();
@@ -71,7 +72,7 @@ public class OpenAiProviderHandlerTests
         Assert.True(await _fixture.BuildClient().TestStreamingAsync(provider, TestContext.Current.CancellationToken));
     }
 
-    [Fact]
+    [LiveApiFact]
     public async Task TestToolCallingAsync_ReturnsTrue()
     {
         var provider = TryBuildProvider();
@@ -80,7 +81,7 @@ public class OpenAiProviderHandlerTests
         Assert.True(await _fixture.BuildClient().TestToolCallingAsync(provider, TestContext.Current.CancellationToken));
     }
 
-    [Theory]
+    [LiveApiTheory]
     [InlineData(ReasoningEffort.None)]
     [InlineData(ReasoningEffort.Medium)]
     [InlineData(ReasoningEffort.High)]
@@ -93,7 +94,7 @@ public class OpenAiProviderHandlerTests
         Assert.False(string.IsNullOrWhiteSpace(result.Text));
     }
 
-    [Fact]
+    [LiveApiFact]
     public async Task SendRequestAsync_WithWebSearch_ReturnsCompletion()
     {
         var provider = TryBuildProvider(enableWebSearch: true);

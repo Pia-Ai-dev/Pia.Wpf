@@ -1,5 +1,6 @@
 using NSubstitute;
 using Pia.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Integration;
@@ -7,7 +8,7 @@ namespace Pia.Tests.Integration;
 [Trait("Category", "Integration")]
 public class ReminderToolIntegrationTests : ToolPipelineTestBase
 {
-    [Fact]
+    [LiveApiFact]
     public async Task CreateReminder_ShouldCallCreateReminder()
     {
         SkipIfNoApiKey();
@@ -44,7 +45,7 @@ public class ReminderToolIntegrationTests : ToolPipelineTestBase
         Assert.Contains("Once", recurrenceArg, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
+    [LiveApiFact]
     public async Task QueryReminders_ShouldCallQueryReminders()
     {
         SkipIfNoApiKey();

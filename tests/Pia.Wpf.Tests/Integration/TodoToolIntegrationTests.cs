@@ -1,5 +1,6 @@
 using NSubstitute;
 using Pia.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Integration;
@@ -7,7 +8,7 @@ namespace Pia.Tests.Integration;
 [Trait("Category", "Integration")]
 public class TodoToolIntegrationTests : ToolPipelineTestBase
 {
-    [Fact]
+    [LiveApiFact]
     public async Task CreateTodo_ShouldCallCreateTodo()
     {
         SkipIfNoApiKey();
@@ -39,7 +40,7 @@ public class TodoToolIntegrationTests : ToolPipelineTestBase
         Assert.Contains("milk", titleArg, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
+    [LiveApiFact]
     public async Task QueryTodos_ShouldCallQueryTodos()
     {
         SkipIfNoApiKey();
@@ -80,7 +81,7 @@ public class TodoToolIntegrationTests : ToolPipelineTestBase
         Assert.Contains(toolCalls, tc => tc.ToolName == "query_todos");
     }
 
-    [Fact]
+    [LiveApiFact]
     public async Task CompleteTodo_ShouldUseCorrectId()
     {
         SkipIfNoApiKey();

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.AI;
 using Pia.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 using ReasoningEffort = Pia.Models.ReasoningEffort;
 
@@ -30,7 +31,7 @@ public class OpenRouterProviderHandlerTests
         };
     }
 
-    [Fact]
+    [LiveApiFact]
     public async Task SendRequestAsync_ReturnsCompletion()
     {
         var provider = TryBuildProvider();
@@ -40,7 +41,7 @@ public class OpenRouterProviderHandlerTests
         Assert.False(string.IsNullOrWhiteSpace(result.Text));
     }
 
-    [Fact]
+    [LiveApiFact]
     public async Task StreamChatCompletionAsync_YieldsAtLeastOneDelta()
     {
         var provider = TryBuildProvider();
@@ -60,7 +61,7 @@ public class OpenRouterProviderHandlerTests
         Assert.True(any);
     }
 
-    [Fact]
+    [LiveApiFact]
     public async Task TestStreamingAsync_ReturnsTrue()
     {
         var provider = TryBuildProvider();
@@ -69,7 +70,7 @@ public class OpenRouterProviderHandlerTests
         Assert.True(await _fixture.BuildClient().TestStreamingAsync(provider, TestContext.Current.CancellationToken));
     }
 
-    [Theory]
+    [LiveApiTheory]
     [InlineData(ReasoningEffort.None)]
     [InlineData(ReasoningEffort.Minimal)]
     [InlineData(ReasoningEffort.Low)]
@@ -85,7 +86,7 @@ public class OpenRouterProviderHandlerTests
         Assert.False(string.IsNullOrWhiteSpace(result.Text));
     }
 
-    [Fact]
+    [LiveApiFact]
     public async Task SendRequestAsync_WithWebSearch_ReturnsCompletion()
     {
         var provider = TryBuildProvider(enableWebSearch: true);

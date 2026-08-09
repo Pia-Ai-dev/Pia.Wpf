@@ -1,5 +1,6 @@
 using Microsoft.Extensions.AI;
 using Pia.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 using ReasoningEffort = Pia.Models.ReasoningEffort;
 
@@ -28,7 +29,7 @@ public class AzureOpenAiProviderHandlerTests
         };
     }
 
-    [Fact]
+    [LiveApiFact]
     public async Task SendRequestAsync_ReturnsCompletion()
     {
         var provider = TryBuildProvider();
@@ -38,7 +39,7 @@ public class AzureOpenAiProviderHandlerTests
         Assert.False(string.IsNullOrWhiteSpace(result.Text));
     }
 
-    [Fact]
+    [LiveApiFact]
     public async Task TestStreamingAsync_ReturnsTrue()
     {
         var provider = TryBuildProvider();
@@ -47,7 +48,7 @@ public class AzureOpenAiProviderHandlerTests
         Assert.True(await _fixture.BuildClient().TestStreamingAsync(provider, TestContext.Current.CancellationToken));
     }
 
-    [Theory]
+    [LiveApiTheory]
     [InlineData(ReasoningEffort.None)]
     [InlineData(ReasoningEffort.Medium)]
     [InlineData(ReasoningEffort.High)]

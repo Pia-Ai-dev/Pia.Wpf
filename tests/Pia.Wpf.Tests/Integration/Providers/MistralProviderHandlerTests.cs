@@ -1,5 +1,6 @@
 using Microsoft.Extensions.AI;
 using Pia.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 using ReasoningEffort = Pia.Models.ReasoningEffort;
 
@@ -29,7 +30,7 @@ public class MistralProviderHandlerTests
         };
     }
 
-    [Fact]
+    [LiveApiFact]
     public async Task SendRequestAsync_ReturnsCompletion()
     {
         var provider = TryBuildProvider();
@@ -39,7 +40,7 @@ public class MistralProviderHandlerTests
         Assert.False(string.IsNullOrWhiteSpace(result.Text));
     }
 
-    [Fact]
+    [LiveApiFact]
     public async Task StreamChatCompletionAsync_YieldsAtLeastOneDelta()
     {
         var provider = TryBuildProvider();
@@ -59,7 +60,7 @@ public class MistralProviderHandlerTests
         Assert.True(any);
     }
 
-    [Fact]
+    [LiveApiFact]
     public async Task TestStreamingAsync_ReturnsTrue()
     {
         var provider = TryBuildProvider();
@@ -68,7 +69,7 @@ public class MistralProviderHandlerTests
         Assert.True(await _fixture.BuildClient().TestStreamingAsync(provider, TestContext.Current.CancellationToken));
     }
 
-    [Theory]
+    [LiveApiTheory]
     [InlineData(ReasoningEffort.None)]
     [InlineData(ReasoningEffort.High)]
     public async Task SendRequestAsync_EachEffortLevel_Succeeds(ReasoningEffort effort)
@@ -85,7 +86,7 @@ public class MistralProviderHandlerTests
     /// handler must NOT send `reasoning_effort` at all, even if the user
     /// configured one. Otherwise Mistral returns 422.
     /// </summary>
-    [Fact]
+    [LiveApiFact]
     public async Task SendRequestAsync_WithIncompatibleModel_OmitsReasoningField()
     {
         var provider = TryBuildProvider(ReasoningEffort.High, modelOverride: "mistral-large-latest");
@@ -95,7 +96,7 @@ public class MistralProviderHandlerTests
         Assert.False(string.IsNullOrWhiteSpace(result.Text));
     }
 
-    [Fact]
+    [LiveApiFact]
     public async Task SendRequestAsync_WithWebSearch_ReturnsCompletion()
     {
         var (endpoint, key, model) = ProviderTestEnvironment.Mistral();
@@ -121,7 +122,7 @@ public class MistralProviderHandlerTests
         Assert.False(string.IsNullOrWhiteSpace(result.Text));
     }
 
-    [Fact]
+    [LiveApiFact]
     public async Task StreamChatCompletionAsync_WithWebSearch_YieldsAtLeastOneDelta()
     {
         var (endpoint, key, model) = ProviderTestEnvironment.Mistral();
