@@ -14,23 +14,8 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Covers <c>AiClientService.IsContextLengthError</c> and the ORDER in which the tool-not-supported catch
-/// bodies log — the only two things this change adds.
-/// <para>
-/// WHY THIS FILE EXISTS: <c>IsToolNotSupportedError</c> answers true for essentially ANY 400, so a request
-/// that overflowed the model's context window was reported as "retrying without tools" — the wrong top-line
-/// diagnosis in a support log, plus one wasted round trip re-sending the same oversized list. The fix is
-/// diagnosis only: a metadata-only Warning naming the real cause, emitted BEFORE the tool-not-supported line.
-/// Nothing about the retry changes, which is why half of this file pins the retry behaviour exactly as it is.
-/// </para>
-/// <para>
-/// NOTE: <c>IsToolNotSupportedError</c> itself has no test anywhere in the suite (it is <c>private</c>). This
-/// file does not change that; it pins its OBSERVABLE effect — the tool-disabled retry — end to end instead.
-/// Same seam as <c>AiClientServiceInStepCompactionTests</c>: the REAL service against a scripted
-/// <see cref="IChatClient"/>.
-/// </para>
-/// </summary>
+/// <summary><c>IsToolNotSupportedError</c> answers true for essentially any 400, so a context overflow used to
+/// be reported as "retrying without tools" — the wrong top-line diagnosis in a support log.</summary>
 public class AiClientServiceContextLengthDiagnosisTests
 {
     /// <summary>A real OpenAI overflow body, trimmed. Also the shape Azure OpenAI and vLLM return.</summary>
@@ -52,8 +37,7 @@ public class AiClientServiceContextLengthDiagnosisTests
     [InlineData("This endpoint's maximum context length is 16384 tokens. However, you requested 20114 tokens.")]
     public void ContextLengthShapes_AreClassified(string body)
     {
-        // One per provider family Pia talks to: OpenAI/Azure/vLLM, Anthropic, Gemini, Mistral,
-        // llama.cpp/Ollama, OpenRouter.
+        // One body per provider family Pia talks to.
         Assert.True(
             AiClientService.IsContextLengthError(
                 new HttpRequestException(body, null, HttpStatusCode.BadRequest)),
@@ -63,9 +47,8 @@ public class AiClientServiceContextLengthDiagnosisTests
     [Fact]
     public void ContextLengthShape_IsClassified_OnTheExceptionTypeTheOpenAiAdapterThrows()
     {
-        // Built from the body alone, so its Status is 0 (measured) — which is exactly why the classifier does
-        // not re-check the status code: the call site's filter has already established 400/404 through
-        // IsToolNotSupportedError, and a re-check here would go blind on this shape.
+        // This shape carries Status 0, which is why the classifier must not re-check the status code — the call
+        // site has already established 400/404.
         Assert.True(AiClientService.IsContextLengthError(new ClientResultException(OpenAiOverflow)));
     }
 
@@ -75,8 +58,6 @@ public class AiClientServiceContextLengthDiagnosisTests
     [InlineData("{\"error\":{\"message\":\"Unrecognized request argument supplied: tool_choice\"}}")]
     public void ToolNotSupportedShapes_AreNotMisclassified(string body)
     {
-        // The genuine tool-capability rejections must keep reading as exactly that. If one of these ever
-        // classified as an overflow, the new line would slander a working diagnosis.
         Assert.False(
             AiClientService.IsContextLengthError(
                 new HttpRequestException(body, null, HttpStatusCode.BadRequest)),
@@ -96,8 +77,7 @@ public class AiClientServiceContextLengthDiagnosisTests
     [Fact]
     public void NonProviderExceptions_AreNotClassified_EvenWithAMatchingMessage()
     {
-        // Type gate, the same defensive posture as IsToolNotSupportedError: only the two exception types a
-        // provider adapter actually throws are considered.
+        // Type gate: only the two exception types a provider adapter actually throws are considered.
         Assert.False(AiClientService.IsContextLengthError(
             new InvalidOperationException("maximum context length is 8192 tokens")));
     }
@@ -109,8 +89,7 @@ public class AiClientServiceContextLengthDiagnosisTests
             streaming: true,
             firstCallError: new HttpRequestException(OpenAiOverflow, null, HttpStatusCode.BadRequest));
 
-        // 1. The real cause is named, and named FIRST. This ordering is the entire point of the change: the
-        //    catch BODY logs the tool-support line, so the diagnosis has to be its first statement.
+        // The catch body logs the tool-support line, so the diagnosis has to be its first statement.
         var overflow = run.Logger.IndexOf("Context overflow");
         var toolLine = run.Logger.IndexOf("retrying without tools");
         Assert.True(overflow >= 0, "the context-overflow diagnosis line was not logged at all");
@@ -119,10 +98,8 @@ public class AiClientServiceContextLengthDiagnosisTests
             overflow < toolLine,
             $"the wrong diagnosis was logged first (overflow line at {overflow}, tool-support line at {toolLine})");
 
-        // 2. Privacy — the whole risk of this change. The new line carries metadata only: no provider body,
-        //    no user content, no exception attached. Release logs get attached to support tickets. Scoped to
-        //    the new line on purpose: SensitiveDebug IS live in a Debug test build, so a suite-wide
-        //    assertion would be measuring something else.
+        // Metadata only, because release logs get attached to support tickets. Scoped to this one line:
+        // SensitiveDebug is live in a Debug test build, so a suite-wide assertion would measure something else.
         var entry = run.Logger.Entries[overflow];
         Assert.Equal(LogLevel.Warning, entry.Level);
         Assert.Null(entry.Exception);
@@ -130,15 +107,12 @@ public class AiClientServiceContextLengthDiagnosisTests
         Assert.DoesNotContain("maximum context length", entry.Message);
         Assert.DoesNotContain(GoalText, entry.Message);
 
-        // 3. It says what it knows: the round, the message count, and the configured budget.
         Assert.Contains("carried 1 message(s)", entry.Message);
         Assert.Contains("contextBudgetConfigured=True", entry.Message);
         Assert.Contains("windowTokens=8000", entry.Message);
         Assert.Contains("maxOutputTokens=2000", entry.Message);
 
-        // 4. BEHAVIOUR UNCHANGED — the promise of this item, and therefore a GUARD, not red-green evidence:
-        //    every assertion in this block already passes on the pre-change source. Two provider calls (the
-        //    rejected one and the tool-disabled retry), the retry carries no tools, the turn still completes.
+        // The retry is unchanged: this block already passed before the diagnosis line existed.
         Assert.Equal(2, run.OptionsPerCall.Count);
         Assert.Single(run.OptionsPerCall[0]!.Tools!);
         Assert.Null(run.OptionsPerCall[1]!.Tools);
@@ -149,10 +123,8 @@ public class AiClientServiceContextLengthDiagnosisTests
     [Fact]
     public async Task NonStreamingOverflow_NamesTheRealCauseFirstToo_AndStillRetriesWithoutTools()
     {
-        // Site parity: the catch body is duplicated per provider path, and both executors funnel through this
-        // one method — the Headless chain (HeadlessTurnExecutor -> BackgroundAssistantTurnRunner) and the Live
-        // path (ChatSession.RunModelExchangeAsync). So the non-streaming body has to carry the same call in
-        // the same position, or half the fleet keeps the wrong diagnosis.
+        // The catch body is duplicated per provider path, so the non-streaming one needs the same call in the
+        // same position or half the fleet keeps the wrong diagnosis.
         var run = await RunAsync(
             streaming: false,
             firstCallError: new HttpRequestException(OpenAiOverflow, null, HttpStatusCode.BadRequest));
@@ -163,7 +135,6 @@ public class AiClientServiceContextLengthDiagnosisTests
         Assert.True(toolLine >= 0, "the pre-existing tool-disabled retry line disappeared");
         Assert.True(overflow < toolLine, "the non-streaming path logged the wrong diagnosis first");
 
-        // Guard block again — green before and after.
         Assert.Equal(2, run.OptionsPerCall.Count);
         Assert.Single(run.OptionsPerCall[0]!.Tools!);
         Assert.Null(run.OptionsPerCall[1]!.Tools);
@@ -173,8 +144,8 @@ public class AiClientServiceContextLengthDiagnosisTests
     [Fact]
     public async Task UnrecognisedBadRequest_LogsNoOverflowLine_AndBehavesExactlyAsBefore()
     {
-        // The substring list WILL miss provider phrasings. When it does, the change degrades to exactly the
-        // old behaviour — the tool-disabled retry, and only the old warning — never to worse.
+        // The substring list will miss provider phrasings; when it does, the behaviour degrades to the old
+        // tool-disabled retry and never to worse.
         var run = await RunAsync(
             streaming: true,
             firstCallError: new HttpRequestException(
@@ -194,11 +165,8 @@ public class AiClientServiceContextLengthDiagnosisTests
     private sealed record RunResult(
         List<ChatStreamItem> Items, List<ChatOptions?> OptionsPerCall, FakeLogger Logger);
 
-    /// <summary>
-    /// Drives the real service with tools enabled: the first provider call throws
-    /// <paramref name="firstCallError"/>, the tool-disabled retry answers with text. Records the
-    /// <see cref="ChatOptions"/> of every call so the retry can be inspected, and captures every log line.
-    /// </summary>
+    /// <summary>The first provider call throws <paramref name="firstCallError"/> and the tool-disabled retry
+    /// answers with text; every call's <see cref="ChatOptions"/> and log line is recorded.</summary>
     private static async Task<RunResult> RunAsync(bool streaming, Exception firstCallError)
     {
         var logger = new FakeLogger();
@@ -243,8 +211,8 @@ public class AiClientServiceContextLengthDiagnosisTests
                 Arg.Any<AiProvider>(), Arg.Any<string?>(), Arg.Any<HttpClient>(),
                 Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(chatClient));
-        // A FRESH ChatOptions per call: the retry must be observable as "no tools", which only works if the
-        // handler does not hand back the same instance the first call had its tools written into.
+        // A fresh ChatOptions per call, or the retry cannot be observed as "no tools": the first call wrote its
+        // tools into the shared instance.
         handler.CreateChatOptions(Arg.Any<AiProvider>(), Arg.Any<bool>()).Returns(_ => new ChatOptions());
 
         var httpFactory = Substitute.For<IHttpClientFactory>();
@@ -293,7 +261,7 @@ public class AiClientServiceContextLengthDiagnosisTests
         await Task.Yield();
     }
 
-    /// <summary>Captures every line, in order — the order is what this file asserts.</summary>
+    /// <summary>Captures every line in order, because the order is what this file asserts.</summary>
     private sealed class FakeLogger : ILogger<AiClientService>
     {
         public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];

@@ -15,13 +15,8 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Regression tests for the 2026-07-04 E2EE-window stranding fixes (H3): plugin
-/// preferences must survive a failed/403 push (peek-then-clear-on-success) and a
-/// prefs-only cycle must not be short-circuited away; the onboarding full re-push
-/// (PerformFirstSyncMigrationAsync) must include scheduled jobs so they are not stranded
-/// behind the advancing pull cursor.
-/// </summary>
+/// <summary>A failed push must keep the pending plugin prefs for retry, and the onboarding re-push must include
+/// scheduled jobs so they are not stranded behind the advancing pull cursor.</summary>
 public class SyncClientServiceE2EEWindowTests
 {
     private readonly IAuthService _authService = Substitute.For<IAuthService>();

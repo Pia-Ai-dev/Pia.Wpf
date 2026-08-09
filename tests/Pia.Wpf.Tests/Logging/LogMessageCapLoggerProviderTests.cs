@@ -4,16 +4,7 @@ using Xunit;
 
 namespace Pia.Tests.Logging;
 
-/// <summary>
-/// T2-18's release-mode backstop: one log line may not be arbitrarily long.
-/// <para>
-/// What this is NOT is worth stating in a test file too, because the checklist item it comes from repeats a false
-/// claim: this does not introduce redaction. User content already leaves release logs BY COMPILATION — the
-/// <c>Sensitive*</c> family is <c>[Conditional("DEBUG")]</c>, so in a release build there is no string to redact
-/// (<c>17-trust-model.md</c> §4). This covers only the residue that erasure cannot: a line that is not
-/// <c>Sensitive*</c>-gated and carries a payload anyway, ours or a third party's. Hence a content-AGNOSTIC bound.
-/// </para>
-/// </summary>
+// A content-agnostic length bound, not redaction: the Sensitive* family is already erased from release builds.
 public class LogMessageCapLoggerProviderTests
 {
     private sealed class RecordingProvider : ILoggerProvider
@@ -72,10 +63,7 @@ public class LogMessageCapLoggerProviderTests
         Assert.DoesNotContain(new string('x', 21), line);
     }
 
-    /// <summary>
-    /// The HEAD is what survives, which is why the composition in <c>Bootstrapper</c> puts the scope prefix
-    /// inside the cap: a capped line still says which run it belongs to.
-    /// </summary>
+    // The head is what survives, which is why Bootstrapper puts the scope prefix inside the cap.
     [Fact]
     public void TruncationKeepsTheHead_SoAPrefixSurvives()
     {
@@ -86,10 +74,7 @@ public class LogMessageCapLoggerProviderTests
         Assert.StartsWith("[run 1234] ", Assert.Single(inner.Lines));
     }
 
-    /// <summary>
-    /// The exception is handed on untouched, so a stack trace is never truncated: the formatter this caps returns
-    /// the MESSAGE only, and the sink appends the exception itself.
-    /// </summary>
+    // The cap applies to the message only — the sink appends the exception, so a stack trace is never truncated.
     [Fact]
     public void TheExceptionIsPassedThroughUntouched()
     {
@@ -112,10 +97,6 @@ public class LogMessageCapLoggerProviderTests
         Assert.Equal(new string('x', 15), Assert.Single(inner.Lines));
     }
 
-    /// <summary>
-    /// The cap only ever ADDS to a line's length budget in one direction, and a nonsense cap must not produce an
-    /// empty log: it is floored at one character.
-    /// </summary>
     [Fact]
     public void AnAbsurdCap_StillLeavesSomething()
     {
@@ -147,11 +128,7 @@ public class LogMessageCapLoggerProviderTests
         Assert.True(inner.Disposed);
     }
 
-    /// <summary>
-    /// The BUILD's own default, asserted per configuration rather than assumed: DEBUG must not truncate (a
-    /// developer's log is the thing being diagnosed, and the <c>Sensitive*</c> lines only exist there), RELEASE
-    /// must.
-    /// </summary>
+    // DEBUG must not truncate: a developer's log is the thing being diagnosed, and Sensitive* lines only exist there.
     [Fact]
     public void TheDefaultCapMatchesTheBuild()
     {

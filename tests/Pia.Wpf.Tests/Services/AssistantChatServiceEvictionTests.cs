@@ -9,11 +9,7 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Retention (§2.4/§16 R17): <see cref="AssistantChatService.EvictOlderThanAsync"/> skips chats that
-/// bear a <see cref="RunShape.Planned"/> run, so a durable/resumable agent run outlives stale-chat
-/// eviction; the returned list contains only actually-deleted ids.
-/// </summary>
+/// <summary>A chat bearing a <see cref="RunShape.Planned"/> run outlives stale-chat eviction, so a resumable run is never deleted.</summary>
 public sealed class AssistantChatServiceEvictionTests
 {
     private static SyncAssistantChat Chat(Guid id, DateTime lastAccessed) => new()

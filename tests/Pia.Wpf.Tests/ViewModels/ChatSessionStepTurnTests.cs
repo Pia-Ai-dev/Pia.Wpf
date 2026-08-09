@@ -9,12 +9,6 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// The additive step-turn path (§13.7/§16 R4): a step-turn clears IsStreaming and detokenizes PII
-/// via the shared per-exchange cleanup, converts exceptions into a failed StepTurnResult (never
-/// ChatState.Error / a RunFailed snackbar), keeps the ephemeral instruction out of the transcript,
-/// and restores the ambients.
-/// </summary>
 public sealed class ChatSessionStepTurnTests
 {
     private readonly IAiClientService _ai = Substitute.For<IAiClientService>();
@@ -24,7 +18,7 @@ public sealed class ChatSessionStepTurnTests
     private readonly ITokenMapService _tokenMap = Substitute.For<ITokenMapService>();
     private readonly IToolPermissionService _permissions = Substitute.For<IToolPermissionService>();
 
-    /// <summary>The session's log, so a fixture can assert on the compaction diff LINE (D-A').</summary>
+    // The session's log, so a fixture can assert on the compaction diff line.
     private readonly CapturingLogger<ChatSession> _log = new();
 
     public ChatSessionStepTurnTests()
@@ -105,7 +99,7 @@ public sealed class ChatSessionStepTurnTests
         Assert.Equal(0, failed);
         Assert.Null(TaskAmbient.Current);
         Assert.Null(TokenMapAmbient.Current);
-        // Ephemeral instruction is never mirrored into the transcript (§13.7).
+        // The ephemeral instruction is never mirrored into the transcript.
         Assert.Equal(2, session.Messages.Count);
         Assert.DoesNotContain(session.Messages, m => m.Content.Contains("Execute step 1"));
     }
@@ -135,12 +129,8 @@ public sealed class ChatSessionStepTurnTests
     [Fact]
     public async Task RunStepTurn_WithAConfiguredWindow_CompactsTheRequest_AndRelaysTheBudget()
     {
-        // The Headless half of the compaction change is covered by HeadlessTurnExecutorTests; this is the
-        // LIVE half, which had no assertion at all — BuildStepChatMessagesAsync's CompactAsync call and the
-        // budget it relays into RunModelExchangeAsync could both be deleted with the suite staying green,
-        // because every other fixture here leaves MaxContextWindowTokens null (so the budget is null and the
-        // 6-arg stub keeps matching). A live agent step on a provider WITH a window would then still
-        // overflow while the headless path compacts.
+        // Every other fixture here leaves MaxContextWindowTokens null, so the compaction call and the relayed
+        // budget could both be deleted with the suite staying green.
         List<ChatMessage>? sent = null;
         AgentContextBudget? relayed = null;
         var budgeted = new AiProvider
@@ -164,8 +154,7 @@ public sealed class ChatSessionStepTurnTests
 
         var session = CreateSession();
         session.Messages.Add(new AssistantMessage(ChatRole.User, "THE GOAL: audit the repo."));
-        // 12 prior step replies of ~500 estimated tokens each — the shape measured to be over budget at
-        // 8000/2000 (the 8-reply shape is NOT, see AgentContextCompactorTests).
+        // 12 replies, not 8: the 8-reply shape is under the truncation trigger at 8000/2000.
         for (var i = 1; i <= 12; i++)
             session.Messages.Add(new AssistantMessage(ChatRole.Assistant, $"step {i} reply: " + new string('x', 2_000)));
 
@@ -179,17 +168,14 @@ public sealed class ChatSessionStepTurnTests
         Assert.NotNull(sent);
         // Built: system + goal + 12 replies + the ephemeral instruction = 15.
         Assert.True(sent!.Count < 15, $"the live step request must be compacted, saw {sent.Count} of 15");
-        // The pins survive: system first, then the goal, and the step instruction last.
         Assert.Equal(ChatRole.System, sent[0].Role);
         Assert.Contains("THE GOAL", sent[1].Text);
         Assert.Contains("Execute step 1", sent[^1].Text);
         // ...and the same budget is relayed so the IN-STEP tool loop is bounded too.
         Assert.Equal(new AgentContextBudget(8_000, 2_000), relayed);
 
-        // D-A': the seam names WHICH run and WHICH step shrank. Keyed on the IDS rather than on the
-        // wording - the compactor logs to this same logger and structurally cannot emit either id, and no
-        // other ChatSession log template starts "Agent run", so Assert.Single stays honest even if the
-        // compactor's own line is reworded or promoted to Information.
+        // Keyed on the IDS, not the wording: the compactor logs to this same logger but cannot emit either id, so
+        // Assert.Single stays honest even if its line is reworded.
         var diff = Assert.Single(
             _log.Entries,
             e => e.Message.Contains($"Agent run {spec.RunId} step {spec.Ordinal}", StringComparison.Ordinal));
@@ -228,11 +214,8 @@ public sealed class ChatSessionStepTurnTests
         Assert.Null(relayed);
         Assert.Equal(15, sent!.Count);
 
-        // A GUARD, NOT A REGRESSION TEST: this passes before the D-A' change too. What it pins is that the
-        // diff line only appears when something actually shrank - a null budget returns at CompactAsync's
-        // budget guard before anything is logged, and the seam's count comparison finds no difference.
-        // Keyed on the SEAM's own id prefix, never on a bare "compaction": the compactor logs through this
-        // same logger instance, so a bare substring would couple this guard to the compactor's wording.
+        // The diff line must only appear when something actually shrank. Keyed on the seam's own id prefix: the
+        // compactor logs through this same logger, so a bare "compaction" substring would couple this to its wording.
         Assert.DoesNotContain(_log.Entries, e =>
             e.Message.Contains($"Agent run {spec.RunId} step", StringComparison.Ordinal)
             && e.Message.Contains("compaction", StringComparison.Ordinal));
@@ -258,9 +241,8 @@ public sealed class ChatSessionStepTurnTests
     [Fact]
     public async Task RunStepTurn_TransportOce_TokenNotCancelled_ReturnsFailedNotCancelled()
     {
-        // A TaskCanceledException out of the transport with the step token never cancelled — the shape an
-        // HTTP-layer timeout produces. It is a FAILURE, not a user stop: recording Cancelled would settle
-        // the run as cancelled with no replan and nothing telling the person what actually happened.
+        // A TaskCanceledException out of the transport with the step token never cancelled — an HTTP timeout. It is
+        // a FAILURE, not a user stop: recording Cancelled would settle the run with no replan and no explanation.
         ReturnsStream(() => ThrowingStream(new TaskCanceledException("The operation was canceled.")));
 
         var session = CreateSession();

@@ -58,8 +58,7 @@ public sealed class AgentRunClarificationResumeTests
         return result;
     }
 
-    /// <summary>A step row as a PARKED run's plan already holds it, with its status — seeded directly so a zero
-    /// call count on the resume means zero, not "one launch's calls minus one".</summary>
+    /// <summary>Seeded directly so a zero call count on the resume means zero, not "one launch's calls minus one".</summary>
     private static AgentStep Persisted(int ordinal, string intent, AgentStepStatus status) => new()
     {
         Id = Guid.NewGuid(),
@@ -210,7 +209,6 @@ public sealed class AgentRunClarificationResumeTests
         }
     }
 
-    /// <summary>Same shape as every other orchestrator fixture in this folder; the spy store is threaded in so plan writes are countable.</summary>
     private sealed class Harness : IDisposable
     {
         private readonly string _dir;
@@ -248,7 +246,7 @@ public sealed class AgentRunClarificationResumeTests
             return await Runs.CreateAsync(new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User, Goal: goal));
         }
 
-        /// <summary>Parks the run and wins the resume claim, exactly as <c>HeadlessRunLauncher.ResumeAsync</c> does — including that the claim NULLs <c>ExtraJson</c>.</summary>
+        /// <summary>Parks and wins the resume claim as the launcher does, which NULLs <c>ExtraJson</c>.</summary>
         public async Task ParkAndClaimAsync(Guid runId, string reason)
         {
             await Runs.PauseAsync(runId, reason, Ct);
@@ -271,7 +269,6 @@ public sealed class AgentRunClarificationResumeTests
     // direction 1: a resumed needs-goal run RE-PLANS
     // ============================================================================================
 
-    /// <summary>A needs-goal resume with no step rows re-enters planning instead of settling immediately.</summary>
     [Fact]
     public async Task Resume_NeedsGoalPark_WithNoStepRows_RePlans()
     {
@@ -335,7 +332,6 @@ public sealed class AgentRunClarificationResumeTests
         Assert.False(exec.FallbackCalled);
     }
 
-    /// <summary>Token is right but step rows already exist, so the guard's second condition fails and no re-plan happens.</summary>
     [Fact]
     public async Task Resume_NeedsGoalPark_ButStepRowsExist_DoesNotRePlan()
     {
@@ -410,7 +406,6 @@ public sealed class AgentRunClarificationResumeTests
         Assert.Contains(FirstAnswer, RunClarifications.Read(final.ClarificationsJson));
     }
 
-    /// <summary>A resume that supplies no park reason keeps the pre-existing behavior: it never re-plans.</summary>
     [Fact]
     public async Task Resume_WithNoParkReason_DoesNotRePlan()
     {
@@ -433,7 +428,6 @@ public sealed class AgentRunClarificationResumeTests
         Assert.DoesNotContain(AgentRunState.Planning, spy.States);
     }
 
-    /// <summary>Control case: a park reason present but not <c>needs-goal</c> must not trigger a re-plan either.</summary>
     [Fact]
     public async Task Resume_StepCapPark_DrainsTheRemainder_AndNeverRePlans()
     {
@@ -462,7 +456,6 @@ public sealed class AgentRunClarificationResumeTests
         Assert.Equal(AgentRunState.Completed, (await h.Runs.GetAsync(run.Id, Ct))!.State);
     }
 
-    /// <summary>A launch (<c>resume: false</c>) ignores the park-reason parameter entirely; verified by comparing store-read counts against a control launch.</summary>
     [Fact]
     public async Task Launch_IgnoresTheParkReason_AndStillPlansExactlyOnce()
     {
@@ -497,7 +490,6 @@ public sealed class AgentRunClarificationResumeTests
     // The answers: persisted beside the goal, and READ by the re-plan
     // ============================================================================================
 
-    /// <summary>Persisted answers reach the planner via <c>ctx.Clarifications</c>, oldest-first; the goal string itself is never rewritten.</summary>
     [Fact]
     public async Task Resume_NeedsGoalPark_SeedsThePersistedAnswersIntoTheRunContext()
     {
@@ -521,7 +513,7 @@ public sealed class AgentRunClarificationResumeTests
         Assert.Equal(new[] { ThinGoal }, planner.PlannedGoals);          // the goal argument is NOT rewritten
     }
 
-    /// <summary>A full park → answer → resume → re-plan cycle must leave <c>AgentRuns.Goal</c> byte-identical to what the user typed, since the panel renders that column directly.</summary>
+    /// <summary>The panel renders <c>AgentRuns.Goal</c> directly, so a clarification cycle must leave it byte-identical.</summary>
     [Fact]
     public async Task ClarificationCycle_LeavesTheGoalColumnExactlyAsTheUserTypedIt()
     {
@@ -543,7 +535,6 @@ public sealed class AgentRunClarificationResumeTests
         Assert.DoesNotContain(FirstAnswer, final.Goal!);
     }
 
-    /// <summary>Two park/answer cycles in a row: the second re-plan must see both accumulated answers, not just the latest.</summary>
     [Fact]
     public async Task TwoParks_TwoAnswers_AndTheSecondRePlanSeesBoth()
     {
@@ -582,7 +573,7 @@ public sealed class AgentRunClarificationResumeTests
     // The store: accumulation, and where the text must NOT end up
     // ============================================================================================
 
-    /// <summary>Answers accumulate oldest-first, survive the resume claim's <c>ExtraJson</c> NULL-out, and never end up in the pause envelope (which a consumer may log wholesale).</summary>
+    /// <summary>A consumer may log the pause envelope wholesale, so the answers must never be in it.</summary>
     [Fact]
     public async Task AppendClarificationAsync_Accumulates_SurvivesTheResumeClaim_AndStaysOutOfThePauseEnvelope()
     {
@@ -605,7 +596,7 @@ public sealed class AgentRunClarificationResumeTests
         Assert.Equal(new[] { FirstAnswer, SecondAnswer }, RunClarifications.Read(claimed.ClarificationsJson));
     }
 
-    /// <summary>Write-time bounds only: <c>MaxAnswers</c> drops the oldest kept answer, <c>MaxAnswerChars</c> head-truncates with an ellipsis, and neither caps how many times a run may ask.</summary>
+    /// <summary>Write-time bounds only: neither cap limits how many times a run may ask.</summary>
     [Fact]
     public async Task AppendClarificationAsync_PastTheStoredBounds_KeepsTheNewest_AndHeadKeepsALongAnswer()
     {
@@ -630,7 +621,6 @@ public sealed class AgentRunClarificationResumeTests
         Assert.EndsWith("…", stored, StringComparison.Ordinal);
     }
 
-    /// <summary>A blank answer writes nothing; the run still re-plans on an answerless resume rather than silently completing.</summary>
     [Fact]
     public async Task AppendClarificationAsync_BlankAnswer_WritesNothing_AndAnAnswerlessResumeStillRePlans()
     {
@@ -652,7 +642,6 @@ public sealed class AgentRunClarificationResumeTests
         Assert.Empty(Assert.Single(planner.SeenClarifications));
     }
 
-    /// <summary>A database predating <c>ClarificationsJson</c> must gain the column via migration and keep its existing runs readable.</summary>
     [Fact]
     public async Task AnExistingDatabase_GainsClarificationsJson_AndKeepsItsRuns()
     {
@@ -731,7 +720,7 @@ public sealed class AgentRunClarificationResumeTests
     // The prompt: what the model actually receives
     // ============================================================================================
 
-    /// <summary>Seeded answers land in the plan turn's <c>ChatRole.User</c> message with the goal, never in the System prompt (the tokenizer only rewrites User-role text).</summary>
+    /// <summary>The tokenizer only rewrites User-role text, so the answers must ride the user message.</summary>
     [Fact]
     public async Task PlanTurn_CarriesTheAnswersOnTheUserMessage_NeverOnTheSystemPrompt()
     {
@@ -747,7 +736,6 @@ public sealed class AgentRunClarificationResumeTests
         Assert.DoesNotContain(SecondAnswer, system.Text);
     }
 
-    /// <summary>Control: with no answers recorded, the plan turn's user message is the goal and only the goal.</summary>
     [Fact]
     public async Task PlanTurn_WithNoAnswers_SendsTheGoalUnchanged()
     {

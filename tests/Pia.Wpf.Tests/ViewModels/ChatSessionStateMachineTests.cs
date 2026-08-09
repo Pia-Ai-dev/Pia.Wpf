@@ -10,11 +10,8 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// Exercises the relocated run loop's state machine. The loop is UI-thread-affine
-/// in production; here it runs synchronously on the test thread (no Task.Run), which
-/// is exactly how its continuations behave.
-/// </summary>
+// The loop is UI-thread-affine in production; here it runs synchronously on the test thread (no Task.Run), which is
+// exactly how its continuations behave.
 public class ChatSessionStateMachineTests
 {
     private readonly IAiClientService _ai = Substitute.For<IAiClientService>();
@@ -52,7 +49,6 @@ public class ChatSessionStateMachineTests
         session.SetActiveRun(runId);   // no-op — unchanged
         session.SetActiveRun(null);
 
-        // Only two notifications: set-to-runId and clear-to-null (the duplicate set is suppressed).
         Assert.Equal(new Guid?[] { runId, null }, raised);
         Assert.Null(session.ActiveRunId);
     }
@@ -182,7 +178,6 @@ public class ChatSessionStateMachineTests
 
         await session.RunTurnAsync(BuildRequest(session), CancellationToken.None);
 
-        // A backgrounded turn that produced content ends Completed (unread result).
         Assert.Equal(ChatState.Completed, session.State);
         Assert.False(session.IsStreaming);
     }
@@ -226,9 +221,8 @@ public class ChatSessionStateMachineTests
     [Fact]
     public async Task Cancel_DuringSetupWindow_AbortsTurn_NoAiCall_NoEmptyResponse()
     {
-        // Mirrors a Cancel click while the manager resolves settings/persona/provider:
-        // BeginTurn() has created the per-turn CTS, the user cancels, then the run starts.
-        // The cancel must be honored (C1) and must NOT also report an empty response.
+        // A Cancel click while the manager is still resolving settings: BeginTurn has created the per-turn CTS, the
+        // user cancels, then the run starts. It must be honoured without also reporting an empty response.
         var session = CreateSession();
         var request = BuildRequest(session);
         var failures = new List<RunFailureKind>();
@@ -254,10 +248,8 @@ public class ChatSessionStateMachineTests
     [Fact]
     public async Task AtFiles_InjectedFileContent_LandsInUserMessage_AndCommandIsStripped()
     {
-        // The fix for the @Files hallucination: the manager reads the tagged file at setup and
-        // hands it to the session via InjectedFileContext; the session must inline it into the
-        // AI-visible user turn (so a model that won't call read_file still sees the file), while
-        // the persisted/displayed message keeps the original @Files token (ephemeral injection).
+        // The session must inline the injected file into the AI-visible user turn, so a model that will not call
+        // read_file still sees it, while the persisted message keeps the original @Files token.
         IList<ChatMessage>? captured = null;
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
@@ -354,7 +346,6 @@ public class ChatSessionStateMachineTests
         _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
         _cards.ResolveSuccessTitle(Arg.Any<string>()).Returns("Saved");
 
-        // Stream invokes the tool handler, then yields a closing text delta.
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
                 Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
@@ -380,11 +371,9 @@ public class ChatSessionStateMachineTests
         var states = new List<ChatState>();
         session.StateChanged += (_, e) => states.Add(e.NewState);
 
-        // Accept the card shortly after it appears.
         session.Messages.CollectionChanged += (_, _) => { };
         var run = session.RunTurnAsync(request, CancellationToken.None);
 
-        // Spin until the card is pending, then accept it.
         await WaitUntilAsync(() => card.IsPending);
         Assert.Equal(ChatState.WaitingForTool, session.State);
         card.AllowOnceCommand.Execute(null);
@@ -442,8 +431,8 @@ public class ChatSessionStateMachineTests
     [Fact]
     public async Task McpTool_Ungranted_IsGated_ShownNotAutoRun_ThenAlwaysAllowPersistsGrant()
     {
-        // Phase-2 MCP gate: an interactive MCP call is NOT auto-run — it shows a card and waits. Because
-        // MCP is grantable as a class, "Always allow" persists a standing grant (unlike write_file).
+        // An interactive MCP call is not auto-run. MCP is grantable as a class, so "Always allow" persists a
+        // standing grant — unlike write_file.
         var executed = false;
         var mcpPluginId = Guid.NewGuid();
         var pending = new PluginToolCall(
@@ -567,9 +556,7 @@ public class ChatSessionStateMachineTests
     [Fact]
     public async Task GrantedEligibleTool_AutoApproves_WithoutWaiting_CardAddedBeforeExecute()
     {
-        // The Execute lambda asserts the ordering AT THE MOMENT it runs: the auto-approved
-        // card must already be in message.ActionCards and already resolved. A post-call
-        // assert would pass vacuously, so the proof lives inside Execute.
+        // The ordering is asserted from INSIDE Execute: a post-call assert would pass vacuously.
         AssistantMessage? owningMessage = null;
         var card = NewCard("create_todo", BuiltInPluginDefaults.TodoPluginId);
         card.State = ActionCardState.Accepted; // mock returns the pre-resolved bypass card
@@ -599,8 +586,8 @@ public class ChatSessionStateMachineTests
         _permissions.IsAutoApproveEligible("create_todo").Returns(true);
         _permissions.IsGranted(BuiltInPluginDefaults.TodoPluginId, "create_todo").Returns(true);
 
-        // Only the bypass build path returns the resolved card — and it is now keyed on the DECISION the gate
-        // resolved (the persisted "always allow" this test set up), not on a bare `true`.
+        // Only the bypass build path returns the resolved card, keyed on the DECISION the gate resolved rather
+        // than on a bare `true`.
         _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(),
             ToolGateDecision.AutoApprovedStandingGrant, Arg.Any<ToolClass?>()).Returns(card);
         _cards.ResolveStatusText(Arg.Any<string>()).Returns("running");
@@ -633,12 +620,8 @@ public class ChatSessionStateMachineTests
     [Fact]
     public async Task GrantedDestructiveMcpTool_IsNotAutoApproved_StillPrompts()
     {
-        // B1 broadened IsDeleteLike from the single "delete" substring to the whole destructive stem
-        // family, and the INTERACTIVE gate composes it: eligible = IsAutoApproveEligible(tool)
-        // || (IsMcpTool(tool) && !IsDeleteLike(tool)). A standing per-tool grant on an external
-        // destructive tool must therefore NOT auto-execute — it must still raise a card. Without this
-        // case, dropping the !IsDeleteLike term would silently auto-run a granted MCP delete in the
-        // foreground with every other test in the batch still green.
+        // The interactive gate is eligible = IsAutoApproveEligible || (IsMcpTool && !IsDeleteLike); dropping the
+        // !IsDeleteLike term would silently auto-run a granted MCP delete in the foreground.
         var executed = false;
         var mcpPluginId = Guid.NewGuid();
         var pending = new PluginToolCall(
@@ -719,7 +702,6 @@ public class ChatSessionStateMachineTests
         var request = ToolRequest(session);
         var run = session.RunTurnAsync(request, CancellationToken.None);
 
-        // The forged grant must NOT have auto-bypassed: the user is prompted.
         await WaitUntilAsync(() => card.IsPending);
         Assert.Equal(ChatState.WaitingForTool, session.State);
         Assert.Contains(ChatState.WaitingForTool, states);
@@ -732,12 +714,7 @@ public class ChatSessionStateMachineTests
         await _permissions.DidNotReceive().GrantAsync(Arg.Any<Guid>(), Arg.Any<string>());
     }
 
-    /// <summary>
-    /// 04 D8 / T-GATE-5. The interactive gate used to call <c>IPluginService.IsMcpTool</c> BARE while its
-    /// headless twin has wrapped it since M3, so a derivation fault propagated out of the tool loop and failed
-    /// the whole turn. Nothing pinned that either way — this is the absence 04 §0.3 names. The guard fails
-    /// CLOSED (treat as external), so a delete-like tool is still not auto-approved.
-    /// </summary>
+    // The guard fails CLOSED (treat as external), so a delete-like tool is still not auto-approved.
     [Fact]
     public async Task WhenMcpDerivationThrows_TheTurnSurvives_AndTheToolIsTreatedAsExternal()
     {

@@ -7,10 +7,6 @@ using Xunit;
 
 namespace Pia.Tests.Services.Flow;
 
-/// <summary>
-/// Persistence round-trip + reload, and the load-bearing delete-through guarantee: a durable item that
-/// is retracted must NOT resurrect on the next launch (design §6, §11; advisor flag #2).
-/// </summary>
 public sealed class FlowPersistenceStoreTests : IDisposable
 {
     private readonly string _dbPath;
@@ -75,7 +71,6 @@ public sealed class FlowPersistenceStoreTests : IDisposable
     [Fact]
     public void OpenRunAction_RoundTrips_Unchanged()
     {
-        // G2: the appended OpenRun action must persist → reconstruct with Kind/RunId/Label intact.
         var store = Store();
         var runId = Guid.NewGuid();
         var item = new FlowItem
@@ -106,7 +101,6 @@ public sealed class FlowPersistenceStoreTests : IDisposable
     [Fact]
     public void ContinueRunAction_RoundTrips_Unchanged()
     {
-        // G2/G9: the appended ContinueRun action must persist → reconstruct with Kind/RunId/Label intact.
         var store = Store();
         var runId = Guid.NewGuid();
         var item = new FlowItem
@@ -137,7 +131,6 @@ public sealed class FlowPersistenceStoreTests : IDisposable
     [Fact]
     public void OpenParkedRunAction_RoundTrips_Unchanged()
     {
-        // Must reconstruct as its own type, distinct from OpenRunAction.
         var store = Store();
         var runId = Guid.NewGuid();
         var item = new FlowItem

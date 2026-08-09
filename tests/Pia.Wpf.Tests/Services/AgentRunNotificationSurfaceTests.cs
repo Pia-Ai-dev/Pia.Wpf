@@ -8,12 +8,6 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// R18: the surface publishes a durable Flow item for a terminal PLANNED run only when the assistant
-/// window is NOT focused; foreground runs and SingleTurn runs publish nothing. Completed → Success,
-/// Failed → Error, both carrying an OpenRunAction keyed by run id. Exercised via the internal
-/// terminal handler (the ctor subscribe + dispatcher marshal are the production seam).
-/// </summary>
 public sealed class AgentRunNotificationSurfaceTests
 {
     private readonly IAgentRunService _runs = Substitute.For<IAgentRunService>();
@@ -42,30 +36,12 @@ public sealed class AgentRunNotificationSurfaceTests
         return chat;
     }
 
-    /// <summary>
-    /// <b>REGRESSION</b> (Phase 3 fix pass). The Flow card's body must name WHY the run parked. Three reasons
-    /// reach WaitingForInput since Batch 07 and only one is a budget, so a parent parked because a CHILD hit its
-    /// own halved budget — or because the app restarted mid-fan-out — was told "Stopped at its budget".
-    /// <para>
-    /// The last three rows are the fallback pin and the non-vacuity control at once: an unknown or absent reason
-    /// keeps the budget wording, which is correct for every pause the run loop writes for itself. Asserted on the
-    /// key mapping rather than through a publish, because the reason lives in the run row's ExtraJson and the
-    /// mapping is the whole decision. Neutralization: go back to a constant key → the first two rows red.
-    /// </para>
-    /// </summary>
     [Theory]
     [InlineData("children-parked", "Flow_Run_ChildrenParked")]
     [InlineData("children-interrupted", "Flow_Run_ChildrenInterrupted")]
-    // Batch 08 G2. The "user" token is the one reason that is NOT a budget at all, and this row is the only
-    // coverage its key has: the body is read as _localizationService[PausedBodyKey(...)], so the key literal
-    // lives inside the switch arm where LocalizationTests' quoted-literal regex cannot see it.
+    // The only coverage this key has: the literal sits inside a switch arm, invisible to LocalizationTests' regex.
     [InlineData("user", "Flow_Run_UserPaused")]
-    // Batch 08 F19. HeadlessRunLauncher's three re-park arms write this when a Continue CAS-claimed the row and
-    // then never reached the orchestrator (cancelled or faulted in the slot wait, the scope build or the
-    // executor construction). It fell through to the budget arm, so the card told a user whose Continue had
-    // just failed to go and raise budgets that were never reached — and if they had paused the run by HAND a
-    // moment earlier, it also overwrote who paused it. The row still parks WaitingForInput and stays
-    // resumable; only the wording was a lie.
+    // Written when a Continue claimed the row but never reached the orchestrator; it used to read as a budget stop.
     [InlineData("resume-interrupted", "Flow_Run_ResumeInterrupted")]
     // One key per resume behaviour (plan-time vs. mid-plan) — never the question itself.
     [InlineData("needs-goal", "Flow_Run_NeedsGoal")]
@@ -76,25 +52,12 @@ public sealed class AgentRunNotificationSurfaceTests
     public void AParkedRunsFlowBodyNamesWhyItParked(string? reason, string expectedKey)
         => Assert.Equal(expectedKey, AgentRunNotificationSurface.PausedBodyKey(reason));
 
-    /// <summary>
-    /// <b>REGRESSION</b> (Phase 3 fix pass). A DELEGATED run publishes nothing: the parent's own item already
-    /// represents the whole fan-out, and a child lives in a stub chat the user never opened. Every row of the
-    /// theory is a state a child really reaches — a clean 3-way fan-out used to produce four durable items and
-    /// four toasts for one run started once. The WaitingForInput row is the load-bearing one: a child parked at
-    /// its own halved budget published an ActionRequired card carrying a ContinueRunAction on the CHILD run id,
-    /// a transition nothing supports.
-    /// <para>
-    /// Non-vacuity: the same states on a PARENTLESS run do publish, which the facts above and below this one
-    /// assert directly. Neutralization: drop the <c>run.ParentRunId is not null</c> early return → red on every
-    /// row.
-    /// </para>
-    /// </summary>
+    // The parent's own item represents the whole fan-out, and a child lives in a stub chat the user never opened.
     [Theory]
     [InlineData(AgentRunState.Completed)]
     [InlineData(AgentRunState.Failed)]
     [InlineData(AgentRunState.WaitingForInput)]
-    // Batch 08 G8: Paused joined the publishable set below, so the same delegated-child filter must still
-    // catch it — a cascade-paused child (D6) is exactly as un-actionable to the user as a budget-parked one.
+    // Paused is publishable now, so the delegated-child filter has to catch it too.
     [InlineData(AgentRunState.Paused)]
     public async Task ADelegatedRun_PublishesNothing(AgentRunState state)
     {
@@ -140,7 +103,6 @@ public sealed class AgentRunNotificationSurfaceTests
     [Fact]
     public async Task Foreground_ActiveChat_PublishesNothing()
     {
-        // R18: suppress ONLY the chat the user is actively watching in the foreground.
         var runId = Guid.NewGuid();
         var chatId = SetupRun(runId, RunShape.Planned);
         _windows.IsInForeground(WindowMode.Assistant).Returns(true);
@@ -154,12 +116,11 @@ public sealed class AgentRunNotificationSurfaceTests
     [Fact]
     public async Task Foreground_NonActiveChat_Publishes()
     {
-        // R18: a foreground window watching a DIFFERENT chat (e.g. a headless run's chat is never
-        // the active session) still publishes — this fixes the interactive background-chat silent-drop.
+        // A headless run's chat is never the active session, so a foreground window on another chat publishes.
         var runId = Guid.NewGuid();
         SetupRun(runId, RunShape.Planned);
         _windows.IsInForeground(WindowMode.Assistant).Returns(true);
-        _windows.ActiveAssistantChatId.Returns(Guid.NewGuid()); // some other chat
+        _windows.ActiveAssistantChatId.Returns(Guid.NewGuid());
 
         await Create().HandleRunStateAsync(runId, AgentRunState.Completed);
 
@@ -169,7 +130,6 @@ public sealed class AgentRunNotificationSurfaceTests
     [Fact]
     public async Task Foreground_NoActiveChat_Publishes()
     {
-        // A headless run reaching terminal state while the window is up but no chat is active.
         var runId = Guid.NewGuid();
         SetupRun(runId, RunShape.Planned);
         _windows.IsInForeground(WindowMode.Assistant).Returns(true);
@@ -195,9 +155,7 @@ public sealed class AgentRunNotificationSurfaceTests
     [Fact]
     public async Task SecondTerminalEvent_SameRun_CarriesIdenticalDedupKey()
     {
-        // §15.5: a redundant terminal RunChanged for the same run must collapse to one durable Flow
-        // item. The surface delegates dedup to FlowService via DedupKey, so both Publish drafts must
-        // carry the SAME key (== run id) for the store to reconcile them onto a single item.
+        // Dedup is FlowService's job via DedupKey, so both drafts have to carry the same key.
         var runId = Guid.NewGuid();
         SetupRun(runId, RunShape.Planned);
         _windows.IsInForeground(WindowMode.Assistant).Returns(false);
@@ -212,8 +170,6 @@ public sealed class AgentRunNotificationSurfaceTests
     [Fact]
     public async Task ChatDeleted_RetractsPublishedRunItems()
     {
-        // R17 deletion-side: once a chat (and its cascaded runs) is deleted, the durable OpenRun item(s)
-        // this surface published for that chat must be retracted so nothing dangles in Flow.
         var chatId = Guid.NewGuid();
         var runId = Guid.NewGuid();
         SetupRun(runId, RunShape.Planned, chatId);
@@ -229,13 +185,10 @@ public sealed class AgentRunNotificationSurfaceTests
     [Fact]
     public void ChatDeleted_UnknownChat_RetractsNothing()
     {
-        // A chat with no published run items (or an already-handled one) is a no-op — never a spurious retract.
         Create().HandleChatDeleted(Guid.NewGuid());
 
         _flow.DidNotReceive().Retract(Arg.Any<string>());
     }
-
-    // ---- Budget-pause WaitingForInput publish + retract (Phase 2) --------------------------------
 
     [Fact]
     public async Task WaitingForInput_PublishesSingleActionRequiredContinueItem()
@@ -255,7 +208,6 @@ public sealed class AgentRunNotificationSurfaceTests
             d.Action is ContinueRunAction));
     }
 
-    /// <summary>Needs-goal/needs-input cards must never leak the Goal or the model's question into Title/Body, and route via <see cref="OpenParkedRunAction"/> rather than <see cref="ContinueRunAction"/> since there is no answer for a blind resume to carry.</summary>
     [Theory]
     [InlineData("needs-goal", "Flow_Run_NeedsGoal")]
     [InlineData("needs-input", "Flow_Run_NeedsInput")]
@@ -278,7 +230,7 @@ public sealed class AgentRunNotificationSurfaceTests
     [Fact]
     public async Task WaitingForInput_ForegroundActiveChat_Suppressed()
     {
-        // A foreground run shows the panel Continue button instead — no Flow card.
+        // A foreground run shows the panel's Continue button instead.
         var runId = Guid.NewGuid();
         var chatId = SetupRun(runId, RunShape.Planned);
         _windows.IsInForeground(WindowMode.Assistant).Returns(true);
@@ -304,7 +256,6 @@ public sealed class AgentRunNotificationSurfaceTests
     [Fact]
     public async Task WaitingForInput_ThenRepeat_DedupesToOne()
     {
-        // A redundant WaitingForInput event carries the SAME DedupKey (run id) so the store collapses it.
         var runId = Guid.NewGuid();
         SetupRun(runId, RunShape.Planned);
         _windows.IsInForeground(WindowMode.Assistant).Returns(false);
@@ -319,7 +270,6 @@ public sealed class AgentRunNotificationSurfaceTests
     [Fact]
     public async Task Running_AfterWaitingPublished_Retracts()
     {
-        // A resumed parked run (→Running) must drop its WaitingForInput card.
         var runId = Guid.NewGuid();
         SetupRun(runId, RunShape.Planned);
         _windows.IsInForeground(WindowMode.Assistant).Returns(false);
@@ -334,7 +284,6 @@ public sealed class AgentRunNotificationSurfaceTests
     [Fact]
     public async Task Cancelled_AfterWaitingPublished_Retracts()
     {
-        // D6: a run cancelled while parked must not leave a stale WaitingForInput card.
         var runId = Guid.NewGuid();
         SetupRun(runId, RunShape.Planned);
         _windows.IsInForeground(WindowMode.Assistant).Returns(false);
@@ -346,12 +295,7 @@ public sealed class AgentRunNotificationSurfaceTests
         _flow.Received(1).Retract(runId.ToString());
     }
 
-    /// <summary>
-    /// Batch 08 G8. A user-paused run needs the SAME ActionRequired/ContinueRun card
-    /// <see cref="AgentRunState.WaitingForInput"/> gets, or a run the user paused from a background chat is
-    /// invisible forever — the startup sweep's <c>State &lt; @Terminal</c> excludes <c>Paused</c> by design
-    /// (W15), so there is no other surface that would ever tell the user about it.
-    /// </summary>
+    // Without this card a run paused from a background chat is invisible: the startup sweep excludes Paused.
     [Fact]
     public async Task PausedRun_PublishesAnActionRequiredCardWithContinueRun()
     {
@@ -373,7 +317,6 @@ public sealed class AgentRunNotificationSurfaceTests
     [Fact]
     public async Task Running_NoPriorPublish_RetractsNothing()
     {
-        // An ordinary per-step Running event for a run that never parked issues no spurious Retract.
         var runId = Guid.NewGuid();
         SetupRun(runId, RunShape.Planned);
 
@@ -382,23 +325,8 @@ public sealed class AgentRunNotificationSurfaceTests
         _flow.DidNotReceive().Retract(Arg.Any<string>());
     }
 
-    /// <summary>
-    /// Batch 07 G8, <b>GUARD</b> (for the rows unrelated to <c>Paused</c>). A delegating parent
-    /// (<c>WaitingForChildren</c>) is not user-actionable, so it must fall OUT of the publish filter entirely.
-    /// Pinned deliberately rather than left to the <c>is … or …</c> set's shape, because widening that set is
-    /// not harmless: the last arm of <c>HandleRunStateAsync</c> is the TERMINAL publish, so a state that passes
-    /// the filter without an arm of its own would publish a "run finished" card for a run whose children are
-    /// still working.
-    /// <para>
-    /// <b>Batch 08 G8:</b> the <c>Paused</c> row flips from <c>false</c> to <c>true</c> — a REGRESSION-shaped
-    /// pin now, not a guard. A user-paused run needs the same ActionRequired card <c>WaitingForInput</c> gets
-    /// (<see cref="PausedRun_PublishesAnActionRequiredCardWithContinueRun"/>), or it is invisible forever once
-    /// the panel that shows its Continue button is closed.
-    /// </para>
-    /// <para>
-    /// A row per state, plus a member-count pin so an appended state cannot slip through unasserted.
-    /// </para>
-    /// </summary>
+    // Widening the filter is not harmless: the last arm is the terminal publish, so a state without an arm of
+    // its own would announce "run finished" while its children are still working.
     [Theory]
     [InlineData(AgentRunState.Planning, false)]
     [InlineData(AgentRunState.Running, true)]

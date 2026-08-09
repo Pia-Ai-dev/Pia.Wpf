@@ -8,23 +8,8 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// T1-1's settings surface: the run-pool width slider (<see cref="AssistantSettingsViewModel.MaxParallelBackgroundRuns"/>).
-/// Four facts, each about a step the slider needs and that nothing else covers — the parse test reads the
-/// binding PATH without evaluating it, and <c>AppSettings</c>'s own tests cover the model, not the projection.
-/// <para>
-/// The clamp is the point rather than a nicety: the launcher's pool is built with the hard cap as its
-/// semaphore <c>maxCount</c>, so an out-of-range width is not a cosmetic issue at the other end. The VM clamps
-/// on the same pair the pool does, which is what keeps the slider from ever showing a width the pool is not
-/// running at.
-/// </para>
-/// <para>
-/// The five positional sub-ViewModels are constructed here rather than shared with
-/// <c>AssistantSettingsRosterTests</c>: that fixture keeps its scheduled-jobs substitute on the instance for
-/// its OWN wiring fact, so a shared base would couple two suites through mutable fixture state to save a
-/// dozen lines of <c>Substitute.For</c>.
-/// </para>
-/// </summary>
+/// <summary>The VM clamps the width on the same pair the launcher's pool uses for its semaphore, so the slider can
+/// never show a width the pool is not running at.</summary>
 public class AssistantSettingsRunPoolTests
 {
     private static (AssistantSettingsViewModel Sut, AppSettings Stored, ISettingsService Service) Create(
@@ -84,9 +69,8 @@ public class AssistantSettingsRunPoolTests
     [Fact]
     public async Task Initialize_ReClampsAStoredWidthThatIsOutOfRange()
     {
-        // A stored 0 is the case the read-side clamp exists for: a settings document written by an older build
-        // has no member at all and deserializes to 0, and a pool of width 0 has no permits and nothing that
-        // could ever release one. The slider must not show that width either.
+        // A settings document from an older build has no member at all and deserializes to 0; a pool of width 0 has
+        // no permits and nothing that could ever release one.
         var (sut, _, _) = Create(new AppSettings { MaxParallelBackgroundRuns = 0 });
 
         await sut.InitializeAsync();
@@ -106,19 +90,8 @@ public class AssistantSettingsRunPoolTests
         Assert.Equal(5, sut.MaxParallelBackgroundRuns);
     }
 
-    /// <summary>
-    /// REVIEW FIX. The Slider is bound to the property, which raises on load; the TextBlock beneath it
-    /// (<c>AssistantView.xaml</c>) is bound to the computed <c>…Display</c>, which
-    /// <c>OnMaxParallelBackgroundRunsChanged</c> deliberately does NOT raise while <c>_isLoading</c>. The post-load
-    /// refresh block is therefore the only thing that can move the label, and it was omitted there — so a stored
-    /// width of 5 showed a slider at 5 above a label still reading the default, until the user dragged it.
-    /// <para>
-    /// Asserted as a raised NOTIFICATION, not as a string: this fixture's <c>ILocalizationService.Format</c>
-    /// returns "display" for every key, so any assertion on the text would pass on a VM that never notified.
-    /// </para>
-    /// <para>Neutralize: delete the <c>OnPropertyChanged(nameof(MaxParallelBackgroundRunsDisplay))</c> line from
-    /// <c>InitializeAsync</c>'s refresh block → red.</para>
-    /// </summary>
+    /// <summary>The <c>…Display</c> readout is not raised while loading, so only the post-load refresh can move the
+    /// label; asserted as a notification because this fixture's <c>Format</c> returns "display" for every key.</summary>
     [Fact]
     public async Task Initialize_RaisesTheWidthReadout_SoTheLabelAgreesWithTheSlider()
     {
@@ -132,22 +105,8 @@ public class AssistantSettingsRunPoolTests
         Assert.Contains(nameof(sut.MaxParallelBackgroundRunsDisplay), raised);
     }
 
-    /// <summary>
-    /// The clamp, and the SAVE CALL that makes a new width live.
-    /// <para>
-    /// REVIEW FIX on the second half. It used to poll the shared <c>AppSettings</c> instance the fixture hands back
-    /// from every <c>GetSettingsAsync</c>, which <c>SaveSettingsAsync</c> mutates IN PLACE before it reaches
-    /// <c>ISettingsService.SaveSettingsAsync</c> — so deleting that call left the test green while nothing was
-    /// written and <c>SettingsChanged</c> never fired, which is precisely the failure that kills T1-1's live
-    /// resize (<c>HeadlessRunLauncher.OnSettingsChanged</c> is the only thing that resizes the pool without a
-    /// restart). What is observed now is the call itself, recorded with its payload.
-    /// </para>
-    /// <para>
-    /// Recorded rather than asserted with <c>Received()</c>: the save is fire-and-forget from the setter, so a
-    /// <c>Received()</c> read taken the moment the value appears can precede the call by a scheduling quantum.
-    /// The recorder is re-stubbed AFTER <c>InitializeAsync</c> so no save made during load can satisfy it.
-    /// </para>
-    /// </summary>
+    /// <summary>The save is fire-and-forget from the setter, so the call is recorded rather than read with
+    /// <c>Received()</c>, and the recorder is re-stubbed after load so no save made during load can satisfy it.</summary>
     [Fact]
     public async Task SettingTheWidth_ClampsToTheCap_AndSavesTheClampedValueThroughTheService()
     {

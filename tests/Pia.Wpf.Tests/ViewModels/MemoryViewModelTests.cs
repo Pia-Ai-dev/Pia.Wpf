@@ -12,12 +12,6 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// The Memory view drives off the vault: <see cref="IMemoryService.ListMemoriesAsync"/> items grouped
-/// by the §8 canonical order (alpha within a group), header metrics from the same snapshot, and
-/// edit/delete routed through the vault verbs
-/// <see cref="IMemoryService.UpdateSectionAsync"/> / <see cref="IMemoryService.ForgetAsync"/>.
-/// </summary>
 public class MemoryViewModelTests
 {
     private static (MemoryViewModel Vm, IMemoryService Memory, IDialogService Dialog) Create(
@@ -142,8 +136,7 @@ public class MemoryViewModelTests
         Directory.CreateDirectory(sourcesDir);
         try
         {
-            // A source already staged under sources/note.txt, and a different file with the same name
-            // dropped from elsewhere — the collision must not clobber the staged one.
+            // A different file with the same name, dropped from elsewhere, must not clobber the staged one.
             File.WriteAllText(Path.Combine(sourcesDir, "note.txt"), "existing");
             var dropDir = Path.Combine(tempRoot, "drop");
             Directory.CreateDirectory(dropDir);
@@ -236,7 +229,7 @@ public class MemoryViewModelTests
 
         await vm.OnNavigatedToAsync(null);
 
-        // §8 canonical order: Personal Profile, Contacts, ..., Notes.
+        // Canonical group order, not the order the items arrived in.
         Assert.Equal(
             new[] { "personal_profile", "contact_list", "note" },
             vm.MemoryGroups.Select(g => g.Type).ToArray());
@@ -244,7 +237,6 @@ public class MemoryViewModelTests
             new[] { "Personal Profile", "Contacts", "Notes" },
             vm.MemoryGroups.Select(g => g.DisplayName).ToArray());
 
-        // Within the notes group, items are alphabetical by title.
         var notes = vm.MemoryGroups.Single(g => g.Type == "note");
         Assert.Equal(new[] { "Apple note", "Zebra note" }, notes.Items.Select(i => i.Title).ToArray());
         Assert.Equal(2, notes.ItemCount);
@@ -305,7 +297,7 @@ public class MemoryViewModelTests
         var group = Assert.Single(vm.MemoryGroups);
         var found = Assert.Single(group.Items);
         Assert.Equal("John Smith", found.Title);
-        // The full vault body is surfaced (re-read by reference), not just the recall snippet.
+        // The body is re-read by reference, so it is the full vault text and not the recall snippet.
         Assert.Equal("real body", found.Body);
 
         vm.Dispose();
@@ -320,16 +312,14 @@ public class MemoryViewModelTests
             Item("memory/notes/a.md", "memory/notes/a.md", "note", "Apple note"),
             Item("memory/contacts.md#John", "memory/contacts.md", "contact_list", "John"),
             Item("memory/profile.md#Coffee", "memory/profile.md", "personal_profile", "Coffee"),
-            // A foreign-typed record the canonical grouping drops: it must be excluded from BOTH the
-            // composition and the header total, so the bar and header agree.
+            // A foreign type the grouping drops, so the bar and the header total must both exclude it.
             Item("memory/misc.md#Junk", "memory/misc.md", "random", "Junk"),
         };
         var (vm, _, _) = Create(items, bytes: 200);
 
         await vm.OnNavigatedToAsync(null);
 
-        // Segments follow the §8 CanonicalGroups order (profile, contacts, ..., notes); zero-count types
-        // are absent and the foreign "random" type never appears.
+        // Zero-count types are absent and the foreign "random" type never appears.
         Assert.Equal(
             new[] { "personal_profile", "contact_list", "note" },
             vm.VaultComposition.Select(s => s.Type).ToArray());
@@ -338,11 +328,9 @@ public class MemoryViewModelTests
             vm.VaultComposition.Select(s => s.DisplayName).ToArray());
         Assert.Equal(new[] { 1, 1, 2 }, vm.VaultComposition.Select(s => s.Count).ToArray());
 
-        // Bar and header agree by construction, and both exclude the foreign-typed record.
         Assert.Equal(vm.TotalObjectCount, vm.VaultComposition.Sum(s => s.Count));
         Assert.Equal(4, vm.TotalObjectCount);
 
-        // Fractions are count / totalDisplayable and sum to 1.0.
         Assert.Equal(1.0, vm.VaultComposition.Sum(s => s.Fraction), 9);
         Assert.Equal(2 / 4.0, vm.VaultComposition.Single(s => s.Type == "note").Fraction, 9);
 
@@ -368,21 +356,18 @@ public class MemoryViewModelTests
 
         await vm.OnNavigatedToAsync(null);
 
-        // Topics are exploded into per-category segments (People/Organizations/Other in TopicCategories
-        // order), never merged into a single "Topics" row — Notes precedes them in §8 order.
+        // Topics explode into per-category segments rather than merging into a single "Topics" row.
         Assert.Equal(
             new[] { "Notes", "People", "Organizations", "Other" },
             vm.VaultComposition.Select(s => s.DisplayName).ToArray());
         Assert.Equal(new[] { 1, 2, 1, 1 }, vm.VaultComposition.Select(s => s.Count).ToArray());
 
-        // Each topic category carries its own category key (drives a distinct palette swatch), never a
-        // shared "topic" key.
+        // Each category carries its own key, which is what drives a distinct palette swatch.
         Assert.Equal(
             new[] { "note", "person", "organization", "other" },
             vm.VaultComposition.Select(s => s.Type).ToArray());
 
-        // The real contract: the overview legend rows are the exact same set/order/counts as the left
-        // group headers — the two grouping walks can no longer drift.
+        // The two grouping walks are separate code, so assert they cannot drift.
         Assert.Equal(
             vm.MemoryGroups.Select(g => g.DisplayName).ToArray(),
             vm.VaultComposition.Select(s => s.DisplayName).ToArray());
@@ -431,8 +416,7 @@ public class MemoryViewModelTests
     [Fact]
     public async Task Composition_reflects_full_snapshot_during_search()
     {
-        // Two notes in the vault, but search recalls only one. The composition must still reflect the
-        // FULL snapshot (both notes) rather than collapsing to the single filtered hit.
+        // Search recalls one of the two notes, but the composition must still reflect the full snapshot.
         var a = Item("memory/notes/a.md", "memory/notes/a.md", "note", "Apple note", body: "apple");
         var b = Item("memory/notes/b.md", "memory/notes/b.md", "note", "Banana note", body: "banana");
         var (vm, memory, _) = Create([a, b], bytes: 100);
@@ -442,7 +426,6 @@ public class MemoryViewModelTests
         vm.SearchQuery = "apple";
         await vm.RefreshCommand.ExecuteAsync(null);
 
-        // Grouped list is filtered to the one hit, but the composition sees the whole vault.
         Assert.Equal(2, vm.VaultComposition.Single(s => s.Type == "note").Count);
         Assert.Equal(2, vm.TotalObjectCount);
 
@@ -469,14 +452,12 @@ public class MemoryViewModelTests
             vm.SourceFiles.Select(r => r.Name).ToArray());
         Assert.Equal(new[] { true, false, false }, vm.SourceFiles.Select(r => r.IsIngested).ToArray());
 
-        // Status lines are localized in the VM: ingested rows carry the page count, raw text rows the
-        // not-ingested key, non-text rows the not-a-text-file key.
+        // The status line is chosen in the VM, so the localization key is the observable behaviour.
         Assert.Equal("Memory_Sources_IngestedPages:2", vm.SourceFiles[0].StatusText);
         Assert.Equal("Memory_Sources_NotIngested", vm.SourceFiles[1].StatusText);
         Assert.Equal("Memory_Sources_NotText", vm.SourceFiles[2].StatusText);
 
         Assert.Equal("100 B", vm.SourceFiles[0].SizeText);
-        // Summary aggregates count and total size of the RAW layer.
         Assert.Equal("Memory_Sources_Summary:3,450 B", vm.SourcesSummaryText);
 
         vm.Dispose();
@@ -489,8 +470,7 @@ public class MemoryViewModelTests
 
         await vm.OnNavigatedToAsync(null);
 
-        // No displayable memories, but staged sources: the overview (with its sources section) must
-        // show instead of the "select a memory" placeholder.
+        // Staged sources alone must still show the overview, not the "select a memory" placeholder.
         Assert.Empty(vm.VaultComposition);
         Assert.Equal(0, vm.TotalObjectCount);
         Assert.True(vm.IsVaultOverviewVisible);
@@ -535,8 +515,7 @@ public class MemoryViewModelTests
     [Fact]
     public async Task NavigateToLink_to_structured_topic_selects_first_section()
     {
-        // A topic whose synthesized body has `## sections` yields one item per section; the link resolves
-        // to the first (alpha-ordered) section rather than dead-ending.
+        // A sectioned topic has no bare-path item, so the link must resolve to a section, not dead-end.
         var alpha = Item("memory/topics/foo.md#Alpha", "memory/topics/foo.md", "topic", "Alpha", "a");
         var beta = Item("memory/topics/foo.md#Beta", "memory/topics/foo.md", "topic", "Beta", "b");
         var (vm, _, _) = Create([beta, alpha]);
@@ -568,8 +547,7 @@ public class MemoryViewModelTests
     [Fact]
     public async Task NavigateToLink_resolves_a_slug_drifted_target_to_the_canonical_file()
     {
-        // Topic FILES are named via VaultSlug.Slugify(subject); the LLM-authored inline link is only the
-        // informal "lowercase-hyphen form", so `topics/Node.js` must still reach `memory/topics/node-js.md`.
+        // The file name is slugified but the LLM writes the informal lowercase-hyphen form.
         var nodejs = Item("memory/topics/node-js.md", "memory/topics/node-js.md", "topic", "Node.js", "js runtime");
         var (vm, _, _) = Create([nodejs]);
 
@@ -591,7 +569,6 @@ public class MemoryViewModelTests
 
         vm.SearchQuery = "foo";
         await vm.RefreshCommand.ExecuteAsync(null);
-        // Only the matching page is shown; the target is filtered out.
         Assert.DoesNotContain(vm.MemoryGroups.SelectMany(g => g.Items), i => i.Reference == "memory/topics/bar.md");
 
         await vm.NavigateToLinkCommand.ExecuteAsync("topics/bar");
@@ -720,8 +697,7 @@ public class MemoryViewModelTests
     [Fact]
     public async Task GoBack_still_skips_an_unresolvable_entry_and_lands_on_an_earlier_one()
     {
-        // Defense-in-depth for the pop-until-resolves loop: even if an entry cannot resolve (e.g. removed
-        // by a path the purge did not cover), Back walks past it to the next valid page.
+        // Defense-in-depth: an entry the purge did not cover must be walked past, not landed on.
         var a = Item("memory/notes/a.md", "memory/notes/a.md", "note", "A");
         var b = Item("memory/notes/b.md", "memory/notes/b.md", "note", "B");
         var c = Item("memory/notes/c.md", "memory/notes/c.md", "note", "C");
@@ -733,8 +709,7 @@ public class MemoryViewModelTests
         vm.SelectedMemory = b; // records a
         vm.SelectedMemory = c; // records b -> stack [a, b]
 
-        // Remove b from the loaded set WITHOUT going through the purge (simulates an out-of-band removal):
-        // reload the groups so b is gone but the back stack still references it.
+        // Drops b without the purge, so the back stack still references it — an out-of-band removal.
         memory.ListMemoriesAsync().Returns(new VaultMemorySnapshot([a, c], 0));
         await vm.RefreshCommand.ExecuteAsync(null);
 
@@ -748,8 +723,7 @@ public class MemoryViewModelTests
     [Fact]
     public async Task Search_does_not_crash_on_duplicate_headings()
     {
-        // A hand-edited file can carry two identical ## headings -> two items with the SAME reference.
-        // The search join must collapse (last-wins) rather than throw.
+        // Two identical headings in a hand-edited file share a reference, so the search join must not throw.
         var dup1 = Item("memory/contacts.md#John", "memory/contacts.md", "contact_list", "John", body: "first");
         var dup2 = Item("memory/contacts.md#John", "memory/contacts.md", "contact_list", "John", body: "second");
         var (vm, memory, _) = Create([dup1, dup2], bytes: 60);

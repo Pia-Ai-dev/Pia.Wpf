@@ -7,38 +7,20 @@ using static Pia.Tests.Architecture.ArchitectureTestBase;
 
 namespace Pia.Tests.Architecture;
 
-/// <summary>
-/// Pins the containment premise stated at the top of
-/// <c>src/Pia.Wpf/Services/AgentContextCompactor.cs</c>: every public type in
-/// <c>Microsoft.Agents.AI.Compaction</c> is <c>[Experimental]</c>, MAAI001 fires at declarations as well
-/// as at call sites, and the ONE suppression in the solution is sufficient only while no compaction type
-/// reaches a Pia signature. Cache a strategy in a field somewhere and the 0-warning build bar starts
-/// pushing toward a project-wide &lt;NoWarn&gt;, which would silently hide experimental-API adoption across
-/// the entire solution. Until these two tests, review was the only thing enforcing it.
-/// <para>
-/// NetArchTest cannot express the first rule: its <c>HaveDependencyOn</c> reads the IL of method BODIES
-/// too, so it would flag AgentContextCompactor itself — the one type whose method-local use IS the design.
-/// The surface/body distinction has to be walked over the reflection members by hand.
-/// </para>
-/// </summary>
+/// <summary>The solution's single experimental-API suppression holds only while no compaction type reaches a
+/// Pia signature; a project-wide &lt;NoWarn&gt; would hide every future adoption of the API.</summary>
 public class ExperimentalApiContainmentTests
 {
     private const string CompactionNamespacePrefix = "Microsoft.Agents.AI.Compaction";
 
-    /// <summary>
-    /// A namespace that legitimately DOES appear in Pia signatures, used as the positive control for the
-    /// reflection walk — <c>ChatMessage</c> is all over the service surface.
-    /// </summary>
+    /// <summary>Positive control: a namespace that legitimately does appear in Pia signatures.</summary>
     private const string ControlNamespacePrefix = "Microsoft.Extensions.AI";
 
     private const BindingFlags DeclaredMembers =
         BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static |
         BindingFlags.DeclaredOnly;
 
-    /// <summary>
-    /// Repo root, resolved exactly the way <c>LocalizationTests.SourceDirectory</c> resolves its own path:
-    /// five levels up from the test binary (<c>bin/{config}/{tfm}</c> → project → <c>tests</c> → root).
-    /// </summary>
+    /// <summary>Five levels up from the test binary: <c>bin/{config}/{tfm}</c> → project → <c>tests</c> → root.</summary>
     private static readonly string RepositoryRoot = Path.GetFullPath(
         Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
 
@@ -51,12 +33,7 @@ public class ExperimentalApiContainmentTests
     private static readonly string ExpectedSuppressionFile =
         Path.Combine("src", "Pia.Wpf", "Services", "AgentContextCompactor.cs");
 
-    /// <summary>
-    /// The build and editor-config files that could silence a diagnostic for a whole project or the whole
-    /// tree. Globbed rather than hardcoded: there is one <c>Directory.Build.props</c> (under <c>src</c>) and
-    /// no <c>Directory.Packages.props</c> or <c>.editorconfig</c> today, and a glob picks up whichever of
-    /// them somebody adds later without this list having to guess.
-    /// </summary>
+    /// <summary>Globbed rather than hardcoded, so a file somebody adds later is still scanned.</summary>
     private static readonly string[] BuildFilePatterns =
     [
         "*.csproj",
@@ -66,38 +43,17 @@ public class ExperimentalApiContainmentTests
         ".editorconfig",
     ];
 
-    /// <summary>
-    /// Matches a warning-disable pragma naming MAAI001, including the multi-code list form
-    /// (<c>disable CS0618, MAAI001</c>). Deliberately expressed as an escaped PATTERN and never as a plain
-    /// literal: this file must not contain the text it is counting, or the test fails on itself.
-    /// </summary>
+    /// <summary>Kept as an escaped pattern, never a plain literal: this file must not contain the text it counts.</summary>
     private static readonly Regex Maai001Disable = new(
         @"#pragma\s+warning\s+disable[^\r\n]*\bMAAI001\b", RegexOptions.Compiled);
 
-    /// <summary>
-    /// Walks every type in the Pia assembly and reports each member whose SURFACE names a type in the
-    /// experimental compaction namespace: base type, interfaces, field/property/event types, method return
-    /// types, and every method and constructor parameter — recursed through generic arguments, array,
-    /// by-ref and pointer element types, and nullable underlying types.
-    /// <para>
-    /// This test is deliberately BLIND to method-local use, which is exactly WHY it passes today:
-    /// AgentContextCompactor builds its strategy inside <c>CompactAsync</c> and lets it die there. Do not
-    /// "improve" it into reading method bodies — that flags the one usage the suppression exists to permit,
-    /// and the obvious repair would be the project-wide &lt;NoWarn&gt; this arrangement exists to avoid.
-    /// </para>
-    /// <para>
-    /// Not redundant with the source scan below: an <c>[Experimental("MAAI001")]</c> attribute on a Pia
-    /// member silences the diagnostic with no pragma and no &lt;NoWarn&gt;, so a compaction type could reach a
-    /// Pia signature with nothing for a text scan to find. This walk is the only guard on that route.
-    /// </para>
-    /// </summary>
+    /// <summary>Blind to method-local use on purpose: reading method bodies would flag the one usage the
+    /// suppression exists to permit. Not redundant with the source scan — an attribute needs no pragma.</summary>
     [Fact]
     public void PiaTypes_ShouldNot_ExposeCompactionTypesInTheirSurface()
     {
-        // POSITIVE CONTROL, inside the same fact so it can never be skipped or drift out of sync: the
-        // IDENTICAL walk pointed at a namespace that is present in Pia signatures. CompactAsync alone
-        // declares IReadOnlyList<ChatMessage>, so this also exercises the generic-argument recursion. An
-        // empty result here means the walk is broken and the assertion below is vacuous, not passing.
+        // The identical walk over a namespace Pia really does name, kept inside this fact so it cannot be
+        // skipped: an empty result means the walk is broken, not that Pia is contained.
         var control = SurfaceViolations(ControlNamespacePrefix);
 
         Assert.True(control.Count > 0,
@@ -113,12 +69,8 @@ public class ExperimentalApiContainmentTests
             + $"but these members break that: {string.Join(", ", violations)}");
     }
 
-    /// <summary>
-    /// Source scan, and the test that actually catches the regression the premise fears: a SECOND
-    /// suppression anywhere in the solution's sources, or the same diagnostic silenced project-wide from a
-    /// csproj, a <c>Directory.Build.props</c> or an <c>.editorconfig</c>. The reflection guard above is
-    /// blind to both.
-    /// </summary>
+    /// <summary>Catches a second suppression, or the diagnostic silenced project-wide from a build file — both
+    /// invisible to the reflection guard above.</summary>
     [Fact]
     public void Maai001_MustBeSuppressed_ExactlyOnceAndOnlyInAgentContextCompactor()
     {
@@ -149,7 +101,7 @@ public class ExperimentalApiContainmentTests
 
         var buildFiles = BuildConfigurationFiles().ToList();
 
-        // Anti-vacuity again: three csproj plus src/Directory.Build.props are present today.
+        // Anti-vacuity: the project files really were found.
         Assert.True(buildFiles.Count >= 3,
             $"the build-file scan must find the project files, but it found {buildFiles.Count} under {RepositoryRoot}");
 
@@ -172,30 +124,23 @@ public class ExperimentalApiContainmentTests
         {
             try
             {
-                // Compiler-generated types ARE method-local scope, materialised: the async state machine for
-                // CompactAsync can hoist the local ContextWindowCompactionStrategy into one of its fields, and
-                // a lambda display class hoists its captures the same way. Removing this filter therefore
-                // makes the test flag the exact usage the suppression exists to permit — it is not a loophole.
-                // The same CompilerGeneratedAttribute filter is already applied by NamingConventionTests and
-                // MvvmPatternTests. Inside the try because IsDefined is itself a reflection call that can fail
-                // to load an attribute type.
+                // Compiler-generated types are method-local scope materialised — an async state machine hoists
+                // the local into a field — so dropping this filter would flag the permitted usage, not a leak.
                 if (IsCompilerGenerated(type))
                     continue;
 
                 foreach (var (member, surface) in SurfaceTypes(type))
                 {
-                    // NAMESPACE STRING comparison on purpose. typeof(ContextWindowCompactionStrategy) would
-                    // force a Microsoft.Agents.AI package reference into the test project, and this project
-                    // staying free of that reference is itself part of the containment being asserted.
+                    // Compared as a namespace string because a typeof would force the package reference this
+                    // project's freedom from is itself part of the containment.
                     if (surface.Namespace is { } ns && ns.StartsWith(namespacePrefix, StringComparison.Ordinal))
                         violations.Add($"{type.FullName} -> {member} ({surface.Name})");
                 }
             }
             catch (TypeLoadException)
             {
-                // A type whose dependencies will not load cannot be inspected, and WPF types live in this
-                // assembly. Skipping is safe here because the source scan above is an independent backstop
-                // that needs no type loading at all.
+                // A type whose dependencies will not load cannot be inspected; the source scan is an
+                // independent backstop that needs no type loading at all.
             }
             catch (FileNotFoundException)
             {
@@ -211,11 +156,7 @@ public class ExperimentalApiContainmentTests
         return violations;
     }
 
-    /// <summary>
-    /// Every type named by <paramref name="type"/>'s declared surface, paired with a human-readable
-    /// description of where it was named. Lazy on purpose so that a reflection failure surfaces inside the
-    /// caller's try block.
-    /// </summary>
+    /// <summary>Lazy on purpose, so a reflection failure surfaces inside the caller's try block.</summary>
     private static IEnumerable<(string Member, Type SurfaceType)> SurfaceTypes(Type type)
     {
         foreach (var surface in Expand(type.BaseType))
@@ -282,12 +223,7 @@ public class ExperimentalApiContainmentTests
         }
     }
 
-    /// <summary>
-    /// Every type reachable from <paramref name="root"/> by walking generic arguments, array/by-ref/pointer
-    /// element types and nullable underlying types — so <c>List&lt;Strategy&gt;</c>,
-    /// <c>Task&lt;Foo&lt;Strategy&gt;&gt;</c>, <c>Strategy[]</c>, <c>ref Strategy</c> and <c>Strategy?</c> are
-    /// all caught, not only a bare <c>Strategy</c>.
-    /// </summary>
+    /// <summary>Recurses generic arguments and element types, so a nested or wrapped type is caught too.</summary>
     private static IEnumerable<Type> Expand(Type? root)
     {
         if (root is null)
@@ -325,9 +261,7 @@ public class ExperimentalApiContainmentTests
         }
     }
 
-    /// <summary>
-    /// True when the member — or any type enclosing it — is compiler-synthesised.
-    /// </summary>
+    /// <summary>True when the member, or any type enclosing it, is compiler-synthesised.</summary>
     private static bool IsCompilerGenerated(MemberInfo member)
     {
         MemberInfo? current = member;

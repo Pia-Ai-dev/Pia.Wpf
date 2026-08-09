@@ -12,26 +12,8 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Batch 08 G6 — D3's validated plan mutation, against a real SQLite <see cref="AgentRunService"/>, plus the
-/// two facts that need the real <see cref="AgentRunOrchestrator"/> because the behaviour they pin lives in
-/// its two step-status filters (<c>KeepDoneAsync</c> and <c>SafeSeedResumeContext</c>) rather than in the
-/// service.
-/// <para>
-/// The whole design turns on one property: <b>the gate is the state.</b> A mutation is refused unless the run
-/// is <see cref="AgentRunState.Paused"/>, so the only writer of a paused run's plan is the user, and D3's two
-/// races (a mutation between the drain and the step execution; a plan rewrite during a step's terminal write)
-/// are unreachable rather than merely unlikely. The second structural property is that ORDINALS ARE NEVER
-/// SUPPLIED — the service assigns them prefix-first — which makes duplicate, negative, non-contiguous and
-/// across-the-settled-boundary ordinals unrepresentable instead of validated.
-/// </para>
-/// <para>
-/// The skip verb is the one with a second half: nothing in <c>src/</c> had ever written
-/// <see cref="AgentStepStatus.Skipped"/>, and the next replan's <c>KeepDoneAsync</c> filter would have
-/// DELETED the row — erasing the user's decision and, with it, the panel row. That widening is pinned here
-/// end to end, through the real loop.
-/// </para>
-/// </summary>
+// A mutation is refused unless the run is Paused, and callers never supply ordinals: the service assigns
+// them prefix-first, which makes the whole class of illegal ordinals unrepresentable rather than validated.
 public sealed class AgentRunServicePlanMutationTests : IDisposable
 {
     private readonly string _tmpDir;
@@ -48,8 +30,7 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         _chats = new AssistantChatService(_ctx, _service);
     }
 
-    /// <summary>Which rejection a theory row is exercising. A <c>[Theory]</c> cannot carry a
-    /// <c>PlanStepEdit[]</c> through <c>InlineData</c>, so the submission is built per case below.</summary>
+    // InlineData cannot carry a PlanStepEdit[], so the theory names a case and builds the submission itself.
     public enum RejectionCase
     {
         UnknownStepId,
@@ -60,16 +41,6 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         Overlong,
     }
 
-    /// <summary>
-    /// <b>THE GATE</b>, and the fact that removes D3's race by construction: a mutation of a RUNNING run is
-    /// refused and writes nothing. Everything else in this file assumes the run is paused, so if this arm
-    /// ever weakened into "try it anyway", every other fact here would still pass while the panel gained the
-    /// ability to delete the row the loop is mid-way through executing.
-    /// <para>
-    /// The "changes nothing" half compares every column of every step row, not just the titles: a rejection
-    /// that still restamped <c>UpdatedAt</c> or renumbered the ordinals would be a write.
-    /// </para>
-    /// </summary>
     [Fact]
     public async Task Mutation_OnARunningRun_IsRefused_AndChangesNothing()
     {
@@ -84,23 +55,11 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
             run.Id, [new PlanStepEdit(pending[0].Id, "rewritten", null, null)], ct);
 
         Assert.Equal(PlanMutationOutcome.NotPaused, result.Outcome);
-        Assert.Equal(2, result.StepCount);              // the UNCHANGED persisted count, so a caller can repaint
+        Assert.Equal(2, result.StepCount);              // the unchanged persisted count, so a caller can repaint
         Assert.Equal(before, PlanSnapshot(run.Id));
     }
 
-    /// <summary>
-    /// The edit verb. The step Id survives, which is what keeps its per-step ledger entry (keyed by the step
-    /// id as a string) and its timeline rows — which deliberately have no foreign key — naming a row that
-    /// still exists.
-    /// <para>
-    /// <b>And the columns the user did NOT edit survive too.</b> That is the half a fact about the Id alone
-    /// cannot see: an edit rebuilds the row, so a rebuild that dropped <c>ExtraJson</c> would silently make a
-    /// fan-out plan sequential again (that column is where the planner writes <c>{"parallelGroup":N}</c>, and
-    /// its ONE consumer treats absence as "sequential"), and one that dropped
-    /// <see cref="AgentStep.AssignedPersonaId"/> would silently change which persona runs the step. Both stay
-    /// invisible behind a preserved Id.
-    /// </para>
-    /// </summary>
+    // An edit rebuilds the row, so the planner-owned columns it does not touch have to be carried across.
     [Fact]
     public async Task Edit_RewritesTitleAndIntent_PreservingTheStepId()
     {
@@ -108,11 +67,9 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         var run = await NewRunAsync(ct);
         await SeedPlanAsync(run.Id, ct, ("done", AgentStepStatus.Done), ("s2", AgentStepStatus.Pending));
 
-        // The settled step carries a per-step ledger entry, the way a step that really ran does.
         var doneId = (await _service.GetAsync(run.Id, ct))!.Plan.Single(s => s.Title == "done").Id;
         await _service.AddUsageAsync(run.Id, doneId, new UsageDetails { InputTokenCount = 7, OutputTokenCount = 3 }, ct);
 
-        // The pending step carries everything the planner writes on a step that is NOT the user's to change.
         var persona = Guid.NewGuid();
         var pendingId = (await PendingAsync(run.Id, ct))[0].Id;
         SetStepColumns(pendingId, persona, extraJson: """{"parallelGroup":1}""", reRunnable: false);
@@ -125,36 +82,21 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         Assert.Equal(2, result.StepCount);
 
         var plan = (await _service.GetAsync(run.Id, ct))!.Plan;
-        var edited = Assert.Single(plan, s => s.Id == pendingId);           // the SAME row, not a new one
+        var edited = Assert.Single(plan, s => s.Id == pendingId);
         Assert.Equal("new title", edited.Title);                            // trimmed
         Assert.Equal("new intent", edited.Intent);
         Assert.Equal("out.md", edited.ExpectedArtifact);
         Assert.Equal(AgentStepStatus.Pending, edited.Status);
-        Assert.Equal(persona, edited.AssignedPersonaId);                    // carried, not defaulted
-        Assert.Equal("""{"parallelGroup":1}""", edited.ExtraJson);          // carried — otherwise the fan-out dies
-        Assert.False(edited.ReRunnable);                                    // carried
+        Assert.Equal(persona, edited.AssignedPersonaId);
+        Assert.Equal("""{"parallelGroup":1}""", edited.ExtraJson);          // dropping this makes a fan-out plan sequential
+        Assert.False(edited.ReRunnable);
 
-        // The settled step and its ledger key are untouched by the rewrite around it.
         Assert.Equal(doneId, Assert.Single(plan, s => s.Title == "done").Id);
         var ledgerStepIds = LedgerNode(run.Id)["perStep"]!.AsArray().Select(n => n!["stepId"]!.GetValue<string>());
         Assert.Contains(doneId.ToString(), ledgerStepIds);
     }
 
-    /// <summary>
-    /// <b>Batch 08 F7: a blank Intent falls back to the Title, because Intent is the field that reaches the
-    /// model and Title is the field that was validated.</b> Both executors build the step turn from
-    /// <c>Intent</c> alone — <c>ChatSession</c>'s <c>$"Execute step {n}: {spec.Intent}."</c> and
-    /// <c>HeadlessTurnExecutor.BuildInstruction(step.Ordinal, step.Intent ?? "", …)</c> — and neither ever reads
-    /// <c>Title</c>. <c>AgentPlanner</c> drops a planner step whose Intent is blank, so this method was the
-    /// first writer in the codebase that could persist a Pending step with a null one; the panel's "Insert step
-    /// below" minted exactly that (<c>new PlanStepEdit(null, "New step", null, null)</c>), and the run then sent
-    /// the literal turn <c>"Execute step 3: ."</c>, burned a step against the budget and billed the tokens.
-    /// <para>
-    /// Both entries below matter: an INSERT (the panel's own shape) and an EDIT that blanks an existing step's
-    /// intent (the inline editor's second box cleared). The third asserts a supplied intent still wins, so the
-    /// fallback cannot be an unconditional overwrite.
-    /// </para>
-    /// </summary>
+    // Intent is the only field that reaches the model, so a blank one has to fall back to the validated Title.
     [Fact]
     public async Task AStepWithNoIntent_FallsBackToItsTitle_SoTheExecutorNeverSendsAnEmptyInstruction()
     {
@@ -165,9 +107,9 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
 
         var pending = await PendingAsync(run.Id, ct);
         var result = await _service.ApplyPlanMutationAsync(run.Id, [
-            new PlanStepEdit(pending[0].Id, "Tidy the report", "   ", null),  // an edit that BLANKS the intent
+            new PlanStepEdit(pending[0].Id, "Tidy the report", "   ", null),  // an edit that blanks the intent
             new PlanStepEdit(null, "New step", null, null),                   // the panel's own insert shape
-            new PlanStepEdit(pending[1].Id, "s2", "keep this one", null),     // a real intent still wins
+            new PlanStepEdit(pending[1].Id, "s2", "keep this one", null),     // a supplied intent still wins
         ], ct);
 
         Assert.Equal(PlanMutationOutcome.Applied, result.Outcome);
@@ -177,17 +119,10 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         Assert.Equal("New step", Assert.Single(plan, s => s.Title == "New step").Intent);
         Assert.Equal("keep this one", Assert.Single(plan, s => s.Title == "s2").Intent);
 
-        // The property that actually matters, stated over the whole plan rather than per row: no Pending step
-        // this method writes can reach an executor with nothing to say.
         Assert.All(plan, s => Assert.False(string.IsNullOrWhiteSpace(s.Intent)));
     }
 
-    /// <summary>
-    /// The insert verb, asserted where it matters: not "a row exists" but "the LOOP runs them in the new
-    /// order". The drain here is the real <c>NextPendingStepAsync</c>, the same query the orchestrator's
-    /// while-loop calls, so the mutation is honoured by the loop for free — there is no re-plan, no reload
-    /// and no cache to invalidate.
-    /// </summary>
+    // The drain below is the real NextPendingStepAsync the orchestrator's loop calls, not a stand-in.
     [Fact]
     public async Task Insert_AppearsAtItsSubmittedPosition_AndDrainsInThatOrder()
     {
@@ -199,7 +134,7 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         var pending = await PendingAsync(run.Id, ct);
         var result = await _service.ApplyPlanMutationAsync(run.Id, [
             new PlanStepEdit(pending[0].Id, "s1", null, null),
-            new PlanStepEdit(null, "inserted", "do the new thing", null),   // BETWEEN the two existing steps
+            new PlanStepEdit(null, "inserted", "do the new thing", null),
             new PlanStepEdit(pending[1].Id, "s2", null, null),
         ], ct);
 
@@ -217,13 +152,7 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         Assert.Equal(new[] { "s1", "inserted", "s2" }, drained);
     }
 
-    /// <summary>
-    /// The reorder verb, and the structural guarantee behind it. The submitted tail is reversed AND the
-    /// settled step is not submitted at all, because it is not the caller's to place: the service ordinals
-    /// the immutable prefix first, so no submission — hostile, buggy or careless — can put a pending step
-    /// above a step that already ran. This is one of the four ordinal defects D3 makes unrepresentable rather
-    /// than rejected, so there is no matching arm in the rejection theory below.
-    /// </summary>
+    // The settled step is not submitted at all: it is not the caller's to place, so there is nothing to reject.
     [Fact]
     public async Task Reorder_NeverPlacesAPendingStepAboveASettledOne()
     {
@@ -242,16 +171,11 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         Assert.Equal(PlanMutationOutcome.Applied, result.Outcome);
         var plan = (await _service.GetAsync(run.Id, ct))!.Plan;             // ordered by Ordinal
         Assert.Equal(new[] { "done", "s3", "s2" }, plan.Select(s => s.Title));
-        Assert.Equal(new[] { 0, 1, 2 }, plan.Select(s => s.Ordinal));       // contiguous from 0, prefix first
+        Assert.Equal(new[] { 0, 1, 2 }, plan.Select(s => s.Ordinal));
         Assert.Equal("s3", (await _service.NextPendingStepAsync(run.Id, ct))!.Title);
     }
 
-    /// <summary>
-    /// A Pending step the caller does not submit is DROPPED — the submitted list is the COMPLETE new tail.
-    /// D3 has no delete verb, so this is a CONSEQUENCE of the tail semantics rather than a feature, and it is
-    /// pinned here so the UI that submits the list inherits a stated semantic instead of discovering it.
-    /// (The settled prefix is never at risk: it is not submitted at all.)
-    /// </summary>
+    // There is no delete verb: the submitted list IS the complete new tail, so an omitted pending step is dropped.
     [Fact]
     public async Task Omitting_APendingStep_DropsIt_AndNeverTouchesTheSettledPrefix()
     {
@@ -272,17 +196,7 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         Assert.Equal(new[] { "done", "s2", "s4" }, (await _service.GetAsync(run.Id, ct))!.Plan.Select(s => s.Title));
     }
 
-    /// <summary>
-    /// <b>REGRESSION (W13)</b>, and the reason the skip verb needed a second edit outside the service:
-    /// <c>KeepDoneAsync</c> filtered <c>== Done</c>, so the FIRST replan after a skip deleted the skipped row
-    /// from the plan — and <c>SyncSteps</c> then removed its panel row. The user's decision survived exactly
-    /// until the run needed to re-plan, which is the moment it matters most.
-    /// <para>
-    /// Driven through the real orchestrator so the replan is the real one: verify fails once, the planner
-    /// returns a revised plan, and <c>KeepDoneAsync</c> decides what survives. Neutralize the widening back to
-    /// <c>== Done</c> and the skipped row is gone from the final plan.
-    /// </para>
-    /// </summary>
+    // A skipped step has to survive the next replan's step-status filter, or the user's decision is erased.
     [Fact]
     public async Task Skip_IsNotDrained_AndSurvivesAReplan()
     {
@@ -300,7 +214,6 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         ], ct);
         Assert.Equal(PlanMutationOutcome.Applied, applied.Outcome);
 
-        // The drain skips it immediately — before any replan is in the picture.
         Assert.Equal("s1", (await _service.NextPendingStepAsync(run.Id, ct))!.Title);
 
         Assert.True(await _service.TryResumeFromPauseAsync(run.Id, ct));
@@ -312,25 +225,16 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         await BuildOrchestrator(planner, verifier).RunAsync(
             resumed, exec, Persona(), Provider(), RunProfile.Interactive, ct, resume: true);
 
-        Assert.Equal(1, planner.ReplanCalls);                               // the replan really ran
-        Assert.Equal(new[] { "s1", "s3", "s4" }, exec.Executed);            // s2 never executed
+        Assert.Equal(1, planner.ReplanCalls);                               // non-vacuity: the replan really ran
+        Assert.Equal(new[] { "s1", "s3", "s4" }, exec.Executed);
         var plan = (await _service.GetAsync(run.Id, ct))!.Plan;
         var survivor = Assert.Single(plan, s => s.Title == "s2");
-        Assert.Equal(AgentStepStatus.Skipped, survivor.Status);             // …and it is STILL in the plan
+        Assert.Equal(AgentStepStatus.Skipped, survivor.Status);
         Assert.Equal(new[] { "s1", "s2", "s3", "s4" }, plan.Select(s => s.Title));
         Assert.Equal(AgentRunState.Completed, (await _service.GetAsync(run.Id, ct))!.State);
     }
 
-    /// <summary>
-    /// The other half of the pair, and the reason the two step-status filters must stay DIFFERENT: a skipped
-    /// step never ran, so it must not enter <c>ctx.CompletedSteps</c> — the critic's list of finished work,
-    /// whose declared artifacts it probes on disk. Presenting a skipped step there would invite a verdict
-    /// about an artifact nothing was ever asked to produce.
-    /// <para>
-    /// Non-vacuous by construction: the Done sibling IS asserted present in the same list, so an empty
-    /// context (a resume that seeded nothing at all) cannot pass this.
-    /// </para>
-    /// </summary>
+    // A skipped step never ran, so the critic must not be handed its declared artifact to probe for.
     [Fact]
     public async Task Skip_NeverEntersTheVerifyContext()
     {
@@ -353,30 +257,12 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
             resumed, new RecordingExecutor(), Persona(), Provider(), RunProfile.Interactive, ct, resume: true);
 
         var seen = Assert.Single(verifier.SeenCompletedSteps);
-        Assert.Contains(seen, s => s.Title == "done");                      // the resume seed ran (non-vacuity)
-        Assert.Contains(seen, s => s.Title == "s3");                        // …and so did the post-resume step
-        Assert.DoesNotContain(seen, s => s.Title == "s2");                  // the skipped one is absent
+        Assert.Contains(seen, s => s.Title == "done");                      // non-vacuity: the resume seed ran
+        Assert.Contains(seen, s => s.Title == "s3");
+        Assert.DoesNotContain(seen, s => s.Title == "s2");
     }
 
-    /// <summary>
-    /// Every rejection the validator has, one row each, and every row asserts the persisted plan is
-    /// byte-identical afterwards — a validator that rejected AFTER writing would satisfy the outcome
-    /// assertion alone.
-    /// <list type="bullet">
-    /// <item><c>UnknownStepId</c> — an id that names no step of this run.</item>
-    /// <item><c>DuplicateStepId</c> — the same Pending step submitted twice, which would otherwise mint two
-    /// rows sharing one id's history.</item>
-    /// <item><c>SettledStepId</c> — a Done step's id in the tail: the settled prefix is not the caller's to
-    /// move, re-title or re-run.</item>
-    /// <item><c>BlankTitle</c> — whitespace AND newlines, so it is only blank once NORMALIZED; a validator
-    /// that checked before flattening would store a row whose title is three spaces.</item>
-    /// <item><c>EmptyPlan</c> — the silent one: no steps ⇒ the drain returns null at once ⇒ verify has
-    /// nothing to judge ⇒ the critic's safe default is ACCEPT ⇒ the run settles Completed having done
-    /// nothing.</item>
-    /// <item><c>Overlong</c> — one row past <see cref="RunProfile.MaxStepsCap"/>, the only run-independent
-    /// bound (a run's own MaxSteps lives in an ephemeral profile and a resume gets a fresh budget).</item>
-    /// </list>
-    /// </summary>
+    // Every row also asserts the plan is unchanged: a validator that rejected after writing would still pass on the outcome.
     [Theory]
     [InlineData(RejectionCase.UnknownStepId, PlanMutationOutcome.UnknownStep)]
     [InlineData(RejectionCase.DuplicateStepId, PlanMutationOutcome.UnknownStep)]
@@ -390,8 +276,7 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         var ct = TestContext.Current.CancellationToken;
         var run = await NewRunAsync(ct);
 
-        // EmptyPlan is the one case that needs NO settled prefix: with a Done step present, an empty
-        // submission is a legal "drop every pending step" and applies.
+        // With a Done step present an empty submission is a legal "drop every pending step", so EmptyPlan gets no prefix.
         if (which == RejectionCase.EmptyPlan)
             await SeedPlanAsync(run.Id, ct, ("s1", AgentStepStatus.Pending), ("s2", AgentStepStatus.Pending));
         else
@@ -415,7 +300,7 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
                 [new PlanStepEdit(plan.Single(s => s.Title == "done").Id, "re-run it", null, null)],
             RejectionCase.BlankTitle => [new PlanStepEdit(pending[0].Id, " \r\n\t ", null, null)],
             RejectionCase.EmptyPlan => [],
-            RejectionCase.Overlong => Enumerable.Range(0, RunProfile.MaxStepsCap)   // + the Done prefix = cap + 1
+            RejectionCase.Overlong => Enumerable.Range(0, RunProfile.MaxStepsCap)   // plus the Done prefix, so cap + 1
                 .Select(i => new PlanStepEdit(null, "extra " + i, null, null)).ToList(),
             _ => throw new ArgumentOutOfRangeException(nameof(which)),
         };
@@ -427,19 +312,7 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         Assert.Equal(before, PlanSnapshot(run.Id));
     }
 
-    /// <summary>
-    /// <b>REGRESSION (W8)</b> — the forged-fact-line class, closed at the WRITE instead of at five
-    /// interpolation sites. A step title is user content and lands verbatim inside prompts that are built by
-    /// appending lines: <c>AgentVerifier</c>'s artifact facts, the replan's plan listing, both executors' step
-    /// instruction. A title containing a newline plus a leading "- " therefore lets a user (or a prompt
-    /// injection that reached the panel) FORGE an extra fact line in the critic's evidence block. Flattening
-    /// at write time bounds all of them at once, and the cap keeps one long paste from crowding out the
-    /// prompt around it.
-    /// <para>
-    /// The cap is asserted from BOTH ends — the head is kept and the tail is gone — so a "cap" that silently
-    /// dropped the text or kept the wrong end cannot pass.
-    /// </para>
-    /// </summary>
+    // A step title is user content that lands verbatim in line-built prompts, so a newline in it could forge a fact line.
     [Fact]
     public async Task Mutation_NormalizesTitleAndIntent_FlatteningNewlinesAndCapping()
     {
@@ -463,27 +336,18 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         Assert.DoesNotContain('\n', flattened.Title);
         Assert.DoesNotContain('\r', flattened.Title);
         Assert.Equal("write the report - step 9 \"x\" declared: y → found", flattened.Title);
-        Assert.Equal("keep this", flattened.Intent);                        // tabs flattened, then trimmed
+        Assert.Equal("keep this", flattened.Intent);
 
         var capped = plan[1];
-        Assert.Equal(AgentRunService.MaxStepTitleChars + 1, capped.Title.Length);    // + the ellipsis
-        Assert.StartsWith("HEAD", capped.Title);                            // head kept…
-        Assert.EndsWith("…", capped.Title);                                 // …tail cut
+        Assert.Equal(AgentRunService.MaxStepTitleChars + 1, capped.Title.Length);    // the ellipsis is the extra char
+        Assert.StartsWith("HEAD", capped.Title);
+        Assert.EndsWith("…", capped.Title);
         Assert.Equal(AgentRunService.MaxStepIntentChars + 1, capped.Intent!.Length);
         Assert.Equal(AgentRunService.MaxStepArtifactChars + 1, capped.ExpectedArtifact!.Length);
         Assert.StartsWith("A", capped.ExpectedArtifact);
     }
 
-    /// <summary>
-    /// The panel-refresh half of W12. <c>ReplaceStepsAsync</c> raises no <c>RunChanged</c> and the run panel
-    /// refreshes from that event and from nothing else, which is exactly why the mutation lives on
-    /// <see cref="IAgentRunService"/> rather than on a separate validating service: a service that could
-    /// validate but not repaint would leave the user looking at the plan they just replaced.
-    /// <para>
-    /// Once, and on Applied ONLY — a rejected mutation that still raised the event would make the panel
-    /// repaint an unchanged plan and read as "it worked".
-    /// </para>
-    /// </summary>
+    // RunChanged is the panel's only refresh trigger, and a rejected mutation that raised it would read as success.
     [Fact]
     public async Task Mutation_RaisesRunChangedOnce_OnApplyOnly()
     {
@@ -505,10 +369,9 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
             var raised = Assert.Single(seen);
             Assert.Equal(run.Id, raised.RunId);
             Assert.Equal(AgentRunState.Paused, raised.State);
-            Assert.Null(raised.StepId);         // the change is the PLAN, not a step
+            Assert.Null(raised.StepId);
 
-            // Now a refusal, from a state the gate rejects. SetStateAsync raises its own Running event, so the
-            // count below is over the Paused ones — the shape this member emits.
+            // SetStateAsync raises its own Running event, so the count below is over the Paused ones only.
             await _service.SetStateAsync(run.Id, AgentRunState.Running, ct);
             var refused = await _service.ApplyPlanMutationAsync(
                 run.Id, [new PlanStepEdit(null, "nope", null, null)], ct);
@@ -522,18 +385,7 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         }
     }
 
-    /// <summary>
-    /// Atomicity. The rewrite is a DELETE of every step row followed by re-inserts, so a fault partway
-    /// through is the difference between "the mutation did not apply" and "the run lost its plan" — the
-    /// second of which leaves a resumable run that drains nothing and settles Completed (see
-    /// <see cref="PlanMutationOutcome.EmptyPlan"/>).
-    /// <para>
-    /// The fault is induced with a UNIQUE index on <c>Title</c>, created on this test's own throwaway
-    /// database: two identically-titled rows in one submission make the second INSERT throw inside the
-    /// transaction, which is a genuine mid-write fault rather than a mocked one. The whole plan — settled
-    /// prefix included — must come back.
-    /// </para>
-    /// </summary>
+    // The rewrite deletes every step row and re-inserts, so a fault partway through would lose the run's plan.
     [Fact]
     public async Task Mutation_IsAtomic_OnAFaultedInsert()
     {
@@ -553,12 +405,12 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         var pending = await PendingAsync(run.Id, ct);
         var result = await _service.ApplyPlanMutationAsync(run.Id, [
             new PlanStepEdit(pending[0].Id, "collide", null, null),
-            new PlanStepEdit(pending[1].Id, "collide", null, null),          // the second INSERT throws
+            new PlanStepEdit(pending[1].Id, "collide", null, null),          // the second insert trips the unique index
         ], ct);
 
         Assert.Equal(PlanMutationOutcome.WriteFailed, result.Outcome);
         Assert.Equal(3, result.StepCount);
-        Assert.Equal(before, PlanSnapshot(run.Id));                          // rolled back, plan intact
+        Assert.Equal(before, PlanSnapshot(run.Id));
     }
 
     public void Dispose()
@@ -619,7 +471,7 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         await _service.ReplaceStepsAsync(runId, rows, ct);
     }
 
-    /// <summary>Puts the run at <see cref="AgentRunState.Paused"/> through the real CAS, never a blind write.</summary>
+    // Pauses through the real CAS rather than a blind state write.
     private async Task PauseAsync(Guid runId, CancellationToken ct)
     {
         await _service.SetStateAsync(runId, AgentRunState.Running, ct);
@@ -630,11 +482,7 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         (await _service.GetAsync(runId, ct))!.Plan
         .Where(s => s.Status == AgentStepStatus.Pending).OrderBy(s => s.Ordinal).ToList();
 
-    /// <summary>
-    /// EVERY column of EVERY step row of the run, as one string. A "changed nothing" claim has to cover the
-    /// columns nobody thinks about — <c>UpdatedAt</c> and <c>Ordinal</c> above all, which a rejection that
-    /// wrote first and validated second would silently restamp and renumber.
-    /// </summary>
+    // Every column of every step row: a "changed nothing" claim has to cover UpdatedAt and Ordinal too.
     private string PlanSnapshot(Guid runId)
     {
         using var cmd = _ctx.GetConnection().CreateCommand();
@@ -653,8 +501,7 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         return sb.ToString();
     }
 
-    /// <summary>Writes the planner-owned columns of a step directly — the ones an edit must CARRY, not
-    /// rewrite, and which no public API on the service sets in isolation.</summary>
+    // Written directly because no public API on the service sets these planner-owned columns in isolation.
     private void SetStepColumns(Guid stepId, Guid personaId, string extraJson, bool reRunnable)
     {
         using var cmd = _ctx.GetConnection().CreateCommand();
@@ -675,8 +522,6 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         return JsonNode.Parse(Assert.IsType<string>(cmd.ExecuteScalar()))!;
     }
 
-    /// <summary>Succeeds every step and records the order, so "the loop honoured the mutation" is asserted
-    /// against what actually ran rather than against what the plan says.</summary>
     private sealed class RecordingExecutor : IAgentTurnExecutor
     {
         public List<string> Executed { get; } = new();
@@ -698,11 +543,7 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         public Task OnPausedAsync(AgentRun run, RunContext ctx, CancellationToken ct) => Task.CompletedTask;
     }
 
-    /// <summary>
-    /// A planner whose REPLAN returns a real revised plan. The shared <c>FakePlanner</c>s in this suite return
-    /// <c>PlanResult.Fallback</c> from <c>ReplanAsync</c>, which degrades before <c>KeepDoneAsync</c> ever
-    /// runs — a skip-survives-a-replan fact built on one would be vacuous.
-    /// </summary>
+    // Needed because a replan that degrades to Fallback returns before the step-status filter ever runs.
     private sealed class RevisingPlanner : IAgentPlanner
     {
         private readonly AgentStep[] _revised;

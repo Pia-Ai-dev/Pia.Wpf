@@ -9,26 +9,8 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// The seam between managed personas (merged at <c>cf571e51</c> from <c>feature/managed-personas-client</c>)
-/// and Batch 07's per-step persona machinery. <b>Neither branch's suite could have covered this</b>, because
-/// neither branch had both halves: the agent roster shipped before managed personas existed, and the managed
-/// persona work was authored against the chat picker, where the roster does not appear.
-/// <para>
-/// <b>Why these facts use the REAL <see cref="PersonaService"/> and a real database.</b>
-/// <see cref="StepPersonaResolverTests"/> and <see cref="HeadlessRunLauncherTests"/> both substitute
-/// <see cref="IPersonaService"/>, so a substitute answers whatever the test told it to — including for a
-/// managed persona, which is exactly the question here. The whole content of "does a managed row reach the
-/// agent roster" lives in <c>PersonaService</c>'s merge order and its <c>ManagedPersonas</c> lookup, so a
-/// substitute would pin the test's own assumption rather than the code's behaviour.
-/// </para>
-/// <para>
-/// <b>What these facts do NOT reach.</b> No run is launched and no orchestrator runs: the launcher's own
-/// ladder is covered by <c>HeadlessRunLauncherTests</c>, and the fact below that stands in for it says so at
-/// the assertion rather than implying more. Nothing here renders — whether the roster CheckBox list shows a
-/// Managed badge is manual-smoke debt like every other locale/render item on this branch.
-/// </para>
-/// </summary>
+// The REAL PersonaService and a real database: the sibling suites substitute IPersonaService, so a substitute would
+// pin the test's own assumption rather than PersonaService's merge order and its ManagedPersonas lookup.
 public sealed class ManagedPersonaAgentSeamTests : IDisposable
 {
     private readonly string _tmpDir;
@@ -42,9 +24,8 @@ public sealed class ManagedPersonaAgentSeamTests : IDisposable
 
     public ManagedPersonaAgentSeamTests()
     {
-        // An EXPLICIT temp database for the reason PersonaServiceTests documents: ReplaceManagedPersonasAsync
-        // opens with `DELETE FROM ManagedPersonas`, and against a real profile that wipes every
-        // admin-published persona the developer is signed in to.
+        // An EXPLICIT temp database: ReplaceManagedPersonasAsync opens with `DELETE FROM ManagedPersonas`, which
+        // against a real profile wipes every admin-published persona the developer is signed in to.
         _tmpDir = Path.Combine(Path.GetTempPath(), "PiaManagedPersonaSeam_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tmpDir);
         _ctx = new SqliteContext(Path.Combine(_tmpDir, "history.db"));
@@ -102,11 +83,8 @@ public sealed class ManagedPersonaAgentSeamTests : IDisposable
         var roster = await resolver.GetRosterAsync(Ct);
         var resolved = await resolver.ResolveAsync(managed.Id, RunDefault(), tokenizationEnabled: false, Ct);
 
-        // Both halves, because either alone is satisfiable while the seam is broken. GetRosterAsync filters
-        // its configured ids through PersonaService.GetPersonasAsync, so the first half is the actual
-        // question: does a MANAGED row survive that filter, or is a managed id silently dropped as "no longer
-        // resolves to a persona"? The second half is what the user would notice — the step running on the
-        // admin-published prompt rather than degrading to the run persona.
+        // Both halves: the roster read filters configured ids through GetPersonasAsync, so the first asks whether a
+        // MANAGED row survives that filter and the second is what the user would notice.
         Assert.Equal([managed.Id], roster.Select(p => p.Id));
         Assert.True(roster[0].IsManaged);
         Assert.Equal(managed.Id, resolved.Persona.Id);
@@ -116,12 +94,8 @@ public sealed class ManagedPersonaAgentSeamTests : IDisposable
     [Fact]
     public async Task AManagedPersonaId_ResolvesThroughGetPersonaAsync_TheLaunchersSecondNarrowing()
     {
-        // HeadlessRunLauncher.ResolveRunPersonaAsync (:782/:788) narrows a delegated child's persona twice:
-        // the id must be on settings' roster, AND GetPersonaAsync(id) must return something. This pins the
-        // SECOND narrowing against the real store, which is the half managed personas changed — the launcher
-        // reads its own single-row lookup, and a managed row lives in ManagedPersonas, not Personas.
-        // <b>Deliberately not routed through the launcher itself</b>: HeadlessRunLauncherTests substitutes
-        // IPersonaService, so building a launcher here would re-pin the substitute, not this lookup.
+        // The launcher narrows a child's persona twice, on the roster and on GetPersonaAsync. A managed row lives in
+        // ManagedPersonas, not Personas, so it is that lookup this pins — against the real store, not a substitute.
         var managed = ManagedPersona("TEST_ManagedForLauncher");
         await _personas.ReplaceManagedPersonasAsync([managed]);
         _settings.Settings.SetAgentPersonaRoster(UserOperatingMode.Personal, [managed.Id]);
@@ -141,9 +115,8 @@ public sealed class ManagedPersonaAgentSeamTests : IDisposable
         await _personas.ReplaceManagedPersonasAsync([managed]);
         _settings.Settings.SetAgentPersonaRoster(UserOperatingMode.Personal, [managed.Id]);
 
-        // The withdrawal: replace-all with an empty catalog is how an admin unassigns a persona (there is no
-        // tombstone). A resolver is built AFTER it, because the roster is memoized per run — a run already in
-        // flight keeps the specialist it started with, which is the intended shape, not a gap.
+        // Replace-all with an empty catalog is how an admin unassigns a persona; there is no tombstone. The resolver
+        // is built AFTER it because the roster is memoized per run — a run in flight keeps its specialist.
         await _personas.ReplaceManagedPersonasAsync([]);
         var resolver = BuildResolver();
         var runDefault = RunDefault();
@@ -158,17 +131,8 @@ public sealed class ManagedPersonaAgentSeamTests : IDisposable
     [Fact]
     public async Task AWithdrawnManagedPersonaId_LeavesTheAgentRoster_WhileTheStillPublishedOneStays()
     {
-        // This fact was written INVERTED, pinning the merge's one residue: ReplaceManagedPersonasAsync's
-        // withdrawal latch walked settings.ModePersonaDefaults only, so a withdrawn id sat on the agent roster
-        // until the settings page was next saved. It carried the instruction to flip rather than delete it when
-        // the latch learned to walk the roster too, and that is what this now is — the roster walk's red.
-        //
-        // The three assertions are one claim in three parts, and none of them alone is worth anything:
-        //  · the chat selection IS cleared — the contrast that proves the latch ran at all, so a red here is
-        //    read as "the whole latch broke" rather than "the roster half broke";
-        //  · the withdrawn id is GONE from the roster — the residue, closed;
-        //  · the still-published id STAYS — the non-vacuity guard, because clearing the roster wholesale (or
-        //    on any id at all, rather than on the withdrawn ones) would satisfy the middle assertion too.
+        // Three parts of one claim: the chat selection IS cleared, so a red reads as "the whole latch broke"; the
+        // withdrawn id is gone; the still-published id stays, because clearing wholesale would satisfy the middle.
         var withdrawn = ManagedPersona("TEST_ManagedRosterWithdrawn");
         var republished = ManagedPersona("TEST_ManagedRosterRepublished");
         await _personas.ReplaceManagedPersonasAsync([withdrawn, republished]);
@@ -185,11 +149,8 @@ public sealed class ManagedPersonaAgentSeamTests : IDisposable
         Assert.Contains(republished.Id, roster);
     }
 
-    /// <summary>
-    /// A real <see cref="AppSettings"/> behind <see cref="ISettingsService"/>: <c>PersonaService</c>'s
-    /// withdrawal latch reads the settings, mutates them and saves, so a substitute returning a fresh object
-    /// per call would lose the mutation this file asserts on.
-    /// </summary>
+    // A real AppSettings: the withdrawal latch reads, mutates and saves the settings, so a substitute returning a
+    // fresh object per call would lose the mutation these facts assert on.
     private sealed class TestSettingsService : ISettingsService
     {
 #pragma warning disable CS0067

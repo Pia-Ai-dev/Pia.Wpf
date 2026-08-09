@@ -14,13 +14,6 @@ using ReasoningEffort = Pia.Models.ReasoningEffort;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Planner behavior (§13.3/§13.12): an <c>emit_plan</c> call parses into ordered Pending steps;
-/// no-call retries once (firmer) then falls back to SingleTurn (R10); a semantically invalid plan
-/// falls back without a retry. Plus the opt-in reason-then-emit split: it only fires on a provider whose
-/// handler drops the configured reasoning effort under tools, it is tool-FREE (which is the whole point),
-/// it can never hard-fail planning, and its tokens always reach <c>PlanResult.Usage</c> (I1).
-/// </summary>
 public sealed class AgentPlannerTests
 {
     private readonly IAiClientService _ai = Substitute.For<IAiClientService>();
@@ -47,12 +40,7 @@ public sealed class AgentPlannerTests
     private static Persona Persona() => new() { Name = "Pia", SystemPrompt = "sys" };
     private static RunContext Ctx() => new("build a thing", RunProfile.Interactive);
 
-    /// <summary>
-    /// The goal every test plans. It must NOT be a substring of the analysis wrapper that
-    /// <c>BuildPlanMessages</c> composes ("--- Your analysis of this <b>goal</b> …"): with the literal
-    /// "goal" as the goal, <c>Assert.Contains(goal, LastUserPrompt)</c> is satisfied by the wrapper alone
-    /// and the "the goal survives into the analysis-seeded user message" guarantee has zero coverage.
-    /// </summary>
+    // Must not be a substring of the analysis wrapper the planner composes, or Contains would pass on the wrapper alone.
     private const string Goal = "ship the widget catalogue";
 
     private AgentPlanner BuildPlanner() => BuildPlanner(AiProviderType.OpenAI, dropsEffortWithTools: false);
@@ -67,11 +55,8 @@ public sealed class AgentPlannerTests
             _ai, new AiProviderHandlerResolver([handler]), _settingsService, NullLogger<AgentPlanner>.Instance);
     }
 
-    /// <summary>
-    /// Builds the planner AND its provider together so the registered handler's ProviderType always matches
-    /// the provider's. A mismatch would make <c>AiProviderHandlerResolver.Get</c> throw, the gate's catch-all
-    /// swallow it, and every gate assertion below pass for the wrong reason.
-    /// </summary>
+    // Pairs planner and provider so their types match: a mismatch is swallowed by the gate's catch-all and
+    // would make every gate assertion pass for the wrong reason.
     private (AgentPlanner Planner, AiProvider Provider) PlannerFor(
         AiProviderType type,
         bool dropsEffortWithTools,
@@ -83,9 +68,7 @@ public sealed class AgentPlannerTests
         return (BuildPlanner(type, dropsEffortWithTools), Provider(type, effort, supportsTools));
     }
 
-    // Drives one planning turn: invokes the captured toolHandler with a synthetic emit_plan call
-    // (when emitArgs is set) then yields Finished — the loop drains the whole stream (R6). The usage
-    // rides on the yielded Finished item, which is the ONLY place a provider reports it (I1).
+    // The usage rides on the yielded Finished item, which is the only place a provider ever reports it.
     private static async IAsyncEnumerable<ChatStreamItem> PlanStream(
         ToolCallHandler? handler, Dictionary<string, object?>? emitArgs,
         UsageDetails? usage = null)
@@ -109,7 +92,7 @@ public sealed class AgentPlannerTests
         return new Dictionary<string, object?> { ["steps"] = arr };
     }
 
-    /// <summary>The DECLINE turn's <c>emit_plan</c> arguments; member names are wire literals, not <c>nameof</c>, since that's what a provider actually sends.</summary>
+    // Member names are wire literals rather than nameof, since that is what a provider actually sends.
     private static Dictionary<string, object?> Decline(string? question = Question, bool cannotGround = true) =>
         new() { ["cannotGround"] = cannotGround, ["question"] = question, ["steps"] = null };
 
@@ -118,10 +101,10 @@ public sealed class AgentPlannerTests
     private readonly List<string> _systemPrompts = new();
     private readonly List<string> _userPrompts = new();
 
-    /// <summary>Tools argument of each constrained turn, in order — captured because prompt text alone can't reveal a schema difference the model actually reads.</summary>
+    // Captured because prompt text alone cannot reveal a schema difference the model actually reads.
     private readonly List<IList<AITool>?> _toolSets = new();
 
-    /// <summary>Reads the schema off the actual argument the planner passed, not the static field, so a build that sent the wrong tool would still be caught.</summary>
+    // Reads the schema off the argument the planner passed, so sending the wrong tool is still caught.
     private JsonElement ToolSchemaOfTurn(int turn)
     {
         var tools = _toolSets[turn];
@@ -129,7 +112,7 @@ public sealed class AgentPlannerTests
         return Assert.IsAssignableFrom<AIFunction>(Assert.Single(tools!)).JsonSchema;
     }
 
-    /// <summary>Flattens a schema node's <c>type</c> to a string (e.g. "array|null" for a union) without throwing on the union case.</summary>
+    // A union type comes back as an array, so it is flattened to "array|null" rather than throwing.
     private static string SchemaType(JsonElement node)
     {
         var type = node.GetProperty("type");
@@ -138,13 +121,11 @@ public sealed class AgentPlannerTests
             : type.GetString() ?? string.Empty;
     }
 
-    /// <summary>The system prompt of the LAST planning attempt.</summary>
     private string LastPrompt => _systemPrompts[^1];
 
-    /// <summary>The user message of the LAST planning attempt — where the analysis rides.</summary>
     private string LastUserPrompt => _userPrompts[^1];
 
-    /// <summary>Serves a different answer per constrained turn (<paramref name="turns"/>[0] the first attempt, [1] the firm retry, last entry beyond); unlike <see cref="ReturnsPlan"/>, which answers every turn identically.</summary>
+    // One entry per constrained turn: the first attempt, then the firm retry, with the last entry reused beyond.
     private void ReturnsPlanTurns(UsageDetails? usage, params Dictionary<string, object?>?[] turns)
     {
         var served = 0;
@@ -205,7 +186,6 @@ public sealed class AgentPlannerTests
             .Returns(_ => Task.FromException<ChatResponse>(ex));
     }
 
-    /// <summary>Received-count assertion for the tool-free reasoning turn. 0 == DidNotReceive.</summary>
     private void AssertReasoningTurns(int count)
     {
         _ = _ai.Received(count).GetChatResponseAsync(
@@ -213,7 +193,6 @@ public sealed class AgentPlannerTests
             Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>());
     }
 
-    /// <summary>Received-count assertion for the constrained emit_plan turn.</summary>
     private void AssertConstrainedTurns(int count)
     {
         _ai.Received(count).GetChatCompletionWithToolsAsync(
@@ -279,7 +258,7 @@ public sealed class AgentPlannerTests
 
     // ---- decline: the plan turn may refuse to ground the goal, distinct from the single-turn degrade ----
 
-    /// <summary>A decline must stay distinguishable from the no-plan degrade — both would otherwise deserialize to empty steps.</summary>
+    // A decline and the no-plan degrade both deserialize to empty steps, so they have to stay distinguishable.
     [Fact]
     public async Task PlanAsync_Decline_IsTheThirdOutcome_NotTheSingleTurnDegrade()
     {
@@ -288,12 +267,12 @@ public sealed class AgentPlannerTests
         var result = await BuildPlanner().PlanAsync(Goal, Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
 
         Assert.True(result.CannotGroundGoal);
-        Assert.False(result.FallBackToSingleTurn); // the whole point: the degrade must not be reused as the exit
+        Assert.False(result.FallBackToSingleTurn);
         Assert.Empty(result.Steps);
         Assert.Equal(Question, result.ClarificationQuestion);
     }
 
-    /// <summary>A decline must not burn a second provider turn: the firm retry's text only makes sense for silence, not for a model that already called <c>emit_plan</c> to decline.</summary>
+    // The firm retry's text only makes sense for silence, not for a model that already called emit_plan.
     [Fact]
     public async Task PlanAsync_Decline_ShortCircuitsTheFirmRetry()
     {
@@ -305,7 +284,6 @@ public sealed class AgentPlannerTests
         Assert.True(result.CannotGroundGoal);
     }
 
-    /// <summary>A decline on the firm retry (after silence on the first turn) is still honoured, since <c>BuildPlanMessages</c> offers the decline on both turns.</summary>
     [Fact]
     public async Task PlanAsync_SilentThenDeclines_HonoursTheDecline_OnTheFirmRetry()
     {
@@ -319,7 +297,6 @@ public sealed class AgentPlannerTests
         Assert.Equal(Question, result.ClarificationQuestion);
     }
 
-    /// <summary>A decline spends provider rounds like any other plan turn; usage must sum across both attempts on the silent-then-declines path.</summary>
     [Fact]
     public async Task PlanAsync_Decline_CarriesTheTurnsUsage()
     {
@@ -340,11 +317,11 @@ public sealed class AgentPlannerTests
         var afterRetry = await BuildPlanner().PlanAsync(Goal, Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
 
         Assert.True(afterRetry.CannotGroundGoal);
-        Assert.Equal(18, afterRetry.Usage!.InputTokenCount);  // silent attempt + the declining retry
+        Assert.Equal(18, afterRetry.Usage!.InputTokenCount);  // the silent attempt plus the declining retry
         Assert.Equal(8, afterRetry.Usage.OutputTokenCount);
     }
 
-    /// <summary>The decline flag is the discriminator, not the question text: a decline with no question must still decline, not fall into the no-plan degrade.</summary>
+    // The flag is the discriminator, not the question text.
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -357,12 +334,11 @@ public sealed class AgentPlannerTests
 
         Assert.True(result.CannotGroundGoal);
         Assert.False(result.FallBackToSingleTurn);
-        AssertConstrainedTurns(1);                  // still not the retry's business
-        Assert.Null(result.ClarificationQuestion);  // blank normalizes to null, so one nullness test answers
-                                                    // "was a question worded?" for every consumer downstream
+        AssertConstrainedTurns(1);
+        Assert.Null(result.ClarificationQuestion);  // blank normalizes to null, so one nullness test covers all three rows
     }
 
-    /// <summary>A turn that both declines and emits steps must still decline — never execute a plan the model disowned in the same breath.</summary>
+    // A plan the model disowned in the same breath must never run.
     [Fact]
     public async Task PlanAsync_DeclinesAndAlsoEmitsSteps_TheDeclineWins()
     {
@@ -374,14 +350,14 @@ public sealed class AgentPlannerTests
         var result = await BuildPlanner().PlanAsync(Goal, Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
 
         Assert.True(result.CannotGroundGoal);
-        Assert.Empty(result.Steps); // the emitted steps are NOT carried into the run
+        Assert.Empty(result.Steps);
     }
 
-    /// <summary>The decline option must be offered on both the first attempt and the firm retry, or the retry becomes a demand for a plan with no alternative.</summary>
+    // Without the decline on the retry too, the retry becomes a demand for a plan with no alternative.
     [Fact]
     public async Task PlanAsync_PlanPrompt_OffersTheDecline_OnTheFirstTurnAndTheFirmRetry()
     {
-        ReturnsPlan(emitArgs: null); // silent on both turns → both prompts get recorded
+        ReturnsPlan(emitArgs: null); // silent on both turns, so both prompts get recorded
 
         var result = await BuildPlanner().PlanAsync(Goal, Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
 
@@ -394,14 +370,13 @@ public sealed class AgentPlannerTests
             // A gate that refuses goals the model could have planned is worse than no gate.
             Assert.Contains("however terse, gets a plan", p, StringComparison.Ordinal);
         });
-        // The firm text is unchanged and still addresses only silence.
         Assert.Contains("You did not call emit_plan", _systemPrompts[^1], StringComparison.Ordinal);
-        // Non-vacuity: a silent model still degrades, so the prompt text alone doesn't turn silence into a decline.
+        // Non-vacuity: a silent model still degrades, so the prompt text alone does not turn silence into a decline.
         Assert.True(result.FallBackToSingleTurn);
         Assert.False(result.CannotGroundGoal);
     }
 
-    /// <summary>The plan tool offers the decline members but keeps step items strict — annotating the steps parameter as nullable must not propagate nullability into the item properties (a measured Microsoft.Extensions.AI schema-generation regression).</summary>
+    // Annotating the steps parameter as nullable must not propagate nullability down into the item properties.
     [Fact]
     public async Task PlanAsync_PlanTool_OffersTheDecline_ButKeepsTheStepItemsStrict()
     {
@@ -409,7 +384,7 @@ public sealed class AgentPlannerTests
 
         var result = await BuildPlanner().PlanAsync(Goal, Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
 
-        Assert.Single(result.Steps); // the turn was an ordinary successful plan, so nothing below is read off a degrade
+        Assert.Single(result.Steps); // an ordinary successful plan, so nothing below is read off a degrade
         var schema = ToolSchemaOfTurn(0);
         var props = schema.GetProperty("properties");
 
@@ -420,19 +395,18 @@ public sealed class AgentPlannerTests
         Assert.False(schema.TryGetProperty("required", out _));
 
         var steps = props.GetProperty("steps");
-        Assert.Equal("array", SchemaType(steps));           // NOT "array|null"
+        Assert.Equal("array", SchemaType(steps));
         var items = steps.GetProperty("items");
-        Assert.Equal("object", SchemaType(items));          // NOT "object|null"
+        Assert.Equal("object", SchemaType(items));
         var itemProps = items.GetProperty("properties");
-        Assert.Equal("string", SchemaType(itemProps.GetProperty("title")));   // NOT "string|null"
-        Assert.Equal("string", SchemaType(itemProps.GetProperty("intent")));  // NOT "string|null"
-        // A step's two required members are unchanged, so the loosening cannot hide here either.
+        Assert.Equal("string", SchemaType(itemProps.GetProperty("title")));
+        Assert.Equal("string", SchemaType(itemProps.GetProperty("intent")));
         Assert.Equal(
             new[] { "title", "intent" },
             items.GetProperty("required").EnumerateArray().Select(e => e.GetString()).ToArray());
     }
 
-    /// <summary>Support logs may record that a run declined, but never the model-generated clarification question or the goal — both are user-derived payload.</summary>
+    // The clarification question and the goal are both user-derived payload, so neither may reach a support log.
     [Fact]
     public async Task PlanAsync_Decline_LogsThatItDeclined_ButNeverTheQuestion()
     {
@@ -449,7 +423,7 @@ public sealed class AgentPlannerTests
         Assert.DoesNotContain(release, m => m.Contains(Goal, StringComparison.Ordinal));
     }
 
-    /// <summary>A replan turn never offers the decline, in its prompt (<c>BuildReplanMessages</c>) or its tool schema (<c>ReplanAsync</c> ships the original <c>EmitRevisedPlanTool</c> shape) — a model that invents the member anyway is read as a no-steps turn, hitting the ordinary firm retry then degrade.</summary>
+    // A replan never offers the decline, so a model that invents the member reads as a no-steps turn.
     [Fact]
     public async Task ReplanAsync_DeclineMember_IsNotHonoured_AndNeitherThePromptNorTheToolEverOffersIt()
     {

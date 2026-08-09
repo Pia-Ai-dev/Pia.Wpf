@@ -13,14 +13,6 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Durable-spine coverage for <see cref="AgentRunService"/> (phase1 plan §12.8): schema
-/// idempotency, lifecycle transitions, ledger accrual, the R1 write-order/FK-cascade rules, the
-/// eviction predicate, and the R2 re-query semantics of <see cref="AgentRunService.NextPendingStepAsync"/>.
-/// Also covers the ledger's ACTIVE-time clock (G1 — parked gaps are not worked time) and the opaque
-/// launch-envelope round-trip (<c>PolicyJson</c>).
-/// Written to run on Windows/CI — the WPF-targeted test assembly cannot execute on macOS.
-/// </summary>
 public sealed class AgentRunServiceTests : IDisposable
 {
     private readonly string _tmpDir;
@@ -45,8 +37,6 @@ public sealed class AgentRunServiceTests : IDisposable
         Assert.True(TableExists(_ctx.GetConnection(), "AgentRuns"));
         Assert.True(TableExists(_ctx.GetConnection(), "AgentSteps"));
 
-        // Reopening the same file re-runs EnsureSchema over existing tables (CREATE TABLE IF NOT
-        // EXISTS) — a no-op that must not throw.
         using var reopened = new SqliteContext(_dbPath);
         var conn = reopened.GetConnection();
         Assert.True(TableExists(conn, "AgentRuns"));
@@ -116,8 +106,6 @@ public sealed class AgentRunServiceTests : IDisposable
     [Fact]
     public async Task AddUsageAsync_WithStepId_AccruesPerStepAndGrandTotal()
     {
-        // Exercises the non-null-stepId branch of AddUsageAsync (AgentRunService.cs ~170-180),
-        // which AddUsageAsync_AccruesRunLevelLedger (stepId: null) never hits.
         var chatId = await MakeChatAsync();
         var run = await _service.CreateAsync(new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User), TestContext.Current.CancellationToken);
         var step = new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "A", Status = AgentStepStatus.Pending };
@@ -129,11 +117,9 @@ public sealed class AgentRunServiceTests : IDisposable
         var fetched = await _service.GetAsync(run.Id, TestContext.Current.CancellationToken);
         using var doc = JsonDocument.Parse(fetched!.LedgerJson!);
 
-        // Grand total accrues across both calls.
         Assert.Equal(15, doc.RootElement.GetProperty("inputTokens").GetInt64());
         Assert.Equal(5, doc.RootElement.GetProperty("outputTokens").GetInt64());
 
-        // The per-step entry for that StepId also accrues across both calls.
         var perStep = doc.RootElement.GetProperty("perStep");
         Assert.Equal(1, perStep.GetArrayLength());
         Assert.Equal(step.Id.ToString(), perStep[0].GetProperty("stepId").GetString());
@@ -197,9 +183,6 @@ public sealed class AgentRunServiceTests : IDisposable
     [Fact]
     public async Task FailInterruptedRunsAsync_SettlesNonTerminalRuns_LeavesTerminalUntouched()
     {
-        // G-4: a crash / forced-exit leaves runs crash-recoverable (Planning/Running/Verifying); the startup
-        // sweep settles exactly those to Cancelled and never touches already-terminal runs. WaitingForInput/
-        // Paused are a DELIBERATE budget-parked state — they survive the sweep resumable (guardrail 3).
         var ct = TestContext.Current.CancellationToken;
 
         var planning = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
@@ -225,13 +208,12 @@ public sealed class AgentRunServiceTests : IDisposable
         Assert.Equal(AgentRunState.Cancelled, (await _service.GetAsync(running.Id, ct))!.State);
         Assert.Equal(AgentRunState.Cancelled, (await _service.GetAsync(verifying.Id, ct))!.State);
         Assert.NotNull((await _service.GetAsync(planning.Id, ct))!.CompletedAt);
-        // Parked runs survive the sweep resumable (guardrail 3).
+        // A budget park is deliberate, so it survives the sweep resumable.
         Assert.Equal(AgentRunState.WaitingForInput, (await _service.GetAsync(waiting.Id, ct))!.State);
         Assert.Equal(AgentRunState.Paused, (await _service.GetAsync(paused.Id, ct))!.State);
         Assert.Equal(AgentRunState.Completed, (await _service.GetAsync(completed.Id, ct))!.State);
         Assert.Equal(AgentRunState.Failed, (await _service.GetAsync(failed.Id, ct))!.State);
 
-        // Idempotent: a second sweep settles nothing (all runs are now terminal).
         Assert.Equal(0, await _service.FailInterruptedRunsAsync(ct));
     }
 
@@ -246,7 +228,7 @@ public sealed class AgentRunServiceTests : IDisposable
 
         var fetched = await _service.GetAsync(run.Id, ct);
         Assert.Equal(AgentRunState.WaitingForInput, fetched!.State);
-        Assert.Null(fetched.CompletedAt); // pause is NOT terminal (guardrail 2)
+        Assert.Null(fetched.CompletedAt); // pause is NOT terminal
         Assert.Contains("paused", fetched.ExtraJson ?? string.Empty);
         Assert.Contains("step-cap", fetched.ExtraJson ?? string.Empty);
     }
@@ -258,12 +240,12 @@ public sealed class AgentRunServiceTests : IDisposable
         var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
         await _service.PauseAsync(run.Id, "step-cap", ct);
 
-        // Two racers CAS-claim the same parked run; exactly one wins (guardrail 2 — never two loops).
+        // Two racers CAS-claim the same parked run; exactly one wins — never two loops.
         var a = _service.TryBeginResumeAsync(run.Id, ct);
         var b = _service.TryBeginResumeAsync(run.Id, ct);
         var results = await Task.WhenAll(a, b);
 
-        Assert.Single(results, r => r); // exactly one true
+        Assert.Single(results, r => r);
         Assert.Equal(AgentRunState.Running, (await _service.GetAsync(run.Id, ct))!.State);
     }
 
@@ -274,14 +256,14 @@ public sealed class AgentRunServiceTests : IDisposable
         var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
         await _service.SetStateAsync(run.Id, AgentRunState.Running, ct);
 
-        Assert.False(await _service.TryBeginResumeAsync(run.Id, ct)); // not parked → no-op
+        Assert.False(await _service.TryBeginResumeAsync(run.Id, ct));
         Assert.Equal(AgentRunState.Running, (await _service.GetAsync(run.Id, ct))!.State);
     }
 
     [Fact]
     public async Task CreateAsync_BeforeChatRow_ThrowsFkConstraint()
     {
-        // R1: FK enforcement is ON — a run row cannot precede its AssistantChats parent.
+        // FK enforcement is ON — a run row cannot precede its AssistantChats parent.
         var orphanChatId = Guid.NewGuid();
 
         await Assert.ThrowsAsync<SqliteException>(async () =>
@@ -320,23 +302,8 @@ public sealed class AgentRunServiceTests : IDisposable
         Assert.True(await _service.ChatHasPlannedRunAsync(chatId, TestContext.Current.CancellationToken));
     }
 
-    /// <summary>
-    /// The scheduler's duplicate-dispatch guard, against the REAL SQL rather than a substitute (hermes #2 /
-    /// Batch 08 §19 Q4). Three things could silently make this query answer "nothing is running" forever and no
-    /// scheduler test would notice: a <c>TriggerRef</c> parameter bound in a different format from the one
-    /// <c>CreateAsync</c> writes, an exclusion set that misses a state, and a range predicate.
-    /// <para>
-    /// The <c>WaitingForChildren</c> leg is the D7 trap made a test: that member is 8, ABOVE the terminal band,
-    /// so replacing the explicit exclusion set with <c>State &lt; WaitingForInput</c> — the shape the startup
-    /// sweep is allowed to use — reds that leg alone while every other leg stays green. A parent parked over its
-    /// children IS still live, and re-dispatching its job would double a whole fan-out.
-    /// </para>
-    /// <para>
-    /// The parked legs are a DECISION, not an omission: a park needs a human to resume it, so counting one as
-    /// live would let a single un-resumed budget park silence a recurring job forever. See
-    /// <c>AgentRunStates.IsExecuting</c>.
-    /// </para>
-    /// </summary>
+    // WaitingForChildren sorts ABOVE the terminal band, so a range predicate reds that leg alone. Parked runs are
+    // excluded on purpose: a park needs a human, so counting one as live would silence a recurring job forever.
     [Fact]
     public async Task AnyExecutingRunForTriggerAsync_TrueForEveryExecutingState_FalseForParkedAndTerminal()
     {
@@ -347,8 +314,7 @@ public sealed class AgentRunServiceTests : IDisposable
         var run = await _service.CreateAsync(new AgentRunCreateRequest(
             chatId, RunShape.Planned, AgentRunTrigger.Schedule, jobId, null, "goal"), ct);
 
-        // Planning: the state a launch has already reached when LaunchAsync returns, so the guard sees a run
-        // that has not executed a single step yet — which is the whole point of checking before dispatch.
+        // Planning is the state a launch has already reached when LaunchAsync returns, before any step ran.
         Assert.Equal(AgentRunState.Planning, run.State);
         Assert.True(await _service.AnyExecutingRunForTriggerAsync(jobId, ct));
 
@@ -396,8 +362,7 @@ public sealed class AgentRunServiceTests : IDisposable
     [Fact]
     public async Task NextPendingStepAsync_ReQueriesPersistedSteps_NotASnapshot()
     {
-        // R2: the loop must pick up steps written by a later ReplaceStepsAsync (replan), not iterate
-        // a stale snapshot.
+        // The loop must pick up steps written by a later ReplaceStepsAsync (replan), not iterate a stale snapshot.
         var chatId = await MakeChatAsync();
         var run = await _service.CreateAsync(new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User), TestContext.Current.CancellationToken);
 
@@ -412,7 +377,6 @@ public sealed class AgentRunServiceTests : IDisposable
         next = await _service.NextPendingStepAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal("B", next!.Title);
 
-        // Replan: replace the remaining plan with an entirely new step set.
         var stepC = new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "C", Status = AgentStepStatus.Pending };
         await _service.ReplaceStepsAsync(run.Id, new[] { stepC }, TestContext.Current.CancellationToken);
 
@@ -442,18 +406,16 @@ public sealed class AgentRunServiceTests : IDisposable
         Assert.Equal(AgentStepStatus.Done, doneStep.Status);
     }
 
-    // ---- G1: the ledger clock measures ACTIVE time, never the parked gap ----
+    // ---- the ledger clock measures ACTIVE time, never the parked gap ----
 
     [Fact]
     public async Task Ledger_WallClock_ExcludesParkedGap_AndIsMonotonicAcrossTwoPauseResumeCycles()
     {
-        // G1: WallClockMs is accumulated WORKED time. The old formula (UtcNow - StartedAt) billed the
-        // whole parked span, so a run parked overnight reported ~12h it never worked. StartedAt is
-        // deliberately back-dated below — that is exactly the input that used to poison the ledger.
+        // WallClockMs is accumulated WORKED time. StartedAt is deliberately back-dated below because
+        // (UtcNow - StartedAt) is the formula that used to bill the whole parked span.
         var ct = TestContext.Current.CancellationToken;
         var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
 
-        // Cycle 1: 4s of work, then park.
         Assert.NotNull(SegmentStartedAt(run.Id)); // create opens the first segment
         BackdateOpenSegment(run.Id, TimeSpan.FromSeconds(4));
         await _service.PauseAsync(run.Id, "step-cap", ct);
@@ -476,7 +438,7 @@ public sealed class AgentRunServiceTests : IDisposable
         Assert.InRange(WallClockMs(run.Id), afterFirstPause, afterFirstPause + 60_000);
         Assert.Equal(afterFirstPause, ActiveMs(run.Id));          // Refresh must not fold the segment in
 
-        // Cycle 2: 6 more seconds of work, then park again — the accumulator only ever grows.
+        // Park again — the accumulator only ever grows.
         BackdateOpenSegment(run.Id, TimeSpan.FromSeconds(6));
         await _service.PauseAsync(run.Id, "step-cap", ct);
 
@@ -489,10 +451,8 @@ public sealed class AgentRunServiceTests : IDisposable
     [Fact]
     public async Task Ledger_WallClock_ExcludesParkedGap_OnTheStepResultAccrualSiteToo()
     {
-        // G1 changed TWO accrual sites. The AddUsageAsync one is covered above; this is the HOT one —
-        // every completed step of every run goes through RecordStepResultAsync, so a regression that
-        // restored `WallClockMs = ElapsedMs(startedAt)` there would re-import the parked gap with every
-        // other G1 test still green.
+        // The HOT accrual site: every completed step goes through RecordStepResultAsync, so a regression that
+        // restored `WallClockMs = ElapsedMs(startedAt)` there would re-import the parked gap with the rest green.
         var ct = TestContext.Current.CancellationToken;
         var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
         var step = new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "A", Status = AgentStepStatus.Pending };
@@ -520,10 +480,8 @@ public sealed class AgentRunServiceTests : IDisposable
     [Fact]
     public async Task LedgerClockFault_IsSwallowed_AndTheStateWriteStillLands()
     {
-        // Guardrail 1 for the ledger clock itself: MoveLedgerClock runs BEFORE the pause/terminal state
-        // UPDATE, so an unguarded fault there would leave a run dangling Running — unresumable, its parked
-        // work lost until the startup sweep cancels it. Forced here with an unparseable StartedAt, which
-        // makes the ledger read throw (DateTime.Parse) inside MoveLedgerClock.
+        // MoveLedgerClock runs BEFORE the state UPDATE, so an unguarded fault there would leave a run dangling
+        // Running. Forced with an unparseable StartedAt, which makes the ledger read throw inside MoveLedgerClock.
         var ct = TestContext.Current.CancellationToken;
         var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
         SetRawStartedAt(run.Id, "not-a-timestamp");
@@ -578,9 +536,8 @@ public sealed class AgentRunServiceTests : IDisposable
     [Fact]
     public async Task SweptRun_StaleOpenSegment_IsDroppedNotBilled()
     {
-        // Crash path: the startup sweep settles a Running run to Cancelled in bulk and deliberately
-        // does not touch ledgers, so the run keeps an OPEN segment forever. Any later ledger write must
-        // drop that stale segment — a terminal run cannot have been working through the downtime.
+        // The startup sweep settles runs in bulk and deliberately does not touch ledgers, so a swept run keeps an
+        // OPEN segment forever; any later ledger write must drop it.
         var ct = TestContext.Current.CancellationToken;
         var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.SingleTurn, AgentRunTrigger.User), ct);
 
@@ -597,9 +554,8 @@ public sealed class AgentRunServiceTests : IDisposable
     [Fact]
     public async Task LegacyLedger_ParkedRun_SeedsFromReportedTotal_ThenAccumulatesActiveTime()
     {
-        // Backward compatibility: a ledger persisted before active-time tracking has neither activeMs
-        // nor segmentStartedAt. A non-terminal legacy run seeds the accumulator ONCE from its last
-        // reported total and then behaves like any other run — the parked gap stays out.
+        // A ledger persisted before active-time tracking has neither activeMs nor segmentStartedAt; a non-terminal
+        // one seeds the accumulator ONCE from its last reported total.
         var ct = TestContext.Current.CancellationToken;
         var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
         await _service.PauseAsync(run.Id, "step-cap", ct);
@@ -624,8 +580,8 @@ public sealed class AgentRunServiceTests : IDisposable
     [Fact]
     public async Task LegacyLedger_WithoutReportedTotal_SeedsFromStartedAt()
     {
-        // Fallback branch of the legacy upgrade: a legacy ledger that never accrued (wallClockMs 0)
-        // has only StartedAt to go on, so the run's whole life so far counts as active.
+        // A legacy ledger that never accrued (wallClockMs 0) has only StartedAt to go on, so the run's whole life
+        // so far counts as active.
         var ct = TestContext.Current.CancellationToken;
         var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
         await _service.SetStateAsync(run.Id, AgentRunState.Running, ct);
@@ -661,7 +617,7 @@ public sealed class AgentRunServiceTests : IDisposable
         Assert.Equal(5_000, WallClockMs(run.Id));
     }
 
-    // ---- D1: the launch grant envelope round-trips as an opaque string ----
+    // ---- the launch grant envelope round-trips as an opaque string ----
 
     [Fact]
     public async Task CreateAsync_PolicyJson_RoundTripsThroughGetAndGetByChat()
@@ -694,15 +650,6 @@ public sealed class AgentRunServiceTests : IDisposable
         Assert.Null(Assert.Single(await _service.GetByChatAsync(chatId, ct)).PolicyJson);
     }
 
-    /// <summary>
-    /// T-ST-9, REGRESSION. The column and its round-trip predate the producer: the INSERT parameter and MapRun
-    /// were always correct, and only <c>CreateAsync</c>'s object initializer failed to copy the request member.
-    /// BOTH halves matter and this asserts both, because the IN-MEMORY run is the object a fresh launch hands to
-    /// <c>AgentRunOrchestrator.RunAsync</c> — the row is never re-read first, so a guard asking "am I a child?"
-    /// reads THIS object, not the database. Neutralizing the initializer line reds both asserts at once (the
-    /// INSERT sources <c>run.ParentRunId</c>, not <c>request.ParentRunId</c>), which is exactly why the omission
-    /// would otherwise be invisible.
-    /// </summary>
     [Fact]
     public async Task CreateAsync_RoundTripsParentRunId()
     {
@@ -714,9 +661,8 @@ public sealed class AgentRunServiceTests : IDisposable
         var child = await _service.CreateAsync(
             new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User, Goal: "child goal", ParentRunId: parent.Id), ct);
 
-        // The in-memory object CreateAsync returns — the half no pre-existing test covered.
+        // The in-memory object is what a fresh launch hands to the orchestrator; the row is never re-read first.
         Assert.Equal(parent.Id, child.ParentRunId);
-        // …and the persisted row.
         Assert.Equal(parent.Id, (await _service.GetAsync(child.Id, ct))!.ParentRunId);
 
         // A top-level run stays null in both places: absence is the default and must not become Guid.Empty.
@@ -724,11 +670,8 @@ public sealed class AgentRunServiceTests : IDisposable
         Assert.Null((await _service.GetAsync(parent.Id, ct))!.ParentRunId);
     }
 
-    /// <summary>
-    /// T-ST-10, GUARD. The link is queried ("which children is this parent still waiting on"), so it needs an
-    /// index. Non-vacuity: the four pre-existing AgentRuns indexes are asserted alongside it, so a typo'd or
-    /// deleted CREATE INDEX cannot pass by making the lookup match nothing.
-    /// </summary>
+    // The four pre-existing indexes are asserted alongside, so a typo'd or deleted CREATE INDEX cannot pass by
+    // making the lookup match nothing.
     [Fact]
     public void TheParentRunIdIndexExists()
     {
@@ -742,16 +685,8 @@ public sealed class AgentRunServiceTests : IDisposable
         Assert.True(IndexExists(conn, "IX_AgentRuns_TriggerRef"));
     }
 
-    /// <summary>
-    /// T0-1. The reconcile's read side: ONE row per trigger, and it must be the LATEST SETTLED run, never merely
-    /// the first row of the group. Built so creation order and settle order DISAGREE — the older run settles
-    /// later — because a "take any row per group" implementation would still be green if they agreed.
-    /// <para>
-    /// The negative legs are the other half: a PARKED run must not appear (booking a park burns a strike on work
-    /// the user can still continue) and a null <c>TriggerRef</c> must not appear (a child run, or a user's
-    /// "run in background" detach, is not a scheduled firing).
-    /// </para>
-    /// </summary>
+    // Creation order and settle order deliberately DISAGREE: a "take any row per group" implementation would
+    // still be green if they agreed.
     [Fact]
     public async Task GetLatestSettledFiringsAsync_ReturnsTheMostRecentlySettledRunPerTrigger_AndIgnoresParkedRunsAndNullTriggerRefs()
     {
@@ -799,12 +734,8 @@ public sealed class AgentRunServiceTests : IDisposable
         Assert.DoesNotContain(firings, f => f.RunId == loose.Id);
     }
 
-    /// <summary>
-    /// The UPGRADE direction for T-ST-10: an existing database has no <c>IX_AgentRuns_ParentRunId</c>, and the
-    /// DDL block lives inside <c>EnsureSchema</c>'s command string, which runs on EVERY open — so the index
-    /// arrives at next launch with no MigrateSchema entry. Simulated by dropping it, which leaves exactly the
-    /// pre-batch shape.
-    /// </summary>
+    // The index DDL lives inside EnsureSchema, which runs on EVERY open, so the index arrives at next launch with
+    // no MigrateSchema entry; dropping it leaves exactly the pre-upgrade shape.
     [Fact]
     public void TheParentRunIdIndexIsAddedToAPreBatchDatabase()
     {
@@ -858,7 +789,7 @@ public sealed class AgentRunServiceTests : IDisposable
 
     private long WallClockMs(Guid runId) => LedgerNode(runId)["wallClockMs"]!.GetValue<long>();
 
-    /// <summary>The accumulator; null for a legacy ledger (field absent) — that is the upgrade trigger.</summary>
+    // Null for a legacy ledger (field absent) — that is the upgrade trigger.
     private long? ActiveMs(Guid runId) => LedgerNode(runId)["activeMs"]?.GetValue<long>();
 
     private DateTime? SegmentStartedAt(Guid runId) => LedgerNode(runId)["segmentStartedAt"]?.GetValue<DateTime>();
@@ -869,7 +800,6 @@ public sealed class AgentRunServiceTests : IDisposable
         return (node["inputTokens"]!.GetValue<long>(), node["outputTokens"]!.GetValue<long>());
     }
 
-    /// <summary>Pretends the currently OPEN work segment started <paramref name="by"/> ago.</summary>
     private void BackdateOpenSegment(Guid runId, TimeSpan by)
     {
         var node = LedgerNode(runId);
@@ -888,10 +818,6 @@ public sealed class AgentRunServiceTests : IDisposable
         cmd.ExecuteNonQuery();
     }
 
-    /// <summary>
-    /// Forces a settled run's <c>CompletedAt</c>, in the column's own convention (UTC "O"), so a fact about
-    /// "the most recently settled" does not depend on two <c>DateTime.UtcNow</c> calls landing microseconds apart.
-    /// </summary>
     private void SetCompletedAt(Guid runId, DateTime completedAtUtc)
     {
         var conn = _ctx.GetConnection();
@@ -912,7 +838,7 @@ public sealed class AgentRunServiceTests : IDisposable
         cmd.ExecuteNonQuery();
     }
 
-    /// <summary>Writes a raw (possibly unparseable) StartedAt, to fault the ledger read that parses it.</summary>
+    // A possibly unparseable value, to fault the ledger read that parses it.
     private void SetRawStartedAt(Guid runId, string rawValue)
     {
         var conn = _ctx.GetConnection();
@@ -923,7 +849,7 @@ public sealed class AgentRunServiceTests : IDisposable
         cmd.ExecuteNonQuery();
     }
 
-    /// <summary>State straight from the row — GetAsync would itself trip over a forged StartedAt.</summary>
+    // Straight from the row: GetAsync would itself trip over a forged StartedAt.
     private long RawState(Guid runId)
     {
         var conn = _ctx.GetConnection();

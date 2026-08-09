@@ -11,35 +11,20 @@ using Xunit;
 namespace Pia.Tests.Services;
 
 /// <summary>
-/// Batch 06 G4: what a completed run's promotion actually copies (B7's mtime promote set), where it copies it
-/// (B9's recorded destination), and the two cases where it deliberately copies NOTHING — worktree mode, where
-/// the branch is the deliverable (plan D5b), and any input the service cannot reason about.
-/// <para>
-/// The workspace is built BY HAND rather than through <c>ProvisionAsync</c>: every fact here turns on the
-/// relationship between a file's <c>LastWriteTimeUtc</c> and the ONE durable <c>provisionedAtUtc</c> the
-/// metadata document carries, and writing that timestamp explicitly is the difference between a fact and a
-/// race against the clock. It also keeps these facts git-free.
-/// </para>
-/// <para>
-/// In the <c>RunWorkspaceRedirectsStatic</c> collection because
-/// <see cref="Promote_AtTheRealRunsRootShape_ActuallyCopiesFilesOut"/> drives a real <c>CopyOut</c>, whose
-/// <c>RunWorkspaceRedirects.Record</c> call lands at a root the containment gate ACCEPTS and therefore mutates
-/// the process-global registry. <c>RunWorkspaceRedirectsTests</c> deliberately overflows that registry's entry
-/// cap, so the two must not run concurrently.
-/// </para>
+/// The workspace is built by hand so the mtime-vs-<c>provisionedAtUtc</c> facts are not a race against the
+/// clock, and the collection is shared because the real-shape fact mutates the global redirect registry.
 /// </summary>
 [Collection("RunWorkspaceRedirectsStatic")]
 public sealed class RunWorkspacePromotionTests : IDisposable
 {
     private readonly string _dir;
 
-    /// <summary>The promotion destination: the source root the run was provisioned FROM (B9).</summary>
+    /// <summary>The promotion destination: the source root the run was provisioned FROM.</summary>
     private readonly string _dest;
     private readonly string _runsBase;
     private readonly FakeGitProcessRunner _runner = new();
 
-    /// <summary>One hour ago / one minute from now, relative to <see cref="Stamp"/>: "the run did not touch
-    /// this" and "the run wrote this".</summary>
+    /// <summary>Either side of <see cref="Stamp"/>: "the run did not touch this" and "the run wrote this".</summary>
     private static readonly DateTime Stamp = new(2026, 7, 31, 9, 0, 0, DateTimeKind.Utc);
     private static readonly DateTime BeforeProvision = Stamp.AddHours(-1);
     private static readonly DateTime AfterProvision = Stamp.AddMinutes(1);
@@ -53,8 +38,7 @@ public sealed class RunWorkspacePromotionTests : IDisposable
         Directory.CreateDirectory(_runsBase);
     }
 
-    /// <summary>Cleaned up by <see cref="Dispose"/>: the ONE fixture that lives at the real shape, under the
-    /// developer's actual runs root (see <see cref="Promote_AtTheRealRunsRootShape_ActuallyCopiesFilesOut"/>).</summary>
+    /// <summary>The one fixture that lives at the real shape, under the developer's actual runs root.</summary>
     private Guid? _realShapeRunId;
 
     public void Dispose()
@@ -69,8 +53,8 @@ public sealed class RunWorkspacePromotionTests : IDisposable
         }
     }
 
-    /// <param name="filesFolder">The CURRENTLY configured assistant files folder. Defaults to the promotion
-    /// destination; a different value models the user relocating the folder mid-run (T-G4-7).</param>
+    /// <param name="filesFolder">Defaults to the promotion destination; another value models the user relocating
+    /// the folder mid-run.</param>
     private RunWorkspaceService Build(string? filesFolder = null)
     {
         var settings = Substitute.For<ISettingsService>();
@@ -82,10 +66,7 @@ public sealed class RunWorkspacePromotionTests : IDisposable
 
     private string MetadataPath(Guid runId) => Path.Combine(_runsBase, runId + ".workspace.json");
 
-    /// <summary>
-    /// Writes the sibling metadata document the way <c>ProvisionAsync</c> would. camelCase and <c>v:1</c> —
-    /// the exact wire shape, because promotion after a restart reads a document some other build wrote.
-    /// </summary>
+    /// <summary>camelCase and <c>v:1</c> — the exact wire shape, because a promotion after a restart reads a document another build wrote.</summary>
     private void WriteMetadata(Guid runId, RunWorkspaceMode mode, DateTime provisionedAtUtc, string? branch = null)
     {
         Directory.CreateDirectory(RunRoot(runId));
@@ -111,18 +92,8 @@ public sealed class RunWorkspacePromotionTests : IDisposable
     }
 
     /// <summary>
-    /// T-G4-1, <b>REGRESSION</b>. The promote set is what the RUN wrote, decided by mtime against the one
-    /// durable <c>provisionedAtUtc</c>: a copied-in file keeps the source's timestamp and is therefore older,
-    /// a file the agent wrote is newer. Promoting everything back would rewrite files the run never touched —
-    /// mtime churn that wakes the vault watcher and the sync delta, and (worse) a silent revert of a user edit
-    /// made during the run.
-    /// <para>
-    /// The DISCRIMINATING half is the third file. An untouched file whose content matches the destination is
-    /// protected by the byte-identity skip as well, so on its own it cannot tell the mtime rule from the
-    /// identity rule: with the mtime skip neutralized it still stays put. A copied-in file the USER DELETED at
-    /// the destination during the run has no destination to compare against — without the mtime rule
-    /// promotion "creates a missing file" and resurrects it. A promotion must never undelete.
-    /// </para>
+    /// The promote set is decided by mtime against <c>provisionedAtUtc</c>; the user-deleted third file is the
+    /// discriminator, because without the mtime rule promotion would resurrect it.
     /// </summary>
     [Fact]
     public async Task Promote_CopiesOnlyWhatTheRunWrote()
@@ -140,16 +111,12 @@ public sealed class RunWorkspacePromotionTests : IDisposable
         Assert.NotNull(result);
         Assert.Equal(1, result!.Promoted);
         Assert.Equal("written", File.ReadAllText(Path.Combine(_dest, "new.md")));
-        // The untouched file was not rewritten — asserted on its TIMESTAMP, because identical content would
-        // hide a copy that happened anyway.
+        // Asserted on the TIMESTAMP, because identical content would hide a copy that happened anyway.
         Assert.Equal(BeforeProvision, File.GetLastWriteTimeUtc(Path.Combine(_dest, "a.md")));
         Assert.False(File.Exists(Path.Combine(_dest, "user-deleted.md")));
     }
 
-    /// <summary>
-    /// T-G4-2, <b>REGRESSION</b>. A file the run rewrote to exactly what was already there is skipped: same
-    /// size, same SHA256, so copying it would only churn its mtime for no change in content.
-    /// </summary>
+    /// <summary>Same size and SHA256, so copying would only churn the mtime for no change in content.</summary>
     [Fact]
     public async Task Promote_SkipsAByteIdenticalDestination()
     {
@@ -166,11 +133,7 @@ public sealed class RunWorkspacePromotionTests : IDisposable
         Assert.Equal(BeforeProvision, File.GetLastWriteTimeUtc(Path.Combine(_dest, "same.md")));
     }
 
-    /// <summary>
-    /// T-G4-3, <b>REGRESSION</b>. The B7 conflict rule, and the one that protects a real user edit: the
-    /// destination changed WHILE the run was working, so an unattended run does not get to overwrite it. It is
-    /// counted and reported, never silently dropped.
-    /// </summary>
+    /// <summary>The destination changed WHILE the run was working, so an unattended run does not get to overwrite it.</summary>
     [Fact]
     public async Task Promote_NeverOverwritesAFileTheUserChangedDuringTheRun()
     {
@@ -186,28 +149,15 @@ public sealed class RunWorkspacePromotionTests : IDisposable
         Assert.Equal(0, result.Promoted);
         Assert.Equal("the user's newer edit", File.ReadAllText(Path.Combine(_dest, "notes.md")));
 
-        // <b>REGRESSION</b> (Phase 3 fix pass, Batch 06 Lens A finding 5 / Lens B finding 3). Keeping the
-        // user's edit is only half the decision: the RUN's version of notes.md was deliberately not written and
-        // now exists ONLY in the workspace, which the caller tears down the moment a non-null result comes
-        // back. Telling the caller to keep it is the difference between "we kept your edit" and "we silently
-        // threw the run's work away". Neutralization: RetainWorkspace: false → red.
+        // The run's version now exists ONLY in the workspace, which the caller tears down on a non-null result,
+        // so the caller has to be told to keep it.
         Assert.True(result.RetainWorkspace);
         Assert.Equal("the run's version", File.ReadAllText(Path.Combine(RunRoot(runId), "notes.md")));
     }
 
     /// <summary>
-    /// <b>REGRESSION</b> (Phase 3 consolidation pass — Lens A finding 5 / Lens B finding 3's remaining half).
-    /// The conflict count is RECORDED on the workspace metadata document, so the panel can render it after an
-    /// AUTOMATIC promotion instead of only after the user clicks Publish and it is re-counted. The promotion
-    /// itself has no channel to the ViewModel and will not grow one: it runs in a DI scope the panel knows
-    /// nothing about, and the panel is routinely opened from history long after the run settled, when an event
-    /// raised at completion would be gone. The document is readable for exactly as long as the retained
-    /// workspace the count is about.
-    /// <para>
-    /// Neutralization: drop the <c>meta.PromotionConflicts</c> write from <c>PromoteAsync</c>'s copy arm → the
-    /// describe answers 0 → red. The non-vacuity control is the second half: a promotion with NO conflict
-    /// records nothing, so a stale non-zero count cannot be what makes this pass.
-    /// </para>
+    /// The promotion has no channel to the ViewModel — a different DI scope, and the panel is often opened from
+    /// history long after — so the conflict count is recorded on the metadata document instead.
     /// </summary>
     [Fact]
     public async Task Promote_RecordsItsConflictCount_SoTheDescribeCanAnnounceItWithoutAPublishClick()
@@ -226,13 +176,11 @@ public sealed class RunWorkspacePromotionTests : IDisposable
 
         Assert.NotNull(outcome);
         Assert.Equal(1, outcome!.Conflicts);
-        // And the offer stands beside it, because the workspace was retained: the count is only worth
-        // announcing while the run's version of that file is still recoverable.
+        // The count is only worth announcing while the run's version of that file is still recoverable.
         Assert.True(outcome.HasUnpublishedFiles);
 
-        // The control: an ordinary promotion with nothing left alone records no count, so an ordinary run's
-        // panel stays quiet. (A clean copy-mode workspace is torn down at promotion, so this is asserted before
-        // any teardown — the describe below is the same call the panel makes.)
+        // Control: an ordinary promotion records no count. A clean copy-mode workspace is torn down at
+        // promotion, so the describe below is the same call the panel makes.
         var clean = Guid.NewGuid();
         WriteMetadata(clean, RunWorkspaceMode.Copy, Stamp);
         Write(RunRoot(clean), "new.md", "written", AfterProvision);
@@ -242,10 +190,7 @@ public sealed class RunWorkspacePromotionTests : IDisposable
         Assert.Equal(0, cleanOutcome?.Conflicts ?? 0);
     }
 
-    /// <summary>
-    /// T-G4-4, <b>GUARD</b>. Promote is not sync: a deletion inside the workspace is never propagated, so a
-    /// background run cannot delete a user's file by finishing. Write arbitration belongs to a later batch.
-    /// </summary>
+    /// <summary>Promote is not sync: a deletion inside the workspace is never propagated.</summary>
     [Fact]
     public async Task Promote_NeverDeletesAtTheDestination()
     {
@@ -261,11 +206,7 @@ public sealed class RunWorkspacePromotionTests : IDisposable
         Assert.Equal("still here", File.ReadAllText(Path.Combine(_dest, "keep.md")));
     }
 
-    /// <summary>
-    /// T-G4-5, <b>REGRESSION</b>. Plan D5b: in worktree mode the BRANCH is the deliverable. Nothing is copied
-    /// and nothing is merged — which is what keeps conflict handling out of an unattended path entirely — and
-    /// the branch name comes back so the panel can say where the output is.
-    /// </summary>
+    /// <summary>In worktree mode the BRANCH is the deliverable, which keeps conflict handling out of the unattended path.</summary>
     [Fact]
     public async Task Promote_WorktreeMode_CopiesNothing_AndReportsTheBranch()
     {
@@ -283,12 +224,7 @@ public sealed class RunWorkspacePromotionTests : IDisposable
         Assert.False(File.Exists(Path.Combine(_dest, "committed.md")));
     }
 
-    /// <summary>
-    /// T-G4-6, <b>GUARD</b>. B5's restrictive degrade: an unreadable metadata document promotes NOTHING and
-    /// keeps the workspace. "Promote nothing and leave the files where they are" is recoverable — the publish
-    /// offer and the folder are both still there; "overwrite the user's folder from a workspace we cannot
-    /// reason about" is not.
-    /// </summary>
+    /// <summary>Restrictive degrade: promoting nothing is recoverable, overwriting from a workspace we cannot reason about is not.</summary>
     [Fact]
     public async Task Promote_WithUnreadableMetadata_PromotesNothing_AndKeepsTheWorkspace()
     {
@@ -304,12 +240,7 @@ public sealed class RunWorkspacePromotionTests : IDisposable
         Assert.False(File.Exists(Path.Combine(_dest, "new.md")));
     }
 
-    /// <summary>
-    /// T-G4-7, <b>REGRESSION</b>. B9: the recorded destination must still resolve inside the CURRENT assistant
-    /// files folder. The user relocated the folder (or edited the setting) between provisioning and the
-    /// terminal settle, so re-anchoring the promotion onto a folder the run never saw is not a repair — it is
-    /// writing a run's output somewhere nobody asked for.
-    /// </summary>
+    /// <summary>Re-anchoring onto a folder the run never saw is not a repair — it writes the output somewhere nobody asked for.</summary>
     [Fact]
     public async Task Promote_WhenTheSourceRootNoLongerResolvesInsideTheAssistantFolder_IsSkipped()
     {
@@ -329,18 +260,8 @@ public sealed class RunWorkspacePromotionTests : IDisposable
     }
 
     /// <summary>
-    /// <b>REGRESSION</b>, and the one fact here that runs at the REAL shape (plan R1). Every other fixture in
-    /// this file roots its runs base under <c>Path.GetTempPath()</c>, which is outside every blocked root — but
-    /// in production a run workspace lives inside <c>%LOCALAPPDATA%\Pia</c>, which
-    /// <c>SensitivePathGuard</c> blocks wholesale and G1's carve-out re-opens. The promote walk asks
-    /// <c>IsBlocked</c> about every file it considers, so without that carve-out covering the runs tree the walk
-    /// returns NOTHING: zero promoted, no exception, and a green gate over a promotion that silently does
-    /// nothing. This is the "successful write at the real shape" plan R1 asks for, on the read side.
-    /// <para>
-    /// The workspace directory is Guid-named deliberately: <c>RunStartupSweepAsync</c> skips any name that is
-    /// not a parseable Guid, so a fixture leaked by a crashed test run would otherwise sit in the developer's
-    /// real runs folder forever. <see cref="Dispose"/> removes it and its metadata document.
-    /// </para>
+    /// The only fact at the real shape: a production workspace sits inside the tree <c>SensitivePathGuard</c>
+    /// blocks, and without the carve-out the promote walk returns nothing with no exception at all.
     /// </summary>
     [Fact]
     public async Task Promote_AtTheRealRunsRootShape_ActuallyCopiesFilesOut()
@@ -376,13 +297,7 @@ public sealed class RunWorkspacePromotionTests : IDisposable
         Assert.Equal("written by the run", File.ReadAllText(Path.Combine(_dest, "deliverable.md")));
     }
 
-    /// <summary>
-    /// <b>GUARD</b>. The panel's offer and the promotion must agree about what is publishable: a
-    /// <c>.git</c> the model created inside its own workspace (copy mode has no repository — a stated
-    /// release-note behaviour) is ignore-pruned on the way out, so it must not by itself make
-    /// <see cref="RunWorkspaceOutcome.HasUnpublishedFiles"/> true. Otherwise the user gets an offer that
-    /// publishes nothing.
-    /// </summary>
+    /// <summary>A <c>.git</c> the model created is ignore-pruned on the way out, so it must not by itself raise the publish offer.</summary>
     [Fact]
     public async Task Describe_DoesNotOfferToPublishFilesThatPromotionWouldPrune()
     {
@@ -396,8 +311,7 @@ public sealed class RunWorkspacePromotionTests : IDisposable
         Assert.NotNull(pruned);
         Assert.False(pruned!.HasUnpublishedFiles);
 
-        // Positive control: a real deliverable DOES raise the offer, so the assertion above is about pruning
-        // rather than about a Describe that always says no.
+        // Positive control: a real deliverable DOES raise the offer.
         Write(RunRoot(runId), "deliverable.md", "written", AfterProvision);
         var offered = await svc.DescribeAsync(runId, TestContext.Current.CancellationToken);
         Assert.NotNull(offered);

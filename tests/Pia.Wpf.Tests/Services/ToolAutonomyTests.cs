@@ -4,11 +4,6 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// 04 D5/D6: the ONE autonomy resolver both gates call. The destructive floor is evaluated FIRST and
-/// unconditionally, so these tests are the executable form of "no value of the policy document can reach an
-/// auto-approval past the floor" — asserted over the whole policy value space, not a sample.
-/// </summary>
 public class ToolAutonomyTests
 {
     private static readonly ToolGateSurface[] AllSurfaces = Enum.GetValues<ToolGateSurface>();
@@ -33,24 +28,13 @@ public class ToolAutonomyTests
         bool standingGrant = false,
         bool namedGrant = false,
         bool canPark = false,
-        // hermes #15. Defaulted like the rest, so the AXIS is what the exhaustive facts below must add
-        // explicitly — a defaulted parameter silently keeps a matrix green while it stops covering the new
-        // dimension, which is the failure mode this branch has been bitten by four times.
         bool sessionGrant = false,
-        // T2-7b. Defaulted for the same reason and with the same caveat: false is "no MCP server declared
-        // anything", which is what every fact written before this axis existed meant, so the whole matrix below
-        // keeps asserting the NAME rule. The declaration's own facts pass it explicitly.
         bool serverDeclaredDestructive = false,
-        // The run-scoped denial list (a tool-approval park's Deny). Defaulted like the rest; the ordering facts
-        // below pass it explicitly.
         bool namedDenial = false)
         => new(surface, toolName, toolClass, serverDeclaredDestructive, allowlisted, sessionGrant, standingGrant,
                namedGrant, namedDenial, policy, canPark);
 
-    /// <summary>
-    /// T-FLOOR-1. A single Fact with nested loops rather than a ~3.5k-case Theory: the assertion is the same
-    /// exhaustive cross product, it adds no xUnit analyzer surface, and it does not inflate the suite total.
-    /// </summary>
+    /// <summary>Nested loops in one Fact, not a ~3.5k-case Theory, to keep the cross product out of the suite total.</summary>
     [Fact]
     public void DestructiveExternalTool_IsNeverAutoRun_AcrossTheEntirePolicySpace()
     {
@@ -63,13 +47,7 @@ public class ToolAutonomyTests
         foreach (var granted in new[] { false, true })
         foreach (var allowlisted in new[] { false, true })
         foreach (var named in new[] { false, true })
-        // hermes #16 added the FOURTH axis, and it is not decoration: CanPark is a new way in, so the
-        // "no value of the inputs reaches an auto-approval past the floor" claim is only still exhaustive
-        // if the park's own permission is part of the value space.
         foreach (var canPark in new[] { false, true })
-        // hermes #15 added the FIFTH axis for the same reason: the session tier is a new way for a call to be
-        // authorized, so "no value of the inputs reaches an auto-approval past the floor" is only still an
-        // exhaustive claim if the session grant is part of the value space.
         foreach (var sessionGrant in new[] { false, true })
         foreach (var namedDenial in new[] { false, true })
         {
@@ -78,23 +56,16 @@ public class ToolAutonomyTests
                 allowlisted: allowlisted, standingGrant: granted, namedGrant: named, canPark: canPark,
                 sessionGrant: sessionGrant, namedDenial: namedDenial));
 
-            // The M3 FLOOR: a delete-like EXTERNAL tool never auto-runs, whatever the policy says and
-            // however it was granted.
             var floorBroken = toolClass == ToolClass.External && verdict.Outcome == ToolGateOutcome.AutoRun;
 
-            // D6, which is strictly stronger and applies to EVERY class: a POLICY may never be the reason a
-            // delete-like tool ran. (A NAMED grant for a built-in delete still may — that is the user's own
-            // auditable decision, pinned by PolicyNeverCoversADeleteLikeTool_EvenABuiltInOne.)
+            // A policy may never be the reason a delete-like tool ran; a named grant for a built-in still may.
             var policyBroken = verdict.Decision == ToolGateDecision.AutoApprovedPolicy;
 
-            // hermes #16: and a delete-like tool of ANY class never PARKS. Wider than the floor on purpose —
-            // the floor is external-only and lets a named grant run delete_file, whereas the park would put
-            // an irreversible action behind a one-button Continue that shows no arguments.
+            // Wider than the floor on purpose: a park puts an irreversible action behind a Continue button
+            // that shows no arguments.
             var parkBroken = verdict.Outcome == ToolGateOutcome.Park;
 
-            // hermes #15, and the same shape as policyBroken: a SESSION grant may never be the reason a
-            // delete-like tool ran, on any surface and in any class. One card shows one call's arguments; a
-            // multi-call grant would be authorizing deletions the user never saw.
+            // A session grant covers later calls whose arguments the user never sees.
             var sessionBroken = verdict.Decision == ToolGateDecision.AutoApprovedSessionGrant;
 
             // The denial tier is a REFUSE-only arm: a declined tool never auto-runs, whatever else is granted.
@@ -113,12 +84,6 @@ public class ToolAutonomyTests
         Assert.Empty(violations);
     }
 
-    /// <summary>
-    /// A run-scoped denial is the person's newest answer: it refuses where the settings policy covers the
-    /// class AND a named grant authorizes the call, and it refuses instead of re-parking a settled question.
-    /// The same input without the denial auto-runs — the control keeps the fact honest about WHICH arm spoke.
-    /// <para>Neutralize: move the <c>HasNamedDenial</c> arm below the policy, grant or park arms → red.</para>
-    /// </summary>
     [Fact]
     public void NamedDenial_Refuses_AheadOfPolicyGrantsAndPark()
     {
@@ -136,23 +101,13 @@ public class ToolAutonomyTests
         Assert.Equal(ToolGateOutcome.AutoRun, granted.Outcome);
     }
 
-    /// <summary>
-    /// T-PARK-A (hermes #16), <b>GUARD</b>. The park is UNATTENDED-ONLY, asserted over the whole input space
-    /// with <c>canPark</c> forced true: the interactive surface has a card (a park would be strictly worse
-    /// than the card it replaces) and voice has a speaker who would never see a Flow item.
-    /// <para>
-    /// The non-vacuity control is inside the same loop: the unattended surface DOES park these exact inputs,
-    /// so a resolver that had simply stopped parking altogether reds here rather than passing.
-    /// </para>
-    /// <para>Neutralize: drop <c>Surface == ToolGateSurface.Unattended</c> from the Park arm → red.</para>
-    /// </summary>
     [Fact]
     public void OnlyTheUnattendedSurfaceEverParks_EvenWhenTheCallerPermitsIt()
     {
         var violations = new List<string>();
         var unattendedParks = 0;
 
-        // Promptable names only — a delete-like name never parks anywhere, which T-FLOOR-1 above now covers.
+        // Promptable names only — a delete-like name never parks anywhere.
         foreach (var surface in AllSurfaces)
         foreach (var toolClass in AllClasses)
         foreach (var name in new[] { "write_file", "update_todo", "some_mcp_action" })
@@ -175,11 +130,6 @@ public class ToolAutonomyTests
         Assert.True(unattendedParks > 0, "no input parked at all — the guard above would then be vacuous");
     }
 
-    /// <summary>
-    /// T-PARK-B (hermes #16). <c>canPark</c> is a permission to ASK, never to run: the same input that parks
-    /// with it refuses without it, and NEITHER executes. The park changes what happens to a call the gate was
-    /// always going to withhold — it does not widen the set of calls that run unattended.
-    /// </summary>
     [Fact]
     public void CanPark_ChangesRefuseIntoAsk_AndNeverIntoRun()
     {
@@ -196,20 +146,8 @@ public class ToolAutonomyTests
         Assert.NotEqual(ToolGateOutcome.AutoRun, parked.Outcome);
     }
 
-    // ------------------------------------------------- hermes #15, THE SESSION TIER, at the resolver
+    // ------------------------------------------------- THE SESSION TIER, at the resolver
 
-    /// <summary>
-    /// T-SESS-A. What the session tier may NEVER cover, asserted over the whole input space rather than a
-    /// sample: a delete-like name (any class) and a work-discarding one (git_switch/git_restore/git_stash).
-    /// A session grant authorizes calls whose ARGUMENTS the user will never see, so the rule is wider than
-    /// the destructive-external floor by construction.
-    /// <para>
-    /// The non-vacuity control is in the same test: a promptable name with the same grant DOES auto-run on the
-    /// two surfaces that honour the tier, so a resolver that had simply stopped honouring session grants reds
-    /// here instead of passing.
-    /// </para>
-    /// <para><b>Neutralize:</b> drop <c>IsSessionGrantOfferable</c> from the session arm → red.</para>
-    /// </summary>
     [Fact]
     public void SessionGrant_NeverCoversADeleteLikeOrWorkDiscardingTool()
     {
@@ -229,8 +167,7 @@ public class ToolAutonomyTests
 
         Assert.Empty(violations);
 
-        // The control: the SAME grant on a promptable name does authorize, so the loop above is not passing
-        // because nothing is honoured any more.
+        // Non-vacuity control: the same grant on a promptable name does authorize.
         foreach (var surface in new[] { ToolGateSurface.Interactive, ToolGateSurface.Unattended })
         {
             var honoured = ToolAutonomy.Resolve(Input(surface, "write_file", ToolClass.Files, sessionGrant: true));
@@ -239,12 +176,6 @@ public class ToolAutonomyTests
         }
     }
 
-    /// <summary>
-    /// T-SESS-B. VOICE never honours a session grant. It is collected on a card the speaker cannot see, and
-    /// the tier is wider than the standing grant voice already honours (it covers <c>write_file</c>), so
-    /// honouring it here would silently widen what a spoken turn may do.
-    /// <para><b>Neutralize:</b> drop <c>Surface != Voice</c> from the session arm → red.</para>
-    /// </summary>
     [Fact]
     public void VoiceSurface_NeverHonoursASessionGrant()
     {
@@ -257,23 +188,12 @@ public class ToolAutonomyTests
             Assert.NotEqual(ToolGateDecision.AutoApprovedSessionGrant, verdict.Decision);
         }
 
-        // Control: the standing grant voice DOES honour is unaffected by this batch.
+        // Control: voice still honours the standing grant.
         var standing = ToolAutonomy.Resolve(Input(
             ToolGateSurface.Voice, "some_mcp_action", ToolClass.External, standingGrant: true));
         Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, standing.Decision);
     }
 
-    /// <summary>
-    /// T-SESS-C. WHERE the tier sits, as four separate facts about the same input — this is the ordering the
-    /// requirement pins ("between the once-decision and the persisted list").
-    /// <list type="bullet">
-    /// <item>ABOVE the park: an unattended run holding the grant RUNS instead of stopping to ask again.</item>
-    /// <item>ABOVE the named grant: a run widened by its own Continue AND holding a session grant is audited
-    /// as the session tier — the discriminator the park-interaction tests depend on.</item>
-    /// <item>ABOVE the interactive prompt: no card for a tool granted this session.</item>
-    /// <item>BELOW the floor: it does not lift the destructive-external refusal.</item>
-    /// </list>
-    /// </summary>
     [Fact]
     public void SessionGrant_OutranksTheParkAndTheNamedGrant_ButNotTheFloor()
     {
@@ -290,8 +210,6 @@ public class ToolAutonomyTests
             ToolGateSurface.Interactive, "write_file", ToolClass.Files, sessionGrant: true));
         Assert.Equal(ToolGateOutcome.AutoRun, overPrompt.Outcome);
 
-        // …and BELOW the floor: a destructive external tool is still refused unattended and still only
-        // CARDED interactively, session grant or not.
         var floor = ToolAutonomy.Resolve(Input(
             ToolGateSurface.Unattended, "delete_issue", ToolClass.External, sessionGrant: true, canPark: true));
         Assert.Equal(ToolGateOutcome.Refuse, floor.Outcome);
@@ -303,11 +221,7 @@ public class ToolAutonomyTests
         Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, standing.Decision);
     }
 
-    /// <summary>
-    /// T-SESS-D. The offerability rule itself: what the card may offer and the gate may mint are ONE function,
-    /// and it is name-only (unlike the standing rule, which collapses to the allowlist off the External class
-    /// and would therefore make the tier unreachable unattended).
-    /// </summary>
+    /// <summary>The offerability rule is name-only, unlike the standing rule which collapses to the allowlist off External.</summary>
     [Fact]
     public void SessionGrantOfferable_AdmitsThePromptableTools_AndExcludesTheIrreversibleOnes()
     {
@@ -326,24 +240,11 @@ public class ToolAutonomyTests
         // Case-insensitive, like IsDeleteLike — a differently-cased route must not slip the exclusion.
         Assert.False(ToolAutonomy.IsSessionGrantOfferable("GIT_STASH"));
 
-        // The tier is deliberately WIDER than the standing one for a built-in: that is the gap #15 closes.
+        // The tier is deliberately WIDER than the standing one for a built-in.
         Assert.False(ToolAutonomy.IsStandingGrantOfferable(ToolClass.Files, "write_file", isAllowlisted: false));
         Assert.True(ToolAutonomy.IsSessionGrantOfferable("write_file"));
     }
 
-    /// <summary>
-    /// REVIEW FIX (#15). A tool whose ARGUMENTS ARE A GRANT LIST is not session-grantable. The first two
-    /// exclusions could not see it: <c>create_scheduled_research</c> is neither delete-like nor
-    /// work-discarding, so one click on "Allow this session" minted a grant that authorized every later
-    /// job-authoring call in the process with no card — and that argument may name <c>delete_file</c>, which
-    /// the unattended gate runs as a named grant because the FLOOR is external-only.
-    /// <para>
-    /// The last two assertions are the PREMISE, not decoration: they are what makes this an escalation rather
-    /// than a style rule. Delete them and the fact still passes while no longer saying why it matters.
-    /// </para>
-    /// <para>Neutralize: drop <c>&amp;&amp; !ToolPermissionService.IsAuthorityAuthoring(toolName)</c> from
-    /// <c>IsSessionGrantOfferable</c> → red.</para>
-    /// </summary>
     [Fact]
     public void AToolWhoseArgumentsAreAGrantList_IsNeverSessionGrantable()
     {
@@ -351,8 +252,7 @@ public class ToolAutonomyTests
         Assert.False(ToolAutonomy.IsSessionGrantOfferable("update_scheduled_research"));
         // Case-insensitive, like the other two exclusions.
         Assert.False(ToolAutonomy.IsSessionGrantOfferable("CREATE_SCHEDULED_RESEARCH"));
-        // Its sibling IS delete-like and was already excluded; and reading the schedule stays grantable, so
-        // the exclusion is about AUTHORING authority, not about the scheduling plugin.
+        // The exclusion is about AUTHORING authority, not about the scheduling plugin.
         Assert.False(ToolAutonomy.IsSessionGrantOfferable("delete_scheduled_research"));
         Assert.True(ToolAutonomy.IsSessionGrantOfferable("query_scheduled_research"));
 
@@ -361,12 +261,9 @@ public class ToolAutonomyTests
             ToolGateSurface.Interactive, "create_scheduled_research", ToolClass.Scheduling, sessionGrant: true));
         Assert.Equal(ToolGateOutcome.Prompt, forged.Outcome);
 
-        // THE PREMISE. The persisted tier was never on offer for this tool, so before the fix the SESSION tier
-        // was strictly wider than the permanent one …
         Assert.False(ToolAutonomy.IsStandingGrantOfferable(ToolClass.Scheduling, "create_scheduled_research", false));
-        // … and what it authorized authoring is real: delete_file survives that tool's create-time grant filter
-        // (IsPresumedExternalDeleteLike spares our own destructive names on purpose), reaches the run as a
-        // NAMED grant, and the floor above is External-only, so it auto-runs unattended.
+        // IsPresumedExternalDeleteLike spares our own destructive names on purpose, so delete_file survives a
+        // create-time grant filter and the External-only floor then lets it auto-run unattended.
         Assert.False(ToolPermissionService.IsPresumedExternalDeleteLike("delete_file"));
         Assert.Equal(
             ToolGateDecision.GrantedByName,
@@ -374,26 +271,10 @@ public class ToolAutonomyTests
                 ToolGateSurface.Unattended, "delete_file", ToolClass.Files, namedGrant: true, canPark: true)).Decision);
     }
 
-    /// <summary>
-    /// REVIEW FIX (#15). UNATTENDED, the session tier is honoured only for the classes the PARK would have been
-    /// willing to raise a question about. Before the fix the arm had no External exclusion and no surface
-    /// condition, so <c>Resolve(Unattended, "send_email", External, sessionGrant: true)</c> returned AutoRun
-    /// where the identical input without the grant returned Refuse — it did not even reach the park, whose own
-    /// doc refuses External on the grounds that a server-defined name behind one unlabelled button is WEAKER
-    /// evidence of consent than the grant list it already rejects.
-    /// <para>
-    /// The interactive leg is asserted in the same fact deliberately: the fix must narrow the UNATTENDED
-    /// surface only. A human looking at a card may still grant a non-destructive MCP tool for the session, and
-    /// the standing tier already offers exactly that — narrowing both would undo #15's stated purpose.
-    /// </para>
-    /// <para>Neutralize: drop
-    /// <c>&amp;&amp; (input.Surface != ToolGateSurface.Unattended || input.ToolClass != ToolClass.External)</c>
-    /// from the session arm → the Refuse assertions red.</para>
-    /// </summary>
     [Fact]
     public void UnattendedSessionGrant_DoesNotReachAnExternalWrite_ButInteractiveStillDoes()
     {
-        // The exact input the review found auto-running: not delete-like, so nothing above the arm stops it.
+        // Not delete-like, so nothing above the session arm stops it.
         Assert.False(ToolPermissionService.IsDeleteLike("send_email"));
         Assert.True(ToolAutonomy.IsSessionGrantOfferable("send_email"));
 
@@ -415,13 +296,12 @@ public class ToolAutonomyTests
         Assert.Equal(ToolGateOutcome.AutoRun, interactive.Outcome);
         Assert.Equal(ToolGateDecision.AutoApprovedSessionGrant, interactive.Decision);
 
-        // …and an unattended NON-external tool is untouched: T-SESS's headline still holds.
+        // …and an unattended NON-external tool is untouched.
         var files = ToolAutonomy.Resolve(Input(
             ToolGateSurface.Unattended, "write_file", ToolClass.Files, canPark: true, sessionGrant: true));
         Assert.Equal(ToolGateDecision.AutoApprovedSessionGrant, files.Decision);
     }
 
-    /// <summary>T-FLOOR-2: this batch does not tighten the path where a human is looking at the card.</summary>
     [Fact]
     public void InteractiveSurface_NeverRefuses()
     {
@@ -444,11 +324,7 @@ public class ToolAutonomyTests
         Assert.Empty(violations);
     }
 
-    /// <summary>
-    /// T-FLOOR-3, D6's exact boundary: a POLICY class grant never covers a delete-like tool even when the
-    /// class is covered and the tool is a BUILT-IN — but an explicit NAMED grant still runs it, because that
-    /// is the user's own auditable decision and the pre-batch behaviour.
-    /// </summary>
+    /// <summary>An explicit NAMED grant still runs a built-in delete — that is the user's own auditable decision.</summary>
     [Fact]
     public void PolicyNeverCoversADeleteLikeTool_EvenABuiltInOne()
     {
@@ -471,7 +347,7 @@ public class ToolAutonomyTests
         Assert.Equal(ToolGateDecision.AutoApprovedPolicy, sibling.Decision);
     }
 
-    /// <summary>T-FLOOR-4: an unrecognised class name in a persisted document must never become authority.</summary>
+    /// <summary>An unrecognised class name in a persisted document must never become authority.</summary>
     [Fact]
     public void UnknownClass_IsNeverCovered()
     {
@@ -497,8 +373,7 @@ public class ToolAutonomyTests
     [Fact]
     public void Interactive_AllowlistedButUngranted_StillPrompts()
     {
-        // Today's semantics: the allowlist alone does not auto-run interactively — it only makes the tool
-        // grantable, so the first call still shows a card with an "Always allow" button.
+        // The allowlist alone does not auto-run interactively; it only makes the tool grantable.
         var verdict = ToolAutonomy.Resolve(Input(
             ToolGateSurface.Interactive, "create_todo", ToolClass.Todo, allowlisted: true));
 
@@ -548,9 +423,7 @@ public class ToolAutonomyTests
     [Fact]
     public void Unattended_TheAllowlistIsNotHonoured()
     {
-        // §0.3: IToolPermissionService is injected nowhere in the headless files, so the unattended gate
-        // passes IsAllowlisted: false. Pinned here so a future "tidy-up" that starts passing it true is a
-        // deliberate behaviour change with a red test, not a silent widening of four tools on every job.
+        // IToolPermissionService is injected nowhere headless, so the unattended gate passes IsAllowlisted: false.
         var verdict = ToolAutonomy.Resolve(Input(
             ToolGateSurface.Unattended, "create_todo", ToolClass.Todo, allowlisted: true));
 
@@ -567,12 +440,7 @@ public class ToolAutonomyTests
         Assert.Equal(ToolGateDecision.AutoApprovedAllowlist, verdict.Decision);
     }
 
-    /// <summary>
-    /// The voice allowlist is BUILT-INS only. <c>IsAutoApproveEligible</c> is a name-only set and
-    /// <c>PluginService</c>'s tool-name routes are last-wins with no collision detection (§13.4), so an MCP
-    /// server can own the route for a name in the allowlist. Voice has no card and no transcript entry, so
-    /// name-only authority there would hand a third-party server the user's spoken content with no consent.
-    /// </summary>
+    /// <summary>Plugin tool-name routes are last-wins with no collision detection, so an MCP server can own the route for an allowlisted name.</summary>
     [Theory]
     [InlineData("create_todo")]
     [InlineData("create_object")]
@@ -625,10 +493,7 @@ public class ToolAutonomyTests
         Assert.Equal(ToolGateDecision.DeniedDestructiveFloor, verdict.Decision);
     }
 
-    /// <summary>
-    /// T-OFF-1: the executable form of "the refactor changed no semantics". The historic interactive
-    /// expression was <c>IsAutoApproveEligible(t) || (IsMcpTool(t) &amp;&amp; !IsDeleteLike(t))</c>.
-    /// </summary>
+    /// <summary>The historic expression was <c>IsAutoApproveEligible(t) || (IsMcpTool(t) &amp;&amp; !IsDeleteLike(t))</c>.</summary>
     [Fact]
     public void IsStandingGrantOfferable_MatchesTheHistoricEligibleExpression()
     {
@@ -636,15 +501,13 @@ public class ToolAutonomyTests
         foreach (var toolClass in AllClasses)
             Assert.True(ToolAutonomy.IsStandingGrantOfferable(toolClass, "create_todo", isAllowlisted: true));
 
-        // External and non-destructive → offerable (an external tool is a named capability the user may
-        // choose to always allow), even though it is not allowlisted.
+        // External and non-destructive → offerable even though it is not allowlisted.
         Assert.True(ToolAutonomy.IsStandingGrantOfferable(ToolClass.External, "notion_create_page", false));
 
         // External and destructive → never offerable.
         Assert.False(ToolAutonomy.IsStandingGrantOfferable(ToolClass.External, "notion_delete_page", false));
 
-        // Every other class, not allowlisted → the allowlist's answer, i.e. false. write_file and the git
-        // tools are the load-bearing cases (GitActionCardTests pins that git is not auto-approve-eligible).
+        // Every other class, not allowlisted → the allowlist's answer, i.e. false.
         foreach (var toolClass in AllClasses.Where(c => c != ToolClass.External))
         {
             Assert.False(ToolAutonomy.IsStandingGrantOfferable(toolClass, "write_file", false));

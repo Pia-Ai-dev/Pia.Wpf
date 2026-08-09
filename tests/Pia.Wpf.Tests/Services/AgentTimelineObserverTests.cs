@@ -11,18 +11,8 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// T2-G1: the telemetry seam. <see cref="IRunObserver"/> is a read-only bystander on the ONE append
-/// entrypoint the store already has, and every test here is about the same property from a different angle —
-/// <b>the observer cannot hurt the audit trail</b>.
-/// <para>
-/// Every run emits against a REAL chat + run row, because <c>AgentTimelineEvents.RunId</c> has an enforced FK:
-/// a bare <c>Guid.NewGuid()</c> would have its INSERT rejected, logged and dropped, producing a silently green
-/// "zero rows" test. And every emit-then-observe awaits a barrier (<c>DrainAsync</c> for the table,
-/// <c>ObserverDrainAsync</c> for the seam) rather than sleeping — the two chains are independent, so which
-/// barrier a test awaits is itself part of what it asserts.
-/// </para>
-/// </summary>
+// AgentTimelineEvents.RunId has an enforced FK, so a bare Guid.NewGuid() would have its INSERT dropped, leaving a
+// silently green "zero rows" test. The table and observer drain barriers are independent chains.
 public sealed class AgentTimelineObserverTests : IDisposable
 {
     private readonly string _tmpDir;
@@ -56,7 +46,6 @@ public sealed class AgentTimelineObserverTests : IDisposable
         var rows = await svc.GetForRunAsync(run.Id, ct);
         await svc.ObserverDrainAsync();
 
-        // The row — the system of record — is untouched by the throw.
         var row = Assert.Single(rows);
         Assert.Equal(1, row.Seq);
         Assert.Equal("write_file", row.ToolName);
@@ -84,11 +73,8 @@ public sealed class AgentTimelineObserverTests : IDisposable
             // callback and stuck there. Bounded so a broken build fails instead of hanging the suite.
             Assert.True(entered.Wait(TimeSpan.FromSeconds(30), ct), "the observer was never notified");
 
-            // The audit chain is a different chain, so this must complete WHILE the observer is still blocked.
-            // BOUNDED, and that bound IS the assertion: if the notification were chained onto _writeTail,
-            // GetForRunAsync's opening `await DrainAsync()` would never return — `release` is only Set in the
-            // finally below, which this method would never reach. Awaited unbounded, that regression hangs the
-            // whole suite indefinitely instead of failing one test.
+            // The bound IS the assertion: chained onto _writeTail, GetForRunAsync's opening DrainAsync would never
+            // return, and awaited unbounded that regression hangs the whole suite instead of failing one test.
             var readTask = svc.GetForRunAsync(run.Id, ct);
             Assert.Same(
                 readTask,
@@ -96,9 +82,8 @@ public sealed class AgentTimelineObserverTests : IDisposable
 
             var rows = await readTask;
             Assert.Single(rows);
-            // Corroboration, not proof: `release` is still unset here, so this flag is false by construction.
-            // It is kept because it names the property the bounded read above actually establishes — the row was
-            // readable BEFORE the callback returned.
+            // Corroboration, not proof: `release` is still unset, so this is false by construction — it names the
+            // property the bounded read above establishes.
             Assert.False(blocker.Completed, "the row was only readable after the observer returned");
 
             // Shutdown is not hostage to a bystander either: Dispose waits on _writeTail alone.
@@ -150,9 +135,8 @@ public sealed class AgentTimelineObserverTests : IDisposable
 
         await svc.ObserverDrainAsync();
 
-        // THE load-bearing assertion. "The test terminated" proves nothing — ObserverDrainAsync captures the
-        // FIRST tail, which completes even if each notification enqueues another. The dispatch count is what
-        // shows the recursive row was written but NOT notified.
+        // "The test terminated" proves nothing: ObserverDrainAsync captures the FIRST tail, which completes even if
+        // each notification enqueues another. The dispatch count shows the recursive row was written, not notified.
         Assert.Equal(1, svc.NotifyDispatches);
         Assert.Equal(1, observer.Calls);
 
@@ -192,9 +176,8 @@ public sealed class AgentTimelineObserverTests : IDisposable
         for (var i = 0; i < 3; i++)
             EmitOne(scope, "write_file");
 
-        // Nothing was enqueued at all — no delegate, no Task, no ContinueWith — while the rows landed as usual.
-        // The dispatch count is the whole observation: an identity check on _observerTail would fail (or pass)
-        // for reasons unrelated to whether the notify path did any work.
+        // The dispatch count is the whole observation: an identity check on _observerTail would pass or fail for
+        // reasons unrelated to whether the notify path did any work.
         Assert.Equal(0, svc.NotifyDispatches);
         Assert.Equal(3, (await svc.GetForRunAsync(run.Id, ct)).Count);
     }
@@ -216,9 +199,8 @@ public sealed class AgentTimelineObserverTests : IDisposable
         await svc.ObserverDrainAsync();
         var rows = await svc.GetForRunAsync(run.Id, ct);
 
-        // The truncation marker IS a row, so it IS observed; the 50 events dropped after it are not. Observer
-        // and table see exactly the same stream — a seam that reported events the table refused would be a
-        // second, disagreeing account of the run.
+        // The truncation marker IS a row, so it is observed; the 50 events dropped after it are not. A seam that
+        // reported events the table refused would be a second, disagreeing account of the run.
         Assert.Equal(AgentTimelineService.MaxEventsPerRun + 1, rows.Count);
         Assert.Equal(rows.Count, observer.Seen.Count);
         Assert.Equal(AgentTimelineService.MaxEventsPerRun + 1, svc.NotifyDispatches);
@@ -244,9 +226,8 @@ public sealed class AgentTimelineObserverTests : IDisposable
         var persisted = Assert.Single(await svc.GetForRunAsync(run.Id, ct));
         var seen = Assert.Single(observer.Seen);
 
-        // The SERVICE-ASSIGNED fields are what discriminate here: the seam is handed `row` (post-allocation),
-        // not the caller's `e`, on which both of these are still 0/null. The caller-supplied T2-14 columns
-        // would look identical either way, so they are the corroboration, not the proof.
+        // The SERVICE-ASSIGNED fields discriminate: the seam is handed the post-allocation row, not the caller's
+        // event, on which both are still 0/null. The caller-supplied columns would look identical either way.
         Assert.Equal(1, seen.Seq);
         Assert.Equal(1, seen.StepOrdinal);
         Assert.Equal(persisted.Seq, seen.Seq);
@@ -309,7 +290,7 @@ public sealed class AgentTimelineObserverTests : IDisposable
     {
         private readonly ConcurrentQueue<AgentTimelineEvent> _seen = new();
 
-        /// <summary>Snapshot, so an assertion cannot race a late notification into the middle of a comparison.</summary>
+        // Snapshot, so an assertion cannot race a late notification into the middle of a comparison.
         public IReadOnlyList<AgentTimelineEvent> Seen => _seen.ToArray();
 
         public void OnTimelineEvent(AgentTimelineEvent e) => _seen.Enqueue(e);
@@ -332,8 +313,7 @@ public sealed class AgentTimelineObserverTests : IDisposable
     {
         private volatile bool _completed;
 
-        /// <summary>The callback RETURNED. Volatile because the assertion reads it from the test thread while
-        /// the notification chain writes it from a pool thread.</summary>
+        // Volatile: the assertion reads this from the test thread while the chain writes it from a pool thread.
         public bool Completed => _completed;
 
         public void OnTimelineEvent(AgentTimelineEvent e)
@@ -344,7 +324,7 @@ public sealed class AgentTimelineObserverTests : IDisposable
         }
     }
 
-    /// <summary>An observer that emits from inside its own notification — the self-feeding case.</summary>
+    // Emits from inside its own notification — the self-feeding case.
     private sealed class ReentrantObserver(Guid runId, int maxReemits) : IRunObserver
     {
         private AgentTimelineService? _service;

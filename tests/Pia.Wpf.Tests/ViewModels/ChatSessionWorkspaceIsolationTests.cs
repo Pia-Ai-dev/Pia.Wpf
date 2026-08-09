@@ -11,21 +11,8 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// Batch 06 D4 at the <see cref="ChatSession"/> seam: <c>RunStepTurnAsync</c> turns
-/// <c>StepTurnSpec.WorkspaceRoot</c> into the ambient <c>TaskContext</c> the file tools read, and it applies
-/// the ONE-NARROWING rule (B6) while doing it. The step turn is driven directly here — no executor, no
-/// orchestrator — so this class discriminates <see cref="ChatSession"/>'s own two arguments from
-/// <c>LiveTurnExecutor.BuildSpec</c>'s (covered by <see cref="LiveTurnExecutorPlannedRunTests"/>): dropping
-/// either one breaks the same end-to-end write, so there is one fact per call site.
-/// <para>
-/// The write goes through a REAL <see cref="FilesToolHandler"/>, invoked from inside the AI stream — i.e.
-/// inside the step's logical async flow, which is the only place the ambient is set. Asserting on where the
-/// bytes landed is the point: the ambient itself is also read, because the double-narrow neutralization is
-/// otherwise INVISIBLE in the file location (<c>ResolveEffectiveRoot</c> falls back to the base root when a
-/// subpath does not exist, so a wrongly-passed subpath would still land the file in the workspace root).
-/// </para>
-/// </summary>
+// The ambient is asserted alongside the file location because ResolveEffectiveRoot falls back to the base root
+// when a subpath does not exist, so a wrongly-narrowed subpath would still land the file in the workspace root.
 public sealed class ChatSessionWorkspaceIsolationTests : IDisposable
 {
     private readonly IAiClientService _ai = Substitute.For<IAiClientService>();
@@ -89,7 +76,6 @@ public sealed class ChatSessionWorkspaceIsolationTests : IDisposable
         TokenizationEnabled: false,
         WorkspaceRoot: workspaceRoot);
 
-    /// <summary>Records the ambient the file tools would read, then performs a real write through them.</summary>
     private readonly List<TaskContext?> _seenAmbients = [];
 
     private void ReturnsAWriteThenText()
@@ -114,12 +100,6 @@ public sealed class ChatSessionWorkspaceIsolationTests : IDisposable
         yield return new Finished(null, "m");
     }
 
-    /// <summary>
-    /// REGRESSION for <see cref="ChatSession"/>'s two per-step ambient arguments. Drop the
-    /// <c>spec.WorkspaceRoot</c> argument and the file lands in the assistant folder instead (red on the path
-    /// assertion); pass <c>WorkingDirectory</c> through as the subpath and the ambient carries it (red on the
-    /// null assertion). One fact, both call-site mutations discriminated.
-    /// </summary>
     [Fact]
     public async Task StepTurn_WithAWorkspaceRoot_WritesIntoTheWorkspace_AndNarrowsOnlyOnce()
     {
@@ -134,22 +114,16 @@ public sealed class ChatSessionWorkspaceIsolationTests : IDisposable
         var ambient = Assert.Single(_seenAmbients);
         Assert.NotNull(ambient);
         Assert.Equal(_workspace, ambient!.Value.WorkspaceRoot);
-        Assert.Null(ambient.Value.WorkingSubpath); // B6: the workspace root already IS the narrowed root
+        Assert.Null(ambient.Value.WorkingSubpath); // the workspace root already is the narrowed root
 
         Assert.True(File.Exists(Path.Combine(_workspace, "a.md")));
         Assert.False(File.Exists(Path.Combine(_workingSub, "a.md")));
         Assert.False(File.Exists(Path.Combine(_workspace, "sub", "a.md")));
 
-        // The chip the step built points INTO the workspace — which is exactly why opening one has to resolve
-        // through RunWorkspaceRedirects once the work is promoted out (plan D8).
         var assistant = session.Messages.Last(m => !m.IsUser);
         Assert.Single(assistant.FileRefs, r => r.AbsolutePath == Path.Combine(_workspace, "a.md"));
     }
 
-    /// <summary>
-    /// GUARD: a step with NO workspace root is the pre-Batch-06 shape and must still narrow by the chat's
-    /// working directory. It is what keeps the ternary a ternary rather than an unconditional null.
-    /// </summary>
     [Fact]
     public async Task StepTurn_WithoutAWorkspaceRoot_StillNarrowsByTheChatWorkingDirectory()
     {
@@ -170,11 +144,7 @@ public sealed class ChatSessionWorkspaceIsolationTests : IDisposable
         Assert.False(File.Exists(Path.Combine(_workspace, "a.md")));
     }
 
-    /// <summary>
-    /// GUARD, and the "no interactive regression" pin (Batch 06 §11): the ORDINARY turn is a separate
-    /// <c>TaskContext</c> construction that was deliberately left alone, so a plain chat still writes straight
-    /// into the assistant files folder even while isolation ships.
-    /// </summary>
+    // The ordinary turn builds its own TaskContext, deliberately left alone by workspace isolation.
     [Fact]
     public async Task AnOrdinaryChatTurn_StillWritesToTheAssistantFolder()
     {
@@ -204,10 +174,6 @@ public sealed class ChatSessionWorkspaceIsolationTests : IDisposable
         Assert.True(File.Exists(Path.Combine(_workingSub, "a.md")));
     }
 
-    /// <summary>
-    /// GUARD (plan R20's precedent): every existing <c>StepTurnSpec</c> construction — the ordinary
-    /// interactive path and every test that builds one with named arguments — still means "no isolation".
-    /// </summary>
     [Fact]
     public void StepTurnSpec_WorkspaceRoot_DefaultsToNull()
     {

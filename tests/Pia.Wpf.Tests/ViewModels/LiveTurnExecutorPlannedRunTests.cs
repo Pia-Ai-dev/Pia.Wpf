@@ -19,20 +19,8 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// The interactive Planned wiring (§13.11/§13.12 cancellation + §16 R11/R13): a real
-/// <see cref="ChatSession"/> driven through a real <see cref="LiveTurnExecutor"/> + real
-/// <see cref="AgentRunOrchestrator"/> against a real SQLite <see cref="AgentRunService"/>. Proves the
-/// pieces the pure-fake orchestrator test cannot: the session's pre-added streaming placeholder is
-/// removed at run start, <c>ChatSession.Cancel()</c> mid-step really stops the in-flight step via the
-/// linked CTS (R13), and <c>EndRunAsync</c> settles the terminal <see cref="ChatState"/> + raises
-/// <see cref="ChatSession.TurnCompleted"/> — including NOT settling a Failed run as Completed (§13.5.2).
-/// <para>
-/// Batch 06 G5 added the isolation facts at the bottom, which drive the process-global
-/// <see cref="RunWorkspaceRedirects"/> registry through a real promotion — hence the shared collection with
-/// <c>RunWorkspaceRedirectsTests</c>, whose cap fact deliberately overflows it.
-/// </para>
-/// </summary>
+// The isolation facts drive the process-global RunWorkspaceRedirects registry, hence the shared collection with
+// RunWorkspaceRedirectsTests, whose cap fact deliberately overflows it.
 [Collection("RunWorkspaceRedirectsStatic")]
 public sealed class LiveTurnExecutorPlannedRunTests
 {
@@ -75,7 +63,6 @@ public sealed class LiveTurnExecutorPlannedRunTests
             => Task.FromResult(Replans.Count > 0 ? Replans.Dequeue() : PlanResult.Fallback);
     }
 
-    /// <summary>Real SQLite run store + chat store, mirroring AgentRunOrchestratorTests' harness.</summary>
     private sealed class Harness : IDisposable
     {
         public readonly SqliteContext Ctx;
@@ -154,15 +141,6 @@ public sealed class LiveTurnExecutorPlannedRunTests
     }
 
     /// <summary>Sets a UI SynchronizationContext, constructs the live executor bound to the session, restores.</summary>
-    /// <param name="workspaceRoot">Batch 06 D4's isolated workspace root; null (the default) keeps every
-    /// pre-existing fact in this file on the un-isolated path it was written for.</param>
-    /// <param name="stepPersonas">Batch 07 G6's per-step resolver; null (the default) keeps every pre-existing
-    /// fact on the one-persona-per-run path it was written for.</param>
-    /// <param name="runPersona">The run persona as a whole object, which the attribution is only a projection
-    /// of. Null ⇒ no step is ever resolved, whatever <paramref name="stepPersonas"/> says.</param>
-    /// <param name="ui">The UI context to capture. A plain one by default (its <c>Post</c> queues to the
-    /// thread pool); a fixture that needs to observe which side of the <c>Post</c> something ran on supplies
-    /// its own.</param>
     private LiveTurnExecutor BuildLiveExecutor(
         ChatSession session, Func<ChatSession, bool> isActive, RunAutonomyPolicy? policy = null,
         bool supportsTools = false, string? workspaceRoot = null,
@@ -264,19 +242,8 @@ public sealed class LiveTurnExecutorPlannedRunTests
         Assert.True(completed!.Succeeded);
     }
 
-    /// <summary>
-    /// 04 D11's INTERACTIVE half, end to end through the real orchestrator and the real
-    /// <see cref="LiveTurnExecutor"/>. <c>ChatSessionPolicyGateTests</c> constructs <c>StepTurnSpec(Policy: …)</c>
-    /// by hand, so it never touches the two production lines that carry the policy from the manager to the gate:
-    /// <c>ChatSessionManager</c>'s <c>new LiveTurnExecutor(…, policy)</c> and <c>BuildSpec</c>'s
-    /// <c>Policy: _policy</c>. Both are optional/defaulted, so dropping either COMPILES and every other test
-    /// stays green — the run would silently revert to carding every write while its persisted envelope still
-    /// recorded the preset classes, which is exactly the record-disagrees-with-behaviour case D11 forbids.
-    /// <para>
-    /// Verified red both ways before landing: removing <c>Policy: _policy</c> from <c>BuildSpec</c>, and
-    /// removing the <c>policy</c> argument from the executor construction, each fail this fact and nothing else.
-    /// </para>
-    /// </summary>
+    // Both production lines that carry the policy to the gate are optional and defaulted, so dropping either
+    // compiles and reverts the run to carding every write while its envelope still records the preset classes.
     [Fact]
     public async Task PlannedRun_CarriesTheRunPolicyIntoTheGate_SoACoveredWriteAutoRuns()
     {

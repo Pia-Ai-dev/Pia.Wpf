@@ -6,10 +6,6 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// Unit coverage for the persona-driven prompt composition (contract §8) and tool gating (§5),
-/// exercised through the pure <c>public static</c> helpers on <see cref="AssistantPromptComposer"/>.
-/// </summary>
 public class PersonaPromptCompositionTests
 {
     private static Persona Persona(string systemPrompt, string? guardrails = null, PersonaToolScope scope = PersonaToolScope.Full, string? outputFormat = null) => new()

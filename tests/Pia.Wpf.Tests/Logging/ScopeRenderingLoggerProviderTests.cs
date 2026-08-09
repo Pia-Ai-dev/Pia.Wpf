@@ -4,14 +4,8 @@ using Xunit;
 
 namespace Pia.Tests.Logging;
 
-/// <summary>
-/// T2-18 — the decorator that makes <c>BeginScope</c> reach the file. Without it the run/step scope is discarded
-/// before it is written: <c>NReco.Logging.File</c> has no scope support at all, so the correlation would exist
-/// only in a debugger.
-/// <para>
-/// Every fact here is asserted on what the INNER provider was handed, because that is what reaches the file.
-/// </para>
-/// </summary>
+/// <summary><c>NReco.Logging.File</c> has no scope support, so without this decorator the run/step scope never reaches
+/// the file; every fact is asserted on what the INNER provider was handed.</summary>
 public class ScopeRenderingLoggerProviderTests
 {
     /// <summary>Stands in for the file sink: records the FORMATTED text, which is all a text sink ever writes.</summary>
@@ -125,11 +119,8 @@ public class ScopeRenderingLoggerProviderTests
         Assert.Equal($"[run {runId}] between steps", inner.Lines[1]);
     }
 
-    /// <summary>
-    /// THE reason the scope stack is static rather than per-logger: a run scope opened by the orchestrator's
-    /// category must also label the lines a tool handler writes through its OWN category inside that flow.
-    /// A per-logger stack would leave every one of those lines unattributed, which is most of the log.
-    /// </summary>
+    /// <summary>Why the scope stack is static rather than per-logger: a run scope opened on one category must also
+    /// label the lines another category writes inside that flow.</summary>
     [Fact]
     public void AScopeOpenedOnOneCategory_LabelsAnotherCategorysLines()
     {
@@ -147,10 +138,7 @@ public class ScopeRenderingLoggerProviderTests
         Assert.Equal($"[run {runId}] write_file prepared", Assert.Single(inner.Lines));
     }
 
-    /// <summary>
-    /// A scope opened before an <c>await</c> must still label what happens after it — a run loop awaits on every
-    /// line it writes, so an ambient that did not flow would label almost nothing.
-    /// </summary>
+    /// <summary>A run loop awaits on every line it writes, so an ambient that did not flow would label almost nothing.</summary>
     [Fact]
     public async Task AScopeSurvivesAnAwait()
     {
@@ -167,10 +155,7 @@ public class ScopeRenderingLoggerProviderTests
         Assert.Equal($"[run {runId}] after the await", Assert.Single(inner.Lines));
     }
 
-    /// <summary>
-    /// Two concurrent runs must not see each other's scope. This is the property that makes the log readable at
-    /// all once the run pool is wider than one.
-    /// </summary>
+    /// <summary>Two concurrent runs must not see each other's scope, or the log is unreadable once the pool is wider than one.</summary>
     [Fact]
     public async Task ConcurrentFlows_DoNotSeeEachOthersScopes()
     {

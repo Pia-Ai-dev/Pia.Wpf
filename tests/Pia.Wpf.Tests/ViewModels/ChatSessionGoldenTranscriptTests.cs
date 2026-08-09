@@ -11,12 +11,7 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// Interactive single-turn regression (§16 R11): the Chat-mode <see cref="ChatSession.RunTurnAsync"/>
-/// path must be byte-for-byte behavior-preserving after the <c>RunModelExchangeAsync</c> extraction.
-/// These frozen characterization snapshots pin the final transcript / state / streaming / TurnCompleted
-/// / RunFailed for the canonical scenarios; a regression in the extraction breaks them.
-/// </summary>
+/// <summary>Frozen characterization snapshots: the Chat-mode turn must stay behaviour-identical after the <c>RunModelExchangeAsync</c> extraction.</summary>
 public sealed class ChatSessionGoldenTranscriptTests
 {
     private readonly IAiClientService _ai = Substitute.For<IAiClientService>();
@@ -69,11 +64,7 @@ public sealed class ChatSessionGoldenTranscriptTests
         }
     }
 
-    /// <summary>
-    /// Sets up the AI stream to first drive the passed-in tool handler (the
-    /// <c>supportsTools ? HandleToolCallWithStatus : null</c> wiring inside RunModelExchangeAsync)
-    /// with one <see cref="FunctionCallContent"/> round, then stream the final answer.
-    /// </summary>
+    /// <summary>Drives the passed-in tool handler with one call round, then streams the final answer.</summary>
     private void ReturnsToolThenText(string toolName, string finalText)
     {
         _ai.GetChatCompletionWithToolsAsync(
@@ -106,8 +97,6 @@ public sealed class ChatSessionGoldenTranscriptTests
 #pragma warning restore CS0162
     }
 
-    // G1: a Chat turn whose tool schema carries the injected suggest_agent_mode must still produce
-    // today's transcript/state for a normal text answer — no reasoning/tool-path regression.
     private static ChatTurnRequest BuildRequestWithSuggestTool(ChatSession session)
     {
         var user = new AssistantMessage(ChatRole.User, "hi");
@@ -129,7 +118,6 @@ public sealed class ChatSessionGoldenTranscriptTests
     [Fact]
     public async Task SuggestToolInjected_PlainText_ByteIdenticalToBaseline()
     {
-        // G1: with suggest_agent_mode present in the tool list, a plain-text Chat turn is unchanged.
         ReturnsStream(() => Stream(new TextDelta("Hello "), new TextDelta("world"), new Finished(null, "m")));
         var session = CreateSession();
         bool? succeeded = null;
@@ -149,8 +137,7 @@ public sealed class ChatSessionGoldenTranscriptTests
     [Fact]
     public async Task SuggestAgentMode_PreRouteAck_RecordsChip_AndNeverRoutes()
     {
-        // R7: the model calling suggest_agent_mode is intercepted before RouteToolCallAsync; it records a
-        // typed chip (Goal = the turn's user text) and returns a short ack, never dead-ending at "Unknown tool.".
+        // Intercepted before RouteToolCallAsync, so it never dead-ends at "Unknown tool.".
         ReturnsToolThenText("suggest_agent_mode", "Sure, here is a plan.");
         var session = CreateSession();
 
@@ -225,8 +212,7 @@ public sealed class ChatSessionGoldenTranscriptTests
     public async Task CancelMidStream_SettlesIdle_RaisesCancelledRunFailed()
     {
         var session = CreateSession();
-        // Models a user stop: the session CTS fires mid-stream (the Stop button's Cancel()), then the
-        // exchange aborts — only a FIRED token classifies the OCE as a cancel, not a transport fault.
+        // Only a FIRED token classifies the OCE as a cancel rather than a transport fault.
         ReturnsStream(() => ThrowingStream(new OperationCanceledException("cancel"), () => session.Cancel()));
         RunFailedEventArgs? failure = null;
         session.RunFailed += (_, e) => failure = e;
@@ -281,11 +267,7 @@ public sealed class ChatSessionGoldenTranscriptTests
         Assert.Equal("done", session.Messages.Last(m => !m.IsUser).Content);
     }
 
-    /// <summary>
-    /// R11/R4 golden: SupportsTools=true wires the tool handler into the extracted
-    /// RunModelExchangeAsync. A tool round must invoke the handler + run the status path, then the
-    /// final content still settles Idle — a regression that dropped the handler would break this.
-    /// </summary>
+    /// <summary>A tool round must invoke the handler and run the status path, and the final content still settles Idle.</summary>
     [Fact]
     public async Task SupportsTools_ToolRound_InvokesHandler_StatusPathRuns_SettlesIdle()
     {
@@ -305,11 +287,7 @@ public sealed class ChatSessionGoldenTranscriptTests
         Assert.False(session.IsStreaming);
     }
 
-    /// <summary>
-    /// R11/R4 golden: WebSearchActive=true runs the ApplyWebCitations post-process moved into
-    /// RunModelExchangeAsync. Citations must be extracted from the final content into Sources and the
-    /// raw URL rewritten to a marker — a regression that dropped the post-process would break this.
-    /// </summary>
+    /// <summary>Citations must be extracted from the final content into Sources and the raw URL rewritten to a marker.</summary>
     [Fact]
     public async Task WebSearchActive_ExtractsCitations_FromFinalContent()
     {
@@ -324,31 +302,19 @@ public sealed class ChatSessionGoldenTranscriptTests
         Assert.Single(msg.Sources); // ApplyWebCitations ran on the final content
         Assert.Contains("example.com", msg.Sources[0].Url);
 
-        // The URL legitimately SURVIVES in the content: WebCitationExtractor rewrites an inline link into
-        // a numbered chip marker whose href is still the source URL — `[\[1\]](url)` — so that Markdig
-        // renders a clickable "[1]". That contract is pinned by WebCitationExtractorTests, which predates
-        // this branch and is the verified reference; its own guard is DoesNotContain("][http"). The
-        // previous assertion here (DoesNotContain of the raw URL) therefore contradicted the extractor and
-        // could only ever pass if citations stopped linking anywhere. Assert the rewrite instead: the chip
-        // marker is present and the original link TEXT is no longer carrying the URL.
+        // The URL legitimately SURVIVES: the extractor rewrites an inline link into `[\[1\]](url)`, whose href
+        // is still the source URL, so this asserts the rewrite rather than the URL's absence.
         Assert.Contains("[\\[1\\]](https://example.com/page)", msg.Content);
         Assert.DoesNotContain("[Example](https://example.com/page)", msg.Content);
         Assert.DoesNotContain("][http", msg.Content);
         Assert.Equal(ChatState.Idle, session.State);
     }
 
-    /// <summary>
-    /// R11/R4 golden: with TokenizationEnabled=true the extracted <c>CleanupPerExchange</c> must still run
-    /// its safety-net PII detokenization on the final content and restore the ambient token-map/task
-    /// context. The other golden cases run tokenization off, so this is the only guard on that leg — a
-    /// regression that dropped it would leak tokenized PII into the (syncing) transcript or leave a stale
-    /// ambient bleeding into the next turn.
-    /// </summary>
+    /// <summary>The other golden cases run tokenization off, so this is the only guard on the detokenize-and-restore leg.</summary>
     [Fact]
     public async Task TokenizationEnabled_SafetyNetDetokenizes_AndRestoresAmbients()
     {
-        // The AI substitute is the RAW client (not the tokenizing decorator), so no mid-stream
-        // detokenization happens — the ONLY detokenize is the finally-time safety net in CleanupPerExchange.
+        // The substitute is the RAW client, so the only detokenize is CleanupPerExchange's safety net.
         _tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => ((string)ci[0]).Replace("<PII_1>", "Alice"));
         ReturnsStream(() => Stream(new TextDelta("Hello <PII_1>"), new Finished(null, "m")));
         var session = CreateSession();

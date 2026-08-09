@@ -3,18 +3,11 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Unit tests for the pure adaptive-polling scheduling helpers on <see cref="SyncClientService"/>
-/// (Phase 2.1: jittered period + idle backoff). These exercise the extracted deterministic math
-/// without touching the timer or any network I/O.
-/// </summary>
 public class SyncClientSchedulingTests
 {
     private static readonly TimeSpan BasePeriod = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan Ceiling = TimeSpan.FromMinutes(15);
     private const double JitterFraction = 0.20;
-
-    // --- ComputeNextSyncDelay: base period + jitter ---
 
     [Fact]
     public void ComputeNextSyncDelay_BelowThreshold_UsesBasePeriod_NoJitterAtMidpoint()
@@ -50,12 +43,9 @@ public class SyncClientSchedulingTests
         var atMid = SyncClientService.ComputeNextSyncDelay(0, 0.5).TotalMilliseconds;
         var belowByFloor = atMid - atMin;
 
-        // The floor sits JitterFraction below the base; symmetry means the ceiling sits the
-        // same distance above it.
+        // Symmetry: the ceiling sits the same JitterFraction above the base that the floor sits below it.
         Assert.Equal(BasePeriod.TotalMilliseconds * JitterFraction, belowByFloor, precision: 3);
     }
-
-    // --- ComputeNextSyncDelay: backoff growth + ceiling ---
 
     [Fact]
     public void ComputeNextSyncDelay_AtThreshold_GrowsBeyondBase()
@@ -86,8 +76,7 @@ public class SyncClientSchedulingTests
     [InlineData(1000)]
     public void ComputeNextSyncDelay_Backoff_CapsAtCeiling_EvenWithMaxJitter(int idleCycles)
     {
-        // Growth eventually exceeds the ceiling; the cap is applied BEFORE jitter, so the jitter
-        // ceiling is Ceiling * (1 + JitterFraction).
+        // The cap is applied BEFORE jitter, so the reachable maximum is Ceiling * (1 + JitterFraction).
         var delay = SyncClientService.ComputeNextSyncDelay(idleCycles, randomUnit: 0.999999);
 
         Assert.True(delay.TotalMilliseconds <= Ceiling.TotalMilliseconds * (1.0 + JitterFraction) + 1,
@@ -96,8 +85,6 @@ public class SyncClientSchedulingTests
         var atMid = SyncClientService.ComputeNextSyncDelay(idleCycles, 0.5);
         Assert.Equal(Ceiling, atMid);
     }
-
-    // --- ClassifyCycle ---
 
     [Fact]
     public void ClassifyCycle_PushSentChanges_IsActive()
@@ -131,8 +118,7 @@ public class SyncClientSchedulingTests
     [Fact]
     public void ClassifyCycle_SuccessfulPullWithTimestampButNoRows_IsInconclusive()
     {
-        // A 200 that advanced the cursor but merged no rows is not a clean 304 no-change; leave
-        // backoff unchanged rather than counting it as idle.
+        // A 200 that advanced the cursor but merged no rows is not a clean 304, so backoff must not advance.
         var outcome = SyncClientService.ClassifyCycle(pushSucceeded: true, pushSentChanges: false, pulled: 0, pullSucceeded: true, serverTimestamp: DateTime.UtcNow);
         Assert.Equal(SyncCycleOutcome.Inconclusive, outcome);
     }
@@ -140,10 +126,7 @@ public class SyncClientSchedulingTests
     [Fact]
     public void ClassifyCycle_FailedPush_IsInconclusive()
     {
-        // A push failure (non-success HTTP status) must never be treated as an idle cycle:
-        // local changes are still pending, so engaging backoff would slow their retry.
-        // Even a 304 pull (pullSucceeded: true, serverTimestamp: null) alongside it must not
-        // classify as Idle.
+        // Local changes are still pending after a failed push, so backoff would slow their retry.
         var outcome = SyncClientService.ClassifyCycle(pushSucceeded: false, pushSentChanges: false, pulled: 0, pullSucceeded: true, serverTimestamp: null);
         Assert.Equal(SyncCycleOutcome.Inconclusive, outcome);
     }
@@ -151,14 +134,10 @@ public class SyncClientSchedulingTests
     [Fact]
     public void ClassifyCycle_DeletesOrPrefsOnlyPush_IsActive()
     {
-        // A push that sent only deletes or plugin-preference changes has PushedCount == 0
-        // (upserts only) but must still count as activity, matching the plan's "a push sent
-        // changes" reset condition.
+        // A deletes-only or prefs-only push has PushedCount == 0 (upserts only) but is still activity.
         var outcome = SyncClientService.ClassifyCycle(pushSucceeded: true, pushSentChanges: true, pulled: 0, pullSucceeded: true, serverTimestamp: null);
         Assert.Equal(SyncCycleOutcome.Active, outcome);
     }
-
-    // --- UpdateIdleCycleCount ---
 
     [Fact]
     public void UpdateIdleCycleCount_Active_ResetsToZero()
@@ -177,8 +156,6 @@ public class SyncClientSchedulingTests
     {
         Assert.Equal(5, SyncClientService.UpdateIdleCycleCount(current: 5, SyncCycleOutcome.Inconclusive));
     }
-
-    // --- End-to-end scheduling behavior: idle accrual -> backoff, activity -> reset ---
 
     [Fact]
     public void Scheduling_SixConsecutiveIdleCycles_EngagesBackoff()
@@ -199,12 +176,10 @@ public class SyncClientSchedulingTests
     public void Scheduling_ActivityAfterBackoff_ResetsToBase()
     {
         var idle = 0;
-        // Accrue enough idle cycles to be well into backoff.
         for (var i = 0; i < 10; i++)
             idle = SyncClientService.UpdateIdleCycleCount(idle, SyncCycleOutcome.Idle);
         Assert.Equal(Ceiling, SyncClientService.ComputeNextSyncDelay(idle, 0.5));
 
-        // A cycle that pushed changes resets the counter, and thus the period, back to base.
         var active = SyncClientService.ClassifyCycle(pushSucceeded: true, pushSentChanges: true, pulled: 0, pullSucceeded: true, serverTimestamp: null);
         idle = SyncClientService.UpdateIdleCycleCount(idle, active);
 
@@ -222,8 +197,6 @@ public class SyncClientSchedulingTests
         Assert.Equal(0, idle);
         Assert.Equal(BasePeriod, SyncClientService.ComputeNextSyncDelay(idle, 0.5));
     }
-
-    // --- ShouldCheckDevices: Sec 4.2 interim device-check cadence ---
 
     [Theory]
     [InlineData(0)]
@@ -244,8 +217,6 @@ public class SyncClientSchedulingTests
     {
         Assert.False(SyncClientService.ShouldCheckDevices(counter));
     }
-
-    // --- AdvanceDeviceCheck: stateful cadence loop (reset-to-1, not 0) ---
 
     [Theory]
     [InlineData(6, 1)]   // exactly one cadence's worth of idle cycles -> 1 check
@@ -270,8 +241,7 @@ public class SyncClientSchedulingTests
     [Fact]
     public void AdvanceDeviceCheck_ThrottleActuallyEngages_DoesNotCheckEveryCycle()
     {
-        // Regression guard for the bug where resetting to 0 (instead of 1) after a check made
-        // ShouldCheckDevices true again on the very next cycle, so every eligible cycle checked.
+        // Resetting the counter to 0 instead of 1 made every eligible cycle check.
         var (firstCheck, counterAfterFirst) = SyncClientService.AdvanceDeviceCheck(0, got200Pull: false);
         Assert.True(firstCheck);
         Assert.Equal(1, counterAfterFirst);

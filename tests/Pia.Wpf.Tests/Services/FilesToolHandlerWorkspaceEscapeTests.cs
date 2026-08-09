@@ -11,21 +11,8 @@ using Xunit;
 namespace Pia.Tests.Services;
 
 /// <summary>
-/// G-1 fuzz: with an unattended run's isolated <see cref="TaskContext.WorkspaceRoot"/> active, every
-/// path the model can supply — traversal (<c>..</c>), absolute POSIX/Windows paths, and reparse-point
-/// (symlink) escapes — must reject against the PER-RUN root, never the interactive folder. A rejected
-/// write/delete never touches the filesystem outside the run workspace; a rejected read returns no
-/// outside content. Mirrors the SafeFolderPath containment contract, re-anchored to runs\&lt;runId&gt;.
-/// <para>
-/// The run root is deliberately at the REAL shape — a Guid-named directory under
-/// <see cref="AssistantWorkspace.RunsRoot"/> — because <c>SensitivePathGuard.BuildBlockedRoots</c> reads
-/// the real <c>LOCALAPPDATA</c>, so a <c>Path.GetTempPath()</c> fixture sits outside every blocked root
-/// and this suite structurally could not see the guard that now applies to a run's every file operation
-/// (plan §4 R1). Batch 06 G2 made that the production shape, so the escape matrix now runs where the
-/// guard actually applies. All of these are <b>GUARD</b> facts: they cannot go red on a revert of G2 —
-/// containment is unchanged by it. <see cref="Write_InsideTheRunRoot_Succeeds"/> can, and is the control
-/// that stops the whole matrix passing vacuously against an un-writable root.
-/// </para>
+/// The run root sits at its real shape under <see cref="AssistantWorkspace.RunsRoot"/>: a
+/// <c>GetTempPath()</c> fixture falls outside every <c>SensitivePathGuard</c> blocked root.
 /// </summary>
 public class FilesToolHandlerWorkspaceEscapeTests : IDisposable
 {
@@ -37,11 +24,8 @@ public class FilesToolHandlerWorkspaceEscapeTests : IDisposable
     public FilesToolHandlerWorkspaceEscapeTests()
     {
         _interactiveRoot = NewDir("pia-escape-interactive-");
-        // The run root, and ONLY the run root, moves under the real runs dir: _interactiveRoot and _outside
-        // stay under GetTempPath() so "outside" really is outside the carve-out. The name is a bare Guid
-        // (R11) — RunStartupSweepAsync `continue`s on any directory name that is not a parseable Guid, so a
-        // prefixed fixture that leaked would live in the developer's real runs folder forever, while a
-        // Guid-named one is swept as `run is null` on the next app start.
+        // Bare Guid name: RunStartupSweepAsync skips any directory name that is not a parseable Guid, so a
+        // prefixed fixture that leaked would live in the developer's real runs folder forever.
         _runRoot = Path.Combine(AssistantWorkspace.RunsRoot, Guid.NewGuid().ToString());
         Directory.CreateDirectory(_runRoot);
         _outside = NewDir("pia-escape-outside-");
@@ -55,12 +39,7 @@ public class FilesToolHandlerWorkspaceEscapeTests : IDisposable
         TaskAmbient.Current = new TaskContext(Guid.NewGuid(), WorkingSubpath: null, OnFileTouched: null, WorkspaceRoot: _runRoot);
     }
 
-    /// <summary>
-    /// Reads a member off one of FilesToolHandler's private result records (WriteResult and friends are
-    /// <c>private sealed record</c>s, so a test cannot name the type). Same helper as
-    /// <c>FilesToolHandlerWriteTests.Prop</c>; the positional record parameters are lower-cased, so the
-    /// member names here are the wire names (<c>success</c>, <c>error</c>).
-    /// </summary>
+    /// <summary>FilesToolHandler's result records are private, so members are read by their wire names (<c>success</c>, <c>error</c>).</summary>
     private static T Prop<T>(object obj, string name)
     {
         var p = obj.GetType().GetProperty(name);
@@ -75,12 +54,7 @@ public class FilesToolHandlerWorkspaceEscapeTests : IDisposable
             try { Directory.Delete(d, recursive: true); } catch { /* best effort */ }
     }
 
-    /// <summary>
-    /// The positive control for this whole class, and the one fact here that is not a GUARD: every escape
-    /// assertion below would pass vacuously against a run root the handler cannot write to at all (a
-    /// broken guard carve-out looks exactly like a rejected escape from the outside). Proves the fixture
-    /// root is genuinely usable at the real shape before anything claims a rejection means something.
-    /// </summary>
+    /// <summary>Non-vacuity control: every escape assertion below would pass against a run root the handler cannot write to at all.</summary>
     [Fact]
     public async Task Write_InsideTheRunRoot_Succeeds()
     {
@@ -113,15 +87,8 @@ public class FilesToolHandlerWorkspaceEscapeTests : IDisposable
             new Dictionary<string, object?> { ["path"] = vector, ["content"] = "pwned" });
         var (result, pending) = await _handler.HandleToolCallAsync(call, TestContext.Current.CancellationToken);
 
-        // Escape → structured failure, no pending write to approve.
-        //
-        // NOT a string. write_file's prepare-time hard failures return the private WriteResult record
-        // (FilesToolHandler.WriteResult.Failed), so the cast this assertion used to do — (string)result —
-        // threw InvalidCastException and took all five theory cases down BEFORE any containment claim was
-        // checked, including the "nothing written outside" check below. Read the record's members by
-        // reflection, as FilesToolHandlerWriteTests does, and assert the failure rather than merely that
-        // the call returned something. (delete_file below still returns a plain string, which is why only
-        // the write vector crashed.)
+        // write_file's prepare-time hard failures return the private WriteResult record, not a string, so
+        // the members are read by reflection (delete_file below still returns a plain string).
         Assert.Null(pending);
         Assert.NotNull(result);
         Assert.False(Prop<bool>(result!, "success"));
@@ -162,8 +129,7 @@ public class FilesToolHandlerWorkspaceEscapeTests : IDisposable
     [Fact]
     public async Task Symlink_InsideRunRoot_PointingOutside_IsRejectedOnWrite()
     {
-        // A reparse point planted inside the run root that targets a sibling outside it must not
-        // become a sandbox hole: canonicalization resolves the link and containment rejects it.
+        // Canonicalization must resolve a reparse point planted inside the run root that targets a sibling outside.
         var linkPath = Path.Combine(_runRoot, "escape-link");
         try { Directory.CreateSymbolicLink(linkPath, _outside); }
         catch { return; /* privilege/platform unavailable — skip (cannot create the reparse point) */ }

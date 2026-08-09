@@ -13,9 +13,8 @@ using Pia.Shared.Models;
 using Xunit;
 
 /// <summary>
-/// Persona mapper round-trip coverage in both plaintext (E2EE off) and encrypted (E2EE on) modes.
-/// Verifies the E2EE field split from contract §3: textual fields (Name/Tagline/SystemPrompt/
-/// Guardrails/Expertise) are encrypted; structural fields stay plaintext.
+/// Persona mapper round-trips with E2EE off and on: the textual fields are encrypted, the structural ones stay
+/// plaintext in both modes.
 /// </summary>
 public class SyncMapperPersonaTests
 {
@@ -210,8 +209,7 @@ public class SyncMapperPersonaTests
         Assert.True(persona.IsManaged);
         Assert.False(persona.IsBuiltIn);
         Assert.True(persona.IsReadOnly);
-        // Q8: the DTO has no preferredProviderId, so a managed persona resolves to the member's mode
-        // default exactly as a user persona with no preference does.
+        // The DTO carries no preferredProviderId, so a managed persona resolves to the member's mode default.
         Assert.Null(persona.PreferredProviderId);
     }
 
@@ -251,8 +249,8 @@ public class SyncMapperPersonaTests
     {
         var mapper = PlainMapper();
 
-        // "absent/blank ⇒ custom" (handoff §2.1.1) includes whitespace-only: Archetype indexes a closed
-        // vocabulary, so "   " would match no glyph and no label.
+        // Whitespace-only counts as absent too: Archetype indexes a closed vocabulary, so "   " would match no
+        // glyph and no label.
         foreach (var archetype in new[] { null, "", "   ", "\t" })
         {
             var sync = SampleManagedPersona();
@@ -266,9 +264,8 @@ public class SyncMapperPersonaTests
     {
         var mapper = PlainMapper();
 
-        // The user-persona mapper is held to the same rule, deliberately: MapPersona and both mappers
-        // treat the two persona flavours as column-identical, so a divergence here would show up as one
-        // kind of persona rendering an archetype the picker cannot label.
+        // Both mappers treat the two persona flavours as column-identical, so a divergence here would show up as
+        // one kind of persona rendering an archetype the picker cannot label.
         foreach (var archetype in new[] { null, "", "   ", "\t" })
         {
             var sync = mapper.ToSyncPersona(SamplePersona());
@@ -295,10 +292,8 @@ public class SyncMapperPersonaTests
     [Fact]
     public void FromSyncManagedPersona_UnderE2EE_StillMapsPlaintext()
     {
-        // Handoff §5.3: managed rows are plaintext even for an E2EE-enabled account, because a
-        // group-shared row cannot be wrapped with any single user's UMK. The mapper here has a live,
-        // ready E2EEService (IsE2EEActive == true) — the same one the encrypted user-persona test uses —
-        // and the managed mapping must ignore it entirely rather than look for a payload to decrypt.
+        // Managed rows are plaintext even for an E2EE-enabled account, because a group-shared row cannot be
+        // wrapped with any single user's UMK — so the mapping must ignore the live E2EEService entirely.
         var mapper = E2EEMapper();
         var sync = SampleManagedPersona();
 
@@ -314,23 +309,22 @@ public class SyncMapperPersonaTests
     [Fact]
     public void SyncManagedPersona_HasNoE2EEFields()
     {
-        // The absence of these fields is what makes a decrypt branch impossible to write, so it is the
-        // real pin for §5.3. If they ever reappear on the DTO, FromSyncManagedPersona needs revisiting.
+        // The absence of these fields is what makes a decrypt branch impossible to write; if they ever reappear
+        // on the DTO, FromSyncManagedPersona needs revisiting.
         var names = typeof(SyncManagedPersona).GetProperties().Select(p => p.Name).ToHashSet();
 
         Assert.DoesNotContain("EncryptedPayload", names);
         Assert.DoesNotContain("WrappedDek", names);
         Assert.DoesNotContain("UserId", names);
-        // Q8: deliberately absent — see FromSyncManagedPersona's comment.
+        // Deliberately absent — see FromSyncManagedPersona.
         Assert.DoesNotContain("PreferredProviderId", names);
     }
 
     [Fact]
     public void SyncMapper_HasNoManagedPersonaPushDirection()
     {
-        // The managed channel is pull-only: the client never authors these rows, and a push direction
-        // would be a write path into another user's shared data. Expressed by reflection so it fails the
-        // day someone adds one.
+        // The managed channel is pull-only: a push direction would be a write path into another user's shared
+        // data. Expressed by reflection so it fails the day someone adds one.
         var methods = typeof(SyncMapper)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static)
             .Select(m => m.Name)

@@ -6,11 +6,6 @@ using Xunit;
 
 namespace Pia.Tests.Wiki;
 
-/// <summary>
-/// Spec §1 scaffolding tests for <see cref="VaultSchemaService"/>: a fresh install gets the
-/// <c>sources/</c> directory plus a default <c>memory/AGENTS.md</c> (the human-editable Schema), and a
-/// pre-existing AGENTS.md is left byte-identical (co-evolved / never overwritten).
-/// </summary>
 public class VaultSchemaServiceTests : IDisposable
 {
     private readonly string _root;
@@ -35,8 +30,6 @@ public class VaultSchemaServiceTests : IDisposable
         new VaultPathProvider(_root),
         NullLogger<VaultSchemaService>.Instance);
 
-    // ---- (1) first run scaffolds sources/ and a valid default AGENTS.md ----
-
     [Fact]
     public async Task First_run_creates_AGENTS_with_valid_frontmatter_and_sources_directory()
     {
@@ -57,8 +50,6 @@ public class VaultSchemaServiceTests : IDisposable
         Assert.True(doc.Frontmatter.ContainsKey("created"));
         Assert.True(doc.Frontmatter.ContainsKey("updated"));
     }
-
-    // ---- (2) an existing AGENTS.md is preserved byte-identical (never overwritten) ----
 
     [Fact]
     public async Task Existing_AGENTS_is_preserved_byte_identical()

@@ -13,9 +13,8 @@ using Xunit;
 namespace Pia.Tests.Services;
 
 /// <summary>
-/// Headless multi-step run (§13.6/§13.12): the executor accumulates ONE chat across steps (goal +
-/// one assistant reply per step), and <c>TaskAmbient.TaskId == run.Id</c> throughout the run (R9).
-/// Driven through the real orchestrator + real SQLite stores.
+/// A headless multi-step run accumulates ONE chat across steps and keeps <c>TaskAmbient.TaskId == run.Id</c>
+/// throughout, driven through the real orchestrator and real SQLite stores.
 /// </summary>
 public sealed class HeadlessTurnExecutorTests
 {
@@ -33,7 +32,7 @@ public sealed class HeadlessTurnExecutorTests
 
     private static async IAsyncEnumerable<ChatStreamItem> Drive(string answer)
     {
-        // Runs inside RunExchangeAsync — the run's TaskAmbient is live here (R9 probe).
+        // Runs inside RunExchangeAsync, where the run's TaskAmbient is live.
         ObservedTaskIds.Add(TaskAmbient.Current?.TaskId);
         await Task.Yield();
         yield return new TextDelta(answer);
@@ -75,7 +74,7 @@ public sealed class HeadlessTurnExecutorTests
         ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();
 
         // The executor uses this runner only as its per-step RunExchangeAsync engine, never RunAsync, so the
-        // A2 bracket is not exercised here — a throwaway index keeps the composition explicit.
+        // executing-run bracket is not exercised here — a throwaway index keeps the composition explicit.
         var engine = new BackgroundAssistantTurnRunner(
             ai, plugins, composer, personas, chats, titles, settings, TokenMapFactory, runs,
             new ExecutingRunStore(), NullLogger<BackgroundAssistantTurnRunner>.Instance);
@@ -83,7 +82,7 @@ public sealed class HeadlessTurnExecutorTests
             engine, chats, settings, personas, providers, composer, titles, TokenMapFactory,
             NullLogger<HeadlessTurnExecutor>.Instance);
 
-        // Bootstrap: FK parent chat + Planned run (R1 ordering).
+        // Bootstrap: the FK parent chat before the Planned run.
         var chatId = Guid.NewGuid();
         var now = DateTime.UtcNow;
         await chats.SaveAsync(new SyncAssistantChat
@@ -109,11 +108,11 @@ public sealed class HeadlessTurnExecutorTests
 
         await orchestrator.RunAsync(run, executor, persona, provider, RunProfile.Interactive, TestContext.Current.CancellationToken);
 
-        // TaskAmbient.TaskId == run.Id for every exchange (R9).
+        // TaskAmbient.TaskId == run.Id for every exchange.
         Assert.Equal(3, ObservedTaskIds.Count);
         Assert.All(ObservedTaskIds, id => Assert.Equal(run.Id, id));
 
-        // R7/G1: the headless path never offers Agent mode — suggestAgentModeEligible is always false.
+        // The headless path never offers Agent mode — suggestAgentModeEligible is always false.
         composer.DidNotReceive().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(),
             suggestAgentModeEligible: true);
@@ -136,7 +135,7 @@ public sealed class HeadlessTurnExecutorTests
         try { Directory.Delete(dir, true); } catch { /* best effort */ }
     }
 
-    // ---- C2: consent + MCP disable + provider override ----
+    // ---- consent + MCP disable + provider override ----
 
     private sealed class SingleStepPlanner : IAgentPlanner
     {
@@ -227,8 +226,8 @@ public sealed class HeadlessTurnExecutorTests
         var orchestrator = new AgentRunOrchestrator(runs, new SingleStepPlanner(), new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
         await orchestrator.RunAsync(run, executor, persona, defaultProvider, RunProfile.Interactive, TestContext.Current.CancellationToken);
 
-        // MCP is now OFFERED to unattended runs (Phase-2 gate): no longer stripped — instead denied inline
-        // unless granted. Both tools reach the model.
+        // MCP is OFFERED to unattended runs rather than stripped: it is denied inline unless granted, so both
+        // tools reach the model.
         Assert.NotNull(capturedTools);
         Assert.Contains(capturedTools!, t => t.Name == "mcp_search");
         Assert.Contains(capturedTools!, t => t.Name == "write_file");
@@ -317,9 +316,8 @@ public sealed class HeadlessTurnExecutorTests
     [Fact]
     public async Task HeadlessStep_RecordsItsGateDecisions_AttributedToTheRunAndStep()
     {
-        // Batch 03: proves the executor→RunExchangeAsync relay actually carries a scope. Everything below the
-        // relay is covered by the gate suite; a forgotten argument HERE would be invisible there, because
-        // those facts call RunExchangeAsync directly.
+        // Proves the executor→RunExchangeAsync relay carries a scope: the gate suite calls RunExchangeAsync
+        // directly, so a forgotten argument HERE would be invisible there.
         var dir = Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         using var ctx = new SqliteContext(Path.Combine(dir, "history.db"));
@@ -408,7 +406,7 @@ public sealed class HeadlessTurnExecutorTests
         yield return new Finished(null, "test-model");
     }
 
-    // ---- E2: per-step transcript durability (a budget pause used to lose the whole transcript) ----
+    // ---- per-step transcript durability (a budget pause used to lose the whole transcript) ----
 
     private static async IAsyncEnumerable<ChatStreamItem> DriveText(string answer)
     {
@@ -450,7 +448,7 @@ public sealed class HeadlessTurnExecutorTests
             return _inner.SaveAsync(chat, ct);
         }
 
-        /// <summary>W2b: the executor's write seam. Counted as a WRITE — the merge must not cost a second one.</summary>
+        /// <summary>The executor's write seam. Counted as a WRITE — the merge must not cost a second one.</summary>
         public Task<int> SaveMergedAsync(SyncAssistantChat chat, CancellationToken ct = default)
         {
             SaveCalls++;
@@ -464,8 +462,8 @@ public sealed class HeadlessTurnExecutorTests
 
         public Task SaveFromRemoteAsync(SyncAssistantChat chat, CancellationToken ct = default) => _inner.SaveFromRemoteAsync(chat, ct);
 
-        /// <summary>W2a: the title-only writer. Counted separately from <see cref="SaveCalls"/> — the point of
-        /// the change is that the auto-title path issues NO full replace.</summary>
+        /// <summary>The title-only writer, counted separately from <see cref="SaveCalls"/> because the auto-title
+        /// path must issue NO full replace.</summary>
         public int SetTitleCalls { get; private set; }
 
         public Task<bool> SetTitleAsync(Guid chatId, string title, CancellationToken ct = default)
@@ -504,11 +502,11 @@ public sealed class HeadlessTurnExecutorTests
         public readonly Persona Persona = new() { Name = "Pia", SystemPrompt = "sys" };
         public readonly IAiClientService Ai = Substitute.For<IAiClientService>();
 
-        /// <summary>The executor's log, so a fixture can assert on the compaction diff LINE (D-A').</summary>
+        /// <summary>The executor's log, so a fixture can assert on the compaction diff LINE.</summary>
         public readonly CapturingLogger<HeadlessTurnExecutor> ExecutorLog = new();
 
         // Hoisted out of NewExecutor so a fixture can seed them and so a resume shares them with the launch —
-        // which is what the container does anyway. Batch 07's per-step persona facts need all four.
+        // which is what the container does anyway.
         public readonly IAssistantPromptComposer Composer = Substitute.For<IAssistantPromptComposer>();
         public readonly IPersonaService Personas = Substitute.For<IPersonaService>();
         public readonly IProviderService Providers = Substitute.For<IProviderService>();
@@ -516,16 +514,16 @@ public sealed class HeadlessTurnExecutorTests
         public readonly AppSettings Settings = new();
 
         /// <summary>
-        /// Batch 07 G6: the per-step resolver handed to every executor this harness builds, or null for the
-        /// pre-batch behaviour (every step on the run persona). Set it before the first NewExecutor call.
+        /// The per-step resolver handed to every executor this harness builds; null puts every step on the run
+        /// persona. Set it before the first NewExecutor call.
         /// </summary>
         public StepPersonaResolver? StepPersonas;
 
         public int Turns;
 
         /// <summary>
-        /// Runs on the run's own thread at the START of turn N, i.e. AFTER BeginRunAsync seeded the executor's
-        /// transcript and BEFORE that turn's interim persist. The seam a "second writer" needs (W2).
+        /// Runs on the run's own thread at the START of turn N — after BeginRunAsync seeded the transcript and
+        /// before that turn's interim persist, which is the seam a "second writer" needs.
         /// </summary>
         public Action<int>? OnTurn;
 
@@ -537,9 +535,8 @@ public sealed class HeadlessTurnExecutorTests
             Runs = new AgentRunService(Ctx, NullLogger<AgentRunService>.Instance);
             Chats = new CountingChatService(new AssistantChatService(Ctx, Runs));
 
-            // A prompt that NAMES the persona it was composed from, so a fixture can tell whose system message
-            // a given step actually sent. Every pre-Batch-07 fixture in this file only ever sees one persona,
-            // so its prompt is a constant string exactly as before.
+            // A prompt that NAMES the persona it was composed from, so a fixture can tell whose system message a
+            // given step actually sent; a single-persona fixture still sees a constant string.
             Composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
                     Arg.Any<bool>(), Arg.Any<bool>())
                 .Returns(ci => new AssistantTurnSetup(
@@ -562,10 +559,8 @@ public sealed class HeadlessTurnExecutorTests
         }
 
         /// <summary>
-        /// A fresh executor — models the launcher's per-run (and per-resume) DI scope. The four persona-side
-        /// substitutes are the HARNESS's, not locals: a resume must meet the same persona store and the same
-        /// composer the launch did, which is what the container gives it, and Batch 07's per-step facts need to
-        /// seed them from the fixture.
+        /// A fresh executor, modelling the launcher's per-run DI scope. The persona-side substitutes are the
+        /// HARNESS's, because a resume must meet the same persona store and composer the launch did.
         /// </summary>
         public HeadlessTurnExecutor NewExecutor()
         {
@@ -619,8 +614,8 @@ public sealed class HeadlessTurnExecutorTests
     [Fact]
     public async Task ParkedAtBudget_BothStepRepliesArePersisted_AndTheResumeAppendsWithoutErasingThem()
     {
-        // E2: the pause path deliberately skips EndRunAsync, which used to be the ONLY chat write a
-        // headless run ever did — so a run parked after 2 of 4 steps left the DB holding just the goal.
+        // The pause path deliberately skips EndRunAsync, which used to be the ONLY chat write a headless run ever
+        // did — so a run parked after 2 of 4 steps left the DB holding just the goal.
         using var h = new DurabilityHarness();
         var run = await h.NewRunAsync("the goal");
         var planner = new FakePlanner(Steps(4));
@@ -633,9 +628,8 @@ public sealed class HeadlessTurnExecutorTests
         var parked = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.WaitingForInput, parked!.State);
 
-        // The parked transcript is DURABLE: goal + one reply per completed step + T2-18's grace turn, which
-        // spends one tool-free wrap-up round before the park and persists it here (a park never reaches
-        // EndRunAsync, so a wrap-up not written at pause time would never be written at all).
+        // The parked transcript is DURABLE: goal + one reply per completed step + the grace turn's wrap-up, which
+        // must be persisted here because a park never reaches EndRunAsync.
         var afterPause = await h.Chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
         Assert.Equal(4, afterPause!.Messages.Count);
         Assert.Equal("the goal", afterPause.Messages[0].Content);
@@ -647,7 +641,7 @@ public sealed class HeadlessTurnExecutorTests
         // write on the pause path. Three turns here — two steps and the grace turn.
         Assert.Equal(3, h.Chats.SaveCalls - savesBeforeRun);
 
-        // The interim rows carry the SAME Ids the step slices point at (R3 — stable Guids, not ordinals).
+        // The interim rows carry the SAME Ids the step slices point at — stable Guids, not ordinals.
         var doneSteps = parked.Plan.Where(s => s.Status == AgentStepStatus.Done).OrderBy(s => s.Ordinal).ToList();
         Assert.Equal(2, doneSteps.Count);
         Assert.Equal(afterPause.Messages[1].Id, doneSteps[0].FirstMessageId);
@@ -663,8 +657,8 @@ public sealed class HeadlessTurnExecutorTests
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.Completed, final!.State);
 
-        // D2: the resume LOADED the existing rows and appended — it neither erased nor duplicated them.
-        // "reply 3" is the pre-pause wrap-up; the resumed run's own two steps are turns 4 and 5.
+        // The resume LOADED the existing rows and appended — it neither erased nor duplicated them. "reply 3" is
+        // the pre-pause wrap-up; the resumed run's own two steps are turns 4 and 5.
         var afterResume = await h.Chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
         Assert.Equal(6, afterResume!.Messages.Count);
         Assert.Equal(new[] { "the goal", "reply 1", "reply 2", "reply 3", "reply 4", "reply 5" },
@@ -673,7 +667,8 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Single(await h.Chats.GetAllIdsAsync(TestContext.Current.CancellationToken));
     }
 
-    /// <summary>A <c>needs-goal</c> park's chat holds only the model's clarification question, never the goal — so a resumed run must seed the goal into the model context even though the stored chat doesn't contain it.</summary>
+    // A needs-goal park's chat holds only the model's clarification question, so a resumed run must seed the goal
+    // into the model context even though the stored chat does not contain it.
     [Fact]
     public async Task NeedsGoalResume_ChatHoldsOnlyTheQuestion_ButTheModelContextStillStatesTheGoal()
     {
@@ -695,7 +690,8 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Contains(persistedAfter.Messages, m => m.Role == "assistant" && m.Content == "what do you mean by ggg?");
     }
 
-    /// <summary>When the answer arrives as a chat-composer user row, the transcript still opens with the model's question rather than a user row, so the resume-seed check must test what the chat opens with, not merely whether it contains any user row.</summary>
+    // When the answer arrives as a chat-composer user row the transcript still opens with the model's question, so
+    // the resume-seed check must test what the chat OPENS with, not whether it contains any user row.
     [Fact]
     public async Task NeedsGoalResume_AnsweredInTheChat_StillStatesTheGoal_AndKeepsTheAnswer()
     {
@@ -720,7 +716,8 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Contains(persistedAfter.Messages, m => m.Role == "user" && m.Content == "I mean the nightly export job");
     }
 
-    /// <summary>Guards against always seeding the goal: an ordinary resume, whose chat already opens with the goal, must not gain a second copy of it.</summary>
+    // Guards against always seeding: an ordinary resume, whose chat already opens with the goal, must not gain a
+    // second copy of it.
     [Fact]
     public async Task OrdinaryResume_ChatAlreadyOpensWithTheGoal_DoesNotSeedItTwice()
     {
@@ -746,7 +743,8 @@ public sealed class HeadlessTurnExecutorTests
         Timestamp = DateTime.UtcNow,
     };
 
-    /// <summary>Seeds the chat, then begins a fresh executor on a new DI scope — matching what a real resume gets — and returns the messages that reached the provider for one step.</summary>
+    /// <summary>Seeds the chat, begins a fresh executor on a new DI scope the way a real resume gets one, and
+    /// returns the messages that reached the provider for one step.</summary>
     private static async Task<List<ChatMessage>> SeedChatAndRunOneStepAsync(
         DurabilityHarness h, AgentRun run, string goal, params SyncAssistantChatMessage[] rows)
     {
@@ -779,8 +777,8 @@ public sealed class HeadlessTurnExecutorTests
     [Fact]
     public async Task InterimAndTerminalSaves_AgreeOnMessageIds()
     {
-        // The interim save and the terminal full replace must write the SAME message Ids: the run's and
-        // each step's First/LastMessageId slices point at them (R3).
+        // The interim save and the terminal full replace must write the SAME message Ids: the run's and each
+        // step's First/LastMessageId slices point at them.
         using var h = new DurabilityHarness();
         var run = await h.NewRunAsync("goal");
         var planner = new FakePlanner(Steps(2));
@@ -809,8 +807,8 @@ public sealed class HeadlessTurnExecutorTests
     [Fact]
     public async Task InterimPersistThrows_DoesNotFailTheStepOrTheRun_AndTheTerminalSaveRecovers()
     {
-        // Guardrail 1: interim persistence is bookkeeping. A store fault logs and the run continues; the
-        // terminal replace then re-writes the whole transcript, so nothing is permanently lost.
+        // Interim persistence is bookkeeping: a store fault logs and the run continues, and the terminal replace
+        // then re-writes the whole transcript, so nothing is permanently lost.
         using var h = new DurabilityHarness();
         var run = await h.NewRunAsync("goal");
         var planner = new FakePlanner(Steps(2));
@@ -859,19 +857,16 @@ public sealed class HeadlessTurnExecutorTests
         var parked = await h.Chats.GetAsync(chatId, TestContext.Current.CancellationToken);
         Assert.Equal("A nice earlier title", parked!.Title);
         Assert.Equal("projects/alpha", parked.WorkingDirectory);
-        // Pre-existing goal row + the one step reply + T2-18's grace-turn wrap-up, which is itself an interim
-        // save and therefore subject to the same title/working-directory rule.
+        // Pre-existing goal row + the one step reply + the grace-turn wrap-up, which is itself an interim save and
+        // therefore subject to the same title/working-directory rule.
         Assert.Equal(3, parked.Messages.Count);
     }
 
     [Fact]
     public async Task BeginRunAsync_DoesNotInheritTheChatsWorkingSubpath_ParityWithLive()
     {
-        // Executor parity (guardrail 3) with LiveTurnExecutor.BeginRunAsync, which DOES hand its chat's
-        // working subpath to the run context so the verifier's artifact probe stats the right root. A
-        // headless run deliberately must NOT: every step runs with TaskContext.WorkingSubpath: null, so its
-        // writes land at the base root even when the chat row carries a WorkingDirectory. Asserted so a
-        // future "just copy the row's value" tweak cannot point the probe at a folder nothing wrote to.
+        // Unlike LiveTurnExecutor, a headless run must NOT inherit the chat's working subpath: every step runs with
+        // WorkingSubpath null, so its writes land at the base root even when the chat row carries one.
         using var h = new DurabilityHarness();
         var chatId = Guid.NewGuid();
         var now = DateTime.UtcNow;
@@ -895,10 +890,8 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Null(ctx.WorkingSubpath);
     }
 
-    // REGRESSION (T-G1-6, Batch 06 B3): the value Initialize was given must reach RunContext so the
-    // verifier — which runs on the orchestrator thread, outside any step's ambient — can resolve
-    // declared artifacts against the root the steps actually wrote into. Delete the assignment in
-    // BeginRunAsync to see this go red.
+    // The value Initialize was given must reach RunContext, because the verifier runs on the orchestrator thread —
+    // outside any step's ambient — and resolves declared artifacts against the root the steps wrote into.
     [Fact]
     public async Task BeginRunAsync_PublishesTheWorkspaceRootOntoTheRunContext()
     {
@@ -915,14 +908,13 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Null(ctx.WorkingSubpath);
     }
 
-    // ---- W2b: the run's chat write merges the persisted rows INSIDE the store's gate hold ----
+    // ---- the run's chat write merges the persisted rows INSIDE the store's gate hold ----
 
     [Fact]
     public async Task ForeignRowWrittenAfterBeginRun_SurvivesTheInterimAndTerminalWrites()
     {
-        // W2 direction B: BeginRunAsync takes ONE snapshot of the chat and every later write is a full
-        // replace from it, so a row another writer added afterwards used to be DELETED — silently, because
-        // there is no FK from AgentSteps to the message rows. SaveMergedAsync absorbs it instead.
+        // BeginRunAsync takes ONE snapshot and every later write is a full replace from it, so a row another writer
+        // added afterwards used to be DELETED silently — there is no FK from AgentSteps to the message rows.
         using var h = new DurabilityHarness();
         var run = await h.NewRunAsync("the goal");
         var planner = new FakePlanner(Steps(2));
@@ -953,9 +945,8 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Contains("reply 1", contents);
         Assert.Contains("reply 2", contents);
 
-        // The run's own message Ids are unchanged, and every step slice still resolves to a live row —
-        // resolved against the ROWS, not against a substring (nothing in production reads these ids, so this
-        // is the only place the dangling-id symptom can be caught).
+        // Resolved against the ROWS, not a substring: nothing in production reads these ids, so this is the only
+        // place a dangling-id symptom can be caught.
         var runRow = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         var ids = final.Messages.Select(m => m.Id).ToHashSet();
         Assert.Equal(AgentRunState.Completed, runRow!.State);
@@ -971,13 +962,8 @@ public sealed class HeadlessTurnExecutorTests
     [Fact]
     public async Task Merge_IsNotASecondWrite_SaveCallsPerParkedRunIsOnePerTurn()
     {
-        // The cost guard for W2b: if the merge were ever implemented as "write, merge, re-write", the write
-        // count would double. It must be one read + one write inside a single gate hold, so the per-turn
-        // write cost is unchanged. SaveCalls counts BOTH save seams (see CountingChatService).
-        //
-        // THREE, not two, since T2-18: two steps plus the grace turn spent before the budget park. The
-        // invariant this guards is one write per TURN — which is why the number moved when a turn was added
-        // and the name no longer carries it.
+        // A merge implemented as "write, merge, re-write" would double the write count; it must be one read plus one
+        // write inside a single gate hold. Three, not two: two steps plus the grace turn before the park.
         using var h = new DurabilityHarness();
         var run = await h.NewRunAsync("the goal");
         var planner = new FakePlanner(Steps(4));
@@ -993,8 +979,8 @@ public sealed class HeadlessTurnExecutorTests
     [Fact]
     public async Task ChatDeletedMidRun_MergeIsANoOp_AndTheRunStillCompletes()
     {
-        // Guardrail 1: the write lives inside PersistChatAsync's try. A chat deleted mid-run has no stored
-        // rows, the merge absorbs nothing, and the run writes its own transcript exactly as before.
+        // The write lives inside PersistChatAsync's try: a chat deleted mid-run has no stored rows, the merge
+        // absorbs nothing, and the run writes its own transcript exactly as before.
         using var h = new DurabilityHarness();
         var run = await h.NewRunAsync("the goal");
         var planner = new FakePlanner(Steps(2));
@@ -1009,18 +995,12 @@ public sealed class HeadlessTurnExecutorTests
         await h.Orchestrator(planner).RunAsync(run, h.NewExecutor(), h.Persona, h.Provider,
             RunProfile.Interactive, TestContext.Current.CancellationToken);
 
-        // The run row is GONE, not Completed — and asserting Completed here was unachievable by design,
-        // not a production defect. AgentRuns declares
-        // FOREIGN KEY (ChatId) REFERENCES AssistantChats(Id) ON DELETE CASCADE, Microsoft.Data.Sqlite
-        // enables foreign keys by default, and DurabilityHarness.NewRunAsync inserts the chat row before
-        // the run row (it has to, or the run INSERT would trip the constraint). So deleting the chat
-        // mid-run cascades the run row away, and the orchestrator's terminal SetStateAsync updates zero
-        // rows inside SafeSetState — which is exactly the failure-isolated bookkeeping it promises.
+        // The run row is GONE, not Completed: AgentRuns.ChatId cascades on delete, so the orchestrator's terminal
+        // SetStateAsync updates zero rows inside SafeSetState.
         Assert.Null(await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken));
 
-        // What the guardrail is actually about: RunAsync returned normally (reaching this line at all
-        // proves it did not throw or hang), and PersistChatAsync kept writing after the chat vanished
-        // instead of aborting the run on the first failed merge.
+        // Reaching this line proves RunAsync returned normally, and the count proves PersistChatAsync kept writing
+        // after the chat vanished instead of aborting on the first failed merge.
         Assert.True(
             h.Chats.SaveCalls > savesBefore,
             "the run must keep persisting after its chat is deleted, not abort on the failed merge");
@@ -1029,9 +1009,8 @@ public sealed class HeadlessTurnExecutorTests
     [Fact]
     public async Task Merge_DoesNotFeedForeignRowsIntoTheRunsModelContext()
     {
-        // Executor parity: the run's plan is fixed at BeginRunAsync, so a foreign turn must reach the DURABLE
-        // transcript but NEVER the model context. The exchange messages are [system, goal, ...replies,
-        // step instruction] — a mid-run user row must not appear among them.
+        // The run's plan is fixed at BeginRunAsync, so a foreign turn must reach the DURABLE transcript but NEVER
+        // the model context — a mid-run user row must not appear among the exchange messages.
         using var h = new DurabilityHarness();
         var run = await h.NewRunAsync("the goal");
         var planner = new FakePlanner(Steps(2));
@@ -1074,9 +1053,8 @@ public sealed class HeadlessTurnExecutorTests
     private static string LongReply(int turn) => $"reply {turn}: " + new string('x', 8_000);
 
     /// <summary>
-    /// Re-stubs the harness AI with long replies and records the message list each turn was actually
-    /// asked to send. The real BackgroundAssistantTurnRunner sits between the executor and this stub,
-    /// so the captured argument IS the request the provider would have seen — compaction included.
+    /// Records the message list each turn was asked to send. The real turn runner sits between the executor and
+    /// this stub, so the captured argument IS the request the provider would have seen, compaction included.
     /// </summary>
     private static List<List<ChatMessage>> CaptureLongReplyRequests(DurabilityHarness h)
     {
@@ -1096,9 +1074,8 @@ public sealed class HeadlessTurnExecutorTests
     [Fact]
     public async Task CompactionShrinksTheRequest_ButPersistedTranscriptKeepsEveryStepReply()
     {
-        // THE HARD-GUARDRAIL TEST. Compaction operates on the request copy only: the outgoing list may
-        // shrink, but _persisted — and therefore the E2 per-step durable transcript — must be
-        // bit-for-bit what it would have been without compaction.
+        // Compaction operates on the request copy only: the outgoing list may shrink, but the durable transcript
+        // must be bit-for-bit what it would have been without compaction.
         using var h = new DurabilityHarness();
         h.Provider.MaxContextWindowTokens = 4_000;
         h.Provider.MaxOutputTokens = 1_000;
@@ -1130,12 +1107,8 @@ public sealed class HeadlessTurnExecutorTests
         for (var turn = 1; turn <= 6; turn++)
             Assert.Equal(LongReply(turn), persisted.Messages[turn].Content);
 
-        // D-A': and the log says WHICH run lost context - the compactor itself holds no run id, so
-        // without this line a support log can say context was dropped but not where. Keyed on the RUN ID
-        // (which the compactor's own line structurally cannot carry) AND on "compaction" (which the four
-        // other "Headless run {RunId}" lines in this executor do not carry), so neither side can be
-        // reworded into satisfying it by accident. Not vacuous: the assertion above already proved a
-        // request shrank at this 4000/1000 window.
+        // The log must say WHICH run lost context: the compactor itself holds no run id, so without this line a
+        // support log can say context was dropped but not where.
         Assert.Contains(h.ExecutorLog.Entries, e =>
             e.Level == LogLevel.Information
             && e.Message.Contains($"Headless run {run.Id}", StringComparison.Ordinal)
@@ -1145,12 +1118,8 @@ public sealed class HeadlessTurnExecutorTests
     [Fact]
     public async Task NoConfiguredWindow_SendsTheWholeRequest_AndLogsNoCompactionDiff()
     {
-        // A GUARD, NOT A REGRESSION TEST: this passes before the D-A' change too, because before it there
-        // was no diff line at all. What it pins is the MEANING of the line - "context WAS dropped on this
-        // step", not "compaction ran" - and it is what fails if someone later moves the log outside the
-        // count-difference guard. On an unconfigured provider (every provider after upgrade)
-        // AgentContextBudget.From returns null, CompactAsync returns at its budget guard before it logs
-        // anything, and the seam's count comparison finds no difference.
+        // Pins the MEANING of the diff line — "context WAS dropped on this step", not "compaction ran" — so it
+        // fails if the log is ever moved outside the count-difference guard.
         using var h = new DurabilityHarness(); // Provider leaves the window and max output unset.
         var run = await h.NewRunAsync("the goal");
         var planner = new FakePlanner(Steps(6));
@@ -1164,9 +1133,8 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Equal(6, captured.Count);
         Assert.Equal(8, captured[^1].Count);
 
-        // Keyed on the SEAM's own signature (run id AND "compaction"), never on a bare "compaction":
-        // the compactor logs through this same logger instance, so a bare substring would couple this
-        // guard to the compactor's wording and level.
+        // Keyed on the seam's own signature (run id AND "compaction"): the compactor logs through this same logger
+        // instance, so a bare substring would couple this guard to the compactor's wording.
         Assert.DoesNotContain(h.ExecutorLog.Entries, e =>
             e.Message.Contains($"Headless run {run.Id}", StringComparison.Ordinal)
             && e.Message.Contains("compaction", StringComparison.Ordinal));
@@ -1175,10 +1143,8 @@ public sealed class HeadlessTurnExecutorTests
     [Fact]
     public async Task ParkAndResumeUnderCompaction_TranscriptMatchesTheUncompactedBaseline()
     {
-        // Resume growth enters through the transcript re-seed into _messages, so resume is the path
-        // most likely to compact — and the path where a persistence leak would be least visible.
-        // Asserts the PERSISTED FACT rather than the mechanism: the same park/resume scenario run with
-        // a tiny window and with no window at all must leave byte-identical transcripts.
+        // Resume re-seeds the transcript, so it is the path most likely to compact and the one where a persistence
+        // leak would be least visible: with a tiny window and with none, the transcripts must be byte-identical.
         var budget = new RunProfile(MaxSteps: 2, MaxReplans: 0, WallClock: TimeSpan.FromMinutes(20));
 
         async Task<List<string>> ParkAndResumeAsync(int? window, int? maxOutput)
@@ -1214,16 +1180,11 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Equal(baseline, compacted);
     }
 
-    // ---------------------------------------------------------------------------------------------------
-    // Batch 07 G6 — per-step persona, provider and PROMPT on the headless executor.
-    //
-    // The prompt is the half that is easy to ship broken: the executor's accumulating transcript already
-    // holds the RUN persona's system message at element 0, so an implementation that resolves a per-step
-    // persona and then reuses that element sends the right label, the right provider and the WRONG
-    // instructions — a feature that looks correct in the panel and is inert in the model.
-    // ---------------------------------------------------------------------------------------------------
+    // ---- per-step persona, provider and PROMPT on the headless executor ----
+    // The accumulating transcript already holds the RUN persona's system message at element 0, so reusing that
+    // element sends the right label, the right provider and the WRONG instructions.
 
-    /// <summary>A planner that degrades immediately, so the run takes the R10 single-turn fallback path.</summary>
+    /// <summary>A planner that degrades immediately, so the run takes the single-turn fallback path.</summary>
     private sealed class FallbackPlanner : IAgentPlanner
     {
         public Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
@@ -1233,9 +1194,8 @@ public sealed class HeadlessTurnExecutorTests
     }
 
     /// <summary>
-    /// Puts <paramref name="roster"/> on the harness's configured roster and gives the harness a real
-    /// <see cref="StepPersonaResolver"/> over its own substitutes. Roster membership is checked on the
-    /// EXECUTOR side too, so a fixture that only stubs the persona store would see every assignment ignored.
+    /// Roster membership is checked on the EXECUTOR side too, so a fixture that only stubbed the persona store
+    /// would see every assignment ignored.
     /// </summary>
     private static void WithRoster(DurabilityHarness h, params Persona[] roster)
     {
@@ -1266,11 +1226,8 @@ public sealed class HeadlessTurnExecutorTests
     private static Persona RosterPersona(string name, Guid? preferredProviderId = null) =>
         new() { Id = Guid.NewGuid(), Name = name, SystemPrompt = "you are " + name, PreferredProviderId = preferredProviderId };
 
-    /// <summary>
-    /// A three-step plan whose first two steps are assigned to two DIFFERENT roster personas and whose third
-    /// is unassigned — the shape that catches both "the prompt never changes" and "the prompt changes and then
-    /// never changes back".
-    /// </summary>
+    // Two assigned steps then an unassigned one: the shape that catches both "the prompt never changes" and "the
+    // prompt changes and then never changes back".
     private static List<AgentStep> MixedSteps(Persona first, Persona second)
     {
         var steps = Steps(3);
@@ -1282,8 +1239,8 @@ public sealed class HeadlessTurnExecutorTests
     [Fact]
     public async Task AnAssignedStep_SendsThatPersonasSystemPrompt_AndTheRunPersonaSurvivesForTheNextStep()
     {
-        // REGRESSION for the §0.1 headline: the system message is per STEP, and the accumulating transcript's
-        // element 0 stays the RUN persona's, so an unassigned step later in the same run is unaffected.
+        // The system message is per STEP, and the accumulating transcript's element 0 stays the RUN persona's, so
+        // an unassigned step later in the same run is unaffected.
         using var h = new DurabilityHarness();
         var analyst = RosterPersona("Analyst");
         var critic = RosterPersona("Critic");
@@ -1309,8 +1266,8 @@ public sealed class HeadlessTurnExecutorTests
     [Fact]
     public async Task AnAssignedStep_RunsOnThatPersonasProvider()
     {
-        // REGRESSION: D5 — a roster persona was chosen BECAUSE of its provider, so its PreferredProviderId
-        // wins for its own step while every other step stays on the run's.
+        // A roster persona is chosen BECAUSE of its provider, so its PreferredProviderId wins for its own step
+        // while every other step stays on the run's.
         using var h = new DurabilityHarness();
         var fast = new AiProvider { Id = Guid.NewGuid(), Name = "fast", Endpoint = "https://y", ProviderType = AiProviderType.OpenAI };
         var analyst = RosterPersona("Analyst", preferredProviderId: fast.Id);
@@ -1332,8 +1289,7 @@ public sealed class HeadlessTurnExecutorTests
     [Fact]
     public async Task AnAssignedStep_StampsThatPersonaOnItsPersistedMessage()
     {
-        // REGRESSION: the attribution the panel and the transcript read. Row 0 is the goal, then one row per
-        // step in order.
+        // The attribution the panel and the transcript read. Row 0 is the goal, then one row per step in order.
         using var h = new DurabilityHarness();
         var analyst = RosterPersona("Analyst");
         var critic = RosterPersona("Critic");
@@ -1359,9 +1315,8 @@ public sealed class HeadlessTurnExecutorTests
     [Fact]
     public async Task NoResolver_LeavesAnAssignedStepOnTheRunPersona()
     {
-        // GUARD for the batch's off switch at this seam: the executor the container builds without a resolver
-        // (and, equivalently, any run whose roster is empty) behaves exactly as it did before Batch 07 even
-        // for a step that already carries an AssignedPersonaId — a persisted plan from a roster since cleared.
+        // The off switch: an executor built without a resolver — equivalently, a run whose roster is empty — keeps
+        // every step on the run persona even for a step that still carries an AssignedPersonaId.
         using var h = new DurabilityHarness();
         var analyst = RosterPersona("Analyst");
         h.Personas.GetPersonaAsync(analyst.Id).Returns(analyst);
@@ -1382,8 +1337,8 @@ public sealed class HeadlessTurnExecutorTests
     [Fact]
     public async Task TheDegradeTurnUsesTheRunPersona()
     {
-        // GUARD: the R10 single-turn fallback belongs to the RUN and to no step, so it must not pick up a
-        // persona at all — there is no step to read an assignment from, and the run persona is the answer.
+        // The single-turn fallback belongs to the RUN and to no step, so there is no assignment to read and the
+        // run persona is the answer.
         using var h = new DurabilityHarness();
         WithRoster(h, RosterPersona("Analyst"));
         var captured = CaptureTurns(h);
@@ -1421,9 +1376,8 @@ public sealed class HeadlessTurnExecutorTests
     [Fact]
     public async Task TransportOce_TokenNotCancelled_SettlesFailedNotCancelled()
     {
-        // The incident shape: a TaskCanceledException out of the transport (an HTTP-layer timeout) while
-        // the run token is still live. The step must FAIL — the run settles Failed after the replan
-        // degrades to Fallback — instead of reading as a user cancel and settling Cancelled.
+        // A TaskCanceledException out of the transport (an HTTP-layer timeout) while the run token is still live
+        // must FAIL the step, not read as a user cancel and settle Cancelled.
         using var h = new DurabilityHarness();
         StubThrowing(h, () => ThrowStream(new TaskCanceledException("The operation was canceled.")));
         var run = await h.NewRunAsync("the goal");

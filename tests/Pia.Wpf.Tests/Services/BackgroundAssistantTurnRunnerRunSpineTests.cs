@@ -11,11 +11,6 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Milestone 1.1 durable-spine wiring for <see cref="BackgroundAssistantTurnRunner"/> (§12.8):
-/// run bookkeeping is failure-isolated (a throwing <see cref="IAgentRunService"/> never fails the
-/// turn), and a headless turn persists a durable run with the right trigger provenance + ledger.
-/// </summary>
 public sealed class BackgroundAssistantTurnRunnerRunSpineTests
 {
     private static AiProvider Provider() => new()
@@ -83,8 +78,7 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
     [Fact]
     public async Task HeadlessTurn_NeverMarksSuggestAgentModeEligible()
     {
-        // R7/§14.3: the headless BackgroundAssistantTurnRunner must never inject suggest_agent_mode —
-        // it has no chip-render surface. PrepareTurn must be called with suggestAgentModeEligible:false only.
+        // The headless runner has no chip-render surface, so it must never offer suggest_agent_mode.
         var chats = Substitute.For<IAssistantChatService>();
         chats.SaveAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         var runs = new ThrowingAgentRunService(throwOnCreate: false);
@@ -103,8 +97,7 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
     [Fact]
     public async Task ThrowingRunService_OnHotPath_DoesNotFailTheTurn()
     {
-        // CreateAsync returns a run, but every subsequent call (AddUsage/SetRunMessageRange/Complete)
-        // throws — the isolation wrappers must swallow them.
+        // CreateAsync returns a run and every later bookkeeping call throws.
         var chats = Substitute.For<IAssistantChatService>();
         chats.SaveAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         var runs = new ThrowingAgentRunService(throwOnCreate: false);
@@ -131,10 +124,8 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
     [Fact]
     public async Task SingleTurnRun_HoldsTheComposerBracket_AcrossItsFullReplaceWrite()
     {
-        // A2's bracket premise for RunShape.SingleTurn — the hole A2 closes. This runner's terminal SaveAsync
-        // is a FULL REPLACE with no merge and no bound, so a user message that lands while it is in flight is
-        // deleted outright; the bracket must therefore be open across exactly that write, and gone once
-        // RunAsync returns (a stale entry is a permanently dead composer).
+        // The terminal SaveAsync is a full replace, so a user message landing while it is in flight is deleted
+        // outright; the bracket must span that write and be gone once RunAsync returns.
         var store = new ExecutingRunStore();
         var bracketOpenAtWrite = new List<bool>();
 
@@ -142,9 +133,8 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
         chats.SaveAsync(Arg.Do<SyncAssistantChat>(c => bracketOpenAtWrite.Add(store.IsExecuting(c.Id))), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
-        // The CreateAsync stub is LOAD-BEARING, not decoration: unconfigured, NSubstitute yields a null
-        // AgentRun, the runner proceeds run-less, no bracket is ever registered — and the assertions below
-        // would pass vacuously with the whole feature deleted.
+        // Load-bearing: unconfigured, NSubstitute yields a null run, no bracket is registered, and every
+        // assertion below passes vacuously.
         var runId = Guid.NewGuid();
         var runs = Substitute.For<IAgentRunService>();
         runs.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
@@ -161,8 +151,7 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
             new BackgroundTurnRequest { Prompt = "go", Provider = Provider() }, TestContext.Current.CancellationToken);
 
         Assert.True(result.Succeeded);
-        // Two writes: the FK stub, which precedes the run row and has nothing to lose (the chat is empty), and
-        // the terminal full replace, which is the one that must be bracketed.
+        // Two writes: the FK stub, which has nothing to lose, then the terminal full replace.
         Assert.Collection(bracketOpenAtWrite,
             stub => Assert.False(stub),
             terminal => Assert.True(terminal));
@@ -203,8 +192,7 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
             Assert.Equal(jobId, run.TriggerRef);
             Assert.Equal(deviceId, run.OwnerDeviceId);
 
-            // R3: FirstMessageId/LastMessageId must pin the actual persisted user/assistant message
-            // ids — not merely be non-null — so the run's transcript slice is provably correct.
+            // Pinned against the persisted ids, not merely non-null, so the transcript slice is provably right.
             var chat = await chats.GetAsync(result.ChatId, CancellationToken.None);
             Assert.NotNull(chat);
             var userMessage = Assert.Single(chat!.Messages, m => m.Role == "user");
@@ -225,9 +213,7 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
     [Fact]
     public async Task HeadlessTurn_AiThrowsMidStream_LeavesStubChat_AndMarksRunFailed()
     {
-        // R1 write-order: even when the AI stream throws mid-turn, the up-front stub AssistantChats
-        // row must remain so the Failed run's ChatId FK still resolves. Uses the real chat + run
-        // services against a temp SqliteContext (FK enforcement ON) to prove the persisted state.
+        // The up-front stub chat row must survive the throw, or the Failed run's ChatId FK cannot resolve.
         var tmpDir = Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tmpDir);
         using var ctx = new SqliteContext(Path.Combine(tmpDir, "history.db"));
@@ -243,7 +229,6 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
 
             Assert.False(result.Succeeded);
 
-            // The stub chat row persisted before the run was created still exists (FK target resolves).
             var stub = await chats.GetAsync(result.ChatId, CancellationToken.None);
             Assert.NotNull(stub);
 
@@ -260,8 +245,7 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
     [Fact]
     public async Task HeadlessTurn_AiThrowsOperationCanceled_RethrowsAndMarksRunCancelled()
     {
-        // §12.6 mapping: an OperationCanceledException mid-stream must both propagate to the caller
-        // (never swallowed as an ordinary failure) AND leave the durable run Cancelled, not Failed.
+        // A cancellation must propagate to the caller AND leave the durable run Cancelled, not Failed.
         var tmpDir = Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tmpDir);
         using var ctx = new SqliteContext(Path.Combine(tmpDir, "history.db"));

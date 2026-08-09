@@ -12,17 +12,8 @@ using Xunit;
 namespace Pia.Tests.Services;
 
 /// <summary>
-/// Batch 07 G8 — the persisted <see cref="AgentRunState.WaitingForChildren"/> state, end to end against a real
-/// SQLite <see cref="AgentRunService"/>.
-/// <para>
-/// The state exists because D7 gave child runs their own concurrency pool, so a parent AWAITS its children and
-/// no pre-existing state can say so: 0–2 are swept to Cancelled at every startup, 3 is the one state the
-/// resume CAS claims (parking there invites a second loop onto one run), 4 is reserved for Batch 08, and 5–7
-/// are terminal. Appending at 8 — ABOVE the terminal band — is what makes the sweep's <c>State &lt; 3</c>
-/// leave a waiting parent alone for free; the price is that every ordinal RANGE over this enum now lies, which
-/// is what <see cref="TheLedgerTerminalTest_MatchesTheOldRangeForEveryPreExistingState_AndExcludesWaitingForChildren"/>
-/// pins.
-/// </para>
+/// <see cref="AgentRunState.WaitingForChildren"/> is appended at 8, ABOVE the terminal band, so the startup
+/// sweep's <c>State &lt; 3</c> leaves a waiting parent alone — the price is that every ordinal RANGE now lies.
 /// </summary>
 public sealed class AgentRunServiceChildWaitTests : IDisposable
 {
@@ -40,16 +31,8 @@ public sealed class AgentRunServiceChildWaitTests : IDisposable
         _chats = new AssistantChatService(_ctx, _service);
     }
 
-    /// <summary>
-    /// T-ST-1, <b>GUARD</b>. The persisted ordinals, pinned by name. This enum is written to
-    /// <c>AgentRuns.State</c> as an <c>int</c>, so a renumber silently reinterprets every historical row — and
-    /// until this test there was no pin at all (R9).
-    /// <para>
-    /// The member-count assert is the non-vacuity half: without it, an INSERTED member (the one mistake that
-    /// actually shifts ordinals) would leave every named row below still correct for its own name while
-    /// everything after the insertion point moved, and this test would pass.
-    /// </para>
-    /// </summary>
+    // Persisted to AgentRuns.State as an int, so a renumber silently reinterprets every historical row. The
+    // member-count assert is the non-vacuity half: an INSERTED member leaves every named row below still correct.
     [Fact]
     public void AgentRunState_OrdinalsArePinned()
     {
@@ -68,18 +51,8 @@ public sealed class AgentRunServiceChildWaitTests : IDisposable
         Assert.Equal(all.Length, all.Select(s => (int)s).Distinct().Count());
     }
 
-    /// <summary>
-    /// T-ST-2, <b>REGRESSION</b>. Parking a parent writes state 8 and CLOSES the ledger work segment: the
-    /// parent is not working while its children are, and each child bills its own wall clock into its own
-    /// ledger (D15's tokens-only roll-up depends on this).
-    /// <para>
-    /// The open segment is back-dated 3 s first, on purpose. A freshly created run's segment is only
-    /// microseconds old, so without the back-date "the clock froze" and "the clock kept running" are the same
-    /// number and the test would pass with <c>MoveLedgerClock(CloseSegment)</c> deleted.
-    /// </para>
-    /// Neutralize: drop the <c>MoveLedgerClock(CloseSegment)</c> from <c>BeginChildWaitAsync</c> — the segment
-    /// stays open and both the null and the frozen-total asserts red.
-    /// </summary>
+    // A parked parent is not working while its children are, so the ledger work segment closes. The open segment
+    // is back-dated first, or "the clock froze" and "the clock kept running" would be the same number.
     [Fact]
     public async Task BeginChildWait_ParksTheParent_AndClosesItsLedgerSegment()
     {
@@ -92,7 +65,7 @@ public sealed class AgentRunServiceChildWaitTests : IDisposable
         var parked = await _service.GetAsync(parent.Id, ct);
         Assert.Equal(AgentRunState.WaitingForChildren, parked!.State);
         Assert.Null(parked.CompletedAt);        // a park is not a completion
-        Assert.Null(parked.ExtraJson);          // the child ROWS are the marker (§0.4) — no counter is written
+        Assert.Null(parked.ExtraJson);          // the child ROWS are the marker — no counter is written
 
         Assert.Null(SegmentStartedAt(parent.Id));
         var frozen = WallClockMs(parent.Id);
@@ -100,18 +73,8 @@ public sealed class AgentRunServiceChildWaitTests : IDisposable
         Assert.Equal(frozen, ActiveMs(parent.Id));
     }
 
-    /// <summary>
-    /// T-ST-3, <b>REGRESSION</b> — D14, and the whole point of this group. A process death while a parent is
-    /// mid-fan-out used to lose the wait outright. Now the startup reconcile cancels the children (statement 1)
-    /// and RE-PARKS the parent as <see cref="AgentRunState.WaitingForInput"/> (statement 2) carrying the same
-    /// <c>{paused:true,reason}</c> envelope <c>PauseAsync</c> writes — so the panel's existing Continue button
-    /// and the existing resume CAS bring it back with no new resume vocabulary.
-    /// <para>
-    /// The <c>TryBeginResumeAsync</c> leg is the one that matters: it proves the re-park landed in the ONE
-    /// state that CAS accepts. Asserting the JSON alone would pass on a re-park to any state at all.
-    /// </para>
-    /// Neutralize: delete statement 2 — the parent stays at 8 and the claim returns false.
-    /// </summary>
+    // The startup reconcile re-parks the parent as WaitingForInput carrying the same pause envelope PauseAsync
+    // writes, so the existing Continue button and resume CAS bring it back with no new vocabulary.
     [Fact]
     public async Task AWaitingParentSurvivesTheStartupSweep_AsWaitingForInput()
     {
@@ -142,21 +105,8 @@ public sealed class AgentRunServiceChildWaitTests : IDisposable
         Assert.Equal(AgentRunState.Running, (await _service.GetAsync(parent.Id, ct))!.State);
     }
 
-    /// <summary>
-    /// <b>REGRESSION</b> (Phase 3 fix pass). The crash path's half of the fan-out's Pending invariant, and the
-    /// other half of what "the parent survives a restart mid-fan-out" has to mean.
-    /// <para>
-    /// <c>TryFanOutAsync</c> sets every DISPATCHED sibling step to Running immediately, and the in-process
-    /// parked arm puts them back to Pending explicitly — because <c>NextPendingStepAsync</c> selects on
-    /// <c>Status=Pending</c> and a step left Running is invisible to the resume drain. No code runs on the
-    /// crash path, so statement 1b has to establish the same invariant. Without it a re-parked parent skips its
-    /// whole delegated group on Continue, runs the steps AFTER it out of order against inputs nothing produced,
-    /// and settles Completed while the panel still renders those steps as active.
-    /// </para>
-    /// The non-vacuity control is the DONE step: a statement that simply reset every step would also make the
-    /// Pending assertions pass. Neutralize: delete statement 1b → <c>NextPendingStepAsync</c> returns the
-    /// post-group step and the two delegated ones stay Running.
-    /// </summary>
+    // NextPendingStepAsync selects on Status=Pending, so a dispatched sibling left Running is invisible to the
+    // resume drain and a re-parked parent would skip its whole delegated group on Continue.
     [Fact]
     public async Task AnInterruptedFanOutsDelegatedStepsGoBackToPending_SoTheResumeCanSeeThem()
     {
@@ -190,19 +140,8 @@ public sealed class AgentRunServiceChildWaitTests : IDisposable
         Assert.Equal(groupA.Id, next!.Id);
     }
 
-    /// <summary>
-    /// The INTENDED startup-sweep verdict for every <see cref="AgentRunState"/>, stated as an independent
-    /// hand-written table — never derived from the predicate under test. 0–2 are crash-recoverable and are
-    /// settled to <see cref="AgentRunState.Cancelled"/> WITH a <c>CompletedAt</c> stamp; 3/4 are a deliberate
-    /// park and must survive restart resumable; 5–7 are already terminal and are not re-stamped; 8 is
-    /// reconciled to <see cref="AgentRunState.WaitingForInput"/> and is NOT a completion.
-    /// <para>
-    /// <c>StampsCompletedAt</c> is here because state alone cannot tell a swept
-    /// <see cref="AgentRunState.Cancelled"/> row from an untouched one — statement 1 writes
-    /// <c>State=Cancelled</c> to both, and only the stamp distinguishes "the sweep reached this row" from "the
-    /// sweep left it alone".
-    /// </para>
-    /// </summary>
+    // An INDEPENDENT hand-written table, never derived from the predicate under test. StampsCompletedAt is here
+    // because state alone cannot tell a swept Cancelled row from an untouched one.
     private static readonly IReadOnlyDictionary<AgentRunState, (AgentRunState After, bool StampsCompletedAt)>
         ExpectedSweepVerdict = new Dictionary<AgentRunState, (AgentRunState, bool)>
         {
@@ -227,31 +166,8 @@ public sealed class AgentRunServiceChildWaitTests : IDisposable
         return data;
     }
 
-    /// <summary>
-    /// T-ST-4, <b>GUARD</b> — Batch 08 §19 Q5. A row per state, so no threshold change can hide, and the rows
-    /// are now ENUMERATED FROM THE ENUM rather than hand-listed. <c>FailInterruptedRunsAsync</c>'s statement 1
-    /// is the one sanctioned ordinal RANGE left over this enum (<c>WHERE State &lt; WaitingForInput</c>); every
-    /// other predicate was converted to an explicit set (D7). Under append-only growth a tenth member at
-    /// ordinal 9 falls OUTSIDE that range silently — no compiler error, no failing row — even if it is
-    /// crash-recoverable and therefore exactly what the sweep exists for. An <c>[InlineData]</c> table cannot
-    /// catch that: the new member simply has no row.
-    /// <para>
-    /// Non-vacuity is the whole point of the shape and it is TWO assertions, because a theory that enumerates
-    /// an enum passes trivially otherwise. The verdict is looked up in
-    /// <see cref="ExpectedSweepVerdict"/> — an INDEPENDENT literal table, never <c>state &lt; WaitingForInput</c>
-    /// restated, which would only prove the production expression equals itself — so an undeclared member fails
-    /// on the lookup; and the count is asserted against <c>Enum.GetValues</c> so the mirror image (a stale entry
-    /// for a member that was removed, or a table left behind entirely) fails too.
-    /// </para>
-    /// <para>
-    /// The spec's alternative reading — "this could simply gain a non-vacuity count assertion" — is already
-    /// satisfied by <see cref="AgentRunState_OrdinalsArePinned"/>'s <c>Assert.Equal(9, all.Length)</c>, which is
-    /// why the count here is against <c>Enum.GetValues</c>'s length rather than a second literal 9: a copy of
-    /// that pin would add nothing, whereas this one binds the TABLE to the enum.
-    /// </para>
-    /// Runs are forced into each state through the blind <c>SetStateAsync</c> so the row under test is exactly
-    /// the state named and nothing else.
-    /// </summary>
+    // The rows are enumerated FROM the enum: the sweep's first statement is an ordinal RANGE, so a member appended
+    // above WaitingForInput falls outside it silently and an [InlineData] table would simply have no row for it.
     [Theory]
     [MemberData(nameof(EverySweepState))]
     public async Task TheSweepStillCancelsOnlyStatesBelowWaitingForInput(AgentRunState before)
@@ -276,16 +192,8 @@ public sealed class AgentRunServiceChildWaitTests : IDisposable
         Assert.Equal(verdict.StampsCompletedAt, swept.CompletedAt is not null);
     }
 
-    /// <summary>
-    /// T-ST-5, <b>REGRESSION</b>. Leaving the wait is a CAS, not a blind write. Two writers can want a
-    /// waiting parent — its own loop, and the cascade-cancel path — and <c>SetStateAsync</c> would happily
-    /// flip a Cancelled parent back to Running (R11), producing a run that is live in the panel and owned by
-    /// nobody.
-    /// <para>
-    /// Neutralize: make <c>TryEndChildWaitAsync</c> a blind UPDATE — the second half reds with a resurrected
-    /// Cancelled run.
-    /// </para>
-    /// </summary>
+    // Two writers can want a waiting parent — its own loop and the cascade-cancel path — and a blind write would
+    // flip a Cancelled parent back to Running: live in the panel and owned by nobody.
     [Fact]
     public async Task TryEndChildWait_IsACAS()
     {
@@ -309,12 +217,8 @@ public sealed class AgentRunServiceChildWaitTests : IDisposable
         Assert.Null(SegmentStartedAt(settled.Id));                // the loser never re-opens a clock
     }
 
-    /// <summary>
-    /// T-ST-6, <b>GUARD</b>. The CAS does NOT null <c>ExtraJson</c>, unlike <c>TryBeginResumeAsync</c>, which
-    /// clears the pause marker it is claiming. This transition is not a user "continue" and has no marker to
-    /// retire — and a run's <c>ExtraJson</c> is the only place a truncation reason or an error lives, so
-    /// copying the resume claim's <c>ExtraJson=NULL</c> here would erase it.
-    /// </summary>
+    // Unlike the resume claim, this transition has no pause marker to retire — and ExtraJson is the only place a
+    // truncation reason or an error lives, so nulling it here would erase that.
     [Fact]
     public async Task TryEndChildWait_DoesNotClearExtraJson()
     {
@@ -333,16 +237,8 @@ public sealed class AgentRunServiceChildWaitTests : IDisposable
         Assert.Equal(before, (await _service.GetAsync(run.Id, ct))!.ExtraJson);
     }
 
-    /// <summary>
-    /// T-ST-7, <b>REGRESSION</b>. D15's tokens-only rule at the ledger. A parent rolls up each settled child's
-    /// tokens through the ordinary run-level <c>AddUsageAsync</c> while it is still parked, and that write must
-    /// not re-open the work segment: the children's wall clock belongs to the children, and re-opening here
-    /// would bill the rest of the wait to the parent as worked time.
-    /// <para>
-    /// Neutralize: make the roll-up open a segment (or let <c>ApplyLedgerClock</c> treat 8 as non-parked) —
-    /// <c>segmentStartedAt</c> comes back non-null and the frozen total moves.
-    /// </para>
-    /// </summary>
+    // The children's wall clock belongs to the children, so a token roll-up onto a still-parked parent must not
+    // re-open its work segment and bill the rest of the wait to it as worked time.
     [Fact]
     public async Task AddUsage_OnAWaitingParent_AccruesTokensWithoutReopeningTheClock()
     {
@@ -361,19 +257,8 @@ public sealed class AgentRunServiceChildWaitTests : IDisposable
         Assert.Equal(AgentRunState.WaitingForChildren, (await _service.GetAsync(parent.Id, ct))!.State);
     }
 
-    /// <summary>
-    /// T-LED-1, <b>REGRESSION</b> — D8c, the one production range comparison the appended ordinal broke.
-    /// <c>ApplyLedgerClock</c>'s <c>terminal</c> test used to be <c>state &gt;= Completed</c>, and
-    /// <c>WaitingForChildren = 8 &gt;= 5</c>, so a parked parent would have been read as TERMINAL: its open
-    /// segment dropped and its <c>wallClockMs</c> frozen for the rest of its life.
-    /// <para>
-    /// Driven behaviourally rather than by reflecting the private predicate: a 3 s-old open segment plus a
-    /// usage accrual answers "did this state freeze the clock?" for every member. Rows 0–7 assert exactly what
-    /// the OLD range said (computed from it, in the assert, so the parity claim is in the code and not only in
-    /// the name); row 8 asserts the opposite, and that disagreement is what makes the theory non-vacuous.
-    /// </para>
-    /// Neutralize: restore <c>state &gt;= AgentRunState.Completed</c> — the WaitingForChildren row reds.
-    /// </summary>
+    // ApplyLedgerClock's terminal test used to be state >= Completed, and WaitingForChildren = 8, so a parked
+    // parent read as TERMINAL: its open segment dropped and its wallClockMs frozen for the rest of its life.
     [Theory]
     [InlineData(AgentRunState.Planning)]
     [InlineData(AgentRunState.Running)]
@@ -394,11 +279,10 @@ public sealed class AgentRunServiceChildWaitTests : IDisposable
 
         await _service.AddUsageAsync(run.Id, null, new UsageDetails { InputTokenCount = 1, OutputTokenCount = 1 }, ct);
 
-        // What the enum's ordinal band says, and what "can never work again" actually says. They agree for
-        // every member that existed before Batch 07, and disagree for exactly the appended one.
+        // What the enum's ordinal band says, and what "can never work again" actually says.
         var oldRangeSaidTerminal = state >= AgentRunState.Completed;
         var reallyTerminal = state is AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled;
-        // They agree for every member that existed before Batch 07, and for EXACTLY ONE they disagree.
+        // They agree for every pre-existing member, and for EXACTLY ONE they disagree.
         Assert.Equal(state != AgentRunState.WaitingForChildren, oldRangeSaidTerminal == reallyTerminal);
 
         if (reallyTerminal)
@@ -413,12 +297,8 @@ public sealed class AgentRunServiceChildWaitTests : IDisposable
         }
     }
 
-    /// <summary>
-    /// T-ST-8, <b>REGRESSION</b>. <c>GetChildRunsAsync</c> is how a parent counts what it is still waiting on
-    /// and how the panel lists its children — the reason no "waiting on N children" counter is persisted
-    /// anywhere (§0.4). Ordered by <c>CreatedAt</c>, scoped to the parent, and deliberately WITHOUT the steps.
-    /// <para>Neutralize: drop the <c>WHERE ParentRunId</c> — the unrelated run appears and the count reds.</para>
-    /// </summary>
+    // How a parent counts what it is still waiting on, which is why no "waiting on N children" counter is
+    // persisted anywhere. Ordered by CreatedAt, scoped to the parent, deliberately WITHOUT the steps.
     [Fact]
     public async Task GetChildRuns_ReturnsOnlyTheChildren_InCreationOrder()
     {

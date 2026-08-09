@@ -16,12 +16,6 @@ using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Xunit;
 
-/// <summary>
-/// Behavioral coverage for AssistantChatSyncService: that startup pulls apply
-/// remote deletes, that 404s from the chats endpoint invalidate the capability
-/// cache, and that E2EE encryption wraps the wire body so the server never sees
-/// plaintext content fields.
-/// </summary>
 public class AssistantChatSyncServiceTests
 {
     private const string ServerUrl = "https://test.local";

@@ -11,11 +11,7 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// The plan → act → failure-only-replan → complete loop (§13.2/§13.12). Uses fake planner/executor
-/// + a real SQLite <see cref="AgentRunService"/> so the R2 re-query, R5 truncation, replan bound,
-/// and R13 cancellation are exercised against the real persisted step store.
-/// </summary>
+// Fake planner/executor over a real SQLite AgentRunService, so the persisted step store is the real one.
 public sealed class AgentRunOrchestratorTests
 {
     private static Persona Persona() => new() { Name = "Pia", SystemPrompt = "sys" };
@@ -27,7 +23,7 @@ public sealed class AgentRunOrchestratorTests
     private static StepTurnResult Fail(string err) => new(false, false, err, string.Empty, null, Guid.NewGuid(), Guid.NewGuid());
     private static StepTurnResult Cancel() => new(false, true, "cancelled", string.Empty, null, Guid.NewGuid(), Guid.NewGuid());
 
-    /// <summary>A step that called <c>request_user_input</c>: shaped like the real executors return it — no text or message ids, since the step did not finish.</summary>
+    // Empty ids because a step that asked never finished, exactly as the real executors return it.
     private static StepTurnResult Ask(string question) =>
         new(false, false, null, string.Empty, null, Guid.Empty, Guid.Empty, UserInputQuestion: question);
 
@@ -45,7 +41,6 @@ public sealed class AgentRunOrchestratorTests
         public Queue<PlanResult> Replans { get; } = new();
         public int ReplanCalls { get; private set; }
 
-        /// <summary>Snapshot of <c>ctx.CompletedSteps</c> per replan — what the replan judge got to see (E2).</summary>
         public List<IReadOnlyList<CompletedStepSummary>> SeenCompletedSteps { get; } = new();
 
         public Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
@@ -62,7 +57,6 @@ public sealed class AgentRunOrchestratorTests
     private sealed class RecordingExecutor : IAgentTurnExecutor
     {
         private readonly Func<AgentStep, StepTurnResult> _result;
-        /// <summary>What the R10 single-turn fallback returns; null = a plain successful turn.</summary>
         public StepTurnResult? FallbackResult { get; set; }
         public List<string> Executed { get; } = new();
         public bool BeginCalled { get; private set; }
@@ -72,11 +66,7 @@ public sealed class AgentRunOrchestratorTests
         public bool FallbackCalled { get; private set; }
         public bool PausedCalled { get; private set; }
 
-        /// <summary>
-        /// What this executor publishes onto <c>ctx.WorkspaceRoot</c> in <c>BeginRunAsync</c>, exactly as both
-        /// real executors do (Batch 06 B3). Null (the default) is the no-isolation shape every pre-Batch-06
-        /// fact in this file runs in, and it is what keeps them from promoting anything.
-        /// </summary>
+        // Published onto ctx in BeginRunAsync like the real executors; null means no isolation, so no promotion.
         public string? WorkspaceRoot { get; set; }
 
         public RecordingExecutor(Func<AgentStep, StepTurnResult> result) => _result = result;
@@ -108,17 +98,12 @@ public sealed class AgentRunOrchestratorTests
 
         public Task OnPausedAsync(AgentRun run, RunContext ctx, CancellationToken ct)
         {
-            PausedCalled = true; // non-terminal pause hook — NOT EndRunAsync (guardrail 5)
+            PausedCalled = true;
             return Task.CompletedTask;
         }
     }
 
-    /// <summary>
-    /// Executor whose <see cref="ExecuteStepAsync"/> models a real blocking step-turn: it cancels the
-    /// SESSION-level source the orchestrator's run CTS is linked from (as <c>ChatSession.Cancel()</c>
-    /// would), then honors the linked token by blocking on it. Without the R13 linkage the delay would
-    /// never observe the cancel and the run would hang — so a green test proves the link propagates.
-    /// </summary>
+    // Cancels the session-level source and then blocks on the linked token: without the linkage the run hangs.
     private sealed class CancellingExecutor : IAgentTurnExecutor
     {
         private readonly CancellationTokenSource _sessionCts;
@@ -133,8 +118,8 @@ public sealed class AgentRunOrchestratorTests
         public async Task<StepTurnResult> ExecuteStepAsync(AgentRun run, AgentStep step, RunContext ctx, CancellationToken ct)
         {
             Executed.Add(step.Intent ?? step.Title);
-            _sessionCts.Cancel(); // ChatSession.Cancel() fires mid-step
-            await Task.Delay(Timeout.Infinite, ct); // linked run CTS must cancel this in-flight step
+            _sessionCts.Cancel();
+            await Task.Delay(Timeout.Infinite, ct);
             return Ok(); // unreachable
         }
 
@@ -150,11 +135,7 @@ public sealed class AgentRunOrchestratorTests
         public Task OnPausedAsync(AgentRun run, RunContext ctx, CancellationToken ct) => Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Real run store with individually POISONABLE bookkeeping seams: the run-level usage accrual
-    /// (plan/replan/verify) and the run read the resume context seed uses. Everything else delegates, so
-    /// the run really executes — guardrail 1: bookkeeping is never on the critical path.
-    /// </summary>
+    // Real store with two poisonable seams — the usage accrual and the read the resume seed uses; the rest delegates.
     private sealed class FaultyRunService : IAgentRunService
     {
         private readonly IAgentRunService _inner;
@@ -163,7 +144,6 @@ public sealed class AgentRunOrchestratorTests
         public bool FailAddUsage { get; set; }
         public bool FailGet { get; set; }
 
-        /// <summary>Shared call log, appended with <c>"complete"</c> (Batch 06 B8's ordering fact).</summary>
         public List<string>? Order { get; set; }
 
         public Task AddUsageAsync(Guid runId, Guid? stepId, UsageDetails usage, CancellationToken ct = default)
@@ -220,9 +200,7 @@ public sealed class AgentRunOrchestratorTests
         public readonly AssistantChatService Chats;
         private readonly string _dir;
 
-        /// <summary>A real directory an isolated run's workspace root can point at (Batch 06 G4). It only has
-        /// to EXIST and be non-null — promotion itself is a fake here; what is under test is the loop's
-        /// ordering, not the copy.</summary>
+        // Only has to exist and be non-null: promotion is faked here, so nothing is really copied.
         public string RunsBase { get; }
 
         public Harness()
@@ -256,8 +234,6 @@ public sealed class AgentRunOrchestratorTests
 
         public AgentRunOrchestrator BuildOrchestrator(
             IAgentPlanner planner, IAgentVerifier? verifier = null,
-            // Batch 06 G4, trailing and defaulted like the ctor param it feeds: omitted ⇒ no promotion, i.e.
-            // the pre-Batch-06 loop, which is the shape every existing fact in this file asserts.
             IRunWorkspaceService? workspaces = null, IAgentRunService? runService = null) =>
             new(runService ?? Runs, planner, verifier ?? new FakeVerifier(),
                 NullLogger<AgentRunOrchestrator>.Instance, workspaces);
@@ -298,16 +274,16 @@ public sealed class AgentRunOrchestratorTests
         var run = await h.NewRunAsync("goal");
         var planner = new FakePlanner();
         planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2"), ("C", "s3")), false));
-        planner.Replans.Enqueue(new PlanResult(MakeSteps(("B2", "s2prime")), false)); // drops s3, adds s2prime
+        planner.Replans.Enqueue(new PlanResult(MakeSteps(("B2", "s2prime")), false));
         var exec = new RecordingExecutor(step => step.Intent == "s2" ? Fail("boom") : Ok());
 
         await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
 
-        Assert.Contains("s2prime", exec.Executed); // revised step ran (re-query, R2)
-        Assert.DoesNotContain("s3", exec.Executed); // dropped step never ran
+        Assert.Contains("s2prime", exec.Executed);
+        Assert.DoesNotContain("s3", exec.Executed);
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.Completed, final!.State);
-        Assert.Contains(final.Plan, s => s.Title == "A" && s.Status == AgentStepStatus.Done); // Done step preserved
+        Assert.Contains(final.Plan, s => s.Title == "A" && s.Status == AgentStepStatus.Done);
     }
 
     [Fact]
@@ -343,14 +319,13 @@ public sealed class AgentRunOrchestratorTests
         await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
 
         Assert.Equal(1, planner.ReplanCalls);
-        // R10 replan-degrade: fails with the original step error — it does NOT run a single-turn fallback
-        // (that fallback is only for the INITIAL plan degrade, not a mid-run replan degrade).
+        // The single-turn fallback is only for an INITIAL plan degrade, never a mid-run replan degrade.
         Assert.False(exec.FallbackCalled);
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.Failed, final!.State);
-        Assert.Contains(final.Plan, s => s.Title == "A" && s.Status == AgentStepStatus.Done); // Done step preserved
+        Assert.Contains(final.Plan, s => s.Title == "A" && s.Status == AgentStepStatus.Done);
         Assert.True(exec.EndCalled);
-        Assert.True(exec.EndFailed);        // EndRunAsync told the run failed (§13.5.2 / D-fix)
+        Assert.True(exec.EndFailed);
         Assert.False(exec.EndCancelled);
     }
 
@@ -366,16 +341,14 @@ public sealed class AgentRunOrchestratorTests
 
         await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), profile, TestContext.Current.CancellationToken);
 
-        Assert.Equal(2, exec.Executed.Count); // dispatched at most MaxSteps
+        Assert.Equal(2, exec.Executed.Count);
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
-        // Budget now PARKS the run (WaitingForInput), not Completed+truncated.
         Assert.Equal(AgentRunState.WaitingForInput, final!.State);
         Assert.Contains("paused", final.ExtraJson ?? string.Empty);
         Assert.Contains("step-cap", final.ExtraJson ?? string.Empty);
         Assert.DoesNotContain("truncated", final.ExtraJson ?? string.Empty);
-        Assert.Null(final.CompletedAt); // not terminal
-        // Guardrail 5: a pause must NOT raise a terminal EndRun (no ChatState.Completed / TurnCompleted),
-        // but MUST call the non-terminal OnPaused release hook so a Live session is unwedged (Idle).
+        Assert.Null(final.CompletedAt);
+        // A pause must not raise a terminal EndRun, but must call OnPaused so a live session is unwedged.
         Assert.False(exec.EndCalled);
         Assert.True(exec.PausedCalled);
     }
@@ -389,21 +362,18 @@ public sealed class AgentRunOrchestratorTests
         var planner = new FakePlanner();
         planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2"), ("C", "s3")), false));
 
-        // First run: budget = 2 steps → s1, s2 Done, then pause before s3.
         var profile = new RunProfile(MaxSteps: 2, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
         var exec1 = new RecordingExecutor(_ => Ok());
         await h.BuildOrchestrator(planner).RunAsync(run, exec1, Persona(), Provider(), profile, ct);
         Assert.Equal(new[] { "s1", "s2" }, exec1.Executed);
         Assert.Equal(AgentRunState.WaitingForInput, (await h.Runs.GetAsync(run.Id, ct))!.State);
 
-        // Resume: CAS-claim, then re-invoke on the EXISTING run with resume:true + a fresh budget. The
-        // persisted Pending remainder (s3) drains; the Done steps (s1, s2) are NOT re-executed.
         Assert.True(await h.Runs.TryBeginResumeAsync(run.Id, ct));
         var fresh = new RunProfile(MaxSteps: 24, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
         var exec2 = new RecordingExecutor(_ => Ok());
         await h.BuildOrchestrator(planner).RunAsync(run, exec2, Persona(), Provider(), fresh, ct, resume: true);
 
-        Assert.Equal(new[] { "s3" }, exec2.Executed); // only the remainder ran (no re-plan, no re-run)
+        Assert.Equal(new[] { "s3" }, exec2.Executed);
         var final = await h.Runs.GetAsync(run.Id, ct);
         Assert.Equal(AgentRunState.Completed, final!.State);
         Assert.All(final.Plan, s => Assert.Equal(AgentStepStatus.Done, s.Status));
@@ -419,20 +389,20 @@ public sealed class AgentRunOrchestratorTests
         planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2"), ("C", "s3")), false));
 
         var profile = new RunProfile(MaxSteps: 2, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
-        var exec1 = new RecordingExecutor(_ => OkUsage(10, 5)); // 2 steps → 20/10 accrued, then pause
+        var exec1 = new RecordingExecutor(_ => OkUsage(10, 5));
         await h.BuildOrchestrator(planner).RunAsync(run, exec1, Persona(), Provider(), profile, ct);
 
         Assert.True(await h.Runs.TryBeginResumeAsync(run.Id, ct));
         var fresh = new RunProfile(MaxSteps: 24, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
-        var exec2 = new RecordingExecutor(_ => OkUsage(10, 5)); // 1 more step → +10/5 (ledger is persisted, NOT reset)
+        var exec2 = new RecordingExecutor(_ => OkUsage(10, 5));
         await h.BuildOrchestrator(planner).RunAsync(run, exec2, Persona(), Provider(), fresh, ct, resume: true);
 
         var final = await h.Runs.GetAsync(run.Id, ct);
         Assert.Equal(AgentRunState.Completed, final!.State);
         using var doc = JsonDocument.Parse(final.LedgerJson!);
         var root = doc.RootElement;
-        Assert.Equal(30, root.GetProperty("inputTokens").GetInt64());  // 20 pre-pause + 10 resume
-        Assert.Equal(15, root.GetProperty("outputTokens").GetInt64()); // 10 pre-pause + 5 resume
+        Assert.Equal(30, root.GetProperty("inputTokens").GetInt64());
+        Assert.Equal(15, root.GetProperty("outputTokens").GetInt64());
     }
 
     [Fact]
@@ -444,17 +414,14 @@ public sealed class AgentRunOrchestratorTests
         var planner = new FakePlanner();
         planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2"), ("C", "s3")), false));
 
-        // First run: 2 steps produce a transcript slice, then pause. The pre-pause first message is pinned.
         var profile = new RunProfile(MaxSteps: 2, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
         await h.BuildOrchestrator(planner).RunAsync(run, new RecordingExecutor(_ => Ok()), Persona(), Provider(), profile, ct);
         var parked = await h.Runs.GetAsync(run.Id, ct);
         Assert.Equal(AgentRunState.WaitingForInput, parked!.State);
         var pinnedFirst = parked.FirstMessageId;
-        Assert.NotNull(pinnedFirst); // pre-pause slice pinned
+        Assert.NotNull(pinnedFirst);
 
-        // Resume drains s3 (producing its OWN message ids). The terminal PinRange must EXTEND the range, not
-        // overwrite FirstMessageId with the resume-only first id — the orchestrator seeds runFirst from the
-        // (freshly-fetched) run on resume (R3). Pass the fetched run, exactly as HeadlessRunLauncher does.
+        // The resume must be handed the freshly fetched run: the terminal pin seeds its first id from there.
         Assert.True(await h.Runs.TryBeginResumeAsync(run.Id, ct));
         var resumeRun = await h.Runs.GetAsync(run.Id, ct);
         var fresh = new RunProfile(MaxSteps: 24, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
@@ -462,7 +429,7 @@ public sealed class AgentRunOrchestratorTests
 
         var final = await h.Runs.GetAsync(run.Id, ct);
         Assert.Equal(AgentRunState.Completed, final!.State);
-        Assert.Equal(pinnedFirst, final.FirstMessageId); // first message UNCHANGED across pause → resume → Completed
+        Assert.Equal(pinnedFirst, final.FirstMessageId);
     }
 
     [Fact]
@@ -474,16 +441,13 @@ public sealed class AgentRunOrchestratorTests
         var planner = new FakePlanner();
         planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2"), ("C", "s3")), false));
 
-        // First run pauses after 2 steps; the executed slice is pinned by PauseAsync's PinRange.
         var profile = new RunProfile(MaxSteps: 2, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
-        var exec1 = new RecordingExecutor(_ => Ok()); // Ok() carries non-empty message ids → a real slice
+        var exec1 = new RecordingExecutor(_ => Ok()); // Ok() carries non-empty message ids, so there is a real slice
         await h.BuildOrchestrator(planner).RunAsync(run, exec1, Persona(), Provider(), profile, ct);
         var parked = await h.Runs.GetAsync(run.Id, ct);
         Assert.Equal(AgentRunState.WaitingForInput, parked!.State);
-        Assert.NotNull(parked.FirstMessageId); // slice pinned at pause
+        Assert.NotNull(parked.FirstMessageId);
 
-        // Resume, but a cancel lands on the remaining step. The run settles Cancelled and the pre-pause
-        // slice stays pinned (no double-run, no null range).
         Assert.True(await h.Runs.TryBeginResumeAsync(run.Id, ct));
         using var sessionCts = new CancellationTokenSource();
         var exec2 = new CancellingExecutor(sessionCts);
@@ -493,7 +457,7 @@ public sealed class AgentRunOrchestratorTests
         var final = await h.Runs.GetAsync(run.Id, ct);
         Assert.Equal(AgentRunState.Cancelled, final!.State);
         Assert.True(exec2.EndCancelled);
-        Assert.NotNull(final.FirstMessageId); // slice still pinned
+        Assert.NotNull(final.FirstMessageId);
         Assert.NotEqual(Guid.Empty, final.FirstMessageId!.Value);
     }
 
@@ -508,7 +472,7 @@ public sealed class AgentRunOrchestratorTests
 
         await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
 
-        Assert.Equal(new[] { "s1", "s2" }, exec.Executed); // s3 never dispatched
+        Assert.Equal(new[] { "s1", "s2" }, exec.Executed);
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.Cancelled, final!.State);
         Assert.True(exec.EndCalled);
@@ -521,13 +485,13 @@ public sealed class AgentRunOrchestratorTests
         using var h = new Harness();
         var run = await h.NewRunAsync("goal");
         var planner = new FakePlanner();
-        planner.Plans.Enqueue(PlanResult.Fallback); // R10 degrade
+        planner.Plans.Enqueue(PlanResult.Fallback);
         var exec = new RecordingExecutor(_ => Ok());
 
         await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
 
         Assert.True(exec.FallbackCalled);
-        Assert.Empty(exec.Executed); // no step recorded — not a degenerate 1-step Planned run
+        Assert.Empty(exec.Executed);
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.Completed, final!.State);
         Assert.Empty(final.Plan);
@@ -538,8 +502,7 @@ public sealed class AgentRunOrchestratorTests
     {
         using var h = new Harness();
         var run = await h.NewRunAsync("goal");
-        // A zero wall-clock budget trips WallClockExceeded on the very first loop iteration, before
-        // any step is dispatched — the OTHER §16 R5 branch from the step-cap test above.
+        // A zero wall-clock budget trips on the very first loop iteration, before any step is dispatched.
         var profile = new RunProfile(MaxSteps: 24, MaxReplans: 2, WallClock: TimeSpan.Zero);
         var planner = new FakePlanner();
         planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2"), ("C", "s3")), false));
@@ -547,14 +510,14 @@ public sealed class AgentRunOrchestratorTests
 
         await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), profile, TestContext.Current.CancellationToken);
 
-        Assert.Empty(exec.Executed); // wall-clock exhausted before dispatching any step
+        Assert.Empty(exec.Executed);
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
-        Assert.Equal(AgentRunState.WaitingForInput, final!.State); // parked, never a silent clean Completed
+        Assert.Equal(AgentRunState.WaitingForInput, final!.State);
         Assert.Contains("paused", final.ExtraJson ?? string.Empty);
         Assert.Contains("wall-clock", final.ExtraJson ?? string.Empty);
         Assert.Null(final.CompletedAt);
-        Assert.False(exec.EndCalled); // guardrail 5: pause is not terminal
-        Assert.True(exec.PausedCalled); // non-terminal release hook fired (Live session → Idle)
+        Assert.False(exec.EndCalled);
+        Assert.True(exec.PausedCalled);
     }
 
     [Fact]
@@ -565,13 +528,13 @@ public sealed class AgentRunOrchestratorTests
         var planner = new FakePlanner();
         planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2")), false));
 
-        // sessionCts stands in for ChatSession.Cts; RunAsync links its run CTS from this token (R13).
+        // sessionCts stands in for ChatSession.Cts; the run's own CTS is linked from this token.
         using var sessionCts = new CancellationTokenSource();
         var exec = new CancellingExecutor(sessionCts);
 
         await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, sessionCts.Token);
 
-        Assert.Equal(new[] { "s1" }, exec.Executed); // cancel landed on the in-flight step; s2 never dispatched
+        Assert.Equal(new[] { "s1" }, exec.Executed);
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.Cancelled, final!.State);
         Assert.True(exec.EndCalled);
@@ -585,7 +548,7 @@ public sealed class AgentRunOrchestratorTests
         var run = await h.NewRunAsync("goal");
         var planner = new FakePlanner();
         planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2")), false));
-        var exec = new RecordingExecutor(_ => OkUsage(10, 5)); // each step carries usage (R16 ledger)
+        var exec = new RecordingExecutor(_ => OkUsage(10, 5));
 
         await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
 
@@ -595,12 +558,12 @@ public sealed class AgentRunOrchestratorTests
 
         using var doc = JsonDocument.Parse(final.LedgerJson!);
         var root = doc.RootElement;
-        Assert.Equal(20, root.GetProperty("inputTokens").GetInt64());  // 2 × 10
-        Assert.Equal(10, root.GetProperty("outputTokens").GetInt64()); // 2 × 5
-        Assert.Equal(2, root.GetProperty("perStep").GetArrayLength());  // per-step ledger entries
+        Assert.Equal(20, root.GetProperty("inputTokens").GetInt64());
+        Assert.Equal(10, root.GetProperty("outputTokens").GetInt64());
+        Assert.Equal(2, root.GetProperty("perStep").GetArrayLength());
     }
 
-    // ---- Verify/critic pass (§13.x) ----
+    // ---- Verify/critic pass ----
 
     [Fact]
     public async Task Run_VerifyPasses_Completed()
@@ -630,8 +593,8 @@ public sealed class AgentRunOrchestratorTests
         planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
         planner.Replans.Enqueue(new PlanResult(MakeSteps(("B", "s2")), false));
         var verifier = new FakeVerifier();
-        verifier.Verdicts.Enqueue(new VerdictResult(false, "not yet", new[] { "x" }, null)); // fail → replan
-        verifier.Verdicts.Enqueue(VerdictResult.Accept);                                     // re-drain → pass
+        verifier.Verdicts.Enqueue(new VerdictResult(false, "not yet", new[] { "x" }, null));
+        verifier.Verdicts.Enqueue(VerdictResult.Accept);
         var exec = new RecordingExecutor(_ => Ok());
 
         await h.BuildOrchestrator(planner, verifier).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
@@ -654,15 +617,15 @@ public sealed class AgentRunOrchestratorTests
         planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
         planner.Replans.Enqueue(new PlanResult(MakeSteps(("B", "s2")), false));
         var verifier = new FakeVerifier();
-        verifier.Verdicts.Enqueue(new VerdictResult(false, "nope", new[] { "x" }, null)); // fail → replan (1)
-        verifier.Verdicts.Enqueue(new VerdictResult(false, "still nope", new[] { "x" }, null)); // fail → exhausted
+        verifier.Verdicts.Enqueue(new VerdictResult(false, "nope", new[] { "x" }, null));
+        verifier.Verdicts.Enqueue(new VerdictResult(false, "still nope", new[] { "x" }, null));
         var exec = new RecordingExecutor(_ => Ok());
 
         await h.BuildOrchestrator(planner, verifier).RunAsync(run, exec, Persona(), Provider(), profile, TestContext.Current.CancellationToken);
 
         Assert.Equal(1, planner.ReplanCalls);
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
-        Assert.Equal(AgentRunState.Completed, final!.State); // NOT Failed — steps genuinely ran
+        Assert.Equal(AgentRunState.Completed, final!.State);
         Assert.Contains("truncated", final.ExtraJson ?? string.Empty);
         Assert.Contains("unverified", final.ExtraJson ?? string.Empty);
     }
@@ -683,7 +646,7 @@ public sealed class AgentRunOrchestratorTests
 
         Assert.Equal(1, planner.ReplanCalls);
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
-        Assert.Equal(AgentRunState.Completed, final!.State); // NOT Failed
+        Assert.Equal(AgentRunState.Completed, final!.State);
         Assert.Contains("unverified", final.ExtraJson ?? string.Empty);
     }
 
@@ -725,12 +688,12 @@ public sealed class AgentRunOrchestratorTests
 
         using var doc = JsonDocument.Parse(final.LedgerJson!);
         var root = doc.RootElement;
-        Assert.Equal(7, root.GetProperty("inputTokens").GetInt64());   // verify run-level accrual
+        Assert.Equal(7, root.GetProperty("inputTokens").GetInt64());
         Assert.Equal(3, root.GetProperty("outputTokens").GetInt64());
-        Assert.Equal(0, root.GetProperty("perStep").GetArrayLength()); // verify accrues run-level (stepId null)
+        Assert.Equal(0, root.GetProperty("perStep").GetArrayLength()); // verify accrues run-level, with a null step id
     }
 
-    // ---- I1: plan/replan spend reaches the run ledger (it used to be discarded in the planner) ----
+    // ---- plan/replan spend reaches the run ledger ----
 
     private static UsageDetails Usage(long input, long output) =>
         new() { InputTokenCount = input, OutputTokenCount = output };
@@ -749,8 +712,8 @@ public sealed class AgentRunOrchestratorTests
         using var h = new Harness();
         var run = await h.NewRunAsync("goal");
         var planner = new FakePlanner();
-        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false, Usage(40, 12))); // the plan turn's rounds
-        var exec = new RecordingExecutor(_ => Ok()); // null step usage → no per-step entry
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false, Usage(40, 12)));
+        var exec = new RecordingExecutor(_ => Ok()); // null step usage, so no per-step entry
 
         await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
 
@@ -759,7 +722,7 @@ public sealed class AgentRunOrchestratorTests
         var (input, output, perStep) = Ledger(final);
         Assert.Equal(40, input);
         Assert.Equal(12, output);
-        Assert.Equal(0, perStep); // planning is run-level spend (stepId: null), never a step entry
+        Assert.Equal(0, perStep); // planning is run-level spend, never a step entry
     }
 
     [Fact]
@@ -768,7 +731,6 @@ public sealed class AgentRunOrchestratorTests
         using var h = new Harness();
         var run = await h.NewRunAsync("goal");
         var planner = new FakePlanner();
-        // R10 degrade: no usable plan, but both planning attempts (incl. the firm retry) were paid for.
         planner.Plans.Enqueue(PlanResult.Fallback with { Usage = Usage(80, 24) });
         var exec = new RecordingExecutor(_ => Ok());
 
@@ -778,15 +740,14 @@ public sealed class AgentRunOrchestratorTests
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.Completed, final!.State);
         var (input, output, _) = Ledger(final);
-        Assert.Equal(80, input);  // the degrade path must not drop the planner's spend
+        Assert.Equal(80, input);
         Assert.Equal(24, output);
     }
 
     [Fact]
     public async Task Run_SingleTurnFallbackUsage_AccruesToRunLedger()
     {
-        // The fallback turn owns no step row, so nothing else would ever bill it: without a run-level
-        // accrual the entire R10 degrade path reports zero tokens.
+        // The fallback turn owns no step row, so only a run-level accrual can bill it at all.
         using var h = new Harness();
         var run = await h.NewRunAsync("goal");
         var planner = new FakePlanner();
@@ -803,7 +764,7 @@ public sealed class AgentRunOrchestratorTests
         var (input, output, perStep) = Ledger(final);
         Assert.Equal(95, input);  // planner degrade 80 + fallback turn 15
         Assert.Equal(30, output); // 24 + 6
-        Assert.Equal(0, perStep); // no step row exists for the fallback turn
+        Assert.Equal(0, perStep);
     }
 
     [Fact]
@@ -833,7 +794,7 @@ public sealed class AgentRunOrchestratorTests
         var run = await h.NewRunAsync("goal");
         var planner = new FakePlanner();
         planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1fail")), false, Usage(40, 12)));
-        planner.Replans.Enqueue(PlanResult.Fallback with { Usage = Usage(30, 9) }); // replan degraded → run fails
+        planner.Replans.Enqueue(PlanResult.Fallback with { Usage = Usage(30, 9) });
         var exec = new RecordingExecutor(_ => Fail("boom"));
 
         await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
@@ -841,7 +802,7 @@ public sealed class AgentRunOrchestratorTests
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.Failed, final!.State);
         var (input, output, _) = Ledger(final);
-        Assert.Equal(70, input);  // a failed run still bills the planning it consumed
+        Assert.Equal(70, input);
         Assert.Equal(21, output);
     }
 
@@ -854,8 +815,8 @@ public sealed class AgentRunOrchestratorTests
         planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false, Usage(40, 12)));
         planner.Replans.Enqueue(new PlanResult(MakeSteps(("B", "s2")), false, Usage(30, 9)));
         var verifier = new FakeVerifier();
-        verifier.Verdicts.Enqueue(new VerdictResult(false, "not yet", new[] { "x" }, Usage(7, 3))); // fail → replan
-        verifier.Verdicts.Enqueue(VerdictResult.Accept with { Usage = Usage(7, 3) });               // re-drain → pass
+        verifier.Verdicts.Enqueue(new VerdictResult(false, "not yet", new[] { "x" }, Usage(7, 3)));
+        verifier.Verdicts.Enqueue(VerdictResult.Accept with { Usage = Usage(7, 3) });
         var exec = new RecordingExecutor(_ => OkUsage(10, 5));
 
         await h.BuildOrchestrator(planner, verifier).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
@@ -865,14 +826,13 @@ public sealed class AgentRunOrchestratorTests
         var (input, output, perStep) = Ledger(final);
         Assert.Equal(40 + 30 + 7 + 7 + 10 + 10, input);  // plan + verify-fail replan + 2 verifies + 2 steps
         Assert.Equal(12 + 9 + 3 + 3 + 5 + 5, output);
-        Assert.Equal(2, perStep); // only the two step turns own per-step entries
+        Assert.Equal(2, perStep);
     }
 
     [Fact]
     public async Task Run_PlannerUsageBookkeepingFaults_DoesNotFailTheRun()
     {
-        // Guardrail 1: the plan-usage accrual is bookkeeping. A ledger write fault must never turn an
-        // otherwise-clean run into a failure — the run still completes.
+        // The accrual is bookkeeping: a ledger write fault must never fail an otherwise-clean run.
         using var h = new Harness();
         var run = await h.NewRunAsync("goal");
         var planner = new FakePlanner();
@@ -891,7 +851,6 @@ public sealed class AgentRunOrchestratorTests
 
     // ---- the orchestrator's DECLINE branch ----
 
-    /// <summary>Given <c>PlanResult.Decline</c>, the loop parks <c>needs-goal</c> with no steps, never calls <c>RunSingleTurnFallbackAsync</c>, and still bills the plan turn.</summary>
     [Fact]
     public async Task Run_PlannerDeclinesTheGoal_ParksNeedsGoal_NoSteps_NoFallback_AndBillsThePlanTurn()
     {
@@ -903,22 +862,22 @@ public sealed class AgentRunOrchestratorTests
 
         await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
 
-        Assert.False(exec.FallbackCalled); // the no-plan degrade is the worst branch here, never taken for a decline
+        Assert.False(exec.FallbackCalled);
         Assert.Empty(exec.Executed);
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.WaitingForInput, final!.State);
         Assert.Contains("needs-goal", final.ExtraJson ?? string.Empty);
         Assert.Empty(final.Plan);
-        Assert.Null(final.CompletedAt);   // a park is not terminal…
-        Assert.False(exec.EndCalled);     // …so the terminal bracket does not fire…
-        Assert.True(exec.PausedCalled);   // …and the non-terminal release hook does (guardrail 5)
+        Assert.Null(final.CompletedAt);
+        Assert.False(exec.EndCalled);
+        Assert.True(exec.PausedCalled);
         var (input, output, perStep) = Ledger(final);
-        Assert.Equal(31, input);           // the branch sits AFTER the usage accrual, not in front of it
+        Assert.Equal(31, input);           // the decline branch sits after the usage accrual, not in front of it
         Assert.Equal(7, output);
         Assert.Equal(0, perStep);
     }
 
-    // ---- E2: a resumed run's critic/replan must see the PRE-PAUSE work, not only the post-resume slice ----
+    // ---- a resumed run's critic/replan must see the pre-pause work ----
 
     private static List<AgentStep> MakeStepsWithArtifacts(params (string Title, string Intent, string? Artifact)[] steps)
     {
@@ -944,15 +903,13 @@ public sealed class AgentRunOrchestratorTests
         planner.Plans.Enqueue(new PlanResult(MakeStepsWithArtifacts(
             ("A", "s1", "one.md"), ("B", "s2", "two.md"), ("C", "s3", "three.md")), false));
 
-        // First run: budget = 2 steps → s1, s2 Done, then park before s3 (verify never runs at a pause).
         var profile = new RunProfile(MaxSteps: 2, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
         var firstVerifier = new FakeVerifier();
         await h.BuildOrchestrator(planner, firstVerifier).RunAsync(run, new RecordingExecutor(_ => Ok()), Persona(), Provider(), profile, ct);
         Assert.Equal(AgentRunState.WaitingForInput, (await h.Runs.GetAsync(run.Id, ct))!.State);
         Assert.Empty(firstVerifier.SeenCompletedSteps);
 
-        // Resume with the SAME 2-step budget: the seeded pre-pause steps must not be billed against it,
-        // otherwise the run would re-park instantly instead of draining s3.
+        // The resume reuses the same 2-step budget: if the seeded steps were billed against it, it would re-park instantly.
         Assert.True(await h.Runs.TryBeginResumeAsync(run.Id, ct));
         var verifier = new FakeVerifier();
         var exec2 = new RecordingExecutor(_ => Ok("post-resume text"));
@@ -961,15 +918,13 @@ public sealed class AgentRunOrchestratorTests
         Assert.Equal(new[] { "s3" }, exec2.Executed);
         Assert.Equal(AgentRunState.Completed, (await h.Runs.GetAsync(run.Id, ct))!.State);
 
-        // The critic judged all three steps: the two seeded ones (marked as an earlier segment, carrying
-        // their declared artifacts, with no recoverable result text) plus the post-resume one.
         var seen = Assert.Single(verifier.SeenCompletedSteps);
         Assert.Equal(new[] { 0, 1, 2 }, seen.Select(s => s.Ordinal).ToArray());
         Assert.Equal(new[] { "A", "B", "C" }, seen.Select(s => s.Title).ToArray());
         Assert.Equal(new[] { "one.md", "two.md", "three.md" }, seen.Select(s => s.ExpectedArtifact).ToArray());
         Assert.Equal(new[] { true, true, false }, seen.Select(s => s.FromEarlierSegment).ToArray());
         Assert.All(seen.Take(2), s => Assert.True(s.Succeeded));
-        Assert.All(seen.Take(2), s => Assert.Equal(string.Empty, s.VisibleText)); // not recoverable (yet)
+        Assert.All(seen.Take(2), s => Assert.Equal(string.Empty, s.VisibleText)); // a seeded step's text is not recoverable
         Assert.Equal("post-resume text", seen[2].VisibleText);
     }
 
@@ -987,8 +942,7 @@ public sealed class AgentRunOrchestratorTests
         await h.BuildOrchestrator(planner).RunAsync(run, new RecordingExecutor(_ => Ok()), Persona(), Provider(), profile, ct);
         Assert.Equal(AgentRunState.WaitingForInput, (await h.Runs.GetAsync(run.Id, ct))!.State);
 
-        // Resume: s3 fails → replan. The replan judge must be told about s1/s2 (which it cannot see in
-        // this process any more) so it does not re-plan work that already happened.
+        // The replan judge must be told about s1/s2, which it cannot see in this process any more.
         Assert.True(await h.Runs.TryBeginResumeAsync(run.Id, ct));
         var fresh = new RunProfile(MaxSteps: 24, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
         var exec = new RecordingExecutor(step => step.Intent == "s3fail" ? Fail("boom") : Ok());
@@ -1002,8 +956,7 @@ public sealed class AgentRunOrchestratorTests
     [Fact]
     public async Task Run_Resume_SeedReadFaults_StillDrainsAndCompletes()
     {
-        // Guardrail 1: the seed is bookkeeping. A failing read degrades to the old partial picture — it
-        // must never fail the resume.
+        // The seed is bookkeeping: a failing read degrades to the partial picture, never fails the resume.
         using var h = new Harness();
         var ct = TestContext.Current.CancellationToken;
         var run = await h.NewRunAsync("goal");
@@ -1025,13 +978,12 @@ public sealed class AgentRunOrchestratorTests
         Assert.Equal(new[] { "s3" }, exec2.Executed);
         Assert.Equal(AgentRunState.Completed, (await h.Runs.GetAsync(run.Id, ct))!.State);
         var seen = Assert.Single(verifier.SeenCompletedSteps);
-        Assert.Single(seen); // degraded to the post-resume slice only — but the run still finished cleanly
+        Assert.Single(seen); // degraded to the post-resume slice only
     }
 
     [Fact]
     public async Task Run_FreshRun_SeedsNothing_NoEarlierSegmentMarkers()
     {
-        // A non-resume run must be untouched by E2 (and must not pay for the extra read).
         using var h = new Harness();
         var run = await h.NewRunAsync("goal");
         var planner = new FakePlanner();
@@ -1053,10 +1005,7 @@ public sealed class AgentRunOrchestratorTests
         var planner = new FakePlanner();
         planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
 
-        // The step produces a transcript slice (Ok() carries non-empty message Ids); a user cancel then
-        // lands DURING verify. Guardrail 1: SafeVerify rethrows a genuine run cancel (never degrade-to-
-        // accept), so the run settles Cancelled — not a spurious Completed. R3: the executed-so-far slice
-        // is still pinned even though the cancel surfaced after the clean drain.
+        // A genuine run cancel is rethrown out of verify rather than degrading to accept, so nothing settles Completed.
         using var sessionCts = new CancellationTokenSource();
         var verifier = new FakeVerifier { CancelSessionOnVerify = sessionCts };
         var exec = new RecordingExecutor(_ => Ok());
@@ -1065,25 +1014,16 @@ public sealed class AgentRunOrchestratorTests
 
         Assert.Equal(1, verifier.VerifyCalls);
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
-        Assert.Equal(AgentRunState.Cancelled, final!.State); // cancel during verify propagates — NOT accepted
+        Assert.Equal(AgentRunState.Cancelled, final!.State);
         Assert.True(exec.EndCalled);
         Assert.True(exec.EndCancelled);
-        Assert.NotNull(final.FirstMessageId);                 // R3: transcript slice pinned on cancel-during-verify
+        Assert.NotNull(final.FirstMessageId);
         Assert.NotEqual(Guid.Empty, final.FirstMessageId!.Value);
     }
 
-    // ---- Batch 06 G4: promotion on the terminal path ----
+    // ---- promotion on the terminal path ----
 
-    /// <summary>
-    /// T-G4-8, <b>REGRESSION</b>. Batch 06 B8's ordering, asserted as an ORDER and not as three independent
-    /// "it happened" facts: verify runs against the run root, THEN the workspace is promoted, THEN the run is
-    /// marked Completed. Promoting before CompleteAsync is what dissolves the "Completed but its deliverables
-    /// are still only in a workspace the sweep may delete" window without needing a promotion-aware sweep.
-    /// <para>
-    /// The orchestrator is built WITH the service on purpose: its ctor param is trailing-optional, so no
-    /// existing fact in this file supplies one and there is no inherited coverage to lean on.
-    /// </para>
-    /// </summary>
+    // Promotion has to land before CompleteAsync, or a Completed run's files live only in a sweepable workspace.
     [Fact]
     public async Task CleanRun_Promotes_AfterVerify_AndBeforeCompleteAsync()
     {
@@ -1109,23 +1049,14 @@ public sealed class AgentRunOrchestratorTests
         Assert.Equal(AgentRunState.Completed, final!.State);
     }
 
-    /// <summary>
-    /// T-G4-9, <b>REGRESSION</b>. The R10 single-turn fallback arm is a SECOND terminal path: it returns early
-    /// and never reaches the terminal-settle block, and it settles Complete BEFORE EndRun — the opposite order
-    /// to the main path. Omitting promotion there is this group's most likely silent hole, and it is the
-    /// well-trodden path: every launcher-harness test plans to <c>PlanResult.Fallback</c>.
-    /// <para>
-    /// Its discrimination property was measured, not assumed: with promotion present on the MAIN arm only,
-    /// this fact fails while <see cref="CleanRun_Promotes_AfterVerify_AndBeforeCompleteAsync"/> stays green.
-    /// </para>
-    /// </summary>
+    // The fallback arm is a second terminal path: it returns early and settles Complete before EndRun.
     [Fact]
     public async Task TheSingleTurnFallbackArm_AlsoPromotes()
     {
         using var h = new Harness();
         var run = await h.NewRunAsync("goal");
         var order = new List<string>();
-        var planner = new FakePlanner(); // empty queue then PlanResult.Fallback then the R10 degrade arm
+        var planner = new FakePlanner(); // an empty queue plans PlanResult.Fallback, taking the degrade arm
         var runs = new FaultyRunService(h.Runs) { Order = order };
         var workspaces = new FakeRunWorkspaceService(h.RunsBase)
         {
@@ -1141,19 +1072,7 @@ public sealed class AgentRunOrchestratorTests
         Assert.Equal(new[] { "promote", "teardown", "complete" }, order); // no verify on this arm at all
     }
 
-    /// <summary>
-    /// <b>REGRESSION</b> (Phase 3 fix pass, Batch 06 Lens A finding 5 / Lens B finding 3). A promotion that
-    /// could not move everything reports <c>RetainWorkspace</c>, and the terminal path must OBEY it: the
-    /// workspace holds the only copy of what was left behind — a copy-mode conflict whose resolution kept the
-    /// user's newer file, or a worktree the run-branch commit could not fully take. Tearing it down there is
-    /// silent, irreversible loss on a run that reports success.
-    /// <para>
-    /// The non-vacuity control is <see cref="CleanRun_Promotes_AfterVerify_AndBeforeCompleteAsync"/> above: the
-    /// identical arm with <c>RetainWorkspace</c> unset DOES tear down, so this is about the flag and not about
-    /// a teardown that never happens. Neutralization: drop the <c>RetainWorkspace</c> early return from
-    /// <c>SafePromote</c> → red.
-    /// </para>
-    /// </summary>
+    // RetainWorkspace means the workspace still holds the only copy of what promotion could not move.
     [Fact]
     public async Task ACleanRunWhosePromotionLeftWorkBehind_KeepsItsWorkspace()
     {
@@ -1174,16 +1093,13 @@ public sealed class AgentRunOrchestratorTests
         await h.BuildOrchestrator(planner, verifier: null, workspaces, runs)
             .RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
 
-        Assert.Equal(new[] { "promote", "complete" }, order); // promoted, completed — and NOT torn down
+        Assert.Equal(new[] { "promote", "complete" }, order); // no teardown between them
         Assert.Empty(workspaces.TornDown);
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
-        Assert.Equal(AgentRunState.Completed, final!.State); // non-vacuity: this is the CLEAN terminal path
+        Assert.Equal(AgentRunState.Completed, final!.State); // non-vacuity: this is the clean terminal path
     }
 
-    /// <summary>
-    /// T-G4-10, <b>REGRESSION</b>. Plan D3's "Completed auto, ELSE OFFER": a cancelled or failed run is never
-    /// promoted automatically and its workspace is never torn down, so the panel still has something to offer.
-    /// </summary>
+    // A cancelled or failed run keeps its workspace, so the panel still has something to offer.
     [Theory]
     [InlineData("cancel")]
     [InlineData("step-fail")]
@@ -1205,8 +1121,7 @@ public sealed class AgentRunOrchestratorTests
             WorkspaceRoot = h.RunsBase,
             FallbackResult = how == "fallback-fail" ? Fail("planner degraded and the turn failed") : null,
         };
-        // A step failure would otherwise burn a replan and end unverified-Completed; zero replans makes the
-        // failure terminal on the step-fail row.
+        // Zero replans keeps the failure terminal: otherwise the step-fail row would replan into unverified-Completed.
         var profile = new RunProfile(MaxSteps: 8, MaxReplans: 0, WallClock: TimeSpan.FromMinutes(5));
 
         await h.BuildOrchestrator(planner, verifier: null, workspaces)
@@ -1218,10 +1133,6 @@ public sealed class AgentRunOrchestratorTests
         Assert.Empty(workspaces.TornDown);
     }
 
-    /// <summary>
-    /// T-G4-11, <b>GUARD</b>. Failure-isolated bookkeeping: a promotion that throws does not fail an
-    /// otherwise-successful run. The files stay in the workspace and the publish affordance offers them.
-    /// </summary>
     [Fact]
     public async Task APromotionFault_DoesNotFailTheRun()
     {
@@ -1241,11 +1152,6 @@ public sealed class AgentRunOrchestratorTests
         Assert.Empty(workspaces.TornDown);    // and the workspace kept, so the work is not lost
     }
 
-    /// <summary>
-    /// T-G4-12, <b>GUARD</b>. The pin that the trailing-optional dependency changed nothing: with no workspace
-    /// service — and separately, with a service but no workspace root, which is the no-isolation degrade — the
-    /// loop settles exactly as it did before Batch 06 and nothing is promoted.
-    /// </summary>
     [Fact]
     public async Task WithNoWorkspaceService_TheLoopIsByteIdenticalToToday()
     {
@@ -1262,13 +1168,12 @@ public sealed class AgentRunOrchestratorTests
         Assert.Equal(AgentRunState.Completed, settled!.State);
         Assert.All(settled.Plan, s => Assert.Equal(AgentStepStatus.Done, s.Status));
 
-        // Second half: a service IS injected, but the run has no workspace root (provisioning degraded to no
-        // isolation). Promotion must not be attempted against a root that does not exist.
+        // Second half: a service is injected but the run has no workspace root, so there is nothing to promote.
         var noRoot = await h.NewRunAsync("goal");
         var planner2 = new FakePlanner();
         planner2.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
         var workspaces = new FakeRunWorkspaceService(h.RunsBase);
-        var unisolated = new RecordingExecutor(_ => Ok()); // WorkspaceRoot stays null
+        var unisolated = new RecordingExecutor(_ => Ok());
 
         await h.BuildOrchestrator(planner2, verifier: null, workspaces).RunAsync(
             noRoot, unisolated, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
@@ -1278,9 +1183,9 @@ public sealed class AgentRunOrchestratorTests
         Assert.Empty(workspaces.Promoted);
     }
 
-    // ---- the MID-PLAN ASK park, at the loop level (end-to-end facts live in MidPlanAskTests) ----
+    // ---- the mid-plan ask park, at the loop level ----
 
-    /// <summary>A partially executed plan where step B asks: the loop parks <c>needs-input</c>, keeps A as <c>Done</c>, and returns B to <c>Pending</c> so a resume re-runs it — recording B as <c>Failed</c> instead would lose it, since <c>NextPendingStepAsync</c> and <c>KeepDoneAsync</c> don't see failed steps. The replanner is never called.</summary>
+    // The asking step must go back to Pending, not Failed: NextPendingStepAsync and KeepDoneAsync never see failed steps.
     [Fact]
     public async Task AStepThatAsks_ParksNeedsInput_KeepsDoneSteps_AndGivesTheAskingStepBack()
     {
@@ -1296,17 +1201,17 @@ public sealed class AgentRunOrchestratorTests
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.WaitingForInput, final!.State);
         Assert.Contains("needs-input", final.ExtraJson ?? string.Empty, StringComparison.Ordinal);
-        Assert.Null(final.CompletedAt); // a park is NOT terminal (guardrail 5)
+        Assert.Null(final.CompletedAt);
 
         Assert.Equal(AgentStepStatus.Done, final.Plan.Single(s => s.Title == "A").Status);
         Assert.Equal(AgentStepStatus.Pending, final.Plan.Single(s => s.Title == "B").Status);
 
         Assert.Equal(0, planner.ReplanCalls); // an ask is not a failure
-        Assert.True(exec.PausedCalled);       // the NON-terminal release hook…
-        Assert.False(exec.EndCalled);         // …and never the terminal one
+        Assert.True(exec.PausedCalled);
+        Assert.False(exec.EndCalled);
     }
 
-    /// <summary>A step that asks AND declares <c>emit_step_result{succeeded:false}</c> in the same exchange still parks, never taking the step-failure replan branch — the ask rides its own member rather than the outcome bool, same reason <c>ApprovalRequiredTool</c> stays out of <c>Succeeded</c>.</summary>
+    // The ask rides its own member rather than the outcome bool, so a declared failure alongside it changes nothing.
     [Fact]
     public async Task AStepThatAsksAndAlsoDeclaresFailure_StillParks_AndNeverReplans()
     {
@@ -1314,7 +1219,7 @@ public sealed class AgentRunOrchestratorTests
         var run = await h.NewRunAsync("goal");
         var planner = new FakePlanner();
         planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
-        planner.Replans.Enqueue(new PlanResult(MakeSteps(("R", "revised")), false)); // armed: silence is a CHOICE
+        planner.Replans.Enqueue(new PlanResult(MakeSteps(("R", "revised")), false)); // armed, so a replan would be visible
         var exec = new RecordingExecutor(_ => Ask("which cluster?") with
         {
             Succeeded = false,
@@ -1331,7 +1236,7 @@ public sealed class AgentRunOrchestratorTests
         Assert.Equal(AgentStepStatus.Pending, final.Plan.Single().Status);
     }
 
-    /// <summary>A step that both parks for a tool approval and asks a question answers the approval first — that is the call which actually stopped the exchange, and re-asking costs nothing on the resumed step.</summary>
+    // The approval is the call that actually stopped the exchange, and re-asking costs nothing on the resumed step.
     [Fact]
     public async Task WhenAStepBothParksForApprovalAndAsks_TheApprovalWins()
     {
@@ -1350,7 +1255,7 @@ public sealed class AgentRunOrchestratorTests
         Assert.DoesNotContain("needs-input", final.ExtraJson ?? string.Empty, StringComparison.Ordinal);
     }
 
-    /// <summary>Tokens an abandoned step spent are billed run-level (<c>stepId: null</c>) — a step that will re-run must not carry a per-step ledger entry for the attempt that did not finish.</summary>
+    // A step that will re-run must not carry a per-step ledger entry for the attempt that did not finish.
     [Fact]
     public async Task AnAskingStepsTokensAreBilledRunLevel()
     {
@@ -1370,6 +1275,6 @@ public sealed class AgentRunOrchestratorTests
         var (input, output, perStep) = Ledger(final!);
         Assert.Equal(30, input);
         Assert.Equal(12, output);
-        Assert.Equal(0, perStep); // …and NO per-step entry for the attempt that will run again
+        Assert.Equal(0, perStep);
     }
 }

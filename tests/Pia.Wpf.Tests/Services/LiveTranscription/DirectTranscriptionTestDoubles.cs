@@ -3,12 +3,7 @@ using Pia.Services.LiveTranscription;
 
 namespace Pia.Tests.Services.LiveTranscription;
 
-/// <summary>
-/// Fakes shared by <c>DirectTranscriptionServiceTests</c>. Mirrors the shape of
-/// <c>MeetingAttendeeServiceStateTests</c>' private <c>FakeAudioSource</c> (that file belongs to another
-/// module and is off-limits to edit), duplicated here rather than shared so this module's tests stay
-/// self-contained and do not create a cross-module test dependency.
-/// </summary>
+/// <summary>Duplicated from the meeting module's own fake rather than shared, so neither module's tests depend on the other's.</summary>
 internal sealed class FakeAudioSource : IAudioCaptureSource
 {
     private readonly List<string>? _order;
@@ -54,9 +49,7 @@ internal sealed class FakeAudioSource : IAudioCaptureSource
     }
 }
 
-/// <summary>A no-op <see cref="IAsyncDisposable"/> that records its dispose (and, optionally, one extra
-/// action — used to model an engine's trailing-segment write during <c>DisposeAsync</c>) into a shared
-/// ordering list.</summary>
+/// <summary>The optional extra action models an engine's trailing-segment write during <c>DisposeAsync</c>.</summary>
 internal sealed class RecordingDisposable : IAsyncDisposable
 {
     private readonly List<string>? _order;
@@ -80,10 +73,7 @@ internal sealed class RecordingDisposable : IAsyncDisposable
     }
 }
 
-/// <summary>Scripted <see cref="ITranscriptionEngine"/> — never actually used by
-/// <c>DirectTranscriptionServiceTests</c> (the engine-service factory seam bypasses real transcription
-/// entirely), but required to satisfy the create-transcription seam's return shape. Optionally records
-/// its own dispose into a shared ordering list (for the "diarizer disposed last" invariant).</summary>
+/// <summary>Never actually transcribes; it exists only to satisfy the create-transcription seam's return shape.</summary>
 internal sealed class FakeTranscriptionEngine : ITranscriptionEngine
 {
     private readonly List<string>? _order;
@@ -108,10 +98,8 @@ internal sealed class FakeTranscriptionEngine : ITranscriptionEngine
     }
 }
 
-/// <summary>Scripted <see cref="ISpeakerIdentificationService"/> double. <see cref="SpeakersReassigned"/>
-/// has empty add/remove accessors (dodges CS0067) and can never fire — mirroring the real manual
-/// implementation's documented safety property. Optionally records its own dispose into a shared
-/// ordering list (for the "diarizer disposed last" invariant).</summary>
+/// <summary><see cref="SpeakersReassigned"/> has empty add/remove accessors to dodge CS0067 and can never fire,
+/// mirroring the real implementation.</summary>
 internal sealed class FakeSpeakerIdentificationService : ISpeakerIdentificationService
 {
     private readonly List<string>? _order;

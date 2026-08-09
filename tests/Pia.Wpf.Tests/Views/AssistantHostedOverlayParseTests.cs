@@ -5,18 +5,8 @@ using Xunit;
 
 namespace Pia.Tests.Views;
 
-/// <summary>
-/// The two overlays <c>AssistantView.xaml</c> hosts on a bound <c>DataContext</c> — <c>VoiceModeOverlay</c>
-/// (<c>:574</c>, <c>{Binding VoiceMode}</c>) and <c>MeetingAttendeeOverlay</c> (<c>:582</c>,
-/// <c>{Binding MeetingAttendee}</c>). Neither had ever been parsed.
-/// <para>
-/// These are the ordinary Batch 14 shape — a root reflected off the hosting ViewModel's property — so they
-/// carry the hole D1 named: reflection sees a RENAME (<c>nameof</c> stops compiling) and a RETYPE (the
-/// <c>Assert.Equal</c>), but not a RE-HOST. The second fact below closes it the way
-/// <see cref="ViewHostDataContextTests"/> does, by reading the declared <c>DataContext</c> path out of a
-/// parsed <c>AssistantView</c> — the same tree that file already builds for the run panel.
-/// </para>
-/// </summary>
+/// <summary>Reflecting an overlay's root off the hosting ViewModel's property catches a RENAME and a RETYPE but not a
+/// RE-HOST; the last fact closes that by reading the declared <c>DataContext</c> path off a parsed <c>AssistantView</c>.</summary>
 [Collection("WpfApplicationStatic")]
 public class AssistantHostedOverlayParseTests
 {
@@ -24,20 +14,10 @@ public class AssistantHostedOverlayParseTests
     private const int MinimumVoiceModePaths = 6;
     private const int MinimumMeetingAttendeePaths = 13;
 
-    /// <summary>
-    /// Floor, not a count: this project cannot execute a markup-compile pass (macOS), so this is a manual
-    /// lower bound counted from the non-templated bindings in DirectTranscriptionOverlay.xaml (header,
-    /// disclaimer panel, footer) — deliberately conservative since <see cref="BindingPathWalker"/> only
-    /// walks the logical tree, not DataTemplate content (the consent-chip and bubble templates' bindings
-    /// do not count toward this floor).
-    /// </summary>
+    /// <summary>Floor, not a count: <see cref="BindingPathWalker"/> walks only the logical tree, so DataTemplate bindings do not count toward it.</summary>
     private const int MinimumDirectTranscriptionPaths = 15;
 
-    /// <summary>
-    /// The root type for an overlay, read off the hosting ViewModel's property. <c>VoiceMode</c> is declared
-    /// <c>VoiceModeViewModel?</c>; there is nothing to unwrap, because the annotation is metadata and
-    /// <c>PropertyType</c> is the reference type itself.
-    /// </summary>
+    /// <summary>A <c>?</c> annotation needs no unwrapping: it is metadata, and <c>PropertyType</c> is the reference type itself.</summary>
     private static Type RootOf(string property) =>
         typeof(AssistantViewModel).GetProperty(property, BindingFlags.Public | BindingFlags.Instance)!
             .PropertyType;
@@ -72,9 +52,8 @@ public class AssistantHostedOverlayParseTests
     [Fact]
     public void AllOverlays_AreHostedOnTheDataContextPathTheirWalksReflectTheirRootsOff()
     {
-        // Batch 14 review D1, applied to two more sites: repoint AssistantView.xaml:574 from
-        // {Binding VoiceMode} to {Binding MeetingAttendee} and every path in VoiceModeOverlay is dead at
-        // runtime while both facts above stay green, because neither of them opens the host markup.
+        // Repoint AssistantView.xaml's {Binding VoiceMode} at {Binding MeetingAttendee} and every path in
+        // VoiceModeOverlay is dead at runtime while the facts above stay green: neither opens the host markup.
         var observed = WpfStaHost.Run(() =>
         {
             var assistant = new Pia.Views.AssistantView();

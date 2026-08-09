@@ -35,10 +35,8 @@ public class ChatSessionManagerTests
     private readonly IWindowManagerService _windowManager = Substitute.For<IWindowManagerService>();
     private readonly IAgentRunResumeService _resumeService = Substitute.For<IAgentRunResumeService>();
 
-    /// <summary>
-    /// The REAL A2 launch-bracket index: these tests assert through it, not around it. Fully qualified
-    /// because this file deliberately has no `using Pia.Services;` (see AgentRunOrchestrator below).
-    /// </summary>
+    // The REAL launch-bracket index: these tests assert through it, not around it. Fully qualified because this
+    // file deliberately has no `using Pia.Services;`.
     private readonly Pia.Services.ExecutingRunStore _executingRuns = new();
 
     public ChatSessionManagerTests()
@@ -50,22 +48,8 @@ public class ChatSessionManagerTests
     }
 
     /// <summary>
-    /// Runs every posted callback INLINE, on the posting thread, in order.
-    /// <para>
-    /// A bare <see cref="SynchronizationContext"/> forwards <c>Post</c> to the ThreadPool, which guarantees
-    /// NO ordering — so two <c>RunChanged</c> events raised in quick succession could have their handlers
-    /// execute out of order, and a test that raises "terminal, then Running" would observe the Running
-    /// recompute first and settle on the wrong final state. That produced a real intermittent failure in
-    /// <c>RunChanged_OwnRunTerminal_RetiresOwnership</c> (~1 run in 6 under full-suite load), which is a
-    /// FIXTURE defect, not a product one: in production these events are separated by real work, and the
-    /// handler is invoked on the WPF dispatcher, which is ordered.
-    /// </para>
-    /// <para>
-    /// Inline is the faithful choice rather than merely the convenient one — it is exactly what the WPF
-    /// dispatcher does when a post originates on the UI thread, which is the case these tests model. It also
-    /// makes the handler's effects observable immediately after the raise, so a test never has to sleep to
-    /// find out whether bookkeeping ran.
-    /// </para>
+    /// Runs every posted callback INLINE and in order: a bare context forwards <c>Post</c> to the ThreadPool, which
+    /// guarantees no ordering, so two <c>RunChanged</c> events could have their handlers execute out of order.
     /// </summary>
     private sealed class InlineSynchronizationContext : SynchronizationContext
     {
@@ -95,14 +79,8 @@ public class ChatSessionManagerTests
     }
 
     /// <summary>
-    /// The same manager, plus Batch 06 D4's two moving parts: the workspace provisioner it must call for an
-    /// interactive <c>Planned</c> run, and a planner that captures the <c>RunContext</c> the orchestrator
-    /// builds — the only place the root the manager provisioned becomes observable from out here.
-    /// <para>
-    /// Deliberately a SECOND builder rather than two defaulted parameters on <see cref="CreateSut"/>: that one
-    /// passes the ctor positionally and omits every trailing optional, and keeping it that way is what proves
-    /// the new ctor parameter is source-compatible with the hand-constructed production call sites.
-    /// </para>
+    /// A SECOND builder rather than defaulted parameters on <see cref="CreateSut"/>, because that one passes the
+    /// ctor positionally with every trailing optional omitted — which is what proves source compatibility.
     /// </summary>
     private ChatSessionManager CreateIsolatingSut(
         Pia.Services.Interfaces.IRunWorkspaceService workspaces,
@@ -220,14 +198,8 @@ public class ChatSessionManagerTests
         return captured!;
     }
 
-    /// <summary>
-    /// The envelope's SECOND authority channel (04 D10/D11). The name of the next fact promises "parking
-    /// cannot widen authority" but its body only inspects the grant LIST, and a resume honours the policy too —
-    /// so with the setting on, a parked run resumes with the Files-covering preset even though its grant list is
-    /// empty. That is D10 working as designed (the launch itself carried the policy), but it has to be stated,
-    /// and it is the only assertion that fails if <c>ChatSessionManager</c>'s <c>SerializeGrantEnvelope(...,
-    /// policy)</c> argument is dropped — it is optional and defaulted, so dropping it compiles.
-    /// </summary>
+    // The envelope's SECOND authority channel: a resume honours the policy as well as the grant list, and this is
+    // the only assertion that fails if the optional, defaulted policy argument is dropped from the serializer.
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -240,7 +212,7 @@ public class ChatSessionManagerTests
 
         if (!settingOn)
         {
-            // Off ⇒ NO policy member at all, so the document stays byte-identical to a pre-Batch-04 one.
+            // Off ⇒ NO policy member at all, so the document stays byte-identical to one written before policies.
             Assert.Null(policy);
             return;
         }
@@ -260,14 +232,8 @@ public class ChatSessionManagerTests
     [Fact]
     public async Task StartPlannedTurn_PersistsAnEmptyGrantEnvelope_SoParkingCannotWidenAuthority()
     {
-        // D1's producer half for the INTERACTIVE origin. An interactive run holds no standing write grant:
-        // write_file is not auto-approve eligible, so every write raises an action card the user clicks. A
-        // resume, though, runs UNATTENDED through HeadlessRunLauncher, and a run whose PolicyJson is null
-        // falls back to the {write_file} resume floor — so parking would ESCALATE the run to card-free
-        // writes with nobody watching. The create must persist the honoured-EMPTY envelope instead.
-        //
-        // Scope: this covers the grant LIST only. The policy channel of the same document is
-        // StartPlannedTurn_PersistsTheSettingsPolicyInTheEnvelope, above.
+        // An interactive run holds no standing write grant, but a resume runs UNATTENDED and a null PolicyJson falls
+        // back to the {write_file} floor — so parking would ESCALATE the run to card-free writes.
         var captured = await CapturePlannedRunRequestAsync();
 
         var restored = Pia.Services.HeadlessRunLauncher.TryRestoreGrantEnvelope(captured.PolicyJson);
@@ -275,7 +241,7 @@ public class ChatSessionManagerTests
         Assert.Empty(restored!);   // and it grants nothing, which is exactly what the launch granted
     }
 
-    // ---- C2: a parked run must stay reachable after a restart (ActiveRunId is runtime-only) ----
+    // ---- a parked run must stay reachable after a restart (ActiveRunId is runtime-only) ----
 
     private static AgentRun Run(Guid chatId, AgentRunState state, DateTime createdAt, RunShape shape = RunShape.Planned) =>
         new() { Id = Guid.NewGuid(), ChatId = chatId, RunShape = shape, State = state, CreatedAt = createdAt };
@@ -298,8 +264,8 @@ public class ChatSessionManagerTests
     [Fact]
     public async Task ActivateAsync_ChatWithParkedRun_RestoresTheRunPanel()
     {
-        // The headline C2 case: after an app restart the run is durable but was unreachable — no panel, no
-        // Continue button, and the Flow WaitingForInput card is suppressed for the foreground active chat.
+        // After an app restart the run is durable but used to be unreachable — no panel, no Continue button, and
+        // the Flow WaitingForInput card is suppressed for the foreground active chat.
         var chatId = Guid.NewGuid();
         var parked = Run(chatId, AgentRunState.WaitingForInput, DateTime.UtcNow.AddMinutes(-2));
         _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
@@ -321,16 +287,14 @@ public class ChatSessionManagerTests
         Assert.True(raised is null || raised == parked.Id);
     }
 
-    // ---- W2c: a re-attached, still-EXECUTING run is a foreign writer, so the composer must be blocked ----
+    // ---- a re-attached, still-EXECUTING run is a foreign writer, so the composer must be blocked ----
 
     [Theory]
     [InlineData(AgentRunState.Planning)]
     [InlineData(AgentRunState.Running)]
     [InlineData(AgentRunState.Verifying)]
-    // Batch 07 G8: a parent parked awaiting its children IS live — its children are writing its workspace and
-    // it will write this chat again the moment they settle — unlike the parked WaitingForInput/Paused rows in
-    // the theory below, whose "continue in chat" path must stay open. It also has to be re-attachable at all:
-    // without it in the re-attach scan the panel would not find the run.
+    // A parent awaiting its children IS live — they are writing its workspace and it will write this chat again the
+    // moment they settle — unlike the parked rows in the theory below, whose "continue in chat" path stays open.
     [InlineData(AgentRunState.WaitingForChildren)]
     public async Task RestoreActiveRunAsync_ExecutingRun_MarksTheSessionsRunForeign(AgentRunState state)
     {
@@ -357,8 +321,8 @@ public class ChatSessionManagerTests
     [InlineData(AgentRunState.Paused)]
     public async Task RestoreActiveRunAsync_ParkedRun_DoesNotMarkItForeign(AgentRunState state)
     {
-        // The parked "continue in chat" path must stay OPEN: a parked run is not writing, and blocking Send
-        // there would break the headline C2 case (resume the run by talking to the chat).
+        // The parked "continue in chat" path must stay OPEN: a parked run is not writing, and blocking Send there
+        // would remove the only way to resume it by talking to the chat.
         var chatId = Guid.NewGuid();
         var parked = Run(chatId, state, DateTime.UtcNow.AddMinutes(-1));
         _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
@@ -388,7 +352,7 @@ public class ChatSessionManagerTests
         await sut.RestoreActiveRunAsync(session);
         Assert.True(session.ForeignRunActive);
 
-        // AgentRunService raises RunChanged from a pool thread; the manager marshals the flip (G3), so poll.
+        // AgentRunService raises RunChanged from a pool thread; the manager marshals the flip, so poll.
         _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(running.Id, AgentRunState.Paused));
 
         for (var i = 0; i < 200 && session.ForeignRunActive; i++)
@@ -449,18 +413,8 @@ public class ChatSessionManagerTests
         Assert.False(session.ForeignRunActive);
     }
 
-    /// <summary>
-    /// Batch 07 G8, <b>REGRESSION</b>. A parent that parks at <c>WaitingForChildren</c> must keep its ownership
-    /// exemption. Read as non-executing, the state retires this manager's <c>_ownRunIds</c> entry the instant the
-    /// run delegates — and then the very next executing event (the un-park CAS's <c>RunChanged(Running)</c>, or
-    /// any per-step one after it) treats the run as a FOREIGN full-chat writer on its own session: composer
-    /// blocked, Send disabled, and no later event to correct it, because ownership is never re-granted.
-    /// <para>
-    /// The two events must be raised in this order and both asserted; the park event alone flags nothing, so a
-    /// test that stopped there would pass on the broken build.
-    /// </para>
-    /// Neutralize: drop <c>WaitingForChildren</c> from the <c>executing</c> set in <c>OnAgentRunChanged</c>.
-    /// </summary>
+    // Read as non-executing, WaitingForChildren retires the ownership entry the instant the run delegates, and the
+    // next executing event then treats the run as foreign on its own session — with nothing left to correct it.
     [Fact]
     public async Task RunChanged_OwnRunAwaitingChildren_KeepsItsOwnershipExemption()
     {
@@ -491,10 +445,8 @@ public class ChatSessionManagerTests
     [Fact]
     public async Task RunChanged_OwnRunParkedThenResumedHeadlessly_IsFlaggedForeign()
     {
-        // The two-writer path the product hits most: the user launches an agent run interactively, it parks at
-        // its step budget, IsStreaming goes false and the composer comes back — and then Continue resumes it
-        // through HeadlessRunLauncher, unattended, against the same chat. Ownership must NOT survive the park,
-        // or Send stays enabled and the live turn's full replace deletes every row the resumed run wrote.
+        // Continue resumes a parked interactive run UNATTENDED against the same chat, so ownership must NOT survive
+        // the park — otherwise Send stays enabled and a live full replace deletes every row the resume wrote.
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
         _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
@@ -534,9 +486,8 @@ public class ChatSessionManagerTests
     [InlineData(AgentRunState.Cancelled)]
     public async Task RunChanged_OwnRunTerminal_RetiresOwnership(AgentRunState terminal)
     {
-        // Same retirement on the terminal states (which is also what keeps _ownRunIds from growing for the
-        // lifetime of the process). A run id can only be re-used by a re-attach/resume, so treating a
-        // post-terminal executing state as foreign is the safe reading.
+        // The same retirement on the terminal states, which is also what keeps the ownership set from growing for
+        // the life of the process; a post-terminal executing state can only come from a re-attach or resume.
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
         _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
@@ -643,7 +594,7 @@ public class ChatSessionManagerTests
     [Fact]
     public async Task RestoreActiveRunAsync_LookupThrows_LeavesTheChatUsable()
     {
-        // Guardrail 1: the rehydration query is bookkeeping — a fault must not fail the activation.
+        // The rehydration query is bookkeeping — a fault must not fail the activation.
         var chatId = Guid.NewGuid();
         _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
         _runService.GetByChatAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
@@ -695,11 +646,8 @@ public class ChatSessionManagerTests
     [Fact]
     public async Task PersistRequested_SavesTheTranscript_WithoutTurnCompletedOrAutoTitle()
     {
-        // E2 (interactive per-step durability): the live executor asks for a persist after each completed
-        // step. The manager must save — so a budget pause or a crash cannot lose the step replies — while
-        // staying NON-terminal: no TurnCompleted, no terminal state, and no auto-title (that stays with the
-        // terminal persist, so titling behaviour is unchanged and the rename never read-modify-writes a
-        // chat that is still growing).
+        // The per-step persist must save, so a budget pause or a crash cannot lose the step replies, while staying
+        // NON-terminal: auto-title stays with the terminal persist, so a rename never rewrites a growing chat.
         _settings.GetSettingsAsync().Returns(new AppSettings { ChatAutoTitleEnabled = true });
         var sut = CreateSut();
         var session = sut.GetOrCreateActiveForNewChat();
@@ -741,10 +689,8 @@ public class ChatSessionManagerTests
     [Fact]
     public async Task AutoTitle_WritesTheTitleOnly_AndNeverFullReplacesTheChat()
     {
-        // W2: the auto-title rename used to be GetAsync -> mutate Title -> SaveAsync, a fire-and-forget
-        // read-modify-write. Its DB snapshot is routinely stale by the time it lands (the title LLM call sits
-        // in the middle), so it could revert message rows a headless step appended in between — a second
-        // effective writer on the chat row. It must now issue exactly one SetTitleAsync and NO SaveAsync.
+        // The rename used to be a fire-and-forget read-modify-write whose snapshot was stale by the time it landed
+        // (the title LLM call sits in the middle), so it could revert rows a headless step appended in between.
         _settings.GetSettingsAsync().Returns(new AppSettings { ChatAutoTitleEnabled = true });
         _titleService.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns("Weekly plan");
@@ -763,8 +709,8 @@ public class ChatSessionManagerTests
 
         Assert.Equal("Weekly plan", session.Title);
         await _chatService.Received(1).SetTitleAsync(session.Id!.Value, "Weekly plan", Arg.Any<CancellationToken>());
-        // EXACTLY ONE full replace for the whole turn — the terminal persist's. Before W2 the rename added a
-        // second one, from a snapshot read before the title LLM call.
+        // EXACTLY ONE full replace for the whole turn — the terminal persist's. The rename used to add a second,
+        // from a snapshot read before the title LLM call.
         await _chatService.Received(1).SaveAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>());
         // And it no longer READS the chat back: that read existed only to carry the message payload.
         await _chatService.DidNotReceive().GetAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
@@ -876,12 +822,8 @@ public class ChatSessionManagerTests
     [Fact]
     public async Task FirstTurn_BackgroundSession_SurfaceWorthyState_RoutesToNotifier_BeforeAnyPersist()
     {
-        // Regression: a brand-new chat backgrounded mid-first-turn must still notify.
-        // Before the fix the session Id was null until the end-of-turn persist, so the
-        // notifier-routing gate (session.Id is { } chatId) silently dropped the toast.
-        // (Under C4 the failed background turn is now also persisted by
-        // FinalizeFailedSetupAsync — but the notifier still fires first, on SetState(Error),
-        // before that persist runs.)
+        // A brand-new chat backgrounded mid-first-turn must still notify: the session Id used to stay null until
+        // the end-of-turn persist, so the notifier-routing gate silently dropped the toast.
         var sut = CreateSut();
 
         var background = sut.GetOrCreateActiveForNewChat(); // first turn, Id still null
@@ -931,8 +873,8 @@ public class ChatSessionManagerTests
 
         Assert.Equal(ChatState.Error, background.State);
         Assert.NotNull(background.Id);
-        // C4: a backgrounded setup failure is persisted so its Error toast re-hydrates
-        // from the store after a reap instead of dead-linking.
+        // A backgrounded setup failure is persisted so its Error toast re-hydrates from the store after a reap
+        // instead of dead-linking.
         await _chatService.Received(1).SaveAsync(Arg.Is<SyncAssistantChat>(c => c.Id == background.Id), Arg.Any<CancellationToken>());
         // LLM auto-title (which needs a provider) is suppressed for the errored chat.
         await _titleService.DidNotReceive().GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
@@ -952,17 +894,16 @@ public class ChatSessionManagerTests
         await sut.StartTurnAsync(active, "hi", null);
 
         Assert.Equal(ChatState.Error, active.State);
-        // C4 scope: a FOREGROUND no-provider failure is NOT persisted — no junk history
-        // entries for an unconfigured user, and the toast never fires for the active chat.
+        // A FOREGROUND no-provider failure is NOT persisted — no junk history entries for an unconfigured user,
+        // and the toast never fires for the active chat.
         await _chatService.DidNotReceive().SaveAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task StartTurnAsync_FirstTurn_WithProvider_PersistsImmediately()
     {
-        // Point 3: a brand-new chat must enter history on the first message — not only
-        // after the turn finishes. With provider resolution succeeding, StartTurnAsync
-        // persists the first turn (user + streaming placeholder) before dispatching the run.
+        // A brand-new chat must enter history on the first message, not only after the turn finishes, so the first
+        // turn is persisted before the run is dispatched.
         var sut = CreateSut();
 
         var session = sut.GetOrCreateActiveForNewChat(); // first turn, Id still null
@@ -978,9 +919,7 @@ public class ChatSessionManagerTests
         await sut.StartTurnAsync(session, "hello", null);
 
         Assert.NotNull(session.Id);
-        // SaveAsync runs synchronously (mocked) inside the first-turn persist, before
-        // RunTurnAsync streams — so the chat is already in history. The snapshot holds the
-        // user message + the (still streaming) assistant placeholder = 2 messages.
+        // The snapshot holds the user message plus the still-streaming assistant placeholder, so 2 messages.
         await _chatService.Received().SaveAsync(
             Arg.Is<SyncAssistantChat>(c => c.Id == session.Id && c.Messages.Count == 2),
             Arg.Any<CancellationToken>());
@@ -989,9 +928,8 @@ public class ChatSessionManagerTests
     [Fact]
     public async Task StartTurnAsync_AtFilesCommand_ReadsTaggedFileForInjection()
     {
-        // The manager glue: an @Files-tagged turn reads the file at setup (capped to the per-file
-        // line limit) so its content can be inlined into the user message. The preview read is
-        // awaited inside StartTurnAsync, before the run is dispatched.
+        // An @Files-tagged turn reads the file at setup, capped to the per-file line limit, so its content can be
+        // inlined into the user message before the run is dispatched.
         var sut = CreateSut();
         var session = sut.GetOrCreateActiveForNewChat();
 
@@ -1041,9 +979,8 @@ public class ChatSessionManagerTests
         sut.GetOrCreateActiveForNewChat(); // background is non-active
         _chatService.ClearReceivedCalls();
 
-        // Settings resolution throws — both at setup AND again on the persist-path re-read
-        // (TryStartAutoTitleAsync), exercising the failure path's own fallibility.
-        // StartTurnAsync must settle to Error and NOT rethrow at the send command.
+        // Settings resolution throws at setup AND again on the persist path's re-read, so the failure path's own
+        // fallibility is exercised: StartTurnAsync must settle to Error and NOT rethrow at the send command.
         _settings.GetSettingsAsync().Returns<AppSettings>(_ => throw new InvalidOperationException("settings boom"));
 
         await sut.StartTurnAsync(background, "hi", null); // a rethrow here fails the test
@@ -1056,8 +993,8 @@ public class ChatSessionManagerTests
     [Fact]
     public async Task StartTurnAsync_Planned_CreatesPlannedRun_AndSurfacesActiveRunId()
     {
-        // 1.3 lever wiring: planned:true creates a RunShape.Planned run and stamps its id onto the
-        // session (SetActiveRun) so the active VM can embed the run-progress panel.
+        // planned:true creates a Planned run and stamps its id onto the session, so the active VM can embed the
+        // run-progress panel.
         var sut = CreateSut();
         var session = sut.GetOrCreateActiveForNewChat();
 
@@ -1108,8 +1045,8 @@ public class ChatSessionManagerTests
     [Fact]
     public async Task StartTurnAsync_Planned_WeakProvider_StillCreatesRun()
     {
-        // R10 never-blocks contract at the consumer: a Weak/Unknown provider surfaces the banner in the
-        // VM but must NOT gate the Planned send — the run is still created and stamped onto the session.
+        // A Weak or Unknown provider surfaces the banner in the VM but must NOT gate the Planned send — the run is
+        // still created and stamped onto the session.
         var sut = CreateSut();
         var session = sut.GetOrCreateActiveForNewChat();
 
@@ -1136,7 +1073,7 @@ public class ChatSessionManagerTests
     [Fact]
     public async Task StartTurnAsync_ChatTurn_CapableProvider_MarksSuggestEligible()
     {
-        // §14.3/R7: only an interactive Chat turn on a tool-Capable provider offers suggest_agent_mode.
+        // Only an interactive Chat turn on a tool-Capable provider offers suggest_agent_mode.
         var sut = CreateSut();
         var session = sut.GetOrCreateActiveForNewChat();
 
@@ -1304,20 +1241,13 @@ public class ChatSessionManagerTests
         Assert.Single(rehydrated.Messages);
     }
 
-    // ---- A2: the composer gate is seeded SYNCHRONOUSLY from the launch-bracket index (closes W2c) ----
+    // ---- the composer gate is seeded SYNCHRONOUSLY from the launch-bracket index ----
 
     [Fact]
     public async Task ActivateAsync_BracketedRun_GatesTheComposer_BeforeItEverGoesLive()
     {
-        // The gate must already be set by the time SetActive raises ActiveChanged — that is the instant
-        // AssistantViewModel attaches and reads ChatSession.ForeignRunActive (AssistantViewModel.cs:356),
-        // i.e. the instant Send becomes clickable. Before A2 the flag arrived from a fire-and-forget lookup
-        // that blocked on AgentRunService's gate, so an Enter press in that window reached a full-replace
-        // SaveAsync. Drop the seed line from ActivateAsync and this test fails.
-        //
-        // It also pins the SingleTurn hole: nothing is ATTACHED to this session (RestoreActiveRunAsync only
-        // ever attaches RunShape.Planned), yet the composer is gated — which is the whole point of keying the
-        // decision on the chat rather than on ChatSession.ActiveRunId.
+        // The gate must be set by the time ActiveChanged is raised, because that is the instant Send becomes
+        // clickable; the flag used to arrive from a fire-and-forget lookup, leaving a window for a full replace.
         var chatId = Guid.NewGuid();
         var runId = Guid.NewGuid();
         _executingRuns.Register(chatId, runId);
@@ -1338,9 +1268,8 @@ public class ChatSessionManagerTests
     [Fact]
     public async Task ActivateAsync_NoBracketedRun_LeavesTheComposerLive()
     {
-        // GUARD, not a regression test: this passes before and after. It exists because the rejected
-        // alternative to A2 was a pessimistic flicker-disable on every activation, and this is what would
-        // catch that — an ordinary history click must not disable Send.
+        // The rejected alternative was a pessimistic flicker-disable on every activation; an ordinary history click
+        // must not disable Send.
         var chatId = Guid.NewGuid();
         _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
 
@@ -1354,10 +1283,8 @@ public class ChatSessionManagerTests
     [Fact]
     public async Task RunChanged_Terminal_ReleasesTheBracket_AndUngatesTheComposer()
     {
-        // The release must happen HERE and not only in the launcher's finally: AgentRunService raises the
-        // terminal RunChanged BEFORE that finally runs (it raises outside its own gate), so a handler that
-        // merely recomputed would read a still-present entry, conclude "executing", and never be woken again —
-        // a permanently dead composer, because re-activating takes the live-attach branch and never re-seeds.
+        // The release must happen HERE, not only in the launcher's finally: the terminal RunChanged is raised before
+        // that finally runs, so a handler that merely recomputed would read a still-present entry and never wake.
         var chatId = Guid.NewGuid();
         var runId = Guid.NewGuid();
         _executingRuns.Register(chatId, runId);
@@ -1367,7 +1294,7 @@ public class ChatSessionManagerTests
         var session = await sut.ActivateAsync(chatId);
         Assert.True(session!.ForeignRunActive);
 
-        // AgentRunService raises RunChanged from a pool thread; the manager marshals the flip (G3), so poll.
+        // AgentRunService raises RunChanged from a pool thread; the manager marshals the flip, so poll.
         // The handler releases BEFORE it recomputes, so a cleared flag proves the release already landed.
         _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Completed));
 
@@ -1382,15 +1309,11 @@ public class ChatSessionManagerTests
         Assert.False(_executingRuns.IsExecuting(chatId));
     }
 
-    // ---------------------------------------------------------------------------------------------------
-    // Batch 06 G5 / plan D4: the interactive Planned launch owns a workspace lifecycle now. Before this
-    // group the branch was a bare CreateAsync and no directory was created anywhere on this path.
-    // ---------------------------------------------------------------------------------------------------
+    // ---- the interactive Planned launch owns a workspace lifecycle ----
 
     /// <summary>
-    /// Captures the <see cref="Pia.Services.RunContext"/> the orchestrator builds, then PARKS. The fact is
-    /// what the manager handed the executor; letting the run drain would execute steps against a substituted
-    /// AI client for no added coverage. Released by cancelling the session at the end of each fact.
+    /// Captures the <see cref="Pia.Services.RunContext"/> the orchestrator builds, then PARKS: letting the run drain
+    /// would execute steps against a substituted AI client. Released by cancelling the session.
     /// </summary>
     private sealed class CapturingPlanner : Pia.Services.Interfaces.IAgentPlanner
     {
@@ -1448,15 +1371,8 @@ public class ChatSessionManagerTests
         return (runId, await captured);
     }
 
-    /// <summary>
-    /// REGRESSION, and the seam nothing else can see: the manager PROVISIONS a workspace for an interactive
-    /// Planned run, asks for it with the CHAT's working subpath (B6 — the workspace stands in for
-    /// <c>&lt;folder&gt;\sub</c>, which is why the steps must not narrow again), and hands the resulting root
-    /// to the live executor. Drop the provisioning call and nothing is provisioned; drop the
-    /// <c>workspaceRoot</c> argument to <c>new LiveTurnExecutor(...)</c> — which compiles, it is trailing and
-    /// defaulted — and the run context comes back with a null root, i.e. every interactive step ships
-    /// un-isolated.
-    /// </summary>
+    // The workspace stands in for the chat's working subpath, so the steps must not narrow again. Dropping the
+    // trailing, defaulted workspaceRoot argument compiles and ships every interactive step un-isolated.
     [Fact]
     public async Task StartPlannedTurn_ProvisionsAWorkspaceForTheChatSubpath_AndHandsItsRootToTheExecutor()
     {
@@ -1478,11 +1394,8 @@ public class ChatSessionManagerTests
         }
     }
 
-    /// <summary>
-    /// GUARD: provisioning is BOOKKEEPING with a user watching (guardrail 1). A provisioner that degrades to
-    /// "no isolation" (null) or that throws must leave the turn running on the pre-Batch-06 path — writing
-    /// straight into the assistant files folder — never refuse to start it.
-    /// </summary>
+    // Provisioning is bookkeeping with a user watching: a provisioner that degrades to "no isolation" or throws must
+    // leave the turn writing straight into the assistant files folder, never refuse to start it.
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -1507,8 +1420,7 @@ public class ChatSessionManagerTests
 
             var (_, capturedRoot) = await StartIsolatedPlannedTurnAsync(workspaces);
 
-            // Reaching the planner at all is the "the turn started" half; the null root is the "no isolation"
-            // half, i.e. exactly today's behaviour.
+            // Reaching the planner at all is the "the turn started" half; the null root is the "no isolation" half.
             Assert.Null(capturedRoot);
         }
         finally
@@ -1517,13 +1429,9 @@ public class ChatSessionManagerTests
         }
     }
 
-    // ---------------------------------------------------------------------------------------------------
-    // Batch 08 G4 / impl spec §5.3 producer 3: an interactive Planned run registers its cancel SINK, and the
-    // wrapper around the dispatch releases it. Not in §17's file table for G4 — added because both lines are
-    // trailing/optional wiring: delete either and this file, the new live-parity file and the whole batch stay
-    // green while a live run can no longer be paused at all (RecordPauseRequest is registration-scoped, so the
-    // pause would be silently REFUSED).
-    // ---------------------------------------------------------------------------------------------------
+    // ---- an interactive Planned run registers its cancel SINK, and the dispatch wrapper releases it ----
+    // Both lines are trailing/optional wiring: delete either and everything stays green while a live run can no
+    // longer be paused at all, because RecordPauseRequest is registration-scoped and silently refuses.
 
     /// <summary>Parks inside the planner and signals both entry and unwind, so a fact needs no sleep.</summary>
     private sealed class ParkingPlanner : Pia.Services.Interfaces.IAgentPlanner
@@ -1544,10 +1452,8 @@ public class ChatSessionManagerTests
     }
 
     /// <summary>
-    /// Pass-through over the real <c>RunSteeringStore</c> that signals <see cref="Released"/> when the dispatch
-    /// drops its registration. The release happens in the wrapper's <c>finally</c>, AFTER the orchestrator has
-    /// returned, and nothing else in the process observes it — so without this signal the only alternative would
-    /// be polling, i.e. a sleep dressed up as an assertion.
+    /// Signals <see cref="Released"/> when the dispatch drops its registration: that happens in a <c>finally</c>
+    /// after the orchestrator returns, and nothing else in the process observes it.
     /// </summary>
     private sealed class ReleaseSignallingSteeringStore : Pia.Services.Interfaces.IRunSteeringStore
     {
@@ -1579,10 +1485,8 @@ public class ChatSessionManagerTests
     }
 
     /// <summary>
-    /// The manager with a steering store and a planner it parks in. A THIRD builder rather than a parameter on
-    /// either of the two above, for the reason <see cref="CreateIsolatingSut"/> states about itself:
-    /// <see cref="CreateSut"/> passes the ctor positionally with every trailing optional omitted, and keeping
-    /// one call site that way is what proves the new parameter is source-compatible.
+    /// A THIRD builder rather than a parameter on either of the two above, for the reason
+    /// <see cref="CreateIsolatingSut"/> states: <see cref="CreateSut"/> must keep passing the ctor positionally.
     /// </summary>
     private ChatSessionManager CreateSteeringSut(
         Pia.Services.Interfaces.IAgentPlanner planner, Pia.Services.Interfaces.IRunSteeringStore steering)
@@ -1604,17 +1508,8 @@ public class ChatSessionManagerTests
             steering: steering);
     }
 
-    /// <summary>
-    /// §5.3 producer 3, both halves. An interactive Planned run must register a cancel sink that is
-    /// <c>session.Cancel()</c> — the ONE thing that also releases a pending action card, which is the normal way
-    /// an interactive step blocks — and must drop that registration when the dispatch ends.
-    /// <para>
-    /// Non-vacuity is the point of every assertion here: <c>RecordPauseRequest</c> returning <c>true</c> is only
-    /// possible while a dispatch of that run is registered, firing the sink is observed on the SESSION's own
-    /// token (not on some private CTS), and the same record call returning <c>false</c> at the end is the
-    /// release. Drop <c>RegisterDispatch</c> and the first assertion reds; drop the release and the last one does.
-    /// </para>
-    /// </summary>
+    // The registered cancel sink must be session.Cancel(), the one thing that also releases a pending action card —
+    // the normal way an interactive step blocks — and the registration must be dropped when the dispatch ends.
     [Fact]
     public async Task StartPlannedTurn_RegistersTheSessionsCancelSink_AndReleasesItWhenTheDispatchEnds()
     {
@@ -1644,8 +1539,8 @@ public class ChatSessionManagerTests
         await sut.StartPlannedTurnAsync(session, "do the thing");
         await planner.Entered.Task.WaitAsync(TimeSpan.FromSeconds(20), ct); // the dispatch is really running
 
-        // (1) REGISTERED: a pause of this run is accepted rather than refused. This is the whole gate — the
-        //     steering service records nothing for a run no dispatch here owns.
+        // (1) REGISTERED: a pause of this run is accepted rather than refused — the store records nothing for a run
+        //     no dispatch here owns.
         var turnToken = session.Cts!.Token;
         Assert.True(steering.RecordPauseRequest(runId));
 

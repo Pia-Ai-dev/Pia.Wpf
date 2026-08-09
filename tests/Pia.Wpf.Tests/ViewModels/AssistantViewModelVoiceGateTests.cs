@@ -13,17 +13,8 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// Batch 04 D13. Voice mode used to execute EVERY pending write with no eligibility check, no grant check, no
-/// card and no destructive floor (<c>"Auto-approve write operations in voice mode (no dialog)"</c>), so
-/// <c>write_file</c>, <c>delete_file</c>, <c>forget</c> and every destructive MCP tool ran silently. Nothing in
-/// the suite pinned it either way — this file is both the fix's coverage and the first voice-mode harness.
-/// <para>
-/// The gate is driven through <c>HandleVoiceModeToolCall</c>, made <c>internal</c> for exactly this: the
-/// alternative is standing up a whole voice turn through <c>StreamVoiceModeResponse</c>, which is a
-/// disproportionate fixture for five facts.
-/// </para>
-/// </summary>
+// Driven through HandleVoiceModeToolCall, which is internal for exactly this: standing up a whole voice turn through
+// StreamVoiceModeResponse is a disproportionate fixture for these facts.
 public sealed class AssistantViewModelVoiceGateTests
 {
     private readonly IPluginService _plugins = Substitute.For<IPluginService>();

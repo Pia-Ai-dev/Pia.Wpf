@@ -12,24 +12,8 @@ using Xunit;
 namespace Pia.Tests.Services;
 
 /// <summary>
-/// Batch 08 G3 — the pause/cancel DISCRIMINATOR and the <c>Pending</c> restore, on the HEADLESS shape (the
-/// executor returns a cancelled <c>StepTurnResult</c> rather than throwing, which is what
-/// <c>HeadlessTurnExecutor</c>'s cancel arm does). Live parity is G4's file; the pause is not yet reachable
-/// from any UI on either executor, which is what makes the split legal.
-/// <para>
-/// The whole batch turns on one property, so every fact here asserts some part of it: <b>a user pause must
-/// leave a RESUMABLE run, not a Cancelled one.</b> The failure is silent in the sense that the run does settle —
-/// just terminally, with <c>CompletedAt</c> stamped by <c>FailAsync</c>. The four-part shape is
-/// <c>State == Paused</c> · <c>CompletedAt is null</c> · the aborted step back at <c>Pending</c> ·
-/// <c>RunPauseEnvelope.ReadReason(run) == UserPausedReason</c>, and then the run is actually RESUMED and
-/// asserted to complete: a fact that only checks the state has not checked the thing.
-/// </para>
-/// <para>
-/// These drive the real <see cref="AgentRunOrchestrator"/> against a real SQLite <see cref="AgentRunService"/>
-/// and the real <see cref="RunSteeringStore"/> + <see cref="AgentRunSteeringService"/> — the pause is requested
-/// the way the UI will request it (through the service, which also exercises its state pre-check), and the
-/// dispatch's cancel sink is registered the way <c>HeadlessRunLauncher</c> registers it.
-/// </para>
+/// The headless shape: the executor returns a cancelled <c>StepTurnResult</c> rather than throwing. A user pause
+/// must leave a RESUMABLE run, so every fact here resumes the run instead of only checking its state.
 /// </summary>
 public sealed class AgentRunOrchestratorUserPauseTests
 {
@@ -83,19 +67,8 @@ public sealed class AgentRunOrchestratorUserPauseTests
     }
 
     /// <summary>
-    /// A step body that models what really happens when the user presses Pause mid-step: the steering service
-    /// records the intent and fires this dispatch's cancel sink, and the step then unwinds the way its executor
-    /// unwinds. Three unwind shapes, because the loop has to handle all three:
-    /// <list type="bullet">
-    /// <item><see cref="Unwind.Cancelled"/> — honour the token and report <c>Cancelled: true</c>
-    /// (<c>HeadlessTurnExecutor</c>'s cancel arm).</item>
-    /// <item><see cref="Unwind.DeclinedTool"/> — report <c>Succeeded: false, Cancelled: false</c>, which is what
-    /// a RELEASED action card produces on Live: the release maps to <c>ToolDecision.Decline</c> and the exchange
-    /// CONTINUES. Without the pause branch this shape replans.</item>
-    /// <item><see cref="Unwind.Throws"/> — throw the OCE instead of returning, which is what an abort inside the
-    /// per-step persona resolve does (it leaves the step row <c>Running</c>) and what Live's second escape hatch
-    /// does.</item>
-    /// </list>
+    /// Three unwind shapes because the loop must handle all three: honour the token, decline a tool without
+    /// cancelling (what a released action card produces), or throw the OCE out of the step.
     /// </summary>
     private sealed class PausingExecutor : IAgentTurnExecutor
     {
@@ -112,16 +85,13 @@ public sealed class AgentRunOrchestratorUserPauseTests
             _unwind = unwind;
         }
 
-        /// <summary>Usage the ABORTED step reports. Null models both real executors today (they report none on a
-        /// cancel); non-null is the day one of them reports partial spend, which D2 says is still billed.</summary>
+        /// <summary>Null models both real executors today; non-null is the day one reports partial spend, which is still billed.</summary>
         public UsageDetails? AbortedUsage { get; set; }
 
-        /// <summary>Usage every SUCCESSFUL step reports. A step's per-step ledger entry is only written when it
-        /// carries usage, so a fact that counts those entries needs this to have anything to count.</summary>
+        /// <summary>A per-step ledger entry is only written when the step carries usage.</summary>
         public UsageDetails? StepUsage { get; set; }
 
-        /// <summary>Message ids the aborted step reports, so "the aborted step was not recorded" is provable
-        /// rather than vacuous — a result with empty ids could not have written them anyway.</summary>
+        /// <summary>Non-empty, so "the aborted step was not recorded" is provable rather than vacuous.</summary>
         public Guid AbortedFirstMessageId { get; } = Guid.NewGuid();
 
         public Guid AbortedLastMessageId { get; } = Guid.NewGuid();
@@ -134,9 +104,7 @@ public sealed class AgentRunOrchestratorUserPauseTests
 
         public bool EndCancelled { get; private set; }
 
-        /// <summary>What <c>IAgentRunSteeringService.PauseAsync</c> returned — asserted, so a fact can never pass
-        /// on a pause that was refused (the run would then just be cancelled, and "not Paused" is the pass
-        /// condition of nothing here).</summary>
+        /// <summary>Asserted, so no fact can pass on a pause that was actually refused.</summary>
         public bool? PauseAccepted { get; private set; }
 
         public Task BeginRunAsync(AgentRun run, RunContext ctx, CancellationToken ct) => Task.CompletedTask;
@@ -158,7 +126,7 @@ public sealed class AgentRunOrchestratorUserPauseTests
 
             try
             {
-                await Task.Delay(Timeout.Infinite, ct); // the sink's cancel reaches the in-flight step (R13)
+                await Task.Delay(Timeout.Infinite, ct); // the sink's cancel reaches the in-flight step
             }
             catch (OperationCanceledException)
             {
@@ -182,7 +150,7 @@ public sealed class AgentRunOrchestratorUserPauseTests
 
         public Task OnPausedAsync(AgentRun run, RunContext ctx, CancellationToken ct)
         {
-            PausedCalled = true; // the NON-terminal release (guardrail 5) — never EndRunAsync
+            PausedCalled = true; // the NON-terminal release — never EndRunAsync
             return Task.CompletedTask;
         }
     }
@@ -230,7 +198,7 @@ public sealed class AgentRunOrchestratorUserPauseTests
             return await Runs.CreateAsync(new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User, Goal: goal));
         }
 
-        /// <param name="steering">Omitted ⇒ the pre-Batch-08 loop: no request can ever be consumed.</param>
+        /// <param name="steering">Omitted ⇒ no request can ever be consumed.</param>
         public AgentRunOrchestrator BuildOrchestrator(
             IAgentPlanner planner, IAgentVerifier? verifier = null, IRunSteeringStore? steering = null) =>
             new(Runs, planner, verifier ?? new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance,
@@ -244,12 +212,7 @@ public sealed class AgentRunOrchestratorUserPauseTests
         }
     }
 
-    /// <summary>
-    /// THE headline fact. A pause landing mid-step leaves the four-part resumable shape, and the run then
-    /// actually RESUMES and completes. If the pause branch were gated on <c>r.Cancelled</c> after
-    /// <c>SafeRecordStep</c>, or if it took <c>SafeFail(cancelled: true)</c>, the state would be
-    /// <c>Cancelled</c> with a stamped <c>CompletedAt</c> and there would be nothing left to resume.
-    /// </summary>
+    /// <summary>A pause gated on <c>r.Cancelled</c>, or taking <c>SafeFail(cancelled: true)</c>, would leave nothing to resume.</summary>
     [Fact]
     public async Task UserPause_MidStep_LeavesTheRunResumable_OnHeadless()
     {
@@ -269,18 +232,17 @@ public sealed class AgentRunOrchestratorUserPauseTests
 
         Assert.True(exec.PauseAccepted);          // the pause was accepted, not refused: this fact is not vacuous
         var paused = await h.Runs.GetAsync(run.Id, ct);
-        Assert.Equal(AgentRunState.Paused, paused!.State);                              // (1) not Cancelled
-        Assert.Null(paused.CompletedAt);                                                // (2) not settled
-        Assert.Equal(AgentRunService.UserPausedReason, RunPauseEnvelope.ReadReason(paused)); // (4) a USER pause
+        Assert.Equal(AgentRunState.Paused, paused!.State);                              // not Cancelled
+        Assert.Null(paused.CompletedAt);                                                // not settled
+        Assert.Equal(AgentRunService.UserPausedReason, RunPauseEnvelope.ReadReason(paused)); // a USER pause
         var aborted = Assert.Single(paused.Plan, s => s.Title == "s1");
-        Assert.Equal(AgentStepStatus.Pending, aborted.Status);                          // (3) back in the plan
-        // …and visible to the drain the resume uses. Failed(3) — what SafeRecordStep would have written — is
-        // invisible to this query AND dropped by KeepDoneAsync, so this is the assertion that "Pending" is not
-        // merely a nicer-looking number in a column.
+        Assert.Equal(AgentStepStatus.Pending, aborted.Status);                          // back in the plan
+        // Failed(3) is invisible to this query and dropped by KeepDoneAsync, so Pending is not merely a nicer
+        // number in a column.
         var next = await h.Runs.NextPendingStepAsync(run.Id, ct);
         Assert.Equal("s1", next!.Title);
         Assert.True(exec.PausedCalled);   // the NON-terminal executor release ran
-        Assert.False(exec.EndCalled);     // …and the terminal one did not (guardrail 5)
+        Assert.False(exec.EndCalled);     // …and the terminal one did not
 
         // NOW RESUME IT, the way the launcher does: claim from Paused, then re-enter with resume: true.
         Assert.True(await h.Runs.TryResumeFromPauseAsync(run.Id, ct));
@@ -297,10 +259,8 @@ public sealed class AgentRunOrchestratorUserPauseTests
     }
 
     /// <summary>
-    /// D2 made literal: the aborted step's TEXT is discarded, so the step re-runs clean. The branch returns
-    /// BEFORE <c>SafeRecordStep</c>, so the row keeps no <c>First</c>/<c>LastMessageId</c> and gains no per-step
-    /// ledger entry — and the run-level message range still points at the step that really finished, not at a
-    /// transcript slice the resumed step will rewrite.
+    /// The branch returns BEFORE <c>SafeRecordStep</c>, so the aborted row keeps no message ids and gains no
+    /// per-step ledger entry, and the run-level range still points at the step that really finished.
     /// </summary>
     [Fact]
     public async Task UserPause_DoesNotRecordTheAbortedStep()
@@ -333,8 +293,7 @@ public sealed class AgentRunOrchestratorUserPauseTests
         Assert.Null(aborted.LastMessageId);
         Assert.Equal(AgentStepStatus.Done, Assert.Single(paused.Plan, s => s.Title == "s1").Status);
 
-        // ONE per-step ledger entry — s1's. SafeRecordStep is where a step's entry is written, and it never ran
-        // for s2. (The count is the non-vacuity control: an empty ledger would satisfy "no entry for s2".)
+        // ONE per-step entry — s1's. The count is the non-vacuity control against an empty ledger.
         Assert.Equal(1, Ledger(paused).PerStep);
 
         // The run-level slice is s1's, not the aborted step's: its ids were never folded in.
@@ -343,11 +302,8 @@ public sealed class AgentRunOrchestratorUserPauseTests
     }
 
     /// <summary>
-    /// <b>The W3 fact.</b> On Live, a pause releases a pending action card — and that release is a
-    /// <c>ToolDecision.Decline</c>, not a cancellation: the exchange CONTINUES and can return
-    /// <c>Succeeded: false, Cancelled: false</c>. So the pause branch may not be gated on <c>r.Cancelled</c>,
-    /// and it is not: the consumed REQUEST alone decides. Gate it the other way and the user presses Pause and
-    /// the run REPLANS around work it thinks failed — which <c>ReplanCalls</c> below is what catches.
+    /// A released action card is a <c>ToolDecision.Decline</c>, not a cancellation, so the pause branch may not be
+    /// gated on <c>r.Cancelled</c> — gate it that way and pressing Pause makes the run replan.
     /// </summary>
     [Fact]
     public async Task UserPause_WhoseStepReturnsSucceededFalseAndCancelledFalse_StillPauses()

@@ -13,12 +13,6 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// R12/G3: the run-progress projection over a real <see cref="AgentRunService"/>. Covers state mapping
-/// (incl. the distinct truncated-Completed), the moving Running highlight, live ledger accrual, run-id
-/// filtering, and off-thread RunChanged marshaling with no cross-thread WPF exception.
-/// Written to run on Windows/CI — the WPF test assembly cannot execute on macOS.
-/// </summary>
 public sealed class RunProgressViewModelTests : IDisposable
 {
     private readonly string _tmpDir;
@@ -40,7 +34,6 @@ public sealed class RunProgressViewModelTests : IDisposable
             .Returns(ci => $"{(string)ci[0]}|{string.Join(",", (object[])ci[1])}");
     }
 
-    /// <summary>Runs Post callbacks inline so the projection is observable synchronously in tests.</summary>
     private async Task<AgentRun> NewPlannedRunAsync()
     {
         var chatId = Guid.NewGuid();
@@ -74,17 +67,17 @@ public sealed class RunProgressViewModelTests : IDisposable
 
         var vm = CreateVm(run.Id);
         await vm.RefreshAsync();
-        Assert.Equal("Run_Activity_Planning", vm.CurrentActivity); // Planning note (fake echoes the loc key)
+        Assert.Equal("Run_Activity_Planning", vm.CurrentActivity);
         Assert.True(vm.HasCurrentActivity);
 
         await _runs.SetStateAsync(run.Id, AgentRunState.Running, TestContext.Current.CancellationToken);
         await _runs.SetStepStatusAsync(step.Id, AgentStepStatus.Running, TestContext.Current.CancellationToken);
         await vm.RefreshAsync();
-        Assert.Equal("Read notes", vm.CurrentActivity); // active step title
+        Assert.Equal("Read notes", vm.CurrentActivity);
 
         await _runs.CompleteAsync(run.Id, ct: TestContext.Current.CancellationToken);
         await vm.RefreshAsync();
-        Assert.Null(vm.CurrentActivity); // terminal → line hidden
+        Assert.Null(vm.CurrentActivity);
         Assert.False(vm.HasCurrentActivity);
 
         vm.Dispose();
@@ -156,13 +149,11 @@ public sealed class RunProgressViewModelTests : IDisposable
         await cleanVm.RefreshAsync();
         Assert.Equal(RunProgressState.Completed, cleanVm.State);
         Assert.False(cleanVm.IsTruncated);
-        Assert.Null(cleanVm.TruncationNote); // no chip on a clean completion
+        Assert.Null(cleanVm.TruncationNote);
         cleanVm.Dispose();
     }
 
-    /// <summary>J1: the truncation chip must name the REAL reason. Budget exhaustion now parks the run,
-    /// so the only reason the run loop still produces is "unverified" — a run whose work was never
-    /// verified must not claim it hit a budget it never hit.</summary>
+    // Budget exhaustion parks the run now, so a truncated run must not claim a budget it never hit.
     [Fact]
     public async Task TruncationNote_Unverified_IsNotTheBudgetCopy()
     {
@@ -175,13 +166,12 @@ public sealed class RunProgressViewModelTests : IDisposable
 
         Assert.Equal(RunProgressState.TruncatedCompleted, vm.State);
         Assert.True(vm.IsTruncated);
-        Assert.Equal("Run_Unverified", vm.TruncationNote); // fake echoes the loc key
+        Assert.Equal("Run_Unverified", vm.TruncationNote);
         Assert.NotEqual("Run_StoppedAtBudget", vm.TruncationNote);
         vm.Dispose();
     }
 
-    /// <summary>A run persisted BEFORE the budget-pause change carries reason "budget" (or the two
-    /// orchestrator cap reasons) — those keep the budget wording, which is true for them.</summary>
+    // Rows written before budget-pause carry these reasons, and the budget wording is true for them.
     [Theory]
     [InlineData("budget")]
     [InlineData("step-cap")]
@@ -199,8 +189,6 @@ public sealed class RunProgressViewModelTests : IDisposable
         vm.Dispose();
     }
 
-    /// <summary>An unknown or absent reason must degrade to the neutral "ended early" copy — falling
-    /// back to the budget wording is exactly the lie this mapping removes.</summary>
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -219,8 +207,6 @@ public sealed class RunProgressViewModelTests : IDisposable
         vm.Dispose();
     }
 
-    /// <summary>The chip clears when the run leaves the truncated state (a resumed/replanned run must
-    /// not keep a stale note): Completed+truncated → Running drops both flag and note.</summary>
     [Fact]
     public async Task TruncationNote_ClearsWhenTheRunIsNoLongerTruncated()
     {
@@ -239,8 +225,7 @@ public sealed class RunProgressViewModelTests : IDisposable
         vm.Dispose();
     }
 
-    /// <summary>Verifying folds into the Running chip (spinner stays lit) but supplies its own
-    /// current-activity line — the only rendered signal that the critic pass is running.</summary>
+    // Verifying keeps the Running chip lit but supplies its own activity line, the only signal the critic ran.
     [Fact]
     public async Task Verifying_FoldsToRunningChip_WithItsOwnActivityLine()
     {
@@ -252,9 +237,9 @@ public sealed class RunProgressViewModelTests : IDisposable
         await _runs.SetStateAsync(run.Id, AgentRunState.Verifying, TestContext.Current.CancellationToken);
         await vm.RefreshAsync();
 
-        Assert.Equal(RunProgressState.Running, vm.State); // spinner stays lit (MapState default)
+        Assert.Equal(RunProgressState.Running, vm.State);
         Assert.False(vm.IsTruncated);
-        Assert.Equal("Run_Activity_Verifying", vm.CurrentActivity); // fake echoes the loc key
+        Assert.Equal("Run_Activity_Verifying", vm.CurrentActivity);
         Assert.True(vm.HasCurrentActivity);
         Assert.False(vm.CanContinue);
         vm.Dispose();
@@ -280,7 +265,6 @@ public sealed class RunProgressViewModelTests : IDisposable
         await vm.RefreshAsync();
         var before = vm.State;
 
-        // A terminal event for a DIFFERENT run must not reproject this vm (no throw either).
         await _runs.CompleteAsync(other.Id, truncated: true, truncationReason: "budget", TestContext.Current.CancellationToken);
 
         Assert.Equal(before, vm.State);
@@ -294,9 +278,7 @@ public sealed class RunProgressViewModelTests : IDisposable
         var run = await NewPlannedRunAsync();
         var vm = CreateVm(run.Id);
 
-        // Raise a state change from a background thread — the vm must marshal via the captured
-        // SynchronizationContext (G3). With the inline context installed on THIS thread, the assert is
-        // that no exception escapes; production posts to the WPF dispatcher.
+        // The whole claim is that nothing throws: the vm marshals through the captured SynchronizationContext.
         await Task.Run(async () => await _runs.SetStateAsync(run.Id, AgentRunState.Running), TestContext.Current.CancellationToken);
 
         vm.Dispose();
@@ -312,38 +294,20 @@ public sealed class RunProgressViewModelTests : IDisposable
         await vm.RefreshAsync();
 
         Assert.Equal(RunProgressState.WaitingForInput, vm.State);
-        Assert.Equal("Run_Activity_WaitingAtBudget", vm.CurrentActivity); // fake echoes the loc key
+        Assert.Equal("Run_Activity_WaitingAtBudget", vm.CurrentActivity);
         Assert.True(vm.CanContinue);
         Assert.True(vm.ContinueCommand.CanExecute(null));
         vm.Dispose();
     }
 
-    /// <summary>
-    /// <b>REGRESSION</b> (Phase 3 fix pass). WaitingForInput is reached for THREE reasons since Batch 07 and only
-    /// one of them is a budget: a fan-out's child can park at its own halved budget (the parent re-parks with
-    /// "children-parked"), and the startup reconcile re-parks a parent interrupted mid-fan-out
-    /// ("children-interrupted"). Announcing either as "Stopped at budget — continue?" sends the user to raise
-    /// budgets in Settings that were never reached, which changes nothing.
-    /// <para>
-    /// The <c>step-cap</c> row is the non-vacuity control AND the fallback pin: an unknown or absent reason must
-    /// keep the budget wording, because that is what every pause the run loop writes for itself really is.
-    /// Neutralization: go back to a constant <c>Run_Activity_WaitingAtBudget</c> → the first two rows red.
-    /// </para>
-    /// </summary>
     [Theory]
     [InlineData("children-parked", "Run_Activity_ChildrenParked")]
     [InlineData("children-interrupted", "Run_Activity_ChildrenInterrupted")]
-    // Batch 08 G2. Driven through PauseAsync (→ WaitingForInput) because that is the only route that reaches
-    // DescribePause at all: ComputeActivity returns null for Paused itself, since the state chip carries it.
-    // The arm exists so the mapping is defensible the day that changes, instead of saying "Stopped at budget"
-    // to someone who pressed Pause.
+    // Driven through the WaitingForInput route: the activity line is null for Paused itself, since the chip carries it.
     [InlineData("user", "Run_Activity_UserPaused")]
-    // Batch 08 F19, and unlike the "user" row above this one IS reachable today: the launcher's three re-park
-    // arms write it and they write WaitingForInput, which is exactly the state this mapping renders for. It
-    // fell through to the budget arm, so a Continue that never started announced itself as "Stopped at
-    // budget" — and for a run the user had paused by hand a moment earlier, that also overwrote who paused it.
+    // Reachable today: the launcher's re-park arms write this reason together with WaitingForInput.
     [InlineData("resume-interrupted", "Run_Activity_ResumeInterrupted")]
-    // On the interactive path this label is the only surface for these two reasons — token-keyed, never the model's question.
+    // On the interactive path this label is the only surface for these two — token-keyed, never the model's question.
     [InlineData("needs-goal", "Run_Activity_NeedsGoal")]
     [InlineData("needs-input", "Run_Activity_NeedsInput")]
     [InlineData("step-cap", "Run_Activity_WaitingAtBudget")]
@@ -358,27 +322,15 @@ public sealed class RunProgressViewModelTests : IDisposable
         await vm.RefreshAsync();
 
         Assert.Equal(RunProgressState.WaitingForInput, vm.State);
-        Assert.Equal(expectedKey, vm.CurrentActivity); // the fake localization echoes the loc key
+        Assert.Equal(expectedKey, vm.CurrentActivity);
         vm.Dispose();
     }
 
-    /// <summary>
-    /// hermes #16, <b>REGRESSION</b>. The FOURTH reason a run reaches WaitingForInput, and the first one that
-    /// has to name something: the run is waiting for a human to approve a specific tool, and the Continue
-    /// button beside this line is what grants it.
-    /// <para>
-    /// The assertion is deliberately "not the budget wording, AND it carries the tool name". Asserting only
-    /// that the line is non-empty would pass on the fall-through arm — both pause readers degrade to the
-    /// budget copy rather than failing, which is exactly how Batch 08 F19 shipped a lie, and is the failure
-    /// this branch has now logged three times as "the assertion observed the default, not the mechanism".
-    /// </para>
-    /// <para>Neutralize: delete the <c>ToolApprovalReason</c> arm from <c>DescribePause</c> → red.</para>
-    /// </summary>
+    // Asserting only a non-empty line would pass on the fall-through arm, which degrades to the budget copy.
     [Fact]
     public async Task AToolApprovalParksActivityLineNamesTheToolAndIsNotTheBudgetWording()
     {
-        // Format is stubbed only here: every other activity string is a bare key lookup, and echoing
-        // "key|arg0" keeps both halves of the claim readable in one assert.
+        // Format is stubbed only here; every other activity string is a bare key lookup.
         _loc.Format(Arg.Any<string>(), Arg.Any<object[]>())
             .Returns(ci => (string)ci[0] + "|" + string.Join(',', ((object[])ci[1]).Select(a => a?.ToString())));
 
@@ -422,9 +374,7 @@ public sealed class RunProgressViewModelTests : IDisposable
         vm.Dispose();
     }
 
-    /// <summary>Batch 02: pricing is withdrawn, so the strip is tokens + active seconds and nothing else.
-    /// Asserted as the WHOLE string rather than a Contains — a money segment appended after the seconds
-    /// is exactly what a substring check would let through.</summary>
+    // Asserted as the whole string: a money segment appended after the seconds would slip past a Contains.
     [Fact]
     public async Task LedgerSummary_IsTokensAndActiveSecondsOnly_WithNoMoneySegment()
     {
@@ -439,12 +389,8 @@ public sealed class RunProgressViewModelTests : IDisposable
         vm.Dispose();
     }
 
-    /// <summary>Persisted-data compatibility for that removal. The ledger's JSON options never suppressed
-    /// nulls, so every row written before 2026-07-30 carries the withdrawn money key literally; neither
-    /// serializer sets <c>UnmappedMemberHandling</c>, so the reader skips it — no migration, no shim. The
-    /// fixture value is deliberately non-null: a null would also pass against a reader that still bound
-    /// the field. If the key made <c>TryParseLedger</c> throw it would return null and the tokens below
-    /// would read 0, so these asserts are what proves the parse.</summary>
+    // Legacy rows carry the withdrawn money key literally and no serializer sets UnmappedMemberHandling, so the
+    // reader skips it; the fixture value is non-null on purpose, since a null would also pass a reader that bound it.
     [Fact]
     public async Task LegacyLedger_CarryingTheWithdrawnMoneyKey_ProjectsTokensAndTimeUnchanged()
     {

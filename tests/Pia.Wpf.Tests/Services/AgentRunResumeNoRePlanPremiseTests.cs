@@ -10,11 +10,7 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Pins the invariant that a resume dispatch calls neither <c>PlanAsync</c> nor <c>ReplaceStepsAsync</c>,
-/// measured on spies rather than inferred from end state (a re-planning resume that happened to produce the
-/// same steps would pass an end-state-only check).
-/// </summary>
+/// <summary>Measured on spies, not end state: a re-planning resume that produced the same steps would pass an end-state check.</summary>
 public sealed class AgentRunResumeNoRePlanPremiseTests
 {
     private static Persona Persona() => new() { Name = "Pia", SystemPrompt = "sys" };
@@ -43,10 +39,7 @@ public sealed class AgentRunResumeNoRePlanPremiseTests
         return result;
     }
 
-    /// <summary>
-    /// A step row written directly with a given status, so a seeded park has no prior dispatch and a zero call
-    /// count on the resume means zero rather than "one launch's calls, minus one".
-    /// </summary>
+    /// <summary>Written directly so a seeded park has no prior dispatch and a zero call count means zero.</summary>
     private static AgentStep Persisted(int ordinal, string intent, AgentStepStatus status) => new()
     {
         Id = Guid.NewGuid(),
@@ -56,10 +49,7 @@ public sealed class AgentRunResumeNoRePlanPremiseTests
         Status = status,
     };
 
-    /// <summary>
-    /// Counts both planner entry points separately: <c>PlanAsync</c> is reached only from the resume-guarded
-    /// planning block, while <c>ReplanAsync</c> is also reachable from a resume's verify-fail branch.
-    /// </summary>
+    /// <summary>The two entry points are counted separately because <c>ReplanAsync</c> is also reachable from a resume's verify-fail branch.</summary>
     private sealed class SpyPlanner : IAgentPlanner
     {
         public Queue<PlanResult> Plans { get; } = new();
@@ -70,8 +60,7 @@ public sealed class AgentRunResumeNoRePlanPremiseTests
 
         public int ReplanCalls { get; private set; }
 
-        /// <summary>The goal each <c>PlanAsync</c> call was handed, so a control fact can show the planner was
-        /// wired to this run rather than merely invoked.</summary>
+        /// <summary>Lets a control fact show the planner was wired to this run rather than merely invoked.</summary>
         public List<string> PlannedGoals { get; } = new();
 
         public Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
@@ -88,11 +77,6 @@ public sealed class AgentRunResumeNoRePlanPremiseTests
         }
     }
 
-    /// <summary>
-    /// Pass-through decorator over the real run store, counting <c>ReplaceStepsAsync</c> calls and recording
-    /// every <c>SetStateAsync</c> so plan writes and <c>Planning</c> transitions are observable; everything else
-    /// delegates, so the run still executes against real persisted rows.
-    /// </summary>
     private sealed class SpyRunService : IAgentRunService
     {
         private readonly IAgentRunService _inner;
@@ -159,7 +143,6 @@ public sealed class AgentRunResumeNoRePlanPremiseTests
         }
     }
 
-    /// <summary>Records what the executor was asked to run, including whether the single-turn fallback was taken.</summary>
     private sealed class RecordingExecutor : IAgentTurnExecutor
     {
         private readonly Func<AgentStep, StepTurnResult> _result;
@@ -213,10 +196,6 @@ public sealed class AgentRunResumeNoRePlanPremiseTests
         }
     }
 
-    /// <summary>
-    /// Mirrors the other orchestrator fixtures in this folder, with <see cref="BuildOrchestrator"/> wired to the
-    /// <see cref="SpyRunService"/> so plan writes are countable while tests still read and seed through the real store.
-    /// </summary>
     private sealed class Harness : IDisposable
     {
         private readonly string _dir;
@@ -269,10 +248,7 @@ public sealed class AgentRunResumeNoRePlanPremiseTests
 
     // ------------------------------------------------------- the premise itself
 
-    /// <summary>
-    /// The park here is seeded directly through the store rather than driven by a first dispatch, so the resume
-    /// below is this fixture's only dispatch and its zero counts genuinely mean zero.
-    /// </summary>
+    /// <summary>The park is seeded through the store, so the resume is the only dispatch and its zero counts mean zero.</summary>
     [Fact]
     public async Task Resume_CallsNeitherPlanAsyncNorReplaceSteps_AndNeverEntersPlanning()
     {
@@ -318,10 +294,7 @@ public sealed class AgentRunResumeNoRePlanPremiseTests
 
     // ------------------------------------------------------------- the controls
 
-    /// <summary>
-    /// Control for the fact above: on the same fixture, a <c>resume: false</c> dispatch does call
-    /// <c>PlanAsync</c> and does write the plan, showing the harness really does wire a reachable planner.
-    /// </summary>
+    /// <summary>Control for the fact above: it shows the harness really does wire a reachable planner.</summary>
     [Fact]
     public async Task Launch_CallsPlanAsyncOnce_AndWritesThePlan()
     {
@@ -345,10 +318,7 @@ public sealed class AgentRunResumeNoRePlanPremiseTests
         Assert.Equal(AgentRunState.Completed, (await h.Runs.GetAsync(run.Id, ct))!.State);
     }
 
-    /// <summary>
-    /// The premise again, with launch and resume sharing one planner instance and one spy store across a real
-    /// park, so the only difference between the two dispatches is the <c>resume</c> flag.
-    /// </summary>
+    /// <summary>One planner instance and one spy store across a real park, so the only difference between the dispatches is the <c>resume</c> flag.</summary>
     [Fact]
     public async Task LaunchThenResume_OnOneWiring_AddsNoSecondPlanCall()
     {
@@ -388,12 +358,7 @@ public sealed class AgentRunResumeNoRePlanPremiseTests
 
     // ------------------------------------- the zero-step resume, characterised
 
-    /// <summary>
-    /// A resume of a run with zero persisted step rows drains nothing but still settles <c>Completed</c>,
-    /// un-truncated — i.e. it reports the goal as done having done no work. The park reason is written as
-    /// <c>"needs-goal"</c> purely to name the shape under test; <c>TryBeginResumeAsync</c> NULLs <c>ExtraJson</c>,
-    /// so this dispatch cannot read the reason at all, and an unstated reason is the conservative case.
-    /// </summary>
+    /// <summary>A zero-step resume settles <c>Completed</c> un-truncated — it reports the goal as done having done no work.</summary>
     [Fact]
     public async Task ZeroStepResume_PlansNothing_DrainsNothing_AndSettlesCompleted()
     {
@@ -440,11 +405,7 @@ public sealed class AgentRunResumeNoRePlanPremiseTests
         Assert.DoesNotContain("truncated", final.ExtraJson ?? string.Empty);
     }
 
-    /// <summary>
-    /// A resume can already reach <see cref="IAgentPlanner"/> today: on a failed verdict the outer loop spends
-    /// the shared replan budget via <c>ReplanAsync</c>, and the resulting steps are written and executed even on
-    /// a <c>resume: true</c> dispatch.
-    /// </summary>
+    /// <summary>A resume does reach the planner on a failed verdict, through <c>ReplanAsync</c> rather than <c>PlanAsync</c>.</summary>
     [Fact]
     public async Task ZeroStepResume_WhoseVerifyFails_ReachesReplanAsync()
     {

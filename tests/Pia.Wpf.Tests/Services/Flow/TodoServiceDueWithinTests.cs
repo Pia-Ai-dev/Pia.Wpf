@@ -9,11 +9,6 @@ using Xunit;
 
 namespace Pia.Tests.Services.Flow;
 
-/// <summary>
-/// The load-bearing DueDate parsing case (design §11): GetDueWithinAsync filters in C# after
-/// round-tripping DueDate through SQLite (ToString("O") → DateTime.Parse), so the comparison holds
-/// for local-midnight (Kind=Unspecified) DueDates as well as offset-bearing ones.
-/// </summary>
 public sealed class TodoServiceDueWithinTests : IDisposable
 {
     private readonly string _dbPath;

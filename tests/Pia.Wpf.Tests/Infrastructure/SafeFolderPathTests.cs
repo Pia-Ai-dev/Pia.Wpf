@@ -6,12 +6,6 @@ using Xunit;
 
 namespace Pia.Tests.Infrastructure;
 
-/// <summary>
-/// Covers the §0.3 permissive resolver <see cref="SafeFolderPath.TryResolveInsideAllowingAbsolute"/>:
-/// in-base absolute resolves; out-of-base absolute rejected; an in-base junction pointing outside is
-/// rejected after canonicalization; ".." escaping the base rejected; a not-yet-existing leaf under a
-/// real in-base dir resolves.
-/// </summary>
 public sealed class SafeFolderPathTests : IDisposable
 {
     private readonly string _temp;

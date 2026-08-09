@@ -6,25 +6,8 @@ using Xunit;
 namespace Pia.Tests.Helpers;
 
 /// <summary>
-/// Plan D8 / Batch 06 B14, both phases: a chip opened DURING the run must open the workspace copy, and the
-/// same chip opened AFTER promotion must open the promoted copy.
-/// <para>
-/// Rooted at the REAL shape (<c>AssistantWorkspace.RunsRoot\&lt;guid&gt;</c>), not under
-/// <c>Path.GetTempPath()</c> — <see cref="RunWorkspaceRedirects.Record"/>'s containment gate refuses anything
-/// else, so a temp-rooted fixture would assert on a registry that installed nothing (plan R1's failure mode
-/// exactly). Guid-named because <c>RunStartupSweepAsync</c> skips any directory name that is not a parseable
-/// Guid, so a leaked fixture is swept as <c>run is null</c> on the next app start instead of living in the
-/// developer's real runs folder forever.
-/// </para>
-/// <para>
-/// Shares the <c>RunWorkspaceRedirectsStatic</c> collection with every other class that reaches
-/// <see cref="RunWorkspaceRedirects.Record"/> at a root the containment gate ACCEPTS, because the registry is
-/// process-global: this class's cap fact deliberately overflows it, and evicting another class's entry mid-fact
-/// would be a fixture-only failure. Those classes are <c>LiveTurnExecutorPlannedRunTests</c> and
-/// <c>RunWorkspacePromotionTests</c> — the latter's real-shape promotion fact drives a CopyOut whose Record call
-/// lands under the real runs root, so it was silently outside this isolation until the Phase 3 fix pass joined
-/// it. Anything new that promotes at the real shape belongs in the collection too.
-/// </para>
+/// Rooted at the real runs root because <see cref="RunWorkspaceRedirects.Record"/>'s containment gate refuses
+/// anything else, and collection-shared because the cap fact deliberately overflows a process-global registry.
 /// </summary>
 [Collection("RunWorkspaceRedirectsStatic")]
 public sealed class RunWorkspaceRedirectsTests : IDisposable
@@ -64,11 +47,7 @@ public sealed class RunWorkspaceRedirectsTests : IDisposable
         }
     }
 
-    /// <summary>
-    /// REGRESSION (phase 1 of plan D8). The recorded path wins while the file is still there, even though a
-    /// redirect for that workspace is already installed — which is a real state: a byte-identical file counts
-    /// as promoted before the workspace is torn down. Neutralize by resolving unconditionally and this reds.
-    /// </summary>
+    /// <summary>A byte-identical file counts as promoted before teardown, so a redirect can be installed while the file is still there.</summary>
     [Fact]
     public void Resolve_ReturnsTheRecordedPath_WhileItStillExists()
     {
@@ -82,11 +61,6 @@ public sealed class RunWorkspaceRedirectsTests : IDisposable
         Assert.Equal(inWorkspace, RunWorkspaceRedirects.Resolve(inWorkspace));
     }
 
-    /// <summary>
-    /// REGRESSION (phase 2 of plan D8): the workspace is gone — promotion moved the file and the orchestrator
-    /// tore the directory down — so the chip's recorded path must resolve to the same relative path under the
-    /// destination. Neutralize by dropping the redirect lookup and this reds.
-    /// </summary>
     [Fact]
     public void Resolve_RedirectsToThePromotedCopy_OnceTheWorkspaceIsGone()
     {
@@ -94,9 +68,7 @@ public sealed class RunWorkspaceRedirectsTests : IDisposable
         var dest = NewDestination();
         var recorded = WriteFile(ws, Path.Combine("sub", "a.md"), "workspace");
 
-        // Record BEFORE the teardown, which is the real order (RunWorkspaceService records inside its
-        // promotion walk, the caller tears down afterwards) and the only order in which the workspace root
-        // can still be real-path resolved.
+        // Record BEFORE the teardown: the workspace root can only be real-path resolved while it still exists.
         RunWorkspaceRedirects.Record(ws, dest);
         Directory.Delete(ws, recursive: true);
 
@@ -105,10 +77,6 @@ public sealed class RunWorkspaceRedirectsTests : IDisposable
         Assert.Equal(promoted, RunWorkspaceRedirects.Resolve(recorded));
     }
 
-    /// <summary>
-    /// GUARD (it cannot red on a revert of the redirect behaviour): a since-deleted file with no redirect
-    /// comes back unchanged, so <c>ShellLauncher</c> no-ops on it exactly as it does today.
-    /// </summary>
     [Fact]
     public void Resolve_ReturnsTheInput_WhenNeitherPathExists()
     {
@@ -119,11 +87,7 @@ public sealed class RunWorkspaceRedirectsTests : IDisposable
         Assert.Equal(string.Empty, RunWorkspaceRedirects.Resolve(string.Empty));
     }
 
-    /// <summary>
-    /// REGRESSION: the containment gate on the registry. Both roots are app-derived today, and this is what
-    /// keeps it that way — no path outside the runs tree can install a redirect that would silently send an
-    /// "open file" somewhere else. Neutralize by dropping the gate and this reds.
-    /// </summary>
+    /// <summary>No path outside the runs tree may install a redirect that silently sends an "open file" elsewhere.</summary>
     [Fact]
     public void Record_RefusesAWorkspaceRootOutsideTheRunsRoot()
     {
@@ -141,10 +105,7 @@ public sealed class RunWorkspaceRedirectsTests : IDisposable
         Assert.Equal(recorded, RunWorkspaceRedirects.Resolve(recorded));
     }
 
-    /// <summary>
-    /// GUARD: bounds process-local state that nothing else ever clears. The cap holds and the NEWEST entry is
-    /// the one that survives — evicting the newest would be worse than not evicting at all.
-    /// </summary>
+    /// <summary>Bounds process-local state nothing else clears, and the newest entry is the one that survives.</summary>
     [Fact]
     public void Record_EvictsPastTheEntryCap()
     {

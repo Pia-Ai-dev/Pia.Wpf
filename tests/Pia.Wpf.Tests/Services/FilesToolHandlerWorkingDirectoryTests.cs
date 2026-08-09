@@ -9,12 +9,7 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Covers the per-chat working-subpath narrowing end-to-end through
-/// <see cref="FilesToolHandler.HandleToolCallAsync"/>: relative tool paths resolve under the
-/// effective (narrowed) root, and a deferred write captures the effective root at PREPARE time —
-/// so an ambient change after the approval await cannot redirect where the file lands.
-/// </summary>
+/// <summary>A deferred write captures the effective root at PREPARE time, so an ambient change after the approval await cannot redirect where the file lands.</summary>
 public class FilesToolHandlerWorkingDirectoryTests : IDisposable
 {
     private readonly string _root;
@@ -82,7 +77,7 @@ public class FilesToolHandlerWorkingDirectoryTests : IDisposable
     [Fact]
     public async Task WorkspaceRoot_RedirectsListReadWrite_UnderRunRoot_NotInteractiveFolder()
     {
-        // Per-run isolated workspace (§17.2). The ambient WorkspaceRoot must win over _currentFolder.
+        // The ambient WorkspaceRoot must win over _currentFolder.
         var runRoot = Path.Combine(Path.GetTempPath(), "pia-runroot-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(runRoot);
         try

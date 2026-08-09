@@ -6,16 +6,8 @@ using Xunit;
 
 namespace Pia.Tests.Logging;
 
-/// <summary>
-/// T2-18, END TO END: the run scope reaches the FILE. Every other logging fact in this folder asserts against a
-/// stand-in sink, which is exactly the gap that let the item look done while shipping dead — <c>NReco</c> has no
-/// scope support, so "BeginScope works" and "the scope is in pia-*.log" are different claims and only the second
-/// one is the item.
-/// <para>
-/// This drives the real <c>FileLoggerProvider</c> in the same composition <c>Bootstrapper</c> builds
-/// (scope OUTSIDE cap) against a temp file, and reads the bytes back.
-/// </para>
-/// </summary>
+/// <summary>NReco has no scope support, so "BeginScope works" and "the scope is in pia-*.log" are different claims; this asserts
+/// the second, against the real file sink.</summary>
 public sealed class LogSinkCompositionTests : IDisposable
 {
     private readonly string _dir;
@@ -26,12 +18,10 @@ public sealed class LogSinkCompositionTests : IDisposable
         Directory.CreateDirectory(_dir);
     }
 
-    /// <summary>The Bootstrapper composition, pointed at a temp file. <paramref name="cap"/> is explicit so the
-    /// truncation half runs in a DEBUG test run too (the build default there is unlimited).</summary>
+    /// <summary><paramref name="cap"/> is explicit because the DEBUG build default is unlimited.</summary>
     private (ILoggerFactory Factory, string Path) BuildSink(int cap)
     {
-        // A file per fact: two facts in one class would otherwise append to one file, and the second would meet
-        // the first's still-open handle.
+        // A file per fact, so the second test never meets the first's still-open handle.
         var path = Path.Combine(_dir, "pia-" + Guid.NewGuid().ToString("N") + ".log");
         var options = new FileLoggerOptions
         {
@@ -47,22 +37,8 @@ public sealed class LogSinkCompositionTests : IDisposable
         return (factory, path);
     }
 
-    /// <summary>
-    /// Reads the log after the factory (and with it the provider) has been disposed, waiting for the writer to
-    /// land.
-    /// <para>
-    /// THE WAIT IS NOT DECORATION, and it is why this method takes <paramref name="expected"/>: NReco writes from
-    /// a background queue, so disposal does not guarantee the bytes are on disk by the time the next statement
-    /// runs. Reading once made this fact pass alone and fail inside the full suite — a load-sensitive flake,
-    /// authored here, not inherited. The bound is generous and the assertion is unchanged: if the composition is
-    /// wrong the text never arrives and the fact still fails, just a second later.
-    /// </para>
-    /// <para>
-    /// It reads whatever file the sink actually created rather than assuming the name — NReco applies its own
-    /// rolling-file convention to the path it is given, and pinning the literal name would make this a fact about
-    /// file naming instead of about the log's CONTENT.
-    /// </para>
-    /// </summary>
+    /// <summary>NReco writes from a background queue, so disposal does not put the bytes on disk — hence the wait for
+    /// <paramref name="expected"/>, and the read of whatever file the sink actually named.</summary>
     private string ReadAfter(ILoggerFactory factory, string path, string expected)
     {
         factory.Dispose();
@@ -82,10 +58,7 @@ public sealed class LogSinkCompositionTests : IDisposable
         }
     }
 
-    /// <summary>
-    /// Reads a file the sink may still hold a handle on. <c>File.ReadAllText</c> asks for exclusive-ish sharing
-    /// and throws on a live log file, which is a property of the reader, not a fact about the log.
-    /// </summary>
+    /// <summary><c>File.ReadAllText</c> throws on a log file the sink still holds a handle on.</summary>
     private static string ReadShared(string path)
     {
         using var stream = new FileStream(
@@ -109,21 +82,16 @@ public sealed class LogSinkCompositionTests : IDisposable
         }
         logger.LogInformation("after the run");
 
-        // The LAST line written is what we wait for, so the two before it are certainly on disk as well.
+        // Waiting on the LAST line written puts the two before it on disk too.
         var text = ReadAfter(factory, path, expected: "after the run");
 
         Assert.Contains($"[run {runId}] dispatching", text);
         Assert.Contains($"[run {runId} step 2] executing", text);
-        // And the scope really closed: the last line carries no prefix at all.
         Assert.Contains("after the run", text);
         Assert.DoesNotContain($"[run {runId}] after the run", text);
     }
 
-    /// <summary>
-    /// The composition ORDER, which the Bootstrapper comment claims: scope outside cap, so the prefix is inside
-    /// the capped text and survives truncation (which keeps the head). A capped line still says which run it
-    /// belongs to — that is the whole reason the order is not the other way round.
-    /// </summary>
+    /// <summary>Scope must wrap cap, not the reverse, so the run prefix sits inside the text truncation keeps.</summary>
     [Fact]
     public void ACappedLine_StillCarriesItsRunScope()
     {

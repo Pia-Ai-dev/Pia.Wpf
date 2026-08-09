@@ -9,12 +9,6 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Coverage for <see cref="PersonaService"/>: built-in ∪ managed ∪ user merge, built-in and managed
-/// immutability, delete tracking (including the pin that a managed id never becomes a push tombstone),
-/// the replace-all managed store with its withdrawal latch, and active-persona resolution with the
-/// operating-mode fallback (contract §7).
-/// </summary>
 public class PersonaServiceTests : IDisposable
 {
     private readonly SqliteContext _ctx;
@@ -28,11 +22,8 @@ public class PersonaServiceTests : IDisposable
     {
         _tmpDir = Path.Combine(Path.GetTempPath(), "PiaPersonaTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tmpDir);
-        // An EXPLICIT temp database, never the parameterless ctor's %LOCALAPPDATA%\Pia\history.db: the
-        // managed-store tests below call ReplaceManagedPersonasAsync, whose first statement is
-        // `DELETE FROM ManagedPersonas` — against a real profile that wipes every admin-published persona
-        // the developer is signed in to, and the first-run latch in the real settings.json means the next
-        // sync echoes a current catalogVersion and never re-fetches them.
+        // An explicit temp database, never the parameterless ctor: ReplaceManagedPersonasAsync starts with
+        // `DELETE FROM ManagedPersonas`, which against a real profile wipes the developer's own personas.
         _ctx = new SqliteContext(Path.Combine(_tmpDir, "history.db"));
         _deleteTracker = new SyncDeleteTrackerService(_tmpDir, NullLogger<SyncDeleteTrackerService>.Instance);
         _settings = new TestSettingsService();
@@ -66,7 +57,6 @@ public class PersonaServiceTests : IDisposable
         Assert.NotNull(userRow);
         Assert.False(userRow!.IsBuiltIn);
 
-        // Built-ins are listed before user personas.
         var lastBuiltInIndex = all.Select((p, i) => (p, i)).Where(t => t.p.IsBuiltIn).Max(t => t.i);
         var userIndex = all.Select((p, i) => (p, i)).First(t => t.p.Id == user.Id).i;
         Assert.True(userIndex > lastBuiltInIndex);
@@ -90,7 +80,6 @@ public class PersonaServiceTests : IDisposable
         Assert.NotNull(fetched);
         Assert.Equal(outputFormat, fetched!.OutputFormat);
 
-        // A persona with no output format round-trips as null (substrate default applies at prompt time).
         var plain = await AddUserPersonaAsync("TEST_NoOutputFormat");
         var fetchedPlain = await _service.GetPersonaAsync(plain.Id);
         Assert.Null(fetchedPlain!.OutputFormat);
@@ -126,11 +115,9 @@ public class PersonaServiceTests : IDisposable
         fetched.ModelType = null;
         await _service.UpdatePersonaAsync(fetched);
 
-        // A blanked hint reads back as the default type, not as a stale value and not as null.
         var cleared = await _service.GetPersonaAsync(added.Id);
         Assert.Equal(Persona.DefaultModelType, cleared!.ModelType);
 
-        // A persona that never set the hint reads back as the default type too.
         var plain = await AddUserPersonaAsync("TEST_NoModelType");
         Assert.Equal(Persona.DefaultModelType, (await _service.GetPersonaAsync(plain.Id))!.ModelType);
     }
@@ -226,21 +213,15 @@ public class PersonaServiceTests : IDisposable
         };
     }
 
-    /// <summary>
-    /// Seeds the managed store through the only writer there is. Replace-all semantics mean every seed starts
-    /// from an empty store, on top of this instance's own temp database.
-    /// </summary>
+    /// <summary>Seeds the managed store; replace-all semantics mean every seed starts from an empty store.</summary>
     private async Task<Persona[]> AddManagedPersonasAsync(params Persona[] personas)
     {
         await _service.ReplaceManagedPersonasAsync(personas);
         return personas;
     }
 
-    /// <summary>
-    /// Direct read of the pushed <c>Personas</c> table. Several assertions below are about what is on DISK
-    /// rather than what the merged list shows — a suppressed user row must survive, and a managed row must
-    /// never appear here at all (this table is the push source).
-    /// </summary>
+    /// <summary>Direct read of the pushed <c>Personas</c> table, which is the push source: a suppressed user
+    /// row must survive there and a managed row must never appear in it.</summary>
     private bool UserPersonaRowExists(Guid id)
     {
         using var command = _ctx.GetConnection().CreateCommand();
@@ -259,8 +240,7 @@ public class PersonaServiceTests : IDisposable
 
         var all = await _service.GetPersonasAsync();
 
-        // Built-ins occupy the head, so the managed block starts at exactly the built-in count — asserted by
-        // index, because the index order is the contract the picker relies on.
+        // Asserted by index, because the index order is the contract the picker relies on.
         var builtInCount = all.Count(p => p.IsBuiltIn);
         Assert.Equal(managed[0].Id, all[builtInCount].Id);
         Assert.Equal(managed[1].Id, all[builtInCount + 1].Id);
@@ -287,8 +267,7 @@ public class PersonaServiceTests : IDisposable
     [Fact]
     public async Task ManagedPersona_WithoutModelType_ReadsBackTheDefault()
     {
-        // The managed wire DTO has no ModelType field, so every managed row lands in the store with a
-        // blank type; the read path must still hand chat a routable value.
+        // The managed wire DTO has no ModelType field, so the read path must still hand chat a routable value.
         await AddManagedPersonasAsync(NewManagedPersona("TEST_ManagedModelType"));
 
         var stored = await _service.GetManagedPersonasAsync();
@@ -320,8 +299,7 @@ public class PersonaServiceTests : IDisposable
         var user = await AddUserPersonaAsync("TEST_UserSurvivesManagedClear");
         await AddManagedPersonasAsync(NewManagedPersona("TEST_ManagedCleared"));
 
-        // Present-and-empty means CLEAR. (An ABSENT channel never reaches this method at all — that decision
-        // belongs to the sync apply.)
+        // Present-and-empty means clear; an absent channel never reaches this method at all.
         await _service.ReplaceManagedPersonasAsync([]);
 
         Assert.Empty(await _service.GetManagedPersonasAsync());
@@ -332,21 +310,16 @@ public class PersonaServiceTests : IDisposable
     [Fact]
     public async Task ReplaceManagedPersonasAsync_RunsOffTheSharedConnection_SoAPendingTransactionCannotBreakIt()
     {
-        // The sync pull calls the replace from a threadpool thread while the UI thread keeps using
-        // SqliteContext's SHARED connection — including TodoService.UpdateSortOrderAsync and
-        // KanbanColumnService.SetDefaultViewAsync, which hold transactions on it. One SqliteConnection cannot
-        // serve a pending transaction and an untransacted command at the same time, so a replace that used
-        // the shared handle would throw ("does not support nested transactions" / "Execute requires the
-        // command to have a transaction object …") and abort the whole pull. Simulating the pending
-        // transaction is the cheapest deterministic proxy for the cross-thread race.
+        // One SqliteConnection cannot serve a pending transaction and an untransacted command at once, so a
+        // replace on the shared handle would throw and abort the whole sync pull.
         var shared = _ctx.GetConnection();
         using var pending = shared.BeginTransaction(deferred: true);
         using (var read = shared.CreateCommand())
         {
             read.Transaction = pending;
             read.CommandText = "SELECT COUNT(*) FROM ManagedPersonas";
-            // Synchronous on purpose: this only has to materialize the read snapshot, and the async overload
-            // would drag TestContext.Current.CancellationToken plumbing into a one-line fixture (xUnit1051).
+            // Synchronous on purpose: the async overload drags cancellation-token plumbing into a one-line
+            // fixture (xUnit1051), and this only has to materialize the read snapshot.
             read.ExecuteScalar();
         }
 
@@ -396,8 +369,8 @@ public class PersonaServiceTests : IDisposable
     {
         var managed = (await AddManagedPersonasAsync(NewManagedPersona("TEST_ManagedUndeletable")))[0];
 
-        // Delete a real user persona first so the tracker file definitely exists on disk — otherwise the
-        // persisted-state assertion below would pass trivially.
+        // Delete a real user persona first so the tracker file exists on disk; otherwise the assertion below
+        // passes trivially.
         var user = await AddUserPersonaAsync("TEST_UserDeletedForTracker");
         await _service.DeletePersonaAsync(user.Id);
         _created.Remove(user.Id);
@@ -493,15 +466,13 @@ public class PersonaServiceTests : IDisposable
         Assert.Equal(1, all.Count(p => p.Id == user.Id));
         Assert.True(all.First(p => p.Id == user.Id).IsManaged);
 
-        // The user's own row is only SUPPRESSED from the merged list, never deleted from storage.
+        // Suppressed from the merged list, never deleted from storage.
         Assert.True(UserPersonaRowExists(user.Id));
     }
 
     public void Dispose()
     {
-        // The whole database is this instance's own temp file, so dropping the directory is the cleanup.
-        // The row-level deletes are kept only because they exercise the same paths the tests do and would
-        // surface a delete that stopped working; they are no longer load-bearing for isolation.
+        // Dropping the temp directory is the real cleanup; the row-level deletes only exercise the delete path.
         foreach (var id in _created)
         {
             try { _service.DeletePersonaAsync(id).GetAwaiter().GetResult(); }

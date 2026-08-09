@@ -12,30 +12,13 @@ using Xunit;
 namespace Pia.Tests.Services;
 
 /// <summary>
-/// hermes #9 on the HEADLESS executor, end to end through the real <see cref="AgentRunOrchestrator"/> and a
-/// real SQLite run store — because the defect is stated in terms of the PERSISTED status ("records as Done"),
-/// and Done/Failed is decided in <c>AgentRunOrchestrator.SafeRecordStep</c> from <c>r.Succeeded</c>. Asserting
-/// only the returned <c>StepTurnResult</c> would test the record, not the recorded status.
-/// <para>
-/// The discriminating pair is <see cref="DeclaredFailure_WithPlentyOfText_RecordsFailed"/> — the old
-/// heuristic's exact blind spot, a step that fails and then eloquently explains itself — and
-/// <see cref="DeclaredSuccess_WithNoTextAtAll_RecordsDone"/>, its inverse.
-/// </para>
-/// <para>
-/// <b>Neutralize</b> (for both): restore <c>var succeeded = !string.IsNullOrWhiteSpace(exchange.Visible);</c>
-/// at the decision line in <c>HeadlessTurnExecutor.RunExchangeStepAsync</c>. Deleting the tool instead reds
-/// every fact here and proves nothing.
-/// </para>
+/// Runs through the real orchestrator and a real SQLite store because Done/Failed is decided when the step is
+/// recorded — asserting only the returned <c>StepTurnResult</c> would test the record, not the recorded status.
 /// </summary>
 public sealed class HeadlessStepOutcomeSignalTests
 {
     // ---- the discriminating pair ----
 
-    /// <summary>
-    /// <b>THE RED DEMO.</b> The step produces a full paragraph of articulate prose AND declares
-    /// <c>succeeded:false</c>. Old behaviour: non-empty text, so <c>AgentStepStatus.Done</c> and the run
-    /// marches on with a false premise. New behaviour: the declaration wins and the row is <c>Failed</c>.
-    /// </summary>
     [Fact]
     public async Task DeclaredFailure_WithPlentyOfText_RecordsFailed()
     {
@@ -63,10 +46,6 @@ public sealed class HeadlessStepOutcomeSignalTests
         Assert.Equal("the source spreadsheet is missing", h.Planner.LastReplanFailure);
     }
 
-    /// <summary>
-    /// <b>THE INVERSE DEMO.</b> The step emits no visible text at all and declares <c>succeeded:true</c>.
-    /// Old behaviour: empty text, so <c>Failed</c> + "Empty response". New behaviour: <c>Done</c>.
-    /// </summary>
     [Fact]
     public async Task DeclaredSuccess_WithNoTextAtAll_RecordsDone()
     {
@@ -94,11 +73,7 @@ public sealed class HeadlessStepOutcomeSignalTests
 
     // ---- the fallback ----
 
-    /// <summary>
-    /// THE FALLBACK, pinned so it cannot be turned fail-closed by accident: a step that never calls the tool
-    /// keeps the old non-empty-text verdict and still records <c>Done</c>. Failing an undeclared step would
-    /// break every run on a provider that cannot call tools at all.
-    /// </summary>
+    /// <summary>Failing an undeclared step would break every run on a provider that cannot call tools at all.</summary>
     [Fact]
     public async Task NoDeclaration_FallsBackToTheTextHeuristic_AndStillRecordsDone()
     {
@@ -111,8 +86,7 @@ public sealed class HeadlessStepOutcomeSignalTests
 
         Assert.Equal(AgentStepStatus.Done, Assert.Single(run.Plan).Status);
         Assert.Equal(AgentRunState.Completed, run.State);
-        // …but it is recorded as UNCONFIRMED: no claim reached the run context, so the critic is told the
-        // "ok" is only an inference.
+        // …but recorded as UNCONFIRMED: no claim reached the run context, so the "ok" is only an inference.
         Assert.Null(Assert.Single(Assert.Single(h.Verifier.SeenCompletedSteps)).Outcome);
     }
 
@@ -131,10 +105,7 @@ public sealed class HeadlessStepOutcomeSignalTests
         Assert.Equal("Empty response", h.Planner.LastReplanFailure);
     }
 
-    /// <summary>
-    /// <b>GUARD</b>. A declaration whose <c>succeeded</c> argument is unusable is NOT a failure — it is
-    /// silence, so the step falls back. A provider's argument-encoding quirk must never fail a user's run.
-    /// </summary>
+    /// <summary>An unusable <c>succeeded</c> argument is silence, not failure — a provider's encoding quirk must never fail a run.</summary>
     [Fact]
     public async Task AMalformedDeclaration_FallsBackInsteadOfFailing()
     {
@@ -156,11 +127,7 @@ public sealed class HeadlessStepOutcomeSignalTests
 
     // ---- scoping ----
 
-    /// <summary>
-    /// The tool is SCOPED: it reaches the provider on an agent step, and the run's cached tool list is not
-    /// mutated on the way there (an in-place add would leak a step tool into every other turn on that setup).
-    /// Paired with <see cref="TheFallbackTurn_IsNotOfferedTheTool"/>.
-    /// </summary>
+    /// <summary>An in-place add would leak the step tool into every other turn on that setup.</summary>
     [Fact]
     public async Task AStepTurn_IsOfferedTheTool()
     {
@@ -176,11 +143,7 @@ public sealed class HeadlessStepOutcomeSignalTests
             "the run's cached tool list must not have been mutated");
     }
 
-    /// <summary>
-    /// The R10 planner-degrade turn runs the goal as one ordinary turn and creates no <c>AgentStep</c> row, so
-    /// there is no Done/Failed for a declaration to decide — it is deliberately not offered the tool. The live
-    /// executor draws the same line at the same place.
-    /// </summary>
+    /// <summary>The planner-degrade turn creates no step row, so there is no Done/Failed for a declaration to decide.</summary>
     [Fact]
     public async Task TheFallbackTurn_IsNotOfferedTheTool()
     {
@@ -195,16 +158,7 @@ public sealed class HeadlessStepOutcomeSignalTests
         Assert.False(AgentStepTools.OffersStepResultTool(h.LastTools));
     }
 
-    /// <summary>
-    /// <b>GUARD</b>. A step that resolved its OWN persona (Batch 07 G6) runs on a different
-    /// <c>AssistantTurnSetup</c> than the run default, and it is still offered the tool. Augmenting the run
-    /// default instead of the resolved setup compiles, leaves every other fact here green, and silently
-    /// strands exactly those steps on the text heuristic forever — the Batch 14 failure mode.
-    /// <para>
-    /// Non-vacuity: the assertion also requires the SPECIALIST's own tool in the same list, so a fixture
-    /// where the step persona quietly degraded to the run default cannot pass this.
-    /// </para>
-    /// </summary>
+    /// <summary>Augmenting the run default instead of the step's resolved setup compiles and leaves every other fact here green.</summary>
     [Fact]
     public async Task AStepWithItsOwnPersona_IsStillOfferedTheTool()
     {
@@ -222,12 +176,7 @@ public sealed class HeadlessStepOutcomeSignalTests
             "a step running on its own persona must still be offered emit_step_result");
     }
 
-    /// <summary>
-    /// <b>GUARD</b>. The interception is PRE-ROUTE: <c>RouteToolCallAsync</c> never sees the call, so no
-    /// <c>ToolGateDecision.UnknownTool</c> audit row is written and the model gets a real acknowledgement
-    /// rather than "Unknown tool.". Without the short-circuit the claim would be lost and the audit trail
-    /// would accuse the model of inventing a tool the run itself offered it.
-    /// </summary>
+    /// <summary>The interception is PRE-ROUTE, so no <c>UnknownTool</c> audit row is written and the model gets a real acknowledgement.</summary>
     [Fact]
     public async Task TheDeclarationIsInterceptedBeforeRouting()
     {
@@ -258,9 +207,8 @@ public sealed class HeadlessStepOutcomeSignalTests
         return new FunctionCallContent("call-emit", AgentStepTools.EmitStepResultToolName, args);
     }
 
-    /// <summary>Plans exactly one step; every replan degrades so a failed step terminates the run instead of
-    /// looping, which makes the run's terminal state an assertable consequence of the step's status. Records
-    /// the failure text it was handed — that is what the model's own summary has to reach.</summary>
+    /// <summary>Every replan degrades, so a failed step terminates the run instead of looping and the terminal
+    /// state becomes an assertable consequence of the step's status.</summary>
     private sealed class OneStepPlanner : IAgentPlanner
     {
         public bool DegradePlan { get; set; }
@@ -285,8 +233,7 @@ public sealed class HeadlessStepOutcomeSignalTests
         }
     }
 
-    /// <summary>Everything a headless run needs, wired to one temp SQLite file — the shape
-    /// <c>HeadlessTurnExecutorTests.DurabilityHarness</c> established.</summary>
+    /// <summary>Everything a headless run needs, wired to one temp SQLite file.</summary>
     private sealed class Harness : IDisposable
     {
         private readonly string _dir;
@@ -308,8 +255,7 @@ public sealed class HeadlessStepOutcomeSignalTests
             Plugins = Substitute.For<IPluginService>();
             Timeline = new RecordingTimelineService();
 
-            // SupportsTools TRUE with a non-empty base list: with tools gated off the exchange engine passes
-            // neither tools nor a tool handler, and there would be nothing to offer or intercept.
+            // Tools must be ON with a non-empty base list, or there is nothing to offer or intercept.
             RunTools = [AIFunctionFactory.Create(() => "ok", "unrelated_tool", "not the step-result tool")];
             _composer = Substitute.For<IAssistantPromptComposer>();
             _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
@@ -370,15 +316,10 @@ public sealed class HeadlessStepOutcomeSignalTests
         /// <summary>What the interception handed back to the model, per tool call.</summary>
         public List<object?> ToolReplies { get; } = [];
 
-        /// <summary>Sets what the model does inside the exchange: optionally call the tool handler, then
-        /// return the visible text it leaves behind (empty string = no TextDelta at all).</summary>
+        /// <summary>An empty returned string means no TextDelta at all.</summary>
         public void Drive(Func<ToolCallHandler?, Task<string>> drive) => _drive = drive;
 
-        /// <summary>
-        /// Puts one roster persona in place with a turn setup of its OWN — a distinct tool list carrying a
-        /// marker tool — and gives the executor a real <see cref="StepPersonaResolver"/>. Roster membership is
-        /// checked executor-side, so stubbing the persona store alone would see the assignment ignored.
-        /// </summary>
+        /// <summary>Roster membership is checked executor-side, so stubbing the persona store alone would see the assignment ignored.</summary>
         public Persona WithSpecialistPersona()
         {
             var specialist = new Persona { Id = Guid.NewGuid(), Name = "Specialist", SystemPrompt = "spec" };
@@ -414,8 +355,7 @@ public sealed class HeadlessStepOutcomeSignalTests
             yield return new Finished(null, "test-model");
         }
 
-        /// <summary>Bootstraps the FK parent chat + a Planned run (R1 ordering), dispatches the real
-        /// orchestrator over a real headless executor, and returns the persisted run with its plan.</summary>
+        /// <summary>Bootstraps the FK parent chat before the run row, then dispatches the real orchestrator.</summary>
         public async Task<AgentRun> DispatchAsync(CancellationToken ct)
         {
             var chatId = Guid.NewGuid();

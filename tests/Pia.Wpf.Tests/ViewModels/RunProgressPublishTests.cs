@@ -13,12 +13,6 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// Batch 06 G4 / plan D3: the run panel's publish affordance, and plan D5b's "the panel must say the output is
-/// on a branch". ViewModel level only — <c>RunProgressPanel.xaml</c> is parsed by nothing in this suite and a
-/// frame-pushing View test is not available (the WPF host holds a fixed number of such facts), so the XAML is
-/// booked as manual-smoke debt and the projection is asserted here.
-/// </summary>
 public sealed class RunProgressPublishTests : IDisposable
 {
     private readonly string _tmpDir;
@@ -49,7 +43,6 @@ public sealed class RunProgressPublishTests : IDisposable
         try { Directory.Delete(_tmpDir, recursive: true); } catch { /* best effort */ }
     }
 
-    /// <summary>Runs Post callbacks inline so the projection is observable synchronously.</summary>
     private async Task<AgentRun> NewRunAsync(AgentRunState state)
     {
         var ct = TestContext.Current.CancellationToken;
@@ -88,10 +81,8 @@ public sealed class RunProgressPublishTests : IDisposable
 
     private FakeRunWorkspaceService Workspaces() => new(_tmpDir);
 
-    /// <summary>
-    /// T-G4-15, <b>REGRESSION</b>. Plan D3's second half: a failed run does not promote automatically, so its
-    /// work is still in its workspace and the panel OFFERS to publish it rather than deciding for the user.
-    /// </summary>
+    // A failed run does not promote automatically, so its work is still in its workspace and the panel offers to
+    // publish it rather than deciding for the user.
     [Fact]
     public async Task AFailedRunWithUnpublishedFiles_OffersPublish()
     {
@@ -107,10 +98,8 @@ public sealed class RunProgressPublishTests : IDisposable
         Assert.True(vm.PublishCommand.CanExecute(null));
     }
 
-    /// <summary>
-    /// T-G4-16, <b>GUARD</b>. A cleanly completed run promoted before it was marked complete and its workspace
-    /// was torn down in the same breath, so there is nothing to describe and nothing to offer.
-    /// </summary>
+    // A cleanly completed run promoted and tore its workspace down before it was marked complete, so there is
+    // nothing left to describe and nothing to offer.
     [Fact]
     public async Task ACompletedRun_OffersNothing()
     {
@@ -128,12 +117,8 @@ public sealed class RunProgressPublishTests : IDisposable
         Assert.Null(vm.OutputBranchName);
     }
 
-    /// <summary>
-    /// <b>GUARD</b>. The outcome read is TERMINAL-ONLY. <c>RunChanged</c> fires on every step, state flip and
-    /// ledger write, and the read behind it is a file read plus a directory enumeration — folding it into the
-    /// projection path would pay for that dozens of times per run to answer a question a live run cannot even
-    /// be asked (its files are still being written).
-    /// </summary>
+    // The outcome read is TERMINAL-ONLY: RunChanged fires on every step and the read behind it is file I/O, for a
+    // question a live run cannot be asked while its files are still being written.
     [Fact]
     public async Task ALiveRun_IsNeverAskedAboutItsWorkspace()
     {
@@ -147,16 +132,8 @@ public sealed class RunProgressPublishTests : IDisposable
         Assert.False(vm.CanPublish);
     }
 
-    /// <summary>
-    /// T-G4-17, <b>REGRESSION</b>. Publishing promotes and THEN tears the workspace down — in that order, so a
-    /// teardown never destroys files a promotion has not carried out yet — and the offer is cleared afterwards
-    /// so the user cannot publish the same workspace twice.
-    /// <para>
-    /// Also the NON-VACUITY CONTROL for the retain arm next door: this result leaves nothing behind
-    /// (<c>RetainWorkspace</c> unset), and it still tears down. So "the workspace is kept" there is about the
-    /// flag and not about a teardown that stopped happening.
-    /// </para>
-    /// </summary>
+    // Promote THEN tear down, in that order, so a teardown never destroys files a promotion has not carried out
+    // yet; the offer is cleared afterwards so the same workspace cannot be published twice.
     [Fact]
     public async Task Publish_PromotesThenTearsDown_AndClearsTheOffer()
     {
@@ -178,21 +155,8 @@ public sealed class RunProgressPublishTests : IDisposable
         Assert.Equal("Run_Publish_Done:3", vm.PublishNote);
     }
 
-    /// <summary>
-    /// <b>REGRESSION</b>, and the Phase 3 consolidation pass's data-loss fix. Two facts about one result,
-    /// because the real service only ever produces them together — <c>CopyOut</c> sets
-    /// <c>RetainWorkspace = conflicts &gt; 0</c>, so a conflict result with the flag unset is a state no
-    /// promotion can return (the T-G4-19 mistake, pointed the other way).
-    /// <para>
-    /// (1) Conflicts ARE surfaced, because "1 published" alone would read as "everything landed" when a file the
-    /// user changed during the run was deliberately left alone. (2) <b>The manual path OBEYS
-    /// <c>RetainWorkspace</c></b> exactly as the automatic one does: the run's version of the conflicted file
-    /// exists ONLY in that workspace, so publishing must not delete it, and the offer stays standing because the
-    /// files it points at are still there. Neutralization: restore the unconditional
-    /// <c>TearDownAsync</c>/<c>HasUnpublishedFiles = false</c> pair in <c>Publish()</c> and both the
-    /// <c>TornDown</c> and the <c>CanPublish</c> assertion go red.
-    /// </para>
-    /// </summary>
+    // The run's version of a conflicted file exists ONLY in that workspace, so a publish must obey
+    // RetainWorkspace and leave the offer standing instead of deleting it.
     [Fact]
     public async Task Publish_WithConflicts_SaysSo_AndKeepsTheWorkspaceItCouldNotEmpty()
     {
@@ -212,10 +176,7 @@ public sealed class RunProgressPublishTests : IDisposable
         Assert.True(vm.CanPublish);
     }
 
-    /// <summary>
-    /// T-G4-18, <b>GUARD</b>. A publish that faults does not escape into the UI, and it leaves the offer
-    /// standing: nothing was promoted, so the files are still there to try again with.
-    /// </summary>
+    // A faulted publish leaves the offer standing: nothing was promoted, so the files are still there to retry.
     [Fact]
     public async Task Publish_Fault_DoesNotThrow_AndLeavesTheOfferStanding()
     {
@@ -233,11 +194,8 @@ public sealed class RunProgressPublishTests : IDisposable
         Assert.Equal("Run_Publish_Failed", vm.PublishNote);
     }
 
-    /// <summary>
-    /// <b>GUARD</b>. A promotion that returns "nothing promoted, workspace intact" — a relocated assistant
-    /// folder is the realistic cause — is reported as a failure and keeps the offer, rather than clearing it and
-    /// claiming zero files were published.
-    /// </summary>
+    // "Nothing promoted, workspace intact" — a relocated assistant folder is the realistic cause — is a failure,
+    // not a clean publish of zero files.
     [Fact]
     public async Task Publish_ThatPromotesNothing_KeepsTheOffer()
     {
@@ -255,11 +213,7 @@ public sealed class RunProgressPublishTests : IDisposable
         Assert.Equal("Run_Publish_Failed", vm.PublishNote);
     }
 
-    /// <summary>
-    /// T-G4-19, <b>REGRESSION</b>. Plan D5b at the only level a test can reach: in worktree mode nothing was
-    /// copied anywhere, so the panel must name the branch the output is on. Without this line the honest user
-    /// question after a successful run is "where is my file?".
-    /// </summary>
+    // In worktree mode nothing was copied anywhere, so the panel must name the branch the output is on.
     [Fact]
     public async Task WorktreeOutcome_SurfacesTheBranchName()
     {
@@ -277,19 +231,8 @@ public sealed class RunProgressPublishTests : IDisposable
         Assert.False(vm.CanPublish); // the branch is the deliverable — there is nothing to publish as files
     }
 
-    /// <summary>
-    /// <b>REGRESSION</b> (Phase 3 consolidation pass — Lens A 5 / Lens B 3's remaining half). An AUTOMATIC
-    /// promotion's conflict count now reaches the panel on completion, with no click: the count rides on the
-    /// workspace outcome the panel already reads for every terminal run. Before this, <c>Run_Publish_Conflicts</c>
-    /// was produced ONLY inside <c>Publish()</c>, so the one number that says "the run's work on that file was
-    /// discarded in favour of your edit" was invisible until the user happened to press a button.
-    /// <para>
-    /// Neutralization: drop the <c>outcome.Conflicts</c> arm from <c>ApplyWorkspaceOutcomeAsync</c> → the note is
-    /// null → red. The control is the ordinary run in <see cref="ACompletedRun_OffersNothing"/>, which describes
-    /// with no conflicts and must stay silent — three muted note lines that all shout on an ordinary run would be
-    /// worse than none.
-    /// </para>
-    /// </summary>
+    // An automatic promotion's conflict count rides on the workspace outcome the panel already reads, so the
+    // number that says the run's work on a file was discarded no longer waits for a button press.
     [Fact]
     public async Task AnAutomaticPromotionsConflicts_AreAnnouncedWithoutAPublishClick()
     {
@@ -308,12 +251,8 @@ public sealed class RunProgressPublishTests : IDisposable
         Assert.Empty(workspaces.Promoted);   // nothing was promoted BY THE PANEL — this is a read, not an act
     }
 
-    /// <summary>
-    /// <b>REGRESSION</b>. A worktree run whose run-branch commit failed describes with no branch name and with
-    /// files to offer, and the panel must render exactly that: no "output is on branch X" claim, and a publish
-    /// button that retries the commit. This is the UI half of the first item `3b66603` opened — the arm where the
-    /// panel previously named an empty branch and offered nothing.
-    /// </summary>
+    // A worktree run whose run-branch commit failed has no branch name but does have files, so the panel must
+    // claim no branch and offer a retry rather than name an empty one.
     [Fact]
     public async Task AWorktreeRunWithNoCommittedBranch_OffersTheRetry_AndClaimsNoBranch()
     {
@@ -341,11 +280,8 @@ public sealed class RunProgressPublishTests : IDisposable
         Assert.True(vm.CanPublish);          // so the retry stays available
     }
 
-    /// <summary>
-    /// T-G4-20, <b>GUARD</b>. With no workspace service the panel is the pre-Batch-06 one: no offer, no branch
-    /// line, and nothing asked of anybody. The pin that the trailing-defaulted ctor parameter changed nothing —
-    /// the whole existing <c>RunProgressViewModel</c> suite passes unmodified for the same reason.
-    /// </summary>
+    // With no workspace service: no offer, no branch line, nothing asked of anybody — the pin that the
+    // trailing-defaulted ctor parameter changed nothing.
     [Fact]
     public async Task WithNoWorkspaceService_ThePanelIsUnchanged()
     {

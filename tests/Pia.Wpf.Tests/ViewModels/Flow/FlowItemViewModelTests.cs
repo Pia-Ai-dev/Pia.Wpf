@@ -13,10 +13,6 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels.Flow;
 
-/// <summary>
-/// Covers the per-item Flow wrapper (design §5, §9): reminder decision derivation, command wiring
-/// (Snooze/Done → reminder service then dismiss), IsBusy re-entrancy gating, and failure-keeps-card.
-/// </summary>
 public class FlowItemViewModelTests
 {
     private static FlowItemViewModel Create(
@@ -176,10 +172,10 @@ public class FlowItemViewModelTests
         vm.ExecuteActionCommand.Execute(null);
 
         windowManager.Received(1).ShowAgentRun(runId);
-        flow.Received(1).Retract(runId.ToString()); // RetractByKey — DedupKey present
+        flow.Received(1).Retract(runId.ToString());
     }
 
-    /// <summary>Opening a needs-goal/needs-input card must not retract it — the run is still WaitingForInput right after the click, so retracting would delete its only durable trace.</summary>
+    // The run is still WaitingForInput right after the click, so retracting would delete its only durable trace.
     [Fact]
     public void ExecuteAction_OpenParkedRun_ShowsAgentRun_MarksReadButDoesNotRetract()
     {
@@ -248,7 +244,7 @@ public class FlowItemViewModelTests
         vm.ExecuteActionCommand.Execute(null);
 
         resume.Received(1).ResumeAsync(runId, Arg.Any<string?>(), Arg.Any<CancellationToken>());
-        flow.Received(1).Retract(runId.ToString()); // RetractByKey — DedupKey present
+        flow.Received(1).Retract(runId.ToString());
     }
 
     private static FlowItem ToolApprovalItem(Guid runId)
@@ -265,8 +261,7 @@ public class FlowItemViewModelTests
             Action = new ToolApprovalRunAction(runId, "Continue run"),
         };
 
-    /// <summary>A tool-approval card carries the approve/deny pair the park's question has — derived from
-    /// the persisted action kind, so the bar survives a reload exactly like the link does.</summary>
+    // Derived from the persisted action kind, so the approve/deny bar survives a reload.
     [Fact]
     public void Bind_ToolApprovalItem_DerivesDenyAndApproveDecisions()
     {

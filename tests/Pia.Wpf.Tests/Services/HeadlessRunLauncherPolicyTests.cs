@@ -4,12 +4,7 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Batch 04 D1/D10/D12: the autonomy policy rides inside the EXISTING <c>v:1</c> grant envelope as an additive
-/// member. The version is deliberately not bumped — the reader compares with <c>!=</c>, so a bump would make
-/// every pre-batch envelope unreadable, and for an interactive-origin envelope (<c>grantedWrites: []</c>) the
-/// "restrictive" resume floor <c>{write_file}</c> is WIDER than the launch, i.e. a silent escalation.
-/// </summary>
+/// <summary>The envelope version is deliberately not bumped — the reader compares with <c>!=</c>, so a bump would make every existing envelope unreadable.</summary>
 public class HeadlessRunLauncherPolicyTests
 {
     private const string PreBatch04Envelope = """{"v":1,"grantedWrites":["write_file"],"trigger":"Schedule"}""";
@@ -56,18 +51,11 @@ public class HeadlessRunLauncherPolicyTests
     [InlineData("{\"v\":1,\"policy\":{\"autoApproveClasses\":[\"Files\",\"External\"]}}")]
     public void AnUnreadableEnvelopeLosesThePolicyBeforeItLosesTheGrantFloor(string? policyJson)
     {
-        // D10's asymmetry: losing the policy is always the RESTRICTIVE direction, so it fails to null (today's
-        // behaviour) rather than to a floor. The grant list is the one that needs a floor to work with.
+        // Losing the policy is always the restrictive direction, so it fails to null rather than to a floor.
         Assert.Null(HeadlessRunLauncher.TryRestorePolicy(policyJson));
     }
 
-    /// <summary>
-    /// The two readers must agree on what "readable" MEANS, even though they disagree on the fallback. For
-    /// <c>{"v":1,"policy":{…}}</c> with no <c>grantedWrites</c> the grant half already returns null (⇒ the
-    /// resume applies the <c>{write_file}</c> floor, i.e. it treats the envelope as unreadable); the policy half
-    /// used to return a full policy for the same document, which INVERTS the documented asymmetry — a resumed
-    /// unattended run would auto-approve every non-delete-like tool in the named classes with no grant behind it.
-    /// </summary>
+    /// <summary>Both halves must treat a missing <c>grantedWrites</c> as unreadable, or a resumed run auto-approves the named classes with no grant behind it.</summary>
     [Fact]
     public void ADocumentWithNoGrantedWrites_IsUnreadableToBothHalvesOfTheReader()
     {
@@ -76,8 +64,7 @@ public class HeadlessRunLauncherPolicyTests
         Assert.Null(HeadlessRunLauncher.TryRestoreGrantEnvelope(truncated));
         Assert.Null(HeadlessRunLauncher.TryRestorePolicy(truncated));
 
-        // The same document WITH grantedWrites is readable by both — so the discriminator really is that member
-        // and not something about the policy shape.
+        // The same document WITH grantedWrites is readable by both, so the discriminator is that member.
         const string whole = """{"v":1,"grantedWrites":[],"policy":{"autoApproveClasses":["Files"]}}""";
         Assert.Empty(HeadlessRunLauncher.TryRestoreGrantEnvelope(whole)!);
         Assert.True(HeadlessRunLauncher.TryRestorePolicy(whole)!.Covers(ToolClass.Files));
@@ -97,8 +84,7 @@ public class HeadlessRunLauncherPolicyTests
         // No USABLE class ⇒ no policy at all, rather than an empty-but-present one.
         Assert.Null(HeadlessRunLauncher.TryRestorePolicy(
             """{"v":1,"grantedWrites":[],"policy":{"autoApproveClasses":["Warp"]}}"""));
-        // "Unknown" is dropped like any unparseable name — Covers() hardcodes it false anyway, so carrying it
-        // would only make the restored policy look wider than it is.
+        // "Unknown" is dropped like any unparseable name — Covers() hardcodes it false anyway.
         Assert.Null(HeadlessRunLauncher.TryRestorePolicy(
             """{"v":1,"grantedWrites":[],"policy":{"autoApproveClasses":["Unknown"]}}"""));
     }
@@ -106,14 +92,12 @@ public class HeadlessRunLauncherPolicyTests
     [Fact]
     public void TheInteractiveFallbackLiteralIsTheDocumentTheSerializerProduces()
     {
-        // SHAPE pin (D12): without this, a later member addition rots the literal silently while the
-        // round-trip pin below still passes.
+        // Shape pin: a later member addition would rot the literal silently while the round-trip pin passes.
         Assert.Equal(
             HeadlessRunLauncher.InteractiveEmptyEnvelopeJson,
             HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User, policy: null));
 
-        // ROUND-TRIP pin: it restores an honoured-EMPTY grant set and NO policy, so an interactive run whose
-        // envelope write faulted resumes granting nothing and auto-approving nothing.
+        // Round-trip pin: an interactive run whose envelope write faulted resumes granting nothing.
         var grants = HeadlessRunLauncher.TryRestoreGrantEnvelope(HeadlessRunLauncher.InteractiveEmptyEnvelopeJson);
         Assert.NotNull(grants);
         Assert.Empty(grants!);
@@ -123,7 +107,7 @@ public class HeadlessRunLauncherPolicyTests
     [Fact]
     public void SerializeWithNoPolicy_OmitsTheMember()
     {
-        // Not "policy":null — omitted, so a pre-04 reader sees a pre-04 document byte for byte.
+        // Not "policy":null — omitted, so an older reader sees an unchanged document byte for byte.
         var json = HeadlessRunLauncher.SerializeGrantEnvelope(["write_file"], AgentRunTrigger.Schedule, policy: null);
 
         Assert.DoesNotContain("policy", json);

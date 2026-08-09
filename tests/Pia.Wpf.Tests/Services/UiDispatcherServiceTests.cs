@@ -7,33 +7,8 @@ using Xunit;
 namespace Pia.Tests.Services;
 
 /// <summary>
-/// Pins the three member semantics <see cref="UiDispatcherService"/>'s callers actually depend on. Until
-/// this file existed they were asserted only in comments: every migrated ViewModel is tested through
-/// <see cref="InlineUiDispatcher"/>, whose <c>Post</c> and <c>PostOrRun</c> are the same one-liner, so the
-/// queue-vs-inline distinction the design leans on was enforced by nothing. Collapsing <c>Post</c> into
-/// <c>PostOrRun</c> — which would run <c>VoiceModeViewModel</c>'s silence-timer lambda, and with it
-/// <c>TransitionToProcessingAsync</c>, synchronously inside <c>Timer.Elapsed</c> — kept the whole suite
-/// green. Now it does not.
-/// <para>
-/// Every body runs INSIDE <see cref="WpfStaHost.Run{T}"/>, i.e. on the host's STA thread with a live
-/// <c>Application</c> and <c>CheckAccess() == true</c>. That is deliberate: it is the only configuration
-/// where queue-vs-inline is observable, and it needs no cross-thread wait, so nothing here can hang
-/// (<c>Run</c> is bounded, and every drain is an explicit <see cref="WpfStaHost.Pump"/>).
-/// </para>
-/// <para>
-/// NOT covered, and not coverable: the null-<c>Application</c> fallback — <c>Application.Current</c> is
-/// process-wide and, once the host has created it, can never be unset. That branch is exercised instead by
-/// every other test in the suite, indirectly, through <see cref="InlineUiDispatcher"/>. The LOG LINE that
-/// <c>Post</c>/<c>PostOrRun</c> write for a queued failure is not asserted either (it is written from a
-/// thread-pool continuation, and waiting on one would trade a real assertion for a flake); what is asserted
-/// is the observable half — that the failure does not reach the caller and does not break the pump.
-/// </para>
-/// <para>
-/// Authored on macOS, where the test host cannot execute. NEVER RUN. If the first Windows run reds
-/// <see cref="PostAsync_WhenTheActionThrows_FaultsTheReturnedTask"/>, that is not a flake: it would mean
-/// <c>Dispatcher.InvokeAsync</c> does not deliver the action's exception on the operation's task, which is
-/// the single assumption <c>PostAsync</c> is built on, and four awaited call sites would need rethinking.
-/// </para>
+/// Every body runs on the host's STA thread with a live <c>Application</c> and <c>CheckAccess() == true</c> — the
+/// only configuration where <c>Post</c>'s queueing is distinguishable from <c>PostOrRun</c>'s inline run.
 /// </summary>
 [Collection("WpfApplicationStatic")]
 public class UiDispatcherServiceTests
@@ -103,14 +78,8 @@ public class UiDispatcherServiceTests
     [Fact]
     public void PostAsync_WhenTheActionThrows_FaultsTheReturnedTask()
     {
-        // A net for the duration, so a WRONG assumption fails this test instead of killing the test
-        // PROCESS: App's own DispatcherUnhandledException handler is installed in OnStartup, which the
-        // host never runs. If InvokeAsync routed a queued failure to Dispatcher.UnhandledException the
-        // way the legacy BeginInvoke does, an unhandled exception here would take ~2700 tests with it.
-        //
-        // The net's lifetime has to SPAN the pump, and the pump now runs on the test thread — so the
-        // attach/detach pair is managed explicitly from here rather than by a finally inside one host
-        // operation. Both halves still execute ON the host thread, which is where the event lives.
+        // A net spanning the pump: App's own DispatcherUnhandledException handler is installed in OnStartup,
+        // which the host never runs, so a queued failure routed there would kill the whole test process.
         DispatcherUnhandledExceptionEventHandler net = (_, e) => e.Handled = true;
         WpfStaHost.Run(() =>
         {

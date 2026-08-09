@@ -7,12 +7,7 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Covers the tool-call → UI-string mapping extracted from AssistantViewModel:
-/// confirmation-card shape, delete warnings, and the status/success lookups.
-/// The localization mock echoes each key, so a wrong key surfaces directly in
-/// the asserted value (guarding the moved string literals).
-/// </summary>
+/// <summary>The localization mock echoes each key, so a wrong key surfaces directly in the asserted value.</summary>
 public class ActionCardBuilderTests
 {
     private static ActionCardBuilder CreateBuilder(out ITokenMapService tokenMap)
@@ -27,8 +22,6 @@ public class ActionCardBuilderTests
 
         tokenMap = Substitute.For<ITokenMapService>();
         permissions = Substitute.For<IToolPermissionService>();
-        // Eligibility classification is exercised by ToolPermissionServiceTests; the builder
-        // tests stub just the names they need to verify the triad-vs-pair mapping.
         permissions.IsAutoApproveEligible("create_todo").Returns(true);
         permissions.IsAutoApproveEligible("write_file").Returns(false);
         permissions.IsAutoApproveEligible("delete_file").Returns(false);
@@ -77,7 +70,6 @@ public class ActionCardBuilderTests
         Assert.Equal(ActionCardCategory.Memory, card.Category);
         Assert.False(card.IsDestructive);
         Assert.Null(card.WarningText);
-        // remember maps to the Update action, NOT the default "Create Memory" title.
         Assert.Equal("ActionCard_Action_Update ActionCard_Category_Memory", card.Title);
         Assert.NotEqual("ActionCard_Action_Create ActionCard_Category_Memory", card.Title);
     }
@@ -92,7 +84,6 @@ public class ActionCardBuilderTests
         Assert.Equal(ActionCardCategory.Memory, card.Category);
         Assert.True(card.IsDestructive);
         Assert.Equal("Msg_Assistant_PermanentDeleteMemory", card.WarningText);
-        // forget maps to the Delete action, NOT the default "Create Memory" title.
         Assert.Equal("ActionCard_Action_Delete ActionCard_Category_Memory", card.Title);
         Assert.NotEqual("ActionCard_Action_Create ActionCard_Category_Memory", card.Title);
     }
@@ -102,8 +93,7 @@ public class ActionCardBuilderTests
     {
         var builder = CreateBuilder(out _);
 
-        // A non-built-in plugin name → external (MCP) tool. IsAutoApproveEligible is not stubbed for it
-        // (defaults false), so grantability here comes purely from the MCP-as-a-class branch.
+        // IsAutoApproveEligible is unstubbed here, so grantability comes purely from the MCP-as-a-class branch.
         var card = builder.Build(Call("search_issues", "linear", "linear: search_issues", "{\"query\":\"bug\"}"), detokenize: false);
 
         Assert.Equal(ActionCardCategory.Mcp, card.Category);
@@ -181,8 +171,8 @@ public class ActionCardBuilderTests
         Assert.True(card.IsAutoApprovable);
         Assert.False(card.IsAutoApproved);
 
-        // hermes #15 made this a FOUR-button bar: the grant tiers ascend in durability after Allow once, so a
-        // user who does not want to be asked forty times is no longer pushed straight to the permanent one.
+        // Four buttons: the grant tiers ascend in durability after Allow once, so nobody is pushed straight to
+        // the permanent one.
         Assert.True(card.IsSessionGrantable);
         Assert.Equal(4, card.Decisions.Count);
         Assert.Equal("ActionCard_Decline", card.Decisions[0].Label);
@@ -195,12 +185,8 @@ public class ActionCardBuilderTests
         Assert.Equal(DecisionEmphasis.Default, card.Decisions[3].Emphasis);
     }
 
-    /// <summary>
-    /// Neither of these tools may ever offer the PERSISTED tier. hermes #15 split them on the middle one, and
-    /// the pair is the discriminator: <c>write_file</c> is exactly the tool a user approves over and over, so it
-    /// gains "Allow this session"; <c>delete_file</c> is irreversible, so it keeps the bare pair — a multi-call
-    /// grant would authorize deletions whose arguments the user never saw.
-    /// </summary>
+    /// <summary><c>delete_file</c> is irreversible, so it keeps the bare pair: a multi-call grant would
+    /// authorize deletions whose arguments the user never saw.</summary>
     [Theory]
     [InlineData("write_file", "files", true)]
     [InlineData("delete_file", "files", false)]

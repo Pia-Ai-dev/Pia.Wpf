@@ -7,12 +7,8 @@ using Xunit;
 namespace Pia.Tests.Services;
 
 /// <summary>
-/// hermes #9, the pieces in isolation: <see cref="StepOutcomeStore"/>'s argument parsing and
-/// <see cref="AgentStepTools"/>' tool-list augmentation. The two executors' end-to-end facts live in
-/// <c>HeadlessStepOutcomeSignalTests</c> and <c>ChatSessionStepOutcomeSignalTests</c>; this file covers the
-/// decisions that are invisible from there — chiefly that a malformed <c>succeeded</c> argument yields NO
-/// claim rather than a failure, which is the difference between "the provider encoded a bool oddly" and
-/// "the run failed a step".
+/// <see cref="StepOutcomeStore"/> parsing and <see cref="AgentStepTools"/> augmentation in isolation; chiefly
+/// that a malformed <c>succeeded</c> argument yields NO claim rather than a failed step.
 /// </summary>
 public sealed class StepOutcomeSignalTests
 {
@@ -27,12 +23,8 @@ public sealed class StepOutcomeSignalTests
 
     private static JsonElement Json(string raw) => JsonDocument.Parse(raw).RootElement;
 
-    /// <summary>
-    /// Every encoding a provider realistically sends for a boolean argument reaches the same claim. The
-    /// <c>JsonElement</c> rows are the ones that matter in production: <c>Microsoft.Extensions.AI</c> hands
-    /// tool arguments through as deserialized JSON, so a naive <c>is bool</c> check would see NONE of them and
-    /// every declaration would silently degrade to the unconfirmed fallback.
-    /// </summary>
+    // Microsoft.Extensions.AI hands tool arguments through as deserialized JSON, so a naive `is bool` check
+    // would see none of the JsonElement rows and every declaration would degrade to the unconfirmed fallback.
     [Theory]
     [InlineData(true, true)]
     [InlineData(false, false)]
@@ -53,11 +45,7 @@ public sealed class StepOutcomeSignalTests
     public void TryReadBool_ReadsABareString(string raw, bool expected)
         => Assert.Equal(expected, StepOutcomeStore.TryReadBool(Args(raw), "succeeded"));
 
-    /// <summary>
-    /// <b>GUARD</b>. Anything the parser cannot understand is NO answer, never <c>false</c>. Reading a
-    /// number, a null, an object or a missing key as "the step failed" would turn a provider quirk into a
-    /// failed run — the fallback rule exists precisely so that not-knowing is survivable.
-    /// </summary>
+    // Anything the parser cannot understand is NO answer, never false: a provider quirk must not fail a run.
     [Theory]
     [InlineData("1")]
     [InlineData("null")]
@@ -101,11 +89,7 @@ public sealed class StepOutcomeSignalTests
         Assert.Equal(1, sink.AcceptedCalls);
     }
 
-    /// <summary>
-    /// LAST call wins. A step that declares success and then discovers a problem in a later tool round must
-    /// be able to correct itself; freezing the first verdict would re-create the very "records Done on a
-    /// false premise" bug this signal exists to remove.
-    /// </summary>
+    // A step that declares success and then hits a problem in a later tool round must be able to correct itself.
     [Fact]
     public void Record_LastCallWins()
     {
@@ -119,11 +103,8 @@ public sealed class StepOutcomeSignalTests
         Assert.Equal(2, sink.AcceptedCalls);
     }
 
-    /// <summary>
-    /// Newlines are flattened before the claim is stored. Both fields are rendered as their own lines in the
-    /// critic prompt, so an un-flattened summary could forge a surrounding fact line — the same reason
-    /// <c>AgentVerifier.Flatten</c> and <c>RunContext.SetNudge</c> flatten their inputs.
-    /// </summary>
+    // Both fields are rendered as their own lines in the critic prompt, so an un-flattened summary could forge a
+    // surrounding fact line.
     [Fact]
     public void Record_FlattensNewlinesOutOfBothTextFields()
     {
@@ -164,12 +145,8 @@ public sealed class StepOutcomeSignalTests
     private static AssistantTurnSetup Setup(bool supportsTools, params AITool[] tools) =>
         new("system", supportsTools ? [.. tools] : null, supportsTools, WebSearchActive: false);
 
-    /// <summary>
-    /// <b>GUARD</b>. The augmentation COPIES the tool list. An executor's <c>AssistantTurnSetup</c> is
-    /// resolved once and cached for the whole run — and on the live path it is the same instance the
-    /// session's ordinary chat turns use — so an in-place <c>Add</c> would leak a step-only tool into every
-    /// later turn, including plain chat.
-    /// </summary>
+    // The setup is resolved once and cached for the run — on the live path the same instance ordinary chat turns
+    // use — so an in-place Add would leak a step-only tool into every later turn.
     [Fact]
     public void WithStepResultTool_DoesNotMutateTheOriginalList()
     {
@@ -185,9 +162,8 @@ public sealed class StepOutcomeSignalTests
         Assert.NotSame(original.Tools, augmented.Tools);
     }
 
-    /// <summary>A tool-less setup is returned untouched: with <c>SupportsTools=false</c> the exchange engines
-    /// pass neither tools nor a handler, so there would be nothing to offer the tool to and nothing to
-    /// intercept. Such a step lands on the unconfirmed fallback, which is the correct answer.</summary>
+    // With SupportsTools=false the exchange engines pass neither tools nor a handler, so there is nothing to
+    // offer the tool to; such a step lands on the unconfirmed fallback.
     [Fact]
     public void WithStepResultTool_IsANoOpWhenTheTurnHasNoTools()
     {

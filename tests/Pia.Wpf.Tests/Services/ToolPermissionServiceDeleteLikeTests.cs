@@ -3,12 +3,8 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// B1: the destructive-name heuristic shared by the card builder, the interactive gate and the unattended
-/// grant gate. Covers the broadened stem set (a "delete" substring alone let remove_/purge_/drop_/wipe_/
-/// erase_/destroy_/truncate_ MCP tools be granted as a class and then auto-execute forever) and the
-/// create-time "presumed external" split that keeps our own delete tools grantable.
-/// </summary>
+/// <summary>Matching only a "delete" substring let remove_/purge_/drop_/wipe_ MCP tools be granted as a class and then
+/// auto-execute forever; the "presumed external" split is what still keeps our own delete tools grantable.</summary>
 public class ToolPermissionServiceDeleteLikeTests
 {
     [Theory]
@@ -33,7 +29,7 @@ public class ToolPermissionServiceDeleteLikeTests
     [Theory]
     [InlineData(null)]
     [InlineData("")]
-    [InlineData("write_file")]      // overwrite-class, deliberately NOT delete-like (design §3/§5)
+    [InlineData("write_file")]      // overwrite-class, deliberately NOT delete-like
     [InlineData("create_object")]
     [InlineData("update_todo")]
     [InlineData("complete_todo")]

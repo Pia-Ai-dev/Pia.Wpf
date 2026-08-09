@@ -10,16 +10,8 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// T0-1: the startup reconcile that books a scheduled firing whose outcome nobody was left alive to record.
-/// <para>
-/// Deliberately over the REAL SQLite round trip — both services, one context, a temp file — and not over fakes.
-/// Two of these facts exist only in the persisted STRINGS: idempotence depends on
-/// <c>DateTime.ToString("O")</c> → <c>DateTime.Parse</c> preserving the instant exactly, and the timezone fact
-/// depends on <c>MapJob</c> re-projecting a stored offset into host-local time. A fake holds the
-/// <see cref="DateTime"/> object, so it would preserve both trivially and both tests would be theatre.
-/// </para>
-/// </summary>
+/// <summary>Over real SQLite, not fakes: idempotence and the timezone fact both live in the persisted <c>"O"</c> strings, which a
+/// fake holding a <see cref="DateTime"/> would preserve for free.</summary>
 public sealed class ScheduledFiringReconcilerTests : IDisposable
 {
     private readonly string _tmpDir;
@@ -43,18 +35,8 @@ public sealed class ScheduledFiringReconcilerTests : IDisposable
         _reconciler = new ScheduledFiringReconciler(_jobs, _runs, NullLogger<ScheduledFiringReconciler>.Instance);
     }
 
-    /// <summary>
-    /// The whole reason this class exists, in the shape that is unrecoverable rather than merely untidy: a ONE-OFF
-    /// job whose dispatch settled it <c>Completed</c> and whose process then died mid-run. It produced no chat, it
-    /// recorded no firing, and it will never fire again. The reconcile must book the outcome — and ONLY the
-    /// outcome: re-arming it or advancing it would either re-run an unattended goal or rewrite the honest record
-    /// of when it was meant to fire.
-    /// <para>
-    /// Goes through the REAL <c>FailInterruptedRunsAsync</c> rather than writing a Cancelled row, because that
-    /// ordering is a stated precondition: before the sweep the crashed run is <c>Planning</c>, i.e. not settled,
-    /// and a reconcile that ran first would find nothing at all.
-    /// </para>
-    /// </summary>
+    /// <summary>The reconcile must book the outcome only: re-arming would re-run an unattended goal, advancing would rewrite
+    /// the record of when it was meant to fire.</summary>
     [Fact]
     public async Task ACrashedOneOffFiring_GetsItsHealthColumnsBooked_WithoutReArmingOrAdvancing()
     {
@@ -64,7 +46,7 @@ public sealed class ScheduledFiringReconcilerTests : IDisposable
 
         var before = await _jobs.GetAsync(job.Id);
         Assert.Equal(ScheduledJobStatus.Completed, before!.Status);
-        Assert.Null(before.LastFiredAt);   // premise: nothing recorded the firing — the defect's fingerprint
+        Assert.Null(before.LastFiredAt);
 
         var run = await CrashedRunAsync(job.Id);
         Assert.Equal(AgentRunState.Planning, (await _runs.GetAsync(run.Id, ct))!.State);
@@ -74,24 +56,17 @@ public sealed class ScheduledFiringReconcilerTests : IDisposable
 
         var settledRun = await _runs.GetAsync(run.Id, ct);
         var after = await _jobs.GetAsync(job.Id);
-        // Booked AT THE RUN'S SETTLE INSTANT, not at startup — the reconcile is recording history.
         Assert.NotNull(settledRun!.CompletedAt);
         Assert.Equal(settledRun.CompletedAt!.Value.ToLocalTime(), after!.LastFiredAt!.Value, TimeSpan.FromSeconds(1));
         Assert.Equal(1, after.ConsecutiveFailures);
 
-        // ...and nothing else moved. Status in particular: a booking that flipped it to 'Failed' would retire
-        // the job through a path with no 5-strike valve, and NextFireAt must keep the past instant it fired at.
+        // A booking that flipped Status to Failed would retire the job through a path with no 5-strike valve.
         Assert.Equal(ScheduledJobStatus.Completed, after.Status);
         Assert.Equal(plantedFire, after.NextFireAt, TimeSpan.FromSeconds(1));
         Assert.DoesNotContain(await _jobs.GetDueJobsAsync(), j => j.Id == job.Id);
     }
 
-    /// <summary>
-    /// The reconcile runs on EVERY startup, so a second pass over the same rows must be a no-op — otherwise a
-    /// crashed job's failure counter climbs by one per launch until it looks chronically broken. The guard is a
-    /// <c>&gt;=</c> against what the first pass wrote, which is only sound if the instant survives the round trip
-    /// through the column's local "O" string; a fake would preserve it for free and prove nothing.
-    /// </summary>
+    /// <summary>Startup runs this every launch, so a non-idempotent pass would climb a crashed job's failure counter forever.</summary>
     [Fact]
     public async Task ReconcileAsync_IsIdempotent_ASecondPassBooksNothing()
     {
@@ -107,16 +82,12 @@ public sealed class ScheduledFiringReconcilerTests : IDisposable
         Assert.Equal(0, await _reconciler.ReconcileAsync(ct));
 
         var after = await _jobs.GetAsync(job.Id);
-        Assert.Equal(1, after!.ConsecutiveFailures);   // still ONE strike, not three
+        Assert.Equal(1, after!.ConsecutiveFailures);
         Assert.Equal(firstPass!.LastFiredAt!.Value, after.LastFiredAt!.Value, TimeSpan.FromMilliseconds(1));
         Assert.NotEqual(Guid.Empty, run.Id);
     }
 
-    /// <summary>
-    /// A HEALTHY firing: the run completed and the live bookkeeping already booked it. The reconcile must leave
-    /// it entirely alone — re-booking would stamp a failure over a success (the reconcile classifies a
-    /// <c>Cancelled</c>/<c>Failed</c> run as a failure) and would do it on every single launch.
-    /// </summary>
+    /// <summary>Re-booking an already-booked firing would stamp a failure over a success, on every launch.</summary>
     [Fact]
     public async Task ReconcileAsync_SkipsAFiringTheJobAlreadyBooked()
     {
@@ -130,7 +101,7 @@ public sealed class ScheduledFiringReconcilerTests : IDisposable
         await _jobs.MarkRunCompleteAsync(job.Id, chatId);
 
         var booked = await _jobs.GetAsync(job.Id);
-        Assert.NotNull(booked!.LastFiredAt);   // premise: the firing IS on the row
+        Assert.NotNull(booked!.LastFiredAt);
 
         Assert.Equal(0, await _reconciler.ReconcileAsync(ct));
 
@@ -140,33 +111,19 @@ public sealed class ScheduledFiringReconcilerTests : IDisposable
         Assert.Equal(booked.LastFiredAt!.Value, after.LastFiredAt!.Value, TimeSpan.FromMilliseconds(1));
     }
 
-    /// <summary>
-    /// THE TIMEZONE FACT, and the bug that cannot reproduce on a UTC+0 machine.
-    /// <c>ScheduledJobs.LastFiredAt</c> is LOCAL <c>"O"</c> (with an offset) and comes back from
-    /// <c>DateTime.Parse</c> as <see cref="DateTimeKind.Local"/>; <c>AgentRuns.CompletedAt</c> is UTC. C#'s
-    /// comparison operators ignore <see cref="DateTime.Kind"/> entirely, so comparing the two raw is off by the
-    /// host's offset — east of Greenwich every healthy job looks freshly booked and nothing is ever reconciled,
-    /// west of it every healthy job looks stale and gets re-booked on EVERY startup.
-    /// <para>
-    /// Two jobs in one fact, straddling the settle instant by an hour each way, so it reds for EITHER sign of the
-    /// offset instead of only the sign this machine happens to have. Honest limitation: inside a
-    /// −1h..+1h band (Greenwich, Iceland, west Africa) both legs would still pass on the raw comparison, and
-    /// there is no way to widen that without injecting the timezone into the reconciler.
-    /// </para>
-    /// </summary>
+    /// <summary>Comparison operators ignore <see cref="DateTime.Kind"/>, so the Local <c>LastFiredAt</c> against the UTC
+    /// <c>CompletedAt</c> is off by the host offset; the two jobs straddle the settle so either sign reds.</summary>
     [Fact]
     public async Task ReconcileAsync_ComparesInUtc_NotLocalStringOrder()
     {
         var ct = TestContext.Current.CancellationToken;
         var settledAtUtc = DateTime.UtcNow.AddHours(-3);
 
-        // STALE: the row's record predates the settle, so this firing is unbooked and must be booked.
         var stale = await _jobs.CreateAsync("TEST_TzStale", "q", RecurrenceType.Daily, new TimeOnly(9, 0));
         var stalePlanted = settledAtUtc.AddHours(-1).ToLocalTime();
         await ForceLastFiredAtAsync(stale.Id, stalePlanted);
         await SettledRunAsync(stale.Id, settledAtUtc);
 
-        // FRESH: the row's record postdates the settle, so it is already booked and must be left alone.
         var fresh = await _jobs.CreateAsync("TEST_TzFresh", "q", RecurrenceType.Daily, new TimeOnly(9, 0));
         var freshPlanted = settledAtUtc.AddHours(1).ToLocalTime();
         await ForceLastFiredAtAsync(fresh.Id, freshPlanted);
@@ -174,23 +131,16 @@ public sealed class ScheduledFiringReconcilerTests : IDisposable
 
         Assert.Equal(1, await _reconciler.ReconcileAsync(ct));
 
-        // Reds at any positive offset > 1h: the stale row's LOCAL value compares as LATER than the UTC settle,
-        // so a raw comparison skips a firing that was never booked.
         var staleAfter = await _jobs.GetAsync(stale.Id);
         Assert.Equal(1, staleAfter!.ConsecutiveFailures);
         Assert.Equal(settledAtUtc.ToLocalTime(), staleAfter.LastFiredAt!.Value, TimeSpan.FromSeconds(1));
 
-        // Reds at any negative offset < -1h: the fresh row's LOCAL value compares as EARLIER than the UTC
-        // settle, so a raw comparison re-books a healthy job — every launch, forever.
         var freshAfter = await _jobs.GetAsync(fresh.Id);
         Assert.Equal(0, freshAfter!.ConsecutiveFailures);
         Assert.Equal(freshPlanted, freshAfter.LastFiredAt!.Value, TimeSpan.FromSeconds(1));
     }
 
-    /// <summary>
-    /// A firing whose job row is gone (deleted while its run was in flight) must not throw the whole reconcile —
-    /// startup runs this once, and one orphan must not cost every other job its booking.
-    /// </summary>
+    /// <summary>Startup runs the reconcile once, so one orphaned firing must not cost every other job its booking.</summary>
     [Fact]
     public async Task ReconcileAsync_IgnoresAFiringWhoseJobWasDeleted()
     {
@@ -201,14 +151,10 @@ public sealed class ScheduledFiringReconcilerTests : IDisposable
         await CrashedRunAsync(job.Id);
         await _runs.FailInterruptedRunsAsync(ct);
 
-        // The orphan is skipped and the real firing is still booked — a single count proves both.
         Assert.Equal(1, await _reconciler.ReconcileAsync(ct));
         Assert.NotNull((await _jobs.GetAsync(job.Id))!.LastFiredAt);
     }
 
-    // ---- fixture ----
-
-    /// <summary>A one-off job whose occurrence has been dispatched: Status 'Completed', LastFiredAt null.</summary>
     private async Task<ScheduledJob> DispatchedOnceJobAsync()
     {
         var job = await _jobs.CreateAsync("TEST_Crashed", "q", RecurrenceType.Once, new TimeOnly(9, 0),
@@ -219,7 +165,6 @@ public sealed class ScheduledFiringReconcilerTests : IDisposable
         return job;
     }
 
-    /// <summary>A run of <paramref name="jobId"/> left non-terminal, i.e. the shape a killed process leaves.</summary>
     private async Task<AgentRun> CrashedRunAsync(Guid jobId)
     {
         var chatId = await MakeChatAsync();
@@ -228,7 +173,6 @@ public sealed class ScheduledFiringReconcilerTests : IDisposable
             TestContext.Current.CancellationToken);
     }
 
-    /// <summary>A run of <paramref name="jobId"/> settled Cancelled at a chosen UTC instant.</summary>
     private async Task<AgentRun> SettledRunAsync(Guid jobId, DateTime completedAtUtc)
     {
         var ct = TestContext.Current.CancellationToken;
@@ -261,10 +205,7 @@ public sealed class ScheduledFiringReconcilerTests : IDisposable
     private async Task ForceNextFireAtAsync(Guid id, DateTime when) =>
         await ForceJobColumnAsync(id, "NextFireAt", when);
 
-    /// <summary>
-    /// Plants <c>LastFiredAt</c> as the production writers do — a LOCAL <c>"O"</c> string, offset included —
-    /// which is the only way the timezone fact above can be about anything.
-    /// </summary>
+    /// <summary>Plants a LOCAL <c>"O"</c> string with its offset, exactly as the production writers do.</summary>
     private async Task ForceLastFiredAtAsync(Guid id, DateTime when) =>
         await ForceJobColumnAsync(id, "LastFiredAt", when);
 

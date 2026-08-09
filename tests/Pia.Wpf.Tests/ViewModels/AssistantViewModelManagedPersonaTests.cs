@@ -13,17 +13,8 @@ using Xunit;
 namespace Pia.Tests.ViewModels;
 
 /// <summary>
-/// Slice C7 / §5.1: when the org withdraws a managed persona the user had selected, the assistant tells them
-/// once, in a snackbar, and keeps working. The one-shot property is the interesting half — the latch is the
-/// cleared per-mode selection in <c>PersonaService.ReplaceManagedPersonasAsync</c>, not a persisted flag, so
-/// nothing here may re-announce a withdrawal on a later, unrelated persona reload.
-/// <para>
-/// The two events are raised in the order the service raises them (<c>ManagedPersonaWithdrawn</c>, then
-/// <c>PersonasChanged</c>) because that ordering is the contract the handler depends on: the notice names the
-/// fallback persona, which only exists once the reload has resolved it. An <c>InlineUiDispatcher</c> makes the
-/// posted lambda run synchronously, so the fire-and-forget reload has finished by the time <c>Raise</c>
-/// returns and the assertions need no polling.
-/// </para>
+/// The two events are raised in the service's order because the notice names the fallback, which exists only
+/// once the reload resolved it; <c>InlineUiDispatcher</c> runs the posted lambda inline so nothing polls.
 /// </summary>
 public sealed class AssistantViewModelManagedPersonaTests
 {
@@ -51,8 +42,7 @@ public sealed class AssistantViewModelManagedPersonaTests
         _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
             .Returns(_ => Task.FromResult(_fallback));
 
-        // Echo the key and the substituted arguments instead of formatting English copy, so the assertions
-        // pin the resource key and both names without breaking when translators reword the template.
+        // Echo the key and arguments instead of English copy, so the assertions survive a reworded template.
         _localization.Format(Arg.Any<string>(), Arg.Any<object[]>()).Returns(call =>
             $"{call.ArgAt<string>(0)}|{string.Join("|", call.ArgAt<object[]>(1).Select(a => a?.ToString()))}");
         _localization[Arg.Any<string>()].Returns(call => call.Arg<string>());
@@ -110,11 +100,7 @@ public sealed class AssistantViewModelManagedPersonaTests
             Substitute.For<IToolPermissionService>());
     }
 
-    /// <summary>
-    /// The message argument of every <c>ISnackbarService.Show</c> call, read off <c>ReceivedCalls()</c> by
-    /// method name and position rather than with an <c>Arg.Is</c> matcher, so this survives WPF-UI
-    /// reshuffling <c>Show</c>'s optional parameters.
-    /// </summary>
+    /// <summary>Read by method name and position, not an <c>Arg.Is</c> matcher, so it survives WPF-UI reshuffling <c>Show</c>'s optional parameters.</summary>
     private List<string> ShownMessages() =>
         _snackbar.ReceivedCalls()
             .Where(call => call.GetMethodInfo().Name == "Show")
@@ -150,9 +136,7 @@ public sealed class AssistantViewModelManagedPersonaTests
     [Fact]
     public void A_second_reload_does_not_repeat_the_notice()
     {
-        // The one-shot. A later pull that changes any persona raises PersonasChanged again, and the stash
-        // was consumed by the first reload — the latch that stops a re-detection is the cleared per-mode
-        // selection in PersonaService, so there is nothing left here to re-announce.
+        // The latch is the cleared per-mode selection in PersonaService, so nothing is left here to re-announce.
         CreateSut();
 
         RaiseWithdrawn(Guid.NewGuid(), "Brandvoice");
@@ -165,11 +149,8 @@ public sealed class AssistantViewModelManagedPersonaTests
     [Fact]
     public void A_reload_that_still_resolves_the_withdrawn_persona_defers_the_notice()
     {
-        // A reload can START before the managed replace and FINISH after it: the pull raises PersonasChanged
-        // once per applied user persona, well before it applies the managed snapshot, and LoadPersonasAsync is
-        // fire-and-forget. Such a reload still holds pre-replace data, so consuming the stash there would show
-        // "Brandvoice is no longer available; switched to Brandvoice" and burn the one shot on a nonsense
-        // message. It must be left pending for the reload that sees the real fallback.
+        // A reload can START before the managed replace and FINISH after it, so consuming the stash there would
+        // announce the withdrawn persona as its own fallback and burn the one shot.
         var withdrawn = new Persona
         {
             Id = Guid.NewGuid(),
@@ -179,8 +160,7 @@ public sealed class AssistantViewModelManagedPersonaTests
         };
         var vm = CreateSut();
 
-        // Configured after CreateSut so these win: the first reload sees the store as it was BEFORE the
-        // replace, the second sees it after.
+        // Configured after CreateSut so these win: the first reload sees the store before the replace.
         var beforeReplace = true;
         _personas.GetPersonasAsync().Returns(_ =>
             Task.FromResult<IReadOnlyList<Persona>>(beforeReplace ? [withdrawn, _fallback] : [_fallback]));
@@ -193,8 +173,7 @@ public sealed class AssistantViewModelManagedPersonaTests
         Assert.Empty(ShownMessages());
         Assert.Equal(withdrawn.Id, vm.ActivePersona?.Id);
 
-        // The replace has now landed, and PersonaService always raises PersonasChanged after the withdrawal
-        // event — so a reload that resolves the real fallback is guaranteed to follow, and it announces once.
+        // PersonaService always raises PersonasChanged after the withdrawal event, so this reload is guaranteed.
         beforeReplace = false;
         RaisePersonasChanged();
 
@@ -208,8 +187,7 @@ public sealed class AssistantViewModelManagedPersonaTests
     [Fact]
     public void An_ordinary_reload_with_no_withdrawal_shows_nothing()
     {
-        // Guards the other direction: every sync pull that touches a persona raises PersonasChanged, so an
-        // unconditional notice here would nag on routine syncs.
+        // Every sync pull that touches a persona raises PersonasChanged, so an unconditional notice would nag.
         CreateSut();
 
         RaisePersonasChanged();

@@ -11,12 +11,8 @@ using ReasoningEffort = Pia.Models.ReasoningEffort;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// The Batch 07 per-step persona ladder (D3/D5): an assigned persona brings its OWN system prompt, tool list
-/// and provider; every way that can go wrong degrades to the run default and none of them throws, because a
-/// per-step persona is an enhancement and must never be able to fail a run. Plus the roster read (D1/D7),
-/// whose emptiness is the feature's off switch.
-/// </summary>
+// An assigned persona brings its own system prompt, tool list and provider; every way that can go wrong degrades to
+// the run default and none of them throws, because a per-step persona must never be able to fail a run.
 public sealed class StepPersonaResolverTests
 {
     private readonly IPersonaService _personas = Substitute.For<IPersonaService>();
@@ -56,7 +52,6 @@ public sealed class StepPersonaResolverTests
     private static StepPersonaSetup RunDefault() =>
         new(Persona("Pia"), Provider("run-provider"), new AssistantTurnSetup("run system", null, false, false));
 
-    /// <summary>Puts <paramref name="personas"/> on the roster for the settings' operating mode.</summary>
     private void Roster(params Persona[] personas)
     {
         _settings.SetAgentPersonaRoster(UserOperatingMode.Personal, personas.Select(p => p.Id).ToList());
@@ -65,7 +60,7 @@ public sealed class StepPersonaResolverTests
             _personas.GetPersonaAsync(p.Id).Returns(p);
     }
 
-    /// <summary>Composes a setup whose prompt names the persona, so a test can tell whose prompt came back.</summary>
+    // The composed prompt names the persona, so a test can tell whose prompt came back.
     private void ComposerEchoesThePersona() =>
         _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
                 Arg.Any<bool>(), Arg.Any<bool>())
@@ -93,8 +88,8 @@ public sealed class StepPersonaResolverTests
     [Fact]
     public async Task AssignedPersona_GetsItsOwnSystemPromptAndTools()
     {
-        // §0.1's headline fact: a per-step persona that does not re-compose the turn setup is INERT in the
-        // model — it changes the label and nothing the model reads.
+        // A per-step persona that does not re-compose the turn setup is INERT: it changes the label and nothing
+        // the model reads.
         var analyst = Persona("Analyst");
         Roster(analyst);
         ComposerEchoesThePersona();
@@ -110,20 +105,15 @@ public sealed class StepPersonaResolverTests
         _composer.Received(1).PrepareTurn(analyst, Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
             Arg.Any<bool>(), Arg.Any<bool>());
 
-        // <b>REGRESSION</b> (Phase 3 fix pass, Batch 06 Lens A finding 3). The persona comes from the roster
-        // list already in hand — GetRosterAsync fetched the full objects and dropped the ids that no longer
-        // resolve — and NOT from a second per-id store round-trip. That round-trip was the one arm of this
-        // ladder that could throw: PersonaService.GetPersonaAsync does raw SQLite I/O, resolution happens
-        // before each executor's exchange try/catch, so a busy connection failed the whole RUN. Neutralization:
-        // restore the `await _personas.GetPersonaAsync(id)` lookup → red.
+        // The persona comes from the roster list already in hand, not a second per-id store round-trip: that
+        // lookup does raw SQLite I/O outside any executor try/catch, so a busy connection failed the whole run.
         await _personas.DidNotReceive().GetPersonaAsync(Arg.Any<Guid>());
     }
 
     [Fact]
     public async Task AssignedPersona_UsesItsPreferredProvider_NotTheRunsOne()
     {
-        // D5: a roster persona was chosen BECAUSE of its provider, so the run-level provider (which on a
-        // scheduled job is the launcher's override) does not win here.
+        // A roster persona was chosen BECAUSE of its provider, so the run-level provider does not win here.
         var preferred = Provider("preferred");
         var analyst = Persona("Analyst", preferredProviderId: preferred.Id);
         Roster(analyst);
@@ -158,11 +148,8 @@ public sealed class StepPersonaResolverTests
     [Fact]
     public async Task UnresolvablePersona_FallsBackToTheRunDefault()
     {
-        // The persona was deleted between plan and execute: its id is still in the CONFIGURED roster setting,
-        // but the store no longer returns it — so GetRosterAsync drops it (logging the dropped count) and the
-        // assignment has nothing to resolve against. Modelled at GetPersonasAsync rather than at
-        // GetPersonaAsync, because the per-id lookup no longer exists: the roster list IS the persona source,
-        // and a roster containing an id GetPersonasAsync does not know is a state the loader cannot produce.
+        // The persona was deleted between plan and execute: its id is still in the configured roster but the store
+        // no longer returns it, so the roster read drops it and the assignment has nothing to resolve against.
         var ghost = Persona("Ghost");
         var survivor = Persona("Survivor");
         _settings.SetAgentPersonaRoster(UserOperatingMode.Personal, [ghost.Id, survivor.Id]);
@@ -202,8 +189,8 @@ public sealed class StepPersonaResolverTests
     [Fact]
     public async Task WithAnEmptyRoster_NoAssignedIdIsEverHonoured()
     {
-        // The other half of D1's opt-in, at the EXECUTOR seam rather than the planner's: even a persisted plan
-        // that already carries assignments goes back to the run persona once the roster is empty.
+        // The opt-in at the EXECUTOR seam: even a persisted plan that already carries assignments goes back to the
+        // run persona once the roster is empty.
         var analyst = Persona("Analyst");
         _personas.GetPersonaAsync(analyst.Id).Returns(analyst);
         _personas.GetPersonasAsync().Returns([analyst]);
@@ -217,8 +204,8 @@ public sealed class StepPersonaResolverTests
     [Fact]
     public async Task UnresolvableProvider_BorrowsTheRunProvider_ButKeepsTheAssignedPersonaAndItsPrompt()
     {
-        // The one PARTIAL arm (D3.3). Dropping the persona here would throw away its SYSTEM PROMPT, which is
-        // the whole substance of assigning the step — a persona on a borrowed provider is still that persona.
+        // The one PARTIAL arm: dropping the persona here would throw away its SYSTEM PROMPT, which is the whole
+        // substance of assigning the step.
         var analyst = Persona("Analyst", preferredProviderId: Guid.NewGuid());
         Roster(analyst);
         ComposerEchoesThePersona();
@@ -252,8 +239,8 @@ public sealed class StepPersonaResolverTests
     [Fact]
     public async Task ResolvesEachPersonaOnce_AcrossManySteps()
     {
-        // GUARD. Recomposing the system prompt on all 24 steps of a run is pure waste, and the memo is also
-        // what keeps a persona edited mid-run from changing the prompt at step 13.
+        // Recomposing the prompt on every step is waste, and the memo is also what keeps a persona edited mid-run
+        // from changing the prompt at step 13.
         var analyst = Persona("Analyst");
         Roster(analyst);
         ComposerEchoesThePersona();
@@ -270,8 +257,8 @@ public sealed class StepPersonaResolverTests
     [Fact]
     public async Task SuggestAgentModeIsNeverOfferedInsideARun()
     {
-        // GUARD. suggest_agent_mode offers to switch the USER into Agent mode; inside a run there is nobody to
-        // offer it to, and a run that offers it is a run that can call a tool with no surface.
+        // suggest_agent_mode offers to switch the USER into Agent mode; inside a run there is nobody to offer it
+        // to, and the tool has no surface.
         var analyst = Persona("Analyst");
         Roster(analyst);
         ComposerEchoesThePersona();
@@ -293,9 +280,8 @@ public sealed class StepPersonaResolverTests
             personas.Add(Persona($"P{i}"));
         var unknown = Guid.NewGuid();
 
-        // Nine configured entries: P0 twice, P3 twice, and one id that resolves to nothing. Written STRAIGHT
-        // into the dictionary, bypassing the setter — a hand-edited (or one day synced) settings file never
-        // went through SetAgentPersonaRoster, so the READ side is what has to hold.
+        // Written STRAIGHT into the dictionary, bypassing the setter: a hand-edited settings file never went
+        // through SetAgentPersonaRoster, so the READ side is what has to hold.
         _settings.AgentPersonaRoster[UserOperatingMode.Personal] =
         [
             personas[0].Id, personas[0].Id, personas[1].Id, unknown,
@@ -313,7 +299,7 @@ public sealed class StepPersonaResolverTests
     [Fact]
     public async Task GetRoster_IsEmptyWhenNothingIsConfigured()
     {
-        // GUARD — the D1 default. Nothing configured ⇒ nothing listed ⇒ nothing assigned ⇒ today.
+        // Nothing configured ⇒ nothing listed ⇒ nothing assigned.
         Assert.Empty(await Build().GetRosterAsync(Ct));
         await _personas.DidNotReceive().GetPersonasAsync();
     }
@@ -323,8 +309,7 @@ public sealed class StepPersonaResolverTests
     {
         _settingsService.GetSettingsAsync().Throws(new IOException("settings unavailable"));
 
-        // GUARD. Reading the roster is the gate of an optional feature; the answer on any fault is "no
-        // specialists", which is exactly today's behaviour.
+        // Reading the roster gates an optional feature, so the answer on any fault is "no specialists".
         Assert.Empty(await Build().GetRosterAsync(Ct));
     }
 }

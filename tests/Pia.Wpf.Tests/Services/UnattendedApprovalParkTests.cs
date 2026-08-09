@@ -14,40 +14,8 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// hermes #16, THE UNATTENDED APPROVAL PARK. A headless run that hit a promptable capability it was not
-/// granted used to HARD-DENY it — the model was told "Do not retry", the step carried on without the thing it
-/// needed, and the run finished having quietly failed to do the job. It now stops and asks, reusing the Batch
-/// 06 park verbatim: <c>WaitingForInput</c>, the same pause envelope, the same durable Flow Continue card and
-/// the same <c>IAgentRunResumeService</c> claim.
-/// <para>
-/// THE BOUNDARY THIS SUITE DEFENDS. Parking is for calls a human could legitimately approve; everything else
-/// still hard-denies, and each guard here is written so that making the park GREEDIER reds it:
-/// <list type="bullet">
-/// <item>a destructive EXTERNAL (MCP) tool — the unliftable floor (T-PARK-3)</item>
-/// <item>a delete-like BUILT-IN, which the floor does NOT cover and a named grant would run (T-PARK-4)</item>
-/// <item>a CHILD run, pinned to default-deny as a delegate (T-PARK-5)</item>
-/// <item>an unrouted tool, which never reaches the gate at all (T-PARK-6)</item>
-/// </list>
-/// </para>
-/// <para>
-/// THE UNBOUNDED-PARK HAZARD, and how it is answered. A scheduled job has nobody at the keyboard, so "park
-/// and wait" could in principle be forever. It is bounded not in TIME but in RESOURCES: a parked run holds
-/// nothing at all (T-PARK-8) — the dispatch task has returned, the concurrency slot is released, the
-/// executing-run bracket is closed and the ledger's work segment is shut, so parked time is not worked time
-/// and a parked run costs exactly one database row. The question itself is durable (a Persistent Flow card
-/// plus a row the startup sweep deliberately leaves alone), so the human is reached whenever they next open
-/// the app rather than never. That is the same shape <c>D5PausePremiseTests</c> measured for the budget park,
-/// which is the point of reusing it instead of inventing a second park.
-/// </para>
-/// <para>
-/// Real everything below the AI client: real SQLite run + chat stores, real <c>HeadlessRunLauncher</c>, real
-/// <c>AgentRunOrchestrator</c>, real <c>HeadlessTurnExecutor</c>, real <c>BackgroundAssistantTurnRunner</c>
-/// and the real <c>ToolAutonomy</c> gate. Only the provider stream, the plugin route and the planner are
-/// doubles — the park is a decision made between those three and nothing else would be exercised by faking
-/// the layers in between.
-/// </para>
-/// </summary>
+/// <summary>Parking an ungranted call is for tools a human could legitimately approve, so every guard here is written to red if
+/// the park gets greedier. Only the provider stream, the plugin route and the planner are doubles.</summary>
 public sealed class UnattendedApprovalParkTests : IDisposable
 {
     private readonly string _dir;
@@ -76,23 +44,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         try { Directory.Delete(_dir, true); } catch { /* best effort */ }
     }
 
-    // ---------------------------------------------------------------- the discriminating facts
-
-    /// <summary>
-    /// T-PARK-1, the headline. A ROOT headless run whose step calls an ungranted, non-destructive, routed
-    /// tool now PARKS: the tool does not run, the run sits at WaitingForInput with a <c>tool-approval</c>
-    /// envelope naming it, and the step is back at Pending so a Continue re-runs exactly that step.
-    /// <para>
-    /// The run is NOT terminal and NOT failed — that distinction is the whole feature. Before #16 the same
-    /// input produced a Completed run that had silently not done the work.
-    /// </para>
-    /// <para>
-    /// <b>Neutralize:</b> comment out the Park arm in <c>ToolAutonomy.Resolve</c> (the mechanism, not the
-    /// feature — the gate then falls through to <c>Refuse/DeniedNotGranted</c> exactly as it did before) →
-    /// the run completes and every assertion below reds. Note that the model's text still flows in both
-    /// worlds: the fake stream always yields a reply, so nothing here can pass on "the turn produced nothing".
-    /// </para>
-    /// </summary>
+    /// <summary>The run is left neither terminal nor failed, which is the whole feature: the earlier behaviour completed a run
+    /// that had silently not done the work.</summary>
     [Fact]
     public async Task UngrantedPromptableTool_ParksTheRunForApproval_InsteadOfDenyingIt()
     {
@@ -109,55 +62,33 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         Assert.Equal("tool-approval", PauseMember(run, "reason"));
         Assert.Equal("write_file", PauseMember(run, "tool"));
 
-        // The security half: parking is not running.
         Assert.False(probe.Executed);
-        // The model was told, and told to stop — not "denied, do not retry".
         Assert.Contains("approval", probe.GateResult ?? string.Empty);
 
-        // The step is resumable, not consumed: NextPendingStepAsync must still find it, or a Continue would
-        // drain an empty plan and settle the run Completed with the work never done.
+        // The step must stay findable, or a Continue would drain an empty plan and settle the run Completed.
         var pending = await _runs.NextPendingStepAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(pending);
         Assert.Equal(AgentStepStatus.Pending, pending!.Status);
 
-        // A park is NOT a completion (the state above) and NOT a failure — CompletedAt stays null, which is
-        // what keeps the startup sweep and the scheduled-job striker from treating it as a finished run.
+        // A null CompletedAt is what keeps the startup sweep and the job striker off a parked run.
         Assert.Null(run.CompletedAt);
 
-        // Audited as its own decision, not as a denial: the timeline is where a user goes to ask why a run
-        // stopped, and "denied" for a call still awaiting their answer would be the wrong story.
+        // Audited as its own decision: "denied" for a call still awaiting an answer would be the wrong story.
         var row = Assert.Single(_timeline.Rows, r => r.ToolName == "write_file");
         Assert.Equal(ToolGateDecision.ParkedForApproval, row.Decision);
         Assert.Equal(AgentTimelineOutcome.NotExecuted, row.Outcome);
         Assert.Equal(ToolGateSurface.Unattended, row.Surface);
 
-        // T2-14, the SAME story told by the two timestamps: the run genuinely ASKED (RequestedAt is real) and
-        // nobody has answered (DecidedAt is null). This is the one arm in either gate that writes a null
-        // DecidedAt, and it is the guard against a reflexive `decidedAt: DateTime.UtcNow` on every emit —
-        // which would claim a decision was made at the instant the run stopped to ask for one. The answer,
-        // when it comes, arrives as a resume that writes a FRESH GrantedByName row; this row is never
-        // back-filled, because the write model is one row after the outcome is known.
+        // The one arm that writes a null DecidedAt: asked, unanswered. A reflexive `decidedAt: UtcNow` would
+        // claim a decision was made at the instant the run stopped to ask for one.
         Assert.NotNull(row.RequestedAt);
         Assert.Null(row.DecidedAt);
 
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// T-PARK-2, the other half of the headline: <b>the human decision reaches the pending call</b>. Continue
-    /// IS the approval, so a resume grants the one tool the envelope named and the re-run step's SAME call
-    /// now executes.
-    /// <para>
-    /// The pending call itself cannot be replayed — a park outlives the process and a deferred action's
-    /// delegate does not — so what is applied is the CAPABILITY, and the evidence that it reached the actual
-    /// call is that the identical tool the run parked on is the one that runs.
-    /// </para>
-    /// <para>
-    /// <b>Neutralize:</b> delete the <c>grants = widened;</c> line in <c>HeadlessRunLauncher.ResumeAsync</c>
-    /// (leaving the read, the persist and the log) → the resumed step parks again on the same tool and
-    /// <c>probe.Executed</c> reds.
-    /// </para>
-    /// </summary>
+    /// <summary>A park outlives the process but a deferred action's delegate does not, so what a resume applies is the
+    /// capability; the evidence it reached the call is that the same tool then runs.</summary>
     [Fact]
     public async Task Resume_AppliesTheApprovalToTheToolTheRunParkedOn()
     {
@@ -170,8 +101,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
         Assert.False(probe.Executed); // the premise: it parked rather than ran
 
-        // THE HUMAN'S DECISION. This is the exact call the panel's Continue button and the Flow card's
-        // ContinueRunAction both make — no approval-specific entry point exists, by design.
+        // The exact call the Continue button and the Flow card make: there is no approval-specific entry point.
         Assert.True(await launcher.ResumeAsync(handle.RunId, ct: TestContext.Current.CancellationToken));
         await AwaitSettledAsync(handle.RunId);
 
@@ -179,12 +109,10 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         var run = await GetRunAsync(handle.RunId);
         Assert.Equal(AgentRunState.Completed, run.State);
 
-        // DURABLE, not just applied to this dispatch. Without persisting it, a run needing two tools would
-        // park on A, be granted A, park on B, be granted B but forget A, park on A again — a livelock paced
-        // by a human pressing Continue.
+        // Must be durable: without persisting it, a run needing two tools would park on A, be granted A, park
+        // on B, be granted B but forget A, and park on A again — a livelock paced by a human pressing Continue.
         Assert.Contains("write_file", HeadlessRunLauncher.TryRestoreGrantEnvelope(run.PolicyJson)!);
 
-        // And the re-run call is audited as a GRANT, not a second park: the question was answered once.
         Assert.Equal(
             ToolGateDecision.GrantedByName,
             _timeline.Rows.Last(r => r.ToolName == "write_file").Decision);
@@ -192,15 +120,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// T-PARK-3, <b>GUARD</b>. The unliftable floor: a destructive EXTERNAL (MCP) tool never runs unattended
-    /// and never parks either. There is no human who can be shown enough to consent — an MCP tool's name and
-    /// effect are server-defined and the Continue affordance carries no arguments — so it stays a hard denial.
-    /// <para>
-    /// <b>Greedy-park mutation that must red this:</b> move the Park arm ABOVE the floor in
-    /// <c>ToolAutonomy.Resolve</c>. Proven by doing it.
-    /// </para>
-    /// </summary>
+    /// <summary>An MCP tool's name and effect are server-defined and the Continue affordance carries no arguments, so no human
+    /// can be shown enough to consent.</summary>
     [Fact]
     public async Task DestructiveExternalTool_StillHardDenies_AndNeverParks()
     {
@@ -217,22 +138,13 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// T-PARK-4, <b>GUARD</b>. A delete-like BUILT-IN is the sharper case, because the destructive-external
-    /// floor does NOT cover it: <c>delete_file</c> runs unattended today when a grant list names it. It still
-    /// must not PARK, and the reason is the asymmetry between the two approval surfaces — an action card
-    /// shows the ARGUMENTS of the call it is asking about, the Continue button shows one sentence. Approving
-    /// an irreversible action blind, for a step that will then re-run and pick its own path, is not consent.
-    /// <para>
-    /// <b>Greedy-park mutation that must red this:</b> drop <c>&amp;&amp; !isDeleteLike</c> from the Park arm.
-    /// Proven by doing it.
-    /// </para>
-    /// </summary>
+    /// <summary>An action card shows the call's arguments; the Continue button shows one sentence. Approving an irreversible
+    /// action blind, for a step that will then re-run and pick its own path, is not consent.</summary>
     [Fact]
     public async Task DeleteLikeBuiltInTool_StillHardDenies_AndNeverParks()
     {
         var probe = new ToolProbe("delete_file");
-        var (launcher, _) = Build(probe); // built-in: IsMcpTool false, so the FLOOR does not apply
+        var (launcher, _) = Build(probe); // built-in: IsMcpTool false, so the floor does not apply
 
         var handle = await launcher.LaunchAsync(
             new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []),
@@ -244,25 +156,16 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// T-PARK-5, <b>GUARD</b>. A CHILD run is a delegate (hermes #8): it receives a strict subset of its
-    /// parent's authority and may never acquire more. An approval park ACQUIRES authority, so a child parking
-    /// would be the one path by which a delegate ends up wider than its delegator. It hard-denies instead —
-    /// the same tool, the same empty grant set, the same everything except the parent id.
-    /// <para>
-    /// <b>Greedy-park mutation that must red this:</b> make <c>HeadlessRunLauncher.CanParkForApproval</c>
-    /// return <c>true</c> unconditionally. Proven by doing it.
-    /// </para>
-    /// </summary>
+    /// <summary>A child run holds a strict subset of its parent's authority, and a park ACQUIRES authority, so a parking child
+    /// would be the one path by which a delegate ends up wider than its delegator.</summary>
     [Fact]
     public async Task ChildRun_StillHardDenies_AndNeverParks()
     {
-        var probe = new ToolProbe("write_file"); // the very tool a ROOT run parks on in T-PARK-1
+        var probe = new ToolProbe("write_file"); // the very tool a root run parks on
         var (launcher, _) = Build(probe);
 
-        // The parent is a bare ROW, never launched: it exists only to make the run under test a child, and
-        // launching it would park it too (it is a root run) — putting a second run's ParkedForApproval row in
-        // the shared timeline and making this fact's "nothing parked" assertion ambiguous.
+        // A bare row, never launched: launching it would park it too and put a second ParkedForApproval row in
+        // the shared timeline, making this fact's "nothing parked" assertion ambiguous.
         var parent = await NewRunAsync();
         var child = await ParkedChildAsync(parent.Id);
         Assert.True(await launcher.ResumeAsync(child.Id, ct: TestContext.Current.CancellationToken));
@@ -272,13 +175,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// T-PARK-6, <b>GUARD</b>. A tool with no route never reaches the gate at all — it dead-ends at
-    /// "Unknown tool." before <c>Resolve</c> is called. Worth pinning because a park is the one gate outcome
-    /// a model could try to PROVOKE: inventing a plausible tool name to make the run stop and put a Continue
-    /// button in front of a human is a strictly better attack than being denied, and this is the arm that
-    /// makes it impossible rather than merely unlikely.
-    /// </summary>
+    /// <summary>A park is the one gate outcome a model could try to provoke: inventing a tool name to put a Continue button in
+    /// front of a human beats being denied. An unrouted name dead-ends before <c>Resolve</c> is reached.</summary>
     [Fact]
     public async Task UnroutedToolName_StillDeadEnds_AndNeverParks()
     {
@@ -300,12 +198,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// T-PARK-7, <b>GUARD</b>. A run whose policy already covers the tool AUTO-RUNS it — it never reaches the
-    /// park at all. The non-vacuity control for the whole suite: without it every guard above could be
-    /// satisfied by a park that simply never fires, and the "greedy" mutations would be the only thing
-    /// keeping the feature honest.
-    /// </summary>
+    /// <summary>The control for the whole suite: without it, every guard above could be satisfied by a park that never fires.</summary>
     [Fact]
     public async Task PolicyCoveredTool_StillAutoRuns_AndNeverParks()
     {
@@ -325,25 +218,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// T-PARK-8, <b>THE BOUND</b>. "Park and wait for a human" on a run nobody is watching is only safe if
-    /// waiting is FREE, so this measures that a parked-for-approval run holds nothing:
-    /// <list type="number">
-    /// <item>the dispatch task has RETURNED — which is where the concurrency slot is released in its
-    /// <c>finally</c>, so a parked run does not occupy one of the launcher's slots forever;</item>
-    /// <item>the executing-run bracket is CLOSED, so the composer/session bookkeeping is not pinned;</item>
-    /// <item>the ledger's work segment is SHUT, so parked wall-clock is not billed as worked time and does
-    /// not eat the fresh budget the eventual Continue hands out;</item>
-    /// <item>TWO runs park on the SAME launcher and a THIRD then still gets a permit from that same
-    /// two-wide pool — the sharpest observable form of (1), and the only shape that catches a slot leak:
-    /// the pool is a per-instance field, so a second launcher proves nothing about the first's permits,
-    /// and a single parked run cannot exhaust a cap of two;</item>
-    /// <item>and the question survives: the row is still claimable, which is what makes the wait an
-    /// unanswered question rather than a lost one.</item>
-    /// </list>
-    /// A time bound is deliberately NOT the answer. The park is answered by a human, and a deadline that
-    /// expired into a denial would silently un-do the very decision this feature exists to collect.
-    /// </summary>
+    /// <summary>Waiting for a human on an unwatched run is only safe if waiting is free; a time bound is deliberately not the
+    /// answer, since a deadline expiring into a denial would un-do the decision this exists to collect.</summary>
     [Fact]
     public async Task AParkedRunHoldsNothing_SoWaitingForAHumanIsBounded()
     {
@@ -354,34 +230,26 @@ public sealed class UnattendedApprovalParkTests : IDisposable
             new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []),
             TestContext.Current.CancellationToken);
 
-        // (1) It RETURNS. A park that awaited a human here would hang this line until the timeout.
+        // A park that awaited a human here would hang this line until the timeout.
         await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
         var run = await GetRunAsync(handle.RunId);
-        Assert.Equal(AgentRunState.WaitingForInput, run.State); // the premise: it really is parked
+        Assert.Equal(AgentRunState.WaitingForInput, run.State);
 
-        // (2) The A2 bracket is closed.
         Assert.False(_executing.IsExecuting(run.ChatId));
 
-        // (3) Parked time is not worked time: no OPEN segment is left on the ledger clock.
+        // Parked time is not worked time: no open segment is left on the ledger clock.
         Assert.Null(OpenLedgerSegmentStart(run.Id));
 
-        // (4) THE SLOT ITSELF, on the pool that actually holds it. This step used to build a SECOND
-        // HeadlessRunLauncher — but `_slots` is a per-INSTANCE `new(2, 2)`, so that run drew on a fresh pool of
-        // two permits and would have completed even if the parked launcher had leaked BOTH of its own. The
-        // claim "would catch a slot leak the other three miss" was measured by nothing.
-        //
-        // Two things are needed to observe it. The pool must be the SAME instance that parked — so every run
-        // below goes through `launcher`. And the pool must be EXHAUSTED, which takes TWO parked runs: with a
-        // cap of two, one leaked permit still leaves one, and a queue that drains serially completes anyway.
+        // The slot pool is a per-instance field, so every run below must go through the SAME launcher, and it
+        // takes TWO parked runs to exhaust a cap of two — one leaked permit still leaves one.
         var secondPark = await launcher.LaunchAsync(
             new HeadlessRunRequest("g2", AgentRunTrigger.Schedule, GrantedWrites: []),
             TestContext.Current.CancellationToken);
         await secondPark.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.WaitingForInput, (await GetRunAsync(secondPark.RunId)).State);
 
-        // Both permits are now held by parked runs unless a park releases them. GRANTING the tool this run
-        // would otherwise park on is what lets it reach Completed at all, so the only thing its progress is
-        // evidence about is the pool: if a park held its permit, this line hangs until the timeout.
+        // Granted the tool up front, so its progress is evidence about the pool and nothing else: if a park
+        // held its permit, this line hangs until the timeout.
         var third = await launcher.LaunchAsync(
             new HeadlessRunRequest("g3", AgentRunTrigger.Schedule, GrantedWrites: ["write_file"]),
             TestContext.Current.CancellationToken);
@@ -389,27 +257,19 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await AwaitSettledAsync(third.RunId);
         Assert.Equal(AgentRunState.Completed, (await GetRunAsync(third.RunId)).State);
 
-        // …and BOTH parked runs are still parked, so the third run's permit did not come from one of them
-        // being swept, resumed or failed out of the way.
+        // Both are still parked, so the third run's permit did not come from one of them being swept out of
+        // the way.
         Assert.Equal(AgentRunState.WaitingForInput, (await GetRunAsync(handle.RunId)).State);
         Assert.Equal(AgentRunState.WaitingForInput, (await GetRunAsync(secondPark.RunId)).State);
 
-        // (5) The question is still answerable — the row remains claimable by the ordinary resume CAS.
+        // The question is still answerable: the row remains claimable by the ordinary resume CAS.
         Assert.True(await _runs.TryBeginResumeAsync(handle.RunId, TestContext.Current.CancellationToken));
 
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// T-PARK-9, <b>REGRESSION</b>. The Flow card's body for an approval park must NOT be the budget wording
-    /// and MUST name the tool. Both pause readers fall back to the budget copy rather than failing, so a test
-    /// that only asked "is the body non-empty?" would pass on the fall-through — the precise way Batch 08's
-    /// F19 defect shipped, and the third time on this branch that "the assertion observed the default".
-    /// <para>
-    /// Naming the tool is not polish either: Continue on an approval park IS the grant, so a card that does
-    /// not say what it is granting asks the user to approve something blind.
-    /// </para>
-    /// </summary>
+    /// <summary>Both pause readers fall back to the budget copy rather than failing, so a non-empty check would pass on the
+    /// fall-through. Continue IS the grant, so a card that does not name the tool asks for blind approval.</summary>
     [Fact]
     public void TheFlowContinueCard_NamesTheToolAndIsNotTheBudgetBody()
     {
@@ -427,23 +287,15 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         Assert.NotEqual("Flow_Run_WaitingAtBudget", AgentRunNotificationSurface.PausedBodyKey("tool-approval"));
         Assert.Equal("Flow_Run_ToolApproval|write_file", AgentRunNotificationSurface.PausedBody(loc, parked));
 
-        // The fall-through is untouched for every other token, which is what makes the arm above a mapping
-        // rather than a blanket rewrite.
+        // The fall-through is untouched for every other token, so the arm above is a mapping, not a rewrite.
         Assert.Equal("Flow_Run_WaitingAtBudget", AgentRunNotificationSurface.PausedBodyKey("step-cap"));
         Assert.Equal(
             "Flow_Run_WaitingAtBudget",
             AgentRunNotificationSurface.PausedBody(loc, new AgentRun { ExtraJson = """{"paused":true,"reason":"step-cap"}""" }));
     }
 
-    /// <summary>
-    /// T-PARK-10. The envelope round-trip in isolation, including the two degrades a reader must survive:
-    /// a park with no <c>tool</c> member (every other park) and a blank one (a corrupted row) both read as
-    /// null rather than as an empty tool the Continue card would offer to grant.
-    /// <para>
-    /// The first row is also the byte-shape pin: <c>PauseAsync</c> with no approval tool must write the
-    /// document it has always written, so no existing park's envelope changes shape.
-    /// </para>
-    /// </summary>
+    /// <summary>A missing or blank <c>tool</c> member must read as null, never as an empty tool the Continue card would offer
+    /// to grant; and a park with no approval tool must still write the byte-shape it always wrote.</summary>
     [Fact]
     public async Task ThePauseEnvelopeCarriesTheToolOnlyForAnApprovalPark()
     {
@@ -458,27 +310,14 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         Assert.Equal("tool-approval", PauseMember(run, "reason"));
         Assert.Equal("write_file", PauseMember(run, "tool"));
 
-        // And the claim retires the whole envelope, which is why ResumeAsync has to read the tool BEFORE it
-        // CASes — the regression that would make every approval silently grant nothing.
+        // The claim retires the whole envelope, so ResumeAsync has to read the tool BEFORE it CASes or every
+        // approval silently grants nothing.
         Assert.True(await _runs.TryBeginResumeAsync(approval.Id, ct));
         Assert.Null((await GetRunAsync(approval.Id)).ExtraJson);
     }
 
-    /// <summary>
-    /// T-PARK-11, <b>GUARD</b>. A model that keeps calling tools after it was told the run is parking must not
-    /// move the question. The envelope names ONE tool, that name is what the Continue card shows and what the
-    /// resume grants, so it has to be the call that actually stopped the run — a later call is one the model
-    /// made AFTER being told to stop, and approving THAT because it arrived last would grant a capability the
-    /// human was never shown.
-    /// <para>
-    /// The second half is the audit: exactly ONE <c>ParkedForApproval</c> row. A row per attempt would imply
-    /// several pending decisions when there is one, and the panel would show the user a queue that does not
-    /// exist. Neither the first-wins rule nor the emit-once rule is observable with a single tool call, which
-    /// is why this fact drives two.
-    /// </para>
-    /// <para><b>Neutralize:</b> in <c>ToolApprovalStore.Park</c>, drop the <c>PendingToolName is not null</c>
-    /// early return so the LAST call wins → the envelope names <c>update_todo</c> and this reds.</para>
-    /// </summary>
+    /// <summary>The envelope names one tool and that name is what Continue grants, so a later call — made after the model was
+    /// told to stop — must not replace it. Two calls, because neither first-wins nor emit-once shows up with one.</summary>
     [Fact]
     public async Task ASecondParkedCallInTheSameStep_DoesNotMoveTheQuestionOrDoubleTheAudit()
     {
@@ -493,46 +332,22 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         var run = await GetRunAsync(handle.RunId);
         Assert.Equal(AgentRunState.WaitingForInput, run.State);
 
-        // FIRST WINS. Both calls were parkable, so a last-wins store would read "update_todo" here.
+        // Both calls were parkable, so a last-wins store would read "update_todo" here.
         Assert.Equal("write_file", PauseMember(run, "tool"));
 
-        // Both calls were told to stop, and neither ran.
         Assert.Empty(probe.ExecutedNames);
         Assert.Equal(2, probe.Results.Count);
         Assert.All(probe.Results, r => Assert.Contains("approval", r ?? string.Empty));
 
-        // ONE pending decision, one audit row — for the tool the envelope actually names.
+        // One audit row: a row per attempt would show the user a queue of decisions that does not exist.
         var parkRows = _timeline.Rows.Where(r => r.Decision == ToolGateDecision.ParkedForApproval).ToList();
         Assert.Equal("write_file", Assert.Single(parkRows).ToolName);
 
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// T-PARK-12, <b>THE CONTAINMENT</b>. A park must STOP the exchange, not merely advise it — so a GRANTED
-    /// tool the model calls after the run has already decided to park does not run, and the resumed step
-    /// therefore does it exactly ONCE in the run's whole life.
-    /// <para>
-    /// This is the case T-PARK-11 looks like it covers and does not: both of its calls are ungranted, so both
-    /// park and its <c>Assert.Empty(probe.ExecutedNames)</c> passes trivially. Every other fact in this file
-    /// launches with <c>GrantedWrites: []</c>, so until this one no fact had ever put a granted tool and a
-    /// parked tool in the same exchange — the park DECISION was measured eleven times and containment after it
-    /// zero times.
-    /// </para>
-    /// <para>
-    /// Why once matters more than the wasted call: the executor discards the parked step's whole attempt and
-    /// the orchestrator puts the row back to <c>Pending</c>, so a side effect that happened after the park is
-    /// replayed by the re-run with nothing in the transcript to tell the model it had already done it. One
-    /// human Continue press therefore created the same todo twice. Pre-#16 the ungranted call was refused and
-    /// the step ran to completion exactly once, so a park must not be able to lose that.
-    /// </para>
-    /// <para>
-    /// <b>Neutralize:</b> delete the <c>approvals?.PendingToolName is { } parkedFor</c> containment guard in
-    /// <c>BackgroundAssistantTurnRunner.HandleToolCallAsync</c> (leaving the Park arm itself, i.e. the park
-    /// decision, untouched) → <c>update_todo</c> runs during the parked attempt and again on the resume, and
-    /// both assertions below red.
-    /// </para>
-    /// </summary>
+    /// <summary>A park discards the step's whole attempt and puts the row back to <c>Pending</c>, so a side effect that ran
+    /// after the park would be replayed by the re-run — one Continue press creating the same todo twice.</summary>
     [Fact]
     public async Task AGrantedCallAfterThePark_DoesNotRun_AndIsNotReplayedByTheResume()
     {
@@ -540,49 +355,28 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         var probe = new ToolProbe("write_file");
         var (launcher, _) = Build(probe, secondToolName: "update_todo");
 
-        // GRANTED, unlike every other fact here — so nothing but the park can stop this second call.
+        // The second tool is granted, so nothing but the park can stop it.
         var handle = await launcher.LaunchAsync(
             new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: ["update_todo"]), ct);
         await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
         Assert.Equal(AgentRunState.WaitingForInput, (await GetRunAsync(handle.RunId)).State);
 
-        // The premise, so this cannot pass on "the second call never happened": the gate answered it.
+        // The gate answered it, so this cannot pass on "the second call never happened".
         Assert.Equal(2, probe.Results.Count);
-        // CONTAINMENT: it was answered without being executed.
         Assert.DoesNotContain("update_todo", probe.ExecutedNames);
 
         Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
         await AwaitSettledAsync(handle.RunId);
 
-        // AT MOST ONCE across the park: the re-run is the only time it happens.
+        // Once across the park's whole life: the re-run is the only time it happens.
         Assert.Equal(1, probe.ExecutedNames.Count(n => n == "update_todo"));
-        // …and the park really was answered, so the once is the resumed step's and not the parked attempt's.
         Assert.Equal(AgentRunState.Completed, (await GetRunAsync(handle.RunId)).State);
 
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// T-PARK-13, <b>REGRESSION</b>. A park SURVIVES a provider fault that happens later in the same exchange.
-    /// The audit row is written the moment the gate parks, so if the fault then discarded the park the persisted
-    /// state contradicted itself: the timeline showed <c>Run_Timeline_Decision_AwaitingApproval</c> — "Awaiting
-    /// approval" — on a run that had settled terminally with no pause envelope, no <c>tool</c> member, no Flow
-    /// Continue card and no panel Continue button. A user reading that is told the run is waiting for them to
-    /// answer a question that no longer exists, which is the exact reporting failure #16 was built to remove.
-    /// <para>
-    /// It is also the safe direction on its own terms. The tool did not run, the step's text is discarded and
-    /// the row goes back to <c>Pending</c> either way, so a fault and a park lead to the same place — except
-    /// that parking keeps the QUESTION, and failing throws it away. Nor can it hide a persistent fault: the
-    /// resume grants the tool, so the next attempt parks on nothing and the fault surfaces normally.
-    /// </para>
-    /// <para>
-    /// The pairing is the assertion, not either half alone: the timeline row and the run state are read in the
-    /// same fact, because each of them separately was already true in the broken world.
-    /// </para>
-    /// <para><b>Neutralize:</b> delete the <c>approvals.PendingToolName</c> re-check from the generic
-    /// <c>catch (Exception ex)</c> arm in <c>HeadlessTurnExecutor.RunExchangeStepAsync</c> → the run settles
-    /// terminally, the envelope is gone, and the state assertions below red while the timeline row stays.</para>
-    /// </summary>
+    /// <summary>The audit row is written the moment the gate parks, so a fault that then discarded the park left the timeline
+    /// saying "awaiting approval" on a terminally settled run. The pairing is the assertion: each half alone was already true.</summary>
     [Fact]
     public async Task AParkIsNotDiscardedByAProviderFaultLaterInTheSameExchange()
     {
@@ -596,50 +390,31 @@ public sealed class UnattendedApprovalParkTests : IDisposable
 
         var run = await GetRunAsync(handle.RunId);
 
-        // The audit already told the user a decision is pending…
+        // The audit says a decision is pending…
         Assert.Equal(
             ToolGateDecision.ParkedForApproval,
             Assert.Single(_timeline.Rows, r => r.ToolName == "write_file").Decision);
 
-        // …so the run has to actually BE parked, and the envelope has to name the tool the card will show.
+        // …so the run has to actually be parked, on the tool the card will name.
         Assert.Equal(AgentRunState.WaitingForInput, run.State);
         Assert.Equal("tool-approval", PauseMember(run, "reason"));
         Assert.Equal("write_file", PauseMember(run, "tool"));
         Assert.Null(run.CompletedAt);
 
-        // And the step is still there to re-run, so answering the question is not answering it into a void.
+        // The step is still there, so answering the question is not answering it into a void.
         Assert.NotNull(await _runs.NextPendingStepAsync(run.Id, ct));
         Assert.False(probe.Executed);
 
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// T-PARK-14, <b>GUARD</b>. An approval must not make the resume FLOOR durable, and must not destroy an
-    /// envelope it could not read.
-    /// <para>
-    /// The floor (<c>{write_file}</c>) is a deliberate per-dispatch degrade for a run whose launch envelope is
-    /// missing, corrupt, foreign or of a version this build does not know — and it is explicitly WIDER than some
-    /// launches, which is why <c>InteractiveEmptyEnvelopeJson</c> exists as its own documented shape. Writing a
-    /// fresh <c>v:1</c> document built on top of that floor turned a transient degrade into the run's durable
-    /// record of its own authority: a run that never held <c>write_file</c> came back holding it forever, and
-    /// <c>ResumeAsync</c> re-reads the row and hands <c>PolicyJson</c> to <c>LaunchChildAsync</c>, so the next
-    /// fan-out narrows its children from the widened envelope instead of the real one. It also overwrote a
-    /// document a NEWER build wrote, which no build could then ever read back.
-    /// </para>
-    /// <para>
-    /// The approval still reaches the pending call — that is asserted here too, on the same dispatch — so this
-    /// is about the PERSISTED record, not about whether Continue works.
-    /// </para>
-    /// <para><b>Neutralize:</b> drop the <c>envelopeWasReadable</c> condition on the
-    /// <c>UpdatePolicyJsonAsync</c> call in <c>HeadlessRunLauncher.ResumeAsync</c> → the row is rewritten to
-    /// <c>v:1</c> carrying <c>write_file</c> and both assertions below red.</para>
-    /// </summary>
+    /// <summary>The resume floor is a per-dispatch degrade and is wider than some launches, so persisting it would make a run
+    /// that never held <c>write_file</c> hold it forever — and would overwrite a document a newer build wrote.</summary>
     [Fact]
     public async Task Resume_DoesNotPersistTheFloorOverAnEnvelopeItCouldNotRead()
     {
         var ct = TestContext.Current.CancellationToken;
-        // A FUTURE version: readable JSON this build must not act on, which is exactly what the floor is for.
+        // A future version: readable JSON this build must not act on, which is what the floor is for.
         const string future = """{"v":2,"grantedWrites":["read_file"]}""";
         var run = await NewRunAsync(policyJson: future);
         Assert.Null(HeadlessRunLauncher.TryRestoreGrantEnvelope(future)); // the premise: unreadable here
@@ -649,7 +424,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
             Id = Guid.NewGuid(), RunId = run.Id, Ordinal = 0, Title = "S1", Intent = "do it",
             Status = AgentStepStatus.Pending,
         }], ct);
-        // NOT in the floor, so the widening block is the code under test.
+        // Not in the floor, so the widening block is the code under test.
         await _runs.PauseAsync(run.Id, "tool-approval", ct, approvalTool: "update_todo");
 
         var probe = new ToolProbe("update_todo");
@@ -657,43 +432,22 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         Assert.True(await launcher.ResumeAsync(run.Id, ct: ct));
 
         var after = await GetRunAsync(run.Id);
-        // The run's own document is still the run's own document.
         Assert.Equal(future, after.PolicyJson);
-        // …and in particular the floor did not become the run's durable authority.
         Assert.DoesNotContain("write_file", after.PolicyJson!);
 
-        // The human's decision still reached the call it was collected for — the grant is applied to THIS
-        // dispatch, which is all the Continue card ever promised.
+        // The grant still applies to THIS dispatch, which is all the Continue card ever promised.
         await AwaitSettledAsync(run.Id);
         Assert.Contains("update_todo", probe.ExecutedNames);
 
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// T-PARK-15, <b>GUARD</b>. A NON-destructive EXTERNAL (MCP) tool hard-denies too. The floor at the top of
-    /// <c>Resolve</c> only catches the destructive ones, and <c>send_email</c> / <c>create_issue</c> are not
-    /// delete-like — so this is the case that fell between the two guards and raised a Continue button naming a
-    /// server-defined tool.
-    /// <para>
-    /// It is the same argument the suite already makes for <c>delete_file</c> (T-PARK-4), one step further out.
-    /// A park's Continue affordance shows no ARGUMENTS, and here it also names a tool whose meaning and reach
-    /// are defined by a third-party server rather than by this app — outside the run's workspace containment
-    /// entirely. The destructive floor's own rationale is that a curated grant list authored days earlier is not
-    /// informed consent for an MCP call; one unlabelled button is weaker evidence than that list, not stronger.
-    /// </para>
-    /// <para>
-    /// It denies with <c>DeniedNotGranted</c> and NOT with the destructive floor, which is the discriminating
-    /// half: routing a non-destructive external tool through the floor would also stop it parking, and would be
-    /// the wrong reason recorded in the audit a user reads to find out why the run stopped.
-    /// </para>
-    /// <para><b>Greedy-park mutation that must red this:</b> drop
-    /// <c>&amp;&amp; input.ToolClass != ToolClass.External</c> from the Park arm. Proven by doing it.</para>
-    /// </summary>
+    /// <summary>The destructive floor only catches delete-like tools, so this is the case that fell between the two guards. It
+    /// must deny with <c>DeniedNotGranted</c> and not through the floor, or the audit records the wrong reason.</summary>
     [Fact]
     public async Task NonDestructiveExternalTool_StillHardDenies_AndNeverParks()
     {
-        var probe = new ToolProbe("send_email"); // routed, granted to nothing, and NOT delete-like
+        var probe = new ToolProbe("send_email"); // routed, granted to nothing, and not delete-like
         var (launcher, _) = Build(probe, isMcpTool: true);
 
         var handle = await launcher.LaunchAsync(
@@ -706,19 +460,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    // ------------------------------------------- hermes #15: THE SESSION TIER MEETS THE PARK
-
-    /// <summary>
-    /// T-SESS-13. A session grant the user gave EARLIER IN THIS PROCESS means the run does not park at all:
-    /// the same launch that parks in T-PARK-1 now runs the tool and completes. This is the tier's whole point
-    /// one layer out — "do not make me answer this again" has to include the background run that is about to
-    /// ask the same question through a Flow card.
-    /// <para>
-    /// <b>Neutralize (the unattended lookup only):</b> in <c>BackgroundAssistantTurnRunner.HandleToolCallAsync</c>
-    /// replace <c>HasSessionGrant: approvals?.HasSessionGrant(...) == true</c> with <c>false</c> → the run parks
-    /// exactly as T-PARK-1 says it does with no grant, and every assertion below reds.
-    /// </para>
-    /// </summary>
+    /// <summary>"Do not make me answer this again" has to include the background run about to ask the same question through a
+    /// Flow card, so a session grant held in this process keeps the run from parking at all.</summary>
     [Fact]
     public async Task ASessionGrantHeldInThisProcess_KeepsTheRunFromParkingAtAll()
     {
@@ -742,8 +485,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         Assert.DoesNotContain(_timeline.Rows, r => r.Decision == ToolGateDecision.ParkedForApproval);
 
         Assert.True(probe.Executed);
-        // The decision names the tier that carried it — not GrantedByName (the launch granted nothing) and not
-        // AutoApprovedPolicy (there is no policy).
+        // Names the tier that carried it: the launch granted nothing and there is no policy.
         Assert.Equal(
             ToolGateDecision.AutoApprovedSessionGrant,
             Assert.Single(_timeline.Rows, r => r.ToolName == "write_file").Decision);
@@ -751,21 +493,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// T-SESS-14, THE PARK INTERACTION. The run parks first; THEN the human chooses the session tier; the
-    /// resumed step's call runs on that grant, and so does a LATER, UNRELATED run in the same process.
-    /// <para>
-    /// TWO DISCRIMINATORS, because the resume widens its own grants with the parked tool name and would make a
-    /// weaker version of this test pass with the session tier removed entirely:
-    /// <list type="number">
-    /// <item>the re-run call is audited <c>AutoApprovedSessionGrant</c>, not <c>GrantedByName</c> — the session
-    /// arm sits ABOVE the named-grant arm in <c>Resolve</c> precisely so this is observable;</item>
-    /// <item>a SECOND root run, launched with an empty grant set and its own fresh envelope, never parks —
-    /// nothing but the process-scoped store can explain that.</item>
-    /// </list>
-    /// And the tier stays where it belongs: <c>AppSettings.AlwaysAllowedTools</c> is untouched throughout.
-    /// </para>
-    /// </summary>
+    /// <summary>The resume widens its own grants with the parked tool name, so this needs two discriminators the widening
+    /// cannot explain: the decision cites the session tier, and a second unrelated run never parks.</summary>
     [Fact]
     public async Task TheSessionTierAppliesToTheResumedRun_AndToALaterRun_WithoutTouchingSettings()
     {
@@ -776,7 +505,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         var probe = new ToolProbe("write_file");
         var (launcher, _) = Build(probe, appSettings: appSettings, sessionGrants: session, pluginId: pluginId);
 
-        // 1) The run parks, exactly as T-PARK-1 — the grant does not exist yet.
+        // The grant does not exist yet, so the run parks.
         var handle = await launcher.LaunchAsync(
             new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []),
             TestContext.Current.CancellationToken);
@@ -785,19 +514,19 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         Assert.Equal("write_file", PauseMember(await GetRunAsync(handle.RunId), "tool"));
         Assert.False(probe.Executed);
 
-        // 2) THE HUMAN CHOOSES THE SESSION TIER for the capability the card named, then continues the run.
+        // The human chooses the session tier for the capability the card named, then continues the run.
         session.Grant(pluginId, "write_file");
         Assert.True(await launcher.ResumeAsync(handle.RunId, ct: TestContext.Current.CancellationToken));
         await AwaitSettledAsync(handle.RunId);
 
         Assert.True(probe.Executed);
         Assert.Equal(AgentRunState.Completed, (await GetRunAsync(handle.RunId)).State);
-        // DISCRIMINATOR 1: the re-run call cites the session grant, not the resume's own widening.
+        // The re-run call cites the session grant, not the resume's own widening.
         Assert.Equal(
             ToolGateDecision.AutoApprovedSessionGrant,
             _timeline.Rows.Last(r => r.ToolName == "write_file").Decision);
 
-        // 3) DISCRIMINATOR 2: a fresh, unrelated ROOT run with an empty grant set does not park either.
+        // A fresh, unrelated root run with an empty grant set does not park either.
         var second = new ToolProbe("write_file");
         var (launcher2, _) = Build(second, appSettings: appSettings, sessionGrants: session, pluginId: pluginId);
         var handle2 = await launcher2.LaunchAsync(
@@ -811,25 +540,15 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         Assert.Null(PauseMember(run2, "tool"));
         Assert.True(second.Executed);
 
-        // 4) NOTHING LEAKED. The session tier never writes settings — the persisted grant list is the thing
-        // the user would have to go and revoke, and it is still empty.
+        // The session tier writes no settings, so there is no persisted grant for the user to go and revoke.
         Assert.Empty(appSettings.AlwaysAllowedTools);
 
         await launcher.StopAsync(CancellationToken.None);
         await launcher2.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// T-SESS-15, <b>GUARD</b>, the other direction. Pressing Continue on a park does NOT mint a session
-    /// grant: it is one button whose whole vocabulary is "carry on", and reading it as "and never ask me again
-    /// this session" would hand out the wider tier on evidence of the narrower one. So a LATER run parks
-    /// again on the same tool.
-    /// <para>
-    /// <b>Red demo (inject the defect):</b> make <c>HeadlessRunLauncher.ResumeAsync</c> call
-    /// <c>ISessionToolGrantStore.Grant(...)</c> for <c>approvedTool</c> → the second park below disappears and
-    /// this reds.
-    /// </para>
-    /// </summary>
+    /// <summary>Continue's whole vocabulary is "carry on", so reading it as "never ask me again this session" would hand out the
+    /// wider tier on evidence of the narrower one.</summary>
     [Fact]
     public async Task ContinuingAParkGrantsTheRunOnly_NotTheSession()
     {
@@ -845,9 +564,9 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
         Assert.True(await launcher.ResumeAsync(handle.RunId, ct: TestContext.Current.CancellationToken));
         await AwaitSettledAsync(handle.RunId);
-        Assert.True(probe.Executed); // the run itself was granted, as T-PARK-2 says
+        Assert.True(probe.Executed); // the run itself was granted
 
-        // The store is still empty, and the proof that MATTERS is behavioural: a new run asks again.
+        // The behavioural half is below: a new run asks again.
         Assert.False(session.IsGranted(pluginId, "write_file"));
 
         var second = new ToolProbe("write_file");
@@ -866,22 +585,14 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher2.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// T-SESS-16, <b>GUARD</b>. A CHILD run does not inherit the session tier — the same invariant T-PARK-5
-    /// defends for the park, and for the same reason: a child is a delegate running a strict subset of its
-    /// parent's grants (<c>NarrowForChild</c>), and a session grant ACQUIRES authority just as a park does. The
-    /// tier is therefore armed on <c>ToolApprovalStore.CanPark</c>, which a child never has.
-    /// <para>
-    /// <b>Neutralize:</b> drop <c>CanPark &amp;&amp;</c> from <c>ToolApprovalStore.HasSessionGrant</c> → the
-    /// child executes the tool and this reds.
-    /// </para>
-    /// </summary>
+    /// <summary>A session grant ACQUIRES authority just as a park does, so the tier is armed on the same <c>CanPark</c> flag a
+    /// child never has.</summary>
     [Fact]
     public async Task AChildRun_DoesNotInheritTheSessionTier()
     {
         var pluginId = Guid.NewGuid();
         var session = new SessionToolGrantStore();
-        session.Grant(pluginId, "write_file"); // the grant a ROOT run would happily use
+        session.Grant(pluginId, "write_file"); // the grant a root run would happily use
 
         var probe = new ToolProbe("write_file");
         var (launcher, _) = Build(probe, sessionGrants: session, pluginId: pluginId);
@@ -895,15 +606,13 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    // ---------------------------------------------------------------- helpers
-
-    /// <summary>Assert the run finished WITHOUT parking, and that the gate really refused this tool.</summary>
+    /// <summary>Asserts the run finished without parking, and that the gate really refused this tool.</summary>
     private async Task AssertHardDeniedNotParkedAsync(Guid runId, ToolProbe probe, ToolGateDecision expected)
     {
         var run = await GetRunAsync(runId);
 
-        // The claim is "did not park", asserted on the STATE and on the envelope, not on "the tool did not
-        // run" — a park does not run the tool either, so that alone would not tell the two apart.
+        // Read on the state and the envelope: a park does not run the tool either, so "did not run" cannot
+        // tell a denial and a park apart.
         Assert.NotEqual(AgentRunState.WaitingForInput, run.State);
         Assert.Null(PauseMember(run, "tool"));
         Assert.DoesNotContain(_timeline.Rows, r => r.Decision == ToolGateDecision.ParkedForApproval);
@@ -916,7 +625,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
     private async Task<AgentRun> GetRunAsync(Guid runId)
         => (await _runs.GetAsync(runId, TestContext.Current.CancellationToken))!;
 
-    /// <summary>Poll to a terminal state. Approval parks are NOT terminal, so this also proves non-parking.</summary>
+    /// <summary>Polls to a terminal state; an approval park is not terminal, so this also proves non-parking.</summary>
     private async Task AwaitSettledAsync(Guid runId)
     {
         var ct = TestContext.Current.CancellationToken;
@@ -942,21 +651,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
             : null;
     }
 
-    /// <summary>
-    /// The ledger's OPEN work segment start, or null when the clock is shut (G1 shape).
-    /// <para>
-    /// The member is <c>segmentStartedAt</c>: <c>AgentRunService</c> serializes its <c>Ledger</c> with
-    /// <c>PropertyNamingPolicy = CamelCase</c> over a property named <c>SegmentStartedAt</c>. It used to be
-    /// read here as <c>openSegmentStartedAt</c>, which no ledger document has ever carried — so this helper
-    /// returned null for EVERY possible state and T-PARK-8's parked-time claim was measured by nothing. The
-    /// spelling is asserted, not just used, because a silent rename is exactly how the read died the first
-    /// time: a helper that cannot find its member must fail loudly rather than report "shut".
-    /// </para>
-    /// <para>
-    /// A CLOSED clock writes <c>"segmentStartedAt":null</c> (the options set no ignore condition), so
-    /// "present" and "open" are different questions and this reads both.
-    /// </para>
-    /// </summary>
+    /// <summary>The member name is asserted, not just used: a helper that cannot find it would report every run's clock as
+    /// shut. A closed clock writes <c>"segmentStartedAt":null</c>, so present and open are different questions.</summary>
     private string? OpenLedgerSegmentStart(Guid runId)
     {
         using var cmd = _ctx.GetConnection().CreateCommand();
@@ -993,7 +689,6 @@ public sealed class UnattendedApprovalParkTests : IDisposable
                 PolicyJson: policyJson, ParentRunId: parentRunId), ct);
     }
 
-    /// <summary>A parked CHILD run with one Pending step and an EMPTY grant envelope, ready to be resumed.</summary>
     private async Task<AgentRun> ParkedChildAsync(Guid parentRunId)
     {
         var ct = TestContext.Current.CancellationToken;
@@ -1012,14 +707,12 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         return run;
     }
 
-    // ---------------------------------------------------------------- doubles
-
     /// <summary>Records what the unattended gate did with the tool call(s) a run makes.</summary>
     private sealed class ToolProbe
     {
         public ToolProbe(string toolName) => ToolName = toolName;
 
-        /// <summary>The FIRST tool the run calls — the one the park's envelope must name.</summary>
+        /// <summary>The first tool the run calls — the one the park's envelope must name.</summary>
         public string ToolName { get; }
 
         /// <summary>Every name that actually reached <c>Execute()</c>, in order.</summary>
@@ -1030,18 +723,15 @@ public sealed class UnattendedApprovalParkTests : IDisposable
 
         public bool Executed => ExecutedNames.Count > 0;
 
-        /// <summary>The first call's gate result — the only one, for every fact that makes a single call.</summary>
+        /// <summary>The first call's gate result.</summary>
         public string? GateResult => Results.Count > 0 ? Results[0] : null;
 
         public void MarkExecuted(string name) => ExecutedNames.Add(name);
         public void Record(object? gateResult) => Results.Add(gateResult as string);
     }
 
-    /// <summary>
-    /// Plans exactly ONE real step. Deliberately not <see cref="PlanResult.Fallback"/>: the single-turn
-    /// degrade turn creates no AgentStep row, so it is not offered the park at all — a run has to reach the
-    /// drain loop before there is anything to put back to Pending.
-    /// </summary>
+    /// <summary>Not <see cref="PlanResult.Fallback"/>: the single-turn degrade creates no AgentStep row, so it is never offered
+    /// the park at all.</summary>
     private sealed class OneStepPlanner : IAgentPlanner
     {
         public Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
@@ -1049,25 +739,18 @@ public sealed class UnattendedApprovalParkTests : IDisposable
                 [new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "S0", Intent = "do it", Status = AgentStepStatus.Pending }],
                 FallBackToSingleTurn: false));
 
-        // A parked step must never reach the replanner — a park is not a failure. If it did, this returning
-        // Fallback would settle the run terminally and the park facts above would red loudly.
+        // A park is not a failure, so a parked step must never reach this; returning Fallback makes that loud.
         public Task<PlanResult> ReplanAsync(RunContext ctx, string? failure, Persona persona, AiProvider provider, CancellationToken ct)
             => Task.FromResult(PlanResult.Fallback);
     }
 
     /// <param name="routed">False ⇒ the plugin service resolves no route for the call (the "Unknown tool." path).</param>
     /// <param name="isMcpTool">True ⇒ the gate derives ToolClass.External, which is what arms the floor.</param>
-    /// <param name="secondToolName">A SECOND call the same step turn makes, after the first has already
-    /// parked. Omitted ⇒ one call, which is every other fact here.</param>
-    /// <param name="faultAfterFirstCall">The provider FAULTS on a later round of the same exchange, after the
-    /// first call has already parked — a timeout, a truncation or a transport error, all of which surface here
-    /// as an exception out of the stream.</param>
-    /// <param name="sessionGrants">hermes #15: the process-scoped session grants. Omitted ⇒ NOT registered at
-    /// all, so <c>HeadlessTurnExecutor</c>'s trailing parameter stays null and the run has no session tier —
-    /// which is why every park fact above is unaffected by that batch.</param>
-    /// <param name="pluginId">hermes #15: a STABLE owner for the routed pending action. The default mints a
-    /// fresh id per call (fine for a name-keyed grant list), but a session grant is keyed on
-    /// <c>(PluginId, ToolName)</c>, so a fact about it has to route the same owner twice.</param>
+    /// <param name="secondToolName">A second call the same step turn makes, after the first has already parked.</param>
+    /// <param name="faultAfterFirstCall">The provider faults on a later round of the same exchange.</param>
+    /// <param name="sessionGrants">Omitted ⇒ not registered at all, so the run has no session tier.</param>
+    /// <param name="pluginId">A stable owner: a session grant is keyed on (PluginId, ToolName), so a fact about
+    /// it has to route the same owner twice, while the default mints a fresh id per call.</param>
     private (HeadlessRunLauncher Launcher, OneStepPlanner Planner) Build(
         ToolProbe probe, bool routed = true, bool isMcpTool = false, AppSettings? appSettings = null,
         string? secondToolName = null, bool faultAfterFirstCall = false,
@@ -1089,14 +772,12 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         var plugins = Substitute.For<IPluginService>();
         plugins.IsMcpTool(Arg.Any<string>()).Returns(isMcpTool);
         plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
-            // Echoes the INCOMING call's name rather than the probe's, so a turn that makes two different
-            // calls really presents two different tools to the gate.
+            // Echoes the incoming name, not the probe's, so a two-call turn presents two tools to the gate.
             .Returns(ci =>
             {
                 var name = ci.Arg<FunctionCallContent>().Name;
                 return routed
-                    // A DEFERRED write (a pending action) — the only shape that reaches the gate at all; a
-                    // read returns its Result and short-circuits above it.
+                    // A deferred write is the only shape that reaches the gate; a read short-circuits above it.
                     ? ((object? Result, PluginToolCall? PendingAction)?)(null, new PluginToolCall(
                         name, pluginId ?? Guid.NewGuid(), isMcpTool ? "some-mcp-server" : "files", "desc", null,
                         () => { probe.MarkExecuted(name); return Task.FromResult<object?>("did it"); }))

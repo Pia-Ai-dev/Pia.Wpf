@@ -10,30 +10,12 @@ using Xunit;
 
 namespace Pia.Tests.Views;
 
-/// <summary>
-/// <c>FirstRunWizardWindow</c> is the ONE view <c>00-OVERVIEW.md</c> (Row 12) names as unparseable under
-/// the shared STA test host: its <c>Icon="pack://application:,,,/Resources/Icons/Pia.ico"</c> is an
-/// authority-only pack URI, which resolves against <c>Application.ResourceAssembly</c> — and that getter
-/// latches to whichever assembly reads it FIRST, which under this host is <c>Pia.Wpf.Tests</c>, not
-/// <c>Pia.Wpf</c>. The prior fix attempt (assigning <c>Application.ResourceAssembly</c> in
-/// <c>WpfStaHost</c>) was tried and reverted — a static-mutation approach fighting a static that was
-/// already latched by the read guarding it.
-/// <para>
-/// This fact takes a different approach that the revert does not bear on: qualify the pack URIs
-/// themselves with <c>Pia.Wpf;component</c>, so resolution never consults
-/// <c>Application.ResourceAssembly</c> at all. <see cref="Pia.Views.WizardSteps.WelcomeStep"/>, nested here at
-/// step 0, carries the same defect for <c>Resources/Images/Pia_Persona.png</c> — fixing both is what lets
-/// this window (and the wizard step tree under it) construct under the shared host.
-/// </para>
-/// </summary>
+/// <summary>Authority-only pack URIs resolve against <c>Application.ResourceAssembly</c>, which latches to whichever
+/// assembly reads it first, so this window and its wizard steps qualify theirs with <c>Pia.Wpf;component</c>.</summary>
 [Collection("WpfApplicationStatic")]
 public class FirstRunWizardWindowParseTests
 {
-    /// <summary>
-    /// A floor, not a count: WelcomeStep alone (UiLanguages, UiLanguage) plus the window's own nav/step
-    /// bindings comfortably clears this. Kept low on purpose — this fact exists to prove the window
-    /// PARSES at all, not to pin every binding in seven nested wizard steps.
-    /// </summary>
+    /// <summary>A non-vacuity floor, not a count: the point is that the window parses at all.</summary>
     private const int MinimumBoundPaths = 5;
 
     private static Pia.Views.FirstRunWizardWindow CreateSut()
@@ -74,11 +56,8 @@ public class FirstRunWizardWindowParseTests
     [Fact]
     public void Constructs_WithoutThrowing()
     {
-        // The regression this fact guards: an authority-only pack URI Icon (or, nested one level down in
-        // WelcomeStep, ImageBrush) throws IOException("Cannot locate resource '...'") the moment
-        // InitializeComponent runs under a host whose entry assembly isn't Pia.Wpf. WpfStaHost.Run
-        // rethrows on the calling thread with the original stack, so a regression here surfaces as this
-        // fact failing with that exact IOException, not a timeout.
+        // An authority-only pack URI throws IOException("Cannot locate resource") from InitializeComponent when the
+        // entry assembly isn't Pia.Wpf; WpfStaHost.Run rethrows it here rather than timing out.
         var window = WpfStaHost.Run(CreateSut);
         Assert.NotNull(window);
     }
@@ -94,9 +73,7 @@ public class FirstRunWizardWindowParseTests
             $"below the non-vacuity floor of {MinimumBoundPaths}. The walk is logical, so suspect a " +
             "container that no longer reports logical children rather than a genuine removal.");
 
-        // Proves the nested WelcomeStep (step 0, no DataContext of its own) was actually walked: its
-        // UiLanguages/UiLanguage bindings only resolve against FirstRunWizardViewModel if the walker
-        // correctly treated the inherited context as the parent's.
+        // The nested WelcomeStep has no DataContext of its own, so this resolves only if the walker used the parent's.
         Assert.Contains(bindings, b => b.Contains("=UiLanguages [FirstRunWizardViewModel]"));
 
         var unresolved = bindings.Where(b => b.EndsWith("UNRESOLVED", StringComparison.Ordinal)).ToArray();

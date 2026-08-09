@@ -12,22 +12,12 @@ using Xunit;
 namespace Pia.Tests.Services;
 
 /// <summary>
-/// T1-2's WIRING, which <c>ProviderRequestThrottleTests</c> cannot see: where in
-/// <see cref="AiClientService"/> the permit is taken and — the fact that actually matters — where it is given
-/// back.
-/// <para>
-/// The load-bearing one is <see cref="NoPermitIsHeldWhileTheToolHandlerRuns"/>. A permit taken once per CALL
-/// instead of once per ROUND compiles, passes every throttle unit test, and holds the provider's permit across
-/// an interactive approval card — so one human staring at a dialog would stop every background run on that
-/// provider. Nothing else in the suite would notice.
-/// </para>
+/// Where <see cref="AiClientService"/> takes the throttle permit and — the fact that matters — where it gives it
+/// back: a permit taken once per CALL instead of once per ROUND still passes every throttle unit test.
 /// </summary>
 public class AiClientServiceThrottleTests
 {
-    /// <summary>
-    /// Records the bracket. <see cref="Held"/> is the interesting value: it is asserted from INSIDE the tool
-    /// handler, i.e. at the one instant the permit must not be held.
-    /// </summary>
+    // Held is asserted from INSIDE the tool handler, the one instant at which the permit must not be held.
     private sealed class RecordingThrottle : IProviderRequestThrottle
     {
         private int _held;
@@ -149,10 +139,8 @@ public class AiClientServiceThrottleTests
         Assert.All(throttle.Keys, key => Assert.Equal(provider.Id, key));
     }
 
-    /// <summary>
-    /// THE fact. The tool handler is where an interactive approval card is awaited, so a permit held here is a
-    /// permit held for however long a person takes to answer.
-    /// </summary>
+    // The tool handler is where an interactive approval card is awaited, so a permit held here is held for as
+    // long as a person takes to answer.
     [Fact]
     public async Task NoPermitIsHeldWhileTheToolHandlerRuns()
     {

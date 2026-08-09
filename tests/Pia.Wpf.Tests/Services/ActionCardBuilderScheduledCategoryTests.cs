@@ -6,13 +6,7 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// 04 §0.6: <c>scheduled-research</c> is a BUILT-IN plugin (BuiltInPluginDefaults) that was missing from the
-/// card builder's plugin-name switch, so its cards fell into the <c>_ =&gt; Mcp</c> bucket. The gate defended
-/// (eligibility was false, and AlwaysAllow silently degraded to AllowOnce) but the UI lied three ways: it was
-/// titled "External tool", it rendered an "Always allow" button on a built-in scheduling tool, and it parsed
-/// key/value detail TEXT with a JSON parser so no detail rows appeared at all. Nothing pinned any of it.
-/// </summary>
+/// <summary><c>scheduled-research</c> is a built-in plugin, so its cards must not fall into the MCP bucket.</summary>
 public class ActionCardBuilderScheduledCategoryTests
 {
     private static ActionCardBuilder CreateBuilder()
@@ -47,12 +41,8 @@ public class ActionCardBuilderScheduledCategoryTests
         var card = CreateBuilder().Build(Call("create_scheduled_research"), detokenize: false);
 
         Assert.False(card.IsAutoApprovable);
-        // The user-visible half of §0.6: never the PERSISTED tier. hermes #15 briefly offered the MIDDLE one
-        // here too, reasoning that a scheduled-research create is reversible and repetitive. The review pass on
-        // #15 took it back off, because THIS tool's arguments are a grant list: one click would have authorized
-        // every later job-authoring call in the process, each with a `grantedTools` argument nobody sees and
-        // which may name delete_file. So the bar is Decline / Allow once, and NEITHER grant tier.
-        // (ToolAutonomyTests.AToolWhoseArgumentsAreAGrantList_IsNeverSessionGrantable owns the rule itself.)
+        // Neither grant tier: this tool's arguments are themselves a grant list, so one click would authorize
+        // every later job-authoring call in the process.
         Assert.Equal(2, card.Decisions.Count);
         Assert.DoesNotContain(card.Decisions, d => ReferenceEquals(d.Command, card.AlwaysAllowCommand));
         Assert.DoesNotContain(card.Decisions, d => ReferenceEquals(d.Command, card.AllowForSessionCommand));
@@ -62,8 +52,7 @@ public class ActionCardBuilderScheduledCategoryTests
     [Fact]
     public void ScheduledResearchCard_ParsesItsKeyValueDetails()
     {
-        // What ScheduledJobToolHandler actually builds: "Label: value" lines, not JSON. Under the old Mcp
-        // categorization these went through JsonHelper.ParseToDetails and yielded nothing.
+        // What ScheduledJobToolHandler actually builds: "Label: value" lines, not JSON.
         var card = CreateBuilder().Build(
             Call("create_scheduled_research", "Name: Morning digest\nKind: Agent task\nRecurrence: Daily"),
             detokenize: false);
@@ -86,26 +75,16 @@ public class ActionCardBuilderScheduledCategoryTests
     [Fact]
     public void DeleteScheduledResearch_KeepsItsDestructiveWarning()
     {
-        // isDestructive is unchanged by this batch: delete_scheduled_research is delete-like by name, so its
-        // warning still resolves through the isDelete branch to the generic external-delete string. Recorded
-        // rather than "fixed" — a scheduling-specific warning would be a fourth locale triple.
+        // Delete-like by name, so the warning resolves to the generic external-delete string: a
+        // scheduling-specific one would mean a fourth locale triple.
         var card = CreateBuilder().Build(Call("delete_scheduled_research"), detokenize: false);
 
         Assert.True(card.IsDestructive);
         Assert.Equal("Msg_Assistant_PermanentDeleteExternal", card.WarningText);
     }
 
-    /// <summary>
-    /// The card's OWN exclusion, which the shared resolver deliberately does not carry (04 D9). This is a
-    /// DIRECT assertion, not a comparison against the expression production uses — <see cref="CardAndGate_AgreeOnEligibility"/>
-    /// is tautological on this axis by construction, so it cannot cover it.
-    /// <para>
-    /// git_switch / git_restore / git_stash shed uncommitted work yet carry no destructive stem, so
-    /// <c>IsDeleteLike</c> is false and the resolver alone WOULD offer a one-click standing grant to an MCP
-    /// server exposing a tool with one of these names. The last assertion pins that, so deleting the card's
-    /// <c>&amp;&amp; !isDestructive</c> makes this fact red rather than silently widening the offer.
-    /// </para>
-    /// </summary>
+    /// <summary>These verbs shed uncommitted work yet carry no destructive stem, so the shared resolver alone
+    /// would offer a standing grant; the exclusion is the card's own.</summary>
     [Theory]
     [InlineData("git_switch")]
     [InlineData("git_restore")]
@@ -124,20 +103,12 @@ public class ActionCardBuilderScheduledCategoryTests
         Assert.Equal(2, card.Decisions.Count);   // the pair, never the triad
         Assert.DoesNotContain(card.Decisions, d => ReferenceEquals(d.Command, card.AlwaysAllowCommand));
 
-        // Load-bearing: the shared floor says YES here. Only the card's wider exclusion says no.
+        // The shared floor says yes here; only the card's wider exclusion says no.
         Assert.False(ToolPermissionService.IsDeleteLike(toolName));
         Assert.True(ToolAutonomy.IsStandingGrantOfferable(ToolClass.External, toolName, isAllowlisted: false));
     }
 
-    /// <summary>
-    /// T-CARD-5, the regression guard for the divergence 04 R16 names: the card's own eligibility copy and the
-    /// gate's used to be two independent expressions over two different notions of "MCP".
-    /// <para>
-    /// Necessarily tautological on the shared half (it calls the same function production calls), so it proves
-    /// only that the card routes through the resolver — not what the resolver decides, and not the card's own
-    /// wider git-verb exclusion. That one has its own direct fact above.
-    /// </para>
-    /// </summary>
+    /// <summary>Proves only that the card routes through the shared resolver, not what that resolver decides.</summary>
     [Theory]
     [InlineData("memory", "create_object")]
     [InlineData("memory", "forget")]
@@ -168,8 +139,6 @@ public class ActionCardBuilderScheduledCategoryTests
 
         var card = builder.Build(pending, detokenize: false);
 
-        // The class the builder guesses from the name alone is the one the gate would derive for a non-MCP
-        // route; both then run the same IsStandingGrantOfferable.
         var expected = ToolAutonomy.IsStandingGrantOfferable(
             ToolClassifier.ClassifyPresumedExternal(pluginName), toolName,
             permissions.IsAutoApproveEligible(toolName));

@@ -6,11 +6,7 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Covers the deny-by-default eligibility allowlist and the persisted
-/// per-(PluginId, ToolName) grant store. The fake ISettingsService returns a
-/// single controlled AppSettings instance, so mutate-and-readback works.
-/// </summary>
+/// <summary>The fake ISettingsService hands back one shared AppSettings instance, so mutate-and-readback works.</summary>
 public class ToolPermissionServiceTests
 {
     private static readonly Guid PluginA = Guid.Parse("11111111-1111-1111-1111-111111111111");
@@ -23,11 +19,7 @@ public class ToolPermissionServiceTests
         return (sut, settings, appSettings);
     }
 
-    /// <summary>
-    /// hermes #15. The same fixture, with the process-scoped session store visible — a real store, not a
-    /// substitute, because "a fresh session inherits nothing" is a fact about the store's LIFETIME and a
-    /// substitute would be asserting the mock's default.
-    /// </summary>
+    /// <summary>A real session store, not a substitute: "a fresh session inherits nothing" is a fact about its lifetime.</summary>
     private static (ToolPermissionService sut, ISettingsService settings, AppSettings appSettings,
         SessionToolGrantStore session) CreateWithSessionStore(AppSettings? initial = null,
         SessionToolGrantStore? session = null)
@@ -169,13 +161,6 @@ public class ToolPermissionServiceTests
         Assert.True(raised);
     }
 
-    // ------------------------------------------------------ hermes #15, THE SESSION TIER
-
-    /// <summary>
-    /// T-SESS-1. A session grant is READ BACK by the same owner the gates ask, and is keyed per
-    /// (plugin, tool) exactly like the persisted tier — a grant for one plugin's tool authorizes neither
-    /// another plugin's same-named tool nor another tool of the same plugin.
-    /// </summary>
     [Fact]
     public void GrantForSession_IsReadBack_PerPluginAndTool()
     {
@@ -186,21 +171,11 @@ public class ToolPermissionServiceTests
         Assert.True(sut.IsGrantedForSession(PluginA, "write_file"));
         Assert.False(sut.IsGrantedForSession(PluginB, "write_file"));
         Assert.False(sut.IsGrantedForSession(PluginA, "delete_file"));
-        // Case-sensitive on the name, deliberately identical to the persisted grant keys, so this tier can
-        // never match a name the standing tier would not.
+        // Case-sensitive, matching the persisted keys, so this tier can never match a name the standing tier would not.
         Assert.False(sut.IsGrantedForSession(PluginA, "WRITE_FILE"));
     }
 
-    /// <summary>
-    /// T-SESS-2, THE NO-LEAK FACT. A session grant writes NOTHING durable: no settings save, no
-    /// <c>AlwaysAllowedTools</c> row, no standing grant, and no <c>Changed</c> event (which drives the
-    /// settings grant list — announcing a grant it can neither show nor revoke would be a lie).
-    /// <para>
-    /// <b>Red demo (inject the defect, do not delete a mechanism):</b> make
-    /// <c>ToolPermissionService.GrantForSession</c> also call
-    /// <c>GrantAsync(pluginId, toolName).GetAwaiter().GetResult()</c> → the four assertions below red.
-    /// </para>
-    /// </summary>
+    /// <summary>No <c>Changed</c> event either: it drives the settings grant list, which can neither show nor revoke this tier.</summary>
     [Fact]
     public void GrantForSession_TouchesNeitherAppSettingsNorTheStandingTier()
     {
@@ -217,12 +192,8 @@ public class ToolPermissionServiceTests
         settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
     }
 
-    /// <summary>
-    /// T-SESS-3, THE SCOPE FACT. The session IS the store instance, so a FRESH session inherits nothing —
-    /// asserted over the SAME <see cref="AppSettings"/> object that still carries a persisted grant, which is
-    /// what makes it a statement about scope rather than about an empty <c>HashSet</c>: the standing grant
-    /// survives the new "process", the session grant does not.
-    /// </summary>
+    /// <summary>The session IS the store instance; the shared <see cref="AppSettings"/> is what makes this about scope rather
+    /// than about an empty set.</summary>
     [Fact]
     public async Task AFreshSession_InheritsNoSessionGrant_ButKeepsThePersistedOnes()
     {
@@ -231,21 +202,15 @@ public class ToolPermissionServiceTests
         first.GrantForSession(PluginA, "write_file");     // the session tier
         Assert.True(first.IsGrantedForSession(PluginA, "write_file"));
 
-        // A NEW store over the SAME settings document = the next launch of the app.
+        // A new store over the same settings document stands in for the next launch of the app.
         var (next, _, _, _) = CreateWithSessionStore(appSettings);
 
         Assert.False(next.IsGrantedForSession(PluginA, "write_file"));
-        // …and it left NO durable trace for the next session to inherit through the other tier either, which
-        // is the assertion that makes this a fact about the leak and not just about a fresh HashSet.
         Assert.False(next.IsGranted(PluginA, "write_file"));
         Assert.True(next.IsGranted(PluginA, "create_todo"));
     }
 
-    /// <summary>
-    /// T-SESS-4. The two tiers are independent in both directions: a standing grant is not a session grant
-    /// (nothing reads it as one) and a session grant is not revoked by revoking the standing one — there is no
-    /// revoke short of closing the app, which is what the button promises.
-    /// </summary>
+    /// <summary>A session grant has no revoke short of closing the app, which is what the button promises.</summary>
     [Fact]
     public async Task TheTwoTiersAreIndependent()
     {
@@ -261,11 +226,8 @@ public class ToolPermissionServiceTests
         Assert.True(sut.IsGrantedForSession(PluginA, "create_todo"));
     }
 
-    /// <summary>
-    /// T-SESS-5. The work-discarding set the session tier and the action card now SHARE. It lives here (beside
-    /// <c>IsDeleteLike</c>) rather than inline in <c>ActionCardBuilder</c>, so the gate's mint check cannot end
-    /// up wider than the card's offer.
-    /// </summary>
+    /// <summary>The set lives on the service rather than in <c>ActionCardBuilder</c>, so the gate's check cannot end up wider
+    /// than the card's offer.</summary>
     [Theory]
     [InlineData("git_switch", true)]
     [InlineData("git_restore", true)]

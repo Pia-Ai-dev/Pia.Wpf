@@ -15,11 +15,6 @@ using Xunit;
 
 namespace Pia.Tests.Vault;
 
-/// <summary>
-/// Tests for the vault read/list surface (Task B.2): enumerate memory records as view items, scoped to
-/// genuine record files (housekeeping/scaffolding and the sources/ RAW layer are excluded), with one
-/// item per <c>##</c> section and one item per freeform preamble file, plus the storage byte total.
-/// </summary>
 public class ListVaultMemoriesTests : IDisposable
 {
     private const string ProfileMd =
@@ -157,7 +152,7 @@ public class ListVaultMemoriesTests : IDisposable
     [Fact]
     public async Task ListMemoriesAsync_infers_type_from_path_when_frontmatter_type_absent()
     {
-        // Type-less frontmatter (hand-authored / foreign client) -> the §7 path inference fills it in.
+        // Type-less frontmatter (hand-authored or a foreign client) -> the type is inferred from the path.
         await _store.WriteAtomicAsync("memory/preferences.md",
             "---\npia: managed\nid: 00000000-0000-0000-0000-0000000000a1\n---\n## Tone\n- style: terse\n");
         await _store.WriteAtomicAsync("memory/projects/acme.md",

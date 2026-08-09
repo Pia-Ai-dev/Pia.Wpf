@@ -8,22 +8,8 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// Slice C4's editor lock: a managed (admin-published) persona is read-only in Settings, and Duplicate is
-/// the only sanctioned way to get an editable version of one.
-/// <para>
-/// The commands are exercised directly rather than through the buttons, because hiding the buttons is not
-/// the guard — <c>PersonasView.xaml</c> only keys their <c>Visibility</c> off <c>IsReadOnly</c>, and a
-/// command reachable by any other route (keyboard, a future context menu, a stale binding) must still
-/// refuse. What is pinned here is that refusing costs the service nothing: no <c>UpdatePersonaAsync</c>, no
-/// <c>DeletePersonaAsync</c>, and no editor dialog. A local delete would be pointless anyway — the admin
-/// owns the catalog and the next sync pull would put the row straight back.
-/// </para>
-/// <para>
-/// Built-ins are covered too, as a regression guard in the other direction: they must keep returning
-/// silently from Edit. Explaining "this is managed" over a built-in would be simply wrong.
-/// </para>
-/// </summary>
+/// <summary>The commands are exercised directly, not through the buttons: <c>PersonasView.xaml</c> only keys their
+/// <c>Visibility</c> off <c>IsReadOnly</c>, so a command reached by any other route must still refuse.</summary>
 public class PersonaSettingsManagedPersonaTests
 {
     private sealed record Harness(
@@ -83,11 +69,7 @@ public class PersonaSettingsManagedPersonaTests
         return new Harness(sut, personas, dialogs, snackbar);
     }
 
-    /// <summary>
-    /// The message argument of every <c>ISnackbarService.Show</c> call. Read off <c>ReceivedCalls()</c> by
-    /// method name and positional argument rather than with an <c>Arg.Is</c> matcher, so this stays valid
-    /// if WPF-UI reshuffles <c>Show</c>'s optional parameters.
-    /// </summary>
+    /// <summary>Read positionally off <c>ReceivedCalls()</c>, so it survives WPF-UI reshuffling <c>Show</c>'s optional parameters.</summary>
     private static List<string> ShownMessages(global::Wpf.Ui.ISnackbarService snackbar) =>
         snackbar.ReceivedCalls()
             .Where(call => call.GetMethodInfo().Name == "Show")

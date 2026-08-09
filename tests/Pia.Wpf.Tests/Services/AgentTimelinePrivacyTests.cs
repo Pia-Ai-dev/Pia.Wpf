@@ -12,15 +12,6 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// The batch's central invariant, proved by inspecting the PERSISTED ROWS rather than the code: nothing a tool
-/// call carried — its arguments, its result, its user-facing description, its target path — reaches any column
-/// of <c>AgentTimelineEvents</c>.
-/// <para>
-/// This drives the real unattended gate against the real store, so the assertion covers the whole path from
-/// <c>HandleToolCallAsync</c> through <c>AgentTimelineScope</c> to the INSERT.
-/// </para>
-/// </summary>
 public sealed class AgentTimelinePrivacyTests : IDisposable
 {
     private const string Canary = "CANARY-9f3a1c";
@@ -48,8 +39,7 @@ public sealed class AgentTimelinePrivacyTests : IDisposable
         var chatId = await MakeChatAsync();
         var run = await _runs.CreateAsync(new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User), ct);
 
-        // Everything a gated call carries is poisoned, EXCEPT the tool name — §3 explicitly permits the name,
-        // whose precedent is both gates logging it at Information today.
+        // Everything a gated call carries is poisoned except the tool name, which is deliberately allowed through.
         var pending = new PluginToolCall(
             ToolName: "write_file",
             PluginId: Guid.NewGuid(),
@@ -70,22 +60,20 @@ public sealed class AgentTimelinePrivacyTests : IDisposable
 
         await _timeline.DrainAsync();
 
-        // Control: the row IS there, so the sweep below is not vacuously green.
+        // Control: without a row present the sweep below would be vacuously green.
         var cells = ReadEveryCell();
         Assert.NotEmpty(cells);
         Assert.Contains("write_file", cells);
 
         Assert.DoesNotContain(cells, cell => cell.Contains(Canary, StringComparison.OrdinalIgnoreCase));
-        // And the low-entropy half specifically: a path fragment must not survive either.
         Assert.DoesNotContain(cells, cell => cell.Contains("C:/Users", StringComparison.OrdinalIgnoreCase));
 
-        // Lengths ARE recorded — that is the point of the metadata design, and a length is not a fingerprint.
+        // Lengths are recorded on purpose: a length is not a fingerprint.
         var rows = await _timeline.GetForRunAsync(run.Id, ct);
         var row = Assert.Single(rows);
         Assert.Equal($"wrote {Canary} (2 KB)".Length, row.ResultChars);
     }
 
-    /// <summary>Every value of every column of every row, stringified — the sweep T-PRIV-1 runs.</summary>
     private List<string> ReadEveryCell()
     {
         var cells = new List<string>();
@@ -140,12 +128,8 @@ public sealed class AgentTimelinePrivacyTests : IDisposable
     {
         if (handler is not null)
         {
-            // The ARGUMENTS carry the canary too — this is the half a hash column would leak.
-            // So does the CALL ID (T2-14): it is copied out of provider JSON and nothing in this process
-            // validates it, so a provider — or a proxy in front of one — that echoed model text into it would
-            // put free text in a metadata-only column. Poisoning it here makes the every-column sweep below
-            // cover ToolCallId for free, and proves SanitizeCallId sits on the PERSISTED path rather than
-            // only on a unit-tested helper. A path-shaped id fails the charset check, so it stores NULL.
+            // The call id is poisoned too: it is copied out of provider JSON unvalidated, so the sweep has to
+            // cover that column as well — a path-shaped id fails the charset check and stores NULL.
             await handler(new FunctionCallContent($"C:/Users/marco/{Canary}.md", "write_file",
                 new Dictionary<string, object?> { ["path"] = $"C:/Users/marco/{Canary}.md", ["content"] = Canary }), new ToolDispatchContext(1));
         }

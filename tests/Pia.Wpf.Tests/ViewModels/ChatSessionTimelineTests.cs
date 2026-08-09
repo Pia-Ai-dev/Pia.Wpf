@@ -11,18 +11,8 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// Batch 03 at the INTERACTIVE gate. The audit sink arrives on <c>StepTurnSpec.Timeline</c>, so these facts
-/// drive <c>RunStepTurnAsync</c> — the Planned-run path — rather than the ordinary <c>RunTurnAsync</c> turn,
-/// which has no run and therefore records nothing. That is why every fact in
-/// <see cref="ChatSessionStateMachineTests"/> still holds unchanged.
-/// <para>
-/// Cards are answered BEFORE the turn starts. <c>ActionCardInfo</c>'s decision commands complete a
-/// <see cref="TaskCompletionSource{TResult}"/> and are idempotent on a non-pending card, so a pre-resolved
-/// card makes <c>WaitForUserDecisionAsync</c> return immediately — which keeps these facts free of wall-clock
-/// polling.
-/// </para>
-/// </summary>
+// Cards are answered before the turn starts: a pre-resolved card makes WaitForUserDecisionAsync return
+// immediately, which keeps these facts free of wall-clock polling.
 public sealed class ChatSessionTimelineTests
 {
     private readonly IAiClientService _ai = Substitute.For<IAiClientService>();
@@ -44,8 +34,6 @@ public sealed class ChatSessionTimelineTests
         _cards.ResolveSuccessTitle(Arg.Any<string>()).Returns("Done");
     }
 
-    // ---- T-EMIT-1: the batch's acceptance test, restated for GATED calls ----
-
     [Fact]
     public async Task NGatedToolCalls_SomeDenied_ProduceNOrderedEvents_WithTheRightDecisions()
     {
@@ -53,14 +41,12 @@ public sealed class ChatSessionTimelineTests
         var reminderId = BuiltInPluginDefaults.ReminderPluginId;
         var filesId = BuiltInPluginDefaults.FilesPluginId;
 
-        // 1) allowlisted AND granted → auto-approved on the standing grant, no card interaction.
+        // Allowlisted and granted: auto-approved on the standing grant, with no card at all.
         _permissions.IsAutoApproveEligible("create_todo").Returns(true);
         _permissions.IsGranted(todoId, "create_todo").Returns(true);
-        // 2) allowlisted, not granted → card; the user clicks "Allow once".
+        // Allowlisted but not granted, so each of these prompts a card.
         _permissions.IsAutoApproveEligible("append_to_list").Returns(true);
-        // 3) allowlisted, not granted → card; the user clicks "Always allow".
         _permissions.IsAutoApproveEligible("create_reminder").Returns(true);
-        // 4) not allowlisted, not granted → card; the user declines.
         _permissions.IsAutoApproveEligible("write_file").Returns(false);
 
         var pendings = new Dictionary<string, PluginToolCall>(StringComparer.Ordinal)
@@ -72,7 +58,6 @@ public sealed class ChatSessionTimelineTests
         };
         var cards = pendings.ToDictionary(p => p.Key, p => NewCard(p.Key, p.Value.PluginId), StringComparer.Ordinal);
 
-        // Pre-answer the three cards that need an answer.
         cards["append_to_list"].AllowOnceCommand.Execute(null);
         cards["create_reminder"].AlwaysAllowCommand.Execute(null);
         cards["write_file"].DeclineCommand.Execute(null);
@@ -112,13 +97,10 @@ public sealed class ChatSessionTimelineTests
             Assert.Equal(AgentTimelineEventKind.ToolCall, r.Kind);
             Assert.Equal(_runId, r.RunId);
         });
-        // The class comes from the same classifier the gate resolved with.
         Assert.Equal(ToolClass.Todo, rows[0].ToolClass);
         Assert.Equal(ToolClass.Reminder, rows[2].ToolClass);
         Assert.Equal(ToolClass.Files, rows[3].ToolClass);
     }
-
-    // ---- T-EMIT-2: reads emit nothing. Paired with the fact above, which proves the same path DOES emit. ----
 
     [Fact]
     public async Task ReadsEmitNothing()
@@ -131,12 +113,10 @@ public sealed class ChatSessionTimelineTests
             Spec(), new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
 
         Assert.True(result.Succeeded, result.Error);
-        // The read path really ran — otherwise "no rows" would be true of a turn where nothing happened.
+        // Without this, "no rows" would also be true of a turn where nothing happened.
         await _plugins.Received().RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>());
         Assert.Empty(_timeline.Rows);
     }
-
-    // ---- T-EMIT-3 ----
 
     [Fact]
     public async Task EveryEventCarriesTheStepId()
@@ -154,9 +134,7 @@ public sealed class ChatSessionTimelineTests
     [Fact]
     public async Task AnOrdinaryChatTurnRecordsNothing()
     {
-        // Control for the fact above: the identical arrangement through RunTurnAsync — no spec, no scope — is
-        // silent, which is the whole opt-in mechanism. The "it ran" probe is asserted so that a stub that
-        // stops matching RunTurnAsync's call shape cannot make this pass for free.
+        // The same arrangement through RunTurnAsync has no spec and no scope, so recording is opt-in and silent here.
         var ran = ArrangeAutoApproved("create_todo", BuiltInPluginDefaults.TodoPluginId, "todo");
         ArrangeStream(["create_todo"]);
 
@@ -167,8 +145,6 @@ public sealed class ChatSessionTimelineTests
         Assert.Empty(_timeline.Rows);
     }
 
-    // ---- T-EMIT-4 ----
-
     [Fact]
     public async Task ACancelledCardIsRecordedAsCancelled_NotAsAUserDenial()
     {
@@ -176,8 +152,7 @@ public sealed class ChatSessionTimelineTests
         _permissions.IsAutoApproveEligible("write_file").Returns(false);
         var pending = Pending("write_file", "files", filesId);
         var card = NewCard("write_file", filesId);
-        // Cancel (new chat / retry / scope dispose) — the gate maps this to ToolDecision.Decline internally,
-        // and recording THAT as "the user declined" would be a false audit statement.
+        // The gate maps a cancel to ToolDecision.Decline internally; auditing that as a user denial would be a lie.
         card.CancelCommand.Execute(null);
 
         ArrangeRoutes(new() { ["write_file"] = pending }, new() { ["write_file"] = card });
@@ -191,30 +166,15 @@ public sealed class ChatSessionTimelineTests
         Assert.NotEqual(ToolGateDecision.DeclinedByUser, row.Decision);
         Assert.Equal(AgentTimelineOutcome.NotExecuted, row.Outcome);
 
-        // T2-14: BOTH stamps land on the cancelled path, which is what the `finally` around
-        // WaitForUserDecisionAsync is for. The cancel arrives as a TaskCanceledException, so a DecidedAt
-        // assigned after a SUCCESSFUL await would be null here and the row would read "still pending" for a
-        // question that is definitively over. This is the whole of "including timeout": there is no approval
-        // timer in this tree, so a card that ends without an answer ends as a cancellation, and this row is
-        // what says how long the question had been open when the turn died.
+        // The cancel arrives as a TaskCanceledException, so a DecidedAt assigned only after a successful await
+        // would be null here and the row would read "still pending" for a question that is over.
         Assert.NotNull(row.RequestedAt);
         Assert.NotNull(row.DecidedAt);
         Assert.True(row.DecidedAt >= row.RequestedAt);
         Assert.True(row.CreatedAt >= row.DecidedAt);
     }
 
-    /// <summary>
-    /// The PROMPTED accept arm's stamps. Separate from the cancelled fact above because it runs through
-    /// <c>ExecuteAndReport</c>, which is shared with the AutoRun bypass: the two authorities carry DIFFERENT
-    /// pairs (the card's instants vs. the policy resolver's), and only driving both proves the prompted arm is
-    /// not silently reading the policy pair.
-    /// <para>
-    /// Ordering is asserted with <c>&lt;=</c>, never <c>&lt;</c>. The card here is pre-resolved so
-    /// <c>WaitForUserDecisionAsync</c> returns immediately, and <c>DateTime.UtcNow</c> has ~1 ms resolution on
-    /// Windows — the two instants are normally EQUAL, and a strict comparison would be a wall-clock flake
-    /// rather than a fact. What is asserted is the state: both stamps present, correctly ordered.
-    /// </para>
-    /// </summary>
+    // Ordering is asserted with <=, never <: the pre-resolved card makes the two instants normally equal.
     [Fact]
     public async Task APromptedCardRecordsWhenItWasShownAndWhenItWasAnswered()
     {
@@ -231,45 +191,17 @@ public sealed class ChatSessionTimelineTests
             Spec(), new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
 
         var row = Assert.Single(_timeline.Rows);
-        Assert.Equal(ToolGateDecision.ApprovedOnce, row.Decision); // the prompted arm, not the bypass
+        Assert.Equal(ToolGateDecision.ApprovedOnce, row.Decision); // the prompted arm, not the bypass one
         Assert.NotNull(row.RequestedAt);
         Assert.NotNull(row.DecidedAt);
         Assert.True(row.DecidedAt >= row.RequestedAt);
         Assert.True(row.CreatedAt >= row.DecidedAt);
-        // The correlation pair rides along on this arm too.
         Assert.Equal("call-0", row.ToolCallId);
         Assert.Equal(1, row.Round);
     }
 
-    /// <summary>
-    /// THE DISCRIMINATING FACT for the prompted arm: its two instants must straddle the HUMAN's answer, not
-    /// the policy resolver's.
-    /// <para>
-    /// <b>Why the two facts above cannot prove this.</b> Both gates take a policy pair
-    /// (<c>askedAt</c>/<c>resolvedAt</c>) around <c>ToolAutonomy.Resolve</c>, and the card arms take their own
-    /// (<c>cardShownAt</c>/<c>cardDecidedAt</c>). Substituting the policy pair into a card arm — an easy
-    /// copy-paste from the AutoRun line a few arms up — leaves both pairs non-null and correctly ordered, so
-    /// <c>NotNull</c> and <c>&gt;=</c> assertions pass either way. Verified by mutation: swapping the decline
-    /// arm to the policy pair left the ENTIRE suite green before this test existed.
-    /// </para>
-    /// <para>
-    /// <b>The anchor, and why comparing the pair to ITSELF is not enough.</b> The obvious assertion —
-    /// <c>DecidedAt &gt; RequestedAt</c> — does NOT discriminate, and that was verified by mutation rather
-    /// than assumed: the policy pair brackets a <c>ToolAutonomy.Resolve</c> whose input expression makes
-    /// several substitute calls, which is sometimes enough to tick <c>DateTime.UtcNow</c>, so the substituted
-    /// arm passed that assertion intermittently. The reliable discriminator is a THIRD instant the test owns:
-    /// <c>afterResolve</c>, captured when the gate builds the card, which is provably after <c>resolvedAt</c>
-    /// and before <c>cardShownAt</c>.
-    /// </para>
-    /// <para>
-    /// <b>Why a strict comparison is deterministic here</b>, when it would be a coin flip anywhere else in
-    /// this batch: the hook then blocks for <see cref="GapMs"/> ms before returning, so <c>cardShownAt</c> is
-    /// forced tens of milliseconds past <c>afterResolve</c> — far beyond <c>DateTime.UtcNow</c>'s ~1 ms
-    /// Windows resolution. The policy pair is taken entirely BEFORE the card is built, so it can never be
-    /// after <c>afterResolve</c>. The gap CAUSES the ordering; it is not raced against, and nothing here
-    /// compares an elapsed time to a threshold.
-    /// </para>
-    /// </summary>
+    // Comparing the pair to itself does not discriminate: the anchor is a third instant taken as the card is built,
+    // provably after the policy resolver answered and before the card was shown.
     [Fact]
     public async Task APromptedCardsInstantsStraddleTheHumansAnswer_NotThePolicyResolver()
     {
@@ -285,12 +217,10 @@ public sealed class ChatSessionTimelineTests
             Spec(), new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
 
         var row = Assert.Single(_timeline.Rows);
-        Assert.Equal(ToolGateDecision.DeclinedByUser, row.Decision); // the `default:` arm, prompted and answered
+        Assert.Equal(ToolGateDecision.DeclinedByUser, row.Decision);
         Assert.NotNull(row.RequestedAt);
         Assert.NotNull(row.DecidedAt);
 
-        // THE assertions. Both instants are after the resolver had already answered, which is only true of the
-        // CARD's pair — substitute the policy pair in and both go red.
         Assert.True(
             row.RequestedAt > afterResolve(),
             $"RequestedAt must be the instant the CARD was shown, not the policy resolver's; got {row.RequestedAt:O} vs anchor {afterResolve():O}");
@@ -301,14 +231,11 @@ public sealed class ChatSessionTimelineTests
         Assert.True(row.CreatedAt >= row.DecidedAt);
     }
 
-    /// <summary>Milliseconds the card build is held open, to force the ordering the two facts below assert.</summary>
+    // Milliseconds the card build is held open, well past DateTime.UtcNow's resolution, so the ordering is caused
+    // rather than raced for.
     private const int GapMs = 60;
 
-    /// <summary>
-    /// Arranges a prompted card that is answered only AFTER the gate has shown it, and returns a getter for
-    /// the anchor instant — captured as the gate builds the card, i.e. strictly after the policy resolver
-    /// answered and strictly before <c>cardShownAt</c> is taken.
-    /// </summary>
+    // Returns a getter for the anchor instant, captured as the gate builds the card.
     private Func<DateTime> ArrangeLateAnsweredCard(
         PluginToolCall pending, ActionCardInfo card, Action<ActionCardInfo> answer)
     {
@@ -319,10 +246,7 @@ public sealed class ChatSessionTimelineTests
             onCardBuilt: built =>
             {
                 anchor = DateTime.UtcNow;
-                // Held SYNCHRONOUSLY, so cardShownAt (taken right after Build returns) is forced past the
-                // anchor. Answered after the same gap again, so DecidedAt is forced past cardShownAt. The gate
-                // blocks on WaitForUserDecisionAsync until the command fires, so the turn cannot finish early
-                // and there is nothing to race.
+                // Held synchronously so cardShownAt, taken right after Build returns, is forced past the anchor.
                 Thread.Sleep(GapMs);
                 _ = Task.Run(async () =>
                 {
@@ -333,12 +257,7 @@ public sealed class ChatSessionTimelineTests
         return () => anchor;
     }
 
-    /// <summary>
-    /// The same discriminator on the prompted ACCEPT path, which reaches the emit through
-    /// <c>ExecuteAndReport</c> — the local function the AutoRun bypass ALSO calls, with the other pair. That
-    /// sharing is why the two instants are explicit parameters there rather than captured locals, and this is
-    /// what holds the two authorities apart.
-    /// </summary>
+    // The accept arm emits through the same local function the auto-run bypass calls, but with the other pair.
     [Fact]
     public async Task APromptedAcceptStampsTheCardsInstants_NotThePolicyResolvers()
     {
@@ -365,12 +284,7 @@ public sealed class ChatSessionTimelineTests
         Assert.True(row.DecidedAt >= row.RequestedAt);
     }
 
-    /// <summary>
-    /// The control for the two facts above, and the guard in the OTHER direction: the AutoRun bypass must
-    /// carry the POLICY's pair. Nobody was asked, so its interval is the resolver's, and it must NOT pick up a
-    /// card instant — the bypass renders a resolved card too, so a naive "use cardShownAt everywhere" would
-    /// still compile and still produce plausible timestamps.
-    /// </summary>
+    // The bypass renders a resolved card too, so "use cardShownAt everywhere" would still produce plausible stamps.
     [Fact]
     public async Task TheAutoRunBypassStampsThePolicyResolversInstants()
     {
@@ -386,23 +300,12 @@ public sealed class ChatSessionTimelineTests
         Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, row.Decision);
         Assert.NotNull(row.RequestedAt);
         Assert.NotNull(row.DecidedAt);
-        // >=, not >: this pair brackets a few comparisons and is normally EQUAL. Nothing here forces a gap,
-        // and asserting one would be the wall-clock flake the batch avoids.
+        // >=, not >: this pair brackets a few comparisons and is normally equal.
         Assert.True(row.DecidedAt >= row.RequestedAt);
         Assert.True(row.CreatedAt >= row.DecidedAt);
     }
 
-    /// <summary>
-    /// The run-level turn (no step) still gets a row, and it carries NO <c>StepOrdinal</c> — an ordinal without
-    /// a step would invent one.
-    /// <para>
-    /// This half alone would be vacuous: the gate hardcodes <c>StepOrdinal: null</c> (the column is
-    /// service-assigned, like <c>Seq</c>), so the null asserted here is also what a sink that never assigned an
-    /// ordinal at all would produce. Its control is
-    /// <see cref="AStepTurnsRowsCarryAPerStepOrdinal"/>, which drives the same tool through a step turn and
-    /// reads a NON-null ordinal off the same sink. The pair is what makes either one a fact.
-    /// </para>
-    /// </summary>
+    // Vacuous on its own; AStepTurnsRowsCarryAPerStepOrdinal reads a non-null ordinal off the same sink.
     [Fact]
     public async Task ARunLevelTurnRecordsNoStepOrdinal()
     {
@@ -418,18 +321,7 @@ public sealed class ChatSessionTimelineTests
         Assert.Null(runLevel.StepOrdinal);
     }
 
-    /// <summary>
-    /// The control for <see cref="ARunLevelTurnRecordsNoStepOrdinal"/>: a STEP turn's rows do get an ordinal,
-    /// and it counts within the step. Asserted as the exact sequence, so a sink that handed out one shared
-    /// counter — or the same value twice — goes red rather than merely non-null.
-    /// <para>
-    /// The mechanism under test here is <see cref="RecordingTimelineService"/>'s allocator MIRRORING the real
-    /// one, not the real one itself (<c>AgentTimelineServiceTests.Emit_AllocatesStepOrdinal_PerStepNotPerRun</c>
-    /// owns that against SQLite). It is worth pinning because every gate assertion about this column in this
-    /// suite reads it through the fake: a fake that quietly stopped assigning ordinals would make a future
-    /// "the gate lost the step ordinal" bug indistinguishable from correct behaviour.
-    /// </para>
-    /// </summary>
+    // Pins the fake sink's allocator, which every other ordinal assertion in this suite reads through.
     [Fact]
     public async Task AStepTurnsRowsCarryAPerStepOrdinal()
     {
@@ -445,8 +337,6 @@ public sealed class ChatSessionTimelineTests
         Assert.All(rows, r => Assert.Equal(_stepId, r.StepId));
         Assert.Equal(new long?[] { 1, 2 }, rows.Select(r => r.StepOrdinal).ToArray());
     }
-
-    // ---- T-EMIT-5 ----
 
     [Fact]
     public async Task AThrowingToolIsRecordedAsError_AndTheExceptionStillPropagates()
@@ -466,15 +356,12 @@ public sealed class ChatSessionTimelineTests
 
         var row = Assert.Single(_timeline.Rows);
         Assert.Equal(AgentTimelineOutcome.Error, row.Outcome);
-        Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, row.Decision); // still says WHY it was allowed
+        Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, row.Decision);
         Assert.Null(row.ResultChars);
-        // …and the throw still reaches the step, unchanged by this batch: a swallow here would make the step
-        // succeed.
+        // The throw must still reach the step: a swallow around the emit would make the step succeed.
         Assert.False(result.Succeeded);
         Assert.Contains("the tool blew up", result.Error);
     }
-
-    // ---- T-EMIT-6 ----
 
     [Fact]
     public async Task AnUnknownToolIsRecorded()
@@ -497,8 +384,7 @@ public sealed class ChatSessionTimelineTests
     [Fact]
     public async Task TheAgentModeSuggestionShortCircuitIsNotATimelineEvent()
     {
-        // suggest_agent_mode returns before RouteToolCallAsync, so it is neither a gated call nor an unknown
-        // tool. Pinned so a future "emit for every unrouted name" does not start recording it.
+        // suggest_agent_mode returns before RouteToolCallAsync, so it is neither a gated call nor an unknown tool.
         ArrangeStream(["suggest_agent_mode"]);
 
         await CreateSession().RunStepTurnAsync(
@@ -507,8 +393,6 @@ public sealed class ChatSessionTimelineTests
         Assert.Empty(_timeline.Rows);
         await _plugins.DidNotReceive().RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>());
     }
-
-    // ---- T-EMIT-7: the failure-isolation guardrail, executable ----
 
     [Fact]
     public async Task AFailingTimelineServiceDoesNotFailTheStep()
@@ -524,8 +408,6 @@ public sealed class ChatSessionTimelineTests
         Assert.True(executed(), "the tool must still have run");
         Assert.Empty(_timeline.Rows);
     }
-
-    // ---- T-PRIV-3 (the half this suite can prove) ----
 
     [Fact]
     public async Task ArgsAndResultCharsAreLengthsOfWhatTheHandlerSaw()
@@ -546,9 +428,7 @@ public sealed class ChatSessionTimelineTests
             Spec(), new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
 
         var row = Assert.Single(_timeline.Rows);
-        // The emit sits INSIDE the handler that TokenizingAiClientService.WrapToolHandler decorates, so these
-        // are the pre-tokenization lengths (the wrapper's detokenize-in / tokenize-out ordering is pinned by
-        // TokenizingAiClientServiceTests). Lengths only — never the text.
+        // The emit sits inside the handler the tokenizing wrapper decorates, so these are pre-tokenization lengths.
         Assert.Equal(System.Text.Json.JsonSerializer.Serialize(args).Length, row.ArgsChars);
         Assert.Equal(resultText.Length, row.ResultChars);
         Assert.NotNull(row.DurationMs);
@@ -559,8 +439,6 @@ public sealed class ChatSessionTimelineTests
     private ChatSession CreateSession() => new(
         _tokenMap, _ai, _plugins, _cards, _permissions, _loc, NullLogger.Instance, _ => true);
 
-    /// <param name="runLevel">Drives the planner-degrade RUN-LEVEL turn — a scope with no step id, whose rows
-    /// carry no <c>StepOrdinal</c>. The default is the ordinary step turn every other fact here uses.</param>
     private StepTurnSpec Spec(bool runLevel = false) => new(
         RunId: _runId,
         Ordinal: 0,
@@ -573,8 +451,7 @@ public sealed class ChatSessionTimelineTests
         SupportsTools: true,
         WebSearchActive: false,
         TokenizationEnabled: false,
-        // The SCOPE carries the step id; the record has no StepId field of its own (it was written by one
-        // executor and read by nobody, so a spec-level value could silently disagree with the scope's).
+        // The scope carries the step id; the spec has no field of its own that could disagree with it.
         Timeline: new AgentTimelineScope(_timeline, _runId, runLevel ? null : _stepId));
 
     private static AiProvider TestProvider => new()
@@ -614,7 +491,7 @@ public sealed class ChatSessionTimelineTests
         PluginId = pluginId,
     };
 
-    /// <summary>Arranges one auto-approved (allowlisted + granted) tool and returns an "it ran" probe.</summary>
+    // Returns a probe for whether the tool actually ran.
     private Func<bool> ArrangeAutoApproved(string toolName, Guid pluginId, string pluginName)
     {
         var ran = false;
@@ -628,10 +505,7 @@ public sealed class ChatSessionTimelineTests
         return () => ran;
     }
 
-    /// <param name="onCardBuilt">Invoked as the gate BUILDS a card, i.e. after the policy resolver has already
-    /// answered and immediately before the card is shown. It is the only hook in this suite that can act
-    /// between those two instants, which is what
-    /// <see cref="APromptedCardsInstantsStraddleTheHumansAnswer_NotThePolicyResolver"/> needs.</param>
+    // onCardBuilt is the only hook that can act between the policy resolver answering and the card being shown.
     private void ArrangeRoutes(
         Dictionary<string, PluginToolCall> pendings, Dictionary<string, ActionCardInfo> cards,
         Action<ActionCardInfo>? onCardBuilt = null)
@@ -653,7 +527,6 @@ public sealed class ChatSessionTimelineTests
             });
     }
 
-    /// <summary>Drives the handler once per tool name, in order, then closes the stream.</summary>
     private void ArrangeStream(string[] toolNames, IDictionary<string, object?>? arguments = null)
     {
         _ai.GetChatCompletionWithToolsAsync(

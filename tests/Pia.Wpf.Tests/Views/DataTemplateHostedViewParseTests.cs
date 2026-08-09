@@ -4,55 +4,17 @@ using Xunit;
 
 namespace Pia.Tests.Views;
 
-/// <summary>
-/// The seven top-level views hosted by an <c>App.xaml</c> <c>DataTemplate</c>, none of which any test parsed
-/// before Batch 15. Their binding paths are walked against the ViewModel type the template is KEYED on.
-/// <para>
-/// <b>The host guard is stronger here than the reflection recipe the settings views use, and that is the
-/// point of doing them this way.</b> <see cref="ViewHostDataContextTests"/> exists because a per-view fact
-/// that reflects its root off a property NAME cannot see a <c>DataContext</c> re-host — proven by execution
-/// in the Batch 14 review. These seven have no such hole to close, because the host relationship is not a
-/// property name to reflect off: it is a resource, and this fact READS it. Look up
-/// <c>Application.Current.Resources[new DataTemplateKey(vm)]</c>, <c>LoadContent()</c> it, and assert the
-/// object that comes out is the expected view. A re-typed, re-keyed or deleted <c>DataTemplate</c> reds here,
-/// and the view the walk then examines is the one the template really produces — so the host check and the
-/// parse cannot drift apart by construction.
-/// </para>
-/// <para>
-/// <b>Amends this batch's own decision D1 ("one file per view"), on purpose.</b> Seven near-identical files
-/// would duplicate the lookup seven times; a <c>[Theory]</c> keeps the floors in one table and still names
-/// the failing view in the test case. The three views with a DIFFERENT technique each keep their own file.
-/// </para>
-/// <para>
-/// Out of reach for these walks, in the same way and for the same reason as every other file in this folder:
-/// <c>DataTemplate</c> content, <c>Style.Triggers</c>, and bindings carrying <c>RelativeSource</c>,
-/// <c>ElementName</c> or an explicit <c>Source</c> (which is what keeps <c>loc:Str</c> out of scope).
-/// </para>
-/// </summary>
+// The walk cannot reach DataTemplate content, Style.Triggers, or bindings with RelativeSource/ElementName/Source.
 [Collection("WpfApplicationStatic")]
 public class DataTemplateHostedViewParseTests
 {
-    /// <summary>
-    /// The code-assigned re-root the markup cannot express: <c>TodoPanelControl</c>'s ctor NULLS its
-    /// <c>DataContext</c> to break inheritance from the hosting view, and its <c>Loaded</c> handler assigns a
-    /// <see cref="TodoViewModel"/> from the window's scoped provider. Without this map, walking the top-level
-    /// <c>OptimizeView</c> reports the panel's eight paths as <c>UNRESOLVED</c> against
-    /// <see cref="OptimizeViewModel"/> — which is neither a defect nor a truth. Every half of that claim is
-    /// pinned by <see cref="TodoPanelControlParseTests"/>; this map is only sound because those facts are.
-    /// </summary>
+    // TodoPanelControl nulls its DataContext in the ctor and gets a TodoViewModel at Loaded, which the markup
+    // cannot express — without this map the panel's paths read UNRESOLVED against the hosting ViewModel.
     internal static readonly Dictionary<Type, Type> CodeAssignedRoots =
         new() { [typeof(Pia.Views.TodoPanelControl)] = typeof(TodoViewModel) };
 
-    /// <summary>
-    /// Floors, not counts (measured 2026-08-02: 22 / 28 / 29 / 30 / 13 / 218 / 15). Set well under the
-    /// measurement so ordinary markup edits never touch this file, while a genuine collapse — a container
-    /// that stops reporting logical children — is still caught long before the floor is reached.
-    /// <para>
-    /// <c>Pia.Views.OptimizeView</c> is the TOP-LEVEL one. <c>Pia.Views.SettingsViews.OptimizeView</c> is a
-    /// different type with the same file name, already covered by <see cref="OptimizeViewParseTests"/>; both
-    /// exist and both compile, so the fully-qualified name here is load-bearing.
-    /// </para>
-    /// </summary>
+    // Floors, not counts: set well under the measured values so ordinary markup edits never touch this file.
+    // OptimizeView is fully qualified because SettingsViews holds a different type of the same name.
     public static TheoryData<Type, Type, int> Hosted => new()
     {
         { typeof(AssistantHistoryViewModel), typeof(Pia.Views.AssistantHistoryView), 14 },
@@ -71,8 +33,7 @@ public class DataTemplateHostedViewParseTests
     {
         var (produced, bindings) = WpfStaHost.Run(() =>
         {
-            // The host mapping, EXECUTED rather than reflected. A missing key is a null template and a
-            // NullReferenceException here would say nothing useful, so it is turned into a named failure.
+            // A missing key is a null template, so it becomes a named failure rather than a bare NRE.
             if (Application.Current.Resources[new DataTemplateKey(viewModel)] is not DataTemplate template)
                 return ("<no DataTemplate keyed on this ViewModel in App.xaml>", Array.Empty<string>());
 
@@ -102,13 +63,7 @@ public class DataTemplateHostedViewParseTests
     [Fact]
     public void TheTopLevelOptimizeView_ReachesTheTodoPanelsPathsThroughTheCodeAssignedReRoot()
     {
-        // The two-halves assertion the re-root needs, in the shape GeneralViewParseTests uses for its markup
-        // re-root. Asserting only the re-root LINE would pass if the walk stopped following it; asserting only
-        // a [TodoViewModel] path would pass if some other element supplied that context. Both, or neither.
-        //
-        // This is also the fact that makes the theory above honest for OptimizeView: without the re-root those
-        // eight paths read UNRESOLVED, and the tempting "fix" — dropping the panel's subtree from the walk —
-        // would have silently removed real coverage instead of rooting it correctly.
+        // Both halves are needed: either assertion alone can stay green while the re-root is broken.
         var bindings = WpfStaHost.Run(() =>
         {
             var template = (DataTemplate)Application.Current.Resources[new DataTemplateKey(typeof(OptimizeViewModel))];

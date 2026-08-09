@@ -9,14 +9,8 @@ using Xunit;
 namespace Pia.Tests.ViewModels;
 
 /// <summary>
-/// The signal-band redesign's two new projections: the plan WINDOW (a long plan folds to the running step ±1,
-/// because the card is pinned above a chat transcript and may neither grow without bound nor introduce an inner
-/// scrollbar) and the band's SUB-LINE (state · position · elapsed, or the settled run's totals).
-/// <para>
-/// Store-less: <c>IAgentRunService.GetAsync</c> is stubbed with a hand-built <see cref="AgentRun"/>, which is
-/// what makes a 12-step plan a one-line fixture. The window and the sub-line both read only the projected step
-/// rows and the ledger, so nothing here needs SQLite.
-/// </para>
+/// A long plan folds to the running step ±1 because the card is pinned above a chat transcript and may neither
+/// grow without bound nor introduce an inner scrollbar.
 /// </summary>
 public sealed class RunProgressViewModelPlanWindowTests
 {
@@ -40,15 +34,12 @@ public sealed class RunProgressViewModelPlanWindowTests
         return new RunProgressViewModel(_runs, _runId, _loc, _resume, NullLogger.Instance);
     }
 
-    /// <summary>The band's own elapsed format, in the current culture — mirrored here rather than hardcoded so
-    /// these facts pin the FORMAT and not the test host's locale. Above a minute the VM spends the localized
-    /// min/sec key, which the loc stub echoes with its arguments.</summary>
+    // Mirrors the band's own culture-aware format rather than hardcoding it, so these facts pin the FORMAT and
+    // not the test host's locale.
     private static string Duration(long milliseconds) => milliseconds / 1000 < 60
         ? $"{milliseconds / 1000.0:0.#}s"
         : $"Run_Duration_MinSec|{milliseconds / 60000},{milliseconds / 1000 % 60}";
 
-    /// <summary>A plan whose step at <paramref name="runningIndex"/> is Running, everything before it Done and
-    /// everything after it Pending — the ordinary shape of a run in flight.</summary>
     private void StubPlan(int count, int runningIndex, AgentRunState state = AgentRunState.Running,
         string? ledgerJson = null)
     {
@@ -75,11 +66,7 @@ public sealed class RunProgressViewModelPlanWindowTests
         });
     }
 
-    /// <summary>
-    /// GUARD, and the non-vacuity control for every fact below: a plan AT the limit is not windowed at all. The
-    /// window is a concession to a bounded card, not a default, so the ordinary short plan must render exactly as
-    /// it did before the redesign.
-    /// </summary>
+    // The non-vacuity control for every fact below: the window is a concession to a bounded card, not a default.
     [Fact]
     public async Task APlanAtTheLimitIsNotWindowed()
     {
@@ -97,12 +84,8 @@ public sealed class RunProgressViewModelPlanWindowTests
         vm.Dispose();
     }
 
-    /// <summary>
-    /// <b>REGRESSION.</b> One step over the limit and the list folds to the running step ±1 — EXCEPT the plan's
-    /// last row, which always stays visible (below its own fold) because a windowed run must keep showing the
-    /// step it is working toward. The three counts are asserted together with the sum, because an off-by-one in
-    /// either bound hides a step from the reader with no other symptom.
-    /// </summary>
+    // The plan's last row always stays visible below its own fold, because a windowed run must keep showing the
+    // step it is working toward.
     [Fact]
     public async Task ALongPlanFoldsToTheRunningStepPlusMinusOne_AndTheFoldCountsAccountForEveryHiddenStep()
     {
@@ -132,11 +115,8 @@ public sealed class RunProgressViewModelPlanWindowTests
         vm.Dispose();
     }
 
-    /// <summary>
-    /// The other half of the fold copy, and the one that can tell a lie: "all done" over a fold hiding a SKIPPED
-    /// step would report a run that went better than it did. The VM claims the qualifier only when it holds.
-    /// <para>Neutralize: collapse the two branches in <c>ApplyStepWindow</c> onto the qualified key → red.</para>
-    /// </summary>
+    // "All done" over a fold hiding a SKIPPED step would report a run that went better than it did, so the VM
+    // claims that qualifier only when it holds.
     [Fact]
     public async Task AFoldHidingAnUnfinishedStepDropsTheAllDoneClaim()
     {
@@ -152,14 +132,8 @@ public sealed class RunProgressViewModelPlanWindowTests
         vm.Dispose();
     }
 
-    /// <summary>
-    /// <b>REGRESSION.</b> A fold that would hide exactly ONE step folds nothing. Two reasons, and the second is
-    /// what makes this load-bearing rather than cosmetic: a 24px fold row in place of a 28px step row buys no
-    /// height while costing the reader the step's title, AND one is the only count at which the fold copy's plural
-    /// is wrong in every locale ("1 earlier steps", "1 frühere Schritte"). Absorbing the row is what let the copy
-    /// stay plural in all three languages instead of going to a paren form.
-    /// <para>Neutralize: delete either absorption line in <c>ApplyStepWindow</c> → the corresponding leg reds.</para>
-    /// </summary>
+    // A fold hiding exactly one step is absorbed: it buys no height, and one is the only count at which the fold
+    // copy's plural is wrong in every locale ("1 earlier steps", "1 frühere Schritte").
     [Theory]
     // 8 steps, running at index 2: the earlier fold would hide step 1 alone, so it is absorbed; the tail fold
     // hides steps 5-7 while the always-visible last row rides outside the list (4 in it + 1 outside).
@@ -191,11 +165,7 @@ public sealed class RunProgressViewModelPlanWindowTests
         vm.Dispose();
     }
 
-    /// <summary>
-    /// The fold rows' only action, and it is one-way: once a reader has asked for the whole plan, a later step
-    /// transition may not re-fold it under them. The second projection is the half that bites — the command alone
-    /// would pass without the latch.
-    /// </summary>
+    // One-way: once a reader has asked for the whole plan, a later step transition may not re-fold it under them.
     [Fact]
     public async Task ExpandingTheWindowShowsEveryStep_AndSurvivesTheNextProjection()
     {
@@ -239,12 +209,8 @@ public sealed class RunProgressViewModelPlanWindowTests
         vm.Dispose();
     }
 
-    /// <summary>
-    /// The whole-plan strip is bound to its OWN source so the list's folding cannot reach it — it is the only
-    /// element that shows every step of a windowed plan. Asserted as a wrapper over the SAME rows (never a copy,
-    /// which could disagree with the list about a status) and as a DIFFERENT object (the panel's two ItemsControls
-    /// are told apart by their sources).
-    /// </summary>
+    // The strip is bound to its OWN source so the list's folding cannot reach it, and it wraps the SAME rows —
+    // copies could disagree with the list about a status.
     [Fact]
     public async Task TheProgressStripSeesEveryStepEvenWhenTheListIsWindowed()
     {
@@ -275,11 +241,8 @@ public sealed class RunProgressViewModelPlanWindowTests
         vm.Dispose();
     }
 
-    /// <summary>
-    /// <b>REGRESSION.</b> The band's sub-line for a run in flight: the state, where it is in its plan, and how
-    /// long it has been going. The step POSITION is the leg that matters — it is the only place the card says
-    /// "7 of 12" once the list is windowed, and it is computed from the projected rows, not from the plan length.
-    /// </summary>
+    // The step POSITION is the leg that matters: it is the only place the card says "7 of 12" once the list is
+    // windowed, and it is computed from the projected rows, not from the plan length.
     [Fact]
     public async Task TheBandSubLineNamesTheStateThePositionAndTheElapsedTime()
     {
@@ -289,19 +252,14 @@ public sealed class RunProgressViewModelPlanWindowTests
         var vm = CreateVm();
         await vm.RefreshAsync();
 
-        // Built from the same culture-aware formats the VM uses: the test host runs under a German culture, and
-        // "96,7s" / "70.137" are the CORRECT renderings there. A literal "96.7s" here would pin the machine, not
-        // the behaviour.
+        // Built from the same culture-aware formats the VM uses: a literal "96.7s" here would pin the test host's
+        // locale rather than the behaviour.
         Assert.Equal($"Run_State_Running · Run_Sub_Step|7,12 · Run_Sub_Elapsed|{Duration(96700)}", vm.SubLine);
         Assert.True(vm.HasSubLine);
         vm.Dispose();
     }
 
-    /// <summary>
-    /// The settled run's sub-line trades the state name for its totals — steps, seconds and the token figure that
-    /// used to live in the header ledger strip. Asserted for the CLEAN finish, which is the only one that spends
-    /// a clause on tokens.
-    /// </summary>
+    // Asserted for the CLEAN finish, the only settled sub-line that spends a clause on tokens.
     [Fact]
     public async Task ACompletedRunsSubLineCarriesItsTotals()
     {
@@ -318,12 +276,8 @@ public sealed class RunProgressViewModelPlanWindowTests
         vm.Dispose();
     }
 
-    /// <summary>
-    /// <b>REGRESSION.</b> A windowed run keeps its LAST step visible below the tail fold — the step the run is
-    /// working toward must not be one of the ones the fold swallows (readers experienced exactly that as the
-    /// last step "disappearing" mid-run and returning once the run settled). Unfolding returns the row to the
-    /// list and clears the outside slot.
-    /// </summary>
+    // Readers experienced the last step "disappearing" mid-run: the step a run is working toward must not be one
+    // the tail fold swallows.
     [Fact]
     public async Task AWindowedRunKeepsItsLastStepBelowTheFold_AndExpandReturnsItToTheList()
     {

@@ -10,13 +10,7 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// The R1 fact (plan §4 R1 / this batch's §0.2a), proved at the REAL shape rather than under
-/// <c>Path.GetTempPath()</c>: <see cref="FilesToolHandlerWorkspaceEscapeTests"/> roots its fixture outside
-/// every blocked root, so it structurally cannot see the guard collision Batch 06 B1 exists to fix. This
-/// class roots at <c>AssistantWorkspace.RunsRoot\&lt;guid&gt;</c> — inside the real, guard-checked
-/// <c>%LOCALAPPDATA%\Pia</c> tree — and asserts a SUCCESSFUL write, not only that an escape is rejected.
-/// </summary>
+/// <summary>Roots the fixture inside the real, guard-checked <c>%LOCALAPPDATA%\Pia</c> tree, so a successful write actually exercises the runs carve-out.</summary>
 public sealed class FilesToolHandlerRunsDirGuardTests : IDisposable
 {
     private readonly string _runDir;
@@ -24,16 +18,12 @@ public sealed class FilesToolHandlerRunsDirGuardTests : IDisposable
 
     public FilesToolHandlerRunsDirGuardTests()
     {
-        // Guid-shaped name (R11): RunStartupSweepAsync `continue`s on any directory name that is not a
-        // parseable Guid, so a leaked fixture with this shape is swept as `run is null` on next app
-        // start rather than living in the developer's real runs folder forever.
+        // Guid-shaped so the startup sweep reclaims a leaked fixture instead of leaving it in the real runs folder.
         _runDir = Path.Combine(AssistantWorkspace.RunsRoot, Guid.NewGuid().ToString());
         Directory.CreateDirectory(_runDir);
 
-        // The base root the settings folder would resolve to is irrelevant here on purpose: the ambient
-        // TaskContext.WorkspaceRoot below is what FilesToolHandler's dispatch point (R1) prefers, so an
-        // unrelated settings folder proves the run root — not some carve-out on the settings side — is
-        // what makes the write succeed.
+        // The settings folder is deliberately unrelated: the ambient TaskContext.WorkspaceRoot below wins, so
+        // the run root — not a settings-side carve-out — is what makes the write succeed.
         var settings = Substitute.For<ISettingsService>();
         settings.GetSettingsAsync().Returns(new AppSettings { AssistantFilesFolder = Path.GetTempPath() });
         _handler = new FilesToolHandler(settings, new FileStalenessStore(), NullLogger<FilesToolHandler>.Instance);
@@ -54,13 +44,7 @@ public sealed class FilesToolHandlerRunsDirGuardTests : IDisposable
         return (T)p!.GetValue(obj)!;
     }
 
-    /// <summary>
-    /// <b>REGRESSION</b>, and the fact carrying R1's whole point — labelled here rather than only in the spec's
-    /// table, as 06 §9's preamble requires. Neutralization: revert the <c>runs</c> entry in
-    /// <c>SensitivePathGuard.BuildAllowedExceptions</c> → the write comes back as
-    /// <c>WriteResult.Failed</c> naming a "protected system or application data directory", because
-    /// <c>%LOCALAPPDATA%\Pia</c> is blocked wholesale and containment passes before the denylist runs.
-    /// </summary>
+    /// <summary>Without the <c>runs</c> carve-out in <c>SensitivePathGuard</c> this fails: <c>%LOCALAPPDATA%\Pia</c> is blocked wholesale.</summary>
     [Fact]
     public async Task AWriteInsideARealRunsWorkspace_Succeeds()
     {
@@ -78,13 +62,7 @@ public sealed class FilesToolHandlerRunsDirGuardTests : IDisposable
         Assert.Contains("hi", File.ReadAllText(full));
     }
 
-    /// <summary>
-    /// <b>GUARD</b>, not a regression, and the distinction matters when this pair is next debugged: containment
-    /// is unchanged by G1/G2, so reverting the carve-out leaves this fact GREEN. It is the companion that stops
-    /// the carve-out from being read as "the runs tree is unguarded" — but it cannot itself demonstrate the
-    /// carve-out, because an escape assertion also passes against a root nothing can write to at all. The fact
-    /// above is the control.
-    /// </summary>
+    /// <summary>Companion to the write above, which is its control: an escape assertion also passes against a root nothing can write to at all.</summary>
     [Fact]
     public async Task EscapeVector_IsStillRejected_InsideARealRunsWorkspace()
     {

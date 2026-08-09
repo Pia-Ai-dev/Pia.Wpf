@@ -13,13 +13,6 @@ using Xunit;
 
 namespace Pia.Tests.Sync;
 
-/// <summary>
-/// Compile-driven TDD for Task 5.3: the per-file last-synced BASE snapshot store
-/// (<see cref="SyncBaseStore"/>), the {path,content} sync envelope mapping on
-/// <see cref="SyncMapper"/>, and the merge-on-pull reconciler (<see cref="VaultSyncService"/>).
-/// Uses a real parser + real <see cref="SectionMergeEngine"/> against temp directories so the
-/// merge oracle (spec §10.1) is exercised end-to-end.
-/// </summary>
 public sealed class VaultSyncTests : IDisposable
 {
     private const string Id = "6f9c0b3e-7c1a-4f2e-9a8b-000000000001";
@@ -142,7 +135,7 @@ public sealed class VaultSyncTests : IDisposable
         Assert.Equal(content, rtContent);
     }
 
-    // ---- (b') {path,content} envelope: E2EE-ON encrypts; plaintext Path stays null (C5) ----
+    // ---- (b') {path,content} envelope: E2EE-ON encrypts; plaintext Path stays null ----
 
     [Fact]
     public void ToVaultSyncMemory_E2EEOn_EncryptsPayload_PathStaysNull()
@@ -163,14 +156,9 @@ public sealed class VaultSyncTests : IDisposable
         Assert.Equal(id, sync.Id);
         Assert.Equal("CIPHER", sync.EncryptedPayload);
         Assert.Equal("WDEK", sync.WrappedDek);
-        Assert.Null(sync.Path);    // C5: server never sees a plaintext path
+        Assert.Null(sync.Path);    // the server never sees a plaintext path
 
-        // NOT null: SyncMemory.Data is initialised to "{}" by the DTO itself, and the E2EE branch simply
-        // never assigns it — as in all 11 E2EE branches in SyncMapper, none of which nulls Data. So "{}"
-        // is the layer-wide shape and this was the only assertion claiming otherwise. C5 still holds: the
-        // requirement is that no plaintext PATH or CONTENT reaches the server, and an empty JSON object
-        // carries neither. Asserting the literal keeps the guarantee explicit — if a future change ever
-        // let real content into Data under E2EE, this fails.
+        // Not null: SyncMemory.Data is initialised to "{}" by the DTO and the E2EE branch never assigns it.
         Assert.Equal("{}", sync.Data);
         e2ee.Received().EncryptRecord(
             Arg.Any<object>(), UserId, "vault_file", id.ToString());
@@ -198,9 +186,7 @@ public sealed class VaultSyncTests : IDisposable
         Assert.Equal(content, rtContent);
     }
 
-    // ---- (b'') {path,content} envelope: an encrypted row given to a mapper that CANNOT decrypt
-    //      (E2EE inactive) THROWS instead of materializing an empty (path, content). The sync layer
-    //      catches this and skips the row. The plaintext round-trip still works unchanged. ----
+    // ---- (b'') an encrypted row given to a mapper that cannot decrypt THROWS rather than yielding empty ----
 
     [Fact]
     public void FromVaultSyncMemory_EncryptedRow_E2EEInactive_Throws()
@@ -209,7 +195,7 @@ public sealed class VaultSyncTests : IDisposable
         var mapper = new SyncMapper(dpapi); // no E2EE -> cannot decrypt
         var id = Guid.Parse(Id);
 
-        // Encrypted envelope: ciphertext present, plaintext Path/Data null (C5).
+        // Encrypted envelope: ciphertext present, plaintext Path/Data null.
         var sync = new SyncMemory { Id = id, EncryptedPayload = "CIPHER", WrappedDek = "WDEK" };
 
         Assert.Throws<InvalidOperationException>(() => mapper.FromVaultSyncMemory(sync, UserId));

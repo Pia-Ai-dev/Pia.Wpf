@@ -9,12 +9,7 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Batch 06 B3: the verifier's artifact probe must prefer <c>RunContext.WorkspaceRoot</c> over the
-/// (null-at-verify-time) ambient and the settings folder, because verify runs on the orchestrator thread
-/// — outside any step's ambient — after the per-step <c>TaskAmbient.Current</c> has already been restored
-/// in the step's <c>finally</c>. Mirrors <c>AgentVerifierTests</c>'s probe harness.
-/// </summary>
+/// <summary>Verify runs outside any step's ambient, so the artifact probe must use <c>RunContext.WorkspaceRoot</c> rather than <c>TaskAmbient.Current</c>.</summary>
 public sealed class AgentVerifierWorkspaceRootTests : IDisposable
 {
     private readonly IAiClientService _ai = Substitute.For<IAiClientService>();
@@ -82,9 +77,6 @@ public sealed class AgentVerifierWorkspaceRootTests : IDisposable
             });
     }
 
-    // REGRESSION (T-G1-4): drop `ctx.WorkspaceRoot ??` from AgentVerifier's probe and this goes red —
-    // the artifact would report NOT FOUND because the probe would fall through to the settings folder,
-    // where nothing was ever written.
     [Fact]
     public async Task ArtifactProbe_ResolvesAgainstTheContextWorkspaceRoot_NotTheSettingsFolder()
     {
@@ -92,9 +84,7 @@ public sealed class AgentVerifierWorkspaceRootTests : IDisposable
         _settings.AssistantFilesFolder = _settingsDir; // deliberately NOT where the file lives
         ReturnsVerdict(V(true, "ok"));
 
-        // TaskAmbient.Current is null here, matching the production shape at verify time (the
-        // orchestrator thread, outside any step's ambient — the per-step ambient was already restored
-        // in the step's `finally`).
+        // Matches the production shape at verify time: no step ambient is in scope.
         Assert.Null(TaskAmbient.Current);
 
         var ctx = CtxDeclaring(_workspaceDir, "report.md");
@@ -104,8 +94,6 @@ public sealed class AgentVerifierWorkspaceRootTests : IDisposable
         Assert.Contains("declared: report.md → found", LastPrompt);
     }
 
-    // GUARD (T-G1-5): pins that G1 changes no behaviour for the (still universal, in production) case
-    // where no workspace root is set — the settings folder is probed exactly as it is today.
     [Fact]
     public async Task ArtifactProbe_StillUsesTheSettingsFolder_WhenNoWorkspaceRootIsSet()
     {

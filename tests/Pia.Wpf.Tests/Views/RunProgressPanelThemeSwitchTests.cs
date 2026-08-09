@@ -12,35 +12,13 @@ using Xunit;
 
 namespace Pia.Tests.Views;
 
-/// <summary>
-/// A live theme switch has to repaint the run card, including the surfaces whose colour came from a
-/// <see cref="System.Windows.Data.IValueConverter"/>.
-/// <para>
-/// <b>The defect this exists for.</b> A converter that resolves a theme brush by key returns a SNAPSHOT — it
-/// re-runs only when its source value changes — and a dictionary swap cannot fix that snapshot in place, because
-/// WPF freezes freezables once their dictionary is owned (so neither recolouring the brush nor giving it a
-/// <c>DynamicResource</c> colour works; both were measured while writing this). On this card that reaches the
-/// band's tint, its hairline, the card outline and every state and status foreground — so a light→dark switch left
-/// a light band sitting on a dark card until the run's state next happened to move, which on a settled run is
-/// never. <c>IThemeService.ThemeChanged</c> plus <c>RunProgressViewModel.RefreshThemeBrushes</c> is the fix, and
-/// this fact is what proves it reaches the rendered visual rather than just the ViewModel.
-/// </para>
-/// <para>
-/// Restores the light theme in a <c>finally</c>: the <see cref="Application"/> is process-wide and outlives this
-/// class, and the collection is shared with every other view fact.
-/// </para>
-/// </summary>
+/// <summary>A converter-resolved theme brush is a snapshot WPF freezes once its dictionary owns it, so a dictionary swap alone
+/// cannot repaint the card. The light theme is restored in a <c>finally</c> because the Application is process-wide.</summary>
 [Collection("WpfApplicationStatic")]
 public class RunProgressPanelThemeSwitchTests
 {
-    /// <summary>
-    /// <b>REGRESSION.</b> The band's rendered Background and BorderBrush, and the card's outline, all change colour
-    /// across a switch — read off the laid-out visual, never off the ViewModel. The run is left COMPLETED, i.e.
-    /// settled, deliberately: that is the state whose bindings never move on their own, so nothing but the theme
-    /// notification can have caused the repaint.
-    /// <para>Neutralize: drop the <c>ThemeChanged</c> subscription in <c>RunProgressViewModel</c>'s constructor —
-    /// every leg reds, because every one of these brushes is converter-resolved.</para>
-    /// </summary>
+    /// <summary>The run is left settled on purpose: its bindings never move on their own, so only the theme notification
+    /// can have caused a repaint.</summary>
     [Fact]
     public async Task ASettledCardRepaintsItsBandAndOutlineWhenTheThemeChanges()
     {
@@ -103,7 +81,6 @@ public class RunProgressPanelThemeSwitchTests
             });
         }
 
-        // Non-vacuity first: a fully transparent read would satisfy "they differ" for the wrong reason.
         Assert.NotEqual(default, light.Band);
         Assert.NotEqual(default, light.Card);
 
@@ -113,11 +90,7 @@ public class RunProgressPanelThemeSwitchTests
         Assert.NotEqual(light.StepGlyph, dark.StepGlyph);
     }
 
-    /// <summary>
-    /// The other half: a VM that has been DISPOSED must stop listening. The theme service is a singleton, so a
-    /// leaked handler keeps a whole projected run and every one of its rows alive for the process's life — and the
-    /// run card is constructed anew for every chat the user opens.
-    /// </summary>
+    /// <summary>The theme service is a singleton, so a leaked handler keeps a whole projected run alive for the process's life.</summary>
     [Fact]
     public void ADisposedPanelViewModelStopsListeningForThemeChanges()
     {
@@ -137,8 +110,7 @@ public class RunProgressPanelThemeSwitchTests
 
     private static (Color Band, Color BandBorder, Color Card, Color StepGlyph) Probe(RunProgressPanel panel)
     {
-        // Located structurally, never by index: the card is the outermost Border, the band is the one Border that
-        // binds BOTH Background and BorderBrush to State, and the step glyph is the icon inside the realized row.
+        // Located by declared binding, not by index, so a reordered template cannot silently pick another Border.
         var borders = FindVisual<Border>(panel).ToList();
         var card = borders.First(b =>
             BindingPathWalker.PathOf(b, Border.BorderBrushProperty) == "State" &&

@@ -18,7 +18,7 @@ public sealed class GoalGroundingReproTests : IDisposable
 {
     private const string ThinGoal = "ggg";
 
-    /// <summary>User-derived text; the test never logs it (see the CLAUDE.md privacy rule).</summary>
+    /// <summary>User-derived text, so the test never logs it.</summary>
     private const string ModelQuestion = "what do u mean with ggg?";
 
     /// <summary>Wire-level pause reason for a plan-time decline; kept as a literal so a rename doesn't go unnoticed.</summary>

@@ -9,12 +9,7 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Guards the WriteOperations allow-list that gates argument detokenization before a
-/// write reaches the vault. The memory tool rename (Phase 3) replaced the retired
-/// create_object/update_object/append_to_list/delete_object verbs with remember/forget;
-/// recall is read-only and must NOT be treated as a write.
-/// </summary>
+/// <summary>Guards the write allow-list that gates argument detokenization; recall is read-only and must NOT count as a write.</summary>
 public class TokenizingAiClientServiceTests
 {
     [Theory]
@@ -42,9 +37,7 @@ public class TokenizingAiClientServiceTests
     [Fact]
     public async Task GetChatCompletionWithTools_WithTokenizationEnabled_ForwardsReasoningDelta()
     {
-        // Regression: the tokenization-enabled relay used to handle only TextDelta/Finished,
-        // silently dropping ReasoningDelta — so reasoning never reached ThinkingContent for
-        // users with PII tokenization on. It must now pass reasoning through (detokenized).
+        // The relay once handled only TextDelta/Finished, so reasoning never reached ThinkingContent.
         var inner = Substitute.For<IAiClientService>();
         inner.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
@@ -90,9 +83,7 @@ public class TokenizingAiClientServiceTests
     [Fact]
     public async Task GetChatCompletionWithTools_ObjectToolResult_IsSerializedAndTokenized()
     {
-        // Regression: WrapToolHandler used to tokenize only STRING tool results, so an object result
-        // (recall's RecallResult, a read_topic body, a raw read_source transcript) was JSON-serialized
-        // downstream with REAL PII. It must now serialize the object to its wire JSON and tokenize it.
+        // WrapToolHandler once tokenized only STRING results, so an object result went downstream with real PII.
         ToolCallHandler? capturedHandler = null;
         var inner = Substitute.For<IAiClientService>();
         inner.GetChatCompletionWithToolsAsync(
@@ -120,10 +111,8 @@ public class TokenizingAiClientServiceTests
         TokenMapAmbient.Current = tokenMap;
         try
         {
-            // T2-14: the decorator must RELAY the dispatch context, not re-create it. It sits between the tool
-            // loop and the real gate for every tokenization-enabled user, so a `handler(toolCall, default)`
-            // would persist Round = 0 on exactly those installs — and would be invisible to any test that
-            // leaves tokenization off, which is why this fact lives in the ENABLED test rather than its own.
+            // The decorator must RELAY the dispatch context; re-creating it would persist Round = 0 for
+            // tokenization-enabled installs only, which no tokenization-off test can see.
             ToolDispatchContext? seenByInnerHandler = null;
             ToolCallHandler objectResultHandler = (_, ctx) =>
             {
@@ -140,8 +129,7 @@ public class TokenizingAiClientServiceTests
             }
 
             Assert.NotNull(capturedHandler);
-            // A round the DEFAULT would not produce: `default(ToolDispatchContext).Round` is 0, so a decorator
-            // that dropped the context reads back 0 here rather than 7.
+            // 7 is a round the default would not produce — a dropped context reads back 0.
             var toolResult = await capturedHandler!(
                 new FunctionCallContent("id", "recall", new Dictionary<string, object?>()), new ToolDispatchContext(7));
 
@@ -164,9 +152,7 @@ public class TokenizingAiClientServiceTests
     [InlineData(false)]  // tokenization OFF — the pass-through branch
     public async Task RelaysTheContextBudgetToTheInnerClient(bool tokenizationEnabled)
     {
-        // The decorator is registered AS IAiClientService, so if it dropped the budget the in-step tool
-        // loop would never compact in production even though every unit test of the adapter passed.
-        // Both branches must relay it.
+        // The decorator is registered AS IAiClientService, so dropping the budget would stop compaction in production.
         AgentContextBudget? seenByInner = null;
         var inner = Substitute.For<IAiClientService>();
         inner.GetChatCompletionWithToolsAsync(
@@ -216,8 +202,6 @@ public class TokenizingAiClientServiceTests
     [Fact]
     public async Task WithoutAContextBudget_TheInnerClientSeesNull()
     {
-        // An unconfigured provider (every provider after upgrade) and every interactive/background
-        // caller must reach the inner client with a null budget — i.e. today's behaviour exactly.
         var observed = new List<AgentContextBudget?>();
         var inner = Substitute.For<IAiClientService>();
         inner.GetChatCompletionWithToolsAsync(

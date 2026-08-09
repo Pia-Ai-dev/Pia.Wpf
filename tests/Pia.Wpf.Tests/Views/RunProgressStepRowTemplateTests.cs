@@ -12,21 +12,8 @@ using Xunit;
 
 namespace Pia.Tests.Views;
 
-/// <summary>
-/// Batch 08 8b's step-row <c>DataTemplate</c> (<c>Controls/Assistant/RunProgressPanel.xaml</c>, the Steps
-/// <c>ItemsControl</c>'s <c>ItemTemplate</c>) — the five plan-mutation verbs (Edit/Insert/MoveUp/MoveDown/
-/// Skip) plus the inline editor's Save/Cancel, all item-scoped and therefore invisible to
-/// <see cref="RunProgressPanelParseTests"/>'s LOGICAL walk over the non-templated tree (a
-/// <c>DataTemplate</c>'s content is never in the logical tree until a container realizes it).
-/// <para>
-/// Follows <see cref="ScheduledJobsRowTemplateTests"/> character for character (hazard 11): a THROWAWAY
-/// <see cref="ItemsControl"/> carrying the parsed panel's own <c>ItemTemplate</c> and a real
-/// <see cref="RunProgressViewModel"/> as <c>DataContext</c>, with a loaded row added to <c>Items</c> so
-/// <c>RelativeSource AncestorType=ItemsControl</c> resolves against it — no panel, no
-/// <c>ApplyTemplate</c>, no measure/arrange pass. The parsed control is needed only as the SOURCE of the
-/// template, so the shipped markup drives every assertion below, not a hand-built copy.
-/// </para>
-/// </summary>
+/// <summary>A <c>DataTemplate</c>'s content is never in the logical tree until a container realizes it, so the
+/// row is loaded into a throwaway <see cref="ItemsControl"/> for <c>AncestorType=ItemsControl</c> to resolve.</summary>
 [Collection("WpfApplicationStatic")]
 public class RunProgressStepRowTemplateTests
 {
@@ -40,8 +27,7 @@ public class RunProgressStepRowTemplateTests
     {
         var panel = new RunProgressPanel();
 
-        // Identify the Steps ItemsControl by its DECLARED ItemsSource path, never by index: the panel has
-        // three ItemsControls (Steps, Timeline, Children) plus two more nested inside the Children template.
+        // By declared ItemsSource path, never by index: the panel has three ItemsControls plus two nested ones.
         var parsed = BindingPathWalker.FindLogical<ItemsControl>(panel)
             .Single(ic => (BindingOperations.GetBinding(ic, ItemsControl.ItemsSourceProperty) as Binding)
                 ?.Path?.Path == "Steps");
@@ -72,13 +58,8 @@ public class RunProgressStepRowTemplateTests
         Status = AgentStepStatus.Done,
     };
 
-    /// <summary>
-    /// The five plan-mutation verb buttons, asserted per <see cref="ScheduledJobsRowTemplateTests"/>'s own
-    /// discipline: the command PATH, command IDENTITY (never merely non-null), <c>CommandParameter</c> is the
-    /// row instance, and the declared <c>IsEnabled</c> PATH — never its resolved value (hazard 12: a
-    /// <c>Button.IsEnabled</c> defaults to <c>True</c>, so a value-only check on the Pending row would be
-    /// vacuous either way).
-    /// </summary>
+    /// <summary>The declared <c>IsEnabled</c> path, never its resolved value: it defaults to <c>True</c>, so a
+    /// value-only check on the Pending row would be vacuous either way.</summary>
     [Fact]
     public void FiveVerbButtons_ResolveToTheirCommands_WithTheRowAsParameter_AndIsEnabledBoundToIsMutable()
     {
@@ -124,12 +105,7 @@ public class RunProgressStepRowTemplateTests
         Assert.Contains(probes, p => p.Path == "DataContext.SkipStepCommand");
     }
 
-    /// <summary>
-    /// The row-button group's OWN visibility — bound to <c>DataContext.CanMutatePlan</c> off the ancestor
-    /// <c>ItemsControl</c> (the VM), never to anything on the row — is <c>Collapsed</c> BEFORE the mutation
-    /// (hazard 8: <c>Visibility</c> defaults to <c>Visible</c>, so only the Collapsed direction is
-    /// non-vacuous), and <c>Visible</c> once the run is <see cref="RunProgressState.Paused"/>.
-    /// </summary>
+    /// <summary><c>Visibility</c> defaults to <c>Visible</c>, so only the Collapsed direction is non-vacuous.</summary>
     [Fact]
     public void VerbButtonGroup_IsHiddenUntilTheRunIsPaused()
     {
@@ -167,11 +143,7 @@ public class RunProgressStepRowTemplateTests
         Assert.Equal(Visibility.Visible, after);
     }
 
-    /// <summary>
-    /// The inline editor: hidden while <c>IsEditing</c> is false (the default, so this direction is the
-    /// non-vacuous one — hazard 8), and its Save/Cancel buttons resolve to the SAME commands the header verbs
-    /// use the identical ancestor pattern for.
-    /// </summary>
+    /// <summary>Hidden while <c>IsEditing</c> is false, which is the default and so the non-vacuous direction.</summary>
     [Fact]
     public void InlineEditor_IsHiddenByDefault_AndItsButtonsResolveToSaveAndCancel()
     {
@@ -216,10 +188,8 @@ public class RunProgressStepRowTemplateTests
         Assert.Contains(probes, p => p.Path == "DataContext.CancelStepEditCommand");
     }
 
-    /// <summary>Both fixture rows discriminate <see cref="StepRowViewModel.IsMutable"/> at the template
-    /// level, not just on the model — the Done row's five buttons are all present but every one is
-    /// individually disabled, which the value-only reading of <c>IsEnabled</c> below is not vacuous for
-    /// (unlike the Pending row, where True is the DP default).</summary>
+    /// <summary>The Done row is where a value-only reading of <c>IsEnabled</c> is not vacuous, unlike the
+    /// Pending row where True is the DP default.</summary>
     [Fact]
     public void ADoneRow_HasAllFiveButtonsDisabled_ThroughIsMutable()
     {
@@ -232,7 +202,7 @@ public class RunProgressStepRowTemplateTests
             {
                 ctx = Build();
                 var host = new ItemsControl { ItemTemplate = ctx.Parsed.ItemTemplate, DataContext = ctx.Vm };
-                ctx.Vm.State = RunProgressState.Paused; // the group must be VISIBLE, so disablement is observable
+                ctx.Vm.State = RunProgressState.Paused; // the group must be visible for disablement to be observable
 
                 rowElement = (FrameworkElement)ctx.Parsed.ItemTemplate.LoadContent();
                 rowElement.DataContext = DoneRow();
@@ -241,9 +211,7 @@ public class RunProgressStepRowTemplateTests
             });
             WpfStaHost.Pump();
 
-            // Read Count AND every IsEnabled on the STA thread itself — a Button created there cannot be
-            // touched from the test's own thread (hazard 4's sibling: cross-thread DP access throws, it does
-            // not merely race).
+            // Read Count and every IsEnabled on the STA thread: cross-thread DP access throws, it does not race.
             var (count, allDisabled) = WpfStaHost.Run(() =>
             {
                 var buttons = ProbeVerbButtonElements(rowElement!);
@@ -306,8 +274,7 @@ public class RunProgressStepRowTemplateTests
         _ => null,
     };
 
-    /// <summary>The StackPanel wrapping the five verb buttons — identified by being the parent of the Edit
-    /// button, never by index (the row has several StackPanels).</summary>
+    /// <summary>Found as the Edit button's parent, never by index: the row has several StackPanels.</summary>
     private static FrameworkElement VerbGroupOf(FrameworkElement row)
     {
         var editButton = BindingPathWalker.FindLogical<ButtonBase>(row)
@@ -315,9 +282,7 @@ public class RunProgressStepRowTemplateTests
         return (FrameworkElement)LogicalTreeHelper.GetParent(editButton)!;
     }
 
-    /// <summary>The StackPanel wrapping the inline editor — identified by being the parent of the Save
-    /// button's own parent (Save/Cancel sit in their own horizontal StackPanel one level below the editor's
-    /// outer one), never by index.</summary>
+    /// <summary>Found two levels above the Save button, which sits in its own StackPanel inside the editor.</summary>
     private static FrameworkElement EditorPanelOf(FrameworkElement row)
     {
         var saveButton = BindingPathWalker.FindLogical<ButtonBase>(row)

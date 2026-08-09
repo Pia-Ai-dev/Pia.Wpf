@@ -13,16 +13,8 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// Covers the 1.3 Chat/Agent lever wiring (14.5 / R8 / R10 / R15) at the <see cref="AssistantViewModel"/>
-/// level: the lever resolves the <c>planned</c> flag threaded into <see cref="IChatSessionManager.StartTurnAsync"/>,
-/// the ToolScope==None defence-in-depth guard forces Chat, the global default persists on change but not on
-/// seed, reopen restores it, <c>SwitchToAgent</c> re-dispatches a goal as Planned, and the Weak-provider
-/// banner surfaces without ever blocking. The VM is constructed off any thread with a stub
-/// <see cref="System.Threading.SynchronizationContext"/>, and the lever paths never touch the WPF
-/// dispatcher — since Batch 12 that holds because an <c>InlineUiDispatcher</c> is injected, not because
-/// <c>Application.Current</c> happens to be null (<c>AssistantViewParseTests</c> creates a real one).
-/// </summary>
+/// <summary>The lever paths stay off the WPF dispatcher because an <c>InlineUiDispatcher</c> is injected, not
+/// because <c>Application.Current</c> happens to be null — another test in this assembly creates a real one.</summary>
 public class AssistantViewModelLeverTests
 {
     private readonly IChatSessionManager _manager = Substitute.For<IChatSessionManager>();
@@ -96,7 +88,6 @@ public class AssistantViewModelLeverTests
     private static Persona PersonaWith(PersonaToolScope scope) =>
         new() { Name = "Tester", SystemPrompt = "be helpful", ToolScope = scope };
 
-    /// <summary>Runs Post callbacks inline so the panel VM's projections land synchronously in these facts.</summary>
     // ---- Default + toggle -> planned wiring -------------------------------------------------------
 
     [Fact]
@@ -137,8 +128,8 @@ public class AssistantViewModelLeverTests
     [Fact]
     public async Task Send_ToolScopeNone_ForcesChatEvenWhenLeverOn()
     {
-        // Defence in depth (the lever UI already disables for a no-tools persona): a stale lever value
-        // must never plan on a persona that can't use tools.
+        // Defence in depth: the lever UI already disables for a no-tools persona, but a stale value must never
+        // plan on one.
         var vm = CreateSut();
         vm.ActivePersona = PersonaWith(PersonaToolScope.None);
         vm.AgentModeEnabled = true;
@@ -170,20 +161,20 @@ public class AssistantViewModelLeverTests
         var vm = CreateSut();
         _settings.ClearReceivedCalls();
 
-        // Mirrors the LoadPersonasAsync seed path (reopen restore) via the internal seam.
+        // Mirrors the reopen-restore seed path via the internal seam.
         vm.SeedAgentModeFromSettings(new AppSettings { AssistantAgentModeDefault = true });
 
-        Assert.True(vm.AgentModeEnabled);                       // reopen restores the persisted value
-        _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>()); // guard: seed never re-persists
+        Assert.True(vm.AgentModeEnabled);
+        _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
     }
 
-    // ---- SwitchToAgent chip (R8) -----------------------------------------------------------------
+    // ---- SwitchToAgent chip ----------------------------------------------------------------------
 
     [Fact]
     public async Task SwitchToAgent_FlipsLever_AndRedispatchesGoalAsPlanned()
     {
         var vm = CreateSut();
-        vm.InputText = "unrelated draft"; // must be left untouched (composer round-trip preserved)
+        vm.InputText = "unrelated draft"; // must be left untouched
 
         await vm.SwitchToAgentCommand.ExecuteAsync(new AgentModeSuggestion("summarise and file these", "multi-step task"));
 
@@ -205,7 +196,7 @@ public class AssistantViewModelLeverTests
             Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), Arg.Any<bool>());
     }
 
-    // ---- Weak-provider banner surfaces but never blocks (R10) ------------------------------------
+    // ---- Weak-provider banner surfaces but never blocks ------------------------------------------
 
     [Theory]
     [InlineData(PlanningCapability.Weak)]
@@ -240,9 +231,8 @@ public class AssistantViewModelLeverTests
     [Fact]
     public void ARunSettling_FlipsTheLeverBackToChat()
     {
-        // A follow-up typed after a finished run must land in the conversation, not mint a fresh run that
-        // replaces the settled header — so the live-to-terminal transition resets the lever. The inline
-        // context makes the panel VM's projections synchronous, so the transition is observable by the assert.
+        // A follow-up typed after a finished run must land in the conversation rather than mint a fresh run
+        // that replaces the settled header. The inline context makes the transition observable synchronously.
         SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
         var runId = Guid.NewGuid();
         var run = new AgentRun { Id = runId, State = AgentRunState.Running, Plan = [] };
@@ -262,8 +252,8 @@ public class AssistantViewModelLeverTests
     [Fact]
     public void AttachingToAnAlreadySettledRun_KeepsTheLever()
     {
-        // The fallback is a TRANSITION, not a state: opening a chat whose run finished long ago (history)
-        // must not touch the lever the user set.
+        // The fallback is a transition, not a state: opening a chat whose run finished long ago must not touch
+        // the lever the user set.
         SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
         var runId = Guid.NewGuid();
         var run = new AgentRun { Id = runId, State = AgentRunState.Completed, Plan = [] };
@@ -279,14 +269,13 @@ public class AssistantViewModelLeverTests
         Assert.True(vm.AgentModeEnabled);
     }
 
-    // ---- W2c: Send is blocked while a FOREIGN (headless) run is executing in this chat ----
+    // ---- Send is blocked while a foreign (headless) run is executing in this chat ----
 
     [Fact]
     public void CanSend_IsFalse_WhileAForeignRunIsExecuting()
     {
-        // The data-loss guard: a live turn here would be a SECOND full-chat writer against a headless
-        // executor that is mid-run, and its full replace deletes the run's step rows. The composer's
-        // Assistant_BackgroundRunActive_Hint line explains the disabled Send in words; this fact pins the gate.
+        // A live turn here would be a second full-chat writer against a mid-run headless executor, and its
+        // full replace deletes the run's step rows.
         var vm = CreateSut();
         vm.InputText = "hello";
         Assert.True(vm.SendMessageCommand.CanExecute(null));
@@ -312,7 +301,7 @@ public class AssistantViewModelLeverTests
     [Fact]
     public void RunInBackground_Disabled_WhileAForeignRunIsExecuting()
     {
-        // The button never offers more than Send: a foreign run disables Send, so it disables this too.
+        // The button never offers more than Send.
         var vm = CreateSut();
         vm.InputText = "a different goal";
         vm.ForeignRunActive = true;
@@ -330,13 +319,9 @@ public class AssistantViewModelLeverTests
         Assert.True(vm.SendMessageCommand.CanExecute(null));
     }
 
-    // ---- W2c: the ChatSession -> ViewModel wiring, and the two commands that also start live turns ----
+    // ---- the ChatSession -> ViewModel wiring, and the two commands that also start live turns ----
 
-    /// <summary>
-    /// A session with a two-message transcript, optionally already flagged as having a foreign run
-    /// executing — the state <c>ChatSessionManager.RestoreActiveRunAsync</c> leaves behind for a chat whose
-    /// headless run is mid-flight.
-    /// </summary>
+    /// <summary>The state a restore leaves behind for a chat whose headless run is mid-flight.</summary>
     private static ChatSession SessionWithTranscript(bool foreignRunActive)
     {
         var session = new ChatSession(
@@ -361,9 +346,8 @@ public class AssistantViewModelLeverTests
     [Fact]
     public void AttachingASessionWithAForeignRun_SeedsTheFlagOntoTheViewModel()
     {
-        // The wiring the other W2c view-model tests cannot see because they poke the property directly:
-        // delete `ForeignRunActive = session.ForeignRunActive` from AttachToActiveSession and the composer
-        // stays enabled for the whole duration of a foreign run with no red test anywhere.
+        // The wiring the sibling facts cannot see because they poke the property directly: without the seed on
+        // attach, the composer stays enabled for the whole duration of a foreign run.
         var vm = CreateSut();
         vm.InputText = "hello";
         Assert.True(vm.SendMessageCommand.CanExecute(null));
@@ -389,9 +373,8 @@ public class AssistantViewModelLeverTests
     [Fact]
     public async Task Regenerate_IsBlocked_WhileAForeignRunIsExecuting()
     {
-        // Regenerate had only an IsStreaming guard, so it was an open door through the W2c lever — and a
-        // worse one than Send: it TRUNCATES the transcript the headless run is still extending, then starts a
-        // live turn whose persist full-replaces the chat.
+        // Worse than Send: Regenerate truncates the transcript the headless run is still extending, then starts
+        // a live turn whose persist full-replaces the chat.
         var vm = CreateSut();
         var session = SessionWithTranscript(foreignRunActive: true);
         _manager.ActiveSession.Returns(session);
@@ -401,13 +384,13 @@ public class AssistantViewModelLeverTests
 
         await _manager.DidNotReceive().StartTurnAsync(
             Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), Arg.Any<bool>());
-        Assert.Equal(2, vm.Messages.Count);   // the transcript was not truncated either
+        Assert.Equal(2, vm.Messages.Count);   // not truncated either
     }
 
     [Fact]
     public async Task Regenerate_StillWorks_WithoutAForeignRun()
     {
-        // The guard must not be vacuous: the same call goes through on an ordinary chat.
+        // Non-vacuity: the same call goes through on an ordinary chat.
         var vm = CreateSut();
         var session = SessionWithTranscript(foreignRunActive: false);
         _manager.ActiveSession.Returns(session);
@@ -422,8 +405,8 @@ public class AssistantViewModelLeverTests
     [Fact]
     public async Task SwitchToAgent_IsBlocked_WhileAForeignRunIsExecuting()
     {
-        // Modeled on Send, so it needs Send's lever: it starts a live turn against the ACTIVE chat and would
-        // additionally create a second Planned run in a chat that already has one.
+        // It starts a live turn against the active chat, and would create a second Planned run in a chat that
+        // already has one.
         var vm = CreateSut();
         var session = SessionWithTranscript(foreignRunActive: true);
         _manager.ActiveSession.Returns(session);
@@ -449,22 +432,20 @@ public class AssistantViewModelLeverTests
             session, "plan my week", Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), planned: true);
     }
 
-    // ---- Dispose is unsubscribe-only, so it has to unsubscribe EVERY session event ----
+    // ---- Dispose is unsubscribe-only, so it has to unsubscribe every session event ----
 
     [Fact]
     public void Dispose_StopsReactingToForeignRunActiveChanged()
     {
-        // The manager owns session lifetime, so the session outlives the ViewModel - that is exactly what
-        // lets Assistant -> History -> Assistant not kill a running turn. Any event Dispose forgets
-        // therefore keeps the dead ViewModel in the live session's invocation list for good (one leaked
-        // ViewModel per round-trip) and its handler still runs on every foreign-run flip.
+        // The manager owns session lifetime, so the session outlives the ViewModel: any event Dispose forgets
+        // leaves the dead ViewModel in the live session's invocation list for good.
         var vm = CreateSut();
         var session = SessionWithTranscript(foreignRunActive: false);
         Activate(session);
         Assert.False(vm.ForeignRunActive);
 
         vm.Dispose();
-        session.SetForeignRunActive(true);   // false -> true, so this really does raise (the setter no-ops on equal)
+        session.SetForeignRunActive(true);   // false -> true, so this really does raise
 
         Assert.False(vm.ForeignRunActive);
     }
@@ -472,12 +453,10 @@ public class AssistantViewModelLeverTests
     [Fact]
     public void Dispose_StopsReactingToActiveRunChanged()
     {
-        // Regression guard for the sibling event, which Dispose already unsubscribes: this one is green
-        // today, and goes red if that unsubscribe is ever removed.
         var vm = CreateSut();
         var session = SessionWithTranscript(foreignRunActive: false);
         Activate(session);
-        Assert.Null(vm.ActiveRunProgress);   // attaching a run-less session leaves the panel unembedded
+        Assert.Null(vm.ActiveRunProgress);
 
         vm.Dispose();
         session.SetActiveRun(Guid.NewGuid());   // null -> an id, so this really does raise

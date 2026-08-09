@@ -6,7 +6,6 @@ using Xunit;
 
 namespace Pia.Tests.Services.Flow;
 
-/// <summary>Each source vocabulary → the single <see cref="FlowSeverity"/> target (design §8, §11).</summary>
 public class FlowSeverityMapperTests
 {
     [Theory]

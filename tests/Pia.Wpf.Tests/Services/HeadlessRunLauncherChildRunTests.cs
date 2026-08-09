@@ -5,27 +5,11 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Phase 3 R13 — the CHILD grant envelope. <c>AgentRunCreateRequest.PolicyJson</c> is opaque to the run
-/// service, so a naive child-spawn would create a run with a NULL policy, and the resume reader then widens
-/// null to the <c>{write_file}</c> floor — i.e. a child could end up WIDER than the parent that delegated to
-/// it. <see cref="HeadlessRunLauncher.NarrowForChild"/> / <c>TrySerializeChildEnvelope</c> exist to make that
-/// impossible, and these are their facts.
-/// <para>
-/// Pure static-helper coverage: no launcher instance, no <c>runsBaseDirOverride</c> harness, no disk. The
-/// launcher-driving child facts (T-CHILD-1..6 — the separate child pool, the shared workspace, the resumed
-/// child, <c>CancelAsync</c> and the chat→runs non-registration) live in <c>HeadlessRunLauncherTests</c>
-/// instead, which already owns the <c>BuildLauncher</c> harness they need.
-/// </para>
-/// </summary>
+// The resume reader widens a null policy to the {write_file} floor, so a naive child-spawn could end up WIDER than
+// the parent that delegated to it — which is what NarrowForChild exists to prevent.
 public class HeadlessRunLauncherChildRunTests
 {
-    /// <summary>
-    /// T-CHILD-ENV-1, GUARD. Containment in both directions of failure: the child's grant NAMES are a subset of
-    /// the parent's, and the child's policy CLASSES are a subset of the parent's. Rows cover every unreadable
-    /// shape the resume reader knows, plus the interactive empty envelope. Non-vacuity is asserted separately
-    /// below (a "⊆" theory is trivially satisfied when everything is empty), on both halves.
-    /// </summary>
+    // A "⊆" theory is trivially satisfied when everything is empty, so non-vacuity is asserted separately below.
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -42,9 +26,8 @@ public class HeadlessRunLauncherChildRunTests
     [InlineData("""{"v":1,"grantedWrites":[],"trigger":"User"}""")]
     public void AChildEnvelopeIsNeverWiderThanItsParents(string? parentPolicyJson)
     {
-        // The parent's own effective grants, read exactly the way a resume reads them — including the floor a
-        // parent with an unreadable envelope would itself fall back to. Comparing against the FLOOR rather than
-        // against the empty set is the strict version of the claim: a child must not reach even that.
+        // The parent's grants read the way a resume reads them, floor included: comparing against the FLOOR rather
+        // than against the empty set is the strict version of the claim.
         var parentGrants = HeadlessRunLauncher.TryRestoreGrantEnvelope(parentPolicyJson)
                            ?? HeadlessRunRequest.DefaultGrantedWrites;
         var parentPolicy = HeadlessRunLauncher.TryRestorePolicy(parentPolicyJson);
@@ -63,20 +46,14 @@ public class HeadlessRunLauncherChildRunTests
         Assert.All(restored!, g => Assert.Contains(g, parentGrants, StringComparer.OrdinalIgnoreCase));
     }
 
-    /// <summary>
-    /// The theory's last row is a hand-copied literal because an attribute argument must be constant. Pinned
-    /// against the production constant so the row cannot silently stop being the interactive envelope.
-    /// </summary>
+    // The theory's last row is hand-copied because an attribute argument must be constant; pinned here so it
+    // cannot silently stop being the interactive envelope.
     [Fact]
     public void TheInteractiveEmptyEnvelopeRowMatchesTheProductionConstant()
         => Assert.Equal(
             HeadlessRunLauncher.InteractiveEmptyEnvelopeJson,
             """{"v":1,"grantedWrites":[],"trigger":"User"}""");
 
-    /// <summary>
-    /// T-CHILD-ENV-1's non-vacuity, GUARD. At least one row must produce a NON-EMPTY child grant set and one a
-    /// non-empty child policy, or the containment theory above proves nothing: ⊆ holds for free over emptiness.
-    /// </summary>
     [Fact]
     public void TheContainmentTheoryIsNotVacuous()
     {
@@ -91,10 +68,7 @@ public class HeadlessRunLauncherChildRunTests
         Assert.True(policy.Covers(ToolClass.Todo));
     }
 
-    /// <summary>
-    /// The parent's denials pass to the child verbatim and survive the child envelope's round-trip: a denial
-    /// is a narrowing, so dropping it would let the delegate re-ask what the parent's person settled.
-    /// </summary>
+    // A denial is a narrowing, so dropping it would let the delegate re-ask what the parent's person settled.
     [Fact]
     public void ParentDenialsPassToTheChildVerbatim()
     {
@@ -107,13 +81,8 @@ public class HeadlessRunLauncherChildRunTests
         Assert.Equal("git_commit", Assert.Single(HeadlessRunLauncher.TryRestoreDeniedWritesEnvelope(childJson)));
     }
 
-    /// <summary>
-    /// T-CHILD-ENV-2, REGRESSION. An unreadable parent envelope grants the child NOTHING — not
-    /// <c>DefaultGrantedWrites</c> and not the resume floor. The discriminating half is the round-trip: the
-    /// serialized child envelope must restore to an EMPTY-BUT-PRESENT list, because the reader treats null as
-    /// "apply the floor" and present-but-empty as "granted nothing". A helper that returned an empty list but
-    /// persisted an unreadable document would still hand the child <c>{write_file}</c> at resume.
-    /// </summary>
+    // The round-trip is the discriminating half: the reader treats null as "apply the floor" and present-but-empty
+    // as "granted nothing", so an empty list persisted as an unreadable document still grants {write_file}.
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -134,11 +103,7 @@ public class HeadlessRunLauncherChildRunTests
         Assert.Empty(restored!);
     }
 
-    /// <summary>
-    /// T-CHILD-ENV-3, REGRESSION. A child is a delegate: it does the work it was asked for and it does not get
-    /// to destroy anything, so a delete-like NAME is stripped even when the parent legitimately held it. The
-    /// parent can still delete, in its own steps.
-    /// </summary>
+    // A child is a delegate: a delete-like NAME is stripped even when the parent legitimately held it.
     [Fact]
     public void DeleteLikeGrantsAreStrippedEvenWhenTheParentHeldThem()
     {
@@ -156,11 +121,8 @@ public class HeadlessRunLauncherChildRunTests
         Assert.Equal("write_file", Assert.Single(byStem));
     }
 
-    /// <summary>
-    /// T-CHILD-ENV-4, GUARD. The child envelope stays at <c>v:1</c> with additive members. The version check is
-    /// an EXACT equality (<c>envelope.V != 1</c>), so a bump makes every persisted envelope unreadable at once —
-    /// and for a grant list that is the FLOOR, i.e. a silent widening of every in-flight run.
-    /// </summary>
+    // The version check is an EXACT equality, so a bump makes every persisted envelope unreadable at once — and for
+    // a grant list that means falling back to the FLOOR, a silent widening of every in-flight run.
     [Fact]
     public void TheChildEnvelopeStaysAtV1()
     {

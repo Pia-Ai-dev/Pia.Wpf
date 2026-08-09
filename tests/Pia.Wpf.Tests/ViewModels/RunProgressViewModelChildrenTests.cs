@@ -13,9 +13,8 @@ using Xunit;
 namespace Pia.Tests.ViewModels;
 
 /// <summary>
-/// Batch 07 D17 — the panel's sub-agent list and its parent→child drill-down. Deliberately NOT a merged
-/// timeline: <c>Seq</c> is monotonic only within a run id, each child gets its own 500-event cap, and
-/// <c>CreatedAt</c> is explicitly rejected as an ordering source, so the rows are two per-run views side by side.
+/// Deliberately not a merged timeline: <c>Seq</c> is monotonic only within a run id and <c>CreatedAt</c> is
+/// rejected as an ordering source, so the rows are two per-run views side by side.
 /// </summary>
 public sealed class RunProgressViewModelChildrenTests
 {
@@ -35,10 +34,6 @@ public sealed class RunProgressViewModelChildrenTests
         _timeline.GetForRunAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new List<AgentTimelineEvent>());
     }
 
-    /// <summary>
-    /// T-CHILD-VM-1. The projection: one row per child, its state mapped through the SAME map the parent's chip
-    /// uses, its own token totals off its own ledger, and the localized "N of M finished" line.
-    /// </summary>
     [Fact]
     public async Task ChildrenAreProjectedWithStateTokensAndACount()
     {
@@ -74,10 +69,6 @@ public sealed class RunProgressViewModelChildrenTests
         Assert.Equal("Run_Children_Count:1,2", vm.ChildrenNote);
     }
 
-    /// <summary>
-    /// T-CHILD-VM-2, <b>GUARD</b>. An ordinary run delegates nothing, and the whole section stays hidden — the
-    /// panel must be byte-identical to the pre-Batch-07 one for every run a build with no persona roster produces.
-    /// </summary>
     [Fact]
     public async Task AChildlessRunShowsNothing()
     {
@@ -89,11 +80,7 @@ public sealed class RunProgressViewModelChildrenTests
         Assert.Null(vm.ChildrenNote);
     }
 
-    /// <summary>
-    /// T-CHILD-VM-3, <b>REGRESSION</b>. <c>OnRunChanged</c>'s filter must accept a CHILD's run id. Without the
-    /// widened filter every child event is dropped, the rows freeze at whatever the first projection saw, and a
-    /// fan-out renders as permanently unfinished with nothing failing.
-    /// </summary>
+    /// <summary>Without the widened filter every child event is dropped and a fan-out renders as permanently unfinished.</summary>
     [Fact]
     public async Task AChildsRunChangedIsProjected_NotFilteredOut()
     {
@@ -112,7 +99,7 @@ public sealed class RunProgressViewModelChildrenTests
             Child(childId, AgentRunState.Completed, "work", input: 5, output: 1),
         });
 
-        // The event carries the CHILD's id — the case the pre-Batch-07 filter dropped.
+        // The event carries the CHILD's id — the case the narrow filter dropped.
         _runs.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(childId, AgentRunState.Completed, null));
 
         var row = Assert.Single(vm.Children);
@@ -126,11 +113,7 @@ public sealed class RunProgressViewModelChildrenTests
         await _runs.Received(3).GetChildRunsAsync(_runId, Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// T-CHILD-VM-4, <b>REGRESSION</b>. Rows are diffed by run id, never rebuilt: a rebuild on every
-    /// <c>RunChanged</c> — and a live fan-out raises one per step, per state flip and per ledger write — would
-    /// collapse an expanded row and throw away its loaded trace under the user's cursor.
-    /// </summary>
+    /// <summary>A rebuild on every <c>RunChanged</c> would collapse an expanded row and discard its loaded trace.</summary>
     [Fact]
     public async Task RowsAreDiffedByRunId_SoAnExpandedRowSurvivesAProjection()
     {
@@ -152,11 +135,7 @@ public sealed class RunProgressViewModelChildrenTests
         Assert.True(row.IsExpanded);
     }
 
-    /// <summary>
-    /// T-CHILD-VM-5. The drill-down: expanding a row reads THAT run's trace, through the same store call and the
-    /// same off-thread hop the parent's own expander uses — and the parent's <c>Timeline</c> is untouched, which
-    /// is the observable form of "no merged ordering".
-    /// </summary>
+    /// <summary>The parent's <c>Timeline</c> is untouched, which is the observable form of "no merged ordering".</summary>
     [Fact]
     public async Task ExpandingAChildLoadsThatRunsOwnTrace_AndNotTheParents()
     {
@@ -185,10 +164,7 @@ public sealed class RunProgressViewModelChildrenTests
     }
 
     /// <summary>
-    /// T-CHILD-VM-6, <b>GUARD</b>. The child-id snapshot must be an IMMUTABLE set assigned as a whole.
-    /// <c>RunChanged</c> fires OFF the UI thread — that is this VM's whole premise — so the filter reads this
-    /// field from a pool thread while the projection writes it on the UI thread; a mutable <c>HashSet</c> here is
-    /// the exact data race <c>ChatSessionManager</c> documents for its own <c>_ownRunIds</c>. Asserted by TYPE,
+    /// <c>RunChanged</c> fires off the UI thread, so a mutable set here would be a data race; asserted by TYPE
     /// because a race is not observable in a test that would still pass on the broken shape.
     /// </summary>
     [Fact]
@@ -202,18 +178,8 @@ public sealed class RunProgressViewModelChildrenTests
     }
 
     /// <summary>
-    /// T-CHILD-VM-4 (§9.9's <c>TheChildRowCarriesNoPayload</c>), <b>GUARD</b> — specified by 07 §9.9, renumbered
-    /// away when this file shipped, and added by the Phase 3 fix pass. The sibling guard
-    /// <c>RunProgressViewModelTimelineTests.TimelineRowsCarryNoPathAndNoPayload</c> covers the trace rows NESTED
-    /// inside a child row; the child row's OWN members were unpinned.
-    /// <para>
-    /// A later convenience member — <c>LastAnswer</c>, <c>ResultText</c>, an <c>OutputPath</c> for the child's
-    /// deliverable — sourced from the child chat's last assistant message would bind into the row template and
-    /// become a route for tool-result text to reach any surface that dumps VM state. An EXACT member list rather
-    /// than a name blacklist, for the same reason the timeline guard uses one: it is its own non-vacuity control,
-    /// and it fails on ADDITION rather than only on the four names someone thought of. <c>Title</c> is on the list
-    /// and is sensitive, which is why it carries its own bound-never-logged comment at the declaration.
-    /// </para>
+    /// An EXACT member list, not a name blacklist, so a later convenience member sourced from the child chat
+    /// fails here rather than quietly becoming a route for tool-result text into a VM-state dump.
     /// </summary>
     [Fact]
     public void TheChildRowCarriesNoPayload()
@@ -224,10 +190,8 @@ public sealed class RunProgressViewModelChildrenTests
             .OrderBy(n => n, StringComparer.Ordinal)
             .ToArray();
 
-        // The exact-set form is what forces every addition through this assertion. The signal-band redesign adds
-        // two: HasTokens and TokensLabel, which are a RENDER of InputTokens + OutputTokens (both already listed)
-        // and say nothing new about the child run — in particular nothing about what it touched, which is the
-        // property this fact protects.
+        // HasTokens and TokensLabel are a render of InputTokens + OutputTokens and say nothing new about the
+        // child run — in particular nothing about what it touched.
         Assert.Equal(
             new[]
             {
@@ -237,10 +201,6 @@ public sealed class RunProgressViewModelChildrenTests
             actual);
     }
 
-    /// <summary>
-    /// T-CHILD-VM-7, <b>REGRESSION</b>. A child-read fault leaves the rows exactly as they were and never breaks
-    /// the panel — the parent's own projection still lands. Failure-isolated bookkeeping, the standing guardrail.
-    /// </summary>
     [Fact]
     public async Task AFailedChildReadLeavesTheRowsAlone_AndStillProjectsTheRun()
     {
@@ -263,10 +223,7 @@ public sealed class RunProgressViewModelChildrenTests
         Assert.Equal(RunProgressState.Completed, vm.State);           // and the run itself still projected
     }
 
-    /// <summary>
-    /// T-CHILD-VM-8, <b>REGRESSION</b>. A child trace that could not be READ says so; it never renders as the
-    /// positive claim that the child recorded no decisions — the same standard the parent's trace is held to.
-    /// </summary>
+    /// <summary>A trace that could not be read must never render as the positive claim that the child recorded no decisions.</summary>
     [Fact]
     public async Task AFailedChildTraceReadSaysSo_AndIsNotAnEmptyTrace()
     {
@@ -290,17 +247,8 @@ public sealed class RunProgressViewModelChildrenTests
     }
 
     /// <summary>
-    /// T-CHILD-VM-5 (Batch 07 G8), <b>REGRESSION</b>. A parent parked at
-    /// <see cref="AgentRunState.WaitingForChildren"/> projects its OWN state and offers no Continue.
-    /// <para>
-    /// Both halves matter. Without the explicit <c>MapState</c> arm the state falls through the default to
-    /// <see cref="RunProgressState.Running"/>, hiding that the work moved to the children — and the header would
-    /// read from the label converter's fall-through, i.e. "Completed", on a run that is still going. And
-    /// <c>CanContinue</c> must stay false: this park is not a user affordance, and the resume CAS only ever
-    /// claims <see cref="AgentRunState.WaitingForInput"/>, so a Continue here would silently no-op.
-    /// </para>
-    /// Neutralize: delete the <c>AgentRunState.WaitingForChildren</c> arm from <c>MapState</c> — the state and
-    /// the activity line both red.
+    /// Without an explicit <c>MapState</c> arm the state falls through to Running, and <c>CanContinue</c> must
+    /// stay false because the resume CAS only ever claims <see cref="AgentRunState.WaitingForInput"/>.
     /// </summary>
     [Fact]
     public async Task WaitingForChildren_ProjectsItsOwnStateAndDoesNotOfferContinue()
@@ -349,6 +297,4 @@ public sealed class RunProgressViewModelChildrenTests
         DurationMs: 5,
         CreatedAt: DateTime.UtcNow,
         ToolCallId: null, Round: null, StepOrdinal: null, RequestedAt: null, DecidedAt: null);
-
-    /// <summary>Runs Post callbacks inline so the projection is observable synchronously.</summary>
 }

@@ -9,19 +9,8 @@ using Xunit;
 namespace Pia.Tests.Services;
 
 /// <summary>
-/// T2-7b — consuming an MCP server's <c>ToolAnnotations</c> in the MORE-RESTRICTED DIRECTION ONLY.
-/// <para>
-/// Two properties, and the second is the one worth a file: a server CAN make its own tool stricter, and a
-/// server CANNOT make one safer. The second is not a hypothetical — <c>ReadOnlyHint</c> exists precisely as a
-/// "this tool is harmless" claim, and honouring it from a stdio subprocess running with full user privileges
-/// outside <c>SafeFolderPath</c> (<c>17-trust-model.md</c> §2) would be a self-service exemption from the gate.
-/// </para>
-/// <para>
-/// The other half is the DEFAULT. MCP's spec says an unspecified <c>destructiveHint</c> should be assumed
-/// <c>true</c>; taking that literally here would mark every tool of every annotation-less server destructive,
-/// i.e. refuse all unattended MCP and drop interactive auto-approval everywhere. Absence therefore means
-/// "no hint", and this file pins it so nobody "fixes" it into spec-compliance without seeing the cost.
-/// </para>
+/// A server's <c>ToolAnnotations</c> are honoured only in the more-restricted direction, and an unspecified
+/// <c>destructiveHint</c> deliberately means "no hint" rather than the spec's "assume true".
 /// </summary>
 public class McpToolAnnotationHintTests
 {
@@ -54,10 +43,6 @@ public class McpToolAnnotationHintTests
             new ToolAnnotations { DestructiveHint = true }));
     }
 
-    /// <summary>
-    /// The spec's "null ⇒ assume true" default is deliberately NOT applied — including in the shape that
-    /// triggers it most often, a server that says only "I modify my environment".
-    /// </summary>
     [Fact]
     public void AnUnspecifiedDestructiveHint_IsNoHint_EvenWhenTheToolSaysItWrites()
     {
@@ -69,16 +54,12 @@ public class McpToolAnnotationHintTests
     [Fact]
     public void AnExplicitlyNonDestructiveHint_ChangesNothing()
     {
-        // "destructiveHint: false" is a safety claim, and a safety claim is exactly what may not be honoured:
-        // it must not be able to clear a delete-like NAME either (see TheHintCannotClearADeleteLikeName).
+        // "destructiveHint: false" is a safety claim, and a safety claim is exactly what may not be honoured.
         Assert.False(McpPluginToolHandler.IsServerDeclaredDestructive(
             new ToolAnnotations { DestructiveHint = false }));
     }
 
-    /// <summary>
-    /// A contradictory pair resolves to the STRICTER reading. <c>readOnlyHint: true</c> beside
-    /// <c>destructiveHint: true</c> is either a buggy server or a hostile one; both are handled the same way.
-    /// </summary>
+    /// <summary>A contradictory pair resolves to the stricter reading — a buggy server and a hostile one are handled alike.</summary>
     [Fact]
     public void ReadOnlyHint_CannotCancelADestructiveHint()
     {
@@ -88,11 +69,6 @@ public class McpToolAnnotationHintTests
 
     // ---- the gate: what the declaration actually changes ----------------------------------------------
 
-    /// <summary>
-    /// The floor. Unattended, a NAMED grant for a benign-looking external tool auto-runs it today — that is the
-    /// scheduled-job grant path — and the server's declaration is what turns it into the same hard denial a
-    /// delete-NAMED external tool already gets.
-    /// </summary>
     [Fact]
     public void Unattended_ADeclaredDestructiveExternalTool_IsRefusedEvenWithANamedGrant()
     {
@@ -107,10 +83,7 @@ public class McpToolAnnotationHintTests
         Assert.Equal(ToolGateDecision.DeniedDestructiveFloor, after.Decision);
     }
 
-    /// <summary>
-    /// The floor is evaluated before the POLICY arm, so a run whose autonomy policy covers External cannot
-    /// reach an auto-approval past the declaration either.
-    /// </summary>
+    /// <summary>The floor is evaluated before the policy arm.</summary>
     [Fact]
     public void Unattended_APolicyCoveringTheClass_DoesNotLiftTheDeclaration()
     {
@@ -126,11 +99,7 @@ public class McpToolAnnotationHintTests
         Assert.Equal(ToolGateDecision.DeniedDestructiveFloor, after.Decision);
     }
 
-    /// <summary>
-    /// Interactively the floor SUPPRESSES auto-approval and still prompts — today's semantics for a
-    /// delete-named external tool, deliberately not tightened. The human sees the card (now carrying the
-    /// destructive warning) and may still allow it once.
-    /// </summary>
+    /// <summary>Interactively the floor suppresses auto-approval but still prompts, so the human may allow it once.</summary>
     [Fact]
     public void Interactive_ADeclaredDestructiveExternalTool_PromptsInsteadOfAutoRunning()
     {
@@ -143,11 +112,7 @@ public class McpToolAnnotationHintTests
         Assert.Equal(ToolGateOutcome.Prompt, after.Outcome);
     }
 
-    /// <summary>
-    /// hermes #15's session tier is above the standing grant and below the floor; the declaration must reach it
-    /// too, or "Allow for this session" would be the widest authority on offer for the one tool the server
-    /// itself flagged.
-    /// </summary>
+    /// <summary>The session tier sits above the standing grant and below the floor, so the declaration must reach it too.</summary>
     [Fact]
     public void Interactive_ASessionGrant_DoesNotLiftTheDeclaration()
     {
@@ -171,15 +136,10 @@ public class McpToolAnnotationHintTests
         Assert.Equal(ToolGateDecision.DeniedDestructiveFloor, after.Decision);
     }
 
-    /// <summary>
-    /// THE asymmetry, stated as a fact rather than a comment: the hint may only be believed one way. A server
-    /// declaring its <c>delete_everything</c> tool non-destructive gets nothing.
-    /// </summary>
     [Fact]
     public void TheHintCannotClearADeleteLikeName()
     {
-        // false is what IsServerDeclaredDestructive returns for `destructiveHint: false` — i.e. the loosening
-        // claim reaches the gate as "no hint", and the NAME rule still refuses the call.
+        // A loosening claim reaches the gate as "no hint", which is what false stands for here.
         var verdict = ToolAutonomy.Resolve(new ToolGateInput(
             ToolGateSurface.Unattended, "delete_everything", ToolClass.External,
             ServerDeclaredDestructive: false,
@@ -204,10 +164,6 @@ public class McpToolAnnotationHintTests
         Assert.False(ToolAutonomy.IsSessionGrantOfferable(BenignExternalTool, serverDeclaredDestructive: true));
     }
 
-    /// <summary>
-    /// The CARD, which is where a human meets the declaration: it must render the destructive warning and stop
-    /// offering the one-click standing grant — the same answer the gate now gives.
-    /// </summary>
     [Fact]
     public void TheCard_WarnsAndWithdrawsTheStandingGrantOffer()
     {

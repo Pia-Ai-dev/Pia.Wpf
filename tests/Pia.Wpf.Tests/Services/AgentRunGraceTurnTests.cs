@@ -12,13 +12,8 @@ using Xunit;
 namespace Pia.Tests.Services;
 
 /// <summary>
-/// T2-18 — the grace turn on a BUDGET park. One tool-free wrap-up round before the run parks, so the chat a
-/// person opens later ends with "here is where I got to".
-/// <para>
-/// The facts that matter are the ones about what must NOT change: the park still happens when the grace turn
-/// throws, no turn is spent on an already-cancelled run, and an executor that spends none (the interface default,
-/// which is what <c>LiveTurnExecutor</c> keeps) parks exactly as it did before this existed.
-/// </para>
+/// One tool-free wrap-up round before a BUDGET park, so the chat a person opens later ends with "here is where I
+/// got to" — and the park still happens when that round throws.
 /// </summary>
 public sealed class AgentRunGraceTurnTests
 {
@@ -51,11 +46,7 @@ public sealed class AgentRunGraceTurnTests
             => Task.FromResult(PlanResult.Fallback);
     }
 
-    /// <summary>
-    /// A minimal executor that RECORDS whether the grace turn was asked for. It overrides the interface's
-    /// defaulted member; the executor in <c>GraceTurnIsNotSpentByAnExecutorThatDoesNotWantOne</c> deliberately
-    /// does not.
-    /// </summary>
+    // Records whether the grace turn was asked for, by overriding the interface's defaulted member.
     private class ParkingExecutor : IAgentTurnExecutor
     {
         public List<string> Executed { get; } = [];
@@ -201,14 +192,12 @@ public sealed class AgentRunGraceTurnTests
         var final = await h.Runs.GetAsync(run.Id, Ct);
         Assert.Equal(AgentRunState.WaitingForInput, final!.State);
         Assert.Contains("step-cap", final.ExtraJson ?? string.Empty);
-        // The wrap-up's tokens are real spend and are billed run-level, like every other non-step turn (I1).
+        // The wrap-up's tokens are real spend and are billed run-level, like every other non-step turn.
         Assert.Contains("\"inputTokens\":30", final.LedgerJson ?? string.Empty);
         Assert.Contains("\"outputTokens\":7", final.LedgerJson ?? string.Empty);
     }
 
-    /// <summary>
-    /// A courtesy round must never cost the park. This is the fact that makes the feature safe to have at all.
-    /// </summary>
+    // A courtesy round must never cost the park.
     [Fact]
     public async Task AThrowingGraceTurn_StillParksTheRun()
     {
@@ -223,7 +212,7 @@ public sealed class AgentRunGraceTurnTests
         var final = await h.Runs.GetAsync(run.Id, Ct);
         Assert.Equal(AgentRunState.WaitingForInput, final!.State);
         Assert.Contains("step-cap", final.ExtraJson ?? string.Empty);
-        Assert.True(exec.PausedCalled); // the non-terminal release hook still ran (guardrail 5)
+        Assert.True(exec.PausedCalled); // the non-terminal release hook still ran
         Assert.Null(final.CompletedAt);
     }
 
@@ -246,10 +235,8 @@ public sealed class AgentRunGraceTurnTests
         Assert.True(exec.PausedCalled);
     }
 
-    /// <summary>
-    /// The interface default. Ten hand-written fakes and <c>LiveTurnExecutor</c> take this path, so it is the
-    /// one that must be indistinguishable from the pre-T2-18 loop.
-    /// </summary>
+    // The interface default: ten hand-written fakes and LiveTurnExecutor take this path, so it must stay
+    // indistinguishable from the loop as it was before the grace turn existed.
     [Fact]
     public async Task GraceTurnIsNotSpentByAnExecutorThatDoesNotWantOne()
     {
@@ -270,15 +257,8 @@ public sealed class AgentRunGraceTurnTests
         Assert.Contains("\"outputTokens\":0", final.LedgerJson ?? string.Empty);
     }
 
-    /// <summary>
-    /// THE property that keeps the budget cap from becoming advisory: the real
-    /// <see cref="HeadlessTurnExecutor"/>'s grace turn is sent NO tools. The run has just been told its budget is
-    /// spent; a wrap-up turn that could still call <c>write_file</c> would be an extra action past the cap.
-    /// <para>
-    /// Non-vacuous by construction: the same fixture asserts the STEP turn was handed the tool list, so a
-    /// harness where tools were globally off could not pass this.
-    /// </para>
-    /// </summary>
+    // The real executor's grace turn is sent NO tools: the run's budget is already spent, so a wrap-up that could
+    // still call write_file would be an action past the cap.
     [Fact]
     public async Task TheHeadlessGraceTurn_IsSentNoTools()
     {
@@ -399,12 +379,8 @@ public sealed class AgentRunGraceTurnTests
         }
     }
 
-    /// <summary>
-    /// A grace turn that produced NOTHING must not be announced as a wrap-up. The headless executor's exchange
-    /// engine turns a cancellation (including this feature's own 90 s bound) and a provider fault into a
-    /// RETURNED failure result rather than a throw, so the orchestrator's null check is always false there —
-    /// reading it as "there is a wrap-up" put a false statement in the support log of the very run it describes.
-    /// </summary>
+    // The exchange engine turns a cancellation or a provider fault into a RETURNED failure result rather than a
+    // throw, so a null check alone would log a wrap-up that never happened.
     [Fact]
     public async Task AGraceTurnThatFailed_IsNotLoggedAsAWrapUp()
     {

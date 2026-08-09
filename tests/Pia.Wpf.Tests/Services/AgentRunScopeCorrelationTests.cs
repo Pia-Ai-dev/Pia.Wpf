@@ -10,17 +10,9 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// T2-18 — the run/step logging scopes the orchestrator opens. <c>ScopeRenderingLoggerProviderTests</c> proves the
-/// SINK renders a scope; this proves the run loop actually opens one, with the ids a person can correlate on.
-/// <para>
-/// The ordinal, not the step id, is the step scope's value: the plan, the run panel and the audit table all show
-/// the ordinal, so it is what a log line has to be matched against.
-/// </para>
-/// </summary>
+// The step scope's value is the ordinal, not the step id: the plan, run panel and audit table all show the ordinal.
 public sealed class AgentRunScopeCorrelationTests
 {
-    /// <summary>Records what was pushed and what was open at each line — the two questions this file asks.</summary>
     private sealed class ScopeRecordingLogger : ILogger<AgentRunOrchestrator>
     {
         private readonly AsyncLocal<ImmutableStackish?> _open = new();
@@ -39,7 +31,6 @@ public sealed class AgentRunScopeCorrelationTests
 
         public List<string> Pushed { get; } = [];
 
-        /// <summary>Every logged line, prefixed with the scopes open at the time (outermost first).</summary>
         public List<string> Lines { get; } = [];
 
         public IDisposable BeginScope<TState>(TState state) where TState : notnull
@@ -75,7 +66,6 @@ public sealed class AgentRunScopeCorrelationTests
             Lines.Add((parts.Count == 0 ? "" : "[" + string.Join(" ", parts) + "] ") + formatter(state, exception));
         }
 
-        /// <summary>What was open when <paramref name="predicate"/> matched a line.</summary>
         public string? LineMatching(Func<string, bool> predicate) => Lines.FirstOrDefault(predicate);
     }
 
@@ -95,7 +85,6 @@ public sealed class AgentRunScopeCorrelationTests
             => Task.FromResult(PlanResult.Fallback);
     }
 
-    /// <summary>Logs from INSIDE the step turn, which is where the step scope has to be visible.</summary>
     private sealed class LoggingExecutor : IAgentTurnExecutor
     {
         private readonly ILogger _logger;
@@ -150,16 +139,13 @@ public sealed class AgentRunScopeCorrelationTests
             await orchestrator.RunAsync(run, new LoggingExecutor(logger), Persona(), Provider(),
                 RunProfile.Interactive, ct);
 
-            // The run scope carries the run id, and the step scope its ORDINAL.
             Assert.Contains($"run {run.Id}", logger.Pushed);
             Assert.Contains("step 0", logger.Pushed);
 
-            // Nesting, read off a line written from INSIDE the step turn: this is the fact a wrong scope
-            // placement (or a scope opened around the wrong call) breaks.
+            // Read off a line written from inside the step turn, which is where the nesting has to hold.
             var stepLine = logger.LineMatching(l => l.EndsWith("executing the step turn"));
             Assert.Equal($"[run {run.Id} step 0] executing the step turn", stepLine);
 
-            // And the step scope CLOSED with the step: a run-level line after it carries the run scope only.
             var endLine = logger.LineMatching(l => l.EndsWith("ending the run"));
             Assert.Equal($"[run {run.Id}] ending the run", endLine);
         }

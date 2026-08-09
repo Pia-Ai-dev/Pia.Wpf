@@ -9,14 +9,7 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// T2-18 — the per-job run history, which is a QUERY over the run rows rather than a new table. Before this,
-/// `ScheduledJobs.LastResultEntryId` was the only record of a firing and it is overwritten on every one.
-/// <para>
-/// The facts worth the file are the exclusions: a CHILD run (null <c>TriggerRef</c>) is not a firing of its
-/// parent's job, a PARKED run is not a firing outcome at all, and another job's runs never leak in.
-/// </para>
-/// </summary>
+/// <summary>The per-job firing history is a query over the run rows; <c>ScheduledJobs.LastResultEntryId</c> keeps only the latest.</summary>
 public sealed class ScheduledJobRunHistoryTests : IDisposable
 {
     private readonly string _dir;
@@ -133,11 +126,7 @@ public sealed class ScheduledJobRunHistoryTests : IDisposable
         Assert.Equal(mineRun.Id, history[0].RunId);
     }
 
-    /// <summary>
-    /// A PARKED firing is absent, the same predicate <c>GetLatestSettledFiringsAsync</c> uses: it has no settle
-    /// instant to order or label it by, and it is still live — the run panel is where a run waiting for a person
-    /// belongs.
-    /// </summary>
+    /// <summary>A parked firing has no settle instant to order or label it by, and it is still live.</summary>
     [Fact]
     public async Task AParkedFiring_IsNotHistoryYet()
     {
@@ -151,10 +140,7 @@ public sealed class ScheduledJobRunHistoryTests : IDisposable
         Assert.Equal(settled.Id, history[0].RunId);
     }
 
-    /// <summary>
-    /// A delegated CHILD run carries a null <c>TriggerRef</c> by design (07 D7), so a fan-out cannot inflate its
-    /// parent job's history with runs the schedule never fired.
-    /// </summary>
+    /// <summary>A delegated child run carries a null <c>TriggerRef</c> by design, so a fan-out cannot inflate its parent job's history.</summary>
     [Fact]
     public async Task ChildRuns_AreNotFiringsOfTheParentsJob()
     {

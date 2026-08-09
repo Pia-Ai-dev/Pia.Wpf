@@ -11,27 +11,6 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Batch 07 D7 — the fan-out. A plan step marked with a <c>parallelGroup</c> is not executed in-process: the
-/// whole group is dispatched as sibling CHILD runs on a SEPARATE concurrency pool and awaited, so siblings run
-/// in parallel while the parent waits. These facts drive the real <see cref="AgentRunOrchestrator"/> against a
-/// real SQLite <see cref="AgentRunService"/>, with a launcher double that creates real child run ROWS — because
-/// every decision the loop makes after the wait is read off those rows and not off the handle.
-/// <para>
-/// Batch 07 G8 has since landed, so the parent PARKS in the persisted <see cref="AgentRunState.WaitingForChildren"/>
-/// state for the span of the wait and leaves it through a CAS. The two facts for that are
-/// <see cref="TwoSiblingsLaunchInParallel_AndTheParentParksInWaitingForChildren"/> and
-/// <see cref="WhenTheParentIsNoLongerWaiting_TheLoopStopsInsteadOfResurrectingIt"/>; the cancellation check
-/// after the wait still has its own fact, because it runs BEFORE the CAS and owns a different case (this loop
-/// still owns the run and must settle it Cancelled itself).
-/// </para>
-/// <para>
-/// NUMBERING, so nobody "fixes" it: G8 numbered its two appended facts in ITS OWN sequence, so a second T-FAN-4
-/// (the park) and a second T-FAN-10 (the lost CAS) exist alongside G10's. They are deliberately NOT renumbered —
-/// G8's commit message names T-FAN-10 by number and a renumber would leave that message pointing at nothing.
-/// Every doc comment says which group's numbering it carries; G10's own sequence runs 1–16.
-/// </para>
-/// </summary>
 public sealed class AgentRunOrchestratorFanOutTests
 {
     private static Persona Persona() => new() { Name = "Pia", SystemPrompt = "sys" };
@@ -41,9 +20,7 @@ public sealed class AgentRunOrchestratorFanOutTests
     private static StepTurnResult Ok(string text = "done") =>
         new(true, false, null, text, null, Guid.NewGuid(), Guid.NewGuid());
 
-    /// <summary>A plan whose steps carry the <c>{"parallelGroup":N}</c> marker the planner writes — the same
-    /// document shape, produced through <see cref="JsonSerializer"/> rather than hand-typed, so a producer
-    /// change cannot leave these facts asserting a stale spelling.</summary>
+    // The parallelGroup marker is serialized, not hand-typed, so a producer change cannot leave a stale spelling here.
     private static List<AgentStep> MakeSteps(params (string Intent, int? Group)[] steps)
     {
         var result = new List<AgentStep>();
@@ -93,8 +70,6 @@ public sealed class AgentRunOrchestratorFanOutTests
 
         public bool PausedCalled { get; private set; }
 
-        /// <summary>What this executor publishes onto <c>ctx.WorkspaceRoot</c> in <c>BeginRunAsync</c>, exactly
-        /// as both real executors do — and therefore the root the fan-out hands its children.</summary>
         public string? WorkspaceRoot { get; set; }
 
         public Task BeginRunAsync(AgentRun run, RunContext ctx, CancellationToken ct)
@@ -122,17 +97,12 @@ public sealed class AgentRunOrchestratorFanOutTests
         }
     }
 
-    /// <summary>What one <c>LaunchChildAsync</c> call was asked for, plus the row it created.</summary>
     private sealed record Dispatch(
         HeadlessRunRequest Request, Guid ParentRunId, string? ParentPolicyJson, string? ParentWorkspaceRoot,
         Guid? PersonaId, Guid ChildRunId, Guid ChatId, Task Completion);
 
-    /// <summary>
-    /// Launcher double that behaves like the real one in the two ways these facts depend on: it creates a REAL
-    /// child run row (with <c>ParentRunId</c> set, through the real service, so <c>GetChildRunsAsync</c> and the
-    /// per-child re-read see it) and its <c>Completion</c> settles on a budget PAUSE as well as on a terminal
-    /// state — which is the whole reason the parent must re-read the row instead of trusting the handle.
-    /// </summary>
+    // Like the real launcher, Completion settles on a budget pause too, not only on a terminal state — which is
+    // why the parent must re-read the row instead of trusting the handle.
     private sealed class FakeChildLauncher : IHeadlessRunLauncher
     {
         private readonly AgentRunService _runs;
@@ -148,33 +118,23 @@ public sealed class AgentRunOrchestratorFanOutTests
 
         public List<Guid> Cancelled { get; } = new();
 
-        /// <summary>Held children: every child waits on this before settling, so a test can observe the parent
-        /// inside the wait. Null ⇒ settle immediately.</summary>
+        // Every child waits on this before settling, so a test can observe the parent inside the wait; null ⇒ settle at once.
         public TaskCompletionSource? Gate { get; set; }
 
-        /// <summary>Signalled once every dispatched child has entered its wait.</summary>
         public TaskCompletionSource AllDispatched { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        /// <summary>How many children must enter the wait before <see cref="AllDispatched"/> fires.</summary>
         public int ExpectedChildren { get; set; } = int.MaxValue;
 
-        /// <summary>The state each child settles in, in dispatch order; the default is Completed.</summary>
         public Queue<AgentRunState> Outcomes { get; } = new();
 
-        /// <summary>Tokens each child accrues into its OWN ledger before settling — the roll-up's input.</summary>
         public UsageDetails? ChildUsage { get; set; }
 
-        /// <summary>How many PER-STEP ledger entries each child writes before settling, i.e. how many steps the
-        /// child itself executed. Nothing the parent reads may depend on this — that is exactly the point of
-        /// <see cref="TheParentsEnforcedBudgetCountsItsOwnStepsOnly_NeverItsChildrens"/>. Zero by default, so
-        /// every other fact in this file is untouched.</summary>
+        // Per-step ledger entries each child writes; zero by default so every other fact here is untouched.
         public int ChildStepEntries { get; set; }
 
-        /// <summary>The assistant answer written into each child's chat, or null to write none.</summary>
         public string? ChildAnswer { get; set; }
 
-        /// <summary>When set, <c>LaunchChildAsync</c> throws for the CALL at this index (0-based). Counted per
-        /// call and not per successful dispatch, or one configured fault would repeat for every later sibling.</summary>
+        // Counted per CALL, not per successful dispatch, or one configured fault would repeat for every later sibling.
         public int? ThrowForIndex { get; set; }
 
         private int _entered;
@@ -233,7 +193,6 @@ public sealed class AgentRunOrchestratorFanOutTests
             if (ChildUsage is not null)
                 await _runs.AddUsageAsync(childRunId, null, ChildUsage, CancellationToken.None);
 
-            // The child's own per-step ledger — what a run that executed N steps looks like from the outside.
             for (var i = 0; i < ChildStepEntries; i++)
             {
                 await _runs.AddUsageAsync(
@@ -344,15 +303,6 @@ public sealed class AgentRunOrchestratorFanOutTests
         }
     }
 
-    /// <summary>
-    /// T-FAN-1, <b>REGRESSION</b>. The headline: two steps sharing a <c>parallelGroup</c> are dispatched as
-    /// child runs instead of executed in-process, both are awaited, both settle Done, and the run completes
-    /// with its ordinary sequential step still running in-process.
-    /// <para>
-    /// The <c>DoesNotContain</c> legs are the discriminating half: without them a loop that ran the group
-    /// in-process AND also dispatched children would pass every other assertion here.
-    /// </para>
-    /// </summary>
     [Fact]
     public async Task AParallelGroupIsDispatchedAsChildRuns_AwaitedAndMarkedDone()
     {
@@ -369,7 +319,6 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.Equal(2, launcher.Dispatches.Count);
         Assert.All(launcher.Dispatches, d => Assert.Equal(run.Id, d.ParentRunId));
 
-        // The delegated steps ran ELSEWHERE; only the sequential one ran in-process.
         Assert.Equal(["c"], exec.Executed);
         Assert.DoesNotContain("a", exec.Executed);
         Assert.DoesNotContain("b", exec.Executed);
@@ -378,15 +327,10 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.Equal(AgentRunState.Completed, final!.State);
         Assert.All(final.Plan, s => Assert.Equal(AgentStepStatus.Done, s.Status));
 
-        // No orphans (D16): the parent cannot leave the wait while a child's dispatch task is still live.
+        // No orphans: the parent cannot leave the wait while a child's dispatch task is still live.
         Assert.All(launcher.Dispatches, d => Assert.True(d.Completion.IsCompleted));
     }
 
-    /// <summary>
-    /// T-FAN-2, <b>GUARD</b>. No launcher injected ⇒ no delegation, ever. This is what keeps every existing
-    /// orchestrator fact — all of which construct the type positionally without a launcher — asserting the
-    /// pre-Batch-07 loop, and it is the shape a build whose DI never registered a launcher would run in.
-    /// </summary>
     [Fact]
     public async Task WithNoLauncher_AParallelGroupRunsInProcess()
     {
@@ -403,11 +347,8 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.Equal(AgentRunState.Completed, (await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken))!.State);
     }
 
-    /// <summary>
-    /// T-FAN-3, <b>GUARD</b> (D11). A group of ONE is not a fan-out. Without this a model that stamped
-    /// <c>parallelGroup: 1</c> on every step of a linear plan would turn it into N sequential child runs — all
-    /// of delegation's cost, none of its parallelism.
-    /// </summary>
+    // A group of one is not a fan-out: otherwise a linear plan stamped parallelGroup on every step becomes N
+    // sequential child runs — all of delegation's cost, none of its parallelism.
     [Fact]
     public async Task AGroupOfOneRunsInProcess()
     {
@@ -425,11 +366,8 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.Equal(["a", "b"], exec.Executed);
     }
 
-    /// <summary>
-    /// T-FAN-4, <b>REGRESSION</b> (§7.5's depth guard). A run that is ITSELF a child never delegates. One line,
-    /// and it is what bounds the wall clock, the child-pool pressure and the scheduled-job <c>_runLock</c> hold
-    /// to a single level — without it a plan shaped like a tree multiplies R15 by its depth.
-    /// </summary>
+    // A child never delegates further: that depth guard is what bounds wall clock, child-pool pressure and the
+    // scheduled-job lock hold to a single level.
     [Fact]
     public async Task AChildRunNeverDelegatesFurther()
     {
@@ -445,15 +383,9 @@ public sealed class AgentRunOrchestratorFanOutTests
             child, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
 
         Assert.Empty(launcher.Dispatches);
-        Assert.Equal(["a", "b"], exec.Executed); // the group ran in-process instead
+        Assert.Equal(["a", "b"], exec.Executed);
     }
 
-    /// <summary>
-    /// T-FAN-5, <b>REGRESSION</b> (D15). The PERSISTED ledger nests: each settled child's token totals are
-    /// pushed into the parent's run-level ledger exactly once. The per-step half is the discriminating one —
-    /// the push is <c>stepId: null</c> on purpose, because the parent ran no turn for that step and a per-step
-    /// entry would claim it spent tokens it never did.
-    /// </summary>
     [Fact]
     public async Task ASettledChildsTokensRollUpIntoTheParentsLedger_RunLevelOnly()
     {
@@ -480,17 +412,12 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.All(children, c =>
             Assert.Equal(100, JsonDocument.Parse(c.LedgerJson!).RootElement.GetProperty("inputTokens").GetInt64()));
 
-        // Run-level, not per-step: no ledger entry exists for either delegated step.
+        // Run-level, not per-step: the parent ran no turn for a delegated step, so a per-step entry would claim
+        // tokens it never spent.
         var perStep = ledger.GetProperty("perStep");
         Assert.Equal(0, perStep.GetArrayLength());
     }
 
-    /// <summary>
-    /// T-FAN-6, <b>REGRESSION</b> (§0.9/D13). <c>HeadlessRunHandle.Completion</c> settles on a budget PAUSE too,
-    /// so a parent that treated it as terminality would mark the step Done, roll up a PARTIAL ledger and carry
-    /// on while the child sat parked and resumable. The step stays Pending, the parent re-parks itself, and
-    /// nothing is rolled up.
-    /// </summary>
     [Fact]
     public async Task AParkedChildLeavesItsStepPending_AndReParksTheParent_WithNoRollUp()
     {
@@ -523,12 +450,6 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.Equal(40, ledger.GetProperty("inputTokens").GetInt64());
     }
 
-    /// <summary>
-    /// T-FAN-7, <b>REGRESSION</b>. A failed child is an ordinary failed step: it feeds the SHARED replan budget
-    /// through the same branch an in-process failure takes (the extraction that made both paths share one copy
-    /// of it is what this pins). The replan's failure reason names the delegation, so the model is told what
-    /// actually happened.
-    /// </summary>
     [Fact]
     public async Task AFailedChildFeedsTheOrdinaryReplanPath()
     {
@@ -555,16 +476,6 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.Contains(final.Plan, s => s.Title == "a" && s.Status == AgentStepStatus.Done);
     }
 
-    /// <summary>
-    /// T-FAN-8, <b>REGRESSION</b> (D16). Cancellation cascades through the EXISTING linked CTS and leaves no
-    /// orphan. Three claims in one, because they are only meaningful together: every dispatched child is
-    /// cancelled, the parent does NOT return until every child's dispatch task has unwound, and the parent
-    /// settles <c>Cancelled</c> rather than resurrecting itself with the next blind state write.
-    /// <para>
-    /// That last one is the check standing in for the missing <c>TryEndChildWaitAsync</c> CAS. Remove it and
-    /// the drain loop's next <c>SetStateAsync(Running)</c> flips this run back out of a terminal state.
-    /// </para>
-    /// </summary>
     [Fact]
     public async Task CancellingTheParentCascadesToEveryChild_WithNoOrphanAndNoResurrection()
     {
@@ -600,20 +511,8 @@ public sealed class AgentRunOrchestratorFanOutTests
             c => Assert.Equal(AgentRunState.Cancelled, c.State));
     }
 
-    /// <summary>
-    /// T-FAN-4 (Batch 07 G8), <b>REGRESSION</b>. Siblings launch in PARALLEL and the parent parks in the
-    /// persisted <see cref="AgentRunState.WaitingForChildren"/> state for the span of the wait, with its ledger
-    /// work segment CLOSED — it is not working, its children are, and each bills its own time.
-    /// <para>
-    /// Both halves are asserted from inside the wait, while the launcher gate holds both children. The
-    /// parallelism claim is that neither completion has resolved at the moment the second child was dispatched
-    /// (awaiting each child before launching the next would make that impossible); the park claim is the
-    /// persisted row, which is the only thing a restart can see.
-    /// </para>
-    /// Neutralize: drop the <c>SafeBeginChildWait</c> call — the row reads <c>Planning</c>/<c>Running</c> inside
-    /// the wait and the segment stays open, so a restart would sweep it to Cancelled (which is the defect this
-    /// group closes).
-    /// </summary>
+    // The park is asserted off the persisted row, which is the only thing a restart can see: left unparked, the
+    // sweep would take a waiting parent to Cancelled.
     [Fact]
     public async Task TwoSiblingsLaunchInParallel_AndTheParentParksInWaitingForChildren()
     {
@@ -653,20 +552,8 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.All(final.Plan, s => Assert.Equal(AgentStepStatus.Done, s.Status));
     }
 
-    /// <summary>
-    /// T-FAN-10 (Batch 07 G8), <b>REGRESSION</b>. The un-park is a CAS, and losing it stops the loop instead of
-    /// resurrecting the run. Here another writer settles the parent <c>Cancelled</c> while its children work —
-    /// a chat delete, a cascade cancel from a sibling window, or another process's startup reconcile.
-    /// <para>
-    /// The trailing sequential step is the discriminator: if the loop carried on it would execute <c>"c"</c> and
-    /// write <c>Completed</c> over a <c>Cancelled</c> row (R11's resurrection). The external token is NEVER
-    /// cancelled here on purpose, so the pre-existing cancellation check cannot cover this case — only the CAS
-    /// can. The executor still gets its non-terminal release, because for a Live run nothing else clears the
-    /// session's <c>IsStreaming</c>.
-    /// </para>
-    /// Neutralize: ignore <c>SafeTryEndChildWait</c>'s result (or make it a blind write) — <c>"c"</c> runs and
-    /// the run ends <c>Completed</c>.
-    /// </summary>
+    // The external token is deliberately never cancelled here, so only the un-park CAS can stop the loop from
+    // writing Completed over a Cancelled row.
     [Fact]
     public async Task WhenTheParentIsNoLongerWaiting_TheLoopStopsInsteadOfResurrectingIt()
     {
@@ -697,11 +584,7 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.True(exec.PausedCalled);                        // the executor was still released
     }
 
-    /// <summary>
-    /// T-FAN-9, <b>REGRESSION</b>. A launcher fault dispatching sibling 2 of 3 fails THAT step and still awaits
-    /// the sibling already in flight. The alternative — letting the throw escape the dispatch loop — leaves a
-    /// dispatched child unawaited, which is exactly the orphan D16 rules out.
-    /// </summary>
+    // Letting the dispatch throw escape the loop would leave the sibling already in flight unawaited — an orphan.
     [Fact]
     public async Task ADispatchFaultFailsOnlyThatSibling_AndTheOthersAreStillAwaited()
     {
@@ -722,13 +605,8 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.Contains("could not be started", Assert.Single(planner.ReplanFailures));
     }
 
-    /// <summary>
-    /// T-FAN-10, <b>REGRESSION</b>. The stale-generation cancel. A parent that re-parked because a child parked
-    /// arrives here again with the same Pending group, and nothing links a child to a STEP — so without this the
-    /// previous generation would sit parked forever, each child owning a visible stub chat, because states at or
-    /// above <c>WaitingForInput</c> are deliberately never swept. <c>CancelAsync</c> alone cannot fix it: a child
-    /// parked in a PREVIOUS process is not in the in-flight map, which is the case this seeds.
-    /// </summary>
+    // Nothing links a child to a STEP, and parked states are never swept, so without the supersede the previous
+    // generation sits parked forever, each child owning a visible stub chat.
     [Fact]
     public async Task APreviousGenerationsParkedChildIsSupersededBeforeANewDispatch()
     {
@@ -754,12 +632,8 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.DoesNotContain(stale.Id, launcher.Dispatches.Select(d => d.ChildRunId));
     }
 
-    /// <summary>
-    /// T-FAN-11, <b>GUARD</b>. What a child is actually asked for: its parent's id, its parent's grant envelope
-    /// (never the launch default — the launcher narrows it), its parent's WORKSPACE ROOT rather than one of its
-    /// own, no <c>TriggerRef</c>, no request-level grants, and a HALVED wall clock (R15 — the scheduled-job lock
-    /// is held for the parent's wall clock plus every descendant's).
-    /// </summary>
+    // The wall clock is halved because the scheduled-job lock is held for the parent's wall clock plus every
+    // descendant's.
     [Fact]
     public async Task TheChildRequestCarriesTheParentsEnvelopeWorkspaceAndAHalvedWallClock()
     {
@@ -787,28 +661,11 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.Equal(profile.MaxSteps, first.Request.Budget.MaxSteps);
         // The goal is the step's own intent, not the parent's goal.
         Assert.Equal("a", first.Request.Goal);
-        // No roster assignment on these steps ⇒ nothing to hand over, and the child takes the per-mode
-        // persona. The positive half is
-        // ADelegatedStepsAssignedPersonaReachesItsChildRun_NotJustThePanel.
+        // No roster assignment on these steps ⇒ nothing to hand over, so the child takes the per-mode persona.
         Assert.Null(first.PersonaId);
     }
 
-    /// <summary>
-    /// <b>REGRESSION</b> (Phase 3 fix pass). A delegated step's ASSIGNED roster persona has to reach its child
-    /// run, or the roster is decorative for exactly the steps the plan grouped. The dispatch passed a hard
-    /// <c>ProviderId: null</c> and carried <c>AssignedPersonaId</c> nowhere, so each child resolved the GLOBAL
-    /// per-mode persona and that persona's provider: neither the specialist's system prompt (07 §0.1 calls it
-    /// "the substance of multi-persona") nor its provider and reasoning effort (D5) was ever used, while G7's
-    /// panel drew that specialist's avatar and accent ring on the step. The user's only visible evidence that
-    /// the roster did anything was a lie.
-    /// <para>
-    /// The child's own planner re-assigning personas does not cover this: the run-level persona is the fallback
-    /// for every one of the child's steps and is used verbatim for its plan, replan and verify turns, so the
-    /// chosen specialist otherwise runs nowhere at all. Neutralization: restore <c>personaId: null</c> at the
-    /// dispatch → red. Non-vacuity: the second sibling carries a DIFFERENT id, so a dispatch that passed one
-    /// constant would fail.
-    /// </para>
-    /// </summary>
+    // The two siblings carry DIFFERENT ids, so a dispatch that passed one constant — or null — would fail.
     [Fact]
     public async Task ADelegatedStepsAssignedPersonaReachesItsChildRun_NotJustThePanel()
     {
@@ -832,11 +689,7 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.Equal(writer, launcher.Dispatches[1].PersonaId);
     }
 
-    /// <summary>
-    /// T-FAN-12, <b>REGRESSION</b>. The marker reader degrades to "sequential" on every unreadable shape and
-    /// never throws — the same swallowing discipline <c>ReadTruncation</c> follows. The last row is the
-    /// non-vacuity control: a reader that returned null for everything would pass the other rows for free.
-    /// </summary>
+    // The last row is the non-vacuity control: a reader that returned null for everything passes the rest for free.
     [Theory]
     [InlineData(null, null)]
     [InlineData("", null)]
@@ -851,16 +704,8 @@ public sealed class AgentRunOrchestratorFanOutTests
     public void TheParallelGroupMarkerDegradesToSequential(string? extraJson, int? expected)
         => Assert.Equal(expected, AgentRunOrchestrator.ParallelGroupOf(new AgentStep { ExtraJson = extraJson }));
 
-    /// <summary>
-    /// T-FAN-13, <b>REGRESSION</b>, and the highest-severity fact in this file. A child run reaches its own
-    /// terminal settle, so without the guard inside <c>SafePromote</c> it would consume its parent's single
-    /// allowed promotion — and worse, <c>SafePromote</c> TEARS THE WORKSPACE DOWN after a successful promote, so
-    /// the first sibling to finish would delete the directory its still-running siblings are writing into.
-    /// <para>
-    /// Driven on the <c>PlanResult.Fallback</c> degrade arm, which returns early and settles in the opposite
-    /// order to the main path — the arm a guard wrapped around the two call sites would most easily miss.
-    /// </para>
-    /// </summary>
+    // Promotion tears the workspace down afterwards, so an unguarded child would delete the directory its
+    // still-running siblings are writing into.
     [Fact]
     public async Task AChildRunNeverPromotesAndNeverTearsDownTheSharedWorkspace()
     {
@@ -897,20 +742,8 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.Equal([lone.Id], workspaces.TornDown);
     }
 
-    /// <summary>
-    /// T-FAN-13's SECOND ARM, added by the Phase 3 fix pass. §9.8 asks for both arms in as many words — "one
-    /// in-method guard serves both, and driving both arms is what proves it" — and the fact above only ever takes
-    /// the <c>PlanResult.Fallback</c> degrade one. This one lets the child's plan drain normally so it settles
-    /// through the MAIN terminal arm (<c>SafeEndRun</c> → <c>SafePromote</c> → <c>SafeComplete</c>), the path a
-    /// real completed child takes.
-    /// <para>
-    /// <b>GUARD as of today's tree, deliberately labelled so:</b> the guard is a single early return inside
-    /// <c>SafePromote</c> and both call sites funnel through it, so the two arms cannot diverge here and this
-    /// cannot red on a revert that the fact above survives. It exists for the change that MOVES the guard to the
-    /// two call sites — e.g. to keep promoting a child but skip only the teardown — and gets it right on one arm
-    /// and wrong on the other. The parentless control repeats on this arm for the same reason it does above.
-    /// </para>
-    /// </summary>
+    // Today one early return inside SafePromote serves both arms, so this cannot diverge from the fact above; it
+    // exists for the change that moves the guard out to the two call sites and gets only one of them right.
     [Fact]
     public async Task AChildRunNeverPromotes_OnTheMainTerminalArmEither()
     {
@@ -954,11 +787,8 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.Equal([lone.Id], workspaces.TornDown);
     }
 
-    /// <summary>
-    /// T-FAN-14, <b>REGRESSION</b>. The parent's critic and any replan must SEE what the children produced.
-    /// Without the chat read a completed delegated step carries empty visible text and the verifier judges the
-    /// whole goal on nothing — the same failure mode <c>CompletedStepSummary.FromEarlierSegment</c> exists for.
-    /// </summary>
+    // Without the chat read a completed delegated step carries empty visible text and the verifier judges the
+    // whole goal on nothing.
     [Fact]
     public async Task ASettledChildsAnswerReachesTheParentsCriticAndReplan()
     {
@@ -978,11 +808,7 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.All(judged, s => Assert.True(s.Succeeded));
     }
 
-    /// <summary>
-    /// T-FAN-15, <b>GUARD</b> and the counterpart to the fact above: with no chat service the fan-out still
-    /// works, and the step says the work ran elsewhere instead of implying it produced nothing. The chat
-    /// dependency is trailing and defaulted, so this is the shape a caller that omits it runs in.
-    /// </summary>
+    // The chat dependency is trailing and defaulted, so this is the shape a caller that omits it runs in.
     [Fact]
     public async Task WithNoChatService_ADelegatedStepSaysTheWorkRanElsewhere()
     {
@@ -1004,22 +830,8 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.Equal(AgentRunState.Completed, (await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken))!.State);
     }
 
-    /// <summary>
-    /// T-FAN-16, <b>REGRESSION</b> (D15, the half T-FAN-5 does not cover). TWO budgets coexist and the batch owes
-    /// an answer to which one nests. T-FAN-5 pins the one that DOES: the persisted ledger, tokens only, run-level.
-    /// This pins the one that does NOT — the ephemeral per-dispatch <c>RunContext</c>, the budget that actually
-    /// gates pausing. A fan-out costs the parent exactly ONE step per sibling step, its own; the children's
-    /// internal steps count against their OWN caps.
-    /// <para>
-    /// Discriminating by the numbers rather than by wording: the parent's cap is 3 and it owns 3 steps (two
-    /// delegated + one sequential), while each of its two children reports 10 executed steps in its own ledger.
-    /// Nest the enforced budget in ANY form — all 20 child steps, or even one extra unit per child — and the
-    /// parent is over its cap the moment the group settles, so it parks at <c>step-cap</c> with "c" never
-    /// executed instead of completing. Red-before-green from the other direction too: delete
-    /// <c>SettleSiblingAsync</c>'s <c>ctx.RecordStep</c> and the sibling steps stop counting at all, which the
-    /// critic's step count catches.
-    /// </para>
-    /// </summary>
+    // The enforced budget lives on the ephemeral RunContext, not the persisted ledger, and does NOT nest: a
+    // fan-out costs the parent one step per sibling step, and the children's own steps count against their caps.
     [Fact]
     public async Task TheParentsEnforcedBudgetCountsItsOwnStepsOnly_NeverItsChildrens()
     {
@@ -1059,7 +871,7 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.All(children, c => Assert.Equal(
             10, JsonDocument.Parse(c.LedgerJson!).RootElement.GetProperty("perStep").GetArrayLength()));
 
-        // And the OTHER budget did nest, in the same run: tokens are on the parent (T-FAN-5 owns the detail).
+        // And the OTHER budget did nest, in the same run: the tokens landed on the parent.
         var ledger = JsonDocument.Parse(final.LedgerJson!).RootElement;
         Assert.True(ledger.GetProperty("inputTokens").GetInt64() >= 200);
     }

@@ -8,16 +8,7 @@ using Xunit;
 
 namespace Pia.Tests.Consent;
 
-/// <summary>
-/// Measures the real on-disk behaviour of <see cref="ConsentEvidenceStore"/>: it writes one file per
-/// speaker under the session directory, it throws (and writes nothing) instead of silently persisting
-/// an empty evidence file when DPAPI protection fails, the raw plaintext consent sentence never lands
-/// on disk unprotected, and a revocation never rewrites the grant file it sits beside.
-/// <para>
-/// <see cref="DpapiHelper"/> uses Windows DPAPI and would throw off Windows, so every test substitutes
-/// it rather than using the real implementation.
-/// </para>
-/// </summary>
+/// <summary><see cref="DpapiHelper"/> would throw off Windows, so every test here substitutes it.</summary>
 public sealed class ConsentEvidenceStoreTests : IDisposable
 {
     private const string Canary = "CANARY-9f3a1c";
@@ -34,8 +25,7 @@ public sealed class ConsentEvidenceStoreTests : IDisposable
     private static DpapiHelper SubstituteDpapi() =>
         Substitute.For<DpapiHelper>(NullLogger<DpapiHelper>.Instance);
 
-    // A reversible fake standing in for real DPAPI: proves the store round-trips through Encrypt
-    // rather than writing raw JSON, without depending on the real Windows-only implementation.
+    // Reversible so a test can decode the file back and see the store really went through Encrypt.
     private static void MakeReversible(DpapiHelper dpapi)
     {
         dpapi.Encrypt(Arg.Any<string>())
@@ -100,8 +90,6 @@ public sealed class ConsentEvidenceStoreTests : IDisposable
 
         Assert.DoesNotContain(Canary, raw, StringComparison.Ordinal);
 
-        // Confirm the fake round-trips (proves the assertion above is meaningful, not vacuous because
-        // Encrypt was never actually invoked).
         var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(raw));
         Assert.Contains(Canary, decoded, StringComparison.Ordinal);
     }

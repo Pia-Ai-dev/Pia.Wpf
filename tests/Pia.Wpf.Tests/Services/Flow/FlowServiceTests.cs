@@ -5,10 +5,6 @@ using Xunit;
 
 namespace Pia.Tests.Services.Flow;
 
-/// <summary>
-/// Covers dedup, the durability invariant, bounded-capacity eviction order, transient expiry (via the
-/// deterministic Sweep seam), and delete-through on every removal path (design §6, §11).
-/// </summary>
 public class FlowServiceTests
 {
     private static FlowService Create(out FakeFlowPersistenceStore persistence)

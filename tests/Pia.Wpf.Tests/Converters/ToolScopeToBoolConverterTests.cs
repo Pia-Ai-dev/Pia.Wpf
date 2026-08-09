@@ -5,11 +5,7 @@ using Xunit;
 
 namespace Pia.Tests.Converters;
 
-/// <summary>
-/// The Chat/Agent lever binds its <c>IsEnabled</c> through this converter (14.5 / R15): a persona with
-/// <see cref="PersonaToolScope.None"/> can never plan, so the lever must read disabled; every other
-/// scope enables it.
-/// </summary>
+/// <summary>The Chat/Agent lever binds its <c>IsEnabled</c> here: a <c>None</c>-scope persona can never plan.</summary>
 public class ToolScopeToBoolConverterTests
 {
     private static bool Convert(object? value) =>

@@ -22,29 +22,13 @@ using Xunit;
 
 namespace Pia.Tests.Sync;
 
-/// <summary>
-/// The managed-persona pull channel, client side (handoff §2.1). Two halves:
-/// <list type="bullet">
-/// <item>the WIRE contract, pinned against raw JSON strings taken verbatim from the handoff's real-JSON
-/// examples (§2.1.5/§2.1.6/§2.1.7) — the absent-key-vs-present-and-empty distinction is a serialization
-/// property, so constructing objects would test nothing;</item>
-/// <item>the APPLY contract in <c>SyncClientService.PullPageAsync</c>: replace-all on a non-null block,
-/// nothing at all on an absent one, plus the first-run unconditional pull and the never-push filter.</item>
-/// </list>
-/// Sibling of <see cref="SyncPullResponseSerializationTests"/>, which covers the other additive
-/// <see cref="SyncPullResponse"/> members.
-/// </summary>
+/// <summary>Pinned against raw JSON: the absent-key-vs-present-and-empty distinction is a serialization property, so
+/// constructing objects would test nothing.</summary>
 public class SyncClientManagedPersonaTests
 {
-    /// <summary>
-    /// The options the client actually deserializes a pull with. <c>PullPageAsync</c> calls
-    /// <c>ReadFromJsonAsync&lt;SyncPullResponse&gt;()</c> with no options, and System.Net.Http.Json
-    /// defaults to <see cref="JsonSerializerDefaults.Web"/> (camelCase + case-insensitive). Using anything
-    /// else here would test a serializer the client never runs.
-    /// </summary>
+    /// <summary><c>PullPageAsync</c> deserializes with no options, so anything but Web defaults would test a serializer the client never runs.</summary>
     private static readonly JsonSerializerOptions WireOptions = new(JsonSerializerDefaults.Web);
 
-    // Handoff §2.1.5 — full snapshot, verbatim.
     private const string FullSnapshotJson = """
         {
           "serverTimestamp": "2026-08-01T09:14:02.1837744Z",
@@ -85,7 +69,7 @@ public class SyncClientManagedPersonaTests
         }
         """;
 
-    // Handoff §2.1.6 — the group has no managed personas. Present-and-empty: authoritative, CLEAR the store.
+    // The group has no managed personas. Present-and-empty is authoritative: CLEAR the store.
     private const string EmptySnapshotJson = """
         {
           "serverTimestamp": "2026-08-01T09:20:11.4410920Z",
@@ -94,7 +78,7 @@ public class SyncClientManagedPersonaTests
         }
         """;
 
-    // Handoff §2.1.7 — catalog fast-skip fired: no managedPersonas key at all. KEEP the store.
+    // Catalog fast-skip fired: no managedPersonas key at all. KEEP the store.
     private const string CatalogSkippedJson = """
         {
           "serverTimestamp": "2026-08-01T09:21:44.9910110Z",
@@ -107,7 +91,7 @@ public class SyncClientManagedPersonaTests
     private const long OpaqueCatalogVersion = 4194235871203344761L;
     private static readonly Guid BrandvoiceId = Guid.Parse("6f1b3f2a-9c44-4d1e-8b77-2a0d5e91c4aa");
 
-    // --- The wire contract (§2.1.5-§2.1.7) ---
+    // --- The wire contract ---
 
     [Fact]
     public void Deserialize_WithManagedPersonas_PopulatesTheSnapshotAndEveryRowField()
@@ -133,7 +117,7 @@ public class SyncClientManagedPersonaTests
         Assert.Equal(4, row.ReasoningEffort);
         Assert.Equal(1, row.SchemaVersion);
         Assert.True(row.IsManaged);
-        // recentlyRemoved is read but never consumed as the removal mechanism (§2.1.4).
+        // recentlyRemoved is read but never consumed as the removal mechanism.
         Assert.Equal(
             Guid.Parse("b2c7e0d1-5f38-42aa-9a10-71c0d4e9f001"),
             Assert.Single(response.ManagedPersonas.RecentlyRemoved));
@@ -142,9 +126,8 @@ public class SyncClientManagedPersonaTests
     [Fact]
     public void Deserialize_WithoutTheKey_YieldsNull_NotAnEmptySnapshot()
     {
-        // Non-negotiable 1. The server applies WhenWritingNull app-wide, so "the catalog was skipped"
-        // arrives as an ABSENT key. Null must survive deserialization — a `= new()` initializer on the
-        // property would turn every fast-skipped pull into "clear the store".
+        // The server applies WhenWritingNull app-wide, so "the catalog was skipped" arrives as an ABSENT key; a
+        // `= new()` initializer on the property would turn every fast-skipped pull into "clear the store".
         var response = JsonSerializer.Deserialize<SyncPullResponse>(CatalogSkippedJson, WireOptions);
 
         Assert.NotNull(response);
@@ -154,8 +137,8 @@ public class SyncClientManagedPersonaTests
     [Fact]
     public void Deserialize_PresentButEmpty_IsDistinguishableFromAbsent()
     {
-        // §2.1.6: "the admin unassigned my group from everything" arrives exactly like this, and it is
-        // authoritative. Non-null + empty must not collapse into the absent case.
+        // "The admin unassigned my group from everything" arrives exactly like this and is authoritative, so
+        // non-null + empty must not collapse into the absent case.
         var response = JsonSerializer.Deserialize<SyncPullResponse>(EmptySnapshotJson, WireOptions);
 
         Assert.NotNull(response);
@@ -167,11 +150,8 @@ public class SyncClientManagedPersonaTests
     [Fact]
     public void Deserialize_OldUpsertedDeletedShape_YieldsAnEmptyPersonasList()
     {
-        // Non-negotiable 2's type guard. Every sibling channel is { upserted, deleted } and MERGES; this
-        // one is { personas, recentlyRemoved } and REPLACES. A server still emitting the old shape must
-        // not be half-read: the client sees zero personas rather than silently treating `upserted` as the
-        // snapshot. (Under replace-all that clears the store, which is the safe direction — a revoked
-        // persona disappears rather than persisting forever.)
+        // Every sibling channel is { upserted, deleted } and MERGES; this one is { personas, recentlyRemoved } and
+        // REPLACES, so a server still on the old shape must read as zero personas rather than be half-read.
         const string legacyJson = """
             {
               "serverTimestamp": "2026-08-01T09:14:02.1837744Z",
@@ -200,15 +180,13 @@ public class SyncClientManagedPersonaTests
     [Fact]
     public void CatalogVersion_RoundTripsAnOpaqueLongWithoutLoss()
     {
-        // §2.1.2: the token is not a counter — the server folds the caller's group into it, so it is a
-        // large arbitrary long. It must survive deserialization exactly (int truncation would silently
-        // make every echo mismatch and every pull unconditional).
+        // Not a counter: the server folds the caller's group into it, so int truncation would silently make every
+        // echo mismatch and every pull unconditional.
         var response = JsonSerializer.Deserialize<SyncPullResponse>(FullSnapshotJson, WireOptions);
 
         Assert.Equal(OpaqueCatalogVersion, response!.CatalogVersion);
-        // Non-vacuity: the fixture has to be outside int range for "without loss" to mean anything.
-        // Expressed as an inequality on a truncating round-trip rather than a `>` comparison, because
-        // ordering two catalog versions is exactly the bug this whole channel forbids (§2.1.2).
+        // Non-vacuity: the fixture has to be outside int range. Written as an inequality on a truncating round-trip
+        // because ordering two catalog versions is exactly the bug this channel forbids.
         Assert.NotEqual(OpaqueCatalogVersion, unchecked((long)(int)OpaqueCatalogVersion));
 
         var reSerialized = JsonSerializer.Serialize(response, WireOptions);
@@ -231,11 +209,7 @@ public class SyncClientManagedPersonaTests
     /// <summary>Snapshots every list handed to <c>ReplaceManagedPersonasAsync</c>, in call order.</summary>
     private readonly List<IReadOnlyList<Persona>> _replaceCalls = [];
 
-    /// <summary>
-    /// Same shape as SyncClientPullPaginationTests/SyncClientServiceTransferOptimizationTests: real
-    /// SyncMapper + temp-dir delete tracker, everything else an NSubstitute stub. The delete tracker gets
-    /// its own directory so a pending-delete file left by another test cannot leak into the push body.
-    /// </summary>
+    /// <summary>The delete tracker gets its own directory so a pending-delete file left by another test cannot leak into the push body.</summary>
     private SyncClientService CreateSut()
     {
         var dpapiHelper = Substitute.For<DpapiHelper>(NullLogger<DpapiHelper>.Instance);
@@ -313,17 +287,16 @@ public class SyncClientManagedPersonaTests
         Assert.True(persona.IsManaged);
         Assert.False(persona.IsBuiltIn);
         Assert.Null(persona.PreferredProviderId);
-        // recentlyRemoved is NOT processed — it is confirmation, not the mechanism (§2.1.4). The one row
-        // that arrived is the whole store, so nothing else may be inferred from it.
+        // recentlyRemoved is NOT processed — it is confirmation, not the mechanism. The one row that arrived
+        // is the whole store, so nothing else may be inferred from it.
         Assert.Single(applied);
     }
 
     [Fact]
     public async Task Pull_AbsentKey_NeverTouchesTheStore()
     {
-        // Non-negotiable 1: an absent key means the catalog fast-skip fired. Calling replace here — with
-        // an empty list, which is what a "normalize null to empty" reading produces — would wipe every
-        // user's managed personas on the first conditional pull.
+        // An absent key means the catalog fast-skip fired; replacing with an empty list here — what a
+        // "normalize null to empty" reading produces — would wipe every user's managed personas.
         var sut = CreateSut();
         var handler = new RecordingPullHandler((HttpStatusCode.OK, CatalogSkippedJson, null));
         using var client = new HttpClient(handler);
@@ -350,8 +323,8 @@ public class SyncClientManagedPersonaTests
     [Fact]
     public async Task Pull_NotModified_KeepsTheStore()
     {
-        // A 304 means "nothing at all changed" (§2.1.2) and carries no body — there is no snapshot to
-        // apply, and treating it as an empty one would clear the store on every idle cycle.
+        // A 304 carries no body, so there is no snapshot to apply; treating it as an empty one would clear the
+        // store on every idle cycle.
         var sut = CreateSut();
         var handler = new RecordingPullHandler((HttpStatusCode.NotModified, "", null));
         using var client = new HttpClient(handler);
@@ -368,13 +341,8 @@ public class SyncClientManagedPersonaTests
     [Fact]
     public async Task Pull_ApplyThrows_KeepsTheOldETag_SoTheRetryRefetchesTheSnapshot()
     {
-        // The apply has to be able to FAIL SAFELY (SQLITE_BUSY, a concurrent transaction, a disk-full
-        // settings save). Both conditional tokens are persisted only after every apply returned, so a
-        // throwing replace leaves LastPullETag and LastCatalogVersion at their old values. If the new ETag
-        // were stored here, the server would recompute the identical string ("v{userDataVersion}-
-        // c{catalogVersion}-s{sinceTicks}" — a failed page advances none of the three) and answer 304
-        // forever: the withdrawn persona would stay in the store, resolvable and sent as X-Pia-Persona,
-        // which is the exact outcome replace-all exists to prevent.
+        // Both conditional tokens are persisted only after every apply returned. Storing the new ETag on a failed
+        // page would make the server recompute the identical string and answer 304 forever.
         var sut = CreateSut();
         const string ServerETag = "\"v10-c4194235871203344761-s0\"";
         _personaService.ReplaceManagedPersonasAsync(Arg.Any<IReadOnlyList<Persona>>())
@@ -404,7 +372,7 @@ public class SyncClientManagedPersonaTests
         Assert.Equal(BrandvoiceId, Assert.Single(_replaceCalls[^1]).Id);
     }
 
-    // --- First-run rule (§2.1.3) ---
+    // --- First-run rule ---
 
     [Fact]
     public async Task Pull_FirstRun_IsUnconditional_ThenRevertsToConditional()
@@ -436,11 +404,8 @@ public class SyncClientManagedPersonaTests
     [Fact]
     public async Task Pull_FirstRunAgainstAPreUpgradeServer_StillClosesTheLatch()
     {
-        // Deliberate superset of the handoff's literal "only after a non-null block applied" rule: a
-        // pre-upgrade server has no managedPersonas channel at all, so waiting for a non-null block would
-        // keep every future pull unconditional and permanently lose the 304 fast path. Safe because the
-        // server folds the caller's group into catalogVersion (Q10) — a token stored before the upgrade
-        // can never equal a mixed one, so the upgrade itself forces one full-catalog pull anyway.
+        // A pre-upgrade server has no managedPersonas channel at all, so waiting for a non-null block would keep
+        // every future pull unconditional and permanently lose the 304 fast path.
         var sut = CreateSut();
         var handler = new RecordingPullHandler((HttpStatusCode.OK, CatalogSkippedJson, null));
         using var client = new HttpClient(handler);
@@ -490,7 +455,7 @@ public class SyncClientManagedPersonaTests
         Assert.False(settings.ManagedPersonaStoreInitialized);
     }
 
-    // --- Never push (§2.3) ---
+    // --- Never push ---
 
     [Fact]
     public async Task DeltaPush_NeverIncludesAManagedPersona()
@@ -499,8 +464,8 @@ public class SyncClientManagedPersonaTests
         var lastSync = new DateTime(2026, 8, 1, 9, 0, 0, DateTimeKind.Utc);
         var userPersonaId = Guid.NewGuid();
 
-        // GetPersonasAsync returns built-ins ∪ managed ∪ user rows (C2's merged ordering), so the push
-        // builder sees the managed row and has to filter it out itself.
+        // GetPersonasAsync returns built-ins ∪ managed ∪ user rows, so the push builder sees the managed row
+        // and has to filter it out itself.
         _personaService.GetPersonasAsync().Returns(new List<Persona>
         {
             new()
@@ -537,9 +502,8 @@ public class SyncClientManagedPersonaTests
     [Fact]
     public async Task FirstSyncPush_NeverIncludesAManagedPersona()
     {
-        // The first-sync migration has its own persona projection, separate from the delta builder above.
-        // Both filters have to carry !IsManaged, or a brand-new device would upload the whole managed
-        // catalog under the signing-in user's name on its very first sync.
+        // The first-sync migration has its own persona projection, so it needs its own !IsManaged filter or a
+        // brand-new device uploads the whole managed catalog under the signing-in user's name.
         var sut = CreateSut();
         var userPersonaId = Guid.NewGuid();
 
@@ -565,11 +529,7 @@ public class SyncClientManagedPersonaTests
         Assert.DoesNotContain(BrandvoiceId.ToString(), handler.LastPushBody!);
     }
 
-    /// <summary>
-    /// Serves a queued sequence of pull responses and records each request's URI and If-None-Match. The
-    /// header capture is what SyncClientPullPaginationTests' PullHandler does not do, and the first-run
-    /// rule is precisely about a header being absent.
-    /// </summary>
+    /// <summary>Records each request's URI and <c>If-None-Match</c>, because the first-run rule is about a header being absent.</summary>
     private sealed class RecordingPullHandler : HttpMessageHandler
     {
         private readonly Queue<(HttpStatusCode Status, string Body, string? ETag)> _responses;

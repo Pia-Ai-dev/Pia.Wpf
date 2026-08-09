@@ -13,13 +13,6 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Batch 07's planner half: the roster the model is shown, the name→id mapping of what it emits, and the
-/// invariant that with NO roster configured the plan prompt and the produced steps are byte-for-byte what they
-/// were before the batch (D1). Uses the same harness shape as <see cref="AgentPlannerTests"/> — substituted
-/// <see cref="IAiClientService"/>, a real <see cref="AppSettings"/>, a driver that invokes the captured
-/// <c>emit_plan</c> handler — extended with the two new step keys.
-/// </summary>
 public sealed class AgentPlannerRosterTests
 {
     private readonly IAiClientService _ai = Substitute.For<IAiClientService>();
@@ -77,7 +70,7 @@ public sealed class AgentPlannerRosterTests
         yield return new Finished(null, "test-model");
     }
 
-    /// <summary>The <c>Steps(...)</c> builder of <see cref="AgentPlannerTests"/>, plus the two Batch 07 keys.</summary>
+    /// <summary>The <c>Steps(...)</c> builder of <see cref="AgentPlannerTests"/>, plus the persona and group keys.</summary>
     private static Dictionary<string, object?> Steps(
         params (string Title, string Intent, string? PersonaKey, int? ParallelGroup)[] steps)
     {
@@ -119,9 +112,8 @@ public sealed class AgentPlannerRosterTests
     [Fact]
     public async Task EmptyRoster_ProducesTheExactPrePhase3PlanPrompt()
     {
-        // The D1 opt-in as a test, and the comparison is what makes it strong: the prompt a planner WITH a
-        // roster source but no configured roster builds must be identical to the one a planner with no roster
-        // source at all builds, which is the pre-Phase-3 prompt.
+        // The comparison is what makes this strong: a planner WITH a roster source but no configured roster must
+        // build a prompt identical to one built with no roster source at all.
         ReturnsPlan(Steps(("Gather", "collect the inputs", null, null)));
 
         await Planner(personas: null).PlanAsync(Goal, Ctx(), Persona("Pia"), Provider(), Ct);
@@ -138,8 +130,8 @@ public sealed class AgentPlannerRosterTests
     [Fact]
     public async Task AnEmptyRoster_MeansNoStepIsEverAssigned()
     {
-        // T-OPT-1. Even when the model volunteers both new keys — a model may have seen them in the tool
-        // schema, which is generated unconditionally — an unconfigured roster assigns nothing.
+        // Even when the model volunteers both keys — the tool schema is generated unconditionally, so it may have
+        // seen them — an unconfigured roster assigns nothing.
         ReturnsPlan(Steps(
             ("Gather", "collect the inputs", "Analyst", 1),
             ("Draft", "write it up", "Writer", 1)));
@@ -148,9 +140,8 @@ public sealed class AgentPlannerRosterTests
 
         Assert.Equal(2, result.Steps.Count);
         Assert.All(result.Steps, s => Assert.Null(s.AssignedPersonaId));
-        // BOTH halves: an unconfigured roster means the produced step rows are what they were before the batch,
-        // and parallelGroup is the other member that could have made one differ. The roster block is the only
-        // thing that mentions parallelGroup to the model, so with no roster a value in it was never asked for.
+        // parallelGroup is the other member that could make a step row differ, and the roster block is the only
+        // thing that mentions it to the model — so with no roster a value in it was never asked for.
         Assert.All(result.Steps, s => Assert.Null(s.ExtraJson));
     }
 
@@ -206,8 +197,8 @@ public sealed class AgentPlannerRosterTests
     [Fact]
     public async Task MatchingIsCaseAndWhitespaceInsensitive()
     {
-        // GUARD. A model that echoes the name with stray padding or different casing still meant that persona;
-        // failing on it would silently downgrade the step to the run persona.
+        // A model that echoes the name with stray padding or different casing still meant that persona; failing
+        // on it would silently downgrade the step to the run persona.
         var analyst = Persona("Analyst");
         Roster(analyst);
         ReturnsPlan(Steps(("Gather", "collect the inputs", "  aNaLySt ", null)));
@@ -254,8 +245,8 @@ public sealed class AgentPlannerRosterTests
     [Fact]
     public async Task ValidatePlan_IsUnaffectedByPersonaAndGroupFields()
     {
-        // GUARD. An unknown persona key is a cosmetic model slip, not a plan defect; validating it would throw
-        // away a perfectly good plan and degrade the whole run to SingleTurn.
+        // An unknown persona key is a cosmetic model slip, not a plan defect; validating it would throw away a
+        // perfectly good plan and degrade the whole run to SingleTurn.
         Roster(Persona("Analyst"));
         ReturnsPlan(Steps(
             ("Gather", "collect the inputs", "Gandalf", 99),
@@ -287,11 +278,8 @@ public sealed class AgentPlannerRosterTests
     public async Task ARosterResolveFault_DegradesToTodaysPrompt()
     {
         Roster(Persona("Analyst"));
-        // The roster read is the gate of an optional feature: a fault there must cost the specialists, not the
-        // plan. NOTE ON LAYERING: this drives the fault through the SETTINGS read, which StepPersonaResolver
-        // swallows itself, so what is proven here is the observable outcome (a valid plan on today's prompt).
-        // AgentPlanner.TryGetRosterAsync's own catch is a second net around a call into another type and cannot
-        // be reached from here — it is stated as defence in depth at the code, not claimed as covered.
+        // The roster read gates an optional feature: a fault there must cost the specialists, not the plan. Driven
+        // through the SETTINGS read, which StepPersonaResolver swallows itself.
         _settingsService.GetSettingsAsync().Throws(new IOException("settings unavailable"));
         ReturnsPlan(Steps(("Gather", "collect the inputs", "Analyst", null)));
 

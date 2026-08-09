@@ -4,17 +4,12 @@ using Xunit;
 namespace Pia.Tests.Architecture;
 
 /// <summary>
-/// The 04 ↔ 03 shared vocabulary, mechanized. Batch 04 defined <see cref="ToolClass"/>,
-/// <see cref="ToolGateSurface"/> and <see cref="ToolGateDecision"/>; Batch 03 persists all three as ordinals
-/// and adds two of its own. These facts exist so an append to 04's enums cannot silently leave 03 with a
-/// decision it does not record and does not render.
+/// The gate/timeline shared vocabulary, mechanized: an append to a gate enum must not silently leave the
+/// timeline with a decision it neither records nor renders.
 /// </summary>
 public class AgentTimelineVocabularyTests
 {
-    /// <summary>
-    /// Every decision the two RUN gates can reach, and which of Batch 03's emit arms writes it. Derived by
-    /// walking the arms, not by copying the enum.
-    /// </summary>
+    // Derived by walking the emit arms, not by copying the enum.
     private static readonly ToolGateDecision[] EmittedByAGate =
     [
         ToolGateDecision.AutoApprovedStandingGrant, // interactive AutoRun (verdict.Decision)
@@ -27,10 +22,9 @@ public class AgentTimelineVocabularyTests
         ToolGateDecision.DeniedNotGranted,          // unattended default
         ToolGateDecision.DeniedDestructiveFloor,    // unattended floor refusal
         ToolGateDecision.UnknownTool,               // either surface, null route
-        ToolGateDecision.ParkedForApproval,         // hermes #16: unattended Park (the FIRST parked call only)
-        // hermes #15, the session tier — BOTH surfaces reach the first one (interactive AutoRun and, since the
-        // tier is armed on the same condition as the park, a root run's unattended AutoRun), while the second
-        // is written only where the grant is minted: the interactive card.
+        ToolGateDecision.ParkedForApproval,         // unattended Park (the FIRST parked call only)
+        // The session tier: BOTH surfaces reach the first one, because the tier is armed on the same condition
+        // as the park, while the second is written only where the grant is minted — the interactive card.
         ToolGateDecision.AutoApprovedSessionGrant,  // either surface, AutoRun (verdict.Decision)
         ToolGateDecision.ApprovedForSession,        // interactive card, AllowForSession
         // The deny beside a tool-approval park: the unattended gate's DeniedForRun Refuse arm writes it on
@@ -38,15 +32,12 @@ public class AgentTimelineVocabularyTests
         ToolGateDecision.DeniedForRun,
     ];
 
-    /// <summary>
-    /// Decisions a gate can produce that this batch deliberately does NOT record, each with its reason.
-    /// A new entry here is a decision, not an omission.
-    /// </summary>
+    // Decisions a gate can produce that the timeline deliberately does NOT record; an entry is a decision, not
+    // an omission.
     private static readonly ToolGateDecision[] NotEmittedByDesign =
     [
-        // Voice-mode only (04 D13). A voice turn has no run, so there is no RunId to attach a row to and the
-        // enforced FK would reject one. The value exists so a later batch that gives voice turns a run needs
-        // no new ordinal.
+        // Voice-mode only: a voice turn has no run, so there is no RunId to attach a row to and the enforced FK
+        // would reject one.
         ToolGateDecision.AutoApprovedAllowlist,
     ];
 
@@ -58,7 +49,7 @@ public class AgentTimelineVocabularyTests
             .Where(d => !EmittedByAGate.Contains(d) && !NotEmittedByDesign.Contains(d))
             .ToArray();
 
-        // Adding a decision to Batch 04 without deciding what Batch 03 does with it fails HERE.
+        // Adding a gate decision without deciding what the timeline does with it fails HERE.
         Assert.Empty(unaccounted);
 
         // The two sets are disjoint and neither claims Unknown (which is a render value, never written).
@@ -67,21 +58,8 @@ public class AgentTimelineVocabularyTests
         Assert.DoesNotContain(ToolGateDecision.Unknown, NotEmittedByDesign);
     }
 
-    /// <summary>
-    /// The golden ordinal map for every enum this batch PERSISTS — the append-only guardrail, mechanized.
-    /// <para>
-    /// The shape assertions below (min 0, Unknown at 0, distinct, contiguous) do NOT catch the failure they
-    /// exist to prevent: alphabetizing <c>ToolGateDecision</c> or inserting a member keeps all four true while
-    /// swapping <c>ApprovedOnce</c> and <c>ApprovedAlways</c>, so every already-persisted row would read back
-    /// as a decision the user never made — and these ordinals also travel in <c>AgentRuns.PolicyJson</c>, where
-    /// an older peer's stored value gets reinterpreted. A name→ordinal map is the only assertion that turns a
-    /// rename, a renumber and a removal all red, with a diff naming the member.
-    /// </para>
-    /// <para>
-    /// APPENDING to one of these enums is legal and requires adding the new member HERE with its ordinal.
-    /// Changing an existing pair is not.
-    /// </para>
-    /// </summary>
+    // The shape assertions further down stay true under a reorder that swaps two persisted ordinals, so only a
+    // name→ordinal map reds for a rename, a renumber or a removal. Appending means adding the new pair here.
     [Fact]
     public void PersistedEnumOrdinalsMatchTheGoldenMap()
     {
@@ -155,7 +133,7 @@ public class AgentTimelineVocabularyTests
         AssertAppendOnlyShape<AgentTimelineEventKind>();
         AssertAppendOnlyShape<AgentTimelineOutcome>();
 
-        // 04's three are persisted by this batch too, so their shape is 03's problem as well.
+        // The gate's three are persisted by the timeline too, so their shape is checked here as well.
         AssertAppendOnlyShape<ToolClass>();
         AssertAppendOnlyShape<ToolGateSurface>();
         AssertAppendOnlyShape<ToolGateDecision>();

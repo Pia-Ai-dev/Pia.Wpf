@@ -5,28 +5,8 @@ using Xunit;
 namespace Pia.Tests.Views;
 
 /// <summary>
-/// <c>TodoPanelControl</c> — and it inverts the host guard every other file in this folder applies.
-/// <para>
-/// Both of its host sites (<c>AssistantView.xaml:521</c>, <c>OptimizeView.xaml:483</c>) declare <b>no</b>
-/// <c>DataContext</c> binding, so by markup alone the panel would inherit the hosting view's ViewModel —
-/// <see cref="AssistantViewModel"/> at one site and <see cref="OptimizeViewModel"/> at the other, neither of
-/// which carries a single one of its paths. It does not, because its CTOR sets <c>DataContext = null</c>
-/// specifically to break that inheritance, and its <c>Loaded</c> handler assigns a <see cref="TodoViewModel"/>
-/// from the window's scoped provider.
-/// </para>
-/// <para>
-/// <b>So the correctness condition here is the opposite of the usual one, and it needs all three halves.</b>
-/// If a future edit deletes the ctor line, the panel silently inherits the host's ViewModel at both sites and
-/// every path in it mis-binds, with the build at zero warnings and — before this file — the whole suite
-/// green. The third fact is the only one that reds for that, and it is the one that looks trivial.
-/// </para>
-/// <para>
-/// These three facts are also what makes
-/// <see cref="DataTemplateHostedViewParseTests.CodeAssignedRoots"/> sound: that map tells the walker to
-/// re-root this panel's subtree at <see cref="TodoViewModel"/> when it is reached through the top-level
-/// <c>OptimizeView</c>, which is only true while all three hold. Break any of them and the map becomes a
-/// fiction the walker would happily keep asserting.
-/// </para>
+/// Neither host site binds <c>DataContext</c>: the panel's ctor nulls it to block inheritance and <c>Loaded</c>
+/// assigns a <see cref="TodoViewModel"/>, which is what <c>CodeAssignedRoots</c>' re-root map rests on.
 /// </summary>
 [Collection("WpfApplicationStatic")]
 public class TodoPanelControlParseTests
@@ -70,16 +50,8 @@ public class TodoPanelControlParseTests
     [Fact]
     public void ThePanel_DoesNotInheritItsHostsDataContext_BecauseTheCtorNullsIt()
     {
-        // <b>Read the shape of this fact, because the obvious version of it is VACUOUS and was written first.</b>
-        // Asserting `new TodoPanelControl().DataContext is null` passes whether or not the ctor line exists: an
-        // unparented control has a null DataContext by default, so the assertion observes the default and not
-        // the mechanism. Demonstrated, not reasoned — commenting out `DataContext = null;` left that version
-        // GREEN, which is the exact failure mode this whole line of work exists to prevent.
-        //
-        // The mechanism only shows itself against a host that HAS a DataContext, because what the ctor line
-        // does is write a local null that blocks INHERITANCE. So: parse the real host, give it a sentinel, and
-        // read the panel. Neutralization: comment out `DataContext = null;` → the panel inherits the sentinel
-        // and this reds.
+        // Asserting `new TodoPanelControl().DataContext is null` is vacuous — an unparented control reads null
+        // anyway. Only a host that HAS a DataContext shows the ctor's local null blocking inheritance.
         var sentinel = new object();
         var inherited = WpfStaHost.Run(() =>
         {
@@ -97,12 +69,7 @@ public class TodoPanelControlParseTests
             "which re-roots this panel's subtree at TodoViewModel on the strength of that ctor line.");
     }
 
-    /// <summary>
-    /// The <c>DataContext</c> path declared at the single <c>TodoPanelControl</c> site inside one host view,
-    /// found by TYPE on the parsed logical tree — never by index, because logical-walk order is a measured
-    /// property of the markup and not something to assert against. Folds the count into the returned string
-    /// so "not found", "found twice" and "wrong path" all produce one readable message.
-    /// </summary>
+    // Found by TYPE, never by index: logical-walk order is a property of the markup, not something to assert on.
     private static string PathAt<THost>() where THost : FrameworkElement, new()
     {
         var panels = BindingPathWalker.FindLogical<Pia.Views.TodoPanelControl>(new THost()).ToArray();

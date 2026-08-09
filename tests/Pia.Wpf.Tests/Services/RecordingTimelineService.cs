@@ -4,13 +4,8 @@ using Pia.Services.Interfaces;
 namespace Pia.Tests.Services;
 
 /// <summary>
-/// In-memory <see cref="IAgentTimelineService"/> for the gate suites.
-/// <para>
-/// The gate tests deliberately do NOT use the real store: <c>AgentTimelineEvents.RunId</c> has an enforced
-/// foreign key, so emitting against a run id with no <c>AgentRuns</c> row would have its INSERT rejected,
-/// logged as a warning and dropped — a silently green "zero rows" test and a baffling red "N rows" one. This
-/// fake records what the gate asked for, which is exactly what those facts are about.
-/// </para>
+/// In-memory <see cref="IAgentTimelineService"/> for the gate suites; the real store's <c>RunId</c> foreign key
+/// would silently drop rows emitted against a run that has no <c>AgentRuns</c> row.
 /// </summary>
 internal sealed class RecordingTimelineService : IAgentTimelineService
 {
@@ -18,11 +13,7 @@ internal sealed class RecordingTimelineService : IAgentTimelineService
     private readonly List<AgentTimelineEvent> _rows = [];
     private long _seq;
 
-    /// <summary>
-    /// <c>StepOrdinal</c>'s allocator, mirroring <c>AgentTimelineService</c>'s: per STEP, and no entry (so no
-    /// ordinal) for a run-level row. Present because the real service assigns this column, not the gate — a
-    /// fake that left it null would make every gate assertion about it read null and look like a gate bug.
-    /// </summary>
+    // Mirrors the real service's per-step StepOrdinal allocator; leaving the column null would read as a gate bug.
     private readonly Dictionary<Guid, long> _stepSeq = [];
 
     /// <summary>Drives the failure-isolation fact: a broken bookkeeping store must not fail a step.</summary>

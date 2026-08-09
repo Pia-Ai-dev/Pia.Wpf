@@ -10,10 +10,8 @@ using Xunit;
 namespace Pia.Tests.Services;
 
 /// <summary>
-/// Coverage for <see cref="FilesToolHandler.ListRelativeFiles"/> — the enumeration that
-/// backs the <c>@Files</c> autocomplete picker. It shares <c>CollectRelativeFiles</c> with
-/// <c>list_files</c> (same containment + sensitive-path filtering) so the picker and the
-/// tools agree on which files exist, and normalizes to forward slashes.
+/// The <c>@Files</c> picker shares <c>CollectRelativeFiles</c> with <c>list_files</c>, so both must agree on
+/// which files exist.
 /// </summary>
 public class FilesToolHandlerListTests : IDisposable
 {
@@ -156,8 +154,8 @@ public class FilesToolHandlerListTests : IDisposable
     [Fact]
     public void ListRelativeFiles_ExcludesDefaultIgnoredDirectories()
     {
-        // The @Files picker must not surface VCS/build/dependency noise — especially .git now that the
-        // sandbox may be a git working tree. This is the core feature guard for the ignore migration.
+        // The @Files picker must not surface VCS/build/dependency noise — especially .git, now that the
+        // sandbox may be a git working tree.
         WriteFile("keep.txt");
         WriteFile(Path.Combine(".git", "config"));
         WriteFile(Path.Combine("bin", "app.dll"));
@@ -229,10 +227,8 @@ public class FilesToolHandlerListTests : IDisposable
     [Fact]
     public void ListRelativeFiles_NegationCannotResurfaceSensitivePathGuardBlockedPath()
     {
-        // Invariant: SensitivePathGuard is applied independently of the ignore matcher, so a broad
-        // ".piaignore" negation ("!**") must NOT surface a guard-blocked path. Uses a sandbox under
-        // %LOCALAPPDATA%\Pia (a blocked root, outside the workdir carve-out) — every file there is
-        // guard-blocked regardless of the ignore matcher.
+        // SensitivePathGuard is applied independently of the ignore matcher, so a broad "!**" negation must NOT
+        // surface a guard-blocked path — and %LOCALAPPDATA%\Pia is a blocked root outside the workdir carve-out.
         var blockedRoot = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Pia", "pia-guard-test-" + Guid.NewGuid().ToString("N"));
@@ -263,9 +259,8 @@ public class FilesToolHandlerListTests : IDisposable
         settings.GetSettingsAsync().Returns(new AppSettings { AssistantFilesFolder = null });
         var handler = new FilesToolHandler(settings, new FileStalenessStore(), NullLogger<FilesToolHandler>.Instance);
 
-        // IsAvailable no longer requires a configured folder (§17.3 — route-table gap fix): tools are
-        // enabled by default, and an unattended run supplies its own WorkspaceRoot. The @Files
-        // autocomplete still returns empty because no interactive folder is configured.
+        // IsAvailable no longer requires a configured folder: tools are enabled by default and an unattended run
+        // supplies its own WorkspaceRoot, but the @Files autocomplete still needs an interactive folder.
         Assert.True(handler.IsAvailable);
         Assert.Empty(handler.ListRelativeFiles(filter: null, max: 50));
     }

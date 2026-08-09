@@ -9,19 +9,8 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// hermes #9 on the LIVE path. <c>LiveTurnExecutor</c> makes no step-success decision of its own — it
-/// delegates to <c>ChatSession.RunStepTurnAsync</c>, so that is where the facts have to be driven. The live
-/// predicate was a DIFFERENT premise in kind from the headless one (exception-absence plus the
-/// empty-response downgrade, rather than non-empty text), which is exactly why a fix in one executor would
-/// have been half a fix — this file is the other half.
-/// <para>
-/// The discriminating pair is <see cref="DeclaredFailure_WithPlentyOfText_DoesNotSucceed"/> and
-/// <see cref="DeclaredSuccess_WithNoTextAtAll_Succeeds"/>. <b>Neutralize</b> both by commenting out the
-/// <c>if (claim is not null) { succeeded = …; error = …; }</c> block that sits after the <c>finally</c> in
-/// <c>RunStepTurnAsync</c>. Deleting the tool instead reds everything and proves nothing.
-/// </para>
-/// </summary>
+/// <summary><c>LiveTurnExecutor</c> makes no step-success decision of its own, so the facts have to be driven
+/// through <c>ChatSession.RunStepTurnAsync</c>.</summary>
 public sealed class ChatSessionStepOutcomeSignalTests
 {
     private readonly IAiClientService _ai = Substitute.For<IAiClientService>();
@@ -44,8 +33,7 @@ public sealed class ChatSessionStepOutcomeSignalTests
     private ChatSession CreateSession() => new(
         _tokenMap, _ai, _plugins, _cards, _permissions, _loc, NullLogger.Instance, _ => true);
 
-    /// <summary>A step spec whose tool list is what <c>LiveTurnExecutor.BuildSpec</c> would have produced —
-    /// with the declaration tool when <paramref name="offerStepResultTool"/>, without it otherwise.</summary>
+    /// <summary>The tool list <c>LiveTurnExecutor.BuildSpec</c> would have produced for such a step.</summary>
     private static StepTurnSpec Spec(bool offerStepResultTool)
     {
         var setup = new AssistantTurnSetup(
@@ -109,11 +97,6 @@ public sealed class ChatSessionStepOutcomeSignalTests
 
     // ---- the discriminating pair ----
 
-    /// <summary>
-    /// <b>THE RED DEMO.</b> The step throws nothing, streams a full paragraph of articulate prose, and
-    /// declares <c>succeeded:false</c>. The old live predicate — no exception and no empty placeholder —
-    /// returned <c>Succeeded:true</c>, which the orchestrator writes as <c>AgentStepStatus.Done</c>.
-    /// </summary>
     [Fact]
     public async Task DeclaredFailure_WithPlentyOfText_DoesNotSucceed()
     {
@@ -131,7 +114,7 @@ public sealed class ChatSessionStepOutcomeSignalTests
             Spec(offerStepResultTool: true), new RunContext("goal", RunProfile.Interactive),
             TestContext.Current.CancellationToken);
 
-        // The text really was there and nothing threw — this is the exact case the old predicate got wrong.
+        // Text was there and nothing threw, which a text-and-exception predicate reads as success.
         Assert.Equal(eloquent, result.VisibleText);
         Assert.False(result.Succeeded);
         Assert.False(result.Cancelled);
@@ -141,24 +124,8 @@ public sealed class ChatSessionStepOutcomeSignalTests
         Assert.False(result.Outcome!.Succeeded);
     }
 
-    /// <summary>
-    /// <b>THE INVERSE DEMO.</b> No visible text at all plus <c>succeeded:true</c>. The old predicate hit
-    /// <c>CleanupPerExchange</c>'s empty-response downgrade and returned <c>Succeeded:false</c> with the
-    /// localized "empty response" error; the declaration now clears both.
-    /// <para>
-    /// And it clears the placeholder TEXT out of the result too, which is a separate claim from clearing the
-    /// error. The synthesized "The assistant did not return a response." stays in the assistant MESSAGE — that
-    /// is UI text so the chat does not render a blank bubble — but this used to travel on as
-    /// <c>VisibleText</c>, i.e. as <c>CompletedStepSummary.VisibleText</c>, which the critic prompt renders as
-    /// <c>result: …</c> immediately under <c>- [ok, declared] &lt;title&gt;</c>. A step presented as a declared
-    /// success and contradicted on the next line is a false premise handed to the reader the #9 tags were added
-    /// for. The headless twin (<c>HeadlessStepOutcomeSignalTests.DeclaredSuccess_WithNoTextAtAll_RecordsDone</c>)
-    /// carries the empty string, so this is also where the two executors stopped disagreeing.
-    /// </para>
-    /// <para><b>Neutralize:</b> restore <c>VisibleText: assistantMessage.Content ?? string.Empty</c> at the
-    /// <c>StepTurnResult</c> construction in <c>ChatSession.RunStepTurnAsync</c> → the placeholder is back and
-    /// the <c>VisibleText</c> assertion below reds while every other assertion here stays green.</para>
-    /// </summary>
+    /// <summary>The empty-response placeholder is UI text: carried on as <c>VisibleText</c> it would reach the
+    /// critic prompt as a result line contradicting the declared success right above it.</summary>
     [Fact]
     public async Task DeclaredSuccess_WithNoTextAtAll_Succeeds()
     {
@@ -173,11 +140,10 @@ public sealed class ChatSessionStepOutcomeSignalTests
             Spec(offerStepResultTool: true), new RunContext("goal", RunProfile.Interactive),
             TestContext.Current.CancellationToken);
 
-        // The empty-response placeholder was still synthesized for the UI — the chat bubble is not blank…
+        // Synthesized for the UI, so the chat bubble is not blank…
         Assert.Equal("Msg_Assistant_EmptyResponse", session.Messages[^1].Content);
-        // …but it is NOT what this step reports having produced. Empty, exactly like the headless twin.
+        // …but not what the step reports having produced.
         Assert.Equal(string.Empty, result.VisibleText);
-        // …and the step is a success, because the step said so.
         Assert.True(result.Succeeded, result.Error);
         Assert.Null(result.Error);
         Assert.Equal("data/clean.csv", result.Outcome!.ArtifactRef);
@@ -185,8 +151,7 @@ public sealed class ChatSessionStepOutcomeSignalTests
 
     // ---- the fallback ----
 
-    /// <summary>THE FALLBACK: no declaration keeps the old predicate — non-empty text and no exception is
-    /// still a success — but the result carries no claim, so the step is recorded UNCONFIRMED.</summary>
+    /// <summary>With no declaration the text-and-exception predicate still decides, and the step is unconfirmed.</summary>
     [Fact]
     public async Task NoDeclaration_FallsBackToTheOldPredicate_AndIsUnconfirmed()
     {
@@ -217,10 +182,7 @@ public sealed class ChatSessionStepOutcomeSignalTests
         Assert.Null(result.Outcome);
     }
 
-    /// <summary>
-    /// <b>GUARD</b>. A declaration cannot paper over a transport failure: the model declares success and the
-    /// exchange then throws. The step still fails — the model gets a vote on its work, not on the transport.
-    /// </summary>
+    /// <summary>The model gets a vote on its own work, not on the transport.</summary>
     [Fact]
     public async Task ADeclaredSuccess_CannotOverrideAThrownExchange()
     {
@@ -242,12 +204,8 @@ public sealed class ChatSessionStepOutcomeSignalTests
 
     // ---- scoping / the interception gate ----
 
-    /// <summary>
-    /// <b>GUARD</b>. The interception is armed by the SINK, not by the tool name: a turn that was never
-    /// offered the tool routes a hallucinated <c>emit_step_result</c> the ordinary way and gets the honest
-    /// "Unknown tool." answer, with no claim recorded. Without this gate an ordinary chat turn would silently
-    /// swallow the call.
-    /// </summary>
+    /// <summary>The interception is armed by the sink, not by the tool name, or an ordinary chat turn would
+    /// silently swallow a hallucinated call.</summary>
     [Fact]
     public async Task ATurnThatWasNotOfferedTheTool_StillRoutesTheNameAndFindsNothing()
     {
@@ -272,17 +230,8 @@ public sealed class ChatSessionStepOutcomeSignalTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>
-    /// <b>GUARD</b>. The sink is DISARMED when a step turn ends, and the turn shape that proves it is an
-    /// ORDINARY chat turn — not a second step turn.
-    /// <para>
-    /// A second <c>RunStepTurnAsync</c> re-assigns the field on entry, so it would pass whether or not the
-    /// <c>finally</c> clears anything: it observes the re-assignment, not the disarm. <c>RunTurnAsync</c>
-    /// never touches the field, so it is the only caller that can see a leak — and it is the real hazard,
-    /// since a session outlives the run that borrowed it. With the disarm removed this turn swallows a
-    /// hallucinated <c>emit_step_result</c> instead of answering "Unknown tool.".
-    /// </para>
-    /// </summary>
+    /// <summary>A second step turn re-assigns the sink on entry, so only an ordinary chat turn can observe the
+    /// disarm — and a session outlives the run that borrowed it.</summary>
     [Fact]
     public async Task TheSinkIsDisarmedAfterTheStep_SoALaterChatTurnStillRoutesTheName()
     {
@@ -300,8 +249,7 @@ public sealed class ChatSessionStepOutcomeSignalTests
             Spec(offerStepResultTool: true), new RunContext("goal", RunProfile.Interactive), ct);
         Assert.NotNull(step.Outcome);
 
-        // Now an ORDINARY chat turn on the same session — never offered the tool, so the model inventing the
-        // name must reach routing and dead-end there.
+        // An ordinary chat turn on the same session: the invented name must reach routing and dead-end there.
         _toolReplies.Clear();
         ArrangeExchange(async handler =>
         {
@@ -328,8 +276,7 @@ public sealed class ChatSessionStepOutcomeSignalTests
             Arg.Any<CancellationToken>());
     }
 
-    /// <summary>The model's acknowledgement tells it the verdict was taken — and, for a declared failure,
-    /// not to contradict itself in the visible reply.</summary>
+    /// <summary>The acknowledgement tells the model not to contradict its own declared failure in the reply.</summary>
     [Fact]
     public async Task TheModelIsToldTheDeclarationWasRecorded()
     {

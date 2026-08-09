@@ -80,14 +80,8 @@ public class LocalizationTests
     {
         var allKeys = GetAllResourceKeys();
 
-        // Patterns for static (non-interpolated) key lookups
-        //
-        // Batch 08 G2 widens the array with the `_localization` field name. RunProgressViewModel calls its
-        // localization service `_localization`, not `_localizationService`, so NONE of the run panel's
-        // VM-formatted keys were seen by any regex here — and AllTranslations_MustBeComplete only compares
-        // resx to resx, so a key missing from all three files was invisible in both directions. The `[` must
-        // follow `_localization` immediately, which is what keeps this from also matching
-        // `_localizationService[` and double-reporting every hit above.
+        // Patterns for static (non-interpolated) key lookups. The `[` must follow `_localization` immediately
+        // so these do not also match `_localizationService[` and double-report every hit above.
         var patterns = new[]
         {
             new Regex(@"_localizationService\[""(\w+)""\]", RegexOptions.Compiled),
@@ -165,16 +159,7 @@ public class LocalizationTests
             $"translation files should not contain keys absent from the base file: {string.Join(", ", orphanedTranslations)}");
     }
 
-    /// <summary>
-    /// T-CONV-3 (Batch 07 G8), <b>GUARD</b>. Every key <c>RunStateToLabelConverter.LabelKey</c> can return
-    /// must resolve in en, de AND fr. The other two scans in this file cannot see these: they match
-    /// <c>LocalizationSource.Instance["Literal"]</c> at the call site, and this mapping was extracted to a
-    /// helper so a theory could pin it — which moved the literals out of reach of the regex.
-    /// <para>
-    /// The run-state chip is the one string on the run panel a user always sees, and an unresolved key renders
-    /// as the key text itself. Non-vacuity: the key set must be non-empty and cover ≥ 7 keys.
-    /// </para>
-    /// </summary>
+    /// <summary>The mapping lives in a helper, so this file's literal-key regexes cannot see the keys it returns.</summary>
     [Fact]
     public void EveryRunStateLabelKeyResolvesInAllThreeLocales()
     {
@@ -198,20 +183,7 @@ public class LocalizationTests
             $"every run-state label key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
     }
 
-    /// <summary>
-    /// <b>Batch 08 F14</b>, the same GUARD shape as <see cref="EveryRunStateLabelKeyResolvesInAllThreeLocales"/>
-    /// two screens up, for the same reason: <c>RunProgressViewModel.MutationErrorKey</c> is a HELPER, so the
-    /// literal-key regexes in <see cref="AllCodeLocalizationKeys_MustExistInResources"/> cannot see the keys it
-    /// returns. Five of the six (<c>NotPaused</c>, <c>UnknownStep</c>, <c>TitleRequired</c>, <c>EmptyPlan</c>,
-    /// <c>TooLong</c>) matched no scan at all — only <c>Run_Plan_Error_WriteFailed</c> was covered, and only
-    /// because it also appears as a literal in <c>ApplyStepEditsAsync</c>'s <c>catch</c>. Renaming or dropping
-    /// one in the resx left the suite green and shipped a raw <c>[Run_Plan_Error_TooLong]</c> into the panel.
-    /// <para>
-    /// Driven off <c>Enum.GetValues</c>, not a written list: a seventh outcome is covered the moment it exists,
-    /// and the <c>_ =&gt;</c> arm in the helper means a new member silently reads as <c>WriteFailed</c> rather
-    /// than throwing, so nothing else would notice it either.
-    /// </para>
-    /// </summary>
+    /// <summary><c>MutationErrorKey</c> is a helper, so this file's literal-key regexes cannot see the keys it returns.</summary>
     [Fact]
     public void EveryPlanMutationErrorKeyResolvesInAllThreeLocales()
     {
@@ -236,17 +208,7 @@ public class LocalizationTests
             $"every plan-mutation error key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
     }
 
-    /// <summary>
-    /// <b>GUARD</b>, the same shape as the two above and for the same reason: the run panel's decision-summary
-    /// pills format their key from a TABLE (<c>ApplyDecisionSummary</c>'s category list), so the literal never
-    /// appears immediately after <c>_localization.Format(</c> and none of this file's five regexes can see it.
-    /// Renaming or dropping one of these in the resx left the suite green and shipped a raw
-    /// <c>[Run_Timeline_Pill_Denied]</c> into the collapsed header's badge.
-    /// <para>
-    /// Written as an explicit list, deliberately: unlike the two guards above there is no enum to drive it off,
-    /// and the point is precisely that these six keys are reachable only through a variable.
-    /// </para>
-    /// </summary>
+    /// <summary>The pills format their key from a table, so the literal never follows <c>_localization.Format(</c> and no regex here can see it.</summary>
     [Fact]
     public void EveryDecisionPillKeyResolvesInAllThreeLocales()
     {
@@ -271,8 +233,7 @@ public class LocalizationTests
         Assert.True(missing.Count == 0,
             $"every decision-pill key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
 
-        // …and one pill per user-facing decision category, so a sixth category added to DecisionLabelKey cannot
-        // quietly render with no pill at all.
+        // One pill per decision category, so a new category cannot quietly render with no pill.
         var categories = Enum.GetValues<ToolGateDecision>()
             .Select(RunProgressViewModel.DecisionLabelKey)
             .Distinct()

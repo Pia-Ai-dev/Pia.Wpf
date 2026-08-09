@@ -10,8 +10,6 @@ namespace Pia.Tests.Services.Providers;
 
 public class MistralConversationsHandlerTests
 {
-    // ---- Request rewriting --------------------------------------------------
-
     [Fact]
     public void RewriteRequest_SingleUserMessage_CollapsesInputsToString()
     {
@@ -87,8 +85,6 @@ public class MistralConversationsHandlerTests
     {
         Assert.Null(MistralConversationsHandler.RewriteRequest("not json", "ag:123"));
     }
-
-    // ---- Response transformation -------------------------------------------
 
     [Fact]
     public void TransformResponse_ExtractsTextFromMessageOutputContentChunks()
@@ -167,8 +163,6 @@ public class MistralConversationsHandlerTests
         Assert.Null(MistralConversationsHandler.TransformResponse("not json"));
         Assert.Null(MistralConversationsHandler.TransformResponse(string.Empty));
     }
-
-    // ---- HTTP-level (URL + body in/out) ------------------------------------
 
     [Theory]
     [InlineData("https://api.mistral.ai/v1/chat/completions")]

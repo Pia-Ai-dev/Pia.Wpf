@@ -12,33 +12,8 @@ public class DependencyInjectionTests
     [Fact]
     public void ViewModels_MustNotReference_SystemWindows()
     {
-        // MEASURED, not reasoned (Batch 12 Step 0): with every exemption removed this rule flags
-        // AssistantViewModel, TranscriptOverlayViewModel and VoiceModeViewModel — and NOT
-        // MeetingAttendeeViewModel, even with its base still dirty, because NetArchTest 1.3.2 does not
-        // resolve base-type dependencies transitively.
-        //
-        // AssistantViewModel is flagged DIRECTLY, and not for the dispatcher. Its COMPLETE System.Windows
-        // dependency set was measured with Mono.Cecil over the built assembly, and it has TWO roots:
-        //   1. System.Windows.Media.Imaging.BitmapSource — the clipboard-image paste path (:7 using, the
-        //      IAsyncRelayCommand<BitmapSource> property, its AsyncRelayCommand<BitmapSource>
-        //      construction, and ExecuteHandleImagePasted(BitmapSource?)); member signatures only, no IL
-        //      site. Call site of the paste: AssistantView.xaml.cs:153-154.
-        //   2. System.Windows.Input.ICommand — two `callvirt ICommand::Execute(Object)` sites:
-        //      OnMeetingAttendeeSummarizeRequested (:622 SendMessageCommand.Execute(null)) and
-        //      CancelPendingActionCards (:832 card.CancelCommand.Execute(null)). Execute is declared on
-        //      ICommand, so a cast to the toolkit's IRelayCommand does NOT avoid it; closing this one
-        //      means calling the commands' own methods instead of going through the ICommand face.
-        // NetArchTest matches dependencies by name prefix, so "System.Windows" catches both at full
-        // type-name depth. BOTH must go before this exemption can be deleted — removing only the
-        // BitmapSource path turns the rule red again, naming AssistantViewModel. The dispatcher ban is
-        // still enforced for it, explicitly, by AssistantViewModel_MustNotReference_DispatcherOrApplication
-        // below. (The comment this replaces claimed AssistantViewModel was flagged "transitively because
-        // it creates VoiceModeViewModel". That was never the mechanism — and the comment that replaced
-        // THAT one named only the BitmapSource half, which is the same class of error.)
-        //
-        // TranscriptOverlayViewModel and MeetingAttendeeViewModel were removed in Batch 12 Unit 2:
-        // the base's DispatchToUi now goes through IUiDispatcher, so neither names System.Windows at
-        // all — and MeetingAttendeeViewModel never did.
+        // AssistantViewModel is exempt because it still names System.Windows through BitmapSource and ICommand;
+        // both roots must go before the exemption can, and its dispatcher ban is enforced by the fact below.
         var result = Types.InAssembly(PiaAssembly)
             .That().ResideInNamespace(ViewModelsNamespace)
             .And().DoNotResideInNamespace(ViewModelModelsNamespace)
@@ -53,20 +28,13 @@ public class DependencyInjectionTests
     [Fact]
     public void AssistantViewModel_MustNotReference_DispatcherOrApplication()
     {
-        // AssistantViewModel is exempt from the blanket System.Windows rule above, but only for
-        // BitmapSource and ICommand (both roots measured — see that rule's comment) and NEVER for the
-        // Dispatcher or Application. Keep the dispatcher ban enforced for it explicitly, so nobody
-        // reintroduces App.Current.Dispatcher under cover of that exemption. Measured before the
-        // migration: this failed, naming AssistantViewModel — so it is not vacuous. Measured as an
-        // instrument after it: the same two prefixes flag OutputService and UiDispatcherService, which do
-        // read Application.Current.Dispatcher.
+        // Enforced explicitly so the exemption above cannot be used to reintroduce App.Current.Dispatcher.
         var target = Types.InAssembly(PiaAssembly)
             .That().ResideInNamespace(ViewModelsNamespace)
             .And().HaveName("AssistantViewModel")
             .GetTypes();
 
-        // NetArchTest reports success on an EMPTY type set (measured), so without this guard a rename
-        // would silently turn the assertion below green.
+        // NetArchTest reports success on an empty type set, so a rename would silently green the assertion below.
         Assert.Single(target);
 
         var result = Types.InAssembly(PiaAssembly)
@@ -93,8 +61,7 @@ public class DependencyInjectionTests
             var fields = type.GetFields(BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly);
             var methods = type.GetMethods(BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly);
 
-            // Check if any method body references Bootstrapper (via IL would be complex,
-            // so we check field types and method return/parameter types)
+            // Signatures only — catching a method BODY would need an IL scan.
             foreach (var field in fields)
             {
                 if (field.FieldType.FullName?.Contains("Bootstrapper") == true)
@@ -102,13 +69,11 @@ public class DependencyInjectionTests
             }
         }
 
-        // Also use NetArchTest for dependency checking
         var result = Types.InAssembly(PiaAssembly)
             .That().ResideInNamespace(ViewModelsNamespace)
             .ShouldNot().HaveDependencyOn("Pia.Bootstrapper")
             .GetResult();
 
-        // Combine both checks
         if (!result.IsSuccessful && result.FailingTypeNames != null)
         {
             foreach (var name in result.FailingTypeNames)
@@ -145,23 +110,18 @@ public class DependencyInjectionTests
             {
                 var paramType = param.ParameterType;
 
-                // Allowed: interfaces
                 if (paramType.IsInterface) continue;
 
-                // Allowed: ILogger<T> (generic interface resolves as class)
+                // A closed ILogger<T> reflects as a generic class, not an interface.
                 if (paramType.IsGenericType && paramType.GetGenericTypeDefinition() == typeof(ILogger<>)) continue;
 
-                // Allowed: other ViewModels (composite pattern)
+                // Composing ViewModels is allowed.
                 if (typeof(ObservableObject).IsAssignableFrom(paramType)) continue;
 
-                // Allowed: delegates (Func<>, Action<>) for manually-created ViewModels
                 if (typeof(Delegate).IsAssignableFrom(paramType)) continue;
 
-                // Allowed: value types and string — DATA, not a dependency. This rule exists to stop a
-                // ViewModel taking a concrete SERVICE (which defeats substitution and pins it to one
-                // implementation); a Guid identifying which run a per-run ViewModel represents is an
-                // argument, not something DI could ever have supplied. RunProgressViewModel(Guid runId)
-                // is constructed on the UI thread by AssistantViewModel, not resolved from the container.
+                // Value types and string are data, not dependencies — a per-run ViewModel's runId is an argument
+                // DI could never have supplied.
                 if (paramType.IsValueType || paramType == typeof(string)) continue;
 
                 violations.Add($"{vmType.Name} injects concrete type {paramType.Name} via parameter '{param.Name}'");

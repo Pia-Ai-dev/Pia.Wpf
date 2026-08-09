@@ -10,16 +10,8 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// The executor-parity guardrail, executable: the SAME tool call, authorized for the SAME reason, recorded by
-/// the two run gates, must produce rows that differ only in <c>Surface</c>. A timeline that works headless and
-/// not live (or the reverse) is a defect, and only a test that drives both catches it.
-/// <para>
-/// The call is a policy-covered <c>write_file</c>, chosen because it is the one authorization both surfaces can
-/// reach for the identical reason (<c>AutoApprovedPolicy</c>): a standing grant is interactive-only and a named
-/// grant is unattended-only, so either of those would compare two different decisions.
-/// </para>
-/// </summary>
+/// <summary>A policy-covered <c>write_file</c> is the one authorization both gates reach for the identical reason; a standing
+/// grant is interactive-only and a named grant unattended-only, so either would compare two different decisions.</summary>
 public sealed class AgentTimelineParityTests
 {
     [Fact]
@@ -39,38 +31,28 @@ public sealed class AgentTimelineParityTests
         Assert.Equal(live.Kind, headless.Kind);
         Assert.Equal(live.ResultChars, headless.ResultChars);
 
-        // ---- T2-14: the five correlation columns are parity facts too. A column populated on one surface and
-        // NULL on the other is a silent bug, and the only thing that catches it is asserting BOTH here.
-        // The provider's call id (the Drive helpers both dispatch `new FunctionCallContent("call-1", …)`) —
-        // recorded on both surfaces, not just the unrouted one.
+        // A correlation column populated on one surface and NULL on the other is a silent bug, so assert both.
         Assert.Equal("call-1", live.ToolCallId);
         Assert.Equal(live.ToolCallId, headless.ToolCallId);
-        // 1-based: both Drive helpers stand in for the loop's FIRST round, and both gates read it off the
-        // dispatch context rather than counting anything themselves.
+        // Round is 1-based and read off the dispatch context, not counted by either gate.
         Assert.Equal(1, live.Round);
         Assert.Equal(live.Round, headless.Round);
-        // A policy-approved call HAS been asked and answered on both surfaces, so neither instant is null.
         Assert.NotNull(live.RequestedAt);
         Assert.NotNull(live.DecidedAt);
         Assert.NotNull(headless.RequestedAt);
         Assert.NotNull(headless.DecidedAt);
-        // >=, never >: both gates bracket a ToolAutonomy.Resolve call that takes far less than
-        // DateTime.UtcNow's ~1 ms resolution, so the two instants are normally EQUAL.
+        // >=, never >: Resolve is far faster than UtcNow's ~1 ms resolution, so the instants are normally equal.
         Assert.True(live.DecidedAt >= live.RequestedAt);
         Assert.True(headless.DecidedAt >= headless.RequestedAt);
         Assert.True(live.CreatedAt >= live.DecidedAt);
         Assert.True(headless.CreatedAt >= headless.DecidedAt);
 
-        // …and the one thing that MUST differ.
         Assert.Equal(ToolGateSurface.Interactive, live.Surface);
         Assert.Equal(ToolGateSurface.Unattended, headless.Surface);
     }
 
-    /// <summary>
-    /// The unrouted arm's stamps, on BOTH surfaces: NULL/NULL, because routing missed and NO gate was ever
-    /// consulted — there was no question, so there is no time-to-answer. The CALL ID is still recorded, which
-    /// is the difference from <c>ToolName</c>: <c>CallId</c> is provider-authored on every arm.
-    /// </summary>
+    /// <summary>Routing missed, so no gate was consulted and there is no time-to-answer; <c>CallId</c> is provider-authored on
+    /// every arm and survives anyway.</summary>
     [Fact]
     public async Task AnUnroutedCallRecordsNoGateTiming_ButStillRecordsTheCallId()
     {
@@ -90,15 +72,13 @@ public sealed class AgentTimelineParityTests
     }
 
     [Theory]
-    // Real provider shapes survive UNMODIFIED. Both halves of this theory matter: a charset too TIGHT silently
-    // nulls the column for every user of that provider, which no "it rejects junk" test would notice.
+    // The positive half matters: a charset too tight silently nulls the column for a whole provider's users.
     [InlineData("call_abc123", "call_abc123")]            // OpenAI
     [InlineData("toolu_01ABCdefGHIjkl", "toolu_01ABCdefGHIjkl")] // Anthropic
     [InlineData("chatcmpl-tool-9f2", "chatcmpl-tool-9f2")]
     [InlineData("f47ac10b-58cc-4372-a567-0e02b2c3d479", "f47ac10b-58cc-4372-a567-0e02b2c3d479")] // bare GUID
     [InlineData("mcp.github:call.7", "mcp.github:call.7")]
-    // …and anything outside a correlation-id shape becomes NULL, not a sentinel: the column is nullable and
-    // "no usable correlation id" is exactly what null means there.
+    // Anything else becomes NULL, not a sentinel: the column is nullable and null means "no usable id".
     [InlineData("""{"path":"C:/Users/marco/Therapy notes.md"}""", null)]
     [InlineData("call 1", null)]
     [InlineData("", null)]
@@ -112,23 +92,17 @@ public sealed class AgentTimelineParityTests
     [Fact]
     public void SanitizeCallIdBoundsTheLength()
     {
-        // Same size hazard as the tool name: nothing in this process validates a provider-supplied CallId, so
-        // an unbounded one is an audit-table growth vector. 128 is generous against every real shape above.
+        // Nothing validates a provider-supplied CallId, so an unbounded one is an audit-table growth vector.
         Assert.Null(AgentTimelineScope.SanitizeCallId(new string('a', 129)));
         Assert.Equal(new string('a', 128), AgentTimelineScope.SanitizeCallId(new string('a', 128)));
     }
 
-    /// <summary>
-    /// The unrouted arm, on BOTH surfaces. The tool name is the one string on this arm that the MODEL authored,
-    /// so it is the one arm where the column's own contract ("never an argument, never a result, never a path")
-    /// can be broken by a malformed call — and it is the arm the canary sweep in
-    /// <c>AgentTimelinePrivacyTests</c> cannot reach, because that one drives a ROUTED write_file.
-    /// </summary>
+    /// <summary>On the unrouted arm the tool name is model-authored, so it is the one arm where a malformed call can break the
+    /// column's "never an argument, never a path" contract.</summary>
     [Fact]
     public async Task AnUnroutedModelAuthoredToolNameIsSanitizedOnBothSurfaces()
     {
-        // A provider surfaces the raw function name verbatim; a model that concatenates its arguments into it
-        // would otherwise put a user path straight into ToolName.
+        // A provider surfaces the function name verbatim, so concatenated arguments reach ToolName unsanitized.
         const string Malformed = """read_file{"path":"C:/Users/marco/Therapy notes.md"}""";
 
         var live = await RecordLiveAsync(policy: null, BuiltInPluginDefaults.FilesPluginId,
@@ -138,7 +112,6 @@ public sealed class AgentTimelineParityTests
         Assert.Equal(ToolGateDecision.UnknownTool, live.Decision);
         Assert.Equal(live.Decision, headless.Decision);
 
-        // Parity, and the invariant: neither surface persists the path.
         Assert.Equal("(unnamed)", live.ToolName);
         Assert.Equal("(unnamed)", headless.ToolName);
         Assert.DoesNotContain("Therapy", live.ToolName, StringComparison.OrdinalIgnoreCase);
@@ -146,10 +119,8 @@ public sealed class AgentTimelineParityTests
     }
 
     [Theory]
-    // A real tool identifier survives untouched — including the shapes an MCP server produces.
     [InlineData("write_file", "write_file")]
     [InlineData("mcp.github:create-issue", "mcp.github:create-issue")]
-    // …and everything that is not one becomes the sentinel.
     [InlineData("""read_file{"path":"C:/x.md"}""", "(unnamed)")]
     [InlineData("tool with spaces", "(unnamed)")]
     [InlineData("", "(unnamed)")]
@@ -162,8 +133,7 @@ public sealed class AgentTimelineParityTests
     [Fact]
     public void SanitizeBoundsTheLength()
     {
-        // The other half of the finding: an unbounded model-authored string is also an audit-table size hazard
-        // (ten calls with 100 KB names each).
+        // An unbounded model-authored string is an audit-table size hazard.
         Assert.Equal("(unnamed)", AgentTimelineScope.SanitizeUnroutedToolName(new string('a', 65)));
         Assert.Equal(new string('a', 64), AgentTimelineScope.SanitizeUnroutedToolName(new string('a', 64)));
     }
@@ -187,8 +157,6 @@ public sealed class AgentTimelineParityTests
                 Title = "write_file", Summary = "write_file",
                 Category = ActionCardCategory.Files, ToolName = "write_file", PluginId = filesId,
             });
-        // A null pending action means the route MISSED — the unrouted arm — which is why this is a parameter
-        // rather than a fixed stub.
         plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
             .Returns(Route(pending));
         ai.GetChatCompletionWithToolsAsync(

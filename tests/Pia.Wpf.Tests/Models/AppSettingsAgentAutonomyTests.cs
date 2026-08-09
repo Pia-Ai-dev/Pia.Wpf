@@ -4,12 +4,8 @@ using Xunit;
 
 namespace Pia.Tests.Models;
 
-/// <summary>
-/// Batch 04 D9: the per-run autonomy default. OFF by default is a decision, not an accident — with it on, an
-/// unattended run can overwrite files in the assistant folder with nobody watching. The JSON round-trip is
-/// the only automated proof the settings CheckBox can actually persist (no test constructs
-/// <c>AssistantSettingsViewModel</c>, and nothing parses <c>Views/SettingsViews/AssistantView.xaml</c>).
-/// </summary>
+/// <summary>Off by default because with it on an unattended run can overwrite assistant-folder files with nobody
+/// watching; the JSON round-trip is the only automated proof the settings CheckBox can persist it.</summary>
 public class AppSettingsAgentAutonomyTests
 {
     private static readonly JsonSerializerOptions Options = new()
@@ -41,7 +37,7 @@ public class AppSettingsAgentAutonomyTests
     [Fact]
     public void FromSettings_OffYieldsNoPolicy()
     {
-        // Null, not an empty policy: the persisted envelope then stays byte-identical to a pre-04 document.
+        // Null, not an empty policy, so the persisted envelope stays byte-identical to an older document.
         Assert.Null(RunAutonomyPolicy.FromSettings(new AppSettings { AgentRunAutoApproveBuiltInWrites = false }));
     }
 
@@ -57,10 +53,8 @@ public class AppSettingsAgentAutonomyTests
         Assert.True(policy.Covers(ToolClass.Scheduling));
         Assert.True(policy.Covers(ToolClass.Files));
 
-        // D9's stated exclusions, as a test: git_switch/git_restore/git_stash are destructive but NOT
-        // delete-like by name, so no rule would stop them; a class grant over External would make an MCP
-        // server's next tool auto-approved retroactively; Unknown can never be authority; Ingest is never
-        // gated at all.
+        // The git_* tools are destructive but not delete-like by name, so no rule would stop them; a class grant
+        // over External would retroactively auto-approve an MCP server's next tool.
         Assert.False(policy.Covers(ToolClass.Git));
         Assert.False(policy.Covers(ToolClass.External));
         Assert.False(policy.Covers(ToolClass.Unknown));

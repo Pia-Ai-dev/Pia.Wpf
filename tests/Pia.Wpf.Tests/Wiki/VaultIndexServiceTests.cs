@@ -8,11 +8,6 @@ using Xunit;
 
 namespace Pia.Tests.Wiki;
 
-/// <summary>
-/// Tests for <see cref="VaultIndexService"/> — specifically the §8 rewrite's category sub-grouping of
-/// the <c>## Topics</c> group, reading each topic page's frontmatter <c>category</c> at rewrite time.
-/// Uses a real temp <see cref="VaultStore"/>, same setup shape as <see cref="IngestServiceTests"/>.
-/// </summary>
 public class VaultIndexServiceTests : IDisposable
 {
     private readonly string _tmpDir;

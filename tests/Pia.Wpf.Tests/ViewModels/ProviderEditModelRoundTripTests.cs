@@ -5,19 +5,10 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// ProviderEditModel maps every AiProvider field TWICE by hand — once in FromProvider and once in
-/// ToProvider. Missing either half yields a dialog that appears to save and then silently reverts
-/// to the default, which for a context budget would silently feed compaction the wrong numbers.
-/// These tests close that gap by reflection, so a field added after Batch 11 fails here instead of
-/// failing quietly at runtime.
-/// </summary>
+/// <summary>ProviderEditModel maps every AiProvider field by hand twice, so a field missing from either mapper silently reverts to the default.</summary>
 public class ProviderEditModelRoundTripTests
 {
-    /// <summary>
-    /// Set by the persistence/service layer, not by the edit dialog, so they are legitimately not
-    /// part of the round trip.
-    /// </summary>
+    /// <summary>Set by the persistence layer, not by the edit dialog, so they are legitimately not part of the round trip.</summary>
     private static readonly HashSet<string> NotMappedByTheDialog =
     [
         nameof(AiProvider.Id),
@@ -99,8 +90,7 @@ public class ProviderEditModelRoundTripTests
     [Fact]
     public void ZeroInTheDialog_MeansCompactionStaysOff()
     {
-        // 0 is the edit model's "not configured" sentinel; the persisted model must see null so the
-        // whole batch stays opt-in.
+        // 0 is the edit model's "not configured" sentinel; the persisted model must see null.
         var model = ProviderEditModel.FromProvider(new AiProvider
         {
             Name = "Unconfigured",
