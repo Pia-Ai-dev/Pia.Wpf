@@ -88,15 +88,10 @@
       </StackPanel>
     </Border>
 
-    <!-- Sources -->
-    <ItemsControl ItemsSource="{Binding Sources}" Margin="0,10,0,0"
-                  Visibility="{Binding HasSources, Converter={StaticResource BooleanToVisibilityConverter}}">
-      <ItemsControl.ItemsPanel>
-        <ItemsPanelTemplate>
-          <WrapPanel Orientation="Horizontal" />
-        </ItemsPanelTemplate>
-      </ItemsControl.ItemsPanel>
-      <ItemsControl.ItemTemplate>
+    <!-- Sources — first three inline, the rest behind the "+N" dropdown -->
+    <chat:PiaChipOverflowPanel ItemsSource="{Binding Sources}" Margin="0,10,0,0"
+                               Visibility="{Binding HasSources, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <chat:PiaChipOverflowPanel.ItemTemplate>
         <DataTemplate>
           <chat:PiaSourceChip Number="{Binding Number}"
                               Source="{Binding Source}"
@@ -104,26 +99,21 @@
                               Url="{Binding Url}"
                               Margin="0,0,6,6" />
         </DataTemplate>
-      </ItemsControl.ItemTemplate>
-    </ItemsControl>
+      </chat:PiaChipOverflowPanel.ItemTemplate>
+    </chat:PiaChipOverflowPanel>
 
     <!-- Local file chips (read / created / updated / exported / @File-referenced) -->
-    <ItemsControl ItemsSource="{Binding FileRefs}" Margin="0,10,0,0"
-                  Visibility="{Binding HasFileRefs, Converter={StaticResource BooleanToVisibilityConverter}}">
-      <ItemsControl.ItemsPanel>
-        <ItemsPanelTemplate>
-          <WrapPanel Orientation="Horizontal" />
-        </ItemsPanelTemplate>
-      </ItemsControl.ItemsPanel>
-      <ItemsControl.ItemTemplate>
+    <chat:PiaChipOverflowPanel ItemsSource="{Binding FileRefs}" Margin="0,10,0,0"
+                               Visibility="{Binding HasFileRefs, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <chat:PiaChipOverflowPanel.ItemTemplate>
         <DataTemplate>
           <chat:PiaFileChip AbsolutePath="{Binding AbsolutePath}"
                             FileName="{Binding FileName}"
                             Kind="{Binding Kind}"
                             Margin="0,0,6,6" />
         </DataTemplate>
-      </ItemsControl.ItemTemplate>
-    </ItemsControl>
+      </chat:PiaChipOverflowPanel.ItemTemplate>
+    </chat:PiaChipOverflowPanel>
 
     <!-- Toolbar -->
     <chat:PiaAnswerToolbar Margin="-6,6,0,0"
