@@ -46,7 +46,7 @@ Scope: structural/organizational review of the repo's test projects.
 >   had already drifted from production.
 >
 > **Still open, and worth a look:** `AssistantChatConcurrencyTests.DeleteAllAsync_WithAnotherConnectionCommittingThroughout_Completes`
-> is genuinely flaky under full-suite load (1 failure in 4 runs; 5/5 clean in isolation), and
+> is genuinely flaky under full-suite load (1 failure in 12 full runs; 5/5 clean in isolation), and
 > `E2EEOnboardingViewModelTests.GoBack_WhilePolling_ShouldStopPolling` is **vacuous** — `PollInterval`
 > is a hard-coded 5s and the loop delays before its first poll, so the test passes even if
 > `StopPolling()` were a no-op. Fixing it needs `PollInterval` injectable, which is a production
