@@ -6,6 +6,7 @@ using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Pia.ViewModels;
 using Pia.ViewModels.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.ViewModels;
@@ -33,11 +34,6 @@ public class AssistantHistoryViewModelFilterTests
 
     /// <summary>Runs <see cref="SynchronizationContext.Post"/> callbacks inline so the VM's
     /// SessionStateChanged marshalling is deterministic in-test.</summary>
-    private sealed class InlineSyncContext : SynchronizationContext
-    {
-        public override void Post(SendOrPostCallback d, object? state) => d(state);
-    }
-
     private AssistantHistoryViewModel CreateSut(IReadOnlyList<SyncAssistantChat> chats)
     {
         // Captured by the VM ctor; inline posting makes the SessionStateChanged path run

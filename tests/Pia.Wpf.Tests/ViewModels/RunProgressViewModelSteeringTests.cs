@@ -6,6 +6,7 @@ using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.Tests;
 using Pia.ViewModels;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.ViewModels;
@@ -251,11 +252,6 @@ public sealed class RunProgressViewModelSteeringTests
 
     /// <summary>Runs Post callbacks inline so the projection is observable synchronously in tests — the same
     /// shape every other RunProgressViewModel test file declares for itself.</summary>
-    private sealed class InlineSyncContext : SynchronizationContext
-    {
-        public override void Post(SendOrPostCallback d, object? state) => d(state);
-        public override void Send(SendOrPostCallback d, object? state) => d(state);
-    }
 }
 
 /// <summary>
@@ -288,12 +284,6 @@ public sealed class RunProgressViewModelPlanMutationTests
     {
         SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
         return new RunProgressViewModel(_runs, _runId, _loc, _resume, NullLogger.Instance, steering: steering);
-    }
-
-    private sealed class InlineSyncContext : SynchronizationContext
-    {
-        public override void Post(SendOrPostCallback d, object? state) => d(state);
-        public override void Send(SendOrPostCallback d, object? state) => d(state);
     }
 
     /// <summary>

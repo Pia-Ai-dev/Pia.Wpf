@@ -5,6 +5,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.ViewModels;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.ViewModels;
@@ -475,9 +476,4 @@ public sealed class RunProgressViewModelTimelineTests
         ToolCallId: null, Round: null, StepOrdinal: null, RequestedAt: null, DecidedAt: null);
 
     /// <summary>Runs Post callbacks inline so the projection is observable synchronously.</summary>
-    private sealed class InlineSyncContext : SynchronizationContext
-    {
-        public override void Post(SendOrPostCallback d, object? state) => d(state);
-        public override void Send(SendOrPostCallback d, object? state) => d(state);
-    }
 }

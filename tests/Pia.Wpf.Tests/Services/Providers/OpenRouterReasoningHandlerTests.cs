@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Pia.Models;
 using Pia.Services.Providers.Http;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services.Providers;
@@ -69,7 +70,7 @@ public class OpenRouterReasoningHandlerTests
     [Fact]
     public async Task SendAsync_RewritesOutgoingRequestBody()
     {
-        var captured = new CapturingHandler();
+        var captured = new CapturingRequestHandler();
         var rewrite = new OpenRouterReasoningHandler(ReasoningEffort.High) { InnerHandler = captured };
         var client = new HttpClient(rewrite);
 
@@ -123,20 +124,4 @@ public class OpenRouterReasoningHandlerTests
         Assert.Equal("web", node["plugins"]!.AsArray()[0]!["id"]!.GetValue<string>());
     }
 
-    private sealed class CapturingHandler : HttpMessageHandler
-    {
-        public string? LastBody { get; private set; }
-
-        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            if (request.Content is not null)
-            {
-                LastBody = await request.Content.ReadAsStringAsync(cancellationToken);
-            }
-            return new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("{}", Encoding.UTF8, "application/json"),
-            };
-        }
-    }
 }

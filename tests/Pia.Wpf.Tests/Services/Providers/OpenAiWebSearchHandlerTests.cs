@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json.Nodes;
 using Pia.Services.Providers.Http;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services.Providers;
@@ -51,7 +52,7 @@ public class OpenAiWebSearchHandlerTests
     [Fact]
     public async Task SendAsync_InjectsWebSearchPreviewToolIntoRequest()
     {
-        var captured = new CapturingHandler();
+        var captured = new CapturingRequestHandler();
         var handler = new OpenAiWebSearchHandler { InnerHandler = captured };
         var client = new HttpClient(handler);
 
@@ -64,18 +65,4 @@ public class OpenAiWebSearchHandlerTests
         Assert.Equal("web_search_preview", tools[0]!["type"]!.GetValue<string>());
     }
 
-    private sealed class CapturingHandler : HttpMessageHandler
-    {
-        public string? LastBody { get; private set; }
-
-        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            if (request.Content is not null)
-                LastBody = await request.Content.ReadAsStringAsync(cancellationToken);
-            return new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("{}", Encoding.UTF8, "application/json"),
-            };
-        }
-    }
 }

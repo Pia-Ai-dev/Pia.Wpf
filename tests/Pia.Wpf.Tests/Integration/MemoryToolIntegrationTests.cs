@@ -11,6 +11,7 @@ using Pia.Infrastructure;
 using Pia.Infrastructure.Vault;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Integration;
@@ -372,54 +373,4 @@ public class MemoryToolIntegrationTests : IDisposable
         Assert.DoesNotContain(doc!.Sections, s => s.Heading == "John Smith");
     }
 
-    // Distinct text -> well-spread near-orthogonal unit vectors so unrelated subjects do NOT collide into
-    // an Edit/Ambiguous band; identical text round-trips to an identical vector. (Mirrors MemoryWriteTests.)
-    private sealed class StubEmbeddingService : IEmbeddingService
-    {
-        private const int Dim = 16;
-
-        public bool IsModelAvailable => true;
-
-        public Task<bool> DownloadModelAsync(IProgress<float>? progress = null, CancellationToken cancellationToken = default)
-            => Task.FromResult(true);
-
-        public Task<bool> EnsureAvailableAsync(IProgress<float>? progress = null, CancellationToken cancellationToken = default)
-            => Task.FromResult(true);
-
-        public Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken cancellationToken = default)
-        {
-            var vec = new float[Dim];
-            var h = Fnv1a(text);
-            for (var i = 0; i < Dim; i++)
-            {
-                h = (h ^ (uint)(i * 0x9e3779b9)) * 16777619u;
-                vec[i] = ((h & 0xffff) / 32767.5f) - 1f;
-            }
-            return Task.FromResult(vec);
-        }
-
-        private static uint Fnv1a(string s)
-        {
-            uint h = 2166136261u;
-            foreach (var c in s)
-            {
-                h = (h ^ c) * 16777619u;
-            }
-            return h;
-        }
-
-        public byte[] FloatsToBytes(float[] embedding)
-        {
-            var bytes = new byte[embedding.Length * sizeof(float)];
-            Buffer.BlockCopy(embedding, 0, bytes, 0, bytes.Length);
-            return bytes;
-        }
-
-        public float[] BytesToFloats(byte[] bytes)
-        {
-            var floats = new float[bytes.Length / sizeof(float)];
-            Buffer.BlockCopy(bytes, 0, floats, 0, bytes.Length);
-            return floats;
-        }
-    }
 }

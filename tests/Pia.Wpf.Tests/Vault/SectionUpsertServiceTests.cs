@@ -5,84 +5,13 @@ using System.Threading.Tasks;
 using Pia.Models.Vault;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Vault;
 
 public class SectionUpsertServiceTests
 {
-    // Deterministic embedding stub. DISTINCT inputs map to one of several near-orthogonal unit
-    // vectors so cosine discriminates: identical text -> identical vector -> cosine 1.0; unrelated
-    // text -> a different basis vector -> cosine 0.0. A few specific inputs are pinned to chosen
-    // basis vectors so we can drive the Edit-via-embedding and Ambiguous bands deterministically.
-    private sealed class StubEmbeddingService : IEmbeddingService
-    {
-        private const int Dim = 16;
-
-        // Explicit text -> basis-index pins. Texts sharing an index get cosine 1.0 with each other.
-        private readonly Dictionary<string, int> _pins;
-
-        public StubEmbeddingService(Dictionary<string, int>? pins = null)
-            => _pins = pins ?? new Dictionary<string, int>();
-
-        public bool IsModelAvailable => true;
-
-        public Task<bool> DownloadModelAsync(IProgress<float>? progress = null, CancellationToken cancellationToken = default)
-            => Task.FromResult(true);
-
-        public Task<bool> EnsureAvailableAsync(IProgress<float>? progress = null, CancellationToken cancellationToken = default)
-            => Task.FromResult(true);
-
-        public Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken cancellationToken = default)
-        {
-            // Pinned text -> a single shared basis vector (so two pinned-identical texts cosine 1.0).
-            if (_pins.TryGetValue(text, out var pinned))
-            {
-                var pinnedVec = new float[Dim];
-                pinnedVec[pinned % Dim] = 1f;
-                return Task.FromResult(pinnedVec);
-            }
-
-            // Unpinned distinct text -> a deterministic, well-spread unit vector. Two pinned basis
-            // vectors are axis-aligned; this fills ALL dims from a stable FNV-1a hash so an unpinned
-            // vector is near-orthogonal to any axis basis (cosine ~ 1/sqrt(Dim)) and to other
-            // unpinned vectors, while identical text round-trips to an identical vector (cosine 1.0).
-            var vec = new float[Dim];
-            var h = Fnv1a(text);
-            for (var i = 0; i < Dim; i++)
-            {
-                h = (h ^ (uint)(i * 0x9e3779b9)) * 16777619u;
-                // Map to [-1, 1] but bias away from 0 so no component vanishes.
-                vec[i] = ((h & 0xffff) / 32767.5f) - 1f;
-            }
-            return Task.FromResult(vec);
-        }
-
-        private static uint Fnv1a(string s)
-        {
-            uint h = 2166136261u;
-            foreach (var c in s)
-            {
-                h = (h ^ c) * 16777619u;
-            }
-            return h;
-        }
-
-        public byte[] FloatsToBytes(float[] embedding)
-        {
-            var bytes = new byte[embedding.Length * sizeof(float)];
-            Buffer.BlockCopy(embedding, 0, bytes, 0, bytes.Length);
-            return bytes;
-        }
-
-        public float[] BytesToFloats(byte[] bytes)
-        {
-            var floats = new float[bytes.Length / sizeof(float)];
-            Buffer.BlockCopy(bytes, 0, floats, 0, bytes.Length);
-            return floats;
-        }
-    }
-
     private static VaultSection Section(string heading, string body)
     {
         var slug = heading.ToLowerInvariant().Replace(' ', '-');

@@ -51,12 +51,6 @@ public sealed class AgentRunGraceTurnTests
             => Task.FromResult(PlanResult.Fallback);
     }
 
-    private sealed class FakeVerifier : IAgentVerifier
-    {
-        public Task<VerdictResult> VerifyAsync(RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
-            => Task.FromResult(VerdictResult.Accept);
-    }
-
     /// <summary>
     /// A minimal executor that RECORDS whether the grace turn was asked for. It overrides the interface's
     /// defaulted member; the executor in <c>GraceTurnIsNotSpentByAnExecutorThatDoesNotWantOne</c> deliberately

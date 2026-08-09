@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json.Nodes;
 using Pia.Services.Providers.Http;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services.Providers;
@@ -174,7 +175,7 @@ public class MistralConversationsHandlerTests
     [InlineData("https://api.mistral.ai/chat/completions")]
     public async Task SendAsync_RewritesUrlToConversations(string inputUrl)
     {
-        var captured = new CapturingHandler();
+        var captured = new CapturingRequestHandler();
         var handler = new MistralConversationsHandler("ag:proj:model:abc") { InnerHandler = captured };
         var client = new HttpClient(handler);
 
@@ -197,7 +198,7 @@ public class MistralConversationsHandlerTests
           "outputs":[{"type":"message.output","role":"assistant","model":"m","content":[{"type":"text","text":"ready"}]}]
         }
         """;
-        var captured = new CapturingHandler(conversationsResponse);
+        var captured = new CapturingRequestHandler(conversationsResponse);
         var handler = new MistralConversationsHandler("ag:1") { InnerHandler = captured };
         var client = new HttpClient(handler);
 
@@ -222,7 +223,7 @@ public class MistralConversationsHandlerTests
           "outputs":[{"type":"message.output","role":"assistant","model":"m","content":[{"type":"text","text":"ready"}]}]
         }
         """;
-        var captured = new CapturingHandler(conversationsResponse);
+        var captured = new CapturingRequestHandler(conversationsResponse);
         var handler = new MistralConversationsHandler("ag:1") { InnerHandler = captured };
         var client = new HttpClient(handler);
 
@@ -261,7 +262,7 @@ public class MistralConversationsHandlerTests
     [Fact]
     public async Task SendAsync_LeavesNonChatCompletionsUrlsAlone()
     {
-        var captured = new CapturingHandler();
+        var captured = new CapturingRequestHandler();
         var handler = new MistralConversationsHandler("ag:1") { InnerHandler = captured };
         var client = new HttpClient(handler);
 
@@ -270,28 +271,4 @@ public class MistralConversationsHandlerTests
         Assert.Equal("/v1/models", captured.LastRequestUri?.AbsolutePath);
     }
 
-    private sealed class CapturingHandler : HttpMessageHandler
-    {
-        private readonly string _responseBody;
-        public Uri? LastRequestUri { get; private set; }
-        public string? LastBody { get; private set; }
-
-        public CapturingHandler(string responseBody = "{}")
-        {
-            _responseBody = responseBody;
-        }
-
-        protected override async Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request,
-            CancellationToken cancellationToken)
-        {
-            LastRequestUri = request.RequestUri;
-            if (request.Content is not null)
-                LastBody = await request.Content.ReadAsStringAsync(cancellationToken);
-            return new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(_responseBody, Encoding.UTF8, "application/json"),
-            };
-        }
-    }
 }

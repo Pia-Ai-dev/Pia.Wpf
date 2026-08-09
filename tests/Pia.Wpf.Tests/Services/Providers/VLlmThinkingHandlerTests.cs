@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using Pia.Models;
 using Pia.Services.Providers.Http;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services.Providers;
@@ -62,7 +63,7 @@ public class VLlmThinkingHandlerTests
     [Fact]
     public async Task SendAsync_RewritesOutgoingRequestBody()
     {
-        var captured = new CapturingHandler();
+        var captured = new CapturingRequestHandler();
         var rewrite = new VLlmThinkingHandler(ReasoningEffort.Medium) { InnerHandler = captured };
         var client = new HttpClient(rewrite);
 
@@ -75,20 +76,4 @@ public class VLlmThinkingHandlerTests
         Assert.True(node["chat_template_kwargs"]!["enable_thinking"]!.GetValue<bool>());
     }
 
-    private sealed class CapturingHandler : HttpMessageHandler
-    {
-        public string? LastBody { get; private set; }
-
-        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            if (request.Content is not null)
-            {
-                LastBody = await request.Content.ReadAsStringAsync(cancellationToken);
-            }
-            return new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("{}", Encoding.UTF8, "application/json"),
-            };
-        }
-    }
 }

@@ -8,6 +8,7 @@ using Pia.Services.MeetingAttendee;
 using Pia.Tests.Services;
 using Pia.ViewModels;
 using Pia.ViewModels.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.ViewModels;
@@ -96,12 +97,6 @@ public class AssistantViewModelLeverTests
         new() { Name = "Tester", SystemPrompt = "be helpful", ToolScope = scope };
 
     /// <summary>Runs Post callbacks inline so the panel VM's projections land synchronously in these facts.</summary>
-    private sealed class InlineSyncContext : SynchronizationContext
-    {
-        public override void Post(SendOrPostCallback d, object? state) => d(state);
-        public override void Send(SendOrPostCallback d, object? state) => d(state);
-    }
-
     // ---- Default + toggle -> planned wiring -------------------------------------------------------
 
     [Fact]

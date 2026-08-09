@@ -95,12 +95,6 @@ public sealed class AgentRunScopeCorrelationTests
             => Task.FromResult(PlanResult.Fallback);
     }
 
-    private sealed class FakeVerifier : IAgentVerifier
-    {
-        public Task<VerdictResult> VerifyAsync(RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
-            => Task.FromResult(VerdictResult.Accept);
-    }
-
     /// <summary>Logs from INSIDE the step turn, which is where the step scope has to be visible.</summary>
     private sealed class LoggingExecutor : IAgentTurnExecutor
     {

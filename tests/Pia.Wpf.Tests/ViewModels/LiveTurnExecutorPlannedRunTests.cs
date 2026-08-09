@@ -14,6 +14,7 @@ using Pia.Shared.Models;
 using Pia.Tests.Services;
 using Pia.ViewModels;
 using Pia.ViewModels.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.ViewModels;
@@ -1001,13 +1002,6 @@ public sealed class LiveTurnExecutorPlannedRunTests
     }
 
     /// <summary>Runs Post callbacks inline so a marshaled projection is observable synchronously.</summary>
-    private sealed class InlineSyncContext : SynchronizationContext
-    {
-        public override void Post(SendOrPostCallback d, object? state) => d(state);
-
-        public override void Send(SendOrPostCallback d, object? state) => d(state);
-    }
-
     /// <summary>The REAL planner over this fixture's stubbed provider client.</summary>
     private AgentPlanner RealPlanner()
     {

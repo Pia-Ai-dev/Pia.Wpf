@@ -1,8 +1,9 @@
-﻿using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.ViewModels;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.ViewModels;
@@ -31,12 +32,6 @@ public sealed class RunProgressViewModelPlanWindowTests
         _loc[Arg.Any<string>()].Returns(ci => (string)ci[0]);
         _loc.Format(Arg.Any<string>(), Arg.Any<object[]>())
             .Returns(ci => $"{(string)ci[0]}|{string.Join(",", (object[])ci[1])}");
-    }
-
-    private sealed class InlineSyncContext : SynchronizationContext
-    {
-        public override void Post(SendOrPostCallback d, object? state) => d(state);
-        public override void Send(SendOrPostCallback d, object? state) => d(state);
     }
 
     private RunProgressViewModel CreateVm()

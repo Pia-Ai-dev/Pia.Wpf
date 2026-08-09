@@ -8,6 +8,7 @@ using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Pia.ViewModels;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.ViewModels;
@@ -40,12 +41,6 @@ public sealed class RunProgressViewModelTests : IDisposable
     }
 
     /// <summary>Runs Post callbacks inline so the projection is observable synchronously in tests.</summary>
-    private sealed class InlineSyncContext : SynchronizationContext
-    {
-        public override void Post(SendOrPostCallback d, object? state) => d(state);
-        public override void Send(SendOrPostCallback d, object? state) => d(state);
-    }
-
     private async Task<AgentRun> NewPlannedRunAsync()
     {
         var chatId = Guid.NewGuid();
