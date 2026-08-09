@@ -10,7 +10,7 @@ public class ReminderToolIntegrationTests : ToolPipelineTestBase
     [Fact]
     public async Task CreateReminder_ShouldCallCreateReminder()
     {
-        if (ShouldSkip) return;
+        SkipIfNoApiKey();
 
         // Arrange
         ReminderService.CreateAsync(
@@ -47,7 +47,7 @@ public class ReminderToolIntegrationTests : ToolPipelineTestBase
     [Fact]
     public async Task QueryReminders_ShouldCallQueryReminders()
     {
-        if (ShouldSkip) return;
+        SkipIfNoApiKey();
 
         // Arrange
         ReminderService.GetActiveAsync().Returns(new List<Reminder>

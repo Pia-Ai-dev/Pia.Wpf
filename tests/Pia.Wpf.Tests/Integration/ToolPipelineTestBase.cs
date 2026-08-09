@@ -9,6 +9,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Services.Providers;
+using Xunit;
 
 namespace Pia.Tests.Integration;
 
@@ -17,7 +18,11 @@ public abstract class ToolPipelineTestBase
     protected static string? ApiKey =>
         Environment.GetEnvironmentVariable("PIA_TEST_API_KEY");
 
-    protected bool ShouldSkip => string.IsNullOrEmpty(ApiKey);
+    protected static void SkipIfNoApiKey()
+    {
+        if (string.IsNullOrEmpty(ApiKey))
+            Assert.Skip("PIA_TEST_API_KEY not set");
+    }
 
     protected readonly IMemoryService MemoryService = Substitute.For<IMemoryService>();
     protected readonly ITodoService TodoService = Substitute.For<ITodoService>();

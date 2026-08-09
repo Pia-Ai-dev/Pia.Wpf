@@ -1,0 +1,8 @@
+<Project>
+
+  <!-- Makes CLAUDE.md's zero-warning policy a build failure instead of a review checklist item. -->
+  <PropertyGroup>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

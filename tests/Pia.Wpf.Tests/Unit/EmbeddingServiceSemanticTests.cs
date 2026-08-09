@@ -5,15 +5,15 @@ using Xunit;
 
 namespace Pia.Wpf.Tests.Unit;
 
-// Exercises the REAL EmbeddingService (XLM-RoBERTa SentencePiece tokenizer + ONNX model). These are
-// self-skipping: they only run when the model is already downloaded on this machine, because the model
-// files are a large (~460 MB) network download that is not part of the repo.
+// Drives the real ONNX model, a ~460 MB download that is not in the repo — hence the self-skip.
 public class EmbeddingServiceSemanticTests
 {
-    private static EmbeddingService? CreateIfAvailable()
+    private static EmbeddingService CreateOrSkip()
     {
         var svc = new EmbeddingService(NullLogger<EmbeddingService>.Instance, new SimpleHttpClientFactory());
-        return svc.IsModelAvailable ? svc : null;
+        if (!svc.IsModelAvailable)
+            Assert.Skip("embedding model not downloaded on this machine");
+        return svc;
     }
 
     private static float Cosine(float[] a, float[] b)
@@ -27,8 +27,7 @@ public class EmbeddingServiceSemanticTests
     [Fact]
     public async Task GenerateEmbeddingAsync_ProducesFiniteNormalizedVector()
     {
-        var svc = CreateIfAvailable();
-        if (svc is null) return; // model not on disk — skip
+        var svc = CreateOrSkip();
 
         var v = await svc.GenerateEmbeddingAsync("This is a business plan.", TestContext.Current.CancellationToken);
 
@@ -47,8 +46,7 @@ public class EmbeddingServiceSemanticTests
     [Fact]
     public async Task GenerateEmbeddingAsync_SimilarTextRanksAboveUnrelated()
     {
-        var svc = CreateIfAvailable();
-        if (svc is null) return;
+        var svc = CreateOrSkip();
 
         var anchor = await svc.GenerateEmbeddingAsync("The cat sat on the mat.", TestContext.Current.CancellationToken);
         var similar = await svc.GenerateEmbeddingAsync("A cat is sitting on the rug.", TestContext.Current.CancellationToken);
@@ -64,8 +62,7 @@ public class EmbeddingServiceSemanticTests
     [Fact]
     public async Task GenerateEmbeddingAsync_IsCrossLingual()
     {
-        var svc = CreateIfAvailable();
-        if (svc is null) return;
+        var svc = CreateOrSkip();
 
         // The whole point of the multilingual model: a German translation must be closer to the English
         // sentence than an unrelated English sentence is. A WordPiece-shaped tokenizer against this XLM-R
@@ -84,8 +81,7 @@ public class EmbeddingServiceSemanticTests
     [Fact]
     public async Task GenerateEmbeddingAsync_ConcurrentFirstUse_DoesNotCorruptVocabulary()
     {
-        var svc = CreateIfAvailable();
-        if (svc is null) return;
+        var svc = CreateOrSkip();
 
         // The vault watcher fires one callback per changed file, so a multi-file drop hits a FRESH
         // service concurrently. Before EnsureModelLoaded was locked, two threads populated the same

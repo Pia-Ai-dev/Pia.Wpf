@@ -10,7 +10,7 @@ public class TodoToolIntegrationTests : ToolPipelineTestBase
     [Fact]
     public async Task CreateTodo_ShouldCallCreateTodo()
     {
-        if (ShouldSkip) return;
+        SkipIfNoApiKey();
 
         // Arrange
         TodoService.CreateAsync(Arg.Any<string>(), Arg.Any<TodoPriority>(),
@@ -42,7 +42,7 @@ public class TodoToolIntegrationTests : ToolPipelineTestBase
     [Fact]
     public async Task QueryTodos_ShouldCallQueryTodos()
     {
-        if (ShouldSkip) return;
+        SkipIfNoApiKey();
 
         // Arrange
         TodoService.GetPendingAsync().Returns(new List<TodoItem>
@@ -83,7 +83,7 @@ public class TodoToolIntegrationTests : ToolPipelineTestBase
     [Fact]
     public async Task CompleteTodo_ShouldUseCorrectId()
     {
-        if (ShouldSkip) return;
+        SkipIfNoApiKey();
 
         // Arrange: existing todo
         var knownGuid = Guid.NewGuid();
