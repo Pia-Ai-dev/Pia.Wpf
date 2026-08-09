@@ -793,10 +793,13 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     public async Task Stop_DuringInFlightRun_SettlesRun_NeverRunning()
     {
         var release = new TaskCompletionSource();
-        var (launcher, _) = BuildLauncher(onPlan: () => release.Task);
+        // Asynchronous continuations: entered fires on the planner's thread inside PlanAsync, so resuming
+        // inline would call StopAsync from within that call stack instead of from the test's.
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var (launcher, _) = BuildLauncher(onPlan: () => { entered.TrySetResult(); return release.Task; });
 
         var handle = await launcher.LaunchAsync(new HeadlessRunRequest("a", AgentRunTrigger.User), TestContext.Current.CancellationToken);
-        await Task.Delay(100, TestContext.Current.CancellationToken); // let it enter the planner
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
         await launcher.StopAsync(TestContext.Current.CancellationToken);
         release.TrySetResult();

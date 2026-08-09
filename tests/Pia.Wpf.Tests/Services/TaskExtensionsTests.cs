@@ -29,9 +29,19 @@ public class TaskExtensionsTests
         var tcs = new TaskCompletionSource();
         tcs.SetException(new InvalidOperationException("test error"));
 
+        // SafeFireAndForget is async void, so the logger call is the only observable completion signal.
+        var logged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _logger.When(l => l.Log(
+                LogLevel.Error,
+                Arg.Any<EventId>(),
+                Arg.Any<object>(),
+                Arg.Any<Exception>(),
+                Arg.Any<Func<object, Exception?, string>>()))
+            .Do(_ => logged.TrySetResult());
+
         tcs.Task.SafeFireAndForget(_logger);
 
-        await Task.Delay(50, TestContext.Current.CancellationToken);
+        await logged.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
         _logger.Received().Log(
             LogLevel.Error,
@@ -59,22 +69,23 @@ public class TaskExtensionsTests
     public async Task SafeFireAndForget_SlowTask_DoesNotBlock()
     {
         var started = false;
-        var completed = false;
+        var blocking = new TaskCompletionSource();
+        var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         async Task SlowOperation()
         {
             started = true;
-            await Task.Delay(200);
-            completed = true;
+            await blocking.Task;
+            finished.TrySetResult();
         }
 
         SlowOperation().SafeFireAndForget(_logger);
 
         // Should return immediately without blocking
         Assert.True(started);
-        Assert.False(completed);
+        Assert.False(finished.Task.IsCompleted);
 
-        await Task.Delay(300, TestContext.Current.CancellationToken);
-        Assert.True(completed);
+        blocking.SetResult();
+        await finished.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
     }
 }
