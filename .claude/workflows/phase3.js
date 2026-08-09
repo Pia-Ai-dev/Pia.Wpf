@@ -44,7 +44,7 @@ BUILD + TEST GATE (this repo's commit-ready bar — a group is not done until th
 
   1. dotnet build -t:Rebuild -v:n
   2. dotnet build -t:Rebuild -v:n -c Release
-  3. dotnet test tests/Pia.Wpf.Tests/Pia.Wpf.Tests.csproj -- --filter-not-namespace "Pia.Wpf.Tests.Integration.Providers"
+  3. dotnet test tests/Pia.Wpf.Tests/Pia.Wpf.Tests.csproj
 
 The bar is 0 errors AND 0 warnings in BOTH configurations, and failed: 0 on the suite.
 

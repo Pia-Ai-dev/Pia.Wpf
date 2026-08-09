@@ -4,7 +4,7 @@ using Pia.Models;
 using Pia.Services.Providers;
 using Xunit;
 
-namespace Pia.Wpf.Tests.Unit.Providers;
+namespace Pia.Tests.Services.Providers;
 
 /// <summary>
 /// Batch 05 conformance: <see cref="IAiProviderHandler.DropsReasoningEffortWithTools"/> is a transport

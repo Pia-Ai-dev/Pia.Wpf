@@ -10,7 +10,10 @@ setlocal enabledelayedexpansion
 ::   2. Fill in the secrets.
 ::   3. In a command prompt at the repo root:
 ::        call scripts\set-provider-test-env.bat
-::        dotnet test --filter "FullyQualifiedName~Pia.Wpf.Tests.Integration.Providers"
+::        dotnet test -- --explicit only --filter-namespace "Pia.Tests.Integration.Providers"
+::
+:: These tests are marked Explicit, so a plain "dotnet test" never runs them --
+:: --explicit only is what opts in.
 ::
 :: Any provider whose KEY/ENDPOINT is left empty will have its integration
 :: tests Skipped (not Failed). Leave blocks empty for providers you don't

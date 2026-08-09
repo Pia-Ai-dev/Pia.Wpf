@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
 using Xunit;
 
-namespace Pia.Wpf.Tests.Infrastructure;
+namespace Pia.Tests.Infrastructure;
 
 /// <summary>
 /// T2-13b (hermes #13's second half): the shared history database is checked once, on its first open, and the

@@ -1,7 +1,7 @@
 using Pia.Services.Search;
 using Xunit;
 
-namespace Pia.Wpf.Tests.Unit;
+namespace Pia.Tests.Services;
 
 public class VectorSearchHelperTests
 {

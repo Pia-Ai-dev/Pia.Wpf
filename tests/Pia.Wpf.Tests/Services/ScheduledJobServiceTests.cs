@@ -7,7 +7,7 @@ using Pia.Services.Interfaces;
 using Pia.Services.Scheduling;
 using Xunit;
 
-namespace Pia.Wpf.Tests.Unit;
+namespace Pia.Tests.Services;
 
 public class ScheduledJobServiceTests : IDisposable
 {

@@ -2,7 +2,7 @@ using System.IO;
 using Pia.Infrastructure;
 using Xunit;
 
-namespace Pia.Wpf.Tests.Unit;
+namespace Pia.Tests.Infrastructure;
 
 /// <summary>
 /// Pins the shared connection's durability pragmas (Batch 10 DB1). Moving the chat store onto its own

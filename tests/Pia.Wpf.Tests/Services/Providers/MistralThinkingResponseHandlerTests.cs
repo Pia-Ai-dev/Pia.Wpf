@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 using Pia.Services.Providers.Http;
 using Xunit;
 
-namespace Pia.Wpf.Tests.Unit.Providers;
+namespace Pia.Tests.Services.Providers;
 
 public class MistralThinkingResponseHandlerTests
 {

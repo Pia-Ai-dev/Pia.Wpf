@@ -4,8 +4,9 @@ using Pia.Tests.TestInfrastructure;
 using Xunit;
 using ReasoningEffort = Pia.Models.ReasoningEffort;
 
-namespace Pia.Wpf.Tests.Integration.Providers;
+namespace Pia.Tests.Integration.Providers;
 
+[Trait("Category", "Network")]
 public class OpenRouterProviderHandlerTests
 {
     private readonly ProviderIntegrationFixture _fixture = new();

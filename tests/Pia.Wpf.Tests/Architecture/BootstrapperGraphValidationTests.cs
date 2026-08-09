@@ -5,7 +5,7 @@ using Pia;
 using Pia.Services;
 using Xunit;
 
-namespace Pia.Wpf.Tests.Unit;
+namespace Pia.Tests.Architecture;
 
 /// <summary>
 /// Guards the production DI graph the way DEBUG startup does (<c>ValidateOnBuild</c> +

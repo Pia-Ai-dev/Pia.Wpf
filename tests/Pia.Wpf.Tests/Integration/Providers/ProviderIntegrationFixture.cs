@@ -7,7 +7,7 @@ using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Services.Providers;
 
-namespace Pia.Wpf.Tests.Integration.Providers;
+namespace Pia.Tests.Integration.Providers;
 
 /// <summary>
 /// Reusable factory for an <see cref="AiClientService"/> wired with the same

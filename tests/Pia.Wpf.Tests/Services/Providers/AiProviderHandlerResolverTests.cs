@@ -5,7 +5,7 @@ using Pia.Models;
 using Pia.Services.Providers;
 using Xunit;
 
-namespace Pia.Wpf.Tests.Unit.Providers;
+namespace Pia.Tests.Services.Providers;
 
 public class AiProviderHandlerResolverTests
 {

@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Services;
 using Xunit;
 
-namespace Pia.Wpf.Tests.Services;
+namespace Pia.Tests.Services;
 
 public class PiaCloudChatClientToolCallTests
 {

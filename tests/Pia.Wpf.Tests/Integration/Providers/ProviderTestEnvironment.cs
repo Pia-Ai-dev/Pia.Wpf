@@ -1,4 +1,4 @@
-namespace Pia.Wpf.Tests.Integration.Providers;
+namespace Pia.Tests.Integration.Providers;
 
 /// <summary>
 /// Per-provider env-var lookups for real-API integration tests. Tests should

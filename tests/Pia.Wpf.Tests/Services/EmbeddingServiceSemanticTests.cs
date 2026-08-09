@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Services;
 using Xunit;
 
-namespace Pia.Wpf.Tests.Unit;
+namespace Pia.Tests.Services;
 
 // Drives the real ONNX model, a ~460 MB download that is not in the repo — hence the self-skip.
 public class EmbeddingServiceSemanticTests

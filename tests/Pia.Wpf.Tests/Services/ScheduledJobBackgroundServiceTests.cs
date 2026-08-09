@@ -6,7 +6,7 @@ using Pia.Services;
 using Pia.Services.Interfaces;
 using Xunit;
 
-namespace Pia.Wpf.Tests.Unit;
+namespace Pia.Tests.Services;
 
 public class ScheduledJobBackgroundServiceTests
 {

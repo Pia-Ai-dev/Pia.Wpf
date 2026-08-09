@@ -7,7 +7,7 @@ using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Xunit;
 
-namespace Pia.Wpf.Tests.Unit;
+namespace Pia.Tests.Services;
 
 /// <summary>
 /// Unit coverage for the headless background-turn tool policy: reads (immediate result) are

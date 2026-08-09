@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 using Pia.Infrastructure;
 using Xunit;
 
-namespace Pia.Wpf.Tests.Unit;
+namespace Pia.Tests.Infrastructure;
 
 /// <summary>
 /// Verifies the PRAGMA-detect migration that adds <c>AssistantChats.WorkingDirectory</c> to

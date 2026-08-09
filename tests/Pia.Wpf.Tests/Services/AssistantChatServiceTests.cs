@@ -7,7 +7,7 @@ using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Xunit;
 
-namespace Pia.Wpf.Tests.Unit;
+namespace Pia.Tests.Services;
 
 /// <summary>
 /// net10.0-windows cannot execute on macOS — these tests are written, not run; execution is deferred to
