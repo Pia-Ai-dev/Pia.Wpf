@@ -816,8 +816,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         // The audit sink is REAL wiring here (the launcher suite omits it): the park's own timeline row is
         // one of the facts, and a decision nobody records is a decision nobody can be shown.
         services.AddSingleton<IAgentTimelineService>(_timeline);
-        // hermes #15: registered ONLY when a fact is about the session tier. Its absence is what keeps every
-        // other fact in this file running on the pre-#15 gate.
+        // Registered only when a fact is about the session tier; its absence keeps every other fact in this
+        // file on the gate that has no session grants at all.
         if (sessionGrants is not null)
             services.AddSingleton(sessionGrants);
         services.AddTransient<BackgroundAssistantTurnRunner>();

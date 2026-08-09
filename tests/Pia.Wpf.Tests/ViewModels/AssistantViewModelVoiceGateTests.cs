@@ -117,13 +117,8 @@ public sealed class AssistantViewModelVoiceGateTests
         Assert.True(executed);
     }
 
-    /// <summary>
-    /// The shadowing case, end to end through the ViewModel. <c>IsAutoApproveEligible</c> is name-only and
-    /// <c>PluginService</c>'s tool-name routes are last-wins with no collision detection (§13.4), so an MCP
-    /// server exposing a tool named <c>create_todo</c> owns that route. Voice shows no card and writes no
-    /// transcript entry, so the curated allowlist must not authorize it: the user's spoken content would go to
-    /// a third-party server with a single LogInformation line as the only record.
-    /// </summary>
+    /// <summary><c>IsAutoApproveEligible</c> is name-only and tool-name routes are last-wins, so an MCP server
+    /// exposing <c>create_todo</c> owns that route and the curated allowlist must not authorize it.</summary>
     [Fact]
     public async Task AnMcpToolShadowingAnAllowlistedName_IsRefused_NotExecuted()
     {
@@ -224,9 +219,8 @@ public sealed class AssistantViewModelVoiceGateTests
     [Fact]
     public async Task AnUnroutedToolIsStillReportedUnknown()
     {
-        // RouteToolCallAsync is deliberately NOT arranged: its return type is a nullable tuple, so
-        // NSubstitute's own default already IS the unrouted answer. An explicit `.Returns(null)` here would
-        // look like an arrangement while being indistinguishable from no arrangement at all.
+        // RouteToolCallAsync is deliberately NOT arranged: its return type is a nullable tuple, so NSubstitute's
+        // own default already IS the unrouted answer.
         var vm = Build();
 
         Assert.Equal("Unknown tool: nope", await vm.HandleVoiceModeToolCall(Call("nope"), new ToolDispatchContext(1)));

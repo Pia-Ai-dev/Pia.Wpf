@@ -6,36 +6,8 @@ using Xunit;
 
 namespace Pia.Tests.Views;
 
-/// <summary>
-/// The one fact in this repo that opens a HOST view's markup — and the guard every binding-path walk in this
-/// folder silently depends on.
-/// <para>
-/// Each per-view parse fact reflects its root ViewModel type off the property the host site binds
-/// <c>DataContext</c> to (<c>typeof(SettingsViewModel).GetProperty(nameof(SettingsViewModel.GeneralVm))
-/// .PropertyType</c>, and so on for the rest). That catches a RENAME of the property — <c>nameof</c> stops
-/// compiling — and a RETYPE, via the <c>Assert.Equal</c> next to it. It was also long documented as catching
-/// a RE-HOST. <b>It does not, and the Batch 14 review proved that by execution</b> (D1, 2026-08-01): change
-/// <c>SettingsView.xaml:123</c> from <c>DataContext="{Binding GeneralVm}"</c> to <c>{Binding AccountVm}</c>
-/// and all 40 of GeneralView's binding paths are dead at runtime — the tab renders empty controls — while
-/// every one of the Views facts stays GREEN at 0 warnings, because nothing in the suite ever read the host
-/// site.
-/// </para>
-/// <para>
-/// This fact closes that hole for all seven walks: it constructs the real hosts, reads the
-/// <c>DataContext</c> binding declared at each host site out of the parsed tree, and compares its PATH to
-/// the property name the corresponding parse test reflects off. <b>The two count checks are the non-vacuity
-/// guard</b>, because this is the same trap in a new place: a logical walk that reached none of the six
-/// children would satisfy a per-site loop vacuously, so the six host sites and the one panel must be FOUND,
-/// not merely left uncontradicted.
-/// </para>
-/// <para>
-/// No ViewModel, no <c>DataContext</c>, no <c>Pump()</c>, no frame: a <c>{Binding}</c> written in XAML is a
-/// <c>BindingExpression</c> local value the moment the parse completes, which is the same property the seven
-/// walks already rely on. What this does NOT check is the reverse direction — that a view is hosted at all,
-/// or hosted only once; it checks that wherever these views ARE hosted, the DataContext path is the one
-/// their parse tests assume.
-/// </para>
-/// </summary>
+/// <summary>A per-view parse test cannot see a RE-HOST, so this compares the <c>DataContext</c> path declared at
+/// each host site with the property that test reflects its root type off.</summary>
 [Collection("WpfApplicationStatic")]
 public class ViewHostDataContextTests
 {
@@ -43,13 +15,8 @@ public class ViewHostDataContextTests
     /// all — distinct from a wrong path, and a red either way.</summary>
     private const string NoBinding = "<no DataContext binding>";
 
-    /// <summary>
-    /// The six settings views <c>SettingsView.xaml</c> instantiates, each paired with the
-    /// <see cref="SettingsViewModel"/> property its host site must bind <c>DataContext</c> to — which is
-    /// exactly the property that view's parse test reflects its root type off. <c>nameof</c> ties every
-    /// expectation to the real property, so a rename cannot leave this table quietly stale; the host line is
-    /// carried only so a failure message can point at the markup.
-    /// </summary>
+    /// <summary><c>nameof</c> ties every expectation to the real property, so a rename cannot leave this table
+    /// stale; the host line is carried only so a failure message can point at the markup.</summary>
     private static readonly (Type View, string Path, int HostLine, string ParseTest)[] SettingsHosts =
     [
         (typeof(Pia.Views.SettingsViews.ProvidersView), nameof(SettingsViewModel.ProvidersVm), 84,
@@ -69,20 +36,16 @@ public class ViewHostDataContextTests
     [Fact]
     public void EveryParsedView_IsHostedWithTheDataContextPathItsParseTestReflectsItsRootOff()
     {
-        // SettingsView has never been constructed by any test before this one. Its code-behind is a bare
-        // InitializeComponent(); its two StaticResource styles (PiaSettingsPageTitleStyle,
-        // PiaSettingsSidebarItemStyle) live in Resources/Theme/PiaStyles.xaml, which App.xaml merges, so the
-        // host's Application is what makes the parse resolve; and nav:ViewModelLocator.AutoWireViewModel
-        // no-ops here (no Window, no service provider, so it only defers to a Loaded that never fires).
+        // SettingsView's StaticResource styles live in a dictionary App.xaml merges, so the host's Application is
+        // what makes the parse resolve; AutoWireViewModel no-ops here, deferring to a Loaded that never fires.
         var observed = WpfStaHost.Run(() =>
             BindingPathWalker.FindLogical<UserControl>(new Pia.Views.SettingsView())
                 .Where(child => SettingsHosts.Any(host => host.View == child.GetType()))
                 .Select(child => $"{child.GetType().FullName}={PathAt(child)}")
                 .ToArray());
 
-        // NON-VACUITY, and the whole reason this is not a per-site loop on its own: if the six children ever
-        // stop being reachable by a LOGICAL walk (a TabControl with a templated ContentTemplate would do it),
-        // every per-site check below passes over nothing.
+        // NON-VACUITY: if the six children ever stop being reachable by a LOGICAL walk, every per-site check
+        // below passes over nothing.
         Assert.True(observed.Length == SettingsHosts.Length,
             $"expected {SettingsHosts.Length} settings-view host sites in the parsed SettingsView but found " +
             $"{observed.Length}: {string.Join(" | ", observed)}. The walk is LOGICAL, so suspect a container " +
@@ -102,9 +65,8 @@ public class ViewHostDataContextTests
             "reflects its root type off, so every binding path in those views is dead at runtime while the " +
             $"walk still resolves against the old type (Batch 14 review, D1): {string.Join("; ", rehosted)}");
 
-        // The run panel's host is the CHAT AssistantView (Pia.Views.AssistantView) — a different type from
-        // the settings one above that shares a file name. Folding the count into the compared string keeps
-        // one message for "not found", "found twice" and "wrong path" alike.
+        // The run panel's host is the CHAT AssistantView — a different type from the settings one above that
+        // shares a file name. Folding the count into the compared string keeps one message for every failure.
         var panelPath = WpfStaHost.Run(() =>
         {
             var panels = BindingPathWalker.FindLogical<RunProgressPanel>(new Pia.Views.AssistantView()).ToArray();

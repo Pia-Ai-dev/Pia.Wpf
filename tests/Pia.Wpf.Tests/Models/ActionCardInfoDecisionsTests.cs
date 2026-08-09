@@ -4,19 +4,12 @@ using Xunit;
 
 namespace Pia.Tests.Models;
 
-/// <summary>
-/// Covers the <see cref="ActionCardInfo.Decisions"/> bar (Spec 2, design §7/§8; hermes #15 for the third
-/// tier). Decline first, then Allow once, then the GRANT tiers in ascending durability — each keyed off its
-/// OWN offerability flag and never off <see cref="ActionCardInfo.IsDestructive"/>:
-/// <see cref="ActionCardInfo.IsSessionGrantable"/> adds "Allow this session",
-/// <see cref="ActionCardInfo.IsAutoApprovable"/> adds "Always allow". A card offering neither shows the pair,
-/// with Allow once styled Danger when the action is destructive.
-/// </summary>
+/// <summary>Every grant tier on the decision bar is keyed off its OWN offerability flag and never off
+/// <see cref="ActionCardInfo.IsDestructive"/>, which only styles Allow once.</summary>
 public class ActionCardInfoDecisionsTests
 {
-    // isSessionGrantable is NOT defaulted: hermes #15 made it a dimension of the button set, and a defaulted
-    // parameter would have let every case below keep asserting the old counts while silently never exercising
-    // the new axis.
+    // isSessionGrantable is NOT defaulted: a defaulted parameter would let every case below keep asserting the
+    // old counts while never exercising the axis.
     private static ActionCardInfo NewCard(bool isAutoApprovable, bool isDestructive, bool isSessionGrantable) => new()
     {
         Title = "t",
@@ -80,22 +73,16 @@ public class ActionCardInfoDecisionsTests
     [Fact]
     public void Decisions_AutoApprovableCard_IgnoresDestructive_AllowOnceStaysPrimary()
     {
-        // Eligibility wins over the destructive heuristic for the button set: an auto-approvable
-        // card never styles Allow once as Danger (design §8 — Decisions key off IsAutoApprovable only).
+        // Eligibility wins over the destructive heuristic: an auto-approvable card never styles Allow once
+        // as Danger.
         var card = NewCard(isAutoApprovable: true, isDestructive: true, isSessionGrantable: false);
 
         Assert.Equal(3, card.Decisions.Count);
         Assert.Equal(DecisionEmphasis.Primary, card.Decisions[1].Emphasis);
     }
 
-    // --------------------------------------------- hermes #15: the third tier on the bar
-
-    /// <summary>
-    /// T-SESS-6. An allowlisted or external tool (e.g. <c>create_todo</c>) offers all three tiers, in
-    /// ascending durability: once → this session → always. The ORDER is asserted, not just the count — the bar
-    /// is how a user tells the tiers apart, and "always" sitting where "this session" is expected is the one
-    /// mistake that cannot be undone by clicking again.
-    /// </summary>
+    /// <summary>The ORDER is asserted, not just the count: "always" sitting where "this session" is expected
+    /// is the one mistake a user cannot undo by clicking again.</summary>
     [Fact]
     public void Decisions_AllTiersOfferable_AreDeclineAllowOnceThisSessionAlwaysAllow()
     {
@@ -119,10 +106,8 @@ public class ActionCardInfoDecisionsTests
         Assert.Same(card.AlwaysAllowCommand, card.Decisions[3].Command);
     }
 
-    /// <summary>
-    /// T-SESS-7, the gap #15 closes. <c>write_file</c> is session-grantable and NOT standing-grantable, so its
-    /// card gains the middle tier and still refuses to offer a permanent grant.
-    /// </summary>
+    /// <summary><c>write_file</c> is session-grantable and NOT standing-grantable, so its card gains the middle
+    /// tier and still refuses to offer a permanent grant.</summary>
     [Fact]
     public void Decisions_SessionGrantableButNotAutoApprovable_OffersThisSession_AndNeverAlwaysAllow()
     {
@@ -134,11 +119,8 @@ public class ActionCardInfoDecisionsTests
         Assert.DoesNotContain(card.Decisions, d => d.Label == "Always allow");
     }
 
-    /// <summary>
-    /// T-SESS-8. Pressing it resolves the card ONCE with the session decision, and a second press changes
-    /// nothing (first-press-wins, like the other three) — so a double-click cannot turn one grant into two
-    /// decisions on a card the gate has already read.
-    /// </summary>
+    /// <summary>First-press-wins, so a double-click cannot turn one grant into two decisions on a card the gate
+    /// has already read.</summary>
     [Fact]
     public async Task AllowForSession_ResolvesWithTheSessionDecision_AndIsFirstPressWins()
     {

@@ -4,16 +4,7 @@ using Xunit;
 
 namespace Pia.Tests.Infrastructure;
 
-/// <summary>
-/// Pins the shared connection's durability pragmas (Batch 10 DB1). Moving the chat store onto its own
-/// connection converts an intra-connection <c>InvalidOperationException</c> into a cross-connection
-/// SQLITE_BUSY, and the shared connection is the side with no error handling at all — so WAL (persistent,
-/// per FILE) and a busy timeout (per CONNECTION) are part of that change, not an optimisation.
-/// <para>
-/// net10.0-windows cannot execute on macOS — these tests are written, not run; execution is deferred to
-/// Windows/CI.
-/// </para>
-/// </summary>
+/// <summary>The shared connection has no SQLITE_BUSY handling, so its durability pragmas are pinned here.</summary>
 public class SqliteContextTests : IDisposable
 {
     private readonly string _tmpDir;
@@ -72,9 +63,8 @@ public class SqliteContextTests : IDisposable
     [Fact]
     public void EnsureSchema_CreatesAgentTimelineEvents_Idempotently()
     {
-        // The table lives inside EnsureSchema's CREATE TABLE IF NOT EXISTS command string — which runs on
-        // EVERY open — so an existing database gets it on next launch with no MigrateSchema entry, and a
-        // second open over the same file is a no-op that must not throw.
+        // The CREATE TABLE IF NOT EXISTS runs on every open, so no MigrateSchema entry is needed and a
+        // second open over the same file must be a no-op.
         Assert.True(TableExists(_ctx.GetConnection(), "AgentTimelineEvents"));
 
         using var reopened = new SqliteContext(_dbPath);
@@ -84,8 +74,8 @@ public class SqliteContextTests : IDisposable
     [Fact]
     public void EnsureSchema_AddsAgentTimelineEvents_ToAPreBatchDatabase()
     {
-        // The UPGRADE direction, which the reopen fact above does not cover: a database written before this
-        // batch has no AgentTimelineEvents table. Simulated by dropping it, which leaves exactly that shape.
+        // The upgrade direction the reopen fact above does not cover: a database with no AgentTimelineEvents
+        // table, reproduced by dropping it.
         var conn = _ctx.GetConnection();
         using (var drop = conn.CreateCommand())
         {
@@ -95,8 +85,6 @@ public class SqliteContextTests : IDisposable
 
         Assert.False(TableExists(conn, "AgentTimelineEvents"));
 
-        // Opening it with this build creates the table — no MigrateSchema entry needed, because the DDL lives
-        // in EnsureSchema's command string, which runs on every open.
         using var upgraded = new SqliteContext(_dbPath);
         var upgradedConn = upgraded.GetConnection();
         Assert.True(TableExists(upgradedConn, "AgentTimelineEvents"));
@@ -117,17 +105,8 @@ public class SqliteContextTests : IDisposable
         [
             "Id", "SchemaVersion", "RunId", "StepId", "Seq", "Kind", "Surface", "Decision", "Outcome",
             "ToolName", "ToolClass", "PluginId", "ArgsChars", "ResultChars", "DurationMs", "CreatedAt",
-            // T2-14 added five, and each one is still metadata under 03 §3 — stated, because a diff that just
-            // widened this list would read as a weakening of the privacy contract:
-            //   ToolCallId  — a BOUNDED provider-generated correlation token, never derived from user content.
-            //                 It is metadata BECAUSE AgentTimelineScope.SanitizeCallId enforces a
-            //                 tool-identifier charset and a 128-char cap on every arm, which is what keeps an
-            //                 argument, a path or a JSON blob out of the column; an unbounded raw CallId would
-            //                 NOT belong here.
-            //   Round       — an int: which provider tool-loop round dispatched the call.
-            //   StepOrdinal — an int: Seq's per-step sibling, allocated in memory like Seq.
-            //   RequestedAt/DecidedAt — instants, exactly as CreatedAt already is.
-            // Still no ExtraJson, no Path, no ArgsHash, and no column that can hold an argument or a result.
+            // ToolCallId counts as metadata only because AgentTimelineScope.SanitizeCallId holds it to a
+            // tool-identifier charset and a 128-char cap; an unbounded raw CallId would not belong here.
             "ToolCallId", "Round", "StepOrdinal", "RequestedAt", "DecidedAt",
         ];
 
@@ -141,20 +120,7 @@ public class SqliteContextTests : IDisposable
         Assert.Equal(expected.OrderBy(c => c, StringComparer.Ordinal), actual.OrderBy(c => c, StringComparer.Ordinal));
     }
 
-    /// <summary>
-    /// THE EXISTING-USER FACT for T2-14: a profile created before the five correlation columns existed must
-    /// open, gain them, and keep every row it already had.
-    /// <para>
-    /// This is the half a CREATE-TABLE-only change passes and a MigrateSchema-only change also passes: the
-    /// column-list test above covers the fresh-install path (the CREATE TABLE literal), and only this one
-    /// covers the ALTER path. Getting one of the two right is the classic half-fix on this table.
-    /// </para>
-    /// <para>
-    /// The pre-T2-14 shape is reproduced by DROPping the five columns rather than by pasting an old CREATE
-    /// TABLE: pasting one would silently stop being the real old shape the moment any OTHER column changed,
-    /// while a DROP is defined against whatever this build actually creates.
-    /// </para>
-    /// </summary>
+    /// <summary>Only this covers the ALTER path; the column-list test above covers the fresh CREATE TABLE.</summary>
     [Fact]
     public void EnsureSchema_AddsTheCorrelationColumns_ToAPreT214Database()
     {
@@ -163,7 +129,7 @@ public class SqliteContextTests : IDisposable
         var legacyStepId = Guid.NewGuid();
         var legacyCreatedAt = new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc);
 
-        // ---- arrange: rewind this database to the pre-T2-14 shape and put a row in it ----
+        // ---- arrange: rewind this database to the older shape and put a row in it ----
         {
             // NOT a `using`: this is the context's OWN shared connection, and the context closes it in Dispose.
             var conn = _ctx.GetConnection();
@@ -175,7 +141,6 @@ public class SqliteContextTests : IDisposable
             }
 
             // No AgentRuns parent, so the FK would reject this INSERT — switched off for the fixture only.
-            // The subject here is the SCHEMA migration, not referential integrity (which T-FK covers).
             using (var off = conn.CreateCommand())
             {
                 off.CommandText = "PRAGMA foreign_keys=OFF;";
@@ -242,9 +207,8 @@ public class SqliteContextTests : IDisposable
         Assert.True(row.IsDBNull(11));
         Assert.True(row.IsDBNull(12));
 
-        // ---- assert 3: idempotent. A THIRD launch must not attempt the ALTERs again (SQLite errors on a
-        // duplicate column name, and MigrateSchema has no try/catch — an unguarded ALTER would take the whole
-        // app's startup down on every launch after the first).
+        // ---- assert 3: a third launch must not re-run the ALTERs. MigrateSchema has no try/catch, so a
+        // duplicate-column error would take startup down on every launch after the first.
         reopened.Dispose();
         using var third = new SqliteContext(_dbPath);
         Assert.NotNull(third.GetConnection());

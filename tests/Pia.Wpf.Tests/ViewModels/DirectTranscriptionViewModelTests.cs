@@ -13,22 +13,7 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// Exercises <see cref="DirectTranscriptionViewModel"/> against a hand-rolled
-/// <see cref="FakeDirectTranscriptionService"/> (modeled on <c>FakeMeetingAttendeeService</c>) and
-/// <see cref="InlineUiDispatcher"/>, so every <c>DispatchToUi</c> call runs synchronously inline and no
-/// background-thread polling is needed. Utterances are fed through the inherited (internal, friend-
-/// assembly-visible) <c>AddUtterance</c> hook directly rather than the utterance channel + reader task,
-/// which is deterministic and exercises exactly the same bubble/journal code path the reader loop would.
-///
-/// <para>Measured here: the view model's own wiring (chips, revoke/rename, start/stop/resume gating,
-/// the "me" label, and that the front-matter/stats hand-off reaches <c>DirectTranscriptMarkdown</c> with
-/// real data). NOT measured: <c>DirectTranscriptMarkdown</c>'s exact rendered format (owned by module 3)
-/// or <c>NamedConsentClassifier</c>'s matching behaviour (owned by module 2) — those have their own test
-/// suites. The stats-block assertion below plants a distinctive duration value and checks it surfaces
-/// somewhere in the rendered Markdown; if module 3 changes how it formats durations, that one assertion
-/// (not the schema check) may need updating.</para>
-/// </summary>
+/// <summary>Utterances are fed through the internal AddUtterance hook, which keeps them deterministic.</summary>
 public class DirectTranscriptionViewModelTests
 {
     [Fact]
@@ -70,11 +55,8 @@ public class DirectTranscriptionViewModelTests
     [Fact]
     public void SpeakerConsentChanged_Granted_WhenTheRenameWasRefused_KeepsTheConsentMapKeyOnTheChip()
     {
-        // The service resolves a REFUSED grant-time rename (the extracted name is already taken) by keeping
-        // the original diarizer label as the consent-map key while still reporting the name. The chip must
-        // key off that authoritative label, not off the name: Revoke is issued with the chip's key, so a
-        // chip keyed by the name would revoke a different speaker's entry — or, if that name is not a
-        // consent key at all, nothing whatsoever, silently failing to honour a withdrawal of consent.
+        // Revoke is issued with the chip's key, so a chip keyed by the reported name rather than by the
+        // consent-map label would revoke a different speaker's entry — or nothing at all.
         var (vm, service) = CreateSut();
         service.RaiseSpeakerRegistered("Speaker 2");
         vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hello there", DateTimeOffset.Now, "Speaker 2"));
@@ -99,10 +81,8 @@ public class DirectTranscriptionViewModelTests
     [Fact]
     public void ConsentSessionReset_ClearsChipsAndStats_ButKeepsAlreadyEmittedBubbles()
     {
-        // A re-prepare after a failed start builds a BRAND-NEW diarizer, so the service discards the consent
-        // map — its old "Speaker 1" is a different voice now. A chip left reading "consented" would tell the
-        // user a participant is being recorded while the gate has reverted them to Unknown and is dropping
-        // their speech. The bubbles stay: that text was emitted lawfully under the consent of the time.
+        // A re-prepare builds a BRAND-NEW diarizer, so the old consent map is discarded — its "Speaker 1" is a
+        // different voice now. The bubbles stay: that text was emitted lawfully under the consent of the time.
         var (vm, service) = CreateSut();
         service.RaiseSpeakerRegistered("Speaker 2");
         service.RaiseConsentChanged(
@@ -123,10 +103,8 @@ public class DirectTranscriptionViewModelTests
     [Fact]
     public void MicSpeakingStarted_DoesNotMaterializeAnEmptyBubble()
     {
-        // Voice activity that never produces transcribable text (a cough, a keystroke) used to leave an
-        // EMPTY "me" bubble behind forever: a blank pill in the overlay, an empty block in the exported
-        // Markdown, Save/Summarize wrongly enabled for a session with no speech, and a bubble that vanished
-        // on any journal rebuild because it had no journal entry. Activity is reported via IsMicListening.
+        // Voice activity that never produces transcribable text used to leave an EMPTY "me" bubble behind
+        // forever; activity is reported through IsMicListening instead.
         var (vm, service) = CreateSut();
 
         service.RaiseSpeaking(TranscriptSpeaker.You, true);
@@ -200,9 +178,8 @@ public class DirectTranscriptionViewModelTests
         var remaining = Assert.Single(vm.Bubbles);
         Assert.Equal("Speaker 3", remaining.SpeakerLabel);
 
-        // The journal is private, but its removal is observable through the rebuild path: adding a new
-        // utterance for the SAME (revoked) label starts a brand-new bubble rather than merging into
-        // anything the old journal entry would have produced.
+        // The journal is private, but its removal is observable: a new utterance for the same label starts a
+        // brand-new bubble instead of merging into what the old entry would have produced.
         vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "from two again", DateTimeOffset.Now, "Speaker 2"));
         Assert.Equal(2, vm.Bubbles.Count);
     }
@@ -230,8 +207,7 @@ public class DirectTranscriptionViewModelTests
 
         var bubble = Assert.Single(vm.Bubbles);
         var label = SpeakerToDisplayNameConverter.Resolve(bubble.Speaker, bubble.SpeakerLabel, vm.CounterpartName);
-        // Not a hardcoded "you"/"me" literal: whatever LocalizationSource resolves for Speaker_Me today
-        // (design §3.7 — the converter no longer hardcodes the English word).
+        // Not a hardcoded "you"/"me" literal: whatever LocalizationSource resolves for Speaker_Me today.
         Assert.Equal(LocalizationSource.Instance["Speaker_Me"], label);
     }
 
@@ -417,13 +393,7 @@ public class DirectTranscriptionViewModelTests
         return (vm, service, dialog);
     }
 
-    /// <summary>
-    /// Hand-rolled <see cref="IDirectTranscriptionService"/> double, modeled on
-    /// <c>MeetingAttendeeViewModelTests.FakeMeetingAttendeeService</c>: a bounded, drop-oldest utterance
-    /// channel plus manually-raisable events and simple call counters. Every "raise" method invokes the
-    /// event synchronously on the CALLING (test) thread — combined with <see cref="InlineUiDispatcher"/>,
-    /// the view model's handler runs inline before the raise call returns, so tests need no polling.
-    /// </summary>
+    /// <summary>Every "raise" method fires synchronously on the calling thread, so no test needs polling.</summary>
     private sealed class FakeDirectTranscriptionService : IDirectTranscriptionService
     {
         private readonly Channel<TranscriptUtterance> _channel = Channel.CreateBounded<TranscriptUtterance>(

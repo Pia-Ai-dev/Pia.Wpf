@@ -334,16 +334,7 @@ public sealed class AgentRunOrchestratorUserPauseTests
         Assert.False(exec.EndCalled);
     }
 
-    /// <summary>
-    /// The SECOND consume site. An abort can leave the loop by THROWING rather than returning a result — an OCE
-    /// out of the per-step persona resolve (awaited before either executor's exchange try/catch, so the step row
-    /// is left <c>Running(1)</c>), and Live's second escape hatch. The <c>catch (OperationCanceledException)</c>
-    /// arm has to restore the step from the hoisted id, because <c>step</c> is not in scope there.
-    /// <para>
-    /// Not in §8's fact table; added because this commit adds that arm and G4 would otherwise be the first
-    /// place it is exercised — for Live only.
-    /// </para>
-    /// </summary>
+    /// <summary>An abort can also leave the loop by THROWING, and that arm restores the step from a hoisted id.</summary>
     [Fact]
     public async Task UserPause_WhoseStepThrowsInsteadOfReturning_AlsoLeavesTheRunResumable()
     {
@@ -374,12 +365,8 @@ public sealed class AgentRunOrchestratorUserPauseTests
         Assert.False(exec.EndCalled); // a pause is not terminal, so no EndRun even on the throw path
     }
 
-    /// <summary>
-    /// D2, both halves. The tokens the aborted step already spent are BILLED — run-level (<c>stepId: null</c>),
-    /// because a per-step entry belongs to a step that finished and this one will re-run. And when the executor
-    /// reports NO usage (which is what both real executors do on a cancel today) nothing is written: no
-    /// estimate, no synthesized number, no fallback.
-    /// </summary>
+    /// <summary>The tokens an aborted step already spent are billed run-level, because a per-step entry belongs
+    /// to a step that finished and this one will re-run; when the executor reports none, nothing is written.</summary>
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -411,11 +398,7 @@ public sealed class AgentRunOrchestratorUserPauseTests
         Assert.Equal(0, ledger.PerStep); // never a per-step entry for a step that will re-run
     }
 
-    /// <summary>
-    /// The no-regression guardrail. With no pause request, a cancel is a STOP and settles exactly as it did
-    /// before this batch: <c>Cancelled</c>, <c>CompletedAt</c> stamped, <c>EndRunAsync(cancelled: true)</c>.
-    /// A dispatch IS registered here, so the difference is the request and nothing else.
-    /// </summary>
+    /// <summary>A dispatch IS registered here, so the only difference from a pause is the absent request.</summary>
     [Fact]
     public async Task GenuineCancel_StillSettlesCancelled()
     {
@@ -443,19 +426,8 @@ public sealed class AgentRunOrchestratorUserPauseTests
         Assert.Equal(new[] { "s1" }, exec.Executed); // s2 never dispatched
     }
 
-    /// <summary>
-    /// Collision hardening 2, and Batch 08 F3's OWNERSHIP RULE from the side that must be refused: <b>a request
-    /// recorded against a PREVIOUS dispatch must not abort the first step of the next one.</b> The launcher's
-    /// per-run entry is overwritten by a resume while the old dispatch is still unwinding, and a
-    /// <c>!started</c> arm can leave a request behind, so this is reachable.
-    /// <para>
-    /// TWO dispatches are constructed here on purpose. Until F3 this fact registered ONE sink, recorded against
-    /// it and then ran <c>RunAsync</c> for that same registration — which under the ownership rule is not a
-    /// stale request at all but a live one belonging to the dispatch that is running, i.e. the fact's body
-    /// asserted the F3 defect (blind revoke) as correct behaviour while its name described a scenario it never
-    /// built. Its twin below is the other side.
-    /// </para>
-    /// </summary>
+    /// <summary>The ownership rule from the side that must be refused: a request recorded against a PREVIOUS
+    /// dispatch must not abort the first step of the next one, which is why TWO dispatches are built here.</summary>
     [Fact]
     public async Task StalePauseRequest_FromAPreviousDispatch_IsNotHonoured()
     {
@@ -489,23 +461,8 @@ public sealed class AgentRunOrchestratorUserPauseTests
         Assert.False(h.Store.TryConsumePauseRequest(run.Id)); // dropped, not merely ignored
     }
 
-    /// <summary>
-    /// <b>Batch 08 F3 — the twin, and the leg that was broken.</b> Continue, then Pause a beat later: the
-    /// resume CAS has already put the row at <c>Running</c> and the panel's Pause button is live, so the
-    /// request is accepted and fires the RESUME's own sink — and it must then be honoured by the very dispatch
-    /// it was aimed at, not thrown away by it.
-    /// <para>
-    /// Before the fix the loop revoked any request for its own run id on entry, which discarded this one while
-    /// the cancel it had fired stood: the first step came back cancelled with nothing to consume, and
-    /// <c>SafeFail(cancelled: true)</c> settled the run <c>Cancelled</c> with <c>CompletedAt</c> stamped and no
-    /// claim path back — after <c>PauseAsync</c> had already returned <c>true</c> to the user. The review
-    /// executed exactly that through the real launcher (<c>FINAL state=Cancelled … resumable=False</c>).
-    /// </para>
-    /// <para>
-    /// Deterministic, not timed: the request is recorded strictly BEFORE <c>RunAsync</c> is entered, which is
-    /// the whole window. No sleep, no gate.
-    /// </para>
-    /// </summary>
+    /// <summary>Continue then Pause a beat later: the request fires the RESUME's own sink, so that dispatch must
+    /// honour it rather than revoke it as stale and settle the run <c>Cancelled</c> with no claim path back.</summary>
     [Fact]
     public async Task APauseInTheResumeRampUp_IsHonouredByTheDispatchItFired_NotRevokedByIt()
     {
@@ -526,8 +483,7 @@ public sealed class AgentRunOrchestratorUserPauseTests
         Assert.Equal(AgentRunState.Paused, (await h.Runs.GetAsync(run.Id, ct))!.State);
 
         // CONTINUE. The claim CAS moves the row to Running, then the launcher registers the resume's sink —
-        // both before the loop is even scheduled (HeadlessRunLauncher.ResumeAsync: the CAS, then
-        // RegisterDispatch, then Task.Run).
+        // both before the loop is even scheduled.
         Assert.True(await h.Runs.TryResumeFromPauseAsync(run.Id, ct));
         var resumed = (await h.Runs.GetAsync(run.Id, ct))!;
         using var dispatchB = new CancellationTokenSource();
@@ -542,9 +498,8 @@ public sealed class AgentRunOrchestratorUserPauseTests
         // cancelled from leg 1's own pause, so it says nothing here.)
         Assert.True(dispatchB.IsCancellationRequested);
 
-        // NOW the loop starts, on the token the pause already cancelled. The delegate below does not pause
-        // again — the pause already happened; it only routes the step into the token-honouring unwind a real
-        // executor performs when it is handed an already-cancelled token.
+        // NOW the loop starts, on the token the pause already cancelled. The delegate below does not pause again;
+        // it only routes the step into the token-honouring unwind a real executor performs on a cancelled token.
         var second = new PausingExecutor("s1", _ => Task.FromResult(true));
         await h.BuildOrchestrator(new FakePlanner(), steering: h.Store)
             .RunAsync(resumed, second, Persona(), Provider(), RunProfile.Interactive, dispatchB.Token, resume: true);
@@ -555,7 +510,7 @@ public sealed class AgentRunOrchestratorUserPauseTests
         Assert.Equal(AgentRunService.UserPausedReason, RunPauseEnvelope.ReadReason(final));  // a USER pause
         Assert.All(final.Plan, s => Assert.Equal(AgentStepStatus.Pending, s.Status));        // nothing lost
         Assert.True(second.PausedCalled);   // the non-terminal release …
-        Assert.False(second.EndCalled);     // … and not the terminal one (guardrail 5)
+        Assert.False(second.EndCalled);     // … and not the terminal one
 
         // Resumable for real, which is the property the whole batch rests on: claim it and drain it.
         Assert.True(await h.Runs.TryResumeFromPauseAsync(run.Id, ct));
@@ -567,12 +522,8 @@ public sealed class AgentRunOrchestratorUserPauseTests
         Assert.Equal(AgentRunState.Completed, (await h.Runs.GetAsync(run.Id, ct))!.State);
     }
 
-    /// <summary>
-    /// The additive property the whole batch rests on: a null steering store makes this loop byte-for-byte the
-    /// pre-Batch-08 one. A request can exist in a store the loop does not have, and the cancel is still a plain
-    /// cancel — which is what keeps a dozen positional test constructions, and every build that has not
-    /// registered the singleton, on exactly their old behaviour.
-    /// </summary>
+    /// <summary>A request can exist in a store the loop was not given, and the cancel is then still a plain
+    /// cancel — which keeps positional test constructions and unregistered builds on their old behaviour.</summary>
     [Fact]
     public async Task NullSteeringStore_BehavesExactlyAsBeforeThisBatch()
     {
@@ -601,8 +552,7 @@ public sealed class AgentRunOrchestratorUserPauseTests
         Assert.True(h.Store.TryConsumePauseRequest(run.Id));
     }
 
-    /// <summary>An executor whose named step FAILS (not cancels), so the loop takes the replan branch. Every
-    /// other step succeeds.</summary>
+    /// <summary>Fails its named step rather than cancelling, so the loop takes the replan branch.</summary>
     private sealed class FailingExecutor : IAgentTurnExecutor
     {
         private readonly string _failOn;
@@ -670,25 +620,8 @@ public sealed class AgentRunOrchestratorUserPauseTests
         }
     }
 
-    /// <summary>
-    /// <b>Batch 08 F9: a pause that lands during a REPLAN must not lose the repair the replan was owed.</b>
-    /// <para>
-    /// <c>TryReplanAfterFailureAsync</c> awaits <c>ReplanAsync</c> on the dispatch token with no local catch, so
-    /// a pause there throws into the loop's outer arm, which parks the run correctly and resumably — but used to
-    /// leave the <c>Failed</c> step behind with nothing owed to it. <c>replans</c> is a <c>RunAsync</c> local, so
-    /// the resumed dispatch has no memory a replan was due; <c>NextPendingStepAsync</c> filters <c>Pending</c>,
-    /// so the step never re-ran; and <c>SafeSeedResumeContext</c> filters <c>== Done</c>, so the critic was
-    /// never told it failed. <b>The resumed run drained the remainder and reported <c>Completed</c> over work
-    /// that failed and was never repaired</b> — and pre-Batch-08 that same interleaving settled
-    /// <c>Cancelled</c>, so the silent-success shape was new.
-    /// </para>
-    /// <para>
-    /// The fix is the cheap half of the review's recommendation and it is what changes the OUTCOME: the failed
-    /// row goes back to <c>Pending</c> when the user pause parks, so the resume RE-ATTEMPTS it. The assertions
-    /// are therefore in two parts — the parked plan (what the user sees and can still edit), and the resumed
-    /// run actually executing <c>s1</c> again.
-    /// </para>
-    /// </summary>
+    /// <summary>A pause parking mid-replan must hand the failed step back as <c>Pending</c>, or the resume drains
+    /// the remainder and reports <c>Completed</c> over work that failed and was never repaired.</summary>
     [Fact]
     public async Task APauseDuringAReplan_GivesTheFailedStepBackToThePlan_SoTheResumeReattemptsIt()
     {

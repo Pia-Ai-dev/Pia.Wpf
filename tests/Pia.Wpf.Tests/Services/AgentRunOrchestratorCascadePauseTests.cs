@@ -10,35 +10,14 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Batch 08 G5 / D6 — the CASCADE pause of a fan-out. Pausing a parent that is
-/// <see cref="AgentRunState.WaitingForChildren"/> pauses what is actually working (its children) and lets the
-/// parent's own wait end naturally; the parent's token is deliberately never fired.
-/// <para>
-/// Why that matters, stated once for the whole file: <c>AgentRunOrchestrator</c>'s fan-out checks
-/// <c>cts.IsCancellationRequested</c> BEFORE the un-park CAS and returns <c>Cancelled: true</c>, which its
-/// caller turns into <c>SafeFail(cancelled: true)</c> — a TERMINAL settle with <c>CompletedAt</c> stamped. So
-/// "release the parent by cancelling it" would turn the entire feature into a cancel, silently, with the run
-/// still settling. <see cref="PausingAParent_DoesNotFireItsOwnToken_SoItNeverSettlesCancelled"/> is that
-/// guard, asserted from both sides (the token AND the row).
-/// </para>
-/// <para>
-/// These facts drive the real <see cref="AgentRunOrchestrator"/> against a real SQLite
-/// <see cref="AgentRunService"/>, the real <see cref="RunSteeringStore"/> and the real
-/// <see cref="AgentRunSteeringService"/>. Each CHILD runs its own real orchestrator inside the launcher
-/// double, so a cascade-paused child pauses through its OWN D1 abort — its step really goes back to
-/// <c>Pending</c> and its row really CASes to <c>Paused</c> — rather than through a row the fixture wrote.
-/// </para>
-/// </summary>
+/// <summary>A cascade never fires a fan-out parent's own token: the fan-out reads that as a terminal cancel.</summary>
 public sealed class AgentRunOrchestratorCascadePauseTests
 {
     private static Persona Persona() => new() { Name = "Pia", SystemPrompt = "sys" };
 
     private static AiProvider Provider() => new() { Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
 
-    /// <summary>A plan carrying the <c>{"parallelGroup":N}</c> marker the planner writes, produced through
-    /// <see cref="JsonSerializer"/> rather than hand-typed so a producer change cannot leave these facts
-    /// asserting a stale spelling.</summary>
+    /// <summary>Serialized rather than hand-typed, so a producer change cannot leave a stale spelling here.</summary>
     private static List<AgentStep> MakeSteps(params (string Intent, int? Group)[] steps)
     {
         var result = new List<AgentStep>();
@@ -67,19 +46,13 @@ public sealed class AgentRunOrchestratorCascadePauseTests
 
         public int ReplanCalls { get; private set; }
 
-        /// <summary>Every failure string a replan was asked to recover from. The fan-out's
-        /// <c>"child run did not settle"</c> arrives here and nowhere else that a test can read, because a
-        /// sibling's error text is carried in <c>ctx</c> and never persisted on the step row.</summary>
+        /// <summary>A sibling's error text lives only in ctx, so this is the only copy a test can read.</summary>
         public List<string?> ReplanFailures { get; } = new();
 
-        /// <summary>Signalled as the plan turn is entered — at which point the row reads <c>Planning</c>,
-        /// because <c>RunAsync</c> sets that state immediately before calling here.</summary>
+        /// <summary>By the time this signals, the row already reads <c>Planning</c>.</summary>
         public TaskCompletionSource? PlanEntered { get; set; }
 
-        /// <summary>Holds the plan turn open until the fact releases it. Awaited WITH the dispatch's token, so
-        /// a fired cancel throws <see cref="OperationCanceledException"/> out of the plan turn exactly as a
-        /// real provider call would — which is the whole shape a cascade aimed at a <c>Planning</c> child
-        /// produces.</summary>
+        /// <summary>Awaited with the dispatch token, so a cancel throws out of the plan turn.</summary>
         public Task? PlanGate { get; set; }
 
         public async Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
@@ -130,22 +103,20 @@ public sealed class AgentRunOrchestratorCascadePauseTests
 
         public Task OnPausedAsync(AgentRun run, RunContext ctx, CancellationToken ct)
         {
-            PausedCalled = true; // the NON-terminal release (guardrail 5) — never EndRunAsync
+            PausedCalled = true; // the non-terminal release — never EndRunAsync
             return Task.CompletedTask;
         }
     }
 
     private enum ChildBehavior
     {
-        /// <summary>Sit inside the step until this dispatch's own token is cancelled, then report the cancel
-        /// the way <c>HeadlessTurnExecutor</c>'s cancel arm does. The shape the cascade interrupts.</summary>
+        /// <summary>The shape a cascade interrupts.</summary>
         HoldUntilCancelled,
 
         /// <summary>Finish the step immediately — a fresh generation after a resume.</summary>
         Complete,
 
-        /// <summary>Pause ITSELF (the user pausing a child from the child's own chat) and then unwind. Produces
-        /// a <c>Paused</c> child with NO pause request standing against the parent.</summary>
+        /// <summary>The child pauses itself, leaving no pause request standing against the parent.</summary>
         PauseItself,
     }
 
@@ -175,12 +146,11 @@ public sealed class AgentRunOrchestratorCascadePauseTests
 
             try
             {
-                await Task.Delay(Timeout.Infinite, ct); // the sink's cancel reaches the in-flight step (R13)
+                await Task.Delay(Timeout.Infinite, ct);
             }
             catch (OperationCanceledException)
             {
-                // Swallowed on purpose: this is the RETURNING unwind shape, which is what the headless
-                // executor does. The throwing shape has its own coverage in G3's file.
+                // Swallowed on purpose: the RETURNING unwind shape, which is what the headless executor does.
             }
 
             return new StepTurnResult(false, true, "cancelled", string.Empty, null, Guid.Empty, Guid.Empty);
@@ -197,19 +167,7 @@ public sealed class AgentRunOrchestratorCascadePauseTests
 
     private sealed record Dispatch(Guid RunId, Guid ChatId, string Goal, Task Completion);
 
-    /// <summary>
-    /// Launcher double that behaves like the real one in the four ways these facts depend on: it creates a REAL
-    /// child run row through the real service; it registers each dispatch's cancel sink with the SAME steering
-    /// store the parent uses; it runs a REAL <see cref="AgentRunOrchestrator"/> for the child, so a cascade
-    /// pause is honoured by the child's own loop rather than by the fixture; and its <c>CancelAsync</c> reaches
-    /// only a dispatch that is still live — exactly like <c>HeadlessRunLauncher</c>'s <c>_inflight</c> lookup.
-    /// <para>
-    /// That last property is what makes the supersede facts real: once a child has PAUSED, its dispatch has
-    /// returned and its registration is gone, so <c>CancelAsync</c> is a no-op against it. That is the same
-    /// shape a child parked by a PREVIOUS PROCESS presents, and it is the only reason
-    /// <c>SafeCancelStaleChildrenAsync</c>'s row-level settle exists.
-    /// </para>
-    /// </summary>
+    /// <summary>CancelAsync reaches only a still-live dispatch, exactly like the real launcher's lookup.</summary>
     private sealed class CascadingChildLauncher : IHeadlessRunLauncher
     {
         private readonly Harness _h;
@@ -224,8 +182,7 @@ public sealed class AgentRunOrchestratorCascadePauseTests
 
         public List<Guid> Cancelled { get; } = new();
 
-        /// <summary>Calls that came through <see cref="LaunchAsync"/> — the PARENT slot pool (<c>_slots</c>) —
-        /// rather than <see cref="LaunchChildAsync"/>, which is the child pool (<c>_childSlots</c>).</summary>
+        /// <summary>Calls through the parent-pool LaunchAsync rather than the child-pool LaunchChildAsync.</summary>
         public int TopLevelLaunchAttempts { get; private set; }
 
         /// <summary>Behaviour by dispatch index, so one fact can hold generation 1 and complete generation 2.</summary>
@@ -236,12 +193,7 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         /// <summary>Signalled once <see cref="ExpectedChildren"/> children are inside their step.</summary>
         public TaskCompletionSource AllChildrenInFlight { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        /// <summary>
-        /// Batch 08 F2. Which <c>LaunchChildAsync</c> call blocks — before it creates anything — so the parent's
-        /// loop is held INSIDE the fan-out dispatch prologue, the window in which the persisted row still reads
-        /// <c>Running</c>. <c>-1</c> ⇒ no gate. Deliberately takes NO cancellation token: the gate exists to keep
-        /// the loop in the window, and a cancel must not be able to release it early.
-        /// </summary>
+        /// <summary>Token-free on purpose: a cancel must not release the loop from the prologue early.</summary>
         public int GateBeforeLaunchIndex { get; set; } = -1;
 
         /// <summary>Signalled when <see cref="GateBeforeLaunchIndex"/> is reached.</summary>
@@ -250,8 +202,7 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         /// <summary>Completed by the fact to let the prologue continue.</summary>
         public TaskCompletionSource ReleasePrologue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        /// <summary>Which child is held inside its PLAN turn — a child sitting at <c>Planning</c>, which is the
-        /// state a cascade must leave alone. <c>-1</c> ⇒ none.</summary>
+        /// <summary>A child sitting at Planning is the state a cascade must leave alone; -1 ⇒ none.</summary>
         public int HoldPlanningChildIndex { get; set; } = -1;
 
         /// <summary>Signalled when that child's plan turn is entered.</summary>
@@ -260,8 +211,7 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         /// <summary>Completed by the fact to let that child plan and run.</summary>
         public TaskCompletionSource ReleasePlanning { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        /// <summary>Every child whose cancel SINK was invoked, in order — the direct observable of "the cascade
-        /// fired at this child". Snapshot, taken under the lock every append uses.</summary>
+        /// <summary>Snapshot under the append lock of every child the cascade fired at.</summary>
         public List<Guid> SinkFired
         {
             get { lock (_liveLock) return _sinkFired.ToList(); }
@@ -405,13 +355,7 @@ public sealed class AgentRunOrchestratorCascadePauseTests
             new(Runs, planner, verifier ?? new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance,
                 workspaces: null, childLauncher: childLauncher, chats: null, steering: Store);
 
-        /// <summary>
-        /// Poll the persisted row until it reads <paramref name="state"/>. The parent's park
-        /// (<c>SafeBeginChildWait</c>) happens AFTER the last child was dispatched, so "both children are inside
-        /// their step" does not imply "the parent's row says WaitingForChildren" — and pausing one instant too
-        /// early would take the <c>Running</c> arm, which fires the parent's own token. Polls the row rather
-        /// than sleeping a fixed span, so the fact is a wait and not a race.
-        /// </summary>
+        /// <summary>Pausing before the park takes the Running arm, which fires the parent's own token.</summary>
         public async Task<AgentRun> WaitForStateAsync(Guid runId, AgentRunState state, CancellationToken ct)
         {
             var deadline = DateTime.UtcNow.AddSeconds(10);
@@ -434,8 +378,7 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         }
     }
 
-    /// <summary>Register a dispatch's cancel sink exactly the way the launcher does, and hand back the delegate
-    /// instance so the release can be ownership-guarded on it.</summary>
+    /// <summary>Hands back the sink instance so the release can be ownership-guarded on it.</summary>
     private static Action RegisterDispatch(Harness h, Guid runId, CancellationTokenSource cts)
     {
         Action sink = () => { try { cts.Cancel(); } catch { /* already disposed */ } };
@@ -443,23 +386,6 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         return sink;
     }
 
-    /// <summary>
-    /// <b>THE HEADLINE FACT, and the group's mandatory red demo.</b> Pausing a <c>WaitingForChildren</c> parent
-    /// parks every child and records NONE of them as a failed sibling.
-    /// <para>
-    /// Red before the <c>WaitingForInput or Paused</c> widening of the fan-out's per-child arm: a <c>Paused</c>
-    /// child falls through to <c>default:</c>, which sets <c>anyFailed</c>, calls <c>SettleSiblingAsync</c> with
-    /// the error <c>"child run did not settle"</c> (persisting the step <c>Failed</c> AND recording it into
-    /// <c>ctx</c> for the critic), and rolls up nothing — so the user presses Pause and the parent replans
-    /// around work that is sitting there resumable.
-    /// </para>
-    /// <para>
-    /// The <c>ctx</c> half is asserted through its co-located call site rather than by reading a private field:
-    /// <c>SettleSiblingAsync</c> is the ONLY writer of both the persisted step status and <c>ctx.RecordStep</c>
-    /// for a sibling, so a step row still at <c>Pending</c> plus a planner that was never asked to recover from
-    /// <c>"child run did not settle"</c> is exactly the evidence that it never ran.
-    /// </para>
-    /// </summary>
     [Fact]
     public async Task PausingAParent_ParksEveryChild_AndRecordsNoneAsFailed()
     {
@@ -490,7 +416,7 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         Assert.Null(parent.CompletedAt);
         Assert.Equal(AgentRunService.UserPausedReason, RunPauseEnvelope.ReadReason(parent));
 
-        // Every child parked through its OWN D1 abort, with its own step given back to its own plan.
+        // Every child parked through its OWN abort, with its own step given back to its own plan.
         var children = await h.Runs.GetChildRunsAsync(run.Id, ct);
         Assert.Equal(2, children.Count);
         Assert.All(children, c => Assert.Equal(AgentRunState.Paused, c.State));
@@ -513,20 +439,9 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         Assert.Equal(0, verifier.VerifyCalls);
 
         Assert.True(exec.PausedCalled);  // the non-terminal executor release ran …
-        Assert.False(exec.EndCalled);    // … and the terminal one did not (guardrail 5)
+        Assert.False(exec.EndCalled);    // … and the terminal one did not
     }
 
-    /// <summary>
-    /// <b>The guardrail this whole group is one mistake away from.</b> The cascade must never fire the PARENT's
-    /// own token: the fan-out reads a cancelled token before the un-park CAS and returns <c>Cancelled: true</c>,
-    /// which settles the run terminally with <c>CompletedAt</c> stamped and nothing left to resume.
-    /// <para>
-    /// Asserted from both sides, because either alone is weak: the parent's dispatch token was never cancelled
-    /// (the direct claim — a builder reaching for <c>FireCancel(parent)</c> or a <c>.WaitAsync(cts.Token)</c> on
-    /// the child <c>WhenAll</c> reds this instantly), and the row is <c>Paused</c> with no <c>CompletedAt</c>
-    /// and no <c>EndRunAsync(cancelled: true)</c> (the consequence).
-    /// </para>
-    /// </summary>
     [Fact]
     public async Task PausingAParent_DoesNotFireItsOwnToken_SoItNeverSettlesCancelled()
     {
@@ -558,19 +473,7 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         Assert.False(exec.EndCancelled);
     }
 
-    /// <summary>
-    /// Continue on a cascade-paused parent: the paused generation is SUPERSEDED and a FRESH one is dispatched,
-    /// which is the shipped D13 park→resume shape exactly. The children are never resumed — D6 build item 8
-    /// forbids it, because a child resumed from inside its parent would queue on the PARENT pool the parent is
-    /// already holding, and with two concurrent headless parents that is a permanent deadlock.
-    /// <para>
-    /// Red before the <c>WaitingForInput or Paused</c> widening of the stale-child settle: by the time the
-    /// resumed parent supersedes them, the paused children's dispatches have RETURNED, so they are not in
-    /// <c>_inflight</c> and <c>CancelAsync</c> cannot reach them (the launcher double reproduces that exactly).
-    /// Without the widening they stay <c>Paused</c> forever, each owning a visible stub chat — the very leak
-    /// the row-level settle exists to prevent, surviving exactly the restart path its comment names.
-    /// </para>
-    /// </summary>
+    /// <summary>A child resumed from inside its parent would queue on the pool the parent already holds.</summary>
     [Fact]
     public async Task ResumingAPausedParent_SupersedesThePausedGeneration_AndDispatchesAFreshOne()
     {
@@ -629,17 +532,6 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         Assert.All(final.Plan, s => Assert.Equal(AgentStepStatus.Done, s.Status));
     }
 
-    /// <summary>
-    /// The RESTART shape of the same leak, and the narrowest red demo for the stale-child widening: a child
-    /// left <c>Paused</c> by a PREVIOUS PROCESS — nothing here has ever heard of it, so <c>CancelAsync</c> is a
-    /// no-op against it and states at or above <c>WaitingForInput</c> are deliberately never swept. Without the
-    /// row-level settle it lingers forever with its own stub chat while its parent runs to completion.
-    /// <para>
-    /// Its sibling fact for the budget park (<c>WaitingForInput</c>) is
-    /// <c>AgentRunOrchestratorFanOutTests.APreviousGenerationsParkedChildIsSupersededBeforeANewDispatch</c>;
-    /// this is the <c>Paused(4)</c> half, which Batch 08 makes reachable on demand.
-    /// </para>
-    /// </summary>
     [Fact]
     public async Task APausedChild_LeftBehind_IsNotOrphaned()
     {
@@ -673,19 +565,7 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         Assert.Equal(AgentRunState.Completed, (await h.Runs.GetAsync(run.Id, ct))!.State);
     }
 
-    /// <summary>
-    /// D6 build item 8, from the outside: a cascade never puts a child on the PARENT's slot pool. The resumed
-    /// parent re-dispatches through <c>LaunchChildAsync</c> — which in the real launcher is the one call that
-    /// selects <c>_childSlots</c>, exactly as <c>LaunchAsync</c> is the one that selects <c>_slots</c> — and the
-    /// paused children are superseded rather than resumed.
-    /// <para>
-    /// Why the method IS the claim: the pools are private to <c>HeadlessRunLauncher</c> and are chosen at
-    /// <c>LaunchAsync</c>/<c>LaunchChildAsync</c> and nowhere else, so the observable form of "nothing nested
-    /// waits on the pool it holds" is that no child was ever launched top-level and no paused child was ever
-    /// re-dispatched under its own id (which is what resuming one through <c>IAgentRunResumeService</c> — the
-    /// path that would take <c>_slots</c> — would look like from here).
-    /// </para>
-    /// </summary>
+    /// <summary>The slot pools are private, so which launch method was called is the only observable.</summary>
     [Fact]
     public async Task CascadePause_NeverAcquiresTheParentSlotPoolForAChild()
     {
@@ -729,16 +609,6 @@ public sealed class AgentRunOrchestratorCascadePauseTests
             Assert.Equal(AgentRunState.Cancelled, (await h.Runs.GetAsync(old, ct))!.State);
     }
 
-    /// <summary>
-    /// <b>GUARD.</b> The widened per-child arm must not hijack the BUDGET park. Here a child pauses itself (the
-    /// user pausing a child from the child's own chat) while NO pause request stands against the parent, so the
-    /// parent takes the existing <c>ChildrenParkedReason</c> shape byte for byte: <c>WaitingForInput</c>, not
-    /// <c>Paused</c>, and not the user reason.
-    /// <para>
-    /// Without it, widening the arm to accept <c>Paused</c> would be pinned only in the presence of a parent
-    /// request, and a consume moved one line up — or peeked instead of consumed — would go unnoticed.
-    /// </para>
-    /// </summary>
     [Fact]
     public async Task AChildThatPausedItself_ReParksTheParentAtItsBudgetShape_NotAsAUserPause()
     {
@@ -777,35 +647,10 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         Assert.Equal(0, planner.ReplanCalls);
     }
 
-    // ---- Batch 08 F2/F1: the two windows in which a pause used to settle the run TERMINALLY ----
-    //
-    // Stated once for the four facts below, because it is the reason the shipped suite missed both. EVERY
-    // cascade fact above waits for WaitingForChildren before it pauses. The row does not say that until the
-    // fan-out's dispatch prologue has finished — superseding the previous generation, then one
-    // LaunchChildAsync per sibling — so the whole prologue, where the row still reads Running, is
-    // STRUCTURALLY OUTSIDE those facts. These four pause INSIDE it, held there by a gate the fact controls
-    // rather than by a sleep.
+    // The four facts below pause INSIDE the fan-out dispatch prologue, where the row still reads Running.
+    // Every fact above waits for WaitingForChildren first, so that window sits structurally outside them.
 
-    /// <summary>
-    /// <b>THE BATCH'S CENTRAL CLAIM, in the window that broke it.</b> A pause landing inside the fan-out
-    /// DISPATCH PROLOGUE leaves a run <c>Paused</c> and resumable — not <c>Cancelled</c> with
-    /// <c>CompletedAt</c> stamped.
-    /// <para>
-    /// Red before the fix, and the review reproduced exactly this by execution:
-    /// <c>ROW-IN-PROLOGUE=Running ACCEPTED=True FINAL=Cancelled COMPLETEDAT=SET RESUMABLE=False</c> with
-    /// <c>STEPS=[s1:Done,g1:Done,g2:Done]</c> — i.e. both children finished their work and the run was thrown
-    /// away terminally anyway. D6's "never fire a fan-out parent's own token" was keyed on the persisted row
-    /// reading <c>WaitingForChildren</c>; in this window it reads <c>Running</c>, so the pause took the
-    /// FireCancel branch, the fan-out read its own cancelled token and reported the run cancelled, and the
-    /// caller called <c>SafeFail(cancelled: true)</c>.
-    /// </para>
-    /// <para>
-    /// The plan carries an ORDINARY step before the group on purpose. On the first step of a fresh launch the
-    /// row still reads <c>Planning</c> and the pause is refused outright, so a fact built on
-    /// <c>MakeSteps(("a",1),("b",1))</c> would pass without ever entering the window. The
-    /// <c>Running</c> assertion below is what keeps it honest.
-    /// </para>
-    /// </summary>
+    /// <summary>The plan leads with an ordinary step: on a launch's first step a pause is refused outright.</summary>
     [Fact]
     public async Task APauseInsideTheFanOutDispatchPrologue_ParksTheRunResumable_NeverCancelled()
     {
@@ -842,7 +687,6 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         launcher.ReleasePrologue.TrySetResult();
         await loop.WaitAsync(TimeSpan.FromSeconds(10), ct);
 
-        // The whole shape the review's probe printed, inverted.
         var parent = await h.Runs.GetAsync(run.Id, ct);
         Assert.Equal(AgentRunState.Paused, parent!.State);
         Assert.NotEqual(AgentRunState.Cancelled, parent.State);
@@ -864,16 +708,6 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         Assert.True(await h.Runs.TryResumeFromPauseAsync(run.Id, ct));
     }
 
-    /// <summary>
-    /// The same window, HALF DISPATCHED — the shape a real fan-out spends most of its prologue in. One child is
-    /// already live when the pause lands and the loop is still inside the launch loop for the next one. The
-    /// cascade must reach the live child and the parent's own token must still never fire.
-    /// <para>
-    /// Red before the fix for the same reason as its sibling above (the row reads <c>Running</c>, so the pause
-    /// fired the parent), with the extra evidence that the already-dispatched child was revoked and cancelled by
-    /// the parent's own <c>cts.Token.Register</c> callback rather than paused.
-    /// </para>
-    /// </summary>
     [Fact]
     public async Task APauseMidPrologue_CascadesToTheChildAlreadyDispatched_AndStillParksTheParent()
     {
@@ -929,21 +763,7 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         Assert.True(await h.Runs.TryResumeFromPauseAsync(run.Id, ct));
     }
 
-    /// <summary>
-    /// <b>F3 on the DELEGATING shape, which is where it bites hardest.</b> Continue, then Pause a beat later, on
-    /// a parent whose next pending step is a parallel group. The pause is recorded against the resume's own sink
-    /// and fires it, so the loop starts on an already-cancelled token — and the fan-out reaches
-    /// <c>cts.IsCancellationRequested</c> (which returns <c>Cancelled: true</c> and settles the run TERMINALLY)
-    /// only after it has read the request. Ordering, not luck: <c>TryFanOutAsync</c> consumes at the
-    /// <c>BeginFanOut</c> handshake, before <c>FanOutCoreAsync</c> is entered at all, so the parent parks with
-    /// NOTHING dispatched rather than cancelling a fresh generation on the way to a terminal settle.
-    /// <para>
-    /// Doubly red before F3's fix: the loop revoked the request on entry, so the cancelled token was all that
-    /// was left — the launch loop threw OCE per sibling, the wait ended and <c>:892</c> returned
-    /// <c>Cancelled: true</c>. This is the fact that stops a future "tidy" that moves the token check above the
-    /// request read from being silent.
-    /// </para>
-    /// </summary>
+    /// <summary>Ordering, not luck: the request is consumed at the BeginFanOut handshake.</summary>
     [Fact]
     public async Task APauseInTheResumeRampUp_OfADelegatingParent_ParksItBeforeAnyChildIsDispatched()
     {
@@ -1000,23 +820,6 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         Assert.True(await h.Runs.TryResumeFromPauseAsync(run.Id, ct));
     }
 
-    /// <summary>
-    /// <b>F1.</b> A cascade must not fire at a child outside the PAUSABLE set. Here one child is live inside its
-    /// step and the other is still in its PLANNING turn — the longest single phase of a child's life, and the
-    /// state the review calls the most likely real-world timing in the whole batch.
-    /// <para>
-    /// Red before the fix, executed by the review's lens 6: the cascade filtered terminal-versus-not, so the
-    /// <c>Planning</c> child was cancelled, its own loop consumed the request, and <c>TryPauseUserAsync</c>'s CAS
-    /// then LOST because <c>Planning</c> is not one of its source states — leaving the child stranded
-    /// non-terminal with no dispatch behind it. The parent's settle loop charged that as
-    /// <c>"child run did not settle"</c>, recorded both sibling steps <c>Failed</c>, burnt a replan and settled
-    /// the parent terminally <c>Failed</c>.
-    /// </para>
-    /// <para>
-    /// The claim is asserted at the MECHANISM — the held child's cancel sink was never invoked — and then at the
-    /// consequence, because the downstream chain has four links and only the first is the edit.
-    /// </para>
-    /// </summary>
     [Fact]
     public async Task ACascade_LeavesAChildStillPlanningAlone_AndTheParentStillParksPaused()
     {
@@ -1064,7 +867,7 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         Assert.False(dispatchCts.IsCancellationRequested);
         Assert.False(exec.EndCalled);
 
-        // Neither child is destroyed: one parked through its own D1 abort, the other simply ran.
+        // Neither child is destroyed: one parked through its own abort, the other simply ran.
         Assert.Equal(AgentRunState.Paused, (await h.Runs.GetAsync(liveChild, ct))!.State);
         var held = await h.Runs.GetAsync(planningChild, ct);
         Assert.Equal(AgentRunState.Completed, held!.State);
@@ -1080,16 +883,7 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         Assert.True(await h.Runs.TryResumeFromPauseAsync(run.Id, ct));
     }
 
-    /// <summary>
-    /// F1 at the edit itself, and the cheapest place it can be pinned: the cascade fires at exactly the members
-    /// of the PAUSABLE set and at nothing else. A table rather than a scenario, so the seventh state someone
-    /// adds to <see cref="AgentRunState"/> has to be classified here deliberately.
-    /// <para>
-    /// The two rows that matter are <c>Planning</c> — a child mid-plan, and also the shape of one still QUEUED
-    /// behind the child slot pool, which the real launcher settles <c>Cancelled(7)</c> when its token fires
-    /// before it starts — and the two parked states, which have already stopped and must not be re-fired at.
-    /// </para>
-    /// </summary>
+    /// <summary>A table rather than a scenario, so a new AgentRunState must be classified here deliberately.</summary>
     [Fact]
     public async Task ACascade_FiresAtExactlyThePausableChildren_AndAtNoOthers()
     {
@@ -1134,27 +928,7 @@ public sealed class AgentRunOrchestratorCascadePauseTests
         Assert.True(h.Store.TryConsumePauseRequest(parent.Id));
     }
 
-    /// <summary>
-    /// <b>Batch 08 F8: a group that has dropped below TWO pending members must still supersede the generation
-    /// behind it.</b>
-    /// <para>
-    /// <c>SafeCancelStaleChildrenAsync</c> is the only cleanup for a previous child generation, and
-    /// <c>TryFanOutAsync</c>'s <c>siblings.Count &lt; 2</c> early return — which counts PENDING members only —
-    /// used to skip straight past it. A <c>Paused</c> child is never swept (the startup reconcile's statement 1
-    /// is <c>State &lt; WaitingForInput</c>), so the orphan was PERMANENT rather than something a restart
-    /// cleared: a non-terminal row and a visible stub chat, forever.
-    /// </para>
-    /// <para>
-    /// The trigger modelled here is the USER one rather than the timing one, because it needs no race: pause a
-    /// 2-way fan-out, both children park, both sibling steps go back to <c>Pending</c> — and the user then
-    /// clicks "Skip step" on one of them before Continue. The mixed generation (one child <c>Done</c>, one
-    /// <c>Paused</c>) reaches the identical early return by the identical count.
-    /// </para>
-    /// <para>
-    /// Driven through <c>resume: true</c> so the persisted plan IS the plan (no planner turn can re-write the
-    /// skip away), which is also exactly how the real Continue re-enters.
-    /// </para>
-    /// </summary>
+    /// <summary>Driven through <c>resume: true</c> so no planner turn can rewrite the skipped step away.</summary>
     [Fact]
     public async Task AGroupThatDroppedBelowTwoPendingMembers_StillSupersedesItsPausedChild()
     {

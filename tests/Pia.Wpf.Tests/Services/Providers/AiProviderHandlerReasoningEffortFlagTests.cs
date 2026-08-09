@@ -6,12 +6,8 @@ using Xunit;
 
 namespace Pia.Tests.Services.Providers;
 
-/// <summary>
-/// Batch 05 conformance: <see cref="IAiProviderHandler.DropsReasoningEffortWithTools"/> is a transport
-/// constant every handler must declare, and the two mappings its values rest on keep behaving the way the
-/// values claim. Without the table-driven test a NEW handler would silently default to whatever its author
-/// guessed, which is exactly what putting the flag on the interface is meant to prevent.
-/// </summary>
+/// <summary>Without the table below, a NEW handler would silently default
+/// <see cref="IAiProviderHandler.DropsReasoningEffortWithTools"/> to whatever its author guessed.</summary>
 public class AiProviderHandlerReasoningEffortFlagTests
 {
     // Keyed on the CLR Type, NOT on AiProviderType: a future handler that duplicated an existing
@@ -23,10 +19,8 @@ public class AiProviderHandlerReasoningEffortFlagTests
         // ToOpenAi(effort, hasTools) omits the parameter once tools are present.
         [typeof(AzureOpenAiProviderHandler)] = true,
         [typeof(OllamaProviderHandler)] = true,
-        // ShouldEmitReasoning returns (false, default) for a non-None effort once hasTools, so
-        // CreateChatOptions omits the field. TRANSPORT ONLY: for a reasoning-capable Mistral model an absent
-        // field leaves reasoning ON, and the ladder is `none`|`high`, so nothing HIGHER is recoverable by a
-        // tool-free turn — see the comment on MistralProviderHandler.DropsReasoningEffortWithTools.
+        // CreateChatOptions omits the field once hasTools. TRANSPORT ONLY: for a reasoning-capable Mistral model
+        // an absent field leaves reasoning ON.
         [typeof(MistralProviderHandler)] = true,
         // Reasoning injected by a DelegatingHandler, unconditionally — already boosted under tools.
         [typeof(OpenRouterProviderHandler)] = false,
@@ -49,10 +43,8 @@ public class AiProviderHandlerReasoningEffortFlagTests
 
         foreach (var type in discovered)
         {
-            // GetUninitializedObject runs NO constructor. That is deliberate: it lets PiaCloudProviderHandler
-            // (three ctor deps) be inspected without a container, AND it makes the test fail loudly if the
-            // flag is ever written as an initialised auto-property (`{ get; } = true;`), whose initialiser
-            // lives in the ctor and would read back false for every handler — a silently vacuous test.
+            // GetUninitializedObject runs NO constructor: it inspects PiaCloudProviderHandler without a container,
+            // and an initialised auto-property would read back false for every handler — a vacuous test.
             var handler = (IAiProviderHandler)RuntimeHelpers.GetUninitializedObject(type);
 
             Assert.True(Expected.TryGetValue(type, out var expected),
@@ -87,10 +79,8 @@ public class AiProviderHandlerReasoningEffortFlagTests
     [InlineData(typeof(MistralProviderHandler))]
     public void HandlersDeclaringTheDrop_ReallyOmitReasoningEffortUnderTools_AndSendItWithout(Type handlerType)
     {
-        // The link the two tests above do NOT make: one pins the flag against a table, the other pins the
-        // mapping — nothing tied a handler's DECLARED transport behaviour to the request it actually builds.
-        // Mutate OllamaProviderHandler.CreateChatOptions to ToOpenAi(effort, hasTools: false) and both stay
-        // green while the flag becomes a lie and AgentPlanner burns one round per plan turn for nothing.
+        // Neither test above ties a handler's DECLARED transport behaviour to the request it actually builds:
+        // mutate OllamaProviderHandler.CreateChatOptions to hasTools: false and both stay green.
         var handler = (IAiProviderHandler)Activator.CreateInstance(handlerType)!;
         Assert.True(handler.DropsReasoningEffortWithTools); // ties this test to the table above
 
@@ -109,11 +99,8 @@ public class AiProviderHandlerReasoningEffortFlagTests
         Assert.True(SendsReasoningEffort(handler.CreateChatOptions(provider, hasTools: false)));
     }
 
-    /// <summary>
-    /// Whether <c>reasoning_effort</c> reaches the wire at all. Two shapes count as omitted: no
-    /// <c>RawRepresentationFactory</c> (Mistral returns a bare <c>ChatOptions</c>) and a factory whose
-    /// <c>ChatCompletionOptions</c> leaves <c>ReasoningEffortLevel</c> unset (Azure, Ollama).
-    /// </summary>
+    /// <summary>Two shapes count as omitted: no <c>RawRepresentationFactory</c> at all, and a factory whose
+    /// options leave <c>ReasoningEffortLevel</c> unset.</summary>
     private static bool SendsReasoningEffort(Microsoft.Extensions.AI.ChatOptions options)
     {
         if (options.RawRepresentationFactory is null) return false;
@@ -126,9 +113,8 @@ public class AiProviderHandlerReasoningEffortFlagTests
     [Fact]
     public void MistralShouldEmitReasoning_SuppressedUnderTools_ButHighWithout()
     {
-        // Pins EMISSION, not the reasoning level: under tools the field is omitted, which for a
-        // reasoning-capable Mistral model leaves reasoning at its default — which is ON. Do not read
-        // `emitWithTools == false` as "this turn does not reason".
+        // Pins EMISSION, not the reasoning level: an omitted field leaves a reasoning-capable Mistral model at
+        // its default, which is ON — do not read `emitWithTools == false` as "this turn does not reason".
         var provider = new AiProvider
         {
             Name = "M",

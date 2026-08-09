@@ -5,38 +5,28 @@ using Pia.Services.Interfaces;
 
 namespace Pia.Tests.Services;
 
-/// <summary>Test double for <see cref="IAgentVerifier"/>. Default (empty queue) = ACCEPT so existing
-/// orchestrator tests stay green; enqueue verdicts to drive verify-fail flows; ThrowOnVerify exercises
-/// the degrade-to-accept guardrail; CancelSessionOnVerify models a user cancel landing mid-verify.</summary>
+/// <summary>Test double for <see cref="IAgentVerifier"/>; an empty queue means ACCEPT, so orchestrator tests
+/// that do not care about verdicts stay green.</summary>
 internal sealed class FakeVerifier : IAgentVerifier
 {
     public Queue<VerdictResult> Verdicts { get; } = new();
     public int VerifyCalls { get; private set; }
     public bool ThrowOnVerify { get; set; }
 
-    /// <summary>
-    /// Snapshot of <c>ctx.CompletedSteps</c> per verify call — what the critic actually got to judge
-    /// (E2: a resumed run must not present only its post-resume slice).
-    /// </summary>
+    /// <summary>Snapshot of <c>ctx.CompletedSteps</c> per verify call — a resumed run must not present only its
+    /// post-resume slice to the critic.</summary>
     public List<IReadOnlyList<CompletedStepSummary>> SeenCompletedSteps { get; } = new();
 
-    /// <summary>
-    /// Snapshot of <c>ctx.WorkspaceRoot</c> per verify call — the isolated run workspace the executor
-    /// published in BeginRunAsync (Batch 06 B3). Verify runs on the ORCHESTRATOR thread, outside any
-    /// step's ambient, so this is the only place the root is observable after a step's finally has
-    /// restored the ambient; the resume half of G2 reads its call site through it. Recorded even when
-    /// null, so a test can tell "no isolation" apart from "verify never ran".
-    /// </summary>
+    /// <summary>Verify runs on the ORCHESTRATOR thread, so this is the only place the run workspace root is
+    /// observable once a step's finally has restored the ambient; recorded even when null.</summary>
     public List<string?> SeenWorkspaceRoots { get; } = new();
 
     /// <summary>When set, the verify turn cancels this source (as ChatSession.Cancel() would) and then
     /// honors the linked run token — so the orchestrator's SafeVerify observes a genuine run cancel.</summary>
     public CancellationTokenSource? CancelSessionOnVerify { get; set; }
 
-    /// <summary>
-    /// Shared call log, appended with <c>"verify"</c>. Batch 06 B8's whole claim is an ORDER — verify, then
-    /// promote, then complete — and no single fake can observe it.
-    /// </summary>
+    /// <summary>Shared call log, appended with <c>"verify"</c> — the verify-then-promote-then-complete order
+    /// takes more than one fake to observe.</summary>
     public List<string>? Order { get; set; }
 
     public Task<VerdictResult> VerifyAsync(RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)

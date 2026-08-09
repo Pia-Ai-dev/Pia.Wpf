@@ -14,17 +14,8 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// Covers the host-side wiring of the two audio overlays that <see cref="AssistantViewModel"/> owns —
-/// mutual exclusion and the summarize hand-off. Both are net-new logic with no analogue elsewhere in the
-/// app, and both matter beyond tidiness: the direct-transcription overlay and the Teams meeting attendee
-/// each own the LOCAL AUDIO STACK (microphone plus system loopback), so if both were visible at once both
-/// would have a live capture pipeline. Nothing else in the suite would notice that regression.
-///
-/// <para>Measured through the real <see cref="AssistantViewModel"/> with substituted services; the two
-/// overlay view models are real instances over substituted backing services, so the toggle really does
-/// drive their <c>StopAsync</c>.</para>
-/// </summary>
+/// <summary>Each audio overlay owns the local audio stack (microphone plus system loopback), so two visible at
+/// once would mean two live capture pipelines.</summary>
 public class AssistantViewModelOverlayHostingTests
 {
     private readonly IChatSessionManager _manager = Substitute.For<IChatSessionManager>();

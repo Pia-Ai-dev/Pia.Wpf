@@ -11,14 +11,8 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// T2-18 — quiet mode for monitor jobs. Two halves: the flag SURVIVES (it is persisted, editable, and a sync
-/// pull cannot reset it) and it suppresses only what it claims to (success, never failure).
-/// <para>
-/// The failure half is the one worth pinning: an hourly job that answers "nothing changed" is noise, but one
-/// that has silently stopped working is a problem, so <c>NotifyFailure</c> must ignore the flag entirely.
-/// </para>
-/// </summary>
+/// <summary>Quiet mode suppresses a monitor job's success notification only: a job that has silently stopped
+/// working is a problem, so <c>NotifyFailure</c> ignores the flag entirely.</summary>
 public sealed class ScheduledJobQuietModeTests : IDisposable
 {
     private readonly string _dir;
@@ -51,11 +45,8 @@ public sealed class ScheduledJobQuietModeTests : IDisposable
         Assert.False((await _jobs.GetAsync(job.Id))!.QuietOnSuccess);
     }
 
-    /// <summary>
-    /// A job can be created QUIET, not only edited into it. The jobs editor is one panel with one checkbox for
-    /// both actions, so a create path that dropped the flag produced a notifying job with no error and no hint
-    /// that the choice was lost — which is what the first cut of this item did.
-    /// </summary>
+    /// <summary>A create path that drops the flag leaves a notifying job with no error and no hint that the
+    /// choice was lost.</summary>
     [Fact]
     public async Task AJobCanBeCreatedQuiet()
     {
@@ -78,10 +69,8 @@ public sealed class ScheduledJobQuietModeTests : IDisposable
         Assert.False((await _jobs.GetAsync(job.Id))!.QuietOnSuccess);
     }
 
-    /// <summary>
-    /// Every other <c>UpdateAsync</c> parameter means "leave it alone" when null, and this one must too — an
-    /// edit that renamed the job would otherwise un-quiet it.
-    /// </summary>
+    /// <summary>Every other <c>UpdateAsync</c> parameter means "leave it alone" when null, and this one must
+    /// too.</summary>
     [Fact]
     public async Task AnUnrelatedEdit_DoesNotClearQuietMode()
     {
@@ -95,11 +84,8 @@ public sealed class ScheduledJobQuietModeTests : IDisposable
         Assert.True(reloaded.QuietOnSuccess);
     }
 
-    /// <summary>
-    /// The flag is DEVICE-LOCAL: it is not on the wire, and <c>UpsertFromSyncAsync</c> writes only the synced
-    /// config columns. A pull from a peer that has never heard of quiet mode must not silently switch a monitor
-    /// job's notifications back on.
-    /// </summary>
+    /// <summary>The flag is device-local: it is not on the wire, and <c>UpsertFromSyncAsync</c> writes only the
+    /// synced config columns.</summary>
     [Fact]
     public async Task ASyncPull_CannotResetQuietMode()
     {
@@ -125,11 +111,8 @@ public sealed class ScheduledJobQuietModeTests : IDisposable
         Assert.True(reloaded.QuietOnSuccess);              // and it did not touch this
     }
 
-    /// <summary>
-    /// The surface is the chokepoint: both producers of a success notification come through
-    /// <c>NotifySuccess</c>, so this is where the flag is honoured. Asserted through <c>IFlowService</c>,
-    /// because the Flow card is the in-app half a test can see (the Windows toast needs a desktop).
-    /// </summary>
+    /// <summary>Asserted through <c>IFlowService</c> because the Flow card is the in-app half a test can see —
+    /// the Windows toast needs a desktop.</summary>
     [Fact]
     public void AQuietJob_PublishesNoSuccessCard_ButStillPublishesFailures()
     {

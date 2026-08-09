@@ -11,17 +11,7 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Batch 06 G3: the two workspace provisioning modes (a git worktree when the source root is a repository we
-/// may touch, else a bounded copy of the source tree — plan D5), the degrade-to-copy fault list, and the
-/// SYMMETRIC teardown each mode needs. Git-free throughout: <see cref="FakeGitProcessRunner"/> answers
-/// <c>rev-parse</c>/<c>worktree</c> with canned results and records every request, so the gate and the
-/// teardown command shapes are asserted without a real repository.
-/// <para>
-/// The runs base is a per-test temp directory, never the real <c>%LOCALAPPDATA%\Pia\runs</c>: these tests
-/// DELETE workspaces and prune metadata.
-/// </para>
-/// </summary>
+/// <summary>The runs base is a per-test temp directory, never the real one: these tests DELETE workspaces.</summary>
 public sealed class RunWorkspaceServiceTests : IDisposable
 {
     private readonly string _dir;
@@ -45,9 +35,7 @@ public sealed class RunWorkspaceServiceTests : IDisposable
 
     private RunWorkspaceService Build() => BuildFor(_source);
 
-    /// <summary>The "no usable assistant files folder" shape, which <see cref="Build"/> deliberately cannot
-    /// express: a <c>filesFolder</c> parameter defaulting to the source root coalesces a null argument back to
-    /// the source and the degrade goes untested (it did — that is what made the guard below pass vacuously).</summary>
+    /// <summary>A separate builder: a defaulted parameter would coalesce null back to the source root.</summary>
     private RunWorkspaceService BuildWithoutFilesFolder() => BuildFor(null);
 
     private RunWorkspaceService BuildFor(string? filesFolder)
@@ -81,23 +69,16 @@ public sealed class RunWorkspaceServiceTests : IDisposable
     private static GitProcessResult Ok(string stdout = "") => new(0, stdout, string.Empty, TimedOut: false);
     private static GitProcessResult Exit(int code) => new(code, string.Empty, "fatal", TimedOut: false);
 
-    /// <summary>Arms the runner so the whole worktree gate passes for a repository at
-    /// <paramref name="toplevel"/>: <c>--show-toplevel</c> reports it, <c>--verify HEAD</c> exits 0 (the repo
-    /// has a commit — a worktree can only start from one), and every <c>worktree</c> call succeeds.</summary>
+    /// <summary>Arms the runner so the whole worktree gate passes for a repo at <paramref name="toplevel"/>.</summary>
     private void ArrangeRepoWithCommits(string toplevel) => _runner.Responder = req =>
         IsShowToplevel(req) ? Ok(toplevel.Replace('\\', '/') + "\n") : Ok();
 
     // ---- copy mode ----
 
-    /// <summary>
-    /// T-G3-1, <b>REGRESSION</b>. Copy mode copies the source tree IN. This is B6's whole justification as a
-    /// fact: an unattended run reads the user's existing files through the same tool set it writes with, so an
-    /// empty workspace silently breaks "summarise notes.md" — a functional regression, not a nicety.
-    /// </summary>
     [Fact]
     public async Task CopyMode_CopiesTheSourceTree_SoTheRunCanReadExistingFiles()
     {
-        _runner.IsGitInstalled = false; // F1: no git at all, so the gate cannot even be attempted
+        _runner.IsGitInstalled = false; // no git at all, so the gate cannot even be attempted
         WriteSource("a.md", "alpha");
         WriteSource(Path.Combine("sub", "b.md"), "beta");
         var runId = Guid.NewGuid();
@@ -109,19 +90,13 @@ public sealed class RunWorkspaceServiceTests : IDisposable
         Assert.Equal("alpha", File.ReadAllText(Path.Combine(ws.Root, "a.md")));
         Assert.Equal("beta", File.ReadAllText(Path.Combine(ws.Root, "sub", "b.md")));
 
-        // The recorded source root is what a promotion writes back to (B9), so it is part of the fact.
+        // The recorded source root is what a promotion writes back to, so it is part of the fact.
         Assert.Equal(
             SafeFolderPath.Canonicalize(_source),
             ReadMetadata(runId).GetProperty("sourceRoot").GetString());
     }
 
-    /// <summary>
-    /// T-G3-2, <b>REGRESSION</b>. What copy mode leaves OUT, each for a stated reason (B6): the memory vault
-    /// (owned by MemoryService / the vault watcher / the ingest indexer, which write through their own paths —
-    /// the run still reaches memory through the memory tools) and everything <c>SandboxIgnore</c> prunes, so
-    /// what the run sees in its workspace is exactly what <c>list_files</c> would have listed.
-    /// <c>keep.md</c> is the positive control: without it a provisioner that copied NOTHING would pass.
-    /// </summary>
+    /// <summary>The vault is left out because its own writers own it; <c>keep.md</c> is the positive control.</summary>
     [Fact]
     public async Task CopyMode_ExcludesTheVaultAndIgnoredTrees()
     {
@@ -142,12 +117,7 @@ public sealed class RunWorkspaceServiceTests : IDisposable
         Assert.False(File.Exists(Path.Combine(ws.Root, "node_modules", "p", "i.js")));
     }
 
-    /// <summary>
-    /// T-G3-3, <b>REGRESSION</b>. Over either cap, provisioning leaves NOTHING behind and returns null (no
-    /// isolation, today's behaviour). Running a partial tree is the one outcome worse than not isolating: the
-    /// agent would see a truncated folder, "recreate" the missing files, and a promotion would write them
-    /// over the originals.
-    /// </summary>
+    /// <summary>A partial tree is worse than no isolation: the agent would recreate the missing files.</summary>
     [Fact]
     public async Task CopyMode_OverTheFileCap_ReturnsNull_AndLeavesNoWorkspace()
     {
@@ -165,12 +135,7 @@ public sealed class RunWorkspaceServiceTests : IDisposable
 
     // ---- worktree mode ----
 
-    /// <summary>
-    /// T-G3-4, <b>REGRESSION</b>. Plan D5's worktree half: a source root that is a repository with commits,
-    /// inside the assistant files folder, is provisioned as a worktree on a fresh run branch. The ARGUMENT
-    /// LIST is asserted, not a substring — <c>Arguments[0]</c> is the string "worktree" for add, remove and
-    /// prune alike, so a subcommand check would discriminate nothing.
-    /// </summary>
+    /// <summary>The argument LIST is asserted: Arguments[0] is "worktree" for add, remove and prune alike.</summary>
     [Fact]
     public async Task WorktreeMode_AddsAWorktreeOnTheRunBranch()
     {
@@ -193,11 +158,7 @@ public sealed class RunWorkspaceServiceTests : IDisposable
         Assert.False(File.Exists(Path.Combine(ws.Root, "a.md")));
     }
 
-    /// <summary>
-    /// T-G3-5, <b>REGRESSION</b>. The executable form of plan R16: EVERY fault in B11's F1–F9 list degrades
-    /// to copy mode with a usable workspace. None throws, none returns null, and none fails the run. One row
-    /// per fault, because a single "something went wrong" row would let eight of the nine gates rot.
-    /// </summary>
+    /// <summary>One row per fault, because a single "something went wrong" row would let eight gates rot.</summary>
     [Theory]
     [InlineData("F1")] // git not installed
     [InlineData("F2")] // source root is not a repo (rev-parse exit != 0)
@@ -247,12 +208,7 @@ public sealed class RunWorkspaceServiceTests : IDisposable
 
     // ---- idempotence + metadata ----
 
-    /// <summary>
-    /// T-G3-6, <b>REGRESSION</b>. A resume re-enters the SAME workspace with the SAME provisioning instant:
-    /// that one timestamp decides the promote set (B7), so a second provisioning would make the promote set
-    /// "everything the workspace contains". In worktree mode it also must not issue a second
-    /// <c>worktree add</c> — that fails, and the degrade would silently drop the run into copy mode.
-    /// </summary>
+    /// <summary>The provisioning timestamp decides the promote set, so a second one would widen it.</summary>
     [Fact]
     public async Task Provision_IsIdempotent_SoAResumeLandsInTheSameWorkspaceWithTheSameTimestamp()
     {
@@ -275,17 +231,7 @@ public sealed class RunWorkspaceServiceTests : IDisposable
         Assert.Single(_runner.Calls, c => IsWorktree(c, "add"));
     }
 
-    /// <summary>
-    /// T-G3-7, <b>GUARD</b>. The metadata document round-trips at <c>v:1</c>, and a version this build does
-    /// not understand reads as "no workspace" in the RESTRICTIVE direction: nothing is described, nothing is
-    /// promoted, and — the load-bearing half — nothing is deleted. "Promote nothing and leave the files where
-    /// they are" is recoverable; acting on a document we cannot reason about is not.
-    /// <para>
-    /// The <c>PromoteAsync</c> leg is satisfied at this commit by G3's documented no-op (promotion lands with
-    /// the next group). It is asserted here anyway so the group that implements the real promote path inherits
-    /// the obligation rather than having to invent it.
-    /// </para>
-    /// </summary>
+    /// <summary>Leaving the files alone is recoverable; acting on a document we cannot read is not.</summary>
     [Fact]
     public async Task Metadata_RoundTripsAtV1_AndAnUnknownVersionReadsAsNoWorkspace()
     {
@@ -310,12 +256,7 @@ public sealed class RunWorkspaceServiceTests : IDisposable
         Assert.True(File.Exists(MetadataPath(runId)));
     }
 
-    /// <summary>
-    /// <b>REGRESSION</b> for the one thing <c>DescribeAsync</c> decides on its own: whether a settled run
-    /// still has files sitting in its workspace. Both mtimes are SET explicitly rather than slept for —
-    /// <c>DateTime.UtcNow</c> has ~15 ms granularity while a file time is far finer, so a "write it and it
-    /// will be newer" test would be a coin flip on a fast machine.
-    /// </summary>
+    /// <summary>Both mtimes are SET rather than slept for: DateTime.UtcNow is coarser than a file time.</summary>
     [Fact]
     public async Task Describe_ReportsUnpublishedFiles_OnlyWhenTheRunWroteAfterProvisioning()
     {
@@ -348,12 +289,7 @@ public sealed class RunWorkspaceServiceTests : IDisposable
 
     // ---- teardown ----
 
-    /// <summary>
-    /// T-G3-8, <b>REGRESSION</b>. Teardown is symmetric with provisioning: a worktree is removed THROUGH GIT,
-    /// from the main worktree recorded at provisioning, and the run branch is never deleted — it is the
-    /// deliverable (plan D5b). An <c>rmdir</c> here would leave a <c>.git/worktrees/&lt;id&gt;</c> registration
-    /// in the user's repository forever (plan R5).
-    /// </summary>
+    /// <summary>An rmdir here would leave a .git/worktrees registration in the user's repository forever.</summary>
     [Fact]
     public async Task TearDown_WorktreeMode_RemovesTheWorktree_AndNeverDeletesTheBranch()
     {
@@ -371,20 +307,14 @@ public sealed class RunWorkspaceServiceTests : IDisposable
         Assert.Equal(SafeFolderPath.Canonicalize(_source), remove.WorkingDirectory);
         Assert.DoesNotContain(_runner.Calls, c => c.Arguments.Count > 0 && c.Arguments[0] == "branch");
 
-        // The document is not deleted in worktree mode but STAMPED as torn down: D5b's branch line is read
-        // after the terminal settle, i.e. after this teardown, and the stub is the only thing that still knows
-        // the branch name. It no longer claims a live workspace, which is what every other consumer keys on.
+        // The document is STAMPED rather than deleted: the branch line is rendered after the terminal settle,
+        // and this stub is the only thing that still knows the branch name.
         Assert.True(File.Exists(MetadataPath(runId)));
         Assert.True(ReadMetadata(runId).TryGetProperty("tornDownAtUtc", out var stamp));
         Assert.NotEqual(JsonValueKind.Null, stamp.ValueKind);
     }
 
-    /// <summary>
-    /// T-G3-9, <b>REGRESSION</b>. The half of plan R5 that actually leaks: when <c>worktree remove</c> fails
-    /// (a locked index, a file held open, a git that vanished), the directory is deleted here AND the stale
-    /// registration is pruned. Without the prune the user's repository accumulates a dead worktree entry per
-    /// failed teardown.
-    /// </summary>
+    /// <summary>Without the prune the repository accumulates a dead worktree entry per failed teardown.</summary>
     [Fact]
     public async Task TearDown_WhenWorktreeRemoveFails_FallsBackToRmdirThenPrune()
     {
@@ -405,18 +335,13 @@ public sealed class RunWorkspaceServiceTests : IDisposable
 
         Assert.False(Directory.Exists(ws.Root));
         Assert.Contains(_runner.Calls, c => IsWorktree(c, "prune"));
-        // Stamped, not deleted (see T-G3-8) — and keeping mainWorktree in the stub is what lets the metadata
-        // sweep prune again later if this prune did not take.
+        // Stamped, not deleted — and keeping mainWorktree in the stub is what lets the metadata sweep prune
+        // again later if this prune did not take.
         Assert.True(File.Exists(MetadataPath(runId)));
         Assert.NotEqual(JsonValueKind.Null, ReadMetadata(runId).GetProperty("tornDownAtUtc").ValueKind);
     }
 
-    /// <summary>
-    /// T-G3-10, <b>REGRESSION</b>. The startup sweep enumerates DIRECTORIES only, so a metadata document
-    /// whose workspace is already gone is invisible to it — and in worktree mode that document is the only
-    /// thing that knows which repository still carries the stale registration. The second document, whose
-    /// directory DOES exist, is the non-vacuity control: a sweep that deleted everything would pass without it.
-    /// </summary>
+    /// <summary>The startup sweep enumerates directories only, so a document without one is invisible to it.</summary>
     [Fact]
     public async Task SweepOrphanMetadata_PrunesAndDeletesAMetadataFileWhoseDirectoryIsGone()
     {
@@ -444,11 +369,7 @@ public sealed class RunWorkspaceServiceTests : IDisposable
         Assert.True(Directory.Exists(liveWs!.Root));
     }
 
-    /// <summary>
-    /// <b>GUARD</b> on the narrowing rule (B6): the workspace corresponds 1:1 to the NARROWED source root, so
-    /// an isolated run's own subpath must then be null — narrowing twice would look for
-    /// <c>&lt;runRoot&gt;\&lt;subpath&gt;</c>, which does not exist.
-    /// </summary>
+    /// <summary>The workspace IS the narrowed root, so narrowing twice would look for a missing path.</summary>
     [Fact]
     public async Task CopyMode_WithAWorkingSubpath_ProvisionsFromTheNarrowedRoot()
     {
@@ -467,10 +388,7 @@ public sealed class RunWorkspaceServiceTests : IDisposable
             ReadMetadata(runId).GetProperty("sourceRoot").GetString());
     }
 
-    /// <summary>
-    /// <b>GUARD</b>. No usable assistant files folder ⇒ no isolation (null), not an exception and not an empty
-    /// workspace. Bookkeeping must never fail a run.
-    /// </summary>
+    /// <summary>Bookkeeping must never fail a run: no folder means no isolation, not an exception.</summary>
     [Fact]
     public async Task Provision_WithNoAssistantFilesFolder_ReturnsNull_AndLeavesNoWorkspace()
     {

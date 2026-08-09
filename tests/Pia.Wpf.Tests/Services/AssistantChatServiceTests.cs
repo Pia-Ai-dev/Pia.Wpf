@@ -9,10 +9,6 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// net10.0-windows cannot execute on macOS — these tests are written, not run; execution is deferred to
-/// Windows/CI.
-/// </summary>
 public class AssistantChatServiceTests : IDisposable
 {
     private readonly SqliteContext _ctx;
@@ -33,8 +29,8 @@ public class AssistantChatServiceTests : IDisposable
     [Fact]
     public async Task SaveAsync_PopulatesFtsRow()
     {
-        // W1 canary: the service writes on its OWN dedicated connection, so this assertion — issued on the
-        // SHARED _ctx.GetConnection() handle — is now also a cross-connection commit-visibility check.
+        // The service writes on its own dedicated connection, so asserting through the shared handle also
+        // checks cross-connection commit visibility.
         var chat = MakeChat(title: "UniqueWordABC title", body: "UniqueWordXYZ body");
         await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
         _createdIds.Add(chat.Id);
@@ -49,10 +45,8 @@ public class AssistantChatServiceTests : IDisposable
     [Fact]
     public async Task SaveAsync_OnTheDedicatedConnection_IsVisibleToAReaderOnTheSharedConnection()
     {
-        // W1: the chat store no longer writes through SqliteContext.GetConnection(). A commit on the private
-        // handle must be visible to the ten services still sharing the context connection — this is the
-        // assertion that would fail if the dedicated connection ever opened a different file, or if a write
-        // were left in an uncommitted transaction.
+        // Reds if the dedicated connection ever opened a different file, or if a write were left in an
+        // uncommitted transaction.
         var chat = MakeChat(title: "Cross connection", body: "committed body");
         await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
         _createdIds.Add(chat.Id);
@@ -72,9 +66,8 @@ public class AssistantChatServiceTests : IDisposable
     [Fact]
     public async Task ChatsChangedSubscriber_MayCallBackIntoTheService_WithoutDeadlocking()
     {
-        // W1: the gate is NOT reentrant, so ChatsChanged must be raised strictly AFTER the gate is released.
-        // Real subscribers do exactly this (the history view model posts a SearchAsync; HeadlessRunLauncher
-        // does a recursive Directory.Delete). If the event were raised under the gate this test would hang.
+        // The gate is not reentrant, so ChatsChanged must be raised strictly after it is released — under the
+        // gate this test would hang.
         var chat = MakeChat(title: "Reentrant", body: "body");
         SyncAssistantChat? readBack = null;
         _service.ChatsChanged += (_, e) =>
@@ -130,7 +123,7 @@ public class AssistantChatServiceTests : IDisposable
     [Fact]
     public async Task SetTitleAsync_ChangesOnlyTheTitle_AndLeavesTheMessageRowsUntouched()
     {
-        // W2a: the whole point of the new member. A title write must not carry a message payload.
+        // A title write must not carry a message payload.
         var chat = MakeChat(title: "old title", body: "the one message");
         await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
         _createdIds.Add(chat.Id);
@@ -148,8 +141,8 @@ public class AssistantChatServiceTests : IDisposable
     [Fact]
     public async Task SetTitleAsync_PreservesMessagesAppendedByAnotherWriter()
     {
-        // The failure W2 is about: the rename's snapshot is taken before the title LLM call, so by the time it
-        // writes, a headless step may have appended rows. A title-only write cannot delete them.
+        // The rename's snapshot is taken before the title LLM call, so by the time it writes a headless step
+        // may have appended rows — a title-only write cannot delete them.
         var chat = MakeChat(title: "old title", body: "first");
         await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
         _createdIds.Add(chat.Id);
@@ -246,7 +239,7 @@ public class AssistantChatServiceTests : IDisposable
         await _service.SaveAsync(real, TestContext.Current.CancellationToken);
         _createdIds.Add(real.Id);
 
-        // Message-less stub (as left by a failed/empty headless turn per §16 R1) — should be hidden.
+        // Message-less stub, as left by a failed/empty headless turn — should be hidden.
         var now = DateTime.UtcNow;
         var stub = new SyncAssistantChat
         {
@@ -492,10 +485,8 @@ public class AssistantChatServiceTests : IDisposable
 
     public void Dispose()
     {
-        // The whole database lives under _tmpDir, so disposing the connection and
-        // deleting the directory discards everything this fixture created. W1: the chat service and the run
-        // service each own a DEDICATED connection to that file, so both must be closed before the delete or
-        // Windows keeps the temp file locked.
+        // The chat service and the run service each own a dedicated connection to the same file, so both must
+        // be closed before the delete or Windows keeps the temp file locked.
         _service.Dispose();
         _runs.Dispose();
         _ctx.Dispose();

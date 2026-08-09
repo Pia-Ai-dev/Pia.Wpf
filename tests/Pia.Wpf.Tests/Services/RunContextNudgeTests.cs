@@ -4,12 +4,8 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Batch 08 G7 (D4): <see cref="RunContext.SetNudge"/>/<see cref="RunContext.AppendNudge"/> in isolation —
-/// the cap (head kept, matching <c>AgentPlanner.MaxAnalysisChars</c>'s shape), the flatten/trim, blank ⇒
-/// null, and the exact fence text every executor and prompt builder is required to emit byte-for-byte
-/// (<c>AgentRunNudgeParityTests</c> is where those call sites are actually exercised).
-/// </summary>
+/// <summary><see cref="RunContext.SetNudge"/>/<see cref="RunContext.AppendNudge"/> in isolation; the call sites
+/// that must emit the fence text byte-for-byte are exercised by <c>AgentRunNudgeParityTests</c>.</summary>
 public sealed class RunContextNudgeTests
 {
     private static RunContext Ctx() => new("goal", RunProfile.Interactive);
@@ -38,11 +34,8 @@ public sealed class RunContextNudgeTests
             appended);
     }
 
-    /// <summary>
-    /// The two ends of the over-long nudge fixture, the same shape <c>AgentPlannerTests</c> uses for
-    /// <c>MaxAnalysisChars</c>: a homogeneous filler cannot say WHICH 1000 chars survived, so markers at
-    /// each end make the truncation DIRECTION observable, not just its length.
-    /// </summary>
+    /// <summary>Markers at each end of the over-long fixture make the truncation DIRECTION observable — a
+    /// homogeneous filler cannot say WHICH chars survived.</summary>
     private const string NudgeHead = "HEAD-OF-NUDGE";
     private const string NudgeTail = "TAIL-OF-NUDGE";
 
@@ -56,10 +49,8 @@ public sealed class RunContextNudgeTests
 
         Assert.Contains(NudgeHead, appended);
         Assert.DoesNotContain(NudgeTail, appended);
-        // Tight on purpose: the fence text + "instruction" + the capped 1000-char nudge (+ the trailing
-        // ellipsis) bounds the whole appended string well under the un-capped 5000+26 chars it would be
-        // without the cap — a regression that widens or drops MaxNudgeChars shows up as length, not just
-        // as "still contains the head".
+        // Tight on purpose: a regression that widens or drops MaxNudgeChars shows up as length, not just as a
+        // missing head marker.
         Assert.True(appended.Length < 1_200, $"appended nudge was {appended.Length} chars");
     }
 
@@ -67,9 +58,8 @@ public sealed class RunContextNudgeTests
     public void Nudge_IsFlattenedAndTrimmed_AndBlankBecomesNull()
     {
         var ctx = Ctx();
-        // \r, \n and \t each become their OWN space (the same char-for-char replace
-        // AgentRunService.NormalizeStepText uses) — a lone \n and a lone \t give an unambiguous one-space
-        // result; \r\n is covered separately below, where it is expected to leave TWO spaces.
+        // \r, \n and \t each become their OWN space, the same char-for-char replace
+        // AgentRunService.NormalizeStepText uses.
         ctx.SetNudge("  line one\nline two\ttabbed  ");
 
         var appended = ctx.AppendNudge("instruction");
@@ -83,10 +73,8 @@ public sealed class RunContextNudgeTests
     [Fact]
     public void Nudge_CrLf_FlattensToTwoSpaces_NeverALiteralCr()
     {
-        // \r and \n are each replaced independently (never collapsed), so a Windows-style \r\n leaves TWO
-        // spaces — the same char-for-char shape AgentRunService.NormalizeStepText produces. Stated as its
-        // own fact so a future reader does not "fix" the double space into a single one and silently change
-        // the shared shape both places rely on.
+        // \r and \n are replaced independently, so a Windows-style \r\n leaves TWO spaces — do not "fix" that
+        // into a single one.
         var ctx = Ctx();
         ctx.SetNudge("line one\r\nline two");
 

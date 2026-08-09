@@ -9,16 +9,8 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// The <c>X-Pia-Persona</c> relay, end to end on the client side of it: the composer puts the resolved
-/// persona on the turn setup, and every turn path passes it down to <see cref="IAiClientService"/>.
-/// <para>
-/// Written because the transport test (<c>PiaCloudChatClientPersonaHeaderTests</c>) only pins the last hop
-/// — it constructs the client with an explicit id — while every other mock in the suite widened to
-/// <c>Arg.Any&lt;Guid?&gt;()</c>. Without these assertions any of the relay arguments could be reverted to
-/// <c>null</c> and the whole suite would stay green with the header silently never sent.
-/// </para>
-/// </summary>
+/// <summary>Every other mock in the suite widened to <c>Arg.Any&lt;Guid?&gt;()</c>, so a relay argument
+/// reverted to <c>null</c> would leave the suite green with the <c>X-Pia-Persona</c> header never sent.</summary>
 public sealed class PersonaHeaderRelayTests
 {
     private readonly IAiClientService _ai = Substitute.For<IAiClientService>();
@@ -133,8 +125,8 @@ public sealed class PersonaHeaderRelayTests
     [Fact]
     public async Task StepTurn_SendsTheStepsOwnPersonaId()
     {
-        // A planned step can run under a different persona than the run default (Batch 07), so the header
-        // follows the STEP's attribution rather than the run's turn setup — which this path never even sees.
+        // A planned step can run under a different persona than the run default, so the header follows the
+        // step's attribution rather than the run's turn setup — which this path never even sees.
         var stepPersonaId = Guid.NewGuid();
         var spec = new StepTurnSpec(
             RunId: Guid.NewGuid(),

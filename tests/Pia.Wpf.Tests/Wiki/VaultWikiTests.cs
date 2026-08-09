@@ -6,10 +6,7 @@ using Xunit;
 
 namespace Pia.Tests.Wiki;
 
-/// <summary>
-/// Spec §8 (index.md) and §9 (log.md) byte-format tests for <see cref="VaultIndexService"/> and
-/// <see cref="VaultLogService"/>, against a real <see cref="VaultStore"/> over a temp vault.
-/// </summary>
+/// <summary>Byte-format tests for index.md and log.md against a real <see cref="VaultStore"/> over a temp vault.</summary>
 public class VaultWikiTests : IDisposable
 {
     private readonly string _root;
@@ -45,7 +42,7 @@ public class VaultWikiTests : IDisposable
         return close < 0 ? raw : raw[(close + 5)..];
     }
 
-    // ---- (0) §2.3: rewriting index.md preserves unknown (user-added) scalar frontmatter keys ----
+    // ---- (0) rewriting index.md preserves unknown (user-added) scalar frontmatter keys ----
 
     [Fact]
     public async Task Upsert_preserves_unknown_scalar_frontmatter_keys()
@@ -70,7 +67,7 @@ public class VaultWikiTests : IDisposable
         await index.UpsertEntryAsync("memory/topics/acme.md", "Acme Corp.");
 
         var raw = (await store.ReadAsync("memory/index.md"))!.RawText;
-        Assert.Contains("cssclass: dashboard", raw);            // unknown key survived the rewrite (§2.3)
+        Assert.Contains("cssclass: dashboard", raw);            // unknown key survived the rewrite
         Assert.Contains("id: 11111111-1111-1111-1111-111111111111", raw); // stable id preserved
         Assert.Contains("- [[topics/acme]] — Acme Corp.", raw); // and the entry was added
     }

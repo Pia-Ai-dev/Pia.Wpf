@@ -134,7 +134,7 @@ public sealed class LiveTurnExecutorPlannedRunTests
         ChatSession session, [EnumeratorCancellation] CancellationToken ct)
     {
         session.Cancel(); // user hits Stop while the step exchange is streaming
-        await Task.Delay(Timeout.Infinite, ct); // the R13-linked run token must cancel this in-flight step
+        await Task.Delay(Timeout.Infinite, ct); // the linked run token must cancel this in-flight step
 #pragma warning disable CS0162
         yield break;
 #pragma warning restore CS0162
@@ -203,7 +203,7 @@ public sealed class LiveTurnExecutorPlannedRunTests
         await orchestrator.RunAsync(run, live, Persona(), Provider(), RunProfile.Interactive, session.Cts!.Token);
 
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
-        Assert.Equal(AgentRunState.Cancelled, final!.State);          // R13: cancel propagated through the linked CTS
+        Assert.Equal(AgentRunState.Cancelled, final!.State);          // cancel propagated through the linked CTS
         Assert.DoesNotContain(placeholder, session.Messages);        // BeginRunAsync removed the streaming placeholder
         Assert.Equal(2, session.Messages.Count);                     // [user goal] + only step 1's assistant message (s2 never ran)
         Assert.Equal(ChatState.Idle, session.State);                 // EndRunAsync settled the terminal state (not Error/Running)
@@ -291,9 +291,8 @@ public sealed class LiveTurnExecutorPlannedRunTests
             supportsTools: true);
         var orchestrator = new AgentRunOrchestrator(h.Runs, planner, new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
 
-        // BOUNDED on purpose. If the policy does not reach the gate, the gate PROMPTS and the run blocks on a
-        // card nobody clicks — a regression would hang the whole suite instead of failing. Drain it by declining
-        // so the assertion below reports the real cause.
+        // Bounded on purpose: if the policy never reaches the gate the run blocks on a card nobody clicks,
+        // so declining drains it and the assertion below reports the real cause instead of hanging.
         var runTask = orchestrator.RunAsync(run, live, Persona(), Provider(), RunProfile.Interactive, session.Cts!.Token);
         var ct = TestContext.Current.CancellationToken;
         var settled = await Task.WhenAny(runTask, Task.Delay(TimeSpan.FromSeconds(20), ct)) == runTask;
@@ -327,10 +326,8 @@ public sealed class LiveTurnExecutorPlannedRunTests
     [Fact]
     public async Task PlannedRun_ParkedAtBudget_PersistsPerStep_WithoutTurnCompletedOrTerminalSettle()
     {
-        // E2: the interactive transcript used to reach the store ONLY via TurnCompleted → the manager's
-        // PersistAsync, and the budget pause deliberately raises neither (OnPausedAsync is non-terminal) —
-        // so a parked chat kept at most the goal row. The executor now asks for a persist after every
-        // completed step; the request must carry the transcript so far and must NOT settle the run.
+        // A budget pause raises no TurnCompleted, so without the per-step persist request a parked chat
+        // would keep at most the goal row.
         using var h = new Harness();
         var run = await h.NewRunAsync("goal");
         var planner = new FakePlanner();
@@ -359,7 +356,7 @@ public sealed class LiveTurnExecutorPlannedRunTests
         // One persist request per completed step, each seeing the transcript grown by that step's reply.
         Assert.Equal(new[] { 2, 3 }, persistSnapshots.ToArray());
 
-        // Non-terminal: no TurnCompleted, no Completed/Error — the run is parked, not finished (guardrail 5).
+        // Non-terminal: no TurnCompleted, no Completed/Error — the run is parked, not finished.
         Assert.Equal(0, completedCount);
         Assert.DoesNotContain(ChatState.Completed, states);
         Assert.DoesNotContain(ChatState.Error, states);
@@ -419,8 +416,8 @@ public sealed class LiveTurnExecutorPlannedRunTests
     [Fact]
     public async Task PlannedRun_InterimPersistHandlerThrows_DoesNotFailTheStepOrTheRun()
     {
-        // Guardrail 1: interim persistence is bookkeeping. A throwing subscriber is swallowed + logged and
-        // the run drains to a clean Completed.
+        // Interim persistence is bookkeeping: a throwing subscriber is swallowed and the run still drains
+        // to a clean Completed.
         using var h = new Harness();
         var run = await h.NewRunAsync("goal");
         var planner = new FakePlanner();
@@ -448,8 +445,8 @@ public sealed class LiveTurnExecutorPlannedRunTests
     [Fact]
     public async Task SingleTurnFallback_RaisesNoInterimPersist_TheTerminalTurnCompletedCoversIt()
     {
-        // Parity note with HeadlessTurnExecutor: the R10 degrade path runs EndRunAsync immediately, and
-        // that raises TurnCompleted → the manager persists. An interim write there would only duplicate it.
+        // The degrade path runs EndRunAsync immediately, which raises TurnCompleted and makes the manager
+        // persist — an interim write there would only duplicate it.
         using var h = new Harness();
         var run = await h.NewRunAsync("goal");
         var planner = new FakePlanner(); // empty queue → PlanResult.Fallback → single-turn fallback
@@ -499,8 +496,8 @@ public sealed class LiveTurnExecutorPlannedRunTests
 
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.Failed, final!.State);
-        // §13.5.2 / §16 R4: even though the last assistant message carries the catch handler's error text,
-        // a Failed run must NOT settle Completed / raise TurnCompleted(Succeeded=true).
+        // Even though the last assistant message carries the catch handler's error text, a Failed run must
+        // not settle Completed or raise TurnCompleted(Succeeded=true).
         Assert.NotEqual(ChatState.Completed, session.State);
         Assert.Equal(ChatState.Idle, session.State);
         Assert.NotNull(completed);
@@ -512,10 +509,8 @@ public sealed class LiveTurnExecutorPlannedRunTests
     [InlineData(null)]
     public async Task BeginRunAsync_HandsTheChatWorkingSubpathToTheRunContext(string? workingDirectory)
     {
-        // The chat's working subpath is what narrows this run's file sandbox (ChatSession passes it as
-        // TaskContext.WorkingSubpath per step), but that ambient is restored in the step's finally and never
-        // reaches the orchestrator thread — so the verifier's artifact probe can only find the root the steps
-        // wrote into if BeginRunAsync copies it onto the context.
+        // The per-step ambient is restored in the step's finally and never reaches the orchestrator thread,
+        // so the verifier's artifact probe only finds the right root if BeginRunAsync copies it onto the context.
         using var h = new Harness();
         var run = await h.NewRunAsync("goal");
         var planner = new FakePlanner();
@@ -537,18 +532,10 @@ public sealed class LiveTurnExecutorPlannedRunTests
     }
 
     // ---------------------------------------------------------------------------------------------------
-    // Batch 06 G5 / plan D4 + D8: interactive isolation end to end, through the REAL provisioner.
+    // Interactive isolation end to end, through the REAL provisioner.
     // ---------------------------------------------------------------------------------------------------
 
-    /// <summary>
-    /// A real <see cref="RunWorkspaceService"/> (copy mode — git reported absent) over a real
-    /// <see cref="FilesToolHandler"/>, provisioning from <c>&lt;filesFolder&gt;\sub</c> the way an interactive
-    /// chat with a working directory does. Rooted at the REAL <see cref="AssistantWorkspace.RunsRoot"/> rather
-    /// than a temp runs base on purpose: <c>RunWorkspaceRedirects.Record</c>'s containment gate refuses
-    /// anything else, so a temp-rooted fixture would prove the promotion and silently skip the chip half
-    /// (plan R1's failure mode). Every directory it creates is Guid-named and removed in
-    /// <see cref="Dispose"/>.
-    /// </summary>
+    /// <summary>Rooted at the real <see cref="AssistantWorkspace.RunsRoot"/> because <c>RunWorkspaceRedirects.Record</c>'s containment gate refuses anything else.</summary>
     private sealed class WorkspaceFixture : IDisposable
     {
         private readonly string _dir;
@@ -556,8 +543,7 @@ public sealed class LiveTurnExecutorPlannedRunTests
 
         public string FilesFolder { get; }
 
-        /// <summary>The chat's working directory, i.e. the root the workspace is provisioned FROM and the
-        /// destination a promotion writes back to (B9).</summary>
+        /// <summary>The root the workspace is provisioned from, and where a promotion writes back to.</summary>
         public string WorkingSub { get; }
 
         public RunWorkspaceService Workspaces { get; }
@@ -574,8 +560,8 @@ public sealed class LiveTurnExecutorPlannedRunTests
             var settings = Substitute.For<ISettingsService>();
             settings.GetSettingsAsync().Returns(new AppSettings { AssistantFilesFolder = FilesFolder });
 
-            // Git absent ⇒ copy mode, which is the only mode that promotes FILES and therefore the only one
-            // that records a chip redirect (worktree mode's deliverable is a branch, plan D5b).
+            // Git absent ⇒ copy mode, the only mode that promotes files and therefore the only one that
+            // records a chip redirect.
             Workspaces = new RunWorkspaceService(
                 new FakeGitProcessRunner { IsGitInstalled = false }, settings,
                 NullLogger<RunWorkspaceService>.Instance);
@@ -591,12 +577,7 @@ public sealed class LiveTurnExecutorPlannedRunTests
             return workspace;
         }
 
-        /// <summary>
-        /// Moves the recorded provisioning instant back, so the promote set cannot depend on the clock. B7
-        /// decides the set by <c>mtime &gt; provisionedAtUtc</c>, and a file the run writes milliseconds after
-        /// provisioning can tie that timestamp — which would make the fact below flake rather than fail.
-        /// WHAT the rule promotes is <c>RunWorkspacePromotionTests</c>' subject, not this one's.
-        /// </summary>
+        /// <summary>The promote set is decided by <c>mtime &gt; provisionedAtUtc</c>, and a file written milliseconds later can tie it.</summary>
         public void BackdateProvisioning(Guid runId)
         {
             var path = Path.Combine(AssistantWorkspace.RunsRoot, runId + ".workspace.json");
@@ -618,13 +599,7 @@ public sealed class LiveTurnExecutorPlannedRunTests
         }
     }
 
-    /// <summary>
-    /// One step that writes <c>a.md</c> through the REAL file tools, from inside the step's own logical async
-    /// flow — the only place the per-step ambient is set. Records the ambient it saw, because the
-    /// one-narrowing rule (B6) is otherwise invisible in the file's location:
-    /// <c>ResolveEffectiveRoot</c> falls back to the base root when a subpath does not resolve, so a wrongly
-    /// forwarded working subpath would still land the file in the workspace root.
-    /// </summary>
+    /// <summary>Records the ambient it saw, because <c>ResolveEffectiveRoot</c> falls back to the base root and would hide a wrongly forwarded subpath.</summary>
     private static async IAsyncEnumerable<ChatStreamItem> WriteThenReply(
         IFilesToolHandler files, List<TaskContext?> seen, [EnumeratorCancellation] CancellationToken ct)
     {
@@ -649,13 +624,7 @@ public sealed class LiveTurnExecutorPlannedRunTests
         await runTask;
     }
 
-    /// <summary>
-    /// REGRESSION for <c>LiveTurnExecutor.BuildSpec</c>'s <c>WorkspaceRoot:</c> argument and for
-    /// <c>BeginRunAsync</c>'s <c>ctx.WorkspaceRoot</c> assignment — the two lines that turn a provisioned
-    /// directory into an actually-isolated interactive run. Drop either and the step's <c>write_file</c> lands
-    /// in the user's assistant files folder instead. No workspace service is handed to the orchestrator here,
-    /// so nothing promotes and the assertion is about where the bytes WENT.
-    /// </summary>
+    /// <summary>Drop either <c>BuildSpec</c>'s <c>WorkspaceRoot:</c> argument or <c>ctx.WorkspaceRoot</c> and the step writes into the user's files folder.</summary>
     [Fact]
     public async Task PlannedRun_WritesIntoItsWorkspace_NotTheAssistantFolder()
     {
@@ -683,8 +652,7 @@ public sealed class LiveTurnExecutorPlannedRunTests
             orchestrator.RunAsync(run, live, Persona(), Provider(), RunProfile.Interactive, session.Cts!.Token),
             "the run never settled: a step blocked instead of writing into its workspace");
 
-        // The run context the verifier reads carries the root, and the chat's subpath is NOT re-applied on top
-        // of it (B6: the workspace root already IS <filesFolder>\sub).
+        // The chat's subpath is not re-applied on top of the root — the workspace root already IS the subpath.
         Assert.Equal(workspace.Root, ctx.WorkspaceRoot);
         Assert.Null(ctx.WorkingSubpath);
 
@@ -698,13 +666,7 @@ public sealed class LiveTurnExecutorPlannedRunTests
         Assert.False(File.Exists(Path.Combine(ws.FilesFolder, "a.md")));
     }
 
-    /// <summary>
-    /// REGRESSION, and the EXECUTOR-PARITY fact (§11): promotion lives in the executor-agnostic orchestrator
-    /// and keys off <c>ctx.WorkspaceRoot</c>, so a clean interactive run promotes exactly like a headless one
-    /// (T-G4-8's live twin). It also closes plan D8's second phase at the real shape: the chip the step built
-    /// points into a workspace that no longer exists by the time a user could click it, and
-    /// <see cref="RunWorkspaceRedirects.Resolve"/> is what still opens the right file.
-    /// </summary>
+    /// <summary>The chip points into a workspace that no longer exists by the time a user could click it, so <see cref="RunWorkspaceRedirects.Resolve"/> carries it.</summary>
     [Fact]
     public async Task PlannedRun_PromotesOnCleanCompletion_AndItsChipResolvesToThePromotedFile()
     {
@@ -747,11 +709,8 @@ public sealed class LiveTurnExecutorPlannedRunTests
     }
 
     // ---------------------------------------------------------------------------------------------------
-    // Batch 07 G6 — per-step persona on the INTERACTIVE executor (executor parity).
-    //
-    // Batch 04's post-review correction records this exact parity gap being missed on the Live side once
-    // already, which is why the headless facts are not enough: LiveTurnExecutor carries the persona through
-    // StepTurnSpec, and every member it sets is trailing and defaulted, so dropping one COMPILES.
+    // Per-step persona on the INTERACTIVE executor. The StepTurnSpec members carrying it are all trailing
+    // and defaulted, so dropping one still COMPILES — the headless facts are not enough.
     // ---------------------------------------------------------------------------------------------------
 
     private readonly IPersonaService _personaService = Substitute.For<IPersonaService>();
@@ -763,11 +722,7 @@ public sealed class LiveTurnExecutorPlannedRunTests
     private static Persona RosterPersona(string name) =>
         new() { Id = Guid.NewGuid(), Name = name, SystemPrompt = "you are " + name };
 
-    /// <summary>
-    /// A real resolver over this fixture's substitutes, with <paramref name="roster"/> configured. Roster
-    /// membership is checked on the executor side too, so stubbing only the persona store would leave every
-    /// assignment ignored and the tests below green for the wrong reason.
-    /// </summary>
+    /// <summary>Roster membership is checked on the executor side too, so stubbing only the persona store would leave every assignment ignored.</summary>
     private StepPersonaResolver ResolverWith(params Persona[] roster)
     {
         _appSettings.SetAgentPersonaRoster(UserOperatingMode.Personal, roster.Select(p => p.Id).ToList());
@@ -803,10 +758,8 @@ public sealed class LiveTurnExecutorPlannedRunTests
     [Fact]
     public async Task PlannedRun_CarriesThePerStepPersonaIntoTheStepSpec()
     {
-        // REGRESSION for BuildSpec's Persona:/SystemPrompt: change. A real orchestrator, a real
-        // LiveTurnExecutor and a real ChatSession: the assigned step's assistant message is attributed to the
-        // assigned persona and its exchange carries that persona's system prompt, while the unassigned step
-        // stays on the run persona's — within ONE run.
+        // The assigned step must be attributed to its persona and carry that persona's system prompt while
+        // the unassigned step stays on the run persona's — within one run.
         using var h = new Harness();
         var run = await h.NewRunAsync("goal");
         var analyst = RosterPersona("Analyst");
@@ -838,17 +791,13 @@ public sealed class LiveTurnExecutorPlannedRunTests
         Assert.Equal(runPersona.Id, replies[1].Persona!.Id);
 
         // Substance: the system prompt the model actually received per step. Without this half the feature is
-        // a relabelled glyph (§0.1).
+        // a relabelled glyph.
         Assert.Equal(2, captured.Count);
         Assert.Equal("system for Analyst", captured[0].System);
         Assert.Equal("system", captured[1].System);   // the run's turn setup, untouched
     }
 
-    /// <summary>
-    /// A UI context that installs ITSELF as <c>Current</c> for the duration of a posted callback, the way a
-    /// real dispatcher does. That is what makes "did this run inside the Post?" observable: everything the
-    /// executor does before <c>PostAsync</c> sees a different (null) context.
-    /// </summary>
+    /// <summary>Installs itself as <c>Current</c> for the duration of a posted callback, which is what makes "did this run inside the Post?" observable.</summary>
     private sealed class MarkingSyncContext : SynchronizationContext
     {
         public override void Post(SendOrPostCallback d, object? state) =>
@@ -862,9 +811,8 @@ public sealed class LiveTurnExecutorPlannedRunTests
     [Fact]
     public async Task PerStepResolutionHappensOutsideTheUiPost()
     {
-        // GUARD. ResolveAsync awaits a settings read and two store reads; doing that inside PostAsync would put
-        // them on the dispatcher for every step of every interactive run. ExecuteStepAsync is called from the
-        // orchestrator's loop, already off the UI thread, so resolving before the Post costs the UI nothing.
+        // GUARD. ResolveAsync awaits a settings read and two store reads; inside PostAsync that would land on
+        // the dispatcher for every step of every interactive run.
         using var h = new Harness();
         var run = await h.NewRunAsync("goal");
         var analyst = RosterPersona("Analyst");
@@ -872,10 +820,8 @@ public sealed class LiveTurnExecutorPlannedRunTests
 
         SynchronizationContext? contextAtResolve = null;
         var resolveSeen = 0;
-        // Observed at the ROSTER read, not at a per-id GetPersonaAsync: since the Phase 3 fix pass the resolver
-        // takes the persona straight out of the roster list it already fetched (the per-id round-trip was the one
-        // arm of the ladder that could throw, and it failed the whole run). GetRosterAsync is still called from
-        // inside ResolveAsync, so this is the same observation point — one step, so it is reached once.
+        // Observed at the roster read, not at a per-id GetPersonaAsync: the resolver takes the persona
+        // straight out of the roster list it already fetched.
         _personaService.GetPersonasAsync().Returns(_ =>
         {
             contextAtResolve = SynchronizationContext.Current;
@@ -968,7 +914,6 @@ public sealed class LiveTurnExecutorPlannedRunTests
         }
     }
 
-    /// <summary>Runs Post callbacks inline so a marshaled projection is observable synchronously.</summary>
     /// <summary>The REAL planner over this fixture's stubbed provider client.</summary>
     private AgentPlanner RealPlanner()
     {

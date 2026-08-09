@@ -6,28 +6,12 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// T1-2's primitive: the per-provider request throttle. The two facts plan §18.5 asks for are
-/// <see cref="SameProvider_QueuesBehindTheWidth"/> and <see cref="DifferentProviders_NeverQueueBehindEachOther"/>;
-/// the rest are the ways a keyed, resizable semaphore goes silently wrong — a hand-edited 0 that hangs every
-/// request forever, a double release that permanently widens the pool, and a raise that never reaches a request
-/// already queued.
-/// <para>
-/// Admission is read as a STATE FACT (<c>Task.IsCompleted</c>), never timed, exactly as
-/// <c>RunSlotPoolTests</c> does — and that is only sound because <see cref="ProviderRequestThrottle.AcquireAsync"/>
-/// has just one await before the semaphore (the settings read) and <see cref="StubSettings"/> completes it
-/// synchronously. Only the positive "a queued request is admitted" direction takes a bounded await, because
-/// there the thing under test is a transition rather than a state.
-/// </para>
-/// </summary>
+/// <summary>Admission is read as a state fact (<c>Task.IsCompleted</c>) rather than timed, which is only sound
+/// because <see cref="StubSettings"/> completes the one await before the semaphore synchronously.</summary>
 public class ProviderRequestThrottleTests
 {
-    /// <summary>
-    /// A synchronous <see cref="ISettingsService"/>. Hand-written rather than substituted on purpose: every
-    /// <c>IsCompleted</c> assertion below would become a coin flip if the settings read could ever complete
-    /// asynchronously, so "this read never yields" has to be a property of the fixture, not a hope about a
-    /// mocking library.
-    /// </summary>
+    /// <summary>Hand-written rather than substituted: every <c>IsCompleted</c> assertion below would be a coin
+    /// flip if the settings read could ever complete asynchronously.</summary>
     private sealed class StubSettings : ISettingsService
     {
         private readonly AppSettings _settings;
@@ -113,12 +97,8 @@ public class ProviderRequestThrottleTests
         (await b).Dispose();
     }
 
-    /// <summary>
-    /// The hand-edited-zero case. A pool built with no permits has nothing in the process that could ever
-    /// release one, so every request to that provider would queue forever with no error anywhere — the same
-    /// failure <c>AppSettings.GetMaxParallelBackgroundRuns</c>'s clamp exists to prevent, and the reason the
-    /// throttle reads the setting through <c>GetMaxParallelRequestsPerProvider</c> rather than raw.
-    /// </summary>
+    /// <summary>A pool built with no permits has nothing that could ever release one, so every request to that
+    /// provider would queue forever with no error anywhere.</summary>
     [Fact]
     public async Task AZeroSetting_IsClampedToOnePermit_NotToNone()
     {
@@ -151,12 +131,8 @@ public class ProviderRequestThrottleTests
         foreach (var h in held) h.Dispose();
     }
 
-    /// <summary>
-    /// A raise must reach a request that is ALREADY QUEUED — the one case a user widening the setting is trying
-    /// to fix. This is the arm the settings-changed subscription exists for: the resize inside
-    /// <c>AcquireAsync</c> runs on a NEW arrival, and a waiter admitted by a release resized before it queued,
-    /// so without the event a saturated pool would stay narrow until its whole queue had drained.
-    /// </summary>
+    /// <summary>The resize inside <c>AcquireAsync</c> only runs on a NEW arrival, so without the settings-changed
+    /// event a saturated pool would stay narrow until its whole queue had drained.</summary>
     [Fact]
     public async Task ARaisedSetting_AdmitsAnAlreadyQueuedRequest()
     {
@@ -197,12 +173,8 @@ public class ProviderRequestThrottleTests
         first.Dispose();
     }
 
-    /// <summary>
-    /// A double dispose must release ONCE. The failure it guards is silent and permanent: an extra release
-    /// hands back a permit that was never taken, so the effective width sits above the configured one for the
-    /// lifetime of the process (and at the cap it throws <c>SemaphoreFullException</c> out of a
-    /// <c>finally</c>). Measured by admission, not by a counter.
-    /// </summary>
+    /// <summary>An extra release hands back a permit that was never taken, so the effective width would sit above
+    /// the configured one for the lifetime of the process.</summary>
     [Fact]
     public async Task DisposingAPermitTwice_ReleasesOnce()
     {
@@ -241,11 +213,8 @@ public class ProviderRequestThrottleTests
         (await after).Dispose();
     }
 
-    /// <summary>
-    /// A settings fault must never fail an outbound request: the throttle degrades to the compiled default
-    /// width. Same principle as <c>AgentPlanner.TryGetRosterAsync</c> — an enhancement cannot be allowed to
-    /// break the thing it enhances.
-    /// </summary>
+    /// <summary>A settings fault must never fail an outbound request: the throttle degrades to the compiled
+    /// default width.</summary>
     [Fact]
     public async Task AFaultingSettingsRead_DegradesToTheDefaultWidth()
     {

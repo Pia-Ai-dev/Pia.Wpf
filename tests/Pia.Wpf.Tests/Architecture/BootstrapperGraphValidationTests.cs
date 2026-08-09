@@ -7,14 +7,8 @@ using Xunit;
 
 namespace Pia.Tests.Architecture;
 
-/// <summary>
-/// Guards the production DI graph the way DEBUG startup does (<c>ValidateOnBuild</c> +
-/// <c>ValidateScopes</c> in <c>Bootstrapper.InitializeAsync</c>): every registered
-/// implementation's constructor dependencies must themselves be registered, and no
-/// singleton may capture a scoped service. A missing concrete registration (e.g.
-/// <c>HeadlessTurnExecutor</c> depending on the concrete <c>BackgroundAssistantTurnRunner</c>
-/// while only the interface was registered) otherwise only surfaces as a crash on launch.
-/// </summary>
+/// <summary>Runs the DI validation DEBUG startup does, so a missing concrete registration or a captured scoped
+/// service fails here rather than as a crash on launch.</summary>
 public class BootstrapperGraphValidationTests
 {
     [Fact]
@@ -42,18 +36,8 @@ public class BootstrapperGraphValidationTests
         return services;
     }
 
-    /// <summary>
-    /// The one thing <c>ValidateOnBuild</c> above cannot see: a factory descriptor's LAMBDA BODY.
-    /// <c>Func&lt;StepPersonaResolver&gt;</c> (Batch 07 G6) is a singleton that calls
-    /// <c>GetRequiredService</c> on the provider that resolved it — the ROOT — so if the resolver ever gained a
-    /// <c>Scoped</c> dependency, every interactive agent run would throw at its first step with
-    /// <c>ValidateScopes</c> on, and nothing would fail until then. Checked statically here, without resolving
-    /// anything: real construction of these services touches settings files and SQLite.
-    /// <para>
-    /// The factory exists because the resolver's memo must last exactly one RUN while both of its non-headless
-    /// consumers outlive one (a <c>Scoped</c> <c>ChatSessionManager</c> and the planner inside it).
-    /// </para>
-    /// </summary>
+    /// <summary>What <c>ValidateOnBuild</c> cannot see is a factory descriptor's LAMBDA BODY: this singleton
+    /// resolves from the ROOT, so a <c>Scoped</c> dependency would only throw at an agent run's first step.</summary>
     [Fact]
     public void TheStepPersonaResolverFactory_IsRootSafe()
     {
@@ -63,7 +47,7 @@ public class BootstrapperGraphValidationTests
         Assert.Equal(ServiceLifetime.Singleton, factory.Lifetime);
 
         var resolver = Assert.Single(services, d => d.ServiceType == typeof(StepPersonaResolver));
-        // Transient, so each invocation of the factory really does hand back a fresh memo (07 D6).
+        // Transient, so each invocation of the factory really does hand back a fresh memo.
         Assert.Equal(ServiceLifetime.Transient, resolver.Lifetime);
 
         var parameters = typeof(StepPersonaResolver).GetConstructors().Single().GetParameters();

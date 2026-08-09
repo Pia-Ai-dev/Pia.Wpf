@@ -15,11 +15,6 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// /17.5 headless "Run in background" launcher: stub-chat-first FK order, Planned+User run,
-/// isolated per-run workspace, resolved persona/provider passed to the orchestrator, default write
-/// grants, a shared concurrency cap, and shutdown/cleanup lifecycle (G-4, decision c/d).
-/// </summary>
 public sealed class HeadlessRunLauncherTests : IDisposable
 {
     private readonly string _dir;
@@ -28,7 +23,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     private readonly AssistantChatService _chats;
     private readonly string _runsBase;
 
-    /// <summary>The real A2 launch-bracket index — the launcher's registrations are asserted through it.</summary>
+    /// <summary>The real launch-bracket index — the launcher's registrations are asserted through it.</summary>
     private readonly ExecutingRunStore _executing = new();
 
     // Gate that a FakePlanner blocks on, letting a test hold a run inside the orchestrator to probe
@@ -40,28 +35,16 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         public int MaxConcurrent;
         private readonly object _lock = new();
 
-        /// <summary>
-        /// The <see cref="RunContext"/> the orchestrator handed the planner, captured so a test can read
-        /// <c>ctx.WorkspaceRoot</c> — the value the executor published in BeginRunAsync and
-        /// therefore the value the launcher passed to <c>Initialize</c>. PlanAsync runs AFTER
-        /// BeginRunAsync, so the root is already assigned here.
-        /// Null when the planner was never called (a resume skips planning) — check before reading it.
-        /// </summary>
+        /// <summary>The <see cref="RunContext"/> the orchestrator handed the planner; null when the planner was
+        /// never called, since a resume skips planning.</summary>
         public RunContext? PlanContext { get; private set; }
 
-        /// <summary>
-        /// Like the ctor hook, but handed the run's OWN cancellation token: a fact about
-        /// "the dispatch was cancelled" has no other in-process evidence to read, since the teardown that
-        /// follows the cancel is fire-and-forget and says nothing about it. Settable after construction
-        /// because <c>BuildLauncher</c> hands the planner back before the launch.
-        /// </summary>
+        /// <summary>Like the ctor hook, but handed the run's own token — the only in-process evidence that a
+        /// dispatch was cancelled, since the teardown after it is fire-and-forget.</summary>
         public Func<CancellationToken, Task>? OnPlanWithToken { get; set; }
 
-        /// <summary>
-        /// how many REAL steps to plan. Zero (the default) keeps every pre-existing fact in this
-        /// file on <see cref="PlanResult.Fallback"/>, i.e. the single-turn degrade — which is also why no run
-        /// built here could previously reach the drain loop, park, or be paused.
-        /// </summary>
+        /// <summary>How many real steps to plan; zero keeps the run on <see cref="PlanResult.Fallback"/>, the
+        /// single-turn degrade that never reaches the drain loop.</summary>
         public int Steps { get; set; }
 
         public FakePlanner(Func<Task>? onPlan = null) => _onPlan = onPlan;
@@ -120,11 +103,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         try { Directory.Delete(_dir, true); } catch { /* best effort */ }
     }
 
-    /// <summary>
-    /// Drives ONE tool call through the executor's unattended grant gate and records the outcome, so a
-    /// test can observe the grant set a launch or a resume actually handed to the executor (D1/A1) instead
-    /// of trusting a constant.
-    /// </summary>
+    /// <summary>Drives one tool call through the executor's unattended grant gate and records the outcome, so a
+    /// test observes the grant set actually handed to the executor rather than trusting a constant.</summary>
     private sealed class ToolProbe
     {
         public ToolProbe(string toolName) => ToolName = toolName;
@@ -137,33 +117,13 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         public void Record(object? gateResult) => GateResult = gateResult as string;
     }
 
-    /// <param name="appSettings">Trailing and defaulted: the autonomy tests need a launcher whose
-    /// settings have <c>AgentRunAutoApproveBuiltInWrites</c> on, and every existing call site keeps compiling.</param>
-    /// <param name="verifier">Trailing and defaulted, same precedent as <paramref name="appSettings"/>:
-    /// a resume skips planning, so the verify pass is the only place the resumed run's
-    /// <c>ctx.WorkspaceRoot</c> is observable. Pass a FakeVerifier the test holds to read it back; omit
-    /// for the default accept-everything instance every other test wants.</param>
-    /// <param name="workspaces">Trailing and defaulted. Omitted ⇒ the LEGACY shape — no
-    /// provisioner, so the launcher does its own <c>CreateDirectory</c> under the <c>try/catch → FailAsync</c>
-    /// guard — which is what every other test in this file exercises.</param>
-    /// <param name="runsBaseOverride">Trailing and defaulted: lets one test point the runs base
-    /// at an UNWRITABLE path (a file) to prove the legacy settle path still fires.</param>
-    /// <param name="rosterPersona">Trailing and defaulted (Phase 3 fix pass): a roster persona the store can
-    /// resolve, so a fact can see whether <c>LaunchChildAsync</c>'s <c>personaId</c> really reaches the run's
-    /// persona-and-provider ladder. Omitted ⇒ the store resolves no persona by id, i.e. every other test.</param>
-    /// <param name="rosterProvider">The provider <paramref name="rosterPersona"/> prefers, registered with the
-    /// provider store. The child's stub CHAT records the resolved provider id, which is how the ladder's answer
-    /// is observable at all from outside.</param>
-    /// <param name="steering">Trailing and defaulted: the steering registry, registered with the
-    /// per-run scope as well so the run's own orchestrator reads the SAME instance the launcher writes.
-    /// Omitted ⇒ no registry anywhere, i.e. the pre-Batch-08 launcher every other fact here exercises.</param>
-    /// <param name="stream">Trailing and defaulted: replaces <see cref="Drive"/> so a fact can
-    /// hold a run INSIDE a step (the state a pause is legal from) instead of only inside the planner. Handed the
-    /// step's own token.</param>
-    /// <param name="settingsService">Trailing and defaulted: the run pool is live-resizable off
-    /// <c>ISettingsService.SettingsChanged</c>, and a substitute cannot RAISE that event without reflection
-    /// tricks. Pass a <see cref="MutableSettingsService"/> to drive a real save. Supersedes
-    /// <paramref name="appSettings"/> when both are given.</param>
+    /// <param name="verifier">A resume skips planning, so the verify pass is the only place a resumed run's <c>ctx.WorkspaceRoot</c> is observable.</param>
+    /// <param name="workspaces">Omitted ⇒ no provisioner, so the launcher does its own <c>CreateDirectory</c> under the <c>try/catch → FailAsync</c> guard.</param>
+    /// <param name="runsBaseOverride">Lets a test point the runs base at an unwritable path (a file).</param>
+    /// <param name="rosterProvider">The child's stub chat records the resolved provider id, which is how the persona ladder's answer is observable from outside.</param>
+    /// <param name="steering">Registered with the per-run scope too, so the run's own orchestrator reads the same instance the launcher writes.</param>
+    /// <param name="stream">Replaces <see cref="Drive"/> so a fact can hold a run inside a step rather than only inside the planner.</param>
+    /// <param name="settingsService">A substitute cannot raise <c>SettingsChanged</c>; pass a <see cref="MutableSettingsService"/> to drive a real save. Supersedes <paramref name="appSettings"/>.</param>
     private (HeadlessRunLauncher Launcher, FakePlanner Planner) BuildLauncher(
         Func<Task>? onPlan = null, bool nullDefaultProvider = false, ToolProbe? probe = null,
         AppSettings? appSettings = null, FakeVerifier? verifier = null,
@@ -174,8 +134,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         IExecutingRunStore? executing = null,
         ISettingsService? settingsService = null)
     {
-        // Trailing-optional and defaulted to the shared field, so every existing call site is untouched. The
-        // one fact that overrides it needs a SEAM between the resume's RegisterDispatch and RunAsync, and
+        // The one fact that overrides this needs a seam between the resume's RegisterDispatch and RunAsync, and
         // Register is the last statement before the orchestrator is entered.
         var executingRuns = executing ?? _executing;
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
@@ -244,13 +203,11 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         // The orchestrator's terminal critic pass; the default (empty queue) FakeVerifier accepts.
         services.AddSingleton<IAgentVerifier>(verifier ?? new FakeVerifier());
         services.AddSingleton<Func<ITokenMapService>>(_ => () => Substitute.For<ITokenMapService>());
-        // The same index the launcher below is given, because the per-run scope resolves
-        // HeadlessTurnExecutor -> concrete BackgroundAssistantTurnRunner, which now requires it. Omit this
-        // and the resolve throws inside the launcher's dispatch task, which is swallowed there.
+        // The per-run scope resolves HeadlessTurnExecutor -> BackgroundAssistantTurnRunner, which requires this;
+        // omit it and the resolve throws inside the launcher's dispatch task, where it is swallowed.
         services.AddSingleton<IExecutingRunStore>(executingRuns);
-        // The loop needs the SAME registry the launcher registers its sink with, or it can never
-        // consume the request the launcher's dispatch made possible (the orchestrator's parameter is
-        // trailing-optional, so an unregistered store is silently "no steering" — the pre-Batch-08 loop).
+        // The loop needs the SAME registry the launcher registers its sink with; the orchestrator's parameter is
+        // trailing-optional, so an unregistered store is silently "no steering".
         if (steering is not null) services.AddSingleton(steering);
         services.AddTransient<BackgroundAssistantTurnRunner>();
         services.AddTransient<HeadlessTurnExecutor>();
@@ -282,8 +239,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     }
 
     /// <summary>Persist a stub chat + a parked (WaitingForInput) Planned run carrying one Pending step.</summary>
-    /// <param name="parentRunId">makes the parked run a CHILD, which is the shape change 3 is
-    /// about — every child owns a stub chat, so a user can press Continue on one.</param>
+    /// <param name="parentRunId">Makes the parked run a child; every child owns a stub chat, so a user can press Continue on one.</param>
     private async Task<AgentRun> ParkRunWithPendingStepAsync(string? policyJson, Guid? parentRunId = null)
     {
         var ct = TestContext.Current.CancellationToken;
@@ -355,10 +311,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             await Task.Delay(20, ct);
         }
 
-        // Assert terminality rather than just giving up at the deadline: a caller that only asserts a tool
-        // was NOT executed would otherwise pass VACUOUSLY when the resume dispatched no step at all (e.g. a
-        // pre-dispatch failure re-parks the run) — the grant-refusal legs would report green on a resume
-        // path that is entirely broken.
+        // Assert terminality rather than giving up at the deadline: a caller that only asserts a tool was NOT
+        // executed would otherwise pass vacuously when the resume dispatched no step at all.
         Assert.Contains(state, new[] { AgentRunState.Completed, AgentRunState.Failed, AgentRunState.Cancelled });
 
         // Drains the resume task (StopAsync awaits every in-flight run) so nothing touches the
@@ -366,12 +320,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// sibling of <see cref="AwaitRunSettledAsync"/>: poll until the run is parked again, then
-    /// drain. Carries the SAME anti-vacuity property, which is why it is a separate helper rather than a
-    /// relaxed terminal set — a resume that dispatched no step at all leaves the run at whatever state the
-    /// re-park wrote, so the reason token is asserted too, and only the approval park writes that one.
-    /// </summary>
+    /// <summary>Sibling of <see cref="AwaitRunSettledAsync"/> that polls until the run is parked again; the
+    /// reason token is asserted too, because only the approval park writes that one.</summary>
     private async Task AwaitRunParkedForApprovalAsync(HeadlessRunLauncher launcher, Guid runId, string expectedTool)
     {
         var ct = TestContext.Current.CancellationToken;
@@ -436,17 +386,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         try { Directory.Delete(runRoot, true); } catch { }
     }
 
-    /// <summary>
-    /// T-G2-1, <b>REGRESSION</b>. G2's launch half: the launch dispatch hands the executor the
-    /// run's workspace root instead of <c>null</c>, so every file operation the run performs resolves
-    /// inside <c>runs\&lt;runId&gt;</c>. Asserted at the seam that changed rather than by driving a real
-    /// <c>write_file</c> through the launcher ('s scoping note): at G2 the workspace is empty and this
-    /// harness has no provider that emits a tool call, so the observable value is the one G1 published —
-    /// <c>ctx.WorkspaceRoot</c>, read here off the RunContext the orchestrator handed the planner.
-    /// Reverting the launch call site to <c>workspaceRoot: null</c> turns this red while
-    /// <see cref="Resume_InitializesTheExecutorWithTheSameRunWorkspaceRoot"/> stays green — the crossed
-    /// pattern is the evidence the two call sites are covered by one fact each.
-    /// </summary>
+    /// <summary>The launch and resume call sites are separate literals, so each gets its own fact; this one reads
+    /// <c>ctx.WorkspaceRoot</c> because the harness has no provider that emits a tool call.</summary>
     [Fact]
     public async Task Launch_InitializesTheExecutorWithTheRunWorkspaceRoot()
     {
@@ -456,9 +397,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             new HeadlessRunRequest("do the thing", AgentRunTrigger.User), TestContext.Current.CancellationToken);
         await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
-        // Canonicalized, exactly as the launcher canonicalizes it — GetTempPath can carry an 8.3 or a link
-        // component, so a raw Path.Combine expectation would compare two spellings of the same directory.
-        // Computed while the workspace still exists (Canonicalize needs a real handle).
+        // GetTempPath can carry an 8.3 or a link component, so the expectation is canonicalized the way the
+        // launcher does — while the workspace still exists, since Canonicalize needs a real handle.
         var expected = SafeFolderPath.Canonicalize(Path.Combine(_runsBase, handle.RunId.ToString()));
 
         // Non-vacuity control: a planner that was never called leaves PlanContext null, and the claim below
@@ -469,13 +409,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         try { Directory.Delete(expected, true); } catch { }
     }
 
-    /// <summary>
-    /// T-G2-2, <b>REGRESSION</b>. G2's resume half — a SEPARATE literal from the launch call site,
-    /// which has drifted from it before, hence its own fact: a resumed run re-enters the SAME isolated
-    /// workspace it was parked in. A resume deliberately does not re-plan, so the planner never sees
-    /// the context; the terminal verify pass is the only place <c>ctx.WorkspaceRoot</c> is still observable
-    /// (the per-step ambient that also carries it is restored in each step's <c>finally</c>).
-    /// </summary>
+    /// <summary>A resume does not re-plan, so the planner never sees the context and the terminal verify pass is
+    /// the only place <c>ctx.WorkspaceRoot</c> is still observable.</summary>
     [Fact]
     public async Task Resume_InitializesTheExecutorWithTheSameRunWorkspaceRoot()
     {
@@ -488,9 +423,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
         var expected = SafeFolderPath.Canonicalize(Path.Combine(_runsBase, parked.Id.ToString()));
 
-        // The resumed dispatch drained its Pending remainder and reached the critic — without this the
-        // assertion below would be indexing an empty list, i.e. the fact would pass on a resume that never
-        // executed anything. Assert.Single is the non-vacuity control.
+        // Non-vacuity: without this the assertion below would index an empty list, i.e. the fact would pass on
+        // a resume that never executed anything.
         Assert.Single(verifier.SeenWorkspaceRoots);
         Assert.Equal(expected, verifier.SeenWorkspaceRoots[0]);
         // This run parked on `step-cap`, not `needs-goal`, so the resume must not re-plan.
@@ -499,15 +433,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         try { Directory.Delete(expected, true); } catch { }
     }
 
-    /// <summary>
-    /// The resume claim is now dispatched on the row's STATE, over an explicit two-member set and
-    /// never a range: a budget park is <c>WaitingForInput</c> → <c>TryBeginResumeAsync</c>, a USER pause is
-    /// <c>Paused</c> → <c>TryResumeFromPauseAsync</c>, anything else is refused. Every other resume fact in this
-    /// file covers the first arm; this is the only cover for the second, and without it a swapped or missing arm
-    /// would stay green here and surface as a dead Continue button once the UI lands.
-    /// Not listed in the impl spec's file table for G3, which names only the two new test files. Added
-    /// anyway: shipping a new switch arm with no fact is the thing the plan's own hazards forbid.
-    /// </summary>
+    /// <summary>Every other resume fact here covers the <c>WaitingForInput</c> arm; this is the only cover for the
+    /// <c>Paused</c> one, and a swapped or missing arm would otherwise stay green.</summary>
     [Fact]
     public async Task Resume_ClaimsAUserPausedRun_AndDrainsItToCompletion()
     {
@@ -533,14 +460,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
     }
 
-    /// <summary>
-    /// T-G3-14a, <b>REGRESSION</b>. B16's first half: a provisioner that cannot isolate the run
-    /// returns null — "no isolation", the pre-Batch-06 behaviour — and the run proceeds and settles
-    /// <c>Completed</c>. It must NOT be settled <c>Failed</c> with <c>"workspace setup failed"</c>: an
-    /// unattended run that fails because a scratch directory could not be prepared delivers nothing, while the
-    /// same run writing into the assistant folder delivers exactly what it delivered before this batch (plan
-    /// R16 — degrade rather than fail).
-    /// </summary>
+    /// <summary>A provisioner that cannot isolate the run returns null and the run proceeds: an unattended run
+    /// that failed because a scratch directory could not be prepared would deliver nothing.</summary>
     [Fact]
     public async Task ProvisioningFailure_DoesNotFailTheRun()
     {
@@ -561,13 +482,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Null(planner.PlanContext!.WorkspaceRoot);
     }
 
-    /// <summary>
-    /// T-G3-14b, <b>REGRESSION</b> and the non-vacuity control for the fact above: with no provisioner
-    /// injected the LEGACY create path is still in force, and a workspace it cannot create still settles the
-    /// run rather than leaving it dangling non-terminal. Deleting the legacy <c>try/catch → FailAsync</c>
-    /// as "unreachable" (B16 says it is unreachable only on the PROVISIONER path) turns this red, which is
-    /// what keeps T-G3-14a from passing on a launcher that simply stopped settling failed launches.
-    /// </summary>
+    /// <summary>Control for the fact above: with no provisioner the legacy create path is still in force, and a
+    /// workspace it cannot create must still settle the run rather than leave it dangling non-terminal.</summary>
     [Fact]
     public async Task WithNoProvisioner_AnUncreatableWorkspace_StillSettlesTheRun()
     {
@@ -615,12 +531,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             try { Directory.Delete(Path.Combine(_runsBase, h.RunId.ToString()), true); } catch { }
     }
 
-    /// <summary>
-    /// An <see cref="ISettingsService"/> whose stored document can be replaced and whose
-    /// <c>SettingsChanged</c> can therefore actually be RAISED — through <c>SaveSettingsAsync</c>, i.e. the same
-    /// call the settings ViewModel makes when a slider moves. A substitute cannot raise an event without a
-    /// reflection helper; a four-member interface is cheaper to implement than to trick.
-    /// </summary>
+    /// <summary>A substitute cannot raise <c>SettingsChanged</c> without a reflection helper, and a four-member
+    /// interface is cheaper to implement than to trick.</summary>
     private sealed class MutableSettingsService : ISettingsService
     {
         public MutableSettingsService(AppSettings initial) => Current = initial;
@@ -654,10 +566,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     [Fact]
     public async Task LaunchAsync_AppliesTheConfiguredPoolWidthOnColdStart_WithoutASettingsChangeEvent()
     {
-        // T1-1 COLD START. Nothing in this fact saves settings, so SettingsChanged never fires and the ONLY
-        // thing that can apply the configured width is the Resize at the top of LaunchCoreAsync — which is the
-        // arm a live-resize-by-event-only implementation would leave broken until the user re-saved. On the
-        // pre-T1-1 tree the pool was compiled at 2 and the third run stayed slot-starved for the whole hold.
+        // Nothing here saves settings, so SettingsChanged never fires and the only thing that can apply the
+        // configured width is the Resize at the top of LaunchCoreAsync.
         var release = new TaskCompletionSource();
         var (launcher, planner) = BuildLauncher(
             onPlan: () => release.Task,
@@ -687,9 +597,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     [Fact]
     public async Task SettingsChanged_RaisingTheCap_StartsAQueuedRun()
     {
-        // T1-1's live half: the setting takes effect WITHOUT an app restart, and specifically for a run that is
-        // ALREADY QUEUED — the run the user is trying to unblock. The lazy Resize on the dispatch paths cannot
-        // reach it (that run's LaunchCoreAsync already returned), so only the SettingsChanged subscription can.
+        // The setting must take effect for a run that is ALREADY QUEUED; the lazy Resize on the dispatch paths
+        // cannot reach it, so only the SettingsChanged subscription can.
         var release = new TaskCompletionSource();
         var settings = new MutableSettingsService(new AppSettings { MaxParallelBackgroundRuns = 2 });
         var (launcher, planner) = BuildLauncher(onPlan: () => release.Task, settingsService: settings);
@@ -720,13 +629,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             try { Directory.Delete(Path.Combine(_runsBase, h.RunId.ToString()), true); } catch { }
     }
 
-    /// <summary>
-    /// The launcher's own parent pool (<c>_slots</c>). T1-3's ordering is only observable from outside if a test
-    /// can hold the HEAD of the pool's admission chain, and only a ticket the launcher did not issue can do that —
-    /// so the fact below needs the exact instance the dispatch waits on. Deliberately reflection rather than an
-    /// internal accessor on the launcher: this fails loudly (a null deref) if the field is renamed, which is
-    /// cheaper than production surface that exists for one test.
-    /// </summary>
+    /// <summary>Reflection rather than an internal accessor: this fails loudly if the field is renamed, which is
+    /// cheaper than production surface that exists for one test.</summary>
     private static RunSlotPool SlotPoolOf(HeadlessRunLauncher launcher) =>
         (RunSlotPool)typeof(HeadlessRunLauncher)
             .GetField("_slots", BindingFlags.Instance | BindingFlags.NonPublic)!
@@ -735,10 +639,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     [Fact]
     public async Task LaunchAsync_QueuesItsSlotWaitBehindTheTicketTakenBeforeIt()
     {
-        // T1-3 through the REAL launcher: the slot wait runs as the first statement of a detached Task.Run, so
-        // the only thing that can carry launch order into the pool is a ticket taken on the launching thread
-        // BEFORE that Task.Run. Here the test holds a ticket issued before the launch, and the launched run must
-        // queue behind it — with a permit sitting free the whole time.
+        // The slot wait runs as the first statement of a detached Task.Run, so the only thing that can carry
+        // launch order into the pool is a ticket taken on the launching thread before it.
         var ct = TestContext.Current.CancellationToken;
         var gate = new TaskCompletionSource();
         var planCalls = 0;
@@ -754,9 +656,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         // The width the setting asked for — which also proves the reflected field is the pool the launch used.
         Assert.Equal(1, pool.Width);
 
-        // A PERMIT IS FREE, taken and handed straight back. Without this the negative assertion below would pass
-        // on a tree with no ticket chain at all, because a saturated pool explains it just as well — the
-        // assertion-observed-the-default shape.
+        // A permit is free, taken and handed straight back: without this the negative assertion below would pass
+        // on a tree with no ticket chain at all, because a saturated pool explains it just as well.
         var probe = pool.WaitAsync(CancellationToken.None);
         Assert.True(probe.IsCompleted, "the pool should be idle after run A settled");
         pool.Release();
@@ -768,8 +669,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var b = await launcher.LaunchAsync(new HeadlessRunRequest("b", AgentRunTrigger.User), ct);
 
         // B's dispatch task is running and the pool is idle, yet B has not started: its ticket was issued after
-        // `head`, so its wait is not even ENQUEUED yet. Bounded, because "has not happened" has no state to read;
-        // the positive half below is what makes this a mechanism fact rather than a slow tree.
+        // `head`, so its wait is not even enqueued. Bounded, because "has not happened" has no state to read.
         await Task.Delay(300, ct);
         Assert.Equal(0, planner.Concurrent);
         Assert.Equal(1, planCalls);
@@ -852,8 +752,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     [Fact]
     public async Task Launch_WithoutExplicitGrants_PersistsWriteFileOnlyEnvelope()
     {
-        // A1: the default grant set for an unattended run drops delete_file. The launch also persists the
-        // resolved set as its opaque PolicyJson envelope, which is what a later resume restores.
+        // The default grant set for an unattended run drops delete_file, and the launch persists the resolved
+        // set as its opaque PolicyJson envelope, which is what a later resume restores.
         var (launcher, _) = BuildLauncher();
 
         var handle = await launcher.LaunchAsync(
@@ -898,8 +798,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     [Fact]
     public async Task Launch_WithExplicitDeleteGrant_StillHonoursIt()
     {
-        // A1 narrows the DEFAULT only — an explicit GrantedWrites naming delete_file keeps working, and
-        // the envelope records it so a resume restores it too.
+        // Only the DEFAULT is narrow — an explicit GrantedWrites naming delete_file keeps working, and the
+        // envelope records it so a resume restores it too.
         var probe = new ToolProbe("delete_file");
         var (launcher, _) = BuildLauncher(probe: probe);
 
@@ -918,8 +818,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     [Fact]
     public async Task Resume_RestoresTheNarrowLaunchGrant_AndNeverWidensIt()
     {
-        // D1 (top-severity): a scheduled job launched with a NARROW grant list that budget-pauses must not
-        // silently acquire delete_file on resume — nor even write_file, which its launch never granted.
+        // A scheduled job launched with a NARROW grant list that budget-pauses must not silently acquire
+        // delete_file on resume — nor even write_file, which its launch never granted.
         var deleteProbe = new ToolProbe("delete_file");
         var (deleteLauncher, _) = BuildLauncher(probe: deleteProbe);
         var narrowEnvelope = HeadlessRunLauncher.SerializeGrantEnvelope(["create_todo"], AgentRunTrigger.Schedule);
@@ -935,10 +835,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var (writeLauncher, _) = BuildLauncher(probe: writeProbe);
         var parked2 = await ParkRunWithPendingStepAsync(narrowEnvelope);
         Assert.True(await writeLauncher.ResumeAsync(parked2.Id, ct: TestContext.Current.CancellationToken));
-        // CHANGED THIS LEG'S ENDING, NOT ITS CLAIM. D1's claim is that the resume never WIDENS the
-        // grant set, and it still holds exactly: write_file is not in the envelope, so it does not run. What
-        // changed is what happens instead — a root run no longer hard-denies a promptable capability and
-        // marches on, it stops and asks. The security assertion below is untouched.
+        // The resume never widens the grant set: write_file is not in the envelope, so it does not run — a root
+        // run stops and asks rather than hard-denying a promptable capability and marching on.
         await AwaitRunParkedForApprovalAsync(writeLauncher, parked2.Id, "write_file");
 
         Assert.False(writeProbe.Executed); // the floor is a FALLBACK, never an addition to a known set
@@ -996,8 +894,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     [Fact]
     public async Task Resume_WithUnreadableEnvelope_UsesTheWriteOnlyFloor()
     {
-        // Missing/garbage envelope (e.g. a run created before D1): resume with {write_file} ONLY — the
-        // fallback is a floor, never a ceiling, so delete_file stays refused.
+        // Missing/garbage envelope (a legacy run): resume with {write_file} ONLY — the fallback is a floor,
+        // never a ceiling, so delete_file stays refused.
         var deleteProbe = new ToolProbe("delete_file");
         var (deleteLauncher, _) = BuildLauncher(probe: deleteProbe);
         var parked = await ParkRunWithPendingStepAsync(policyJson: null);
@@ -1035,7 +933,6 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var policy = HeadlessRunLauncher.TryRestorePolicy(run!.PolicyJson);
         Assert.NotNull(policy);
         Assert.True(policy!.Covers(ToolClass.Files));
-        // D9's exclusions, as a test.
         Assert.False(policy.Covers(ToolClass.Git));
         Assert.False(policy.Covers(ToolClass.External));
         // The grant list is untouched by the policy.
@@ -1066,9 +963,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     [Fact]
     public async Task Resume_RestoresThePolicyFromTheEnvelope_NotFromSettings()
     {
-        // 04 D10, the red-before-green for the whole decision: the envelope is the run's authority of record.
-        // This run parked with an envelope carrying NO policy and NO grants. The user then turns the setting
-        // ON. A resume that consulted settings would hand the parked run card-free write_file; it must not.
+        // The envelope is the run's authority of record: this run parked with no policy and no grants, so a
+        // resume that consulted the (now on) setting would hand it card-free write_file.
         var probe = new ToolProbe("write_file");
         var (launcher, _) = BuildLauncher(
             probe: probe, appSettings: new AppSettings { AgentRunAutoApproveBuiltInWrites = true });
@@ -1078,9 +974,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
         var parked = await ParkRunWithPendingStepAsync(policylessEnvelope);
         Assert.True(await launcher.ResumeAsync(parked.Id, ct: TestContext.Current.CancellationToken));
-        // The run now PARKS on write_file instead of denying it — the D10 claim is unchanged and
-        // is the assertion below (the settings flip did NOT hand this run card-free write_file), only the
-        // shape of "did not run" moved from a denial to a question put to a human.
+        // The run parks on write_file rather than denying it: "did not run" is a question put to a human here,
+        // not a denial.
         await AwaitRunParkedForApprovalAsync(launcher, parked.Id, "write_file");
 
         Assert.False(probe.Executed);
@@ -1112,8 +1007,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     [Fact]
     public async Task ResumedPolicy_StillCannotRunADeleteLikeSiblingOfACoveredClass()
     {
-        // D6 end-to-end: the Files class covers write_file and delete_file alike, and a POLICY must never be
-        // the reason a delete-like tool ran. Only a NAMED grant can do that.
+        // The Files class covers write_file and delete_file alike, and a POLICY must never be the reason a
+        // delete-like tool ran — only a NAMED grant can do that.
         var probe = new ToolProbe("delete_file");
         var (launcher, _) = BuildLauncher(probe: probe);
 
@@ -1130,16 +1025,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
     }
 
-    /// <summary>
-    /// <c>ResumeAsync</c> returns a bool and hands nobody a task, so the only way a subscriber can learn
-    /// that a resumed dispatch finished is this event — which is why a scheduled run that parked at its budget
-    /// and was later continued TO COMPLETION never booked its outcome onto the job, with no crash involved.
-    /// The ORDERING leg is the other half. The raise sits at the very END of the dispatch's <c>finally</c>,
-    /// deliberately after <c>_slots.Release</c> — bookkeeping must never be able to strand the shared
-    /// concurrency slot, the same rule the composer bracket beside it already follows. The slot itself is
-    /// private, so what is asserted is its neighbour: the composer bracket, released one line after the slot, is
-    /// ALREADY CLOSED when the handler runs. Move the raise above the release (or into the try) and this reds.
-    /// </summary>
+    /// <summary>The raise sits after <c>_slots.Release</c> so bookkeeping cannot strand the shared slot; the slot
+    /// is private, so what is asserted is its neighbour, the composer bracket released one line after it.</summary>
     [Fact]
     public async Task ResumeAsync_RaisesResumedRunSettled_AfterReleasingTheSlot()
     {
@@ -1165,13 +1052,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
     }
 
-    /// <summary>
-    /// The event is NOT conditional on a terminal state: here the resumed run enters the orchestrator, hits a
-    /// tool it was not granted and PARKS AGAIN, and the raise still happens. That is deliberate — the launcher
-    /// cannot distinguish "re-parked before starting" from "ran, then parked again", so it reports every arm and
-    /// the subscriber's state check decides (see <c>ScheduledJobBackgroundService.BookResumedRunAsync</c>).
-    /// Suppressing the raise on non-terminal arms would silently lose the case where the orchestrator DID run.
-    /// </summary>
+    /// <summary>The launcher cannot distinguish "re-parked before starting" from "ran, then parked again", so it
+    /// raises on every arm and the subscriber's state check decides.</summary>
     [Fact]
     public async Task ResumeAsync_RaisesResumedRunSettled_OnTheReParkArmToo()
     {
@@ -1201,9 +1083,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     [Fact]
     public async Task Resume_PreDispatchFailure_ReParksRun_ReturnsFalse()
     {
-        // Guardrail 1/3: after the CAS claim (WaitingForInput→Running) a pre-dispatch failure (here: no
-        // provider resolvable) must re-park the run to WaitingForInput — never leave it dangling Running,
-        // unresumable, until the crash sweep cancels it.
+        // After the CAS claim (WaitingForInput→Running) a pre-dispatch failure must re-park the run — never
+        // leave it dangling Running and unresumable until the crash sweep cancels it.
         var (launcher, _) = BuildLauncher(nullDefaultProvider: true);
 
         var chatId = Guid.NewGuid();
@@ -1300,9 +1181,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Null(planner.PlanContext);
     }
 
-    /// <summary>The claim arm's decline guard: a decline answers a tool-approval park ONLY. On any other park
-    /// there is no question to say no to, and claiming the CAS anyway would turn a budget pause into a
-    /// denied-tool resume.</summary>
+    /// <summary>A decline answers a tool-approval park only: on any other park there is no question to say no
+    /// to, and claiming the CAS anyway would turn a budget pause into a denied-tool resume.</summary>
     [Fact]
     public async Task Decline_OfARunParkedAtItsBudget_IsRefused_AndLeavesTheRunParked()
     {
@@ -1317,9 +1197,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Equal("step-cap", ReadPauseReason(after)); // the park it had, not a denied-tool resume
     }
 
-    /// <summary>The decision arm: Continue IS the approval, so the parked tool joins the run's grants and is
-    /// PERSISTED — without that, a second park would restore the launch envelope and forget the first
-    /// approval.</summary>
+    /// <summary>Continue IS the approval, so the parked tool joins the run's grants and is persisted — a second
+    /// park would otherwise restore the launch envelope and forget the first approval.</summary>
     [Fact]
     public async Task Resume_OfAToolApprovalPark_WidensTheEnvelopeByTheParkedTool_AndPersistsIt()
     {
@@ -1366,11 +1245,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     [Fact]
     public async Task LaunchedRun_HoldsTheComposerBracket_WhileItExecutes_AndReleasesWhenItEnds()
     {
-        // A2's bracket premise for this launcher. ChatSessionManager reads this index SYNCHRONOUSLY when a
-        // chat is activated, so it must be open for the whole span in which the executor writes the chat — and
-        // empty again afterwards, because a stale entry is a permanently dead composer. Drop either the
-        // Register or the Release edit in HeadlessRunLauncher and this fails; a future refactor that
-        // dispatched the orchestrator from somewhere other than those two lambdas fails here too.
+        // ChatSessionManager reads this index synchronously when a chat is activated, so it must be open for the
+        // whole span in which the executor writes the chat — and empty afterwards, or the composer is dead.
         var release = new TaskCompletionSource();
         var (launcher, _) = BuildLauncher(onPlan: () => release.Task);
 
@@ -1397,12 +1273,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
     }
 
-    /// <summary>
-    /// T-CHILD-1, <b>REGRESSION</b>. What a child dispatch is: its own stub chat, a run row carrying
-    /// <c>ParentRunId</c>, the grant envelope NARROWED from the parent's (never the launch default), and — the
-    /// load-bearing half — <b>no workspace of its own</b>. It writes the parent's directory, because
-    /// exactly one promotion is allowed per workspace, and a per-child worktree would mean N branches per fan-out.
-    /// </summary>
+    /// <summary>A child has no workspace of its own and writes the parent's directory: exactly one promotion is
+    /// allowed per workspace, and a per-child worktree would mean N branches per fan-out.</summary>
     [Fact]
     public async Task LaunchChild_CreatesAChildRunInTheParentsWorkspace_WithANarrowedEnvelope()
     {
@@ -1423,24 +1295,15 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Equal<Guid?>(parentRunId, child!.ParentRunId);
         Assert.Equal(new[] { "write_file" }, HeadlessRunLauncher.TryRestoreGrantEnvelope(child.PolicyJson));
 
-        // No directory at the CHILD's run id, and the executor was initialized with the PARENT's root — read
-        // off the RunContext the orchestrator handed the planner, the same seam T-G2-1 uses.
+        // No directory at the CHILD's run id, and the executor was initialized with the PARENT's root, read off
+        // the RunContext the orchestrator handed the planner.
         Assert.False(Directory.Exists(Path.Combine(_runsBase, handle.RunId.ToString())));
         Assert.NotNull(planner.PlanContext);
         Assert.Equal(parentRoot, planner.PlanContext!.WorkspaceRoot);
     }
 
-    /// <summary>
-    /// <b>REGRESSION</b> (Phase 3 fix pass). The other end of a delegated step's persona assignment: the child's
-    /// RUN persona is the specialist the plan chose, and therefore so is its provider and reasoning effort
-    /// (07 D5, "each persona running on its own provider"). Before this the dispatch resolved the GLOBAL
-    /// per-mode persona and that persona's provider, so a fan-out ran exactly as if no roster were configured.
-    /// The resolved provider is observable through the child's stub CHAT, which records it — that value can only
-    /// be the roster provider if the assigned persona reached <c>ResolveProviderAsync</c>. The second leg is the
-    /// containment control and the non-vacuity control in one: the SAME persona, still resolvable, but no longer
-    /// on the configured roster, falls back to the mode default. Neutralization: ignore
-    /// <c>personaIdOverride</c> in <c>ResolveRunPersonaAsync</c> → the first leg reds.
-    /// </summary>
+    /// <summary>A child's run persona is the specialist the plan chose, so its provider is too; that provider is
+    /// observable only through the child's stub chat, which records it.</summary>
     [Fact]
     public async Task AChildsAssignedPersonaDecidesItsRunPersonaAndProvider_WhileItIsStillOnTheRoster()
     {
@@ -1478,15 +1341,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.NotEqual(preferred.Id, declinedChat!.ProviderId);
     }
 
-    /// <summary>
-    /// T-CHILD-2, <b>REGRESSION</b>, and the reason D7 exists. The child pool is a SECOND semaphore. With both
-    /// permits of the shared pool held by parents that are blocked inside their own runs, a child dispatched on
-    /// the shared pool could never start — and neither permit could ever be released, because a permit is
-    /// released only after <c>RunAsync</c> RETURNS. That is a permanent deadlock reachable with exactly two
-    /// concurrent parents, i.e. the configured cap.
-    /// Change <c>_childSlots</c> back to <c>_slots</c> and this fact does not fail an assertion — it TIMES OUT
-    /// on the child's completion, which is what the deadlock actually looks like.
-    /// </summary>
+    /// <summary>A permit is released only after <c>RunAsync</c> returns, so a child sharing the parent pool
+    /// deadlocks behind two blocked parents; this fact TIMES OUT rather than failing an assertion.</summary>
     [Fact]
     public async Task LaunchChild_UsesASeparatePool_SoAChildRunsWhileBothParentSlotsAreHeld()
     {
@@ -1523,11 +1379,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             try { Directory.Delete(Path.Combine(_runsBase, h.RunId.ToString()), true); } catch { }
     }
 
-    /// <summary>
-    /// T-CHILD-3, <b>REGRESSION</b>. <c>CancelAsync</c> is the cascade's mechanism: it cancels ONE in-flight
-    /// dispatch by id and is a silent no-op for a run this process is not running (a child parked in a previous
-    /// process), which is exactly why the orchestrator also settles such a row directly.
-    /// </summary>
+    /// <summary><c>CancelAsync</c> is a silent no-op for a run this process is not running, which is why the
+    /// orchestrator also settles such a row directly.</summary>
     [Fact]
     public async Task CancelAsync_CancelsOneInFlightRun_AndIsANoOpForAnUnknownId()
     {
@@ -1559,14 +1412,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
     }
 
-    /// <summary>
-    /// T-CHILD-4, <b>REGRESSION</b>. Teardown is keyed on WORKSPACE OWNERSHIP, not on run id, so a child's run
-    /// id is never entered in the chat→runs index. Deleting a child's stub chat mid-fan-out would otherwise call
-    /// <c>TearDownWorkspaceAsync(childId)</c> — which routes through the provisioner and in worktree mode is a
-    /// <c>git worktree remove</c> — against a directory the PARENT and its still-running siblings own.
-    /// The second half is the non-vacuity control: a PARENT's chat deletion does still tear its workspace down,
-    /// so this cannot pass on a launcher whose teardown simply stopped working.
-    /// </summary>
+    /// <summary>Teardown is keyed on workspace ownership, not run id: deleting a child's stub chat would otherwise
+    /// <c>git worktree remove</c> a directory the parent and its still-running siblings own.</summary>
     [Fact]
     public async Task AChildsChatDeletion_DoesNotTearDownAWorkspace_ButAParentsStillDoes()
     {
@@ -1589,13 +1436,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Contains(parent.RunId, workspaces.TornDown);
     }
 
-    /// <summary>
-    /// T-CHILD-5, <b>REGRESSION</b>. The hole the rest of the fan-out work would leave open:
-    /// <c>ResumeAsync</c> is a separate dispatch method that provisions at its OWN run id, and every child owns a
-    /// stub chat — so a user opening a parked child's chat and pressing <b>Continue</b> would create a SECOND
-    /// workspace at the child's id, diverging from the parent's and outliving it until the sweep. A resumed child
-    /// re-enters the PARENT's directory and provisions nothing.
-    /// </summary>
+    /// <summary><c>ResumeAsync</c> provisions at its own run id, so pressing Continue on a parked child's chat
+    /// would otherwise create a second workspace that diverges from the parent's and outlives it.</summary>
     [Fact]
     public async Task ResumedChild_ReEntersTheParentsWorkspace_AndNeverProvisionsAtItsOwnId()
     {
@@ -1616,20 +1458,13 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.DoesNotContain(parked.Id, workspaces.Provisioned);
         Assert.False(Directory.Exists(Path.Combine(_runsBase, parked.Id.ToString())));
 
-        // And the resumed child really did run, inside the parent's root. Assert.Single is the non-vacuity
-        // control: a resume that dispatched nothing would satisfy both assertions above for free.
-        // The parent's own launch DID plan (PlanContext is its context, not the child's), so the
-        // resume-does-not-replan claim is T-G2-2's; the fact here is which ROOT the resumed child re-entered.
+        // Non-vacuity: a resume that dispatched nothing would satisfy both assertions above for free.
         Assert.Single(verifier.SeenWorkspaceRoots);
         Assert.Equal(SafeFolderPath.Canonicalize(parentRoot), verifier.SeenWorkspaceRoots[0]);
     }
 
-    /// <summary>
-    /// T-CHILD-6, <b>GUARD</b>. The degrade half: a child whose parent ran UNISOLATED (or whose parent's
-    /// workspace is already gone) gets a null root and writes the assistant folder, exactly as its parent does.
-    /// Parent and child are always in the same isolation regime — the child must never provision one of its own
-    /// to "fix" a parent that has none.
-    /// </summary>
+    /// <summary>Parent and child are always in the same isolation regime: a child must never provision a
+    /// workspace of its own to "fix" a parent that has none.</summary>
     [Fact]
     public async Task AChildOfAnUnisolatedParentIsAlsoUnisolated_AndProvisionsNothing()
     {
@@ -1648,11 +1483,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Equal(AgentRunState.Completed, (await _runs.GetAsync(handle.RunId, TestContext.Current.CancellationToken))!.State);
     }
 
-    /// <summary>
-    /// Creates a chat and a run row in a given terminal/non-terminal state, plus a workspace directory whose
-    /// <c>LastWriteTimeUtc</c> is <paramref name="ageDays"/> old — the two inputs the sweep's retention
-    /// predicate reads.
-    /// </summary>
+    /// <summary>Creates a run row in a given state plus a workspace directory of a given age — the two inputs the
+    /// sweep's retention predicate reads.</summary>
     private async Task<Guid> SeedRunWithAgedWorkspaceAsync(AgentRunState state, int ageDays)
     {
         var ct = TestContext.Current.CancellationToken;
@@ -1698,14 +1530,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         return run.Id;
     }
 
-    /// <summary>
-    /// <b>REGRESSION</b>. B12 — plan D3's retention rule and plan R5's mitigation in one
-    /// predicate. A SETTLED run's workspace is kept only long enough for the user to answer the publish offer;
-    /// anything non-terminal keeps the original 30-day floor because it may still be resumable, and deleting a
-    /// resumable run's only copy of its work is the one mistake this sweep must not make.
-    /// Rows (c) and (d) are the non-vacuity controls: a sweep that deleted everything would pass on (a) and
-    /// (b) alone.
-    /// </summary>
+    /// <summary>A settled run's workspace is kept only long enough to answer the publish offer; anything
+    /// non-terminal keeps the 30-day floor, because it may still hold the only copy of resumable work.</summary>
     [Fact]
     public async Task Sweep_KeepsANonTerminalRunsWorkspace_ButRemovesASettledOneAfterTheTerminalWindow()
     {
@@ -1729,12 +1555,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.True(Directory.Exists(Path.Combine(_runsBase, parked.ToString())));
     }
 
-    /// <summary>
-    /// <b>REGRESSION</b>. Plan R4 / B13: after a run's workspace holds the only copy of its
-    /// un-promoted work, so a chat deletion must CANCEL a still-live dispatch before tearing that directory
-    /// down rather than deleting it under a live writer. Teardown then happens off the synchronous event
-    /// handler, because it may spawn a git process.
-    /// </summary>
+    /// <summary>A run's workspace holds the only copy of its un-promoted work, so a chat deletion must cancel a
+    /// live dispatch before tearing it down — off the synchronous event handler, since it may spawn git.</summary>
     [Fact]
     public async Task ChatDeleted_CancelsAnInFlightRunBeforeTearingDownItsWorkspace()
     {
@@ -1742,9 +1564,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var planCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var workspaces = new FakeRunWorkspaceService(_runsBase);
 
-        // The planner parks the dispatch mid-run and reports whether ITS OWN token was cancelled — the only
-        // in-process evidence that the run's CTS fired, since the teardown that follows is fire-and-forget and
-        // says nothing about the cancel.
+        // The planner reports whether its own token was cancelled — the only in-process evidence that the run's
+        // CTS fired, since the teardown after it is fire-and-forget.
         var (launcher, planner) = BuildLauncher(workspaces: workspaces);
         planner.OnPlanWithToken = async ct =>
         {
@@ -1767,23 +1588,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>
-    /// <b>REGRESSION</b> (Phase 3 consolidation pass — Lens A finding 4's other half). Plan R4 asks for
-    /// "cancel first rather than deleting under a live writer", and CANCELLING IS ONLY HALF OF THAT:
-    /// <c>Cancel</c> returns immediately while the step is still inside a <c>write_file</c>, which is exactly
-    /// when <c>git worktree remove</c> and the recursive delete both fail — the reachable trigger the finding
-    /// named. The teardown now awaits the dispatch task <c>_inflight</c> has always held beside the CTS and
-    /// nothing read.
-    /// Deterministic in both directions, and that rests on one measured fact: <c>AssistantChatService</c> raises
-    /// <c>ChatsChanged</c> SYNCHRONOUSLY inside <c>DeleteAsync</c>, and the fake's <c>TearDownAsync</c> records
-    /// its call before its first await — so in the unfixed build <c>TornDown</c> is already non-empty by the time
-    /// <c>DeleteAsync</c> returns. Neutralization: put the <c>Cancel</c>/fire-and-forget teardown pair back in
-    /// <c>OnChatsChanged</c> and drop the await → the first assertion goes red.
-    /// The bound itself (tear down anyway after a few seconds, because a wedged dispatch must not defer the
-    /// cleanup forever) is NOT covered here: the timeout is a private constant and driving it would mean holding
-    /// a real dispatch for its whole duration. Reasoned, stated, and left to the same startup sweep that already
-    /// collects a teardown that failed.
-    /// </summary>
+    /// <summary><c>Cancel</c> returns while the step is still inside a <c>write_file</c>, which is exactly when
+    /// <c>git worktree remove</c> fails — so the teardown awaits the dispatch task, not just the cancel.</summary>
     [Fact]
     public async Task ChatDeleted_AwaitsTheCancelledDispatchsUnwind_BeforeTearingDownItsWorkspace()
     {
@@ -1822,19 +1628,11 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     }
 
     // ---------------------------------------------------------------------------------------------------
-    // the two steering asymmetries this launcher owns — chat delete REVOKES a pending pause,
-    // shutdown deliberately does NOT. Not listed in the impl spec's table for G4 (which names only the new
-    // live-parity file); they live here because this is where a real launcher with a real dispatch already
-    // exists, and lifting that fixture a third time would be worse than two facts on it.
+    // The two steering asymmetries this launcher owns: chat delete REVOKES a pending pause, shutdown does not.
     // ---------------------------------------------------------------------------------------------------
 
-    /// <summary>
-    /// Records every steering call in order, delegating to a real <see cref="RunSteeringStore"/>. The chat-delete
-    /// revocation has no other observable: deleting the chat takes the run row with it by FK cascade, so
-    /// "the run settled Cancelled rather than Paused" is not assertable — there is no row left to read, and the
-    /// pause CAS would have matched zero rows even if the request HAD been honoured. The order the calls
-    /// happened in is the claim, so the order is what this reads.
-    /// </summary>
+    /// <summary>Records every steering call in order: the chat delete takes the run row with it by FK cascade, so
+    /// the call order is the only observable left.</summary>
     private sealed class RecordingSteeringStore : IRunSteeringStore
     {
         private readonly RunSteeringStore _inner = new();
@@ -1892,36 +1690,21 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             _inner.RevokePauseRequest(runId);
         }
 
-        // Deliberately NOT logged: the fan-out mark is dispatch bookkeeping, and these facts assert the ORDER
-        // of the record/fire/revoke/consume calls. Logging it would make every one of them assert a shape it
-        // is not about.
+        // Deliberately not logged: these facts assert the ORDER of the record/fire/revoke/consume calls, and the
+        // fan-out mark is unrelated dispatch bookkeeping.
         public void BeginFanOut(Guid runId) => _inner.BeginFanOut(runId);
 
         public void EndFanOut(Guid runId) => _inner.EndFanOut(runId);
 
         public bool IsFanningOut(Guid runId) => _inner.IsFanningOut(runId);
 
-        /// <summary>
-        /// Not part of the interface: the run token's own cancellation, appended to the SAME log so the two
-        /// orderings are comparable at all. Called from a <c>CancellationToken.Register</c> callback, which runs
-        /// INSIDE <c>Cts.Cancel</c>.
-        /// </summary>
+        /// <summary>Not part of the interface: appended to the same log so the two orderings are comparable, from
+        /// a <c>CancellationToken.Register</c> callback that runs inside <c>Cts.Cancel</c>.</summary>
         public void NoteDispatchCancelled() => Add("cancelled");
     }
 
-    /// <summary>
-    /// revocation site 3. Deleting the chat is TERMINAL intent — the run row goes with it and its workspace
-    /// is about to be removed — so an unconsumed pause request must be revoked BEFORE the dispatch is cancelled.
-    /// Without the revoke the unwinding loop reads that cancel as "the user asked to pause", which is the
-    /// wrong-direction failure the hardening exists for: a run whose chat the user deleted comes back resumable.
-    /// The ordering is deterministic and rests on two measured facts: <c>AssistantChatService</c> raises
-    /// <c>ChatsChanged</c> SYNCHRONOUSLY inside <c>DeleteAsync</c>, and the token registration below runs INSIDE
-    /// <c>Cts.Cancel</c> — so by the time <c>DeleteAsync</c> returns, both the revoke and the cancel are in the
-    /// log, in the order the production line put them there. The assertion looks for a revoke AFTER the record
-    /// rather than for "a revoke exists" so that it pins the DELETE's revoke specifically and cannot be
-    /// satisfied by some other site's; since F3 removed the loop's blind clear-on-entry there is in
-    /// fact only one revoke in this log, and the search still asserts it is the right one.
-    /// </summary>
+    /// <summary>Deleting the chat is terminal intent, so an unconsumed pause must be revoked before the dispatch
+    /// is cancelled — otherwise the unwinding loop reads that cancel as a pause and the run comes back alive.</summary>
     [Fact]
     public async Task ChatDelete_RevokesAPendingPause_BeforeCancellingTheDispatch()
     {
@@ -1965,18 +1748,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
     }
 
-    /// <summary>
-    /// The deliberate asymmetry, asserted rather than commented: <c>StopAsync</c> is app shutdown and it
-    /// does NOT revoke, so a pause request that is still unconsumed when the shutdown token fires is honoured —
-    /// the run comes back <see cref="AgentRunState.Paused"/> and RESUMABLE instead of <c>Cancelled</c>, which is
-    /// the recoverable direction and the one the user asked for.
-    /// Deterministic because the consume happens INSIDE the dispatch task, and <c>StopAsync</c> awaits every
-    /// dispatch task before returning — so reading the row after the await cannot race
-    /// <c>ReleaseDispatch</c> (which is the last thing in the dispatch's <c>finally</c>, after the loop that
-    /// consumed). Do not "simplify" that await away.
-    /// The pause is recorded directly on the store rather than through <c>IAgentRunSteeringService</c> because
-    /// the service also FIRES the cancel, and the whole point here is that the SHUTDOWN is what cancels.
-    /// </summary>
+    /// <summary>Shutdown deliberately does not revoke, so an unconsumed pause is honoured; the pause is recorded
+    /// straight on the store because <c>IAgentRunSteeringService</c> would also fire the cancel.</summary>
     [Fact]
     public async Task Shutdown_DoesNotRevokeAPendingPause_SoTheRunComesBackResumable()
     {
@@ -1991,9 +1764,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var handle = await launcher.LaunchAsync(new HeadlessRunRequest("a", AgentRunTrigger.User), ct);
         await stepEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
 
-        // The row is Running with a step in flight — the only state a user pause is legal from, and the state
-        // that makes the CAS below win. Asserted so a future change that parks the run somewhere else cannot
-        // make this fact pass through the Planning hole (where the CAS loses and writes nothing).
+        // The row is Running with a step in flight, the only state a user pause is legal from — asserted so a
+        // change that parks the run elsewhere cannot make this fact pass through the Planning hole.
         var mid = await _runs.GetAsync(handle.RunId, ct);
         Assert.Equal(AgentRunState.Running, mid!.State);
         Assert.True(store.RecordPauseRequest(handle.RunId));
@@ -2011,14 +1783,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
     }
 
-    /// <summary>
-    /// Holds a dispatch in the RESUME RAMP-UP — the window F3 lives in. <c>IExecutingRunStore.Register</c>
-    /// is the last statement before <c>orchestrator.RunAsync</c>, and the resume's <c>RegisterDispatch</c> has
-    /// already run by then (it is synchronous, before <c>Task.Run</c>), so a fact holding here has the row at
-    /// <c>Running</c>, the panel's Pause live, and the new dispatch's sink installed and unused.
-    /// Armed explicitly, because the LAUNCH path registers here too and a launch must not be gated. Bounded:
-    /// a gate nobody releases fails the fact instead of hanging the suite.
-    /// </summary>
+    /// <summary>Holds a dispatch in the resume ramp-up: <c>Register</c> is the last statement before
+    /// <c>RunAsync</c>, so the row reads <c>Running</c> with the new dispatch's sink installed and unused.</summary>
     private sealed class RampUpGate : IExecutingRunStore
     {
         private readonly ExecutingRunStore _inner = new();
@@ -2046,20 +1812,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         public Guid? GetChatId(Guid runId) => _inner.GetChatId(runId);
     }
 
-    /// <summary>
-    /// <b> F3, through the REAL launcher</b> — the shape the review executed and printed as
-    /// <c>LPROBE1 … FINAL state=Cancelled … resumableFromPaused=False</c>. Continue, then Pause a beat later:
-    /// the resume's CAS has the row at <c>Running</c> and its sink registered, so the pause is accepted and
-    /// fires THAT dispatch's token. The dispatch must then honour it.
-    /// Before the fix <c>RunAsync</c> revoked any request for its own run id on entry — blindly, unable to tell
-    /// a superseded dispatch's leftover from one recorded against itself milliseconds ago — so the cancel stood
-    /// with nothing to explain it and the run settled <c>Cancelled</c> with <c>CompletedAt</c> stamped, after
-    /// <c>PauseAsync</c> had already told the user it worked. The ownership rule now lives in
-    /// <c>RegisterDispatch</c>, which is the instant ownership actually changes hands.
-    /// The launcher's own ORDER is half the claim, which is why this is not only an orchestrator fact: if
-    /// <c>RegisterDispatch</c> ever moved to after <c>Task.Run</c>, the pause below would be refused
-    /// (registration-scoped) and the assertion that it was accepted reds.
-    /// </summary>
+    /// <summary>Continue, then Pause a beat later. The launcher's own order is half the claim: moving
+    /// <c>RegisterDispatch</c> after <c>Task.Run</c> would make the pause below refused rather than accepted.</summary>
     [Fact]
     public async Task APauseInTheResumeRampUp_LeavesTheRunPausedAndResumable_NotCancelled()
     {

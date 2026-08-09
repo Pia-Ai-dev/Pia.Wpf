@@ -11,12 +11,6 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels.Flow;
 
-/// <summary>
-/// Covers the Id-keyed store→VM reconcile (design §5, §9): wrapper identity is preserved for an
-/// unchanged Id across a Changed event, newest-first order matches the snapshot, removed Ids drop
-/// their wrapper, new Ids insert at their snapshot position, and a Changed event mid-decision keeps
-/// the in-flight wrapper (and its IsBusy) instead of tearing it down.
-/// </summary>
 public class FlowViewModelReconcileTests
 {
     private static FlowItem Item(Guid id, FlowSource source = FlowSource.TodoDeadline)
@@ -32,9 +26,8 @@ public class FlowViewModelReconcileTests
             Lifetime = FlowLifetime.Persistent,
         };
 
-    // Builds a VM whose store snapshot is backed by a reassignable closure, so we can change the
-    // snapshot and raise Changed between assertions. The sync context is nulled before construction
-    // so the VM's Post() runs Reconcile inline (deterministic) rather than queuing it.
+    // The snapshot is a reassignable closure so it can change between assertions, and the sync context is
+    // nulled so the VM's Post() runs Reconcile inline rather than queuing it.
     private static FlowViewModel CreateWith(out IFlowService flow, Func<IReadOnlyList<FlowItem>> snapshot)
     {
         flow = Substitute.For<IFlowService>();
@@ -68,7 +61,6 @@ public class FlowViewModelReconcileTests
         var wrapperA = vm.Items[0];
         var wrapperB = vm.Items[1];
 
-        // Same snapshot contents, new Changed event.
         flow.Changed += Raise.Event<EventHandler>(flow, EventArgs.Empty);
 
         Assert.Same(wrapperA, vm.Items[0]);
@@ -101,7 +93,6 @@ public class FlowViewModelReconcileTests
         var wrapperA = vm.Items[0];
         var wrapperB = vm.Items[1];
 
-        // A newer item arrives at the front (newest-first).
         var c = Item(Guid.NewGuid());
         snapshot = new[] { c, a, b };
         flow.Changed += Raise.Event<EventHandler>(flow, EventArgs.Empty);
@@ -123,7 +114,6 @@ public class FlowViewModelReconcileTests
         var wrapperA = vm.Items[0];
         var wrapperC = vm.Items[2];
 
-        // c republished → bumped to newest (front); reconcile must move the SAME wrapper.
         snapshot = new[] { c, a, b };
         flow.Changed += Raise.Event<EventHandler>(flow, EventArgs.Empty);
 
@@ -140,10 +130,8 @@ public class FlowViewModelReconcileTests
         var vm = CreateWith(out var flow, () => snapshot);
         var wrapperA = vm.Items[0];
 
-        // Simulate an in-flight decision.
         wrapperA.IsBusy = true;
 
-        // A poller Changed event arrives with the same items.
         flow.Changed += Raise.Event<EventHandler>(flow, EventArgs.Empty);
 
         Assert.Same(wrapperA, vm.Items[0]);

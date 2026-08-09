@@ -12,14 +12,7 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// Batch 07 G7 panel attribution (spec S0.7/S4.3/S4.4): before this batch every step row drew an
-/// always-empty 20x20 shadowed box, because <c>StepRowViewModel.AssignedPersonaId</c> is <c>Guid?</c> while
-/// <c>PiaPersonaAvatar.PersonaIdProperty</c> is a non-nullable <c>Guid</c> DP, and <c>Emoji</c> was never
-/// bound at all. This covers the VM-level half of the fix (resolving <c>PersonaId</c>/<c>PersonaEmoji</c>/
-/// <c>PersonaAccent</c>/<c>HasPersona</c> from the persona map) — the XAML binding half is manual-smoke
-/// debt per this group's brief (no frame-pushing View test).
-/// </summary>
+/// <summary>Covers the VM half of panel persona attribution; the XAML binding half is manual-smoke debt.</summary>
 public sealed class RunProgressViewModelPersonaAttributionTests : IDisposable
 {
     private readonly string _tmpDir;
@@ -67,8 +60,7 @@ public sealed class RunProgressViewModelPersonaAttributionTests : IDisposable
     [Fact]
     public async Task StepWithNoAssignedPersona_HasPersonaIsFalse()
     {
-        // GUARD: the common case (single-persona run, D1's default) must render exactly as before —
-        // no avatar, not an empty box.
+        // GUARD: the common single-persona run must render no avatar rather than an empty box.
         var run = await NewPlannedRunAsync();
         var step = new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "Step", Status = AgentStepStatus.Pending };
         await _runs.ReplaceStepsAsync(run.Id, [step], TestContext.Current.CancellationToken);
@@ -120,8 +112,8 @@ public sealed class RunProgressViewModelPersonaAttributionTests : IDisposable
     [Fact]
     public async Task StepWithAssignedPersonaThatNoLongerResolves_FallsBackToNoAvatar()
     {
-        // D3 arm 2: the persona was deleted between plan and execute. Must never throw and must never
-        // show a stale/blank avatar for an id nothing can resolve.
+        // The persona was deleted between plan and execute: never throw, never show a blank avatar for an
+        // id nothing can resolve.
         var run = await NewPlannedRunAsync();
         var deletedPersonaId = Guid.NewGuid();
         var step = new AgentStep
@@ -162,27 +154,7 @@ public sealed class RunProgressViewModelPersonaAttributionTests : IDisposable
         Assert.False(row.HasPersona);
     }
 
-    /// <summary>
-    /// T-VM-4, <b>REGRESSION</b> (rewritten by the Phase 3 fix pass — the version G7 shipped stubbed
-    /// <c>GetPersonasAsync</c> with an already-completed task, so pass 1 already resolved the avatar and the
-    /// assertion held whether or not the existing-row re-application had run at all).
-    /// <para>
-    /// The property under test is the ONE production path that needs
-    /// <c>ApplyPersonaAttribution(existing)</c>: within a single <c>RefreshAsync</c> the map load is awaited
-    /// BEFORE the projection, so a new row always has the map in hand. The correction only matters when the
-    /// FIRST map read FAULTS — the SQLite-busy case the try/catch exists for — leaving rows minted persona-less,
-    /// and a later <c>RunChanged</c> re-reads it successfully. Rows are replaced only when step IDS change, so
-    /// without the re-application those rows would never be corrected and a genuinely delegated step would show
-    /// no avatar for the rest of the run's life.
-    /// </para>
-    /// <para>
-    /// It also pins the deliberate "<c>_personas</c> stays null so the NEXT event RETRIES rather than latching an
-    /// empty map" decision recorded at the field: latch an empty map in the catch and pass 2 no longer corrects.
-    /// <c>Assert.Same</c> is the load-bearing assertion — it is what makes this about the SAME row instance being
-    /// mutated rather than about a replacement row that happens to be right. Neutralization: delete
-    /// <c>ApplyPersonaAttribution(existing)</c> from <c>SyncSteps</c>' else-branch → red.
-    /// </para>
-    /// </summary>
+    /// <summary>Rows are replaced only when step IDs change, so a row minted while the map read faulted must be corrected in place.</summary>
     [Fact]
     public async Task AFaultedFirstPersonaLoad_IsRetried_AndTheSameRowIsCorrectedInPlace()
     {
@@ -216,18 +188,7 @@ public sealed class RunProgressViewModelPersonaAttributionTests : IDisposable
         Assert.Equal(persona.Id, row.PersonaId);
     }
 
-    /// <summary>
-    /// T-VM-5, <b>REGRESSION</b> (not built by G7; added by the Phase 3 fix pass). A persona-store fault must not
-    /// break the panel. <see cref="RunProgressViewModel.RefreshAsync"/> is invoked from the CONSTRUCTOR and from
-    /// the off-thread <c>RunChanged</c> handler, so an unguarded fault is either an unobserved task fault on the
-    /// event path or a panel that never projects the run at all on the ctor path — for a run whose only defect is
-    /// that a persona read was momentarily unavailable.
-    /// <para>
-    /// Neutralization: remove the try/catch around the map load → this fact reds (the fault escapes
-    /// <c>RefreshAsync</c>). The step assertions are the non-vacuity half: the panel is not merely
-    /// exception-free, it still shows the run.
-    /// </para>
-    /// </summary>
+    /// <summary>RefreshAsync runs from the ctor and from the off-thread RunChanged handler, so an unguarded persona-store fault loses the panel.</summary>
     [Fact]
     public async Task APersonaLookupFault_DoesNotBreakThePanel()
     {

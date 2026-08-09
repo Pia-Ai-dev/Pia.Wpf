@@ -5,16 +5,7 @@ using Xunit;
 
 namespace Pia.Tests.Infrastructure;
 
-/// <summary>
-/// Schema coverage for the <c>ManagedPersonas</c> table: it exists on a fresh profile, an existing profile
-/// gains it on startup without disturbing <c>Personas</c>, and — the invariant that matters — its column
-/// names are identical to <c>Personas</c>. That identity is what lets <c>PersonaService</c> reuse one
-/// reader/writer pair across both tables, so a column added to one and not the other must fail here.
-/// <para>
-/// net10.0-windows cannot execute on macOS — these tests are written, not run; execution is deferred to
-/// Windows/CI.
-/// </para>
-/// </summary>
+/// <summary>One reader/writer pair serves both persona tables, so their column names must stay identical.</summary>
 public class SqliteContextManagedPersonaSchemaTests : IDisposable
 {
     private readonly string _tmpDir;
@@ -58,9 +49,8 @@ public class SqliteContextManagedPersonaSchemaTests : IDisposable
     [Fact]
     public void ExistingProfile_GainsManagedPersonas_WithoutTouchingPersonas()
     {
-        // The UPGRADE direction: a database written before this slice has Personas but no ManagedPersonas.
-        // Dropping the table leaves exactly that shape (same simulation as SqliteContextTests uses for
-        // AgentTimelineEvents).
+        // The UPGRADE direction: dropping the table leaves exactly the shape a database written before this
+        // slice had — Personas but no ManagedPersonas.
         var conn = _ctx.GetConnection();
         using (var seed = conn.CreateCommand())
         {

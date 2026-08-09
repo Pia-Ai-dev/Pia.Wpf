@@ -63,9 +63,8 @@ public class DirectTranscriptMarkdownTests
         var md = DirectTranscriptMarkdown.Render("Title", SessionStart, SessionEnd, bubbles, stats, null);
 
         var speakersBlock = ExtractYamlList(md, "speakers:");
-        // The mic side is resolved through SpeakerToDisplayNameConverter, which since §3.7 returns the
-        // localized Speaker_Me resource rather than the English literal "you" — assert against the
-        // resource, not a hardcoded word, so this stays true under any culture.
+        // The mic side resolves to the localized Speaker_Me resource, not an English literal, so it is
+        // asserted against the resource to stay true under any culture.
         Assert.Equal(
             new[] { "Speaker 2", LocalizationSource.Instance["Speaker_Me"], "Speaker 3" },
             speakersBlock);
@@ -87,9 +86,8 @@ public class DirectTranscriptMarkdownTests
         // Quoted, with the raw colon preserved inside the quotes.
         Assert.Equal("\"Bob: Team A\"", speakersBlock[0]);
 
-        // A naive line-scan (split on the first ':' after trimming the leading "- ") must still
-        // recover the full label rather than truncating at the embedded colon, proving the quoting
-        // keeps the document parseable.
+        // A naive line-scan must still recover the whole label rather than truncating at the embedded
+        // colon, which is what the quoting buys.
         var rawLine = md.Split('\n').Single(l => l.TrimStart().StartsWith("- \"Bob", StringComparison.Ordinal));
         var dashIndex = rawLine.IndexOf('-');
         var recovered = rawLine[(dashIndex + 1)..].Trim();

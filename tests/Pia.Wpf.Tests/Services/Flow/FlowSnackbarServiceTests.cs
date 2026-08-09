@@ -6,10 +6,8 @@ using Xunit;
 
 namespace Pia.Tests.Services.Flow;
 
-/// <summary>
-/// The snackbar funnel: both <c>ISnackbarService.Show</c> and the action path produce FlowItems
-/// (design §11 "snackbar-funnel capture"). Items are session-only with a null dedup key.
-/// </summary>
+/// <summary>Both <c>ISnackbarService.Show</c> and the action path produce FlowItems; the items are
+/// session-only with a null dedup key.</summary>
 public class FlowSnackbarServiceTests
 {
     private static (FlowSnackbarService snackbar, FlowService flow) Create()

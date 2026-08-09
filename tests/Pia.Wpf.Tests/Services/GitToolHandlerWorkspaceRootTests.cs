@@ -10,19 +10,8 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Batch 06 G3, git-tool parity: <c>GitToolHandler</c> resolves the repository against the ambient run
-/// workspace, the way <c>FilesToolHandler</c> already does. Without this, isolation creates an incoherence
-/// the tree did not have before — the agent writes into its workspace and commits the interactive folder's
-/// stale tree.
-/// <para>
-/// The interactive TOCTOU re-guard is the thing most easily broken while doing that, so it is asserted HERE
-/// as well, next to its isolated-run counterpart: an isolated run's approved mutation must NOT be refused
-/// after the ambient is gone, while an interactive one MUST still be refused after the folder is re-pointed.
-/// The two facts are each other's discrimination control. <c>GitToolHandlerContainmentTests</c> passes
-/// unmodified — if any of its assertions needed editing, containment semantics changed and the change is wrong.
-/// </para>
-/// </summary>
+/// <summary>Unless <c>GitToolHandler</c> resolves the repository against the ambient run workspace, the agent
+/// writes into its workspace and commits the interactive folder's stale tree.</summary>
 public sealed class GitToolHandlerWorkspaceRootTests : IDisposable
 {
     private readonly string _dir;
@@ -38,12 +27,8 @@ public sealed class GitToolHandlerWorkspaceRootTests : IDisposable
         _runRoot = Path.Combine(_dir, "runs", Guid.NewGuid().ToString());
         Directory.CreateDirectory(_interactive);
         Directory.CreateDirectory(_runRoot);
-        // CANONICALIZE the expectation, exactly as HeadlessRunLauncherTests and LiveTurnExecutorPlannedRunTests
-        // do and for the same reason: GitToolHandler resolves the ambient root through
-        // SafeFolderPath.NormalizeWorkspaceRoot, which canonicalizes (long form, junctions resolved, on-disk
-        // casing). GetTempPath can carry an 8.3 or a link component — a corporate profile redirection or a
-        // service account — so a raw Path.Combine expectation would compare two spellings of the same directory
-        // and red as a git-parity regression that is really a fixture defect.
+        // The handler canonicalizes the ambient root and GetTempPath can carry an 8.3 or a link component, so a
+        // raw Path.Combine expectation would compare two spellings of the same directory.
         _runRoot = SafeFolderPath.Canonicalize(_runRoot);
     }
 
@@ -67,13 +52,8 @@ public sealed class GitToolHandlerWorkspaceRootTests : IDisposable
     private GitToolHandler Handler(ISettingsService settings, FakeGitProcessRunner runner)
         => new(settings, runner, NullLogger<GitToolHandler>.Instance);
 
-    /// <summary>
-    /// T-G3-11, <b>REGRESSION</b>. The dispatch resolves its base root from the ambient workspace root, so git
-    /// runs in the run's workspace — and the discovery CEILING follows it too. R17: with a cwd under
-    /// <c>%LOCALAPPDATA%\Pia\runs\&lt;id&gt;</c> a ceiling pointing at the assistant folder's parent does not
-    /// apply at all, and upward <c>.git</c> discovery would walk runs → Pia → Local → AppData → %USERPROFILE%
-    /// and could bind a repository the user keeps in their profile.
-    /// </summary>
+    /// <summary>The discovery ceiling has to follow the ambient root: left at the assistant folder's parent it
+    /// does not apply, and upward <c>.git</c> discovery could bind a repository in the user's profile.</summary>
     [Fact]
     public async Task GitToolHandler_ResolvesTheRepoAgainstTheAmbientWorkspaceRoot()
     {
@@ -93,12 +73,8 @@ public sealed class GitToolHandlerWorkspaceRootTests : IDisposable
         Assert.Equal(Directory.GetParent(_runRoot)!.FullName, status.CeilingDirectory);
     }
 
-    /// <summary>
-    /// T-G3-12, <b>REGRESSION</b>. The §6.2 trap, as a fact. A mutating tool captures the resolved scope at
-    /// prepare time and re-guards against THAT, never against the ambient: ambient flow is not guaranteed
-    /// inside the deferred execute closure, so a handler that re-read it would resolve <c>_currentFolder</c>,
-    /// find the toplevel (the workspace) outside it, and refuse a commit the user had already approved.
-    /// </summary>
+    /// <summary>Ambient flow is not guaranteed inside the deferred execute closure, so a mutating tool re-guards
+    /// against the scope captured at prepare time rather than re-reading the ambient.</summary>
     [Fact]
     public async Task GitToolHandler_MutatingTool_StillPassesContainment_AfterTheApprovalAwait()
     {
@@ -121,12 +97,8 @@ public sealed class GitToolHandlerWorkspaceRootTests : IDisposable
         Assert.Contains(runner.Calls, c => c.Arguments.Count > 0 && c.Arguments[0] == "commit");
     }
 
-    /// <summary>
-    /// T-G3-13, <b>GUARD</b> and the discrimination control for the fact above: with no ambient workspace
-    /// root, containment is still judged against the CURRENT configured folder, so a runtime re-point between
-    /// prepare and execute still refuses. Freezing containment for every dispatch — rather than only for an
-    /// isolated run — would silently retire this guard, and this is the row that would notice.
-    /// </summary>
+    /// <summary>Discrimination control for the fact above: freezing containment for every dispatch, rather than
+    /// only for an isolated run, would silently retire the refusal after a runtime re-point.</summary>
     [Fact]
     public async Task GitToolHandler_WithNoAmbient_StillRefusesAfterAFolderRepoint()
     {
@@ -153,13 +125,8 @@ public sealed class GitToolHandlerWorkspaceRootTests : IDisposable
         Assert.DoesNotContain(runner.Calls, c => c.Arguments.Count > 0 && c.Arguments[0] == "commit");
     }
 
-    /// <summary>
-    /// <b>GUARD</b>. Copy mode's workspace has no <c>.git</c> (B6 prunes it), so the model gets the
-    /// fresh-folder hint and may <c>git_init</c> inside its own workspace — contained and harmless, and a
-    /// stated release-note item (§13.3) rather than a bug. What must NOT happen is a refusal that reads as
-    /// "outside the assistant files folder", which is what a handler still comparing against
-    /// <c>_currentFolder</c> would produce.
-    /// </summary>
+    /// <summary>Copy mode's workspace has no <c>.git</c>, so <c>git_init</c> inside it is contained and expected;
+    /// what must not happen is the "outside the assistant files folder" refusal.</summary>
     [Fact]
     public async Task GitToolHandler_InAnIsolatedWorkspaceWithNoRepo_RoutesToInitInsideTheWorkspace()
     {

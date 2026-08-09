@@ -9,14 +9,8 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// hermes #9's SCOPING half on the live path: which turn shapes <c>LiveTurnExecutor.BuildSpec</c> puts
-/// <c>emit_step_result</c> in front of. <c>ChatSessionStepOutcomeSignalTests</c> hand-builds its
-/// <c>StepTurnSpec</c>, so it never touches the production line that decides this — the same gap
-/// <c>LiveTurnExecutorPlannedRunTests</c> closes for the autonomy policy, for the same reason: the
-/// augmentation is a single line in <c>BuildSpec</c> and dropping it COMPILES, leaving every interactive run
-/// silently back on the old text/exception premise.
-/// </summary>
+/// <summary>The step-tool augmentation is a single line in <c>LiveTurnExecutor.BuildSpec</c> and dropping it
+/// compiles; <c>ChatSessionStepOutcomeSignalTests</c> hand-builds its spec, so nothing else covers it.</summary>
 public sealed class LiveTurnExecutorStepToolScopeTests
 {
     private readonly IAiClientService _ai = Substitute.For<IAiClientService>();
@@ -103,8 +97,8 @@ public sealed class LiveTurnExecutorStepToolScopeTests
             "the session's cached tool list must not have been mutated");
     }
 
-    /// <summary>The R10 planner-degrade turn produces no <c>AgentStep</c> row, so there is no Done/Failed for
-    /// a declaration to decide — it is deliberately not offered the tool, matching the headless executor.</summary>
+    /// <summary>The planner-degrade turn produces no <c>AgentStep</c> row, so there is no Done/Failed for a
+    /// declaration to decide — it is deliberately not offered the tool, matching the headless executor.</summary>
     [Fact]
     public async Task TheFallbackTurn_IsNotOfferedTheTool()
     {
@@ -118,13 +112,8 @@ public sealed class LiveTurnExecutorStepToolScopeTests
         Assert.False(AgentStepTools.OffersStepResultTool(_lastTools));
     }
 
-    /// <summary>
-    /// <b>GUARD</b>. A step that resolved its OWN persona (Batch 07 G6) runs on a different
-    /// <c>AssistantTurnSetup</c>, and it is still offered the tool. Augmenting <c>_turnSetup</c> instead of
-    /// the resolved one compiles, keeps the two facts above green, and strands exactly the specialist steps
-    /// on the old premise. Non-vacuity: the specialist's own marker tool must be in the same list, so a
-    /// fixture whose step persona quietly degraded to the run default cannot pass.
-    /// </summary>
+    /// <summary>A step that resolved its own persona runs on a different <c>AssistantTurnSetup</c>; augmenting
+    /// <c>_turnSetup</c> instead compiles, keeps the facts above green, and strands the specialist steps.</summary>
     [Fact]
     public async Task AStepWithItsOwnPersona_IsStillOfferedTheTool()
     {
@@ -176,9 +165,8 @@ public sealed class LiveTurnExecutorStepToolScopeTests
     private static AgentRun ChildRun() =>
         new() { Id = Guid.NewGuid(), ChatId = Guid.NewGuid(), Goal = "the goal", ParentRunId = Guid.NewGuid() };
 
-    /// <summary>An interactive Planned step of a ROOT run is offered the ask tool, and the run's cached tool list
-    /// survives untouched — an in-place add would leak a step-only tool into every later chat turn on this
-    /// session, which is the very list an ordinary Send uses.</summary>
+    /// <summary>An in-place add would leak a step-only tool into the session's cached list, which is the very
+    /// list an ordinary Send uses.</summary>
     [Fact]
     public async Task AStepTurn_IsOfferedTheAskTool()
     {

@@ -113,18 +113,8 @@ public class ScheduledJobServiceTests : IDisposable
         Assert.Contains(due, j => j.Id == job.Id);
     }
 
-    // ---------------------------------------------------------------------------------------------
-    // W3: a fired RecurrenceType.Once job must SETTLE, not re-arm.
-    //
-    // These run against the REAL ScheduledJobService and the REAL RecurrenceCalculator on a temp-file
-    // SqliteContext, deliberately NOT against the hand-written fakes in ScheduledJobBackgroundServiceTests
-    // (whose AdvanceMissedRunAsync hardcodes +1d and whose GetDueJobsAsync has no Status clause) — a test
-    // written there passes on unfixed code and is worthless.
-    //
-    // (B) extends the section: a PRE-MODEL failure (ScheduledJobService.NoProviderFailureReason) no longer
-    // retires a one-off outright, it re-arms once — so the old "fails on first failure" test is split into
-    // its post-model and pre-model halves below rather than deleted.
-    // ---------------------------------------------------------------------------------------------
+    // A fired one-off must settle, not re-arm. Asserted against the real service and calculator rather than
+    // the hand-written fakes in ScheduledJobBackgroundServiceTests, where such a test passes on unfixed code.
 
     [Fact]
     public async Task MarkRunCompleteAsync_OnceJob_SettlesAndLeavesNextFireAtAlone()
@@ -175,17 +165,8 @@ public class ScheduledJobServiceTests : IDisposable
         Assert.DoesNotContain(await _service.GetDueJobsAsync(), j => j.Id == job.Id);
     }
 
-    /// <summary>
-    /// hermes #2 layer (a) for the <see cref="RecurrenceType.Once"/> class, which is the half the scheduler's
-    /// own tests cannot see. Now that a tick dispatches without awaiting the run, the schedule must leave the due
-    /// window at DISPATCH — and for a one-off the only column that can do that is <c>Status</c>, because
-    /// <c>NextFireAt</c> is deliberately left at its past instant on every settle path.
-    /// <para>
-    /// The "NextFireAt unchanged" leg is what makes "no longer due" non-vacuous: give the Once branch the
-    /// recurring branch's <c>SET NextFireAt=@NextFireAt</c> and the row also leaves the window, so the not-due leg
-    /// alone would stay green while the honest record was silently rewritten.
-    /// </para>
-    /// </summary>
+    /// <summary>A tick dispatches without awaiting the run, so the schedule must leave the due window at dispatch
+    /// — and for a one-off only <c>Status</c> can do that, since <c>NextFireAt</c> keeps its past instant.</summary>
     [Fact]
     public async Task MarkOccurrenceDispatchedAsync_OnceJob_LeavesTheDueWindowByStatus_NotByMovingNextFireAt()
     {
@@ -206,30 +187,16 @@ public class ScheduledJobServiceTests : IDisposable
         // Dispatching is not a job-health signal: the outcome bookkeeping still owns the counter.
         Assert.Equal(0, after.ConsecutiveFailures);
 
-        // The DISPATCH write deliberately leaves these two null, and that is still the right pin — it is what
-        // keeps "the schedule moved on" and "the run fired and produced something" two separate facts written at
-        // two separate times. Status reads 'Completed' here while the row holds no record of having fired; that
-        // window is closed from the OTHER side, never by widening this write:
-        //   * live: MarkRunComplete / MarkRunFailed fill them in when the run settles;
-        //   * crash: ScheduledFiringReconciler books them at the next startup, from the settled AgentRuns row
-        //     (which FailInterruptedRunsAsync has just swept to Cancelled), via MarkFiringOutcomeAsync —
-        //     health columns only, so the reconcile cannot re-arm, retire or re-schedule anything;
-        //   * park-then-resume: IHeadlessRunLauncher.ResumedRunSettled books the same way, for the run whose
-        //     settle no continuation was awaiting because a resume hands out no handle.
-        // Widening the dispatch write instead would need a parameter through MoveOffCurrentOccurrenceAsync
-        // (which the W3 note above forbids) and would wrongly stamp LastFiredAt for the user-Skip door, which
-        // did NOT fire. Pinned below so a future "just set LastFiredAt at dispatch" reds here.
+        // The dispatch write deliberately leaves these null: the outcome writers fill them in, and stamping them
+        // here would wrongly record a firing for the user-Skip door, which never fired.
         Assert.Null(after.LastFiredAt);
         Assert.Null(after.LastResultEntryId);
 
         Assert.DoesNotContain(await _service.GetDueJobsAsync(), j => j.Id == job.Id);
     }
 
-    /// <summary>
-    /// The recurring half of the same layer, against the real calculator: the occurrence is spent, so the row
-    /// re-arms into the NEXT one and nothing else moves. <c>UpdatedAt</c> deliberately does not bump —
-    /// <c>NextFireAt</c> is device-local execution state and bumping would force a pointless sync push.
-    /// </summary>
+    /// <summary><c>UpdatedAt</c> deliberately does not bump: <c>NextFireAt</c> is device-local execution state and
+    /// bumping would force a pointless sync push.</summary>
     [Fact]
     public async Task MarkOccurrenceDispatchedAsync_RecurringJob_ReArmsAndTouchesNoHealthColumn()
     {
@@ -251,14 +218,8 @@ public class ScheduledJobServiceTests : IDisposable
         Assert.DoesNotContain(await _service.GetDueJobsAsync(), j => j.Id == job.Id);
     }
 
-    /// <summary>
-    /// T0-1. The health-only booking, over the exact row shape the crash leaves behind: a ONE-OFF that dispatch
-    /// already settled as <c>Completed</c> with <c>LastFiredAt</c> null. Booking a FAILURE onto it must record
-    /// the firing and NOTHING else — the four schedule/sync columns are the interesting half of this fact, since
-    /// every existing outcome writer moves at least one of them and reusing one of those here is exactly the
-    /// mistake the plan warns about (it would stamp <c>'Failed'</c> over dispatch's <c>'Completed'</c> and burn a
-    /// strike on a job that can never fire again).
-    /// </summary>
+    /// <summary>Booking a failure onto an already-settled one-off must record the firing and nothing else: every
+    /// existing outcome writer would stamp <c>'Failed'</c> and burn a strike on a job that cannot fire again.</summary>
     [Fact]
     public async Task MarkFiringOutcomeAsync_BooksTheHealthColumns_AndTouchesNeitherStatusNorNextFireAt()
     {
@@ -273,9 +234,8 @@ public class ScheduledJobServiceTests : IDisposable
         Assert.Null(dispatched.LastFiredAt);                             // premise: it never recorded a firing
         var updatedAtAfterDispatch = dispatched.UpdatedAt;
 
-        // A PAST instant, not "now": the whole reason firedAt is a parameter. Asserting it comes back means a
-        // future implementation that stamps DateTime.Now (which would be self-idempotent and therefore stop the
-        // reconcile booking anything at all) reds here.
+        // A past instant, not "now": an implementation that stamped DateTime.Now would be self-idempotent and
+        // stop the reconcile booking anything at all.
         var settledAt = DateTime.Now.AddMinutes(-20);
         await _service.MarkFiringOutcomeAsync(job.Id, settledAt, resultEntryId: null, succeeded: false);
 
@@ -289,11 +249,8 @@ public class ScheduledJobServiceTests : IDisposable
         Assert.Equal(updatedAtAfterDispatch, after.UpdatedAt, TimeSpan.FromMilliseconds(1));
     }
 
-    /// <summary>
-    /// The success half, on a RECURRING row that already carries a failure count — so "clears the counter" and
-    /// "records the chat" are both non-vacuous, and the re-armed <c>NextFireAt</c> proves the booking did not
-    /// recompute the schedule the way <c>MarkRunCompleteAsync</c> would.
-    /// </summary>
+    /// <summary>Run on a row that already carries a failure count, so clearing the counter is non-vacuous; the
+    /// re-armed <c>NextFireAt</c> proves the booking did not recompute the schedule.</summary>
     [Fact]
     public async Task MarkFiringOutcomeAsync_Success_RecordsTheChat_AndClearsTheFailureCounter()
     {
@@ -321,12 +278,8 @@ public class ScheduledJobServiceTests : IDisposable
     [Fact]
     public async Task MarkRunFailedAsync_OnceJob_PostModelFailure_FailsOnFirstFailure()
     {
-        // Half one of the split, and it PASSES BEFORE AND AFTER this change — a guard, not new coverage.
-        // A one-off has no future occurrence to retry INTO, and once the run has STARTED a retry is not
-        // idempotent (the first attempt may already have written to the vault), so a failure carrying
-        // anything other than the pre-model reason retires the job on the first strike and does not wait for
-        // the 5-strike valve. This is the non-idempotency guard: a raw provider or exception string must NEVER
-        // buy a second unattended run.
+        // A one-off has no future occurrence to retry into and a started run's retry is not idempotent, so any
+        // failure but the pre-model reason retires the job on the first strike rather than the 5-strike valve.
         var job = await _service.CreateAsync("TEST_OnceFails", "q", RecurrenceType.Once, new TimeOnly(9, 0),
             specificDate: DateTime.Now.Date.AddDays(-1));
         var plantedFire = DateTime.Now.AddMinutes(-5);
@@ -345,10 +298,8 @@ public class ScheduledJobServiceTests : IDisposable
     [Fact]
     public async Task MarkRunFailedAsync_OnceJob_PreModelFailure_ReArmsInsteadOfRetiring()
     {
-        // Half two, and this one FAILS on the pre-change tree (the row settles Failed immediately today).
-        // NoProvider costs nothing — no AgentRuns row, no tokens, no writes — and is often momentary (a
-        // pinned provider row missing for the seconds a sync pull takes to re-import it), yet it used to
-        // spend the job's only firing.
+        // NoProvider costs nothing — no run row, no tokens, no writes — and is often momentary, so it must not
+        // spend a one-off's only firing.
         var job = await _service.CreateAsync("TEST_OncePreModel", "q", RecurrenceType.Once, new TimeOnly(9, 0),
             specificDate: DateTime.Now.Date.AddDays(-1));
         await ForceNextFireAtAsync(job.Id, DateTime.Now.AddMinutes(-5));
@@ -363,9 +314,8 @@ public class ScheduledJobServiceTests : IDisposable
         Assert.True(after.NextFireAt > DateTime.Now, "a re-armed one-off must have a FUTURE fire time");
         // Far enough forward that the row genuinely leaves the 30 s due window rather than re-running at once.
         Assert.True(after.NextFireAt > DateTime.Now.AddMinutes(5), "the retry must not fire on the next tick");
-        // NextFireAt/ConsecutiveFailures are device-local execution state and are not synced at all, so the
-        // re-arm must NOT bump UpdatedAt — that would force a pointless push and let a local retry outrank a
-        // genuine remote edit in SyncClientService's merge.
+        // NextFireAt/ConsecutiveFailures are device-local and unsynced, so the re-arm must not bump UpdatedAt —
+        // that would let a local retry outrank a genuine remote edit in the merge.
         Assert.Equal(plantedUpdate, after.UpdatedAt, TimeSpan.FromSeconds(1));
         Assert.DoesNotContain(await _service.GetDueJobsAsync(), j => j.Id == job.Id);
         // Still Active, so the row is still listed and still owns a scheduled firing.
@@ -375,9 +325,8 @@ public class ScheduledJobServiceTests : IDisposable
     [Fact]
     public async Task MarkRunFailedAsync_OnceJob_SecondPreModelFailure_SettlesFailed()
     {
-        // The cap: retry once, then stop. A one-off that cannot resolve a provider twice, ten minutes apart,
-        // is broken in a way a third unattended attempt will not fix. FAILS on the pre-change tree at the
-        // intermediate Active assertion.
+        // The cap: retry once, then stop — a one-off that cannot resolve a provider twice will not on a third
+        // unattended attempt either.
         var job = await _service.CreateAsync("TEST_OncePreModelTwice", "q", RecurrenceType.Once, new TimeOnly(9, 0),
             specificDate: DateTime.Now.Date.AddDays(-1));
         await ForceNextFireAtAsync(job.Id, DateTime.Now.AddMinutes(-5));
@@ -397,11 +346,8 @@ public class ScheduledJobServiceTests : IDisposable
     [Fact]
     public async Task MarkRunFailedAsync_OnceJob_PreModelRetryThenSettle_SurvivesASyncPull()
     {
-        // The UpdatedAt trap, both directions. SyncClientService's pull merge applies the REMOTE row when
-        // remote.UpdatedAt >= local.UpdatedAt, and UpsertFromSyncAsync then writes Status back to 'Active' —
-        // so a SETTLE that does not bump looks green locally and is reverted by the first pull. The RE-ARM is
-        // the mirror case: it changes only device-local execution state, so it must not bump. FAILS on the
-        // pre-change tree, where attempt 1 already settles and bumps.
+        // The pull merge applies the remote row when remote.UpdatedAt >= local.UpdatedAt and writes Status back
+        // to 'Active', so a settle that does not bump looks green locally and is reverted by the first pull.
         var job = await _service.CreateAsync("TEST_OnceFailSync", "q", RecurrenceType.Once, new TimeOnly(9, 0),
             specificDate: DateTime.Now.Date.AddDays(-1));
         var remote = (await _service.GetAsync(job.Id))!;   // stands in for the row the server still holds
@@ -422,9 +368,8 @@ public class ScheduledJobServiceTests : IDisposable
         Assert.False(remote.UpdatedAt.ToUniversalTime() >= settled.UpdatedAt.ToUniversalTime(),
             "a terminal settle must bump UpdatedAt or the next pull reverts it to Active");
 
-        // And this is what the revert WOULD do if the predicate held — which is why the bump matters. It also
-        // pins the storage premise behind the whole retry: UpsertFromSyncAsync leaves ConsecutiveFailures
-        // alone (it is absent from SyncScheduledJob), so the attempt budget is not reset by a pull.
+        // What the revert would do if the predicate held. UpsertFromSyncAsync leaves ConsecutiveFailures alone
+        // (absent from SyncScheduledJob), so a pull does not reset the attempt budget.
         remote.Status = ScheduledJobStatus.Active;
         await _service.UpsertFromSyncAsync(remote);
         var pulled = (await _service.GetAsync(job.Id))!;
@@ -435,9 +380,7 @@ public class ScheduledJobServiceTests : IDisposable
     [Fact]
     public async Task MarkRunFailedAsync_RecurringJob_PreModelFailure_StillUsesTheFiveStrikeBudget()
     {
-        // PASSES BEFORE AND AFTER this change (the recurring SQL is untouched) — a scoping guard against a
-        // future refactor that merges the two branches, not a regression test. The retry is for one-offs: a
-        // recurring job already has a next occurrence to retry into, so the pre-model reason must neither
+        // A recurring job already has a next occurrence to retry into, so the pre-model reason must neither
         // shorten nor lengthen its 5-strike budget.
         var job = await _service.CreateAsync("TEST_DailyPreModel", "q", RecurrenceType.Daily, new TimeOnly(9, 0));
         await ForceNextFireAtAsync(job.Id, DateTime.Now.AddMinutes(-5));
@@ -459,10 +402,8 @@ public class ScheduledJobServiceTests : IDisposable
     [Fact]
     public async Task MarkRunCompleteAsync_OnceJobWithNullSpecificDate_StillSettles()
     {
-        // The quiet second face of W3: Once with SpecificDate == null falls through to the Daily
-        // expression in RecurrenceCalculator, which DOES clamp forward — so such a job never "looks
-        // past" and used to repeat every day forever. This test is what proves the predicate is
-        // Recurrence and not "is the recomputed NextFireAt still past".
+        // Once with SpecificDate == null falls through to the Daily expression, which clamps forward — so the
+        // settle predicate must be Recurrence and not "is the recomputed NextFireAt still past".
         var job = await _service.CreateAsync("TEST_OnceNoDate", "q", RecurrenceType.Once, new TimeOnly(9, 0),
             specificDate: null);
         var plantedFire = DateTime.Now.AddMinutes(-5);
@@ -540,9 +481,8 @@ public class ScheduledJobServiceTests : IDisposable
     [InlineData(ScheduledJobKind.AgentTask)]
     public async Task OnceJob_SettlesIdenticallyForEitherKind(ScheduledJobKind kind)
     {
-        // Executor parity, cheaply: the branch lives in the service, so both dispatch legs of
-        // ScheduledJobBackgroundService get the fix. If someone moves it into ExecuteAgentTaskAsync,
-        // the Research case goes red.
+        // The branch lives in the service, so both dispatch legs get it; moving it into ExecuteAgentTaskAsync
+        // reds the Research case.
         var job = await _service.CreateAsync("TEST_OnceKind_" + kind, "q", RecurrenceType.Once, new TimeOnly(9, 0),
             specificDate: DateTime.Now.Date.AddDays(-1), kind: kind);
         await ForceNextFireAtAsync(job.Id, DateTime.Now.AddMinutes(-5));
@@ -557,10 +497,8 @@ public class ScheduledJobServiceTests : IDisposable
     [Fact]
     public async Task UpdateAsync_ReArmsASettledOnceJob()
     {
-        // W3 left no re-arming surface: EnableAsync is not exposed by ScheduledJobToolHandler (list/create/
-        // update/delete only) and there is no scheduled-job view model, so a settled one-off was permanently
-        // inert while the update tool still reported success — "move that job to Friday at 10:00" did
-        // nothing, and list_scheduled_jobs (GetActiveAsync) no longer showed the row to say so.
+        // EnableAsync is not exposed by ScheduledJobToolHandler and there is no scheduled-job view model, so
+        // without this a settled one-off is permanently inert while the update tool still reports success.
         var job = await _service.CreateAsync("TEST_OnceReArm", "q", RecurrenceType.Once, new TimeOnly(9, 0),
             specificDate: DateTime.Now.Date.AddDays(-1));
         await _service.MarkRunCompleteAsync(job.Id, Guid.NewGuid());
@@ -577,15 +515,8 @@ public class ScheduledJobServiceTests : IDisposable
     [Fact]
     public async Task UpdateAsync_DoesNotReArmASettledJobWhoseFireTimeIsStillPast()
     {
-        // The narrowing: a settled one-off whose fire time is still in the past stays settled, because
-        // re-arming it would fire the job on the very next tick — for an AgentTask, an unattended run nobody
-        // asked for. It stays settled until the caller actually re-schedules it FORWARD.
-        //
-        // CORRECTED by Batch 09. This comment used to justify the rule with "UpdateAsync has no specificDate
-        // parameter, so a settled one-off keeps its past instant". That parameter now exists, so the premise
-        // is gone and the rule is load-bearing on its own — which is why the two facts below it were added:
-        // one proves a FUTURE date re-arms, the other that a PAST date still does not. This fact keeps its
-        // original shape (an edit that supplies no date at all) because that is a third distinct case.
+        // A settled one-off whose fire time is still past stays settled until the caller re-schedules it
+        // forward: re-arming it would fire an unattended run on the very next tick.
         var job = await _service.CreateAsync("TEST_OnceStalePast", "q", RecurrenceType.Once, new TimeOnly(9, 0),
             specificDate: DateTime.Now.Date.AddDays(-2));
         await _service.MarkRunCompleteAsync(job.Id, Guid.NewGuid());
@@ -601,10 +532,8 @@ public class ScheduledJobServiceTests : IDisposable
     [Fact]
     public async Task UpdateAsync_MovingASettledOneOffToAFutureDate_ReArmsIt()
     {
-        // Batch 09's re-arm surface, and the reason it needed a SERVICE change rather than only a UI: the
-        // re-arm rule ("Completed + a future NextFireAt ⇒ Active") already existed and was UNREACHABLE for a
-        // one-off whose date had passed, because no caller could supply a new date. The roadmap recorded that
-        // as "a settled Once job has almost no re-arm surface" and handed it to this batch.
+        // The re-arm rule (Completed + a future NextFireAt ⇒ Active) is unreachable for a one-off whose date has
+        // passed unless a caller can supply a new date.
         var job = await _service.CreateAsync("TEST_OnceMovedForward", "q", RecurrenceType.Once,
             new TimeOnly(9, 0), specificDate: DateTime.Now.Date.AddDays(-3));
         await _service.MarkRunCompleteAsync(job.Id, Guid.NewGuid());
@@ -616,17 +545,15 @@ public class ScheduledJobServiceTests : IDisposable
         var after = await _service.GetAsync(job.Id);
         Assert.Equal(ScheduledJobStatus.Active, after!.Status);
         Assert.Equal(target.Date, after.SpecificDate!.Value.Date);
-        // The date has to be PERSISTED, not merely used to recompute: the UPDATE statement did not carry
-        // SpecificDate at all before this batch, so a re-armed job would have been written with the old past
-        // date and settled again on its next fire.
+        // The date has to be persisted, not merely used to recompute, or a re-armed job keeps the old past date
+        // and settles again on its next fire.
         Assert.True(after.NextFireAt > DateTime.Now);
     }
 
     [Fact]
     public async Task UpdateAsync_MovingASettledOneOffToAnotherPastDate_LeavesItSettled()
     {
-        // The other half, and the one that keeps the narrowing honest now that a date CAN be supplied: an
-        // explicitly past date must not re-arm, or the job fires on the next 30 s tick.
+        // An explicitly past date must not re-arm, or the job fires on the next 30 s tick.
         var job = await _service.CreateAsync("TEST_OnceMovedBackward", "q", RecurrenceType.Once,
             new TimeOnly(9, 0), specificDate: DateTime.Now.Date.AddDays(-3));
         await _service.MarkRunCompleteAsync(job.Id, Guid.NewGuid());
@@ -641,9 +568,8 @@ public class ScheduledJobServiceTests : IDisposable
     [Fact]
     public async Task UpdateAsync_CanChangeAJobsKind_WithoutLosingItsIdentity()
     {
-        // A Research job cannot otherwise become an AgentTask except by delete-and-recreate, which discards
-        // the row's id, its history and its LastResultEntryId link. Kind was also absent from the UPDATE
-        // statement, so this is a persistence fact and not only a parameter one.
+        // The only alternative is delete-and-recreate, which discards the row's id, its history and its
+        // LastResultEntryId link.
         var job = await _service.CreateAsync("TEST_KindSwap", "q", RecurrenceType.Daily, new TimeOnly(9, 0),
             kind: ScheduledJobKind.Research);
 

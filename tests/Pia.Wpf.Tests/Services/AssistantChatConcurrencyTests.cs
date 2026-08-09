@@ -11,24 +11,7 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Batch 10 W1/W2 regression net: the REAL <see cref="AssistantChatService"/> and the REAL
-/// <see cref="AgentRunService"/> on ONE temp SQLite file, exercised from several threads at once. Deliberately
-/// not built on the interface-substituting sync-service tests — those never touch SQLite, so they cannot see
-/// the bug at all.
-/// <para>
-/// WHAT THESE MUST FAIL ON: before W1, two threads writing two DIFFERENT chats through the shared
-/// <c>SqliteContext.GetConnection()</c> handle raise "SqliteConnection does not support nested transactions"
-/// from the second <c>BeginTransaction</c>, and any untransacted read issued while a transaction is pending
-/// raises "Execute requires the command to have a transaction object when the connection assigned to the
-/// command is in a pending local transaction". If a test here ever passes on the pre-W1 tree, the writer is
-/// not actually holding a transaction open while the other thread runs and the test is worthless.
-/// </para>
-/// <para>
-/// net10.0-windows cannot execute on macOS — these tests are WRITTEN, not run; execution is deferred to
-/// Windows/CI.
-/// </para>
-/// </summary>
+/// <summary>The real services on one temp SQLite file: an interface-substituting double never touches SQLite.</summary>
 public sealed class AssistantChatConcurrencyTests : IDisposable
 {
     private readonly string _dir;
@@ -70,11 +53,8 @@ public sealed class AssistantChatConcurrencyTests : IDisposable
     [Fact]
     public async Task TwoConcurrentWritersOnDifferentChats_PlusAReaderThread_RaiseNoExceptions()
     {
-        // The headline W1 case. E2 moved the chat write from once per run to once per COMPLETED STEP on pool
-        // threads, with a headless slot cap of 2 — so two runs writing at once is the shipped cadence, not a
-        // synthetic scenario. A third thread hammers the untransacted readers throughout, which is where the
-        // only user-visible symptom lived (a pool-thread ChatsChanged posts SearchAsync from the history view
-        // model; it threw and was swallowed, leaving a stale list).
+        // Two runs writing at once is the shipped cadence, not a synthetic scenario: a chat write lands per
+        // completed step on pool threads and the headless slot cap is 2.
         var a = Guid.NewGuid();
         var b = Guid.NewGuid();
         var errors = new ConcurrentBag<Exception>();
@@ -129,17 +109,8 @@ public sealed class AssistantChatConcurrencyTests : IDisposable
     [Fact]
     public async Task AReadIssuedWhileAWriteIsInFlight_Completes_InsteadOfThrowing()
     {
-        // The assertion that pins the decision to gate READS as well as writes. Exception (b) is raised by a
-        // plain command whose .Transaction is unset executing while a transaction is pending on the same
-        // connection, so on the pre-W1 tree the SearchAsync below throws rather than queueing.
-        //
-        // HONEST LIMITATION: AssistantChatService exposes no seam INSIDE its transaction (ChatsChanged fires
-        // only after commit and after the gate is released, by design), so the reader cannot be released at a
-        // guaranteed mid-transaction instant. What this test does instead is widen the window as far as the
-        // public API allows — a single transaction with 400 message inserts — and start the reader as soon as
-        // the writer task is running. The POST-fix expectation is unconditional (it must never throw, whatever
-        // the interleaving); the PRE-fix failure is highly likely rather than guaranteed. The unconditional
-        // half is the one worth having.
+        // There is no seam INSIDE the store's transaction, so the window is widened as far as the public API
+        // allows — 400 inserts in one transaction — and the reader starts as soon as the writer is running.
         var writerId = Guid.NewGuid();
         var writerStarted = new ManualResetEventSlim(false);
         Exception? readError = null;
@@ -169,8 +140,7 @@ public sealed class AssistantChatConcurrencyTests : IDisposable
     [Fact]
     public async Task AWriteOnTheDedicatedConnection_IsVisibleToAReaderOnTheSharedConnection()
     {
-        // Cross-connection commit visibility: the chat store's handle is private, but the ten services still
-        // on SqliteContext.GetConnection() must see its commits (and vice versa — WAL, DB1).
+        // The chat store's handle is private, but the services on the shared connection must see its commits.
         var id = Guid.NewGuid();
         await _chats.SaveAsync(Chat(id, "visible", "one message"), TestContext.Current.CancellationToken);
 
@@ -189,9 +159,8 @@ public sealed class AssistantChatConcurrencyTests : IDisposable
     [Fact]
     public async Task AWriteFromAnotherConnection_DoesNotBlockTheChatStoreIndefinitely()
     {
-        // DB1's reason for existing: moving chat writes to a second connection converts an intra-connection
-        // InvalidOperationException into a cross-connection SQLITE_BUSY. WAL + busy_timeout is what keeps that
-        // from being an instant "database is locked" for the shared connection's services.
+        // Moving chat writes to a second connection converts an intra-connection InvalidOperationException into
+        // a cross-connection SQLITE_BUSY; WAL + busy_timeout is what keeps that from being "database is locked".
         var shared = _ctx.GetConnection();
         using var journal = shared.CreateCommand();
         journal.CommandText = "PRAGMA journal_mode;";
@@ -214,9 +183,7 @@ public sealed class AssistantChatConcurrencyTests : IDisposable
     public async Task DeleteAllAsync_RaisesOnePerId_AndNoSubscriberRunsInsideTheGate()
     {
         // "Raise after release" is not a style preference: subscribers re-enter this service on the raising
-        // thread (HeadlessRunLauncher.OnChatsChanged does a recursive Directory.Delete; the history and chip
-        // view models post a SearchAsync back). A subscriber that awaits a chat read would deadlock against a
-        // non-reentrant gate.
+        // thread, and one that awaits a chat read would deadlock against a non-reentrant gate.
         var ids = new List<Guid>();
         for (var i = 0; i < 3; i++)
         {
@@ -244,10 +211,8 @@ public sealed class AssistantChatConcurrencyTests : IDisposable
     [Fact]
     public async Task EvictOlderThanAsync_TakesTheRunServiceLookupOutsideItsOwnGate()
     {
-        // Two service gates must never be held at once. This exercises the real AgentRunService (a
-        // synchronous, lock-holding store) from inside EvictOlderThanAsync's filter: a run-bearing chat is
-        // RETAINED (§16 R17) and the call happens with the chat gate released, so a concurrent chat read from
-        // another thread cannot deadlock against it.
+        // Two service gates must never be held at once: the run lookup inside EvictOlderThanAsync's filter
+        // happens with the chat gate released, so a concurrent chat read cannot deadlock against it.
         var keep = Guid.NewGuid();
         var drop = Guid.NewGuid();
         await _chats.SaveAsync(Chat(keep, "has a run", "body"), TestContext.Current.CancellationToken);
@@ -279,8 +244,7 @@ public sealed class AssistantChatConcurrencyTests : IDisposable
     [Fact]
     public async Task TitleOnlyWriteRacingAFullReplace_LosesNeitherTheTitleNorTheMessages()
     {
-        // W2a end-to-end: SetTitleAsync and SaveAsync run concurrently on the SAME chat. Whatever the order,
-        // the messages the full replace wrote must all be present — a title write cannot delete them.
+        // Whatever the order, a title write must not delete the messages the full replace wrote.
         var id = Guid.NewGuid();
         await _chats.SaveAsync(Chat(id, "original", "m0"), TestContext.Current.CancellationToken);
         var grown = Chat(id, "original", "m0", "m1", "m2");
@@ -300,11 +264,8 @@ public sealed class AssistantChatConcurrencyTests : IDisposable
     [Fact]
     public async Task TwoAppendOnlyWritersMergingConcurrently_LoseNoRow()
     {
-        // W2b's atomicity, end to end. A merging save that READ through GetAsync and then wrote through
-        // SaveAsync would release the gate in between, so a writer committing in that gap still has its rows
-        // deleted by the replace. Here BOTH writers append 40 rows each to the same chat, interleaved by the
-        // scheduler; every row must be in the final table. This test is why the merge lives inside
-        // AssistantChatService's gate hold rather than in the caller.
+        // A merging save that READ through GetAsync and then wrote through SaveAsync would release the gate in
+        // between, so a writer committing in that gap would still lose its rows to the replace.
         var id = Guid.NewGuid();
         var seed = Chat(id, "shared", "m0");
         await _chats.SaveAsync(seed, TestContext.Current.CancellationToken);
@@ -350,9 +311,8 @@ public sealed class AssistantChatConcurrencyTests : IDisposable
     [Fact]
     public async Task SaveMergedAsync_OrdersAbsorbedRowsByTimestamp_NotByAppendOrder()
     {
-        // W2b ordering: Ordinal is renumbered from the list index on every replace, so an absorbed row
-        // appended at the TAIL makes "the agent's step reply printed before the question the user typed
-        // mid-run" durable. The merge sorts by Timestamp instead.
+        // Ordinal is renumbered from the list index on every replace, so an absorbed row appended at the TAIL
+        // would durably print the agent's reply before the question typed mid-run. The merge sorts by Timestamp.
         var id = Guid.NewGuid();
         var t0 = new DateTime(2026, 7, 28, 9, 0, 0, DateTimeKind.Utc);
 
@@ -408,9 +368,8 @@ public sealed class AssistantChatConcurrencyTests : IDisposable
     [Fact]
     public async Task SaveMergedAsync_DoesNotMutateTheCallersSnapshot()
     {
-        // The executor reuses its own list to build the next snapshot, so the merge must stay inside the
-        // store: absorbing a foreign row into the caller's list would leak it into the run's next payload
-        // (and, if it ever reached _messages, into the model context — executor parity).
+        // The executor reuses its own list to build the next snapshot, so absorbing a foreign row into the
+        // caller's list would leak it into the run's next payload.
         var id = Guid.NewGuid();
         var stored = Chat(id, "c", "goal", "typed mid-run");
         await _chats.SaveAsync(stored, TestContext.Current.CancellationToken);
@@ -422,12 +381,7 @@ public sealed class AssistantChatConcurrencyTests : IDisposable
         Assert.Single(runView.Messages);
     }
 
-    /// <summary>
-    /// One-off command on a RAW probe connection. <c>CommandTimeout</c> is pinned to one second on purpose:
-    /// Microsoft.Data.Sqlite retries SQLITE_BUSY itself for <c>CommandTimeout</c> (THIRTY SECONDS by default),
-    /// on top of <c>PRAGMA busy_timeout</c>, so a probe write that is blocked by a write lock would otherwise
-    /// stall the suite for half a minute per statement instead of failing fast.
-    /// </summary>
+    /// <summary>CommandTimeout is one second because the driver retries SQLITE_BUSY for its full 30s default.</summary>
     private static async Task ExecAsync(SqliteConnection connection, string sql, SqliteTransaction? transaction = null)
     {
         using var command = connection.CreateCommand();
@@ -440,11 +394,8 @@ public sealed class AssistantChatConcurrencyTests : IDisposable
     [Fact]
     public async Task TheProvidersTransactions_TakeTheWriteLockAtBegin_NotAtTheirFirstWrite()
     {
-        // PREMISE PIN, not a bug reproduction — nothing on this tree is broken. DeleteAllUnderGateAsync is the
-        // one transaction in the store that READS (SELECT Id FROM AssistantChats) before it WRITES, and under
-        // WAL that shape is safe only while BeginTransaction() keeps emitting BEGIN IMMEDIATE. Non-deferred is
-        // Microsoft.Data.Sqlite's default rather than something the store asks for, so it is verified here
-        // instead of assumed. Both halves are DETERMINISTIC: no interleaving is left to the scheduler.
+        // A premise pin, not a bug reproduction: the store's read-then-write transaction is safe under WAL only
+        // while BEGIN IMMEDIATE stays the driver's default, which it never promised the store.
         await _chats.SaveAsync(Chat(Guid.NewGuid(), "seed", "body"), TestContext.Current.CancellationToken);
 
         using var holder = new SqliteConnection(_ctx.ConnectionString);
@@ -463,10 +414,8 @@ public sealed class AssistantChatConcurrencyTests : IDisposable
             Assert.Equal(5, refused.SqliteErrorCode);   // SQLITE_BUSY: the writer lock is already taken
         }
 
-        // Half 2: what the read-first shape WOULD hit if that BEGIN ever became deferred. deferred:true is a
-        // shape no src/ code uses, and that is the point of the guard — do NOT "improve" this half by routing it
-        // through AssistantChatService, because the store has no seam inside its transaction and the assertion
-        // would simply disappear.
+        // Half 2: what the read-first shape WOULD hit if that BEGIN ever became deferred. Do NOT route this
+        // through AssistantChatService — it has no seam inside its transaction and the assertion would vanish.
         using (var deferred = holder.BeginTransaction(deferred: true))
         {
             using (var select = holder.CreateCommand())
@@ -494,17 +443,8 @@ public sealed class AssistantChatConcurrencyTests : IDisposable
     [Fact]
     public async Task DeleteAllAsync_WithAnotherConnectionCommittingThroughout_Completes()
     {
-        // FORWARD GUARD on the read-first SELECT-then-DELETE transaction, deliberately not framed as a
-        // reproduction: it passes on today's tree, because BeginTransaction() is already BEGIN IMMEDIATE.
-        // What it asserts unconditionally is that DeleteAllAsync survives a foreign connection committing
-        // throughout — the same invariant as AWriteFromAnotherConnection_DoesNotBlockTheChatStoreIndefinitely,
-        // on the delete path instead of the write path.
-        //
-        // HONEST LIMITATION: if that BEGIN ever became deferred, the commits below would land inside the
-        // delete's read snapshot and its first DELETE would fail with SQLITE_BUSY_SNAPSHOT — but detection of
-        // that here is PROBABILISTIC, not guaranteed: the window between the SELECT and the DELETE is
-        // microseconds wide and there are only five rounds. The DETERMINISTIC guard for that regression is
-        // TheProvidersTransactions_TakeTheWriteLockAtBegin_NotAtTheirFirstWrite; this is the behavioural half.
+        // A forward guard, not a reproduction: it passes today because BeginTransaction() is already BEGIN
+        // IMMEDIATE, and the deterministic guard for the deferred regression is the write-lock fact above.
         using var writer = new SqliteConnection(_ctx.ConnectionString);
         await writer.OpenAsync(TestContext.Current.CancellationToken);
         await ExecAsync(writer, "PRAGMA busy_timeout=100;");

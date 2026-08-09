@@ -4,18 +4,12 @@ using Xunit;
 
 namespace Pia.Tests.Infrastructure;
 
-/// <summary>
-/// Covers <see cref="SensitivePathGuard"/>'s SECOND carve-out (Batch 06 B1): the per-run agent workspace
-/// root (<see cref="AssistantWorkspace.RunsRoot"/>) sits inside the otherwise-blocked
-/// <c>%LOCALAPPDATA%\Pia</c> tree exactly like the legacy workdir does, and must be carved out the same
-/// way — or an isolated run's every read/write/delete/list/search would pass containment and then be
-/// rejected by the guard's denylist (§0.2a). Mirrors <c>SensitivePathGuardTests</c>'s workdir shape.
-/// </summary>
+/// <summary><see cref="AssistantWorkspace.RunsRoot"/> sits inside the otherwise-blocked <c>%LOCALAPPDATA%\Pia</c>
+/// tree, so without the same carve-out the legacy workdir has, an isolated run's every write is rejected.</summary>
 public sealed class SensitivePathGuardRunsCarveOutTests
 {
-    // REGRESSION: pins the carve-out itself. The "siblings stay blocked" half is the non-vacuity
-    // control — a carve-out that accidentally widened to cover %LOCALAPPDATA%\Pia would turn only the
-    // first half green.
+    // The "siblings stay blocked" half is the non-vacuity control: a carve-out that accidentally widened to
+    // cover %LOCALAPPDATA%\Pia would turn only the first half green.
     [Fact]
     public void RunsRoot_IsCarvedOut_WhileTheDataRootAndDbStayBlocked()
     {
@@ -40,10 +34,8 @@ public sealed class SensitivePathGuardRunsCarveOutTests
         Assert.False(SensitivePathGuard.IsBlocked(Path.Combine(canonRunsRoot, runId, "nested", "a.md"), out _));
     }
 
-    // GUARD: pins CanonicalizeAllowedIsland's missing-tail behavior directly, in isolation from
-    // BuildAllowedExceptions. A test cannot control when SensitivePathGuard's statics initialize — that
-    // is exactly the hazard B2 exists for (the runs root routinely does not exist yet when the array is
-    // built) — so the *helper* is what gets the fact, not an assertion against the static array.
+    // A test cannot control when SensitivePathGuard's statics initialize, and the runs root routinely does not
+    // exist yet when the array is built, so the HELPER gets the fact rather than the static array.
     [Fact]
     public void CanonicalizeAllowedIsland_ResolvesAnIslandWhoseTailDoesNotExist()
     {

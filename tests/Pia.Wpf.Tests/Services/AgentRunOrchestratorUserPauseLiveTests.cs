@@ -16,28 +16,8 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Batch 08 G4 — the pause on the LIVE executor, and the terminal-intent revocations that keep a Stop from
-/// being read as one. Every fact here drives a real <see cref="ChatSession"/> through a real
-/// <see cref="LiveTurnExecutor"/> + a real <see cref="AgentRunOrchestrator"/> against a real SQLite
-/// <see cref="AgentRunService"/>, with the real <see cref="RunSteeringStore"/> and
-/// <see cref="AgentRunSteeringService"/> — so the pause is requested the way the UI will request it and the
-/// cancel SINK is the one <c>ChatSessionManager</c> registers: <c>session.Cancel()</c>.
-/// <para>
-/// <b>Executor parity.</b> <c>AgentRunOrchestratorUserPauseTests</c> asserts the same four-part resumable shape
-/// on the headless shape (the executor RETURNS a cancelled result); this file asserts it on Live, where the
-/// step body is marshaled onto a captured <see cref="SynchronizationContext"/> and where the action-card gate
-/// can block a step on a <see cref="TaskCompletionSource{TResult}"/> that takes no
-/// <see cref="CancellationToken"/> at all. The pause is still not reachable from any UI on either executor
-/// (that is G8), which is what makes the G3/G4 split legal: today it is refused identically on both.
-/// </para>
-/// <para>
-/// The sink is why the registry carries one. D1's candidate (a) — a second linked CTS — cannot release a step
-/// parked at <see cref="ChatState.WaitingForTool"/>, because nothing there observes a token;
-/// <c>session.Cancel()</c> releases the pending cards as well as cancelling the turn. Two facts below turn that
-/// into a discriminating assertion rather than a claim.
-/// </para>
-/// </summary>
+/// <summary>Drives real sessions through the live executor with the cancel sink <c>ChatSessionManager</c>
+/// registers: a linked CTS cannot release a step parked on the action-card gate's tokenless TCS.</summary>
 public sealed class AgentRunOrchestratorUserPauseLiveTests
 {
     private readonly IAiClientService _ai = Substitute.For<IAiClientService>();
@@ -94,7 +74,7 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
         }
     }
 
-    /// <summary>Real SQLite run + chat store, plus the real steering pair, mirroring G3's harness.</summary>
+    /// <summary>Real SQLite run + chat store, plus the real steering pair.</summary>
     private sealed class Harness : IDisposable
     {
         private readonly string _dir;
@@ -171,12 +151,8 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
         }
     }
 
-    /// <summary>
-    /// The mid-step pause: request it through the real steering service (which records the intent and fires
-    /// this dispatch's sink), then honour the token the way a provider stream does. The recorded return value is
-    /// asserted by every caller, so a fact can never pass on a pause that was REFUSED — "not Paused" is the
-    /// pass condition of nothing here.
-    /// </summary>
+    /// <summary>Requests the pause through the real steering service, then honours the token the way a provider
+    /// stream does; the return value is asserted by every caller, so a refused pause cannot pass.</summary>
     private static async IAsyncEnumerable<ChatStreamItem> PauseThenBlock(
         AgentRunSteeringService steering, Guid runId, Action<bool> accepted,
         [EnumeratorCancellation] CancellationToken ct)
@@ -210,9 +186,7 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
         SynchronizationContext.SetSynchronizationContext(new SynchronizationContext());
         try
         {
-            // stepPersonas + runPersona are TRAILING and default to null, so every existing call site is
-            // unchanged and gets exactly the pre-Batch-07 "no per-step resolution" executor. Both are needed
-            // together: a resolver with no run default never resolves anything (Batch 08 C1 needs it to).
+            // Both are needed together: a resolver with no run default never resolves anything.
             return new LiveTurnExecutor(
                 session, _ => false,
                 new PersonaAttribution(Guid.NewGuid(), "Pia", "🤖"),
@@ -236,10 +210,8 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
         session.SetState(ChatState.Running);
     }
 
-    /// <summary>
-    /// The sink <c>ChatSessionManager</c> registers for an interactive Planned run — and, in the two card facts,
-    /// the ONLY route to cancellation, which is what makes them discriminate against D1's candidate (a).
-    /// </summary>
+    /// <summary>The sink <c>ChatSessionManager</c> registers for an interactive Planned run, and in the card
+    /// facts the only route to cancellation.</summary>
     private static Action RegisterSessionSink(RunSteeringStore store, Guid runId, ChatSession session)
     {
         Action sink = () => { try { session.Cancel(); } catch { /* already torn down */ } };
@@ -251,14 +223,8 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
     // Live parity for the pause
     // -------------------------------------------------------------------------------------------------
 
-    /// <summary>
-    /// THE parity fact: hazard 1's four-part shape, on the LIVE executor, and then the run is actually RESUMED
-    /// and asserted to complete. Identical claim to
-    /// <c>AgentRunOrchestratorUserPauseTests.UserPause_MidStep_LeavesTheRunResumable_OnHeadless</c>, different
-    /// executor — Live marshals every step body through a posted callback and its own cancel arm is
-    /// <c>ChatSession.RunStepTurnAsync</c>'s <c>catch (OperationCanceledException)</c>, which RETURNS
-    /// <c>Cancelled: true</c> rather than throwing.
-    /// </summary>
+    /// <summary>Live marshals every step body through a posted callback and its cancel arm RETURNS
+    /// <c>Cancelled: true</c> rather than throwing, unlike the headless twin of this fact.</summary>
     [Fact]
     public async Task UserPause_MidStep_LeavesTheRunResumable_OnLive()
     {
@@ -281,11 +247,11 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
 
         Assert.True(accepted); // the pause was accepted, not refused: this fact is not vacuous
         var paused = await h.Runs.GetAsync(run.Id, ct);
-        Assert.Equal(AgentRunState.Paused, paused!.State);                                   // (1) not Cancelled
-        Assert.Null(paused.CompletedAt);                                                     // (2) not settled
-        Assert.Equal(AgentRunService.UserPausedReason, RunPauseEnvelope.ReadReason(paused));  // (4) a USER pause
+        Assert.Equal(AgentRunState.Paused, paused!.State);                                   // not Cancelled
+        Assert.Null(paused.CompletedAt);                                                     // not settled
+        Assert.Equal(AgentRunService.UserPausedReason, RunPauseEnvelope.ReadReason(paused));  // a USER pause
         var aborted = Assert.Single(paused.Plan, s => s.Title == "s1");
-        Assert.Equal(AgentStepStatus.Pending, aborted.Status);                               // (3) back in the plan
+        Assert.Equal(AgentStepStatus.Pending, aborted.Status);                               // back in the plan
         var next = await h.Runs.NextPendingStepAsync(run.Id, ct);
         Assert.Equal("s1", next!.Title);          // …and visible to the drain a resume uses
         Assert.Equal(0, planner.ReplanCalls);     // a pause is not a step failure
@@ -309,29 +275,8 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
         Assert.Null(RunPauseEnvelope.ReadReason(final));                            // the claim retired the marker
     }
 
-    /// <summary>
-    /// <b>Batch 08 C1 — the THROWING abort shape, on LIVE.</b> The orchestrator's second consume site is its
-    /// outer <c>catch (OperationCanceledException)</c>, for aborts that leave the loop by throwing rather than
-    /// by returning a cancelled result. That arm is pinned headless
-    /// (<c>AgentRunOrchestratorUserPauseTests.UserPause_WhoseStepThrowsInsteadOfReturning_AlsoLeavesTheRunResumable</c>,
-    /// whose own doc says G4 would otherwise be the first place it is exercised "for Live only") — but BOTH
-    /// mechanisms that actually produce it are LIVE-SPECIFIC, so the shape had no Live fact at all.
-    /// <para>
-    /// This drives the first of the two, and it is the real one rather than a simulated throw:
-    /// <c>LiveTurnExecutor.ExecuteStepAsync</c> awaits <c>StepPersonaResolver.ResolveAsync</c> OUTSIDE its
-    /// <c>PostAsync</c> and outside any exchange try/catch, and <c>GetRosterAsync</c>'s ladder — which swallows
-    /// every other fault by design — deliberately rethrows on
-    /// <c>catch (OperationCanceledException) when (ct.IsCancellationRequested)</c>. So the pause's cancel,
-    /// landing while the roster read is in flight, throws straight past the executor with the step row already
-    /// written <c>Running(1)</c> by the loop and <c>step</c> out of scope in the catch arm.
-    /// </para>
-    /// <para>
-    /// What it would catch: a regression that mis-scoped <c>inflightStepId</c> would leave the Live-paused run
-    /// at <c>Paused</c> with its step still <c>Running(1)</c> — invisible to <c>NextPendingStepAsync</c>, so the
-    /// resume would silently skip it and the run would report success over work it never did. Nothing in the
-    /// suite would have gone red. The <c>Pending</c> + <c>NextPendingStepAsync</c> pair below is that assertion.
-    /// </para>
-    /// </summary>
+    /// <summary>The step-persona resolve is awaited outside <c>PostAsync</c> and any exchange try/catch, and the
+    /// roster ladder rethrows a cancelled OCE — so the abort throws out with the step row already Running(1).</summary>
     [Fact]
     public async Task UserPause_ThatThrowsOutOfTheStepPersonaResolve_LeavesTheRunResumable_OnLive()
     {
@@ -349,10 +294,8 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
         SeedSessionForPlannedRun(session, "goal");
         RegisterSessionSink(h.Store, run.Id, session);
 
-        // The roster read IS the throw site. GetPersonasAsync takes no token, so the pause is requested from
-        // inside it and the OCE is raised right after — by then session.Cancel() has already run, so the
-        // resolver's `when (ct.IsCancellationRequested)` filter matches and the exception is rethrown instead
-        // of degraded to the run persona.
+        // The roster read is the throw site: the pause is requested from inside it, so by the time the OCE is
+        // raised session.Cancel() has run and the resolver's `when (ct.IsCancellationRequested)` filter matches.
         var accepted = false;
         var personas = Substitute.For<IPersonaService>();
         var settings = Substitute.For<ISettingsService>();
@@ -375,11 +318,8 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
 
         Assert.True(accepted); // non-vacuity: the pause was accepted, not refused
 
-        // DISCRIMINATING, and this is the assertion that makes the fact about the THROW rather than about the
-        // pause in general: if the resolver had degraded the OCE to the run persona (the ladder's behaviour for
-        // every other fault) the step would have run and come back CANCELLED through the ordinary in-loop
-        // consume — a different code path with the same final row. No exchange means the abort left
-        // ExecuteStepAsync by throwing, before PostAsync, with the step row already written Running(1).
+        // No exchange means the abort left ExecuteStepAsync by throwing: a degraded OCE would have run the step
+        // and come back cancelled through the in-loop consume, a different path with the same final row.
         _ai.DidNotReceive().GetChatCompletionWithToolsAsync(
             Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
             Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>());
@@ -398,25 +338,8 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
         Assert.True(await h.Runs.TryResumeFromPauseAsync(run.Id, ct)); // genuinely claimable
     }
 
-    /// <summary>
-    /// <b>The fact D1's candidate (a) could not have passed.</b> The step is parked at
-    /// <see cref="ChatState.WaitingForTool"/> inside the interactive tool gate, awaiting
-    /// <c>ActionCardInfo.WaitForUserDecisionAsync()</c> — a <see cref="TaskCompletionSource{TResult}"/> that
-    /// takes NO <see cref="CancellationToken"/>. A second linked CTS therefore cannot release it: the step would
-    /// sit there until somebody clicked the card. The registered sink is <c>session.Cancel()</c> and it is the
-    /// ONLY route to cancellation in this fact (the run token IS <c>session.Cts.Token</c>), so the pause has to
-    /// travel through the card release.
-    /// <para>
-    /// It also pins the W3 ordering from the outside: the release is mapped to <c>ToolDecision.Decline</c> and
-    /// the exchange CONTINUES (this stream yields its text and finishes afterwards), so the step can come back
-    /// <c>Cancelled: false</c>. The run must still be <c>Paused</c> — never replanned, never advanced past the
-    /// step.
-    /// </para>
-    /// <para>
-    /// NEUTRALIZATION RUN: swapping the sink for a bare <c>CancellationTokenSource.Cancel()</c> hangs the step
-    /// on the card until the 20 s bound below fires, and the fact reds on its own message.
-    /// </para>
-    /// </summary>
+    /// <summary>The step parks on a card gate whose <see cref="TaskCompletionSource{TResult}"/> takes no
+    /// <see cref="CancellationToken"/>, so only <c>session.Cancel()</c> can release it.</summary>
     [Fact]
     public async Task UserPause_ReleasesAStepBlockedOnAnActionCard()
     {
@@ -455,9 +378,8 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
         RegisterSessionSink(h.Store, run.Id, session);
         ReturnsToolCallStream("write_file");
 
-        // The user presses Pause while the card sits there. Off the turn's own thread (a Task.Run), because the
-        // release completes the very TCS the gate is awaiting and doing that inline from a state-changed handler
-        // would resume the tool loop reentrantly.
+        // Off the turn's own thread: the release completes the very TCS the gate is awaiting, and doing that
+        // inline from a state-changed handler would resume the tool loop reentrantly.
         Task<bool>? pause = null;
         session.StateChanged += (_, e) =>
         {
@@ -491,19 +413,13 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
         Assert.Null(paused.CompletedAt);
         Assert.Equal(AgentRunService.UserPausedReason, RunPauseEnvelope.ReadReason(paused));
         Assert.Equal(AgentStepStatus.Pending, Assert.Single(paused.Plan, s => s.Title == "s1").Status);
-        // W3, from the outside: a declined card is not a step failure, so nothing may replan, and step 2 must
-        // not have started either.
+        // A declined card is not a step failure, so nothing may replan and step 2 must not have started either.
         Assert.Equal(0, planner.ReplanCalls);
         Assert.Equal(AgentStepStatus.Pending, Assert.Single(paused.Plan, s => s.Title == "s2").Status);
     }
 
-    /// <summary>
-    /// Guardrail 5 on the live side: the pause takes <c>OnPausedAsync</c>, never <c>EndRunAsync</c>. So the
-    /// session drops to <see cref="ChatState.Idle"/> with NO <c>TurnCompleted</c> and no
-    /// <see cref="ChatState.Completed"/>, and <c>IsStreaming</c> clears — which is what re-enables Send and
-    /// "Run in background" while the run sits paused and resumable. Settling the session terminal instead would
-    /// tell the user the turn finished.
-    /// </summary>
+    /// <summary>The pause takes <c>OnPausedAsync</c>, never <c>EndRunAsync</c>: settling the session terminal
+    /// instead would tell the user the turn finished.</summary>
     [Fact]
     public async Task UserPause_DoesNotSettleTheLiveSessionCompleted()
     {
@@ -541,17 +457,11 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
     }
 
     // -------------------------------------------------------------------------------------------------
-    // Terminal-intent revocations (§5.3 sites 1 and 2)
+    // Terminal-intent revocations
     // -------------------------------------------------------------------------------------------------
 
-    /// <summary>
-    /// Revocation 1, end to end. A pause request is in flight (recorded, its sink fired) when the user presses
-    /// STOP. Stop is terminal intent, so it revokes the request BEFORE cancelling — and the run therefore
-    /// settles <see cref="AgentRunState.Cancelled"/> with a stamped <c>CompletedAt</c> instead of coming back
-    /// resumable. Without the revoke this is the wrong-direction failure the whole hardening exists for: the
-    /// unconsumed request is still sitting in the store when the step unwinds, so the loop reads a Stop as a
-    /// pause and the run the user killed comes back alive.
-    /// </summary>
+    /// <summary>Stop is terminal intent, so it revokes a pending pause before cancelling — otherwise the
+    /// unwinding loop reads the Stop as a pause and the run the user killed comes back alive.</summary>
     [Fact]
     public async Task StopButton_RevokesAPendingPause_AndTheRunSettlesCancelled()
     {
@@ -586,10 +496,7 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
         Assert.False(h.Store.TryConsumePauseRequest(run.Id), "the request must be gone, not merely unread");
     }
 
-    /// <summary>
-    /// Request the pause, then press Stop while the step is still in flight — the exact race §1 D1 item 5's
-    /// third hardening closes. Both cancels land on the same session; the difference is entirely the revoke.
-    /// </summary>
+    /// <summary>Both cancels land on the same session; the difference is entirely the revoke.</summary>
     private static async IAsyncEnumerable<ChatStreamItem> PauseThenStopThenBlock(
         AgentRunSteeringService steering, Guid runId, Action<bool> accepted, AssistantViewModel vm,
         [EnumeratorCancellation] CancellationToken ct)
@@ -602,12 +509,8 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
 #pragma warning restore CS0162
     }
 
-    /// <summary>
-    /// Revocation 2: "clear conversation" is destructive — it abandons the chat AND cancels its turn — so it
-    /// must revoke for the same reason Stop does. Asserted on the store rather than through a run, because the
-    /// conversation being abandoned is the point: this command's own cancel is what would otherwise be read as
-    /// the pause.
-    /// </summary>
+    /// <summary>Clearing the conversation abandons the chat and cancels its turn, so it must revoke for the same
+    /// reason Stop does; asserted on the store because the conversation being abandoned is the point.</summary>
     [Fact]
     public void ClearConversation_RevokesAPendingPause()
     {
@@ -629,22 +532,12 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
 
         Assert.False(store.TryConsumePauseRequest(runId), "clearing the conversation must not leave a pause behind");
 
-        // Batch 08 F10 CHANGED THE NEXT ASSERTION, and changing it IS the fix. It used to read
-        // `Assert.True(store.RecordPauseRequest(runId))`, justified as "the registration itself is untouched —
-        // dropping it here would make a later pause of a RE-DISPATCHED run silently refused". The registration
-        // claim is still true and still asserted (below), but the fact was reading it off the wrong operation:
-        // this is the SAME dispatch, the one the clear just cancelled with terminal intent. Re-arming a pause
-        // against it is precisely F10 — the step takes time to unwind, the row still reads Running so the
-        // panel's Pause button is live, and the unwinding loop consumes the new request and PARKS the run the
-        // user asked to abandon. IRunSteeringStore's own FAILURE DIRECTION paragraph calls that direction
-        // unrecoverable, so the old assertion encoded the defect as the contract.
         Assert.False(store.RecordPauseRequest(runId),
             "terminal intent is sticky for the dispatch it was aimed at: a pause pressed while the cancel " +
             "unwinds must be refused, not re-armed");
 
-        // The registration IS untouched, which is the half the old assertion was really about — and it is now
-        // pinned directly: a NEW dispatch of the same run (a resume, a re-launch) clears the terminal mark
-        // when it registers its own sink, and is fully pausable again.
+        // A new dispatch of the same run (a resume, a re-launch) clears the terminal mark when it registers its
+        // own sink, and is pausable again.
         void NewSink() { }
         store.RegisterDispatch(runId, NewSink);
         Assert.True(store.RecordPauseRequest(runId),
@@ -653,11 +546,8 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
         store.ReleaseDispatch(runId, sink);
     }
 
-    /// <summary>
-    /// The production <see cref="AssistantViewModel"/> with everything but the two collaborators these facts
-    /// steer through substituted. Argument list copied from <c>AssistantViewModelLeverTests.CreateSut</c>; the
-    /// steering store is the new trailing parameter, which is why that harness still compiles untouched.
-    /// </summary>
+    /// <summary>The production <see cref="AssistantViewModel"/> with everything but the two collaborators these
+    /// facts steer through substituted.</summary>
     private AssistantViewModel CreateAssistantViewModel(IChatSessionManager manager, IRunSteeringStore steering)
     {
         // ChatTitleChipViewModel (built in the ctor) requires a captured SynchronizationContext.

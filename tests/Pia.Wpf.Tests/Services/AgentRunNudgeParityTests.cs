@@ -14,12 +14,7 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Batch 08 G7 (D4): the nudge actually reaching a provider request, on BOTH executors and at all four
-/// call sites (step ×2, critic, replan), never on a System message, never seeded into the persisted
-/// transcript, scoped to a single resume dispatch, and never logged above <c>SensitiveDebug</c>.
-/// <see cref="RunContextNudgeTests"/> covers the cap/flatten/fence shape in isolation.
-/// </summary>
+/// <summary>The cap/flatten/fence shape is covered in isolation by <c>RunContextNudgeTests</c>.</summary>
 public sealed class AgentRunNudgeParityTests
 {
     // ---- shared fixtures ----
@@ -371,17 +366,14 @@ public sealed class AgentRunNudgeParityTests
             => Task.FromResult(PlanResult.Fallback);
     }
 
-    /// <summary>Records what <c>ctx.AppendNudge("MARK")</c> yields per dispatch. A step whose title matches
-    /// <c>pauseOnTitle</c> requests a pause and honors the sink's cancel; every other step (and every step
-    /// when <c>pause</c> is null) succeeds immediately — the same shape
-    /// <c>AgentRunOrchestratorUserPauseTests.PausingExecutor</c> uses.</summary>
+    /// <summary>Records what <c>ctx.AppendNudge</c> yields per dispatch; the step titled <c>pauseOnTitle</c>
+    /// requests a pause and honours the sink's cancel, every other step succeeds immediately.</summary>
     private sealed class NudgeCapturingExecutor : IAgentTurnExecutor
     {
         private readonly Func<Guid, Task<bool>>? _pause;
         private readonly string? _pauseOnTitle;
 
-        /// <param name="pause">Null ⇒ never pauses, whatever <paramref name="pauseOnTitle"/> says (the shape
-        /// <c>AgentRunOrchestratorUserPauseTests.PausingExecutor</c> uses for its "never" fixture).</param>
+        /// <param name="pause">Null ⇒ never pauses, whatever <paramref name="pauseOnTitle"/> says.</param>
         /// <param name="pauseOnTitle">The step title to pause on; other steps always succeed immediately.</param>
         public NudgeCapturingExecutor(Func<Guid, Task<bool>>? pause, string? pauseOnTitle = null)
         {
@@ -402,7 +394,7 @@ public sealed class AgentRunNudgeParityTests
 
             await _pause(run.Id);
             try { await Task.Delay(Timeout.Infinite, ct); }
-            catch (OperationCanceledException) { /* the sink's cancel reached this step (R13) */ }
+            catch (OperationCanceledException) { /* the sink's cancel reached this step */ }
             return new StepTurnResult(false, true, "cancelled", string.Empty, null, Guid.NewGuid(), Guid.NewGuid());
         }
 
@@ -463,12 +455,8 @@ public sealed class AgentRunNudgeParityTests
     private static List<AgentStep> OneStep(string title) =>
         new() { new AgentStep { Id = Guid.Empty, Ordinal = 0, Title = title, Intent = title, Status = AgentStepStatus.Pending } };
 
-    /// <summary>
-    /// D4's "scope to the dispatch", asserted from the outside. Dispatch 1 pauses immediately (no nudge — a
-    /// fresh launch never takes one). Dispatch 2 resumes WITH a nudge and pauses again — its captured request
-    /// carries the fence. Dispatch 3 resumes WITHOUT one: a fresh <c>RunContext</c> means nothing survives
-    /// from dispatch 2, which is exactly what the third capture proves.
-    /// </summary>
+    /// <summary>A nudge is scoped to one dispatch: each gets a fresh <c>RunContext</c>, so the third capture
+    /// must carry no fence at all.</summary>
     [Fact]
     public async Task Nudge_DoesNotSurviveASecondResume()
     {
@@ -522,12 +510,8 @@ public sealed class AgentRunNudgeParityTests
         Assert.Equal(AgentRunState.Completed, (await h.Runs.GetAsync(run.Id, ct))!.State);
     }
 
-    /// <summary>
-    /// Privacy (hazard 5 / §1 D4 item 8): the nudge text may only ever reach <c>SensitiveDebug</c>, never an
-    /// <c>Information</c>-or-above line. Non-vacuous: the SAME dispatch's resume-context-seed log (a real
-    /// Information line, <c>AgentRunOrchestrator.cs</c> "Resume seeded…") proves the logger really is
-    /// capturing something at that level, so an empty log would not make this fact pass for the wrong reason.
-    /// </summary>
+    /// <summary>The nudge text may only ever reach <c>SensitiveDebug</c>; the resume-seed Information line is
+    /// the non-vacuity control, since an empty log would otherwise pass.</summary>
     [Fact]
     public async Task Nudge_IsNeverLoggedAtInformationOrAbove()
     {

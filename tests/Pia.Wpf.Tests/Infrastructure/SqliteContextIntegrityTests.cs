@@ -5,16 +5,7 @@ using Xunit;
 
 namespace Pia.Tests.Infrastructure;
 
-/// <summary>
-/// T2-13b (hermes #13's second half): the shared history database is checked once, on its first open, and the
-/// answer reaches the support log.
-/// <para>
-/// The fact worth the file is <see cref="ADamagedDatabase_IsDiagnosedEvenWhenTheSchemaPassFails"/> — it pins the
-/// ORDERING decision, which is the whole of this item. The check runs BEFORE <c>EnsureSchema</c>, so a damaged
-/// file is diagnosed by a read-only pragma instead of by whatever cryptic error the first <c>ALTER</c> or FTS
-/// rebuild happens to throw while writing to it.
-/// </para>
-/// </summary>
+/// <summary>The check runs before <c>EnsureSchema</c>, so a damaged file is diagnosed by a read-only pragma.</summary>
 public class SqliteContextIntegrityTests : IDisposable
 {
     private readonly string _tmpDir;
@@ -57,10 +48,7 @@ public class SqliteContextIntegrityTests : IDisposable
         Assert.Equal(0, logger.Integrity(LogLevel.Error));
     }
 
-    /// <summary>
-    /// ONCE per process, not once per caller. Ten services share this connection and call
-    /// <c>GetConnection()</c> on every operation; a check that ran per call would be a full file scan per query.
-    /// </summary>
+    /// <summary>A check per <c>GetConnection()</c> call would be a full file scan per query.</summary>
     [Fact]
     public void TheCheckRunsOnce_HoweverOftenTheConnectionIsAskedFor()
     {
@@ -74,10 +62,7 @@ public class SqliteContextIntegrityTests : IDisposable
         Assert.Equal(1, logger.Integrity(LogLevel.Information));
     }
 
-    /// <summary>
-    /// A logger is optional (sixty-odd test sites construct this type by path alone), and the check must not
-    /// depend on one: the status is still recorded.
-    /// </summary>
+    /// <summary>A logger is optional — many callers construct this type by path alone.</summary>
     [Fact]
     public void WithoutALogger_TheCheckStillRuns()
     {
@@ -88,15 +73,7 @@ public class SqliteContextIntegrityTests : IDisposable
         Assert.Equal("ok", ctx.IntegrityStatus);
     }
 
-    /// <summary>
-    /// THE ordering fact. A page of a populated table is zeroed, then the file is opened fresh.
-    /// <para>
-    /// The schema pass that follows the check may well throw on such a file — it reads and writes the very pages
-    /// that are gone — and that is precisely why the diagnosis cannot live inside it. The assertion is therefore
-    /// on <c>IntegrityStatus</c> after a <c>GetConnection()</c> whose own outcome is allowed to be an exception:
-    /// the damaged file is NAMED as damaged either way.
-    /// </para>
-    /// </summary>
+    /// <summary>The schema pass may itself throw on such a file; the claim is only that the damage was named.</summary>
     [Fact]
     public void ADamagedDatabase_IsDiagnosedEvenWhenTheSchemaPassFails()
     {
@@ -123,18 +100,16 @@ public class SqliteContextIntegrityTests : IDisposable
             pageSize = Convert.ToInt32(pragma.ExecuteScalar());
         }
 
-        // Disposing the context returns its connection to Microsoft.Data.Sqlite's POOL rather than closing the
-        // handle, so without this the side files below are still locked (and the pooled handle would serve the
-        // pre-damage pages back on the next open).
+        // Disposing returns the connection to the driver's POOL rather than closing it, so without this the side
+        // files stay locked and the pooled handle would serve pre-damage pages back.
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
 
         // WAL side files would otherwise re-supply the pages this test is about to destroy.
         foreach (var side in new[] { path + "-wal", path + "-shm" })
             if (File.Exists(side)) File.Delete(side);
 
-        // Zero one page well inside the file, leaving page 1 (the header and sqlite_master root) intact — so the
-        // file still OPENS and still has a readable schema, which is what makes the damage the check's job
-        // rather than the connection's.
+        // Page 1 (the header and sqlite_master root) is left intact, so the file still opens with a readable
+        // schema — which is what makes the damage the check's job rather than the connection's.
         var bytes = File.ReadAllBytes(path);
         Assert.True(bytes.Length > pageSize * 6, "the seeded database is too small to damage meaningfully");
         Array.Clear(bytes, pageSize * 4, pageSize);
@@ -156,17 +131,7 @@ public class SqliteContextIntegrityTests : IDisposable
         Assert.Equal(1, logger.Integrity(LogLevel.Error));
     }
 
-    /// <summary>
-    /// THE damage class the first cut of this item could not report, and the reason the check now runs before the
-    /// WAL pragma rather than after it. A file whose HEADER is unreadable still OPENS — <c>sqlite3_open_v2</c>
-    /// does not read page 1 — so the first statement that touches the file is the one that throws. When that was
-    /// <c>PRAGMA journal_mode=WAL</c>, the check never executed: no status, and not one line in the support log
-    /// for the file most in need of the diagnosis.
-    /// <para>
-    /// <c>GetConnection()</c> is still expected to throw here (nothing can use such a file); what is asserted is
-    /// that it says WHY first.
-    /// </para>
-    /// </summary>
+    /// <summary>Such a file opens and throws on its first statement, so the check must precede the WAL pragma.</summary>
     [Fact]
     public void AFileThatIsNotADatabaseAtAll_IsStillDiagnosed()
     {

@@ -4,15 +4,7 @@ using Xunit;
 
 namespace Pia.Tests.Infrastructure;
 
-/// <summary>
-/// Covers <see cref="SensitivePathGuard"/>'s workdir carve-out: the agent's default scratch folder
-/// lives inside the otherwise-blocked <c>%LOCALAPPDATA%\Pia</c> tree, so the guard must block the
-/// Pia data root and its DB/config siblings while letting the workdir island through — otherwise the
-/// file tools dead-end on the default sandbox.
-///
-/// Paths are canonicalized before the check to mirror what the §0.3 resolver feeds the guard in
-/// production (so a junction anywhere on the %LOCALAPPDATA% path can't desync this test from prod).
-/// </summary>
+/// <summary>The agent's workdir lives inside the blocked %LOCALAPPDATA%\Pia tree and must be carved out.</summary>
 public sealed class SensitivePathGuardTests
 {
     [Fact]

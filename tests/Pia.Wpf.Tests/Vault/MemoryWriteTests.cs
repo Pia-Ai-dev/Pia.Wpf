@@ -73,7 +73,6 @@ public class MemoryWriteTests : IDisposable
         Assert.Equal("contact_list", doc.Frontmatter["type"]);
         Assert.Equal("1", doc.Frontmatter["schemaVersion"]);
 
-        // id is the lowercase-canonical 8-4-4-4-12 form (spec §2.1 write rule).
         var idRaw = doc.Frontmatter["id"];
         Assert.True(Guid.TryParse(idRaw, out _));
         Assert.Equal(idRaw, idRaw.ToLowerInvariant());

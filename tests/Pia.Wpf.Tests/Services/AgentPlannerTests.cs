@@ -454,7 +454,7 @@ public sealed class AgentPlannerTests
         }
     }
 
-    // ---- I1: the planning turn's spend must reach the ledger (it used to be discarded here) ----
+    // ---- the planning turn's spend must reach the ledger (it used to be discarded here) ----
 
     [Fact]
     public async Task PlanAsync_CapturesUsageFromFinished()
@@ -520,7 +520,7 @@ public sealed class AgentPlannerTests
         Assert.Equal(8, degraded.Usage.OutputTokenCount);
     }
 
-    // ---- E2: a resumed run's replan judge must be told the pre-pause steps already ran ----
+    // ---- a resumed run's replan judge must be told the pre-pause steps already ran ----
 
     [Fact]
     public async Task ReplanAsync_SeededPrePauseStep_IsPresentedAsExecuted_NotAsMissing()
@@ -535,27 +535,19 @@ public sealed class AgentPlannerTests
 
         await BuildPlanner().ReplanAsync(ctx, "boom", Persona(), Provider(), TestContext.Current.CancellationToken);
 
-        // Batch 08 F11 moved this block from the System prompt to the USER message — every assertion it had is
-        // kept verbatim, only the message it is read from changed, because a step title/intent can be raw user
-        // keystrokes since D3 and TokenizeMessages rewrites ChatRole.User text ONLY. Same precedent as the
-        // reasoning analysis, which this file already reads off LastUserPrompt for the identical reason.
+        // The block rides the USER message because a step title or intent can be raw user keystrokes and
+        // TokenizeMessages rewrites ChatRole.User text only.
         Assert.Contains("Completed so far", LastUserPrompt);
         Assert.Contains("[ok] Early: ran before the pause", LastUserPrompt);
         Assert.Contains(CompletedStepSummary.EarlierSegmentNote, LastUserPrompt); // ran, text just unavailable
         Assert.Contains("do NOT repeat these steps", LastUserPrompt);
 
-        // ADDED, and this is the property F11 is actually about: the block must not ALSO be in the System
-        // prompt, where the tokenizer would never see it. Without this the move could be undone silently.
+        // The block must not ALSO be in the System prompt, where the tokenizer would never see it.
         Assert.DoesNotContain("Completed so far", LastPrompt);
         Assert.DoesNotContain("ran before the pause", LastPrompt);
     }
 
-    /// <summary>
-    /// <b>Batch 08 F16.</b> W13 kept a SKIPPED row alive through a replan; nothing told the replanner it had
-    /// been removed, so the model — seeing only the goal and the completed steps — could emit a fresh step for
-    /// the very work the user deleted and the run would do it. The block rides the USER message with the rest
-    /// (F11): a skipped step's title is user-editable text.
-    /// </summary>
+    /// <summary>Told nothing about a skipped row, the replanner can emit a fresh step for the very work the user deleted.</summary>
     [Fact]
     public async Task ReplanAsync_SkippedSteps_AreListedAsRemoved_OnTheUserMessage()
     {
@@ -567,7 +559,7 @@ public sealed class AgentPlannerTests
 
         Assert.Contains("The user REMOVED these steps from the plan", LastUserPrompt);
         Assert.Contains("- Delete the old backups", LastUserPrompt);
-        Assert.DoesNotContain("Delete the old backups", LastPrompt); // never the System prompt (F11)
+        Assert.DoesNotContain("Delete the old backups", LastPrompt); // never the System prompt
     }
 
     /// <summary>Non-vacuity for the fact above: with no skipped steps the prohibition must not appear at all,
@@ -594,7 +586,7 @@ public sealed class AgentPlannerTests
 
         await BuildPlanner().ReplanAsync(ctx, "boom", Persona(), Provider(), TestContext.Current.CancellationToken);
 
-        // Batch 08 F11: read off the USER message now — see the sibling fact above for the argument.
+        // Read off the USER message — see the sibling fact above for the argument.
         Assert.Contains("[ok] Live: ran in this segment", LastUserPrompt);
         Assert.DoesNotContain(CompletedStepSummary.EarlierSegmentNote, LastUserPrompt);
         Assert.DoesNotContain("ran in this segment", LastPrompt);
@@ -629,10 +621,8 @@ public sealed class AgentPlannerTests
         AssertConstrainedTurns(1);
         Assert.False(result.FallBackToSingleTurn);
         Assert.Equal(new[] { "Gather", "Draft" }, result.Steps.Select(s => s.Title).ToArray());
-        // StartsWith, not Contains: the goal must LEAD the composed user message. Contains would also pass if
-        // the goal were appended after the analysis block, which is a different (worse) prompt shape — and
-        // BuildPlanMessages' system prompt never carries the goal, so losing it here means planning for
-        // nothing.
+        // StartsWith, not Contains: the goal must LEAD the message, and the system prompt never carries it,
+        // so a goal appended after the analysis block would mean planning for nothing.
         Assert.StartsWith(Goal, LastUserPrompt, StringComparison.Ordinal);
         Assert.Contains(Analysis, LastUserPrompt);
     }
@@ -640,8 +630,8 @@ public sealed class AgentPlannerTests
     [Fact]
     public async Task PlanAsync_ReasoningTurn_SendsNoTools_SoTheEffortSurvives()
     {
-        // The premise the whole batch rests on: AiClientService computes hasTools from the tools argument,
-        // so a tools:null call is the one shape that still carries the configured reasoning effort.
+        // AiClientService computes hasTools from the tools argument, so a tools:null call is the one shape
+        // that still carries the configured reasoning effort.
         var (planner, provider) = PlannerFor(
             AiProviderType.Ollama, dropsEffortWithTools: true, ReasoningEffort.High, reasoningTurnEnabled: true);
         ReturnsReasoning(Analysis);
@@ -653,9 +643,8 @@ public sealed class AgentPlannerTests
         Assert.False(_reasoningSawTools);
         // The reasoning turn must not be told about emit_plan — no tool schema is even attached to it.
         Assert.DoesNotContain("emit_plan", _reasoningRequests[^1][0].Text ?? string.Empty);
-        // …and it must actually ASK about something: the goal on the user message, the persona on the system
-        // one. ReturnsReasoning hands back the canned analysis whatever was sent, so without these two the
-        // reasoning turn could be spending a full provider round on an empty request.
+        // The stub answers whatever was sent, so without these two the reasoning turn could be spending a
+        // full provider round on an empty request.
         Assert.Equal(Goal, _reasoningRequests[^1][1].Text);
         Assert.Contains(Persona().SystemPrompt, _reasoningRequests[^1][0].Text ?? string.Empty);
     }
@@ -840,12 +829,7 @@ public sealed class AgentPlannerTests
         AssertConstrainedTurns(0);
     }
 
-    /// <summary>
-    /// The two ends of the over-long analysis fixture. A homogeneous <c>new string('x', n)</c> cannot say
-    /// WHICH 4000 chars survived: truncating from the tail (<c>text[^MaxAnalysisChars..]</c>) instead of the
-    /// head would hand the plan turn a conclusion with the reasoning that produced it cut away, and still
-    /// look truncated. These markers make the direction observable.
-    /// </summary>
+    /// <summary>Distinct ends, because a homogeneous filler string cannot say WHICH half of the analysis survived truncation.</summary>
     private const string AnalysisHead = "HEAD-OF-ANALYSIS";
     private const string AnalysisTail = "TAIL-OF-ANALYSIS";
 
@@ -866,9 +850,8 @@ public sealed class AgentPlannerTests
         // the order they go in — so the head is what survives and the tail is what gets dropped.
         Assert.Contains(AnalysisHead, LastUserPrompt);
         Assert.DoesNotContain(AnalysisTail, LastUserPrompt);
-        // Tight on purpose. MaxAnalysisChars is 4000 and goal + wrapper + truncation marker add 137, so a
-        // correct run lands on exactly 4137 chars. The old bound of 5000 left enough slack that raising the
-        // cap to 4800 (4937 chars) still passed, i.e. the window-overflow guard was unpinned above 4000.
+        // Tight on purpose: a correct run lands on exactly 4137 chars, and a looser bound would let the cap
+        // be raised without failing here.
         Assert.True(LastUserPrompt.Length < 4_300, $"user prompt was {LastUserPrompt.Length} chars");
     }
 
@@ -929,10 +912,8 @@ public sealed class AgentPlannerTests
     [Fact]
     public async Task PlanAsync_GateOn_SettingsReadCancelled_Rethrows()
     {
-        // The other side of the guard above: the gate's catch-all may swallow a settings read that FAILED,
-        // but not one that was CANCELLED — that would let planning march on with a token the caller already
-        // cancelled. Only ShouldReasonFirstAsync's own catch-when(IsCancellationRequested) prevents it: unlike
-        // TryReasonAsync, its general catch just returns false and never calls ThrowIfCancellationRequested.
+        // The gate's catch-all may swallow a settings read that FAILED, but not one that was CANCELLED —
+        // that would let planning march on with a token the caller already cancelled.
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
         // Hand-rolled like the test above, and for the same reason: BuildPlanner/PlannerFor/PlannerWithLog all
@@ -953,13 +934,9 @@ public sealed class AgentPlannerTests
         AssertConstrainedTurns(0); // …and planning did NOT proceed on the cancelled token
     }
 
-    // ---- privacy: nothing this batch logs may put user content at a release-visible level ----
+    // ---- privacy: no log line may put user content at a release-visible level ----
 
-    /// <summary>
-    /// Deliberately NOT a substring of any log line this class emits — "P" is a substring of
-    /// "Plan reason-then-emit is ON…", so the default provider name would make the assertions below fail
-    /// on correct code and teach the wrong lesson.
-    /// </summary>
+    /// <summary>Deliberately not a substring of any log line this class emits, unlike the default provider name.</summary>
     private const string SecretProviderName = "my-secret-box";
 
     private (AgentPlanner Planner, AiProvider Provider, CapturingLogger Log) PlannerWithLog()
@@ -1010,11 +987,7 @@ public sealed class AgentPlannerTests
         Assert.DoesNotContain(release, m => m.Contains(SecretProviderName, StringComparison.Ordinal));
     }
 
-    /// <summary>
-    /// Captures every line with its level. <c>ReleaseVisible</c> is the subset a support log actually keeps:
-    /// <c>SensitiveDebug</c> is <c>[Conditional("DEBUG")]</c> and the test build IS Debug, so an unfiltered
-    /// "the analysis appears in no log line" assertion would be red against correct code.
-    /// </summary>
+    /// <summary><c>SensitiveDebug</c> lines are present in this Debug build, so only the release-visible subset can be asserted over.</summary>
     private sealed class CapturingLogger : ILogger<AgentPlanner>
     {
         private readonly List<(LogLevel Level, string Message)> _entries = new();

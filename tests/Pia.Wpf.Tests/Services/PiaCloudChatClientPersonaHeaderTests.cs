@@ -8,15 +8,11 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// Pins the <c>X-Pia-Persona</c> wire contract (handoff §2.4). This is the ONLY client-side assertion on
-/// the exact header name and value format, so both are spelled out literally here rather than derived —
-/// a rename on either side must fail this test, not silently drop persona scoping on the server.
-/// </summary>
+/// <summary>The only client-side assertion on the <c>X-Pia-Persona</c> header name and value format, so both
+/// are spelled out literally rather than derived.</summary>
 public class PiaCloudChatClientPersonaHeaderTests
 {
-    // The handoff's own example id, asserted as a literal string so the "D" Guid format the server's
-    // Guid.TryParse expects is pinned too.
+    // A literal string, so the "D" Guid format the server's Guid.TryParse expects is pinned too.
     private const string PersonaIdText = "6f1b3f2a-9c44-4d1e-8b77-2a0d5e91c4aa";
 
     private static readonly Guid PersonaId = Guid.Parse(PersonaIdText);
@@ -91,10 +87,7 @@ public class PiaCloudChatClientPersonaHeaderTests
         Assert.Equal(PersonaIdText, Assert.Single(values!));
     }
 
-    /// <summary>
-    /// Same shape as <c>PiaCloudChatClientReasoningTests.StubHandler</c>, plus a capture of the outgoing
-    /// request so the headers can be asserted after the call completes.
-    /// </summary>
+    /// <summary>Captures the outgoing request so the headers can be asserted after the call completes.</summary>
     private sealed class CapturingHandler : HttpMessageHandler
     {
         private readonly string _body;

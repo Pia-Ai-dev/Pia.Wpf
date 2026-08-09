@@ -7,11 +7,8 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// Batch 09's settings surface. The facts here are the ones a XAML parse test cannot reach: what the VM does
-/// with a status this build does not recognise, whether a refusal reaches the user, and whether a malformed
-/// time is refused instead of silently coerced into a schedule.
-/// </summary>
+/// <summary>The facts a XAML parse test cannot reach: an unrecognised status, a refusal reaching the user, and
+/// a malformed time refused rather than coerced into a schedule.</summary>
 public class ScheduledJobsSettingsViewModelTests
 {
     private static ILocalizationService Localizer()
@@ -29,8 +26,7 @@ public class ScheduledJobsSettingsViewModelTests
         CreateSut(params ScheduledJob[] jobs)
         => CreateSut(runs: null, jobs);
 
-    /// <param name="runs">T2-18's run-history source, or null for the pre-T2-18 surface (no history line) —
-    /// which is what every fact written before this axis existed means.</param>
+    /// <param name="runs">The run-history source, or null for a row with no history line.</param>
     private static (ScheduledJobsSettingsViewModel Vm, IScheduledJobService Jobs, IScheduledJobRunner Runner)
         CreateSut(IAgentRunService? runs, params ScheduledJob[] jobs)
     {
@@ -57,11 +53,8 @@ public class ScheduledJobsSettingsViewModelTests
         Status = status,
     };
 
-    /// <summary>
-    /// T2-18: the per-job run history reaches the row. The summary counts a CANCELLED firing with the failed
-    /// ones — the line answers "is this job working?", and a cancelled firing did not deliver either — while the
-    /// detail keeps every state apart.
-    /// </summary>
+    /// <summary>The summary counts a CANCELLED firing with the failed ones, since it did not deliver either,
+    /// while the detail keeps every state apart.</summary>
     [Fact]
     public async Task TheRunHistoryReachesTheRow_WithCancelledCountedAsNotOk()
     {
@@ -106,7 +99,7 @@ public class ScheduledJobsSettingsViewModelTests
         Assert.Empty(row.RecentRunsSummary);
     }
 
-    /// <summary>No run service at all — the pre-T2-18 row, which is what the other facts in this file build.</summary>
+    /// <summary>No run service at all, which is the row every other fact in this file builds.</summary>
     [Fact]
     public async Task WithNoRunService_TheRowCarriesNoHistory()
     {
@@ -120,9 +113,8 @@ public class ScheduledJobsSettingsViewModelTests
     [Fact]
     public async Task AnUnrecognisedStatus_RendersAsUnknownAndIsInert()
     {
-        // NOT defensive padding: ScheduledJobStatus crosses the sync wire as an int and SyncMapper casts it
-        // back with no Enum.IsDefined check, so a newer peer's ordinal really does arrive here. The enum's own
-        // doc requires any UI to tolerate it. The thing that must never happen is coercing it to Active.
+        // NOT defensive padding: ScheduledJobStatus crosses the sync wire as an int and SyncMapper casts it back
+        // with no Enum.IsDefined check, so a newer peer's ordinal really does arrive here.
         var job = NewJob((ScheduledJobStatus)7);
         var (vm, _, _) = CreateSut(job);
 
@@ -181,22 +173,8 @@ public class ScheduledJobsSettingsViewModelTests
         Assert.Equal("Settings_ScheduledJobs_RunNotOwner", vm.StatusMessage);
     }
 
-    /// <summary>
-    /// hermes #2 Q4's UI half. <c>RunNow_SurfacesTheRefusalReason_NotJustAFailure</c> above pins ONE arm
-    /// (<c>NotOwner</c>); the two this round added or changed were unpinned, and the switch has no
-    /// exhaustiveness guard, so both could be deleted with the suite green:
-    /// <list type="bullet">
-    /// <item><c>AlreadyRunning</c> falls through to <c>_ => RunNotFound</c> — the user who pressed Run now on
-    /// a job whose run is executing is told the job "no longer exists", which is the wrong refusal about a job
-    /// that both exists and is running.</item>
-    /// <item><c>Dispatched</c> now says "started", not "finished": the method returns as soon as the run has
-    /// been handed off, so the old key claimed an outcome that was still 45 minutes away.</item>
-    /// </list>
-    /// The three keys are asserted as DISTINCT as well as correct — a refusal that reads as some other
-    /// refusal is the failure here, and each key's translated text is <c>LocalizationTests</c>' business.
-    /// <para>Neutralize: delete the <c>AlreadyRunning</c> arm (or restore the <c>RunFinished</c> key) from
-    /// <c>ScheduledJobsSettingsViewModel.RunNowAsync</c> → red.</para>
-    /// </summary>
+    /// <summary>The three keys must be DISTINCT: <c>AlreadyRunning</c> falling through to the default
+    /// <c>NotFound</c> arm tells the user a job that exists and is running no longer exists.</summary>
     [Fact]
     public async Task RunNow_TellsTheTruthAboutADispatchAndAboutARunAlreadyGoing()
     {
@@ -268,10 +246,8 @@ public class ScheduledJobsSettingsViewModelTests
             kind: Arg.Any<ScheduledJobKind>(), quietOnSuccess: Arg.Any<bool>());
     }
 
-    /// <summary>
-    /// T2-18: the editor is ONE panel for create and edit, so the quiet checkbox has to reach BOTH service
-    /// calls. It reached only the update one at first, which silently created notifying jobs from a ticked box.
-    /// </summary>
+    /// <summary>The editor is ONE panel for create and edit, so the quiet checkbox has to reach BOTH service
+    /// calls or a ticked box silently creates notifying jobs.</summary>
     [Fact]
     public async Task CreatingAQuietJob_PassesTheFlagThrough()
     {
@@ -312,16 +288,15 @@ public class ScheduledJobsSettingsViewModelTests
             Arg.Any<RecurrenceType?>(), Arg.Any<TimeOnly?>(), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(),
             Arg.Any<int?>(), Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<string>>(),
             specificDate: target, kind: Arg.Any<ScheduledJobKind?>(),
-            // T2-18: the editor sends this on every save (its checkbox is part of the same form), so the
-            // matcher has to name it — NSubstitute matches on the whole argument list.
+            // The editor sends this on every save, so the matcher has to name it — NSubstitute matches on
+            // the whole argument list.
             quietOnSuccess: Arg.Any<bool?>());
     }
 
     [Fact]
     public async Task AFailedLoad_SaysSo_RatherThanRenderingAnEmptyList()
     {
-        // "You have no scheduled jobs" and "this could not be read" are different claims — the same
-        // distinction Batch 03's trace panel draws.
+        // "You have no scheduled jobs" and "this could not be read" are different claims.
         var service = Substitute.For<IScheduledJobService>();
         service.GetAllAsync().Returns<IReadOnlyList<ScheduledJob>>(_ => throw new InvalidOperationException("db"));
         var providers = Substitute.For<IProviderService>();

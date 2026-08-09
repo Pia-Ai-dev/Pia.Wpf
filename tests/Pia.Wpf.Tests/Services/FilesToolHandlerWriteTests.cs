@@ -63,7 +63,7 @@ public class FilesToolHandlerWriteTests : IDisposable
         return (T)p!.GetValue(obj)!;
     }
 
-    // ---- (c) atomic write preserves CRLF + BOM ----
+    // ---- atomic write preserves CRLF + BOM ----
 
     [Fact]
     public async Task Write_PreservesCrlfAndBom_OnExistingFile()
@@ -115,7 +115,7 @@ public class FilesToolHandlerWriteTests : IDisposable
         Assert.Equal("p\nq\nr", text); // CRLF input normalized down to the file's LF
     }
 
-    // ---- (a) missing content arg yields an error, not an empty file ----
+    // ---- missing content arg yields an error, not an empty file ----
 
     [Fact]
     public async Task Write_MissingContent_ReturnsError_NoFileWritten()
@@ -147,7 +147,7 @@ public class FilesToolHandlerWriteTests : IDisposable
         Assert.Equal(0, new FileInfo(Path.Combine(_root, "empty.txt")).Length);
     }
 
-    // ---- (a) internal-content guard fires ----
+    // ---- internal-content guard fires ----
 
     [Fact]
     public async Task Write_ReadFileEcho_IsRejected()
@@ -170,7 +170,7 @@ public class FilesToolHandlerWriteTests : IDisposable
         Assert.True(Prop<bool>(result!, "success"));
     }
 
-    // ---- (e) delta-filtered lint: new JSON error surfaced, pre-existing not ----
+    // ---- delta-filtered lint: new JSON error surfaced, pre-existing not ----
 
     [Fact]
     public async Task Write_NewJsonSyntaxError_IsSurfaced()
@@ -210,7 +210,7 @@ public class FilesToolHandlerWriteTests : IDisposable
         Assert.Null(Prop<string?>(result!, "lint"));
     }
 
-    // ---- (f) staleness guard sets _warning on an out-of-band edit ----
+    // ---- staleness guard sets _warning on an out-of-band edit ----
 
     [Fact]
     public async Task Write_OutOfBandEdit_SetsWarning()
@@ -394,12 +394,8 @@ public class FilesToolHandlerWriteTests : IDisposable
         Assert.Contains("Refusing to read", (string)result!);
     }
 
-    // End-to-end carve-out: drives the workdir exception through the REAL §0.3 resolver (which
-    // canonicalizes), not a pre-canonicalized unit input. With sandbox = %LOCALAPPDATA% (which
-    // contains both the blocked Pia data root and its carved-out workdir island), a write targeting
-    // the workdir must be ACCEPTED (viable write card, not a sensitive-path rejection) while a write
-    // to a Pia data sibling is still refused. Stops at prepare — never executes — so no real file is
-    // written into the user's workdir.
+    // Drives the workdir carve-out through the real resolver, which canonicalizes, rather than a
+    // pre-canonicalized input. Stops at prepare, so nothing lands in the user's workdir.
     [Fact]
     public async Task Write_IntoWorkdir_IsAllowed_ThroughRealResolver()
     {

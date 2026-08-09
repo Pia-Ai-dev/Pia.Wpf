@@ -10,19 +10,8 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// The Batch 03 store: Seq allocation and ordering, the per-run cap, the retention prune, and the two FK
-/// rules that make the trail outlive a replan while still dying with its chat.
-/// <para>
-/// Every run these tests emit against has a REAL chat + run row, because <c>AgentTimelineEvents.RunId</c> has
-/// an enforced FK: emitting against a bare <c>Guid.NewGuid()</c> would have its INSERT rejected, logged as a
-/// warning and dropped — producing a silently green "zero rows" test.
-/// </para>
-/// <para>
-/// <c>Emit</c> is fire-and-forget, so every test that emits and then observes (including tests that
-/// <i>mutate</i>, like the cascade and restart facts) awaits <c>DrainAsync</c> first. No sleeps.
-/// </para>
-/// </summary>
+/// <summary>Every run here needs a REAL chat + run row, because the enforced <c>RunId</c> FK would reject the
+/// INSERT and drop it — and <c>Emit</c> is fire-and-forget, so a test that observes drains first.</summary>
 public sealed class AgentTimelineServiceTests : IDisposable
 {
     private readonly string _tmpDir;
@@ -42,8 +31,6 @@ public sealed class AgentTimelineServiceTests : IDisposable
         _chats = new AssistantChatService(_ctx, _runs);
         _service = new AgentTimelineService(_ctx, NullLogger<AgentTimelineService>.Instance);
     }
-
-    // ---- T-STORE ----
 
     [Fact]
     public async Task Emit_ThenGetForRun_ReturnsTheRowsInSeqOrder()
@@ -73,10 +60,7 @@ public sealed class AgentTimelineServiceTests : IDisposable
             Assert.Equal(10, r.ArgsChars);
             Assert.Equal(20, r.ResultChars);
             Assert.Equal(3, r.DurationMs);
-            // 2 since T2-14 widened the row. Read from the row's OWN column, not from the record default, so
-            // this is the write-then-read fact: a row this build wrote stores 2. (A row an older build wrote
-            // stores 1 and still reads back as 1 — that half lives in
-            // SqliteContextTests.EnsureSchema_AddsTheCorrelationColumns_ToAPreT214Database.)
+            // Read from the row's OWN column rather than the record default, so this is a write-then-read fact.
             Assert.Equal(2, r.SchemaVersion);
         });
     }
@@ -138,9 +122,8 @@ public sealed class AgentTimelineServiceTests : IDisposable
         await _service.DrainAsync();
         _service.Dispose();
 
-        // Make the seed query FAIL for a resumed run, the way SQLITE_BUSY or an I/O error would: rename the
-        // table out from under a fresh instance. A rename (not a drop) is what keeps the parked segment's three
-        // rows alive, which is the whole point — the hazard is the resumed segment colliding with them.
+        // Make the seed query fail the way SQLITE_BUSY would. A rename, not a drop, so the parked segment's
+        // three rows stay alive for the resumed segment to collide with.
         Exec("ALTER TABLE AgentTimelineEvents RENAME TO AgentTimelineEvents_hidden;");
 
         using var second = new AgentTimelineService(_ctx, NullLogger<AgentTimelineService>.Instance);
@@ -155,9 +138,8 @@ public sealed class AgentTimelineServiceTests : IDisposable
 
         var rows = await second.GetForRunAsync(run.Id, ct);
 
-        // Caching the failed seed (NextSeq = 0) restarted the sequence at 1, so this row landed as Seq 2 —
-        // a DUPLICATE of the parked segment's second row, and ORDER BY Seq then interleaved the two segments
-        // by rowid tie-break. Retrying the aggregate is what makes it 4.
+        // Caching the failed seed restarted the sequence at 1, duplicating the parked segment's second row;
+        // retrying the aggregate is what makes this 4.
         Assert.Equal(new long[] { 1, 2, 3, 4 }, rows.Select(r => r.Seq).ToArray());
         Assert.Equal(rows.Count, rows.Select(r => r.Seq).Distinct().Count());
     }
@@ -185,8 +167,6 @@ public sealed class AgentTimelineServiceTests : IDisposable
         using var reader = new AgentTimelineService(_ctx, NullLogger<AgentTimelineService>.Instance);
         Assert.Empty(await reader.GetForRunAsync(run.Id, ct));
     }
-
-    // ---- T-CORRELATION (T2-14) ----
 
     [Fact]
     public async Task RoundTrips_ToolCallId_Round_RequestedAt_DecidedAt()
@@ -292,9 +272,8 @@ public sealed class AgentTimelineServiceTests : IDisposable
         var stepA = Guid.NewGuid();
         var stepB = Guid.NewGuid();
 
-        // Two steps AND a run-level row, so the grouped seed has to fold three groups: MAX across them for the
-        // run's Seq, SUM across them for the run's Count, and MAX(StepOrdinal) WITHIN each step group.
-        // A per-group Math.Max on the count would seed 3 (the largest group) instead of 7.
+        // Three groups for the seed to fold: MAX across them for the run's Seq, SUM for its Count, and
+        // MAX(StepOrdinal) WITHIN each step group — a per-group Math.Max on the count would seed 3, not 7.
         var a = new AgentTimelineScope(_service, run.Id, stepA);
         var b = new AgentTimelineScope(_service, run.Id, stepB);
         var runLevel = new AgentTimelineScope(_service, run.Id, stepId: null);
@@ -315,9 +294,8 @@ public sealed class AgentTimelineServiceTests : IDisposable
         Assert.Equal(10, rows.Count);
         // Run Seq continues (8, 9, 10) rather than restarting — folded as MAX across the groups.
         Assert.Equal(new long[] { 8, 9, 10 }, rows.TakeLast(3).Select(r => r.Seq).ToArray());
-        // Each STEP's ordinal continues at 4, reconstructed from MAX(StepOrdinal) per group. Reading
-        // MAX(Seq) per group instead would give 8/9 here, and restarting would give 1/1 — a collision with
-        // the parked segment's own first row.
+        // Each STEP's ordinal continues at 4, reconstructed from MAX(StepOrdinal) per group: MAX(Seq) per group
+        // would give 8/9 here, and restarting would collide with the parked segment's own first row.
         Assert.Equal(4, rows.Last(r => r.StepId == stepA).StepOrdinal);
         Assert.Equal(4, rows.Last(r => r.StepId == stepB).StepOrdinal);
         Assert.Null(rows[^1].StepOrdinal); // the resumed run-level row still gets none
@@ -340,8 +318,7 @@ public sealed class AgentTimelineServiceTests : IDisposable
         await _service.DrainAsync();
 
         // Age only the pruned run's rows, so the OTHER run's slot is cleared with its rows still in the table.
-        // The cutoff is an HOUR AGO, not UtcNow: the kept run's rows were just written, so a UtcNow cutoff
-        // would sweep them too and the test would be about nothing.
+        // The cutoff is an HOUR AGO, not UtcNow, which would sweep the kept run's just-written rows too.
         AgeRow(prunedRun.Id, DateTime.UtcNow - TimeSpan.FromDays(1));
         Assert.Equal(3, await _service.PruneOlderThanAsync(DateTime.UtcNow - TimeSpan.FromHours(1), ct));
 
@@ -357,15 +334,12 @@ public sealed class AgentTimelineServiceTests : IDisposable
         Assert.Equal(new long?[] { 1 }, prunedRows.Select(r => r.StepOrdinal).ToArray());
     }
 
-    /// <summary>One correlation-free tool call, for the tests whose subject is the ALLOCATION, not the
-    /// payload. The four correlation parameters are required at the call site by design, so a helper is how
-    /// those tests stay about one thing.</summary>
+    /// <summary>One correlation-free tool call, for the tests whose subject is the allocation, not the
+    /// payload.</summary>
     private static void EmitOne(AgentTimelineScope scope, string toolName) =>
         scope.Emit(ToolGateSurface.Unattended, toolName, ToolClass.Files, null,
             ToolGateDecision.GrantedByName, AgentTimelineOutcome.Ok,
             toolCallId: null, round: null, requestedAt: null, decidedAt: null);
-
-    // ---- T-CAP ----
 
     [Fact]
     public async Task PerRunCapIsEnforced_AndTheTruncationIsRecordedOnce()
@@ -433,8 +407,6 @@ public sealed class AgentTimelineServiceTests : IDisposable
         Assert.Single(rows, r => r.Kind == AgentTimelineEventKind.TraceTruncated);
     }
 
-    // ---- T-PRUNE ----
-
     [Fact]
     public async Task PruneOlderThan_DeletesByTheRowsOwnCreatedAt()
     {
@@ -481,8 +453,6 @@ public sealed class AgentTimelineServiceTests : IDisposable
         Assert.Equal(0, await _service.PruneOlderThanAsync(DateTime.UtcNow, ct));
     }
 
-    // ---- T-FK ----
-
     [Fact]
     public async Task DeletingTheChatCascadesTheTimelineAway()
     {
@@ -493,9 +463,8 @@ public sealed class AgentTimelineServiceTests : IDisposable
             scope.Emit(ToolGateSurface.Unattended, "write_file", ToolClass.Files, null, ToolGateDecision.GrantedByName, AgentTimelineOutcome.Ok, toolCallId: null, round: null, requestedAt: null, decidedAt: null);
         await _service.DrainAsync();
 
-        // MANDATORY control assertion, not belt-and-braces: Emit is fire-and-forget and the RunId FK is
-        // enforced, so an undrained queue would mean the delete cascades nothing AND the later insert fails
-        // the FK — zero rows, green, proving nothing.
+        // A control assertion, not belt-and-braces: with an undrained queue the delete would cascade nothing
+        // and the later insert would fail the FK — zero rows, green, proving nothing.
         Assert.Equal(3, CountRows());
 
         await _chats.DeleteAsync(run.ChatId, ct);
@@ -525,8 +494,6 @@ public sealed class AgentTimelineServiceTests : IDisposable
         Assert.Equal(3, rows.Count);
         Assert.All(rows, r => Assert.Equal(stepId, r.StepId)); // now dangling, deliberately
     }
-
-    // ---- fixture helpers ----
 
     private async Task<AgentRun> MakeRunAsync()
     {

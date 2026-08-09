@@ -34,8 +34,7 @@ public abstract class ToolPipelineTestBase
     private readonly ReminderToolHandler _reminderToolHandler;
     private readonly AiClientService _aiClientService;
 
-    // NOTE: Keep in sync with AssistantViewModel.BuildSystemPrompt (line 20).
-    // Copied here to avoid making the private method internal just for tests.
+    // Standalone prompt for this pipeline, deliberately NOT tracking production's composer.
     private static string BuildSystemPrompt() => $"""
         You are Pia, a helpful personal assistant. Provide concise, accurate, and friendly responses.
         The current date and time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}).
@@ -148,9 +147,8 @@ public abstract class ToolPipelineTestBase
             new AiProviderHandlerResolver(handlers),
             authService,
             NullLogger<AiClientService>.Instance,
-            // T1-2: the REAL throttle, not a stub — its default width (4) is wider than anything a pipeline
-            // test drives, so it queues nothing here, and using it means these tests exercise the permit
-            // bracket rather than routing around it.
+            // The real throttle, not a stub: its default width is wider than anything a pipeline test
+            // drives, so it queues nothing and the permit bracket still gets exercised.
             new ProviderRequestThrottle(settingsService, NullLogger<ProviderRequestThrottle>.Instance));
     }
 
