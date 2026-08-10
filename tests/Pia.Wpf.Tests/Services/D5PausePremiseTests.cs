@@ -543,6 +543,8 @@ public sealed class D5PausePremiseTests : IDisposable
         services.AddLogging();
         services.AddSingleton<IAiClientService>(ai);
         services.AddSingleton<IPluginService>(Substitute.For<IPluginService>());
+        // All-false: no fact in this file is about the standing tier, and the runner reads it for every call.
+        services.AddSingleton(Substitute.For<IToolPermissionService>());
         services.AddSingleton<IAssistantPromptComposer>(composer);
         services.AddSingleton<IPersonaService>(personas);
         services.AddSingleton<IProviderService>(providers);

@@ -25,10 +25,9 @@ public enum ActionCardCategory
     Mcp,
 
     /// <summary>
-    /// The built-in scheduled-job tools (plugin <c>scheduled-research</c>). APPENDED (Batch 04): these cards
-    /// used to fall through to <see cref="Mcp"/>, so a built-in scheduling tool was titled "External tool",
-    /// offered an "Always allow" button the gate then silently ignored, and had its key/value details parsed
-    /// as JSON. Not persisted — but appended anyway, because renumbering a UI enum is a bad habit to keep.
+    /// The built-in scheduled-job tools (plugin <c>scheduled-research</c>). Appended: these cards used to
+    /// fall through to <see cref="Mcp"/>, so a built-in scheduling tool was titled "External tool" and had
+    /// its key/value details parsed as JSON.
     /// </summary>
     Scheduled
 }
@@ -78,22 +77,6 @@ public partial class ActionCardInfo : ObservableObject
 
     /// <summary>The plugin that owns the gated tool (for the per-(PluginId, ToolName) grant). UI-carried only.</summary>
     public Guid PluginId { get; init; }
-
-    /// <summary>
-    /// Eligibility hint set by the builder from <c>IToolPermissionService.IsAutoApproveEligible</c>:
-    /// drives the triad-vs-pair button set only. The authoritative eligibility check is re-done at the
-    /// gate (never trusted from the card). Distinct from <see cref="IsDestructive"/> — design §8.
-    /// </summary>
-    public bool IsAutoApprovable { get; init; }
-
-    /// <summary>
-    /// hermes #15. May this card offer the SESSION tier ("allow until Pia closes")? Set by the builder from
-    /// <c>ToolAutonomy.IsSessionGrantOfferable</c> — the same function the gate mints with, so the offer and
-    /// the authority cannot drift. Independent of <see cref="IsAutoApprovable"/>: <c>write_file</c> is
-    /// session-grantable and never standing-grantable, which is the gap this tier exists to close, while a
-    /// delete-like or work-discarding tool is neither.
-    /// </summary>
-    public bool IsSessionGrantable { get; init; }
 
     /// <summary>True when the card was built pre-resolved by a standing grant (bypass render). UI-only.</summary>
     public bool IsAutoApproved { get; init; }
@@ -158,70 +141,41 @@ public partial class ActionCardInfo : ObservableObject
     public string AllowOnceLabel { get; init; } = string.Empty;
     public string AlwaysAllowLabel { get; init; } = string.Empty;
 
-    /// <summary>hermes #15. "Allow for this session" — set from <c>ActionCard_AllowForSession</c>.</summary>
+    /// <summary>"Allow for this session" — set from <c>ActionCard_AllowForSession</c>.</summary>
     public string AllowForSessionLabel { get; init; } = string.Empty;
 
     /// <summary>
-    /// The footer rendered as a shared <see cref="CardDecisionBar"/> (design §7/§8). Decline first, then
-    /// Allow once, then the two GRANT tiers in ascending durability — each keyed off its OWN offerability
-    /// flag, never off <see cref="IsDestructive"/>:
-    /// <list type="bullet">
-    /// <item><see cref="IsSessionGrantable"/> → "Allow for this session" (hermes #15, process-scoped)</item>
-    /// <item><see cref="IsAutoApprovable"/> → "Always allow" (persisted; an ineligible-yet-non-destructive
-    /// tool like <c>write_file</c> must NOT offer it)</item>
-    /// </list>
-    /// So: allowlisted/external → four buttons, <c>write_file</c> → three, a delete-like or work-discarding
-    /// tool → the pair [Decline (Default), Allow once (Danger when destructive, else Primary)].
+    /// The footer rendered as a shared <see cref="CardDecisionBar"/>: Decline, Allow once, then the two GRANT
+    /// tiers in ascending durability. Both tiers are on every card — the gate offers each for every tool — so
+    /// this is always the same four buttons.
     /// </summary>
-    public IReadOnlyList<DecisionButton> Decisions
-    {
-        get
+    public IReadOnlyList<DecisionButton> Decisions =>
+    [
+        new()
         {
-            var buttons = new List<DecisionButton>(4)
-            {
-                new()
-                {
-                    Label = DeclineLabel,
-                    Emphasis = DecisionEmphasis.Default,
-                    Command = DeclineCommand,
-                },
-                new()
-                {
-                    // Allow once stays Primary whenever a grant tier is offered beside it; on the bare pair it
-                    // carries the destructive styling. Keyed off IsAutoApprovable for that, unchanged from
-                    // design §8 — a session-grantable card is by construction not destructive, so the two
-                    // conditions cannot disagree in a way that would drop the Danger emphasis.
-                    Label = AllowOnceLabel,
-                    Emphasis = !IsAutoApprovable && IsDestructive
-                        ? DecisionEmphasis.Danger
-                        : DecisionEmphasis.Primary,
-                    Command = AllowOnceCommand,
-                },
-            };
-
-            if (IsSessionGrantable)
-            {
-                buttons.Add(new DecisionButton
-                {
-                    Label = AllowForSessionLabel,
-                    Emphasis = DecisionEmphasis.Default,
-                    Command = AllowForSessionCommand,
-                });
-            }
-
-            if (IsAutoApprovable)
-            {
-                buttons.Add(new DecisionButton
-                {
-                    Label = AlwaysAllowLabel,
-                    Emphasis = DecisionEmphasis.Default,
-                    Command = AlwaysAllowCommand,
-                });
-            }
-
-            return buttons;
-        }
-    }
+            Label = DeclineLabel,
+            Emphasis = DecisionEmphasis.Default,
+            Command = DeclineCommand,
+        },
+        new()
+        {
+            Label = AllowOnceLabel,
+            Emphasis = IsDestructive ? DecisionEmphasis.Danger : DecisionEmphasis.Primary,
+            Command = AllowOnceCommand,
+        },
+        new()
+        {
+            Label = AllowForSessionLabel,
+            Emphasis = DecisionEmphasis.Default,
+            Command = AllowForSessionCommand,
+        },
+        new()
+        {
+            Label = AlwaysAllowLabel,
+            Emphasis = DecisionEmphasis.Default,
+            Command = AlwaysAllowCommand,
+        },
+    ];
 
     public string ResolvedStatusText
     {
@@ -256,7 +210,7 @@ public partial class ActionCardInfo : ObservableObject
     }
 
     /// <summary>
-    /// hermes #15. Same first-press-wins guard and the same resolved state as the other two allow arms — the
+    /// Same first-press-wins guard and the same resolved state as the other two allow arms — the
     /// TIER is carried by the decision value alone, and only the gate may act on it (the card never touches
     /// the grant store: a Model cannot take a service, and the authoritative offerability check is the gate's).
     /// </summary>

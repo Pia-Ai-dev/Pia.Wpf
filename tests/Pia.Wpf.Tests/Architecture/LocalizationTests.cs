@@ -280,16 +280,16 @@ public class LocalizationTests
 
     /// <summary>The mapping lives in a helper, so this file's literal-key regexes cannot see the keys it returns.</summary>
     [Fact]
-    public void EveryToolGrantRestrictionReasonKeyResolvesInAllThreeLocales()
+    public void EveryToolGrantCautionKeyResolvesInAllThreeLocales()
     {
-        var keys = Enum.GetValues<ToolGrantRestriction>()
-            .Select(ToolCatalogRow.ReasonKeyFor)
+        var keys = Enum.GetValues<ToolGrantCaution>()
+            .Select(ToolCatalogRow.CautionKeyFor)
             .Where(k => k is not null)
             .Distinct()
             .ToList();
 
-        // One reason per restriction, less the offerable-at-both-tiers arm that shows no line at all.
-        Assert.Equal(Enum.GetValues<ToolGrantRestriction>().Length - 1, keys.Count);
+        // One note per caution, less the None arm — a tool with nothing to caution about shows no line at all.
+        Assert.Equal(Enum.GetValues<ToolGrantCaution>().Length - 1, keys.Count);
 
         var missing = new List<string>();
         foreach (var culture in new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") })

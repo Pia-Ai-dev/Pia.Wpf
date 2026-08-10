@@ -52,7 +52,7 @@ public sealed class ChatSessionSessionGrantTests
         _permissions.IsAutoApproveEligible("write_file").Returns(false);
         _permissions.IsGranted(FilesId, "write_file").Returns(false);
 
-        var card = NewCard("write_file", FilesId, sessionGrantable: true);
+        var card = NewCard("write_file", FilesId);
         card.AllowForSessionCommand.Execute(null);
 
         var autoApprovedFlags = ArrangeRoutes(pending, card);
@@ -78,11 +78,11 @@ public sealed class ChatSessionSessionGrantTests
     public async Task SessionGrant_TheBypassCard_SaysForThisSession_NotAlwaysAllow()
     {
         var pending = Pending("write_file", "files", FilesId);
-        var answered = NewCard("write_file", FilesId, sessionGrantable: true);
+        var answered = NewCard("write_file", FilesId);
         answered.AllowForSessionCommand.Execute(null);
         ArrangeRoutes(pending, answered);
 
-        var real = new ActionCardBuilder(_loc, _tokenMap, _permissions);
+        var real = new ActionCardBuilder(_loc, _tokenMap);
         ActionCardInfo? bypass = null;
         _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<ToolGateDecision?>(), Arg.Any<ToolClass?>())
             .Returns(ci => ci.ArgAt<ToolGateDecision?>(2) is { } tier
@@ -111,7 +111,7 @@ public sealed class ChatSessionSessionGrantTests
     public async Task SessionGrant_NeverPersistsAStandingGrant()
     {
         var pending = Pending("write_file", "files", FilesId);
-        var card = NewCard("write_file", FilesId, sessionGrantable: true);
+        var card = NewCard("write_file", FilesId);
         card.AllowForSessionCommand.Execute(null);
         ArrangeRoutes(pending, card);
         ArrangeStream(["write_file"]);
@@ -125,16 +125,16 @@ public sealed class ChatSessionSessionGrantTests
         Assert.Equal(ToolGateDecision.ApprovedForSession, Assert.Single(_timeline.Rows).Decision);
     }
 
-    /// <summary>The card is only a UI hint; the gate is the authority.</summary>
+    /// <summary>A delete-like tool takes the tier like any other now — it used to degrade to "execute once, mint
+    /// nothing", which withheld the WEAKER of two grants a user could make on the very same card.</summary>
     [Fact]
-    public async Task AllowForSession_OnANonOfferableTool_ExecutesOnce_AndMintsNothing()
+    public async Task AllowForSession_OnADeleteLikeTool_MintsTheGrant_AndCarriesTheSecondCall()
     {
         var executions = 0;
         var pending = new PluginToolCall("delete_file", FilesId, "files", "files: delete_file", null,
             () => { executions++; return Task.FromResult<object?>("done"); });
 
-        // A forged card: the real builder never offers the tier for a delete-like tool.
-        var card = NewCard("delete_file", FilesId, sessionGrantable: true);
+        var card = NewCard("delete_file", FilesId);
         card.AllowForSessionCommand.Execute(null);
         ArrangeRoutes(pending, card);
         ArrangeStream(["delete_file", "delete_file"]);
@@ -143,20 +143,21 @@ public sealed class ChatSessionSessionGrantTests
             Spec(), new RunContext("goal", RunProfile.Interactive), TestContext.Current.CancellationToken);
 
         Assert.Equal(2, executions);
-        _permissions.DidNotReceive().GrantForSession(Arg.Any<Guid>(), Arg.Any<string>());
+        _permissions.Received(1).GrantForSession(FilesId, "delete_file");
+        // The middle tier, still: nothing about it reaches AppSettings.
         await _permissions.DidNotReceive().GrantAsync(Arg.Any<Guid>(), Arg.Any<string>());
-        Assert.False(_session.IsGranted(FilesId, "delete_file"));
+        Assert.True(_session.IsGranted(FilesId, "delete_file"));
         Assert.Equal(
-            new[] { ToolGateDecision.ApprovedOnce, ToolGateDecision.ApprovedOnce },
+            new[] { ToolGateDecision.ApprovedForSession, ToolGateDecision.AutoApprovedSessionGrant },
             _timeline.Rows.Select(r => r.Decision).ToArray());
     }
 
     [Fact]
     public async Task SessionGrant_DoesNotCarryASiblingTool()
     {
-        var writeCard = NewCard("write_file", FilesId, sessionGrantable: true);
+        var writeCard = NewCard("write_file", FilesId);
         writeCard.AllowForSessionCommand.Execute(null);
-        var moveCard = NewCard("move_file", FilesId, sessionGrantable: true);
+        var moveCard = NewCard("move_file", FilesId);
         moveCard.DeclineCommand.Execute(null);
 
         var pendings = new Dictionary<string, PluginToolCall>(StringComparer.Ordinal)
@@ -209,7 +210,7 @@ public sealed class ChatSessionSessionGrantTests
         var produced = new List<ToolDecision>();
         foreach (var press in presses)
         {
-            var card = NewCard("write_file", FilesId, sessionGrantable: true);
+            var card = NewCard("write_file", FilesId);
             var wait = card.WaitForUserDecisionAsync();
             press(card);
             produced.Add(await wait);
@@ -243,14 +244,13 @@ public sealed class ChatSessionSessionGrantTests
         new(toolName, pluginId, pluginName, $"{pluginName}: {toolName}", null,
             () => Task.FromResult<object?>("done"));
 
-    private static ActionCardInfo NewCard(string toolName, Guid pluginId, bool sessionGrantable) => new()
+    private static ActionCardInfo NewCard(string toolName, Guid pluginId) => new()
     {
         Title = toolName,
         Summary = toolName,
         Category = ActionCardCategory.Files,
         ToolName = toolName,
         PluginId = pluginId,
-        IsSessionGrantable = sessionGrantable,
     };
 
     /// <summary>Returns the captured <c>autoApprovedAs</c> decision per Build call, in order — null on the prompted path.</summary>

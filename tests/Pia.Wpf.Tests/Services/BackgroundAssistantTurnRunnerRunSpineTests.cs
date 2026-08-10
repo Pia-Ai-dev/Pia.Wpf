@@ -55,7 +55,7 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
         ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();
 
         return new BackgroundAssistantTurnRunner(
-            ai, plugins, composer, personas, chats, titles, settings,
+            ai, plugins, Substitute.For<IToolPermissionService>(), composer, personas, chats, titles, settings,
             TokenMapFactory, runs, executingRuns ?? new ExecutingRunStore(),
             NullLogger<BackgroundAssistantTurnRunner>.Instance);
     }

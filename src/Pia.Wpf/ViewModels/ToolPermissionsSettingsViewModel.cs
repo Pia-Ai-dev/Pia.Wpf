@@ -5,7 +5,6 @@ using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Localization;
 using Pia.Models;
-using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Pia.ViewModels.Models;
@@ -145,18 +144,13 @@ public partial class ToolPermissionsSettingsViewModel : UiThreadViewModel
     }
 
     private ToolCatalogRow BuildCatalogRow(ToolCatalogEntry entry) =>
-        new(entry,
-            // Route-first, never the name-only guess: a renamed built-in must not become grantable as external.
-            ToolClassifier.Classify(entry.PluginName, entry.IsExternalRoute),
-            _permissions.IsAutoApproveEligible(entry.ToolName),
-            OnCatalogSessionToggled,
-            OnCatalogAlwaysToggled);
+        new(entry, OnCatalogSessionToggled, OnCatalogAlwaysToggled);
 
     private void NotifyCatalogLanguageChanged()
     {
         foreach (var row in ToolCatalog.SelectMany(group => group.Tools))
         {
-            row.NotifyReasonChanged();
+            row.NotifyCautionChanged();
         }
     }
 

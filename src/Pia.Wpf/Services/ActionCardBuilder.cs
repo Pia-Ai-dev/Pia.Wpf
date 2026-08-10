@@ -14,16 +14,13 @@ public sealed class ActionCardBuilder : IActionCardBuilder
 {
     private readonly ILocalizationService _localizationService;
     private readonly ITokenMapService _tokenMapService;
-    private readonly IToolPermissionService _permissions;
 
     public ActionCardBuilder(
         ILocalizationService localizationService,
-        ITokenMapService tokenMapService,
-        IToolPermissionService permissions)
+        ITokenMapService tokenMapService)
     {
         _localizationService = localizationService;
         _tokenMapService = tokenMapService;
-        _permissions = permissions;
     }
 
     public ActionCardInfo Build(
@@ -33,11 +30,9 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         ToolClass? toolClass = null)
     {
         var autoApproved = autoApprovedAs is not null;
-        // ONE class truth, shared with both gates (04 D4). The gate passes the class it derived from the
-        // plugin ROUTE; with no class supplied we fall back to the name-only guess this builder has always
-        // made (an unrecognised plugin name is presumed external). Before this, "scheduled-research" — a
-        // BUILT-IN plugin missing from the old switch — fell into the Mcp bucket, so its cards claimed to be
-        // external tools and offered a standing grant the gate then refused to honour.
+        // ONE class truth, shared with both gates. The gate passes the class it derived from the plugin
+        // ROUTE; with no class supplied we fall back to the name-only guess (an unrecognised plugin name is
+        // presumed external), which is how the built-in "scheduled-research" once claimed to be an MCP tool.
         var resolvedClass = toolClass ?? ToolClassifier.ClassifyPresumedExternal(pendingAction.PluginName);
         var category = resolvedClass switch
         {
@@ -53,17 +48,9 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             _ => ActionCardCategory.Mcp
         };
 
-        // Destructive is TOOLNAME-based, not the "delete" substring: git_switch/git_restore/git_stash
-        // carry no "delete" yet can shed uncommitted changes, and each needs its OWN warning. (git_stash
-        // "list" runs inline and never reaches a card, so marking the tool destructive here is safe.)
-        // hermes #15 moved the git trio into ToolPermissionService.IsWorkDiscarding so this card rule and
-        // ToolAutonomy.IsSessionGrantOfferable share ONE definition — a gate that could mint a session grant
-        // for a tool this card refuses to offer one for would be a gate wider than its own UI.
-        // T2-7b: the MCP server's own DestructiveHint widens `isDelete` here exactly as it does in the gate, so
-        // one declaration reaches all three things this line feeds — the warning text below, IsDestructive
-        // (which renders the warning at all) and IsAutoApprovable's `&& !isDestructive`. A card that offered a
-        // one-click standing grant for a tool the gate's floor will never auto-run is a button that does
-        // nothing.
+        // Red styling and warning copy only — not an authority rule, and no tier is withheld to signal it. The
+        // git trio sheds uncommitted work yet carries no "delete", and each needs its OWN warning; the trio
+        // lives in ToolPermissionService.IsWorkDiscarding so this card and the catalogue's caution agree.
         var isDelete = ToolPermissionService.IsDeleteLike(
             pendingAction.ToolName, pendingAction.ServerDeclaredDestructive);
         var isGitDestructive = ToolPermissionService.IsWorkDiscarding(pendingAction.ToolName);
@@ -123,30 +110,6 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             Category = category,
             ToolName = pendingAction.ToolName,
             PluginId = pendingAction.PluginId,
-            // The card and the gate now compute grantability with the SAME function (04 D4/D5), so the
-            // divergence between this line and ChatSession's gate cannot recur. MCP tools are grantable as a
-            // class: they aren't in the built-in safe allowlist, but an external tool is a specific named
-            // capability the user may choose to "always allow" per tool (unlike the catch-all write_file,
-            // which stays never-auto-approvable). A DESTRUCTIVE external tool is excluded — no one-click
-            // standing grant on a delete. The gate re-checks all of this.
-            //
-            // `&& !isDestructive` is the card's OWN, WIDER exclusion and must stay (04 D9): isDestructive also
-            // covers git_switch / git_restore / git_stash, which shed uncommitted work yet carry no "delete"
-            // and so are NOT IsDeleteLike. The shared resolver deliberately enforces only the narrower
-            // delete-like floor, so an MCP server exposing a tool literally named `git_switch` would otherwise
-            // be offered a one-click standing grant here. The asymmetry is intentional; the gate is the floor,
-            // the card is allowed to be stricter about what it OFFERS.
-            IsAutoApprovable = ToolAutonomy.IsStandingGrantOfferable(
-                    resolvedClass, pendingAction.ToolName, _permissions.IsAutoApproveEligible(pendingAction.ToolName),
-                    pendingAction.ServerDeclaredDestructive)
-                && !isDestructive,
-            // hermes #15. The SAME function the gate mints with (ToolAutonomy.IsSessionGrantOfferable, via
-            // ChatSession's `sessionOfferable` hoist), and no `&& !isDestructive` beside it: that rule already
-            // excludes both halves of isDestructive — IsDeleteLike and IsWorkDiscarding — so repeating the
-            // exclusion here would only invite the two to drift. Wider than IsAutoApprovable on purpose:
-            // write_file is the tool a user approves forty times a session and can never "always allow".
-            IsSessionGrantable = ToolAutonomy.IsSessionGrantOfferable(
-                pendingAction.ToolName, pendingAction.ServerDeclaredDestructive),
             IsAutoApproved = autoApproved,
             IsDestructive = isDestructive,
             WarningText = warningText,
@@ -165,7 +128,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         };
 
         // [ObservableProperty]-generated State is not init-settable; the auto-approved
-        // bypass card is returned pre-resolved (design §4/§7). A bypass card renders its diff
+        // bypass card is returned pre-resolved. A bypass card renders its diff
         // collapsed (re-expandable) — nobody asked to review it, so don't show a full-height diff.
         if (autoApproved)
         {

@@ -1178,37 +1178,17 @@ public sealed class ChatSession : IDisposable
                     _logger.LogInformation("User allowed {ToolName} action once", tool);
                     return await ExecuteAndReport(ToolGateDecision.ApprovedOnce, card.ShownAt, card.DecidedAt);
 
-                // THE MIDDLE TIER. Execute now and remember for the rest of this app session —
-                // nothing is written to AppSettings, so the grant dies with the process, or earlier if the
-                // user forgets it in settings.
-                //
-                // Defensive in the same shape the AlwaysAllow arm is, and it is the same class of hazard: the
-                // card is a UI hint and the gate is the authority, so a card that somehow surfaced the option
-                // for a delete-like or work-discarding tool executes ONCE and records nothing. The audit row
-                // then says ApprovedOnce, because that is what actually happened — writing ApprovedForSession
-                // for a grant that was not minted would make the timeline claim a tier the user does not have.
+                // THE MIDDLE TIER. Execute now and remember for the rest of this app session — nothing reaches
+                // AppSettings, so the grant dies with the process.
                 case ToolDecision.AllowForSession:
-                    if (gate.SessionOfferable)
-                    {
-                        _permissions.GrantForSession(pluginId, tool);
-                        _logger.LogInformation(
-                            "User granted session approval for {ToolName} (plugin {PluginId})", tool, pluginId);
-                        return await ExecuteAndReport(ToolGateDecision.ApprovedForSession, card.ShownAt, card.DecidedAt);
-                    }
-
+                    _permissions.GrantForSession(pluginId, tool);
                     _logger.LogInformation(
-                        "Session approval not offerable for {ToolName}; executing once instead", tool);
-                    return await ExecuteAndReport(ToolGateDecision.ApprovedOnce, card.ShownAt, card.DecidedAt);
+                        "User granted session approval for {ToolName} (plugin {PluginId})", tool, pluginId);
+                    return await ExecuteAndReport(ToolGateDecision.ApprovedForSession, card.ShownAt, card.DecidedAt);
 
                 case ToolDecision.AlwaysAllow:
-                    // Defensive: never grant a non-offerable tool even if its card somehow
-                    // surfaced the option — AlwaysAllow on a non-offerable tool degrades to
-                    // AllowOnce (execute once, persist no grant).
-                    if (gate.Offerable)
-                    {
-                        await _permissions.GrantAsync(pluginId, tool);
-                        _logger.LogInformation("User granted standing approval for {ToolName} (plugin {PluginId})", tool, pluginId);
-                    }
+                    await _permissions.GrantAsync(pluginId, tool);
+                    _logger.LogInformation("User granted standing approval for {ToolName} (plugin {PluginId})", tool, pluginId);
                     return await ExecuteAndReport(ToolGateDecision.ApprovedAlways, card.ShownAt, card.DecidedAt);
 
                 default:
@@ -1233,8 +1213,6 @@ public sealed class ChatSession : IDisposable
         Guid PluginId,
         string Tool,
         ToolClass ToolClass,
-        bool Offerable,
-        bool SessionOfferable,
         DateTime AskedAt,
         ToolGateVerdict Verdict,
         DateTime ResolvedAt);
@@ -1247,30 +1225,21 @@ public sealed class ChatSession : IDisposable
         ToolDecision Decision, bool Cancelled, DateTime ShownAt, DateTime? DecidedAt);
 
     /// <summary>
-    /// ONE resolver for both gates. The destructive-external FLOOR lives inside Resolve and is evaluated
-    /// before any policy or grant branch, so no policy value can reach an auto-approval past it — it used to be
-    /// an expression here and an independent one in BackgroundAssistantTurnRunner, with no shared chokepoint.
-    /// Grant lookups stay with their OWNERS and arrive as bools: the three sets involved use three
-    /// different comparers today. Eligibility comes from the SERVICE, never the card, so a forged/stale grant on
-    /// an ineligible tool (write_file, a destructive MCP tool) cannot auto-bypass.
+    /// ONE resolver, shared with the unattended and voice gates — it used to be an expression here and an
+    /// independent one in BackgroundAssistantTurnRunner, with no shared chokepoint. Grant lookups stay with
+    /// their OWNERS and arrive as bools, because the sets involved use three different comparers.
     /// </summary>
     private ToolGateResolution ResolveToolGate(PluginToolCall pendingAction, RunAutonomyPolicy? policy)
     {
         var pluginId = pendingAction.PluginId;
         var tool = pendingAction.ToolName;
+        // Resolve's allowlist arm fires on Voice only, so this is inert on THIS surface — passed anyway,
+        // like the session-grant lookup below, so the input stays an honest fact rather than a hardcoded false.
         var allowlisted = _permissions.IsAutoApproveEligible(tool);
         var toolClass = ToolClassifier.Classify(pendingAction.PluginName, IsExternalTool(tool));
-        // Hoisted beside the other two tool facts. False for every built-in handler's pending action
-        // (there is no server to have declared anything), true only where an MCP server sent
-        // ToolAnnotations.DestructiveHint.
+        // False for every built-in handler's pending action (there is no server to have declared anything),
+        // true only where an MCP server sent ToolAnnotations.DestructiveHint.
         var serverDestructive = pendingAction.ServerDeclaredDestructive;
-        // Carried because the AlwaysAllow branch needs the same answer the card's button set was built from:
-        // an AlwaysAllow on a non-offerable tool executes once and persists NO grant.
-        var offerable = ToolAutonomy.IsStandingGrantOfferable(toolClass, tool, allowlisted, serverDestructive);
-        // The same hoist for the same reason: the AllowForSession branch must mint a grant only
-        // where the card was entitled to offer one, and the card computes this with the SAME function
-        // (ActionCardBuilder.IsSessionGrantable), so the two cannot drift.
-        var sessionOfferable = ToolAutonomy.IsSessionGrantOfferable(tool, serverDestructive);
         // The policy question, bracketed. These two are RequestedAt/DecidedAt for the arm the policy
         // itself answered — the AutoRun bypass. They are usually EQUAL: Resolve is a few comparisons and
         // DateTime.UtcNow has ~1 ms resolution on Windows (the same reason Seq is not a timestamp), so nothing
@@ -1280,14 +1249,10 @@ public sealed class ChatSession : IDisposable
         var askedAt = DateTime.UtcNow;
         var verdict = ToolAutonomy.Resolve(new ToolGateInput(
             ToolGateSurface.Interactive, tool, toolClass,
-            // Interactively a server-declared-destructive external tool hits the floor, which on
-            // THIS surface suppresses auto-approval and still shows the card — a human may still click
-            // "Allow once", which is the historic semantics and is deliberately not tightened.
             ServerDeclaredDestructive: serverDestructive,
             IsAllowlisted: allowlisted,
-            // The process-scoped middle tier, read from the grant set's owner exactly like the
-            // persisted one below it. This is the lookup that makes the second call of a session-granted
-            // tool card-free; without it the tier records a grant nothing ever reads.
+            // The lookup that makes the second call of a session-granted tool card-free; without it the tier
+            // records a grant nothing ever reads.
             HasSessionGrant: _permissions.IsGrantedForSession(pluginId, tool),
             HasStandingGrant: _permissions.IsGranted(pluginId, tool),
             IsNamedGrant: false,
@@ -1300,7 +1265,7 @@ public sealed class ChatSession : IDisposable
             CanPark: false));
 
         return new ToolGateResolution(
-            pluginId, tool, toolClass, offerable, sessionOfferable, askedAt, verdict, DateTime.UtcNow);
+            pluginId, tool, toolClass, askedAt, verdict, DateTime.UtcNow);
     }
 
     /// <summary>
@@ -1364,15 +1329,11 @@ public sealed class ChatSession : IDisposable
 
     /// <summary>
     /// Is this an external/MCP tool? Re-derived from the plugin SERVICE at the gate — the same source the
-    /// unattended gate uses — never from a name pattern and never from the pending action, so a renamed or
-    /// spoofed tool cannot talk its way out of the destructive-external floor.
-    /// A fault returns <c>true</c>: fail-CLOSED for the FLOOR, but fail-OPEN for GRANTABILITY, since
-    /// <c>External</c> also makes a non-delete-like BUILT-IN grantable — so a fault on <c>write_file</c> would
-    /// let the card offer "Always allow". Stated rather than fixed, because the only reachable throw is a null
-    /// tool name, which cannot reach here, and a second condition beside the resolver in this file is the exact
-    /// shape the one-decision rule forbids. The try/catch itself is not decoration: this call used to be bare
-    /// while the headless twin already had the guard, so a throw failed the whole turn.
+    /// unattended gate uses — never from a name pattern and never from the pending action.
     /// </summary>
+    /// <remarks>A fault answers <c>true</c>, which only ever narrows this surface: the settings preset does
+    /// not cover External, so an auto-approval degrades to a card. The try/catch is not decoration — this
+    /// call used to be bare, so a throw failed the whole turn.</remarks>
     private bool IsExternalTool(string toolName)
     {
         try

@@ -13,7 +13,8 @@ namespace Pia.Services;
 /// Default <see cref="IBackgroundAssistantTurnRunner"/>. Reuses the same AI + plugin
 /// pipeline as an interactive chat turn (<see cref="IAiClientService.GetChatCompletionWithToolsAsync"/>
 /// + <see cref="IPluginService.RouteToolCallAsync"/>) but with no action-card UI: tool
-/// decisions are governed by the request's grant set instead of inline confirmation.
+/// decisions are governed by the request's grant set, the run's autonomy policy and the user's
+/// standing grants instead of inline confirmation.
 /// PII tokenization is applied via <see cref="TokenMapAmbient"/> for parity with
 /// interactive turns. Runs entirely off the UI thread.
 /// </summary>
@@ -21,6 +22,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
 {
     private readonly IAiClientService _aiClient;
     private readonly IPluginService _pluginService;
+    private readonly IToolPermissionService _permissions;
     private readonly IAssistantPromptComposer _promptComposer;
     private readonly IPersonaService _personaService;
     private readonly IAssistantChatService _chatService;
@@ -34,6 +36,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
     public BackgroundAssistantTurnRunner(
         IAiClientService aiClient,
         IPluginService pluginService,
+        IToolPermissionService permissions,
         IAssistantPromptComposer promptComposer,
         IPersonaService personaService,
         IAssistantChatService chatService,
@@ -46,6 +49,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
     {
         _aiClient = aiClient;
         _pluginService = pluginService;
+        _permissions = permissions;
         _promptComposer = promptComposer;
         _personaService = personaService;
         _chatService = chatService;
@@ -371,9 +375,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
     public sealed record ExchangeResult(string Visible, string? Thinking, UsageDetails? Usage, string? Model, int? Tokens);
 
     /// <summary>
-    /// Headless tool dispatch: reads (tools that return an immediate result) always run;
-    /// writes (tools that return a pending action) run only if explicitly granted to this job — with one
-    /// FLOOR no grant can lift: a destructive EXTERNAL (MCP) tool never runs unattended.
+    /// Headless tool dispatch: reads (tools that return an immediate result) always run; writes (tools that
+    /// return a pending action) run only if explicitly granted to this job.
     /// </summary>
     /// <param name="dispatch">What the tool LOOP knows and this gate cannot derive: the 1-based round,
     /// persisted on every row this gate writes. The interactive twin takes it for the same reason — a column
@@ -474,11 +477,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         ToolClass ToolClass, DateTime AskedAt, ToolGateVerdict Verdict, DateTime ResolvedAt);
 
     /// <summary>
-    /// ONE resolver, shared with the interactive gate. The destructive-external FLOOR is evaluated inside it
-    /// before any policy or grant branch, so it stays unliftable: there is no user here to confirm an
-    /// irreversible action against a third-party system, and an MCP tool's name and effect are server-defined,
-    /// so a grant list authored days earlier is not informed consent. Scoped to EXTERNAL tools only — an
-    /// explicit grant for a built-in delete is the user's own auditable decision and still executes.
+    /// ONE resolver, shared with the interactive gate. A tool named in this run's grant list executes here —
+    /// including a destructive one — because that list is the user's own auditable decision.
     /// </summary>
     private UnattendedGateResolution ResolveToolGate(
         PluginToolCall pending, HashSet<string> grantedWrites, RunAutonomyPolicy? policy,
@@ -490,17 +490,19 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         var askedAt = DateTime.UtcNow;
         var verdict = ToolAutonomy.Resolve(new ToolGateInput(
             ToolGateSurface.Unattended, pending.ToolName, toolClass,
-            // Where the server's declaration bites hardest: a declared-destructive external tool hits the FLOOR
-            // and is refused outright, with no park. There is no human here to weigh it against a card.
+            // The server's own declaration, which widens delete-likeness: the autonomy policy will not cover
+            // the tool and the park will not ask about it. A grant list that names it still runs it.
             ServerDeclaredDestructive: pending.ServerDeclaredDestructive,
-            // No allowlist unattended: there is no user to have curated it, and IToolPermissionService is
-            // injected nowhere in this file. That is today's behaviour restated, not a regression.
+            // No allowlist unattended: the curated set authorizes VOICE alone, and a hardcoded false keeps this
+            // surface off it even if that pin in Resolve ever moved.
             IsAllowlisted: false,
             // The process-scoped middle tier, arriving on the per-step store rather than read ambiently:
             // ambiently it would hand a CHILD run authority its parent narrowed away. A null store answers false.
             HasSessionGrant: approvals?.HasSessionGrant(pending.PluginId, pending.ToolName) == true,
-            // Persisted "always allow" grants are an INTERACTIVE concept and have never applied here.
-            HasStandingGrant: false,
+            // Ambient, unlike the session tier above, and the same lookup the interactive gate makes: a standing
+            // grant sits in no run's envelope, so NarrowForChild has nothing to narrow and a child run reads the
+            // identical persisted fact its parent does.
+            HasStandingGrant: _permissions.IsGranted(pending.PluginId, pending.ToolName),
             IsNamedGrant: grantedWrites.Contains(pending.ToolName),
             // The run-scoped denial list a tool-approval park's Deny wrote into the envelope; the
             // resolver's denial tier sits above the park, so a declined tool is refused with "adapt"
@@ -516,8 +518,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         return new UnattendedGateResolution(toolClass, askedAt, verdict, DateTime.UtcNow);
     }
 
-    /// <summary>Act on the verdict. No card arm: there is no interactive surface here, so the four outcomes are
-    /// execute, park, refuse-by-floor/denial, and the ungranted-write denial.</summary>
+    /// <summary>Act on the verdict. No card arm: there is no interactive surface here, so the outcomes are
+    /// execute, park, refuse-by-denial, and the ungranted-write denial.</summary>
     private async Task<object?> DispatchGateVerdictAsync(
         PluginToolCall pending, FunctionCallContent toolCall, ToolDispatchContext dispatch,
         UnattendedGateResolution gate, AgentTimelineScope? timeline, ToolApprovalStore? approvals, int? argsChars)
@@ -587,17 +589,6 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                        + "It did NOT run. Stop now and produce no further tool calls — the run will be "
                        + "resumed from this step once someone answers.";
 
-            case ToolGateOutcome.Refuse when verdict.Decision == ToolGateDecision.DeniedDestructiveFloor:
-                _logger.LogWarning("Background turn refused granted destructive external tool {ToolName}", pending.ToolName);
-                // The policy DID answer — with a refusal — so both instants are real.
-                timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
-                    verdict.Decision, AgentTimelineOutcome.NotExecuted,
-                    toolCallId: toolCall.CallId, round: dispatch.Round,
-                    requestedAt: askedAt, decidedAt: resolvedAt,
-                    argsChars);
-                return $"Denied: '{pending.ToolName}' is a destructive external (MCP) tool and never runs unattended, "
-                       + "even when granted. Do not retry.";
-
             // The run asked to use this tool, a person DECLINED it, and the resume carried that denial in
             // the envelope. The step re-runs from the top, so the model hears the answer and adapts — the
             // denial tier in Resolve refuses instead of parking, or this run would re-ask a settled question.
@@ -627,10 +618,11 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
 
     /// <summary>
     /// Is this an external/MCP tool? Re-derived from the plugin SERVICE at the gate — the same source the
-    /// interactive gate uses — never from a name pattern and never from the pending action, so a renamed or
-    /// spoofed tool cannot talk its way out of the destructive-external floor. A derivation fault fails
-    /// CLOSED (treat as external): the only consequence is extra friction on a granted built-in delete.
+    /// interactive gate uses — never from a name pattern and never from the pending action.
     /// </summary>
+    /// <remarks>A fault answers <c>true</c>, the restrictive direction here: External is what the session
+    /// tier's unattended exclusion and the park both refuse, so a fault can only cost the run a capability.
+    /// </remarks>
     private bool IsExternalTool(string toolName)
     {
         try

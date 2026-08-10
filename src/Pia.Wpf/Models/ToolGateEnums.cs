@@ -1,8 +1,8 @@
 namespace Pia.Models;
 
 /// <summary>
-/// The family a tool belongs to, for autonomy-policy purposes (Batch 04 D4/D15). PERSISTED — the
-/// <c>AgentRuns.PolicyJson</c> envelope stores class member NAMES, and Batch 03's timeline stores the ordinal
+/// The family a tool belongs to, for autonomy-policy purposes. PERSISTED — the
+/// <c>AgentRuns.PolicyJson</c> envelope stores class member NAMES and the timeline stores the ordinal
 /// — so this enum is APPEND-ONLY: never renumber, never reuse an ordinal, never rename a member. An ordinal
 /// or a name this build does not know reads back as <see cref="Unknown"/>, which
 /// <c>RunAutonomyPolicy.Covers</c> hardcodes to false.
@@ -27,12 +27,12 @@ public enum ToolClass
     /// <summary>
     /// The built-in ingest tool (plugin <c>ingest</c>). It runs INLINE and returns no pending action today,
     /// so it never reaches a gate or a card; the class exists so that if it ever does, it is not silently
-    /// treated as an external/MCP tool the way <c>scheduled-research</c> was (04 §0.6).
+    /// treated as an external/MCP tool the way <c>scheduled-research</c> was.
     /// </summary>
     Ingest = 8,
 }
 
-/// <summary>Which gate asked. PERSISTED by Batch 03 → APPEND-ONLY.</summary>
+/// <summary>Which gate asked. PERSISTED, so the ordinals are APPEND-ONLY.</summary>
 public enum ToolGateSurface
 {
     Unknown = 0,
@@ -47,7 +47,7 @@ public enum ToolGateSurface
     Voice = 3,
 }
 
-/// <summary>Why a tool ran or did not. PERSISTED by Batch 03 → APPEND-ONLY. See 04's D15 table.</summary>
+/// <summary>Why a tool ran or did not. PERSISTED, so the ordinals are APPEND-ONLY.</summary>
 public enum ToolGateDecision
 {
     /// <summary>Never written by this build; the render value for an ordinal an older/newer DB carries.</summary>
@@ -62,17 +62,19 @@ public enum ToolGateDecision
     /// <summary>The card was cancelled (new chat / retry / scope dispose) — NOT a user denial.</summary>
     CardCancelled = 7,
     DeniedNotGranted = 8,
+
+    /// <summary>No longer produced — kept because historic rows carry it and the ordinals cannot move.</summary>
     DeniedDestructiveFloor = 9,
     UnknownTool = 10,
 
     /// <summary>
     /// The curated additive allowlist authorized the call. Voice-mode only: the interactive surface requires
-    /// a standing grant as well, and the unattended surface has no allowlist at all (04 §0.3).
+    /// a standing grant as well, and the unattended surface has no allowlist at all.
     /// </summary>
     AutoApprovedAllowlist = 11,
 
     /// <summary>
-    /// hermes #16. The unattended gate did not execute the tool and did not refuse it either: the run PARKED
+    /// The unattended gate did not execute the tool and did not refuse it either: the run PARKED
     /// at <c>WaitingForInput</c> and a human was asked. Distinct from <see cref="DeniedNotGranted"/> on
     /// purpose — an audit row that said "denied" for a call that is still pending a decision would misreport
     /// the one gate outcome the user is expected to answer.
@@ -84,7 +86,7 @@ public enum ToolGateDecision
     ParkedForApproval = 12,
 
     /// <summary>
-    /// hermes #15. A SESSION grant the user clicked earlier in this app session authorized the call — the
+    /// A SESSION grant the user clicked earlier in this app session authorized the call — the
     /// middle tier between <see cref="ApprovedOnce"/> and the persisted
     /// <see cref="AutoApprovedStandingGrant"/>. Its own ordinal rather than a reuse of the standing one,
     /// because the two answer a question a user reading the timeline actually asks: a standing grant is in
@@ -93,7 +95,7 @@ public enum ToolGateDecision
     AutoApprovedSessionGrant = 13,
 
     /// <summary>
-    /// hermes #15. The user pressed "Allow for this session" on the card, i.e. the row that RECORDS the grant
+    /// The user pressed "Allow for this session" on the card, i.e. the row that RECORDS the grant
     /// the <see cref="AutoApprovedSessionGrant"/> rows below it then cite. Distinct from
     /// <see cref="ApprovedAlways"/> for the same reason: the audit trail must say which tier was chosen, or a
     /// user cannot tell from it whether a permanent grant exists.
@@ -126,8 +128,8 @@ public enum ToolGateOutcome
     Refuse,
 
     /// <summary>
-    /// hermes #16. Do not execute, and do not refuse: PARK the run at <c>WaitingForInput</c> and ask a human,
-    /// reusing the Batch 06 Continue-card machinery. Only reachable on <see cref="ToolGateSurface.Unattended"/>
+    /// Do not execute, and do not refuse: PARK the run at <c>WaitingForInput</c> and ask a human,
+    /// reusing the Continue-card machinery. Only reachable on <see cref="ToolGateSurface.Unattended"/>
     /// and only when the caller passed <c>CanPark</c> — every other surface and every caller that cannot park
     /// still gets <see cref="Refuse"/>, so a gate that never learns about this member keeps today's behaviour.
     /// </summary>

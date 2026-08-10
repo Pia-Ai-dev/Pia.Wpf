@@ -431,8 +431,7 @@ public class ChatSessionStateMachineTests
     [Fact]
     public async Task McpTool_Ungranted_IsGated_ShownNotAutoRun_ThenAlwaysAllowPersistsGrant()
     {
-        // An interactive MCP call is not auto-run. MCP is grantable as a class, so "Always allow" persists a
-        // standing grant — unlike write_file.
+        // An interactive MCP call is not auto-run; "Always allow" then persists a standing grant.
         var executed = false;
         var mcpPluginId = Guid.NewGuid();
         var pending = new PluginToolCall(
@@ -445,7 +444,7 @@ public class ChatSessionStateMachineTests
 
         _plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
             .Returns(((object?)null, (PluginToolCall?)pending));
-        _plugins.IsMcpTool("mcp_search").Returns(true);        // external tool → grantable
+        _plugins.IsMcpTool("mcp_search").Returns(true);        // resolves the class to External
         _permissions.IsAutoApproveEligible("mcp_search").Returns(false); // not a built-in
         _permissions.IsGranted(mcpPluginId, "mcp_search").Returns(false); // no standing grant yet
 
@@ -617,11 +616,11 @@ public class ChatSessionStateMachineTests
         Assert.Contains(card, owningMessage!.ActionCards);
     }
 
+    /// <summary>An "Always" the user set on the Tool access page reaches an MCP delete in the foreground:
+    /// no card, no WaitingForTool.</summary>
     [Fact]
-    public async Task GrantedDestructiveMcpTool_IsNotAutoApproved_StillPrompts()
+    public async Task GrantedDestructiveMcpTool_IsAutoApproved_WithNoCard()
     {
-        // The interactive gate is eligible = IsAutoApproveEligible || (IsMcpTool && !IsDeleteLike); dropping the
-        // !IsDeleteLike term would silently auto-run a granted MCP delete in the foreground.
         var executed = false;
         var mcpPluginId = Guid.NewGuid();
         var pending = new PluginToolCall(
@@ -651,22 +650,17 @@ public class ChatSessionStateMachineTests
         var session = CreateSession();
         var states = new List<ChatState>();
         session.StateChanged += (_, e) => states.Add(e.NewState);
-        var run = session.RunTurnAsync(ToolRequest(session), CancellationToken.None);
 
-        await WaitUntilAsync(() => card.IsPending);
-        Assert.False(executed);                                   // the grant did NOT bypass the gate
-        Assert.Equal(ChatState.WaitingForTool, session.State);    // the user is being asked
-        Assert.Contains(ChatState.WaitingForTool, states);
+        await session.RunTurnAsync(ToolRequest(session), CancellationToken.None);
 
-        card.DeclineCommand.Execute(null);
-        await run;
-
-        Assert.False(executed);
-        await _permissions.DidNotReceive().GrantAsync(Arg.Any<Guid>(), Arg.Any<string>());
+        Assert.True(executed);
+        Assert.DoesNotContain(ChatState.WaitingForTool, states);
     }
 
+    /// <summary>A standing grant now needs no offerability test, so "Always allow" on the card persists one
+    /// for a tool that used to degrade silently to Allow once.</summary>
     [Fact]
-    public async Task ForgedGrant_OnIneligibleTool_StillPrompts_AndDoesNotGrant()
+    public async Task AlwaysAllow_OnAPreviouslyIneligibleTool_PersistsTheGrant()
     {
         var executed = false;
         var pending = new PluginToolCall(
@@ -680,10 +674,8 @@ public class ChatSessionStateMachineTests
         _plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
             .Returns(((object?)null, (PluginToolCall?)pending));
 
-        // Forged/stale grant: IsGranted is true, but the tool is NOT eligible. The gate
-        // must re-check eligibility and refuse to auto-bypass.
         _permissions.IsAutoApproveEligible("write_file").Returns(false);
-        _permissions.IsGranted(BuiltInPluginDefaults.FilesPluginId, "write_file").Returns(true);
+        _permissions.IsGranted(BuiltInPluginDefaults.FilesPluginId, "write_file").Returns(false);
 
         var card = NewCard("write_file", BuiltInPluginDefaults.FilesPluginId);
         _cards.Build(Arg.Any<PluginToolCall>(), Arg.Any<bool>(), Arg.Any<ToolGateDecision?>(), Arg.Any<ToolClass?>()).Returns(card);
@@ -706,17 +698,17 @@ public class ChatSessionStateMachineTests
         Assert.Equal(ChatState.WaitingForTool, session.State);
         Assert.Contains(ChatState.WaitingForTool, states);
 
-        // Even clicking "Always allow" on an ineligible tool degrades to AllowOnce (no grant).
         card.AlwaysAllowCommand.Execute(null);
         await run;
 
-        Assert.True(executed); // degraded to AllowOnce: executed once
-        await _permissions.DidNotReceive().GrantAsync(Arg.Any<Guid>(), Arg.Any<string>());
+        Assert.True(executed);
+        await _permissions.Received(1).GrantAsync(BuiltInPluginDefaults.FilesPluginId, "write_file");
     }
 
-    // The guard fails CLOSED (treat as external), so a delete-like tool is still not auto-approved.
+    /// <summary>The fault answers "external", which no longer withdraws anything interactively — the grant is
+    /// honoured and, above all, the turn does not die in the tool loop.</summary>
     [Fact]
-    public async Task WhenMcpDerivationThrows_TheTurnSurvives_AndTheToolIsTreatedAsExternal()
+    public async Task WhenMcpDerivationThrows_TheTurnSurvives_AndTheGrantIsStillHonoured()
     {
         var executed = false;
         var pluginId = BuiltInPluginDefaults.FilesPluginId;
@@ -732,8 +724,6 @@ public class ChatSessionStateMachineTests
             .Returns(((object?)null, (PluginToolCall?)pending));
         _plugins.IsMcpTool("delete_file").Returns(_ => throw new InvalidOperationException("route table exploded"));
 
-        // Even a (forged) standing grant must not auto-run it: fail-closed makes the class External, and a
-        // delete-like external tool is never auto-approved.
         _permissions.IsAutoApproveEligible("delete_file").Returns(false);
         _permissions.IsGranted(pluginId, "delete_file").Returns(true);
 
@@ -748,19 +738,11 @@ public class ChatSessionStateMachineTests
             .Returns(ci => StreamWithToolCall(ci.ArgAt<ToolCallHandler?>(3)));
 
         var session = CreateSession();
-        var run = session.RunTurnAsync(ToolRequest(session), CancellationToken.None);
-
-        await WaitUntilAsync(() => card.IsPending);
-        Assert.False(executed);                                   // not auto-approved
-        Assert.Equal(ChatState.WaitingForTool, session.State);
-
-        card.AlwaysAllowCommand.Execute(null);
-        await run;
+        await session.RunTurnAsync(ToolRequest(session), CancellationToken.None);
 
         // The turn completed instead of throwing out of the tool loop.
         Assert.NotEqual(ChatState.Error, session.State);
-        Assert.True(executed);                                    // degraded to AllowOnce
-        await _permissions.DidNotReceive().GrantAsync(Arg.Any<Guid>(), Arg.Any<string>());
+        Assert.True(executed);
     }
 
     private static ActionCardInfo NewCard(string toolName, Guid pluginId) => new()

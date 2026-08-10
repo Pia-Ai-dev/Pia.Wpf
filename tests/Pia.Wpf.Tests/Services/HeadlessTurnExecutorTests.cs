@@ -76,7 +76,8 @@ public sealed class HeadlessTurnExecutorTests
         // The executor uses this runner only as its per-step RunExchangeAsync engine, never RunAsync, so the
         // executing-run bracket is not exercised here — a throwaway index keeps the composition explicit.
         var engine = new BackgroundAssistantTurnRunner(
-            ai, plugins, composer, personas, chats, titles, settings, TokenMapFactory, runs,
+            ai, plugins, Substitute.For<IToolPermissionService>(), composer, personas, chats, titles,
+            settings, TokenMapFactory, runs,
             new ExecutingRunStore(), NullLogger<BackgroundAssistantTurnRunner>.Instance);
         var executor = new HeadlessTurnExecutor(
             engine, chats, settings, personas, providers, composer, titles, TokenMapFactory,
@@ -204,7 +205,8 @@ public sealed class HeadlessTurnExecutorTests
         ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();
 
         var engine = new BackgroundAssistantTurnRunner(
-            ai, plugins, composer, personas, chats, titles, settings, TokenMapFactory, runs,
+            ai, plugins, Substitute.For<IToolPermissionService>(), composer, personas, chats, titles,
+            settings, TokenMapFactory, runs,
             new ExecutingRunStore(), NullLogger<BackgroundAssistantTurnRunner>.Instance);
         var executor = new HeadlessTurnExecutor(
             engine, chats, settings, personas, providers, composer, titles, TokenMapFactory,
@@ -286,7 +288,8 @@ public sealed class HeadlessTurnExecutorTests
         ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();
 
         var engine = new BackgroundAssistantTurnRunner(
-            ai, plugins, composer, personas, chats, titles, settings, TokenMapFactory, runs,
+            ai, plugins, Substitute.For<IToolPermissionService>(), composer, personas, chats, titles,
+            settings, TokenMapFactory, runs,
             new ExecutingRunStore(), NullLogger<BackgroundAssistantTurnRunner>.Instance);
         var executor = new HeadlessTurnExecutor(
             engine, chats, settings, personas, providers, composer, titles, TokenMapFactory,
@@ -359,7 +362,8 @@ public sealed class HeadlessTurnExecutorTests
         ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();
 
         var engine = new BackgroundAssistantTurnRunner(
-            ai, plugins, composer, personas, chats, titles, settings, TokenMapFactory, runs,
+            ai, plugins, Substitute.For<IToolPermissionService>(), composer, personas, chats, titles,
+            settings, TokenMapFactory, runs,
             new ExecutingRunStore(), NullLogger<BackgroundAssistantTurnRunner>.Instance);
         var executor = new HeadlessTurnExecutor(
             engine, chats, settings, personas, providers, composer, titles, TokenMapFactory,
@@ -570,7 +574,8 @@ public sealed class HeadlessTurnExecutorTests
             ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();
 
             var engine = new BackgroundAssistantTurnRunner(
-                Ai, plugins, Composer, Personas, Chats, titles, SettingsService, TokenMapFactory, Runs,
+                Ai, plugins, Substitute.For<IToolPermissionService>(), Composer, Personas, Chats,
+                titles, SettingsService, TokenMapFactory, Runs,
                 new ExecutingRunStore(), NullLogger<BackgroundAssistantTurnRunner>.Instance);
             return new HeadlessTurnExecutor(
                 engine, Chats, SettingsService, Personas, Providers, Composer, titles, TokenMapFactory,

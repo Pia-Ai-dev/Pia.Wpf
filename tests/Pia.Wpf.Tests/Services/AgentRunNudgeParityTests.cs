@@ -121,7 +121,8 @@ public sealed class AgentRunNudgeParityTests
             ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();
 
             var engine = new BackgroundAssistantTurnRunner(
-                Ai, plugins, composer, personas, Chats, titles, settings, TokenMapFactory, Runs,
+                Ai, plugins, Substitute.For<IToolPermissionService>(), composer, personas, Chats,
+                titles, settings, TokenMapFactory, Runs,
                 new ExecutingRunStore(), NullLogger<BackgroundAssistantTurnRunner>.Instance);
             Executor = new HeadlessTurnExecutor(
                 engine, Chats, settings, personas, providers, composer, titles, TokenMapFactory,

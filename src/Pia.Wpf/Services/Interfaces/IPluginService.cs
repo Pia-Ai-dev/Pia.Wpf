@@ -19,13 +19,14 @@ public interface IPluginService
     IReadOnlyList<IPluginToolHandler> ActiveHandlers { get; }
     IList<AITool> GetAllTools();
 
-    /// <summary>Every tool of every ENABLED plugin, with the two facts a grant offer needs: route and hint.</summary>
+    /// <summary>Every tool of every ENABLED plugin. Of these the grant offers read only the server's
+    /// destructive hint; the route is carried for other consumers.</summary>
     IReadOnlyList<ToolCatalogEntry> GetToolCatalog();
 
     /// <summary>
     /// True if <paramref name="toolName"/> routes to an MCP handler. MCP tools return an immediate
     /// result and so bypass the unattended write-gate; they are disabled for headless/scheduled runs
-    /// this milestone (§17.4 / G-2). The gate fix for MCP writes is Phase 2.
+    /// this milestone. The gate fix for MCP writes is Phase 2.
     /// </summary>
     bool IsMcpTool(string toolName);
     string GetCombinedSystemPromptAdditions();

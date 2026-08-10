@@ -110,9 +110,8 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
             Details: toolCall.Arguments is { Count: > 0 }
                 ? JsonSerializer.Serialize(toolCall.Arguments)
                 : null,
-            // T2-7b: the server's own destructive declaration, read off the tool the lookup above resolved.
-            // This is the ONLY producer of the flag — everything downstream (the gate's floor, the card's
-            // warning, both grant-offer rules) reads it from the record.
+            // The ONLY producer of the flag — the card's warning and every rule that reads delete-likeness
+            // take it from this record.
             ServerDeclaredDestructive: IsServerDeclaredDestructive(tool.ProtocolTool.Annotations),
             Execute: async () =>
             {
@@ -148,37 +147,23 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
     }
 
     /// <summary>
-    /// T2-7b — does the server DECLARE this tool destructive? Consumes
-    /// <c>ToolAnnotations.DestructiveHint</c>/<c>ReadOnlyHint</c> in the MORE-RESTRICTED DIRECTION ONLY.
-    /// <para>
-    /// The direction is not a preference: the MCP type's own remarks say "clients should never make tool use
-    /// decisions based on <c>ToolAnnotations</c> received from untrusted servers", and every MCP server here is
-    /// a stdio subprocess running with full user privileges outside <c>SafeFolderPath</c> entirely
-    /// (<c>17-trust-model.md</c> §2). A hint that can only ever ADD friction is safe to believe; one that could
-    /// remove it would let a server declare itself safe.
-    /// </para>
-    /// <para>
-    /// <b>Only an EXPLICIT <c>DestructiveHint == true</c> counts — deliberately NOT the spec's
-    /// "null ⇒ assume true" default.</b> Most servers send no annotations at all, so <c>Annotations</c> is null
-    /// and every hint reads null; honouring the spec default here would reclassify EVERY tool of EVERY
-    /// annotation-less server as delete-like, which refuses all unattended MCP outright
-    /// (<c>ToolAutonomy</c>'s floor) and suppresses interactive auto-approval across the board. That is a
-    /// different and much larger policy decision than "consume the hint", and it would make the safe direction
-    /// unusable in practice.
-    /// </para>
-    /// <para>
-    /// <b><c>ReadOnlyHint</c> is read and cannot move this answer.</b> That is the consumption, not an omission:
-    /// <c>false</c> ("I modify my environment") tells us nothing new — Pia already defers EVERY MCP call to the
-    /// write gate — and <c>true</c> is precisely the self-declaration of safety that must not be honoured, so a
-    /// server sending <c>readOnlyHint: true</c> beside a destructive name or a <c>destructiveHint: true</c>
-    /// changes nothing. Pinned by <c>McpToolAnnotationHintTests</c> rather than left to this paragraph.
-    /// </para>
+    /// Does the server DECLARE this tool destructive? The hint widens
+    /// <c>ToolPermissionService.IsDeleteLike</c>, which excludes the tool from the session tier, from the
+    /// autonomy policy and from the unattended park. It cannot narrow anything.
     /// </summary>
+    /// <remarks>
+    /// That direction is not a preference: the MCP type's own remarks warn against making tool-use decisions on
+    /// annotations from untrusted servers, and every MCP server here is a stdio subprocess with full user
+    /// privileges. Only an EXPLICIT <c>DestructiveHint == true</c> counts, deliberately not the spec's
+    /// "null ⇒ assume true" default — most servers send no annotations, so that default would reclassify every
+    /// tool of every annotation-less server as destructive. <c>ReadOnlyHint</c> is read and cannot move this
+    /// answer, since <c>true</c> is exactly the self-declaration of safety that must not be honoured.
+    /// </remarks>
     internal static bool IsServerDeclaredDestructive(ToolAnnotations? annotations) =>
         annotations?.DestructiveHint == true;
 
-    /// <summary>The same answer as above, per tool name and BEFORE any call, so a grant surface cannot offer a
-    /// tier the gate's floor would then ignore. An unknown name reads as "no hint", never as a declaration.</summary>
+    /// <summary>The same answer per tool name and BEFORE any call, so a grant surface can narrow what it offers
+    /// to match. An unknown name reads as "no hint", never as a declaration.</summary>
     public bool DeclaresDestructive(string toolName) =>
         IsServerDeclaredDestructive(
             _tools.FirstOrDefault(t => t.Name == toolName)?.ProtocolTool.Annotations);

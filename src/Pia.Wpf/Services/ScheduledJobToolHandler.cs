@@ -40,7 +40,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
                 "Parse the user's natural language request into structured fields. " +
                 "Examples: 'every weekday at 8am check Tesla stock news' -> create 5 separate Weekly jobs (Mon-Fri) since 'weekday' is not a single recurrence type. " +
                 "'every Monday research crypto trends' -> recurrence=Weekly, dayOfWeek=Monday, timeOfDay=08:00. " +
-                "The background turn may use read-only tools freely. Write tools are DENIED unless the user explicitly grants them: pass their EXACT tool names in grantedTools (comma-separated). Grantable write tools include: create_object/update_object/append_to_list/delete_object (memory), create_todo/update_todo/complete_todo/delete_todo (todos), write_file/delete_file (files). Only grant writes the user clearly asked for. Destructive tools from EXTERNAL (MCP) plugins can never be granted to a scheduled job — they are stripped from the grant list. " +
+                "The background turn may use read-only tools freely. Write tools are DENIED unless the user explicitly grants them: pass their EXACT tool names in grantedTools (comma-separated). Grantable write tools include: remember/forget (memory), create_todo/update_todo/complete_todo/delete_todo (todos), write_file/delete_file (files). Only grant writes the user clearly asked for. Presumed-destructive tool NAMES from EXTERNAL (MCP) plugins are stripped from the grant list at creation. " +
                 "providerName is optional - if omitted, the provider mapped to Assistant mode at fire time is used. " +
                 "KIND: 'research' (default) runs the query once at fire time and saves a summary as a chat; 'agent' runs a multi-step agent task that plans and can use granted write tools to actually carry out work. If the user has NOT made clear which of the two they want, do NOT call this tool - ask a single clarifying question (e.g. 'Should this just research and summarize, or actually carry out the task?') and call once they answer."),
 
@@ -325,7 +325,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         [Description("Day of month for Monthly/Yearly recurrence (1-31)")] string? dayOfMonth = null,
         [Description("Month for Yearly recurrence (1-12)")] string? month = null,
         [Description("Specific date for Once recurrence in yyyy-MM-dd format")] string? specificDate = null,
-        [Description("Comma-separated EXACT write-tool names to allow at fire time (e.g. 'create_object,create_todo,write_file'). Omit for read-only ('agent' jobs still get write_file). Only grant writes the user explicitly asked for. Destructive external (MCP) tool names are refused.")] string? grantedTools = null,
+        [Description("Comma-separated EXACT write-tool names to allow at fire time (e.g. 'create_todo,write_file'). Omit for read-only ('agent' jobs still get write_file). Only grant writes the user explicitly asked for. Destructive external (MCP) tool names are refused.")] string? grantedTools = null,
         [Description("Optional substring of an AI provider name to pin")] string? providerName = null,
         [Description("Job type: 'research' (default) = one-shot query saved as a chat; 'agent' = a multi-step agent task that can use granted write tools. If the user hasn't made the type clear, ASK before calling.")] string? kind = null) => "";
 
@@ -358,16 +358,15 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
     private static string DescribeRejectedGrants(List<string> rejected)
         => rejected.Count == 0
             ? string.Empty
-            : $" NOTE: refused these grants — {string.Join(", ", rejected)} — because a destructive external "
-              + "(MCP) tool can never be granted to an unattended job. Tell the user; do not retry.";
+            : $" NOTE: refused these grants — {string.Join(", ", rejected)} — because you may not put a "
+              + "destructive third-party tool into a job's grant list. Tell the user; do not retry.";
 
     /// <summary>
-    /// Parse the comma-separated grant list and STRIP every presumed-external destructive name (B2): a
-    /// scheduled job must not be able to carry a standing grant for an irreversible third-party action into
-    /// an unattended fire, so the escalation is refused where it would be created rather than only at the
-    /// gate. Our own destructive tools (delete_file, delete_todo, …) are untouched — granting those is the
-    /// user's explicit, auditable choice. Returns the accepted list plus whatever was rejected, so the
-    /// approval card and the tool result can both tell the truth about the grant set that will be used.
+    /// Parse the comma-separated grant list and STRIP every presumed-external destructive name. The gate
+    /// honours whatever this list names, so a MODEL-authored grant for an irreversible third-party action is
+    /// refused where it is written rather than at fire time. Our own destructive tools are untouched —
+    /// granting those is the user's explicit, auditable choice. Rejects come back too, so the approval card
+    /// and the tool result can both tell the truth about the grant set that will be used.
     /// </summary>
     private static (List<string> Accepted, List<string> Rejected) ParseGrantedTools(string? csv)
     {

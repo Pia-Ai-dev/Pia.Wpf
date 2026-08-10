@@ -20,8 +20,7 @@ public class ActionCardBuilderFilesDiffTests
         loc.Format(Arg.Any<string>(), Arg.Any<object[]>()).Returns(ci => (string)ci[0]!);
 
         tokenMap ??= Substitute.For<ITokenMapService>();
-        var permissions = Substitute.For<IToolPermissionService>();
-        return new ActionCardBuilder(loc, tokenMap, permissions);
+        return new ActionCardBuilder(loc, tokenMap);
     }
 
     private static PluginToolCall FilesWrite(IReadOnlyList<DiffLine>? diff, string? details, string? targetPath = null)

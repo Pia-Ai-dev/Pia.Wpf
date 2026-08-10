@@ -4,29 +4,20 @@ using Pia.Services.Interfaces;
 namespace Pia.Services;
 
 /// <summary>
-/// Singleton owner of tool-permission state: the deny-by-default eligibility
-/// allowlist and the persisted per-(PluginId, ToolName) "always allow" grants.
+/// Singleton owner of tool-permission state: the voice-mode auto-approve allowlist and the persisted
+/// per-(PluginId, ToolName) "always allow" grants.
 /// </summary>
 /// <remarks>
-/// Eligibility is an explicit additive allowlist — deliberately NOT a
-/// <c>ToolName.Contains("delete")</c> heuristic, which would misclassify the
-/// overwrite-class <c>write_file</c> as safe (design §3, §5). The grant cache is
-/// updated directly on grant/revoke (the in-memory <see cref="AppSettings"/>
-/// instance is mutated and saved); the <see cref="ISettingsService.SettingsChanged"/>
-/// handler covers external changes.
+/// The grant cache is updated directly on grant/revoke (the in-memory <see cref="AppSettings"/> instance is
+/// mutated and saved); the <see cref="ISettingsService.SettingsChanged"/> handler covers external changes.
 /// </remarks>
 public class ToolPermissionService : IToolPermissionService
 {
-    /// <summary>
-    /// Curated safe/additive set: create-only and append. Excludes every
-    /// update_*, complete_todo, write_file (overwrite), and delete_* tool.
-    /// </summary>
+    /// <summary>Curated create-only set that voice may run unprompted; every other tool needs a grant.</summary>
     private static readonly HashSet<string> AutoApproveAllowlist = new(StringComparer.Ordinal)
     {
-        "create_object",
         "create_todo",
-        "create_reminder",
-        "append_to_list"
+        "create_reminder"
     };
 
     private readonly ISettingsService _settingsService;
@@ -76,30 +67,16 @@ public class ToolPermissionService : IToolPermissionService
     };
 
     /// <summary>
-    /// Name heuristic for a delete/destructive tool, shared by the card builder, the interactive gate and
-    /// the unattended grant gate so a destructive external (MCP) tool is treated the same in all three:
-    /// never auto-approvable and never executable unattended, even though MCP is otherwise
-    /// grantable-as-a-class.
-    /// <para>
-    /// POLICY: any <see cref="DestructiveStems"/> substring (delete/remove/purge/drop/wipe/erase/destroy/
-    /// truncate), case-insensitive, plus the literal <c>forget</c>. Substring — not token — matching is
-    /// deliberate: it is what "delete" already did, and every false positive (e.g. a hypothetical
-    /// <c>dropbox_upload</c>) only ever adds friction, which is the safe direction for this check.
-    /// </para>
-    /// <para>
-    /// This is a NAME HEURISTIC, not a boundary: it cannot see what a server-defined tool actually does,
-    /// and the built-in destructive tools are excluded from auto-approval by the allowlist regardless.
-    /// The real containment lives in the gates that consult it.
-    /// </para>
-    /// <para>
-    /// T2-7b: it is no longer name-ONLY. <paramref name="serverDeclaredDestructive"/> is the MCP server's own
-    /// <c>ToolAnnotations.DestructiveHint</c>, plumbed out of <c>McpPluginToolHandler</c> (which is where the
-    /// direction of trust is argued) through <c>PluginToolCall</c> to every caller that has one. It is ORed in,
-    /// so it can only ever widen this predicate — a hint can add a tool to the destructive set and nothing
-    /// about it can remove one. Callers with no hint (the create-time grant filter, the card's git rules, every
-    /// built-in handler) leave it at its default and get exactly the pre-T2-7b answer.
-    /// </para>
+    /// Name heuristic for a delete/destructive tool: any <see cref="DestructiveStems"/> substring plus the
+    /// literal <c>forget</c>, case-insensitive. It is what excludes a tool from the autonomy policy and from
+    /// the unattended park; both grant tiers are offered and honoured regardless, and the Tool access page
+    /// notes it on a row the user has ticked.
     /// </summary>
+    /// <remarks>
+    /// Substring — not token — matching is deliberate: a false positive (a hypothetical <c>dropbox_upload</c>)
+    /// only ever adds friction, which is the safe direction here. <paramref name="serverDeclaredDestructive"/>
+    /// is ORed in, so an MCP server's own hint can only widen this and never narrow it.
+    /// </remarks>
     public static bool IsDeleteLike(string? toolName, bool serverDeclaredDestructive = false)
         => serverDeclaredDestructive
            || (toolName is not null
@@ -108,28 +85,20 @@ public class ToolPermissionService : IToolPermissionService
 
     /// <summary>
     /// True for a <see cref="IsDeleteLike"/> name that is NOT one of our built-in destructive tools, i.e. a
-    /// PRESUMED external/MCP destructive tool. For use where the plugin routes cannot be consulted — a
-    /// scheduled job's grant list is authored long before fire time and the MCP server set can change in
-    /// between — so such a grant is refused at creation instead. The execution gate still re-derives real
-    /// MCP-ness from <c>IPluginService</c>; this is a create-time filter, never the boundary.
+    /// PRESUMED external/MCP destructive tool. Used where the plugin routes cannot be consulted: a scheduled
+    /// job's grant list is authored long before fire time, so the model is refused such a name at creation.
     /// </summary>
     public static bool IsPresumedExternalDeleteLike(string? toolName)
         => IsDeleteLike(toolName) && !BuiltInDestructiveTools.Contains(toolName!);
 
     /// <summary>
     /// Tools whose ARGUMENTS ARE A GRANT LIST — calling one AUTHORS authority that some later, unattended run
-    /// will exercise with nobody looking. <c>create_scheduled_research</c> / <c>update_scheduled_research</c>
-    /// take a <c>grantedTools</c> CSV that becomes <c>ScheduledJob.GrantedTools</c>, which
-    /// <c>ScheduledJobBackgroundService.ExecuteAgentTaskAsync</c> hands to the run as <c>GrantedWrites</c>,
-    /// which <see cref="ToolAutonomy.Resolve"/> honours as a NAMED grant — and the FLOOR there is
-    /// External-only, so a named built-in <c>delete_file</c> auto-runs unattended by design.
-    /// <see cref="IsPresumedExternalDeleteLike"/> is that argument's only create-time filter and it
-    /// deliberately does not strip our own destructive names.
-    /// <para>
-    /// The complete set as of this writing: only <c>ScheduledJobToolHandler</c> takes a grant list. Sub-agent
-    /// delegation is orchestrator-internal and exposes no such tool. Add a name here if that changes.
-    /// </para>
+    /// will exercise with nobody looking. Their <c>grantedTools</c> CSV becomes <c>ScheduledJob.GrantedTools</c>
+    /// and reaches <see cref="ToolAutonomy.Resolve"/> as a NAMED grant, which auto-runs any tool it names —
+    /// <c>delete_file</c> included. <see cref="IsPresumedExternalDeleteLike"/> is its only create-time filter.
     /// </summary>
+    /// <remarks>Only <c>ScheduledJobToolHandler</c> takes a grant list today; add a name here if that
+    /// changes.</remarks>
     private static readonly HashSet<string> AuthorityAuthoringTools = new(StringComparer.OrdinalIgnoreCase)
     {
         "create_scheduled_research",
@@ -157,10 +126,8 @@ public class ToolPermissionService : IToolPermissionService
     };
 
     /// <summary>
-    /// A tool that throws away uncommitted work. Lifted out of <c>ActionCardBuilder</c> (where it was the
-    /// card's own stricter destructive rule) so <see cref="ToolAutonomy.IsSessionGrantOfferable"/> and the card
-    /// share ONE definition: hermes #15's session tier is minted at the gate, and a gate rule wider than the
-    /// card's would let a forged card mint a grant the card never offers.
+    /// A tool that throws away uncommitted work without carrying a destructive stem. It gates no grant: it
+    /// drives the card's red styling and its own warning copy, and the Tool access page's caution note.
     /// </summary>
     public static bool IsWorkDiscarding(string? toolName)
         => toolName is not null && WorkDiscardingTools.Contains(toolName);
@@ -174,10 +141,9 @@ public class ToolPermissionService : IToolPermissionService
     }
 
     /// <summary>
-    /// hermes #15. The MIDDLE tier, read here so the interactive and voice gates consult one owner for all
-    /// three answers (eligibility, session, standing) instead of growing a second injected dependency. The
-    /// state itself lives in the singleton <see cref="ISessionToolGrantStore"/> — this is a pass-through, and
-    /// deliberately touches neither <see cref="AppSettings"/> nor the persisted cache above.
+    /// The MIDDLE tier, read here so a gate consults one owner for all three answers instead of growing a
+    /// second injected dependency. A pass-through to the singleton <see cref="ISessionToolGrantStore"/>; it
+    /// touches neither <see cref="AppSettings"/> nor the persisted cache above.
     /// </summary>
     public bool IsGrantedForSession(Guid pluginId, string toolName)
         => _sessionGrants.IsGranted(pluginId, toolName);

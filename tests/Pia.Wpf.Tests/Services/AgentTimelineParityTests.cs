@@ -198,7 +198,8 @@ public sealed class AgentTimelineParityTests
 
         ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();
         var runner = new BackgroundAssistantTurnRunner(
-            ai, plugins, Substitute.For<IAssistantPromptComposer>(), Substitute.For<IPersonaService>(),
+            ai, plugins, Substitute.For<IToolPermissionService>(),
+            Substitute.For<IAssistantPromptComposer>(), Substitute.For<IPersonaService>(),
             Substitute.For<IAssistantChatService>(), Substitute.For<IChatTitleService>(), settings,
             TokenMapFactory, Substitute.For<IAgentRunService>(), new ExecutingRunStore(),
             NullLogger<BackgroundAssistantTurnRunner>.Instance);

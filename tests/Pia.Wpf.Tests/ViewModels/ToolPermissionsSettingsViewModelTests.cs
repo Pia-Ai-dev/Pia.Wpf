@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using Pia.Localization;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
@@ -185,10 +186,10 @@ public class ToolPermissionsSettingsViewModelTests
         new(PluginB, "scheduled-research", "create_scheduled_research", null, IsExternalRoute: false, ServerDeclaredDestructive: false),
         new(McpPlugin, "some-mcp-server", "send_email", "Send mail", IsExternalRoute: true, ServerDeclaredDestructive: false),
         new(McpPlugin, "some-mcp-server", "sync_index", "Sync", IsExternalRoute: true, ServerDeclaredDestructive: true),
-        // The quadrant the two independent offer rules produce: an external tool the session rule withholds
-        // by name while the standing rule still admits it.
+        // An external-route tool the session tier withholds by NAME, while the permanent tier takes it like
+        // every other row.
         new(McpPlugin, "some-mcp-server", "git_stash", "Stash", IsExternalRoute: true, ServerDeclaredDestructive: false),
-        // A built-in renamed through server metadata: no route calls it external, so no NAME may either.
+        // A benign built-in under an external-sounding plugin: only the tool name and the hint move an offer.
         new(PluginB, "renamed-by-the-server", "publish_note", null, IsExternalRoute: false, ServerDeclaredDestructive: false),
     ];
 
@@ -198,10 +199,6 @@ public class ToolPermissionsSettingsViewModelTests
         var permissions = Substitute.For<IToolPermissionService>();
         permissions.List().Returns([]);
         permissions.ListSessionGrants().Returns([]);
-        // The real four-name set, not a re-derived local copy.
-        var allowlist = new ToolPermissionService(StubSettings(), new SessionToolGrantStore());
-        permissions.IsAutoApproveEligible(Arg.Any<string>())
-            .Returns(ci => allowlist.IsAutoApproveEligible(ci.Arg<string>()));
 
         var plugins = Substitute.For<IPluginService>();
         plugins.GetAllPluginConfigs().Returns([]);
@@ -221,89 +218,96 @@ public class ToolPermissionsSettingsViewModelTests
     private static ToolCatalogRow Row(ToolPermissionsSettingsViewModel sut, string toolName) =>
         sut.ToolCatalog.SelectMany(g => g.Tools).Single(r => r.ToolName == toolName);
 
-    /// <summary>Columns: tool, offers "Until Pia closes", offers "Always", restriction shown when it does not.</summary>
+    /// <summary>Columns: tool, and the caution its row carries. Every row offers BOTH tiers.</summary>
     [Theory]
-    [InlineData("write_file", true, false, ToolGrantRestriction.SessionOnly)]
-    [InlineData("create_todo", true, true, ToolGrantRestriction.None)]
-    [InlineData("send_email", true, true, ToolGrantRestriction.None)]
-    [InlineData("delete_file", false, false, ToolGrantRestriction.Destructive)]
-    [InlineData("git_switch", false, false, ToolGrantRestriction.WorkDiscarding)]
-    [InlineData("create_scheduled_research", false, false, ToolGrantRestriction.AuthorityAuthoring)]
-    [InlineData("sync_index", false, false, ToolGrantRestriction.Destructive)]
-    // Offered permanently but not for the session, so no "always asks" line may sit beside its live toggle.
-    [InlineData("git_stash", false, true, ToolGrantRestriction.None)]
-    // Route-first: the name-only guess would call this plugin external and offer the standing tier.
-    [InlineData("publish_note", true, false, ToolGrantRestriction.SessionOnly)]
-    public void EachRowOffersExactlyTheTiersTheGateWouldHonour(
-        string toolName, bool offersSession, bool offersAlways, ToolGrantRestriction restriction)
+    [InlineData("write_file", ToolGrantCaution.None)]
+    [InlineData("create_todo", ToolGrantCaution.None)]
+    [InlineData("send_email", ToolGrantCaution.None)]
+    [InlineData("delete_file", ToolGrantCaution.Destructive)]
+    [InlineData("git_switch", ToolGrantCaution.WorkDiscarding)]
+    [InlineData("create_scheduled_research", ToolGrantCaution.AuthorityAuthoring)]
+    [InlineData("sync_index", ToolGrantCaution.Destructive)]
+    [InlineData("git_stash", ToolGrantCaution.WorkDiscarding)]
+    [InlineData("publish_note", ToolGrantCaution.None)]
+    public void EachRowOffersBothTiers_AndClassifiesItsOwnCaution(string toolName, ToolGrantCaution caution)
     {
         var (sut, _, _) = CreateWithCatalog();
         var row = Row(sut, toolName);
 
-        Assert.Equal(offersSession, row.CanGrantForSession);
-        Assert.Equal(offersAlways, row.CanGrantAlways);
-        Assert.Equal(restriction, row.Restriction);
+        Assert.Equal(caution, row.Caution);
+        // Untouched, so nothing is said yet — the classification alone must not put a line on the page.
+        Assert.False(row.HasCaution);
     }
 
-    /// <summary>
-    /// The button-that-does-nothing guard. <c>sync_index</c> is a benign NAME on a non-delete-like MCP tool:
-    /// only the server's own hint withdraws both offers, so a dropped argument (both parameters default to
-    /// false) shows up here and nowhere else.
-    /// </summary>
+    /// <summary><c>sync_index</c> is a benign NAME on a non-delete-like MCP tool, so only the server's own
+    /// hint moves it — and it now moves the caution rather than what the row offers.</summary>
     [Fact]
-    public void AServerDeclaredDestructiveTool_OffersNeitherTier()
+    public void AServerDeclaredDestructiveTool_GainsTheDestructiveCaution()
     {
         var mirror = new ToolCatalogEntry(
             McpPlugin, "some-mcp-server", "sync_index", "Sync", IsExternalRoute: true, ServerDeclaredDestructive: false);
         var (withoutHint, _, _) = CreateWithCatalog([mirror]);
 
         // Non-vacuity: the same name, same route, same allowlist answer — only the hint differs.
-        Assert.True(Row(withoutHint, "sync_index").CanGrantForSession);
-        Assert.True(Row(withoutHint, "sync_index").CanGrantAlways);
+        Assert.Equal(ToolGrantCaution.None, Row(withoutHint, "sync_index").Caution);
 
         var (withHint, _, _) = CreateWithCatalog([mirror with { ServerDeclaredDestructive = true }]);
 
-        Assert.False(Row(withHint, "sync_index").CanGrantForSession);
-        Assert.False(Row(withHint, "sync_index").CanGrantAlways);
+        Assert.Equal(ToolGrantCaution.Destructive, Row(withHint, "sync_index").Caution);
     }
 
+    /// <summary>The note is advice on a choice already made, so it appears on exactly the rows that both carry a
+    /// caution and hold a grant — at EITHER tier, since either one lets the tool run unasked.</summary>
     [Fact]
-    public void ARowOfferingAlways_IsAlwaysOneTheStandingRuleAdmits()
+    public void TheCautionAppears_OnlyOnACautionedRowThatHoldsAGrant()
     {
         var (sut, _, _) = CreateWithCatalog();
 
-        var offered = sut.ToolCatalog.SelectMany(g => g.Tools).Where(r => r.CanGrantAlways).ToList();
-        Assert.NotEmpty(offered);
+        var rows = sut.ToolCatalog.SelectMany(g => g.Tools).ToList();
+        // Both sides of the equivalence below are populated, so neither half of it is vacuous.
+        Assert.Contains(rows, r => r.Caution != ToolGrantCaution.None);
+        Assert.Contains(rows, r => r.Caution == ToolGrantCaution.None);
+        Assert.All(rows, r => Assert.False(r.HasCaution));
 
-        foreach (var row in offered)
+        foreach (var row in rows)
         {
-            // A stated reason beside a working toggle claims the tool always asks while the gate honours the
-            // grant the toggle mints.
-            Assert.Equal(ToolGrantRestriction.None, row.Restriction);
-            Assert.Null(row.ReasonKey);
-        }
+            var cautioned = row.Caution != ToolGrantCaution.None;
 
-        // The tiers are not nested: the session rule is name-only, so it withholds a tool the standing rule
-        // admits, and this row is the one that reaches the loop above through that quadrant.
-        var stash = Row(sut, "git_stash");
-        Assert.True(stash.CanGrantAlways);
-        Assert.False(stash.CanGrantForSession);
-        Assert.False(stash.HasReason);
+            row.AllowedForSession = true;
+            Assert.Equal(cautioned, row.HasCaution);
+            row.AllowedForSession = false;
+            Assert.False(row.HasCaution);
+
+            // "Always" alone is the tick a user makes on a delete-like tool, so it must raise it on its own.
+            row.AllowedAlways = true;
+            Assert.Equal(cautioned, row.HasCaution);
+            row.AllowedAlways = false;
+            Assert.False(row.HasCaution);
+        }
     }
 
+    /// <summary>Every row offers both tiers now, so the note's job changed with it: it describes what the tool
+    /// does unsupervised, and must not name a box that is no longer missing.</summary>
     [Fact]
-    public void RowsThatCanBeGrantedAtNeitherTier_AreListedAndCarryAReason()
+    public void ACautionedRow_ExplainsTheTool_RatherThanADisabledBox()
     {
         var (sut, _, _) = CreateWithCatalog();
 
-        string[] neither = ["delete_file", "git_switch", "create_scheduled_research", "sync_index"];
-        foreach (var toolName in neither)
+        (string Tool, ToolGrantCaution Caution)[] cautioned =
+        [
+            ("delete_file", ToolGrantCaution.Destructive),
+            ("git_switch", ToolGrantCaution.WorkDiscarding),
+            ("create_scheduled_research", ToolGrantCaution.AuthorityAuthoring),
+            ("sync_index", ToolGrantCaution.Destructive),
+        ];
+
+        var sessionLabel = LocalizationSource.Instance["ToolCatalog_UntilClose"];
+        foreach (var (toolName, caution) in cautioned)
         {
             var row = Row(sut, toolName);
-            Assert.False(row.CanGrantForSession);
-            Assert.False(row.CanGrantAlways);
-            Assert.True(row.HasReason, $"{toolName} is shown with both toggles off and no stated reason");
-            Assert.NotEqual(string.Empty, row.Reason);
+            Assert.Equal(caution, row.Caution);
+            Assert.NotEmpty(row.CautionText);
+            Assert.DoesNotContain(sessionLabel, row.CautionText, StringComparison.Ordinal);
         }
     }
 
@@ -386,26 +390,42 @@ public class ToolPermissionsSettingsViewModelTests
     }
 
     /// <summary>
-    /// A grant outlives its offer: an MCP server can add <c>destructiveHint</c> to a tool already granted.
-    /// The row must stay revocable, or it shows a tick beside a line saying the tick is impossible.
+    /// A grant outlives the metadata it was made under: an MCP server can add <c>destructiveHint</c> to a tool
+    /// already granted for the session. The tick survives and the row gains the caution — where the old rule
+    /// took the box away and left a tick beside a line saying that tick was impossible.
     /// </summary>
     [Fact]
-    public async Task AGrantOnATierNoLongerOnOffer_StaysRevocableFromTheRow()
+    public void ASessionGrantOnAToolTheServerCallsDestructive_KeepsItsTick_AndCarriesTheCaution()
     {
         var (sut, permissions, _) = CreateWithCatalog();
-        permissions.IsGranted(McpPlugin, "sync_index").Returns(true);
+        permissions.IsGrantedForSession(McpPlugin, "sync_index").Returns(true);
         permissions.Changed += Raise.Event<EventHandler>(permissions, EventArgs.Empty);
 
         var row = Row(sut, "sync_index");
-        Assert.False(row.CanGrantAlways);
-        Assert.True(row.AllowedAlways);
-        Assert.True(row.CanChangeAlways);
+        Assert.Equal(ToolGrantCaution.Destructive, row.Caution);
+        Assert.True(row.AllowedForSession);
+        Assert.True(row.HasCaution);
 
-        // Turning it off is the only move available, and it must reach the service.
+        // Turning it off must still reach the service, and the note leaves with the grant.
+        row.AllowedForSession = false;
+
+        Assert.False(row.HasCaution);
+        permissions.Received(1).RevokeSessionGrant(McpPlugin, "sync_index");
+    }
+
+    /// <summary>Unticking "Always" must reach the service: the box is now enabled on every row, so a dead
+    /// false-arm would leave a tick that clears in the UI over a grant that is never revoked.</summary>
+    [Fact]
+    public async Task UntickingAlways_RevokesTheStandingGrant()
+    {
+        var (sut, permissions, _) = CreateWithCatalog();
+        var row = Row(sut, "send_email");
+
+        row.AllowedAlways = true;
+        await permissions.Received(1).GrantAsync(McpPlugin, "send_email");
+
         row.AllowedAlways = false;
-
-        Assert.False(row.CanChangeAlways);
-        await permissions.Received(1).RevokeAsync(McpPlugin, "sync_index");
+        await permissions.Received(1).RevokeAsync(McpPlugin, "send_email");
     }
 
     [Fact]

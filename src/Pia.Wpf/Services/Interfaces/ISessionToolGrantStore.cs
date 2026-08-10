@@ -3,31 +3,16 @@ using Pia.Models;
 namespace Pia.Services.Interfaces;
 
 /// <summary>
-/// hermes #15, THE MIDDLE TIER. The process-scoped tool grants: "allow this tool until Pia closes", sitting
-/// between the one-shot <c>ToolDecision.AllowOnce</c> and the persisted <c>AppSettings.AlwaysAllowedTools</c>
-/// standing grant. Singleton, in-process, and deliberately <b>never serialized</b> — the same shape
-/// <c>ToolApprovalStore</c>, <c>StepOutcomeStore</c>, <c>RunSteeringStore</c> and <c>ExecutingRunStore</c>
-/// have.
-/// <para>
-/// NOT PERSISTING IS THE FEATURE, not an omission. The gap this closes is that a user who does not want to
-/// answer the same card forty times had only one alternative: a grant that outlives the session, the app
-/// restart and the reason they granted it. So there is no save path here, no settings member, and no
-/// migration — a grant is gone when the process is.
-/// </para>
-/// <para>
-/// SCOPE = THE APP PROCESS, not the chat and not the run. A per-chat scope would barely beat AllowOnce (a new
-/// chat is one click away and the model reopens tools per chat), and a per-run scope already exists as the
-/// run's own grant envelope (<c>HeadlessRunLauncher</c>'s <c>grantedWrites</c>). "This session" is what a user
-/// means by "until I close the app", and only a process scope lets a decision taken in a chat card reach the
-/// background run that is waiting on the same capability.
-/// </para>
-/// <para>
-/// It is NOT an authority by itself. Both gates read it through <c>ToolAutonomy.Resolve</c>, which evaluates
-/// the destructive-external FLOOR first and honours a session grant only for a tool
-/// <c>ToolAutonomy.IsSessionGrantOfferable</c> admits — so a store entry for a delete-like tool authorizes
-/// nothing.
-/// </para>
+/// THE MIDDLE TIER. Process-scoped tool grants — "allow this tool until Pia closes" — between the one-shot
+/// <c>ToolDecision.AllowOnce</c> and the persisted <c>AppSettings.AlwaysAllowedTools</c> standing grant.
 /// </summary>
+/// <remarks>
+/// NOT PERSISTING IS THE FEATURE: the gap it closes is that a user who does not want to answer the same card
+/// forty times previously had only a grant that outlives the session and the reason for it. Scope is the APP
+/// PROCESS, so a decision taken on a chat card reaches the background run waiting on the same capability.
+/// It is not an authority by itself — <c>ToolAutonomy.Resolve</c> honours an entry only for a tool
+/// <c>ToolAutonomy.IsSessionGrantOfferable</c> admits, so an entry for a delete-like tool authorizes nothing.
+/// </remarks>
 public interface ISessionToolGrantStore
 {
     /// <summary>

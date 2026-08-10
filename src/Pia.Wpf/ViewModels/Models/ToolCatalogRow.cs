@@ -1,16 +1,23 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using Pia.Localization;
-using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 
 namespace Pia.ViewModels.Models;
 
-/// <summary>Why a tool cannot be pre-approved at one or both tiers.</summary>
-public enum ToolGrantRestriction
+/// <summary>
+/// What is worth knowing about pre-approving this tool. Every tool can be granted at both tiers; the note is
+/// shown only once the user has actually ticked one, so a caution reads as advice on a choice already made
+/// rather than as clutter on a row they were only scanning.
+/// </summary>
+/// <remarks>
+/// All three are about what a MULTI-CALL grant can consent to: the card that collects one shows the arguments
+/// of ONE call, and every later call's arguments are invisible. Hence a note for any destructive tool, for the
+/// git trio that sheds uncommitted work, and for the tools whose ARGUMENTS ARE THEMSELVES A GRANT LIST.
+/// </remarks>
+public enum ToolGrantCaution
 {
     None = 0,
-    SessionOnly,
     Destructive,
     WorkDiscarding,
     AuthorityAuthoring,
@@ -19,10 +26,7 @@ public enum ToolGrantRestriction
 /// <summary>The catalogue's tools under the plugin they belong to.</summary>
 public sealed record ToolCatalogGroup(string PluginName, IReadOnlyList<ToolCatalogRow> Tools);
 
-/// <summary>
-/// One pre-approvable tool on the Tool access page. Both offerability flags come from the functions the
-/// gate itself mints with, so a toggle this row offers can never be one the gate would ignore.
-/// </summary>
+/// <summary>One pre-approvable tool on the Tool access page. Both tiers are offered for every tool.</summary>
 public partial class ToolCatalogRow : ObservableObject
 {
     private readonly Action<ToolCatalogRow, bool>? _sessionToggled;
@@ -35,22 +39,19 @@ public partial class ToolCatalogRow : ObservableObject
     public Guid PluginId { get; }
     public string PluginName { get; }
     public string ToolName { get; }
-    public bool CanGrantForSession { get; }
-    public bool CanGrantAlways { get; }
-    public ToolGrantRestriction Restriction { get; }
+    public ToolGrantCaution Caution { get; }
 
+    // Both tiers raise HasCaution: the note is advice about holding a grant, and either tier holds one.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanChangeSession))]
+    [NotifyPropertyChangedFor(nameof(HasCaution))]
     private bool _allowedForSession;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanChangeAlways))]
+    [NotifyPropertyChangedFor(nameof(HasCaution))]
     private bool _allowedAlways;
 
     public ToolCatalogRow(
         ToolCatalogEntry entry,
-        ToolClass toolClass,
-        bool isAllowlisted,
         Action<ToolCatalogRow, bool>? sessionToggled = null,
         Action<ToolCatalogRow, bool>? alwaysToggled = null)
     {
@@ -60,27 +61,19 @@ public partial class ToolCatalogRow : ObservableObject
         _sessionToggled = sessionToggled;
         _alwaysToggled = alwaysToggled;
 
-        CanGrantForSession = ToolAutonomy.IsSessionGrantOfferable(
-            entry.ToolName, entry.ServerDeclaredDestructive);
-        CanGrantAlways = ToolAutonomy.IsStandingGrantOfferable(
-            toolClass, entry.ToolName, isAllowlisted, entry.ServerDeclaredDestructive);
-        Restriction = RestrictionFor(entry.ToolName, CanGrantForSession, CanGrantAlways);
+        Caution = CautionFor(entry.ToolName, entry.ServerDeclaredDestructive);
     }
 
-    // A live grant on a tool that stopped being offerable (a server adds destructiveHint to one you already
-    // allowed) must still be revocable here, or the row shows a tick it also says is impossible.
-    public bool CanChangeSession => CanGrantForSession || AllowedForSession;
+    public string? CautionKey => CautionKeyFor(Caution);
 
-    public bool CanChangeAlways => CanGrantAlways || AllowedAlways;
+    /// <summary>Shown only once a grant is actually held, at either tier — advice on a choice, not a warning
+    /// label on every row.</summary>
+    public bool HasCaution => CautionKey is not null && (AllowedForSession || AllowedAlways);
 
-    public string? ReasonKey => ReasonKeyFor(Restriction);
-
-    public bool HasReason => ReasonKey is not null;
-
-    public string Reason => ReasonKey is null ? string.Empty : LocalizationSource.Instance[ReasonKey];
+    public string CautionText => CautionKey is null ? string.Empty : LocalizationSource.Instance[CautionKey];
 
     /// <summary>Resolved in C#, so a language switch has to be told about it.</summary>
-    public void NotifyReasonChanged() => OnPropertyChanged(nameof(Reason));
+    public void NotifyCautionChanged() => OnPropertyChanged(nameof(CautionText));
 
     /// <summary>Apply live grant state without re-running the toggle callbacks.</summary>
     public void SyncGrantState(bool allowedForSession, bool allowedAlways)
@@ -109,33 +102,28 @@ public partial class ToolCatalogRow : ObservableObject
         _alwaysToggled?.Invoke(this, value);
     }
 
-    private static ToolGrantRestriction RestrictionFor(
-        string toolName, bool canGrantForSession, bool canGrantAlways)
+    /// <summary>First match wins, and destructive is tested FIRST: it is the one a server can declare on a
+    /// benign-looking name, and the strongest thing to say about a tool that carries more than one.</summary>
+    private static ToolGrantCaution CautionFor(string toolName, bool serverDeclaredDestructive)
     {
-        if (canGrantForSession)
-            return canGrantAlways ? ToolGrantRestriction.None : ToolGrantRestriction.SessionOnly;
-
-        // The two tiers are independent, so a work-discarding MCP tool still offers Always. Naming a reason
-        // beside a working toggle would tell the user it always asks while it does not.
-        if (canGrantAlways)
-            return ToolGrantRestriction.None;
-
-        if (ToolPermissionService.IsAuthorityAuthoring(toolName))
-            return ToolGrantRestriction.AuthorityAuthoring;
+        if (ToolPermissionService.IsDeleteLike(toolName, serverDeclaredDestructive))
+            return ToolGrantCaution.Destructive;
 
         if (ToolPermissionService.IsWorkDiscarding(toolName))
-            return ToolGrantRestriction.WorkDiscarding;
+            return ToolGrantCaution.WorkDiscarding;
 
-        return ToolGrantRestriction.Destructive;
+        if (ToolPermissionService.IsAuthorityAuthoring(toolName))
+            return ToolGrantCaution.AuthorityAuthoring;
+
+        return ToolGrantCaution.None;
     }
 
     /// <summary>A helper, not literals, so a localization test can enumerate the keys this returns.</summary>
-    public static string? ReasonKeyFor(ToolGrantRestriction restriction) => restriction switch
+    public static string? CautionKeyFor(ToolGrantCaution caution) => caution switch
     {
-        ToolGrantRestriction.SessionOnly => "ToolCatalog_Reason_SessionOnly",
-        ToolGrantRestriction.Destructive => "ToolCatalog_Reason_Destructive",
-        ToolGrantRestriction.WorkDiscarding => "ToolCatalog_Reason_WorkDiscarding",
-        ToolGrantRestriction.AuthorityAuthoring => "ToolCatalog_Reason_AuthorityAuthoring",
+        ToolGrantCaution.Destructive => "ToolCatalog_Caution_Destructive",
+        ToolGrantCaution.WorkDiscarding => "ToolCatalog_Caution_WorkDiscarding",
+        ToolGrantCaution.AuthorityAuthoring => "ToolCatalog_Caution_AuthorityAuthoring",
         _ => null,
     };
 }

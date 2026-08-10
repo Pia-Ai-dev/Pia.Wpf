@@ -753,7 +753,7 @@
   <data name="ActionCard_Manage" xml:space="preserve"><value>Manage</value></data>
   <data name="Settings_Tab_ToolPermissions" xml:space="preserve"><value>Tool access</value></data>
   <data name="Settings_ToolPermissions_Page_Title" xml:space="preserve"><value>What runs without asking</value></data>
-  <data name="Settings_ToolPermissions_Page_Description" xml:space="preserve"><value>Pia asks before a tool changes anything. Three answers on that card skip the next prompt: "Allow once" covers a single call, "Allow this session" lasts until Pia closes, and "Always allow" is kept in your settings and listed below. Agent autonomy is a fourth source: while it is on, agent runs and voice mode skip the prompt for Pia's own write tools.</value></data>
+  <data name="Settings_ToolPermissions_Page_Description" xml:space="preserve"><value>Pia asks before a tool changes anything. Three answers on that card skip the next prompt: "Allow once" covers a single call, "Allow this session" lasts until Pia closes, and "Always allow" is kept in your settings and listed below. An "Always allow" grant also applies where nobody can be asked — voice mode, scheduled jobs and agent runs all use it. Agent autonomy is a fourth source: while it is on, agent runs and voice mode skip the prompt for Pia's own write tools.</value></data>
   <data name="Settings_ToolPermissions_Autonomy_Section" xml:space="preserve"><value>Agent autonomy</value></data>
   <data name="Settings_ToolPermissions_Autonomy_Covers" xml:space="preserve"><value>Covered classes: notes and memory, todos, reminders, scheduled jobs, files.</value></data>
   <data name="Settings_ToolPermissions_Session_Title" xml:space="preserve"><value>Allowed until Pia closes</value></data>
@@ -766,13 +766,12 @@
   <data name="ToolPermissions_Column_Plugin" xml:space="preserve"><value>Plugin:</value></data>
   <data name="ToolPermissions_Column_GrantedAt" xml:space="preserve"><value>Granted:</value></data>
   <data name="Settings_ToolPermissions_Catalog_Title" xml:space="preserve"><value>All tools</value></data>
-  <data name="Settings_ToolPermissions_Catalog_Description" xml:space="preserve"><value>Approve a tool here and Pia stops asking for it, exactly as if you had chosen the same answer on a card. Tools that always ask are listed too, with the reason.</value></data>
+  <data name="Settings_ToolPermissions_Catalog_Description" xml:space="preserve"><value>Approve a tool here and Pia stops asking for it, exactly as if you had chosen the same answer on a card. Every tool can be allowed for this session or permanently; tick one and the row tells you what that tool can then do unsupervised.</value></data>
   <data name="ToolCatalog_UntilClose" xml:space="preserve"><value>Until Pia closes</value></data>
   <data name="ToolCatalog_Always" xml:space="preserve"><value>Always</value></data>
-  <data name="ToolCatalog_Reason_SessionOnly" xml:space="preserve"><value>Can only be allowed until Pia closes: a permanent grant is reserved for external tools and a few create-only built-ins.</value></data>
-  <data name="ToolCatalog_Reason_Destructive" xml:space="preserve"><value>Always asks: this tool destroys data, and one card cannot speak for calls you will never see.</value></data>
-  <data name="ToolCatalog_Reason_WorkDiscarding" xml:space="preserve"><value>Always asks: this tool can throw away uncommitted work.</value></data>
-  <data name="ToolCatalog_Reason_AuthorityAuthoring" xml:space="preserve"><value>Always asks: this tool grants permissions that later, unattended runs would use.</value></data>
+  <data name="ToolCatalog_Caution_Destructive" xml:space="preserve"><value>Worth knowing: this tool destroys data, and an approval here covers later calls whose arguments you never see. Leave it unticked to be asked each time.</value></data>
+  <data name="ToolCatalog_Caution_WorkDiscarding" xml:space="preserve"><value>Worth knowing: this tool can throw away uncommitted work, and an approval here covers later calls whose arguments you never see.</value></data>
+  <data name="ToolCatalog_Caution_AuthorityAuthoring" xml:space="preserve"><value>Worth knowing: this tool grants permissions that later, unattended runs will use — approving it once lets Pia widen what it may do later.</value></data>
   <data name="ActionCard_CurrentValue" xml:space="preserve"><value>Current value:</value></data>
   <data name="ActionCard_NewValue" xml:space="preserve"><value>New value:</value></data>
   <data name="ActionCard_Category_Memory" xml:space="preserve"><value>Memory</value></data>

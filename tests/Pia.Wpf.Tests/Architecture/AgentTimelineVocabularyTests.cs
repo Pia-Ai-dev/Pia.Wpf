@@ -12,7 +12,7 @@ public class AgentTimelineVocabularyTests
     // Derived by walking the emit arms, not by copying the enum.
     private static readonly ToolGateDecision[] EmittedByAGate =
     [
-        ToolGateDecision.AutoApprovedStandingGrant, // interactive AutoRun (verdict.Decision)
+        ToolGateDecision.AutoApprovedStandingGrant, // either surface, AutoRun (verdict.Decision)
         ToolGateDecision.AutoApprovedPolicy,        // either surface, AutoRun (verdict.Decision)
         ToolGateDecision.GrantedByName,             // unattended AutoRun (verdict.Decision)
         ToolGateDecision.ApprovedOnce,              // interactive card, AllowOnce
@@ -20,7 +20,6 @@ public class AgentTimelineVocabularyTests
         ToolGateDecision.DeclinedByUser,            // interactive card, declined
         ToolGateDecision.CardCancelled,             // interactive card, cancelled (NOT a user denial)
         ToolGateDecision.DeniedNotGranted,          // unattended default
-        ToolGateDecision.DeniedDestructiveFloor,    // unattended floor refusal
         ToolGateDecision.UnknownTool,               // either surface, null route
         ToolGateDecision.ParkedForApproval,         // unattended Park (the FIRST parked call only)
         // The session tier: BOTH surfaces reach the first one, because the tier is armed on the same condition
@@ -41,21 +40,33 @@ public class AgentTimelineVocabularyTests
         ToolGateDecision.AutoApprovedAllowlist,
     ];
 
+    // Historic audit vocabulary: no arm of Resolve produces these any more, but stored rows carry them and the
+    // renderer still maps them, so the ordinals cannot move.
+    private static readonly ToolGateDecision[] LegacyAuditVocabulary =
+    [
+        ToolGateDecision.DeniedDestructiveFloor,
+    ];
+
     [Fact]
     public void EveryToolGateDecision_IsEitherEmittedOrDocumentedAsNotEmitted()
     {
         var unaccounted = Enum.GetValues<ToolGateDecision>()
             .Where(d => d != ToolGateDecision.Unknown)
-            .Where(d => !EmittedByAGate.Contains(d) && !NotEmittedByDesign.Contains(d))
+            .Where(d => !EmittedByAGate.Contains(d)
+                        && !NotEmittedByDesign.Contains(d)
+                        && !LegacyAuditVocabulary.Contains(d))
             .ToArray();
 
         // Adding a gate decision without deciding what the timeline does with it fails HERE.
         Assert.Empty(unaccounted);
 
-        // The two sets are disjoint and neither claims Unknown (which is a render value, never written).
+        // The three sets are disjoint and none claims Unknown (which is a render value, never written).
         Assert.Empty(EmittedByAGate.Intersect(NotEmittedByDesign));
+        Assert.Empty(EmittedByAGate.Intersect(LegacyAuditVocabulary));
+        Assert.Empty(NotEmittedByDesign.Intersect(LegacyAuditVocabulary));
         Assert.DoesNotContain(ToolGateDecision.Unknown, EmittedByAGate);
         Assert.DoesNotContain(ToolGateDecision.Unknown, NotEmittedByDesign);
+        Assert.DoesNotContain(ToolGateDecision.Unknown, LegacyAuditVocabulary);
     }
 
     // The shape assertions further down stay true under a reorder that swaps two persisted ordinals, so only a

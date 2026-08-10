@@ -55,7 +55,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IDialogService _dialogService;
     private readonly IUiDispatcher _uiDispatcher;
 
-    /// <summary>Tool-permission state consulted by the voice-mode gate (Batch 04 D13).</summary>
+    /// <summary>Tool-permission state consulted by the voice-mode gate.</summary>
     private readonly IToolPermissionService _permissions;
 
     /// <summary>
@@ -1753,20 +1753,15 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     /// <summary>
     /// Voice-mode tool dispatch. Reads always run; writes go through the SAME resolver as the chat gate and
-    /// the unattended gate, on <see cref="ToolGateSurface.Voice"/> (Batch 04 D13).
-    /// <para>
-    /// This path used to execute EVERY pending write with no eligibility check, no grant check, no card and no
-    /// destructive floor — so <c>write_file</c>, <c>delete_file</c>, <c>forget</c> and every destructive MCP
-    /// tool ran silently while the user was talking. Nothing pinned that behaviour either way. Closing it is a
-    /// deliberate user-visible TIGHTENING: the four allowlisted create/append tools still run, anything the
-    /// user has already "always allowed" still runs, the settings preset's classes still run, and everything
-    /// else is refused with a remedy instead of being done unseen.
-    /// </para>
-    /// <para>
-    /// There is no run here, so there is no envelope: the policy comes from settings. <c>internal</c> so the
-    /// gate can be tested without standing up a whole voice turn.
-    /// </para>
+    /// the unattended gate, on <see cref="ToolGateSurface.Voice"/>.
     /// </summary>
+    /// <remarks>
+    /// This path used to execute EVERY pending write unchecked, so <c>write_file</c> and <c>delete_file</c> ran
+    /// silently while the user was talking. Now the allowlisted create tools run, anything the user has
+    /// "always allowed" runs, the settings preset's classes run, and everything else is refused with a remedy.
+    /// There is no run here, so the policy comes from settings; <c>internal</c> so the gate can be tested
+    /// without standing up a whole voice turn.
+    /// </remarks>
     /// <param name="context">Unused, and that is the design: this method is a <c>ToolCallHandler</c> so the
     /// loop can dispatch to it, but a voice turn belongs to no run and emits no timeline row (see
     /// <c>IAgentTimelineService</c>'s scope remarks), so there is nowhere for the round to be recorded.</param>
@@ -1793,14 +1788,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             var allowlisted = _permissions.IsAutoApproveEligible(tool);
             var verdict = ToolAutonomy.Resolve(new ToolGateInput(
                 ToolGateSurface.Voice, tool, toolClass,
-                // T2-7b: voice has no card either, so a server-declared-destructive external tool is refused
-                // outright here like a delete-named one — and the refusal below already speaks the reason.
                 ServerDeclaredDestructive: pendingAction.ServerDeclaredDestructive,
                 IsAllowlisted: allowlisted,
-                // hermes #15: the honest lookup, even though the resolver does not honour a session grant on
-                // THIS surface — the input stays a fact about the user's grants and the reason voice is
-                // excluded stays in one place (ToolAutonomy.Resolve's session arm). A voice turn has no card
-                // to have collected it on and no visible transcript to show what it authorized.
+                // The honest lookup, even though the resolver does not honour a session grant on THIS surface:
+                // the input stays a fact and the reason voice is excluded stays in Resolve's session arm.
                 HasSessionGrant: _permissions.IsGrantedForSession(pendingAction.PluginId, tool),
                 HasStandingGrant: _permissions.IsGranted(pendingAction.PluginId, tool),
                 // Voice has no per-job grant list and no run envelope; the policy is the settings preset.
@@ -1808,21 +1799,14 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 // The denial list lives in a run envelope; a voice turn has no run.
                 HasNamedDenial: false,
                 Policy: RunAutonomyPolicy.FromSettings(settings),
-                // hermes #16: a voice turn is not a run — there is no row to park, no Continue card that would
+                // A voice turn is not a run — there is no row to park, no Continue card that would
                 // reach the speaker, and the refusal below is already spoken back as a remedy.
                 CanPark: false));
 
             if (verdict.Outcome != ToolGateOutcome.AutoRun)
             {
-                // English literals, like both existing gate refusals: these go to the MODEL, not the UI, so
-                // they need no resx key.
-                if (verdict.Decision == ToolGateDecision.DeniedDestructiveFloor)
-                {
-                    _logger.LogWarning("Voice mode refused destructive external tool {ToolName}", tool);
-                    return $"Denied: '{tool}' is a destructive external (MCP) tool and never runs without an "
-                           + "explicit confirmation. Do not retry.";
-                }
-
+                // An English literal, like both other gate refusals: it goes to the MODEL, not the UI, so it
+                // needs no resx key.
                 _logger.LogInformation("Voice mode denied ungranted write tool {ToolName}", tool);
                 return $"Denied: '{tool}' needs your confirmation and voice mode cannot show an approval card. "
                        + "Ask me again in the chat window.";
@@ -1845,16 +1829,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     }
 
     /// <summary>
-    /// Is this an external/MCP tool? A route-lookup fault returns <c>true</c> like both run gates, so it adds
-    /// friction instead of failing the voice turn.
-    /// <para>
-    /// "Fail-closed" is only half true and the honest statement matters: <c>true</c> is closed for the
-    /// destructive FLOOR but OPEN for grantability, because <c>External</c> is also what makes a tool
-    /// standing-grantable. On THIS surface that is harmless — voice persists no grants and offers no card — and
-    /// it now also costs the four allowlisted built-ins their voice authority on a fault, which is the
-    /// restrictive direction. See <c>ChatSession.IsExternalTool</c> for why the plumbing fix is deferred rather
-    /// than done: the only reachable throw is a null tool name, which cannot occur here.
-    /// </para>
+    /// Is this an external/MCP tool? A route-lookup fault returns <c>true</c> like both run gates, and only
+    /// ever narrows: it costs the call the allowlist arm and keeps the settings preset from covering it, so
+    /// it adds friction instead of failing the voice turn.
     /// </summary>
     private bool IsExternalTool(string toolName)
     {

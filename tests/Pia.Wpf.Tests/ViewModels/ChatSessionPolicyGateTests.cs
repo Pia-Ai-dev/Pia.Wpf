@@ -163,6 +163,8 @@ public sealed class ChatSessionPolicyGateTests
         Assert.Contains(ChatState.WaitingForTool, states);
     }
 
+    /// <summary>The policy is a class switch and never covers a delete, so a destructive MCP tool with no
+    /// grant of its own still shows a card — and "Always allow" on it now persists a grant.</summary>
     [Fact]
     public async Task PolicyOverEveryClass_CanNotAutoApproveADestructiveMcpTool()
     {
@@ -173,7 +175,7 @@ public sealed class ChatSessionPolicyGateTests
 
         _plugins.IsMcpTool("delete_issue").Returns(true);
         _permissions.IsAutoApproveEligible("delete_issue").Returns(false);
-        _permissions.IsGranted(pluginId, "delete_issue").Returns(true);   // even a standing grant
+        _permissions.IsGranted(pluginId, "delete_issue").Returns(false);
         ArrangeToolCall("delete_issue", pending, card, _ => { });
 
         var session = CreateSession();
@@ -185,21 +187,18 @@ public sealed class ChatSessionPolicyGateTests
         Assert.False(executed);
         Assert.Equal(ChatState.WaitingForTool, session.State);
 
-        // Interactively the floor removes AUTO-approval and the standing grant, not the human's ability to
-        // click — that is today's semantics and this batch does not tighten it. AlwaysAllow therefore
-        // degrades to AllowOnce and persists nothing.
         card.AlwaysAllowCommand.Execute(null);
         await turn;
 
         Assert.True(executed);
-        await _permissions.DidNotReceive().GrantAsync(Arg.Any<Guid>(), Arg.Any<string>());
+        await _permissions.Received(1).GrantAsync(pluginId, "delete_issue");
     }
 
     [Fact]
     public async Task PolicyDoesNotCoverGit_SoAGitWriteStillPrompts()
     {
-        // D9's Git exclusion at the gate: git_switch/git_restore/git_stash shed uncommitted work but are NOT
-        // delete-like by name, so neither the floor nor D6 would stop them — only the preset's omission does.
+        // git_switch/git_restore/git_stash shed uncommitted work but are NOT delete-like by name, so the
+        // policy's own !isDeleteLike exclusion would not stop them — only the preset's Git omission does.
         var pluginId = Guid.NewGuid();
         var card = NewCard("git_switch", pluginId);
         var executed = false;

@@ -2,6 +2,7 @@ using NSubstitute;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.ViewModels.Models;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -17,8 +18,7 @@ public class ActionCardBuilderScheduledCategoryTests
             .Returns(ci => $"{ci.ArgAt<string>(0)}({string.Join(",", ci.ArgAt<object[]>(1))})");
 
         var tokenMap = Substitute.For<ITokenMapService>();
-        var permissions = Substitute.For<IToolPermissionService>();
-        return new ActionCardBuilder(localization, tokenMap, permissions);
+        return new ActionCardBuilder(localization, tokenMap);
     }
 
     private static PluginToolCall Call(string toolName, string? details = null) =>
@@ -35,18 +35,17 @@ public class ActionCardBuilderScheduledCategoryTests
         Assert.Equal("ActionCard_Action_Create ActionCard_Category_Scheduled", card.Title);
     }
 
+    /// <summary>Its arguments are themselves a grant list, and both tiers are still offered — the Tool access row
+    /// says so once one is ticked, rather than the weaker button being taken away.</summary>
     [Fact]
-    public void ScheduledResearchCard_OffersNoAlwaysAllowButton()
+    public void ScheduledResearchCard_OffersBothGrantTiers()
     {
         var card = CreateBuilder().Build(Call("create_scheduled_research"), detokenize: false);
 
-        Assert.False(card.IsAutoApprovable);
-        // Neither grant tier: this tool's arguments are themselves a grant list, so one click would authorize
-        // every later job-authoring call in the process.
-        Assert.Equal(2, card.Decisions.Count);
-        Assert.DoesNotContain(card.Decisions, d => ReferenceEquals(d.Command, card.AlwaysAllowCommand));
-        Assert.DoesNotContain(card.Decisions, d => ReferenceEquals(d.Command, card.AllowForSessionCommand));
-        Assert.False(card.IsSessionGrantable);
+        Assert.Equal(4, card.Decisions.Count);
+        Assert.Contains(card.Decisions, d => ReferenceEquals(d.Command, card.AllowForSessionCommand));
+        Assert.Contains(card.Decisions, d => ReferenceEquals(d.Command, card.AlwaysAllowCommand));
+        Assert.Equal(ToolGrantCaution.AuthorityAuthoring, CautionOf("create_scheduled_research"));
     }
 
     [Fact]
@@ -83,13 +82,13 @@ public class ActionCardBuilderScheduledCategoryTests
         Assert.Equal("Msg_Assistant_PermanentDeleteExternal", card.WarningText);
     }
 
-    /// <summary>These verbs shed uncommitted work yet carry no destructive stem, so the shared resolver alone
-    /// would offer a standing grant; the exclusion is the card's own.</summary>
+    /// <summary>These verbs shed uncommitted work yet carry no destructive stem, so the card styles them as
+    /// destructive and the catalogue cautions about them — neither tier is withheld.</summary>
     [Theory]
     [InlineData("git_switch")]
     [InlineData("git_restore")]
     [InlineData("git_stash")]
-    public void AnExternalGitVerb_IsNeverOfferedAStandingGrant(string toolName)
+    public void AnExternalGitVerb_IsOfferedBothTiers_AndCautionedAsWorkDiscarding(string toolName)
     {
         var pending = new PluginToolCall(
             toolName, Guid.NewGuid(), "some-mcp-server", $"some-mcp-server: {toolName}", null,
@@ -99,16 +98,20 @@ public class ActionCardBuilderScheduledCategoryTests
 
         Assert.Equal(ActionCardCategory.Mcp, card.Category);
         Assert.True(card.IsDestructive);
-        Assert.False(card.IsAutoApprovable);
-        Assert.Equal(2, card.Decisions.Count);   // the pair, never the triad
-        Assert.DoesNotContain(card.Decisions, d => ReferenceEquals(d.Command, card.AlwaysAllowCommand));
+        Assert.Equal(4, card.Decisions.Count);
 
-        // The shared floor says yes here; only the card's wider exclusion says no.
+        // Not delete-like by name, so the caution comes from IsWorkDiscarding and nothing else.
         Assert.False(ToolPermissionService.IsDeleteLike(toolName));
-        Assert.True(ToolAutonomy.IsStandingGrantOfferable(ToolClass.External, toolName, isAllowlisted: false));
+        Assert.Equal(ToolGrantCaution.WorkDiscarding, CautionOf(toolName));
     }
 
-    /// <summary>Proves only that the card routes through the shared resolver, not what that resolver decides.</summary>
+    private static ToolGrantCaution CautionOf(string toolName) =>
+        new ToolCatalogRow(new ToolCatalogEntry(
+            Guid.NewGuid(), "some-mcp-server", toolName, "desc",
+            IsExternalRoute: true, ServerDeclaredDestructive: false)).Caution;
+
+    /// <summary>The card offers a tier exactly where the gate would honour one — both tiers, everywhere. This is
+    /// what keeps the offer and the authority from drifting now that no offerability function couples them.</summary>
     [Theory]
     [InlineData("memory", "create_object")]
     [InlineData("memory", "forget")]
@@ -122,27 +125,24 @@ public class ActionCardBuilderScheduledCategoryTests
     [InlineData("scheduled-research", "create_scheduled_research")]
     [InlineData("linear", "search_issues")]
     [InlineData("linear", "delete_issue")]
-    public void CardAndGate_AgreeOnEligibility(string pluginName, string toolName)
+    public void CardAndGate_AgreeThatBothTiersAreAlwaysHonoured(string pluginName, string toolName)
     {
-        var localization = Substitute.For<ILocalizationService>();
-        localization[Arg.Any<string>()].Returns(ci => ci.Arg<string>());
-        localization.Format(Arg.Any<string>(), Arg.Any<object[]>()).Returns(ci => ci.ArgAt<string>(0));
-        var permissions = Substitute.For<IToolPermissionService>();
-        permissions.IsAutoApproveEligible("create_todo").Returns(true);
-        permissions.IsAutoApproveEligible("create_reminder").Returns(true);
-        permissions.IsAutoApproveEligible("create_object").Returns(true);
-        var builder = new ActionCardBuilder(localization, Substitute.For<ITokenMapService>(), permissions);
-
+        var toolClass = ToolClassifier.ClassifyPresumedExternal(pluginName);
         var pending = new PluginToolCall(
             toolName, Guid.NewGuid(), pluginName, $"{pluginName}: {toolName}", null,
             () => Task.FromResult<object?>(null));
 
-        var card = builder.Build(pending, detokenize: false);
+        var card = CreateBuilder().Build(pending, detokenize: false);
 
-        var expected = ToolAutonomy.IsStandingGrantOfferable(
-            ToolClassifier.ClassifyPresumedExternal(pluginName), toolName,
-            permissions.IsAutoApproveEligible(toolName));
+        Assert.Contains(card.Decisions, d => ReferenceEquals(d.Command, card.AllowForSessionCommand));
+        Assert.Contains(card.Decisions, d => ReferenceEquals(d.Command, card.AlwaysAllowCommand));
 
-        Assert.Equal(expected, card.IsAutoApprovable);
+        Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, Interactive(standing: true).Decision);
+        Assert.Equal(ToolGateDecision.AutoApprovedSessionGrant, Interactive(standing: false).Decision);
+
+        ToolGateVerdict Interactive(bool standing) => ToolAutonomy.Resolve(new ToolGateInput(
+            ToolGateSurface.Interactive, toolName, toolClass,
+            ServerDeclaredDestructive: false, IsAllowlisted: false, HasSessionGrant: !standing,
+            HasStandingGrant: standing, IsNamedGrant: false, HasNamedDenial: false, Policy: null, CanPark: false));
     }
 }

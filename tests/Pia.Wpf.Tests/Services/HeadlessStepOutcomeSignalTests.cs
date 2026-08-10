@@ -277,7 +277,8 @@ public sealed class HeadlessStepOutcomeSignalTests
             Providers = providers;
 
             _engine = new BackgroundAssistantTurnRunner(
-                _ai, Plugins, _composer, personas, Chats, Titles, Settings, TokenMapFactory, Runs,
+                _ai, Plugins, Substitute.For<IToolPermissionService>(), _composer, personas, Chats,
+                Titles, Settings, TokenMapFactory, Runs,
                 new ExecutingRunStore(), NullLogger<BackgroundAssistantTurnRunner>.Instance);
 
             _ai.GetChatCompletionWithToolsAsync(

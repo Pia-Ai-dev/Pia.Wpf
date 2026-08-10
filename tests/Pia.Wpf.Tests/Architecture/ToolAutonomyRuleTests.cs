@@ -15,12 +15,13 @@ public class ToolAutonomyRuleTests
         new()
         {
             { Path.Combine("ViewModels", "Models", "ChatSession.cs"), 1, 1, 1 },
-            // No IToolPermissionService is injected in the headless files, so this gate reads no allowlist.
+            // The headless gate reads standing grants but deliberately no allowlist: that set authorizes voice
+            // alone, and a hardcoded false is a second lock behind Resolve's Voice pin.
             { Path.Combine("Services", "BackgroundAssistantTurnRunner.cs"), 1, 1, 0 },
             { Path.Combine("ViewModels", "AssistantViewModel.cs"), 1, 1, 1 },
         };
 
-    /// <summary>The floor is structural only while exactly one place can reach an auto-approval.</summary>
+    /// <summary>The ordering in Resolve is the whole rule only while no gate derives one of its own.</summary>
     [Theory]
     [MemberData(nameof(GateFiles))]
     public void EveryGateFileDerivesNoAutonomyDecisionOfItsOwn(
@@ -32,10 +33,11 @@ public class ToolAutonomyRuleTests
 
         Assert.Equal(expectedResolveCalls, lines.Count(l => l.Contains("ToolAutonomy.Resolve(", StringComparison.Ordinal)));
 
-        // The floor's own predicate lives inside Resolve and must not be re-derived at a gate.
+        // Delete-likeness is weighed inside Resolve and must not be re-derived at a gate.
         Assert.Empty(CodeLinesContaining(lines, "IsDeleteLike"));
 
-        // A gate must not use the card's name-only guess: a renamed built-in would become grantable-as-external.
+        // A gate must not use the card's name-only guess: a renamed built-in would then change what the
+        // autonomy preset covers and what the park will ask about.
         Assert.Empty(CodeLinesContaining(lines, "ClassifyPresumedExternal"));
 
         var mcpLines = CodeLinesContaining(lines, "IsMcpTool");

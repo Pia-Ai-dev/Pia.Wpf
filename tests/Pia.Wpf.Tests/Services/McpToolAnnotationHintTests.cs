@@ -69,21 +69,18 @@ public class McpToolAnnotationHintTests
 
     // ---- the gate: what the declaration actually changes ----------------------------------------------
 
+    /// <summary>A grant list the user authored still runs the tool; the declaration is not a veto over it.</summary>
     [Fact]
-    public void Unattended_ADeclaredDestructiveExternalTool_IsRefusedEvenWithANamedGrant()
+    public void Unattended_ADeclaredDestructiveExternalTool_StillRunsOnANamedGrant()
     {
-        var before = ToolAutonomy.Resolve(
-            ExternalCall(ToolGateSurface.Unattended, serverDeclaredDestructive: false, namedGrant: true));
-        Assert.Equal(ToolGateOutcome.AutoRun, before.Outcome); // non-vacuity: without the hint it runs
-
         var after = ToolAutonomy.Resolve(
             ExternalCall(ToolGateSurface.Unattended, serverDeclaredDestructive: true, namedGrant: true));
 
-        Assert.Equal(ToolGateOutcome.Refuse, after.Outcome);
-        Assert.Equal(ToolGateDecision.DeniedDestructiveFloor, after.Decision);
+        Assert.Equal(ToolGateOutcome.AutoRun, after.Outcome);
+        Assert.Equal(ToolGateDecision.GrantedByName, after.Decision);
     }
 
-    /// <summary>The floor is evaluated before the policy arm.</summary>
+    /// <summary>Where the declaration does bite: the class-wide policy switch, which is not a per-tool grant.</summary>
     [Fact]
     public void Unattended_APolicyCoveringTheClass_DoesNotLiftTheDeclaration()
     {
@@ -92,88 +89,119 @@ public class McpToolAnnotationHintTests
         var before = ToolAutonomy.Resolve(
             ExternalCall(ToolGateSurface.Unattended, serverDeclaredDestructive: false, policy: policy));
         Assert.Equal(ToolGateOutcome.AutoRun, before.Outcome);
+        Assert.Equal(ToolGateDecision.AutoApprovedPolicy, before.Decision);
 
         var after = ToolAutonomy.Resolve(
             ExternalCall(ToolGateSurface.Unattended, serverDeclaredDestructive: true, policy: policy));
         Assert.Equal(ToolGateOutcome.Refuse, after.Outcome);
-        Assert.Equal(ToolGateDecision.DeniedDestructiveFloor, after.Decision);
+        Assert.Equal(ToolGateDecision.DeniedNotGranted, after.Decision);
     }
 
-    /// <summary>Interactively the floor suppresses auto-approval but still prompts, so the human may allow it once.</summary>
+    /// <summary>…but NOT the park: it refuses an external tool on class alone, so the hint changes nothing
+    /// there and its bite is the policy arm above plus the session tier.</summary>
     [Fact]
-    public void Interactive_ADeclaredDestructiveExternalTool_PromptsInsteadOfAutoRunning()
+    public void Unattended_AnExternalTool_IsNeverParked_HintOrNot()
     {
-        var before = ToolAutonomy.Resolve(
-            ExternalCall(ToolGateSurface.Interactive, serverDeclaredDestructive: false, standingGrant: true));
-        Assert.Equal(ToolGateOutcome.AutoRun, before.Outcome);
+        foreach (var declared in new[] { false, true })
+        {
+            var after = ToolAutonomy.Resolve(
+                ExternalCall(ToolGateSurface.Unattended, serverDeclaredDestructive: declared, canPark: true));
 
+            Assert.Equal(ToolGateOutcome.Refuse, after.Outcome);
+            Assert.Equal(ToolGateDecision.DeniedNotGranted, after.Decision);
+        }
+    }
+
+    /// <summary>A standing grant is a per-tool decision the user took, so the declaration cannot withdraw it.</summary>
+    [Fact]
+    public void Interactive_ADeclaredDestructiveExternalTool_StillAutoRunsOnAStandingGrant()
+    {
         var after = ToolAutonomy.Resolve(
             ExternalCall(ToolGateSurface.Interactive, serverDeclaredDestructive: true, standingGrant: true));
-        Assert.Equal(ToolGateOutcome.Prompt, after.Outcome);
+
+        Assert.Equal(ToolGateOutcome.AutoRun, after.Outcome);
+        Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, after.Decision);
     }
 
-    /// <summary>The session tier sits above the standing grant and below the floor, so the declaration must reach it too.</summary>
+    /// <summary>The declaration no longer withholds the session tier either — a card the user answered is a card
+    /// the user answered, and it is the WEAKER of the two grants that card offers.</summary>
     [Fact]
-    public void Interactive_ASessionGrant_DoesNotLiftTheDeclaration()
+    public void Interactive_ASessionGrant_IsHonouredEvenOnADeclaredDestructiveTool()
     {
-        var before = ToolAutonomy.Resolve(
-            ExternalCall(ToolGateSurface.Interactive, serverDeclaredDestructive: false, sessionGrant: true));
-        Assert.Equal(ToolGateOutcome.AutoRun, before.Outcome);
-        Assert.Equal(ToolGateDecision.AutoApprovedSessionGrant, before.Decision);
+        foreach (var declared in new[] { false, true })
+        {
+            var verdict = ToolAutonomy.Resolve(
+                ExternalCall(ToolGateSurface.Interactive, declared, sessionGrant: true));
 
-        var after = ToolAutonomy.Resolve(
-            ExternalCall(ToolGateSurface.Interactive, serverDeclaredDestructive: true, sessionGrant: true));
-        Assert.Equal(ToolGateOutcome.Prompt, after.Outcome);
+            Assert.Equal(ToolGateOutcome.AutoRun, verdict.Outcome);
+            Assert.Equal(ToolGateDecision.AutoApprovedSessionGrant, verdict.Decision);
+        }
+
+        // Non-vacuity: the declaration still narrows where nothing was granted — the card comes back.
+        var ungranted = ToolAutonomy.Resolve(
+            ExternalCall(ToolGateSurface.Interactive, serverDeclaredDestructive: true));
+        Assert.Equal(ToolGateOutcome.Prompt, ungranted.Outcome);
     }
 
     [Fact]
-    public void Voice_ADeclaredDestructiveExternalTool_IsRefused()
+    public void Voice_ADeclaredDestructiveExternalTool_StillAutoRunsOnAStandingGrant()
     {
         var after = ToolAutonomy.Resolve(
             ExternalCall(ToolGateSurface.Voice, serverDeclaredDestructive: true, standingGrant: true));
 
-        Assert.Equal(ToolGateOutcome.Refuse, after.Outcome);
-        Assert.Equal(ToolGateDecision.DeniedDestructiveFloor, after.Decision);
+        Assert.Equal(ToolGateOutcome.AutoRun, after.Outcome);
+        Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, after.Decision);
+
+        // Ungranted, voice still refuses it: the declaration only ever narrows, and nothing here authorized it.
+        var ungranted = ToolAutonomy.Resolve(
+            ExternalCall(ToolGateSurface.Voice, serverDeclaredDestructive: true));
+        Assert.Equal(ToolGateOutcome.Refuse, ungranted.Outcome);
     }
 
+    /// <summary>A loosening claim reaches the gate as "no hint", so the NAME alone still narrows.</summary>
     [Fact]
     public void TheHintCannotClearADeleteLikeName()
     {
-        // A loosening claim reaches the gate as "no hint", which is what false stands for here.
         var verdict = ToolAutonomy.Resolve(new ToolGateInput(
             ToolGateSurface.Unattended, "delete_everything", ToolClass.External,
             ServerDeclaredDestructive: false,
-            IsAllowlisted: false, HasSessionGrant: false, HasStandingGrant: false,
-            IsNamedGrant: true, HasNamedDenial: false, Policy: null, CanPark: false));
+            IsAllowlisted: false, HasSessionGrant: true, HasStandingGrant: false,
+            IsNamedGrant: false, HasNamedDenial: false,
+            Policy: new RunAutonomyPolicy([ToolClass.External]), CanPark: true));
 
+        // Neither the policy, nor the session tier, nor the park will take it.
         Assert.Equal(ToolGateOutcome.Refuse, verdict.Outcome);
-        Assert.Equal(ToolGateDecision.DeniedDestructiveFloor, verdict.Decision);
+        Assert.Equal(ToolGateDecision.DeniedNotGranted, verdict.Decision);
     }
 
     // ---- the offer rules: the card must not offer what the gate will refuse --------------------------
 
+    /// <summary>The declaration changes how the card LOOKS, not which tiers it offers: neither has an
+    /// offerability test left, and the gate honours both either way.</summary>
     [Fact]
-    public void NeitherGrantTier_IsOfferedForADeclaredDestructiveTool()
+    public void NeitherTier_IsWithheldForADeclaredDestructiveTool()
     {
-        Assert.True(ToolAutonomy.IsStandingGrantOfferable(
-            ToolClass.External, BenignExternalTool, isAllowlisted: false));
-        Assert.True(ToolAutonomy.IsSessionGrantOfferable(BenignExternalTool));
-
-        Assert.False(ToolAutonomy.IsStandingGrantOfferable(
-            ToolClass.External, BenignExternalTool, isAllowlisted: false, serverDeclaredDestructive: true));
-        Assert.False(ToolAutonomy.IsSessionGrantOfferable(BenignExternalTool, serverDeclaredDestructive: true));
+        foreach (var declared in new[] { false, true })
+        {
+            Assert.Equal(
+                ToolGateDecision.AutoApprovedStandingGrant,
+                ToolAutonomy.Resolve(ExternalCall(
+                    ToolGateSurface.Interactive, declared, standingGrant: true)).Decision);
+            Assert.Equal(
+                ToolGateDecision.AutoApprovedSessionGrant,
+                ToolAutonomy.Resolve(ExternalCall(
+                    ToolGateSurface.Interactive, declared, sessionGrant: true)).Decision);
+        }
     }
 
     [Fact]
-    public void TheCard_WarnsAndWithdrawsTheStandingGrantOffer()
+    public void TheCard_Warns_ButKeepsBothGrantOffers()
     {
         var localization = Substitute.For<ILocalizationService>();
         localization[Arg.Any<string>()].Returns(ci => ci.Arg<string>());
         localization.Format(Arg.Any<string>(), Arg.Any<object[]>())
             .Returns(ci => $"{ci.ArgAt<string>(0)}({string.Join(",", ci.ArgAt<object[]>(1))})");
-        var permissions = Substitute.For<IToolPermissionService>();
-        permissions.IsAutoApproveEligible(Arg.Any<string>()).Returns(false);
-        var builder = new ActionCardBuilder(localization, Substitute.For<ITokenMapService>(), permissions);
+        var builder = new ActionCardBuilder(localization, Substitute.For<ITokenMapService>());
 
         PluginToolCall Call(bool declared) => new(
             BenignExternalTool, Guid.NewGuid(), "some-mcp-server", $"some-mcp-server: {BenignExternalTool}",
@@ -183,13 +211,12 @@ public class McpToolAnnotationHintTests
         var plain = builder.Build(Call(declared: false), detokenize: false, toolClass: ToolClass.External);
         Assert.False(plain.IsDestructive);
         Assert.Null(plain.WarningText);
-        Assert.True(plain.IsAutoApprovable);
-        Assert.True(plain.IsSessionGrantable);
+        Assert.Equal(4, plain.Decisions.Count);
 
         var declaredCard = builder.Build(Call(declared: true), detokenize: false, toolClass: ToolClass.External);
         Assert.True(declaredCard.IsDestructive);
         Assert.Equal("Msg_Assistant_PermanentDeleteExternal", declaredCard.WarningText);
-        Assert.False(declaredCard.IsAutoApprovable);
-        Assert.False(declaredCard.IsSessionGrantable);
+        // Same four buttons: the declaration is a warning, not a narrowing.
+        Assert.Equal(4, declaredCard.Decisions.Count);
     }
 }

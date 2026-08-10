@@ -33,10 +33,8 @@ public class ToolPermissionServiceTests
     }
 
     [Theory]
-    [InlineData("create_object")]
     [InlineData("create_todo")]
     [InlineData("create_reminder")]
-    [InlineData("append_to_list")]
     public void IsAutoApproveEligible_TrueForSafeAdditiveSet(string toolName)
     {
         var (sut, _, _) = Create();
@@ -51,6 +49,9 @@ public class ToolPermissionServiceTests
     [InlineData("delete_file")]
     [InlineData("update_todo")]
     [InlineData("update_reminder")]
+    // Declared by no handler in the tree, so the allowlist must not carry them either.
+    [InlineData("create_object")]
+    [InlineData("append_to_list")]
     public void IsAutoApproveEligible_FalseForEverythingElse(string toolName)
     {
         var (sut, _, _) = Create();

@@ -134,7 +134,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
         await AwaitSettledAsync(handle.RunId);
 
-        await AssertHardDeniedNotParkedAsync(handle.RunId, probe, ToolGateDecision.DeniedDestructiveFloor);
+        await AssertHardDeniedNotParkedAsync(handle.RunId, probe, ToolGateDecision.DeniedNotGranted);
         await launcher.StopAsync(CancellationToken.None);
     }
 
@@ -144,7 +144,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
     public async Task DeleteLikeBuiltInTool_StillHardDenies_AndNeverParks()
     {
         var probe = new ToolProbe("delete_file");
-        var (launcher, _) = Build(probe); // built-in: IsMcpTool false, so the floor does not apply
+        var (launcher, _) = Build(probe);
 
         var handle = await launcher.LaunchAsync(
             new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []),
@@ -153,6 +153,34 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await AwaitSettledAsync(handle.RunId);
 
         await AssertHardDeniedNotParkedAsync(handle.RunId, probe, ToolGateDecision.DeniedNotGranted);
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>The complement of the two facts above, and the reason the Tool access page is not lying: "Always" is offered for
+    /// exactly the tools the park refuses to ask about, so a grant that stopped at the interactive gate bought those nothing.</summary>
+    [Fact]
+    public async Task StandingGrant_RunsTheDeleteLikeToolTheParkWillNotEvenAskAbout()
+    {
+        var pluginId = Guid.NewGuid();
+        var permissions = Substitute.For<IToolPermissionService>();
+        permissions.IsGranted(pluginId, "delete_file").Returns(true);
+        var probe = new ToolProbe("delete_file");
+        var (launcher, _) = Build(probe, pluginId: pluginId, permissions: permissions);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []),
+            TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+        await AwaitSettledAsync(handle.RunId);
+
+        Assert.True(probe.Executed);
+        var run = await GetRunAsync(handle.RunId);
+        Assert.Equal(AgentRunState.Completed, run.State);
+
+        var row = Assert.Single(_timeline.Rows, r => r.ToolName == "delete_file");
+        Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, row.Decision);
+        Assert.Equal(AgentTimelineOutcome.Ok, row.Outcome);
+
         await launcher.StopAsync(CancellationToken.None);
     }
 
@@ -442,8 +470,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>The destructive floor only catches delete-like tools, so this is the case that fell between the two guards. It
-    /// must deny with <c>DeniedNotGranted</c> and not through the floor, or the audit records the wrong reason.</summary>
+    /// <summary>Not delete-like, so only the park's own External clause stops it — the case that used to fall
+    /// between two guards.</summary>
     [Fact]
     public async Task NonDestructiveExternalTool_StillHardDenies_AndNeverParks()
     {
@@ -745,16 +773,20 @@ public sealed class UnattendedApprovalParkTests : IDisposable
     }
 
     /// <param name="routed">False ⇒ the plugin service resolves no route for the call (the "Unknown tool." path).</param>
-    /// <param name="isMcpTool">True ⇒ the gate derives ToolClass.External, which is what arms the floor.</param>
+    /// <param name="isMcpTool">True ⇒ the gate derives ToolClass.External, which the park (and the session
+    /// tier, unattended) refuse to ask about or honour.</param>
     /// <param name="secondToolName">A second call the same step turn makes, after the first has already parked.</param>
     /// <param name="faultAfterFirstCall">The provider faults on a later round of the same exchange.</param>
     /// <param name="sessionGrants">Omitted ⇒ not registered at all, so the run has no session tier.</param>
     /// <param name="pluginId">A stable owner: a session grant is keyed on (PluginId, ToolName), so a fact about
     /// it has to route the same owner twice, while the default mints a fresh id per call.</param>
+    /// <param name="permissions">Omitted ⇒ an all-false substitute, i.e. no standing grants. Registered either
+    /// way, unlike <paramref name="sessionGrants"/>: the runner reads this tier on every call.</param>
     private (HeadlessRunLauncher Launcher, OneStepPlanner Planner) Build(
         ToolProbe probe, bool routed = true, bool isMcpTool = false, AppSettings? appSettings = null,
         string? secondToolName = null, bool faultAfterFirstCall = false,
-        ISessionToolGrantStore? sessionGrants = null, Guid? pluginId = null)
+        ISessionToolGrantStore? sessionGrants = null, Guid? pluginId = null,
+        IToolPermissionService? permissions = null)
     {
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         var persona = new Persona { Name = "Pia", SystemPrompt = "sys" };
@@ -820,6 +852,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         // file on the gate that has no session grants at all.
         if (sessionGrants is not null)
             services.AddSingleton(sessionGrants);
+        services.AddSingleton(permissions ?? Substitute.For<IToolPermissionService>());
         services.AddTransient<BackgroundAssistantTurnRunner>();
         services.AddTransient<HeadlessTurnExecutor>();
         services.AddTransient<AgentRunOrchestrator>();

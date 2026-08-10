@@ -337,7 +337,8 @@ public sealed class AgentRunGraceTurnTests
                 });
 
             _engine = new BackgroundAssistantTurnRunner(
-                ai, Substitute.For<IPluginService>(), _composer, _personas, Chats, _titles, _settings,
+                ai, Substitute.For<IPluginService>(), Substitute.For<IToolPermissionService>(),
+                _composer, _personas, Chats, _titles, _settings,
                 static () => Substitute.For<ITokenMapService>(), Runs, new ExecutingRunStore(),
                 NullLogger<BackgroundAssistantTurnRunner>.Instance);
         }

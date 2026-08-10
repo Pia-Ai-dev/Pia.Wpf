@@ -186,7 +186,7 @@
         <local:PersonasView DataContext="{Binding PersonasVm}"/>
       </TabItem>
 
-      <!-- Tool access tab (tool-permission revocation surface — design §7) -->
+      <!-- Tool access tab: the revocation surface and the pre-approval catalogue -->
       <TabItem Header="{loc:Str Settings_Tab_ToolPermissions}" Style="{DynamicResource SettingsInnerTabItemStyle}">
         <ScrollViewer VerticalScrollBarVisibility="Auto" DataContext="{Binding ToolPermissionsVm}">
           <StackPanel MaxWidth="640" HorizontalAlignment="Left">
@@ -334,22 +334,20 @@
                               <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
                                 <TextBlock Text="{Binding ToolName}"
                                            Foreground="{DynamicResource TextDefaultBrush}"/>
-                                <TextBlock Text="{Binding Reason}"
+                                <TextBlock Text="{Binding CautionText}"
                                            FontSize="11"
                                            TextWrapping="Wrap"
                                            Foreground="{DynamicResource TextSubtleBrush}"
                                            Margin="0,2,0,0"
-                                           Visibility="{Binding HasReason, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                           Visibility="{Binding HasCaution, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                               </StackPanel>
 
                               <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                 <CheckBox Content="{loc:Str ToolCatalog_UntilClose}"
                                           IsChecked="{Binding AllowedForSession, Mode=TwoWay}"
-                                          IsEnabled="{Binding CanChangeSession}"
                                           Margin="0,0,12,0"/>
                                 <CheckBox Content="{loc:Str ToolCatalog_Always}"
-                                          IsChecked="{Binding AllowedAlways, Mode=TwoWay}"
-                                          IsEnabled="{Binding CanChangeAlways}"/>
+                                          IsChecked="{Binding AllowedAlways, Mode=TwoWay}"/>
                               </StackPanel>
                             </Grid>
                           </DataTemplate>

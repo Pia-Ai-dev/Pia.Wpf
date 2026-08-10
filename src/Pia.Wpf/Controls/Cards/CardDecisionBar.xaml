@@ -10,9 +10,8 @@
                 HorizontalAlignment="Right">
     <ItemsControl.ItemsPanel>
       <ItemsPanelTemplate>
-        <!-- WrapPanel, not StackPanel: hermes #15 added a third grant tier, so an eligible card now shows
-             four buttons and a narrow chat column would clip the last one out of reach. Identical layout
-             while the row fits. -->
+        <!-- WrapPanel, not StackPanel: a card can show four buttons, and a narrow chat column would clip the
+             last one out of reach. Identical layout while the row fits. -->
         <WrapPanel Orientation="Horizontal" HorizontalAlignment="Right" />
       </ItemsPanelTemplate>
     </ItemsControl.ItemsPanel>

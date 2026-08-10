@@ -296,3 +296,130 @@ and through `SettingsViewModel`'s own ctor.
 
 Phase 1 alone closes the reported complaint: the card stops lying and the Manage link lands
 somewhere that explains what happened. Phases 2 and 3 are additive and independently shippable.
+
+---
+
+## Addendum, 2026-08-09 — the tier decision was reversed by the owner
+
+Everything above is left as written; this note records what no longer holds. The owner asked for
+every tool to be selectable for "Always", and chose to remove the destructive-external floor with
+it. Three things in this document are now reversed:
+
+1. **"Decision: which tier can pre-approval actually target"** — the standing tier is no longer
+   restricted. `ToolAutonomy.IsStandingGrantOfferable` is deleted, the destructive-external floor is
+   gone from `Resolve`, and **every tool offers "Always"**, `delete_file` and MCP deletes included. A
+   scheduled job whose grant list names an MCP delete now auto-runs it unattended, and voice honours
+   an "Always" grant on a delete. The session tier is untouched: `IsSessionGrantOfferable` still
+   withholds delete-like, work-discarding and authority-authoring names, so it is now the *narrower*
+   of the two.
+2. **The four-name allowlist** — `create_object` and `append_to_list` were declared by no handler and
+   are deleted. `create_todo` and `create_reminder` remain; the set authorizes voice mode only.
+3. **Out of scope: "changing which tools are standing-grantable"** — that is exactly what was
+   changed.
+
+Consequences on this page: no row is un-grantable at both tiers, so the "shown disabled with a
+stated reason" case above now means the *session* box alone. The per-row reason was re-aimed at that
+one question (`ToolGrantRestriction.SessionOnly` and its resource key are gone, and the three
+remaining reasons were rewritten in all three locales — they used to say "always asks", which is
+false now that Always is on offer for the same tool).
+
+Still true and deliberately unchanged: an "Always" grant does not reach a headless run
+(`BackgroundAssistantTurnRunner` passes `HasStandingGrant: false`), and
+`ToolPermissionService.IsPresumedExternalDeleteLike` still filters a scheduled job's `grantedTools`
+at create time. `ToolGateDecision.DeniedDestructiveFloor` stays at ordinal 9 as persisted audit
+vocabulary, unreachable from `Resolve`.
+
+---
+
+## Addendum, 2026-08-10 — "Always" now reaches headless runs
+
+The paragraph directly above no longer holds. It was the asymmetry the previous addendum created:
+"Always" was opened up to every tool including `delete_file` and MCP deletes, and those are exactly
+the tools the unattended approval park refuses to ask about — so on a scheduled job a ticked
+"Always" bought nothing and offered no way to ask either. The owner asked for it to be honoured.
+
+`BackgroundAssistantTurnRunner` now takes `IToolPermissionService` and passes the real
+`IsGranted(pending.PluginId, pending.ToolName)`, which is the identical lookup `ChatSession` makes.
+`ToolAutonomy.Resolve` is unchanged: its standing-grant arm never had a surface pin, so the only
+thing that had kept headless out was the hardcoded `false`.
+
+Read **ambiently**, unlike the session tier, which arrives on the per-step `ToolApprovalStore`. Two
+reasons: a `SingleTurn` scheduled job builds no store at all (`HeadlessTurnExecutor` is the only
+construction site), so threading it would have shipped a feature that never fires for the case that
+prompted this; and the child-run argument that put the session tier on the store does not apply —
+a standing grant sits in no run's envelope, so `NarrowForChild` has nothing to narrow and parent and
+child read the same persisted fact.
+
+Consequences, stated rather than discovered later:
+
+- A grant ticked once in Settings authorises every future scheduled job and agent run, unattended,
+  with no per-run record of why. The run's own audit row still names it
+  (`AutoApprovedStandingGrant`), so a run panel shows which authority ran the tool.
+- `NarrowForChild` strips delete-like names from a child's grant envelope; a standing grant on a
+  delete-like tool now bypasses that stripping. Identically for parent and child, so a delegate is
+  still never wider than its delegator.
+- A per-run **denial** (a park's Deny) still beats it: `HasNamedDenial` is the first arm in `Resolve`.
+- `IsAllowlisted: false` stays hardcoded on this gate on purpose. The curated allowlist authorizes
+  voice alone, and the `false` is a second lock behind `Resolve`'s Voice pin —
+  `ToolAutonomyRuleTests`' allowlist column for this file stays at `0`.
+
+Not touched, and worth knowing: `ToolPermissionService._grantedKeys` uses the default tuple
+comparer, so standing-grant matching is case-**sensitive** while `grantedWrites` and `IsDeleteLike`
+are case-insensitive. A model calling `Delete_File` matches no grant on `delete_file`. Interactive
+chat has always had that property; it is not new here.
+
+---
+
+## Addendum, 2026-08-10 (second) — the session tier is open too, and the reason line became a caution
+
+Once "Always" reached headless runs, the session tier's three exclusions read backwards: a user was
+blocked from the **time-bounded** grant on `delete_file` and offered the **permanent** one on the same
+card, with the page explaining the block by naming a risk the permanent grant accepts forever. The
+exclusions were a fossil of the pre-reversal policy, where the standing tier had a destructive floor
+and the session tier was the wider of the two. Worse, the rule pushed anyone who wanted bounded
+permission toward the durable grant, because it was the only sticky option on offer.
+
+The owner's call: open "Until Pia closes" for every tool, keep the three risk classes as an
+**advisory note**, and show that note only once the user has ticked either box — advice on a choice
+already made, rather than clutter on a row they were only scanning.
+
+What changed:
+
+- `ToolAutonomy.IsSessionGrantOfferable` is **deleted**. `Resolve`'s session arm keeps its two
+  surface pins (voice; unattended + `ToolClass.External`) and nothing else. Both were always
+  independent of offerability.
+- The card's `IsAutoApprovable` and `IsSessionGrantable` flags are **gone** with it — both had become
+  a hardcoded `true`. `ActionCardInfo.Decisions` is now unconditionally four buttons.
+- `ChatSession`'s `AllowForSession` degrade arm (execute once, mint nothing) and
+  `ToolGateResolution.SessionOfferable` are **deleted**: they defended against the card and the gate
+  disagreeing about offerability, and there is no offerability left to disagree about.
+- `ToolGrantRestriction` → **`ToolGrantCaution`**, `Restriction` → `Caution`, `ReasonKeyFor` →
+  `CautionKeyFor`, `HasReason`/`Reason` → `HasCaution`/`CautionText`, resx keys
+  `ToolCatalog_Reason_*` → `ToolCatalog_Caution_*`. The classifier no longer keys off "not
+  offerable"; it tests `IsDeleteLike(name, serverDeclaredDestructive)` first, then
+  `IsWorkDiscarding`, then `IsAuthorityAuthoring`.
+- `HasCaution` is `CautionKey is not null && (AllowedForSession || AllowedAlways)`. **Both**
+  observable properties notify it — "Always" alone is the tick a user makes on a delete-like tool, so
+  a notify on the session flag alone would have missed the main path.
+- Both catalogue checkboxes lost their `IsEnabled` bindings; `CanGrantForSession`,
+  `CanChangeSession` and `CanChangeAlways` are gone. `ToolCatalogRowTemplateTests` now pins that
+  neither box carries an enabler binding **and** that neither is a literal `False`.
+- Copy rewritten in all three locales: the three notes no longer say "'Until Pia closes' is not
+  available" (nothing is unavailable) and read as "Worth knowing: …". The catalogue description says
+  a ticked row tells you what that tool can then do unsupervised.
+
+Consequences:
+
+- A session grant on a delete-like tool now auto-runs on a ROOT unattended step. Strictly weaker than
+  the standing grant already available there: it dies with the process and never reaches a child run.
+- `IsWorkDiscarding` and `IsAuthorityAuthoring` now gate no authority at all. `IsWorkDiscarding` still
+  has two readers — the card's red styling / per-tool warning copy, and the caution classifier;
+  `IsAuthorityAuthoring`'s only reader is the classifier. Their doc comments say so.
+- The card is not left silent on a destructive tool: `IsDestructive` still puts Danger emphasis on
+  Allow once, and `WarningText` resolves per plugin — `Msg_Assistant_PermanentDeleteFile` for a
+  built-in `delete_file`, the git trio's own three strings, the generic external one for MCP. What it
+  does **not** show is a note about what a multi-call grant consents to; that lives on the Tool access
+  row, and the card is where most grants actually get made.
+- What still narrows a delete-like tool, unchanged: the autonomy **policy** arm, the unattended
+  **park**, and a per-run **denial**. `ToolAutonomyTests`' full-policy-space sweep still proves no
+  policy, park or denied name can authorize one; only a grant a person made can.

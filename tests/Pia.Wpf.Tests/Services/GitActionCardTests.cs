@@ -11,8 +11,8 @@ namespace Pia.Tests.Services;
 /// <summary>
 /// The git confirmation-card mapping: category, per-tool title/action, and the TOOLNAME-based
 /// destructive predicate with a distinct warning per destructive tool. The localization mock echoes
-/// each key, so a wrong key surfaces directly in the asserted value. Also locks that git write tools
-/// are NOT auto-approve eligible (via the real ToolPermissionService).
+/// each key, so a wrong key surfaces directly in the asserted value. Also locks that git write tools stay
+/// out of the voice allowlist (via the real ToolPermissionService).
 /// </summary>
 public sealed class GitActionCardTests
 {
@@ -23,8 +23,7 @@ public sealed class GitActionCardTests
         localization.Format(Arg.Any<string>(), Arg.Any<object[]>())
             .Returns(ci => $"{ci.ArgAt<string>(0)}({string.Join(",", ci.ArgAt<object[]>(1))})");
         var tokenMap = Substitute.For<ITokenMapService>();
-        var permissions = Substitute.For<IToolPermissionService>();
-        return new ActionCardBuilder(localization, tokenMap, permissions);
+        return new ActionCardBuilder(localization, tokenMap);
     }
 
     private static PluginToolCall GitCall(string toolName, string description, string? details = null) =>
@@ -81,15 +80,13 @@ public sealed class GitActionCardTests
     }
 
     [Fact]
-    public void Build_DestructiveGitTool_IsNotAutoApprovable_WithDangerPair()
+    public void Build_DestructiveGitTool_OffersBothGrantTiers_WithADangerAllowOnce()
     {
-        // The permissions mock returns false for every tool (git tools are never in the allowlist),
-        // so the ineligible-destructive pair with a Danger "Allow once" must render.
         var card = CreateBuilder().Build(GitCall("git_restore", "Discard changes"), detokenize: false);
 
-        Assert.False(card.IsAutoApprovable);
-        Assert.Equal(2, card.Decisions.Count);
-        Assert.DoesNotContain(card.Decisions, d => d.Label == "ActionCard_AlwaysAllow");
+        Assert.Equal(4, card.Decisions.Count);
+        Assert.Contains(card.Decisions, d => d.Label == "ActionCard_AllowForSession");
+        Assert.Contains(card.Decisions, d => d.Label == "ActionCard_AlwaysAllow");
         Assert.Equal(DecisionEmphasis.Danger, card.Decisions[1].Emphasis);
     }
 

@@ -153,24 +153,32 @@ public sealed class AssistantViewModelVoiceGateTests
         Assert.Contains("chat window", result);
     }
 
+    /// <summary>The class PRESET never covers a delete, so an ungranted one is still refused by voice — but an
+    /// "Always" the user set for that exact tool is honoured, on this surface like every other.</summary>
     [Theory]
     [InlineData("delete_file", "files", false)]
     [InlineData("forget", "memory", false)]
     [InlineData("delete_issue", "linear", true)]
-    public async Task DeleteLikeToolIsRefused_EvenWithTheSettingOn(string toolName, string pluginName, bool isMcp)
+    public async Task DeleteLikeTool_NeedsItsOwnGrant_AndTheSettingAloneIsNotEnough(
+        string toolName, string pluginName, bool isMcp)
     {
         var executed = false;
         var pluginId = Guid.NewGuid();
         ArrangeWrite(toolName, pluginName, pluginId, () => executed = true);
         _plugins.IsMcpTool(toolName).Returns(isMcp);
-        // Even a (forged) standing grant and the preset both on: a delete-like tool never runs by voice.
-        _permissions.IsGranted(pluginId, toolName).Returns(true);
+        _permissions.IsGranted(pluginId, toolName).Returns(false);
 
         var vm = Build(new AppSettings { AgentRunAutoApproveBuiltInWrites = true });
         var result = Assert.IsType<string>(await vm.HandleVoiceModeToolCall(Call(toolName), new ToolDispatchContext(1)));
 
         Assert.False(executed);
         Assert.StartsWith("Denied:", result);
+
+        _permissions.IsGranted(pluginId, toolName).Returns(true);
+        var granted = Build(new AppSettings { AgentRunAutoApproveBuiltInWrites = true });
+        await granted.HandleVoiceModeToolCall(Call(toolName), new ToolDispatchContext(1));
+
+        Assert.True(executed);
     }
 
     [Fact]
@@ -200,20 +208,22 @@ public sealed class AssistantViewModelVoiceGateTests
         Assert.True(executed);
     }
 
+    /// <summary>The fault answers "external", which costs the call the allowlist arm and keeps the settings
+    /// preset from covering it; the turn survives instead of throwing.</summary>
     [Fact]
-    public async Task WhenMcpDerivationThrows_TheToolIsTreatedAsExternal_AndTheCallSurvives()
+    public async Task WhenMcpDerivationThrows_TheAllowlistArmIsLost_AndTheCallSurvives()
     {
         var executed = false;
         var pluginId = Guid.NewGuid();
-        ArrangeWrite("purge_records", "linear", pluginId, () => executed = true);
-        _plugins.IsMcpTool("purge_records").Returns(_ => throw new InvalidOperationException("boom"));
-        _permissions.IsGranted(pluginId, "purge_records").Returns(true);
+        ArrangeWrite("create_todo", "todo", pluginId, () => executed = true);
+        _plugins.IsMcpTool("create_todo").Returns(_ => throw new InvalidOperationException("boom"));
+        _permissions.IsAutoApproveEligible("create_todo").Returns(true);
 
         var vm = Build();
-        var result = Assert.IsType<string>(await vm.HandleVoiceModeToolCall(Call("purge_records"), new ToolDispatchContext(1)));
+        var result = Assert.IsType<string>(await vm.HandleVoiceModeToolCall(Call("create_todo"), new ToolDispatchContext(1)));
 
         Assert.False(executed);
-        Assert.Contains("destructive external", result);
+        Assert.StartsWith("Denied:", result);
     }
 
     [Fact]

@@ -4,20 +4,16 @@ using Xunit;
 
 namespace Pia.Tests.Models;
 
-/// <summary>Every grant tier on the decision bar is keyed off its OWN offerability flag and never off
-/// <see cref="ActionCardInfo.IsDestructive"/>, which only styles Allow once.</summary>
+/// <summary>The decision bar is the same four buttons on every card. <see cref="ActionCardInfo.IsDestructive"/>
+/// only styles Allow once — it withholds no tier.</summary>
 public class ActionCardInfoDecisionsTests
 {
-    // isSessionGrantable is NOT defaulted: a defaulted parameter would let every case below keep asserting the
-    // old counts while never exercising the axis.
-    private static ActionCardInfo NewCard(bool isAutoApprovable, bool isDestructive, bool isSessionGrantable) => new()
+    private static ActionCardInfo NewCard(bool isDestructive) => new()
     {
         Title = "t",
         Summary = "s",
         Category = ActionCardCategory.Todo,
         ToolName = "todo",
-        IsAutoApprovable = isAutoApprovable,
-        IsSessionGrantable = isSessionGrantable,
         IsDestructive = isDestructive,
         DeclineLabel = "Decline",
         AllowOnceLabel = "Allow once",
@@ -25,68 +21,12 @@ public class ActionCardInfoDecisionsTests
         AllowForSessionLabel = "Allow this session",
     };
 
-    [Fact]
-    public void Decisions_AutoApprovableCard_AreDeclineAllowOnceAlwaysAllow()
-    {
-        var card = NewCard(isAutoApprovable: true, isDestructive: false, isSessionGrantable: false);
-
-        Assert.Equal(3, card.Decisions.Count);
-
-        Assert.Equal("Decline", card.Decisions[0].Label);
-        Assert.Equal(DecisionEmphasis.Default, card.Decisions[0].Emphasis);
-        Assert.Same(card.DeclineCommand, card.Decisions[0].Command);
-
-        Assert.Equal("Allow once", card.Decisions[1].Label);
-        Assert.Equal(DecisionEmphasis.Primary, card.Decisions[1].Emphasis);
-        Assert.Same(card.AllowOnceCommand, card.Decisions[1].Command);
-
-        Assert.Equal("Always allow", card.Decisions[2].Label);
-        Assert.Equal(DecisionEmphasis.Default, card.Decisions[2].Emphasis);
-        Assert.Same(card.AlwaysAllowCommand, card.Decisions[2].Command);
-    }
-
-    [Fact]
-    public void Decisions_NonEligibleCard_AreDeclineThenAllowOncePrimary_NoAlwaysAllow()
-    {
-        var card = NewCard(isAutoApprovable: false, isDestructive: false, isSessionGrantable: false);
-
-        Assert.Equal(2, card.Decisions.Count);
-
-        Assert.Equal("Decline", card.Decisions[0].Label);
-        Assert.Equal(DecisionEmphasis.Default, card.Decisions[0].Emphasis);
-        Assert.Same(card.DeclineCommand, card.Decisions[0].Command);
-
-        Assert.Equal("Allow once", card.Decisions[1].Label);
-        Assert.Equal(DecisionEmphasis.Primary, card.Decisions[1].Emphasis);
-        Assert.Same(card.AllowOnceCommand, card.Decisions[1].Command);
-    }
-
-    [Fact]
-    public void Decisions_NonEligibleDestructiveCard_AllowOnceEmphasisIsDanger()
-    {
-        var card = NewCard(isAutoApprovable: false, isDestructive: true, isSessionGrantable: false);
-
-        Assert.Equal(2, card.Decisions.Count);
-        Assert.Equal(DecisionEmphasis.Danger, card.Decisions[1].Emphasis);
-    }
-
-    [Fact]
-    public void Decisions_AutoApprovableCard_IgnoresDestructive_AllowOnceStaysPrimary()
-    {
-        // Eligibility wins over the destructive heuristic: an auto-approvable card never styles Allow once
-        // as Danger.
-        var card = NewCard(isAutoApprovable: true, isDestructive: true, isSessionGrantable: false);
-
-        Assert.Equal(3, card.Decisions.Count);
-        Assert.Equal(DecisionEmphasis.Primary, card.Decisions[1].Emphasis);
-    }
-
     /// <summary>The ORDER is asserted, not just the count: "always" sitting where "this session" is expected
     /// is the one mistake a user cannot undo by clicking again.</summary>
     [Fact]
-    public void Decisions_AllTiersOfferable_AreDeclineAllowOnceThisSessionAlwaysAllow()
+    public void Decisions_AreDeclineAllowOnceThisSessionAlwaysAllow()
     {
-        var card = NewCard(isAutoApprovable: true, isDestructive: false, isSessionGrantable: true);
+        var card = NewCard(isDestructive: false);
 
         Assert.Equal(4, card.Decisions.Count);
 
@@ -106,17 +46,17 @@ public class ActionCardInfoDecisionsTests
         Assert.Same(card.AlwaysAllowCommand, card.Decisions[3].Command);
     }
 
-    /// <summary><c>write_file</c> is session-grantable and NOT standing-grantable, so its card gains the middle
-    /// tier and still refuses to offer a permanent grant.</summary>
+    /// <summary>A destructive tool is offered BOTH grant tiers — the Tool access row carries a caution once one is
+    /// ticked instead of the button being withheld — so Danger keys off the destructive flag alone.</summary>
     [Fact]
-    public void Decisions_SessionGrantableButNotAutoApprovable_OffersThisSession_AndNeverAlwaysAllow()
+    public void Decisions_DestructiveCard_OffersBothGrantTiers_AndStylesAllowOnceAsDanger()
     {
-        var card = NewCard(isAutoApprovable: false, isDestructive: false, isSessionGrantable: true);
+        var card = NewCard(isDestructive: true);
 
-        Assert.Equal(3, card.Decisions.Count);
-        Assert.Equal("Allow this session", card.Decisions[2].Label);
+        Assert.Equal(4, card.Decisions.Count);
+        Assert.Equal(DecisionEmphasis.Danger, card.Decisions[1].Emphasis);
         Assert.Same(card.AllowForSessionCommand, card.Decisions[2].Command);
-        Assert.DoesNotContain(card.Decisions, d => d.Label == "Always allow");
+        Assert.Same(card.AlwaysAllowCommand, card.Decisions[3].Command);
     }
 
     /// <summary>First-press-wins, so a double-click cannot turn one grant into two decisions on a card the gate
@@ -124,7 +64,7 @@ public class ActionCardInfoDecisionsTests
     [Fact]
     public async Task AllowForSession_ResolvesWithTheSessionDecision_AndIsFirstPressWins()
     {
-        var card = NewCard(isAutoApprovable: false, isDestructive: false, isSessionGrantable: true);
+        var card = NewCard(isDestructive: false);
         var wait = card.WaitForUserDecisionAsync();
 
         card.AllowForSessionCommand.Execute(null);

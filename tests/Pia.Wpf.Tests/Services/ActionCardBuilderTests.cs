@@ -11,9 +11,6 @@ namespace Pia.Tests.Services;
 public class ActionCardBuilderTests
 {
     private static ActionCardBuilder CreateBuilder(out ITokenMapService tokenMap)
-        => CreateBuilder(out tokenMap, out _);
-
-    private static ActionCardBuilder CreateBuilder(out ITokenMapService tokenMap, out IToolPermissionService permissions)
     {
         var localization = Substitute.For<ILocalizationService>();
         localization[Arg.Any<string>()].Returns(ci => ci.Arg<string>());
@@ -21,11 +18,7 @@ public class ActionCardBuilderTests
             .Returns(ci => $"{ci.ArgAt<string>(0)}({string.Join(",", ci.ArgAt<object[]>(1))})");
 
         tokenMap = Substitute.For<ITokenMapService>();
-        permissions = Substitute.For<IToolPermissionService>();
-        permissions.IsAutoApproveEligible("create_todo").Returns(true);
-        permissions.IsAutoApproveEligible("write_file").Returns(false);
-        permissions.IsAutoApproveEligible("delete_file").Returns(false);
-        return new ActionCardBuilder(localization, tokenMap, permissions);
+        return new ActionCardBuilder(localization, tokenMap);
     }
 
     private static PluginToolCall Call(string toolName, string pluginName, string description, string? details = null, Guid pluginId = default) =>
@@ -93,18 +86,17 @@ public class ActionCardBuilderTests
     {
         var builder = CreateBuilder(out _);
 
-        // IsAutoApproveEligible is unstubbed here, so grantability comes purely from the MCP-as-a-class branch.
         var card = builder.Build(Call("search_issues", "linear", "linear: search_issues", "{\"query\":\"bug\"}"), detokenize: false);
 
         Assert.Equal(ActionCardCategory.Mcp, card.Category);
         Assert.Equal("ActionCard_Category_Mcp", card.Title);
-        Assert.True(card.IsAutoApprovable);   // external tools are grantable as a class ("always allow")
         Assert.False(card.IsDestructive);
         Assert.NotEmpty(card.Details);        // JSON args parsed for display
     }
 
+    /// <summary>The warning is styling, not authority: the card still offers both grant tiers.</summary>
     [Fact]
-    public void Build_DestructiveMcpTool_IsNotGrantable_AndWarns()
+    public void Build_DestructiveMcpTool_StillOffersBothGrantTiers_AndWarns()
     {
         var builder = CreateBuilder(out _);
 
@@ -112,8 +104,11 @@ public class ActionCardBuilderTests
 
         Assert.Equal(ActionCardCategory.Mcp, card.Category);
         Assert.True(card.IsDestructive);
-        Assert.False(card.IsAutoApprovable);  // no one-click standing grant on a destructive external tool
         Assert.Equal("Msg_Assistant_PermanentDeleteExternal", card.WarningText);
+        Assert.Contains(card.Decisions, d => d.Label == "ActionCard_AllowForSession");
+        Assert.Contains(card.Decisions, d => d.Label == "ActionCard_AlwaysAllow");
+        // The red "Allow once" keys off IsDestructive alone; no tier is withheld to signal it.
+        Assert.Equal(DecisionEmphasis.Danger, card.Decisions[1].Emphasis);
     }
 
     [Fact]
@@ -160,20 +155,18 @@ public class ActionCardBuilderTests
     }
 
     [Fact]
-    public void Build_EligibleTool_CarriesPluginIdAndIsAutoApprovable_WithTriadDecisions()
+    public void Build_CarriesPluginId_WithAllFourDecisions()
     {
-        var builder = CreateBuilder(out _, out _);
+        var builder = CreateBuilder(out _);
         var pluginId = Guid.NewGuid();
 
         var card = builder.Build(Call("create_todo", "todo", "Create a todo", pluginId: pluginId), detokenize: false);
 
         Assert.Equal(pluginId, card.PluginId);
-        Assert.True(card.IsAutoApprovable);
         Assert.False(card.IsAutoApproved);
 
         // Four buttons: the grant tiers ascend in durability after Allow once, so nobody is pushed straight to
         // the permanent one.
-        Assert.True(card.IsSessionGrantable);
         Assert.Equal(4, card.Decisions.Count);
         Assert.Equal("ActionCard_Decline", card.Decisions[0].Label);
         Assert.Equal(DecisionEmphasis.Default, card.Decisions[0].Emphasis);
@@ -185,33 +178,30 @@ public class ActionCardBuilderTests
         Assert.Equal(DecisionEmphasis.Default, card.Decisions[3].Emphasis);
     }
 
-    /// <summary><c>delete_file</c> is irreversible, so it keeps the bare pair: a multi-call grant would
-    /// authorize deletions whose arguments the user never saw.</summary>
+    /// <summary>Both grant tiers are on every card, an irreversible tool included: withholding the WEAKER of the
+    /// two only pushed a user toward the permanent one.</summary>
     [Theory]
-    [InlineData("write_file", "files", true)]
-    [InlineData("delete_file", "files", false)]
-    public void Build_IneligibleTool_NeverOffersAlwaysAllow_AndOffersTheSessionTierOnlyWhenReversible(
-        string toolName, string pluginName, bool sessionGrantable)
+    [InlineData("write_file", "files")]
+    [InlineData("delete_file", "files")]
+    [InlineData("git_stash", "git")]
+    [InlineData("create_scheduled_research", "scheduled-research")]
+    public void Build_OffersBothGrantTiers_OnEveryCard(string toolName, string pluginName)
     {
-        var builder = CreateBuilder(out _, out _);
+        var builder = CreateBuilder(out _);
 
         var card = builder.Build(Call(toolName, pluginName, "do the thing"), detokenize: false);
 
-        Assert.False(card.IsAutoApprovable);
-        Assert.Equal(sessionGrantable, card.IsSessionGrantable);
-        Assert.Equal(sessionGrantable ? 3 : 2, card.Decisions.Count);
+        Assert.Equal(4, card.Decisions.Count);
         Assert.Equal("ActionCard_Decline", card.Decisions[0].Label);
         Assert.Equal("ActionCard_AllowOnce", card.Decisions[1].Label);
-        Assert.DoesNotContain(card.Decisions, d => d.Label == "ActionCard_AlwaysAllow");
-        Assert.Equal(
-            sessionGrantable,
-            card.Decisions.Any(d => d.Label == "ActionCard_AllowForSession"));
+        Assert.Equal("ActionCard_AllowForSession", card.Decisions[2].Label);
+        Assert.Equal("ActionCard_AlwaysAllow", card.Decisions[3].Label);
     }
 
     [Fact]
     public void Build_AutoApproved_ReturnsPreResolvedAcceptedCard()
     {
-        var builder = CreateBuilder(out _, out _);
+        var builder = CreateBuilder(out _);
 
         var card = builder.Build(Call("create_todo", "todo", "Create a todo"), detokenize: false, autoApprovedAs: ToolGateDecision.AutoApprovedStandingGrant);
 
@@ -229,7 +219,7 @@ public class ActionCardBuilderTests
     [InlineData(ToolGateDecision.AutoApprovedAllowlist, "ActionCard_AutoApproved")]
     public void Build_AutoApproved_NamesTheTierThatApproved(ToolGateDecision decision, string expectedKey)
     {
-        var builder = CreateBuilder(out _, out _);
+        var builder = CreateBuilder(out _);
 
         var card = builder.Build(Call("create_todo", "todo", "Create a todo"), detokenize: false, autoApprovedAs: decision);
 
@@ -241,7 +231,7 @@ public class ActionCardBuilderTests
     [Fact]
     public void Build_AutoApprovedByPolicy_DoesNotClaimAStandingGrant()
     {
-        var builder = CreateBuilder(out _, out _);
+        var builder = CreateBuilder(out _);
 
         // The reported defect: autonomy runs write_file, the card says "you always allow", and Tool access is
         // blank because no standing grant was ever written. Equality, not a substring — the autonomy key
