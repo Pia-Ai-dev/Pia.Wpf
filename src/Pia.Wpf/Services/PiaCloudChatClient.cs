@@ -123,6 +123,12 @@ public sealed class PiaCloudChatClient : IChatClient
         // Track tool call accumulation across deltas
         var toolCallBuilders = new List<ToolCallBuilder>();
 
+        // OpenAI emits usage on a single final, choiceless chunk — but some OpenAI-compatible
+        // backends (observed: GLM reasoning models) report it on EVERY chunk instead. Buffering to
+        // the latest and yielding once after the loop keeps both correct; yielding per-occurrence
+        // would let Microsoft.Extensions.AI's ToChatResponse() sum the same usage N times over.
+        UsageDetails? pendingUsage = null;
+
         string? line;
         while ((line = await reader.ReadLineAsync(cancellationToken)) is not null)
         {
@@ -136,17 +142,8 @@ public sealed class PiaCloudChatClient : IChatClient
             try { json = JsonNode.Parse(data); }
             catch { continue; }
 
-            // OpenAI-compatible streams emit a final chunk with usage and empty choices when
-            // stream_options.include_usage=true. Surface it as a UsageContent update so the
-            // aggregated ChatResponse.Usage is populated downstream.
             if (TryParseUsage(json?["usage"]) is { } streamUsage)
-            {
-                yield return new ChatResponseUpdate
-                {
-                    Role = ChatRole.Assistant,
-                    Contents = [new UsageContent(streamUsage)]
-                };
-            }
+                pendingUsage = streamUsage;
 
             // Neutral guardrail marker rides its own choiceless chunk (server emits it first).
             if (GuardrailMarker.IsProtected(json))
@@ -263,6 +260,15 @@ public sealed class PiaCloudChatClient : IChatClient
                 toolCallBuilders.Count);
             foreach (var update in EmitAccumulatedToolCalls(toolCallBuilders))
                 yield return update;
+        }
+
+        if (pendingUsage is not null)
+        {
+            yield return new ChatResponseUpdate
+            {
+                Role = ChatRole.Assistant,
+                Contents = [new UsageContent(pendingUsage)]
+            };
         }
     }
 

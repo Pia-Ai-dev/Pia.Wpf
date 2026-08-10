@@ -114,6 +114,31 @@ public class PiaCloudChatClientReasoningTests
     }
 
     [Fact]
+    public async Task Streaming_UsageOnEveryChunk_YieldsOnlyTheLastOne()
+    {
+        // Some OpenAI-compatible backends (observed: GLM reasoning models) report usage on every
+        // chunk instead of once on a final choiceless chunk. Yielding once per occurrence would let
+        // ToChatResponse() sum the same usage repeatedly, inflating the aggregated token count.
+        var sse =
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":1}}\n\n" +
+            "data: {\"choices\":[{\"delta\":{\"content\":\" there\"}}],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":2}}\n\n" +
+            "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":3}}\n\n" +
+            "data: [DONE]\n\n";
+        var client = CreateClient(sse, "text/event-stream");
+
+        var usages = new List<UsageDetails>();
+        await foreach (var update in client.GetStreamingResponseAsync(
+            new[] { new ChatMessage(ChatRole.User, "hi") }, cancellationToken: TestContext.Current.CancellationToken))
+        {
+            usages.AddRange(update.Contents.OfType<UsageContent>().Select(u => u.Details));
+        }
+
+        var usage = Assert.Single(usages);
+        Assert.Equal(100, usage.InputTokenCount);
+        Assert.Equal(3, usage.OutputTokenCount);
+    }
+
+    [Fact]
     public async Task Streaming_WithoutReasoning_YieldsNoReasoningContent()
     {
         var sse =
