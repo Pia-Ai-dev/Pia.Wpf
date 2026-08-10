@@ -196,6 +196,11 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
         AgentRun run, RunContext ctx, Persona persona, Guid messageId, string question, CancellationToken ct) =>
         PostAsync(() =>
         {
+            // The durable post's own ChatsChanged pull can land here first and add this very row — adding it
+            // again renders the question twice and makes the next full-replace persist break Id's UNIQUE index.
+            if (_session.Messages.Any(m => m.Id == messageId))
+                return Task.CompletedTask;
+
             _session.Messages.Add(new AssistantMessage(messageId, ChatRole.Assistant, question, DateTime.Now)
             {
                 Persona = PersonaAttribution.From(persona),

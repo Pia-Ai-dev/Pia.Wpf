@@ -967,6 +967,61 @@ public sealed class LiveTurnExecutorPlannedRunTests
         Assert.Null(session.Cts);                               // …and disposed the run CTS, so Send re-enables
     }
 
+    /// <summary>The store pull can render the question before the mirror runs, so the mirror must skip that row —
+    /// adding it again showed the question twice and broke Id's UNIQUE index on the next persist.</summary>
+    [Fact]
+    public async Task InteractivePlannedRun_StorePullRenderedTheQuestionFirst_TheMirrorDoesNotRepeatIt()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync(ThinGoal);
+        var session = CreateSession();
+        SeedSessionForPlannedRun(session, ThinGoal);
+        ProviderDeclinesEveryPlanTurn();
+
+        // Stands in for ChatSessionManager's transcript pull, which ChatsChanged drives on every durable write:
+        // append-only and keyed on message id, exactly as the real one is.
+        var pulled = new List<Guid>();
+        void Pull(object? _, AssistantChatChangedEventArgs e)
+        {
+            if (e.Kind != AssistantChatChangeKind.Upserted || e.Id != run.ChatId)
+                return;
+
+            var stored = h.Chats.GetAsync(e.Id).GetAwaiter().GetResult();
+            var known = session.Messages.Select(m => m.Id).ToHashSet();
+            foreach (var dto in stored!.Messages.Where(d => known.Add(d.Id)))
+            {
+                session.Messages.Add(AssistantMessageMapper.FromDto(dto));
+                pulled.Add(dto.Id);
+            }
+        }
+
+        h.Chats.ChatsChanged += Pull;
+        try
+        {
+            var live = BuildLiveExecutor(session, _ => false);
+            var orchestrator = new AgentRunOrchestrator(
+                h.Runs, RealPlanner(), new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance, chats: h.Chats);
+
+            await orchestrator.RunAsync(run, live, Persona(), Provider(), RunProfile.Interactive, session.Cts!.Token);
+        }
+        finally
+        {
+            h.Chats.ChatsChanged -= Pull;
+        }
+
+        var rendered = Assert.Single(session.Messages, m => !m.IsUser);
+        Assert.Equal(ModelQuestion, rendered.Content);
+        // Positive control: the PULL is what rendered it, so the mirror's skip is the thing this asserts.
+        Assert.Contains(rendered.Id, pulled);
+
+        // The invariant a second copy broke: a full-replace persist inserts every row, so two rows sharing an
+        // id violated AssistantChatMessages.Id's UNIQUE index and abandoned the whole write.
+        Assert.Equal(session.Messages.Count, session.Messages.Select(m => m.Id).Distinct().Count());
+
+        var storedChat = await h.Chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
+        Assert.Single(storedChat!.Messages, m => m.Role == "assistant");
+    }
+
     /// <summary>A needs-goal park suppresses the Flow card for the watched chat, but the run-progress panel still names the reason and offers Continue.</summary>
     [Fact]
     public async Task InteractiveNeedsGoalPark_PublishesNoFlowCardForTheWatchedChat_ButThePanelNamesItAndOffersContinue()
