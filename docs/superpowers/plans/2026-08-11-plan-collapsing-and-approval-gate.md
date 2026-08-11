@@ -21,7 +21,7 @@
 - Modify: `src/Pia.Wpf/Services/AgentPlanner.cs:159` (`PlanStepArg.ExpectedArtifact` description)
 - Test: `tests/Pia.Wpf.Tests/Services/AgentPlannerTests.cs` (create the file if it does not already exist — grep first: `Grep -l "class AgentPlannerTests" tests/Pia.Wpf.Tests/Services/*.cs` to confirm)
 
-- [ ] **Step 1: Confirm the current exact text of the two edit sites**
+- [x] **Step 1: Confirm the current exact text of the two edit sites**
 
 Read `src/Pia.Wpf/Services/AgentPlanner.cs` lines 774-814 and line 159 to confirm they still match the spec's citations before editing (a stale line number would silently edit the wrong line). Expected content at line 159 today:
 
@@ -35,7 +35,7 @@ Expected content inside `BuildPlanMessages`'s system-prompt builder (around line
 sb.AppendLine("Keep the plan tight — only the steps genuinely needed to accomplish the goal.");
 ```
 
-- [ ] **Step 2: Add the "group by file" rule to `BuildPlanMessages`**
+- [x] **Step 2: Add the "group by file" rule to `BuildPlanMessages`**
 
 In `AgentPlanner.cs`, immediately after the `"Keep the plan tight..."` line inside `BuildPlanMessages`, add:
 
@@ -43,7 +43,7 @@ In `AgentPlanner.cs`, immediately after the `"Keep the plan tight..."` line insi
 sb.AppendLine("Group by logical change, not by file: if one reason requires editing several files, that is ONE step listing every file in expectedArtifact — never split it into \"update file A\", \"update file B\", \"update file C\".");
 ```
 
-- [ ] **Step 3: Reword `ExpectedArtifact`'s description**
+- [x] **Step 3: Reword `ExpectedArtifact`'s description**
 
 Change line 159 from:
 
@@ -59,7 +59,7 @@ to:
 
 This one edit affects both `EmitPlanTool` and `EmitRevisedPlanTool` (both use `PlanStepArg[]`), so Task 1.2 does not need to repeat it.
 
-- [ ] **Step 4: Write a failing test asserting the new prompt text is present**
+- [x] **Step 4: Write a failing test asserting the new prompt text is present**
 
 `tests/Pia.Wpf.Tests/Services/AgentPlannerTests.cs` already exists (it is a large, ~1000-line file) — do NOT reflect into the private static `BuildPlanMessages`. The file already has a purpose-built pattern for exactly this assertion: it drives a real `PlanAsync` call through a fake `IAiClientService` that captures the system prompt it was sent (see the file's existing `LastPrompt`/`LastUserPrompt`-style captures and its `ReturnsPlan(...)` helper, used by tests like the ones around `ReplanAsync_DeclineMember_IsNotHonoured_...`). Grep the file for `LastPrompt` and `ReturnsPlan` to find the exact fixture shape before writing this, then add:
 
@@ -77,7 +77,7 @@ public async Task PlanAsync_SystemPromptIncludesGroupByFileRule()
 
 Match the exact fixture/helper names this file already uses (`BuildPlanner()`, `ReturnsPlan(...)`, `LastPrompt`, `ctx`/`persona`/`provider` construction) rather than the illustrative names above — read the file first and mirror an existing test in the same style.
 
-- [ ] **Step 5: Run the test, confirm it fails before the edit / passes after**
+- [x] **Step 5: Run the test, confirm it fails before the edit / passes after**
 
 This repo's test runner is MTP-based (`Microsoft.Testing.Platform`), not classic VSTest — the `dotnet test --filter "FullyQualifiedName~..."` form does NOT work here (confirmed: it prints `Zero tests ran` and exits with an error). Use the MTP native filter form instead:
 
@@ -87,7 +87,7 @@ dotnet test -- --filter-method "*PlanAsync_SystemPromptIncludesGroupByFileRule*"
 
 Run this once BEFORE Step 2's edit (expect FAIL — text not present) and once AFTER (expect PASS). If this filter form also fails to isolate the test in practice, fall back to the full gate (`dotnet test`, no filter) to confirm red→green — never trust a "0 tests ran" result as a pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/Pia.Wpf/Services/AgentPlanner.cs tests/Pia.Wpf.Tests/Services/AgentPlannerTests.cs
@@ -100,7 +100,7 @@ git commit -m "Stop the planner splitting one logical change into one step per f
 - Modify: `src/Pia.Wpf/Services/AgentPlanner.cs:816-841` (`BuildReplanMessages`)
 - Test: same file as Task 1.1
 
-- [ ] **Step 1: Confirm current text**
+- [x] **Step 1: Confirm current text**
 
 Expected content inside `BuildReplanMessages` (around line 825):
 
@@ -108,7 +108,7 @@ Expected content inside `BuildReplanMessages` (around line 825):
 sb.AppendLine("Call emit_plan with the revised ordered steps (only the steps still needed).");
 ```
 
-- [ ] **Step 2: Add the rule**
+- [x] **Step 2: Add the rule**
 
 Immediately after that line, add the identical rule text from Task 1.1 Step 2:
 
@@ -116,7 +116,7 @@ Immediately after that line, add the identical rule text from Task 1.1 Step 2:
 sb.AppendLine("Group by logical change, not by file: if one reason requires editing several files, that is ONE step listing every file in expectedArtifact — never split it into \"update file A\", \"update file B\", \"update file C\".");
 ```
 
-- [ ] **Step 3: Write a failing test, mirroring Task 1.1's real (non-reflection) pattern**
+- [x] **Step 3: Write a failing test, mirroring Task 1.1's real (non-reflection) pattern**
 
 Same fixture shape as Task 1.1 Step 4 — drive a real `ReplanAsync` call through the existing fake `IAiClientService` and assert on its captured prompt, not reflection into the private `BuildReplanMessages`:
 
@@ -134,7 +134,7 @@ public async Task ReplanAsync_SystemPromptIncludesGroupByFileRule()
 
 Match the exact fixture/helper names this file already uses, mirroring an existing `ReplanAsync` test in the same file rather than the illustrative names above.
 
-- [ ] **Step 4: Run, confirm fail → pass**
+- [x] **Step 4: Run, confirm fail → pass**
 
 ```bash
 dotnet test -- --filter-method "*ReplanAsync_SystemPromptIncludesGroupByFileRule*"
@@ -142,7 +142,7 @@ dotnet test -- --filter-method "*ReplanAsync_SystemPromptIncludesGroupByFileRule
 
 (Same MTP filter-syntax note as Task 1.1 Step 5 — `--filter "FullyQualifiedName~..."` does not work in this repo's runner.)
 
-- [ ] **Step 5: Run the full gate**
+- [x] **Step 5: Run the full gate**
 
 ```bash
 dotnet test
@@ -150,7 +150,7 @@ dotnet test
 
 Expected: `failed: 0` (per `CLAUDE.md`'s Test Gate — no filter, no live-provider opt-in needed for this change).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/Pia.Wpf/Services/AgentPlanner.cs tests/Pia.Wpf.Tests/Services/AgentPlannerTests.cs

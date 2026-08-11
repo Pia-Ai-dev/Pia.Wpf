@@ -587,6 +587,16 @@ public sealed class AgentPlannerTests
     }
 
     [Fact]
+    public async Task ReplanAsync_SystemPromptIncludesGroupByFileRule()
+    {
+        ReturnsPlan(Steps(("Recover", "finish the goal", null)));
+
+        await BuildPlanner().ReplanAsync(Ctx(), "boom", Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        Assert.Contains("Group by logical change, not by file", LastPrompt);
+    }
+
+    [Fact]
     public async Task ReplanAsync_LiveStep_CarriesNoEarlierSegmentNote()
     {
         ReturnsPlan(Steps(("Recover", "finish the goal", null)));

@@ -824,6 +824,7 @@ public sealed class AgentPlanner : IAgentPlanner
         if (!string.IsNullOrWhiteSpace(failure))
             sb.AppendLine($"Failure detail: {failure}");
         sb.AppendLine("Call emit_plan with the revised ordered steps (only the steps still needed).");
+        sb.AppendLine("Group by logical change, not by file: if one reason requires editing several files, that is ONE step listing every file in expectedArtifact — never split it into \"update file A\", \"update file B\", \"update file C\".");
         AppendRoster(sb, roster);
         if (firm)
             sb.AppendLine("You MUST call the emit_plan tool now — do not write prose.");
