@@ -187,6 +187,21 @@ public sealed class ChatSession : IDisposable
         ForeignRunActiveChanged?.Invoke(this, active);
     }
 
+    /// <summary>True while this chat's run is parked for plan approval — narrower than
+    /// <see cref="ForeignRunActive"/>, which stays false for any park so "continue in chat" stays open.</summary>
+    public bool PlanApprovalParkActive { get; private set; }
+
+    /// <summary>Raised when <see cref="PlanApprovalParkActive"/> changes (marshaled to the UI thread by the manager).</summary>
+    public event EventHandler<bool>? PlanApprovalParkActiveChanged;
+
+    public void SetPlanApprovalParkActive(bool active)
+    {
+        if (PlanApprovalParkActive == active)
+            return;
+        PlanApprovalParkActive = active;
+        PlanApprovalParkActiveChanged?.Invoke(this, active);
+    }
+
     /// <summary>
     /// Sets the per-chat working directory. Trims, treats empty as null (= sandbox root),
     /// and normalizes separators to forward slashes (the stored/relative convention).
