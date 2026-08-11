@@ -221,6 +221,16 @@ public sealed class AgentPlannerTests
     }
 
     [Fact]
+    public async Task PlanAsync_SystemPromptIncludesGroupByFileRule()
+    {
+        ReturnsPlan(Steps(("Gather", "collect the inputs", null)));
+
+        await BuildPlanner().PlanAsync(Goal, Ctx(), Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        Assert.Contains("Group by logical change, not by file", LastPrompt);
+    }
+
+    [Fact]
     public async Task PlanAsync_NoCall_RetriesOnce_ThenSingleTurnFallback()
     {
         ReturnsPlan(emitArgs: null); // no emit_plan call on either attempt

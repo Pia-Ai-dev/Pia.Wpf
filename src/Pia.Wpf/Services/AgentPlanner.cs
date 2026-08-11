@@ -156,7 +156,7 @@ public sealed class AgentPlanner : IAgentPlanner
     public sealed record PlanStepArg(
         [property: Description("Short imperative title")] string Title,
         [property: Description("What this step should accomplish")] string Intent,
-        [property: Description("The concrete artifact/result this step should produce")] string? ExpectedArtifact = null,
+        [property: Description("The concrete artifact(s)/result this step should produce — may name several files when they are one logical change")] string? ExpectedArtifact = null,
         // Matched by NAME against the roster the system message listed (07 D2). A name, not a Guid: models do
         // not reproduce GUIDs reliably and one mistyped nibble is an unresolvable id for a step the model DID
         // mean to assign. Not an index either: an off-by-one silently assigns the WRONG persona, whereas a
@@ -781,6 +781,7 @@ public sealed class AgentPlanner : IAgentPlanner
         sb.AppendLine("You are decomposing the user's goal into an ordered, minimal plan of concrete steps.");
         sb.AppendLine("Call the emit_plan tool exactly once with the ordered steps. Each step needs a short title and an intent (what it accomplishes); include an expectedArtifact when there is a concrete deliverable.");
         sb.AppendLine("Keep the plan tight — only the steps genuinely needed to accomplish the goal.");
+        sb.AppendLine("Group by logical change, not by file: if one reason requires editing several files, that is ONE step listing every file in expectedArtifact — never split it into \"update file A\", \"update file B\", \"update file C\".");
         sb.AppendLine("If the goal is too unclear to plan at all, do NOT invent steps: call emit_plan with cannotGround set to true and question set to the one thing you need the user to clarify.");
         sb.AppendLine("Only do that when you genuinely cannot tell what is being asked — a goal you can plan, however terse, gets a plan.");
         AppendRoster(sb, roster);
