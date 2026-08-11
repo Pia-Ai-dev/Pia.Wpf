@@ -89,6 +89,8 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(CanPause))]
     // The visibility halves of the same two buttons (see ShowDenyButton for why each button needs a pair).
     [NotifyPropertyChangedFor(nameof(ShowContinueButton))]
+    // ShowNudgeBox reads ShowContinueButton, and the generated setter notifies only the names listed here.
+    [NotifyPropertyChangedFor(nameof(ShowNudgeBox))]
     [NotifyPropertyChangedFor(nameof(ShowPauseButton))]
     [NotifyPropertyChangedFor(nameof(ShowPauseFirstNote))]
     [NotifyPropertyChangedFor(nameof(CanMutatePlan))]
@@ -132,6 +134,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(CanContinue))]
     [NotifyCanExecuteChangedFor(nameof(ContinueCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeclineToolCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RejectPlanCommand))]
     private bool _isResuming;
 
     /// <summary>True while the run is parked asking to use a named tool — the one pause where a person's
@@ -145,7 +148,17 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string? _approvalToolName;
 
+    /// <summary>True while the run is parked asking the user to approve its plan before any step runs.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowRejectPlanButton))]
+    [NotifyPropertyChangedFor(nameof(ShowNudgeBox))]
+    [NotifyPropertyChangedFor(nameof(ContinueLabel))]
+    [NotifyCanExecuteChangedFor(nameof(RejectPlanCommand))]
+    private bool _isPlanApprovalPause;
+
     public bool CanDeclineTool => IsToolApprovalPause && !IsResuming;
+
+    public bool CanRejectPlan => IsPlanApprovalPause && !IsResuming;
 
     /// <summary>
     /// The band's action slot is driven by a pair of predicates per button, never one: <c>Show…</c> answers
@@ -159,6 +172,9 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// </summary>
     public bool ShowDenyButton => IsToolApprovalPause;
 
+    /// <summary>Mutually exclusive with <see cref="ShowDenyButton"/> by construction: a run parks on one reason.</summary>
+    public bool ShowRejectPlanButton => IsPlanApprovalPause;
+
     /// <summary>The budget-pause Continue affordance, widened by D1 item 8 to the user-pause state
     /// too: <see cref="RunProgressState.Paused"/> is the CAS's own target, and both states offer the identical
     /// Continue command (<see cref="IAgentRunResumeService.ResumeAsync"/> claims either via the row's own
@@ -171,9 +187,19 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private bool IsResumableState => State is RunProgressState.WaitingForInput or RunProgressState.Paused;
 
     /// <summary>See <see cref="ShowDenyButton"/>: visibility is the state gate, enabledness the in-flight one.
-    /// The steering note rides on this too, so a resume in flight does not yank the box out from under a note the
-    /// user is still reading (<c>Continue</c> keeps <see cref="NudgeText"/> unless the resume actually started).</summary>
+    /// <see cref="ShowNudgeBox"/> rides on this too, so a resume in flight does not yank the box out from under a
+    /// note the user is still reading (<c>Continue</c> keeps <see cref="NudgeText"/> unless the resume started).</summary>
     public bool ShowContinueButton => IsResumableState;
+
+    /// <summary><c>Run_Action_ApprovePlan</c> is a separate key from <c>Run_Action_Approve</c>, which is the Flow
+    /// surface's tool-approval label ("Allow").</summary>
+    public string ContinueLabel => IsPlanApprovalPause
+        ? _localization["Run_Action_ApprovePlan"]
+        : _localization["Run_Action_Continue"];
+
+    /// <summary>A steering note scoped to "the rest of THIS run" is meaningless before any step ran, and Approve
+    /// would otherwise ship whatever sits in the box into <see cref="IAgentRunResumeService.ResumeAsync"/>.</summary>
+    public bool ShowNudgeBox => ShowContinueButton && !IsPlanApprovalPause;
 
     /// <summary>True while a user pause request is in flight — gates the Pause button against a double-click
     /// the same way <see cref="IsResuming"/> gates Continue. Cleared only once <see cref="Project"/> observes
@@ -920,6 +946,9 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             : null;
         IsToolApprovalPause = approvalTool is not null;
         ApprovalToolName = approvalTool;
+
+        IsPlanApprovalPause = run.State == AgentRunState.WaitingForInput
+            && RunPauseEnvelope.ReadReason(run) == AgentRunOrchestrator.PlanApprovalReason;
         if (children is not null)
             SyncChildren(children);
 
@@ -1283,6 +1312,26 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Run {RunId} decline failed from panel", _runId);
+        }
+        finally
+        {
+            IsResuming = false;
+        }
+    }
+
+    /// <summary>Settles a plan-approval park to Cancelled with no re-dispatch. Shares the Continue/Deny
+    /// double-click gate; the CAS in the resume service is the hard guard.</summary>
+    [RelayCommand(CanExecute = nameof(CanRejectPlan))]
+    private async Task RejectPlan()
+    {
+        IsResuming = true;
+        try
+        {
+            await _resumeService.RejectPlanAsync(_runId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run {RunId} plan-reject failed from panel", _runId);
         }
         finally
         {

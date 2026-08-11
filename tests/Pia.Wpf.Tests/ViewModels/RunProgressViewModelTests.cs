@@ -362,6 +362,71 @@ public sealed class RunProgressViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task WaitingForInput_ProjectsPlanApprovalPause_ApproveLabelAndNoNudgeBox()
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+
+        await _runs.PauseAsync(run.Id, AgentRunOrchestrator.PlanApprovalReason, TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+
+        Assert.True(vm.IsPlanApprovalPause);
+        Assert.True(vm.ShowRejectPlanButton);
+        Assert.False(vm.ShowNudgeBox);
+        Assert.Equal("Run_Action_ApprovePlan", vm.ContinueLabel);
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task WaitingForInput_OrdinaryToolApprovalPark_LeavesPlanApprovalPropertiesFalse()
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+
+        await _runs.PauseAsync(run.Id, AgentRunOrchestrator.ToolApprovalReason,
+            TestContext.Current.CancellationToken, approvalTool: "write_file");
+        await vm.RefreshAsync();
+
+        Assert.False(vm.IsPlanApprovalPause);
+        Assert.False(vm.ShowRejectPlanButton);
+        Assert.True(vm.ShowNudgeBox);
+        Assert.Equal("Run_Action_Continue", vm.ContinueLabel);
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task RejectPlan_CallsResumeServiceRejectPlanAsync()
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+        await _runs.PauseAsync(run.Id, AgentRunOrchestrator.PlanApprovalReason, TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+        Assert.True(vm.RejectPlanCommand.CanExecute(null));
+
+        await vm.RejectPlanCommand.ExecuteAsync(null);
+
+        await _resume.Received(1).RejectPlanAsync(run.Id, Arg.Any<CancellationToken>());
+        vm.Dispose();
+    }
+
+    // The getter returns the right value with or without the notify attribute on _state, so only the raised
+    // event discriminates it — without this the steering box would go stale across an ordinary pause.
+    [Fact]
+    public async Task PausingAtBudget_RaisesShowNudgeBoxChanged_NotJustShowContinueButtonChanged()
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+        var raised = new List<string?>();
+        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        await _runs.PauseAsync(run.Id, "step-cap", TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+
+        Assert.Contains(nameof(vm.ShowNudgeBox), raised);
+        vm.Dispose();
+    }
+
+    [Fact]
     public async Task Completed_CannotContinue()
     {
         var run = await NewPlannedRunAsync();
