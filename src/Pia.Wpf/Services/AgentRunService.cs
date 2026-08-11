@@ -562,9 +562,8 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
                 run = reader.Read() ? MapRun(reader) : null;
             }
 
-            // Reason-gated rather than a bare `WHERE State=@Expected` CAS: state alone cannot tell "still the
-            // plan this Reject was shown for" from "resumed and re-parked on a different question since".
-            // Read and write share one _gate hold, so nothing can move the row in between.
+            // Reason-gated rather than a bare `WHERE State=@Expected` CAS: state alone cannot tell this plan's
+            // park from a run that resumed and re-parked on a different question since.
             if (run is null || run.State != AgentRunState.WaitingForInput
                 || RunPauseEnvelope.ReadReason(run) != AgentRunOrchestrator.PlanApprovalReason)
             {
