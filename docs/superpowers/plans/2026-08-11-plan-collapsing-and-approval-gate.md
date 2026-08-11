@@ -865,7 +865,7 @@ git commit -m "Preserve the plan-approval reason across an interrupted resume"
 - Modify: `src/Pia.Wpf/Services/AgentRunService.cs` (implementation, add after `TryResumeFromPauseAsync`, around line 546)
 - Test: `tests/Pia.Wpf.Tests/Services/AgentRunServiceUserPauseTests.cs` — NOT `AgentRunServiceTests.cs`; the pause/resume primitives this task's tests mirror (`TryResumeFromPauseAsync`, `TryPauseUserAsync`) live in this sibling file (confirmed: zero hits for either in `AgentRunServiceTests.cs`).
 
-- [ ] **Step 1: Add the interface member**
+- [x] **Step 1: Add the interface member**
 
 ```csharp
     /// <summary>
@@ -889,7 +889,7 @@ git commit -m "Preserve the plan-approval reason across an interrupted resume"
     Task<bool> TryRejectParkedPlanAsync(Guid runId, CancellationToken ct = default);
 ```
 
-- [ ] **Step 2: Add the implementation**
+- [x] **Step 2: Add the implementation**
 
 ```csharp
     public Task<bool> TryRejectParkedPlanAsync(Guid runId, CancellationToken ct = default)
@@ -947,7 +947,7 @@ git commit -m "Preserve the plan-approval reason across an interrupted resume"
 
 Place this method immediately after `TryResumeFromPauseAsync` in `AgentRunService.cs`.
 
-- [ ] **Step 3: Update the four hand-rolled `IAgentRunService` test fakes — REQUIRED, or the test project fails to build**
+- [x] **Step 3: Update the four hand-rolled `IAgentRunService` test fakes — REQUIRED, or the test project fails to build**
 
 `IAgentRunService` has no default-interface members, and exactly four test files hand-roll a full implementation of it (confirmed by grep, no others exist):
 
@@ -976,7 +976,7 @@ dotnet build tests/Pia.Wpf.Tests/Pia.Wpf.Tests.csproj
 
 Expected: `0 Error(s)`.
 
-- [ ] **Step 4: Write a failing test — the happy path**
+- [x] **Step 4: Write a failing test — the happy path**
 
 Mirror this file's existing `TryResumeFromPauseAsync`/`TryPauseUserAsync` test setup (an in-memory or temp-file SQLite-backed `AgentRunService`, a run created and parked):
 
@@ -997,7 +997,7 @@ public async Task TryRejectParkedPlanAsync_CancelsAPlanApprovalPark()
 }
 ```
 
-- [ ] **Step 5: Write a failing test — wrong reason must not match**
+- [x] **Step 5: Write a failing test — wrong reason must not match**
 
 ```csharp
 [Fact]
@@ -1014,7 +1014,7 @@ public async Task TryRejectParkedPlanAsync_DoesNotCancel_WhenParkedForADifferent
 }
 ```
 
-- [ ] **Step 6: Write a failing test — `RunChanged` fires only on the win**
+- [x] **Step 6: Write a failing test — `RunChanged` fires only on the win**
 
 ```csharp
 [Fact]
@@ -1033,19 +1033,19 @@ public async Task TryRejectParkedPlanAsync_RaisesRunChangedCancelled_OnlyOnTheWi
 }
 ```
 
-- [ ] **Step 7: Run all three, confirm fail → pass**
+- [x] **Step 7: Run all three, confirm fail → pass**
 
 ```bash
 dotnet test -- --filter-method "*TryRejectParkedPlanAsync*"
 ```
 
-- [ ] **Step 8: Run the full gate**
+- [x] **Step 8: Run the full gate**
 
 ```bash
 dotnet test
 ```
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src/Pia.Wpf/Services/Interfaces/IAgentRunService.cs src/Pia.Wpf/Services/AgentRunService.cs tests/Pia.Wpf.Tests/Services/AgentRunServiceUserPauseTests.cs tests/Pia.Wpf.Tests/Services/AgentRunOrchestratorTests.cs tests/Pia.Wpf.Tests/Services/AgentRunClarificationResumeTests.cs tests/Pia.Wpf.Tests/Services/AgentRunResumeNoRePlanPremiseTests.cs tests/Pia.Wpf.Tests/Services/BackgroundAssistantTurnRunnerRunSpineTests.cs
@@ -1060,7 +1060,7 @@ git commit -m "Add TryRejectParkedPlanAsync: CAS a plan-approval park straight t
 - Modify: `src/Pia.Wpf/Resources/Strings/ViewStrings.resx` + `.de.resx` + `.fr.resx` (one new key)
 - Test: `tests/Pia.Wpf.Tests/Services/AgentRunOrchestratorTests.cs`. No existing test anywhere covers `PostAndMirrorClarificationQuestionAsync`/`SafePostClarificationQuestionAsync` — this file's `Harness.BuildOrchestrator` (line 235-239) never passes `chats:` even though `Harness.Chats` (a real `AssistantChatService`) exists on the harness, and there is no reusable `ILocalizationService` fake anywhere in this file. Step 3 below extends the harness rather than assuming either already works.
 
-- [ ] **Step 1: Add the loc key**
+- [x] **Step 1: Add the loc key**
 
 `ViewStrings.resx`:
 ```xml
@@ -1083,7 +1083,7 @@ No `Designer.cs` regeneration needed (per Task 3.1 Step 3's finding — runtime 
 dotnet test -- --filter-method "*AllTranslations_MustBeComplete*"
 ```
 
-- [ ] **Step 2: Add the trailing constructor parameter**
+- [x] **Step 2: Add the trailing constructor parameter**
 
 `AgentRunOrchestrator`'s constructor takes every optional dependency as TRAILING and DEFAULTED specifically so its dozen positional test constructions never break (see the class's own doc comments on `workspaces`/`childLauncher`/`chats`/`steering`, all phrased this way). Add `localization` the same way. Current constructor:
 
@@ -1149,7 +1149,7 @@ Add the doc comment above the constructor's `<param name="localization">` the sa
     /// degrades to no-op" shape <see cref="_chats"/> already has.</param>
 ```
 
-- [ ] **Step 3: Add `PostPlanRejectedNoticeAsync`**
+- [x] **Step 3: Add `PostPlanRejectedNoticeAsync`**
 
 Add this new PUBLIC method (called from OUTSIDE any `RunAsync` dispatch — Reject never re-enters the drain loop, so this fetches the run itself):
 
@@ -1178,7 +1178,7 @@ Add this new PUBLIC method (called from OUTSIDE any `RunAsync` dispatch — Reje
 
 Confirm `SafeGetRunAsync` exists with this exact shape (it was cited earlier in this plan's research as `SafeGetRunAsync(Guid runId, CancellationToken ct)` around line 1532) before relying on it — grep to confirm its return type is `Task<AgentRun?>`.
 
-- [ ] **Step 4: Extend the test `Harness` to pass `chats` and a fake `localization`**
+- [x] **Step 4: Extend the test `Harness` to pass `chats` and a fake `localization`**
 
 `Harness.BuildOrchestrator` (`AgentRunOrchestratorTests.cs:235-239`) currently is:
 
@@ -1203,7 +1203,7 @@ Change to (new trailing-optional parameter, so every one of this file's dozens o
 
 `Chats` (the harness's real `AssistantChatService`) is now always passed — this is safe because every existing test either never calls a code path that reads `_chats` (so this is a no-op for them) or already relies on `Chats` being the same real backing store `NewRunAsync` uses.
 
-- [ ] **Step 5: Write a failing test — the happy path**
+- [x] **Step 5: Write a failing test — the happy path**
 
 Use `Substitute.For<ILocalizationService>()` with the same "echo the key" stub `RunProgressViewModelTests.cs` already uses (`_loc[Arg.Any<string>()].Returns(ci => (string)ci[0]);`), so the assertion can check for the literal loc KEY without needing real resolved text:
 
@@ -1227,7 +1227,7 @@ public async Task PostPlanRejectedNoticeAsync_PostsANoticeIntoTheRunsChat()
 
 Adjust `new StubPlanner(...)`/`Persona()` to whatever this file's own helpers are actually named (grep the file — it has its own `Persona()`/`Provider()` helpers used throughout, and its own planner fake, possibly named differently from `AgentRunOrchestratorArmTests.cs`'s `StubPlanner`; a `PlanAsync`/`ReplanAsync` are never invoked by this test, so any minimal `IAgentPlanner` fake in this file works).
 
-- [ ] **Step 6: Write a failing test for the null-localization no-op**
+- [x] **Step 6: Write a failing test for the null-localization no-op**
 
 ```csharp
 [Fact]
@@ -1245,13 +1245,13 @@ public async Task PostPlanRejectedNoticeAsync_NoOps_WhenLocalizationIsNull()
 }
 ```
 
-- [ ] **Step 7: Run, confirm fail → pass**
+- [x] **Step 7: Run, confirm fail → pass**
 
 ```bash
 dotnet test -- --filter-method "*PostPlanRejectedNoticeAsync*"
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/Pia.Wpf/Services/AgentRunOrchestrator.cs src/Pia.Wpf/Resources/Strings/ViewStrings.resx src/Pia.Wpf/Resources/Strings/ViewStrings.de.resx src/Pia.Wpf/Resources/Strings/ViewStrings.fr.resx tests/Pia.Wpf.Tests/Services/AgentRunOrchestratorTests.cs
@@ -1265,7 +1265,7 @@ git commit -m "Post a chat notice when a proposed plan is rejected"
 - Modify: `src/Pia.Wpf/Services/HeadlessRunLauncher.cs`
 - Test: `tests/Pia.Wpf.Tests/Services/HeadlessRunLauncherTests.cs` — its shared `BuildLauncher(...)` helper (lines 127-224) registers a `ServiceCollection` for the launcher's per-run DI scope, but never registers `ILocalizationService`. Since `AgentRunOrchestrator` now takes it as a trailing-optional constructor parameter, an unregistered service resolves to the default `null` (the same "trailing-optional, so an unregistered store is silently absent" behavior this file's own comment already documents for `steering`, line 211-213) — so `PostPlanRejectedNoticeAsync`'s `if (_localization is null) return;` guard would fire and the happy-path test below would have nothing to assert. Step 1 registers a stub so the notice actually posts.
 
-- [ ] **Step 1: Register a stub `ILocalizationService` in `BuildLauncher`**
+- [x] **Step 1: Register a stub `ILocalizationService` in `BuildLauncher`**
 
 In `HeadlessRunLauncherTests.cs`, inside `BuildLauncher(...)` (around line 191-217), add — beside the existing `services.AddSingleton<IAgentVerifier>(...)` line, using the same "echo the key" NSubstitute stub `RunProgressViewModelTests.cs` already uses elsewhere in this suite:
 
@@ -1275,7 +1275,7 @@ In `HeadlessRunLauncherTests.cs`, inside `BuildLauncher(...)` (around line 191-2
         services.AddSingleton(loc);
 ```
 
-- [ ] **Step 2: Add the interface member**
+- [x] **Step 2: Add the interface member**
 
 ```csharp
     /// <summary>
@@ -1288,7 +1288,7 @@ In `HeadlessRunLauncherTests.cs`, inside `BuildLauncher(...)` (around line 191-2
     Task<bool> RejectPlanAsync(Guid runId, CancellationToken ct = default);
 ```
 
-- [ ] **Step 3: Implement on `HeadlessRunLauncher`**
+- [x] **Step 3: Implement on `HeadlessRunLauncher`**
 
 Add near `DeclineAsync` (which is the interface's other short forwarding method):
 
@@ -1331,7 +1331,7 @@ Confirm `_settingsService`, `_personaService`, `_scopeFactory` are the exact fie
 
 Note on resilience: `SafePostClarificationQuestionAsync` (which `PostPlanRejectedNoticeAsync` calls) already wraps its own body in a try/catch that logs and swallows — by the time an exception could reach `RejectPlanAsync`'s own try/catch above, it would have to come from `_scopeFactory.CreateScope()` or `GetRequiredService<AgentRunOrchestrator>()` itself (a DI resolution fault), not from the chat write. This is a narrow, hard-to-cheaply-simulate edge case in `BuildLauncher`'s standard fixture (every dependency `AgentRunOrchestrator` needs is already registered there) — Steps 4-5 below cover the two mechanism-verifiable behaviors (happy path, wrong-reason no-op) and leaves the DI-resolution-fault edge case as a manual code-review check rather than a fabricated test double, since forcing that specific fault would require a bespoke, non-standard DI setup whose only purpose is to prove a defensive `catch` block is reachable.
 
-- [ ] **Step 4: Write a failing test — happy path**
+- [x] **Step 4: Write a failing test — happy path**
 
 Using this file's real fixtures (`_runs`, `ParkRunWithNoStepsAsync`, `BuildLauncher()`):
 
@@ -1354,7 +1354,7 @@ public async Task RejectPlanAsync_CancelsTheRun_AndPostsANotice()
 }
 ```
 
-- [ ] **Step 5: Write a failing test — false when not parked on this reason**
+- [x] **Step 5: Write a failing test — false when not parked on this reason**
 
 ```csharp
 [Fact]
@@ -1372,19 +1372,19 @@ public async Task RejectPlanAsync_ReturnsFalse_WhenRunIsNotParkedOnPlanApproval(
 }
 ```
 
-- [ ] **Step 6: Run, confirm fail → pass**
+- [x] **Step 6: Run, confirm fail → pass**
 
 ```bash
 dotnet test -- --filter-method "*RejectPlanAsync*"
 ```
 
-- [ ] **Step 7: Run the full gate**
+- [x] **Step 7: Run the full gate**
 
 ```bash
 dotnet test
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/Pia.Wpf/Services/Interfaces/IAgentRunResumeService.cs src/Pia.Wpf/Services/HeadlessRunLauncher.cs tests/Pia.Wpf.Tests/Services/HeadlessRunLauncherTests.cs

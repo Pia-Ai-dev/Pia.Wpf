@@ -34,4 +34,9 @@ public interface IAgentRunResumeService
     /// decline) or when the CAS is lost.
     /// </summary>
     Task<bool> DeclineAsync(Guid runId, CancellationToken ct = default);
+
+    /// <summary>Reject a plan-approval park: settles it straight to <c>Cancelled</c> with no re-dispatch, unlike
+    /// <see cref="ResumeAsync"/>/<see cref="DeclineAsync"/>, and best-effort posts a notice into the run's
+    /// chat. <c>false</c> when the run is not parked on a plan-approval question or the CAS is lost.</summary>
+    Task<bool> RejectPlanAsync(Guid runId, CancellationToken ct = default);
 }

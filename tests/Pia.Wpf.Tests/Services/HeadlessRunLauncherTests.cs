@@ -204,6 +204,10 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         services.AddSingleton<IAgentPlanner>(planner);
         // The orchestrator's terminal critic pass; the default (empty queue) FakeVerifier accepts.
         services.AddSingleton<IAgentVerifier>(verifier ?? new FakeVerifier());
+        // Echoes the key back, so a chat notice can be asserted by key instead of by translated sentence.
+        var loc = Substitute.For<ILocalizationService>();
+        loc[Arg.Any<string>()].Returns(ci => (string)ci[0]);
+        services.AddSingleton(loc);
         services.AddSingleton<Func<ITokenMapService>>(_ => () => Substitute.For<ITokenMapService>());
         // The per-run scope resolves HeadlessTurnExecutor -> BackgroundAssistantTurnRunner, which requires this;
         // omit it and the resolve throws inside the launcher's dispatch task, where it is swallowed.
@@ -1198,6 +1202,37 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var after = await _runs.GetAsync(parked.Id, ct);
         Assert.Equal(AgentRunState.WaitingForInput, after!.State);
         Assert.Equal("step-cap", ReadPauseReason(after)); // the park it had, not a denied-tool resume
+    }
+
+    [Fact]
+    public async Task RejectPlanAsync_CancelsTheRun_AndPostsANotice()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (launcher, _) = BuildLauncher();
+        var parked = await ParkRunWithNoStepsAsync(AgentRunOrchestrator.PlanApprovalReason);
+
+        Assert.True(await launcher.RejectPlanAsync(parked.Id, ct));
+
+        var updated = await _runs.GetAsync(parked.Id, ct);
+        Assert.Equal(AgentRunState.Cancelled, updated!.State);
+        Assert.NotNull(updated.CompletedAt);
+        var chat = await _chats.GetAsync(updated.ChatId, ct);
+        Assert.Contains(chat!.Messages, m => m.Content == "Run_PlanRejected_ChatNote");
+    }
+
+    /// <summary>Reject answers a plan-approval park only; on any other park there is no plan to say no to.</summary>
+    [Fact]
+    public async Task RejectPlanAsync_ReturnsFalse_WhenRunIsNotParkedOnPlanApproval()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (launcher, _) = BuildLauncher();
+        var parked = await ParkRunWithNoStepsAsync(AgentRunOrchestrator.NeedsInputReason);
+
+        Assert.False(await launcher.RejectPlanAsync(parked.Id, ct));
+
+        var after = await _runs.GetAsync(parked.Id, ct);
+        Assert.Equal(AgentRunState.WaitingForInput, after!.State);
+        Assert.Equal(AgentRunOrchestrator.NeedsInputReason, ReadPauseReason(after));
     }
 
     /// <summary>Continue IS the approval, so the parked tool joins the run's grants and is persisted — a second

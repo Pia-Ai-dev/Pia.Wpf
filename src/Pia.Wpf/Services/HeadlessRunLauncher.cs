@@ -970,6 +970,33 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     public Task<bool> DeclineAsync(Guid runId, CancellationToken ct = default) =>
         ResumeAsync(runId, nudge: null, ct, declineToolApproval: true);
 
+    /// <summary>Reject a plan-approval park. Never re-enters the dispatch machinery: the CAS settles the row
+    /// directly, and the chat notice rides a scoped orchestrator like every other out-of-dispatch write.</summary>
+    public async Task<bool> RejectPlanAsync(Guid runId, CancellationToken ct = default)
+    {
+        var rejected = await _agentRunService.TryRejectParkedPlanAsync(runId, ct).ConfigureAwait(false);
+        if (!rejected)
+            return false;
+
+        try
+        {
+            var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
+            var persona = await ResolveRunPersonaAsync(personaIdOverride: null, settings).ConfigureAwait(false);
+
+            using var scope = _scopeFactory.CreateScope();
+            var orchestrator = scope.ServiceProvider.GetRequiredService<AgentRunOrchestrator>();
+            await orchestrator.PostPlanRejectedNoticeAsync(runId, persona, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Best-effort: the CAS above already committed, so a failed notice is a missing chat line, not a
+            // wedged run.
+            _logger.LogWarning(ex, "Failed to post the plan-rejected notice for run {RunId}", runId);
+        }
+
+        return true;
+    }
+
     /// <summary>
     /// App shutdown: cancel every dispatch and wait, bounded, for them to unwind.
     /// this path deliberately does <b>not</b> revoke a pending pause request, unlike the four
