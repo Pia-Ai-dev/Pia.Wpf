@@ -46,6 +46,7 @@ public sealed class IngestService : IIngestService
 {
     /// <summary>Mandatory sentinel splitting the (optional) manual preamble from the synthesized body.</summary>
     private const string ManagedMarker = "<!-- pia:managed -->";
+    private const int MaxConcurrentSynthesis = 4;
 
     private readonly IIngestExtractor _extractor;
     private readonly IVaultStore _store;
@@ -190,10 +191,13 @@ public sealed class IngestService : IIngestService
             knownSlugs.Add(p.Slug);
         }
 
-        var touched = new List<string>();
-        var synthFailures = 0;
-        foreach (var (topic, subject, slug) in prepared)
+        // Synthesis calls are the slow part (one full LLM round-trip per topic) and are independent of
+        // each other — knownSlugs is already frozen above — so run up to MaxConcurrentSynthesis at once.
+        // Index upserts happen afterward, sequentially, to avoid concurrent writers on the shared index.
+        var synthesisGate = new SemaphoreSlim(MaxConcurrentSynthesis);
+        var synthesisTasks = prepared.Select(async p =>
         {
+            var (topic, subject, slug) = p;
             var path = $"memory/topics/{slug}.md";
 
             var existing = await _store.ReadAsync(path);
@@ -210,7 +214,24 @@ public sealed class IngestService : IIngestService
                 ? c
                 : topic.Category;
 
-            var summary = await SynthesizePageAsync(path, title, category, sourceRefs, charter, knownSlugs, ct);
+            await synthesisGate.WaitAsync(ct);
+            try
+            {
+                var summary = await SynthesizePageAsync(path, title, category, sourceRefs, charter, knownSlugs, ct);
+                return (path, summary);
+            }
+            finally
+            {
+                synthesisGate.Release();
+            }
+        }).ToList();
+
+        var synthesisResults = await Task.WhenAll(synthesisTasks);
+
+        var touched = new List<string>();
+        var synthFailures = 0;
+        foreach (var (path, summary) in synthesisResults)
+        {
             if (summary is null)
             {
                 synthFailures++;
