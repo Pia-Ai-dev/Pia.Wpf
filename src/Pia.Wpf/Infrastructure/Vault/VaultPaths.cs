@@ -4,7 +4,7 @@ namespace Pia.Infrastructure.Vault;
 /// Path predicates over the vault tree. A <em>record file</em> is a user-facing memory document — the
 /// source of truth for the assistant's recall and the Memory view — as opposed to Pia's housekeeping
 /// documents (<c>AGENTS.md</c>, <c>index.md</c>, <c>log.md</c>), the recoverable <c>.archive/</c>
-/// snapshots, or the immutable <c>sources/</c> RAW layer.
+/// snapshots, or the <c>sources/</c> RAW layer (read-only except for a corrective <c>update_source</c>).
 ///
 /// <para><see cref="VaultStore.EnumerateAsync"/> is NOT a real glob — <c>"memory/*.md"</c> walks the
 /// whole <c>memory/</c> subtree (<see cref="System.IO.SearchOption.AllDirectories"/>) and returns
@@ -49,7 +49,7 @@ public static class VaultPaths
     /// True iff <paramref name="relativePath"/> is a <c>.md</c> file whose content should surface in
     /// recall (the <c>Chunks</c>/<c>ChunksFts</c> index): everything EXCEPT Pia's housekeeping documents
     /// (<c>AGENTS.md</c>, <c>index.md</c>, <c>log.md</c>), the recoverable <c>.archive/</c> snapshots, and
-    /// the immutable <c>sources/</c> RAW layer. Unlike <see cref="IsRecordFile"/> this is a denylist — not
+    /// the <c>sources/</c> RAW layer. Unlike <see cref="IsRecordFile"/> this is a denylist — not
     /// a <c>memory/</c> allowlist — because records may live at the vault root too.
     ///
     /// <para>The <c>sources/</c> layer is excluded so raw ingest inputs are never embedded directly: only

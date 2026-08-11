@@ -1,7 +1,8 @@
 namespace Pia.Models.Vault;
 
 /// <summary>
-/// One file of the vault's immutable <c>sources/</c> RAW layer as the Memory view consumes it.
+/// One file of the vault's <c>sources/</c> RAW layer (read-only except for a corrective
+/// <c>update_source</c>) as the Memory view consumes it.
 /// <see cref="RelativePath"/> is vault-root-relative with forward slashes (<c>sources/q2-report.txt</c>)
 /// — the same spelling the ingest tool takes as <c>source_ref</c> and records as provenance.
 /// <see cref="TopicPageCount"/> is the number of <c>memory/topics/</c> pages whose <c>sources:</c>

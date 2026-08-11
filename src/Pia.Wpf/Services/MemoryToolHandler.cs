@@ -4,7 +4,9 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Pia.Infrastructure;
 using Pia.Logging;
+using Pia.Models;
 using Pia.Services.Interfaces;
 
 namespace Pia.Services;
@@ -14,17 +16,20 @@ public class MemoryToolHandler : IMemoryToolHandler
     private readonly IMemoryService _memoryService;
     private readonly IEmbeddingService _embeddingService;
     private readonly ILocalizationService _localizationService;
+    private readonly IIngestScheduler _ingestScheduler;
     private readonly ILogger<MemoryToolHandler> _logger;
 
     public MemoryToolHandler(
         IMemoryService memoryService,
         IEmbeddingService embeddingService,
         ILocalizationService localizationService,
+        IIngestScheduler ingestScheduler,
         ILogger<MemoryToolHandler> logger)
     {
         _memoryService = memoryService;
         _embeddingService = embeddingService;
         _localizationService = localizationService;
+        _ingestScheduler = ingestScheduler;
         _logger = logger;
     }
 
@@ -55,7 +60,22 @@ public class MemoryToolHandler : IMemoryToolHandler
             AIFunctionFactory.Create(ReadSourceSchema, "read_source",
                 "Read a raw primary source document (reached only via a topic's cited source refs from " +
                 "read_topic). Returns the source text; for a large log or transcript, page through it with " +
-                "offset/limit. Use this when a topic's summary is insufficient and you need the original wording."),
+                "offset/limit. Use this when a topic's summary is insufficient and you need the original wording. " +
+                "To correct this document, call update_source."),
+
+            AIFunctionFactory.Create(UpdateSourceSchema, "update_source",
+                "Correct an EXISTING raw source document under sources/ in place (full replacement text, not a " +
+                "patch). Get the reference the same way as read_source: a topic's cited source refs from " +
+                "read_topic. Shows a diff for approval, then re-ingests so memory topic pages stay in sync. " +
+                "To stage a brand-new source instead, call create_source."),
+
+            AIFunctionFactory.Create(CreateSourceSchema, "create_source",
+                "Stage a brand-new raw source document under sources/ (e.g. a document the user pasted, " +
+                "meeting notes, a decision write-up worth keeping as a primary source — not a personal fact, " +
+                "that's remember, and not an unrelated sandbox file, that's write_file). Provide a NEW " +
+                "vault-relative path, e.g. 'sources/meeting-notes-2026-08-11.txt'; if it already exists, use " +
+                "update_source instead. Shows a diff for approval, then ingests automatically — no separate " +
+                "ingest call needed. Works no matter what folder the chat's working directory is scoped to."),
 
             AIFunctionFactory.Create(RememberSchema, "remember",
                 "Store or update a memory in the user's vault. " +
@@ -86,6 +106,8 @@ public class MemoryToolHandler : IMemoryToolHandler
             "browse_index" => (await HandleBrowseIndex(), (MemoryToolCall?)null),
             "read_topic" => (await HandleReadTopic(args), (MemoryToolCall?)null),
             "read_source" => (await HandleReadSource(args), (MemoryToolCall?)null),
+            "update_source" => await HandleUpdateSource(args),
+            "create_source" => await HandleCreateSource(args),
             "remember" => await HandleRemember(args),
             "forget" => ((object?)null, HandleForget(args)),
             _ => ((object?)$"Unknown tool: {toolCall.Name}", (MemoryToolCall?)null)
@@ -163,6 +185,127 @@ public class MemoryToolHandler : IMemoryToolHandler
         return await _memoryService.ReadSourceAsync(reference, offset, limit);
     }
 
+    private async Task<(object? Result, MemoryToolCall? PendingAction)> HandleUpdateSource(
+        IDictionary<string, object?> args)
+    {
+        var reference = GetStringArg(args, "reference");
+        if (string.IsNullOrWhiteSpace(reference))
+            return ("Error: reference parameter is required", null);
+
+        if (!TryGetRequiredContentArg(args, out var content, out var contentError))
+            return (contentError, null);
+
+        _logger.SensitiveDebug("update_source reference: {Ref}", reference);
+
+        // Resolution-only: run the same guard chain as read_source and capture the diff/TOCTOU
+        // baseline WITHOUT writing. The committing write is the Execute lambda.
+        var preview = await _memoryService.ResolveUpdateSourceAsync(reference);
+        if (!preview.CanWrite)
+            return (preview.Error, null);
+
+        var rel = preview.Ref;
+        var mtime = preview.Mtime;
+        var diff = LineDiff.Compute(preview.OldContent, content);
+
+        var pending = new MemoryToolCall(
+            ToolName: "update_source",
+            Description: _localizationService.Format("Tool_Memory_Desc_UpdateSource", rel),
+            OldValue: null,
+            NewValue: null,
+            TargetObjectId: null,
+            Execute: async () =>
+            {
+                var written = await _memoryService.UpdateSourceAsync(rel, content, mtime);
+                if (!written.Success)
+                    return written.Error;
+
+                // Re-ingest synchronously (the same manual, always-runs entry point the ingest tool
+                // itself uses) so the model gets a deterministic result with stale-page cleanup,
+                // instead of depending on the watcher's async debounced pickup.
+                var ingestResult = await _ingestScheduler.RunAsync(rel, CancellationToken.None);
+                return ingestResult.Outcome switch
+                {
+                    IngestOutcome.NonTextSkipped =>
+                        $"Updated '{rel}', but it is not recognized as a text source so it was not re-ingested.",
+                    IngestOutcome.EmptySource =>
+                        $"Updated '{rel}' to be empty. Any memory pages it previously contributed to were cleaned up.",
+                    IngestOutcome.NoEntities =>
+                        $"Updated '{rel}' and re-ingested it, but no entities were found. Any memory pages it " +
+                        "previously contributed to were cleaned up.",
+                    IngestOutcome.SourceNotFound =>
+                        $"Updated '{rel}', but the re-ingest step could not find it afterward. " +
+                        $"Try calling ingest(\"{rel}\") to retry.",
+                    _ =>
+                        $"Updated '{rel}' and re-ingested it into {ingestResult.TouchedPages.Count} memory " +
+                        $"page(s): {string.Join(", ", ingestResult.TouchedPages)}. The correction is now " +
+                        "reflected via recall.",
+                };
+            },
+            DiffPreview: diff,
+            TargetPath: rel);
+
+        return (null, pending);
+    }
+
+    private async Task<(object? Result, MemoryToolCall? PendingAction)> HandleCreateSource(
+        IDictionary<string, object?> args)
+    {
+        var reference = GetStringArg(args, "reference");
+        if (string.IsNullOrWhiteSpace(reference))
+            return ("Error: reference parameter is required", null);
+
+        if (!TryGetRequiredContentArg(args, out var content, out var contentError))
+            return (contentError, null);
+
+        _logger.SensitiveDebug("create_source reference: {Ref}", reference);
+
+        // Resolution-only: run the same scope guard as read_source, but require the ref NOT already
+        // exist. The committing write is the Execute lambda.
+        var preview = await _memoryService.ResolveCreateSourceAsync(reference);
+        if (!preview.CanWrite)
+            return (preview.Error, null);
+
+        var rel = preview.Ref;
+        var diff = LineDiff.Compute(null, content);
+
+        var pending = new MemoryToolCall(
+            ToolName: "create_source",
+            Description: _localizationService.Format("Tool_Memory_Desc_CreateSource", rel),
+            OldValue: null,
+            NewValue: null,
+            TargetObjectId: null,
+            Execute: async () =>
+            {
+                var written = await _memoryService.CreateSourceAsync(rel, content);
+                if (!written.Success)
+                    return written.Error;
+
+                // Re-ingest synchronously (the same manual, always-runs entry point the ingest tool
+                // itself uses) so the model gets a deterministic result without a separate ingest call.
+                var ingestResult = await _ingestScheduler.RunAsync(rel, CancellationToken.None);
+                return ingestResult.Outcome switch
+                {
+                    IngestOutcome.NonTextSkipped =>
+                        $"Created '{rel}', but it is not recognized as a text source so it was not ingested.",
+                    IngestOutcome.EmptySource =>
+                        $"Created '{rel}', but it is empty — nothing to ingest.",
+                    IngestOutcome.NoEntities =>
+                        $"Created '{rel}' and ingested it, but no entities were found, so no memory pages were written.",
+                    IngestOutcome.SourceNotFound =>
+                        $"Created '{rel}', but the ingest step could not find it afterward. " +
+                        $"Try calling ingest(\"{rel}\") to retry.",
+                    _ =>
+                        $"Created '{rel}' and ingested it into {ingestResult.TouchedPages.Count} memory " +
+                        $"page(s): {string.Join(", ", ingestResult.TouchedPages)}. The content is now " +
+                        "available via recall.",
+                };
+            },
+            DiffPreview: diff,
+            TargetPath: rel);
+
+        return (null, pending);
+    }
+
     private async Task<(object? Result, MemoryToolCall? PendingAction)> HandleRemember(
         IDictionary<string, object?> args)
     {
@@ -234,6 +377,16 @@ public class MemoryToolHandler : IMemoryToolHandler
         [Description("Optional 1-based line to start from, for paging through a large source")] int? offset = null,
         [Description("Optional max lines to return (default 500, max 2000)")] int? limit = null) => "";
 
+    [Description("Correct an existing raw source under sources/ in place (full replacement text)")]
+    private static string UpdateSourceSchema(
+        [Description("Vault-relative source ref of an EXISTING source, e.g. 'sources/meeting-notes.txt' (from a topic's cited sources)")] string reference,
+        [Description("The full corrected text of the source (replaces the entire file, not a partial patch)")] string content) => "";
+
+    [Description("Stage a brand-new raw source under sources/")]
+    private static string CreateSourceSchema(
+        [Description("A NEW vault-relative source path, e.g. 'sources/meeting-notes-2026-08-11.txt'; must not already exist (use update_source for that)")] string reference,
+        [Description("The full text of the new source document")] string content) => "";
+
     [Description("Store or update a memory in the vault; matching subjects are merged to avoid duplicates")]
     private static string RememberSchema(
         [Description("Memory type: personal_profile, contact_list, preference, note, project, topic")] string type,
@@ -255,6 +408,35 @@ public class MemoryToolHandler : IMemoryToolHandler
             return value?.ToString() ?? string.Empty;
         }
         return string.Empty;
+    }
+
+    // Distinguishes a missing 'content' key from a present-but-empty one — GetStringArg returns ""
+    // for both, which would silently wipe a source's content if the model simply forgot the argument.
+    private static bool TryGetRequiredContentArg(
+        IDictionary<string, object?> args, out string content, out string? error)
+    {
+        content = string.Empty;
+        error = null;
+
+        if (!args.TryGetValue("content", out var raw) || raw is null)
+        {
+            error = "Error: 'content' is missing. Re-emit the call with the full corrected text as a JSON string.";
+            return false;
+        }
+
+        if (raw is JsonElement element)
+        {
+            if (element.ValueKind == JsonValueKind.Null)
+            {
+                error = "Error: 'content' is missing. Re-emit the call with the full corrected text as a JSON string.";
+                return false;
+            }
+            content = element.ValueKind == JsonValueKind.String ? element.GetString() ?? string.Empty : element.GetRawText();
+            return true;
+        }
+
+        content = raw.ToString() ?? string.Empty;
+        return true;
     }
 
     private static int? GetOptionalIntArg(IDictionary<string, object?> args, string key)

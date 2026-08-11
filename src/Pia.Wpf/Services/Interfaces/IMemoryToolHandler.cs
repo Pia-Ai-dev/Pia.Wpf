@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using Pia.Models;
 
 namespace Pia.Services.Interfaces;
 
@@ -8,7 +9,9 @@ public record MemoryToolCall(
     string? OldValue,
     string? NewValue,
     Guid? TargetObjectId,
-    Func<Task<object?>> Execute);
+    Func<Task<object?>> Execute,
+    IReadOnlyList<DiffLine>? DiffPreview = null,
+    string? TargetPath = null);
 
 public interface IMemoryToolHandler
 {

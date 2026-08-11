@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Pia.Infrastructure.Vault;
 using Pia.Logging;
 using Pia.Services.Interfaces;
 
@@ -56,7 +57,7 @@ public class IngestToolHandler : IIngestToolHandler
             return "Error: source_ref parameter is required";
         }
 
-        sourceRef = NormalizeSourceRef(sourceRef);
+        sourceRef = VaultReference.NormalizePath(sourceRef);
 
         var result = await _scheduler.RunAsync(sourceRef, cancellationToken);
         _logger.SensitiveDebug("Ingest tool compiled {Source} into {Count} page(s)",
@@ -66,8 +67,8 @@ public class IngestToolHandler : IIngestToolHandler
         {
             IngestOutcome.SourceNotFound =>
                 $"Error: source '{sourceRef}' was not found. Raw files must be inside the vault's sources/ folder. " +
-                "To stage a new file, write it to 'Vault/sources/<name>' with the files tools, then call " +
-                "ingest(\"sources/<name>\").",
+                "To stage a new file, call create_source(reference, content) — it ingests automatically, so no " +
+                "separate ingest call is needed afterward.",
             IngestOutcome.NonTextSkipped =>
                 $"Skipped: '{sourceRef}' is not a text file. Only text sources (e.g. txt, md, csv, json, html, xml, log) can be ingested.",
             IngestOutcome.EmptySource =>
@@ -83,19 +84,6 @@ public class IngestToolHandler : IIngestToolHandler
     [Description("Compile a raw vault source into the memory wiki (one topic page per entity)")]
     private static string IngestSchema(
         [Description("Vault-relative path of the source to ingest. Must be under the sources/ folder, e.g. 'sources/q2-report.txt'; paths elsewhere in the vault (memory/, notes/, …) are refused.")] string source_ref) => "";
-
-    // Model-facing lenience: the files tools address the same file as 'Vault/sources/<name>', so
-    // accept that spelling (any casing) plus stray leading slashes / backslashes, and canonicalize
-    // to the vault-relative form IngestService expects.
-    private static string NormalizeSourceRef(string sourceRef)
-    {
-        var normalized = sourceRef.Trim().Replace('\\', '/').TrimStart('/');
-        if (normalized.StartsWith("vault/", StringComparison.OrdinalIgnoreCase))
-        {
-            normalized = normalized["vault/".Length..];
-        }
-        return normalized;
-    }
 
     private static string GetStringArg(IDictionary<string, object?> args, string key)
     {

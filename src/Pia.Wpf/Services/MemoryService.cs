@@ -656,7 +656,7 @@ public class MemoryService : IMemoryService
     /// <inheritdoc />
     public async Task<TopicRead> ReadTopicAsync(string reference)
     {
-        var reqRef = (reference ?? string.Empty).Trim().Replace('\\', '/');
+        var reqRef = VaultReference.NormalizePath(reference ?? string.Empty);
         // recall emits a bare path, but be lenient if a #heading slipped in.
         var hashIdx = reqRef.IndexOf('#');
         var pathRef = hashIdx >= 0 ? reqRef[..hashIdx] : reqRef;
@@ -713,7 +713,7 @@ public class MemoryService : IMemoryService
     /// <inheritdoc />
     public async Task<SourceRead> ReadSourceAsync(string reference, int? offset = null, int? limit = null)
     {
-        var reqRef = (reference ?? string.Empty).Trim().Replace('\\', '/').TrimStart('/');
+        var reqRef = VaultReference.NormalizePath(reference ?? string.Empty);
 
         if (string.IsNullOrWhiteSpace(reqRef))
             return new SourceRead(false, reqRef, "", false, "Error: a source reference is required.");
@@ -728,7 +728,7 @@ public class MemoryService : IMemoryService
             return new SourceRead(false, reqRef, "", false, "Error: reference is outside the memory vault.");
         }
 
-        // Scope — traversal-only: only the immutable sources/ RAW layer is reachable, asserted on the
+        // Scope — traversal-only: only the sources/ RAW layer is reachable, asserted on the
         // canonical relative path (mirrors IngestService.IsSourcesRef). The ref should come from a topic's
         // cited sources via read_topic.
         var rel = ToVaultRelative(abs);
@@ -767,6 +767,187 @@ public class MemoryService : IMemoryService
             windowed.Length, truncated);
         _logger.SensitiveDebug("read_source ref: {Ref}", rel);
         return new SourceRead(true, rel, windowed, truncated, null);
+    }
+
+    /// <inheritdoc />
+    public async Task<SourceUpdatePreview> ResolveUpdateSourceAsync(string reference)
+    {
+        var reqRef = VaultReference.NormalizePath(reference ?? string.Empty);
+
+        if (string.IsNullOrWhiteSpace(reqRef))
+            return new SourceUpdatePreview(false, reqRef, "", null, "Error: a source reference is required.");
+
+        if (!TryResolveSourceScope(reqRef, out var abs, out var rel, out var scopeError))
+            return new SourceUpdatePreview(false, rel, "", null, scopeError);
+
+        if (!File.Exists(abs))
+            return new SourceUpdatePreview(false, rel, "", null,
+                "Error: source not found. update_source only corrects an EXISTING source — to stage a " +
+                "NEW one, call create_source(reference, content) instead.");
+
+        var info = new FileInfo(abs);
+        if (info.Length > MaxSourceReadBytes)
+            return new SourceUpdatePreview(false, rel, "", null,
+                $"Error: source is too large to update here ({info.Length} bytes, max {MaxSourceReadBytes}).");
+
+        try
+        {
+            var oldContent = await File.ReadAllTextAsync(abs);
+            var mtime = File.GetLastWriteTimeUtc(abs);
+            return new SourceUpdatePreview(true, rel, oldContent, mtime, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "update_source failed to read current content");
+            return new SourceUpdatePreview(false, rel, "", null, $"Error: could not read current source ({ex.Message}).");
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<SourceWrite> UpdateSourceAsync(string reference, string content, DateTime? expectedMtime)
+    {
+        var reqRef = VaultReference.NormalizePath(reference ?? string.Empty);
+
+        if (!TryResolveSourceScope(reqRef, out var abs, out var rel, out var scopeError))
+            return Task.FromResult(new SourceWrite(false, rel, scopeError));
+
+        if (!File.Exists(abs))
+            return Task.FromResult(new SourceWrite(false, rel,
+                "Error: the source no longer exists. Re-check with read_source and submit the update again."));
+
+        if (expectedMtime.HasValue)
+        {
+            var currentMtime = File.GetLastWriteTimeUtc(abs);
+            if (currentMtime != expectedMtime.Value)
+            {
+                _logger.LogInformation("update_source blocked: source changed on disk since it was previewed");
+                return Task.FromResult(new SourceWrite(false, rel,
+                    "Error: the source changed on disk after this edit was previewed, so the approved diff " +
+                    "no longer matches. Re-read it with read_source and submit the update again."));
+            }
+        }
+
+        var contentBytes = Encoding.UTF8.GetByteCount(content);
+        if (contentBytes > MaxSourceReadBytes)
+            return Task.FromResult(new SourceWrite(false, rel,
+                $"Error: content is too large ({contentBytes} bytes, max {MaxSourceReadBytes})."));
+
+        try
+        {
+            // AtomicTextWriter (not IVaultStore.WriteAtomicAsync) — a raw source is a user-authored
+            // file, not a Pia-managed page, so its original EOL style and BOM are preserved rather than
+            // silently normalized to Pia's UTF-8-no-BOM convention.
+            AtomicTextWriter.Write(abs, content);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "update_source failed to write");
+            return Task.FromResult(new SourceWrite(false, rel, $"Error: could not update source ({ex.Message})."));
+        }
+
+        _logger.LogInformation("update_source wrote {Chars} char(s) to {Ref}", content.Length, rel);
+        _logger.SensitiveDebug("update_source ref: {Ref}", rel);
+        return Task.FromResult(new SourceWrite(true, rel, null));
+    }
+
+    /// <inheritdoc />
+    public Task<SourceCreatePreview> ResolveCreateSourceAsync(string reference)
+    {
+        var reqRef = VaultReference.NormalizePath(reference ?? string.Empty);
+
+        if (string.IsNullOrWhiteSpace(reqRef))
+            return Task.FromResult(new SourceCreatePreview(false, reqRef, "Error: a source reference is required."));
+
+        if (!TryResolveSourceScope(reqRef, out var abs, out var rel, out var scopeError))
+            return Task.FromResult(new SourceCreatePreview(false, rel, scopeError));
+
+        if (File.Exists(abs))
+            return Task.FromResult(new SourceCreatePreview(false, rel,
+                $"Error: '{rel}' already exists. create_source only stages a NEW source — to correct " +
+                "this one, call update_source(reference, content) instead."));
+
+        return Task.FromResult(new SourceCreatePreview(true, rel, null));
+    }
+
+    /// <inheritdoc />
+    public Task<SourceWrite> CreateSourceAsync(string reference, string content)
+    {
+        var reqRef = VaultReference.NormalizePath(reference ?? string.Empty);
+
+        if (!TryResolveSourceScope(reqRef, out var abs, out var rel, out var scopeError))
+            return Task.FromResult(new SourceWrite(false, rel, scopeError));
+
+        // Collision guard — the create-side TOCTOU equivalent: nothing existed to have an mtime, so a
+        // file appearing here at all (created out of band since the preview) is the signal to refuse.
+        if (File.Exists(abs))
+            return Task.FromResult(new SourceWrite(false, rel,
+                $"Error: '{rel}' now exists on disk, though it did not when this create was previewed. " +
+                "Re-check with read_source or call update_source instead."));
+
+        var contentBytes = Encoding.UTF8.GetByteCount(content);
+        if (contentBytes > MaxSourceReadBytes)
+            return Task.FromResult(new SourceWrite(false, rel,
+                $"Error: content is too large ({contentBytes} bytes, max {MaxSourceReadBytes})."));
+
+        try
+        {
+            var dir = Path.GetDirectoryName(abs);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+
+            // New file: AtomicTextWriter defaults to the repo convention (CRLF, no BOM) since there is
+            // no existing EOL/BOM to preserve — the same path write_file takes for a brand-new file.
+            AtomicTextWriter.Write(abs, content);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "create_source failed to write");
+            return Task.FromResult(new SourceWrite(false, rel, $"Error: could not create source ({ex.Message})."));
+        }
+
+        _logger.LogInformation("create_source wrote {Chars} char(s) to {Ref}", content.Length, rel);
+        _logger.SensitiveDebug("create_source ref: {Ref}", rel);
+        return Task.FromResult(new SourceWrite(true, rel, null));
+    }
+
+    /// <summary>
+    /// Shared containment + <c>sources/</c>-scope + sensitive-path + text-extension guard for the
+    /// update_source and create_source resolve/write pairs, mirroring <see cref="ReadSourceAsync"/>'s
+    /// chain (minus the existence/size checks, which differ by caller and by create-vs-update).
+    /// </summary>
+    private bool TryResolveSourceScope(string reqRef, out string abs, out string rel, out string? error)
+    {
+        if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(VaultRoot, reqRef, out abs))
+        {
+            _logger.LogWarning("update_source/create_source rejected: reference outside the vault");
+            _logger.SensitiveDebug("update_source/create_source rejected ref: {Ref}", reqRef);
+            rel = reqRef;
+            error = "Error: reference is outside the memory vault.";
+            return false;
+        }
+
+        rel = ToVaultRelative(abs);
+        if (!rel.StartsWith("sources/", StringComparison.OrdinalIgnoreCase))
+        {
+            error = "Error: only files under 'sources/' can be used here. Get a ref from a topic's " +
+                "cited sources via read_topic, or choose a new 'sources/<name>' path.";
+            return false;
+        }
+
+        if (SensitivePathGuard.IsBlocked(abs, out var blockReason))
+        {
+            error = $"Error: refusing to use this path — {blockReason}.";
+            return false;
+        }
+
+        if (!SourcesProvenance.IsTextSource(rel))
+        {
+            error = "Error: that source is not a text file.";
+            return false;
+        }
+
+        error = null;
+        return true;
     }
 
     // Mirrors MemoryViewModel.EnumerateDisplayGroups so browse_index and the Memory view can't drift:

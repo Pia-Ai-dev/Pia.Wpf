@@ -91,7 +91,7 @@ public sealed class IngestService : IIngestService
         // Containment guard: source_ref reaches this service from a model tool call, so refuse any
         // absolute path or '..' traversal that resolves OUTSIDE the vault — otherwise an injected
         // prompt could exfiltrate an arbitrary local text file into memory (which syncs).
-        // Scope guard: only the immutable RAW layer (sources/) is ingestable. The tool reaches the model,
+        // Scope guard: only the RAW layer (sources/) is ingestable. The tool reaches the model,
         // and containment alone would let an ingest("memory/preferences.md") pull Pia's OWN memory back
         // into topic synthesis. Refuse anything outside sources/ before touching the filesystem.
         if (!IsSourcesRef(sourceRef))
@@ -490,7 +490,7 @@ public sealed class IngestService : IIngestService
         return await File.ReadAllTextAsync(absolute, ct);
     }
 
-    // True only for refs under the immutable RAW layer. Separator-tolerant to match IngestAsync, which
+    // True only for refs under the RAW layer. Separator-tolerant to match IngestAsync, which
     // normalizes '\\' → '/' before calling.
     private static bool IsSourcesRef(string sourceRef)
         => sourceRef.Replace('\\', '/').StartsWith("sources/", StringComparison.OrdinalIgnoreCase);

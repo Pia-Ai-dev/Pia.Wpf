@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Infrastructure;
 using Pia.Infrastructure.Vault;
+using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Tests.TestInfrastructure;
@@ -65,8 +66,9 @@ public class MemoryToolIntegrationTests : IDisposable
     private MemoryService BuildMemoryService()
         => new(_ctx, NullLogger<MemoryService>.Instance, _embeddings, _deleteTracker, _store, _upsert);
 
-    private MemoryToolHandler BuildHandler(IMemoryService memory)
-        => new(memory, _embeddings, _localization, NullLogger<MemoryToolHandler>.Instance);
+    private MemoryToolHandler BuildHandler(IMemoryService memory, IIngestScheduler? ingestScheduler = null)
+        => new(memory, _embeddings, _localization, ingestScheduler ?? Substitute.For<IIngestScheduler>(),
+            NullLogger<MemoryToolHandler>.Instance);
 
     private static FunctionCallContent RememberCall(string type, string subject, string content)
         => new(
@@ -373,4 +375,295 @@ public class MemoryToolIntegrationTests : IDisposable
         Assert.DoesNotContain(doc!.Sections, s => s.Heading == "John Smith");
     }
 
+    // Ref-normalization regression: the files tools address a source as 'Vault/sources/<name>'
+    // (relative to the assistant files folder); read_source must tolerate that spelling too, not just
+    // the memory-tools' own 'sources/<name>' (relative to the vault root).
+    [Fact]
+    public async Task ReadSource_VaultPrefixedRef_Normalizes()
+    {
+        SeedAcmeTopicAndSource();
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, _) = await handler.HandleToolCallAsync(
+            NavCall("read_source", new Dictionary<string, object?> { ["reference"] = "Vault/sources/acme-notes.txt" }),
+            TestContext.Current.CancellationToken);
+
+        var source = Assert.IsType<SourceRead>(result);
+        Assert.True(source.Found);
+        Assert.Contains("4.2 billion", source.Text);
+    }
+
+    // Same normalization, and the leading-slash tolerance read_topic previously lacked (read_source had
+    // it, read_topic did not — an inconsistency fixed alongside the Vault/-prefix normalization).
+    [Fact]
+    public async Task ReadTopic_LeadingSlashRef_Normalizes()
+    {
+        SeedAcmeTopicAndSource();
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, _) = await handler.HandleToolCallAsync(
+            NavCall("read_topic", new Dictionary<string, object?> { ["reference"] = "/memory/topics/acme-corp.md" }),
+            TestContext.Current.CancellationToken);
+
+        var topic = Assert.IsType<TopicRead>(result);
+        Assert.True(topic.Found);
+    }
+
+    private static FunctionCallContent UpdateSourceCall(string reference, string content)
+        => new(
+            callId: Guid.NewGuid().ToString(),
+            name: "update_source",
+            arguments: new Dictionary<string, object?> { ["reference"] = reference, ["content"] = content });
+
+    private static IngestResult SuccessfulReingest(string sourceRef, params string[] touchedPages)
+        => new(sourceRef, touchedPages);
+
+    // Happy path: update_source previews a real diff, writes the new content, and re-ingests
+    // synchronously via IIngestScheduler.RunAsync — the same manual entry point the ingest tool uses.
+    [Fact]
+    public async Task UpdateSource_HappyPath_WritesContentAndReingests()
+    {
+        SeedAcmeTopicAndSource();
+        var scheduler = Substitute.For<IIngestScheduler>();
+        scheduler.RunAsync("sources/acme-notes.txt", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(SuccessfulReingest("sources/acme-notes.txt", "memory/topics/acme-corp.md")));
+        var handler = BuildHandler(BuildMemoryService(), scheduler);
+
+        var (result, pending) = await handler.HandleToolCallAsync(
+            UpdateSourceCall("sources/acme-notes.txt", "Acme revenue in 2025 was 5.0 billion USD.\n"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Null(result);
+        Assert.NotNull(pending);
+        Assert.Equal("update_source", pending!.ToolName);
+        Assert.NotNull(pending.DiffPreview);
+        Assert.NotEmpty(pending.DiffPreview!);
+        Assert.Equal("sources/acme-notes.txt", pending.TargetPath);
+
+        var execResult = await handler.ExecutePendingActionAsync(pending);
+        Assert.Contains("Updated", execResult?.ToString());
+        Assert.Contains("acme-corp.md", execResult?.ToString());
+
+        var written = await File.ReadAllTextAsync(
+            Path.Combine(_vaultRoot, "sources", "acme-notes.txt"), TestContext.Current.CancellationToken);
+        Assert.Contains("5.0 billion", written);
+        await scheduler.Received(1).RunAsync("sources/acme-notes.txt", Arg.Any<CancellationToken>());
+    }
+
+    // update_source only corrects an EXISTING source — creating one stays on the write_file+ingest path.
+    [Fact]
+    public async Task UpdateSource_MissingSource_ReturnsErrorWithoutPendingAction()
+    {
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, pending) = await handler.HandleToolCallAsync(
+            UpdateSourceCall("sources/does-not-exist.txt", "new text"), TestContext.Current.CancellationToken);
+
+        Assert.Null(pending);
+        Assert.Contains("not found", result?.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Argument hardening: a missing 'content' key must not be treated as "replace with empty" — that
+    // would silently wipe the source if the model forgot the argument.
+    [Fact]
+    public async Task UpdateSource_MissingContentArg_ReturnsErrorWithoutPendingAction()
+    {
+        SeedAcmeTopicAndSource();
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, pending) = await handler.HandleToolCallAsync(
+            NavCall("update_source", new Dictionary<string, object?> { ["reference"] = "sources/acme-notes.txt" }),
+            TestContext.Current.CancellationToken);
+
+        Assert.Null(pending);
+        Assert.Contains("content", result?.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Scope guard: only sources/ can be updated here — reuses read_source's own scope check.
+    [Fact]
+    public async Task UpdateSource_NonSourcesRef_RejectedByScope()
+    {
+        SeedAcmeTopicAndSource();
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, pending) = await handler.HandleToolCallAsync(
+            UpdateSourceCall("memory/topics/acme-corp.md", "malicious replacement"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Null(pending);
+        Assert.Contains("sources/", result?.ToString());
+    }
+
+    // Containment guard: reuses read_source's own containment check (../ escape).
+    [Fact]
+    public async Task UpdateSource_PathTraversal_RejectedByContainment()
+    {
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, pending) = await handler.HandleToolCallAsync(
+            UpdateSourceCall("sources/../../secret.txt", "malicious replacement"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Null(pending);
+        Assert.Contains("outside", result?.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    // TOCTOU guard: if the source changes on disk between preview and approval, the approved diff no
+    // longer matches current content — Execute must refuse rather than silently clobber it.
+    [Fact]
+    public async Task UpdateSource_ChangedOnDiskSincePreview_BlockedByToctou()
+    {
+        SeedAcmeTopicAndSource();
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (_, pending) = await handler.HandleToolCallAsync(
+            UpdateSourceCall("sources/acme-notes.txt", "The corrected figure.\n"),
+            TestContext.Current.CancellationToken);
+        Assert.NotNull(pending);
+
+        var path = Path.Combine(_vaultRoot, "sources", "acme-notes.txt");
+        File.WriteAllText(path, "Someone else edited this out of band.\n");
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(5));
+
+        var execResult = await handler.ExecutePendingActionAsync(pending!);
+        Assert.Contains("changed on disk", execResult?.ToString(), StringComparison.OrdinalIgnoreCase);
+
+        // The out-of-band edit must survive — the blocked write never touched the file.
+        var onDisk = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+        Assert.Contains("out of band", onDisk);
+    }
+
+    private static FunctionCallContent CreateSourceCall(string reference, string content)
+        => new(
+            callId: Guid.NewGuid().ToString(),
+            name: "create_source",
+            arguments: new Dictionary<string, object?> { ["reference"] = reference, ["content"] = content });
+
+    // Happy path: create_source previews an all-added diff, writes a brand-new file, and ingests
+    // synchronously via IIngestScheduler.RunAsync — no separate ingest call needed.
+    [Fact]
+    public async Task CreateSource_HappyPath_WritesContentAndIngests()
+    {
+        var scheduler = Substitute.For<IIngestScheduler>();
+        scheduler.RunAsync("sources/new-notes.txt", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(SuccessfulReingest("sources/new-notes.txt", "memory/topics/new-notes.md")));
+        var handler = BuildHandler(BuildMemoryService(), scheduler);
+
+        var (result, pending) = await handler.HandleToolCallAsync(
+            CreateSourceCall("sources/new-notes.txt", "Fresh content pasted from chat.\n"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Null(result);
+        Assert.NotNull(pending);
+        Assert.Equal("create_source", pending!.ToolName);
+        Assert.NotNull(pending.DiffPreview);
+        Assert.All(pending.DiffPreview!, d => Assert.Equal(DiffLineKind.Added, d.Kind));
+        Assert.Equal("sources/new-notes.txt", pending.TargetPath);
+
+        var execResult = await handler.ExecutePendingActionAsync(pending);
+        Assert.Contains("Created", execResult?.ToString());
+        Assert.Contains("new-notes.md", execResult?.ToString());
+
+        var written = await File.ReadAllTextAsync(
+            Path.Combine(_vaultRoot, "sources", "new-notes.txt"), TestContext.Current.CancellationToken);
+        Assert.Contains("Fresh content pasted from chat.", written);
+        await scheduler.Received(1).RunAsync("sources/new-notes.txt", Arg.Any<CancellationToken>());
+    }
+
+    // A nested ref must auto-create its parent directory — AtomicTextWriter does not do this itself.
+    [Fact]
+    public async Task CreateSource_NestedRef_CreatesParentDirectory()
+    {
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (_, pending) = await handler.HandleToolCallAsync(
+            CreateSourceCall("sources/meetings/2026-08-11.txt", "Meeting notes.\n"),
+            TestContext.Current.CancellationToken);
+        Assert.NotNull(pending);
+
+        await handler.ExecutePendingActionAsync(pending!);
+
+        var written = await File.ReadAllTextAsync(
+            Path.Combine(_vaultRoot, "sources", "meetings", "2026-08-11.txt"), TestContext.Current.CancellationToken);
+        Assert.Contains("Meeting notes.", written);
+    }
+
+    // create_source only stages a NEW source — an existing ref is rejected and pointed at update_source.
+    [Fact]
+    public async Task CreateSource_AlreadyExists_ReturnsErrorPointingAtUpdateSource()
+    {
+        SeedAcmeTopicAndSource();
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, pending) = await handler.HandleToolCallAsync(
+            CreateSourceCall("sources/acme-notes.txt", "replacement"), TestContext.Current.CancellationToken);
+
+        Assert.Null(pending);
+        Assert.Contains("already exists", result?.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("update_source", result?.ToString());
+    }
+
+    // Argument hardening: mirrors update_source's own missing-content guard.
+    [Fact]
+    public async Task CreateSource_MissingContentArg_ReturnsErrorWithoutPendingAction()
+    {
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, pending) = await handler.HandleToolCallAsync(
+            NavCall("create_source", new Dictionary<string, object?> { ["reference"] = "sources/new.txt" }),
+            TestContext.Current.CancellationToken);
+
+        Assert.Null(pending);
+        Assert.Contains("content", result?.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Scope guard: reuses the same TryResolveSourceScope chain update_source's equivalent test covers.
+    [Fact]
+    public async Task CreateSource_NonSourcesRef_RejectedByScope()
+    {
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, pending) = await handler.HandleToolCallAsync(
+            CreateSourceCall("memory/topics/new-topic.md", "malicious content"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Null(pending);
+        Assert.Contains("sources/", result?.ToString());
+    }
+
+    // Containment guard: reuses the same ../ escape case update_source's equivalent test covers.
+    [Fact]
+    public async Task CreateSource_PathTraversal_RejectedByContainment()
+    {
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, pending) = await handler.HandleToolCallAsync(
+            CreateSourceCall("sources/../../secret.txt", "malicious content"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Null(pending);
+        Assert.Contains("outside", result?.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Create-side collision guard (the TOCTOU equivalent for a create): if the ref appears on disk
+    // between preview and approval, Execute must refuse rather than overwrite it.
+    [Fact]
+    public async Task CreateSource_AppearedOnDiskSincePreview_BlockedByCollisionGuard()
+    {
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (_, pending) = await handler.HandleToolCallAsync(
+            CreateSourceCall("sources/race.txt", "My content.\n"), TestContext.Current.CancellationToken);
+        Assert.NotNull(pending);
+
+        SeedFile("sources/race.txt", "Someone else created this out of band.\n");
+
+        var execResult = await handler.ExecutePendingActionAsync(pending!);
+        Assert.Contains("now exists", execResult?.ToString(), StringComparison.OrdinalIgnoreCase);
+
+        // The out-of-band file must survive — the blocked write never touched it.
+        var onDisk = await File.ReadAllTextAsync(
+            Path.Combine(_vaultRoot, "sources", "race.txt"), TestContext.Current.CancellationToken);
+        Assert.Contains("out of band", onDisk);
+    }
 }

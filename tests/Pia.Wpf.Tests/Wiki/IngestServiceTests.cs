@@ -558,7 +558,7 @@ public class IngestServiceTests : IDisposable
 
         var text = Assert.IsType<string>(result);
         Assert.Contains("not found", text);
-        Assert.Contains("Vault/sources/", text);
+        Assert.Contains("create_source", text);
     }
 
     // --- dangling-wikilink reconciliation (deterministic backstop) ---

@@ -381,6 +381,8 @@ Changes will be applied.</value></data>
   <!-- MemoryToolHandler -->
   <data name="Tool_Memory_Desc_Remember" xml:space="preserve"><value>Remember: {0}</value></data>
   <data name="Tool_Memory_Desc_Forget" xml:space="preserve"><value>Forget: {0}</value></data>
+  <data name="Tool_Memory_Desc_UpdateSource" xml:space="preserve"><value>Update source: {0}</value></data>
+  <data name="Tool_Memory_Desc_CreateSource" xml:space="preserve"><value>Create source: {0}</value></data>
   <data name="Tool_Memory_Exec_Remembered" xml:space="preserve"><value>Memory saved ({0}).</value></data>
   <data name="Tool_Memory_Exec_Forgotten" xml:space="preserve"><value>Memory removed ({0}).</value></data>
   <data name="Msg_Assistant_Exported" xml:space="preserve"><value>Exported</value></data>

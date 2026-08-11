@@ -27,4 +27,24 @@ public static class VaultReference
         var heading = reference[(hashIdx + 1)..];
         return (path, VaultSlug.Slugify(heading));
     }
+
+    /// <summary>
+    /// Normalizes a vault-relative path so the same file addressed via the files tools (which use
+    /// the <c>Vault/sources/&lt;name&gt;</c> spelling, relative to the assistant files folder) and via the
+    /// memory tools (which use the <c>sources/&lt;name&gt;</c> spelling, relative to the vault root) resolve
+    /// the same way: strips backslashes to forward slashes, a leading <c>/</c>, and a leading
+    /// <c>vault/</c> segment (case-insensitively).
+    /// </summary>
+    public static string NormalizePath(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+
+        var normalized = path.Trim().Replace('\\', '/').TrimStart('/');
+        if (normalized.StartsWith("vault/", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized["vault/".Length..];
+        }
+
+        return normalized;
+    }
 }

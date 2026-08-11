@@ -101,6 +101,7 @@ public abstract class ToolPipelineTestBase
             MemoryService,
             EmbeddingService,
             localizationService,
+            Substitute.For<IIngestScheduler>(),
             NullLogger<MemoryToolHandler>.Instance);
 
         _todoToolHandler = new TodoToolHandler(

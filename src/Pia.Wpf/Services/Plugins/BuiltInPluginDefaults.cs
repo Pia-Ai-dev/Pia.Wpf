@@ -39,8 +39,8 @@ public static class BuiltInPluginDefaults
             IsPreloaded = true,
             IsActive = true,
             Version = "1.0.0",
-            ConfigJson = """{"handlerId":"memory","defaultEnabled":true,"systemPromptAddition":"You have a persistent memory system. To store or update personal information, call remember(type, subject, content) — it AUTOMATICALLY finds-or-creates the right record and de-duplicates, so you do NOT need to look anything up first. To look something up, call recall(query). To remove a record, call forget(reference). Valid type values: personal_profile, contact_list, preference, note, project, topic."}""",
-            UpdatedAt = new DateTime(2026, 4, 6, 0, 0, 0, DateTimeKind.Utc)
+            ConfigJson = """{"handlerId":"memory","defaultEnabled":true,"systemPromptAddition":"You have a persistent memory system. To store or update personal information, call remember(type, subject, content) — it AUTOMATICALLY finds-or-creates the right record and de-duplicates, so you do NOT need to look anything up first. To look something up, call recall(query). To remove a record, call forget(reference). Valid type values: personal_profile, contact_list, preference, note, project, topic. To correct an EXISTING raw source document (not a memory record) — e.g. fixing an error in an already-ingested transcript or report — call update_source(reference, content) with the full corrected text; get the reference from a topic's cited sources via read_topic or from search_files. To create a NEW source document worth keeping as a primary source — a document the user pasted, meeting notes, a decision write-up — call create_source(reference, content) instead; it ingests automatically. Do not use write_file for a vault source, new or existing: its path spelling differs from update_source's/create_source's and will not resolve the same way, and it does not work if the chat's working directory is scoped elsewhere."}""",
+            UpdatedAt = new DateTime(2026, 8, 11, 0, 0, 0, DateTimeKind.Utc)
         },
         [TodoPluginId] = new SyncPlugin
         {
@@ -99,8 +99,8 @@ public static class BuiltInPluginDefaults
             IsPreloaded = true,
             IsActive = true,
             Version = "1.0.0",
-            ConfigJson = """{"handlerId":"ingest","defaultEnabled":true,"systemPromptAddition":"You can compile raw documents into recallable memory. Raw files live in the assistant vault's 'sources/' folder. Call ingest with the vault-relative path (e.g. ingest(\"sources/q2-report.txt\")) to extract the key entities from the file and write one memory topic page per entity — after that the content can be found with recall. To stage a NEW document: use the files tools to write it to 'Vault/sources/<name>' (the vault is the 'Vault' folder inside the assistant files folder), then call ingest(\"sources/<name>\"). Re-ingesting the same source does not create duplicates. Only text files are supported (e.g. txt, md, csv, json, html, xml, log)."}""",
-            UpdatedAt = new DateTime(2026, 7, 6, 0, 0, 0, DateTimeKind.Utc)
+            ConfigJson = """{"handlerId":"ingest","defaultEnabled":true,"systemPromptAddition":"You can compile raw documents into recallable memory. Raw files live in the assistant vault's 'sources/' folder. Call ingest with the vault-relative path (e.g. ingest(\"sources/q2-report.txt\")) to extract the key entities from the file and write one memory topic page per entity — after that the content can be found with recall. To stage a NEW document, use the memory tool create_source(reference, content) instead of the files tools — it works no matter what folder the chat's working directory is scoped to, and ingests automatically, so you do not need a separate ingest call. To correct a source that has ALREADY been ingested, call the memory tool update_source(reference, content) instead, which shows a diff, applies it, and re-ingests automatically. Re-ingesting the same source does not create duplicates. Only text files are supported (e.g. txt, md, csv, json, html, xml, log)."}""",
+            UpdatedAt = new DateTime(2026, 8, 11, 0, 0, 0, DateTimeKind.Utc)
         },
         [GitPluginId] = new SyncPlugin
         {

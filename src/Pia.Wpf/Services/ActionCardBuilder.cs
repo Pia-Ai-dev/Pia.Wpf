@@ -73,12 +73,15 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             _ => null
         };
 
-        // Files write_file carries a true line-level diff preview that bypasses the Label/Value
-        // ParseKeyValueText path used for every other plugin. The card renders DiffLines instead.
-        var isFilesDiff = category == ActionCardCategory.Files && pendingAction.DiffPreview is { Count: > 0 };
+        // write_file and update_source carry a true line-level diff preview that bypasses the
+        // Label/Value ParseKeyValueText path used for every other plugin. The card renders DiffLines
+        // instead. Every other Memory-classed call (remember/forget) has no DiffPreview, so this only
+        // widens the branch update_source needs without changing their rendering.
+        var showsDiffPreview = category is ActionCardCategory.Files or ActionCardCategory.Memory
+            && pendingAction.DiffPreview is { Count: > 0 };
 
         var details = new ObservableCollection<ActionCardDetail>();
-        if (!isFilesDiff && pendingAction.Details is not null)
+        if (!showsDiffPreview && pendingAction.Details is not null)
         {
             // Memory + MCP carry structured JSON detail (MCP passes the raw tool-call arguments);
             // the built-in write plugins use key/value text. ActionCardCategory.Scheduled belongs to the
@@ -95,7 +98,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
 
         // Use a `with` expression so detokenizing the text preserves OldLineNumber/NewLineNumber —
         // a positional `new DiffLine(d.Kind, …)` would silently drop them (only in PII-detokenize mode).
-        var diffLines = isFilesDiff
+        var diffLines = showsDiffPreview
             ? new ObservableCollection<DiffLine>(
                 pendingAction.DiffPreview!.Select(d =>
                     detokenize ? d with { Text = _tokenMapService.Detokenize(d.Text) } : d))
@@ -196,8 +199,8 @@ public sealed class ActionCardBuilder : IActionCardBuilder
 
         var actionKey = toolName switch
         {
-            "create_todo" or "create_reminder" => "ActionCard_Action_Create",
-            "remember" or "update_todo" or "update_reminder"
+            "create_todo" or "create_reminder" or "create_source" => "ActionCard_Action_Create",
+            "remember" or "update_source" or "update_todo" or "update_reminder"
                 or "update_scheduled_research" => "ActionCard_Action_Update",
             "forget" or "delete_todo" or "delete_reminder" or "delete_file"
                 or "delete_scheduled_research" => "ActionCard_Action_Delete",

@@ -7,8 +7,9 @@ using Pia.Logging;
 namespace Pia.Services.Wiki;
 
 /// <summary>
-/// Scaffolds the vault layout of spec §1 on a fresh install: the immutable <c>sources/</c> directory
-/// (Pia reads, never edits) and the human-editable Schema <c>memory/AGENTS.md</c>. Renamed from the
+/// Scaffolds the vault layout of spec §1 on a fresh install: the <c>sources/</c> directory (read-only
+/// to Pia, except for a corrective <c>update_source</c>) and the human-editable Schema
+/// <c>memory/AGENTS.md</c>. Renamed from the
 /// plan's <c>VaultSchemaDoc</c> to the <c>Service</c> suffix so it satisfies <c>NamingConventionTests</c>
 /// without an allowlist change, and is a concrete singleton (no interface) so it does not trip
 /// <c>DiRegistrationTests</c>.

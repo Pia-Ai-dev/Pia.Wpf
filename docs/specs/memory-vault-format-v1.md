@@ -23,7 +23,7 @@ The vault is a directory tree. Its root is configurable; defaults:
 
 ```
 Vault/                          # configurable root
-  sources/                      # RAW layer (immutable). Pia READS, never edits or deletes.
+  sources/                      # RAW layer. Read-only to Pia except for a corrective update_source.
   memory/                       # Pia-owned. Pia WRITES ONLY here.
     index.md                    # catalog: every page + 1-line summary, grouped by type (§8)
     log.md                      # append-only journal (§9)
@@ -40,7 +40,10 @@ Vault/                          # configurable root
 
 Ownership rules:
 
-- **`sources/`** is immutable to Pia: read-only, never edited or deleted.
+- **`sources/`** is read-only to Pia except through `update_source`, which corrects a source's
+  content in place (full replacement, approval-gated, then re-ingests) — Pia never otherwise edits
+  or deletes here, and never creates a new file here directly (new sources are staged via the
+  files tools, then `ingest`).
 - **`memory/`** is the only tree Pia writes to. Every file Pia writes carries the `pia: managed`
   frontmatter marker (§2).
 - **User files** anywhere in the vault (including outside `memory/`) are read-only to Pia but are

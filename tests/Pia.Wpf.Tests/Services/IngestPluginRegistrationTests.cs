@@ -37,10 +37,11 @@ public class IngestPluginRegistrationTests
     {
         var config = IngestConfig().ConfigJson;
 
-        // The model must learn where raw files live, the Vault/sources staging path, and that the
-        // compiled content becomes recall-visible.
+        // The model must learn where raw files live, the create_source staging path (which superseded
+        // the old write_file+ingest recipe so staging works regardless of chat working-directory
+        // scope), and that the compiled content becomes recall-visible.
         Assert.Contains("sources/", config);
-        Assert.Contains("Vault/sources/", config);
+        Assert.Contains("create_source", config);
         Assert.Contains("recall", config);
     }
 
