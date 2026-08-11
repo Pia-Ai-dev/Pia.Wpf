@@ -526,7 +526,7 @@ git commit -m "Park a Live run's first 3+-step plan for user approval before exe
 - Modify: `src/Pia.Wpf/Resources/Strings/ViewStrings.de.resx`
 - Modify: `src/Pia.Wpf/Resources/Strings/ViewStrings.fr.resx`
 
-- [ ] **Step 1: Add `Run_Activity_PlanApproval` (panel activity line) to all three resx files**
+- [x] **Step 1: Add `Run_Activity_PlanApproval` (panel activity line) to all three resx files**
 
 Following the exact `<data name="..." xml:space="preserve"><value>...</value></data>` shape already used for `Run_Activity_NeedsInput` (cited in the research above), add to `ViewStrings.resx` near the other `Run_Activity_*` keys:
 
@@ -544,7 +544,7 @@ Following the exact `<data name="..." xml:space="preserve"><value>...</value></d
 <data name="Run_Activity_PlanApproval" xml:space="preserve"><value>En attente de votre approbation du plan</value></data>
 ```
 
-- [ ] **Step 2: Add `Flow_Run_PlanApproval` (Flow card body key) to all three resx files**
+- [x] **Step 2: Add `Flow_Run_PlanApproval` (Flow card body key) to all three resx files**
 
 Following `Flow_Run_NeedsInput`'s shape:
 
@@ -563,7 +563,7 @@ Following `Flow_Run_NeedsInput`'s shape:
 <data name="Flow_Run_PlanApproval" xml:space="preserve"><value>Une exécution attend votre approbation de son plan</value></data>
 ```
 
-- [ ] **Step 3: Run the localization parity test — no `Designer.cs` regeneration needed**
+- [x] **Step 3: Run the localization parity test — no `Designer.cs` regeneration needed**
 
 Runtime lookups (`_localization["key"]` / `{loc:Str Key}`) resolve through `LocalizationSource.this[string key]` → `ResourceManager.GetString(key, culture)` (`src/Pia.Wpf/Localization/LocalizationSource.cs:36-48`), which reads the MSBuild-compiled `.resources` blob directly — they never go through a `ViewStrings.Designer.cs` property. Confirmed by precedent already in this codebase: `Run_Activity_NeedsInput`/`Flow_Run_NeedsInput` exist in all three resx files today but have NO corresponding property in `ViewStrings.Designer.cs` (grep confirms), and they already ship and pass `LocalizationTests.cs` in production — that test validates via `ResourceManager.GetResourceSet`, never via `Designer.cs`. So: do NOT regenerate or hand-edit `Designer.cs` for this task; adding the resx entries above is the complete, sufficient change, and it needs no Visual Studio hand-off.
 
@@ -573,7 +573,7 @@ dotnet test -- --filter-method "*AllTranslations_MustBeComplete*"
 
 Expected: PASS (all three resx files now have matching keys). If it fails, the most likely cause is a typo in one of the three files' key name — diff them.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/Pia.Wpf/Resources/Strings/ViewStrings.resx src/Pia.Wpf/Resources/Strings/ViewStrings.de.resx src/Pia.Wpf/Resources/Strings/ViewStrings.fr.resx
@@ -586,7 +586,7 @@ git commit -m "Add plan-approval panel and Flow-card loc keys"
 - Modify: `src/Pia.Wpf/ViewModels/RunProgressViewModel.cs:1182-1203`
 - Test: find the existing test file that covers `DescribePause` (grep `DescribePause` under `tests/Pia.Wpf.Tests/ViewModels/`)
 
-- [ ] **Step 1: Add the arm**
+- [x] **Step 1: Add the arm**
 
 The current switch (exact text confirmed above) is:
 
@@ -611,7 +611,7 @@ Add a new arm for `PlanApprovalReason`, placed beside `NeedsGoalReason`/`NeedsIn
         AgentRunOrchestrator.PlanApprovalReason => _localization["Run_Activity_PlanApproval"],
 ```
 
-- [ ] **Step 2: Add an `InlineData` row to the existing theory, rather than a new bespoke test**
+- [x] **Step 2: Add an `InlineData` row to the existing theory, rather than a new bespoke test**
 
 `RunProgressViewModelTests.cs` already covers `DescribePause` end-to-end via a parameterized `[Theory]` (around line 303-327): it pauses a real persisted run with a given reason, refreshes the VM, and asserts `vm.CurrentActivity` equals the expected loc KEY (the test file's fake `ILocalizationService` returns the key itself, so this is a bare key-lookup assertion, not resolved text). Add a new row to this SAME theory:
 
@@ -643,13 +643,13 @@ Add a new arm for `PlanApprovalReason`, placed beside `NeedsGoalReason`/`NeedsIn
 
 Only the new `InlineData` line and the `AgentRunOrchestrator.cs` switch-arm change are new; the method body itself is unchanged from what already exists at `RunProgressViewModelTests.cs:303-327`.
 
-- [ ] **Step 3: Run, confirm fail → pass**
+- [x] **Step 3: Run, confirm fail → pass**
 
 ```bash
 dotnet test -- --filter-method "*AParkedRunsActivityLineNamesWhyItParked*"
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/Pia.Wpf/ViewModels/RunProgressViewModel.cs tests/Pia.Wpf.Tests/ViewModels/RunProgressViewModelTests.cs
@@ -663,7 +663,7 @@ git commit -m "Add the plan-approval arm to RunProgressViewModel.DescribePause"
 - Modify: `src/Pia.Wpf/Services/AgentRunNotificationSurface.cs:196-197` (`needsAnswerElsewhere`)
 - Test: grep `tests/Pia.Wpf.Tests/Services/` for the existing `AgentRunNotificationSurface` test file
 
-- [ ] **Step 1: Add the `PausedBodyKey` arm**
+- [x] **Step 1: Add the `PausedBodyKey` arm**
 
 Current switch (exact text confirmed above):
 
@@ -687,7 +687,7 @@ Add, beside the `NeedsGoalReason`/`NeedsInputReason` arms:
         AgentRunOrchestrator.PlanApprovalReason => "Flow_Run_PlanApproval",
 ```
 
-- [ ] **Step 2: Join `needsAnswerElsewhere`**
+- [x] **Step 2: Join `needsAnswerElsewhere`**
 
 Current text (`AgentRunNotificationSurface.cs:196-197`):
 
@@ -706,7 +706,7 @@ Change to:
 
 This is the fix that keeps a Flow notification's link from silently one-click-approving the plan: without it, `PlanApprovalReason` falls through to the default `ContinueRunAction` (bare `ResumeAsync`, no card); with it, the Flow card uses `OpenParkedRunAction` (routes to chat, resolves nothing on click) — the same treatment the clarification parks already get.
 
-- [ ] **Step 3: Add an `InlineData` row to `AParkedRunsFlowBodyNamesWhyItParked`**
+- [x] **Step 3: Add an `InlineData` row to `AParkedRunsFlowBodyNamesWhyItParked`**
 
 `AgentRunNotificationSurfaceTests.cs` already covers `PausedBodyKey` via a `[Theory]` (around line 39-53). Add a new row:
 
@@ -726,7 +726,7 @@ This is the fix that keeps a Flow notification's link from silently one-click-ap
         => Assert.Equal(expectedKey, AgentRunNotificationSurface.PausedBodyKey(reason));
 ```
 
-- [ ] **Step 4: Add an `InlineData` row to `NeedsClarificationPark_CardIsTokenKeyed_AndRoutesToTheRun` (the more important test — it proves the Flow routing, not just the wording)**
+- [x] **Step 4: Add an `InlineData` row to `NeedsClarificationPark_CardIsTokenKeyed_AndRoutesToTheRun` (the more important test — it proves the Flow routing, not just the wording)**
 
 This existing `[Theory]` (around line 211-228) already builds a run parked with a given reason, publishes it through the surface, and asserts the published card uses `OpenParkedRunAction`. Despite its name (written when only the two clarification reasons existed), it is the exact right place for the plan-approval row too — it is generic over `reason`/`expectedKey`:
 
@@ -753,7 +753,7 @@ This existing `[Theory]` (around line 211-228) already builds a run parked with 
 
 Without this row (and the `needsAnswerElsewhere` join from Step 2), a `plan-approval` park would fall through to `ContinueRunAction` and this exact assertion (`d.Action is OpenParkedRunAction`) is what would catch that regression.
 
-- [ ] **Step 5: Run, confirm fail → pass**
+- [x] **Step 5: Run, confirm fail → pass**
 
 Neither test method name contains "PlanApproval" — name both explicitly:
 
@@ -762,7 +762,7 @@ dotnet test -- --filter-method "*AParkedRunsFlowBodyNamesWhyItParked*"
 dotnet test -- --filter-method "*NeedsClarificationPark_CardIsTokenKeyed_AndRoutesToTheRun*"
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/Pia.Wpf/Services/AgentRunNotificationSurface.cs tests/Pia.Wpf.Tests/Services/AgentRunNotificationSurfaceTests.cs
@@ -775,7 +775,7 @@ git commit -m "Route plan-approval Flow cards to chat instead of a bare one-clic
 - Modify: `src/Pia.Wpf/Services/HeadlessRunLauncher.cs:151-156`
 - Test: `tests/Pia.Wpf.Tests/Services/HeadlessRunLauncherTests.cs` — add an `InlineData` row to the existing `Resume_InterruptedBeforeDispatch_ReParksWithTheTokenTheNextResumeNeeds` theory (around line 1148-1166). No test anywhere reaches `InterruptedReasonFor` via reflection today — this theory is the real, end-to-end coverage (it simulates a pre-dispatch resume failure via `BuildLauncher(nullDefaultProvider: true)` and asserts the re-park's reason).
 
-- [ ] **Step 1: Add the join**
+- [x] **Step 1: Add the join**
 
 Current text (exact, confirmed above):
 
@@ -802,7 +802,7 @@ Change to:
 
 Without this, a failed Approve dispatch (a persona/provider/workspace-resolve error between the CAS win and the orchestrator loop starting) would re-park the run with the generic `ResumeInterruptedReason` instead of `PlanApprovalReason` — silently dropping the Approve/Reject card and leaving only a bare Continue.
 
-- [ ] **Step 2: Add an `InlineData` row to the existing theory (and fix its now-stale doc comment)**
+- [x] **Step 2: Add an `InlineData` row to the existing theory (and fix its now-stale doc comment)**
 
 The `<summary>` above this theory (`HeadlessRunLauncherTests.cs:1147`) currently reads "`needs-goal`/`needs-input` preserve their own token... other reasons get the generic `resume-interrupted` diagnostic" — update it to name `plan-approval` as a third token-preserving reason, mirroring the same "fix the doc comment while touching this file" precedent Task 2.2 Step 2 already set:
 
@@ -835,19 +835,19 @@ The `<summary>` above this theory (`HeadlessRunLauncherTests.cs:1147`) currently
 
 Only the new `InlineData` row and the `HeadlessRunLauncher.cs` allowlist change are new; the method body is unchanged from what already exists at `HeadlessRunLauncherTests.cs:1148-1166`.
 
-- [ ] **Step 3: Run, confirm fail → pass**
+- [x] **Step 3: Run, confirm fail → pass**
 
 ```bash
 dotnet test -- --filter-method "*Resume_InterruptedBeforeDispatch_ReParksWithTheTokenTheNextResumeNeeds*"
 ```
 
-- [ ] **Step 4: Run the full gate**
+- [x] **Step 4: Run the full gate**
 
 ```bash
 dotnet test
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/Pia.Wpf/Services/HeadlessRunLauncher.cs tests/Pia.Wpf.Tests/Services/HeadlessRunLauncherTests.cs

@@ -1144,11 +1144,12 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
     }
 
-    /// <summary>A resume that claims the row and then dies before dispatch must re-park with the reason the next resume needs — <c>needs-goal</c>/<c>needs-input</c> preserve their own token (losing it would silently drop re-planning or answer persistence), other reasons get the generic <c>resume-interrupted</c> diagnostic.</summary>
+    /// <summary>A resume that claims the row and then dies before dispatch must re-park with the reason the next resume needs — <c>needs-goal</c>/<c>needs-input</c>/<c>plan-approval</c> preserve their own token (losing it would silently drop re-planning, answer persistence, or the approval card), other reasons get the generic <c>resume-interrupted</c> diagnostic.</summary>
     [Theory]
     [InlineData("needs-goal", "needs-goal")]
     [InlineData("needs-input", "needs-input")]
     [InlineData("step-cap", "resume-interrupted")]
+    [InlineData("plan-approval", "plan-approval")]
     public async Task Resume_InterruptedBeforeDispatch_ReParksWithTheTokenTheNextResumeNeeds(
         string parkReason, string expectedAfterRePark)
     {

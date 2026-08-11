@@ -145,13 +145,15 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
 
     /// <summary>
     /// Which token to re-park with after an interrupted resume: normally <see cref="ResumeInterruptedReason"/>,
-    /// but the original token for a needs-goal/needs-input park, since overwriting either would break the
-    /// resume's re-plan guard or its answer-persistence gate, both of which key on the specific reason.
+    /// but the original token for a needs-goal/needs-input/plan-approval park, since overwriting any of them
+    /// would break the resume's re-plan guard, its answer-persistence gate, or the approval card — each keys
+    /// on the specific reason.
     /// </summary>
     private static string InterruptedReasonFor(string? parkReason) => parkReason switch
     {
         AgentRunOrchestrator.NeedsGoalReason => AgentRunOrchestrator.NeedsGoalReason,
         AgentRunOrchestrator.NeedsInputReason => AgentRunOrchestrator.NeedsInputReason,
+        AgentRunOrchestrator.PlanApprovalReason => AgentRunOrchestrator.PlanApprovalReason,
         _ => ResumeInterruptedReason,
     };
 
