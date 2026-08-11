@@ -248,8 +248,8 @@ public interface IAgentTurnExecutor
     /// <para>
     /// DEFAULTED to "no grace turn", which was the first default-interface member in this codebase (see
     /// <see cref="MirrorClarificationQuestionAsync"/> below for the second) and is here for the reason every
-    /// trailing-and-defaulted constructor parameter on this spine gives: twelve types implement this interface
-    /// (two production, ten hand-written test fakes), the correct behaviour for all but one of them is to do
+    /// trailing-and-defaulted constructor parameter on this spine gives: eighteen types implement this interface
+    /// (two production, sixteen hand-written test fakes), the correct behaviour for all but one of them is to do
     /// nothing, and a required member would edit a dozen files to write <c>return null</c> in each. This is an
     /// optional enhancement, not an authority question — the members that MUST be answered out loud (see
     /// <c>ToolGateInput.CanPark</c>) are required precisely because they are not this.
@@ -262,6 +262,10 @@ public interface IAgentTurnExecutor
     /// </summary>
     Task<StepTurnResult?> RunGraceTurnAsync(AgentRun run, RunContext ctx, CancellationToken ct)
         => Task.FromResult<StepTurnResult?>(null);
+
+    /// <summary>Whether this executor can pause a run for a human to approve a plan before it executes. Headless has
+    /// no live conversation to post the plan into, so its plans always execute unapproved.</summary>
+    bool SupportsPlanApproval => false;
 
     /// <summary>
     /// Mirrors a clarification question into this executor's own live transcript copy, if it has one — the

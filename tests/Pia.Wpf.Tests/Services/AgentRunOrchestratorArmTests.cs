@@ -149,6 +149,13 @@ public sealed class AgentRunOrchestratorArmTests : IDisposable
         Assert.NotNull(settled.FirstMessageId);
     }
 
+    [Fact]
+    public void SupportsPlanApproval_DefaultsFalseForAnExecutorThatDoesNotOverrideIt()
+    {
+        IAgentTurnExecutor executor = new StubExecutor();
+        Assert.False(executor.SupportsPlanApproval);
+    }
+
     private async Task<AgentRun> NewRunAsync(CancellationToken ct)
     {
         var chatId = Guid.NewGuid();
@@ -205,6 +212,8 @@ public sealed class AgentRunOrchestratorArmTests : IDisposable
         public string? ApprovalRequiredTool { get; init; }
 
         public string? UserInputQuestion { get; init; }
+
+        public bool SupportsPlanApproval { get; init; }
 
         public int StepTurns { get; private set; }
 

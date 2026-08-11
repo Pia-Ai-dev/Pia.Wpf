@@ -182,6 +182,13 @@ public sealed class LiveTurnExecutorPlannedRunTests
     }
 
     [Fact]
+    public void LiveTurnExecutor_SupportsPlanApproval()
+    {
+        var live = BuildLiveExecutor(CreateSession(), _ => false);
+        Assert.True(live.SupportsPlanApproval);
+    }
+
+    [Fact]
     public async Task PlannedRun_SessionCancelDuringStep_LinkedCts_StopsInFlightStep_SettlesCancelled()
     {
         using var h = new Harness();

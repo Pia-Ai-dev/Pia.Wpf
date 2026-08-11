@@ -87,6 +87,9 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
         _runDefault = runPersona is null ? null : new StepPersonaSetup(runPersona, provider, turnSetup);
     }
 
+    /// <summary>Live has a chat to post the proposed plan into and a panel for the Approve/Reject card.</summary>
+    public bool SupportsPlanApproval => true;
+
     public Task BeginRunAsync(AgentRun run, RunContext ctx, CancellationToken ct) =>
         PostAsync(() =>
         {
