@@ -69,6 +69,10 @@ public sealed class AgentRunOrchestrator
     /// field from the pause reasons above, read back by <c>RunProgressViewModel.DescribeTruncation</c>.</summary>
     internal const string UnverifiedTruncationReason = "unverified";
 
+    /// <summary>Pause reason when a run's FIRST plan is big enough that a human approves or rejects it before any
+    /// step runs; a later replan never re-triggers it.</summary>
+    internal const string PlanApprovalReason = "plan-approval";
+
     /// <summary>What a settled child's step reports when its answer could not be read. Says the work ran
     /// elsewhere rather than implying the step produced nothing (the failure mode
     /// <c>CompletedStepSummary.FromEarlierSegment</c> exists for).</summary>
