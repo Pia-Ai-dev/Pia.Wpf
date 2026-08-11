@@ -67,6 +67,15 @@ public partial class AssistantMessage : ObservableObject
     [ObservableProperty]
     private bool _toolRoundsExhausted;
 
+    /// <summary>Tool calls made so far this turn. Incremented by <c>ChatSession.HandleToolCallWithStatus</c>
+    /// once per call, live while streaming. In-memory only.</summary>
+    [ObservableProperty]
+    private int _toolCallCount;
+
+    /// <summary>Localized "Tool calls: N" display text, refreshed alongside <see cref="ToolCallCount"/>.</summary>
+    [ObservableProperty]
+    private string _toolCallCountLabel = string.Empty;
+
     [ObservableProperty]
     private PersonaAttribution? _persona;
 
@@ -103,6 +112,8 @@ public partial class AssistantMessage : ObservableObject
     /// collapsed toggle shown above the answer.</summary>
     public bool ShowReasoningSummary => (HasThinkingContent || HasReasoningDuration) && !ShowLiveReasoning;
 
+    public bool HasToolCalls => ToolCallCount > 0;
+
     public bool HasAttachment => Attachment is not null;
 
     public bool IsUser => Role == ChatRole.User;
@@ -137,6 +148,11 @@ public partial class AssistantMessage : ObservableObject
     {
         OnPropertyChanged(nameof(HasReasoningDuration));
         OnPropertyChanged(nameof(ShowReasoningSummary));
+    }
+
+    partial void OnToolCallCountChanged(int value)
+    {
+        OnPropertyChanged(nameof(HasToolCalls));
     }
 
     partial void OnAttachmentChanged(ImageAttachment? value)

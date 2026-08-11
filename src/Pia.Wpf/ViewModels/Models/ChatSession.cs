@@ -960,6 +960,8 @@ public sealed class ChatSession : IDisposable
         FunctionCallContent toolCall, AssistantMessage message, bool tokenizationEnabled,
         ToolDispatchContext dispatch, RunAutonomyPolicy? policy = null, AgentTimelineScope? timeline = null)
     {
+        message.ToolCallCount++;
+        message.ToolCallCountLabel = _localizationService.Format("Assistant_ToolCallCount", message.ToolCallCount);
         message.StatusText = _actionCardBuilder.ResolveStatusText(toolCall.Name);
         var result = await HandleToolCall(toolCall, message, tokenizationEnabled, dispatch, policy, timeline);
         message.StatusText = _localizationService["Msg_Assistant_StatusThinking"];

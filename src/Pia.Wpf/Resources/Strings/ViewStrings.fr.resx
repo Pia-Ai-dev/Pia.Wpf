@@ -87,6 +87,7 @@
   <data name="Assistant_ShowReasoning" xml:space="preserve"><value>Afficher le raisonnement</value></data>
   <data name="Assistant_Thinking" xml:space="preserve"><value>Réflexion</value></data>
   <data name="Assistant_ThoughtForDuration" xml:space="preserve"><value>Réflexion pendant {0}</value></data>
+  <data name="Assistant_ToolCallCount" xml:space="preserve"><value>Appels d'outils : {0}</value></data>
   <data name="Assistant_ClearConversation_Tooltip" xml:space="preserve"><value>Effacer la conversation</value></data>
   <data name="Assistant_Cancel_Tooltip" xml:space="preserve"><value>Annuler</value></data>
   <data name="Assistant_ToggleTts_Tooltip" xml:space="preserve"><value>Activer/désactiver la synthèse vocale</value></data>

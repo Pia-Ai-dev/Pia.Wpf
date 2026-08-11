@@ -87,6 +87,7 @@
   <data name="Assistant_ShowReasoning" xml:space="preserve"><value>Show reasoning</value></data>
   <data name="Assistant_Thinking" xml:space="preserve"><value>Thinking</value></data>
   <data name="Assistant_ThoughtForDuration" xml:space="preserve"><value>Thought for {0}</value></data>
+  <data name="Assistant_ToolCallCount" xml:space="preserve"><value>Tool calls: {0}</value></data>
   <data name="Assistant_ClearConversation_Tooltip" xml:space="preserve"><value>Clear conversation</value></data>
   <data name="Assistant_Cancel_Tooltip" xml:space="preserve"><value>Cancel</value></data>
   <data name="Assistant_ToggleTts_Tooltip" xml:space="preserve"><value>Toggle text-to-speech</value></data>

@@ -19,6 +19,14 @@
                    FontStyle="Italic"
                    VerticalAlignment="Center"
                    Foreground="{DynamicResource TextSubtleBrush}" />
+        <!-- Live tool-call counter, shown once the turn has made at least one call. -->
+        <TextBlock Text="{Binding ToolCallCountLabel}"
+                   FontSize="12"
+                   FontStyle="Italic"
+                   Margin="8,0,0,0"
+                   VerticalAlignment="Center"
+                   Foreground="{DynamicResource TextSubtleBrush}"
+                   Visibility="{Binding HasToolCalls, Converter={StaticResource BooleanToVisibilityConverter}}" />
       </StackPanel>
 
       <!-- Rolling ~2-line window of the latest reasoning, fading at the top -->
