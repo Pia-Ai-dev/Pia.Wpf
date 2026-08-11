@@ -340,7 +340,7 @@ public sealed class LiveTurnExecutorPlannedRunTests
         // Persisted up front and resumed below, so two steps can complete before the budget park: a Live plan
         // of three or more never reaches its first step, it parks for approval.
         await h.Runs.ReplaceStepsAsync(run.Id, MakeSteps("s1", "s2", "s3"), TestContext.Current.CancellationToken);
-        var planner = new FakePlanner();
+        var planner = new FakePlanner(); // never consulted: the resume below drains the rows above
 
         var session = CreateSession();
         SeedSessionForPlannedRun(session, "goal");
