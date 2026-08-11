@@ -978,6 +978,7 @@
   <data name="Run_Activity_WaitingForToolApproval" xml:space="preserve"><value>En attente de votre autorisation pour utiliser {0}</value></data>
   <data name="Run_Activity_NeedsGoal" xml:space="preserve"><value>En attente que vous précisiez l'objectif dans le chat</value></data>
   <data name="Run_Activity_NeedsInput" xml:space="preserve"><value>En attente de votre réponse dans le chat</value></data>
+  <data name="Run_Activity_PlanApproval" xml:space="preserve"><value>En attente de votre approbation du plan</value></data>
   <data name="Run_Action_Continue" xml:space="preserve"><value>Continuer</value></data>
   <data name="Run_Action_Approve" xml:space="preserve"><value>Autoriser</value></data>
   <data name="Run_Action_Deny" xml:space="preserve"><value>Refuser</value></data>
@@ -1057,6 +1058,7 @@
   <data name="Flow_Run_ToolApproval" xml:space="preserve"><value>Cette exécution a besoin de votre autorisation pour utiliser {0}. Reprenez pour l'accorder.</value></data>
   <data name="Flow_Run_NeedsGoal" xml:space="preserve"><value>Cette exécution n'a pas compris ce que vous vouliez — ouvrez-la pour répondre.</value></data>
   <data name="Flow_Run_NeedsInput" xml:space="preserve"><value>Cette exécution a besoin de votre réponse pour continuer — ouvrez-la pour répondre.</value></data>
+  <data name="Flow_Run_PlanApproval" xml:space="preserve"><value>Une exécution attend votre approbation de son plan</value></data>
   <data name="Flow_Action_ContinueRun" xml:space="preserve"><value>Reprendre l'exécution</value></data>
   <data name="Assistant_Regenerate_Shorten" xml:space="preserve"><value>Plus court</value></data>
   <data name="Assistant_Regenerate_Detailed" xml:space="preserve"><value>Plus détaillé</value></data>
