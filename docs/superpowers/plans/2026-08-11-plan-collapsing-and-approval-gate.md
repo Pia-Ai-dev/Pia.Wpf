@@ -1718,7 +1718,7 @@ git commit -m "Add the plan-approval Reject button and rebind Continue's label /
 **Files:**
 - Modify: `src/Pia.Wpf/ViewModels/Models/ChatSession.cs`
 
-- [ ] **Step 1: Add the stored property, mirroring `ForeignRunActive`'s exact shape**
+- [x] **Step 1: Add the stored property, mirroring `ForeignRunActive`'s exact shape**
 
 Current `ForeignRunActive` (lines 168-188, confirmed above) is a plain stored bool with a private setter, a `Changed` event, and a no-op-if-unchanged setter. Add, right after it:
 
@@ -1740,7 +1740,7 @@ Current `ForeignRunActive` (lines 168-188, confirmed above) is a plain stored bo
     }
 ```
 
-- [ ] **Step 2: Build**
+- [x] **Step 2: Build**
 
 ```bash
 dotnet build src/Pia.Wpf/Pia.Wpf.csproj
@@ -1748,7 +1748,7 @@ dotnet build src/Pia.Wpf/Pia.Wpf.csproj
 
 No test here — this is a plain data holder with no logic; Task 6.2 tests the recompute logic that sets it.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/Pia.Wpf/ViewModels/Models/ChatSession.cs
@@ -1761,7 +1761,7 @@ git commit -m "Add ChatSession.PlanApprovalParkActive"
 - Modify: `src/Pia.Wpf/ViewModels/Models/ChatSessionManager.cs`
 - Test: `tests/Pia.Wpf.Tests/ViewModels/ChatSessionManagerTests.cs` (note: NOT under a `Models` subfolder, despite the source file living in `ViewModels/Models/`)
 
-- [ ] **Step 1: Recompute at `ActivateAsync` (line 551)**
+- [x] **Step 1: Recompute at `ActivateAsync` (line 551)**
 
 Current:
 
@@ -1771,7 +1771,7 @@ Current:
 
 **No change at this site.** `ActivateAsync` does call `RestoreActiveRunAsync` right after this line (`ChatSessionManager.cs:551,570`), but via `.SafeFireAndForget(_logger)` — fire-and-forget, not awaited — so that ordering guarantees nothing about completion order by itself. The real reason no seed is needed here: a freshly constructed `ChatSession`'s `PlanApprovalParkActive` already defaults to `false`, which is the safe/composer-enabled value, and `RestoreActiveRunAsync`'s async backfill (Step 2 below) corrects it once its pool-thread lookup lands — the exact same eventual-consistency window `ForeignRunActive`'s own backfill already accepts (per `ChatSessionManager.cs:634-640`'s own comment). No explicit `SetPlanApprovalParkActive(false)` call needed at this site.
 
-- [ ] **Step 2: Recompute at `RestoreActiveRunAsync`**
+- [x] **Step 2: Recompute at `RestoreActiveRunAsync`**
 
 Current (lines 641-647, confirmed above):
 
@@ -1792,7 +1792,7 @@ Add, right after it:
             && RunPauseEnvelope.ReadReason(resumable) == AgentRunOrchestrator.PlanApprovalReason);
 ```
 
-- [ ] **Step 3: Recompute at `OnAgentRunChanged`**
+- [x] **Step 3: Recompute at `OnAgentRunChanged`**
 
 This handler (lines 237-328, confirmed above) reasons ONLY from `e.State` — it deliberately does no store read per event (a documented choice: "this handler reasons purely from `e.State`, no I/O"). `PlanApprovalParkActive` needs the pause REASON, which the event does not carry. Rather than adding an I/O read into this hot per-event handler (a departure from its established no-I/O discipline), take the cheaper, correct path: a `RunChanged(WaitingForInput)` event fires whenever ANY park happens (including plan-approval, via `SafePause` in `ParkForPlanApprovalAsync` from Chunk 2), and a `RunChanged(Running)`/`RunChanged(Cancelled)` event fires whenever it resolves (Approve/Reject/any resume). So:
 
@@ -1821,7 +1821,7 @@ Then, inside the `foreach` loop, right after the existing `session.SetForeignRun
 
 This requires the enclosing `_syncContext.Post(_ => { ... }, null)` lambda to become `async` (`_syncContext.Post(async _ => { ... }, null)`) so the two `await`s above compile — the method's existing `try`/`catch` already spans the whole body, so this is exception-safe as written; there is no ordering hazard today, but that safety rests on `GetAsync`'s current synchronous-under-lock implementation, which this change does not alter.
 
-- [ ] **Step 4: Add the `StartTurnAsync` backstop guard — a LIVE read, per the spec, not the cached flag**
+- [x] **Step 4: Add the `StartTurnAsync` backstop guard — a LIVE read, per the spec, not the cached flag**
 
 The design spec is explicit that this backstop should use "the same two-part read `IsPlanApprovalPause` uses" specifically because a live re-read composes correctly with Reject without depending on the cached flag's async propagation delay (`ChatSession.PlanApprovalParkActive` is updated by `OnAgentRunChanged`, which is itself async and could theoretically lag a fast Approve→immediately-type-again sequence). The cached flag is the right tool for the three cheap, synchronous composer-level `CanExecute`/early-return checks (Task 6.3) — an async DB read there would be the wrong shape for a `CanExecute` predicate — but `StartTurnAsync` is already `async` and already does a live read for the SAME kind of check one line later (`TryAnswerParkedRunAsync` → `ReadClarificationParkReasonAsync`, `ChatSessionManager.cs:1017-1031`, which today only recognizes `NeedsGoalReason`/`NeedsInputReason`). Add a sibling live check rather than relying on the cached flag here.
 
@@ -1876,7 +1876,7 @@ Add a small sibling helper beside `ReadClarificationParkReasonAsync`, following 
 
 This composes correctly with Reject for the same reason `ReadClarificationParkReasonAsync` already does: it re-reads the run's *current* state on every call rather than caching, so once `RejectPlanAsync`'s CAS lands, the very next `StartTurnAsync` call sees `Cancelled` and proceeds normally.
 
-- [ ] **Step 5: Write a failing test for the `StartTurnAsync` backstop**
+- [x] **Step 5: Write a failing test for the `StartTurnAsync` backstop**
 
 This file already has an `AttachParkedRun(session, reason, state)` helper (line 1624 — "writes a real pause envelope rather than stubbing a 'parked' bool, since nothing in production reads such a bool") and a directly analogous existing test, `StartTurnAsync_RunParkedAtBudget_StartsAnOrdinaryTurn_AndNeverResumes` (line 1734), which proves an unanswerable park (`"step-cap"`) lets an ordinary turn start — asserting non-vacuity via `_personas.Received(1).ResolveActiveAsync(...)`. The new plan-approval case is the mirror image: it must NOT let that turn start. Use the same non-vacuity technique, inverted:
 
@@ -1900,7 +1900,7 @@ public async Task StartTurnAsync_RunParkedForPlanApproval_RefusesTheTurn_Without
 }
 ```
 
-- [ ] **Step 6: Write a failing test for `RestoreActiveRunAsync`'s recompute**
+- [x] **Step 6: Write a failing test for `RestoreActiveRunAsync`'s recompute**
 
 Mirroring the existing `RestoreActiveRunAsync_ParkedRun_DoesNotMarkItForeign` `[Theory]` (line 322) and its `Run(chatId, state, createdAt)` helper (line 246) — extend a local `AgentRun` construction to carry the plan-approval `ExtraJson` (`Run(...)` itself has no `ExtraJson` parameter, so build the run inline for this reason, matching the shape `AttachParkedRun` already uses at line 1633-1640):
 
@@ -1946,7 +1946,7 @@ public async Task RestoreActiveRunAsync_LeavesPlanApprovalParkActiveFalse_ForAnO
 }
 ```
 
-- [ ] **Step 7: Write a failing test for the `OnAgentRunChanged` recompute — set on park, clear on resolve**
+- [x] **Step 7: Write a failing test for the `OnAgentRunChanged` recompute — set on park, clear on resolve**
 
 Mirroring `RunChanged_ToPaused_ClearsTheForeignFlag` (line 342)'s exact poll-with-timeout shape, since `AgentRunService` raises `RunChanged` from a pool thread and the manager marshals the flip via `_syncContext.Post`:
 
@@ -1987,19 +1987,19 @@ public async Task RunChanged_ToWaitingForInput_SetsPlanApprovalParkActive_ThenCl
 }
 ```
 
-- [ ] **Step 8: Run, confirm fail → pass**
+- [x] **Step 8: Run, confirm fail → pass**
 
 ```bash
 dotnet test -- --filter-method "*PlanApprovalParkActive*"
 ```
 
-- [ ] **Step 9: Run the full gate**
+- [x] **Step 9: Run the full gate**
 
 ```bash
 dotnet test
 ```
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add src/Pia.Wpf/ViewModels/Models/ChatSessionManager.cs tests/Pia.Wpf.Tests/ViewModels/ChatSessionManagerTests.cs
@@ -2014,7 +2014,7 @@ git commit -m "Track PlanApprovalParkActive and refuse a new turn in StartTurnAs
 - Modify: `src/Pia.Wpf/Resources/Strings/ViewStrings.resx` + `.de.resx` + `.fr.resx` (one new key)
 - Test: `tests/Pia.Wpf.Tests/ViewModels/AssistantViewModelLeverTests.cs` — there is no single `AssistantViewModelTests.cs`; tests are split by concern across several files, and this one already covers `ForeignRunActive`/`SendMessageCommand`/the session-attach wiring with the exact fixtures this task needs (`CreateSut()`, `SessionWithTranscript(...)`, `Activate(...)`).
 
-- [ ] **Step 1: Add the composer-hint loc key**
+- [x] **Step 1: Add the composer-hint loc key**
 
 `ViewStrings.resx`:
 ```xml
@@ -2037,7 +2037,7 @@ No `Designer.cs` regeneration needed (per Task 3.1 Step 3's finding). Run the pa
 dotnet test -- --filter-method "*AllTranslations_MustBeComplete*"
 ```
 
-- [ ] **Step 2: Add a fully-wired `PlanApprovalParkActive` `[ObservableProperty]`, mirroring `ForeignRunActive` exactly**
+- [x] **Step 2: Add a fully-wired `PlanApprovalParkActive` `[ObservableProperty]`, mirroring `ForeignRunActive` exactly**
 
 `ForeignRunActive` (`AssistantViewModel.cs:98-99`) is a full `[ObservableProperty] private bool _foreignRunActive;` kept in sync at FOUR sites, not a computed passthrough — a bare `_chatSessionManager.ActiveSession?.PlanApprovalParkActive ?? false` getter would be `private`/non-notifying and the XAML binding in Step 1 above would silently render nothing bound to it (the exact class of bug this plan has flagged elsewhere). Add the property and all four wiring points:
 
@@ -2104,7 +2104,7 @@ Change to:
 
 Without this, `Dispose_StopsReactingToPlanApprovalParkActiveChanged` (Step 7 below) fails: this test harness's UI dispatcher runs posts synchronously, so after `vm.Dispose()`, `session.SetPlanApprovalParkActive(true)` would still synchronously drive `vm.PlanApprovalParkActive` to `true` through the still-subscribed handler.
 
-- [ ] **Step 2b: Add `PlanApprovalParkActive` to the manual `OnPropertyChanged` allowlist**
+- [x] **Step 2b: Add `PlanApprovalParkActive` to the manual `OnPropertyChanged` allowlist**
 
 `SendMessageCommand`/`RunInBackgroundCommand` are hand-constructed (no `[NotifyCanExecuteChangedFor]`), so their `CanExecute` re-evaluation is driven entirely by the manual dispatcher at `AssistantViewModel.cs:712-719`. Without this step, `CanExecuteSendMessage()`'s new `&& !PlanApprovalParkActive` term (Step 3 below) is logically correct but WPF never re-queries it at the moment a park begins or resolves — the Send button could stay stuck in a stale enabled/disabled state. Current:
 
@@ -2128,7 +2128,7 @@ Change to:
         }
 ```
 
-- [ ] **Step 3: Guard `CanExecuteSendMessage`**
+- [x] **Step 3: Guard `CanExecuteSendMessage`**
 
 Current (lines 852-854):
 
@@ -2148,7 +2148,7 @@ Change to:
 
 (`CanExecuteRunInBackground` composes on this directly per the earlier confirmed research, so it is automatically covered — no separate edit.)
 
-- [ ] **Step 4: Guard `RegenerateCore`**
+- [x] **Step 4: Guard `RegenerateCore`**
 
 Current (line 1140):
 
@@ -2164,7 +2164,7 @@ Change to:
 
 This must run BEFORE the message-truncation logic later in the same method (lines 1149-1156) — confirm the edit lands on this early-return line, not after it.
 
-- [ ] **Step 5: Guard `SwitchToAgent`**
+- [x] **Step 5: Guard `SwitchToAgent`**
 
 Current (line 1512):
 
@@ -2180,7 +2180,7 @@ Change to:
             return;
 ```
 
-- [ ] **Step 6: Add the composer hint `TextBlock` in `AssistantView.xaml`**
+- [x] **Step 6: Add the composer hint `TextBlock` in `AssistantView.xaml`**
 
 Find the existing `Assistant_BackgroundRunActive_Hint` `TextBlock` (`AssistantView.xaml:569-574`, confirmed above):
 
@@ -2206,7 +2206,7 @@ Add a SIBLING `TextBlock` right after it — a separate control, not a shared on
 
 Confirm `PlanApprovalParkActive` is a public bindable property on `AssistantViewModel` (Step 2 above) before wiring this binding — a private property is invisible to XAML and this binding would silently render nothing, the exact class of bug this plan has been careful to avoid throughout.
 
-- [ ] **Step 7: Write failing tests for the three guards**
+- [x] **Step 7: Write failing tests for the three guards**
 
 `AssistantViewModelLeverTests.cs` already has the exact fixtures needed — `CreateSut()`, a settable `vm.ForeignRunActive`/`vm.PlanApprovalParkActive` (both real `[ObservableProperty]`s per Step 2), and `SessionWithTranscript(foreignRunActive:)`/`Activate(session)` for the attach-wiring tests. Add a `planApprovalParkActive` parameter to `SessionWithTranscript` (mirroring its existing `foreignRunActive` parameter) so both flags can be tested independently:
 
@@ -2312,13 +2312,13 @@ public async Task SwitchToAgentCommand_DoesNothing_WhilePlanApprovalParkActive()
 
 Match `CreateSut()`'s exact construction against this file's existing usage (it's used unchanged throughout) — no new setup is needed for these two tests beyond what `CreateSut()` already provides.
 
-- [ ] **Step 8: Run, confirm fail → pass**
+- [x] **Step 8: Run, confirm fail → pass**
 
 ```bash
 dotnet test -- --filter-method "*PlanApprovalParkActive*"
 ```
 
-- [ ] **Step 9: Run the full gate**
+- [x] **Step 9: Run the full gate**
 
 ```bash
 dotnet test
@@ -2326,7 +2326,7 @@ dotnet test
 
 Expected: `failed: 0`.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add src/Pia.Wpf/ViewModels/AssistantViewModel.cs src/Pia.Wpf/Views/AssistantView.xaml src/Pia.Wpf/Resources/Strings/ViewStrings.resx src/Pia.Wpf/Resources/Strings/ViewStrings.de.resx src/Pia.Wpf/Resources/Strings/ViewStrings.fr.resx tests/Pia.Wpf.Tests/ViewModels/AssistantViewModelLeverTests.cs
@@ -2337,7 +2337,7 @@ git commit -m "Block Send/Regenerate/SwitchToAgent while a plan-approval park is
 
 **Files:** none (verification only)
 
-- [ ] **Step 1: Rebuild Debug and check for zero warnings**
+- [x] **Step 1: Rebuild Debug and check for zero warnings**
 
 Per `CLAUDE.md`'s Zero-Warning Policy — a rebuild, not an incremental build (an incremental build skips re-emitting warnings from projects it did not recompile):
 
@@ -2347,7 +2347,7 @@ dotnet build -t:Rebuild -v:n
 
 Read the `N Warning(s)` line off MSBuild's summary (not a grep count — at `-v:n` every warning prints twice, inline and in the summary). Expected: `0 Warning(s)`, `0 Error(s)`.
 
-- [ ] **Step 2: Rebuild Release and check for zero warnings**
+- [x] **Step 2: Rebuild Release and check for zero warnings**
 
 ```bash
 dotnet build -t:Rebuild -c Release -v:n
@@ -2355,7 +2355,7 @@ dotnet build -t:Rebuild -c Release -v:n
 
 Expected: `0 Warning(s)`, `0 Error(s)`.
 
-- [ ] **Step 3: Run the full test gate one final time**
+- [x] **Step 3: Run the full test gate one final time**
 
 ```bash
 dotnet test
