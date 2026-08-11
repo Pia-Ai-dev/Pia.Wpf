@@ -98,6 +98,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     [ObservableProperty]
     private bool _foreignRunActive;
 
+    /// <summary>Narrower than <see cref="ForeignRunActive"/>: the run is parked on a proposed plan, so the only
+    /// answers are Approve and Reject in the run panel. Also drives its own composer hint line.</summary>
+    [ObservableProperty]
+    private bool _planApprovalParkActive;
+
     /// <summary>True only when, in agent mode, <see cref="GoalPreflight.IsRefused"/> refuses the typed goal; appears one idle second after typing, hides immediately.</summary>
     [ObservableProperty]
     private bool _goalTooShortHintVisible;
@@ -415,6 +420,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             prev.RunFailed -= OnActiveSessionRunFailed;
             prev.ActiveRunChanged -= OnActiveRunChanged;
             prev.ForeignRunActiveChanged -= OnForeignRunActiveChanged;
+            prev.PlanApprovalParkActiveChanged -= OnPlanApprovalParkActiveChanged;
         }
 
         _subscribedSession = session;
@@ -424,8 +430,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         session.RunFailed += OnActiveSessionRunFailed;
         session.ActiveRunChanged += OnActiveRunChanged;
         session.ForeignRunActiveChanged += OnForeignRunActiveChanged;
+        session.PlanApprovalParkActiveChanged += OnPlanApprovalParkActiveChanged;
         SyncRunProgress(session.ActiveRunId); // embed the panel if this session already has a run
         ForeignRunActive = session.ForeignRunActive; // late attach: read the flag the manager already seeded
+        PlanApprovalParkActive = session.PlanApprovalParkActive;
 
         Messages = session.Messages;            // re-points the ItemsControl (OnMessagesChanged swaps CollectionChanged)
         HasMessages = session.Messages.Count > 0;
@@ -446,6 +454,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // reason OnActiveRunChanged does — this sets a bound property and re-evaluates a command.
     private void OnForeignRunActiveChanged(object? sender, bool active) =>
         _uiDispatcher.Post(() => ForeignRunActive = active);
+
+    private void OnPlanApprovalParkActiveChanged(object? sender, bool active) =>
+        _uiDispatcher.Post(() => PlanApprovalParkActive = active);
 
     // Internal so the lever facts can attach the panel to a stubbed run without a whole ChatSession.
     internal void SyncRunProgress(Guid? runId)
@@ -712,7 +723,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(InputText) or nameof(IsStreaming) or nameof(PendingAttachment)
-            or nameof(ForeignRunActive))
+            or nameof(ForeignRunActive) or nameof(PlanApprovalParkActive))
         {
             SendMessageCommand.NotifyCanExecuteChanged();
             RunInBackgroundCommand.NotifyCanExecuteChanged();
@@ -850,7 +861,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // headless executor that is mid-run — the live full replace deletes the run's step rows, and the run's
     // own model context never sees the typed message, so the transcript would be garbled even without loss.
     private bool CanExecuteSendMessage() =>
-        !IsStreaming && !ForeignRunActive
+        !IsStreaming && !ForeignRunActive && !PlanApprovalParkActive
         && (!string.IsNullOrWhiteSpace(InputText) || PendingAttachment is not null);
 
     // Factored out so the gate below and the hint that explains it cannot drift out of sync.
@@ -1137,7 +1148,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // chat, and the persist at the end of it is a full replace built from session.Messages, so it would
         // delete every row the headless run has appended since. Regenerate is worse than Send, in fact: it
         // also truncates the transcript the run is still extending.
-        if (message is null || IsStreaming || ForeignRunActive) return;
+        if (message is null || IsStreaming || ForeignRunActive || PlanApprovalParkActive) return;
 
         var idx = Messages.IndexOf(message);
         if (idx <= 0) return;
@@ -1509,7 +1520,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // W2c: same lever as Send (this is modeled on ExecuteSendMessage). It starts a live turn against the
         // ACTIVE chat, so with a foreign headless run mid-flight it would be a second full-chat writer — and
         // it would additionally create a SECOND Planned run in a chat that already has one.
-        if (IsStreaming || ForeignRunActive)
+        if (IsStreaming || ForeignRunActive || PlanApprovalParkActive)
             return;
 
         AgentModeEnabled = true; // persists + evaluates the warning via OnAgentModeEnabledChanged
@@ -1906,6 +1917,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             session.RunFailed -= OnActiveSessionRunFailed;
             session.ActiveRunChanged -= OnActiveRunChanged;
             session.ForeignRunActiveChanged -= OnForeignRunActiveChanged;
+            session.PlanApprovalParkActiveChanged -= OnPlanApprovalParkActiveChanged;
         }
         _runProgress?.Dispose(); // unsubscribes the last RunChanged handler off the singleton
         Messages.CollectionChanged -= OnMessagesCollectionChanged;

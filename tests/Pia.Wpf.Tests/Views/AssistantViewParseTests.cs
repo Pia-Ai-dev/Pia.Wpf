@@ -35,6 +35,10 @@ public class AssistantViewParseTests
     private const string GoalTooShortHintText =
         "This looks too short to run as a goal. Add a few more words so it can be planned.";
 
+    /// <summary>Composer hint while a proposed plan awaits Approve/Reject (Assistant_PlanApprovalActive_Hint).</summary>
+    private const string PlanApprovalHintText =
+        "Approve or reject the proposed plan before sending another message.";
+
     [Fact]
     public void ComposerHint_Parses_AndTracksForeignRunActive()
     {
@@ -86,6 +90,55 @@ public class AssistantViewParseTests
         Assert.True(found,
             $"No TextBlock in the parsed AssistantView renders '{HintText}'. Either the view failed to " +
             "parse, or the loc:Str key Assistant_BackgroundRunActive_Hint no longer resolves.");
+        Assert.Equal(Visibility.Collapsed, before);
+        Assert.Equal(Visibility.Visible, after);
+    }
+
+    [Fact]
+    public void ComposerHint_Parses_AndTracksPlanApprovalParkActive()
+    {
+        AssistantViewModel? vm = null;
+        AssistantView? view = null;
+        TextBlock? hint = null;
+        bool found;
+        Visibility? before, after;
+        try
+        {
+            WpfStaHost.Run(() =>
+            {
+                vm = CreateAssistantViewModel();
+                view = new AssistantView { DataContext = vm };
+                return 0;
+            });
+            WpfStaHost.Pump();
+
+            (found, before) = WpfStaHost.Run(() =>
+            {
+                hint = FindTextBlocks(view!).FirstOrDefault(tb => tb.Text == PlanApprovalHintText);
+                return (hint is not null, hint?.Visibility);
+            });
+
+            WpfStaHost.Run(() =>
+            {
+                vm!.PlanApprovalParkActive = true;
+                return 0;
+            });
+            WpfStaHost.Pump();
+
+            after = WpfStaHost.Run(() => hint?.Visibility);
+        }
+        finally
+        {
+            WpfStaHost.Run(() =>
+            {
+                vm?.Dispose();
+                return 0;
+            });
+        }
+
+        Assert.True(found,
+            $"No TextBlock in the parsed AssistantView renders '{PlanApprovalHintText}'. Either the view failed " +
+            "to parse, or the loc:Str key Assistant_PlanApprovalActive_Hint no longer resolves.");
         Assert.Equal(Visibility.Collapsed, before);
         Assert.Equal(Visibility.Visible, after);
     }

@@ -319,10 +319,48 @@ public class AssistantViewModelLeverTests
         Assert.True(vm.SendMessageCommand.CanExecute(null));
     }
 
+    // ---- Send is blocked while the run is parked on a plan the user has not decided on yet ----
+
+    [Fact]
+    public void CanSend_IsFalse_WhilePlanApprovalParkIsActive()
+    {
+        // Typing here would be neither an approval nor a rejection, so the only answers stay Approve/Reject.
+        var vm = CreateSut();
+        vm.InputText = "hello";
+        Assert.True(vm.SendMessageCommand.CanExecute(null));
+
+        vm.PlanApprovalParkActive = true;
+
+        Assert.False(vm.SendMessageCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void CanSend_ReEnables_WhenThePlanApprovalParkResolves()
+    {
+        var vm = CreateSut();
+        vm.InputText = "hello";
+        vm.PlanApprovalParkActive = true;
+        Assert.False(vm.SendMessageCommand.CanExecute(null));
+
+        vm.PlanApprovalParkActive = false;
+
+        Assert.True(vm.SendMessageCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void RunInBackground_Disabled_WhilePlanApprovalParkIsActive()
+    {
+        var vm = CreateSut();
+        vm.InputText = "a different goal";
+        vm.PlanApprovalParkActive = true;
+
+        Assert.False(vm.RunInBackgroundCommand.CanExecute(null));
+    }
+
     // ---- the ChatSession -> ViewModel wiring, and the two commands that also start live turns ----
 
     /// <summary>The state a restore leaves behind for a chat whose headless run is mid-flight.</summary>
-    private static ChatSession SessionWithTranscript(bool foreignRunActive)
+    private static ChatSession SessionWithTranscript(bool foreignRunActive = false, bool planApprovalParkActive = false)
     {
         var session = new ChatSession(
             Substitute.For<ITokenMapService>(),
@@ -337,6 +375,8 @@ public class AssistantViewModelLeverTests
         session.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.Assistant, "here you go"));
         if (foreignRunActive)
             session.SetForeignRunActive(true);
+        if (planApprovalParkActive)
+            session.SetPlanApprovalParkActive(true);
         return session;
     }
 
@@ -368,6 +408,50 @@ public class AssistantViewModelLeverTests
 
         Assert.False(vm.ForeignRunActive);
         Assert.True(vm.SendMessageCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void AttachingASessionParkedForPlanApproval_SeedsTheFlagOntoTheViewModel()
+    {
+        // The wiring the sibling facts cannot see: without the seed on attach, the composer stays live for a
+        // chat re-opened onto a run that is already waiting on its plan.
+        var vm = CreateSut();
+        vm.InputText = "hello";
+        Assert.True(vm.SendMessageCommand.CanExecute(null));
+
+        Activate(SessionWithTranscript(planApprovalParkActive: true));
+
+        Assert.True(vm.PlanApprovalParkActive);
+        Assert.False(vm.SendMessageCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task Regenerate_IsBlocked_WhileAPlanApprovalParkIsActive()
+    {
+        var vm = CreateSut();
+        var session = SessionWithTranscript(planApprovalParkActive: true);
+        _manager.ActiveSession.Returns(session);
+        Activate(session);
+
+        await vm.RegenerateMessageCommand.ExecuteAsync(vm.Messages[1]);
+
+        await _manager.DidNotReceive().StartTurnAsync(
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), Arg.Any<bool>());
+        Assert.Equal(2, vm.Messages.Count);   // not truncated either
+    }
+
+    [Fact]
+    public async Task SwitchToAgent_IsBlocked_WhileAPlanApprovalParkIsActive()
+    {
+        var vm = CreateSut();
+        var session = SessionWithTranscript(planApprovalParkActive: true);
+        _manager.ActiveSession.Returns(session);
+        Activate(session);
+
+        await vm.SwitchToAgentCommand.ExecuteAsync(new AgentModeSuggestion("plan my week", "multi-step task"));
+
+        await _manager.DidNotReceive().StartTurnAsync(
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), Arg.Any<bool>());
     }
 
     [Fact]
@@ -448,6 +532,20 @@ public class AssistantViewModelLeverTests
         session.SetForeignRunActive(true);   // false -> true, so this really does raise
 
         Assert.False(vm.ForeignRunActive);
+    }
+
+    [Fact]
+    public void Dispose_StopsReactingToPlanApprovalParkActiveChanged()
+    {
+        var vm = CreateSut();
+        var session = SessionWithTranscript();
+        Activate(session);
+        Assert.False(vm.PlanApprovalParkActive);
+
+        vm.Dispose();
+        session.SetPlanApprovalParkActive(true);   // false -> true, so this really does raise
+
+        Assert.False(vm.PlanApprovalParkActive);
     }
 
     [Fact]

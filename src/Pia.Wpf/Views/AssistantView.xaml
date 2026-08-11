@@ -573,6 +573,15 @@
                      Foreground="{DynamicResource TextSubtleBrush}"
                      Visibility="{Binding ForeignRunActive, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
+          <!-- A sibling rather than a shared control: both the text and the condition differ, and the two
+               states are mutually exclusive anyway (a parked run is not executing). -->
+          <TextBlock Text="{loc:Str Assistant_PlanApprovalActive_Hint}"
+                     Margin="2,6,0,0"
+                     FontSize="12"
+                     TextWrapping="Wrap"
+                     Foreground="{DynamicResource TextSubtleBrush}"
+                     Visibility="{Binding PlanApprovalParkActive, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
         </StackPanel>
       </Border>
     </Border>
