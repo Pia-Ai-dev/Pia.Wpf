@@ -378,6 +378,7 @@ public class ChatSessionManagerTests
         };
         _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
         _runService.GetByChatAsync(chatId, Arg.Any<CancellationToken>()).Returns(new List<AgentRun> { parked });
+        _runService.GetAsync(parked.Id, Arg.Any<CancellationToken>()).Returns(parked);
 
         var sut = CreateSut();
         var session = await sut.ActivateAsync(chatId);
@@ -387,6 +388,39 @@ public class ChatSessionManagerTests
 
         Assert.True(session.PlanApprovalParkActive);
         Assert.False(session.ForeignRunActive); // still the parked "continue in chat" shape for THAT flag
+    }
+
+    /// <summary>A Reject that settles the run while the chat's lookup is in flight must win: this flag has no
+    /// other recompute for a session that did not yet hold the run, so a stale true never clears.</summary>
+    [Fact]
+    public async Task RestoreActiveRunAsync_LeavesPlanApprovalParkActiveFalse_WhenTheRunSettledUnderTheLookup()
+    {
+        var chatId = Guid.NewGuid();
+        var parked = new AgentRun
+        {
+            Id = Guid.NewGuid(),
+            ChatId = chatId,
+            RunShape = RunShape.Planned,
+            State = AgentRunState.WaitingForInput,
+            CreatedAt = DateTime.UtcNow.AddMinutes(-1),
+            ExtraJson = PauseEnvelope(Pia.Services.AgentRunOrchestrator.PlanApprovalReason),
+        };
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+        // The by-chat snapshot still reads parked; the row itself is already Cancelled by the Reject.
+        _runService.GetByChatAsync(chatId, Arg.Any<CancellationToken>()).Returns(new List<AgentRun> { parked });
+        _runService.GetAsync(parked.Id, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = parked.Id, ChatId = chatId, RunShape = RunShape.Planned, State = AgentRunState.Cancelled,
+        });
+
+        var sut = CreateSut();
+        var session = await sut.ActivateAsync(chatId);
+        session!.SetActiveRun(null);
+
+        await sut.RestoreActiveRunAsync(session);
+
+        Assert.Equal(parked.Id, session.ActiveRunId);
+        Assert.False(session.PlanApprovalParkActive);
     }
 
     [Fact]
@@ -1821,6 +1855,8 @@ public class ChatSessionManagerTests
         await sut.StartTurnAsync(session, "the printed catalogue", null);
 
         await _resumeService.Received(1).ResumeAsync(runId, "the printed catalogue", Arg.Any<CancellationToken>());
+        // One row read for both the plan-approval refusal and the answer branch, not one each.
+        await _runService.Received(1).GetAsync(runId, Arg.Any<CancellationToken>());
 
         // The only new row, and it has no streaming placeholder — the ordinary path never ran.
         var posted = Assert.Single(session.Messages);
@@ -1908,8 +1944,10 @@ public class ChatSessionManagerTests
         var session = sut.GetOrCreateActiveForNewChat();
         AttachParkedRun(session, Pia.Services.AgentRunOrchestrator.PlanApprovalReason);
 
-        await sut.StartTurnAsync(session, "meanwhile, what is the weather", null);
+        var accepted = await sut.StartTurnAsync(session, "meanwhile, what is the weather", null);
 
+        // False is what tells the composer to put the typed text back; a bare no-op would drop it.
+        Assert.False(accepted);
         // Mechanism-specific, not just a message count: had the turn proceeded, setup resolution would have run.
         await _personas.DidNotReceive().ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>());
         await _resumeService.DidNotReceive().ResumeAsync(

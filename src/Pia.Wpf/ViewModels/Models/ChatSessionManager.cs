@@ -336,7 +336,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                 // After the loop so that recompute stays synchronous, and no ConfigureAwait(false) because
                 // _allSessions is UI-thread-only.
                 var isPlanApprovalPark = e.State == AgentRunState.WaitingForInput
-                    && await IsPlanApprovalParkedAsync(e.RunId);
+                    && await ReadParkReasonAsync(e.RunId) == AgentRunOrchestrator.PlanApprovalReason;
                 if (_disposed || !_runEventSeq.TryGetValue(e.RunId, out var latestSeq) || latestSeq != seq)
                     return;
 
@@ -617,7 +617,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     /// rather than failing the activation.</item>
     /// <item>Off the hot path: <see cref="IAgentRunService"/> is a synchronous lock-holding store, so the
     /// read happens on a pool thread — a live headless run holding that lock must never stall the UI.
-    /// Exactly ONE query per activation, and none at all once a session carries a run.</item>
+    /// At most TWO queries per activation (the lookup, then the parked run's pause reason), and none at all
+    /// once a session carries a run.</item>
     /// <item>A terminal run (Completed/Failed/Cancelled) is never resurrected, and an already-attached run
     /// is never replaced (re-checked after the await).</item>
     /// </list>
@@ -673,10 +674,12 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                 or AgentRunState.WaitingForChildren);
 
         // Narrower than ForeignRunActive above: only a plan-approval park closes the composer's
-        // "type instead of deciding" path.
+        // "type instead of deciding" path. Re-read AFTER the attach, never from the snapshot above: a settle
+        // that lands in between is invisible to OnAgentRunChanged (no session held the run yet) and this flag
+        // has no other recompute, so a stale true would wedge the composer for the window's lifetime.
         session.SetPlanApprovalParkActive(
             resumable.State == AgentRunState.WaitingForInput
-            && RunPauseEnvelope.ReadReason(resumable) == AgentRunOrchestrator.PlanApprovalReason);
+            && await ReadParkReasonAsync(resumable.Id) == AgentRunOrchestrator.PlanApprovalReason);
 
         // Ids + enum only — a run Goal is user content (CLAUDE.md privacy logging).
         _logger.LogInformation("Re-attached run {RunId} ({State}) to activated chat {ChatId}",
@@ -687,26 +690,31 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     /// Programmatic entry point for a <see cref="RunShape.Planned"/> agent run (§13.11). In 1.2 this
     /// is reachable only programmatically (tests / debug); the user-facing Chat/Agent lever is 1.3.
     /// </summary>
-    internal Task StartPlannedTurnAsync(ChatSession session, string goal) =>
+    internal Task<bool> StartPlannedTurnAsync(ChatSession session, string goal) =>
         StartTurnAsync(session, goal, attachment: null, regenerationInstruction: null, planned: true);
 
-    public async Task StartTurnAsync(
+    public async Task<bool> StartTurnAsync(
         ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction = null,
         bool planned = false)
     {
+        // One read for both guards below, so a send never queries the same row twice. Live-read rather than
+        // ChatSession.PlanApprovalParkActive, so a just-landed Reject is seen at once.
+        var parkReason = session.ActiveRunId is { } activeRunId
+            ? await ReadParkReasonAsync(activeRunId)
+            : null;
+
         // A refusal, not an answer: typing over a pending plan must never be read as approving or rejecting it.
-        // Live-read rather than ChatSession.PlanApprovalParkActive, so a just-landed Reject is seen at once.
-        if (session.ActiveRunId is { } activeRunId && await IsPlanApprovalParkedAsync(activeRunId))
+        if (parkReason == AgentRunOrchestrator.PlanApprovalReason)
         {
             _logger.LogInformation(
                 "Chat {ChatId}: refusing a new turn while a plan-approval park is active", session.Id);
-            return;
+            return false;
         }
 
         // Must run before anything below mutates the session: if the attached run is parked asking the user
         // a question, this send is that answer, not a new turn.
-        if (await TryAnswerParkedRunAsync(session, userText, attachment, regenerationInstruction))
-            return;
+        if (await TryAnswerParkedRunAsync(session, userText, attachment, regenerationInstruction, parkReason))
+            return true;
 
         // Captured before the Id-assignment block below: a brand-new chat has no Id yet,
         // so this marks the first turn (never persisted) vs. a resumed/continuing chat
@@ -777,7 +785,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                     Message = _localizationService["Msg_Assistant_NoProviderConfigured"],
                 });
                 await FinalizeFailedSetupAsync(session);
-                return;
+                return true;
             }
 
             if (persona.ReasoningEffort.HasValue)
@@ -847,7 +855,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                 Message = _localizationService.Format("Msg_Assistant_ResponseFailed", ex.Message),
             });
             await FinalizeFailedSetupAsync(session);
-            return;
+            return true;
         }
 
         if (planned)
@@ -961,7 +969,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             // Read the token on THIS thread, before the fire-and-forget, exactly as the direct call did.
             var runToken = session.Cts!.Token;
             RunPlannedAsync().SafeFireAndForget(_logger);
-            return;
+            return true;
 
             // The wrapper exists only to own the release. Same `finally` discipline as the launcher's two
             // dispatches: the registration is dropped on EVERY exit — including the paths where the run faults
@@ -995,6 +1003,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // UI-affine fire-and-forget: starts on the UI thread; continuations resume
         // on the captured UI SynchronizationContext (no Task.Run).
         session.RunTurnAsync(request, CancellationToken.None).SafeFireAndForget(_logger);
+        return true;
     }
 
     /// <summary>
@@ -1006,9 +1015,9 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     /// </para>
     /// </summary>
     private async Task<bool> TryAnswerParkedRunAsync(
-        ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction)
+        ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction,
+        string? parkReason)
     {
-        // Ordered cheapest-first: an ordinary chat turn (no attached run) never touches the run store.
         if (_resumeService is null || session.ActiveRunId is not { } runId
             || regenerationInstruction is not null || attachment is not null
             || string.IsNullOrWhiteSpace(userText))
@@ -1016,7 +1025,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             return false;
         }
 
-        if (await ReadClarificationParkReasonAsync(runId) is not { } reason)
+        if (parkReason is not (AgentRunOrchestrator.NeedsGoalReason or AgentRunOrchestrator.NeedsInputReason))
             return false;
 
         var answer = new AssistantMessage(ChatRole.User, userText);
@@ -1028,7 +1037,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
         _logger.LogInformation(
             "Chat {ChatId}: the composer's send answers run {RunId}'s {Reason} park — resuming instead of "
-            + "starting a turn", session.Id, runId, reason);
+            + "starting a turn", session.Id, runId, parkReason);
 
         try
         {
@@ -1054,8 +1063,9 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         return true;
     }
 
-    /// <summary>Returns the pause reason token when the run is parked waiting on a question it asked the user, null otherwise.</summary>
-    private async Task<string?> ReadClarificationParkReasonAsync(Guid runId)
+    /// <summary>The raw pause token of a run parked waiting on the user, null otherwise. Off the UI thread —
+    /// <see cref="IAgentRunService"/> is a synchronous lock-holding store a live headless run may be holding.</summary>
+    private async Task<string?> ReadParkReasonAsync(Guid runId)
     {
         AgentRun? run;
         try
@@ -1064,33 +1074,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to read run {RunId} while checking for a clarification park", runId);
+            _logger.LogWarning(ex, "Failed to read run {RunId} while checking for a park", runId);
             return null;
         }
 
-        var reason = run is { State: AgentRunState.WaitingForInput } ? RunPauseEnvelope.ReadReason(run) : null;
-        return reason is AgentRunOrchestrator.NeedsGoalReason or AgentRunOrchestrator.NeedsInputReason
-            ? reason
-            : null;
-    }
-
-    /// <summary>A sibling of <see cref="ReadClarificationParkReasonAsync"/> rather than a widening of it: no answer
-    /// text applies to a plan-approval park, so it resolves through Approve/Reject and never through the composer.</summary>
-    private async Task<bool> IsPlanApprovalParkedAsync(Guid runId)
-    {
-        AgentRun? run;
-        try
-        {
-            run = await Task.Run(() => _agentRunService.GetAsync(runId));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to read run {RunId} while checking for a plan-approval park", runId);
-            return false;
-        }
-
-        return run is { State: AgentRunState.WaitingForInput }
-            && RunPauseEnvelope.ReadReason(run) == AgentRunOrchestrator.PlanApprovalReason;
+        return run is { State: AgentRunState.WaitingForInput } ? RunPauseEnvelope.ReadReason(run) : null;
     }
 
     /// <summary>

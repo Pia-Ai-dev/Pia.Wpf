@@ -337,9 +337,10 @@ public sealed class LiveTurnExecutorPlannedRunTests
         // would keep at most the goal row.
         using var h = new Harness();
         var run = await h.NewRunAsync("goal");
+        // Persisted up front and resumed below, so two steps can complete before the budget park: a Live plan
+        // of three or more never reaches its first step, it parks for approval.
+        await h.Runs.ReplaceStepsAsync(run.Id, MakeSteps("s1", "s2", "s3"), TestContext.Current.CancellationToken);
         var planner = new FakePlanner();
-        // Two steps, not more: a Live plan of three or more parks for approval before any step runs.
-        planner.Plans.Enqueue(new PlanResult(MakeSteps("s1", "s2"), false));
 
         var session = CreateSession();
         SeedSessionForPlannedRun(session, "goal");
@@ -354,15 +355,16 @@ public sealed class LiveTurnExecutorPlannedRunTests
 
         var live = BuildLiveExecutor(session, _ => false);
         var orchestrator = new AgentRunOrchestrator(h.Runs, planner, new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
-        var budget = new RunProfile(MaxSteps: 1, MaxReplans: 0, WallClock: TimeSpan.FromMinutes(20));
+        var budget = new RunProfile(MaxSteps: 2, MaxReplans: 0, WallClock: TimeSpan.FromMinutes(20));
 
-        await orchestrator.RunAsync(run, live, Persona(), Provider(), budget, session.Cts!.Token);
+        await orchestrator.RunAsync(run, live, Persona(), Provider(), budget, session.Cts!.Token, resume: true);
 
         var parked = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.WaitingForInput, parked!.State);
 
-        // One persist request per completed step, seeing the transcript grown by that step's reply.
-        Assert.Equal(new[] { 2 }, persistSnapshots.ToArray());
+        // One persist request per completed step, the second seeing the transcript already grown by the first
+        // step's reply — a single persist at the end of the dispatch would leave one snapshot, not two.
+        Assert.Equal(new[] { 2, 3 }, persistSnapshots.ToArray());
 
         // Non-terminal: no TurnCompleted, no Completed/Error — the run is parked, not finished.
         Assert.Equal(0, completedCount);

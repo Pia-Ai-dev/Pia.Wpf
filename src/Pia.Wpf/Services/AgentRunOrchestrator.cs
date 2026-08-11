@@ -75,6 +75,11 @@ public sealed class AgentRunOrchestrator
     /// step runs; a later replan never re-triggers it.</summary>
     internal const string PlanApprovalReason = "plan-approval";
 
+    /// <summary>Fallback for the proposed-plan chat intro when no localization service was injected (the
+    /// positional test constructions).</summary>
+    private const string DefaultPlanProposedIntro =
+        "Proposed plan — review the steps below, then Approve or Reject in the run panel:";
+
     /// <summary>What a settled child's step reports when its answer could not be read. Says the work ran
     /// elsewhere rather than implying the step produced nothing (the failure mode
     /// <c>CompletedStepSummary.FromEarlierSegment</c> exists for).</summary>
@@ -239,7 +244,9 @@ public sealed class AgentRunOrchestrator
                 await SafeReplaceSteps(run.Id, plan.Steps, cts.Token).ConfigureAwait(false);
 
                 // First plan only: a replan-after-failure and the verify-fail replan both live outside this
-                // `if`, and a resume-without-replan never enters it.
+                // `if`, and a resume-without-replan never enters it. A re-plan after a clarification answer
+                // reaches this line but never gates either — every resume dispatches headless, and only the
+                // live executor supports approval.
                 if (plan.Steps.Count >= 3 && executor.SupportsPlanApproval)
                 {
                     await ParkForPlanApprovalAsync(executor, run, ctx, persona, plan.Steps, cts.Token).ConfigureAwait(false);
@@ -622,8 +629,7 @@ public sealed class AgentRunOrchestrator
 
     /// <summary>
     /// Park the run before its first step so a human can Approve or Reject the plan. No PinRange/step handling —
-    /// nothing has run yet, mirroring <see cref="ParkForUngroundableGoalAsync"/>. The plan is also posted into the
-    /// run's own chat, so it survives in scrollback after the panel's Approve/Reject card is gone.
+    /// nothing has run yet, mirroring <see cref="ParkForUngroundableGoalAsync"/>.
     /// </summary>
     private async Task ParkForPlanApprovalAsync(
         IAgentTurnExecutor executor, AgentRun run, RunContext ctx, Persona persona,
@@ -638,16 +644,17 @@ public sealed class AgentRunOrchestrator
         // re-enable while the run sits parked.
         await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
 
-        var summary = BuildPlanSummaryText(steps);
+        var summary = BuildPlanSummaryText(
+            steps, _localization?["Run_PlanProposed_ChatIntro"] ?? DefaultPlanProposedIntro);
         await PostAndMirrorClarificationQuestionAsync(executor, run, ctx, persona, summary).ConfigureAwait(false);
     }
 
     /// <summary>Step titles only — intent/artifact text is longer than what a person needs to decide Approve vs
     /// Reject.</summary>
-    private static string BuildPlanSummaryText(IReadOnlyList<AgentStep> steps)
+    private static string BuildPlanSummaryText(IReadOnlyList<AgentStep> steps, string intro)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("Proposed plan — review the steps below, then Approve or Reject in the run panel:");
+        sb.AppendLine(intro);
         foreach (var step in steps)
             sb.AppendLine($"{step.Ordinal + 1}. {step.Title}");
         return sb.ToString().TrimEnd();

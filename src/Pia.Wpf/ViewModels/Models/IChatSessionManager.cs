@@ -45,10 +45,13 @@ public interface IChatSessionManager
     /// <para>
     /// If <paramref name="session"/>'s attached run is parked asking the user a question (<c>needs-goal</c> /
     /// <c>needs-input</c>), this posts <paramref name="userText"/> as the answer and resumes that run instead
-    /// of starting a turn — the caller sees the same <c>Task</c> either way.
+    /// of starting a turn.
     /// </para>
     /// </summary>
-    Task StartTurnAsync(
+    /// <returns>False only when the send was REFUSED without consuming anything (a plan-approval park is
+    /// pending), so the caller owns restoring its composer. Every other outcome, a failed setup included,
+    /// is true.</returns>
+    Task<bool> StartTurnAsync(
         ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction = null,
         bool planned = false);
 

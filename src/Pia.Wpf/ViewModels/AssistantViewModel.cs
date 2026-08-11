@@ -919,7 +919,15 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         // Awaited so the AsyncRelayCommand's running-state blocks re-entry; StartTurnAsync
         // returns once the turn is fire-and-forgotten (Step 4-compatible).
-        await _chatSessionManager.StartTurnAsync(session, userText, attachment, planned: planned);
+        var accepted = await _chatSessionManager.StartTurnAsync(session, userText, attachment, planned: planned);
+
+        // A refused send consumed nothing, so put the composer back rather than dropping what was typed —
+        // reachable in the window between a plan-approval park releasing the session and the flag landing.
+        if (!accepted)
+        {
+            InputText = userText;
+            PendingAttachment = attachment;
+        }
     }
 
     /// <summary>

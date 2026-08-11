@@ -89,8 +89,13 @@ Right after the **first** successful `PlanAsync` call produces a valid plan — 
   with no approval ever having happened — deliberately out of scope rather than overlooked, on the same
   "first plan only" reasoning taken to its edge. This falls out naturally from the insertion point: those
   branches live outside the `!resume || rePlanAfterClarification` block.
-- A clarification round-trip (`NeedsGoalReason`) still counts as "the first plan" — the gate applies to
-  whatever plan eventually lands in this block, however many clarification hops it took to get there.
+- A clarification round-trip (`NeedsGoalReason`) reaches this block again, but it is **never gated**. Every
+  resume in the app dispatches through `HeadlessRunLauncher`, which resolves `HeadlessTurnExecutor`, and the
+  live-only mechanism below keys the gate on the executor. So a plan that only lands after a clarification
+  hop runs unapproved however many steps it has. Accepted rather than fixed: widening the gate to that path
+  would mean parking a headless dispatch, which the out-of-scope list below rules out categorically — and a
+  child run parked for approval would hang its `WaitingForChildren` parent, since no surface approves one.
+  Pinned by `AgentRunOrchestratorArmTests.ARePlanAfterAClarificationAnswer_NeverParksForApproval_*`.
 
 ### Live-only gate mechanism
 

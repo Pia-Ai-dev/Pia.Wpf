@@ -210,6 +210,45 @@ public sealed class AgentRunOrchestratorArmTests : IDisposable
     }
 
     [Fact]
+    public async Task AnApprovedPlan_DrainsThePersistedSteps_WithoutRePlanning()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        var planner = new StubPlanner(Plan("A", "B", "C"));
+
+        await RunAsync(run, planner, ct, new StubExecutor { SupportsPlanApproval = true });
+        Assert.Equal(
+            AgentRunOrchestrator.PlanApprovalReason, RunPauseEnvelope.ReadReason((await _runs.GetAsync(run.Id, ct))!));
+
+        // Approve is the ordinary resume every other park takes — headless, and carrying the park's reason.
+        var approved = new StubExecutor();
+        await RunAsync(run, planner, ct, approved, resume: true, parkReason: AgentRunOrchestrator.PlanApprovalReason);
+
+        var settled = (await _runs.GetAsync(run.Id, ct))!;
+        Assert.Equal(AgentRunState.Completed, settled.State);
+        Assert.Equal(3, approved.StepTurns);
+        Assert.All(settled.Plan, s => Assert.Equal(AgentStepStatus.Done, s.Status));
+    }
+
+    [Fact]
+    public async Task ARePlanAfterAClarificationAnswer_NeverParksForApproval_BecauseEveryResumeRunsHeadless()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        // Zero step rows + the needs-goal reason is what makes this resume re-plan; the executor is the
+        // headless shape every resume dispatches with, so the gate's second term can never hold here.
+        var executor = new StubExecutor();
+
+        await RunAsync(run, new StubPlanner(Plan("A", "B", "C")), ct, executor,
+            resume: true, parkReason: AgentRunOrchestrator.NeedsGoalReason);
+
+        var settled = (await _runs.GetAsync(run.Id, ct))!;
+        Assert.NotEqual(AgentRunOrchestrator.PlanApprovalReason, RunPauseEnvelope.ReadReason(settled));
+        Assert.Equal(AgentRunState.Completed, settled.State);
+        Assert.Equal(3, executor.StepTurns);
+    }
+
+    [Fact]
     public void SupportsPlanApproval_DefaultsFalseForAnExecutorThatDoesNotOverrideIt()
     {
         IAgentTurnExecutor executor = new StubExecutor();
@@ -233,7 +272,8 @@ public sealed class AgentRunOrchestratorArmTests : IDisposable
 
     private Task RunAsync(
         AgentRun run, IAgentPlanner planner, CancellationToken ct,
-        StubExecutor? executor = null, RunProfile? profile = null, IRunSteeringStore? steering = null)
+        StubExecutor? executor = null, RunProfile? profile = null, IRunSteeringStore? steering = null,
+        bool resume = false, string? parkReason = null)
     {
         var orchestrator = new AgentRunOrchestrator(
             _runs, planner, new AcceptingVerifier(), NullLogger<AgentRunOrchestrator>.Instance,
@@ -242,7 +282,7 @@ public sealed class AgentRunOrchestratorArmTests : IDisposable
         return orchestrator.RunAsync(
             run, executor ?? new StubExecutor(), new Persona { Name = "Pia", SystemPrompt = "sys" },
             new AiProvider { Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI },
-            profile ?? RunProfile.Interactive, ct);
+            profile ?? RunProfile.Interactive, ct, resume: resume, parkReason: parkReason);
     }
 
     private static PlanResult Plan(params string[] titles) => new(

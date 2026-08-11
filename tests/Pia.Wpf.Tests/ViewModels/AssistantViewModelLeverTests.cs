@@ -357,6 +357,34 @@ public class AssistantViewModelLeverTests
         Assert.False(vm.RunInBackgroundCommand.CanExecute(null));
     }
 
+    /// <summary>The park can land between IsStreaming clearing and the flag arriving, so Send stays enabled for
+    /// a moment; a refusal in that window must not swallow what was typed.</summary>
+    [Fact]
+    public async Task Send_RefusedByTheManager_PutsTheTypedTextBack()
+    {
+        var vm = CreateSut();
+        vm.InputText = "meanwhile, what is the weather";
+        _manager.StartTurnAsync(Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(),
+            Arg.Any<string?>(), Arg.Any<bool>()).Returns(false);
+
+        await vm.SendMessageCommand.ExecuteAsync(null);
+
+        Assert.Equal("meanwhile, what is the weather", vm.InputText);
+    }
+
+    [Fact]
+    public async Task Send_AcceptedByTheManager_LeavesTheComposerCleared()
+    {
+        var vm = CreateSut();
+        vm.InputText = "hello";
+        _manager.StartTurnAsync(Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(),
+            Arg.Any<string?>(), Arg.Any<bool>()).Returns(true);
+
+        await vm.SendMessageCommand.ExecuteAsync(null);
+
+        Assert.Equal(string.Empty, vm.InputText);
+    }
+
     // ---- the ChatSession -> ViewModel wiring, and the two commands that also start live turns ----
 
     /// <summary>The state a restore leaves behind for a chat whose headless run is mid-flight.</summary>

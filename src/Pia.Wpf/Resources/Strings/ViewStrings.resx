@@ -946,6 +946,8 @@
   <data name="Run_Activity_NeedsGoal" xml:space="preserve"><value>Waiting for you to clarify the goal in the chat</value></data>
   <data name="Run_Activity_NeedsInput" xml:space="preserve"><value>Waiting for your answer in the chat</value></data>
   <data name="Run_Activity_PlanApproval" xml:space="preserve"><value>Waiting for you to approve the plan</value></data>
+  <!-- The line above the numbered step titles the run posts into its chat; names the same buttons as Run_Action_ApprovePlan/RejectPlan. -->
+  <data name="Run_PlanProposed_ChatIntro" xml:space="preserve"><value>Proposed plan — review the steps below, then Approve or Reject in the run panel:</value></data>
   <data name="Run_PlanRejected_ChatNote" xml:space="preserve"><value>The proposed plan was rejected.</value></data>
   <data name="Run_Action_Continue" xml:space="preserve"><value>Continue</value></data>
   <!-- The approve/deny pair a tool-approval park offers beside Continue. -->
