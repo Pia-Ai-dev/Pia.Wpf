@@ -1193,6 +1193,8 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         // surface for these two reasons; the question text itself lives in the chat message, never here.
         AgentRunOrchestrator.NeedsGoalReason => _localization["Run_Activity_NeedsGoal"],
         AgentRunOrchestrator.NeedsInputReason => _localization["Run_Activity_NeedsInput"],
+        // The panel's Approve/Reject card is the real UI here; the proposed steps live in the chat, never here.
+        AgentRunOrchestrator.PlanApprovalReason => _localization["Run_Activity_PlanApproval"],
         AgentRunService.UserPausedReason => _localization["Run_Activity_UserPaused"],
         // A resume that claimed the row and then never reached the orchestrator. Reachable
         // TODAY, unlike the "user" arm above — the re-park writes WaitingForInput, which is exactly the state

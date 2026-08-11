@@ -313,6 +313,7 @@ public sealed class RunProgressViewModelTests : IDisposable
     [InlineData("step-cap", "Run_Activity_WaitingAtBudget")]
     [InlineData("wall-clock", "Run_Activity_WaitingAtBudget")]
     [InlineData("something-a-later-build-invented", "Run_Activity_WaitingAtBudget")]
+    [InlineData("plan-approval", "Run_Activity_PlanApproval")]
     public async Task AParkedRunsActivityLineNamesWhyItParked(string reason, string expectedKey)
     {
         var run = await NewPlannedRunAsync();
