@@ -102,6 +102,8 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
         // may. Two tokens because the two resumes differ, even though the copy today reads the same.
         AgentRunOrchestrator.NeedsGoalReason => "Flow_Run_NeedsGoal",
         AgentRunOrchestrator.NeedsInputReason => "Flow_Run_NeedsInput",
+        // Like the two above: the token is all the card gets — the proposed steps stay in the run's chat.
+        AgentRunOrchestrator.PlanApprovalReason => "Flow_Run_PlanApproval",
         // Batch 08 G2. Telling a user who pressed Pause that the run "stopped at its budget" would send them
         // to raise budgets that were never reached; the card still carries the same ContinueRunAction.
         AgentRunService.UserPausedReason => "Flow_Run_UserPaused",
@@ -187,14 +189,15 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
 
         if (AgentRunStates.IsParked(state))
         {
-            // A needs-goal/needs-input park has no answer for "Continue" to carry — the answer lives in the
-            // run's own chat — so these two reasons route there instead of firing a blind resume. They use
+            // A needs-goal/needs-input/plan-approval park has no answer for "Continue" to carry — the answer
+            // lives in the run's own chat — so these reasons route there instead of firing a blind resume. They use
             // OpenParkedRunAction rather than OpenRunAction because opening the run resolves nothing (it is
             // still WaitingForInput right after the click), so retracting on open would delete the only
             // durable trace of a still-parked run.
             var reason = RunPauseEnvelope.ReadReason(run);
             var needsAnswerElsewhere = reason == AgentRunOrchestrator.NeedsGoalReason
-                || reason == AgentRunOrchestrator.NeedsInputReason;
+                || reason == AgentRunOrchestrator.NeedsInputReason
+                || reason == AgentRunOrchestrator.PlanApprovalReason;
 
             _flowService.Publish(new FlowItemDraft
             {
@@ -202,7 +205,7 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
                 Source = FlowSource.AgentRun,
                 // Generic title/body — the run Goal + pause reason are SENSITIVE, never in the Flow item.
                 Title = _localizationService["Flow_Run_Title"],
-                // Three reasons reach WaitingForInput and only one is a budget (07 D13/D14). The REASON token is
+                // Several reasons reach WaitingForInput and only one is a budget (07 D13/D14). The REASON token is
                 // app-owned and never user content — unlike the run Goal, which stays out of the Flow item
                 // entirely — so it is safe to key the body on it, and announcing a child's park or a restart as
                 // "stopped at its budget" sends the user to raise budgets that were never reached.

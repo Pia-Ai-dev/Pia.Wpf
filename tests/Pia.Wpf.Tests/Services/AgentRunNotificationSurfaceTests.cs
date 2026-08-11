@@ -49,6 +49,7 @@ public sealed class AgentRunNotificationSurfaceTests
     [InlineData("step-cap", "Flow_Run_WaitingAtBudget")]
     [InlineData("wall-clock", "Flow_Run_WaitingAtBudget")]
     [InlineData(null, "Flow_Run_WaitingAtBudget")]
+    [InlineData("plan-approval", "Flow_Run_PlanApproval")]
     public void AParkedRunsFlowBodyNamesWhyItParked(string? reason, string expectedKey)
         => Assert.Equal(expectedKey, AgentRunNotificationSurface.PausedBodyKey(reason));
 
@@ -211,6 +212,8 @@ public sealed class AgentRunNotificationSurfaceTests
     [Theory]
     [InlineData("needs-goal", "Flow_Run_NeedsGoal")]
     [InlineData("needs-input", "Flow_Run_NeedsInput")]
+    // A plan-approval park answers in the chat too — one-click Continue would approve the plan unseen.
+    [InlineData("plan-approval", "Flow_Run_PlanApproval")]
     public async Task NeedsClarificationPark_CardIsTokenKeyed_AndRoutesToTheRun(string reason, string expectedKey)
     {
         var runId = Guid.NewGuid();
