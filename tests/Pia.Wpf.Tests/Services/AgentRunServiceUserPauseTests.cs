@@ -204,6 +204,64 @@ public sealed class AgentRunServiceUserPauseTests : IDisposable
         Assert.True(await _service.TryResumeFromPauseAsync(userPaused.Id, ct));
     }
 
+    [Fact]
+    public async Task TryRejectParkedPlanAsync_CancelsAPlanApprovalPark()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        await _service.PauseAsync(run.Id, AgentRunOrchestrator.PlanApprovalReason, ct);
+
+        Assert.True(await _service.TryRejectParkedPlanAsync(run.Id, ct));
+
+        var updated = await _service.GetAsync(run.Id, ct);
+        Assert.Equal(AgentRunState.Cancelled, updated!.State);
+        Assert.NotNull(updated.CompletedAt);
+        Assert.Null(updated.ExtraJson);
+    }
+
+    /// <summary>The reason gate is the whole point: state alone cannot tell this plan's park from a run that
+    /// re-parked on a different question since the Reject button was drawn.</summary>
+    [Fact]
+    public async Task TryRejectParkedPlanAsync_DoesNotCancel_WhenParkedForADifferentReason()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        await _service.PauseAsync(run.Id, AgentRunOrchestrator.NeedsInputReason, ct);
+        var before = RowSnapshot(run.Id);
+
+        Assert.False(await _service.TryRejectParkedPlanAsync(run.Id, ct));
+
+        var updated = await _service.GetAsync(run.Id, ct);
+        Assert.Equal(AgentRunState.WaitingForInput, updated!.State);
+        Assert.Equal(before, RowSnapshot(run.Id));
+    }
+
+    [Fact]
+    public async Task TryRejectParkedPlanAsync_RaisesRunChangedCancelled_OnlyOnTheWin()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var winner = await NewRunAsync(ct);
+        await _service.PauseAsync(winner.Id, AgentRunOrchestrator.PlanApprovalReason, ct);
+        var loser = await NewRunAsync(ct);
+        await _service.PauseAsync(loser.Id, AgentRunOrchestrator.NeedsInputReason, ct);
+
+        var seen = new List<(Guid RunId, AgentRunState State)>();
+        void Handler(object? s, AgentRunChangedEventArgs e) => seen.Add((e.RunId, e.State));
+        _service.RunChanged += Handler;
+        try
+        {
+            Assert.True(await _service.TryRejectParkedPlanAsync(winner.Id, ct));
+            Assert.Equal([(winner.Id, AgentRunState.Cancelled)], seen);
+
+            Assert.False(await _service.TryRejectParkedPlanAsync(loser.Id, ct));
+            Assert.Equal([(winner.Id, AgentRunState.Cancelled)], seen);
+        }
+        finally
+        {
+            _service.RunChanged -= Handler;
+        }
+    }
+
     /// <summary>The Flow surface publishes run cards straight off this event, so an event for a run nobody
     /// paused would post a "continue?" card the claim then refuses.</summary>
     [Fact]

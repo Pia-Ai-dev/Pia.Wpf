@@ -247,6 +247,10 @@ public interface IAgentRunService
     /// </summary>
     Task<bool> TryResumeFromPauseAsync(Guid runId, CancellationToken ct = default);
 
+    /// <summary>Reject a plan-approval park: CAS straight to <see cref="AgentRunState.Cancelled"/>, gated on the
+    /// pause reason as well as the state so a stale click cannot hit a run that re-parked on another question.</summary>
+    Task<bool> TryRejectParkedPlanAsync(Guid runId, CancellationToken ct = default);
+
     /// <summary>
     /// Park a PARENT while its child runs execute (Batch 07 D9): State →
     /// <see cref="AgentRunState.WaitingForChildren"/>, and the ledger work segment is CLOSED — the parent is

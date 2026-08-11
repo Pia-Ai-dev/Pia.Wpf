@@ -545,6 +545,57 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         return Task.FromResult(affected > 0);
     }
 
+    public Task<bool> TryRejectParkedPlanAsync(Guid runId, CancellationToken ct = default)
+    {
+        int affected;
+        lock (_gate)
+        {
+            if (_disposed) return Task.FromResult(false);
+
+            var connection = Connection();
+            AgentRun? run;
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText = $"SELECT {RunColumns} FROM AgentRuns WHERE Id=@Id";
+                cmd.Parameters.AddWithValue("@Id", runId.ToString());
+                using var reader = cmd.ExecuteReader();
+                run = reader.Read() ? MapRun(reader) : null;
+            }
+
+            // Reason-gated rather than a bare `WHERE State=@Expected` CAS: state alone cannot tell "still the
+            // plan this Reject was shown for" from "resumed and re-parked on a different question since".
+            // Read and write share one _gate hold, so nothing can move the row in between.
+            if (run is null || run.State != AgentRunState.WaitingForInput
+                || RunPauseEnvelope.ReadReason(run) != AgentRunOrchestrator.PlanApprovalReason)
+            {
+                affected = 0;
+            }
+            else
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText =
+                    "UPDATE AgentRuns SET State=@New, CompletedAt=@Now, UpdatedAt=@Now, ExtraJson=NULL WHERE Id=@Id AND State=@Expected";
+                cmd.Parameters.AddWithValue("@New", (int)AgentRunState.Cancelled);
+                cmd.Parameters.AddWithValue("@Now", DateTime.UtcNow.ToString("O"));
+                cmd.Parameters.AddWithValue("@Id", runId.ToString());
+                cmd.Parameters.AddWithValue("@Expected", (int)AgentRunState.WaitingForInput);
+                affected = cmd.ExecuteNonQuery();
+                // No MoveLedgerClock: the park already closed the work segment and this opens none.
+            }
+        }
+
+        if (affected > 0)
+        {
+            _logger.LogInformation("Run {RunId} plan rejected → Cancelled", runId);
+            RunChanged?.Invoke(this, new AgentRunChangedEventArgs(runId, AgentRunState.Cancelled));
+        }
+        else
+        {
+            _logger.LogInformation("Run {RunId} plan-reject not applied — no longer parked on plan-approval", runId);
+        }
+        return Task.FromResult(affected > 0);
+    }
+
     public Task BeginChildWaitAsync(Guid runId, int childCount, CancellationToken ct = default)
     {
         lock (_gate)

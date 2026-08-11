@@ -298,6 +298,7 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
         public Task<bool> TryBeginResumeAsync(Guid runId, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task<bool> TryPauseUserAsync(Guid runId, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task<bool> TryResumeFromPauseAsync(Guid runId, CancellationToken ct = default) => throw new InvalidOperationException("boom");
+        public Task<bool> TryRejectParkedPlanAsync(Guid runId, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task BeginChildWaitAsync(Guid runId, int childCount, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task<bool> TryEndChildWaitAsync(Guid runId, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task<int> FailInterruptedRunsAsync(CancellationToken ct = default) => throw new InvalidOperationException("boom");
