@@ -1400,7 +1400,7 @@ git commit -m "Add RejectPlanAsync: settle a plan-approval park to Cancelled wit
 **Files:**
 - Modify: `src/Pia.Wpf/Resources/Strings/ViewStrings.resx` + `.de.resx` + `.fr.resx`
 
-- [ ] **Step 1: Add `Run_Action_ApprovePlan` and `Run_Action_RejectPlan` to all three files**
+- [x] **Step 1: Add `Run_Action_ApprovePlan` and `Run_Action_RejectPlan` to all three files**
 
 `ViewStrings.resx` (near `Run_Action_Continue`/`Run_Action_Approve`/`Run_Action_Deny`):
 
@@ -1425,13 +1425,13 @@ git commit -m "Add RejectPlanAsync: settle a plan-approval park to Cancelled wit
 
 No separate "plan-approval title" loc key is needed here: `RunProgressPanel.xaml`'s signal-band lead line already binds `CurrentActivity` (via `ComputeActivity` → `DescribePause`), and Chunk 3 Task 3.2 already added the `PlanApprovalReason` arm there, returning `Run_Activity_PlanApproval` — the exact same key Task 3.1 already localized in all three resx files. A second, competing lead-line key/property would be redundant dead weight (verified against the actual XAML/VM — see Task 5.2 Step 6 and Task 5.3 Step 3 below, which state this firmly rather than as an open question).
 
-- [ ] **Step 2: Run the parity test — no `Designer.cs` regeneration needed (per Task 3.1 Step 3)**
+- [x] **Step 2: Run the parity test — no `Designer.cs` regeneration needed (per Task 3.1 Step 3)**
 
 ```bash
 dotnet test -- --filter-method "*AllTranslations_MustBeComplete*"
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/Pia.Wpf/Resources/Strings/ViewStrings.resx src/Pia.Wpf/Resources/Strings/ViewStrings.de.resx src/Pia.Wpf/Resources/Strings/ViewStrings.fr.resx
@@ -1444,7 +1444,7 @@ git commit -m "Add Approve/Reject button and plan-approval title loc keys"
 - Modify: `src/Pia.Wpf/ViewModels/RunProgressViewModel.cs`
 - Test: `tests/Pia.Wpf.Tests/ViewModels/RunProgressViewModelTests.cs`
 
-- [ ] **Step 1: Add the `[ObservableProperty]` field**
+- [x] **Step 1: Add the `[ObservableProperty]` field**
 
 Beside `_isToolApprovalPause`/`_approvalToolName` (lines 137-146), add:
 
@@ -1458,7 +1458,7 @@ Beside `_isToolApprovalPause`/`_approvalToolName` (lines 137-146), add:
     private bool _isPlanApprovalPause;
 ```
 
-- [ ] **Step 2: Project it in `Project(...)`**
+- [x] **Step 2: Project it in `Project(...)`**
 
 Right after the existing tool-approval block (lines 915-922), add:
 
@@ -1468,7 +1468,7 @@ Right after the existing tool-approval block (lines 915-922), add:
             && RunPauseEnvelope.ReadReason(run) == AgentRunOrchestrator.PlanApprovalReason;
 ```
 
-- [ ] **Step 3: Add `CanRejectPlan`/`ShowRejectPlanButton`**
+- [x] **Step 3: Add `CanRejectPlan`/`ShowRejectPlanButton`**
 
 Beside `CanDeclineTool`/`ShowDenyButton`:
 
@@ -1478,7 +1478,7 @@ Beside `CanDeclineTool`/`ShowDenyButton`:
     public bool ShowRejectPlanButton => IsPlanApprovalPause;
 ```
 
-- [ ] **Step 4: Add `RejectPlan()`**
+- [x] **Step 4: Add `RejectPlan()`**
 
 Mirroring `DeclineTool()` exactly, reusing the same `IsResuming` double-click guard (so Approve/Reject/Continue on this card cannot fire concurrently):
 
@@ -1509,7 +1509,7 @@ Mirroring `DeclineTool()` exactly, reusing the same `IsResuming` double-click gu
 
 Note `[NotifyCanExecuteChangedFor(nameof(RejectPlanCommand))]` also needs adding to the `_isResuming` field's attribute list (mirroring the existing `[NotifyCanExecuteChangedFor(nameof(DeclineToolCommand))]` already there at line 134) so a Reject-in-flight disables the button.
 
-- [ ] **Step 5: Add `ContinueLabel` for the Approve/Continue label swap**
+- [x] **Step 5: Add `ContinueLabel` for the Approve/Continue label swap**
 
 ```csharp
     /// <summary>The Continue button's label: "Approve" on a plan-approval park (a new decision), "Continue"
@@ -1523,7 +1523,7 @@ Note `[NotifyCanExecuteChangedFor(nameof(RejectPlanCommand))]` also needs adding
 
 Add `[NotifyPropertyChangedFor(nameof(ContinueLabel))]` to `IsPlanApprovalPause`'s attribute list (already added in Step 1).
 
-- [ ] **Step 6: Add `ShowNudgeBox` to suppress Region D on this card**
+- [x] **Step 6: Add `ShowNudgeBox` to suppress Region D on this card**
 
 ```csharp
     /// <summary>Region D's visibility. Same state gate as <see cref="ShowContinueButton"/>, minus a
@@ -1538,11 +1538,11 @@ Add `[NotifyPropertyChangedFor(nameof(ContinueLabel))]` to `IsPlanApprovalPause`
 
 While here, `ShowContinueButton`'s own doc comment (`RunProgressViewModel.cs:173-176`) says "The steering note rides on this too" — once Region D is rebound to `ShowNudgeBox` (Task 5.3 Step 3) that sentence is no longer accurate. Update it to name `ShowNudgeBox` instead.
 
-- [ ] **Step 7: (dropped)**
+- [x] **Step 7: (dropped)**
 
 An earlier draft of this plan proposed a `PlanApprovalTitle` property and a matching conditional XAML rebind in Task 5.3, hedging on whether the signal band's lead line already covers this. Verified against the actual source: `RunProgressViewModel.cs`'s `Project` sets `CurrentActivity = ComputeActivity(run)` (line 913), `ComputeActivity` (lines 1208-1227) routes `AgentRunState.WaitingForInput` through `DescribePause(run)`, and `RunProgressPanel.xaml:212-217` binds `CurrentActivity` to the signal band's lead-line `TextBlock`. Chunk 3 Task 3.2 already adds the `PlanApprovalReason` arm to that exact switch. So once Chunk 3 lands, parking for plan approval already renders the lead line with zero further changes — a `PlanApprovalTitle` property would be a second, competing text source bound to the same slot. Confirmed dead weight; not added. (This also means `Run_PlanApproval_Title` was correctly dropped from Task 5.1.)
 
-- [ ] **Step 8: Write failing tests**
+- [x] **Step 8: Write failing tests**
 
 `Project(AgentRun, ...)` is `private` — not reachable directly from the test file. Every existing test in this file drives a projection by persisting a real pause via `_runs.PauseAsync(...)` and then calling `await vm.RefreshAsync()` (see `WaitingForInput_ProjectsWaitingState_ContinueEnabled`, lines 287-301), and every test is `async Task`, never synchronous `void`. Follow that exact pattern:
 
@@ -1616,7 +1616,7 @@ public async Task PausingAtBudget_RaisesShowNudgeBoxChanged_NotJustShowContinueB
 }
 ```
 
-- [ ] **Step 9: Run, confirm fail → pass**
+- [x] **Step 9: Run, confirm fail → pass**
 
 ```bash
 dotnet test -- --filter-method "*PlanApproval*"
@@ -1624,7 +1624,7 @@ dotnet test -- --filter-method "*RejectPlan_CallsResumeServiceRejectPlanAsync*"
 dotnet test -- --filter-method "*PausingAtBudget_RaisesShowNudgeBoxChanged*"
 ```
 
-- [ ] **Step 10: Run the full gate**
+- [x] **Step 10: Run the full gate**
 
 ```bash
 dotnet test
@@ -1632,7 +1632,7 @@ dotnet test
 
 `_state`'s attribute list is a shared list six other commands/properties also depend on — this chunk's changes are not XAML-only, so (unlike Task 5.3, which correctly only builds) this task needs the full suite run before committing.
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 ```bash
 git add src/Pia.Wpf/ViewModels/RunProgressViewModel.cs tests/Pia.Wpf.Tests/ViewModels/RunProgressViewModelTests.cs
@@ -1644,7 +1644,7 @@ git commit -m "Add plan-approval projection, Approve/Reject commands, and nudge-
 **Files:**
 - Modify: `src/Pia.Wpf/Controls/Assistant/RunProgressPanel.xaml`
 
-- [ ] **Step 1: Rebind the Continue button's `Content` to `ContinueLabel`**
+- [x] **Step 1: Rebind the Continue button's `Content` to `ContinueLabel`**
 
 Current (line 256):
 
@@ -1658,7 +1658,7 @@ Change to:
 <ui:Button Content="{Binding ContinueLabel}" Command="{Binding ContinueCommand}"
 ```
 
-- [ ] **Step 2: Add the Reject button, beside the existing Deny button**
+- [x] **Step 2: Add the Reject button, beside the existing Deny button**
 
 Current Deny button (lines 262-265):
 
@@ -1680,7 +1680,7 @@ Add, immediately after it (the two are mutually exclusive by construction — `S
            Visibility="{Binding ShowRejectPlanButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
 ```
 
-- [ ] **Step 3: Rebind Region D's visibility**
+- [x] **Step 3: Rebind Region D's visibility**
 
 Current (line 323):
 
@@ -1694,7 +1694,7 @@ Change to:
 Visibility="{Binding ShowNudgeBox, Converter={StaticResource BooleanToVisibilityConverter}}">
 ```
 
-- [ ] **Step 4: Build and manually smoke-test**
+- [x] **Step 4: Build and manually smoke-test**
 
 ```bash
 dotnet build src/Pia.Wpf/Pia.Wpf.csproj
@@ -1702,7 +1702,7 @@ dotnet build src/Pia.Wpf/Pia.Wpf.csproj
 
 WPF/XAML bindings are not exercised by `dotnet test` — a typo in a binding path fails silently at runtime, not at build time. Run the app (`dotnet run --project src/Pia.Wpf/Pia.Wpf.csproj`), and USE `dotnet test`'s existing `RunProgressViewModelTests` coverage from Task 5.2 as the correctness check for the VM side; the XAML binding paths themselves need a manual check — this plan's Chunk 6 Task 6.4 includes the full manual smoke test once the composer guard is also wired up, so a full plan-approval flow can actually be triggered end-to-end.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/Pia.Wpf/Controls/Assistant/RunProgressPanel.xaml

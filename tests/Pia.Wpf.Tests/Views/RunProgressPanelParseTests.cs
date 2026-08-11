@@ -55,6 +55,11 @@ public class RunProgressPanelParseTests
         Assert.Contains(bindings, b => b.Contains("=ShowPauseFirstNote "));
         Assert.Contains(bindings, b => b.Contains("=NudgeText "));
 
+        Assert.Contains(bindings, b => b.Contains("=ContinueLabel "));        // the Continue/Approve label swap
+        Assert.Contains(bindings, b => b.Contains("=RejectPlanCommand "));    // the plan-approval Reject button
+        Assert.Contains(bindings, b => b.Contains("=ShowRejectPlanButton "));
+        Assert.Contains(bindings, b => b.Contains("=ShowNudgeBox "));         // Region D, suppressed on that park
+
         // Proves the walk reached the LAST section: both section bodies are plain collapsible Borders rather than
         // Expander content, which is what keeps them in the logical tree unconditionally.
         Assert.Contains(bindings, b => b.Contains("=Children "));
@@ -250,6 +255,58 @@ public class RunProgressPanelParseTests
         // disablement came from the in-flight term and not from a dead command.
         Assert.True(idle.Enabled);
         Assert.False(inFlight.Enabled);
+    }
+
+    // Region D's Border and the Reject button both default to Visible, so the Collapsed readings are the ones
+    // that bite; the Continue label proves the swap reaches a rendered element rather than only the getter.
+    [Fact]
+    public void APlanApprovalPark_RelabelsContinueToApprove_ShowsReject_AndHidesTheNudgeBox()
+    {
+        RunProgressViewModel? vm = null;
+        RunProgressPanel? panel = null;
+        (object? ContinueLabel, Visibility Reject, Visibility NudgeBox) ordinary, planApproval;
+        try
+        {
+            WpfStaHost.Run(() =>
+            {
+                vm = CreateRunProgressViewModelWithInterpolatingLocalization();
+                panel = new RunProgressPanel { DataContext = vm };
+                vm.State = RunProgressState.WaitingForInput; // the state Continue and the nudge box are offered from
+                return 0;
+            });
+            WpfStaHost.Pump();
+
+            ordinary = WpfStaHost.Run(() => ProbePlanApprovalCard(panel!));
+
+            WpfStaHost.Run(() => { vm!.IsPlanApprovalPause = true; return 0; });
+            WpfStaHost.Pump();
+
+            planApproval = WpfStaHost.Run(() => ProbePlanApprovalCard(panel!));
+        }
+        finally
+        {
+            WpfStaHost.Run(() => { vm?.Dispose(); return 0; });
+        }
+
+        Assert.Equal("Run_Action_Continue", ordinary.ContinueLabel);
+        Assert.Equal("Run_Action_ApprovePlan", planApproval.ContinueLabel);
+
+        Assert.Equal(Visibility.Collapsed, ordinary.Reject);
+        Assert.Equal(Visibility.Visible, planApproval.Reject);
+
+        Assert.Equal(Visibility.Visible, ordinary.NudgeBox);
+        Assert.Equal(Visibility.Collapsed, planApproval.NudgeBox);
+    }
+
+    private static (object?, Visibility, Visibility) ProbePlanApprovalCard(RunProgressPanel panel)
+    {
+        var continueButton = BindingPathWalker.FindLogical<ButtonBase>(panel)
+            .Single(b => BindingPathWalker.PathOf(b, ButtonBase.CommandProperty) == "ContinueCommand");
+        var reject = BindingPathWalker.FindLogical<ButtonBase>(panel)
+            .Single(b => BindingPathWalker.PathOf(b, ButtonBase.CommandProperty) == "RejectPlanCommand");
+        var nudgeBox = BindingPathWalker.FindLogical<Border>(panel)
+            .Single(b => BindingPathWalker.PathOf(b, UIElement.VisibilityProperty) == "ShowNudgeBox");
+        return (continueButton.Content, reject.Visibility, nudgeBox.Visibility);
     }
 
     private static (Visibility, bool, object?) ProbePauseButton(RunProgressPanel panel)

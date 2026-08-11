@@ -253,7 +253,7 @@
                  CanContinue hides it off both states; CanExecute also disables it (IsResuming) so a double-click
                  cannot launch two resumes. CanPause and CanContinue are mutually exclusive by construction, so at
                  most one of these two is ever on screen. -->
-            <ui:Button Content="{loc:Str Run_Action_Continue}" Command="{Binding ContinueCommand}"
+            <ui:Button Content="{Binding ContinueLabel}" Command="{Binding ContinueCommand}"
                        Appearance="Primary" Padding="15,7" Margin="0,0,6,0"
                        FontSize="{StaticResource RunMetaSize}" FontWeight="SemiBold"
                        Visibility="{Binding ShowContinueButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
@@ -263,6 +263,12 @@
                        Appearance="Secondary" Padding="13,6" Margin="0,0,6,0"
                        FontSize="{StaticResource RunMetaSize}" FontWeight="SemiBold"
                        Visibility="{Binding ShowDenyButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
+            <!-- Reject beside Approve on a plan-approval park; settles the run to Cancelled with no re-dispatch,
+                 so redirecting means an ordinary chat message afterward rather than an in-place edit. -->
+            <ui:Button Content="{loc:Str Run_Action_RejectPlan}" Command="{Binding RejectPlanCommand}"
+                       Appearance="Secondary" Padding="13,6" Margin="0,0,6,0"
+                       FontSize="{StaticResource RunMetaSize}" FontWeight="SemiBold"
+                       Visibility="{Binding ShowRejectPlanButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
             <!-- Batch 06 / plan D3: a failed or cancelled run's work is still in its workspace, so the panel
                  offers to publish it rather than promoting behind the user's back. A clean run never shows this —
                  it promoted before it was marked complete. -->
@@ -314,13 +320,13 @@
         </StackPanel>
 
         <!-- ==================== Region D · steering note ==================== -->
-        <!-- Batch 08 D4. Offered only while a resume is available — CanContinue covers both the budget-paused and
-             the user-paused case. SENSITIVE (user content): bound only, never logged; Continue() carries it to the
+        <!-- Batch 08 D4. Offered only while a resume is available, and never on a plan-approval park — see
+             ShowNudgeBox. SENSITIVE (user content): bound only, never logged; Continue() carries it to the
              resume service and this panel never does. -->
         <Border Margin="14,12,14,4" Padding="10,9" CornerRadius="7" BorderThickness="1"
                 Background="{DynamicResource PiaAccentSoftBrush}"
                 BorderBrush="{DynamicResource AccentBorderBrush}"
-                Visibility="{Binding ShowContinueButton, Converter={StaticResource BooleanToVisibilityConverter}}">
+                Visibility="{Binding ShowNudgeBox, Converter={StaticResource BooleanToVisibilityConverter}}">
           <StackPanel>
             <TextBlock Text="{loc:Str Run_Nudge_Label}" Margin="0,0,0,6"
                        FontSize="{StaticResource RunMicroSize}" FontWeight="SemiBold"
