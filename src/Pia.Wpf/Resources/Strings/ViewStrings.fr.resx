@@ -983,6 +983,8 @@
   <data name="Run_Action_Continue" xml:space="preserve"><value>Continuer</value></data>
   <data name="Run_Action_Approve" xml:space="preserve"><value>Autoriser</value></data>
   <data name="Run_Action_Deny" xml:space="preserve"><value>Refuser</value></data>
+  <data name="Run_Action_ApprovePlan" xml:space="preserve"><value>Approuver</value></data>
+  <data name="Run_Action_RejectPlan" xml:space="preserve"><value>Rejeter</value></data>
   <data name="Run_Action_Pause" xml:space="preserve"><value>Mettre en pause</value></data>
   <data name="Run_Action_Pausing" xml:space="preserve"><value>Mise en pause…</value></data>
   <data name="Run_Action_Publish" xml:space="preserve"><value>Publier les fichiers</value></data>

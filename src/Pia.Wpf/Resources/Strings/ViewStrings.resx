@@ -950,6 +950,9 @@
   <!-- The approve/deny pair a tool-approval park offers beside Continue. -->
   <data name="Run_Action_Approve" xml:space="preserve"><value>Allow</value></data>
   <data name="Run_Action_Deny" xml:space="preserve"><value>Deny</value></data>
+  <!-- The plan-approval pair. Separate from Run_Action_Approve above, which is the Flow's tool-approval "Allow". -->
+  <data name="Run_Action_ApprovePlan" xml:space="preserve"><value>Approve</value></data>
+  <data name="Run_Action_RejectPlan" xml:space="preserve"><value>Reject</value></data>
   <!-- Batch 08 G8: the header Pause button and its in-flight label. -->
   <data name="Run_Action_Pause" xml:space="preserve"><value>Pause</value></data>
   <data name="Run_Action_Pausing" xml:space="preserve"><value>Pausing…</value></data>
