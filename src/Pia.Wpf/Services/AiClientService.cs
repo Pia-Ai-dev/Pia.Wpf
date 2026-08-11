@@ -870,7 +870,8 @@ public class AiClientService : IAiClientService
     public async Task<AiCompletionResult> SendRequestAsync(
             AiProvider provider,
             string prompt,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            string? mode = null)
     {
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
         var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
@@ -886,7 +887,7 @@ public class AiClientService : IAiClientService
 
             var handler = _handlers.Get(provider.ProviderType);
             var httpClient = CreateAiHttpClient();
-            var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, personaModelType: null, linkedCts.Token);
+            var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: mode, managedPersonaId: null, personaModelType: null, linkedCts.Token);
 
             var messages = new[]
             {

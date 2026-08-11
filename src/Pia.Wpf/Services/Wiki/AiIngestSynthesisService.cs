@@ -93,7 +93,7 @@ public sealed class AiIngestSynthesisService : IIngestSynthesizer
     {
         if (!tokenizationEnabled)
         {
-            return await _aiClient.SendRequestAsync(provider, prompt, ct);
+            return await _aiClient.SendRequestAsync(provider, prompt, ct, mode: nameof(WindowMode.Assistant));
         }
 
         var tokenMap = _tokenMapFactory();
@@ -111,7 +111,7 @@ public sealed class AiIngestSynthesisService : IIngestSynthesizer
         AiCompletionResult result;
         try
         {
-            result = await _aiClient.SendRequestAsync(provider, prompt, ct);
+            result = await _aiClient.SendRequestAsync(provider, prompt, ct, mode: nameof(WindowMode.Assistant));
         }
         finally
         {

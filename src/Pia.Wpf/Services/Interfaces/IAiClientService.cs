@@ -33,7 +33,12 @@ public delegate Task<object?> ToolCallHandler(FunctionCallContent call, ToolDisp
 
 public interface IAiClientService
 {
-    Task<AiCompletionResult> SendRequestAsync(AiProvider provider, string prompt, CancellationToken cancellationToken = default);
+    /// <param name="mode">
+    /// Relayed to the Pia Cloud transport as <c>X-Pia-Mode</c> so the server can pick the right model
+    /// catalog. Null ⇒ header omitted, which is what a caller with no window-mode context passes.
+    /// </param>
+    Task<AiCompletionResult> SendRequestAsync(
+        AiProvider provider, string prompt, CancellationToken cancellationToken = default, string? mode = null);
 
     IAsyncEnumerable<string> StreamChatCompletionAsync(
         IList<ChatMessage> messages,

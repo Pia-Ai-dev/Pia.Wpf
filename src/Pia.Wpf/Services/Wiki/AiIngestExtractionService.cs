@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Pia.Logging;
+using Pia.Models;
 using Pia.Services.Interfaces;
 
 namespace Pia.Services.Wiki;
@@ -67,7 +68,7 @@ public sealed class AiIngestExtractionService : IIngestExtractor
             "person|organization|product|concept|regulation|technology|other}. JSON only.\n\n" +
             Truncate(content);
 
-        var result = await _aiClient.SendRequestAsync(provider, prompt, ct);
+        var result = await _aiClient.SendRequestAsync(provider, prompt, ct, mode: nameof(WindowMode.Assistant));
         var topics = ParseTopics(result.Text);
         _logger.SensitiveDebug("Ingest discovered {Count} topics from model output", topics.Count);
         return topics;

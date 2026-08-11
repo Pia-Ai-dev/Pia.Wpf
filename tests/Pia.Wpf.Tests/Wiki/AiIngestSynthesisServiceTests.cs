@@ -104,6 +104,24 @@ public class AiIngestSynthesisServiceTests
             [("sources/a.md", "Alice Anderson leads the project.")], [], TestContext.Current.CancellationToken);
 
         Assert.Equal("Plain body about Alice Anderson.", page.Body);
+        Assert.Equal(nameof(WindowMode.Assistant), aiClient.LastMode);
+    }
+
+    [Fact]
+    public async Task SynthesizeAsync_sends_assistant_mode_when_tokenization_enabled()
+    {
+        // Regression: the server picks the model catalog off X-Pia-Mode, so ingest must send it too —
+        // otherwise re-ingest silently routes to whatever model the server defaults to.
+        var aiClient = new StubAiClient("SUMMARY: s.\n\nbody");
+        var svc = new AiIngestSynthesisService(
+            aiClient, new SingleProviderService(), NewEmptyTokenMap,
+            NewSettings(tokenizationEnabled: true),
+            NullLogger<AiIngestSynthesisService>.Instance);
+
+        await svc.SynthesizeAsync("Acme", "organization", "charter",
+            [("sources/a.md", "raw")], [], TestContext.Current.CancellationToken);
+
+        Assert.Equal(nameof(WindowMode.Assistant), aiClient.LastMode);
     }
 
     [Fact]
@@ -244,10 +262,13 @@ public class AiIngestSynthesisServiceTests
         public StubAiClient(string response) => _response = response;
 
         public string? LastPrompt { get; private set; }
+        public string? LastMode { get; private set; }
 
-        public Task<AiCompletionResult> SendRequestAsync(AiProvider provider, string prompt, CancellationToken cancellationToken = default)
+        public Task<AiCompletionResult> SendRequestAsync(
+            AiProvider provider, string prompt, CancellationToken cancellationToken = default, string? mode = null)
         {
             LastPrompt = prompt;
+            LastMode = mode;
             return Task.FromResult(new AiCompletionResult(_response, 0));
         }
 
@@ -270,7 +291,8 @@ public class AiIngestSynthesisServiceTests
 
     private sealed class ThrowingAiClient : IAiClientService
     {
-        public Task<AiCompletionResult> SendRequestAsync(AiProvider provider, string prompt, CancellationToken cancellationToken = default)
+        public Task<AiCompletionResult> SendRequestAsync(
+            AiProvider provider, string prompt, CancellationToken cancellationToken = default, string? mode = null)
             => throw new InvalidOperationException("Should not be called when no provider is configured.");
 
         public IAsyncEnumerable<string> StreamChatCompletionAsync(IList<ChatMessage> messages, AiProvider provider, string? mode = null, CancellationToken cancellationToken = default)

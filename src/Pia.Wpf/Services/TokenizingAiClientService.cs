@@ -74,13 +74,14 @@ public class TokenizingAiClientService : IAiClientService
         return _enabled.Value;
     }
 
-    public async Task<AiCompletionResult> SendRequestAsync(AiProvider provider, string prompt, CancellationToken cancellationToken = default)
+    public async Task<AiCompletionResult> SendRequestAsync(
+        AiProvider provider, string prompt, CancellationToken cancellationToken = default, string? mode = null)
     {
         if (!await IsEnabledAsync())
-            return await _inner.SendRequestAsync(provider, prompt, cancellationToken);
+            return await _inner.SendRequestAsync(provider, prompt, cancellationToken, mode);
 
         var tokenizedPrompt = TryGetTokenMapService()!.TokenizeStructuredResult(prompt);
-        var result = await _inner.SendRequestAsync(provider, tokenizedPrompt, cancellationToken);
+        var result = await _inner.SendRequestAsync(provider, tokenizedPrompt, cancellationToken, mode);
         var detokenized = TryGetTokenMapService()!.Detokenize(result.Text);
         _logger.LogDebug("Tokenizing.SendRequest: pre-detok length={Pre}, post-detok length={Post}",
             result.Text.Length, detokenized.Length);
