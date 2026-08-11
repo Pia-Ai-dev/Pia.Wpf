@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
@@ -98,7 +99,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
     /// <summary>Stamped per run on the raising thread, so an Approve landing while the park's own plan-approval
     /// read is still in flight is not undone by that read's stale continuation — a dead composer, unrecoverable.</summary>
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, long> _runEventSeq = new();
+    private readonly ConcurrentDictionary<Guid, long> _runEventSeq = new();
     private long _runEventSeqNext;
 
     private long _activationCounter;
@@ -327,13 +328,13 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                     session.SetForeignRunActive(foreign);
                 }
 
-                // Narrower than ForeignRunActive above, and the event carries no pause reason — so only the
-                // WaitingForInput transitions pay for a read, and only when a session is holding this run.
-                // Deliberately after the loop and without ConfigureAwait(false): the recompute above stays
-                // synchronous, and _allSessions is UI-thread-only.
+                // Narrower than ForeignRunActive above, and the event carries no pause reason — so only a
+                // WaitingForInput transition on a run some session actually holds pays for a read.
                 if (!_allSessions.Any(s => s.ActiveRunId == e.RunId))
                     return;
 
+                // After the loop so that recompute stays synchronous, and no ConfigureAwait(false) because
+                // _allSessions is UI-thread-only.
                 var isPlanApprovalPark = e.State == AgentRunState.WaitingForInput
                     && await IsPlanApprovalParkedAsync(e.RunId);
                 if (_disposed || !_runEventSeq.TryGetValue(e.RunId, out var latestSeq) || latestSeq != seq)
