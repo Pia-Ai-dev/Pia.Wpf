@@ -386,6 +386,11 @@ public class ChatSessionManagerTests
 
         await sut.RestoreActiveRunAsync(session);
 
+        // ActivateAsync also restores fire-and-forget, so that call can win the attach and leave this one
+        // early-returning while its own post-attach reason read is still in flight.
+        for (var i = 0; i < 200 && !session.PlanApprovalParkActive; i++)
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+
         Assert.True(session.PlanApprovalParkActive);
         Assert.False(session.ForeignRunActive); // still the parked "continue in chat" shape for THAT flag
     }
