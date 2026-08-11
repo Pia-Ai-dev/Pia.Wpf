@@ -338,7 +338,8 @@ public sealed class LiveTurnExecutorPlannedRunTests
         using var h = new Harness();
         var run = await h.NewRunAsync("goal");
         var planner = new FakePlanner();
-        planner.Plans.Enqueue(new PlanResult(MakeSteps("s1", "s2", "s3", "s4"), false));
+        // Two steps, not more: a Live plan of three or more parks for approval before any step runs.
+        planner.Plans.Enqueue(new PlanResult(MakeSteps("s1", "s2"), false));
 
         var session = CreateSession();
         SeedSessionForPlannedRun(session, "goal");
@@ -353,15 +354,15 @@ public sealed class LiveTurnExecutorPlannedRunTests
 
         var live = BuildLiveExecutor(session, _ => false);
         var orchestrator = new AgentRunOrchestrator(h.Runs, planner, new FakeVerifier(), NullLogger<AgentRunOrchestrator>.Instance);
-        var budget = new RunProfile(MaxSteps: 2, MaxReplans: 0, WallClock: TimeSpan.FromMinutes(20));
+        var budget = new RunProfile(MaxSteps: 1, MaxReplans: 0, WallClock: TimeSpan.FromMinutes(20));
 
         await orchestrator.RunAsync(run, live, Persona(), Provider(), budget, session.Cts!.Token);
 
         var parked = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.WaitingForInput, parked!.State);
 
-        // One persist request per completed step, each seeing the transcript grown by that step's reply.
-        Assert.Equal(new[] { 2, 3 }, persistSnapshots.ToArray());
+        // One persist request per completed step, seeing the transcript grown by that step's reply.
+        Assert.Equal(new[] { 2 }, persistSnapshots.ToArray());
 
         // Non-terminal: no TurnCompleted, no Completed/Error — the run is parked, not finished.
         Assert.Equal(0, completedCount);

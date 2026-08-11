@@ -150,6 +150,66 @@ public sealed class AgentRunOrchestratorArmTests : IDisposable
     }
 
     [Fact]
+    public async Task AFirstPlanOfThreeOrMoreSteps_ParksForApproval_WhenTheExecutorSupportsIt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        var executor = new StubExecutor { SupportsPlanApproval = true };
+
+        await RunAsync(run, new StubPlanner(Plan("A", "B", "C")), ct, executor);
+
+        var settled = (await _runs.GetAsync(run.Id, ct))!;
+        Assert.Equal(AgentRunState.WaitingForInput, settled.State);
+        Assert.Equal(AgentRunOrchestrator.PlanApprovalReason, RunPauseEnvelope.ReadReason(settled));
+        // Nothing ran — the park fires before the drain loop's first iteration.
+        Assert.Equal(0, executor.StepTurns);
+    }
+
+    [Fact]
+    public async Task AFirstPlanOfTwoSteps_DoesNotParkForApproval_EvenWhenTheExecutorSupportsIt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        var executor = new StubExecutor { SupportsPlanApproval = true };
+
+        await RunAsync(run, new StubPlanner(Plan("A", "B")), ct, executor);
+
+        var settled = (await _runs.GetAsync(run.Id, ct))!;
+        Assert.NotEqual(AgentRunOrchestrator.PlanApprovalReason, RunPauseEnvelope.ReadReason(settled));
+        Assert.Equal(AgentRunState.Completed, settled.State);
+    }
+
+    [Fact]
+    public async Task AFirstPlanOfThreeSteps_DoesNotParkForApproval_WhenTheExecutorDoesNotSupportIt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        var executor = new StubExecutor(); // SupportsPlanApproval defaults false — the headless shape
+
+        await RunAsync(run, new StubPlanner(Plan("A", "B", "C")), ct, executor);
+
+        var settled = (await _runs.GetAsync(run.Id, ct))!;
+        Assert.NotEqual(AgentRunOrchestrator.PlanApprovalReason, RunPauseEnvelope.ReadReason(settled));
+        Assert.Equal(AgentRunState.Completed, settled.State);
+    }
+
+    [Fact]
+    public async Task AReplanAfterAStepFailure_NeverParksForApproval_EvenThoughItHasThreeSteps()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        var executor = new StubExecutor { SupportsPlanApproval = true, FailFirstStep = true };
+        // The first plan stays under the gate's threshold on its own, so only the REPLAN path is under test.
+        var planner = new StubPlanner(Plan("A"), replan: Plan("D", "E", "F"));
+
+        await RunAsync(run, planner, ct, executor);
+
+        var settled = (await _runs.GetAsync(run.Id, ct))!;
+        Assert.NotEqual(AgentRunOrchestrator.PlanApprovalReason, RunPauseEnvelope.ReadReason(settled));
+        Assert.Equal(AgentRunState.Completed, settled.State);
+    }
+
+    [Fact]
     public void SupportsPlanApproval_DefaultsFalseForAnExecutorThatDoesNotOverrideIt()
     {
         IAgentTurnExecutor executor = new StubExecutor();
@@ -192,13 +252,13 @@ public sealed class AgentRunOrchestratorArmTests : IDisposable
         })],
         false);
 
-    private sealed class StubPlanner(PlanResult plan) : IAgentPlanner
+    private sealed class StubPlanner(PlanResult plan, PlanResult? replan = null) : IAgentPlanner
     {
         public Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
             => Task.FromResult(plan);
 
         public Task<PlanResult> ReplanAsync(RunContext ctx, string? failure, Persona persona, AiProvider provider, CancellationToken ct)
-            => Task.FromResult(PlanResult.Fallback);
+            => Task.FromResult(replan ?? PlanResult.Fallback);
     }
 
     private sealed class AcceptingVerifier : IAgentVerifier
@@ -215,6 +275,8 @@ public sealed class AgentRunOrchestratorArmTests : IDisposable
 
         public bool SupportsPlanApproval { get; init; }
 
+        public bool FailFirstStep { get; init; }
+
         public int StepTurns { get; private set; }
 
         public int FallbackTurns { get; private set; }
@@ -228,8 +290,9 @@ public sealed class AgentRunOrchestratorArmTests : IDisposable
         public Task<StepTurnResult> ExecuteStepAsync(AgentRun run, AgentStep step, RunContext ctx, CancellationToken ct)
         {
             StepTurns++;
+            var failThisOne = FailFirstStep && StepTurns == 1;
             return Task.FromResult(new StepTurnResult(
-                Succeeded: true, Cancelled: false, Error: null, VisibleText: "done", Usage: null,
+                Succeeded: !failThisOne, Cancelled: false, Error: failThisOne ? "boom" : null, VisibleText: "done", Usage: null,
                 FirstMessageId: Guid.NewGuid(), LastMessageId: Guid.NewGuid(),
                 ApprovalRequiredTool: ApprovalRequiredTool, UserInputQuestion: UserInputQuestion));
         }

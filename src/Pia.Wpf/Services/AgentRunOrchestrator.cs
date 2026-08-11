@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -231,6 +232,14 @@ public sealed class AgentRunOrchestrator
                 }
 
                 await SafeReplaceSteps(run.Id, plan.Steps, cts.Token).ConfigureAwait(false);
+
+                // First plan only: a replan-after-failure and the verify-fail replan both live outside this
+                // `if`, and a resume-without-replan never enters it.
+                if (plan.Steps.Count >= 3 && executor.SupportsPlanApproval)
+                {
+                    await ParkForPlanApprovalAsync(executor, run, ctx, persona, plan.Steps, cts.Token).ConfigureAwait(false);
+                    return;
+                }
             }
             // Resume: TryBeginResumeAsync already CAS'd State→Running; the drain loop re-sets Running per
             // step. The persisted Pending remainder drives the loop — no re-plan, no step wipe.
@@ -604,6 +613,39 @@ public sealed class AgentRunOrchestrator
 
         // A resume re-enters planning via TryEnterClarificationRePlanAsync; the answer persists in
         // AgentRuns.ClarificationsJson since the resume claim nulls ExtraJson.
+    }
+
+    /// <summary>
+    /// Park the run before its first step so a human can Approve or Reject the plan. No PinRange/step handling —
+    /// nothing has run yet, mirroring <see cref="ParkForUngroundableGoalAsync"/>. The plan is also posted into the
+    /// run's own chat, so it survives in scrollback after the panel's Approve/Reject card is gone.
+    /// </summary>
+    private async Task ParkForPlanApprovalAsync(
+        IAgentTurnExecutor executor, AgentRun run, RunContext ctx, Persona persona,
+        IReadOnlyList<AgentStep> steps, CancellationToken ct)
+    {
+        _logger.LogInformation(
+            "Run {RunId}: first plan has {StepCount} step(s) → parking {Reason} for approval",
+            run.Id, steps.Count, PlanApprovalReason);
+
+        await SafePause(run.Id, ct, reason: PlanApprovalReason).ConfigureAwait(false);
+        // Non-terminal executor release, same as every other park: clears IsStreaming so Send/RunInBackground
+        // re-enable while the run sits parked.
+        await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
+
+        var summary = BuildPlanSummaryText(steps);
+        await PostAndMirrorClarificationQuestionAsync(executor, run, ctx, persona, summary).ConfigureAwait(false);
+    }
+
+    /// <summary>Step titles only — intent/artifact text is longer than what a person needs to decide Approve vs
+    /// Reject.</summary>
+    private static string BuildPlanSummaryText(IReadOnlyList<AgentStep> steps)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Proposed plan — review the steps below, then Approve or Reject in the run panel:");
+        foreach (var step in steps)
+            sb.AppendLine($"{step.Ordinal + 1}. {step.Title}");
+        return sb.ToString().TrimEnd();
     }
 
     /// <summary>the planner degraded, so the goal runs as ONE ordinary chat turn and the run settles here —

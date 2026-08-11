@@ -166,7 +166,7 @@ git commit -m "Apply the group-by-file rule to the replan prompt too"
 **Files:**
 - Modify: `src/Pia.Wpf/Services/AgentRunOrchestrator.cs:38-70` (reason-token constants block)
 
-- [ ] **Step 1: Add the constant beside its siblings**
+- [x] **Step 1: Add the constant beside its siblings**
 
 In `AgentRunOrchestrator.cs`, immediately after the `UnverifiedTruncationReason` constant (line 70), add:
 
@@ -186,7 +186,7 @@ In `AgentRunOrchestrator.cs`, immediately after the `UnverifiedTruncationReason`
     internal const string PlanApprovalReason = "plan-approval";
 ```
 
-- [ ] **Step 2: Build to confirm no syntax error**
+- [x] **Step 2: Build to confirm no syntax error**
 
 ```bash
 dotnet build src/Pia.Wpf/Pia.Wpf.csproj
@@ -194,7 +194,7 @@ dotnet build src/Pia.Wpf/Pia.Wpf.csproj
 
 Expected: `0 Error(s)`. (No test yet — this constant has no behavior until Task 2.3 wires it in; a bare unused-`internal const` does not warn in this project's configuration, but confirm the build is clean before moving on.)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/Pia.Wpf/Services/AgentRunOrchestrator.cs
@@ -208,7 +208,7 @@ git commit -m "Add the plan-approval pause reason token"
 - Modify: `src/Pia.Wpf/ViewModels/Models/LiveTurnExecutor.cs` (override)
 - Test: `tests/Pia.Wpf.Tests/Services/AgentRunOrchestratorArmTests.cs` (or wherever a minimal fake `IAgentTurnExecutor` already exists — reuse `StubExecutor` at `AgentRunOrchestratorArmTests.cs:203` if it fits, rather than writing a new fake)
 
-- [ ] **Step 1: Add the interface member**
+- [x] **Step 1: Add the interface member**
 
 In `IAgentTurnExecutor.cs`, add this member to the interface, placed after `RunGraceTurnAsync` (which is the interface's own precedent for a defaulted, non-authority-bearing member — see its doc comment at lines 249-256):
 
@@ -221,11 +221,11 @@ In `IAgentTurnExecutor.cs`, add this member to the interface, placed after `RunG
     bool SupportsPlanApproval => false;
 ```
 
-- [ ] **Step 2: Fix the stale "twelve implementers" doc comment while touching this file**
+- [x] **Step 2: Fix the stale "twelve implementers" doc comment while touching this file**
 
 The doc comment on `RunGraceTurnAsync` (around `IAgentTurnExecutor.cs:249-256`) currently reads "twelve types implement this interface (two production, ten hand-written test fakes)". The actual current count is 18 (2 production + 16 test fakes) — confirmed by grep across `src/` and `tests/`. Update the comment's numbers to match (twelve → eighteen, ten → sixteen) so the next reader of this file is not misled by a doc comment this batch is already touching.
 
-- [ ] **Step 3: Override in `LiveTurnExecutor`**
+- [x] **Step 3: Override in `LiveTurnExecutor`**
 
 In `src/Pia.Wpf/ViewModels/Models/LiveTurnExecutor.cs`, add near the top of the class body (after the constructor, before `BeginRunAsync`, mirroring where a simple interface member belongs relative to the existing `MirrorClarificationQuestionAsync` override further down):
 
@@ -234,11 +234,11 @@ In `src/Pia.Wpf/ViewModels/Models/LiveTurnExecutor.cs`, add near the top of the 
     public bool SupportsPlanApproval => true;
 ```
 
-- [ ] **Step 4: Confirm `HeadlessTurnExecutor` needs no change**
+- [x] **Step 4: Confirm `HeadlessTurnExecutor` needs no change**
 
 Open `src/Pia.Wpf/Services/HeadlessTurnExecutor.cs` and confirm it does NOT already declare a `SupportsPlanApproval` member (it shouldn't — grep first). Leave it untouched; it inherits the interface default (`false`).
 
-- [ ] **Step 5: Add a settable `SupportsPlanApproval` to `StubExecutor`, and a test asserting the default**
+- [x] **Step 5: Add a settable `SupportsPlanApproval` to `StubExecutor`, and a test asserting the default**
 
 Task 2.3 needs an `IAgentTurnExecutor` fake it can flip `SupportsPlanApproval` on for, and none of the 16 existing test fakes in the suite expose one today (they all silently take the interface default). In `AgentRunOrchestratorArmTests.cs`, add a settable auto-property to `StubExecutor` (line 203), mirroring its existing `ApprovalRequiredTool { get; init; }`/`UserInputQuestion { get; init; }` pattern, defaulted `false` so every other test using this fake is unaffected:
 
@@ -257,7 +257,7 @@ public void SupportsPlanApproval_DefaultsFalseForAnExecutorThatDoesNotOverrideIt
 }
 ```
 
-- [ ] **Step 6: Write a test asserting `LiveTurnExecutor` overrides it true**
+- [x] **Step 6: Write a test asserting `LiveTurnExecutor` overrides it true**
 
 Find `LiveTurnExecutor`'s existing test construction (grep `new LiveTurnExecutor(` under `tests/Pia.Wpf.Tests/`) and add, in the nearest matching test file:
 
@@ -270,13 +270,13 @@ public void LiveTurnExecutor_SupportsPlanApproval()
 }
 ```
 
-- [ ] **Step 7: Run both new tests, confirm pass**
+- [x] **Step 7: Run both new tests, confirm pass**
 
 ```bash
 dotnet test -- --filter-method "*SupportsPlanApproval*"
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/Pia.Wpf/Services/Interfaces/IAgentTurnExecutor.cs src/Pia.Wpf/ViewModels/Models/LiveTurnExecutor.cs tests/Pia.Wpf.Tests/Services/AgentRunOrchestratorArmTests.cs
@@ -289,7 +289,7 @@ git commit -m "Add IAgentTurnExecutor.SupportsPlanApproval; Live overrides true"
 - Modify: `src/Pia.Wpf/Services/AgentRunOrchestrator.cs` (new private method + `RunAsync` insertion)
 - Test: `tests/Pia.Wpf.Tests/Services/AgentRunOrchestratorTests.cs` (or `AgentRunOrchestratorArmTests.cs` — whichever already tests `ParkForUngroundableGoalAsync`/`ParkForUserInputAsync`-style behavior; grep first)
 
-- [ ] **Step 1: Add the new park method**
+- [x] **Step 1: Add the new park method**
 
 `ParkForPlanApprovalAsync` parks with NO step in flight (the gate fires right after `SafeReplaceSteps`, before any step runs), so it follows `ParkForUngroundableGoalAsync`'s shape (no `PinRangeAsync`/`ReturnStepToPendingAsync` — nothing has run yet), not `ParkForUserInputAsync`'s. Add this new private method near `ParkForUngroundableGoalAsync` (around line 603, right after it):
 
@@ -338,7 +338,7 @@ git commit -m "Add IAgentTurnExecutor.SupportsPlanApproval; Live overrides true"
 
 Add `using System.Text;` at the top of the file if it is not already present (check first — the file already uses `JsonSerializer` etc., so `System.Text.Json` is present; `System.Text` for `StringBuilder` may or may not already be implicitly available via a global usings file — check `src/Pia.Wpf/GlobalUsings.cs` or similar before adding a duplicate).
 
-- [ ] **Step 2: Wire the gate into `RunAsync`**
+- [x] **Step 2: Wire the gate into `RunAsync`**
 
 The exact current text at `AgentRunOrchestrator.cs` (from the block ending in `await SafeReplaceSteps(...)` through `var replans = 0;`) is:
 
@@ -376,7 +376,7 @@ Change it to:
 
 This chunk uses `AgentRunOrchestratorArmTests.cs`'s REAL existing fixtures throughout — `Plan(params string[] titles)` (line 181, one step per title, `Intent = "do " + title`), the `RunAsync(run, planner, ct, executor, profile, steering)` helper (line 167), `StubPlanner(PlanResult plan)` (line 188), and `StubExecutor` (line 203) — not the fabricated `PlanStepArg`/`BuildStepsFromArgs` from an earlier draft of this plan. `StubExecutor` needs two more capabilities added for this chunk's tests (Step 3 below covers both); do this BEFORE writing Steps 4-7's tests, since they depend on it.
 
-- [ ] **Step 3: Extend `StubExecutor` and `StubPlanner` for this chunk's tests**
+- [x] **Step 3: Extend `StubExecutor` and `StubPlanner` for this chunk's tests**
 
 `StubExecutor` (line 203) already has settable `ApprovalRequiredTool`/`UserInputQuestion`/`SupportsPlanApproval` (the last one added in Task 2.2 Step 5). Add one more settable knob so a test can make the first step fail (needed for Step 7's replan test):
 
@@ -411,7 +411,7 @@ and change `ExecuteStepAsync`'s body to:
     }
 ```
 
-- [ ] **Step 4: Write a failing test for the gate firing**
+- [x] **Step 4: Write a failing test for the gate firing**
 
 ```csharp
 [Fact]
@@ -431,7 +431,7 @@ public async Task AFirstPlanOfThreeOrMoreSteps_ParksForApproval_WhenTheExecutorS
 }
 ```
 
-- [ ] **Step 5: Write a failing test for the gate NOT firing below threshold**
+- [x] **Step 5: Write a failing test for the gate NOT firing below threshold**
 
 ```csharp
 [Fact]
@@ -449,7 +449,7 @@ public async Task AFirstPlanOfTwoSteps_DoesNotParkForApproval_EvenWhenTheExecuto
 }
 ```
 
-- [ ] **Step 6: Write a failing test for the gate NOT firing when the executor doesn't support it**
+- [x] **Step 6: Write a failing test for the gate NOT firing when the executor doesn't support it**
 
 ```csharp
 [Fact]
@@ -467,7 +467,7 @@ public async Task AFirstPlanOfThreeSteps_DoesNotParkForApproval_WhenTheExecutorD
 }
 ```
 
-- [ ] **Step 7: Write a failing test for the gate NOT re-firing on a replan-after-failure**
+- [x] **Step 7: Write a failing test for the gate NOT re-firing on a replan-after-failure**
 
 This is the most important regression test — it locks in "first plan only", using an executor that DOES support plan approval throughout, so the only thing that can explain a missing park on the replan is the "first plan only" gating logic itself (not a executor-capability confound, which Step 6 already covers separately):
 
@@ -492,7 +492,7 @@ public async Task AReplanAfterAStepFailure_NeverParksForApproval_EvenThoughItHas
 }
 ```
 
-- [ ] **Step 8: Run all four new tests, confirm each fails before the Step 2 wiring and passes after**
+- [x] **Step 8: Run all four new tests, confirm each fails before the Step 2 wiring and passes after**
 
 ```bash
 dotnet test -- --filter-method "*ParksForApproval*" --filter-method "*DoesNotParkForApproval*" --filter-method "*NeverParksForApproval*"
@@ -500,7 +500,7 @@ dotnet test -- --filter-method "*ParksForApproval*" --filter-method "*DoesNotPar
 
 If chaining multiple `--filter-method` flags this way is rejected by the runner, run them one at a time instead — do not fall back to the unverified `--filter "FullyQualifiedName~..."` form (see Chunk 1's note on why that form does not work in this repo).
 
-- [ ] **Step 9: Run the full gate**
+- [x] **Step 9: Run the full gate**
 
 ```bash
 dotnet test
@@ -508,7 +508,7 @@ dotnet test
 
 Expected: `failed: 0`.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add src/Pia.Wpf/Services/AgentRunOrchestrator.cs tests/Pia.Wpf.Tests/Services/AgentRunOrchestratorArmTests.cs
