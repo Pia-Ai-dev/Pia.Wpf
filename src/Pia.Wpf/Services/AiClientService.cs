@@ -387,6 +387,9 @@ public class AiClientService : IAiClientService
 
             if (toolCalls.Count > 0 && toolHandler is not null)
             {
+                // Yielded before the dispatch (which awaits real tool execution and can throw) so
+                // consumers know a fresh model turn is coming even if the dispatch itself fails.
+                yield return new ToolRoundCompleted();
                 await DispatchToolCallsAsync(toolCalls, response, workingMessages, toolHandler, round);
                 // Continue the loop to get the AI's response after tool execution
                 continue;

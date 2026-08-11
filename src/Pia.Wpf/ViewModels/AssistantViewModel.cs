@@ -1667,6 +1667,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         var rawBuffer = new StringBuilder();
         var lastVisibleLength = 0;
+        // A tool round just completed; the next TextDelta starts a fresh model turn built on the
+        // tool result, not a continuation of whatever is already in rawBuffer.
+        var pendingRoundBreak = false;
 
         // Any selected persona travels as X-Pia-Persona, managed or not — the server maps an id it does
         // not know to null, so no IsManaged check belongs here.
@@ -1678,8 +1681,18 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             persona.ModelType,
             cancellationToken: cancellationToken))
         {
+            if (item is ToolRoundCompleted)
+            {
+                pendingRoundBreak = true;
+                continue;
+            }
+
             if (item is not TextDelta td)
                 continue;
+
+            if (pendingRoundBreak && rawBuffer.Length > 0)
+                rawBuffer.Append("\n\n");
+            pendingRoundBreak = false;
 
             rawBuffer.Append(td.Text);
             var (visible, _) = StreamThinkTagParser.Parse(rawBuffer.ToString());

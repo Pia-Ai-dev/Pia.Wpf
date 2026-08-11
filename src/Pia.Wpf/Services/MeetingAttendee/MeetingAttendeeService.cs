@@ -131,44 +131,63 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             settingsService,
             loggerFactory,
             provisionChromium: (progress, ct) => browserProvisioner.EnsureChromiumAsync(progress, ct),
-            createTranscription: async (speakerProgress, ct) =>
-            {
-                var settings = await settingsService.GetSettingsAsync().ConfigureAwait(false);
-                var log = loggerFactory.CreateLogger<MeetingAttendeeService>();
-                // Silero VAD + the sherpa engine are REQUIRED for transcription: build them outside any
-                // speaker try/catch so a failure here still propagates fatally (StartAsync → Error), as today.
-                var sileroPath = await LiveTranscriptionModels
-                    .EnsureSileroVadAsync(httpClientFactory, log, ct).ConfigureAwait(false);
-                var engine = await TranscriptionEngineFactory
-                    .CreateAsync(settings, httpClientFactory, downloadProgress: null, log, ct).ConfigureAwait(false);
-                // Diarization is an OPTIONAL enhancement: a missing/corrupt/404 speaker model degrades to
-                // null inside the helper (single-bubble behavior) and must NEVER fail meeting join. The
-                // progress is threaded ONLY here (the optional speaker model), surfacing the download dialog.
-                var speakerId = await TryCreateSpeakerIdentificationAsync(
-                    httpClientFactory, loggerFactory, settings, log, ct, speakerProgress).ConfigureAwait(false);
-                return (sileroPath, engine, speakerId);
-            },
+            createTranscription: CreateProductionTranscriptionFactory(settingsService, httpClientFactory, loggerFactory),
             sessionFactory: spec => new TeamsMeetingSession(
                 spec,
                 httpClientFactory,
                 loggerFactory.CreateLogger<TeamsMeetingSession>()),
             audioSourceFactory: null,
-            engineServiceFactory: async (source, sileroPath, engine, sink, speakerId, minDiarizationSamples, ct) =>
-            {
-                var svc = new LiveTranscriptionEngineService(
-                    TranscriptSpeaker.Them,
-                    source,
-                    sileroPath,
-                    engine,
-                    sink,
-                    loggerFactory.CreateLogger<LiveTranscriptionEngineService>(),
-                    speakerId,
-                    minDiarizationSamples);
-                await svc.StartAsync(ct).ConfigureAwait(false);
-                return svc;
-            },
+            engineServiceFactory: CreateEngineServiceFactory(loggerFactory),
             defaultBrowserResolver: defaultBrowserResolver)
     {
+    }
+
+    /// <summary>
+    /// Builds the real model/engine bootstrapper. Extracted so the DEBUG-only file-audio composition
+    /// in <c>Bootstrapper</c> can reuse the exact same Silero/STT/diarizer construction instead of a
+    /// second, divergent copy.
+    /// </summary>
+    internal static Func<IProgress<ModelDownloadProgress>?, CancellationToken, Task<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService? SpeakerId)>> CreateProductionTranscriptionFactory(
+        ISettingsService settingsService, IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory)
+    {
+        return async (speakerProgress, ct) =>
+        {
+            var settings = await settingsService.GetSettingsAsync().ConfigureAwait(false);
+            var log = loggerFactory.CreateLogger<MeetingAttendeeService>();
+            // Silero VAD + the sherpa engine are REQUIRED for transcription: build them outside any
+            // speaker try/catch so a failure here still propagates fatally (StartAsync → Error), as today.
+            var sileroPath = await LiveTranscriptionModels
+                .EnsureSileroVadAsync(httpClientFactory, log, ct).ConfigureAwait(false);
+            var engine = await TranscriptionEngineFactory
+                .CreateAsync(settings, httpClientFactory, downloadProgress: null, log, ct).ConfigureAwait(false);
+            // Diarization is an OPTIONAL enhancement: a missing/corrupt/404 speaker model degrades to
+            // null inside the helper (single-bubble behavior) and must NEVER fail meeting join. The
+            // progress is threaded ONLY here (the optional speaker model), surfacing the download dialog.
+            var speakerId = await TryCreateSpeakerIdentificationAsync(
+                httpClientFactory, loggerFactory, settings, log, ct, speakerProgress).ConfigureAwait(false);
+            return (sileroPath, engine, speakerId);
+        };
+    }
+
+    /// <summary>Builds the real engine-service factory. Extracted for the same reason as
+    /// <see cref="CreateProductionTranscriptionFactory"/>.</summary>
+    internal static Func<IAudioCaptureSource, string, ITranscriptionEngine, ChannelWriter<TranscriptUtterance>, ISpeakerIdentificationService?, int, CancellationToken, Task<IAsyncDisposable>> CreateEngineServiceFactory(
+        ILoggerFactory loggerFactory)
+    {
+        return async (source, sileroPath, engine, sink, speakerId, minDiarizationSamples, ct) =>
+        {
+            var svc = new LiveTranscriptionEngineService(
+                TranscriptSpeaker.Them,
+                source,
+                sileroPath,
+                engine,
+                sink,
+                loggerFactory.CreateLogger<LiveTranscriptionEngineService>(),
+                speakerId,
+                minDiarizationSamples);
+            await svc.StartAsync(ct).ConfigureAwait(false);
+            return svc;
+        };
     }
 
     /// <summary>

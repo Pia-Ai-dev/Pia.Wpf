@@ -25,6 +25,12 @@ public static class Bootstrapper
     public const string DefaultProductionServerUrl = "https://cloud.pia-ai.de";
     public const string ServerUrlEnvVar = "PIA_CLOUD_SERVER_URL";
 
+    // Dev-only hooks (see DebugFileAudioCaptureService): when set, the corresponding transcription
+    // service is wired to decode this recorded meeting file instead of live mic/loopback/Teams
+    // audio, so the real overlay UI can be exercised against a recording. DEBUG builds only.
+    public const string DebugDirectTranscriptionAudioFileEnvVar = "PIA_DEBUG_DIRECT_TRANSCRIPTION_AUDIO_FILE";
+    public const string DebugMeetingAttendeeAudioFileEnvVar = "PIA_DEBUG_MEETING_ATTENDEE_AUDIO_FILE";
+
     public static string ProductionServerUrl =>
         Environment.GetEnvironmentVariable(ServerUrlEnvVar) is { Length: > 0 } envUrl
             ? envUrl
@@ -575,7 +581,33 @@ public static class Bootstrapper
         // IMeetingSession is intentionally NOT container-registered (no parameterless seam).
         services.AddSingleton<Services.MeetingAttendee.IBrowserProvisioner, Services.MeetingAttendee.ChromiumProvisioner>();
         services.AddSingleton<Services.MeetingAttendee.IDefaultBrowserResolver, Services.MeetingAttendee.DefaultBrowserResolver>();
+#if DEBUG
+        var debugMeetingAttendeeAudioFile = Environment.GetEnvironmentVariable(DebugMeetingAttendeeAudioFileEnvVar);
+        if (!string.IsNullOrEmpty(debugMeetingAttendeeAudioFile))
+        {
+            services.AddSingleton<Services.MeetingAttendee.IMeetingAttendeeService>(sp =>
+                new Services.MeetingAttendee.MeetingAttendeeService(
+                    sp.GetRequiredService<ISettingsService>(),
+                    sp.GetRequiredService<ILoggerFactory>(),
+                    provisionChromium: (_, _) => Task.FromResult(string.Empty),
+                    createTranscription: Services.MeetingAttendee.MeetingAttendeeService.CreateProductionTranscriptionFactory(
+                        sp.GetRequiredService<ISettingsService>(),
+                        sp.GetRequiredService<IHttpClientFactory>(),
+                        sp.GetRequiredService<ILoggerFactory>()),
+                    sessionFactory: _ => new Services.MeetingAttendee.DebugNoOpMeetingSession(),
+                    audioSourceFactory: (_, _) => new Services.LiveTranscription.DebugFileAudioCaptureService(
+                        debugMeetingAttendeeAudioFile,
+                        sp.GetRequiredService<ILoggerFactory>().CreateLogger<Services.LiveTranscription.DebugFileAudioCaptureService>()),
+                    engineServiceFactory: Services.MeetingAttendee.MeetingAttendeeService.CreateEngineServiceFactory(
+                        sp.GetRequiredService<ILoggerFactory>())));
+        }
+        else
+        {
+            services.AddSingleton<Services.MeetingAttendee.IMeetingAttendeeService, Services.MeetingAttendee.MeetingAttendeeService>();
+        }
+#else
         services.AddSingleton<Services.MeetingAttendee.IMeetingAttendeeService, Services.MeetingAttendee.MeetingAttendeeService>();
+#endif
 
         // Direct transcription (in-session voice consent + live capture). Session-scoped consent
         // only (owner decision D-3/D-4): no persistent voice-profile store, no evidence retention worker.
@@ -592,7 +624,37 @@ public static class Bootstrapper
             Services.Consent.ConsentEvidenceStore.DefaultRootDirectory,
             sp.GetRequiredService<DpapiHelper>(),
             sp.GetRequiredService<ILogger<Services.Consent.ConsentEvidenceStore>>()));
+#if DEBUG
+        var debugDirectTranscriptionAudioFile = Environment.GetEnvironmentVariable(DebugDirectTranscriptionAudioFileEnvVar);
+        if (!string.IsNullOrEmpty(debugDirectTranscriptionAudioFile))
+        {
+            services.AddSingleton<IDirectTranscriptionService>(sp =>
+                new Services.LiveTranscription.DirectTranscriptionService(
+                    sp.GetRequiredService<ISettingsService>(),
+                    sp.GetRequiredService<ILoggerFactory>(),
+                    sp.GetRequiredService<Services.Consent.IConsentStateManager>(),
+                    sp.GetRequiredService<Services.Consent.INamedConsentClassifier>(),
+                    sp.GetRequiredService<Services.Consent.IConsentAuditLog>(),
+                    sp.GetRequiredService<Services.Consent.IConsentEvidenceStore>(),
+                    createTranscription: Services.LiveTranscription.DirectTranscriptionService.CreateProductionTranscriptionFactory(
+                        sp.GetRequiredService<ISettingsService>(),
+                        sp.GetRequiredService<IHttpClientFactory>(),
+                        sp.GetRequiredService<ILoggerFactory>()),
+                    micSourceFactory: () => new Services.LiveTranscription.MicAudioCaptureService(
+                        sp.GetRequiredService<ILoggerFactory>().CreateLogger<Services.LiveTranscription.MicAudioCaptureService>()),
+                    loopbackSourceFactory: () => new Services.LiveTranscription.DebugFileAudioCaptureService(
+                        debugDirectTranscriptionAudioFile,
+                        sp.GetRequiredService<ILoggerFactory>().CreateLogger<Services.LiveTranscription.DebugFileAudioCaptureService>()),
+                    engineServiceFactory: Services.LiveTranscription.DirectTranscriptionService.CreateEngineServiceFactory(
+                        sp.GetRequiredService<ILoggerFactory>())));
+        }
+        else
+        {
+            services.AddSingleton<IDirectTranscriptionService, Services.LiveTranscription.DirectTranscriptionService>();
+        }
+#else
         services.AddSingleton<IDirectTranscriptionService, Services.LiveTranscription.DirectTranscriptionService>();
+#endif
 
         // In-app toasts are re-implemented over Flow (design §7), retiring the hand-rolled Border toast.
         services.AddSingleton<INotificationService, Services.Flow.FlowNotificationService>();

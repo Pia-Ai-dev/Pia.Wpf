@@ -4,8 +4,7 @@ using Xunit;
 namespace Pia.Tests.Services;
 
 /// <summary>
-/// Characterizes the <c>&lt;think&gt;</c>-tag splitter extracted from AssistantViewModel,
-/// so the streaming visible/thinking separation stays behavior-identical.
+/// Characterizes the <c>&lt;think&gt;</c>-tag splitter extracted from AssistantViewModel.
 /// </summary>
 public class StreamThinkTagParserTests
 {
@@ -26,11 +25,23 @@ public class StreamThinkTagParserTests
     }
 
     [Fact]
-    public void Parse_ConcatenatesVisibleAroundThinkBlock()
+    public void Parse_SeparatesVisibleAroundThinkBlock()
     {
+        // Previously asserted "beforeafter" (glued, zero separator) — that was the bug: a model
+        // reopening <think> mid-answer fused the word before the tag to the word after it.
         var (visible, thinking) = StreamThinkTagParser.Parse("before<think>mid</think>after");
-        Assert.Equal("beforeafter", visible);
+        Assert.Equal("before after", visible);
         Assert.Equal("mid", thinking);
+    }
+
+    [Fact]
+    public void Parse_SeparatesVisibleAcrossTwoThinkBlocks()
+    {
+        // Reasoning re-opening after real answer text has already streamed (e.g. around a tool
+        // call): both visible runs must stay separated, not just the one around the first block.
+        var (visible, thinking) = StreamThinkTagParser.Parse("before<think>r1</think>middle<think>r2</think>after");
+        Assert.Equal("before middle after", visible);
+        Assert.Equal("r1r2", thinking);
     }
 
     [Fact]

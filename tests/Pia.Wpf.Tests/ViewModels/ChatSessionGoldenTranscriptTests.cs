@@ -189,6 +189,28 @@ public sealed class ChatSessionGoldenTranscriptTests
         Assert.Contains("more", msg.ThinkingContent);
     }
 
+    /// <summary>A tool round boundary: a preamble ends, a tool runs, reasoning continues, and the
+    /// answer resumes. Without a round-boundary separator, the second TextDelta lands directly
+    /// against the first — the reported "hinterÜber" glue.</summary>
+    [Fact]
+    public async Task ToolRoundCompleted_SeparatesContentAcrossRounds()
+    {
+        ReturnsStream(() => Stream(
+            new TextDelta("Ich schaue kurz nach, ob dort etwas hinter"),
+            new ToolRoundCompleted(),
+            new ReasoningDelta("checking the tool result"),
+            new TextDelta("Über Heinrich haben wir einen Eintrag."),
+            new Finished(null, "m")));
+        var session = CreateSession();
+
+        await session.RunTurnAsync(BuildRequest(session), CancellationToken.None);
+
+        var msg = session.Messages.Last(m => !m.IsUser);
+        Assert.Equal(
+            "Ich schaue kurz nach, ob dort etwas hinter\n\nÜber Heinrich haben wir einen Eintrag.",
+            msg.Content);
+    }
+
     [Fact]
     public async Task EmptyResponse_SynthesizesPlaceholder_RaisesEmptyRunFailed_TurnCompletedFalse()
     {

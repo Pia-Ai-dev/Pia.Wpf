@@ -332,6 +332,9 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         int? tokens = null;
         string? model = null;
         UsageDetails? usage = null;
+        // A tool round just completed; the next TextDelta starts a fresh model turn built on the
+        // tool result, not a continuation of whatever is already in textBuffer.
+        var pendingRoundBreak = false;
 
         // The persona rides on the setup (which every caller of this method already builds via
         // PrepareTurn), so no new parameter is needed here — HeadlessTurnExecutor calls this too.
@@ -345,7 +348,13 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             switch (item)
             {
                 case TextDelta td:
+                    if (pendingRoundBreak && textBuffer.Length > 0)
+                        textBuffer.Append("\n\n");
+                    pendingRoundBreak = false;
                     textBuffer.Append(td.Text);
+                    break;
+                case ToolRoundCompleted:
+                    pendingRoundBreak = true;
                     break;
                 case Finished finished:
                     if (finished.Usage is { } u)

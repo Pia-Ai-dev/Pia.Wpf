@@ -120,63 +120,82 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
             consentClassifier,
             auditLog,
             evidenceStore,
-            createTranscription: async ct =>
-            {
-                var settings = await settingsService.GetSettingsAsync().ConfigureAwait(false);
-                var log = loggerFactory.CreateLogger<DirectTranscriptionService>();
-
-                var sileroPath = await LiveTranscriptionModels
-                    .EnsureSileroVadAsync(httpClientFactory, log, ct).ConfigureAwait(false);
-                var engine = await TranscriptionEngineFactory
-                    .CreateAsync(settings, httpClientFactory, downloadProgress: null, log, ct).ConfigureAwait(false);
-
-                // Speaker-model failure is FATAL here (unlike the Teams attendee's degrade-to-null):
-                // without diarization there is no per-speaker consent gate, so a consent-gated session
-                // must not silently degrade to "one anonymous speaker". Let this throw.
-                var speakerModelPath = await LiveTranscriptionModels
-                    .EnsureSpeakerEmbeddingAsync(httpClientFactory, log, ct).ConfigureAwait(false);
-
-                // Always the MANUAL diarizer, regardless of settings.MeetingSmartSpeakerDetection: the
-                // adaptive diarizer retroactively reassigns labels, which is unsound under a consent
-                // gate (design §3.4) — a Granted label could be retroactively handed to an unconsented
-                // speaker, or vice versa, and neither direction can be undone once text has been emitted.
-                // ShouldUseAdaptiveDiarizer is a hardcoded `false` (see its doc); the guard below is
-                // unreachable by construction and exists only so a future edit cannot silently wire the
-                // adaptive diarizer back in without also touching (and breaking) its dedicated test.
-                if (ShouldUseAdaptiveDiarizer(settings))
-                    throw new NotSupportedException("Direct transcription requires the manual speaker diarizer.");
-
-                // maxSpeakers is deliberately 0 (unlimited) and NOT settings.MeetingMaxSpeakers: at the cap
-                // the diarizer FORCE-ASSIGNS a new speaker's segment to its best existing match with no
-                // similarity floor at all, so with the cap reached an unconsented speaker would come back
-                // wearing a Granted label and the gate would emit their speech. That trade (bounded label
-                // growth vs. a consent transfer) is acceptable for the Teams attendee, which has no
-                // per-speaker consent gate; it is not acceptable here. Over-splitting is the accepted
-                // limitation instead (design §5.4) — it fails closed.
-                var speakerId = new SpeakerIdentificationService(
-                    speakerModelPath,
-                    settings.SpeakerEmbeddingThreshold,
-                    maxSpeakers: 0,
-                    loggerFactory.CreateLogger<SpeakerIdentificationService>());
-
-                return (sileroPath, engine, (ISpeakerIdentificationService)speakerId, ComputeSttModelId(settings));
-            },
+            createTranscription: CreateProductionTranscriptionFactory(settingsService, httpClientFactory, loggerFactory),
             micSourceFactory: () => new MicAudioCaptureService(loggerFactory.CreateLogger<MicAudioCaptureService>()),
             loopbackSourceFactory: () => new LoopbackAudioCaptureService(loggerFactory.CreateLogger<LoopbackAudioCaptureService>()),
-            engineServiceFactory: async (speaker, source, sileroPath, engine, sink, speakerId, ct) =>
-            {
-                var svc = new LiveTranscriptionEngineService(
-                    speaker,
-                    source,
-                    sileroPath,
-                    engine,
-                    sink,
-                    loggerFactory.CreateLogger<LiveTranscriptionEngineService>(),
-                    speakerId);
-                await svc.StartAsync(ct).ConfigureAwait(false);
-                return svc;
-            })
+            engineServiceFactory: CreateEngineServiceFactory(loggerFactory))
     {
+    }
+
+    /// <summary>
+    /// Builds the real model/engine bootstrapper. Extracted so the DEBUG-only file-audio composition
+    /// in <c>Bootstrapper</c> can reuse the exact same Silero/STT/diarizer construction instead of a
+    /// second, divergent copy.
+    /// </summary>
+    internal static Func<CancellationToken, Task<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService SpeakerId, string SttModelId)>> CreateProductionTranscriptionFactory(
+        ISettingsService settingsService, IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory)
+    {
+        return async ct =>
+        {
+            var settings = await settingsService.GetSettingsAsync().ConfigureAwait(false);
+            var log = loggerFactory.CreateLogger<DirectTranscriptionService>();
+
+            var sileroPath = await LiveTranscriptionModels
+                .EnsureSileroVadAsync(httpClientFactory, log, ct).ConfigureAwait(false);
+            var engine = await TranscriptionEngineFactory
+                .CreateAsync(settings, httpClientFactory, downloadProgress: null, log, ct).ConfigureAwait(false);
+
+            // Speaker-model failure is FATAL here (unlike the Teams attendee's degrade-to-null):
+            // without diarization there is no per-speaker consent gate, so a consent-gated session
+            // must not silently degrade to "one anonymous speaker". Let this throw.
+            var speakerModelPath = await LiveTranscriptionModels
+                .EnsureSpeakerEmbeddingAsync(httpClientFactory, log, ct).ConfigureAwait(false);
+
+            // Always the MANUAL diarizer, regardless of settings.MeetingSmartSpeakerDetection: the
+            // adaptive diarizer retroactively reassigns labels, which is unsound under a consent
+            // gate (design §3.4) — a Granted label could be retroactively handed to an unconsented
+            // speaker, or vice versa, and neither direction can be undone once text has been emitted.
+            // ShouldUseAdaptiveDiarizer is a hardcoded `false` (see its doc); the guard below is
+            // unreachable by construction and exists only so a future edit cannot silently wire the
+            // adaptive diarizer back in without also touching (and breaking) its dedicated test.
+            if (ShouldUseAdaptiveDiarizer(settings))
+                throw new NotSupportedException("Direct transcription requires the manual speaker diarizer.");
+
+            // maxSpeakers is deliberately 0 (unlimited) and NOT settings.MeetingMaxSpeakers: at the cap
+            // the diarizer FORCE-ASSIGNS a new speaker's segment to its best existing match with no
+            // similarity floor at all, so with the cap reached an unconsented speaker would come back
+            // wearing a Granted label and the gate would emit their speech. That trade (bounded label
+            // growth vs. a consent transfer) is acceptable for the Teams attendee, which has no
+            // per-speaker consent gate; it is not acceptable here. Over-splitting is the accepted
+            // limitation instead (design §5.4) — it fails closed.
+            var speakerId = new SpeakerIdentificationService(
+                speakerModelPath,
+                settings.SpeakerEmbeddingThreshold,
+                maxSpeakers: 0,
+                loggerFactory.CreateLogger<SpeakerIdentificationService>());
+
+            return (sileroPath, engine, (ISpeakerIdentificationService)speakerId, ComputeSttModelId(settings));
+        };
+    }
+
+    /// <summary>Builds the real engine-service factory. Extracted for the same reason as
+    /// <see cref="CreateProductionTranscriptionFactory"/>.</summary>
+    internal static Func<TranscriptSpeaker, IAudioCaptureSource, string, ITranscriptionEngine, ChannelWriter<TranscriptUtterance>, ISpeakerIdentificationService?, CancellationToken, Task<IAsyncDisposable>> CreateEngineServiceFactory(
+        ILoggerFactory loggerFactory)
+    {
+        return async (speaker, source, sileroPath, engine, sink, speakerId, ct) =>
+        {
+            var svc = new LiveTranscriptionEngineService(
+                speaker,
+                source,
+                sileroPath,
+                engine,
+                sink,
+                loggerFactory.CreateLogger<LiveTranscriptionEngineService>(),
+                speakerId);
+            await svc.StartAsync(ct).ConfigureAwait(false);
+            return svc;
+        };
     }
 
     /// <summary>

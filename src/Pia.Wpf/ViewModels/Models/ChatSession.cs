@@ -533,6 +533,9 @@ public sealed class ChatSession : IDisposable
         // and inline <think> tags parsed out of the visible text. Merge both into ThinkingContent.
         var reasoningBuffer = new StringBuilder();
         var tagThinking = string.Empty;
+        // A tool round just completed; the next TextDelta starts a fresh model turn built on the
+        // tool result, not a continuation of whatever is already in rawBuffer.
+        var pendingRoundBreak = false;
 
         void UpdateThinking()
         {
@@ -580,6 +583,9 @@ public sealed class ChatSession : IDisposable
             switch (item)
             {
                 case TextDelta td:
+                    if (pendingRoundBreak && rawBuffer.Length > 0)
+                        rawBuffer.Append("\n\n");
+                    pendingRoundBreak = false;
                     rawBuffer.Append(td.Text);
                     var (visible, thinking) = StreamThinkTagParser.Parse(rawBuffer.ToString());
 
@@ -593,6 +599,10 @@ public sealed class ChatSession : IDisposable
                 case ReasoningDelta rd:
                     reasoningBuffer.Append(rd.Text);
                     UpdateThinking();
+                    break;
+
+                case ToolRoundCompleted:
+                    pendingRoundBreak = true;
                     break;
 
                 case Finished finished:
