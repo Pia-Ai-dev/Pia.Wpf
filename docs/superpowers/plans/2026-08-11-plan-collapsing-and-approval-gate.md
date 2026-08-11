@@ -61,34 +61,31 @@ This one edit affects both `EmitPlanTool` and `EmitRevisedPlanTool` (both use `P
 
 - [ ] **Step 4: Write a failing test asserting the new prompt text is present**
 
-If `tests/Pia.Wpf.Tests/Services/AgentPlannerTests.cs` does not exist, create it following this repo's existing test-fake conventions for `AgentPlanner` (grep `tests/Pia.Wpf.Tests/Services/*.cs` for an existing fake `IAiClientService`/`ISettingsService` construction pattern to reuse — several files listed in the interface-implementer survey above construct `AgentPlanner` directly). Add:
+`tests/Pia.Wpf.Tests/Services/AgentPlannerTests.cs` already exists (it is a large, ~1000-line file) — do NOT reflect into the private static `BuildPlanMessages`. The file already has a purpose-built pattern for exactly this assertion: it drives a real `PlanAsync` call through a fake `IAiClientService` that captures the system prompt it was sent (see the file's existing `LastPrompt`/`LastUserPrompt`-style captures and its `ReturnsPlan(...)` helper, used by tests like the ones around `ReplanAsync_DeclineMember_IsNotHonoured_...`). Grep the file for `LastPrompt` and `ReturnsPlan` to find the exact fixture shape before writing this, then add:
 
 ```csharp
 [Fact]
-public void BuildPlanMessages_IncludesGroupByFileRule()
+public async Task PlanAsync_SystemPromptIncludesGroupByFileRule()
 {
-    // Use reflection to invoke the private static BuildPlanMessages the same way existing
-    // AgentPlanner tests already do (grep the file for `GetMethod("BuildPlanMessages"` — if a
-    // reflection helper already exists in this test class, reuse it instead of writing a new one).
-    var method = typeof(AgentPlanner).GetMethod("BuildPlanMessages",
-        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
-    var messages = (List<ChatMessage>)method.Invoke(null,
-        new object?[] { "goal", TestPersonas.Default, false, null, Array.Empty<Persona>(), null })!;
+    ReturnsPlan(new[] { ("Step 1", "Do the first thing") }); // or this file's exact equivalent setup
 
-    var systemText = messages[0].Text;
-    Assert.Contains("Group by logical change, not by file", systemText);
+    await BuildPlanner().PlanAsync("goal", ctx, persona, provider, CancellationToken.None);
+
+    Assert.Contains("Group by logical change, not by file", LastPrompt);
 }
 ```
 
-Adjust the invocation's parameter list to match `BuildPlanMessages`'s actual signature exactly (`goal, persona, firm, analysis, roster, grounding` per `AgentPlanner.cs:774-776`) and swap `TestPersonas.Default` for whatever persona-construction helper the existing test file already uses (grep for `new Persona` in the same test directory).
+Match the exact fixture/helper names this file already uses (`BuildPlanner()`, `ReturnsPlan(...)`, `LastPrompt`, `ctx`/`persona`/`provider` construction) rather than the illustrative names above — read the file first and mirror an existing test in the same style.
 
 - [ ] **Step 5: Run the test, confirm it fails before the edit / passes after**
 
+This repo's test runner is MTP-based (`Microsoft.Testing.Platform`), not classic VSTest — the `dotnet test --filter "FullyQualifiedName~..."` form does NOT work here (confirmed: it prints `Zero tests ran` and exits with an error). Use the MTP native filter form instead:
+
 ```bash
-dotnet test --filter "FullyQualifiedName~AgentPlannerTests.BuildPlanMessages_IncludesGroupByFileRule"
+dotnet test -- --filter-method "*PlanAsync_SystemPromptIncludesGroupByFileRule*"
 ```
 
-Run this once BEFORE Step 2's edit (expect FAIL — text not present) and once AFTER (expect PASS). If the MTP runner rejects the `--filter` form used here, fall back to the full gate (`dotnet test`) to confirm — do not invent an unverified filter flag.
+Run this once BEFORE Step 2's edit (expect FAIL — text not present) and once AFTER (expect PASS). If this filter form also fails to isolate the test in practice, fall back to the full gate (`dotnet test`, no filter) to confirm red→green — never trust a "0 tests ran" result as a pass.
 
 - [ ] **Step 6: Commit**
 
@@ -119,29 +116,31 @@ Immediately after that line, add the identical rule text from Task 1.1 Step 2:
 sb.AppendLine("Group by logical change, not by file: if one reason requires editing several files, that is ONE step listing every file in expectedArtifact — never split it into \"update file A\", \"update file B\", \"update file C\".");
 ```
 
-- [ ] **Step 3: Write a failing test, mirroring Task 1.1's**
+- [ ] **Step 3: Write a failing test, mirroring Task 1.1's real (non-reflection) pattern**
+
+Same fixture shape as Task 1.1 Step 4 — drive a real `ReplanAsync` call through the existing fake `IAiClientService` and assert on its captured prompt, not reflection into the private `BuildReplanMessages`:
 
 ```csharp
 [Fact]
-public void BuildReplanMessages_IncludesGroupByFileRule()
+public async Task ReplanAsync_SystemPromptIncludesGroupByFileRule()
 {
-    var method = typeof(AgentPlanner).GetMethod("BuildReplanMessages",
-        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
-    var ctx = new RunContext("goal", RunProfile.Interactive);
-    var messages = (List<ChatMessage>)method.Invoke(null,
-        new object?[] { ctx, null, TestPersonas.Default, false, Array.Empty<Persona>() })!;
+    ReturnsPlan(new[] { ("Step 1", "Do the first thing") }); // or this file's exact equivalent setup
 
-    Assert.Contains("Group by logical change, not by file", messages[0].Text);
+    await BuildPlanner().ReplanAsync(ctx, failure: "something failed", persona, provider, CancellationToken.None);
+
+    Assert.Contains("Group by logical change, not by file", LastPrompt);
 }
 ```
 
-Adjust the parameter list to `BuildReplanMessages`'s actual signature (`ctx, failure, persona, firm, roster` per `AgentPlanner.cs:816-818`) and confirm `RunContext`'s actual constructor before using it — grep `class RunContext` if the two-argument form shown here does not match.
+Match the exact fixture/helper names this file already uses, mirroring an existing `ReplanAsync` test in the same file rather than the illustrative names above.
 
 - [ ] **Step 4: Run, confirm fail → pass**
 
 ```bash
-dotnet test --filter "FullyQualifiedName~AgentPlannerTests.BuildReplanMessages_IncludesGroupByFileRule"
+dotnet test -- --filter-method "*ReplanAsync_SystemPromptIncludesGroupByFileRule*"
 ```
+
+(Same MTP filter-syntax note as Task 1.1 Step 5 — `--filter "FullyQualifiedName~..."` does not work in this repo's runner.)
 
 - [ ] **Step 5: Run the full gate**
 
@@ -239,20 +238,24 @@ In `src/Pia.Wpf/ViewModels/Models/LiveTurnExecutor.cs`, add near the top of the 
 
 Open `src/Pia.Wpf/Services/HeadlessTurnExecutor.cs` and confirm it does NOT already declare a `SupportsPlanApproval` member (it shouldn't — grep first). Leave it untouched; it inherits the interface default (`false`).
 
-- [ ] **Step 5: Write a test asserting the default**
+- [ ] **Step 5: Add a settable `SupportsPlanApproval` to `StubExecutor`, and a test asserting the default**
 
-Add to `tests/Pia.Wpf.Tests/Services/AgentRunOrchestratorArmTests.cs` (or the nearest existing test file with a minimal `IAgentTurnExecutor` fake that does not override `SupportsPlanApproval`):
+Task 2.3 needs an `IAgentTurnExecutor` fake it can flip `SupportsPlanApproval` on for, and none of the 16 existing test fakes in the suite expose one today (they all silently take the interface default). In `AgentRunOrchestratorArmTests.cs`, add a settable auto-property to `StubExecutor` (line 203), mirroring its existing `ApprovalRequiredTool { get; init; }`/`UserInputQuestion { get; init; }` pattern, defaulted `false` so every other test using this fake is unaffected:
+
+```csharp
+    public bool SupportsPlanApproval { get; init; }
+```
+
+Then add:
 
 ```csharp
 [Fact]
 public void SupportsPlanApproval_DefaultsFalseForAnExecutorThatDoesNotOverrideIt()
 {
-    IAgentTurnExecutor executor = new StubExecutor(); // or the file's existing minimal fake
+    IAgentTurnExecutor executor = new StubExecutor();
     Assert.False(executor.SupportsPlanApproval);
 }
 ```
-
-If `StubExecutor` (or the chosen fake) already overrides members in a way that would need touching, instead add a tiny local fake in the same test file rather than editing a fake shared by other tests.
 
 - [ ] **Step 6: Write a test asserting `LiveTurnExecutor` overrides it true**
 
@@ -270,7 +273,7 @@ public void LiveTurnExecutor_SupportsPlanApproval()
 - [ ] **Step 7: Run both new tests, confirm pass**
 
 ```bash
-dotnet test --filter "FullyQualifiedName~SupportsPlanApproval"
+dotnet test -- --filter-method "*SupportsPlanApproval*"
 ```
 
 - [ ] **Step 8: Commit**
@@ -371,89 +374,133 @@ Change it to:
             var replans = 0;
 ```
 
-- [ ] **Step 3: Write a failing test for the gate firing**
+This chunk uses `AgentRunOrchestratorArmTests.cs`'s REAL existing fixtures throughout — `Plan(params string[] titles)` (line 181, one step per title, `Intent = "do " + title`), the `RunAsync(run, planner, ct, executor, profile, steering)` helper (line 167), `StubPlanner(PlanResult plan)` (line 188), and `StubExecutor` (line 203) — not the fabricated `PlanStepArg`/`BuildStepsFromArgs` from an earlier draft of this plan. `StubExecutor` needs two more capabilities added for this chunk's tests (Step 3 below covers both); do this BEFORE writing Steps 4-7's tests, since they depend on it.
 
-Find or add a test in `AgentRunOrchestratorArmTests.cs` (this file already tests "arm"/branching behavior per its name) using its existing `StubExecutor` fake, extended to override `SupportsPlanApproval => true`, and an `IAgentPlanner` fake/mock that returns a 3-step plan. Pattern to follow (adapt names to the file's actual existing fakes/mocks — grep the file for how it constructs `AgentRunOrchestrator` and stubs `_planner.PlanAsync` before writing this):
+- [ ] **Step 3: Extend `StubExecutor` and `StubPlanner` for this chunk's tests**
+
+`StubExecutor` (line 203) already has settable `ApprovalRequiredTool`/`UserInputQuestion`/`SupportsPlanApproval` (the last one added in Task 2.2 Step 5). Add one more settable knob so a test can make the first step fail (needed for Step 7's replan test):
 
 ```csharp
-[Fact]
-public async Task RunAsync_ParksForApproval_WhenFirstPlanHasThreeOrMoreSteps_AndExecutorSupportsIt()
-{
-    var steps = new[]
+    public bool FailFirstStep { get; init; }
+```
+
+and change `ExecuteStepAsync`'s body to:
+
+```csharp
+    public Task<StepTurnResult> ExecuteStepAsync(AgentRun run, AgentStep step, RunContext ctx, CancellationToken ct)
     {
-        new PlanStepArg("Step 1", "Do the first thing"),
-        new PlanStepArg("Step 2", "Do the second thing"),
-        new PlanStepArg("Step 3", "Do the third thing"),
-    };
-    // ... construct AgentRunOrchestrator with a fake IAgentPlanner whose PlanAsync returns
-    // new PlanResult(BuildStepsFromArgs(steps), false, usage: null) and a StubExecutor with
-    // SupportsPlanApproval => true ...
-
-    await orchestrator.RunAsync(run, executor, persona, provider, RunProfile.Interactive, CancellationToken.None);
-
-    var updated = await runService.GetAsync(run.Id);
-    Assert.Equal(AgentRunState.WaitingForInput, updated!.State);
-    Assert.Equal(AgentRunOrchestrator.PlanApprovalReason, RunPauseEnvelope.ReadReason(updated));
-}
+        StepTurns++;
+        var failThisOne = FailFirstStep && StepTurns == 1;
+        return Task.FromResult(new StepTurnResult(
+            Succeeded: !failThisOne, Cancelled: false, Error: failThisOne ? "boom" : null, VisibleText: "done", Usage: null,
+            FirstMessageId: Guid.NewGuid(), LastMessageId: Guid.NewGuid(),
+            ApprovalRequiredTool: ApprovalRequiredTool, UserInputQuestion: UserInputQuestion));
+    }
 ```
 
-- [ ] **Step 4: Write a failing test for the gate NOT firing below threshold**
+`StubPlanner` (line 188) always returns `PlanResult.Fallback` from `ReplanAsync` — Step 7 needs it to return a real 3-step replan instead. Add a second, trailing-defaulted constructor parameter (every existing call site passes only `plan`, so this stays non-breaking):
+
+```csharp
+    private sealed class StubPlanner(PlanResult plan, PlanResult? replan = null) : IAgentPlanner
+    {
+        public Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
+            => Task.FromResult(plan);
+
+        public Task<PlanResult> ReplanAsync(RunContext ctx, string? failure, Persona persona, AiProvider provider, CancellationToken ct)
+            => Task.FromResult(replan ?? PlanResult.Fallback);
+    }
+```
+
+- [ ] **Step 4: Write a failing test for the gate firing**
 
 ```csharp
 [Fact]
-public async Task RunAsync_DoesNotParkForApproval_WhenFirstPlanHasFewerThanThreeSteps()
+public async Task AFirstPlanOfThreeOrMoreSteps_ParksForApproval_WhenTheExecutorSupportsIt()
 {
-    // Same setup, but the fake planner returns a 2-step plan.
-    await orchestrator.RunAsync(run, executor, persona, provider, RunProfile.Interactive, CancellationToken.None);
+    var ct = TestContext.Current.CancellationToken;
+    var run = await NewRunAsync(ct);
+    var executor = new StubExecutor { SupportsPlanApproval = true };
 
-    var updated = await runService.GetAsync(run.Id);
-    Assert.NotEqual(AgentRunOrchestrator.PlanApprovalReason, RunPauseEnvelope.ReadReason(updated!));
+    await RunAsync(run, new StubPlanner(Plan("A", "B", "C")), ct, executor);
+
+    var settled = (await _runs.GetAsync(run.Id, ct))!;
+    Assert.Equal(AgentRunState.WaitingForInput, settled.State);
+    Assert.Equal(AgentRunOrchestrator.PlanApprovalReason, RunPauseEnvelope.ReadReason(settled));
+    // Nothing ran — the park fires before the drain loop's first iteration.
+    Assert.Equal(0, executor.StepTurns);
 }
 ```
 
-- [ ] **Step 5: Write a failing test for the gate NOT firing when the executor doesn't support it**
+- [ ] **Step 5: Write a failing test for the gate NOT firing below threshold**
 
 ```csharp
 [Fact]
-public async Task RunAsync_DoesNotParkForApproval_WhenExecutorDoesNotSupportPlanApproval()
+public async Task AFirstPlanOfTwoSteps_DoesNotParkForApproval_EvenWhenTheExecutorSupportsIt()
 {
-    // Same 3-step plan, but StubExecutor.SupportsPlanApproval => false (the default — a headless-shaped fake).
-    await orchestrator.RunAsync(run, executor, persona, provider, RunProfile.Interactive, CancellationToken.None);
+    var ct = TestContext.Current.CancellationToken;
+    var run = await NewRunAsync(ct);
+    var executor = new StubExecutor { SupportsPlanApproval = true };
 
-    var updated = await runService.GetAsync(run.Id);
-    Assert.NotEqual(AgentRunOrchestrator.PlanApprovalReason, RunPauseEnvelope.ReadReason(updated!));
+    await RunAsync(run, new StubPlanner(Plan("A", "B")), ct, executor);
+
+    var settled = (await _runs.GetAsync(run.Id, ct))!;
+    Assert.NotEqual(AgentRunOrchestrator.PlanApprovalReason, RunPauseEnvelope.ReadReason(settled));
+    Assert.Equal(AgentRunState.Completed, settled.State);
 }
 ```
 
-- [ ] **Step 6: Write a failing test for the gate NOT re-firing on a replan-after-failure**
-
-This is the most important regression test — it locks in "first plan only". Construct a run whose first plan has 3 steps (so it WOULD gate — but the executor drains automatically past a park only if you call `RunAsync` with `resume: true` after simulating an Approve, OR more directly: give the executor `SupportsPlanApproval => false` for this specific test so the run drains straight through, make step 1 fail, and assert the resulting REPLAN (which `TryReplanAfterFailureAsync` produces, still ≥3 steps) does NOT re-park):
+- [ ] **Step 6: Write a failing test for the gate NOT firing when the executor doesn't support it**
 
 ```csharp
 [Fact]
-public async Task RunAsync_DoesNotReparkForApproval_OnAReplanAfterStepFailure()
+public async Task AFirstPlanOfThreeSteps_DoesNotParkForApproval_WhenTheExecutorDoesNotSupportIt()
 {
-    // Executor: SupportsPlanApproval => false for THIS test (isolates the assertion to the replan path,
-    // not the first-plan gate re-testing itself) — or, if the test harness makes it easy, SupportsPlanApproval
-    // => true and drive the run through Approve first, then fail step 1, then assert the replan doesn't
-    // re-park. Prefer whichever shape reuses more of this file's existing replan-test scaffolding
-    // (grep for an existing "...ReplansAfterStepFailure" test and mirror its executor/planner fakes).
-    // The fake IAgentPlanner's ReplanAsync should return a fresh 3-step plan.
+    var ct = TestContext.Current.CancellationToken;
+    var run = await NewRunAsync(ct);
+    var executor = new StubExecutor(); // SupportsPlanApproval defaults false — the headless shape
 
-    await orchestrator.RunAsync(run, executor, persona, provider, RunProfile.Interactive, CancellationToken.None);
+    await RunAsync(run, new StubPlanner(Plan("A", "B", "C")), ct, executor);
 
-    var updated = await runService.GetAsync(run.Id);
-    Assert.NotEqual(AgentRunOrchestrator.PlanApprovalReason, RunPauseEnvelope.ReadReason(updated!));
+    var settled = (await _runs.GetAsync(run.Id, ct))!;
+    Assert.NotEqual(AgentRunOrchestrator.PlanApprovalReason, RunPauseEnvelope.ReadReason(settled));
+    Assert.Equal(AgentRunState.Completed, settled.State);
 }
 ```
 
-- [ ] **Step 7: Run all five new tests, confirm each fails before the Step 2 wiring and passes after**
+- [ ] **Step 7: Write a failing test for the gate NOT re-firing on a replan-after-failure**
+
+This is the most important regression test — it locks in "first plan only", using an executor that DOES support plan approval throughout, so the only thing that can explain a missing park on the replan is the "first plan only" gating logic itself (not a executor-capability confound, which Step 6 already covers separately):
+
+```csharp
+[Fact]
+public async Task AReplanAfterAStepFailure_NeverParksForApproval_EvenThoughItHasThreeSteps()
+{
+    var ct = TestContext.Current.CancellationToken;
+    var run = await NewRunAsync(ct);
+    var executor = new StubExecutor { SupportsPlanApproval = true, FailFirstStep = true };
+    // First plan has only 1 step (stays under the gate's own threshold on its own, so this test isolates
+    // the REPLAN path) and fails; the replan comes back with 3 fresh steps.
+    var planner = new StubPlanner(Plan("A"), replan: Plan("D", "E", "F"));
+
+    await RunAsync(run, planner, ct, executor);
+
+    var settled = (await _runs.GetAsync(run.Id, ct))!;
+    Assert.NotEqual(AgentRunOrchestrator.PlanApprovalReason, RunPauseEnvelope.ReadReason(settled));
+    // The failed first step retried inside the replanned steps and this time succeeded (StubExecutor
+    // always succeeds after FailFirstStep's one failure), so the run drains straight through.
+    Assert.Equal(AgentRunState.Completed, settled.State);
+}
+```
+
+- [ ] **Step 8: Run all four new tests, confirm each fails before the Step 2 wiring and passes after**
 
 ```bash
-dotnet test --filter "FullyQualifiedName~RunAsync_ParksForApproval|FullyQualifiedName~RunAsync_DoesNotPark|FullyQualifiedName~RunAsync_DoesNotRepark"
+dotnet test -- --filter-method "*ParksForApproval*" --filter-method "*DoesNotParkForApproval*" --filter-method "*NeverParksForApproval*"
 ```
 
-- [ ] **Step 8: Run the full gate**
+If chaining multiple `--filter-method` flags this way is rejected by the runner, run them one at a time instead — do not fall back to the unverified `--filter "FullyQualifiedName~..."` form (see Chunk 1's note on why that form does not work in this repo).
+
+- [ ] **Step 9: Run the full gate**
 
 ```bash
 dotnet test
@@ -461,7 +508,7 @@ dotnet test
 
 Expected: `failed: 0`.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 git add src/Pia.Wpf/Services/AgentRunOrchestrator.cs tests/Pia.Wpf.Tests/Services/AgentRunOrchestratorArmTests.cs
@@ -518,12 +565,12 @@ Following `Flow_Run_NeedsInput`'s shape:
 
 - [ ] **Step 3: Regenerate `Designer.cs` — MANUAL STEP, `dotnet build` will not do this**
 
-Per this project's convention, `ViewStrings.Designer.cs` is generated by the `PublicResXFileCodeGenerator` Visual Studio single-file generator, NOT by any MSBuild target — `dotnet build`/`dotnet test` will silently NOT regenerate it. Open `ViewStrings.resx` in Visual Studio and save it (this re-invokes the custom tool), or right-click it in Solution Explorer → "Run Custom Tool". Confirm afterward that `ViewStrings.Designer.cs` now contains `Run_Activity_PlanApproval`/`Flow_Run_PlanApproval` properties (grep the generated file to confirm before moving on — do NOT hand-add these properties yourself; that is exactly the drift the project's memory of this file warns against).
+Per this project's convention, `ViewStrings.Designer.cs` is generated by the `PublicResXFileCodeGenerator` Visual Studio single-file generator, NOT by any MSBuild target — `dotnet build`/`dotnet test` will silently NOT regenerate it. Open `ViewStrings.resx` in Visual Studio and save it (this re-invokes the custom tool), or right-click it in Solution Explorer → "Run Custom Tool". Confirm afterward that `ViewStrings.Designer.cs` now contains `Run_Activity_PlanApproval`/`Flow_Run_PlanApproval` properties (grep the generated file to confirm before moving on — do NOT hand-add these properties yourself; that is exactly the drift the project's memory of this file warns against). This step requires Visual Studio's GUI — there is no CLI/MSBuild fallback anywhere in this repo. An agentic worker running headless cannot perform it and should hand it off to a human at this point, resuming once the regenerated `Designer.cs` is confirmed in place.
 
 - [ ] **Step 4: Run the localization parity test**
 
 ```bash
-dotnet test --filter "FullyQualifiedName~LocalizationTests.AllTranslations_MustBeComplete"
+dotnet test -- --filter-method "*AllTranslations_MustBeComplete*"
 ```
 
 Expected: PASS (all three resx files now have matching keys). If it fails, the most likely cause is a typo in one of the three files' key name — diff them.
@@ -566,28 +613,42 @@ Add a new arm for `PlanApprovalReason`, placed beside `NeedsGoalReason`/`NeedsIn
         AgentRunOrchestrator.PlanApprovalReason => _localization["Run_Activity_PlanApproval"],
 ```
 
-- [ ] **Step 2: Write a failing test**
+- [ ] **Step 2: Add an `InlineData` row to the existing theory, rather than a new bespoke test**
+
+`RunProgressViewModelTests.cs` already covers `DescribePause` end-to-end via a parameterized `[Theory]` (around line 303-327): it pauses a real persisted run with a given reason, refreshes the VM, and asserts `vm.CurrentActivity` equals the expected loc KEY (the test file's fake `ILocalizationService` returns the key itself, so this is a bare key-lookup assertion, not resolved text). Add a new row to this SAME theory:
 
 ```csharp
-[Fact]
-public void DescribePause_ReturnsPlanApprovalWording_ForThePlanApprovalReason()
-{
-    var run = /* build a fake AgentRun, State=WaitingForInput, ExtraJson={"paused":true,"reason":"plan-approval"} —
-                 mirror whatever helper this test file already uses to build a run with a given pause reason,
-                 e.g. grep for an existing "ToolApprovalReason" test in this file and copy its run-construction
-                 shape */;
+    [Theory]
+    [InlineData("children-parked", "Run_Activity_ChildrenParked")]
+    [InlineData("children-interrupted", "Run_Activity_ChildrenInterrupted")]
+    [InlineData("user", "Run_Activity_UserPaused")]
+    [InlineData("resume-interrupted", "Run_Activity_ResumeInterrupted")]
+    [InlineData("needs-goal", "Run_Activity_NeedsGoal")]
+    [InlineData("needs-input", "Run_Activity_NeedsInput")]
+    [InlineData("step-cap", "Run_Activity_WaitingAtBudget")]
+    [InlineData("wall-clock", "Run_Activity_WaitingAtBudget")]
+    [InlineData("something-a-later-build-invented", "Run_Activity_WaitingAtBudget")]
+    [InlineData("plan-approval", "Run_Activity_PlanApproval")] // NEW row for this task
+    public async Task AParkedRunsActivityLineNamesWhyItParked(string reason, string expectedKey)
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
 
-    var vm = /* construct RunProgressViewModel the way the rest of this test file already does */;
-    vm.Project(run); // or however this file already drives a projection
+        await _runs.PauseAsync(run.Id, reason, TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
 
-    Assert.Equal("Waiting for you to approve the plan", vm.SubLine); // or wherever DescribePause's result surfaces — confirm via the existing ToolApprovalReason test's assertion shape
-}
+        Assert.Equal(RunProgressState.WaitingForInput, vm.State);
+        Assert.Equal(expectedKey, vm.CurrentActivity);
+        vm.Dispose();
+    }
 ```
+
+Only the new `InlineData` line and the `AgentRunOrchestrator.cs` switch-arm change are new; the method body itself is unchanged from what already exists at `RunProgressViewModelTests.cs:303-327`.
 
 - [ ] **Step 3: Run, confirm fail → pass**
 
 ```bash
-dotnet test --filter "FullyQualifiedName~DescribePause_ReturnsPlanApprovalWording"
+dotnet test -- --filter-method "*DescribePause_ReturnsPlanApprovalWording*"
 ```
 
 - [ ] **Step 4: Commit**
@@ -647,36 +708,57 @@ Change to:
 
 This is the fix that keeps a Flow notification's link from silently one-click-approving the plan: without it, `PlanApprovalReason` falls through to the default `ContinueRunAction` (bare `ResumeAsync`, no card); with it, the Flow card uses `OpenParkedRunAction` (routes to chat, resolves nothing on click) — the same treatment the clarification parks already get.
 
-- [ ] **Step 3: Write a failing test for `PausedBodyKey`**
+- [ ] **Step 3: Add an `InlineData` row to `AParkedRunsFlowBodyNamesWhyItParked`**
+
+`AgentRunNotificationSurfaceTests.cs` already covers `PausedBodyKey` via a `[Theory]` (around line 39-53). Add a new row:
 
 ```csharp
-[Fact]
-public void PausedBodyKey_ReturnsPlanApprovalKey_ForThePlanApprovalReason()
-{
-    Assert.Equal("Flow_Run_PlanApproval", AgentRunNotificationSurface.PausedBodyKey(AgentRunOrchestrator.PlanApprovalReason));
-}
+    [Theory]
+    [InlineData("children-parked", "Flow_Run_ChildrenParked")]
+    [InlineData("children-interrupted", "Flow_Run_ChildrenInterrupted")]
+    [InlineData("user", "Flow_Run_UserPaused")]
+    [InlineData("resume-interrupted", "Flow_Run_ResumeInterrupted")]
+    [InlineData("needs-goal", "Flow_Run_NeedsGoal")]
+    [InlineData("needs-input", "Flow_Run_NeedsInput")]
+    [InlineData("step-cap", "Flow_Run_WaitingAtBudget")]
+    [InlineData("wall-clock", "Flow_Run_WaitingAtBudget")]
+    [InlineData(null, "Flow_Run_WaitingAtBudget")]
+    [InlineData("plan-approval", "Flow_Run_PlanApproval")] // NEW row for this task
+    public void AParkedRunsFlowBodyNamesWhyItParked(string? reason, string expectedKey)
+        => Assert.Equal(expectedKey, AgentRunNotificationSurface.PausedBodyKey(reason));
 ```
 
-- [ ] **Step 4: Write a failing test for the Flow routing (the more important one)**
+- [ ] **Step 4: Add an `InlineData` row to `NeedsClarificationPark_CardIsTokenKeyed_AndRoutesToTheRun` (the more important test — it proves the Flow routing, not just the wording)**
 
-Find this file's existing test that asserts `NeedsGoalReason` produces an `OpenParkedRunAction` (grep the test file for `OpenParkedRunAction`) and mirror it:
+This existing `[Theory]` (around line 211-228) already builds a run parked with a given reason, publishes it through the surface, and asserts the published card uses `OpenParkedRunAction`. Despite its name (written when only the two clarification reasons existed), it is the exact right place for the plan-approval row too — it is generic over `reason`/`expectedKey`:
 
 ```csharp
-[Fact]
-public async Task PublishParkedRun_UsesOpenParkedRunAction_ForPlanApprovalReason()
-{
-    // Build a run parked WaitingForInput with reason=plan-approval, publish it through the surface the
-    // same way the existing NeedsGoalReason test does, and assert the published FlowItemDraft.Action is an
-    // OpenParkedRunAction, NOT a ContinueRunAction.
-    var published = /* ... */;
-    Assert.IsType<OpenParkedRunAction>(published.Action);
-}
+    [Theory]
+    [InlineData("needs-goal", "Flow_Run_NeedsGoal")]
+    [InlineData("needs-input", "Flow_Run_NeedsInput")]
+    [InlineData("plan-approval", "Flow_Run_PlanApproval")] // NEW row for this task
+    public async Task NeedsClarificationPark_CardIsTokenKeyed_AndRoutesToTheRun(string reason, string expectedKey)
+    {
+        var runId = Guid.NewGuid();
+        SetupRun(runId, RunShape.Planned, extraJson: $$"""{"paused":true,"reason":"{{reason}}"}""");
+        _windows.IsInForeground(WindowMode.Assistant).Returns(false);
+
+        await Create().HandleRunStateAsync(runId, AgentRunState.WaitingForInput);
+
+        _flow.Received(1).Publish(Arg.Is<FlowItemDraft>(d =>
+            d.Severity == FlowSeverity.ActionRequired &&
+            d.Title == "Flow_Run_Title" &&
+            d.Body == expectedKey &&
+            d.Action is OpenParkedRunAction));
+    }
 ```
+
+Without this row (and the `needsAnswerElsewhere` join from Step 2), a `plan-approval` park would fall through to `ContinueRunAction` and this exact assertion (`d.Action is OpenParkedRunAction`) is what would catch that regression.
 
 - [ ] **Step 5: Run, confirm fail → pass**
 
 ```bash
-dotnet test --filter "FullyQualifiedName~PlanApproval"
+dotnet test -- --filter-method "*PlanApproval*"
 ```
 
 - [ ] **Step 6: Commit**
@@ -690,7 +772,7 @@ git commit -m "Route plan-approval Flow cards to chat instead of a bare one-clic
 
 **Files:**
 - Modify: `src/Pia.Wpf/Services/HeadlessRunLauncher.cs:151-156`
-- Test: grep `tests/Pia.Wpf.Tests/Services/` for existing `HeadlessRunLauncher` tests covering `InterruptedReasonFor` (it's `private static`, so any existing test reaches it indirectly — via a simulated pre-dispatch resume failure, or via `InternalsVisibleTo` + reflection; check which the file already does before writing a new test)
+- Test: `tests/Pia.Wpf.Tests/Services/HeadlessRunLauncherTests.cs` — add an `InlineData` row to the existing `Resume_InterruptedBeforeDispatch_ReParksWithTheTokenTheNextResumeNeeds` theory (around line 1148-1166). No test anywhere reaches `InterruptedReasonFor` via reflection today — this theory is the real, end-to-end coverage (it simulates a pre-dispatch resume failure via `BuildLauncher(nullDefaultProvider: true)` and asserts the re-park's reason).
 
 - [ ] **Step 1: Add the join**
 
@@ -719,27 +801,37 @@ Change to:
 
 Without this, a failed Approve dispatch (a persona/provider/workspace-resolve error between the CAS win and the orchestrator loop starting) would re-park the run with the generic `ResumeInterruptedReason` instead of `PlanApprovalReason` — silently dropping the Approve/Reject card and leaving only a bare Continue.
 
-- [ ] **Step 2: Write a failing test**
-
-If the existing test file reaches `InterruptedReasonFor` via reflection (check `AgentRunResumeNoRePlanPremiseTests.cs` — its name suggests it already tests reason-preservation-on-resume behavior), add:
+- [ ] **Step 2: Add an `InlineData` row to the existing theory**
 
 ```csharp
-[Fact]
-public void InterruptedReasonFor_PreservesThePlanApprovalReason()
-{
-    var method = typeof(HeadlessRunLauncher).GetMethod("InterruptedReasonFor",
-        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
-    var result = (string)method.Invoke(null, new object?[] { AgentRunOrchestrator.PlanApprovalReason })!;
-    Assert.Equal(AgentRunOrchestrator.PlanApprovalReason, result);
-}
+    [Theory]
+    [InlineData("needs-goal", "needs-goal")]
+    [InlineData("needs-input", "needs-input")]
+    [InlineData("step-cap", "resume-interrupted")]
+    [InlineData("plan-approval", "plan-approval")] // NEW row for this task
+    public async Task Resume_InterruptedBeforeDispatch_ReParksWithTheTokenTheNextResumeNeeds(
+        string parkReason, string expectedAfterRePark)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (launcher, _) = BuildLauncher(nullDefaultProvider: true);
+        var parked = await ParkRunWithNoStepsAsync(parkReason);
+
+        Assert.False(await launcher.ResumeAsync(parked.Id, ct: ct));
+
+        var after = await _runs.GetAsync(parked.Id, ct);
+        Assert.Equal(AgentRunState.WaitingForInput, after!.State); // re-parked, still resumable
+        Assert.Equal(expectedAfterRePark, ReadPauseReason(after));
+
+        try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
+    }
 ```
 
-If the existing tests instead drive this through a full simulated pre-dispatch failure (end-to-end, not reflection), mirror THAT shape instead — check the existing `NeedsGoalReason`/`NeedsInputReason` coverage in this area before choosing.
+Only the new `InlineData` row and the `HeadlessRunLauncher.cs` allowlist change are new; the method body is unchanged from what already exists at `HeadlessRunLauncherTests.cs:1148-1166`.
 
 - [ ] **Step 3: Run, confirm fail → pass**
 
 ```bash
-dotnet test --filter "FullyQualifiedName~InterruptedReasonFor_PreservesThePlanApprovalReason"
+dotnet test -- --filter-method "*Resume_InterruptedBeforeDispatch_ReParksWithTheTokenTheNextResumeNeeds*"
 ```
 
 - [ ] **Step 4: Run the full gate**
@@ -751,7 +843,7 @@ dotnet test
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/Pia.Wpf/Services/HeadlessRunLauncher.cs tests/Pia.Wpf.Tests/Services/AgentRunResumeNoRePlanPremiseTests.cs
+git add src/Pia.Wpf/Services/HeadlessRunLauncher.cs tests/Pia.Wpf.Tests/Services/HeadlessRunLauncherTests.cs
 git commit -m "Preserve the plan-approval reason across an interrupted resume"
 ```
 
@@ -848,7 +940,36 @@ git commit -m "Preserve the plan-approval reason across an interrupted resume"
 
 Place this method immediately after `TryResumeFromPauseAsync` in `AgentRunService.cs`.
 
-- [ ] **Step 3: Write a failing test — the happy path**
+- [ ] **Step 3: Update the four hand-rolled `IAgentRunService` test fakes — REQUIRED, or the test project fails to build**
+
+`IAgentRunService` has no default-interface members, and exactly four test files hand-roll a full implementation of it (confirmed by grep, no others exist):
+
+- `tests/Pia.Wpf.Tests/Services/AgentRunOrchestratorTests.cs` — `FaultyRunService` (wraps `_inner`)
+- `tests/Pia.Wpf.Tests/Services/AgentRunClarificationResumeTests.cs` — `SpyRunService` (wraps `_inner`)
+- `tests/Pia.Wpf.Tests/Services/AgentRunResumeNoRePlanPremiseTests.cs` — `SpyRunService` (wraps `_inner` — confirm this one also wraps rather than hand-implements before copying the one-liner below; if it doesn't, use the `ThrowingAgentRunService` shape instead)
+- `tests/Pia.Wpf.Tests/Services/BackgroundAssistantTurnRunnerRunSpineTests.cs` — `ThrowingAgentRunService` (does NOT wrap an inner — every member throws `InvalidOperationException("boom")`)
+
+Add the new member to each. For the three `_inner`-wrapping fakes, add (matching their existing one-line forwarding style, e.g. beside `TryResumeFromPauseAsync`'s forward):
+
+```csharp
+        public Task<bool> TryRejectParkedPlanAsync(Guid runId, CancellationToken ct = default) => _inner.TryRejectParkedPlanAsync(runId, ct);
+```
+
+For `ThrowingAgentRunService`, add (matching its existing "boom" pattern):
+
+```csharp
+        public Task<bool> TryRejectParkedPlanAsync(Guid runId, CancellationToken ct = default) => throw new InvalidOperationException("boom");
+```
+
+Build immediately after this step, before writing any new tests, to confirm the four `CS0535` errors this interface addition would otherwise cause are gone:
+
+```bash
+dotnet build tests/Pia.Wpf.Tests/Pia.Wpf.Tests.csproj
+```
+
+Expected: `0 Error(s)`.
+
+- [ ] **Step 4: Write a failing test — the happy path**
 
 Mirror this file's existing `TryResumeFromPauseAsync`/`TryPauseUserAsync` test setup (an in-memory or temp-file SQLite-backed `AgentRunService`, a run created and parked):
 
@@ -869,7 +990,7 @@ public async Task TryRejectParkedPlanAsync_CancelsAPlanApprovalPark()
 }
 ```
 
-- [ ] **Step 4: Write a failing test — wrong reason must not match**
+- [ ] **Step 5: Write a failing test — wrong reason must not match**
 
 ```csharp
 [Fact]
@@ -886,7 +1007,7 @@ public async Task TryRejectParkedPlanAsync_DoesNotCancel_WhenParkedForADifferent
 }
 ```
 
-- [ ] **Step 5: Write a failing test — `RunChanged` fires only on the win**
+- [ ] **Step 6: Write a failing test — `RunChanged` fires only on the win**
 
 ```csharp
 [Fact]
@@ -905,22 +1026,22 @@ public async Task TryRejectParkedPlanAsync_RaisesRunChangedCancelled_OnlyOnTheWi
 }
 ```
 
-- [ ] **Step 6: Run all three, confirm fail → pass**
+- [ ] **Step 7: Run all three, confirm fail → pass**
 
 ```bash
-dotnet test --filter "FullyQualifiedName~TryRejectParkedPlanAsync"
+dotnet test -- --filter-method "*TryRejectParkedPlanAsync*"
 ```
 
-- [ ] **Step 7: Run the full gate**
+- [ ] **Step 8: Run the full gate**
 
 ```bash
 dotnet test
 ```
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add src/Pia.Wpf/Services/Interfaces/IAgentRunService.cs src/Pia.Wpf/Services/AgentRunService.cs tests/Pia.Wpf.Tests/Services/AgentRunServiceTests.cs
+git add src/Pia.Wpf/Services/Interfaces/IAgentRunService.cs src/Pia.Wpf/Services/AgentRunService.cs tests/Pia.Wpf.Tests/Services/AgentRunServiceTests.cs tests/Pia.Wpf.Tests/Services/AgentRunOrchestratorTests.cs tests/Pia.Wpf.Tests/Services/AgentRunClarificationResumeTests.cs tests/Pia.Wpf.Tests/Services/AgentRunResumeNoRePlanPremiseTests.cs tests/Pia.Wpf.Tests/Services/BackgroundAssistantTurnRunnerRunSpineTests.cs
 git commit -m "Add TryRejectParkedPlanAsync: CAS a plan-approval park straight to Cancelled"
 ```
 
@@ -930,7 +1051,7 @@ git commit -m "Add TryRejectParkedPlanAsync: CAS a plan-approval park straight t
 - Modify: `src/Pia.Wpf/Services/AgentRunOrchestrator.cs` (new trailing constructor parameter + new public method)
 - Modify: every existing positional `new AgentRunOrchestrator(...)` test construction that would otherwise be unaffected (none need editing — the new parameter is trailing and defaulted, per this class's own established convention; this step is a grep-and-confirm, not an edit)
 - Modify: `src/Pia.Wpf/Resources/Strings/ViewStrings.resx` + `.de.resx` + `.fr.resx` (one new key)
-- Test: `tests/Pia.Wpf.Tests/Services/AgentRunOrchestratorTests.cs` (or wherever `PostAndMirrorClarificationQuestionAsync`'s behavior is already covered — reuse that scaffolding)
+- Test: `tests/Pia.Wpf.Tests/Services/AgentRunOrchestratorTests.cs`. No existing test anywhere covers `PostAndMirrorClarificationQuestionAsync`/`SafePostClarificationQuestionAsync` — this file's `Harness.BuildOrchestrator` (line 235-239) never passes `chats:` even though `Harness.Chats` (a real `AssistantChatService`) exists on the harness, and there is no reusable `ILocalizationService` fake anywhere in this file. Step 3 below extends the harness rather than assuming either already works.
 
 - [ ] **Step 1: Add the loc key**
 
@@ -952,7 +1073,7 @@ git commit -m "Add TryRejectParkedPlanAsync: CAS a plan-approval park straight t
 Regenerate `ViewStrings.Designer.cs` the same manual way as Task 3.1 Step 3, then re-run the parity test:
 
 ```bash
-dotnet test --filter "FullyQualifiedName~LocalizationTests.AllTranslations_MustBeComplete"
+dotnet test -- --filter-method "*AllTranslations_MustBeComplete*"
 ```
 
 - [ ] **Step 2: Add the trailing constructor parameter**
@@ -1050,47 +1171,80 @@ Add this new PUBLIC method (called from OUTSIDE any `RunAsync` dispatch — Reje
 
 Confirm `SafeGetRunAsync` exists with this exact shape (it was cited earlier in this plan's research as `SafeGetRunAsync(Guid runId, CancellationToken ct)` around line 1532) before relying on it — grep to confirm its return type is `Task<AgentRun?>`.
 
-- [ ] **Step 4: Write a failing test**
+- [ ] **Step 4: Extend the test `Harness` to pass `chats` and a fake `localization`**
+
+`Harness.BuildOrchestrator` (`AgentRunOrchestratorTests.cs:235-239`) currently is:
+
+```csharp
+        public AgentRunOrchestrator BuildOrchestrator(
+            IAgentPlanner planner, IAgentVerifier? verifier = null,
+            IRunWorkspaceService? workspaces = null, IAgentRunService? runService = null) =>
+            new(runService ?? Runs, planner, verifier ?? new FakeVerifier(),
+                NullLogger<AgentRunOrchestrator>.Instance, workspaces);
+```
+
+Change to (new trailing-optional parameter, so every one of this file's dozens of existing call sites is unaffected):
+
+```csharp
+        public AgentRunOrchestrator BuildOrchestrator(
+            IAgentPlanner planner, IAgentVerifier? verifier = null,
+            IRunWorkspaceService? workspaces = null, IAgentRunService? runService = null,
+            ILocalizationService? localization = null) =>
+            new(runService ?? Runs, planner, verifier ?? new FakeVerifier(),
+                NullLogger<AgentRunOrchestrator>.Instance, workspaces, chats: Chats, localization: localization);
+```
+
+`Chats` (the harness's real `AssistantChatService`) is now always passed — this is safe because every existing test either never calls a code path that reads `_chats` (so this is a no-op for them) or already relies on `Chats` being the same real backing store `NewRunAsync` uses.
+
+- [ ] **Step 5: Write a failing test — the happy path**
+
+Use `Substitute.For<ILocalizationService>()` with the same "echo the key" stub `RunProgressViewModelTests.cs` already uses (`_loc[Arg.Any<string>()].Returns(ci => (string)ci[0]);`), so the assertion can check for the literal loc KEY without needing real resolved text:
 
 ```csharp
 [Fact]
 public async Task PostPlanRejectedNoticeAsync_PostsANoticeIntoTheRunsChat()
 {
-    // Construct AgentRunOrchestrator with a fake IAssistantChatService (_chats) and a fake ILocalizationService
-    // (_localization) whose indexer returns a fixed string for "Run_PlanRejected_ChatNote" — reuse whatever
-    // fakes this test file already has for testing PostAndMirrorClarificationQuestionAsync/SafePostClarificationQuestionAsync.
-    var run = await runService.CreateAsync(/* ... */);
+    var ct = TestContext.Current.CancellationToken;
+    var h = new Harness();
+    var run = await h.NewRunAsync("goal");
+    var loc = Substitute.For<ILocalizationService>();
+    loc[Arg.Any<string>()].Returns(ci => (string)ci[0]);
+    var orchestrator = h.BuildOrchestrator(new StubPlanner(PlanResult.Fallback), localization: loc);
 
-    await orchestrator.PostPlanRejectedNoticeAsync(run.Id, TestPersonas.Default, CancellationToken.None);
+    await orchestrator.PostPlanRejectedNoticeAsync(run.Id, Persona(), ct);
 
-    var chat = await chatService.GetAsync(run.ChatId, CancellationToken.None);
-    Assert.Contains(chat!.Messages, m => m.Content == "expected fixed string from the fake localization service");
+    var chat = await h.Chats.GetAsync(run.ChatId, ct);
+    Assert.Contains(chat!.Messages, m => m.Content == "Run_PlanRejected_ChatNote");
 }
 ```
 
-- [ ] **Step 5: Write a failing test for the null-localization no-op**
+Adjust `new StubPlanner(...)`/`Persona()` to whatever this file's own helpers are actually named (grep the file — it has its own `Persona()`/`Provider()` helpers used throughout, and its own planner fake, possibly named differently from `AgentRunOrchestratorArmTests.cs`'s `StubPlanner`; a `PlanAsync`/`ReplanAsync` are never invoked by this test, so any minimal `IAgentPlanner` fake in this file works).
+
+- [ ] **Step 6: Write a failing test for the null-localization no-op**
 
 ```csharp
 [Fact]
 public async Task PostPlanRejectedNoticeAsync_NoOps_WhenLocalizationIsNull()
 {
-    // Construct AgentRunOrchestrator WITHOUT a localization service (the default null).
-    var run = await runService.CreateAsync(/* ... */);
+    var ct = TestContext.Current.CancellationToken;
+    var h = new Harness();
+    var run = await h.NewRunAsync("goal");
+    var orchestrator = h.BuildOrchestrator(new StubPlanner(PlanResult.Fallback)); // localization defaults null
 
-    await orchestrator.PostPlanRejectedNoticeAsync(run.Id, TestPersonas.Default, CancellationToken.None);
+    await orchestrator.PostPlanRejectedNoticeAsync(run.Id, Persona(), ct);
 
-    var chat = await chatService.GetAsync(run.ChatId, CancellationToken.None);
+    var chat = await h.Chats.GetAsync(run.ChatId, ct);
     Assert.Empty(chat?.Messages ?? []);
 }
 ```
 
-- [ ] **Step 6: Run, confirm fail → pass**
+- [ ] **Step 7: Run, confirm fail → pass**
 
 ```bash
-dotnet test --filter "FullyQualifiedName~PostPlanRejectedNoticeAsync"
+dotnet test -- --filter-method "*PostPlanRejectedNoticeAsync*"
 ```
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add src/Pia.Wpf/Services/AgentRunOrchestrator.cs src/Pia.Wpf/Resources/Strings/ViewStrings.resx src/Pia.Wpf/Resources/Strings/ViewStrings.de.resx src/Pia.Wpf/Resources/Strings/ViewStrings.fr.resx src/Pia.Wpf/Resources/Strings/ViewStrings.Designer.cs tests/Pia.Wpf.Tests/Services/AgentRunOrchestratorTests.cs
@@ -1102,9 +1256,19 @@ git commit -m "Post a chat notice when a proposed plan is rejected"
 **Files:**
 - Modify: `src/Pia.Wpf/Services/Interfaces/IAgentRunResumeService.cs`
 - Modify: `src/Pia.Wpf/Services/HeadlessRunLauncher.cs`
-- Test: `tests/Pia.Wpf.Tests/Services/HeadlessRunLauncherTests.cs` (grep to confirm exact name)
+- Test: `tests/Pia.Wpf.Tests/Services/HeadlessRunLauncherTests.cs` — its shared `BuildLauncher(...)` helper (lines 127-224) registers a `ServiceCollection` for the launcher's per-run DI scope, but never registers `ILocalizationService`. Since `AgentRunOrchestrator` now takes it as a trailing-optional constructor parameter, an unregistered service resolves to the default `null` (the same "trailing-optional, so an unregistered store is silently absent" behavior this file's own comment already documents for `steering`, line 211-213) — so `PostPlanRejectedNoticeAsync`'s `if (_localization is null) return;` guard would fire and the happy-path test below would have nothing to assert. Step 0 registers a stub so the notice actually posts.
 
-- [ ] **Step 1: Add the interface member**
+- [ ] **Step 1: Register a stub `ILocalizationService` in `BuildLauncher`**
+
+In `HeadlessRunLauncherTests.cs`, inside `BuildLauncher(...)` (around line 191-217), add — beside the existing `services.AddSingleton<IAgentVerifier>(...)` line, using the same "echo the key" NSubstitute stub `RunProgressViewModelTests.cs` already uses elsewhere in this suite:
+
+```csharp
+        var loc = Substitute.For<ILocalizationService>();
+        loc[Arg.Any<string>()].Returns(ci => (string)ci[0]);
+        services.AddSingleton(loc);
+```
+
+- [ ] **Step 2: Add the interface member**
 
 ```csharp
     /// <summary>
@@ -1137,8 +1301,9 @@ Add near `DeclineAsync` (which is the interface's other short forwarding method)
         try
         {
             var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
-            var persona = await _personaService.ResolveActiveAsync(
-                WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal).ConfigureAwait(false);
+            // Reuses the same persona-resolution helper the launch/resume path already has (line 1064),
+            // rather than re-deriving the mode fallback inline.
+            var persona = await ResolveRunPersonaAsync(personaIdOverride: null, settings).ConfigureAwait(false);
 
             using var scope = _scopeFactory.CreateScope();
             var orchestrator = scope.ServiceProvider.GetRequiredService<AgentRunOrchestrator>();
@@ -1157,21 +1322,28 @@ Add near `DeclineAsync` (which is the interface's other short forwarding method)
 
 Confirm `_settingsService`, `_personaService`, `_scopeFactory` are the exact field names already in this class (all four were confirmed present and used with these exact names inside `ResumeAsync`/`RunResumedDispatchAsync` in the research above) before relying on them verbatim.
 
+Note on resilience: `SafePostClarificationQuestionAsync` (which `PostPlanRejectedNoticeAsync` calls) already wraps its own body in a try/catch that logs and swallows — by the time an exception could reach `RejectPlanAsync`'s own try/catch above, it would have to come from `_scopeFactory.CreateScope()` or `GetRequiredService<AgentRunOrchestrator>()` itself (a DI resolution fault), not from the chat write. This is a narrow, hard-to-cheaply-simulate edge case in `BuildLauncher`'s standard fixture (every dependency `AgentRunOrchestrator` needs is already registered there) — Step 5 below covers the two mechanism-verifiable behaviors (happy path, wrong-reason no-op) and leaves the DI-resolution-fault edge case as a manual code-review check rather than a fabricated test double, since forcing that specific fault would require a bespoke, non-standard DI setup whose only purpose is to prove a defensive `catch` block is reachable.
+
 - [ ] **Step 3: Write a failing test — happy path**
+
+Using this file's real fixtures (`_runs`, `ParkRunWithNoStepsAsync`, `BuildLauncher()`):
 
 ```csharp
 [Fact]
 public async Task RejectPlanAsync_CancelsTheRun_AndPostsANotice()
 {
-    var run = await agentRunService.CreateAsync(/* ... */);
-    await agentRunService.PauseAsync(run.Id, AgentRunOrchestrator.PlanApprovalReason);
+    var ct = TestContext.Current.CancellationToken;
+    var (launcher, _) = BuildLauncher();
+    var parked = await ParkRunWithNoStepsAsync(AgentRunOrchestrator.PlanApprovalReason);
 
-    var result = await launcher.RejectPlanAsync(run.Id);
+    var result = await launcher.RejectPlanAsync(parked.Id, ct);
 
     Assert.True(result);
-    var updated = await agentRunService.GetAsync(run.Id);
+    var updated = await _runs.GetAsync(parked.Id, ct);
     Assert.Equal(AgentRunState.Cancelled, updated!.State);
-    // Assert the notice landed — via whatever fake IAssistantChatService this test's DI scope resolves.
+    Assert.NotNull(updated.CompletedAt);
+    var chat = await _chats.GetAsync(updated.ChatId, ct);
+    Assert.Contains(chat!.Messages, m => m.Content == "Run_PlanRejected_ChatNote");
 }
 ```
 
@@ -1181,44 +1353,31 @@ public async Task RejectPlanAsync_CancelsTheRun_AndPostsANotice()
 [Fact]
 public async Task RejectPlanAsync_ReturnsFalse_WhenRunIsNotParkedOnPlanApproval()
 {
-    var run = await agentRunService.CreateAsync(/* ... */); // never parked
-    var result = await launcher.RejectPlanAsync(run.Id);
+    var ct = TestContext.Current.CancellationToken;
+    var (launcher, _) = BuildLauncher();
+    var parked = await ParkRunWithNoStepsAsync(AgentRunOrchestrator.NeedsInputReason); // a DIFFERENT reason
+
+    var result = await launcher.RejectPlanAsync(parked.Id, ct);
+
     Assert.False(result);
+    var updated = await _runs.GetAsync(parked.Id, ct);
+    Assert.Equal(AgentRunState.WaitingForInput, updated!.State); // untouched
 }
 ```
 
-- [ ] **Step 5: Write a failing test — notice failure does not flip the CAS result**
-
-```csharp
-[Fact]
-public async Task RejectPlanAsync_StillReturnsTrue_WhenTheNoticeFailsToPost()
-{
-    // Fake the scoped AgentRunOrchestrator's PostPlanRejectedNoticeAsync to throw. The CAS already
-    // committed before this call, so the method must still return true.
-    var run = await agentRunService.CreateAsync(/* ... */);
-    await agentRunService.PauseAsync(run.Id, AgentRunOrchestrator.PlanApprovalReason);
-
-    var result = await launcher.RejectPlanAsync(run.Id);
-
-    Assert.True(result);
-    var updated = await agentRunService.GetAsync(run.Id);
-    Assert.Equal(AgentRunState.Cancelled, updated!.State);
-}
-```
-
-- [ ] **Step 6: Run, confirm fail → pass**
+- [ ] **Step 5: Run, confirm fail → pass**
 
 ```bash
-dotnet test --filter "FullyQualifiedName~RejectPlanAsync"
+dotnet test -- --filter-method "*RejectPlanAsync*"
 ```
 
-- [ ] **Step 7: Run the full gate**
+- [ ] **Step 6: Run the full gate**
 
 ```bash
 dotnet test
 ```
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add src/Pia.Wpf/Services/Interfaces/IAgentRunResumeService.cs src/Pia.Wpf/Services/HeadlessRunLauncher.cs tests/Pia.Wpf.Tests/Services/HeadlessRunLauncherTests.cs
@@ -1257,32 +1416,17 @@ git commit -m "Add RejectPlanAsync: settle a plan-approval park to Cancelled wit
 <data name="Run_Action_RejectPlan" xml:space="preserve"><value>Rejeter</value></data>
 ```
 
-- [ ] **Step 2: Add a plan-approval lead line for the signal band**
+No separate "plan-approval title" loc key is needed here: `RunProgressPanel.xaml`'s signal-band lead line already binds `CurrentActivity` (via `ComputeActivity` → `DescribePause`), and Chunk 3 Task 3.2 already added the `PlanApprovalReason` arm there, returning `Run_Activity_PlanApproval` — the exact same key Task 3.1 already localized in all three resx files. A second, competing lead-line key/property would be redundant dead weight (verified against the actual XAML/VM — see Task 5.2 Step 6 and Task 5.3 Step 3 below, which state this firmly rather than as an open question).
 
-`ViewStrings.resx`:
-```xml
-<data name="Run_PlanApproval_Title" xml:space="preserve"><value>Review this plan before it runs</value></data>
-```
-
-`ViewStrings.de.resx`:
-```xml
-<data name="Run_PlanApproval_Title" xml:space="preserve"><value>Diesen Plan vor der Ausführung prüfen</value></data>
-```
-
-`ViewStrings.fr.resx`:
-```xml
-<data name="Run_PlanApproval_Title" xml:space="preserve"><value>Vérifiez ce plan avant son exécution</value></data>
-```
-
-- [ ] **Step 3: Regenerate `Designer.cs` and run the parity test**
+- [ ] **Step 2: Regenerate `Designer.cs` and run the parity test**
 
 Same manual Visual-Studio-save step as Task 3.1 Step 3, then:
 
 ```bash
-dotnet test --filter "FullyQualifiedName~LocalizationTests.AllTranslations_MustBeComplete"
+dotnet test -- --filter-method "*AllTranslations_MustBeComplete*"
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
 git add src/Pia.Wpf/Resources/Strings/ViewStrings.resx src/Pia.Wpf/Resources/Strings/ViewStrings.de.resx src/Pia.Wpf/Resources/Strings/ViewStrings.fr.resx src/Pia.Wpf/Resources/Strings/ViewStrings.Designer.cs
@@ -1385,53 +1529,70 @@ Add `[NotifyPropertyChangedFor(nameof(ContinueLabel))]` to `IsPlanApprovalPause`
     public bool ShowNudgeBox => ShowContinueButton && !IsPlanApprovalPause;
 ```
 
-- [ ] **Step 7: Add a plan-approval title line property for the signal band**
+`ShowNudgeBox` also depends on `State` (transitively, via `ShowContinueButton`), not only on `IsPlanApprovalPause`. `_state`'s existing attribute list already carries `[NotifyPropertyChangedFor(nameof(ShowContinueButton))]` (around line 91) but nothing for `ShowNudgeBox` — CommunityToolkit.Mvvm's generated setter only raises `PropertyChanged` for names explicitly listed, it does not cascade through a property's getter body. Without this, an ORDINARY budget pause (`IsPlanApprovalPause` staying `false` throughout) would update `ShowContinueButton`'s binding but never raise `PropertyChanged("ShowNudgeBox")` — regressing the pre-existing steering-note box (Batch 08 D4) across ordinary pause/resume transitions, since Task 5.3 Step 3 rebinds Region D's `Visibility` straight to `ShowNudgeBox`. Add `[NotifyPropertyChangedFor(nameof(ShowNudgeBox))]` to `_state`'s attribute list, beside its existing `ShowContinueButton` entry.
 
-```csharp
-    /// <summary>The signal band's lead line while parked for plan approval; null everywhere else so the
-    /// existing lead-line binding is unaffected on every other state.</summary>
-    public string? PlanApprovalTitle => IsPlanApprovalPause ? _localization["Run_PlanApproval_Title"] : null;
-```
+- [ ] **Step 7: (dropped)**
 
-(Confirm the exact existing lead-line property name in this file before wiring the XAML in Task 5.3 — grep for whatever binds to the signal band's headline text today, since this plan does not have its exact name from the research above; it may already be `ComposeSubLine`/`SubLine`-driven rather than needing a brand-new property. If `SubLine`/`ComposeSubLine` already covers this via `DescribePause`'s new arm from Task 3.2, DROP this step and Task 5.3's corresponding binding — do not introduce a redundant second lead-line property. Verify against the actual XAML before deciding.)
+An earlier draft of this plan proposed a `PlanApprovalTitle` property and a matching conditional XAML rebind in Task 5.3, hedging on whether the signal band's lead line already covers this. Verified against the actual source: `RunProgressViewModel.cs`'s `Project` sets `CurrentActivity = ComputeActivity(run)` (line 913), `ComputeActivity` (lines 1208-1227) routes `AgentRunState.WaitingForInput` through `DescribePause(run)`, and `RunProgressPanel.xaml:212-217` binds `CurrentActivity` to the signal band's lead-line `TextBlock`. Chunk 3 Task 3.2 already adds the `PlanApprovalReason` arm to that exact switch. So once Chunk 3 lands, parking for plan approval already renders the lead line with zero further changes — a `PlanApprovalTitle` property would be a second, competing text source bound to the same slot. Confirmed dead weight; not added. (This also means `Run_PlanApproval_Title` was correctly dropped from Task 5.1.)
 
 - [ ] **Step 8: Write failing tests**
 
+`Project(AgentRun, ...)` is `private` — not reachable directly from the test file. Every existing test in this file drives a projection by persisting a real pause via `_runs.PauseAsync(...)` and then calling `await vm.RefreshAsync()` (see `WaitingForInput_ProjectsWaitingState_ContinueEnabled`, lines 287-301), and every test is `async Task`, never synchronous `void`. Follow that exact pattern:
+
 ```csharp
 [Fact]
-public void Project_SetsIsPlanApprovalPause_ForAPlanApprovalPark()
+public async Task WaitingForInput_ProjectsPlanApprovalPause_ApproveLabelAndNoNudgeBox()
 {
-    var run = /* WaitingForInput, reason=plan-approval */;
-    vm.Project(run);
+    var run = await NewPlannedRunAsync();
+    var vm = CreateVm(run.Id);
+
+    await _runs.PauseAsync(run.Id, AgentRunOrchestrator.PlanApprovalReason, TestContext.Current.CancellationToken);
+    await vm.RefreshAsync();
+
     Assert.True(vm.IsPlanApprovalPause);
     Assert.True(vm.ShowRejectPlanButton);
     Assert.False(vm.ShowNudgeBox);
-    Assert.Equal("Approve", vm.ContinueLabel); // or whatever the fake ILocalizationService returns for Run_Action_ApprovePlan
+    Assert.Equal("Run_Action_ApprovePlan", vm.ContinueLabel); // _loc echoes the key, per this file's setup (line 32)
+    vm.Dispose();
 }
 
 [Fact]
-public void Project_LeavesPlanApprovalPropertiesFalse_ForAnOrdinaryToolApprovalPark()
+public async Task WaitingForInput_OrdinaryToolApprovalPark_LeavesPlanApprovalPropertiesFalse()
 {
-    var run = /* WaitingForInput, reason=tool-approval */;
-    vm.Project(run);
+    var run = await NewPlannedRunAsync();
+    var vm = CreateVm(run.Id);
+
+    await _runs.PauseAsync(run.Id, AgentRunOrchestrator.ToolApprovalReason, TestContext.Current.CancellationToken, approvalTool: "write_file");
+    await vm.RefreshAsync();
+
     Assert.False(vm.IsPlanApprovalPause);
     Assert.False(vm.ShowRejectPlanButton);
     Assert.True(vm.ShowNudgeBox); // ordinary park keeps the nudge box
+    Assert.Equal("Run_Action_Continue", vm.ContinueLabel);
+    vm.Dispose();
 }
 
 [Fact]
 public async Task RejectPlan_CallsResumeServiceRejectPlanAsync()
 {
-    // fake _resumeService captures the call
+    var run = await NewPlannedRunAsync();
+    var vm = CreateVm(run.Id);
+    await _runs.PauseAsync(run.Id, AgentRunOrchestrator.PlanApprovalReason, TestContext.Current.CancellationToken);
+    await vm.RefreshAsync();
+
     await vm.RejectPlanCommand.ExecuteAsync(null);
-    Assert.True(fakeResumeService.RejectPlanAsyncCalled);
+
+    await _resume.Received(1).RejectPlanAsync(run.Id, Arg.Any<CancellationToken>());
+    vm.Dispose();
 }
 ```
+
+Match `CreateVm`/`NewPlannedRunAsync`/`_runs`/`_resume`/`_loc`'s exact existing names in this file (all confirmed present: `_resume` is `Substitute.For<IAgentRunResumeService>()` at line 23, `_loc` echoes the key per line 32) rather than the illustrative fakes an earlier draft of this plan used.
 
 - [ ] **Step 9: Run, confirm fail → pass**
 
 ```bash
-dotnet test --filter "FullyQualifiedName~PlanApproval"
+dotnet test -- --filter-method "*PlanApproval*"
 ```
 
 - [ ] **Step 10: Commit**
@@ -1496,11 +1657,7 @@ Change to:
 Visibility="{Binding ShowNudgeBox, Converter={StaticResource BooleanToVisibilityConverter}}">
 ```
 
-- [ ] **Step 4: Wire the plan-approval title line — CONDITIONAL on Task 5.2 Step 7's decision**
-
-If Task 5.2 kept `PlanApprovalTitle` as a real property (because the existing lead line does NOT already route through `DescribePause`), find the signal band's headline `TextBlock` (search this file for whatever binds the lead/sub line today — the panel's own comments in the research above call this "Region A") and add a `DataTrigger`-style override so `PlanApprovalTitle` wins when non-null, following whatever pattern the existing lead-line binding already uses for its own state-dependent text. If Task 5.2 dropped `PlanApprovalTitle` (because `DescribePause`'s new arm already covers it via the existing `SubLine`/activity-line binding), skip this step entirely — no XAML change needed beyond Steps 1-3.
-
-- [ ] **Step 5: Build and manually smoke-test**
+- [ ] **Step 4: Build and manually smoke-test**
 
 ```bash
 dotnet build src/Pia.Wpf/Pia.Wpf.csproj
@@ -1508,7 +1665,7 @@ dotnet build src/Pia.Wpf/Pia.Wpf.csproj
 
 WPF/XAML bindings are not exercised by `dotnet test` — a typo in a binding path fails silently at runtime, not at build time. Run the app (`dotnet run --project src/Pia.Wpf/Pia.Wpf.csproj`), and USE `dotnet test`'s existing `RunProgressViewModelTests` coverage from Task 5.2 as the correctness check for the VM side; the XAML binding paths themselves need a manual check — this plan's Chunk 6 Task 6.4 includes the full manual smoke test once the composer guard is also wired up, so a full plan-approval flow can actually be triggered end-to-end.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/Pia.Wpf/Controls/Assistant/RunProgressPanel.xaml
@@ -1529,14 +1686,8 @@ git commit -m "Add the plan-approval Reject button and rebind Continue's label /
 Current `ForeignRunActive` (lines 168-188, confirmed above) is a plain stored bool with a private setter, a `Changed` event, and a no-op-if-unchanged setter. Add, right after it:
 
 ```csharp
-    /// <summary>
-    /// True while this chat's active run is parked WaitingForInput specifically for plan approval
-    /// (<c>AgentRunOrchestrator.PlanApprovalReason</c>) — narrower than <see cref="ForeignRunActive"/>, which
-    /// deliberately stays false for ANY WaitingForInput park so the "continue in chat" path stays open. This
-    /// one exists to close exactly one path: a plan sitting on screen for Approve/Reject must not be
-    /// bypassed by starting an unrelated second turn (Send, Regenerate, or an Agent-mode suggestion chip) —
-    /// see ChatSessionManager's three recompute sites and its StartTurnAsync backstop guard.
-    /// </summary>
+    /// <summary>True while this chat's run is parked for plan approval — narrower than
+    /// <see cref="ForeignRunActive"/>, which stays false for any park so "continue in chat" stays open.</summary>
     public bool PlanApprovalParkActive { get; private set; }
 
     /// <summary>Raised when <see cref="PlanApprovalParkActive"/> changes (marshaled to the UI thread by the manager).</summary>
@@ -1571,7 +1722,7 @@ git commit -m "Add ChatSession.PlanApprovalParkActive"
 
 **Files:**
 - Modify: `src/Pia.Wpf/ViewModels/Models/ChatSessionManager.cs`
-- Test: `tests/Pia.Wpf.Tests/ViewModels/Models/ChatSessionManagerTests.cs` (grep to confirm exact name/location)
+- Test: `tests/Pia.Wpf.Tests/ViewModels/ChatSessionManagerTests.cs` (note: NOT under a `Models` subfolder, despite the source file living in `ViewModels/Models/`)
 
 - [ ] **Step 1: Recompute at `ActivateAsync` (line 551)**
 
@@ -1581,7 +1732,7 @@ Current:
         session.SetForeignRunActive(_executingRuns.IsExecuting(chat.Id));
 ```
 
-This site seeds `ForeignRunActive` before a resumable run is even looked up (`RestoreActiveRunAsync` runs after and is the real source of park-reason knowledge for a re-attached run) — so `PlanApprovalParkActive` has nothing to compute here yet. **No change at this site**; it is seeded by `RestoreActiveRunAsync` (Step 2) instead, the same way `ForeignRunActive`'s OWN plan-approval-aware value ultimately comes from there too. Confirm this by reading `ActivateAsync`'s full body before skipping — if it calls `RestoreActiveRunAsync` itself right after this line, the ordering already guarantees the correct final value; if it does not, `PlanApprovalParkActive` needs an explicit `session.SetPlanApprovalParkActive(false)` seed here for symmetry. Check and note which is true in a code comment at the call site.
+**No change at this site.** `ActivateAsync` does call `RestoreActiveRunAsync` right after this line (`ChatSessionManager.cs:551,570`), but via `.SafeFireAndForget(_logger)` — fire-and-forget, not awaited — so that ordering guarantees nothing about completion order by itself. The real reason no seed is needed here: a freshly constructed `ChatSession`'s `PlanApprovalParkActive` already defaults to `false`, which is the safe/composer-enabled value, and `RestoreActiveRunAsync`'s async backfill (Step 2 below) corrects it once its pool-thread lookup lands — the exact same eventual-consistency window `ForeignRunActive`'s own backfill already accepts (per `ChatSessionManager.cs:634-640`'s own comment). No explicit `SetPlanApprovalParkActive(false)` call needed at this site.
 
 - [ ] **Step 2: Recompute at `RestoreActiveRunAsync`**
 
@@ -1608,33 +1759,32 @@ Add, right after it:
 
 This handler (lines 237-328, confirmed above) reasons ONLY from `e.State` — it deliberately does no store read per event (a documented choice: "this handler reasons purely from `e.State`, no I/O"). `PlanApprovalParkActive` needs the pause REASON, which the event does not carry. Rather than adding an I/O read into this hot per-event handler (a departure from its established no-I/O discipline), take the cheaper, correct path: a `RunChanged(WaitingForInput)` event fires whenever ANY park happens (including plan-approval, via `SafePause` in `ParkForPlanApprovalAsync` from Chunk 2), and a `RunChanged(Running)`/`RunChanged(Cancelled)` event fires whenever it resolves (Approve/Reject/any resume). So:
 
-- On `e.State == AgentRunState.WaitingForInput` for the session holding this run: do a ONE-TIME read of the run's reason (an occasional pause-transition event, not a per-step hot path — unlike the `executing`-only recompute above it, which fires every step) via `_agentRunService.GetAsync`, then `SetPlanApprovalParkActive` accordingly.
-- On any OTHER `e.State` for the session holding this run: `SetPlanApprovalParkActive(false)` unconditionally (a run that is Running/Cancelled/Completed/etc. is not parked for plan approval by definition).
+- On `e.State == AgentRunState.WaitingForInput`: do a ONE-TIME read of the run's reason (an occasional pause-transition event, not a per-step hot path — unlike the `executing`-only recompute above it, which fires every step).
+- On any OTHER `e.State`: the run is not parked for plan approval by definition — no read needed, `false` unconditionally.
 
-Add, inside the existing `foreach (var session in _allSessions)` loop, right after the existing `session.SetForeignRunActive(foreign);` line:
+Compute this ONCE, OUTSIDE the `foreach (var session in _allSessions)` loop — not per-session inside it. Two reasons: (1) the answer is the same for whichever session holds this run, so recomputing it once and reusing it avoids redundant reads; (2) `IAgentRunService` is a synchronous, lock-holding store (`AgentRunService.GetAsync` takes `lock (_gate)` for its whole body) — this file's OWN existing caution around it (`RestoreActiveRunAsync` wraps the equivalent call in `Task.Run(...)`, and `ChatSessionManager.cs:1017-1022`'s `ReadClarificationParkReasonAsync` does the same) is "a live headless run holding that lock must never stall the UI." Doing this fetch inside the `foreach` would put an `await` mid-loop, reopening exactly the cross-event interleaving hazard hoisting avoids. Add, right before the `foreach (var session in _allSessions)` loop:
+
+```csharp
+                var isPlanApprovalPark = e.State == AgentRunState.WaitingForInput
+                    && await Task.Run(async () =>
+                    {
+                        var run = await _agentRunService.GetAsync(e.RunId).ConfigureAwait(false);
+                        return run is not null && RunPauseEnvelope.ReadReason(run) == AgentRunOrchestrator.PlanApprovalReason;
+                    }).ConfigureAwait(false);
+```
+
+Then, inside the `foreach` loop, right after the existing `session.SetForeignRunActive(foreign);` line:
 
 ```csharp
                     if (holdsThisRun)
-                    {
-                        if (e.State == AgentRunState.WaitingForInput)
-                        {
-                            // One read per pause transition (not per step) — cheap, and the only way this
-                            // handler can tell a plan-approval park apart from any other WaitingForInput one;
-                            // e.State alone (see the no-I/O discipline above this block) cannot.
-                            var run = await _agentRunService.GetAsync(e.RunId).ConfigureAwait(false);
-                            session.SetPlanApprovalParkActive(
-                                run is not null && RunPauseEnvelope.ReadReason(run) == AgentRunOrchestrator.PlanApprovalReason);
-                        }
-                        else
-                        {
-                            session.SetPlanApprovalParkActive(false);
-                        }
-                    }
+                        session.SetPlanApprovalParkActive(isPlanApprovalPark);
 ```
 
-This requires the enclosing `_syncContext.Post(_ => { ... }, null)` lambda to become `async` (`_syncContext.Post(async _ => { ... }, null)`) so the `await` compiles — confirm this does not change the method's fire-and-forget semantics in a way the rest of the handler relies on (it already catches all exceptions in its own `try`/`catch`, so an async void-shaped continuation is consistent with what is already there).
+This requires the enclosing `_syncContext.Post(_ => { ... }, null)` lambda to become `async` (`_syncContext.Post(async _ => { ... }, null)`) so the two `await`s above compile — the method's existing `try`/`catch` already spans the whole body, so this is exception-safe as written; there is no ordering hazard today, but that safety rests on `GetAsync`'s current synchronous-under-lock implementation, which this change does not alter.
 
-- [ ] **Step 4: Add the `StartTurnAsync` backstop guard**
+- [ ] **Step 4: Add the `StartTurnAsync` backstop guard — a LIVE read, per the spec, not the cached flag**
+
+The design spec is explicit that this backstop should use "the same two-part read `IsPlanApprovalPause` uses" specifically because a live re-read composes correctly with Reject without depending on the cached flag's async propagation delay (`ChatSession.PlanApprovalParkActive` is updated by `OnAgentRunChanged`, which is itself async and could theoretically lag a fast Approve→immediately-type-again sequence). The cached flag is the right tool for the three cheap, synchronous composer-level `CanExecute`/early-return checks (Task 6.3) — an async DB read there would be the wrong shape for a `CanExecute` predicate — but `StartTurnAsync` is already `async` and already does a live read for the SAME kind of check one line later (`TryAnswerParkedRunAsync` → `ReadClarificationParkReasonAsync`, `ChatSessionManager.cs:1017-1031`, which today only recognizes `NeedsGoalReason`/`NeedsInputReason`). Add a sibling live check rather than relying on the cached flag here.
 
 Current (line 667):
 
@@ -1646,12 +1796,10 @@ Current (line 667):
 Change to:
 
 ```csharp
-        // Backstop for any caller that reaches StartTurnAsync WITHOUT going through one of the three
-        // composer-level pre-checks added in AssistantViewModel (CanExecuteSendMessage, RegenerateCore,
-        // SwitchToAgent) — defense in depth, same shape TryAnswerParkedRunAsync's own check is. A REFUSAL,
-        // not an "answer the park" branch: typing over a plan sitting on screen for Approve/Reject must
-        // never be read as approving or rejecting it.
-        if (session.PlanApprovalParkActive)
+        // Backstop (defense in depth, same shape TryAnswerParkedRunAsync's check is below) — a REFUSAL, not
+        // an answer: typing over a pending plan must never be read as approving/rejecting it. Live read, not
+        // the cached PlanApprovalParkActive flag, matching TryAnswerParkedRunAsync's own live check.
+        if (session.ActiveRunId is { } activeRunId && await IsPlanApprovalParkedAsync(activeRunId))
         {
             _logger.LogInformation(
                 "Chat {ChatId}: refusing a new turn while a plan-approval park is active", session.Id);
@@ -1662,44 +1810,98 @@ Change to:
             return;
 ```
 
-This re-reads `session.PlanApprovalParkActive` (the live, session-level flag from Task 6.1/Step 2-3 above) rather than doing its own DB read — so it composes correctly with Reject: once `RejectPlanAsync`'s CAS lands and raises `RunChanged(Cancelled)`, Step 3's handler clears the flag, and the very next `StartTurnAsync` call proceeds normally.
+Add a small sibling helper beside `ReadClarificationParkReasonAsync`, following its exact shape (`ChatSessionManager.cs:1016-1034`):
+
+```csharp
+    /// <summary>Live check for the StartTurnAsync backstop: is this run currently parked specifically for
+    /// plan approval? A sibling of <see cref="ReadClarificationParkReasonAsync"/>, not a widened version of
+    /// it — that method's return type is "the recognized clarification reason, or null", and plan-approval
+    /// is a different park with different resume semantics (no answer text applies to it at all).</summary>
+    private async Task<bool> IsPlanApprovalParkedAsync(Guid runId)
+    {
+        AgentRun? run;
+        try
+        {
+            run = await Task.Run(() => _agentRunService.GetAsync(runId));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read run {RunId} while checking for a plan-approval park", runId);
+            return false;
+        }
+
+        return run is { State: AgentRunState.WaitingForInput }
+            && RunPauseEnvelope.ReadReason(run) == AgentRunOrchestrator.PlanApprovalReason;
+    }
+```
+
+This composes correctly with Reject for the same reason `ReadClarificationParkReasonAsync` already does: it re-reads the run's *current* state on every call rather than caching, so once `RejectPlanAsync`'s CAS lands, the very next `StartTurnAsync` call sees `Cancelled` and proceeds normally.
 
 - [ ] **Step 5: Write a failing test for the `StartTurnAsync` backstop**
 
+This file already has an `AttachParkedRun(session, reason, state)` helper (line 1624 — "writes a real pause envelope rather than stubbing a 'parked' bool, since nothing in production reads such a bool") and a directly analogous existing test, `StartTurnAsync_RunParkedAtBudget_StartsAnOrdinaryTurn_AndNeverResumes` (line 1734), which proves an unanswerable park (`"step-cap"`) lets an ordinary turn start — asserting non-vacuity via `_personas.Received(1).ResolveActiveAsync(...)`. The new plan-approval case is the mirror image: it must NOT let that turn start. Use the same non-vacuity technique, inverted:
+
 ```csharp
 [Fact]
-public async Task StartTurnAsync_RefusesANewTurn_WhilePlanApprovalParkIsActive()
+public async Task StartTurnAsync_RunParkedForPlanApproval_RefusesTheTurn_WithoutEverResolvingSetup()
 {
-    var session = /* build a session, set session.SetPlanApprovalParkActive(true) directly for this unit test */;
-    var messageCountBefore = session.Messages.Count;
+    var sut = CreateResumingSut();
+    var session = sut.GetOrCreateActiveForNewChat();
+    AttachParkedRun(session, AgentRunOrchestrator.PlanApprovalReason);
 
-    await manager.StartTurnAsync(session, "some new message", attachment: null);
+    await sut.StartTurnAsync(session, "meanwhile, what is the weather", null);
 
-    Assert.Equal(messageCountBefore, session.Messages.Count); // nothing was added — refused, not answered
+    // Mechanism-specific, not just a message count: if the turn had proceeded (even via
+    // TryAnswerParkedRunAsync's unrelated no-op path), persona/provider resolution would have run.
+    await _personas.DidNotReceive().ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>());
+    await _resumeService.DidNotReceive().ResumeAsync(
+        Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    // Only the park's own envelope exists — no user/assistant messages were added by this call.
+    Assert.Empty(session.Messages);
 }
 ```
 
 - [ ] **Step 6: Write a failing test for `RestoreActiveRunAsync`'s recompute**
 
+Mirroring the existing `RestoreActiveRunAsync_ParkedRun_DoesNotMarkItForeign` `[Theory]` (line 322) and its `Run(chatId, state, createdAt)` helper (line 246) — extend a local `AgentRun` construction to carry the plan-approval `ExtraJson` (`Run(...)` itself has no `ExtraJson` parameter, so build the run inline for this reason, matching the shape `AttachParkedRun` already uses at line 1633-1640):
+
 ```csharp
 [Fact]
 public async Task RestoreActiveRunAsync_SetsPlanApprovalParkActive_ForAPlanApprovalPark()
 {
-    var run = /* create + pause with AgentRunOrchestrator.PlanApprovalReason */;
-    var session = /* new, unattached session for the same chat */;
+    var chatId = Guid.NewGuid();
+    var parked = new AgentRun
+    {
+        Id = Guid.NewGuid(), ChatId = chatId, RunShape = RunShape.Planned,
+        State = AgentRunState.WaitingForInput, CreatedAt = DateTime.UtcNow.AddMinutes(-1),
+        ExtraJson = PauseEnvelope(AgentRunOrchestrator.PlanApprovalReason),
+    };
+    _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+    _runService.GetByChatAsync(chatId, Arg.Any<CancellationToken>()).Returns(new List<AgentRun> { parked });
 
-    await manager.RestoreActiveRunAsync(session);
+    var sut = CreateSut();
+    var session = await sut.ActivateAsync(chatId);
+    session!.SetActiveRun(null);
+
+    await sut.RestoreActiveRunAsync(session);
 
     Assert.True(session.PlanApprovalParkActive);
+    Assert.False(session.ForeignRunActive); // still the parked "continue in chat" shape for THIS flag
 }
 
 [Fact]
 public async Task RestoreActiveRunAsync_LeavesPlanApprovalParkActiveFalse_ForAnOrdinaryPark()
 {
-    var run = /* create + pause with AgentRunOrchestrator.NeedsInputReason */;
-    var session = /* new, unattached session for the same chat */;
+    var chatId = Guid.NewGuid();
+    var parked = Run(chatId, AgentRunState.WaitingForInput, DateTime.UtcNow.AddMinutes(-1)); // no ExtraJson at all
+    _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+    _runService.GetByChatAsync(chatId, Arg.Any<CancellationToken>()).Returns(new List<AgentRun> { parked });
 
-    await manager.RestoreActiveRunAsync(session);
+    var sut = CreateSut();
+    var session = await sut.ActivateAsync(chatId);
+    session!.SetActiveRun(null);
+
+    await sut.RestoreActiveRunAsync(session);
 
     Assert.False(session.PlanApprovalParkActive);
 }
@@ -1707,31 +1909,49 @@ public async Task RestoreActiveRunAsync_LeavesPlanApprovalParkActiveFalse_ForAnO
 
 - [ ] **Step 7: Write a failing test for the `OnAgentRunChanged` recompute — set on park, clear on resolve**
 
+Mirroring `RunChanged_ToPaused_ClearsTheForeignFlag` (line 342)'s exact poll-with-timeout shape, since `AgentRunService` raises `RunChanged` from a pool thread and the manager marshals the flip via `_syncContext.Post`:
+
 ```csharp
 [Fact]
-public async Task OnAgentRunChanged_SetsThenClearsPlanApprovalParkActive_AcrossAParkAndAResolve()
+public async Task RunChanged_ToWaitingForInput_SetsPlanApprovalParkActive_ThenClearsItOnCancelled()
 {
-    var session = /* attached to a run via session.SetActiveRun(runId) */;
+    var chatId = Guid.NewGuid();
+    var running = Run(chatId, AgentRunState.Running, DateTime.UtcNow.AddMinutes(-1));
+    _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+    _runService.GetByChatAsync(chatId, Arg.Any<CancellationToken>()).Returns(new List<AgentRun> { running });
 
-    RaiseRunChanged(runId, AgentRunState.WaitingForInput); // with the fake IAgentRunService returning a
-                                                            // plan-approval-parked run for GetAsync(runId)
-    await WaitForUiThreadWorkToDrainAsync(); // however this test file already synchronizes with _syncContext.Post
+    var sut = CreateSut();
+    var session = await sut.ActivateAsync(chatId);
+    session!.SetActiveRun(null);
+    await sut.RestoreActiveRunAsync(session);
+    Assert.False(session.PlanApprovalParkActive);
 
+    // The live read this event triggers (Task 6.2 Step 3) needs GetAsync(running.Id) to answer with the
+    // now-parked row — stub it the same way AttachParkedRun does.
+    _runService.GetAsync(running.Id, Arg.Any<CancellationToken>()).Returns(new AgentRun
+    {
+        Id = running.Id, ChatId = chatId, RunShape = RunShape.Planned, State = AgentRunState.WaitingForInput,
+        ExtraJson = PauseEnvelope(AgentRunOrchestrator.PlanApprovalReason),
+    });
+    _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(running.Id, AgentRunState.WaitingForInput));
+
+    for (var i = 0; i < 200 && !session.PlanApprovalParkActive; i++)
+        await Task.Delay(10, TestContext.Current.CancellationToken);
     Assert.True(session.PlanApprovalParkActive);
 
-    RaiseRunChanged(runId, AgentRunState.Cancelled); // Reject landed
-    await WaitForUiThreadWorkToDrainAsync();
+    // Reject lands: Cancelled.
+    _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(running.Id, AgentRunState.Cancelled));
 
+    for (var i = 0; i < 200 && session.PlanApprovalParkActive; i++)
+        await Task.Delay(10, TestContext.Current.CancellationToken);
     Assert.False(session.PlanApprovalParkActive);
 }
 ```
 
-Adapt `RaiseRunChanged`/`WaitForUiThreadWorkToDrainAsync` to whatever this test file's existing `OnAgentRunChanged` coverage (if any — grep for `ForeignRunActive` tests in this file) already uses to drive and observe the `_syncContext.Post` continuation.
-
 - [ ] **Step 8: Run, confirm fail → pass**
 
 ```bash
-dotnet test --filter "FullyQualifiedName~PlanApprovalParkActive"
+dotnet test -- --filter-method "*PlanApprovalParkActive*"
 ```
 
 - [ ] **Step 9: Run the full gate**
@@ -1743,7 +1963,7 @@ dotnet test
 - [ ] **Step 10: Commit**
 
 ```bash
-git add src/Pia.Wpf/ViewModels/Models/ChatSessionManager.cs tests/Pia.Wpf.Tests/ViewModels/Models/ChatSessionManagerTests.cs
+git add src/Pia.Wpf/ViewModels/Models/ChatSessionManager.cs tests/Pia.Wpf.Tests/ViewModels/ChatSessionManagerTests.cs
 git commit -m "Track PlanApprovalParkActive and refuse a new turn in StartTurnAsync while it holds"
 ```
 
@@ -1753,7 +1973,7 @@ git commit -m "Track PlanApprovalParkActive and refuse a new turn in StartTurnAs
 - Modify: `src/Pia.Wpf/ViewModels/AssistantViewModel.cs`
 - Modify: `src/Pia.Wpf/Views/AssistantView.xaml`
 - Modify: `src/Pia.Wpf/Resources/Strings/ViewStrings.resx` + `.de.resx` + `.fr.resx` (one new key)
-- Test: `tests/Pia.Wpf.Tests/ViewModels/AssistantViewModelTests.cs`
+- Test: `tests/Pia.Wpf.Tests/ViewModels/AssistantViewModelLeverTests.cs` — there is no single `AssistantViewModelTests.cs`; tests are split by concern across several files, and this one already covers `ForeignRunActive`/`SendMessageCommand`/the session-attach wiring with the exact fixtures this task needs (`CreateSut()`, `SessionWithTranscript(...)`, `Activate(...)`).
 
 - [ ] **Step 1: Add the composer-hint loc key**
 
@@ -1775,18 +1995,68 @@ git commit -m "Track PlanApprovalParkActive and refuse a new turn in StartTurnAs
 Regenerate `Designer.cs` (manual VS step, as in prior tasks) and run the parity test:
 
 ```bash
-dotnet test --filter "FullyQualifiedName~LocalizationTests.AllTranslations_MustBeComplete"
+dotnet test -- --filter-method "*AllTranslations_MustBeComplete*"
 ```
 
-- [ ] **Step 2: Add a `PlanApprovalParkActive` passthrough property on `AssistantViewModel`**
+- [ ] **Step 2: Add a fully-wired `PlanApprovalParkActive` `[ObservableProperty]`, mirroring `ForeignRunActive` exactly**
 
-The composer hint and the three guards below all need to read the ACTIVE session's flag. Find how this ViewModel already exposes `ForeignRunActive` (grep `ForeignRunActive` in `AssistantViewModel.cs` — it is referenced directly in `CanExecuteSendMessage`/`RegenerateCore`/`SwitchToAgent`, so it is likely a direct passthrough property or a raised/observed change off the active session). Add a property with the identical shape:
+`ForeignRunActive` (`AssistantViewModel.cs:98-99`) is a full `[ObservableProperty] private bool _foreignRunActive;` kept in sync at FOUR sites, not a computed passthrough — a bare `_chatSessionManager.ActiveSession?.PlanApprovalParkActive ?? false` getter would be `private`/non-notifying and the XAML binding in Step 1 above would silently render nothing bound to it (the exact class of bug this plan has flagged elsewhere). Add the property and all four wiring points:
 
 ```csharp
-    private bool PlanApprovalParkActive => _chatSessionManager.ActiveSession?.PlanApprovalParkActive ?? false;
+    /// <summary>True while this chat's active run is parked for plan approval — narrower than
+    /// <see cref="ForeignRunActive"/>. Also drives the composer hint line.</summary>
+    [ObservableProperty]
+    private bool _planApprovalParkActive;
 ```
 
-Adjust this to match EXACTLY how `ForeignRunActive` itself is exposed on this ViewModel (it may be a bound `[ObservableProperty]` synced via an event subscription rather than a plain computed getter — check before assuming a bare getter is sufficient; if `ForeignRunActive` is an observable property kept in sync via `ForeignRunActiveChanged`, `PlanApprovalParkActive` needs the same subscription wiring off `PlanApprovalParkActiveChanged`, added wherever the existing subscription is set up).
+In `AttachToActiveSession` (`AssistantViewModel.cs:408-438`), add the unsubscribe (beside line 417):
+
+```csharp
+            prev.PlanApprovalParkActiveChanged -= OnPlanApprovalParkActiveChanged;
+```
+
+the subscribe (beside line 426):
+
+```csharp
+        session.PlanApprovalParkActiveChanged += OnPlanApprovalParkActiveChanged;
+```
+
+and the late-attach synchronous read (beside line 428):
+
+```csharp
+        PlanApprovalParkActive = session.PlanApprovalParkActive;
+```
+
+Add the UI-thread-marshaling handler, mirroring `OnForeignRunActiveChanged` (`AssistantViewModel.cs:447-448`):
+
+```csharp
+    private void OnPlanApprovalParkActiveChanged(object? sender, bool active) =>
+        _uiDispatcher.Post(() => PlanApprovalParkActive = active);
+```
+
+- [ ] **Step 2b: Add `PlanApprovalParkActive` to the manual `OnPropertyChanged` allowlist**
+
+`SendMessageCommand`/`RunInBackgroundCommand` are hand-constructed (no `[NotifyCanExecuteChangedFor]`), so their `CanExecute` re-evaluation is driven entirely by the manual dispatcher at `AssistantViewModel.cs:712-719`. Without this step, `CanExecuteSendMessage()`'s new `&& !PlanApprovalParkActive` term (Step 3 below) is logically correct but WPF never re-queries it at the moment a park begins or resolves — the Send button could stay stuck in a stale enabled/disabled state. Current:
+
+```csharp
+        if (e.PropertyName is nameof(InputText) or nameof(IsStreaming) or nameof(PendingAttachment)
+            or nameof(ForeignRunActive))
+        {
+            SendMessageCommand.NotifyCanExecuteChanged();
+            RunInBackgroundCommand.NotifyCanExecuteChanged();
+        }
+```
+
+Change to:
+
+```csharp
+        if (e.PropertyName is nameof(InputText) or nameof(IsStreaming) or nameof(PendingAttachment)
+            or nameof(ForeignRunActive) or nameof(PlanApprovalParkActive))
+        {
+            SendMessageCommand.NotifyCanExecuteChanged();
+            RunInBackgroundCommand.NotifyCanExecuteChanged();
+        }
+```
 
 - [ ] **Step 3: Guard `CanExecuteSendMessage`**
 
@@ -1868,36 +2138,114 @@ Confirm `PlanApprovalParkActive` is a public bindable property on `AssistantView
 
 - [ ] **Step 7: Write failing tests for the three guards**
 
+`AssistantViewModelLeverTests.cs` already has the exact fixtures needed — `CreateSut()`, a settable `vm.ForeignRunActive`/`vm.PlanApprovalParkActive` (both real `[ObservableProperty]`s per Step 2), and `SessionWithTranscript(foreignRunActive:)`/`Activate(session)` for the attach-wiring tests. Add a `planApprovalParkActive` parameter to `SessionWithTranscript` (mirroring its existing `foreignRunActive` parameter) so both flags can be tested independently:
+
+```csharp
+    private static ChatSession SessionWithTranscript(bool foreignRunActive = false, bool planApprovalParkActive = false)
+    {
+        var session = new ChatSession(/* ...unchanged... */);
+        session.Messages.Add(/* ...unchanged... */);
+        if (foreignRunActive) session.SetForeignRunActive(true);
+        if (planApprovalParkActive) session.SetPlanApprovalParkActive(true);
+        return session;
+    }
+```
+
+Then, mirroring `CanSend_IsFalse_WhileAForeignRunIsExecuting`/`CanSend_ReEnables_WhenTheForeignRunStops`/`AttachingASessionWithAForeignRun_SeedsTheFlagOntoTheViewModel` exactly:
+
 ```csharp
 [Fact]
-public void CanExecuteSendMessage_ReturnsFalse_WhilePlanApprovalParkActive()
+public void CanSend_IsFalse_WhilePlanApprovalParkIsActive()
 {
-    // set up an active session with PlanApprovalParkActive = true, non-empty InputText
+    var vm = CreateSut();
+    vm.InputText = "hello";
+    Assert.True(vm.SendMessageCommand.CanExecute(null));
+
+    vm.PlanApprovalParkActive = true;
+
     Assert.False(vm.SendMessageCommand.CanExecute(null));
 }
 
 [Fact]
+public void CanSend_ReEnables_WhenThePlanApprovalParkResolves()
+{
+    var vm = CreateSut();
+    vm.InputText = "hello";
+    vm.PlanApprovalParkActive = true;
+    Assert.False(vm.SendMessageCommand.CanExecute(null));
+
+    vm.PlanApprovalParkActive = false;
+
+    Assert.True(vm.SendMessageCommand.CanExecute(null));
+}
+
+[Fact]
+public void AttachingASessionParkedForPlanApproval_SeedsTheFlagOntoTheViewModel()
+{
+    var vm = CreateSut();
+    vm.InputText = "hello";
+    Assert.True(vm.SendMessageCommand.CanExecute(null));
+
+    Activate(SessionWithTranscript(planApprovalParkActive: true));
+
+    Assert.True(vm.PlanApprovalParkActive);
+    Assert.False(vm.SendMessageCommand.CanExecute(null));
+}
+
+[Fact]
+public void Dispose_StopsReactingToPlanApprovalParkActiveChanged()
+{
+    var vm = CreateSut();
+    var session = SessionWithTranscript();
+    Activate(session);
+    Assert.False(vm.PlanApprovalParkActive);
+
+    vm.Dispose();
+    session.SetPlanApprovalParkActive(true); // false -> true, so this really does raise
+
+    Assert.False(vm.PlanApprovalParkActive);
+}
+```
+
+`RegenerateCore`/`SwitchToAgent`'s guards (Steps 4-5) have no `CanExecute` predicate — they no-op inline instead (per this plan's earlier research into those methods). Test them the same way, driving a real `AssistantMessage`/`AgentModeSuggestion` through the command and asserting nothing happened:
+
+```csharp
+[Fact]
 public async Task RegenerateMessageCommand_DoesNothing_WhilePlanApprovalParkActive()
 {
-    // active session PlanApprovalParkActive = true; a regenerate-eligible message present
-    var countBefore = vm.Messages.Count;
-    await vm.RegenerateMessageCommand.ExecuteAsync(someMessage);
-    Assert.Equal(countBefore, vm.Messages.Count); // nothing truncated
+    var vm = CreateSut();
+    var userMsg = new AssistantMessage(Microsoft.Extensions.AI.ChatRole.User, "goal");
+    var assistantMsg = new AssistantMessage(Microsoft.Extensions.AI.ChatRole.Assistant, "answer");
+    vm.Messages.Add(userMsg);
+    vm.Messages.Add(assistantMsg);
+    vm.PlanApprovalParkActive = true;
+
+    await vm.RegenerateMessageCommand.ExecuteAsync(assistantMsg);
+
+    Assert.Equal(2, vm.Messages.Count); // nothing truncated
 }
 
 [Fact]
 public async Task SwitchToAgentCommand_DoesNothing_WhilePlanApprovalParkActive()
 {
-    // active session PlanApprovalParkActive = true
+    var vm = CreateSut();
+    Assert.False(vm.AgentModeEnabled); // confirm the starting state before relying on it below
+    vm.PlanApprovalParkActive = true;
+
     await vm.SwitchToAgentCommand.ExecuteAsync(new AgentModeSuggestion { Goal = "do the thing" });
-    // Assert _chatSessionManager.StartTurnAsync was never called (via whatever fake this test file uses).
+
+    // SwitchToAgent's very next line after the guard is "AgentModeEnabled = true" — it staying false
+    // proves the method returned at the guard rather than proceeding.
+    Assert.False(vm.AgentModeEnabled);
 }
 ```
+
+Match `CreateSut()`'s exact construction against this file's existing usage (it's used unchanged throughout) — no new setup is needed for these two tests beyond what `CreateSut()` already provides.
 
 - [ ] **Step 8: Run, confirm fail → pass**
 
 ```bash
-dotnet test --filter "FullyQualifiedName~PlanApprovalParkActive"
+dotnet test -- --filter-method "*PlanApprovalParkActive*"
 ```
 
 - [ ] **Step 9: Run the full gate**
@@ -1911,7 +2259,7 @@ Expected: `failed: 0`.
 - [ ] **Step 10: Commit**
 
 ```bash
-git add src/Pia.Wpf/ViewModels/AssistantViewModel.cs src/Pia.Wpf/Views/AssistantView.xaml src/Pia.Wpf/Resources/Strings/ViewStrings.resx src/Pia.Wpf/Resources/Strings/ViewStrings.de.resx src/Pia.Wpf/Resources/Strings/ViewStrings.fr.resx src/Pia.Wpf/Resources/Strings/ViewStrings.Designer.cs tests/Pia.Wpf.Tests/ViewModels/AssistantViewModelTests.cs
+git add src/Pia.Wpf/ViewModels/AssistantViewModel.cs src/Pia.Wpf/Views/AssistantView.xaml src/Pia.Wpf/Resources/Strings/ViewStrings.resx src/Pia.Wpf/Resources/Strings/ViewStrings.de.resx src/Pia.Wpf/Resources/Strings/ViewStrings.fr.resx src/Pia.Wpf/Resources/Strings/ViewStrings.Designer.cs tests/Pia.Wpf.Tests/ViewModels/AssistantViewModelLeverTests.cs
 git commit -m "Block Send/Regenerate/SwitchToAgent while a plan-approval park is active"
 ```
 
