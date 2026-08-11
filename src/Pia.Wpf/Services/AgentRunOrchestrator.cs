@@ -28,6 +28,7 @@ public sealed class AgentRunOrchestrator
     private readonly IHeadlessRunLauncher? _childLauncher;
     private readonly IAssistantChatService? _chats;
     private readonly IRunSteeringStore? _steering;
+    private readonly ILocalizationService? _localization;
 
     /// <summary>
     /// Cap on a delegated run's answer text as it is folded into the parent's context. Same number as
@@ -96,6 +97,8 @@ public sealed class AgentRunOrchestrator
     /// null ⇒ no pause request can ever be consumed ⇒ this loop is byte-for-byte the pre-Batch-08 one, which is
     /// what keeps a dozen positional test constructions unchanged. It is the DISCRIMINATOR that tells a user
     /// pause from a stop: without it every cancel is a stop, exactly as before.</param>
+    /// <param name="localization">TRAILING and DEFAULTED, like every dependency this loop has gained: null ⇒
+    /// <see cref="PostPlanRejectedNoticeAsync"/> posts nothing.</param>
     public AgentRunOrchestrator(
         IAgentRunService runService,
         IAgentPlanner planner,
@@ -104,7 +107,8 @@ public sealed class AgentRunOrchestrator
         IRunWorkspaceService? workspaces = null,
         IHeadlessRunLauncher? childLauncher = null,
         IAssistantChatService? chats = null,
-        IRunSteeringStore? steering = null)
+        IRunSteeringStore? steering = null,
+        ILocalizationService? localization = null)
     {
         _runService = runService;
         _planner = planner;
@@ -114,6 +118,7 @@ public sealed class AgentRunOrchestrator
         _childLauncher = childLauncher;
         _chats = chats;
         _steering = steering;
+        _localization = localization;
     }
 
     /// <param name="nudge">TRAILING and DEFAULTED, like every dependency this loop has gained:
@@ -646,6 +651,21 @@ public sealed class AgentRunOrchestrator
         foreach (var step in steps)
             sb.AppendLine($"{step.Ordinal + 1}. {step.Title}");
         return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>The "plan rejected" chat notice, posted after the row has already settled. Durable post only:
+    /// the run's live session was released at park time, so there is nothing left to mirror into.</summary>
+    public async Task PostPlanRejectedNoticeAsync(Guid runId, Persona persona, CancellationToken ct)
+    {
+        if (_localization is null)
+            return;
+
+        var run = await SafeGetRunAsync(runId, ct).ConfigureAwait(false);
+        if (run is null)
+            return;
+
+        await SafePostClarificationQuestionAsync(
+            run, persona, Guid.NewGuid(), _localization["Run_PlanRejected_ChatNote"]).ConfigureAwait(false);
     }
 
     /// <summary>the planner degraded, so the goal runs as ONE ordinary chat turn and the run settles here —

@@ -979,6 +979,7 @@
   <data name="Run_Activity_NeedsGoal" xml:space="preserve"><value>En attente que vous précisiez l'objectif dans le chat</value></data>
   <data name="Run_Activity_NeedsInput" xml:space="preserve"><value>En attente de votre réponse dans le chat</value></data>
   <data name="Run_Activity_PlanApproval" xml:space="preserve"><value>En attente de votre approbation du plan</value></data>
+  <data name="Run_PlanRejected_ChatNote" xml:space="preserve"><value>Le plan proposé a été rejeté.</value></data>
   <data name="Run_Action_Continue" xml:space="preserve"><value>Continuer</value></data>
   <data name="Run_Action_Approve" xml:space="preserve"><value>Autoriser</value></data>
   <data name="Run_Action_Deny" xml:space="preserve"><value>Refuser</value></data>

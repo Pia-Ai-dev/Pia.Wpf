@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
@@ -235,9 +236,10 @@ public sealed class AgentRunOrchestratorTests
 
         public AgentRunOrchestrator BuildOrchestrator(
             IAgentPlanner planner, IAgentVerifier? verifier = null,
-            IRunWorkspaceService? workspaces = null, IAgentRunService? runService = null) =>
+            IRunWorkspaceService? workspaces = null, IAgentRunService? runService = null,
+            ILocalizationService? localization = null) =>
             new(runService ?? Runs, planner, verifier ?? new FakeVerifier(),
-                NullLogger<AgentRunOrchestrator>.Instance, workspaces);
+                NullLogger<AgentRunOrchestrator>.Instance, workspaces, chats: Chats, localization: localization);
 
         public void Dispose()
         {
@@ -1277,5 +1279,36 @@ public sealed class AgentRunOrchestratorTests
         Assert.Equal(30, input);
         Assert.Equal(12, output);
         Assert.Equal(0, perStep);
+    }
+
+    [Fact]
+    public async Task PostPlanRejectedNoticeAsync_PostsANoticeIntoTheRunsChat()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        // Echoes the key back, so the assertion can name the key instead of a translated sentence.
+        var loc = Substitute.For<ILocalizationService>();
+        loc[Arg.Any<string>()].Returns(ci => (string)ci[0]);
+        var orchestrator = h.BuildOrchestrator(new FakePlanner(), localization: loc);
+
+        await orchestrator.PostPlanRejectedNoticeAsync(run.Id, Persona(), ct);
+
+        var chat = await h.Chats.GetAsync(run.ChatId, ct);
+        Assert.Contains(chat!.Messages, m => m.Content == "Run_PlanRejected_ChatNote");
+    }
+
+    [Fact]
+    public async Task PostPlanRejectedNoticeAsync_NoOps_WhenLocalizationIsNull()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var orchestrator = h.BuildOrchestrator(new FakePlanner());
+
+        await orchestrator.PostPlanRejectedNoticeAsync(run.Id, Persona(), ct);
+
+        var chat = await h.Chats.GetAsync(run.ChatId, ct);
+        Assert.Empty(chat?.Messages ?? []);
     }
 }

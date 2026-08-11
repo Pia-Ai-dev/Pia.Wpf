@@ -979,6 +979,7 @@
   <data name="Run_Activity_NeedsGoal" xml:space="preserve"><value>Wartet darauf, dass Sie das Ziel im Chat klären</value></data>
   <data name="Run_Activity_NeedsInput" xml:space="preserve"><value>Wartet auf Ihre Antwort im Chat</value></data>
   <data name="Run_Activity_PlanApproval" xml:space="preserve"><value>Wartet auf Ihre Freigabe des Plans</value></data>
+  <data name="Run_PlanRejected_ChatNote" xml:space="preserve"><value>Der vorgeschlagene Plan wurde abgelehnt.</value></data>
   <data name="Run_Action_Continue" xml:space="preserve"><value>Fortsetzen</value></data>
   <data name="Run_Action_Approve" xml:space="preserve"><value>Erlauben</value></data>
   <data name="Run_Action_Deny" xml:space="preserve"><value>Ablehnen</value></data>
