@@ -96,6 +96,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     /// </summary>
     private readonly HashSet<Guid> _ownRunIds = new();
 
+    /// <summary>Stamped per run on the raising thread, so an Approve landing while the park's own plan-approval
+    /// read is still in flight is not undone by that read's stale continuation — a dead composer, unrecoverable.</summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, long> _runEventSeq = new();
+    private long _runEventSeqNext;
+
     private long _activationCounter;
     private bool _disposed;
 
@@ -245,7 +250,9 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // is correct: the parent WILL write this chat again once its children settle.
         var executing = e.State is AgentRunState.Planning or AgentRunState.Running or AgentRunState.Verifying
             or AgentRunState.WaitingForChildren;
-        _syncContext.Post(_ =>
+        var seq = Interlocked.Increment(ref _runEventSeqNext);
+        _runEventSeq.AddOrUpdate(e.RunId, seq, (_, latest) => Math.Max(latest, seq));
+        _syncContext.Post(async _ =>
         {
             try
             {
@@ -318,6 +325,24 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                         || (executing && !isOwnRun && holdsThisRun);
 
                     session.SetForeignRunActive(foreign);
+                }
+
+                // Narrower than ForeignRunActive above, and the event carries no pause reason — so only the
+                // WaitingForInput transitions pay for a read, and only when a session is holding this run.
+                // Deliberately after the loop and without ConfigureAwait(false): the recompute above stays
+                // synchronous, and _allSessions is UI-thread-only.
+                if (!_allSessions.Any(s => s.ActiveRunId == e.RunId))
+                    return;
+
+                var isPlanApprovalPark = e.State == AgentRunState.WaitingForInput
+                    && await IsPlanApprovalParkedAsync(e.RunId);
+                if (_disposed || !_runEventSeq.TryGetValue(e.RunId, out var latestSeq) || latestSeq != seq)
+                    return;
+
+                foreach (var session in _allSessions)
+                {
+                    if (session.ActiveRunId == e.RunId)
+                        session.SetPlanApprovalParkActive(isPlanApprovalPark);
                 }
             }
             catch (Exception ex)
@@ -646,6 +671,12 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             || resumable.State is AgentRunState.Planning or AgentRunState.Running or AgentRunState.Verifying
                 or AgentRunState.WaitingForChildren);
 
+        // Narrower than ForeignRunActive above: only a plan-approval park closes the composer's
+        // "type instead of deciding" path.
+        session.SetPlanApprovalParkActive(
+            resumable.State == AgentRunState.WaitingForInput
+            && RunPauseEnvelope.ReadReason(resumable) == AgentRunOrchestrator.PlanApprovalReason);
+
         // Ids + enum only — a run Goal is user content (CLAUDE.md privacy logging).
         _logger.LogInformation("Re-attached run {RunId} ({State}) to activated chat {ChatId}",
             resumable.Id, resumable.State, chatId);
@@ -662,6 +693,15 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction = null,
         bool planned = false)
     {
+        // A refusal, not an answer: typing over a pending plan must never be read as approving or rejecting it.
+        // Live-read rather than ChatSession.PlanApprovalParkActive, so a just-landed Reject is seen at once.
+        if (session.ActiveRunId is { } activeRunId && await IsPlanApprovalParkedAsync(activeRunId))
+        {
+            _logger.LogInformation(
+                "Chat {ChatId}: refusing a new turn while a plan-approval park is active", session.Id);
+            return;
+        }
+
         // Must run before anything below mutates the session: if the attached run is parked asking the user
         // a question, this send is that answer, not a new turn.
         if (await TryAnswerParkedRunAsync(session, userText, attachment, regenerationInstruction))
@@ -1031,6 +1071,25 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         return reason is AgentRunOrchestrator.NeedsGoalReason or AgentRunOrchestrator.NeedsInputReason
             ? reason
             : null;
+    }
+
+    /// <summary>A sibling of <see cref="ReadClarificationParkReasonAsync"/> rather than a widening of it: no answer
+    /// text applies to a plan-approval park, so it resolves through Approve/Reject and never through the composer.</summary>
+    private async Task<bool> IsPlanApprovalParkedAsync(Guid runId)
+    {
+        AgentRun? run;
+        try
+        {
+            run = await Task.Run(() => _agentRunService.GetAsync(runId));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read run {RunId} while checking for a plan-approval park", runId);
+            return false;
+        }
+
+        return run is { State: AgentRunState.WaitingForInput }
+            && RunPauseEnvelope.ReadReason(run) == AgentRunOrchestrator.PlanApprovalReason;
     }
 
     /// <summary>

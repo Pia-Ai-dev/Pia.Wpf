@@ -361,6 +361,151 @@ public class ChatSessionManagerTests
         Assert.False(session.ForeignRunActive);
     }
 
+    // ---- PlanApprovalParkActive: narrower than ForeignRunActive, and it needs the pause REASON ----
+
+    [Fact]
+    public async Task RestoreActiveRunAsync_SetsPlanApprovalParkActive_ForAPlanApprovalPark()
+    {
+        var chatId = Guid.NewGuid();
+        var parked = new AgentRun
+        {
+            Id = Guid.NewGuid(),
+            ChatId = chatId,
+            RunShape = RunShape.Planned,
+            State = AgentRunState.WaitingForInput,
+            CreatedAt = DateTime.UtcNow.AddMinutes(-1),
+            ExtraJson = PauseEnvelope(Pia.Services.AgentRunOrchestrator.PlanApprovalReason),
+        };
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+        _runService.GetByChatAsync(chatId, Arg.Any<CancellationToken>()).Returns(new List<AgentRun> { parked });
+
+        var sut = CreateSut();
+        var session = await sut.ActivateAsync(chatId);
+        session!.SetActiveRun(null);
+
+        await sut.RestoreActiveRunAsync(session);
+
+        Assert.True(session.PlanApprovalParkActive);
+        Assert.False(session.ForeignRunActive); // still the parked "continue in chat" shape for THAT flag
+    }
+
+    [Fact]
+    public async Task RestoreActiveRunAsync_LeavesPlanApprovalParkActiveFalse_ForAnOrdinaryPark()
+    {
+        var chatId = Guid.NewGuid();
+        var parked = Run(chatId, AgentRunState.WaitingForInput, DateTime.UtcNow.AddMinutes(-1));
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+        _runService.GetByChatAsync(chatId, Arg.Any<CancellationToken>()).Returns(new List<AgentRun> { parked });
+
+        var sut = CreateSut();
+        var session = await sut.ActivateAsync(chatId);
+        session!.SetActiveRun(null);
+
+        await sut.RestoreActiveRunAsync(session);
+
+        Assert.False(session.PlanApprovalParkActive);
+    }
+
+    [Fact]
+    public async Task RunChanged_ToWaitingForInput_SetsPlanApprovalParkActive_ThenClearsItOnCancelled()
+    {
+        var chatId = Guid.NewGuid();
+        var running = Run(chatId, AgentRunState.Running, DateTime.UtcNow.AddMinutes(-1));
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+        _runService.GetByChatAsync(chatId, Arg.Any<CancellationToken>()).Returns(new List<AgentRun> { running });
+
+        var sut = CreateSut();
+        var session = await sut.ActivateAsync(chatId);
+        session!.SetActiveRun(null);
+        await sut.RestoreActiveRunAsync(session);
+        Assert.False(session.PlanApprovalParkActive);
+
+        // The event carries no reason, so the handler re-reads the row — stub it the way AttachParkedRun does.
+        _runService.GetAsync(running.Id, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = running.Id,
+            ChatId = chatId,
+            RunShape = RunShape.Planned,
+            State = AgentRunState.WaitingForInput,
+            ExtraJson = PauseEnvelope(Pia.Services.AgentRunOrchestrator.PlanApprovalReason),
+        });
+        _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(running.Id, AgentRunState.WaitingForInput));
+
+        for (var i = 0; i < 200 && !session.PlanApprovalParkActive; i++)
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        Assert.True(session.PlanApprovalParkActive);
+
+        // Reject lands: Cancelled.
+        _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(running.Id, AgentRunState.Cancelled));
+
+        for (var i = 0; i < 200 && session.PlanApprovalParkActive; i++)
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        Assert.False(session.PlanApprovalParkActive);
+    }
+
+    /// <summary>Positive control for the pair below: the same gated read, uncontended, really does set the flag.</summary>
+    [Fact]
+    public async Task RunChanged_PlanApprovalRead_SetsTheFlag_WhenNoLaterEventOvertakesIt()
+    {
+        var (session, runId, read) = await ArrangeGatedPlanApprovalReadAsync();
+
+        _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.WaitingForInput));
+        read.SetResult(ParkedForPlanApproval(runId, session.Id!.Value));
+
+        for (var i = 0; i < 200 && !session.PlanApprovalParkActive; i++)
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        Assert.True(session.PlanApprovalParkActive);
+    }
+
+    /// <summary>An Approve that lands while the park's own read is still in flight must win: a stale continuation
+    /// that reinstated the flag would be a dead composer with no later event to correct it.</summary>
+    [Fact]
+    public async Task RunChanged_PlanApprovalRead_IsDiscarded_WhenALaterEventOvertakesIt()
+    {
+        var (session, runId, read) = await ArrangeGatedPlanApprovalReadAsync();
+
+        _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.WaitingForInput));
+        // Approve: the run is Running again before the read above has answered.
+        _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Running));
+        read.SetResult(ParkedForPlanApproval(runId, session.Id!.Value));
+
+        for (var i = 0; i < 200 && !session.PlanApprovalParkActive; i++)
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+
+        Assert.False(session.PlanApprovalParkActive);
+        // Non-vacuity: the read really did run and really did answer "parked for plan approval".
+        await _runService.Received(1).GetAsync(runId, Arg.Any<CancellationToken>());
+    }
+
+    private static AgentRun ParkedForPlanApproval(Guid runId, Guid chatId) => new()
+    {
+        Id = runId,
+        ChatId = chatId,
+        RunShape = RunShape.Planned,
+        State = AgentRunState.WaitingForInput,
+        ExtraJson = PauseEnvelope(Pia.Services.AgentRunOrchestrator.PlanApprovalReason),
+    };
+
+    /// <summary>A restored session whose run's reason lookup is held open, so a second event can be raced against it.</summary>
+    private async Task<(ChatSession Session, Guid RunId, TaskCompletionSource<AgentRun?> Read)>
+        ArrangeGatedPlanApprovalReadAsync()
+    {
+        var chatId = Guid.NewGuid();
+        var running = Run(chatId, AgentRunState.Running, DateTime.UtcNow.AddMinutes(-1));
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+        _runService.GetByChatAsync(chatId, Arg.Any<CancellationToken>()).Returns(new List<AgentRun> { running });
+
+        var sut = CreateSut();
+        var session = await sut.ActivateAsync(chatId);
+        session!.SetActiveRun(null);
+        await sut.RestoreActiveRunAsync(session);
+        Assert.False(session.PlanApprovalParkActive);
+
+        var read = new TaskCompletionSource<AgentRun?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _runService.GetAsync(running.Id, Arg.Any<CancellationToken>()).Returns(read.Task);
+        return (session, running.Id, read);
+    }
+
     [Fact]
     public async Task RunChanged_BackToRunning_SetsTheForeignFlagAgain()
     {
@@ -1753,6 +1898,23 @@ public class ChatSessionManagerTests
         // Asserted by count, not IsStreaming: the fire-and-forget turn may already have cleared that flag.
         Assert.Equal(2, session.Messages.Count);
         Assert.False(session.Messages[1].IsUser);
+    }
+
+    /// <summary>Typing over a pending plan is a refusal, not an answer — it must never be read as approving it.</summary>
+    [Fact]
+    public async Task StartTurnAsync_RunParkedForPlanApproval_RefusesTheTurn_WithoutEverResolvingSetup()
+    {
+        var sut = CreateResumingSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        AttachParkedRun(session, Pia.Services.AgentRunOrchestrator.PlanApprovalReason);
+
+        await sut.StartTurnAsync(session, "meanwhile, what is the weather", null);
+
+        // Mechanism-specific, not just a message count: had the turn proceeded, setup resolution would have run.
+        await _personas.DidNotReceive().ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>());
+        await _resumeService.DidNotReceive().ResumeAsync(
+            Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        Assert.Empty(session.Messages);
     }
 
     /// <summary>A stale pause envelope on an executing (non-<see cref="AgentRunState.WaitingForInput"/>) run is never read as an answer.</summary>
