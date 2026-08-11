@@ -95,6 +95,7 @@
   <data name="Assistant_RemoveAttachment_Tooltip" xml:space="preserve"><value>Retirer la pièce jointe</value></data>
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Conversation vocale</value></data>
   <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Envoyer (Entrée)</value></data>
+  <data name="Assistant_Working_Tooltip" xml:space="preserve"><value>Traitement du dernier message…</value></data>
   <data name="Assistant_RunInBackground_Tooltip" xml:space="preserve"><value>Exécuter en arrière-plan</value></data>
   <data name="Assistant_BackgroundRunActive_Hint" xml:space="preserve"><value>Une exécution en arrière-plan écrit dans ce chat. L'envoi reprend dès qu'elle est terminée.</value></data>
   <data name="Assistant_GoalTooShort_Hint" xml:space="preserve"><value>Cela semble trop court pour être exécuté comme objectif. Ajoutez quelques mots pour qu'il puisse être planifié.</value></data>

@@ -95,6 +95,7 @@
   <data name="Assistant_RemoveAttachment_Tooltip" xml:space="preserve"><value>Remove attachment</value></data>
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Voice conversation</value></data>
   <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Send (Enter)</value></data>
+  <data name="Assistant_Working_Tooltip" xml:space="preserve"><value>Working on the last message…</value></data>
   <data name="Assistant_RunInBackground_Tooltip" xml:space="preserve"><value>Run in background</value></data>
   <data name="Assistant_BackgroundRunActive_Hint" xml:space="preserve"><value>A background run is writing to this chat. Sending resumes when it finishes.</value></data>
   <data name="Assistant_GoalTooShort_Hint" xml:space="preserve"><value>This looks too short to run as a goal. Add a few more words so it can be planned.</value></data>

@@ -516,14 +516,48 @@
                          Visibility="{Binding AgentModeEnabled, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <ui:SymbolIcon Symbol="WindowNew20" FontSize="16" />
               </ui:Button>
-              <!-- Send -->
-              <ui:Button Grid.Column="1"
-                         Command="{Binding SendMessageCommand}"
-                         Appearance="Primary"
-                         Padding="10,4"
-                         ToolTip="{loc:Str Assistant_Send_Tooltip}">
-                <ui:SymbolIcon Symbol="Send24" FontSize="16" />
-              </ui:Button>
+              <!-- Send. While a turn is in flight the command can't execute, and the greyed-out Primary
+                   button read as nothing at all — so a busy pill covers it for the whole turn (covers,
+                   not replaces: collapsing the button would resize this Auto cell). -->
+              <Grid Grid.Column="1">
+                <ui:Button Command="{Binding SendMessageCommand}"
+                           Appearance="Primary"
+                           Padding="10,4"
+                           ToolTip="{loc:Str Assistant_Send_Tooltip}">
+                  <ui:SymbolIcon Symbol="Send24" FontSize="16" />
+                </ui:Button>
+                <Border Background="{DynamicResource AccentFillColorDefaultBrush}"
+                        CornerRadius="{DynamicResource ControlCornerRadius}"
+                        ToolTip="{loc:Str Assistant_Working_Tooltip}"
+                        Visibility="{Binding IsStreaming, Converter={StaticResource BooleanToVisibilityConverter}}">
+                  <ui:SymbolIcon Symbol="ArrowSync24"
+                                 FontSize="16"
+                                 Foreground="White"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center"
+                                 RenderTransformOrigin="0.5,0.5">
+                    <ui:SymbolIcon.RenderTransform>
+                      <RotateTransform Angle="0" />
+                    </ui:SymbolIcon.RenderTransform>
+                    <ui:SymbolIcon.Style>
+                      <Style TargetType="ui:SymbolIcon">
+                        <Style.Triggers>
+                          <!-- Rotation tracks Running, not IsStreaming: a turn parked on a tool-approval
+                               card is waiting for the USER, and a turning wheel there would say "sit tight". -->
+                          <DataTrigger Binding="{Binding ActiveState}" Value="Running">
+                            <DataTrigger.EnterActions>
+                              <BeginStoryboard x:Name="SendBusySpin" Storyboard="{StaticResource PiaSpinForever}" />
+                            </DataTrigger.EnterActions>
+                            <DataTrigger.ExitActions>
+                              <StopStoryboard BeginStoryboardName="SendBusySpin" />
+                            </DataTrigger.ExitActions>
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </ui:SymbolIcon.Style>
+                  </ui:SymbolIcon>
+                </Border>
+              </Grid>
             </Grid>
           </Grid>
 

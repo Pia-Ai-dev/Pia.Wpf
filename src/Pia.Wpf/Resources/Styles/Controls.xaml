@@ -135,4 +135,13 @@
     </Style.Triggers>
   </Style>
 
+  <!-- Busy-glyph rotation. The target must carry its own INLINE RotateTransform: a transform
+       handed in from a Style setter is sealed and throws when animated. -->
+  <Storyboard x:Key="PiaSpinForever" RepeatBehavior="Forever">
+    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                     From="0"
+                     To="360"
+                     Duration="0:0:1.1" />
+  </Storyboard>
+
 </ResourceDictionary>

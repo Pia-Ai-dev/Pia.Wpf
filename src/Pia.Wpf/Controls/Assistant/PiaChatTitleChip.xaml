@@ -36,10 +36,31 @@
                 Background="{Binding ActiveState, Converter={StaticResource ChatStateToBrushBg}}"
                 Visibility="{Binding ActiveState, Converter={StaticResource ChatStateIsBadgeVisibleConverter}}">
           <StackPanel Orientation="Horizontal">
+            <!-- Running spins the glyph the converter already picks (ArrowSync) — the badge is the
+                 only always-visible sign that a turn is in flight, and a static wheel read as settled. -->
             <ui:SymbolIcon Symbol="{Binding ActiveState, Converter={StaticResource ChatStateToGlyphConverter}}"
                            FontSize="11"
                            VerticalAlignment="Center"
-                           Foreground="{Binding ActiveState, Converter={StaticResource ChatStateToBrushFg}}" />
+                           RenderTransformOrigin="0.5,0.5"
+                           Foreground="{Binding ActiveState, Converter={StaticResource ChatStateToBrushFg}}">
+              <ui:SymbolIcon.RenderTransform>
+                <RotateTransform Angle="0" />
+              </ui:SymbolIcon.RenderTransform>
+              <ui:SymbolIcon.Style>
+                <Style TargetType="ui:SymbolIcon">
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding ActiveState}" Value="Running">
+                      <DataTrigger.EnterActions>
+                        <BeginStoryboard x:Name="ChipStateSpin" Storyboard="{StaticResource PiaSpinForever}" />
+                      </DataTrigger.EnterActions>
+                      <DataTrigger.ExitActions>
+                        <StopStoryboard BeginStoryboardName="ChipStateSpin" />
+                      </DataTrigger.ExitActions>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </ui:SymbolIcon.Style>
+            </ui:SymbolIcon>
             <TextBlock Text="{Binding ActiveState, Converter={StaticResource ChatStateToLabelConverter}}"
                        FontSize="10"
                        FontWeight="SemiBold"
