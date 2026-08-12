@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Globalization;
 using System.IO;
+using System.Reflection;
 using System.Resources;
 using System.Text.RegularExpressions;
 using Pia.Converters;
@@ -8,6 +9,8 @@ using Pia.Models;
 using Pia.Resources.Strings;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Services.Operators;
+using Pia.Shared.Operators;
 using Pia.ViewModels;
 using Pia.ViewModels.Models;
 using Xunit;
@@ -301,6 +304,101 @@ public class LocalizationTests
 
         Assert.True(missing.Count == 0,
             $"every tool-catalogue reason key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
+    }
+
+    /// <summary>The status key is formatted from the enum, so this file's literal-key regexes cannot see it.</summary>
+    [Fact]
+    public void EveryAssignmentStatusKeyResolvesInAllThreeLocales()
+    {
+        var keys = Enum.GetValues<AssignmentRowStatus>()
+            .Select(AssignmentRowViewModel.StatusLabelKey)
+            .Distinct()
+            .ToList();
+
+        // One label per status, so a new arm cannot render as a raw key.
+        Assert.Equal(Enum.GetValues<AssignmentRowStatus>().Length, keys.Count);
+
+        // Pinned literally as well, so deleting a status arm shrinks coverage loudly instead of silently.
+        string[] expected =
+        [
+            "Assignments_Status_Queued",
+            "Assignments_Status_Running",
+            "Assignments_Status_Completed",
+            "Assignments_Status_Failed",
+            "Assignments_Status_Cancelled",
+            "Assignments_Status_Unknown",
+        ];
+        Assert.Equal(expected.Order(), keys.Order());
+
+        var missing = new List<string>();
+        foreach (var culture in new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") })
+        {
+            var available = GetResourceKeysForCulture(ViewStrings.ResourceManager, culture);
+            foreach (var key in keys.Where(k => !available.Contains(k)))
+                missing.Add($"{culture.Name}: {key}");
+        }
+
+        Assert.True(missing.Count == 0,
+            $"every assignment-status key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
+    }
+
+    /// <summary>The type label comes from a helper, so this file's literal-key regexes cannot see it.</summary>
+    [Fact]
+    public void EveryAssignmentEntityTypeKeyResolvesInAllThreeLocales()
+    {
+        var entityTypes = typeof(AssignmentInputEntityTypes)
+            .GetFields(BindingFlags.Public | BindingFlags.Static)
+            .Where(f => f.IsLiteral && f.FieldType == typeof(string))
+            .Select(f => (string)f.GetRawConstantValue()!)
+            .ToList();
+
+        // An entity type added to the contract without a label here would otherwise render as "Record".
+        Assert.NotEmpty(entityTypes);
+
+        var keys = entityTypes
+            .Append("something-this-version-does-not-know")
+            .Select(AssignmentScopeItemViewModel.EntityTypeKey)
+            .Distinct()
+            .ToList();
+
+        Assert.Equal(entityTypes.Count + 1, keys.Count);
+        Assert.Contains("AssignmentConsent_EntityType_Unknown", keys);
+
+        var missing = new List<string>();
+        foreach (var culture in new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") })
+        {
+            var available = GetResourceKeysForCulture(ViewStrings.ResourceManager, culture);
+            foreach (var key in keys.Where(k => !available.Contains(k)))
+                missing.Add($"{culture.Name}: {key}");
+        }
+
+        Assert.True(missing.Count == 0,
+            $"every assignment entity-type key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
+    }
+
+    /// <summary>The outcome message comes from a helper, so this file's literal-key regexes cannot see it.</summary>
+    [Fact]
+    public void EveryAssignmentStartResultKeyResolvesInAllThreeLocales()
+    {
+        var keys = Enum.GetValues<AssignmentStartStatus>()
+            .Select(AssignmentConsentViewModel.StartResultKey)
+            .Distinct()
+            .ToList();
+
+        // One message per outcome, so a new arm cannot silently reuse the generic failure line.
+        Assert.Equal(Enum.GetValues<AssignmentStartStatus>().Length, keys.Count);
+        Assert.Contains("AssignmentConsent_Result_Started", keys);
+
+        var missing = new List<string>();
+        foreach (var culture in new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") })
+        {
+            var available = GetResourceKeysForCulture(ViewStrings.ResourceManager, culture);
+            foreach (var key in keys.Where(k => !available.Contains(k)))
+                missing.Add($"{culture.Name}: {key}");
+        }
+
+        Assert.True(missing.Count == 0,
+            $"every assignment start-result key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
     }
 
     [Fact]

@@ -280,6 +280,9 @@
   <data name="Notification_BackgroundChat_Completed" xml:space="preserve"><value>« {0} » est terminé</value></data>
   <data name="Notification_BackgroundChat_Error" xml:space="preserve"><value>« {0} » a rencontré une erreur</value></data>
   <data name="Notification_OpenChat" xml:space="preserve"><value>Ouvrir le chat</value></data>
+  <data name="Notification_Assignment_Title" xml:space="preserve"><value>Mission en arrière-plan</value></data>
+  <data name="Notification_Assignment_Completed" xml:space="preserve"><value>Votre mission est terminée — la réponse se trouve dans une conversation</value></data>
+  <data name="Notification_Assignment_Unfinished" xml:space="preserve"><value>Votre mission ne s'est pas terminée — la conversation indique ce qui est revenu</value></data>
 
   <!-- PII keyword context menu -->
   <data name="Msg_PiiKeyword_Added_Title" xml:space="preserve"><value>Mot-clé PII ajouté</value></data>

@@ -402,6 +402,16 @@
                 <ui:SymbolIcon Symbol="Mic24" FontSize="16" />
               </ui:Button>
 
+              <!-- Background assignment (only when the server offers the surface) -->
+              <ui:Button Command="{Binding RunAssignmentCommand}"
+                         Appearance="Transparent"
+                         Padding="6,4"
+                         Margin="2,0"
+                         Visibility="{Binding IsAssignmentSurfaceAvailable, Converter={StaticResource BooleanToVisibilityConverter}}"
+                         ToolTip="{loc:Str Assistant_RunAssignment_Tooltip}">
+                <ui:SymbolIcon Symbol="Rocket24" FontSize="16" />
+              </ui:Button>
+
               <Separator Width="1" Margin="4,2" Background="{DynamicResource BorderBrush_}" />
 
               <!-- Persona picker (applies from the next turn). MaxWidth widened 200 -> 240 to make room

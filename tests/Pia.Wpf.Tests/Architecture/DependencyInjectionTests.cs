@@ -124,6 +124,10 @@ public class DependencyInjectionTests
                 // DI could never have supplied.
                 if (paramType.IsValueType || paramType == typeof(string)) continue;
 
+                // The BCL's clock abstraction: registered in DI and substituted in tests like any interface,
+                // it just isn't spelled with an I.
+                if (paramType == typeof(TimeProvider)) continue;
+
                 violations.Add($"{vmType.Name} injects concrete type {paramType.Name} via parameter '{param.Name}'");
             }
         }

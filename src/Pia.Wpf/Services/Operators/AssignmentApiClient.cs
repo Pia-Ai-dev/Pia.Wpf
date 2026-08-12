@@ -28,8 +28,9 @@ public interface IAssignmentApiClient
     /// This caller's runs, newest first — what the job list renders. The list projection carries status, step
     /// count, spend and timestamps and deliberately NO artifact, so polling it cannot become a way of
     /// downloading every result the user owns as a side effect.
+    /// Null when the server could not answer, which a caller must not read as "this user has no runs".
     /// </summary>
-    Task<IReadOnlyList<AssignmentDto>> ListAsync(int skip = 0, int limit = 50, CancellationToken ct = default);
+    Task<IReadOnlyList<AssignmentDto>?> ListAsync(int skip = 0, int limit = 50, CancellationToken ct = default);
 
     Task<AssignmentDto?> GetAsync(Guid assignmentId, CancellationToken ct = default);
 
@@ -136,11 +137,11 @@ public sealed class AssignmentApiClient : IAssignmentApiClient
         }
     }
 
-    public async Task<IReadOnlyList<AssignmentDto>> ListAsync(
+    public async Task<IReadOnlyList<AssignmentDto>?> ListAsync(
         int skip = 0, int limit = 50, CancellationToken ct = default)
     {
         var client = await CreateClientAsync(ct);
-        if (client is null) return [];
+        if (client is null) return null;
 
         try
         {
@@ -150,7 +151,7 @@ public sealed class AssignmentApiClient : IAssignmentApiClient
             {
                 _logger.LogInformation(
                     "Assignment list returned {Status}.", (int)response.StatusCode);
-                return [];
+                return null;
             }
 
             return await response.Content.ReadFromJsonAsync<List<AssignmentDto>>(JsonOptions, ct) ?? [];
@@ -161,10 +162,10 @@ public sealed class AssignmentApiClient : IAssignmentApiClient
         }
         catch (Exception ex)
         {
-            // An empty list rather than a throw: the job list showing nothing beats it showing an error the
-            // user can do nothing about, and the next refresh tries again.
+            // Null rather than a throw: the caller decides what to say, but it must not read a failed read as
+            // an answered one and wipe the list the user is watching.
             _logger.LogInformation(ex, "Could not list background assignments.");
-            return [];
+            return null;
         }
     }
 

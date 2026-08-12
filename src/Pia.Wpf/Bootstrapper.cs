@@ -732,6 +732,12 @@ public static class Bootstrapper
         services.AddSingleton<Services.Operators.IAssignmentRunOrchestrator>(sp =>
             sp.GetRequiredService<Services.Operators.AssignmentRunOrchestrator>());
         services.AddSingleton<Services.Operators.AssignmentDrainService>();
+        services.AddSingleton<IAssignmentNotificationSurface, AssignmentNotificationSurface>();
+        // Transient behind a factory: each open is a fresh affirmation, so no dialog may reuse the last one's
+        // selection.
+        services.AddTransient<AssignmentConsentViewModel>();
+        services.AddSingleton<Func<AssignmentConsentViewModel>>(sp =>
+            sp.GetRequiredService<AssignmentConsentViewModel>);
 
         // Auto-update
         services.AddSingleton<IUpdateService, UpdateService>();
@@ -763,6 +769,7 @@ public static class Bootstrapper
         services.AddScoped<AssistantHistoryViewModel>();
         services.AddScoped<MemoryViewModel>();
         services.AddScoped<RemindersViewModel>();
+        services.AddScoped<AssignmentsViewModel>();
         services.AddScoped<TodoViewModel>();
         services.AddScoped<E2EEOnboardingViewModel>();
         services.AddScoped<E2EESetupStepViewModel>();

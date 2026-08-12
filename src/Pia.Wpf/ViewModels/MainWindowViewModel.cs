@@ -19,7 +19,9 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
     private readonly Services.Interfaces.IProviderService _providerService;
     private readonly Services.Interfaces.IAuthService _authService;
     private readonly Services.Interfaces.ISyncClientService _syncClientService;
+    private readonly Services.Operators.IAssignmentApiClient _assignmentApiClient;
     private Timer? _updateTimer;
+    private bool _assignmentSurfaceAvailable;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(WindowTitle))]
@@ -60,6 +62,9 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
     [NotifyPropertyChangedFor(nameof(ShowSetupOverlay))]
     private bool _isOnFeatureView;
 
+    [ObservableProperty]
+    private bool _isAssignmentsNavVisible;
+
     /// <summary>
     /// Show the setup overlay when no usable AI provider is configured
     /// and the user is viewing a feature page (Optimize, Assistant, Research).
@@ -88,7 +93,8 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         Pia.Services.Interfaces.IUpdateService updateService,
         Pia.Services.Interfaces.IProviderService providerService,
         Pia.Services.Interfaces.IAuthService authService,
-        Pia.Services.Interfaces.ISyncClientService syncClientService)
+        Pia.Services.Interfaces.ISyncClientService syncClientService,
+        Pia.Services.Operators.IAssignmentApiClient assignmentApiClient)
         : base(requireUiThread: true)
     {
         _logger = logger;
@@ -100,6 +106,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         _providerService = providerService;
         _authService = authService;
         _syncClientService = syncClientService;
+        _assignmentApiClient = assignmentApiClient;
         IsE2EEOnboardingRequired = _syncClientService.IsE2EEOnboardingRequired;
 
         AppVersion = updateService.CurrentVersion
@@ -134,6 +141,10 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
     }
 
+    /// <summary>The probe is never awaited here — a slow or absent server must not hold up the first
+    /// navigation — so tests await this instead.</summary>
+    internal Task PendingAssignmentSurfaceProbe { get; private set; } = Task.CompletedTask;
+
     public async Task InitializeAsync()
     {
         var settings = await _settingsService.GetSettingsAsync();
@@ -142,6 +153,10 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         _themeService.ApplyTheme(Theme);
 
         UpdateHotkeyHints(settings);
+
+        // Started before the pre-navigated early return below, which a chat window opened for a finished
+        // assignment takes.
+        PendingAssignmentSurfaceProbe = RefreshAssignmentSurfaceAsync();
 
         await RefreshSetupRequiredAsync();
 
@@ -155,6 +170,26 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         else
             _navigationService.NavigateTo<OptimizeViewModel>();
     }
+
+    private async Task RefreshAssignmentSurfaceAsync()
+    {
+        try
+        {
+            _assignmentSurfaceAvailable = (await _assignmentApiClient.GetSurfaceAsync()).Available;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInformation(ex, "Could not read the background-assignment surface; keeping it hidden");
+            _assignmentSurfaceAvailable = false;
+        }
+
+        await PostAsync(RefreshAssignmentsNavVisible);
+    }
+
+    private void RefreshAssignmentsNavVisible() =>
+        IsAssignmentsNavVisible = _assignmentSurfaceAvailable && Mode == WindowMode.Assistant;
+
+    partial void OnModeChanged(WindowMode value) => RefreshAssignmentsNavVisible();
 
     private async Task RefreshSetupRequiredAsync()
     {
@@ -182,6 +217,9 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
 
     private void OnLoginStateChanged(object? sender, bool isLoggedIn)
     {
+        // Signing in is what turns the surface on, and the entry is otherwise probed only at startup.
+        PendingAssignmentSurfaceProbe = RefreshAssignmentSurfaceAsync();
+
         Post(() =>
         {
             _ = RefreshSetupRequiredAsync();
@@ -301,6 +339,9 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
                 break;
             case "Reminders":
                 _navigationService.NavigateTo<RemindersViewModel>();
+                break;
+            case "Assignments":
+                _navigationService.NavigateTo<AssignmentsViewModel>();
                 break;
             case "Todo":
                 _navigationService.NavigateTo<TodoViewModel>();

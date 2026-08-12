@@ -142,6 +142,9 @@ public partial class App : Application
         // Attach the agent-run notification surface eagerly so it subscribes to RunChanged at startup.
         _ = Bootstrapper.ServiceProvider.GetRequiredService<IAgentRunNotificationSurface>();
 
+        // Same reason: nothing else resolves it, and it must be subscribed before the first drain pass.
+        _ = Bootstrapper.ServiceProvider.GetRequiredService<IAssignmentNotificationSurface>();
+
         // G-4: settle any agent run left non-terminal by a crash / forced-exit BEFORE the scheduler can
         // start new headless runs, so nothing dangles Running across sessions. Then sweep orphaned/aged
         // run workspaces (decision c) in the background so startup is not blocked on disk I/O. Failure-

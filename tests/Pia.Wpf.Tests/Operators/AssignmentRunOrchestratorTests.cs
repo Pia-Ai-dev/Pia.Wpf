@@ -371,9 +371,9 @@ public class AssignmentRunOrchestratorTests : IDisposable
             return Task.FromResult<Guid?>(Guid.NewGuid());
         }
 
-        public Task<IReadOnlyList<AssignmentDto>> ListAsync(
+        public Task<IReadOnlyList<AssignmentDto>?> ListAsync(
             int skip = 0, int limit = 50, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<AssignmentDto>>(Assignment is null ? [] : [Assignment]);
+            Task.FromResult<IReadOnlyList<AssignmentDto>?>(Assignment is null ? [] : [Assignment]);
 
         public Task<AssignmentDto?> GetAsync(Guid assignmentId, CancellationToken ct = default) =>
             Task.FromResult(Assignment);

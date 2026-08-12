@@ -16,6 +16,7 @@ using Pia.Navigation;
 using Pia.Services;
 using Pia.Services.Imaging;
 using Pia.Services.Interfaces;
+using Pia.Services.Operators;
 using Pia.Shared.Models;
 using Pia.ViewModels.Models;
 
@@ -71,6 +72,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IAgentRunSteeringService? _steering;
     private readonly IThemeService? _themeService;
     private readonly ITimelineWatcher? _timelineWatcher;
+    private readonly IAssignmentApiClient? _assignmentApiClient;
+    private readonly Func<AssignmentConsentViewModel>? _assignmentConsentFactory;
+    private AssignmentSurface _assignmentSurface = AssignmentSurface.Hidden;
     private bool _disposed;
     private bool _tokenizationEnabled;
     private bool _suggestionsEnabled = true;
@@ -102,6 +106,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// answers are Approve and Reject in the run panel. Also drives its own composer hint line.</summary>
     [ObservableProperty]
     private bool _planApprovalParkActive;
+
+    /// <summary>Gates the action row's background-assignment button: the server offers the surface.</summary>
+    [ObservableProperty]
+    private bool _isAssignmentSurfaceAvailable;
 
     /// <summary>True only when, in agent mode, <see cref="GoalPreflight.IsRefused"/> refuses the typed goal; appears one idle second after typing, hides immediately.</summary>
     [ObservableProperty]
@@ -277,7 +285,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IThemeService? themeService = null,
         // Handed on to the run panel VM only, so its tool-activity section live-updates. Trailing and
         // defaulted, same discipline; null means the panel reads its trace on expand and at settle only.
-        ITimelineWatcher? timelineWatcher = null)
+        ITimelineWatcher? timelineWatcher = null,
+        // Trailing and defaulted for the same reason as the five above; null ⇒ the background-assignment
+        // action never appears, which is also what an unavailable surface looks like.
+        IAssignmentApiClient? assignmentApiClient = null,
+        Func<AssignmentConsentViewModel>? assignmentConsentFactory = null)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -317,6 +329,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _steering = steering;
         _themeService = themeService;
         _timelineWatcher = timelineWatcher;
+        _assignmentApiClient = assignmentApiClient;
+        _assignmentConsentFactory = assignmentConsentFactory;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         RunInBackgroundCommand = new AsyncRelayCommand(ExecuteRunInBackground, CanExecuteRunInBackground);
@@ -1274,6 +1288,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     public async Task OnNavigatedToAsync(object? parameter)
     {
+        // First, so nothing that throws below can decide whether this action row button appears.
+        RefreshAssignmentSurfaceAsync().SafeFireAndForget(_logger);
+
         if (parameter is Guid chatId && chatId != Guid.Empty)
         {
             await ResumeChatAsync(chatId);
@@ -1326,6 +1343,53 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     }
 
     public void OnNavigatedFrom() { }
+
+    internal async Task RefreshAssignmentSurfaceAsync()
+    {
+        if (_assignmentApiClient is null) return;
+
+        try
+        {
+            _assignmentSurface = await _assignmentApiClient.GetSurfaceAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogInformation(ex, "Could not read the background-assignment surface; keeping it hidden");
+            _assignmentSurface = AssignmentSurface.Hidden;
+        }
+
+        await _uiDispatcher.PostAsync(() => IsAssignmentSurfaceAvailable = _assignmentSurface.Available);
+    }
+
+    /// <summary>Prefills the dialog from the composer and leaves the composer alone: what is typed here is a
+    /// draft for either destination until the user affirms one.</summary>
+    [RelayCommand]
+    private async Task RunAssignmentAsync()
+    {
+        if (_assignmentConsentFactory is null || !_assignmentSurface.Available) return;
+
+        var consent = _assignmentConsentFactory();
+
+        try
+        {
+            await consent.InitializeAsync(_assignmentSurface, InputText);
+            if (!await _dialogService.ShowAssignmentConsentDialogAsync(consent)) return;
+
+            var status = await consent.SendAsync();
+            _snackbarService.Show(
+                _localizationService["Assignments_Title"],
+                consent.ResultMessage,
+                status == AssignmentStartStatus.Started
+                    ? Wpf.Ui.Controls.ControlAppearance.Success
+                    : Wpf.Ui.Controls.ControlAppearance.Caution,
+                null,
+                TimeSpan.FromSeconds(6));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "The background-assignment dialog could not be completed");
+        }
+    }
 
     private void ApplyCapturedSelection(string text)
     {

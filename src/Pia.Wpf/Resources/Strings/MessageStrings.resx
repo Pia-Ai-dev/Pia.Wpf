@@ -289,6 +289,9 @@
   <data name="Notification_BackgroundChat_Completed" xml:space="preserve"><value>'{0}' finished</value></data>
   <data name="Notification_BackgroundChat_Error" xml:space="preserve"><value>'{0}' ran into an error</value></data>
   <data name="Notification_OpenChat" xml:space="preserve"><value>Open chat</value></data>
+  <data name="Notification_Assignment_Title" xml:space="preserve"><value>Background assignment</value></data>
+  <data name="Notification_Assignment_Completed" xml:space="preserve"><value>Your assignment finished and its answer is in a chat</value></data>
+  <data name="Notification_Assignment_Unfinished" xml:space="preserve"><value>Your assignment didn't finish — the chat says what came back</value></data>
 
   <!-- PII keyword context menu -->
   <data name="Msg_PiiKeyword_Added_Title" xml:space="preserve"><value>PII Keyword Added</value></data>

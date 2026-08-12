@@ -122,6 +122,9 @@
       <DataTemplate DataType="{x:Type viewModels:TodoViewModel}">
         <views:TodoView />
       </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:AssignmentsViewModel}">
+        <views:AssignmentsView />
+      </DataTemplate>
     </ResourceDictionary>
   </Application.Resources>
 </Application>

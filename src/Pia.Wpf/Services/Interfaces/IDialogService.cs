@@ -1,4 +1,5 @@
 using Pia.Models;
+using Pia.ViewModels;
 using Pia.ViewModels.Models;
 
 namespace Pia.Services.Interfaces;
@@ -19,6 +20,10 @@ public interface IDialogService
     Task<bool> ShowRecordingDialogAsync(CancellationToken cancellationToken);
     Task<bool> ShowTranscribingDialogAsync(CancellationToken cancellationToken);
     Task<string?> ShowInputDialogAsync(string title, string prompt);
+
+    /// <summary>True once the user affirmed the selection; the caller then awaits
+    /// <see cref="AssignmentConsentViewModel.SendAsync"/> and surfaces its <c>ResultMessage</c>.</summary>
+    Task<bool> ShowAssignmentConsentDialogAsync(AssignmentConsentViewModel viewModel);
 
     /// <summary>
     /// Shows the Memory-vault help as a modal dialog overlay (rather than an inline card that reflows

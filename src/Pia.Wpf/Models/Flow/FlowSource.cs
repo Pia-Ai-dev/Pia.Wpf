@@ -14,4 +14,5 @@ public enum FlowSource
     TodoDeadline,
     // Appended (persisted as int, append-only). Terminal agent-run notification.
     AgentRun,
+    Assignment,
 }

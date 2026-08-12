@@ -156,7 +156,7 @@ public class AssignmentApiClientTests
 
         var runs = await CreateSut().ListAsync(ct: Ct);
 
-        var run = Assert.Single(runs);
+        var run = Assert.Single(runs!);
         Assert.Equal("Running", run.Status);
         Assert.Equal(2, run.StepCount);
         Assert.Equal(41000, run.TokensSpent);
@@ -165,16 +165,24 @@ public class AssignmentApiClientTests
         Assert.Null(run.Events);
     }
 
-    /// <summary>An empty list rather than a throw: a job list showing nothing beats one showing an error the
-    /// user can do nothing about, and the next refresh tries again.</summary>
+    /// <summary>Null, not an empty list: a caller that read a refusal as "this user has no runs" would wipe
+    /// the list the user is watching and claim nothing had ever run.</summary>
     [Theory]
     [InlineData(HttpStatusCode.Unauthorized)]
     [InlineData(HttpStatusCode.InternalServerError)]
-    public async Task ListAsync_OnARefusal_IsEmpty(HttpStatusCode status)
+    public async Task ListAsync_OnARefusal_IsNullRatherThanEmpty(HttpStatusCode status)
     {
         _handler.Respond(status, "{}");
 
-        Assert.Empty(await CreateSut().ListAsync(ct: Ct));
+        Assert.Null(await CreateSut().ListAsync(ct: Ct));
+    }
+
+    [Fact]
+    public async Task ListAsync_OnAnEmptyPage_IsAnEmptyListRatherThanNull()
+    {
+        _handler.Respond(HttpStatusCode.OK, "[]");
+
+        Assert.Empty(Assert.IsAssignableFrom<IReadOnlyList<AssignmentDto>>(await CreateSut().ListAsync(ct: Ct)));
     }
 
     /// <summary>404 is the ordinary answer for a run with no live workflow behind it — already finished, or

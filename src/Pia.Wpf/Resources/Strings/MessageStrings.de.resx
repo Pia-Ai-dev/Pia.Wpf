@@ -281,6 +281,9 @@
   <data name="Notification_BackgroundChat_Completed" xml:space="preserve"><value>„{0}" ist fertig</value></data>
   <data name="Notification_BackgroundChat_Error" xml:space="preserve"><value>„{0}" ist auf einen Fehler gestoßen</value></data>
   <data name="Notification_OpenChat" xml:space="preserve"><value>Chat öffnen</value></data>
+  <data name="Notification_Assignment_Title" xml:space="preserve"><value>Hintergrundauftrag</value></data>
+  <data name="Notification_Assignment_Completed" xml:space="preserve"><value>Ihr Auftrag ist fertig – die Antwort steht in einem Chat</value></data>
+  <data name="Notification_Assignment_Unfinished" xml:space="preserve"><value>Ihr Auftrag wurde nicht abgeschlossen – im Chat steht, was zurückkam</value></data>
 
   <!-- PII keyword context menu -->
   <data name="Msg_PiiKeyword_Added_Title" xml:space="preserve"><value>PII-Schlüsselwort hinzugefügt</value></data>

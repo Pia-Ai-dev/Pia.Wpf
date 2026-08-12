@@ -93,6 +93,17 @@
         </ui:NavigationViewItem.Icon>
       </ui:NavigationViewItem>
 
+      <!-- Background assignments (Assistant only, and only when the server offers the surface) -->
+      <ui:NavigationViewItem Content="{loc:Str Nav_Assignments}"
+                             Command="{Binding NavigationCommand}"
+                             CommandParameter="Assignments"
+                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Assignments}"
+                             Visibility="{Binding IsAssignmentsNavVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <ui:NavigationViewItem.Icon>
+          <ui:SymbolIcon Symbol="Rocket24" />
+        </ui:NavigationViewItem.Icon>
+      </ui:NavigationViewItem>
+
       <!-- Todo (all modes) -->
       <ui:NavigationViewItem Content="{loc:Str Nav_Todo}"
                              Command="{Binding NavigationCommand}"

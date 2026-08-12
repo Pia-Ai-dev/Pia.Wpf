@@ -1,4 +1,4 @@
-﻿using Pia.Models;
+using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.ViewModels.Models;
 using Pia.Views.Controls;
@@ -73,6 +73,15 @@ public class DialogService : IDialogService
         var dialogHost = _contentDialogService.GetDialogHostEx()
             ?? throw new InvalidOperationException("No dialog host available");
         var dialog = new MeetingSaveContentDialog(dialogHost, meeting);
+        var result = await dialog.ShowAsync();
+        return result == ContentDialogResult.Primary;
+    }
+
+    public async Task<bool> ShowAssignmentConsentDialogAsync(ViewModels.AssignmentConsentViewModel viewModel)
+    {
+        var dialogHost = _contentDialogService.GetDialogHostEx()
+            ?? throw new InvalidOperationException("No dialog host available");
+        var dialog = new AssignmentConsentContentDialog(dialogHost, viewModel);
         var result = await dialog.ShowAsync();
         return result == ContentDialogResult.Primary;
     }

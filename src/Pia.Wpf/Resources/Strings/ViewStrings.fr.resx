@@ -38,6 +38,7 @@
   <data name="Nav_History" xml:space="preserve"><value>Historique</value></data>
   <data name="Nav_Memory" xml:space="preserve"><value>Mémoire</value></data>
   <data name="Nav_Reminders" xml:space="preserve"><value>Rappels</value></data>
+  <data name="Nav_Assignments" xml:space="preserve"><value>Missions</value></data>
   <data name="Nav_Todo" xml:space="preserve"><value>Tâches</value></data>
   <data name="Nav_Settings" xml:space="preserve"><value>Paramètres</value></data>
   <data name="Nav_NewWindow" xml:space="preserve"><value>Nouvelle fenêtre</value></data>
@@ -93,6 +94,7 @@
   <data name="Assistant_ToggleTts_Tooltip" xml:space="preserve"><value>Activer/désactiver la synthèse vocale</value></data>
   <data name="Assistant_Record_Tooltip" xml:space="preserve"><value>Enregistrer</value></data>
   <data name="Assistant_Attach_Tooltip" xml:space="preserve"><value>Joindre un fichier</value></data>
+  <data name="Assistant_RunAssignment_Tooltip" xml:space="preserve"><value>Confier ceci à votre serveur Pia comme mission en arrière-plan</value></data>
   <data name="Assistant_RemoveAttachment_Tooltip" xml:space="preserve"><value>Retirer la pièce jointe</value></data>
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Conversation vocale</value></data>
   <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Envoyer (Entrée)</value></data>
@@ -1065,6 +1067,9 @@
   <data name="Flow_Run_NeedsInput" xml:space="preserve"><value>Cette exécution a besoin de votre réponse pour continuer — ouvrez-la pour répondre.</value></data>
   <data name="Flow_Run_PlanApproval" xml:space="preserve"><value>Une exécution attend votre approbation de son plan</value></data>
   <data name="Flow_Action_ContinueRun" xml:space="preserve"><value>Reprendre l'exécution</value></data>
+  <data name="Flow_Assignment_Title" xml:space="preserve"><value>Mission en arrière-plan</value></data>
+  <data name="Flow_Assignment_Completed" xml:space="preserve"><value>Terminé — appuyez pour consulter</value></data>
+  <data name="Flow_Assignment_Unfinished" xml:space="preserve"><value>Non terminé — appuyez pour consulter</value></data>
   <data name="Assistant_Regenerate_Shorten" xml:space="preserve"><value>Plus court</value></data>
   <data name="Assistant_Regenerate_Detailed" xml:space="preserve"><value>Plus détaillé</value></data>
   <data name="Assistant_Regenerate_Exportable" xml:space="preserve"><value>Prêt à exporter</value></data>
@@ -1125,4 +1130,57 @@
   <data name="Settings_ScheduledJobs_Recurrence_Weekly" xml:space="preserve"><value>Hebdomadaire</value></data>
   <data name="Settings_ScheduledJobs_Recurrence_Monthly" xml:space="preserve"><value>Mensuel</value></data>
   <data name="Settings_ScheduledJobs_Recurrence_Yearly" xml:space="preserve"><value>Annuel</value></data>
+  <data name="AssignmentConsent_Title" xml:space="preserve"><value>Envoyer à votre serveur Pia</value></data>
+  <data name="AssignmentConsent_Skill_Label" xml:space="preserve"><value>Compétence</value></data>
+  <data name="AssignmentConsent_Mode_Label" xml:space="preserve"><value>Mode :</value></data>
+  <data name="AssignmentConsent_Prompt_Label" xml:space="preserve"><value>Que doit-il faire ?</value></data>
+  <data name="AssignmentConsent_Prompt_Placeholder" xml:space="preserve"><value>Décrivez le travail avec vos propres mots</value></data>
+  <data name="AssignmentConsent_Records_Label" xml:space="preserve"><value>Éléments à envoyer</value></data>
+  <data name="AssignmentConsent_Records_PromptOnly" xml:space="preserve"><value>Cette compétence travaille uniquement à partir de votre demande. Aucun élément n'est envoyé, mais votre demande l'est — en clair.</value></data>
+  <data name="AssignmentConsent_Records_None" xml:space="preserve"><value>Vous n'avez aucun élément que cette compétence puisse utiliser. Vous pouvez tout de même envoyer votre demande seule, en clair.</value></data>
+  <data name="AssignmentConsent_Records_Unavailable" xml:space="preserve"><value>Vos éléments n'ont pas pu être lus ; aucun ne peut donc être répertorié ni envoyé.</value></data>
+  <data name="AssignmentConsent_Records_Loading" xml:space="preserve"><value>Lecture de vos éléments…</value></data>
+  <data name="AssignmentConsent_Record_Chars" xml:space="preserve"><value>{0:N0} caractères</value></data>
+  <data name="AssignmentConsent_Record_TooLarge" xml:space="preserve"><value>Au-delà de la limite de {0:N0} caractères pour un seul élément : il ne peut pas être envoyé.</value></data>
+  <data name="AssignmentConsent_Selection_Summary" xml:space="preserve"><value>{0} sur {1} éléments · {2:N0} sur {3:N0} caractères</value></data>
+  <data name="AssignmentConsent_Cap_TooManyItems" xml:space="preserve"><value>Vous pouvez envoyer au maximum {0} éléments par mission.</value></data>
+  <data name="AssignmentConsent_Cap_TotalChars" xml:space="preserve"><value>Cet élément ferait dépasser {0:N0} caractères à la sélection.</value></data>
+  <data name="AssignmentConsent_Destination" xml:space="preserve"><value>Cela quitte le chiffrement de bout en bout. Les éléments ci-dessous sont envoyés en clair à votre serveur Pia et y sont stockés non chiffrés pendant le travail.</value></data>
+  <data name="AssignmentConsent_Retention" xml:space="preserve"><value>Le texte en clair est supprimé au plus tard 72 heures après la fin de l'exécution, que cet appareil récupère le résultat ou non. Ce qui subsiste plus longtemps, ce sont les métadonnées de l'exécution — état, nombre d'étapes et jetons consommés —, qui ne contiennent aucun de vos contenus.</value></data>
+  <data name="AssignmentConsent_Residual" xml:space="preserve"><value>Tant qu'il s'y trouve, toute personne ayant accès à votre serveur Pia peut le lire.</value></data>
+  <data name="AssignmentConsent_Affirm" xml:space="preserve"><value>Je comprends que ces éléments quittent le chiffrement de bout en bout.</value></data>
+  <data name="AssignmentConsent_Send" xml:space="preserve"><value>Envoyer non chiffré</value></data>
+  <data name="AssignmentConsent_Result_Started" xml:space="preserve"><value>La mission a démarré. Sa réponse arrivera sous forme de conversation une fois l'exécution terminée.</value></data>
+  <data name="AssignmentConsent_Result_ConsentMissing" xml:space="preserve"><value>Rien n'a été envoyé : cette sélection n'a pas été confirmée.</value></data>
+  <data name="AssignmentConsent_Result_TooLarge" xml:space="preserve"><value>Rien n'a été envoyé : la sélection dépasse une limite de taille.</value></data>
+  <data name="AssignmentConsent_Result_Refused" xml:space="preserve"><value>Rien n'a été envoyé : votre serveur Pia a refusé la mission.</value></data>
+  <data name="AssignmentConsent_Result_Error" xml:space="preserve"><value>Rien n'a été envoyé : la mission n'a pas pu démarrer.</value></data>
+  <data name="AssignmentConsent_EntityType_AssistantChat" xml:space="preserve"><value>Conversation</value></data>
+  <data name="AssignmentConsent_EntityType_Session" xml:space="preserve"><value>Session</value></data>
+  <data name="AssignmentConsent_EntityType_Memory" xml:space="preserve"><value>Mémoire</value></data>
+  <data name="AssignmentConsent_EntityType_Todo" xml:space="preserve"><value>Tâche</value></data>
+  <data name="AssignmentConsent_EntityType_Template" xml:space="preserve"><value>Modèle</value></data>
+  <data name="AssignmentConsent_EntityType_Unknown" xml:space="preserve"><value>Élément</value></data>
+  <data name="Assignments_Title" xml:space="preserve"><value>Missions en arrière-plan</value></data>
+  <data name="Assignments_Subtitle" xml:space="preserve"><value>Des missions que votre serveur Pia exécute pour vous, à partir des éléments que vous choisissez. Chaque réponse revient sous forme de conversation.</value></data>
+  <data name="Assignments_New" xml:space="preserve"><value>Nouvelle mission</value></data>
+  <data name="Assignments_Refresh" xml:space="preserve"><value>Actualiser</value></data>
+  <data name="Assignments_EmptyState" xml:space="preserve"><value>Rien n'a encore été lancé. Démarrez une mission : sa réponse apparaîtra ici, et en conversation, dès que l'exécution sera terminée.</value></data>
+  <data name="Assignments_OpenChat" xml:space="preserve"><value>Ouvrir la conversation</value></data>
+  <data name="Assignments_Cancel" xml:space="preserve"><value>Annuler</value></data>
+  <data name="Assignments_Cancel_Requested" xml:space="preserve"><value>Votre serveur Pia a été invité à arrêter cette exécution.</value></data>
+  <data name="Assignments_Cancel_NothingToStop" xml:space="preserve"><value>Votre serveur Pia n'a pas arrêté cette exécution : elle était peut-être déjà terminée.</value></data>
+  <data name="Assignments_Cancel_Failed" xml:space="preserve"><value>Cette exécution n'a pas pu être annulée.</value></data>
+  <data name="Assignments_Refresh_Failed" xml:space="preserve"><value>Votre serveur Pia n'a pas pu être joint ; cette liste n'est donc peut-être pas à jour.</value></data>
+  <data name="Assignments_OtherDevice" xml:space="preserve"><value>Lancée depuis un autre appareil : sa demande et sa réponse ne sont pas sur celui-ci.</value></data>
+  <data name="Assignments_Steps" xml:space="preserve"><value>Étapes : {0}</value></data>
+  <data name="Assignments_Elapsed_UnderAMinute" xml:space="preserve"><value>moins d'une minute</value></data>
+  <data name="Assignments_Elapsed_Minutes" xml:space="preserve"><value>{0} min</value></data>
+  <data name="Assignments_Elapsed_Hours" xml:space="preserve"><value>{0} h {1} min</value></data>
+  <data name="Assignments_Status_Queued" xml:space="preserve"><value>En attente</value></data>
+  <data name="Assignments_Status_Running" xml:space="preserve"><value>En cours</value></data>
+  <data name="Assignments_Status_Completed" xml:space="preserve"><value>Terminée</value></data>
+  <data name="Assignments_Status_Failed" xml:space="preserve"><value>Échouée</value></data>
+  <data name="Assignments_Status_Cancelled" xml:space="preserve"><value>Annulée</value></data>
+  <data name="Assignments_Status_Unknown" xml:space="preserve"><value>Inconnue</value></data>
 </root>

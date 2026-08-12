@@ -1,0 +1,220 @@
+<UserControl x:Class="Pia.Views.AssignmentsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:nav="clr-namespace:Pia.Navigation"
+             xmlns:vm="clr-namespace:Pia.ViewModels.Models"
+             mc:Ignorable="d"
+             d:DesignHeight="700" d:DesignWidth="1100"
+             nav:ViewModelLocator.AutoWireViewModel="True">
+  <UserControl.Resources>
+    <Style x:Key="AssignmentStatusPillStyle" TargetType="Border" BasedOn="{StaticResource PiaLabelChipStyle}">
+      <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}"/>
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding Status}" Value="{x:Static vm:AssignmentRowStatus.Queued}">
+          <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}"/>
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Status}" Value="{x:Static vm:AssignmentRowStatus.Running}">
+          <Setter Property="Background" Value="{DynamicResource PiaAccentSoftBrush}"/>
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Status}" Value="{x:Static vm:AssignmentRowStatus.Completed}">
+          <Setter Property="Background" Value="{DynamicResource SuccessSoftBrush}"/>
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Status}" Value="{x:Static vm:AssignmentRowStatus.Failed}">
+          <Setter Property="Background" Value="{DynamicResource DangerSoftBrush}"/>
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Status}" Value="{x:Static vm:AssignmentRowStatus.Cancelled}">
+          <Setter Property="Background" Value="{DynamicResource WarnSoftBrush}"/>
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+
+    <Style x:Key="AssignmentStatusTextStyle" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding Status}" Value="{x:Static vm:AssignmentRowStatus.Running}">
+          <Setter Property="Foreground" Value="{DynamicResource PiaAccentBrush}"/>
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Status}" Value="{x:Static vm:AssignmentRowStatus.Completed}">
+          <Setter Property="Foreground" Value="{DynamicResource PiaSuccessBrush}"/>
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Status}" Value="{x:Static vm:AssignmentRowStatus.Failed}">
+          <Setter Property="Foreground" Value="{DynamicResource PiaDangerBrush}"/>
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Status}" Value="{x:Static vm:AssignmentRowStatus.Cancelled}">
+          <Setter Property="Foreground" Value="{DynamicResource WarnBrush}"/>
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+  </UserControl.Resources>
+
+  <Grid Background="Transparent">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+    </Grid.RowDefinitions>
+
+    <Grid Grid.Row="0" Margin="24,20,24,14">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+
+      <StackPanel Grid.Column="0" VerticalAlignment="Center">
+        <TextBlock Text="{loc:Str Assignments_Title}"
+                   FontSize="20"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextDefaultBrush}"/>
+        <TextBlock Text="{loc:Str Assignments_Subtitle}"
+                   Margin="0,4,0,0"
+                   FontSize="12"
+                   TextWrapping="Wrap"
+                   MaxWidth="560"
+                   HorizontalAlignment="Left"
+                   Foreground="{DynamicResource TextMutedBrush}"/>
+      </StackPanel>
+
+      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+        <ui:Button Command="{Binding RefreshCommand}"
+                   Icon="{ui:SymbolIcon ArrowClockwise24}"
+                   ToolTip="{loc:Str Assignments_Refresh}"
+                   Appearance="Secondary"
+                   Margin="0,0,8,0"/>
+        <ui:Button Command="{Binding NewAssignmentCommand}"
+                   Content="{loc:Str Assignments_New}"
+                   Icon="{ui:SymbolIcon Add24}"
+                   Appearance="Primary"
+                   Visibility="{Binding CanStartAssignment, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+      </StackPanel>
+    </Grid>
+
+    <Border Grid.Row="1"
+            Margin="24,0,24,12"
+            Padding="12,8"
+            CornerRadius="6"
+            Background="{DynamicResource SurfaceMutedBrush}"
+            Visibility="{Binding HasNotice, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <TextBlock Text="{Binding Notice}"
+                 FontSize="12"
+                 TextWrapping="Wrap"
+                 Foreground="{DynamicResource TextSubtleBrush}"/>
+    </Border>
+
+    <ScrollViewer Grid.Row="2"
+                  Margin="24,0,24,14"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+      <Grid>
+        <ui:ProgressRing IsIndeterminate="True"
+                         Width="40" Height="40"
+                         VerticalAlignment="Top"
+                         HorizontalAlignment="Center"
+                         Margin="0,60,0,0"
+                         Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
+        <StackPanel HorizontalAlignment="Center"
+                    VerticalAlignment="Top"
+                    Margin="0,60,0,0"
+                    Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <ui:SymbolIcon Symbol="Rocket24"
+                         FontSize="48"
+                         HorizontalAlignment="Center"
+                         Margin="0,0,0,16"
+                         Foreground="{DynamicResource PiaAccentBrush}"/>
+          <TextBlock Text="{loc:Str Assignments_EmptyState}"
+                     FontSize="14"
+                     HorizontalAlignment="Center"
+                     TextAlignment="Center"
+                     MaxWidth="380"
+                     TextWrapping="Wrap"
+                     Foreground="{DynamicResource TextMutedBrush}"/>
+        </StackPanel>
+
+        <ItemsControl ItemsSource="{Binding Rows}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Orientation="Vertical"/>
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Style="{StaticResource PiaCardStyle}" Padding="16,12" Margin="0,0,0,10">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+
+                  <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                    <StackPanel Orientation="Horizontal">
+                      <Border Style="{StaticResource AssignmentStatusPillStyle}" Margin="0,0,8,0">
+                        <TextBlock Text="{Binding StatusLabel}" Style="{StaticResource AssignmentStatusTextStyle}"/>
+                      </Border>
+                      <TextBlock Text="{Binding SkillDisplayName}"
+                                 FontSize="13"
+                                 FontWeight="SemiBold"
+                                 VerticalAlignment="Center"
+                                 Foreground="{DynamicResource TextDefaultBrush}"/>
+                    </StackPanel>
+
+                    <TextBlock Text="{Binding Prompt}"
+                               Margin="0,8,0,0"
+                               FontSize="12"
+                               TextWrapping="Wrap"
+                               MaxHeight="54"
+                               TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource TextSubtleBrush}"
+                               Visibility="{Binding HasPrompt, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
+                    <TextBlock Text="{loc:Str Assignments_OtherDevice}"
+                               Margin="0,8,0,0"
+                               FontSize="12"
+                               FontStyle="Italic"
+                               Foreground="{DynamicResource TextGhostBrush}"
+                               Visibility="{Binding IsFromThisDevice, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                      <TextBlock Text="{Binding StepCountLabel}"
+                                 FontSize="11"
+                                 Foreground="{DynamicResource TextMutedBrush}"
+                                 Visibility="{Binding HasSteps, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                      <TextBlock Text="·"
+                                 Margin="6,0"
+                                 FontSize="11"
+                                 Foreground="{DynamicResource TextGhostBrush}"
+                                 Visibility="{Binding HasSteps, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                      <TextBlock Text="{Binding ElapsedLabel}"
+                                 FontSize="11"
+                                 Foreground="{DynamicResource TextMutedBrush}"/>
+                    </StackPanel>
+                  </StackPanel>
+
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                    <ui:Button Command="{Binding OpenChatCommand}"
+                               Content="{loc:Str Assignments_OpenChat}"
+                               Icon="{ui:SymbolIcon Chat24}"
+                               Appearance="Secondary"
+                               Margin="0,0,8,0"
+                               Visibility="{Binding CanOpenChat, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    <ui:Button Command="{Binding CancelCommand}"
+                               Content="{loc:Str Assignments_Cancel}"
+                               Icon="{ui:SymbolIcon Dismiss24}"
+                               Appearance="Secondary"
+                               Visibility="{Binding CanCancel, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Grid>
+    </ScrollViewer>
+  </Grid>
+</UserControl>
