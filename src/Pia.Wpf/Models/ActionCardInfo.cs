@@ -199,15 +199,18 @@ public partial class ActionCardInfo : ObservableObject
 
     public Task<ToolDecision> WaitForUserDecisionAsync() => _tcs.Task;
 
-    [RelayCommand]
-    private void AllowOnce()
+    // A null decision means cancellation, the one arm that does not complete the task with a value.
+    private void Resolve(ActionCardState state, ToolDecision? decision)
     {
         if (State != ActionCardState.Pending) return;
-        State = ActionCardState.Accepted;
+        State = state;
         IsExpanded = false;
         IsDiffExpanded = false;
-        _tcs.TrySetResult(ToolDecision.AllowOnce);
+        if (decision is { } d) _tcs.TrySetResult(d); else _tcs.TrySetCanceled();
     }
+
+    [RelayCommand]
+    private void AllowOnce() => Resolve(ActionCardState.Accepted, ToolDecision.AllowOnce);
 
     /// <summary>
     /// Same first-press-wins guard and the same resolved state as the other two allow arms — the
@@ -215,44 +218,16 @@ public partial class ActionCardInfo : ObservableObject
     /// the grant store: a Model cannot take a service, and the authoritative offerability check is the gate's).
     /// </summary>
     [RelayCommand]
-    private void AllowForSession()
-    {
-        if (State != ActionCardState.Pending) return;
-        State = ActionCardState.Accepted;
-        IsExpanded = false;
-        IsDiffExpanded = false;
-        _tcs.TrySetResult(ToolDecision.AllowForSession);
-    }
+    private void AllowForSession() => Resolve(ActionCardState.Accepted, ToolDecision.AllowForSession);
 
     [RelayCommand]
-    private void AlwaysAllow()
-    {
-        if (State != ActionCardState.Pending) return;
-        State = ActionCardState.Accepted;
-        IsExpanded = false;
-        IsDiffExpanded = false;
-        _tcs.TrySetResult(ToolDecision.AlwaysAllow);
-    }
+    private void AlwaysAllow() => Resolve(ActionCardState.Accepted, ToolDecision.AlwaysAllow);
 
     [RelayCommand]
-    private void Decline()
-    {
-        if (State != ActionCardState.Pending) return;
-        State = ActionCardState.Declined;
-        IsExpanded = false;
-        IsDiffExpanded = false;
-        _tcs.TrySetResult(ToolDecision.Decline);
-    }
+    private void Decline() => Resolve(ActionCardState.Declined, ToolDecision.Decline);
 
     [RelayCommand]
-    private void Cancel()
-    {
-        if (State != ActionCardState.Pending) return;
-        State = ActionCardState.Declined;
-        IsExpanded = false;
-        IsDiffExpanded = false;
-        _tcs.TrySetCanceled();
-    }
+    private void Cancel() => Resolve(ActionCardState.Declined, null);
 
     [RelayCommand]
     private void ToggleExpand()

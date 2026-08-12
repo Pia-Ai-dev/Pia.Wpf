@@ -347,26 +347,14 @@ public partial class FirstRunWizardViewModel : ObservableObject
     {
         if (CurrentStep >= TotalSteps - 1) return;
 
-        // From AccountSetup (1): skip both E2EE and Provider as appropriate
-        if (CurrentStep == 1)
+        CurrentStep = CurrentStep switch
         {
-            if (IsE2EESetupVisible)
-                CurrentStep = 2;
-            else if (IsLoggedIn)
-                CurrentStep = 4; // skip both E2EE (2) and Provider (3)
-            else
-                CurrentStep = 3; // not logged in: go to Provider
-        }
-        // From E2EE step (2): only reachable when visible; skip Provider when logged in
-        else if (CurrentStep == 2)
-        {
-            CurrentStep = IsLoggedIn ? 4 : 3;
-        }
-        // From Provider (3): always advance
-        else
-        {
-            CurrentStep++;
-        }
+            1 when IsE2EESetupVisible => 2,
+            1 when IsLoggedIn => 4,     // skip both E2EE (2) and Provider (3)
+            1 => 3,                     // not logged in: go to Provider
+            2 => IsLoggedIn ? 4 : 3,    // E2EE step is only reachable when visible
+            _ => CurrentStep + 1,
+        };
 
         NotifyNavigationChanged();
     }
@@ -375,25 +363,14 @@ public partial class FirstRunWizardViewModel : ObservableObject
     {
         if (CurrentStep <= 0) return;
 
-        if (CurrentStep == 2)
+        CurrentStep = CurrentStep switch
         {
-            CurrentStep = 1;
-        }
-        else if (CurrentStep == 3)
-        {
-            CurrentStep = IsE2EESetupVisible ? 2 : 1;
-        }
-        else if (CurrentStep == 4)
-        {
-            if (IsLoggedIn)
-                CurrentStep = IsE2EESetupVisible ? 2 : 1;
-            else
-                CurrentStep = 3;
-        }
-        else
-        {
-            CurrentStep--;
-        }
+            2 => 1,
+            3 => IsE2EESetupVisible ? 2 : 1,
+            4 when IsLoggedIn => IsE2EESetupVisible ? 2 : 1,
+            4 => 3,
+            _ => CurrentStep - 1,
+        };
 
         NotifyNavigationChanged();
     }

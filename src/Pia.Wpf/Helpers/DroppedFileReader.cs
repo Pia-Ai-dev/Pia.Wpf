@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.IO;
 using System.Text;
 using DocumentFormat.OpenXml.Packaging;
@@ -38,18 +39,25 @@ public static class DroppedFileReader
         ".wav", ".mp3", ".m4a", ".flac", ".ogg"
     };
 
+    private static readonly FrozenDictionary<string, FileKind> KindByExtension =
+        new Dictionary<string, FileKind>(StringComparer.OrdinalIgnoreCase)
+        {
+            [".docx"] = FileKind.Docx,
+            [".xlsx"] = FileKind.Xlsx,
+            [".xlsm"] = FileKind.Xlsx,
+            [".pdf"] = FileKind.Pdf,
+        }
+        .Concat(ImageExtensions.Select(e => new KeyValuePair<string, FileKind>(e, FileKind.Image)))
+        .Concat(AudioExtensions.Select(e => new KeyValuePair<string, FileKind>(e, FileKind.Audio)))
+        .Concat(TextExtensions.Select(e => new KeyValuePair<string, FileKind>(e, FileKind.Text)))
+        .ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
     public static FileKind Classify(string path)
     {
         var ext = Path.GetExtension(path);
+        // Guard stays: GetValueOrDefault(null) throws on an OrdinalIgnoreCase dictionary.
         if (string.IsNullOrEmpty(ext)) return FileKind.Unsupported;
-        if (string.Equals(ext, ".docx", StringComparison.OrdinalIgnoreCase)) return FileKind.Docx;
-        if (string.Equals(ext, ".xlsx", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(ext, ".xlsm", StringComparison.OrdinalIgnoreCase)) return FileKind.Xlsx;
-        if (string.Equals(ext, ".pdf", StringComparison.OrdinalIgnoreCase)) return FileKind.Pdf;
-        if (ImageExtensions.Contains(ext)) return FileKind.Image;
-        if (AudioExtensions.Contains(ext)) return FileKind.Audio;
-        if (TextExtensions.Contains(ext)) return FileKind.Text;
-        return FileKind.Unsupported;
+        return KindByExtension.GetValueOrDefault(ext, FileKind.Unsupported);
     }
 
     public enum ReadStatus { Ok, TooLarge, Failed }

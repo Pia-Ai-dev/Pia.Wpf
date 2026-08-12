@@ -97,14 +97,17 @@ public class PluginIconLoaderService : IPluginIconLoader
         if (data.Length < 8)
             return false;
 
-        if (data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47) return true;
-        if (data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF) return true;
-        if (data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x38) return true;
-        if (data[0] == 0x42 && data[1] == 0x4D) return true;
-        if (data[0] == 0x00 && data[1] == 0x00 && data[2] == 0x01 && data[3] == 0x00) return true;
-        if ((data[0] == 0x49 && data[1] == 0x49 && data[2] == 0x2A && data[3] == 0x00)
-            || (data[0] == 0x4D && data[1] == 0x4D && data[2] == 0x00 && data[3] == 0x2A)) return true;
-
-        return false;
+        return Signatures.Any(s => data.AsSpan(0, s.Length).SequenceEqual(s));
     }
+
+    private static readonly byte[][] Signatures =
+    [
+        [0x89, 0x50, 0x4E, 0x47],   // PNG
+        [0xFF, 0xD8, 0xFF],         // JPEG
+        [0x47, 0x49, 0x46, 0x38],   // GIF
+        [0x42, 0x4D],               // BMP
+        [0x00, 0x00, 0x01, 0x00],   // ICO
+        [0x49, 0x49, 0x2A, 0x00],   // TIFF LE
+        [0x4D, 0x4D, 0x00, 0x2A],   // TIFF BE
+    ];
 }

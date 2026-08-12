@@ -100,22 +100,21 @@ public static class EmojiScanner
     /// <see cref="IsEmojiCluster"/> already catches structurally. Excluding them keeps ordinary
     /// punctuation/symbols out of the (potentially tofu-prone) emoji path.
     /// </summary>
-    private static bool IsDefaultEmojiScalar(int cp)
-    {
-        // Supplementary pictograph blocks — essentially all emoji.
-        if (cp is >= 0x1F300 and <= 0x1F5FF) return true; // Misc Symbols & Pictographs
-        if (cp is >= 0x1F600 and <= 0x1F64F) return true; // Emoticons
-        if (cp is >= 0x1F680 and <= 0x1F6FF) return true; // Transport & Map
-        if (cp is >= 0x1F900 and <= 0x1F9FF) return true; // Supplemental Symbols & Pictographs
-        if (cp is >= 0x1FA00 and <= 0x1FAFF) return true; // Symbols & Pictographs Extended-A
-
-        // BMP symbol/dingbat blocks that Segoe UI Emoji renders in color.
-        if (cp is >= 0x2600 and <= 0x26FF) return true;   // Miscellaneous Symbols
-        if (cp is >= 0x2700 and <= 0x27BF) return true;   // Dingbats
-
-        // Common default-presentation singletons outside those blocks.
-        return cp switch
+    private static bool IsDefaultEmojiScalar(int cp) =>
+        cp switch
         {
+            // Supplementary pictograph blocks — essentially all emoji.
+            >= 0x1F300 and <= 0x1F5FF => true, // Misc Symbols & Pictographs
+            >= 0x1F600 and <= 0x1F64F => true, // Emoticons
+            >= 0x1F680 and <= 0x1F6FF => true, // Transport & Map
+            >= 0x1F900 and <= 0x1F9FF => true, // Supplemental Symbols & Pictographs
+            >= 0x1FA00 and <= 0x1FAFF => true, // Symbols & Pictographs Extended-A
+
+            // BMP symbol/dingbat blocks that Segoe UI Emoji renders in color.
+            >= 0x2600 and <= 0x26FF => true,   // Miscellaneous Symbols
+            >= 0x2700 and <= 0x27BF => true,   // Dingbats
+
+            // Common default-presentation singletons outside those blocks.
             0x1F004 => true, // 🀄 mahjong red dragon
             0x1F0CF => true, // 🃏 joker
             0x231A or 0x231B => true,                       // ⌚ ⌛
@@ -126,5 +125,4 @@ public static class EmojiScanner
             0x2B50 or 0x2B55 => true,                       // ⭐ ⭕
             _ => false,
         };
-    }
 }

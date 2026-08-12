@@ -52,32 +52,20 @@ internal static class PiaMarkdownRenderer
         return doc;
     }
 
-    private static WpfBlock? RenderBlock(MdBlock block)
+    // FencedCodeBlock must precede CodeBlock — it is a subtype.
+    private static WpfBlock? RenderBlock(MdBlock block) => block switch
     {
-        switch (block)
-        {
-            case HeadingBlock heading:
-                return RenderHeading(heading);
-            case ParagraphBlock paragraph:
-                return RenderParagraph(paragraph);
-            case ListBlock list:
-                return RenderList(list);
-            case QuoteBlock quote:
-                return RenderQuote(quote);
-            case FencedCodeBlock fenced:
-                return RenderCodeCard(fenced.Info, JoinCodeLines(fenced));
-            case CodeBlock code:
-                return RenderCodeCard(string.Empty, JoinCodeLines(code));
-            case ThematicBreakBlock:
-                return RenderThematicBreak();
-            case MdTable table:
-                return RenderTable(table);
-            case HtmlBlock html:
-                return RenderHtmlBlock(html);
-            default:
-                return null;
-        }
-    }
+        HeadingBlock heading => RenderHeading(heading),
+        ParagraphBlock paragraph => RenderParagraph(paragraph),
+        ListBlock list => RenderList(list),
+        QuoteBlock quote => RenderQuote(quote),
+        FencedCodeBlock fenced => RenderCodeCard(fenced.Info, JoinCodeLines(fenced)),
+        CodeBlock code => RenderCodeCard(string.Empty, JoinCodeLines(code)),
+        ThematicBreakBlock => RenderThematicBreak(),
+        MdTable table => RenderTable(table),
+        HtmlBlock html => RenderHtmlBlock(html),
+        _ => null,
+    };
 
     private static Paragraph RenderHeading(HeadingBlock heading)
     {
@@ -278,35 +266,25 @@ internal static class PiaMarkdownRenderer
         }
     }
 
-    private static WpfInline? RenderInline(MdInline inline)
+    private static WpfInline? RenderInline(MdInline inline) => inline switch
     {
-        switch (inline)
-        {
-            case LiteralInline literal:
-                return RenderLiteral(literal.Content.ToString());
-            case CodeInline codeInline:
-                return RenderCodeSpan(codeInline);
-            case EmphasisInline emphasis:
-                return RenderEmphasis(emphasis);
-            case LinkInline link:
-                return RenderLink(link);
-            case AutolinkInline autolink:
-                return RenderAutolink(autolink);
-            case LineBreakInline lineBreak:
-                return lineBreak.IsHard ? (WpfInline)new LineBreak() : new Run(" ");
-            case HtmlEntityInline entity:
-                return new Run(entity.Transcoded.ToString());
-            case HtmlInline:
-                return null;
-            default:
-                if (inline is ContainerInline container)
-                {
-                    var span = new Span();
-                    AppendInlines(container, span.Inlines);
-                    return span;
-                }
-                return null;
-        }
+        LiteralInline literal => RenderLiteral(literal.Content.ToString()),
+        CodeInline codeInline => RenderCodeSpan(codeInline),
+        EmphasisInline emphasis => RenderEmphasis(emphasis),
+        LinkInline link => RenderLink(link),
+        AutolinkInline autolink => RenderAutolink(autolink),
+        LineBreakInline lineBreak => lineBreak.IsHard ? new LineBreak() : new Run(" "),
+        HtmlEntityInline entity => new Run(entity.Transcoded.ToString()),
+        HtmlInline => null,
+        ContainerInline container => RenderContainer(container),
+        _ => null,
+    };
+
+    private static Span RenderContainer(ContainerInline container)
+    {
+        var span = new Span();
+        AppendInlines(container, span.Inlines);
+        return span;
     }
 
     /// <summary>
