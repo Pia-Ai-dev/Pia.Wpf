@@ -28,12 +28,8 @@ public static class TeamsMeetingUrl
         if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) return false;
 
         var host = uri.Host;
-        foreach (var teamsHost in TeamsHosts)
-        {
-            if (string.Equals(host, teamsHost, StringComparison.OrdinalIgnoreCase)) return true;
-            if (host.EndsWith("." + teamsHost, StringComparison.OrdinalIgnoreCase)) return true;
-        }
-        return false;
+        return TeamsHosts.Any(h => string.Equals(host, h, StringComparison.OrdinalIgnoreCase)
+            || host.EndsWith("." + h, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

@@ -1676,11 +1676,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             new(ChatRole.System, fullSystemPrompt)
         };
 
-        // Include existing conversation history
-        foreach (var msg in Messages)
-        {
-            chatMessages.Add(msg.ToChatMessage());
-        }
+        chatMessages.AddRange(Messages.Select(m => m.ToChatMessage()));
 
         chatMessages.Add(new ChatMessage(ChatRole.User, userText));
 

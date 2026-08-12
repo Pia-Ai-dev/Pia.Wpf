@@ -99,16 +99,6 @@ public static class WikiLinkReconciler
 
     // True when every character is already in the slug alphabet [a-z0-9-] (so there is nothing a slug
     // round-trip would lose). Anything with uppercase, spaces, or punctuation is treated as real prose.
-    private static bool IsSlugShaped(string s)
-    {
-        foreach (var c in s)
-        {
-            if (!(char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-'))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
+    private static bool IsSlugShaped(string s) =>
+        s.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-');
 }

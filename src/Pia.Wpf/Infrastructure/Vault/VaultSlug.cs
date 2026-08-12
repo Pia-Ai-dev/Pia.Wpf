@@ -32,16 +32,9 @@ public static class VaultSlug
     public static string Slugify(string heading)
     {
         var decomposed = heading.Normalize(NormalizationForm.FormD);
-        var sb = new StringBuilder(decomposed.Length);
-        foreach (var c in decomposed)
-        {
-            if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
-            {
-                sb.Append(c);
-            }
-        }
-
-        var lowered = sb.ToString().ToLowerInvariant();
+        var lowered = string.Concat(
+                decomposed.Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark))
+            .ToLowerInvariant();
         var slug = NonSlugRun.Replace(lowered, "-").Trim('-');
         return slug.Length == 0 ? "section" : slug;
     }

@@ -65,13 +65,8 @@ public class PolicyService : IPolicyService
         if (candidateDirectories.Length == 0)
             throw new ArgumentException("At least one candidate directory is required", nameof(candidateDirectories));
 
-        foreach (var dir in candidateDirectories)
-        {
-            var path = Path.Combine(dir, PolicyFileName);
-            if (File.Exists(path))
-                return path;
-        }
-        return Path.Combine(candidateDirectories[^1], PolicyFileName);
+        return candidateDirectories.Select(d => Path.Combine(d, PolicyFileName)).FirstOrDefault(File.Exists)
+            ?? Path.Combine(candidateDirectories[^1], PolicyFileName);
     }
 
     public async Task<PolicySettings> GetPolicyAsync()

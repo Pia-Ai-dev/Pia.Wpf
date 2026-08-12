@@ -532,30 +532,15 @@ public partial class TodoViewModel : UiThreadViewModel, INavigationAware, IDispo
     private void UpdateOverdueCount()
     {
         var today = DateTime.Today;
-        var count = 0;
-        foreach (var columnVm in Columns)
-        {
-            foreach (var todo in columnVm.Todos)
-            {
-                if (todo.Status == TodoStatus.Pending
-                    && todo.DueDate.HasValue
-                    && todo.DueDate.Value.Date < today)
-                    count++;
-            }
-        }
-        OverdueCount = count;
+        OverdueCount = Columns
+            .SelectMany(c => c.Todos)
+            .Count(t => t.Status == TodoStatus.Pending && t.DueDate.HasValue && t.DueDate.Value.Date < today);
     }
 
-    private static double ClampColumnWidth(double width)
-    {
-        const double min = 200.0;
-        const double max = 600.0;
-        if (double.IsNaN(width) || width <= 0)
-            return KanbanColumnViewModel.DefaultWidth;
-        if (width < min) return min;
-        if (width > max) return max;
-        return width;
-    }
+    private static double ClampColumnWidth(double width) =>
+        double.IsNaN(width) || width <= 0
+            ? KanbanColumnViewModel.DefaultWidth
+            : Math.Clamp(width, 200.0, 600.0);
 
     /// <summary>
     /// New todos are appended to the end of the list (SortOrder-based).

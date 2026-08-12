@@ -314,11 +314,7 @@ internal static class AgentContextCompactor
 
             var compacted = new List<ChatMessage>(pinnedCount + kept.Count);
             compacted.AddRange(head);
-            foreach (var message in kept)
-            {
-                if (pinnedSystem is null || !pinnedSystem.Contains(message))
-                    compacted.Add(message);
-            }
+            compacted.AddRange(kept.Where(m => pinnedSystem is null || !pinnedSystem.Contains(m)));
             if (pinnedImages is not null)
                 compacted.AddRange(pinnedImages);
             if (instruction is not null)
@@ -365,35 +361,17 @@ internal static class AgentContextCompactor
     /// PiaCloudChatClient's outbound converter matches it, so the pin and the wire agree on what counts
     /// as an image.
     /// </summary>
-    private static bool HasImageContent(ChatMessage message)
-    {
-        foreach (var content in message.Contents)
-        {
-            if (content is DataContent data
-                && data.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    private static bool HasImageContent(ChatMessage message) =>
+        message.Contents.Any(c => c is DataContent data
+            && data.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// True when the message is part of a tool exchange. Such a turn is never withheld from the
     /// compacted range: lifting it out would separate a function call from its result, and a provider
     /// rejects that request outright.
     /// </summary>
-    private static bool HasToolContent(ChatMessage message)
-    {
-        foreach (var content in message.Contents)
-        {
-            if (content is FunctionCallContent or FunctionResultContent)
-                return true;
-        }
-
-        return false;
-    }
+    private static bool HasToolContent(ChatMessage message) =>
+        message.Contents.Any(c => c is FunctionCallContent or FunctionResultContent);
 }
 
 #pragma warning restore MAAI001

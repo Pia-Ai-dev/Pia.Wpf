@@ -547,13 +547,8 @@ public sealed class TeamsMeetingSession : IMeetingSession
 
             if (names is null || names.Length == 0) return Array.Empty<string>();
 
-            var cleaned = new List<string>(names.Length);
-            foreach (var n in names)
-            {
-                var name = n?.Trim();
-                if (!string.IsNullOrEmpty(name)) cleaned.Add(name);
-            }
-            return cleaned;
+            // Filter before trimming: the obvious trim-then-filter form yields List<string?>.
+            return names.Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n!.Trim()).ToList();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

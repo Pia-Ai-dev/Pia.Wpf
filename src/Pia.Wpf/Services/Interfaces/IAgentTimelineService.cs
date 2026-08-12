@@ -101,14 +101,11 @@ public sealed class AgentTimelineScope
     {
         if (string.IsNullOrEmpty(toolName) || toolName.Length > 64) return "(unnamed)";
 
-        foreach (var c in toolName)
-        {
-            if (!char.IsAsciiLetterOrDigit(c) && c != '_' && c != '.' && c != ':' && c != '-')
-                return "(unnamed)";
-        }
-
-        return toolName;
+        return toolName.All(IsToolIdChar) ? toolName : "(unnamed)";
     }
+
+    private static bool IsToolIdChar(char c) =>
+        char.IsAsciiLetterOrDigit(c) || c is '_' or '.' or ':' or '-';
 
     /// <summary>
     /// The provider's correlation token to persist for a gated call, for <c>ToolCallId</c>. Returns
@@ -141,13 +138,7 @@ public sealed class AgentTimelineScope
     {
         if (string.IsNullOrWhiteSpace(callId) || callId.Length > 128) return null;
 
-        foreach (var c in callId)
-        {
-            if (!char.IsAsciiLetterOrDigit(c) && c != '_' && c != '.' && c != ':' && c != '-')
-                return null;
-        }
-
-        return callId;
+        return callId.All(IsToolIdChar) ? callId : null;
     }
 
     /// <summary>

@@ -114,14 +114,10 @@ public static class DirectTranscriptMarkdown
 
     private static List<string> ResolveDeduplicatedSpeakers(IReadOnlyList<TranscriptBubble> bubbles, string? counterpartName)
     {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        var ordered = new List<string>();
-        foreach (var bubble in bubbles)
-        {
-            var label = SpeakerToDisplayNameConverter.Resolve(bubble.Speaker, bubble.SpeakerLabel, counterpartName);
-            if (seen.Add(label)) ordered.Add(label);
-        }
-        return ordered;
+        return bubbles
+            .Select(b => SpeakerToDisplayNameConverter.Resolve(b.Speaker, b.SpeakerLabel, counterpartName))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
     }
 
     /// <summary>

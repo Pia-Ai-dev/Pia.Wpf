@@ -26,14 +26,6 @@ public sealed class ExecutingRunStore : IExecutingRunStore
 
     public Guid? GetChatId(Guid runId) => _chatByRun.TryGetValue(runId, out var chatId) ? chatId : null;
 
-    public bool IsExecuting(Guid chatId)
-    {
-        foreach (var entry in _chatByRun)
-        {
-            if (entry.Value == chatId)
-                return true;
-        }
-
-        return false;
-    }
+    // Enumerates the dictionary itself, not Values — see the type doc.
+    public bool IsExecuting(Guid chatId) => _chatByRun.Any(e => e.Value == chatId);
 }

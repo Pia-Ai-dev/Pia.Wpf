@@ -265,19 +265,8 @@ public sealed class NamedConsentClassifier : INamedConsentClassifier
         return captured;
     }
 
-    private static bool IsValidNameToken(string token)
-    {
-        if (token.Length < 2)
-            return false;
-
-        foreach (var ch in token)
-        {
-            if (!char.IsLetter(ch) && ch != '-' && ch != '\'')
-                return false;
-        }
-
-        return true;
-    }
+    private static bool IsValidNameToken(string token) =>
+        token.Length >= 2 && token.All(ch => char.IsLetter(ch) || ch is '-' or '\'');
 
     private static string TitleCaseToken(string token)
     {
@@ -539,16 +528,8 @@ public sealed class NamedConsentClassifier : INamedConsentClassifier
     /// </summary>
     private static bool MatchesAnyLexiconToken(string token, HashSet<string> lexiconTokens)
     {
-        if (lexiconTokens.Contains(token))
-            return true;
-
-        foreach (var lexiconWord in lexiconTokens)
-        {
-            if (TokenMatches(token, lexiconWord, out _))
-                return true;
-        }
-
-        return false;
+        return lexiconTokens.Contains(token)
+            || lexiconTokens.Any(lexiconWord => TokenMatches(token, lexiconWord, out _));
     }
 
     /// <summary>

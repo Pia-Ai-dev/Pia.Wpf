@@ -41,13 +41,7 @@ public sealed class GitignoreMatcher
     /// <summary>Builds a matcher from raw ignore-file lines (order-significant for negation).</summary>
     public static GitignoreMatcher FromLines(IEnumerable<string> lines)
     {
-        var rules = new List<Rule>();
-        foreach (var line in lines)
-        {
-            var rule = ParseLine(line);
-            if (rule is not null) rules.Add(rule);
-        }
-        return new GitignoreMatcher(rules);
+        return new GitignoreMatcher(lines.Select(ParseLine).OfType<Rule>().ToList());
     }
 
     /// <summary>

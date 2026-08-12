@@ -14,49 +14,34 @@ public static class VoiceStatsCalculator
         ArgumentNullException.ThrowIfNull(samples);
 
         // Group by (Speaker, SpeakerLabel) using ordinal string comparison; null and empty
-        // labels are treated as the same "no label" group.
-        var groups = new Dictionary<(TranscriptSpeaker Speaker, string? Label), (int Count, double Total)>();
-        double grandTotal = 0;
+        // labels are treated as the same "no label" group. Materialized because grandTotal
+        // needs a second read and samples is only enumerable once.
+        var byKey = samples
+            .Select(s => (
+                s.Speaker,
+                Label: string.IsNullOrEmpty(s.SpeakerLabel) ? null : s.SpeakerLabel,
+                // defensive: a caller must never observe negative speech time.
+                Duration: Math.Max(0, s.DurationSeconds)))
+            .GroupBy(x => (x.Speaker, x.Label))
+            .Select(g => (g.Key, Count: g.Count(), Total: g.Sum(x => x.Duration)))
+            .ToList();
 
-        foreach (var sample in samples)
-        {
-            var duration = Math.Max(0, sample.DurationSeconds); // defensive: a caller must never
-                                                                 // observe negative speech time.
-            var label = string.IsNullOrEmpty(sample.SpeakerLabel) ? null : sample.SpeakerLabel;
-            var key = (sample.Speaker, label);
-
-            if (groups.TryGetValue(key, out var existing))
-                groups[key] = (existing.Count + 1, existing.Total + duration);
-            else
-                groups[key] = (1, duration);
-
-            grandTotal += duration;
-        }
-
-        if (groups.Count == 0) return Array.Empty<SpeakerVoiceStats>();
-
-        var result = new List<SpeakerVoiceStats>(groups.Count);
-        foreach (var (key, agg) in groups)
-        {
-            var mean = agg.Count == 0 ? 0 : agg.Total / agg.Count;
-            var share = grandTotal == 0 ? 0 : agg.Total / grandTotal;
-            result.Add(new SpeakerVoiceStats(key.Speaker, key.Label, agg.Count, agg.Total, mean, share));
-        }
+        var grandTotal = byKey.Sum(g => g.Total);
 
         // Deterministic order: total speech desc, then label ordinal asc, then speaker —
         // this is rendered into a saved file, so re-running Compute on the same input must
         // always emit the same order.
-        result.Sort((a, b) =>
-        {
-            var byTotal = b.TotalSpeechSeconds.CompareTo(a.TotalSpeechSeconds);
-            if (byTotal != 0) return byTotal;
-
-            var byLabel = string.CompareOrdinal(a.SpeakerLabel ?? string.Empty, b.SpeakerLabel ?? string.Empty);
-            if (byLabel != 0) return byLabel;
-
-            return ((int)a.Speaker).CompareTo((int)b.Speaker);
-        });
-
-        return result;
+        return byKey
+            .Select(g => new SpeakerVoiceStats(
+                g.Key.Speaker,
+                g.Key.Label,
+                g.Count,
+                g.Total,
+                g.Count == 0 ? 0 : g.Total / g.Count,
+                grandTotal == 0 ? 0 : g.Total / grandTotal))
+            .OrderByDescending(s => s.TotalSpeechSeconds)
+            .ThenBy(s => s.SpeakerLabel ?? string.Empty, StringComparer.Ordinal)
+            .ThenBy(s => (int)s.Speaker)
+            .ToList();
     }
 }

@@ -930,12 +930,7 @@ public sealed class ChatSession : IDisposable
             new(ChatRole.System, spec.SystemPrompt),
         };
 
-        foreach (var msg in Messages)
-        {
-            if (msg == assistantMessage)
-                continue;
-            chatMessages.Add(msg.ToChatMessage());
-        }
+        chatMessages.AddRange(Messages.Where(m => m != assistantMessage).Select(m => m.ToChatMessage()));
 
         string instruction;
         if (spec.UseGoalVerbatim)
