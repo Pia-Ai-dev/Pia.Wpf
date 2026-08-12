@@ -84,16 +84,17 @@
             </Style.Triggers>
           </Style>
         </Border.Style>
-        <ui:Button Appearance="Transparent"
-                   Padding="4"
-                   Cursor="Hand"
-                   ToolTip="{loc:Str History_Delete}"
-                   Command="{Binding DeleteCommand,
-                             RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}}}"
-                   CommandParameter="{Binding}">
-          <ui:SymbolIcon Symbol="Delete24" FontSize="16"
+        <!-- Opacity 0 still measures, so this button sets the row's minimum height —
+             keep it near the title's line height. -->
+        <Button Style="{StaticResource UnstyledButton}"
+                Padding="3"
+                ToolTip="{loc:Str History_Delete}"
+                Command="{Binding DeleteCommand,
+                          RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}}}"
+                CommandParameter="{Binding}">
+          <ui:SymbolIcon Symbol="Delete24" FontSize="14"
                          Foreground="{DynamicResource PiaDangerBrush}"/>
-        </ui:Button>
+        </Button>
       </Border>
     </Grid>
   </Grid>
