@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
@@ -7,6 +8,7 @@ using Pia.Services.LiveTranscription;
 using Pia.Services.MeetingAttendee;
 using Pia.Tests.Services;
 using Pia.ViewModels;
+using Pia.ViewModels.Models;
 using Xunit;
 
 namespace Pia.Tests.ViewModels;
@@ -722,6 +724,146 @@ public class MeetingAttendeeViewModelTests
         Assert.True(fired);
     }
 
+    // ---- save to vault ----------------------------------------------------------------------------
+
+    [Fact]
+    public async Task SaveToVault_WhenTheDetailsDialogIsCancelled_WritesNothing()
+    {
+        var (vm, _, dialog, memory, ingest) = CreateSutWithVault();
+        dialog.ShowMeetingSaveDialogAsync(Arg.Any<MeetingSaveEditModel>()).Returns(false);
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "agenda item one", DateTimeOffset.Now));
+
+        // Non-vacuity: the command must actually have been runnable, or "nothing written" proves nothing.
+        Assert.True(vm.SaveToVaultCommand.CanExecute(null));
+        await ((IAsyncRelayCommand)vm.SaveToVaultCommand).ExecuteAsync(null);
+
+        await memory.DidNotReceive().CreateSourceAsync(Arg.Any<string>(), Arg.Any<string>());
+        await ingest.DidNotReceive().RunAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SaveToVault_WritesASourceUnderSources_ThenIngestsThatSameRef()
+    {
+        var (vm, service, dialog, memory, ingest) = CreateSutWithVault();
+        service.ObservedAttendees = new[] { "Marco Altmann", "Jane Doe" };
+        dialog.ShowMeetingSaveDialogAsync(Arg.Any<MeetingSaveEditModel>())
+            .Returns(ci => { ci.Arg<MeetingSaveEditModel>().Title = "Q3 roadmap sync"; return Task.FromResult(true); });
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "agenda item one", DateTimeOffset.Now));
+
+        await ((IAsyncRelayCommand)vm.SaveToVaultCommand).ExecuteAsync(null);
+
+        var call = Assert.Single(
+            memory.ReceivedCalls(), c => c.GetMethodInfo().Name == nameof(IMemoryService.CreateSourceAsync));
+        var reference = (string)call.GetArguments()[0]!;
+        var markdown = (string)call.GetArguments()[1]!;
+
+        Assert.StartsWith("sources/meeting-", reference, StringComparison.Ordinal);
+        Assert.EndsWith("-q3-roadmap-sync.md", reference, StringComparison.Ordinal);
+        Assert.Contains("schema: pia-meeting/v1", markdown, StringComparison.Ordinal);
+        Assert.Contains("title: Q3 roadmap sync", markdown, StringComparison.Ordinal);
+        Assert.Contains("source: teams", markdown, StringComparison.Ordinal);
+        Assert.Contains("attendees: [Marco Altmann, Jane Doe]", markdown, StringComparison.Ordinal);
+        Assert.Contains("agenda item one", markdown, StringComparison.Ordinal);
+
+        await ingest.Received(1).RunAsync(reference, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SaveToVault_WhenTheRefIsTaken_FallsBackToTheNextFreeName()
+    {
+        var (vm, _, dialog, memory, _) = CreateSutWithVault();
+        dialog.ShowMeetingSaveDialogAsync(Arg.Any<MeetingSaveEditModel>())
+            .Returns(ci => { ci.Arg<MeetingSaveEditModel>().Title = "Standup"; return Task.FromResult(true); });
+        memory.ResolveCreateSourceAsync(Arg.Any<string>()).Returns(ci =>
+        {
+            var reference = ci.Arg<string>();
+            var free = !reference.EndsWith("-standup.md", StringComparison.Ordinal);
+            return Task.FromResult(new SourceCreatePreview(free, reference, free ? null : "taken"));
+        });
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "morning", DateTimeOffset.Now));
+
+        await ((IAsyncRelayCommand)vm.SaveToVaultCommand).ExecuteAsync(null);
+
+        await memory.Received(1).CreateSourceAsync(
+            Arg.Is<string>(r => r.EndsWith("-standup-2.md", StringComparison.Ordinal)), Arg.Any<string>());
+    }
+
+    [Fact]
+    public async Task SaveToVault_WhenTheConfirmedTitleIsBlank_WritesNothing()
+    {
+        // The dialog's disabled primary button is a binding, and a broken binding leaves it enabled.
+        var (vm, _, dialog, memory, _) = CreateSutWithVault();
+        dialog.ShowMeetingSaveDialogAsync(Arg.Any<MeetingSaveEditModel>())
+            .Returns(ci => { ci.Arg<MeetingSaveEditModel>().Title = "   "; return Task.FromResult(true); });
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "morning", DateTimeOffset.Now));
+
+        await ((IAsyncRelayCommand)vm.SaveToVaultCommand).ExecuteAsync(null);
+
+        await memory.DidNotReceive().CreateSourceAsync(Arg.Any<string>(), Arg.Any<string>());
+    }
+
+    [Fact]
+    public async Task SaveToVault_WhenTheVaultRefusesThePath_ReportsThatReasonRatherThanACollision()
+    {
+        // A refusal no name suffix can fix must not be reported as "that name is taken".
+        var (vm, _, dialog, memory, ingest) = CreateSutWithVault();
+        dialog.ShowMeetingSaveDialogAsync(Arg.Any<MeetingSaveEditModel>()).Returns(true);
+        memory.ResolveCreateSourceAsync(Arg.Any<string>()).Returns(ci =>
+            Task.FromResult(new SourceCreatePreview(false, ci.Arg<string>(), "Error: reference is outside the memory vault.")));
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "morning", DateTimeOffset.Now));
+
+        await ((IAsyncRelayCommand)vm.SaveToVaultCommand).ExecuteAsync(null);
+
+        await dialog.Received(1).ShowMessageDialogAsync(
+            Arg.Any<string>(), Arg.Is<string>(m => m.Contains("outside the memory vault", StringComparison.Ordinal)));
+        await memory.DidNotReceive().CreateSourceAsync(Arg.Any<string>(), Arg.Any<string>());
+        await ingest.DidNotReceive().RunAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SaveToVault_WhenTheWriteFails_ReportsTheErrorAndDoesNotIngest()
+    {
+        var (vm, _, dialog, memory, ingest) = CreateSutWithVault();
+        dialog.ShowMeetingSaveDialogAsync(Arg.Any<MeetingSaveEditModel>()).Returns(true);
+        memory.CreateSourceAsync(Arg.Any<string>(), Arg.Any<string>())
+            .Returns(Task.FromResult(new SourceWrite(false, "sources/x.md", "Error: nope.")));
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "morning", DateTimeOffset.Now));
+
+        await ((IAsyncRelayCommand)vm.SaveToVaultCommand).ExecuteAsync(null);
+
+        await dialog.Received(1).ShowMessageDialogAsync(Arg.Any<string>(), Arg.Any<string>());
+        await ingest.DidNotReceive().RunAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SaveToVault_PrefillsAttendeesFromTheObservedRoster()
+    {
+        var (vm, service, dialog, _, _) = CreateSutWithVault();
+        service.ObservedAttendees = new[] { "Marco Altmann", "Jane Doe" };
+        MeetingSaveEditModel? seen = null;
+        dialog.ShowMeetingSaveDialogAsync(Arg.Any<MeetingSaveEditModel>())
+            .Returns(ci => { seen = ci.Arg<MeetingSaveEditModel>(); return Task.FromResult(false); });
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "agenda item one", DateTimeOffset.Now));
+
+        await ((IAsyncRelayCommand)vm.SaveToVaultCommand).ExecuteAsync(null);
+
+        Assert.NotNull(seen);
+        Assert.Equal("Marco Altmann, Jane Doe", seen!.Attendees);
+    }
+
+    [Fact]
+    public void SaveToVault_IsDisabled_WhileRunning_AndWithNoTranscript()
+    {
+        var (vm, service) = CreateSut();
+        Assert.False(vm.SaveToVaultCommand.CanExecute(null));
+
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hello", DateTimeOffset.Now));
+        Assert.True(vm.SaveToVaultCommand.CanExecute(null));
+
+        service.RaiseState(MeetingAttendeeState.Attending);
+        Assert.False(vm.SaveToVaultCommand.CanExecute(null));
+    }
+
     // ---- helpers ----------------------------------------------------------------------------------
 
     private static (MeetingAttendeeViewModel vm, FakeMeetingAttendeeService service) CreateSut()
@@ -732,22 +874,39 @@ public class MeetingAttendeeViewModelTests
 
     private static (MeetingAttendeeViewModel vm, FakeMeetingAttendeeService service, IDialogService dialog) CreateSutWithDialog()
     {
+        var (vm, service, dialog, _, _) = CreateSutWithVault();
+        return (vm, service, dialog);
+    }
+
+    private static (MeetingAttendeeViewModel vm, FakeMeetingAttendeeService service, IDialogService dialog,
+        IMemoryService memory, IIngestScheduler ingest) CreateSutWithVault()
+    {
         var settingsService = Substitute.For<ISettingsService>();
         settingsService.GetSettingsAsync().Returns(new AppSettings());
 
         // Echo the key back as its own value so status assertions can match by key without a real resx.
         var loc = Substitute.For<ILocalizationService>();
         loc[Arg.Any<string>()].Returns(ci => ci.Arg<string>());
+        // Key plus its arguments, so an assertion can see the substituted detail without a real resx.
+        loc.Format(Arg.Any<string>(), Arg.Any<object[]>())
+            .Returns(ci => $"{ci.Arg<string>()} {string.Join(" ", ci.ArgAt<object[]>(1))}");
 
         var files = Substitute.For<IFileDialogService>();
         var dialog = Substitute.For<IDialogService>();
+        var memory = Substitute.For<IMemoryService>();
+        memory.ResolveCreateSourceAsync(Arg.Any<string>())
+            .Returns(ci => Task.FromResult(new SourceCreatePreview(true, ci.Arg<string>(), null)));
+        memory.CreateSourceAsync(Arg.Any<string>(), Arg.Any<string>())
+            .Returns(ci => Task.FromResult(new SourceWrite(true, ci.ArgAt<string>(0), null)));
+        var ingest = Substitute.For<IIngestScheduler>();
         var service = new FakeMeetingAttendeeService();
 
         var vm = new MeetingAttendeeViewModel(
-            service, settingsService, loc, files, dialog,
+            service, settingsService, loc, files, dialog, memory, ingest,
+            Substitute.For<Wpf.Ui.ISnackbarService>(),
             NullLogger<MeetingAttendeeViewModel>.Instance, new InlineUiDispatcher());
 
-        return (vm, service, dialog);
+        return (vm, service, dialog, memory, ingest);
     }
 
     // Variant that exposes the settings substitute and lets the caller seed the AppSettings instance,
@@ -767,6 +926,8 @@ public class MeetingAttendeeViewModelTests
 
         var vm = new MeetingAttendeeViewModel(
             service, settingsService, loc, files, dialog,
+            Substitute.For<IMemoryService>(), Substitute.For<IIngestScheduler>(),
+            Substitute.For<Wpf.Ui.ISnackbarService>(),
             NullLogger<MeetingAttendeeViewModel>.Instance, new InlineUiDispatcher());
 
         return (vm, service, settingsService);

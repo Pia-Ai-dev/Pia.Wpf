@@ -29,7 +29,6 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
     private const int ChipColorPaletteSize = 5;
 
     private readonly IDirectTranscriptionService _service;
-    private readonly IDialogService _dialogService;
 
     private readonly Dictionary<string, int> _chipColorIndex = new(StringComparer.Ordinal);
     private int _nextChipColorIndex;
@@ -79,6 +78,7 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
     protected override string SaveDialogTitleKey => "DirectTrans_SaveDialog_Title";
     protected override string SaveDialogFilterKey => "DirectTrans_SaveDialog_Filter";
     protected override string SaveFileNamePrefix => "direct-transcript";
+    protected override string MeetingSourceKind => "direct";
 
     /// <summary>
     /// Raised when the user clicks "Summarize with assistant". Carries a ready-to-send prompt (a
@@ -94,12 +94,15 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
         ILocalizationService localizationService,
         IFileDialogService fileDialogService,
         IDialogService dialogService,
+        IMemoryService memoryService,
+        IIngestScheduler ingestScheduler,
+        Wpf.Ui.ISnackbarService snackbarService,
         ILogger<DirectTranscriptionViewModel> logger,
         IUiDispatcher uiDispatcher)
-        : base(settingsService, localizationService, fileDialogService, logger, uiDispatcher)
+        : base(settingsService, localizationService, fileDialogService, dialogService, memoryService,
+            ingestScheduler, snackbarService, logger, uiDispatcher)
     {
         _service = service;
-        _dialogService = dialogService;
 
         // Construct StopCommand BEFORE subscribing to StateChanged: a state change raised during wiring
         // would NRE in OnRunningChanged (mirrors MeetingAttendeeViewModel's ctor ordering).

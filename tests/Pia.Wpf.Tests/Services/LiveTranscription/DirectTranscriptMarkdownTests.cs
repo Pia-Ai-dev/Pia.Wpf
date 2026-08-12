@@ -83,15 +83,15 @@ public class DirectTranscriptMarkdownTests
 
         var speakersBlock = ExtractYamlList(md, "speakers:");
         Assert.Single(speakersBlock);
-        // Quoted, with the raw colon preserved inside the quotes.
-        Assert.Equal("\"Bob: Team A\"", speakersBlock[0]);
+        // Single-quoted, with the raw colon preserved inside the quotes.
+        Assert.Equal("'Bob: Team A'", speakersBlock[0]);
 
         // A naive line-scan must still recover the whole label rather than truncating at the embedded
         // colon, which is what the quoting buys.
-        var rawLine = md.Split('\n').Single(l => l.TrimStart().StartsWith("- \"Bob", StringComparison.Ordinal));
+        var rawLine = md.Split('\n').Single(l => l.TrimStart().StartsWith("- 'Bob", StringComparison.Ordinal));
         var dashIndex = rawLine.IndexOf('-');
         var recovered = rawLine[(dashIndex + 1)..].Trim();
-        Assert.Equal("\"Bob: Team A\"", recovered);
+        Assert.Equal("'Bob: Team A'", recovered);
     }
 
     [Fact]

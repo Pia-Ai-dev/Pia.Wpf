@@ -53,6 +53,9 @@ public sealed class AssistantViewModelManagedPersonaTests
             Substitute.For<ILocalizationService>(),
             Substitute.For<IFileDialogService>(),
             Substitute.For<IDialogService>(),
+            Substitute.For<IMemoryService>(),
+            Substitute.For<IIngestScheduler>(),
+            Substitute.For<Wpf.Ui.ISnackbarService>(),
             NullLogger<MeetingAttendeeViewModel>.Instance,
             new InlineUiDispatcher());
 
@@ -62,6 +65,9 @@ public sealed class AssistantViewModelManagedPersonaTests
             Substitute.For<ILocalizationService>(),
             Substitute.For<IFileDialogService>(),
             Substitute.For<IDialogService>(),
+            Substitute.For<IMemoryService>(),
+            Substitute.For<IIngestScheduler>(),
+            Substitute.For<Wpf.Ui.ISnackbarService>(),
             NullLogger<DirectTranscriptionViewModel>.Instance,
             new InlineUiDispatcher());
 

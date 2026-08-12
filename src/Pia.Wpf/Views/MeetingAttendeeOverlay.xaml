@@ -408,6 +408,12 @@
                    Appearance="Primary"
                    Content="{loc:Str MeetingAttendee_Save}"
                    Visibility="{Binding IsRunning, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+        <ui:Button Command="{Binding SaveToVaultCommand}"
+                   Margin="8,0,0,0"
+                   Padding="20,10"
+                   Appearance="Secondary"
+                   Content="{loc:Str MeetingAttendee_SaveToVault}"
+                   Visibility="{Binding IsRunning, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
         <ui:Button Command="{Binding SummarizeWithAssistantCommand}"
                    Margin="8,0,0,0"
                    Padding="20,10"

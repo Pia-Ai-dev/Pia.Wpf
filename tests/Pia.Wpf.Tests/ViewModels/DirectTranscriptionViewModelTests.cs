@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Converters;
@@ -9,6 +10,7 @@ using Pia.Services.Interfaces;
 using Pia.Services.LiveTranscription;
 using Pia.Tests.Services;
 using Pia.ViewModels;
+using Pia.ViewModels.Models;
 using Xunit;
 
 namespace Pia.Tests.ViewModels;
@@ -366,6 +368,54 @@ public class DirectTranscriptionViewModelTests
         Assert.Single(vm.ConsentChips);
     }
 
+    [Fact]
+    public async Task SaveToVault_WritesTheTranscriptWithADirectSourceMarker_AndPrefillsSpeakersAsAttendees()
+    {
+        var (vm, _, dialog, memory, ingest) = CreateSutWithVault();
+        MeetingSaveEditModel? seen = null;
+        dialog.ShowMeetingSaveDialogAsync(Arg.Any<MeetingSaveEditModel>()).Returns(ci =>
+        {
+            seen = ci.Arg<MeetingSaveEditModel>();
+            seen.Title = "Kickoff";
+            seen.Tags = "planning, q3";
+            seen.Notes = "First line\nSecond line";
+            return Task.FromResult(true);
+        });
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hello there", DateTimeOffset.Now, "Speaker 2"));
+
+        await ((IAsyncRelayCommand)vm.SaveToVaultCommand).ExecuteAsync(null);
+
+        Assert.NotNull(seen);
+        Assert.Equal("Speaker 2", seen!.Attendees);
+
+        var call = Assert.Single(
+            memory.ReceivedCalls(), c => c.GetMethodInfo().Name == nameof(IMemoryService.CreateSourceAsync));
+        var reference = (string)call.GetArguments()[0]!;
+        var markdown = (string)call.GetArguments()[1]!;
+
+        Assert.EndsWith("-kickoff.md", reference, StringComparison.Ordinal);
+        Assert.Contains("source: direct", markdown, StringComparison.Ordinal);
+        Assert.Contains("tags: [planning, q3]", markdown, StringComparison.Ordinal);
+        Assert.Contains("notes: |-\n  First line\n  Second line\n", markdown, StringComparison.Ordinal);
+        Assert.Contains("hello there", markdown, StringComparison.Ordinal);
+
+        await ingest.Received(1).RunAsync(reference, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SaveToVault_WhenTheDetailsDialogIsCancelled_WritesNothing()
+    {
+        var (vm, _, dialog, memory, ingest) = CreateSutWithVault();
+        dialog.ShowMeetingSaveDialogAsync(Arg.Any<MeetingSaveEditModel>()).Returns(false);
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hello there", DateTimeOffset.Now, "Speaker 2"));
+
+        Assert.True(vm.SaveToVaultCommand.CanExecute(null));
+        await ((IAsyncRelayCommand)vm.SaveToVaultCommand).ExecuteAsync(null);
+
+        await memory.DidNotReceive().CreateSourceAsync(Arg.Any<string>(), Arg.Any<string>());
+        await ingest.DidNotReceive().RunAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
     private static (DirectTranscriptionViewModel vm, FakeDirectTranscriptionService service) CreateSut()
     {
         var (vm, service, _) = CreateSutWithDialog();
@@ -375,22 +425,39 @@ public class DirectTranscriptionViewModelTests
     private static (DirectTranscriptionViewModel vm, FakeDirectTranscriptionService service, IDialogService dialog)
         CreateSutWithDialog()
     {
+        var (vm, service, dialog, _, _) = CreateSutWithVault();
+        return (vm, service, dialog);
+    }
+
+    private static (DirectTranscriptionViewModel vm, FakeDirectTranscriptionService service, IDialogService dialog,
+        IMemoryService memory, IIngestScheduler ingest) CreateSutWithVault()
+    {
         var settingsService = Substitute.For<ISettingsService>();
         settingsService.GetSettingsAsync().Returns(new AppSettings());
 
         // Echo the key back as its own value so status/title assertions can match by key without a real resx.
         var loc = Substitute.For<ILocalizationService>();
         loc[Arg.Any<string>()].Returns(ci => ci.Arg<string>());
+        // Key plus its arguments, so an assertion can see the substituted detail without a real resx.
+        loc.Format(Arg.Any<string>(), Arg.Any<object[]>())
+            .Returns(ci => $"{ci.Arg<string>()} {string.Join(" ", ci.ArgAt<object[]>(1))}");
 
         var files = Substitute.For<IFileDialogService>();
         var dialog = Substitute.For<IDialogService>();
+        var memory = Substitute.For<IMemoryService>();
+        memory.ResolveCreateSourceAsync(Arg.Any<string>())
+            .Returns(ci => Task.FromResult(new SourceCreatePreview(true, ci.Arg<string>(), null)));
+        memory.CreateSourceAsync(Arg.Any<string>(), Arg.Any<string>())
+            .Returns(ci => Task.FromResult(new SourceWrite(true, ci.ArgAt<string>(0), null)));
+        var ingest = Substitute.For<IIngestScheduler>();
         var service = new FakeDirectTranscriptionService();
 
         var vm = new DirectTranscriptionViewModel(
-            service, settingsService, loc, files, dialog,
+            service, settingsService, loc, files, dialog, memory, ingest,
+            Substitute.For<Wpf.Ui.ISnackbarService>(),
             NullLogger<DirectTranscriptionViewModel>.Instance, new InlineUiDispatcher());
 
-        return (vm, service, dialog);
+        return (vm, service, dialog, memory, ingest);
     }
 
     /// <summary>Every "raise" method fires synchronously on the calling thread, so no test needs polling.</summary>

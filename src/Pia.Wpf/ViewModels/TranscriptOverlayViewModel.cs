@@ -7,6 +7,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Converters;
+using Pia.Helpers;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.Services.LiveTranscription;
@@ -15,10 +17,10 @@ using Pia.ViewModels.Models;
 namespace Pia.ViewModels;
 
 /// <summary>
-/// Shared base for the transcript overlays (<c>LiveTranscriptionViewModel</c> and
+/// Shared base for the transcript overlays (<see cref="DirectTranscriptionViewModel"/> and
 /// <see cref="MeetingAttendeeViewModel"/>). Hoists the behaviour the two overlays share verbatim:
 /// the rolling <see cref="TranscriptBubble"/> collection and its merge/trim rules, the background
-/// utterance consumer over <see cref="UtteranceReader"/>, the Markdown export + save flow, and the
+/// utterance consumer over <see cref="UtteranceReader"/>, the Markdown export + save flows, and the
 /// dispatcher marshalling. The divergent pieces — the backing service, its state→status mapping, and
 /// the start/stop command wiring (different state enums and gating) — stay in the derived classes.
 ///
@@ -33,6 +35,7 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     private const int TrimBatch = 20;
     private const int BubbleWindowSeconds = 25;
     private const int SpeakerColorPaletteSize = 5;
+    private const int MaxVaultReferenceAttempts = 50;
 
     private readonly Dictionary<string, int> _speakerColorIndex = new(StringComparer.Ordinal);
     private int _nextSpeakerColorIndex;
@@ -45,6 +48,10 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     protected readonly ISettingsService _settingsService;
     protected readonly ILocalizationService _localizationService;
     protected readonly IFileDialogService _fileDialogService;
+    protected readonly IDialogService _dialogService;
+    protected readonly IMemoryService _memoryService;
+    protected readonly IIngestScheduler _ingestScheduler;
+    protected readonly Wpf.Ui.ISnackbarService _snackbarService;
     protected readonly ILogger _logger;
     protected readonly IUiDispatcher _uiDispatcher;
 
@@ -66,6 +73,7 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
 
     public IRelayCommand CloseCommand { get; }
     public IRelayCommand SaveTranscriptCommand { get; }
+    public IRelayCommand SaveToVaultCommand { get; }
 
     public event EventHandler? CloseRequested;
 
@@ -73,17 +81,26 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         ISettingsService settingsService,
         ILocalizationService localizationService,
         IFileDialogService fileDialogService,
+        IDialogService dialogService,
+        IMemoryService memoryService,
+        IIngestScheduler ingestScheduler,
+        Wpf.Ui.ISnackbarService snackbarService,
         ILogger logger,
         IUiDispatcher uiDispatcher)
     {
         _settingsService = settingsService;
         _localizationService = localizationService;
         _fileDialogService = fileDialogService;
+        _dialogService = dialogService;
+        _memoryService = memoryService;
+        _ingestScheduler = ingestScheduler;
+        _snackbarService = snackbarService;
         _logger = logger;
         _uiDispatcher = uiDispatcher;
 
         CloseCommand = new RelayCommand(() => CloseRequested?.Invoke(this, EventArgs.Empty));
         SaveTranscriptCommand = new AsyncRelayCommand(SaveTranscriptAsync, CanSaveTranscript);
+        SaveToVaultCommand = new AsyncRelayCommand(SaveToVaultAsync, CanSaveTranscript);
 
         Bubbles.CollectionChanged += OnBubblesCollectionChanged;
     }
@@ -102,6 +119,19 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
 
     /// <summary>Default export file name prefix (e.g. <c>transcript</c> or <c>meeting</c>).</summary>
     protected abstract string SaveFileNamePrefix { get; }
+
+    /// <summary>The <c>source:</c> value written into a vault-saved meeting's metadata.</summary>
+    protected abstract string MeetingSourceKind { get; }
+
+    /// <summary>
+    /// Attendee names to pre-fill the vault-save form with. The transcript's own speakers are the
+    /// fallback; an overlay with a real roster overrides this.
+    /// </summary>
+    protected virtual IReadOnlyCollection<string> DefaultAttendees
+        => Bubbles
+            .Select(b => SpeakerToDisplayNameConverter.Resolve(b.Speaker, b.SpeakerLabel, CounterpartName))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
 
     // ---- Reader plumbing -------------------------------------------------------------------------
 
@@ -367,6 +397,7 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     partial void OnIsRunningChanged(bool value)
     {
         SaveTranscriptCommand.NotifyCanExecuteChanged();
+        SaveToVaultCommand.NotifyCanExecuteChanged();
         OnRunningChanged();
     }
 
@@ -378,7 +409,10 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     protected virtual void OnRunningChanged() { }
 
     private void OnBubblesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
-        => SaveTranscriptCommand.NotifyCanExecuteChanged();
+    {
+        SaveTranscriptCommand.NotifyCanExecuteChanged();
+        SaveToVaultCommand.NotifyCanExecuteChanged();
+    }
 
     // ---- Save (shared transcript export flow) ----------------------------------------------------
 
@@ -421,6 +455,87 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
             _logger.LogError(ex, "Failed to save transcript to {Path}", path);
         }
     }
+
+    // ---- Save into the memory vault --------------------------------------------------------------
+
+    private async Task SaveToVaultAsync()
+    {
+        if (!CanSaveTranscript()) return;
+
+        var model = new MeetingSaveEditModel(
+            _sessionStart,
+            _localizationService.Format(
+                "MeetingSave_DefaultTitle", _sessionStart.LocalDateTime.ToString("yyyy-MM-dd HH:mm")),
+            string.Join(", ", DefaultAttendees));
+
+        // CanSave is re-checked here, not just bound to the dialog's primary button: a broken binding
+        // leaves that button enabled, and a blank title would slug to the meaningless "section".
+        if (!await _dialogService.ShowMeetingSaveDialogAsync(model) || !model.CanSave)
+            return;
+
+        var (reference, refusal) = await ResolveFreeVaultReferenceAsync(model.Title);
+        if (reference is null)
+        {
+            await ShowVaultSaveFailedAsync(refusal ?? _localizationService["Msg_MeetingSave_NoFreeName"]);
+            return;
+        }
+
+        // The end timestamp is not tracked by either service; the last bubble is the practical session end.
+        var sessionEnd = Bubbles.Count > 0 ? Bubbles[^1].EndTimestamp : _sessionStart;
+        var markdown = MeetingVaultMarkdown.Render(
+            model.ToMetadata(sessionEnd, MeetingSourceKind),
+            DirectTranscriptMarkdown.RenderBody(_localizationService[TitleKey], [.. Bubbles], CounterpartName));
+
+        var write = await _memoryService.CreateSourceAsync(reference, markdown);
+        if (!write.Success)
+        {
+            _logger.LogWarning("Saving a meeting into the vault failed");
+            await ShowVaultSaveFailedAsync(write.Error ?? string.Empty);
+            return;
+        }
+
+        _logger.LogInformation("Saved a meeting into the vault ({Chars} chars)", markdown.Length);
+        _logger.SensitiveDebug("Meeting saved as {Ref}", write.Ref);
+
+        // Manual RunAsync always executes and shares the scheduler's serial queue, so it is deterministic
+        // whether or not the sources watcher is enabled, and cannot race the watcher's own pickup.
+        _ingestScheduler.RunAsync(write.Ref).SafeFireAndForget(_logger);
+
+        _snackbarService.Show(
+            _localizationService["Msg_MeetingSave_Saved"],
+            _localizationService.Format("Msg_MeetingSave_SavedDetail", write.Ref),
+            Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
+    }
+
+    /// <summary>
+    /// The first <c>sources/</c> ref the title yields that does not already exist, suffixed <c>-2</c>,
+    /// <c>-3</c>, … so a second save of the same meeting can never clobber the first. The error is
+    /// carried back so a refusal the suffix cannot fix (a rejected path) is not reported as a collision.
+    /// </summary>
+    private async Task<(string? Reference, string? Error)> ResolveFreeVaultReferenceAsync(string title)
+    {
+        var baseTitle = title.Trim();
+        string? lastError = null;
+
+        for (var attempt = 1; attempt <= MaxVaultReferenceAttempts; attempt++)
+        {
+            var candidate = MeetingVaultMarkdown.BuildReference(
+                _sessionStart, attempt == 1 ? baseTitle : $"{baseTitle} {attempt}");
+
+            var preview = await _memoryService.ResolveCreateSourceAsync(candidate);
+            if (preview.CanWrite)
+                return (candidate, null);
+
+            lastError = preview.Error;
+        }
+
+        return (null, lastError);
+    }
+
+    private Task ShowVaultSaveFailedAsync(string detail)
+        => _dialogService.ShowMessageDialogAsync(
+            _localizationService["Msg_Error"],
+            _localizationService.Format("Msg_MeetingSave_Failed", detail));
 
     /// <summary>
     /// Virtual so <c>DirectTranscriptionViewModel</c> can prepend YAML front matter and a voice-stats

@@ -490,7 +490,7 @@
       </ScrollViewer>
     </Grid>
 
-    <!-- Footer: Stop / Resume / Save / Save & Summarize (hidden during the disclaimer). -->
+    <!-- Footer: Stop / Resume / Save / Save to vault / Save & Summarize (hidden during the disclaimer). -->
     <Border Grid.Row="2"
             BorderThickness="0,1,0,0"
             BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
@@ -524,6 +524,13 @@
                    Appearance="Secondary"
                    Icon="{ui:SymbolIcon Save24}"
                    Content="{loc:Str DirectTrans_Save}"
+                   Visibility="{Binding IsRunning, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+        <ui:Button Command="{Binding SaveToVaultCommand}"
+                   Margin="0,0,8,0"
+                   Padding="20,10"
+                   Appearance="Secondary"
+                   Icon="{ui:SymbolIcon BookAdd24}"
+                   Content="{loc:Str DirectTrans_SaveToVault}"
                    Visibility="{Binding IsRunning, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
         <ui:Button Command="{Binding SummarizeWithAssistantCommand}"
                    Padding="20,10"

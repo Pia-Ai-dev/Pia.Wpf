@@ -24,12 +24,11 @@ namespace Pia.ViewModels;
 public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
 {
     private readonly IMeetingAttendeeService _service;
-    private readonly IDialogService _dialogService;
 
     /// <summary>
     /// Stop command. Constructed manually (not via <c>[RelayCommand]</c>) so <see cref="StopAsync"/>
     /// can stay public for <see cref="AssistantViewModel"/> to invoke directly, matching
-    /// <c>LiveTranscriptionViewModel</c>.
+    /// <see cref="DirectTranscriptionViewModel"/>.
     /// </summary>
     public IRelayCommand StopCommand { get; }
 
@@ -89,6 +88,11 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
     protected override string SaveDialogTitleKey => "MeetingAttendee_SaveDialog_Title";
     protected override string SaveDialogFilterKey => "MeetingAttendee_SaveDialog_Filter";
     protected override string SaveFileNamePrefix => "meeting";
+    protected override string MeetingSourceKind => "teams";
+
+    /// <summary>The Teams roster when one was captured, otherwise the transcript's own speakers.</summary>
+    protected override IReadOnlyCollection<string> DefaultAttendees
+        => _service.ObservedAttendees.Count > 0 ? _service.ObservedAttendees : base.DefaultAttendees;
 
     public MeetingAttendeeViewModel(
         IMeetingAttendeeService service,
@@ -96,12 +100,15 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         ILocalizationService localizationService,
         IFileDialogService fileDialogService,
         IDialogService dialogService,
+        IMemoryService memoryService,
+        IIngestScheduler ingestScheduler,
+        Wpf.Ui.ISnackbarService snackbarService,
         ILogger<MeetingAttendeeViewModel> logger,
         IUiDispatcher uiDispatcher)
-        : base(settingsService, localizationService, fileDialogService, logger, uiDispatcher)
+        : base(settingsService, localizationService, fileDialogService, dialogService, memoryService,
+            ingestScheduler, snackbarService, logger, uiDispatcher)
     {
         _service = service;
-        _dialogService = dialogService;
         CounterpartName = _localizationService["MeetingAttendee_Speaker_Placeholder"];
 
         // Construct StopCommand BEFORE subscribing: OnServiceStateChanged → OnRunningChanged calls

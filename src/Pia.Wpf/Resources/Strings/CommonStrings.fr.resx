@@ -63,6 +63,7 @@
   <data name="MeetingAttendee_Join" xml:space="preserve"><value>Rejoindre la réunion</value></data>
   <data name="MeetingAttendee_Stop" xml:space="preserve"><value>Quitter la réunion</value></data>
   <data name="MeetingAttendee_Save" xml:space="preserve"><value>Enregistrer…</value></data>
+  <data name="MeetingAttendee_SaveToVault" xml:space="preserve"><value>Vers le coffre…</value></data>
   <data name="MeetingAttendee_Url_Label" xml:space="preserve"><value>Lien de la réunion Teams</value></data>
   <data name="MeetingAttendee_Url_Placeholder" xml:space="preserve"><value>https://teams.microsoft.com/l/meetup-join/…</value></data>
   <data name="MeetingAttendee_Consent_Label" xml:space="preserve"><value>Je confirme être autorisé à faire participer un assistant à cette réunion et à la transcrire.</value></data>
@@ -99,6 +100,7 @@
   <data name="DirectTrans_Stop" xml:space="preserve"><value>Arrêter</value></data>
   <data name="DirectTrans_Resume" xml:space="preserve"><value>Reprendre</value></data>
   <data name="DirectTrans_Save" xml:space="preserve"><value>Enregistrer</value></data>
+  <data name="DirectTrans_SaveToVault" xml:space="preserve"><value>Vers le coffre…</value></data>
   <data name="DirectTrans_SaveAndSummarize" xml:space="preserve"><value>Enregistrer et résumer</value></data>
   <data name="DirectTrans_SaveDialog_Title" xml:space="preserve"><value>Enregistrer la transcription</value></data>
   <data name="DirectTrans_SaveDialog_Filter" xml:space="preserve"><value>Fichiers Markdown (*.md)|*.md</value></data>
@@ -130,4 +132,17 @@
   <data name="DirectTrans_SummaryPrompt" xml:space="preserve"><value>Merci de résumer la transcription suivante d’une session de transcription directe enregistrée le {0}.</value></data>
   <data name="Speaker_Me" xml:space="preserve"><value>moi</value></data>
   <data name="Speaker_Them" xml:space="preserve"><value>eux</value></data>
+  <data name="MeetingSave_DialogTitle" xml:space="preserve"><value>Enregistrer la réunion dans le coffre</value></data>
+  <data name="MeetingSave_DefaultTitle" xml:space="preserve"><value>Réunion {0}</value></data>
+  <data name="MeetingSave_Title_Label" xml:space="preserve"><value>Titre</value></data>
+  <data name="MeetingSave_Title_Placeholder" xml:space="preserve"><value>De quoi parlait cette réunion ?</value></data>
+  <data name="MeetingSave_Attendees_Label" xml:space="preserve"><value>Participants</value></data>
+  <data name="MeetingSave_Attendees_Placeholder" xml:space="preserve"><value>Noms séparés par des virgules</value></data>
+  <data name="MeetingSave_Tags_Label" xml:space="preserve"><value>Étiquettes</value></data>
+  <data name="MeetingSave_Tags_Placeholder" xml:space="preserve"><value>Séparées par des virgules</value></data>
+  <data name="MeetingSave_Project_Label" xml:space="preserve"><value>Projet</value></data>
+  <data name="MeetingSave_Project_Placeholder" xml:space="preserve"><value>Facultatif</value></data>
+  <data name="MeetingSave_Notes_Label" xml:space="preserve"><value>Notes</value></data>
+  <data name="MeetingSave_Notes_Placeholder" xml:space="preserve"><value>Contexte à conserver avec la transcription</value></data>
+  <data name="MeetingSave_TargetPath_Label" xml:space="preserve"><value>Enregistré sous</value></data>
 </root>

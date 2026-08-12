@@ -95,14 +95,14 @@ public static class DirectTranscriptMarkdown
         sb.Append("speakers:\n");
         foreach (var label in ResolveDeduplicatedSpeakers(bubbles, counterpartName))
         {
-            sb.Append("  - ").Append(YamlScalar(label)).Append('\n');
+            sb.Append("  - ").Append(YamlText.Scalar(label)).Append('\n');
         }
 
         sb.Append("voiceStats:\n");
         foreach (var stat in voiceStats)
         {
             var label = SpeakerToDisplayNameConverter.Resolve(stat.Speaker, stat.SpeakerLabel, counterpartName);
-            sb.Append("  - speaker: ").Append(YamlScalar(label)).Append('\n');
+            sb.Append("  - speaker: ").Append(YamlText.Scalar(label)).Append('\n');
             sb.Append("    utterances: ").Append(stat.UtteranceCount.ToString(CultureInfo.InvariantCulture)).Append('\n');
             sb.Append("    totalSeconds: ").Append(stat.TotalSpeechSeconds.ToString("F1", CultureInfo.InvariantCulture)).Append('\n');
             sb.Append("    meanSeconds: ").Append(stat.MeanUtteranceSeconds.ToString("F1", CultureInfo.InvariantCulture)).Append('\n');
@@ -118,26 +118,5 @@ public static class DirectTranscriptMarkdown
             .Select(b => SpeakerToDisplayNameConverter.Resolve(b.Speaker, b.SpeakerLabel, counterpartName))
             .Distinct(StringComparer.Ordinal)
             .ToList();
-    }
-
-    /// <summary>
-    /// Quotes a YAML scalar when it contains a character that would otherwise change the
-    /// document's structure (a colon, a hash, a leading dash, or a quote character), doubling
-    /// any inner double quotes. A display label can be a user-supplied name, so this must hold
-    /// even for adversarial input (e.g. a name containing ": " or one that starts with "- ").
-    /// </summary>
-    private static string YamlScalar(string value)
-    {
-        var needsQuoting = value.Length == 0
-            || value.StartsWith('-')
-            || value.Contains(':')
-            || value.Contains('#')
-            || value.Contains('"')
-            || value.Contains('\'');
-
-        if (!needsQuoting) return value;
-
-        var escaped = value.Replace("\"", "\"\"");
-        return "\"" + escaped + "\"";
     }
 }
