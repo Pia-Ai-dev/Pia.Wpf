@@ -140,6 +140,55 @@ public class AssignmentApiClientTests
             "research", new AssignmentInput(AssignmentInput.CurrentSchemaVersion, "hello", []), Ct));
     }
 
+    /// <summary>What the job list renders. The list projection carries progress and no artifact, so polling it
+    /// cannot become a way of downloading every result the user owns as a side effect.</summary>
+    [Fact]
+    public async Task ListAsync_ReturnsTheCallersRunsWithProgressAndNoArtifact()
+    {
+        _handler.Respond(
+            HttpStatusCode.OK,
+            """
+            [{"id":"11111111-1111-1111-1111-111111111111","skillName":"brief","mode":"Assistant",
+              "status":"Running","stepCount":2,"tokensSpent":41000,"tokensAbandoned":0,
+              "createdAt":"2026-08-12T10:00:00Z","updatedAt":"2026-08-12T10:04:00Z",
+              "startedAt":"2026-08-12T10:00:05Z"}]
+            """);
+
+        var runs = await CreateSut().ListAsync(ct: Ct);
+
+        var run = Assert.Single(runs);
+        Assert.Equal("Running", run.Status);
+        Assert.Equal(2, run.StepCount);
+        Assert.Equal(41000, run.TokensSpent);
+        Assert.Null(run.ArtifactJson);
+        Assert.Null(run.ArtifactText);
+        Assert.Null(run.Events);
+    }
+
+    /// <summary>An empty list rather than a throw: a job list showing nothing beats one showing an error the
+    /// user can do nothing about, and the next refresh tries again.</summary>
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    public async Task ListAsync_OnARefusal_IsEmpty(HttpStatusCode status)
+    {
+        _handler.Respond(status, "{}");
+
+        Assert.Empty(await CreateSut().ListAsync(ct: Ct));
+    }
+
+    /// <summary>404 is the ordinary answer for a run with no live workflow behind it — already finished, or
+    /// never started — so it is a false, not an error.</summary>
+    [Theory]
+    [InlineData(HttpStatusCode.NoContent, true)]
+    [InlineData(HttpStatusCode.NotFound, false)]
+    public async Task CancelAsync_ReportsWhetherThereWasAnythingToStop(HttpStatusCode status, bool expected)
+    {
+        _handler.Respond(status, "");
+
+        Assert.Equal(expected, await CreateSut().CancelAsync(Guid.NewGuid(), Ct));
+    }
+
     /// <summary>204 and 404 both mean the server has nothing left to hand over, which is what makes the resume
     /// pass safe to run twice. 409 does not — the run is still going.</summary>
     [Theory]

@@ -182,6 +182,12 @@ public class AssignmentRunOrchestratorTests : IDisposable
         Assert.Equal(1, finished);
         Assert.Equal(["chat-write", "collect"], _trace);
         Assert.Empty(await _pending.GetAllAsync());
+
+        // Kept, not deleted: this entry is the only thing that can still say which chat holds the answer once
+        // the server has dropped its copy, and the job list reads it.
+        var journalled = Assert.Single(await _pending.GetJournalAsync());
+        Assert.Equal(run.ChatId, journalled.ChatId);
+        Assert.NotNull(journalled.CollectedAtUtc);
     }
 
     /// <summary>The failure this ordering exists for: if the local write throws, the acknowledgement must not
@@ -365,8 +371,18 @@ public class AssignmentRunOrchestratorTests : IDisposable
             return Task.FromResult<Guid?>(Guid.NewGuid());
         }
 
+        public Task<IReadOnlyList<AssignmentDto>> ListAsync(
+            int skip = 0, int limit = 50, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<AssignmentDto>>(Assignment is null ? [] : [Assignment]);
+
         public Task<AssignmentDto?> GetAsync(Guid assignmentId, CancellationToken ct = default) =>
             Task.FromResult(Assignment);
+
+        public Task<bool> CancelAsync(Guid assignmentId, CancellationToken ct = default)
+        {
+            Trace.Add("cancel");
+            return Task.FromResult(true);
+        }
 
         public Task<bool> CollectAsync(Guid assignmentId, CancellationToken ct = default)
         {
@@ -380,12 +396,23 @@ public class AssignmentRunOrchestratorTests : IDisposable
         private readonly List<PendingAssignment> _pending = [];
 
         public Task<IReadOnlyList<PendingAssignment>> GetAllAsync() =>
+            Task.FromResult<IReadOnlyList<PendingAssignment>>(
+                _pending.Where(p => p.CollectedAtUtc is null).ToList());
+
+        public Task<IReadOnlyList<PendingAssignment>> GetJournalAsync() =>
             Task.FromResult<IReadOnlyList<PendingAssignment>>(_pending.ToList());
 
         public Task AddAsync(PendingAssignment pending)
         {
             _pending.RemoveAll(p => p.AssignmentId == pending.AssignmentId);
             _pending.Add(pending);
+            return Task.CompletedTask;
+        }
+
+        public Task MarkCollectedAsync(Guid assignmentId)
+        {
+            var index = _pending.FindIndex(p => p.AssignmentId == assignmentId);
+            if (index >= 0) _pending[index] = _pending[index] with { CollectedAtUtc = DateTime.UtcNow };
             return Task.CompletedTask;
         }
 

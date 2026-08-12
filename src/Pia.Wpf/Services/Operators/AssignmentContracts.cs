@@ -80,9 +80,14 @@ public sealed record AssignmentStartOutcome(AssignmentStartStatus Status, Guid? 
 /// </summary>
 /// <param name="ChatId">Minted BEFORE the run starts, so writing the artifact is idempotent — a resumed
 /// pull overwrites its own chat instead of creating a second one.</param>
+/// <param name="Prompt">What the user asked, kept locally because nothing else has it: the prompt travels
+/// inside the input the server drops, and the list projection never carried it.</param>
+/// <param name="CollectedAtUtc">Null while the run is still outstanding. Set once the artifact is stored
+/// locally AND acknowledged, after which this entry exists only to say which chat holds the answer.</param>
 public sealed record PendingAssignment(
     Guid AssignmentId,
     Guid ChatId,
     string SkillName,
     string Prompt,
-    DateTime StartedAtUtc);
+    DateTime StartedAtUtc,
+    DateTime? CollectedAtUtc = null);

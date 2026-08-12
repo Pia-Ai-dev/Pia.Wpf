@@ -24,7 +24,22 @@ public interface IAssignmentApiClient
     /// <summary>Null when the server refused or could not be reached; the reason is logged.</summary>
     Task<Guid?> CreateAsync(string skillName, AssignmentInput input, CancellationToken ct = default);
 
+    /// <summary>
+    /// This caller's runs, newest first — what the job list renders. The list projection carries status, step
+    /// count, spend and timestamps and deliberately NO artifact, so polling it cannot become a way of
+    /// downloading every result the user owns as a side effect.
+    /// </summary>
+    Task<IReadOnlyList<AssignmentDto>> ListAsync(int skip = 0, int limit = 50, CancellationToken ct = default);
+
     Task<AssignmentDto?> GetAsync(Guid assignmentId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Asks the server to stop a run. False for a run it cannot cancel — missing, someone else's, or already
+    /// past a live workflow — which the server reports as a plain <c>404</c> without distinguishing them.
+    /// A cancelled run still reaches a terminal state, so its artifact (if any) is still stored and still
+    /// acknowledged: cancelling stops the work, it does not abandon the plaintext.
+    /// </summary>
+    Task<bool> CancelAsync(Guid assignmentId, CancellationToken ct = default);
 
     /// <summary>The irreversible acknowledgement. True for a drop AND for a repeat, which is what makes the
     /// resume pass safe to run twice.</summary>
@@ -118,6 +133,65 @@ public sealed class AssignmentApiClient : IAssignmentApiClient
         {
             _logger.LogWarning(ex, "Could not start a background assignment.");
             return null;
+        }
+    }
+
+    public async Task<IReadOnlyList<AssignmentDto>> ListAsync(
+        int skip = 0, int limit = 50, CancellationToken ct = default)
+    {
+        var client = await CreateClientAsync(ct);
+        if (client is null) return [];
+
+        try
+        {
+            using var response = await client.Http.GetAsync(
+                $"{client.BaseUrl}/api/assignments?skip={skip}&limit={limit}", ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation(
+                    "Assignment list returned {Status}.", (int)response.StatusCode);
+                return [];
+            }
+
+            return await response.Content.ReadFromJsonAsync<List<AssignmentDto>>(JsonOptions, ct) ?? [];
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // An empty list rather than a throw: the job list showing nothing beats it showing an error the
+            // user can do nothing about, and the next refresh tries again.
+            _logger.LogInformation(ex, "Could not list background assignments.");
+            return [];
+        }
+    }
+
+    public async Task<bool> CancelAsync(Guid assignmentId, CancellationToken ct = default)
+    {
+        var client = await CreateClientAsync(ct);
+        if (client is null) return false;
+
+        try
+        {
+            using var response = await client.Http.PostAsync(
+                $"{client.BaseUrl}/api/assignments/{assignmentId}/cancel", content: null, ct);
+            if (response.StatusCode == HttpStatusCode.NoContent) return true;
+
+            _logger.LogInformation(
+                "Cancel for assignment {AssignmentId} returned {Status}.",
+                assignmentId, (int)response.StatusCode);
+            return false;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not cancel assignment {AssignmentId}.", assignmentId);
+            return false;
         }
     }
 

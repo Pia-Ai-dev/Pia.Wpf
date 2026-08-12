@@ -34,6 +34,13 @@ public interface IAssignmentRunOrchestrator
     /// run started, so a re-pull overwrites its own chat instead of making a second one.
     /// </summary>
     Task<int> DrainAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Asks the server to stop a run. The run still finishes terminally, so the drain pass still stores whatever
+    /// it produced and still acknowledges it — this stops the work, it does not abandon the plaintext. False
+    /// when the server has nothing to cancel.
+    /// </summary>
+    Task<bool> CancelAsync(Guid assignmentId, CancellationToken ct = default);
 }
 
 /// <inheritdoc cref="IAssignmentRunOrchestrator"/>
@@ -180,7 +187,9 @@ public sealed class AssignmentRunOrchestrator : IAssignmentRunOrchestrator
                 continue;
             }
 
-            await _pending.RemoveAsync(run.AssignmentId);
+            // Marked, not removed: the entry is what still says which chat holds this run's answer once the
+            // server has dropped its own copy, which is what the job list reads.
+            await _pending.MarkCollectedAsync(run.AssignmentId);
             finished++;
             Completed?.Invoke(this, new AssignmentCompleted(
                 run.AssignmentId, run.ChatId, run.SkillName,
@@ -188,6 +197,17 @@ public sealed class AssignmentRunOrchestrator : IAssignmentRunOrchestrator
         }
 
         return finished;
+    }
+
+    public async Task<bool> CancelAsync(Guid assignmentId, CancellationToken ct = default)
+    {
+        var cancelled = await _api.CancelAsync(assignmentId, ct);
+        if (cancelled)
+            _logger.LogInformation("Asked the server to cancel assignment {AssignmentId}.", assignmentId);
+
+        // The pending entry stays either way: a cancelled run still lands terminal, and the drain pass is what
+        // stores whatever it produced and drops the server's copy.
+        return cancelled;
     }
 
     /// <summary>
