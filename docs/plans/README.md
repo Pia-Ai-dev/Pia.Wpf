@@ -15,6 +15,7 @@ refresh, see `docs/handoff/`: the receiving UI controls already exist under
 | [2026-07-04-sync-transfer-optimization.md](2026-07-04-sync-transfer-optimization.md) | phases 1–4 done; phase 5 ship sequencing (submodule bump + shim cleanup) open |
 | [2026-07-04-sync-transfer-optimization-implementation-plan.md](2026-07-04-sync-transfer-optimization-implementation-plan.md) | same |
 | [2026-07-06-ingest-plugin-server-sync-followup.md](2026-07-06-ingest-plugin-server-sync-followup.md) | open — server seeding for ingest plugin GUID …007 |
+| [2026-08-12-background-assignments-client-surface.md](2026-08-12-background-assignments-client-surface.md) | open — service half shipped (`Services/Operators/`); the job-list view, the consent dialog, the nav entry, the en/de/fr strings and the completion toast remain |
 
 ## Conventions assumed by these plans
 
