@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using Microsoft.Extensions.Configuration;
@@ -715,6 +715,23 @@ public static class Bootstrapper
         services.AddSingleton<IScheduledJobRunner>(sp => sp.GetRequiredService<ScheduledJobBackgroundService>());
         services.AddSingleton<AssistantChatRetentionService>();
         services.AddSingleton<Services.Flow.TodoDeadlineBackgroundService>();
+
+        // Background assignments — the one plane where content leaves the encrypted side. The consent log is a
+        // singleton because its receipts are session-scoped evidence, and the coordinator is the only thing
+        // that can send. Constructing the log touches no disk until the first record, like its speaker-consent
+        // counterpart above.
+        services.AddSingleton<Services.Operators.IAssignmentConsentStore>(sp =>
+            Services.Operators.JsonlAssignmentConsentStore.CreateDefault(
+                sp.GetRequiredService<ILogger<Services.Operators.JsonlAssignmentConsentStore>>()));
+        services.AddSingleton<Services.Operators.IAssignmentApiClient, Services.Operators.AssignmentApiClient>();
+        services.AddSingleton<Services.Operators.IAssignmentScopeResolver, Services.Operators.AssignmentScopeResolver>();
+        services.AddSingleton<Services.Operators.IAssignmentPendingStore, Services.Operators.AssignmentPendingStore>();
+        // The concrete type is registered too, so the notification surface can subscribe to the SAME
+        // instance's Completed event that the drain worker drives.
+        services.AddSingleton<Services.Operators.AssignmentRunOrchestrator>();
+        services.AddSingleton<Services.Operators.IAssignmentRunOrchestrator>(sp =>
+            sp.GetRequiredService<Services.Operators.AssignmentRunOrchestrator>());
+        services.AddSingleton<Services.Operators.AssignmentDrainService>();
 
         // Auto-update
         services.AddSingleton<IUpdateService, UpdateService>();

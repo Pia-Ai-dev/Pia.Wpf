@@ -195,6 +195,13 @@ public partial class App : Application
         var todoDeadlineService = Bootstrapper.ServiceProvider.GetRequiredService<Services.Flow.TodoDeadlineBackgroundService>();
         await todoDeadlineService.StartAsync(CancellationToken.None);
 
+        // Its first pass is the one that matters: a background assignment that finished while the app was
+        // closed is stored locally only because this runs at startup. The server drops the plaintext on its own
+        // retention window whether or not anyone ever comes back for it.
+        var AssignmentDrainService = Bootstrapper.ServiceProvider
+            .GetRequiredService<Services.Operators.AssignmentDrainService>();
+        await AssignmentDrainService.StartAsync(CancellationToken.None);
+
         // Initialize persisted MCP plugins from local database
         var pluginService = Bootstrapper.ServiceProvider.GetRequiredService<IPluginService>();
         _ = pluginService.InitializePersistedPluginsAsync();
@@ -332,6 +339,11 @@ public partial class App : Application
 
         var todoDeadlineService = Bootstrapper.ServiceProvider.GetRequiredService<Services.Flow.TodoDeadlineBackgroundService>();
         await todoDeadlineService.StopAsync(CancellationToken.None);
+
+        // Before the chat sync worker stops, so an artifact this pass stores locally still gets pushed.
+        var AssignmentDrainService = Bootstrapper.ServiceProvider
+            .GetRequiredService<Services.Operators.AssignmentDrainService>();
+        await AssignmentDrainService.StopAsync(CancellationToken.None);
 
         var chatSyncService = Bootstrapper.ServiceProvider.GetRequiredService<AssistantChatSyncService>();
         await chatSyncService.StopAsync(CancellationToken.None);
