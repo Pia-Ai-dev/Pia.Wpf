@@ -253,6 +253,31 @@ public class AssignmentRunOrchestratorTests : IDisposable
         Assert.Single(await _pending.GetAllAsync());
     }
 
+    /// <summary>
+    /// A run the server no longer answers for. The client cannot tell "deleted" from "unreachable", so without
+    /// an age bound the entry would be polled every twenty seconds for the life of the app — and the artifact
+    /// went with the plaintext long before, so there is nothing left to wait for.
+    /// </summary>
+    [Fact]
+    public async Task DrainAsync_ARunTheServerNoLongerAnswersFor_IsEventuallyGivenUpOn()
+    {
+        var recent = new PendingAssignment(
+            Guid.NewGuid(), Guid.NewGuid(), "research", "still hoping", DateTime.UtcNow.AddHours(-2));
+        var ancient = new PendingAssignment(
+            Guid.NewGuid(), Guid.NewGuid(), "research", "long gone",
+            DateTime.UtcNow - AssignmentRunOrchestrator.AbandonAfter - TimeSpan.FromHours(1));
+        await _pending.AddAsync(recent);
+        await _pending.AddAsync(ancient);
+        _api.Assignment = null;   // unreachable, or the row has been swept
+
+        var finished = await CreateSut().DrainAsync(Ct);
+
+        Assert.Equal(0, finished);
+        Assert.Equal(recent.AssignmentId, Assert.Single(await _pending.GetAllAsync()).AssignmentId);
+        // Nothing was stored or acknowledged for either: there was no artifact to store.
+        Assert.Empty(_trace);
+    }
+
     /// <summary>A failed run still produces a chat — the user asked for something and deserves to be told it
     /// did not work — and is still acknowledged, because dropping the server's plaintext is the right move
     /// whether or not there was an answer.</summary>

@@ -39,6 +39,14 @@ public interface IAssignmentRunOrchestrator
 /// <inheritdoc cref="IAssignmentRunOrchestrator"/>
 public sealed class AssignmentRunOrchestrator : IAssignmentRunOrchestrator
 {
+    /// <summary>
+    /// How long a run may go unanswered before this device stops waiting for it. Comfortably past the server's
+    /// default plaintext window (72 hours) so a laptop closed for a long weekend still collects its result, and
+    /// far short of the row's own retention, because by then there is nothing to collect: the artifact goes
+    /// with the plaintext.
+    /// </summary>
+    internal static readonly TimeSpan AbandonAfter = TimeSpan.FromDays(7);
+
     private readonly IAssignmentApiClient _api;
     private readonly IAssignmentConsentStore _consent;
     private readonly IAssignmentScopeResolver _scope;
@@ -139,7 +147,24 @@ public sealed class AssignmentRunOrchestrator : IAssignmentRunOrchestrator
             ct.ThrowIfCancellationRequested();
 
             var assignment = await _api.GetAsync(run.AssignmentId, ct);
-            if (assignment is null) continue;   // unreachable or gone; the next pass tries again
+            if (assignment is null)
+            {
+                // Unreachable or gone, and this cannot tell which — so the age bound is what stops a row the
+                // server has since deleted from leaving an entry that is polled for ever. Nothing is lost by
+                // giving up on it: past the plaintext window the input AND the artifact are already dropped,
+                // so there was never anything left to collect.
+                if (run.StartedAtUtc < DateTime.UtcNow - AbandonAfter)
+                {
+                    await _pending.RemoveAsync(run.AssignmentId);
+                    _logger.LogWarning(
+                        "Giving up on assignment {AssignmentId}: it started {Days} day(s) ago and the server no " +
+                        "longer answers for it, so its result is gone.",
+                        run.AssignmentId, (int)(DateTime.UtcNow - run.StartedAtUtc).TotalDays);
+                }
+
+                continue;
+            }
+
             if (!IsTerminal(assignment.Status)) continue;
 
             // COMMIT FIRST. If this throws, the pending entry survives and collect is never sent, so the
