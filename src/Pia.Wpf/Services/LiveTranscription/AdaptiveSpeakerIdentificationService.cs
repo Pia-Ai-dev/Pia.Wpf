@@ -25,15 +25,22 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
     internal static readonly TimeSpan PassMaxLatency = TimeSpan.FromSeconds(30);
     internal const int DefaultMaxJournaledSegments = 2000;
     internal const float InitialMatchSimilarity = 0.50f;
+    // Borderline-length embeddings are the dominant source of spurious dendrogram splits, so they
+    // stay out of the clustering input — they keep their provisional label either way.
+    internal const float MinClusterSegmentSeconds = 2f;
+    // The cut a degenerate pass reports (one dominant voice → CutMin, or CutMax the other way) would
+    // otherwise derive an unusable instant-match threshold exactly when the evidence is weakest.
+    internal const float MatchSimilarityMin = 0.40f;
+    internal const float MatchSimilarityMax = 0.60f;
 
     private readonly IEmbeddingExtractor _extractor;
     private readonly ILogger _logger;
     private readonly Func<DateTimeOffset> _now;
     private readonly int _maxJournaledSegments;
-    private readonly SpeakerClusterer _clusterer = new();
+    private readonly SpeakerClusterer _clusterer;
 
     private readonly object _lock = new();
-    private readonly List<(long SegmentId, float[] Embedding)> _segments = new(); // oldest first
+    private readonly List<(long SegmentId, float[] Embedding, float DurationSeconds)> _segments = new(); // oldest first
     private readonly Dictionary<long, int> _clusterBySegment = new();
     private readonly Dictionary<int, string> _labelByCluster = new();
     private readonly Dictionary<int, RunningCentroid> _centroidByCluster = new();
@@ -43,6 +50,8 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
     private int _speakerCounter;
     private float _matchSimilarity = InitialMatchSimilarity;
     private int _segmentsSinceLastPass;
+    private int _lastPassClusterCount;
+    private int _expectedSpeakers;
     private DateTimeOffset _lastPassAt;
     private bool _disposed;
 
@@ -58,12 +67,13 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
     /// <summary>Test ctor: caps sized down so cap behavior is exercisable.</summary>
     internal AdaptiveSpeakerIdentificationService(
         IEmbeddingExtractor extractor, ILogger logger, Func<DateTimeOffset>? now,
-        int maxJournaledSegments)
+        int maxJournaledSegments, SpeakerClusterer? clusterer = null)
     {
         _extractor = extractor;
         _logger = logger;
         _now = now ?? (() => DateTimeOffset.UtcNow);
         _maxJournaledSegments = maxJournaledSegments;
+        _clusterer = clusterer ?? new SpeakerClusterer();
         _lastPassAt = _now();
         _logger.LogInformation(
             "Adaptive speaker identification active. dim={Dim} warmup={Warmup} stride={Stride} maxJournal={MaxJournal}",
@@ -76,7 +86,7 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
     public (string Label, float[] Embedding) IdentifyOrRegisterWithEmbedding(float[] segmentSamples, int sampleRate)
     {
         var embedding = Normalize(_extractor.Compute(segmentSamples, sampleRate));
-        var result = ProcessEmbedding(embedding);
+        var result = ProcessEmbedding(embedding, DurationSeconds(segmentSamples, sampleRate));
         // The journal owns its copy; hand the caller an independent one so the biometric wipe
         // cannot zero a buffer the caller still holds (and vice versa).
         return (result.Label, (float[])embedding.Clone());
@@ -85,10 +95,18 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
     public SpeakerSegmentResult IdentifyOrRegisterSegment(float[] segmentSamples, int sampleRate)
     {
         var embedding = Normalize(_extractor.Compute(segmentSamples, sampleRate));
-        return ProcessEmbedding(embedding);
+        return ProcessEmbedding(embedding, DurationSeconds(segmentSamples, sampleRate));
     }
 
-    private SpeakerSegmentResult ProcessEmbedding(float[] embedding)
+    public void SetExpectedSpeakers(int count)
+    {
+        lock (_lock) _expectedSpeakers = Math.Max(0, count);
+    }
+
+    private static float DurationSeconds(float[] samples, int sampleRate)
+        => sampleRate > 0 ? (float)samples.Length / sampleRate : 0f;
+
+    private SpeakerSegmentResult ProcessEmbedding(float[] embedding, float durationSeconds)
     {
         string? newLabel = null;
         List<SpeakerReassignment>? reassignments = null;
@@ -100,7 +118,7 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
             ObjectDisposedException.ThrowIf(_disposed, this);
 
             var segId = _nextSegmentId++;
-            _segments.Add((segId, embedding));
+            _segments.Add((segId, embedding, durationSeconds));
             if (_segments.Count > _maxJournaledSegments)
             {
                 // Oldest falls off: zero the biometric vector; its assignment stays frozen (the
@@ -130,9 +148,11 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
             _segmentsSinceLastPass++;
             result = new SpeakerSegmentResult(segId, _labelByCluster[cluster]);
 
+            // Warm-up counts ELIGIBLE embeddings: a pass over a handful of short interjections would
+            // rebuild the label/centroid maps from near-empty output and wipe every known speaker.
             var due = _segmentsSinceLastPass >= PassSegmentStride
                       || (_segmentsSinceLastPass >= 1 && _now() - _lastPassAt >= PassMaxLatency);
-            if (due && _segments.Count >= WarmupSegments)
+            if (due && EligibleCountUnderLock() >= WarmupSegments)
             {
                 try
                 {
@@ -162,28 +182,45 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
         return result;
     }
 
+    private int EligibleCountUnderLock()
+    {
+        var eligible = 0;
+        foreach (var segment in _segments)
+            if (segment.DurationSeconds >= MinClusterSegmentSeconds) eligible++;
+        return eligible;
+    }
+
     /// <summary>
-    /// Re-clusters ALL journaled embeddings and maps the resulting clusters onto the existing
-    /// stable cluster ids by greedy segment-overlap matching (ties: user-renamed label first,
-    /// then earliest member segment — so "Speaker 1"/"Alice" stays on the earlier voice).
-    /// Returns changed (segment → label) pairs and any labels newly created by the pass.
+    /// Re-clusters the journaled embeddings that clear <see cref="MinClusterSegmentSeconds"/> and
+    /// maps the resulting clusters onto the existing stable cluster ids by greedy segment-overlap
+    /// matching (ties: user-renamed label first, then earliest member segment — so "Speaker 1"/
+    /// "Alice" stays on the earlier voice). Returns changed (segment → label) pairs and any labels
+    /// newly created by the pass.
     /// </summary>
     private (List<SpeakerReassignment> Reassignments, List<string> NewLabels) RunPassUnderLock()
     {
-        var embeddings = new float[_segments.Count][];
-        for (int i = 0; i < _segments.Count; i++) embeddings[i] = _segments[i].Embedding;
+        // Eligible → journal index. Sub-floor segments keep their provisional label but never enter
+        // the dendrogram, so every site below indexes the journal through this map.
+        var journalIndex = new List<int>(_segments.Count);
+        for (int i = 0; i < _segments.Count; i++)
+            if (_segments[i].DurationSeconds >= MinClusterSegmentSeconds) journalIndex.Add(i);
 
-        var previousCount = _labelByCluster.Count;
+        var embeddings = new float[journalIndex.Count][];
+        for (int i = 0; i < journalIndex.Count; i++) embeddings[i] = _segments[journalIndex[i]].Embedding;
+
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        var cr = _clusterer.Cluster(embeddings, previousCount);
+        // Seed hysteresis with the last PASS's count: _labelByCluster also holds the provisional
+        // registrations made since, which would ratchet the count upward pass after pass.
+        var cr = _clusterer.Cluster(embeddings, _lastPassClusterCount, _expectedSpeakers);
         sw.Stop();
-        _matchSimilarity = 1f - cr.CutDistance;
+        _matchSimilarity = Math.Clamp(1f - cr.CutDistance, MatchSimilarityMin, MatchSimilarityMax);
+        _lastPassClusterCount = cr.ClusterCount;
 
         // Members per new cluster index (in journal order → element 0 is the earliest segment).
         var members = new List<long>[cr.ClusterCount];
         for (int c = 0; c < cr.ClusterCount; c++) members[c] = new List<long>();
-        for (int i = 0; i < _segments.Count; i++)
-            members[cr.AssignmentPerSegment[i]].Add(_segments[i].SegmentId);
+        for (int i = 0; i < journalIndex.Count; i++)
+            members[cr.AssignmentPerSegment[i]].Add(_segments[journalIndex[i]].SegmentId);
 
         // Greedy overlap matching new-cluster ↔ previous stable cluster id.
         var candidates = new List<(int NewCluster, int PrevCluster, int Overlap, bool Renamed, long EarliestSeg)>();
@@ -217,32 +254,69 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
             takenPrev.Add(c.PrevCluster);
         }
 
-        // Unmatched new clusters get fresh stable ids + "Speaker N" labels.
+        // Stable ids the pass never saw because only sub-floor segments point at them: a participant
+        // who contributed nothing but short interjections must keep their cluster instead of
+        // re-registering as a new "Speaker N" on their next utterance.
+        var gatedClusters = new HashSet<int>();
+        foreach (var (segId, _, duration) in _segments)
+        {
+            if (duration >= MinClusterSegmentSeconds) continue;
+            if (_clusterBySegment.TryGetValue(segId, out var cluster) && _labelByCluster.ContainsKey(cluster))
+                gatedClusters.Add(cluster);
+        }
+        gatedClusters.ExceptWith(takenPrev);
+
+        // Labels this rebuild orphaned — nothing references them any more. Recycling them before
+        // minting keeps the numbering close to the distinct voices instead of only ever growing;
+        // user-renamed labels are never handed to a different voice.
+        var orphans = new List<int>();
+        foreach (var cluster in _labelByCluster.Keys)
+        {
+            if (takenPrev.Contains(cluster) || gatedClusters.Contains(cluster)) continue;
+            if (_renamedClusters.Contains(cluster)) continue;
+            orphans.Add(cluster);
+        }
+        orphans.Sort();
+        var nextOrphan = 0;
+
         var newLabels = new List<string>();
         var newLabelByCluster = new Dictionary<int, string>();
         var newCentroidByCluster = new Dictionary<int, RunningCentroid>();
         var newRenamed = new HashSet<int>();
         for (int c = 0; c < cr.ClusterCount; c++)
         {
-            if (stableByNew[c] == -1)
+            if (stableByNew[c] != -1)
+            {
+                newLabelByCluster[stableByNew[c]] = _labelByCluster[stableByNew[c]];
+                if (_renamedClusters.Contains(stableByNew[c])) newRenamed.Add(stableByNew[c]);
+            }
+            else if (nextOrphan < orphans.Count)
+            {
+                var recycled = orphans[nextOrphan++];
+                stableByNew[c] = recycled;
+                newLabelByCluster[recycled] = _labelByCluster[recycled];
+            }
+            else
             {
                 stableByNew[c] = _nextClusterId++;
                 var label = $"Speaker {++_speakerCounter}";
                 newLabelByCluster[stableByNew[c]] = label;
                 newLabels.Add(label);
             }
-            else
-            {
-                newLabelByCluster[stableByNew[c]] = _labelByCluster[stableByNew[c]];
-                if (_renamedClusters.Contains(stableByNew[c])) newRenamed.Add(stableByNew[c]);
-            }
+        }
+        foreach (var cluster in gatedClusters)
+        {
+            newLabelByCluster[cluster] = _labelByCluster[cluster];
+            if (_renamedClusters.Contains(cluster)) newRenamed.Add(cluster);
         }
 
-        // Apply: new assignment + per-cluster mean centroids; diff labels for the event.
+        // Apply: new assignment + per-cluster mean centroids; diff labels for the event. Gated
+        // segments keep the assignment and label they already had — no cluster they point at is
+        // ever recycled, so their label cannot silently move to another voice.
         var reassignments = new List<SpeakerReassignment>();
-        for (int i = 0; i < _segments.Count; i++)
+        for (int i = 0; i < journalIndex.Count; i++)
         {
-            var segId = _segments[i].SegmentId;
+            var (segId, embedding, _) = _segments[journalIndex[i]];
             var stable = stableByNew[cr.AssignmentPerSegment[i]];
             var oldLabel = _clusterBySegment.TryGetValue(segId, out var oldCluster)
                 ? _labelByCluster.GetValueOrDefault(oldCluster)
@@ -254,13 +328,17 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
                 reassignments.Add(new SpeakerReassignment(segId, label));
 
             if (!newCentroidByCluster.TryGetValue(stable, out var centroid))
-                newCentroidByCluster[stable] = centroid = new RunningCentroid(_segments[i].Embedding);
+                newCentroidByCluster[stable] = centroid = new RunningCentroid(embedding);
             else
-                centroid.Add(_segments[i].Embedding);
+                centroid.Add(embedding);
         }
 
-        // Old centroids are biometric state too — zero them before swapping in the new set.
-        foreach (var old in _centroidByCluster.Values) old.Wipe();
+        // Old centroids are biometric state too — zero every one the rebuild did not carry over.
+        foreach (var (cluster, old) in _centroidByCluster)
+        {
+            if (gatedClusters.Contains(cluster)) newCentroidByCluster[cluster] = old;
+            else old.Wipe();
+        }
         _centroidByCluster.Clear();
         foreach (var (k, v) in newCentroidByCluster) _centroidByCluster[k] = v;
         _labelByCluster.Clear();
@@ -269,8 +347,9 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
         foreach (var k in newRenamed) _renamedClusters.Add(k);
 
         _logger.LogDebug(
-            "Adaptive pass: {Segments} segments → {Clusters} clusters cut={Cut:F2} changed={Changed} ({Ms}ms)",
-            _segments.Count, cr.ClusterCount, cr.CutDistance, reassignments.Count, sw.ElapsedMilliseconds);
+            "Adaptive pass: {Eligible}/{Segments} segments → {Clusters} clusters cut={Cut:F2} expected={Expected} changed={Changed} ({Ms}ms)",
+            journalIndex.Count, _segments.Count, cr.ClusterCount, cr.CutDistance, _expectedSpeakers,
+            reassignments.Count, sw.ElapsedMilliseconds);
         // Labels can carry user-typed names after a rename → DEBUG-only.
         _logger.SensitiveInformation("Adaptive pass labels: [{Labels}]",
             string.Join(", ", _labelByCluster.Values));
@@ -324,7 +403,7 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
     /// </summary>
     private void WipeBiometricStateUnderLock()
     {
-        foreach (var (_, embedding) in _segments) Array.Clear(embedding);
+        foreach (var (_, embedding, _) in _segments) Array.Clear(embedding);
         _segments.Clear();
         foreach (var centroid in _centroidByCluster.Values) centroid.Wipe();
         _centroidByCluster.Clear();
@@ -335,6 +414,8 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
         _speakerCounter = 0;
         _matchSimilarity = InitialMatchSimilarity;
         _segmentsSinceLastPass = 0;
+        _lastPassClusterCount = 0;
+        _expectedSpeakers = 0;
         // _lastPassAt is deliberately NOT reset: the warm-up gate already blocks a pass until
         // enough new segments exist, and _nextSegmentId must stay monotonic across Reset anyway.
     }

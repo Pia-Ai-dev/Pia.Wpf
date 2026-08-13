@@ -16,7 +16,8 @@ public sealed record ClusterResult(int[] AssignmentPerSegment, int ClusterCount,
 /// and between-speaker distance for THESE voices. Pure logic: no I/O, no native deps,
 /// deterministic. O(n²) time (Lance–Williams + nearest-neighbor cache), O(n²) memory.
 /// </summary>
-public sealed class SpeakerClusterer
+/// <remarks>Overridable so tests can observe what a re-cluster pass asks for.</remarks>
+public class SpeakerClusterer
 {
     // Guardrail band for the cut (cosine distance = 1 − cosine similarity). A cut outside this
     // band would mean an implausible speaker geometry — likely a degenerate gap — so we never cut
@@ -29,15 +30,20 @@ public sealed class SpeakerClusterer
     internal const float HysteresisGapDelta = 0.03f;
     // Over-segmentation guard; matches the manual mode's max cap (12).
     internal const int MaxClusters = 12;
+    // Roster head counts are display-name-deduped, so a meeting-room device undercounts its humans;
+    // the ceiling sits one above the observed roster.
+    internal const int ExpectedSpeakerSlack = 1;
 
     /// <summary>
     /// Chooses the cut distance from the SORTED merge-distance sequence of a dendrogram with
     /// n = sortedMergeDistances.Length + 1 leaves. Candidate cuts sit between consecutive merges
     /// whose upper edge falls inside the guardrail band; the largest gap wins, with hysteresis
-    /// toward <paramref name="previousClusterCount"/> on near-ties. Accepting all merges strictly
-    /// below the returned cut yields the clustering.
+    /// toward <paramref name="previousClusterCount"/> on near-ties, and
+    /// <paramref name="expectedSpeakers"/> (0 = off) applied last as a downward-only ceiling.
+    /// Accepting all merges strictly below the returned cut yields the clustering.
     /// </summary>
-    internal static float ChooseCut(float[] sortedMergeDistances, int previousClusterCount)
+    internal static float ChooseCut(
+        float[] sortedMergeDistances, int previousClusterCount, int expectedSpeakers = 0)
     {
         var seq = sortedMergeDistances;
         if (seq.Length == 0) return CutMin;
@@ -57,26 +63,45 @@ public sealed class SpeakerClusterer
 
         candidates.Sort((x, y) => y.Gap.CompareTo(x.Gap));
         var best = candidates[0];
+        var chosen = best;
         if (previousClusterCount > 0)
         {
             foreach (var c in candidates)
             {
                 if (best.Gap - c.Gap >= HysteresisGapDelta) break;   // sorted → rest are worse
-                if (c.ClusterCount == previousClusterCount) return c.Cut;
+                if (c.ClusterCount == previousClusterCount) { chosen = c; break; }
             }
         }
-        return best.Cut;
+
+        // Roster ceiling, downward only: at or below the cap the choice is untouched, so a meeting
+        // with silent attendees can never be pulled UP toward the roster size. Above it, the most
+        // finely-split competitive candidate that still fits wins; if none fits, the force-merge
+        // guard in Cluster finishes the job.
+        var cap = expectedSpeakers > 0 ? expectedSpeakers + ExpectedSpeakerSlack : 0;
+        if (cap > 0 && chosen.ClusterCount > cap)
+        {
+            (float Gap, float Cut, int ClusterCount)? capped = null;
+            foreach (var c in candidates)
+            {
+                if (best.Gap - c.Gap >= HysteresisGapDelta) break;
+                if (c.ClusterCount > cap) continue;
+                if (capped is null || c.ClusterCount > capped.Value.ClusterCount) capped = c;
+            }
+            if (capped is not null) chosen = capped.Value;
+        }
+        return chosen.Cut;
     }
 
     /// <summary>
     /// Clusters L2-normalized embeddings (caller's contract) by average-linkage AHC and the
     /// <see cref="ChooseCut"/> policy. <paramref name="previousClusterCount"/> (0 = none) feeds
-    /// the hysteresis — a deliberate call-compatible extension of the spec's §4.3 signature (the
-    /// spec mandates hysteresis toward the previous pass's count; this is how the count gets in).
+    /// the hysteresis and must be the previous PASS's count, not a live cluster tally.
     /// Assignments are numbered 0..k-1 in first-appearance order so callers get stable,
-    /// comparable indexes for the same input.
+    /// comparable indexes for the same input. <paramref name="expectedSpeakers"/> (0 = off) caps
+    /// the result at <see cref="ExpectedSpeakerSlack"/> above the known roster size.
     /// </summary>
-    public ClusterResult Cluster(IReadOnlyList<float[]> embeddings, int previousClusterCount = 0)
+    public virtual ClusterResult Cluster(
+        IReadOnlyList<float[]> embeddings, int previousClusterCount = 0, int expectedSpeakers = 0)
     {
         int n = embeddings.Count;
         if (n == 0) return new ClusterResult(Array.Empty<int>(), 0, CutMin);
@@ -90,7 +115,7 @@ public sealed class SpeakerClusterer
         for (int i = 0; i < merges.Count; i++) sorted[i] = merges[i].Distance;
         Array.Sort(sorted);
 
-        var cut = ChooseCut(sorted, previousClusterCount);
+        var cut = ChooseCut(sorted, previousClusterCount, expectedSpeakers);
 
         // Accept merges strictly below the cut via union-find over representative indexes.
         var parent = new int[n];
@@ -107,18 +132,22 @@ public sealed class SpeakerClusterer
             clusters--;
         }
 
-        // Over-segmentation guard: keep merging (cheapest remaining first — merges are already
-        // in ascending order) until the cap is met; the reported cut follows the last merge.
-        if (clusters > MaxClusters)
+        // Over-segmentation guard: keep merging (cheapest remaining first — merges are already in
+        // ascending order) until the cap is met. The reported cut deliberately does NOT follow
+        // these merges — it drives the caller's instant-match threshold, which a cap merge must
+        // not silently retune.
+        var cap = expectedSpeakers > 0
+            ? Math.Min(MaxClusters, expectedSpeakers + ExpectedSpeakerSlack)
+            : MaxClusters;
+        if (clusters > cap)
         {
             foreach (var m in merges)
             {
-                if (clusters <= MaxClusters) break;
+                if (clusters <= cap) break;
                 var (ra, rb) = (Find(m.A), Find(m.B));
                 if (ra == rb) continue;
                 parent[rb] = ra;
                 clusters--;
-                cut = Math.Max(cut, m.Distance);
             }
         }
 

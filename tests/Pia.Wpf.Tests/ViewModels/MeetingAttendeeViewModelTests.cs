@@ -237,11 +237,10 @@ public class MeetingAttendeeViewModelTests
     }
 
     [Fact]
-    public void Utterances_NullLabelSegmentMidRun_SplitsTheColoredRun()
+    public void Utterances_NullLabelSegmentMidRun_InheritsTheRunsLabel()
     {
-        // Fragmentation-shape regression (risk #4): a sub-threshold null-label segment arriving mid-run
-        // splits the colored speaker's run — null only merges with null. Pins the shipped SPLIT
-        // behavior so a future "absorb-null" change is a deliberate, tested diff.
+        // Too short to diarize ("uh") → no label → would render as the generic "meeting" placeholder
+        // and cut the colored run in three. It inherits the run's label and merges instead.
         var (vm, _) = CreateSut();
         var t0 = DateTimeOffset.Now;
 
@@ -249,13 +248,47 @@ public class MeetingAttendeeViewModelTests
         vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "uh", t0.AddSeconds(1), null));
         vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "beta", t0.AddSeconds(2), "Speaker 1"));
 
-        Assert.Equal(3, vm.Bubbles.Count);
-        Assert.Equal("Speaker 1", vm.Bubbles[0].SpeakerLabel);
-        Assert.Null(vm.Bubbles[1].SpeakerLabel);
-        Assert.Equal("Speaker 1", vm.Bubbles[2].SpeakerLabel);
-        // The null-label bubble lands in slot 0; the two "Speaker 1" bubbles keep its assigned slot.
-        Assert.Equal(0, vm.Bubbles[1].ColorIndex);
-        Assert.Equal(vm.Bubbles[0].ColorIndex, vm.Bubbles[2].ColorIndex);
+        var bubble = Assert.Single(vm.Bubbles);
+        Assert.Equal("Speaker 1", bubble.SpeakerLabel);
+        Assert.Equal("alpha uh beta", bubble.Text);
+    }
+
+    [Fact]
+    public void Utterances_NullLabelAtRunStart_KeepsTheGenericPlaceholder()
+    {
+        // Nothing labeled to inherit from — the segment stays honestly unlabeled, and the following
+        // diarized utterance opens its own colored run.
+        var (vm, _) = CreateSut();
+        var t0 = DateTimeOffset.Now;
+
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "uh", t0, null));
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "alpha", t0.AddSeconds(1), "Speaker 1"));
+
+        Assert.Equal(2, vm.Bubbles.Count);
+        Assert.Null(vm.Bubbles[0].SpeakerLabel);
+        Assert.Equal(0, vm.Bubbles[0].ColorIndex);
+        Assert.Equal("Speaker 1", vm.Bubbles[1].SpeakerLabel);
+    }
+
+    [Fact]
+    public void Utterances_InheritanceIsReDerived_OnAReassignmentRebuild()
+    {
+        // The journal keeps the truthful null, so a retro-correction that moves the neighbouring
+        // labels re-derives which run the interjection belongs to.
+        var (vm, _) = CreateSut();
+        var t0 = DateTimeOffset.Now;
+
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "alpha", t0, "Speaker 1", SegmentId: 0));
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "uh", t0.AddSeconds(1), null));
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "beta", t0.AddSeconds(2), "Speaker 2", SegmentId: 1));
+        Assert.Equal(2, vm.Bubbles.Count);
+        Assert.Equal("alpha uh", vm.Bubbles[0].Text);
+
+        vm.ApplyReassignments(new[] { new SpeakerReassignment(0, "Speaker 2") });
+
+        var bubble = Assert.Single(vm.Bubbles);
+        Assert.Equal("Speaker 2", bubble.SpeakerLabel);
+        Assert.Equal("alpha uh beta", bubble.Text);
     }
 
     [Fact]

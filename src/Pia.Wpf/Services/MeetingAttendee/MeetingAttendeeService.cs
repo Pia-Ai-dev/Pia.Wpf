@@ -576,10 +576,13 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
 
     /// <summary>
     /// Folds a snapshot of names into the accumulated union: trims, drops blanks, excludes the attendee's
-    /// own display name, and de-duplicates case-insensitively while preserving first-seen order.
+    /// own display name, and de-duplicates case-insensitively while preserving first-seen order. The
+    /// union size then feeds the diarizer as a speaker-count ceiling — Pia joins as its own participant,
+    /// so the roster and the diarized voices count the same people.
     /// </summary>
     private void AccumulateAttendees(IReadOnlyList<string> names, string botDisplayName)
     {
+        int count;
         lock (_attendeesLock)
         {
             foreach (var raw in names)
@@ -590,7 +593,12 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
                 if (_attendees.Any(a => string.Equals(a, name, StringComparison.OrdinalIgnoreCase))) continue;
                 _attendees.Add(name);
             }
+            count = _attendees.Count;
         }
+
+        // The union only grows, so the ceiling refines monotonically. Polling off or every snapshot
+        // failing leaves it at 0 and the diarizer unconstrained.
+        if (count > 0) _speakerId?.SetExpectedSpeakers(count);
     }
 
     /// <summary>

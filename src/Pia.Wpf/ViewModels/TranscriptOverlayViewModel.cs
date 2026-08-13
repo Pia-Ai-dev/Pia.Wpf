@@ -227,8 +227,10 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     ///
     /// <para>The label is part of the merge key (ordinal equality): two distinct
     /// <paramref name="speakerLabel"/>s in the same window produce two separate, separately-colored
-    /// bubbles. A null label (undiarized / sub-threshold segment) only merges with another null
-    /// label, so a null segment mid-run deterministically splits a colored run.</para>
+    /// bubbles. An unlabeled segment (too short to diarize — "ja", "genau", laughter) inherits the
+    /// in-window run's label instead of splitting it and rendering as the generic placeholder; with
+    /// no labeled predecessor in-window it keeps the placeholder. The journal keeps the truthful
+    /// null, so a rebuild re-derives the same inheritance.</para>
     /// </summary>
     internal TranscriptBubble? GetOrCreateBubble(
         TranscriptSpeaker speaker, DateTimeOffset timestamp, string? speakerLabel, bool createIfMissing)
@@ -239,6 +241,11 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
             && (timestamp - last.StartTimestamp).TotalSeconds < BubbleWindowSeconds;
 
         if (sameWindow && string.Equals(last!.SpeakerLabel, speakerLabel, StringComparison.Ordinal))
+            return last;
+
+        if (sameWindow
+            && string.IsNullOrWhiteSpace(speakerLabel)
+            && !string.IsNullOrWhiteSpace(last!.SpeakerLabel))
             return last;
 
         if (!createIfMissing) return null;

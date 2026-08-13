@@ -45,6 +45,13 @@ public interface ISpeakerIdentificationService : IDisposable
     void Reset();
 
     /// <summary>
+    /// Publish the known head count (the meeting roster size) so an implementation can bound the
+    /// number of distinct voices. A ceiling, never a target: 0 leaves detection unconstrained, and
+    /// a roster larger than the talkers must not inflate the result. No-op by default.
+    /// </summary>
+    void SetExpectedSpeakers(int count) { }
+
+    /// <summary>
     /// Raised the first time a new speaker label is registered (Zone C). Fires on the calling
     /// thread, outside the diarization lock. The consent flow subscribes here so it can prompt
     /// even when the pre-STT consent gate would otherwise drop every segment for an Unknown

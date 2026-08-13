@@ -49,6 +49,56 @@ public class SpeakerClustererTests
         Assert.InRange(fresh, SpeakerClusterer.CutMin, 0.32f); // below 0.33 → yields 4 clusters
     }
 
+    // ---- ChooseCut: roster ceiling ---------------------------------------------------------------
+
+    // Five competitive candidates (gaps 0.12/0.11/0.10, then two clearly out of the hysteresis
+    // window) at cluster counts 6/5/4/3/2 — the ceiling picks among the competitive ones.
+    private static readonly float[] LadderedGaps = { 0.18f, 0.30f, 0.41f, 0.51f, 0.595f, 0.66f };
+
+    [Fact]
+    public void ChooseCut_Ceiling_NeverInflatesTowardTheRoster()
+    {
+        // Best gap yields 2 clusters, a competitive noise gap yields 5. A 6-person roster (cap 7)
+        // must leave the answer at 2 — silent attendees can never pull the count up.
+        var seq = new[] { 0.02f, 0.05f, 0.32f, 0.34f, 0.35f, 0.64f };
+
+        var capped = SpeakerClusterer.ChooseCut(seq, previousClusterCount: 0, expectedSpeakers: 6);
+
+        Assert.Equal(SpeakerClusterer.ChooseCut(seq, previousClusterCount: 0), capped);
+        Assert.InRange(capped, 0.36f, 0.63f);   // between 0.35 and 0.64 → yields 2 clusters
+    }
+
+    [Fact]
+    public void ChooseCut_Ceiling_TakesTheLargestCompetitiveCountThatFits()
+    {
+        // Unconstrained the best gap gives 6 clusters. A 4-person roster (cap 5) steps down to the
+        // competitive candidate at 5 — not all the way to 4.
+        var uncapped = SpeakerClusterer.ChooseCut(LadderedGaps, previousClusterCount: 0);
+        Assert.Equal(SpeakerClusterer.CutMin, uncapped);   // (0.18+0.30)/2 clamps up to CutMin
+
+        Assert.Equal(0.355f, SpeakerClusterer.ChooseCut(LadderedGaps, 0, expectedSpeakers: 4), 3);
+        Assert.Equal(0.46f, SpeakerClusterer.ChooseCut(LadderedGaps, 0, expectedSpeakers: 3), 3);
+    }
+
+    [Fact]
+    public void ChooseCut_Ceiling_KeepsTheChoice_WhenNoCandidateFits()
+    {
+        // Cap 2 is below every competitive candidate (6/5/4) → the cut is left alone and Cluster's
+        // force-merge guard is what finally enforces the cap.
+        var cut = SpeakerClusterer.ChooseCut(LadderedGaps, previousClusterCount: 0, expectedSpeakers: 1);
+        Assert.Equal(SpeakerClusterer.ChooseCut(LadderedGaps, previousClusterCount: 0), cut);
+    }
+
+    [Fact]
+    public void ChooseCut_HysteresisWins_WhenItAlreadyFitsTheCeiling()
+    {
+        // Hysteresis runs before the ceiling: sticking at 4 is within a 5-person roster's cap (6),
+        // so the ceiling leaves it untouched instead of re-deriving from the best gap.
+        Assert.Equal(0.46f, SpeakerClusterer.ChooseCut(LadderedGaps, 4, expectedSpeakers: 5), 3);
+        // And when hysteresis picks a count ABOVE the cap, the ceiling still pulls it down.
+        Assert.Equal(0.355f, SpeakerClusterer.ChooseCut(LadderedGaps, 6, expectedSpeakers: 4), 3);
+    }
+
     // ---- Cluster (geometric end-to-end) ---------------------------------------------------------
 
     private static float[] Vec(double degrees)
@@ -109,21 +159,45 @@ public class SpeakerClustererTests
         Assert.Equal(r.AssignmentPerSegment[1], r.AssignmentPerSegment[0]);
     }
 
+    private static float[][] Orthogonal(int n) => Enumerable.Range(0, n).Select(i =>
+    {
+        var v = new float[n];
+        v[i] = 1f;
+        return v;
+    }).ToArray();
+
     [Fact]
     public void Cluster_MoreClustersThanCap_MergedDownToTwelve()
     {
         // 14 mutually-orthogonal one-hot embeddings: every merge distance is 1.0 (out of band)
         // → fallback cut accepts none → 14 singletons → the cap merges down to 12.
-        var e = Enumerable.Range(0, 14).Select(i =>
-        {
-            var v = new float[14];
-            v[i] = 1f;
-            return v;
-        }).ToArray();
-        var r = new SpeakerClusterer().Cluster(e);
+        var r = new SpeakerClusterer().Cluster(Orthogonal(14));
 
         Assert.Equal(SpeakerClusterer.MaxClusters, r.ClusterCount);
-        Assert.True(r.CutDistance <= SpeakerClusterer.CutMax); // reported cut stays in band
+        // Force-merging must not raise the reported cut — it drives the caller's instant-match
+        // threshold, which a cap merge has no business retuning.
+        Assert.Equal(SpeakerClusterer.FallbackCut, r.CutDistance);
+    }
+
+    [Fact]
+    public void Cluster_Ceiling_ForceMergesDownToTheRosterCap()
+    {
+        // Same pathological input, but a 3-person roster caps it at 4 instead of 12.
+        var r = new SpeakerClusterer().Cluster(Orthogonal(14), previousClusterCount: 0, expectedSpeakers: 3);
+
+        Assert.Equal(4, r.ClusterCount);
+        Assert.Equal(SpeakerClusterer.FallbackCut, r.CutDistance);
+    }
+
+    [Fact]
+    public void Cluster_Ceiling_LeavesAnUndercountedMeetingAlone()
+    {
+        // Three real voices under a 1-person roster (cap 2) collapse; the same input with the
+        // ceiling off keeps all three. Ceiling = ceiling, and only that.
+        var e = new[] { Vec(0), Vec(2), Vec(60), Vec(62), Vec(120), Vec(122) };
+
+        Assert.Equal(3, new SpeakerClusterer().Cluster(e).ClusterCount);
+        Assert.Equal(2, new SpeakerClusterer().Cluster(e, previousClusterCount: 0, expectedSpeakers: 1).ClusterCount);
     }
 
     [Fact]

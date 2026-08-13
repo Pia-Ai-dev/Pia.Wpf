@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.Http;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -226,6 +227,44 @@ public sealed class MeetingAttendeeServiceStateTests
 
         Assert.Contains("Sven K.", fx.Service.ObservedAttendees);
         Assert.DoesNotContain("Marco Altmann", fx.Service.ObservedAttendees);
+
+        await fx.Service.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task RosterSnapshots_PushTheRosterSizeToTheDiarizer_AsASpeakerCeiling()
+    {
+        var speakerId = new FakeSpeakerId();
+        var fx = new Fixture { SpeakerId = speakerId };
+        fx.Settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            SyncUserDisplayName = "Alex",
+            MeetingAttendeeRosterSnapshotMinutes = 1,
+        });
+        fx.Session.GetAttendeeNamesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<string>>(
+                new[] { "Marco Altmann", "Jane Doe", "Sven K.", "Alex's assistant" }));
+
+        await fx.Service.StartAsync(MeetingUrl, TestContext.Current.CancellationToken);
+        await WaitForExpectedSpeakersAsync(speakerId);
+
+        // The bot's own row is excluded from the union, so the ceiling is the 3 real participants.
+        Assert.Contains(3, speakerId.ExpectedSpeakers);
+
+        await fx.Service.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task RosterSnapshots_Disabled_LeaveTheDiarizerUnconstrained()
+    {
+        var speakerId = new FakeSpeakerId();
+        var fx = new Fixture { SpeakerId = speakerId };
+        fx.Settings.GetSettingsAsync().Returns(new AppSettings { MeetingAttendeeRosterSnapshotMinutes = 0 });
+
+        await fx.Service.StartAsync(MeetingUrl, TestContext.Current.CancellationToken);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+
+        Assert.Empty(speakerId.ExpectedSpeakers);
 
         await fx.Service.DisposeAsync();
     }
@@ -696,6 +735,15 @@ public sealed class MeetingAttendeeServiceStateTests
             $"Expected at least {atLeast} observed attendees, saw {service.ObservedAttendees.Count}.");
     }
 
+    private static async Task WaitForExpectedSpeakersAsync(FakeSpeakerId speakerId)
+    {
+        for (var i = 0; i < 200 && speakerId.ExpectedSpeakers.Count == 0; i++)
+        {
+            await Task.Delay(10);
+        }
+        Assert.NotEmpty(speakerId.ExpectedSpeakers);
+    }
+
     /// <summary>
     /// A test rig that wires the orchestrator's internal seam constructor to fully synchronous fakes,
     /// records each dispose step into an ordering list, and exposes the substituted session.
@@ -711,6 +759,10 @@ public sealed class MeetingAttendeeServiceStateTests
         public TaskCompletionSource MeetingEnded { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public bool ProvisionThrows { get; init; }
+
+        /// <summary>Null models the production degrade-to-null; set it to observe diarizer wiring.</summary>
+        public ISpeakerIdentificationService? SpeakerId { get; init; }
+
         public bool SessionFactoryRan { get; private set; }
         public bool AudioSourceFactoryRan { get; private set; }
         public bool EngineBuilt { get; private set; }
@@ -763,11 +815,11 @@ public sealed class MeetingAttendeeServiceStateTests
                     if (ProvisionThrows) throw new InvalidOperationException("provision failed");
                     return Task.FromResult(@"C:\fake\chrome.exe");
                 },
-                // Degraded shape: a null SpeakerId is the production degrade-to-null result; the orchestrator
-                // must treat it as a normal, non-fatal path. A bare null gives the tuple no inferable type,
-                // so the element type is annotated explicitly.
+                // Degraded shape by default: a null SpeakerId is the production degrade-to-null result; the
+                // orchestrator must treat it as a normal, non-fatal path. A bare null gives the tuple no
+                // inferable type, so the element type is annotated explicitly.
                 createTranscription: (_, _) => Task.FromResult<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService? SpeakerId)>(
-                    ("silero.onnx", transcriptionEngine, null)),
+                    ("silero.onnx", transcriptionEngine, SpeakerId)),
                 sessionFactory: _ =>
                 {
                     SessionFactoryRan = true;
@@ -799,6 +851,35 @@ public sealed class MeetingAttendeeServiceStateTests
             _order?.Add(_tag);
             return ValueTask.CompletedTask;
         }
+    }
+
+    /// <summary>Records the roster-derived speaker ceilings the orchestrator pushes. Pushes arrive on
+    /// the background roster loop, hence the concurrent queue. <see cref="SpeakersReassigned"/> has
+    /// empty accessors to dodge CS0067 — this fake never diarizes anything.</summary>
+    private sealed class FakeSpeakerId : ISpeakerIdentificationService
+    {
+        private readonly ConcurrentQueue<int> _expectedSpeakers = new();
+
+        public IReadOnlyCollection<int> ExpectedSpeakers => _expectedSpeakers.ToArray();
+
+        public event EventHandler<string>? SpeakerRegistered { add { } remove { } }
+        public event EventHandler<IReadOnlyList<SpeakerReassignment>>? SpeakersReassigned { add { } remove { } }
+
+        public string IdentifyOrRegister(float[] segmentSamples, int sampleRate) => "Speaker 1";
+
+        public (string Label, float[] Embedding) IdentifyOrRegisterWithEmbedding(float[] segmentSamples, int sampleRate)
+            => ("Speaker 1", Array.Empty<float>());
+
+        public SpeakerSegmentResult IdentifyOrRegisterSegment(float[] segmentSamples, int sampleRate)
+            => new(0, "Speaker 1");
+
+        public bool Rename(string oldLabel, string newLabel) => false;
+
+        public void Reset() { }
+
+        public void SetExpectedSpeakers(int count) => _expectedSpeakers.Enqueue(count);
+
+        public void Dispose() { }
     }
 
     private sealed class FakeAudioSource : IAudioCaptureSource
