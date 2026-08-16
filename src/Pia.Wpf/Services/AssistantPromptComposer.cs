@@ -88,12 +88,8 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
     public static bool ShouldUseTools(bool providerSupportsToolCalling, PersonaToolScope scope) =>
         providerSupportsToolCalling && scope != PersonaToolScope.None;
 
-    // Builds the persona-driven identity block (contract §8): the persona's SystemPrompt replaces the
-    // hardcoded "You are Pia…" line, optional Guardrails follow as their own paragraph, then the
-    // substrate date line. Everything below the identity stays owned by the substrate.
-    // The shape itself lives in Pia.Shared (PersonaPromptShape) because the server's admin
-    // managed-persona preview renders the same block — compose it there, not here, so the two
-    // cannot drift. CurrentCulture so the dddd weekday renders in the end user's language.
+    // Shape lives in Pia.Shared because the server's admin preview renders the same block; CurrentCulture
+    // so the weekday reads in the end user's language.
     public static string BuildIdentityBlock(Persona activePersona) =>
         PersonaPromptShape.BuildIdentityBlock(
             activePersona.SystemPrompt,
