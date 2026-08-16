@@ -19,6 +19,7 @@
       <DataTemplate>
         <ui:Button Content="{Binding Label}"
                    Command="{Binding Command}"
+                   AutomationProperties.AutomationId="{Binding AutomationId}"
                    FontSize="12"
                    Padding="12,4"
                    Margin="6,2,0,2">

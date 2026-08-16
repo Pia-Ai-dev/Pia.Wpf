@@ -62,7 +62,11 @@
                     Margin="0,0,0,16">
               <TabPanel IsItemsHost="True"/>
             </Border>
-            <ContentPresenter Grid.Row="1"
+            <!-- The part name is load-bearing: TabItemAutomationPeer exposes the selected tab's
+                 content only through TabControl.SelectedContentPresenter, which is null unless the
+                 template names this presenter PART_SelectedContentHost. -->
+            <ContentPresenter x:Name="PART_SelectedContentHost"
+                              Grid.Row="1"
                               ContentSource="SelectedContent"/>
           </Grid>
         </ControlTemplate>

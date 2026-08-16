@@ -154,24 +154,28 @@ public partial class ActionCardInfo : ObservableObject
         new()
         {
             Label = DeclineLabel,
+            AutomationId = "ToolApproval_Decline",
             Emphasis = DecisionEmphasis.Default,
             Command = DeclineCommand,
         },
         new()
         {
             Label = AllowOnceLabel,
+            AutomationId = "ToolApproval_AllowOnce",
             Emphasis = IsDestructive ? DecisionEmphasis.Danger : DecisionEmphasis.Primary,
             Command = AllowOnceCommand,
         },
         new()
         {
             Label = AllowForSessionLabel,
+            AutomationId = "ToolApproval_AllowSession",
             Emphasis = DecisionEmphasis.Default,
             Command = AllowForSessionCommand,
         },
         new()
         {
             Label = AlwaysAllowLabel,
+            AutomationId = "ToolApproval_AlwaysAllow",
             Emphasis = DecisionEmphasis.Default,
             Command = AlwaysAllowCommand,
         },

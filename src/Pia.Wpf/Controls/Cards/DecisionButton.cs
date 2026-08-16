@@ -12,6 +12,9 @@ public sealed class DecisionButton
 {
     public string Label { get; init; } = string.Empty;
 
+    /// <summary>Optional UIA AutomationId so automation can target a specific decision.</summary>
+    public string? AutomationId { get; init; }
+
     public DecisionEmphasis Emphasis { get; init; }
 
     public ICommand? Command { get; init; }
