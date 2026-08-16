@@ -56,6 +56,7 @@
                    Padding="0"
                    Margin="0,0,8,0"
                    Appearance="Secondary"
+                   AutomationProperties.Name="{loc:Str DirectTrans_Stats_Toggle_Tooltip}"
                    ToolTip="{loc:Str DirectTrans_Stats_Toggle_Tooltip}"
                    Visibility="{Binding IsDisclaimerVisible, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
           <ui:SymbolIcon Symbol="TaskListSquareLtr24" FontSize="14" />
@@ -67,6 +68,7 @@
                    Height="36"
                    Padding="0"
                    Appearance="Secondary"
+                   AutomationProperties.Name="{loc:Str DirectTrans_Close}"
                    ToolTip="{loc:Str DirectTrans_Close}">
           <ui:SymbolIcon Symbol="Dismiss24" FontSize="14" />
         </ui:Button>

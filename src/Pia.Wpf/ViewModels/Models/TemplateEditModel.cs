@@ -14,6 +14,7 @@ public partial class TemplateEditModel : ObservableValidator
     private Guid _id;
 
     [Required(ErrorMessage = "Template name is required")]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
     [ObservableProperty]
     private string _name = string.Empty;
 
@@ -21,6 +22,7 @@ public partial class TemplateEditModel : ObservableValidator
     [ObservableProperty]
     private string _styleDescription = string.Empty;
 
+    [NotifyPropertyChangedFor(nameof(CanSave))]
     [ObservableProperty]
     private string _generatedPrompt = string.Empty;
 
@@ -35,6 +37,8 @@ public partial class TemplateEditModel : ObservableValidator
     {
         _textOptimizationService = textOptimizationService;
     }
+
+    public bool CanSave => !string.IsNullOrWhiteSpace(Name) && !string.IsNullOrWhiteSpace(GeneratedPrompt);
 
     [RelayCommand]
     private async Task GeneratePromptAsync()

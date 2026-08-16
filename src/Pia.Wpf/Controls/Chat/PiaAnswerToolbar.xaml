@@ -281,6 +281,7 @@
                  Margin="0,0,2,0"
                  Command="{Binding RateCommand, ElementName=Root}"
                  CommandParameter="Up"
+                 AutomationProperties.Name="{loc:Str Assistant_RateUp_Tooltip}"
                  Visibility="{Binding RateCommand, ElementName=Root, Converter={StaticResource NullToVisibilityConverter}}">
         <ui:SymbolIcon Symbol="ThumbLike20" FontSize="13" />
       </ui:Button>
@@ -289,6 +290,7 @@
                  Padding="6,3"
                  Command="{Binding RateCommand, ElementName=Root}"
                  CommandParameter="Down"
+                 AutomationProperties.Name="{loc:Str Assistant_RateDown_Tooltip}"
                  Visibility="{Binding RateCommand, ElementName=Root, Converter={StaticResource NullToVisibilityConverter}}">
         <ui:SymbolIcon Symbol="ThumbDislike20" FontSize="13" />
       </ui:Button>

@@ -9,10 +9,17 @@ namespace Pia.ViewModels.Models;
 
 /// <summary>A provider choice for the persona's optional <c>PreferredProviderId</c> picker.
 /// <c>Id == null</c> is the "(Use mode default)" entry.</summary>
-public record ProviderChoice(Guid? Id, string Name);
+public record ProviderChoice(Guid? Id, string Name)
+{
+    // Combo boxes surface ToString() as the UIA value; the record's synthesised one leaks C# syntax.
+    public override string ToString() => Name;
+}
 
 /// <summary>A reasoning-effort choice. <c>Value == null</c> is the "(Provider default)" entry.</summary>
-public record ReasoningEffortChoice(ReasoningEffort? Value, string Display);
+public record ReasoningEffortChoice(ReasoningEffort? Value, string Display)
+{
+    public override string ToString() => Display;
+}
 
 /// <summary>
 /// Edit model for the single rich persona dialog. Mirrors <see cref="TemplateEditModel"/> — including

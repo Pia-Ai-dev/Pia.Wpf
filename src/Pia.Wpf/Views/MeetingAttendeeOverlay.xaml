@@ -61,6 +61,7 @@
                  Padding="0"
                  Appearance="Secondary"
                  VerticalAlignment="Center"
+                 AutomationProperties.Name="{loc:Str MeetingAttendee_Close}"
                  ToolTip="{loc:Str MeetingAttendee_Close}">
         <ui:SymbolIcon Symbol="Dismiss24" FontSize="14" />
       </ui:Button>

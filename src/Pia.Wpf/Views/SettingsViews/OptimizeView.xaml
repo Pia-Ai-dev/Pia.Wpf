@@ -156,8 +156,9 @@
                               Width="30"
                               Height="30"
                               Padding="0"
-                              Margin="0,0,4,0"
-                              Visibility="{Binding IsBuiltIn, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                               Margin="0,0,4,0"
+                               AutomationProperties.Name="{loc:Str Templates_Edit}"
+                               Visibility="{Binding IsBuiltIn, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
                       <ui:SymbolIcon Symbol="Edit24" FontSize="14"/>
                       <ui:Button.ToolTip>
                         <ToolTip Content="{loc:Str Templates_Edit}"/>
@@ -168,8 +169,9 @@
                               Appearance="Secondary"
                               Width="30"
                               Height="30"
-                              Padding="0"
-                              Visibility="{Binding IsBuiltIn, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                               Padding="0"
+                               AutomationProperties.Name="{loc:Str Templates_Delete}"
+                               Visibility="{Binding IsBuiltIn, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
                       <ui:SymbolIcon Symbol="Delete24" FontSize="14"
                                      Foreground="{DynamicResource PiaDangerBrush}"/>
                       <ui:Button.ToolTip>

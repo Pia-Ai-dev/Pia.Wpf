@@ -32,6 +32,7 @@
       </ui:Button>
       <ui:Button Appearance="Secondary"
                  Command="{Binding RefreshCommand}"
+                 AutomationProperties.Name="{loc:Str Todo_Refresh}"
                  ToolTip="{loc:Str Todo_Refresh}">
         <ui:SymbolIcon Symbol="ArrowSync24" FontSize="16"/>
       </ui:Button>

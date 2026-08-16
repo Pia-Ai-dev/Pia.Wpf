@@ -79,6 +79,7 @@
                      Margin="8,0,0,0"
                      VerticalAlignment="Stretch"
                      Command="{Binding FetchModelsCommand}"
+                     AutomationProperties.Name="{loc:Str Wizard_Provider_FetchModels}"
                      ToolTip="{loc:Str Wizard_Provider_FetchModels}"
                      IsEnabled="{Binding IsFetchingModels, Converter={StaticResource InverseBooleanConverter}}">
             <Grid>

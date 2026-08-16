@@ -196,6 +196,7 @@
                      Appearance="Transparent"
                      BorderThickness="0"
                      Opacity="0"
+                     AutomationProperties.Name="{loc:Str Flow_Dismiss_Tooltip}"
                      ToolTip="{loc:Str Flow_Dismiss_Tooltip}"
                      Command="{Binding DismissCommand}">
             <ui:SymbolIcon FontSize="14" Symbol="Dismiss24" />
@@ -263,6 +264,7 @@
                    Appearance="Transparent"
                    BorderThickness="0"
                    Command="{Binding ClearAllCommand}"
+                   AutomationProperties.Name="{loc:Str Flow_ClearAll}"
                    ToolTip="{loc:Str Flow_ClearAll}"
                    Visibility="{Binding IsEmpty, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
           <ui:SymbolIcon FontSize="16" Symbol="Broom24" />
@@ -284,6 +286,7 @@
                    Appearance="Transparent"
                    BorderThickness="0"
                    Command="{Binding CollapseCommand}"
+                   AutomationProperties.Name="{loc:Str Flow_Unpin}"
                    ToolTip="{loc:Str Flow_Unpin}"
                    Visibility="{Binding IsOverlayMode, Converter={StaticResource BooleanToVisibilityConverter}}">
           <ui:SymbolIcon FontSize="16" Symbol="ChevronRight24" />

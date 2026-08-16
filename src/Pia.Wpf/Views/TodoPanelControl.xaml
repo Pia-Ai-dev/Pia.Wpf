@@ -53,6 +53,7 @@
         <ui:Button Grid.Column="1"
                    Appearance="Transparent"
                    Padding="4"
+                   AutomationProperties.Name="{loc:Str TodoPanel_ClosePanel}"
                    ToolTip="{loc:Str TodoPanel_ClosePanel}"
                    Command="{Binding ToggleTodoPanelCommand}">
           <ui:SymbolIcon Symbol="Dismiss16" FontSize="12" />
@@ -203,6 +204,7 @@
                    Height="32"
                    Padding="0"
                    Margin="0,0,4,0"
+                   AutomationProperties.Name="{loc:Str TodoPanel_Record}"
                    ToolTip="{loc:Str TodoPanel_Record}">
           <ui:SymbolIcon Symbol="Record24" FontSize="14" />
         </ui:Button>
@@ -213,6 +215,7 @@
                    Width="32"
                    Height="32"
                    Padding="0"
+                   AutomationProperties.Name="{loc:Str TodoPanel_Add}"
                    ToolTip="{loc:Str TodoPanel_Add}">
           <ui:SymbolIcon Symbol="Add16" FontSize="14" />
         </ui:Button>

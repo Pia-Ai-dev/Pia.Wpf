@@ -25,30 +25,35 @@
                 VerticalAlignment="Center">
       <ui:Button Appearance="Secondary"
                  Command="{Binding GoBackCommand}"
+                 AutomationProperties.Name="{loc:Str Memory_Back}"
                  ToolTip="{loc:Str Memory_Back}"
                  Margin="0,0,6,0">
         <ui:SymbolIcon Symbol="ArrowLeft24" FontSize="16"/>
       </ui:Button>
       <ui:Button Appearance="Secondary"
                  Command="{Binding GoHomeCommand}"
+                 AutomationProperties.Name="{loc:Str Memory_Home}"
                  ToolTip="{loc:Str Memory_Home}"
                  Margin="0,0,6,0">
         <ui:SymbolIcon Symbol="Home24" FontSize="16"/>
       </ui:Button>
       <ui:Button Appearance="Secondary"
                  Command="{Binding RefreshCommand}"
+                 AutomationProperties.Name="{loc:Str Memory_Refresh}"
                  ToolTip="{loc:Str Memory_Refresh}"
                  Margin="0,0,6,0">
         <ui:SymbolIcon Symbol="ArrowSync24" FontSize="16"/>
       </ui:Button>
       <ui:Button Appearance="Secondary"
                  Command="{Binding OpenVaultFolderCommand}"
+                 AutomationProperties.Name="{loc:Str Memory_OpenFolder}"
                  ToolTip="{loc:Str Memory_OpenFolder}"
                  Margin="0,0,6,0">
         <ui:SymbolIcon Symbol="FolderOpen24" FontSize="16"/>
       </ui:Button>
       <ui:Button Appearance="Secondary"
                  Command="{Binding ShowHelpCommand}"
+                 AutomationProperties.Name="{loc:Str Memory_Help_Tooltip}"
                  ToolTip="{loc:Str Memory_Help_Tooltip}">
         <ui:SymbolIcon Symbol="QuestionCircle24" FontSize="16"/>
       </ui:Button>

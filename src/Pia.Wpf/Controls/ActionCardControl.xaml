@@ -96,6 +96,7 @@
                        Appearance="Transparent"
                        Padding="4"
                        Command="{Binding ToggleExpandCommand}"
+                       AutomationProperties.Name="{loc:Str ActionCard_ToggleDetails}"
                        VerticalAlignment="Center">
               <ui:SymbolIcon FontSize="12">
                 <ui:SymbolIcon.Style>

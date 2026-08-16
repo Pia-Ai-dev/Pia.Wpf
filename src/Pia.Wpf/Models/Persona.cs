@@ -64,4 +64,7 @@ public class Persona
 
     /// <summary>UTC. Conflict key for last-write-wins sync (mirrors <c>SyncTodo</c>, not <c>ModifiedAt</c>).</summary>
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    // Combo boxes surface ToString() as the UIA value when no DisplayMemberPath is set.
+    public override string ToString() => Name;
 }

@@ -8,7 +8,7 @@
                   PrimaryButtonText="{loc:Str Common_Save}"
                   CloseButtonText="{loc:Str Common_Cancel}"
                   DefaultButton="Primary"
-                  IsPrimaryButtonEnabled="True"
+                  IsPrimaryButtonEnabled="{Binding CanSave}"
                   DialogMaxWidth="600"
                   DialogMaxHeight="650">
   <ui:ContentDialog.Resources>
@@ -17,9 +17,13 @@
   </ui:ContentDialog.Resources>
 
   <StackPanel Margin="0,8,0,0" Width="400">
-    <TextBlock Text="{loc:Str Dialog_TemplateEdit_Name}"
-               FontWeight="SemiBold"
-               Margin="0,0,0,4" />
+    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+      <TextBlock Text="{loc:Str Dialog_TemplateEdit_Name}"
+                 FontWeight="SemiBold" />
+      <TextBlock Text="*"
+                 FontWeight="SemiBold"
+                 Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+    </StackPanel>
     <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
                 Margin="0,0,0,16" />
 
@@ -54,9 +58,13 @@
       </Grid>
     </ui:Button>
 
-    <TextBlock Text="{loc:Str Dialog_TemplateEdit_GeneratedPrompt}"
-               FontWeight="SemiBold"
-               Margin="0,0,0,8" />
+    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+      <TextBlock Text="{loc:Str Dialog_TemplateEdit_GeneratedPrompt}"
+                 FontWeight="SemiBold" />
+      <TextBlock Text="*"
+                 FontWeight="SemiBold"
+                 Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+    </StackPanel>
     <TextBox Text="{Binding GeneratedPrompt, UpdateSourceTrigger=PropertyChanged}"
              TextWrapping="Wrap"
              AcceptsReturn="True"

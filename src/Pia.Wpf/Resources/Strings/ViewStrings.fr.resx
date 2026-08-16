@@ -1183,4 +1183,11 @@
   <data name="Assignments_Status_Failed" xml:space="preserve"><value>Échouée</value></data>
   <data name="Assignments_Status_Cancelled" xml:space="preserve"><value>Annulée</value></data>
   <data name="Assignments_Status_Unknown" xml:space="preserve"><value>Inconnue</value></data>
+  <data name="ActionCard_ToggleDetails" xml:space="preserve"><value>Afficher ou masquer les détails</value></data>
+  <data name="ActionCard_Diff_Toggle" xml:space="preserve"><value>Afficher ou masquer le diff</value></data>
+  <data name="Kanban_ColumnOptions" xml:space="preserve"><value>Options de la colonne</value></data>
+  <data name="Kanban_ExpandClosedColumn" xml:space="preserve"><value>Afficher la colonne des terminés</value></data>
+  <data name="Settings_Privacy_RemoveKeyword" xml:space="preserve"><value>Supprimer le mot-clé</value></data>
+  <data name="Assistant_RateUp_Tooltip" xml:space="preserve"><value>Bonne réponse</value></data>
+  <data name="Assistant_RateDown_Tooltip" xml:space="preserve"><value>Mauvaise réponse</value></data>
 </root>

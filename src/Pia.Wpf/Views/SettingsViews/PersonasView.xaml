@@ -96,6 +96,7 @@
                                Height="30"
                                Padding="0"
                                Margin="0,0,4,0"
+                               AutomationProperties.Name="{loc:Str Common_Edit}"
                                Visibility="{Binding IsReadOnly, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
                       <ui:SymbolIcon Symbol="Edit24" FontSize="14"/>
                       <ui:Button.ToolTip>
@@ -108,6 +109,7 @@
                                Width="30"
                                Height="30"
                                Padding="0"
+                               AutomationProperties.Name="{loc:Str Common_Delete}"
                                Visibility="{Binding IsReadOnly, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
                       <ui:SymbolIcon Symbol="Delete24" FontSize="14"
                                      Foreground="{DynamicResource PiaDangerBrush}"/>

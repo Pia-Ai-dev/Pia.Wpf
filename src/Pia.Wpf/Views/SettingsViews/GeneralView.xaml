@@ -134,6 +134,7 @@
                 <ui:Button Grid.Column="3"
                            Appearance="Secondary"
                            Command="{Binding ClearOptimizeHotkeyCommand}"
+                           AutomationProperties.Name="{loc:Str Settings_Hotkey_ResetToDefault}"
                            ToolTip="{loc:Str Settings_Hotkey_ResetToDefault}">
                   <ui:SymbolIcon Symbol="ArrowReset24" FontSize="14"/>
                 </ui:Button>
@@ -173,8 +174,9 @@
                   </ui:Button>
                   <ui:Button Grid.Column="3"
                              Appearance="Secondary"
-                             Command="{Binding ClearFastPathHotkeyCommand}"
-                             ToolTip="{loc:Str Settings_Hotkey_ClearHotkey}">
+                              Command="{Binding ClearFastPathHotkeyCommand}"
+                              AutomationProperties.Name="{loc:Str Settings_Hotkey_ClearHotkey}"
+                              ToolTip="{loc:Str Settings_Hotkey_ClearHotkey}">
                     <ui:SymbolIcon Symbol="Dismiss24" FontSize="14"/>
                   </ui:Button>
                 </Grid>
@@ -216,6 +218,7 @@
                 <ui:Button Grid.Column="3"
                            Appearance="Secondary"
                            Command="{Binding ClearAssistantHotkeyCommand}"
+                           AutomationProperties.Name="{loc:Str Settings_Hotkey_ClearHotkey}"
                            ToolTip="{loc:Str Settings_Hotkey_ClearHotkey}">
                   <ui:SymbolIcon Symbol="Dismiss24" FontSize="14"/>
                 </ui:Button>
@@ -542,7 +545,8 @@
                                    Command="{Binding DataContext.RemovePiiKeywordCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                    CommandParameter="{Binding}"
                                    Appearance="Secondary"
-                                   Padding="4">
+                                   Padding="4"
+                                   AutomationProperties.Name="{loc:Str Settings_Privacy_RemoveKeyword}">
                           <ui:SymbolIcon Symbol="Dismiss24" FontSize="12"/>
                         </ui:Button>
                       </Grid>

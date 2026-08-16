@@ -1193,4 +1193,11 @@
   <data name="Assignments_Status_Failed" xml:space="preserve"><value>Failed</value></data>
   <data name="Assignments_Status_Cancelled" xml:space="preserve"><value>Cancelled</value></data>
   <data name="Assignments_Status_Unknown" xml:space="preserve"><value>Unknown</value></data>
+  <data name="ActionCard_ToggleDetails" xml:space="preserve"><value>Show or hide details</value></data>
+  <data name="ActionCard_Diff_Toggle" xml:space="preserve"><value>Show or hide the diff</value></data>
+  <data name="Kanban_ColumnOptions" xml:space="preserve"><value>Column options</value></data>
+  <data name="Kanban_ExpandClosedColumn" xml:space="preserve"><value>Show the closed column</value></data>
+  <data name="Settings_Privacy_RemoveKeyword" xml:space="preserve"><value>Remove keyword</value></data>
+  <data name="Assistant_RateUp_Tooltip" xml:space="preserve"><value>Good answer</value></data>
+  <data name="Assistant_RateDown_Tooltip" xml:space="preserve"><value>Bad answer</value></data>
 </root>

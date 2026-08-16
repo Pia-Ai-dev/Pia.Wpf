@@ -42,6 +42,7 @@
         <ui:Button Grid.Column="1"
                    Margin="8,0,0,0"
                    Appearance="Secondary"
+                   AutomationProperties.Name="{loc:Str Wizard_Profile_VoiceTooltip}"
                    ToolTip="{loc:Str Wizard_Profile_VoiceTooltip}"
                    Command="{Binding VoiceInputNameCommand}"
                    VerticalAlignment="Stretch">
@@ -65,6 +66,7 @@
         <ui:Button Grid.Column="1"
                    Margin="8,0,0,0"
                    Appearance="Secondary"
+                   AutomationProperties.Name="{loc:Str Wizard_Profile_VoiceTooltip}"
                    ToolTip="{loc:Str Wizard_Profile_VoiceTooltip}"
                    Command="{Binding VoiceInputNicknameCommand}"
                    VerticalAlignment="Stretch">
@@ -88,6 +90,7 @@
         <ui:Button Grid.Column="1"
                    Margin="8,0,0,0"
                    Appearance="Secondary"
+                   AutomationProperties.Name="{loc:Str Wizard_Profile_VoiceTooltip}"
                    ToolTip="{loc:Str Wizard_Profile_VoiceTooltip}"
                    Command="{Binding VoiceInputLocationCommand}"
                    VerticalAlignment="Stretch">

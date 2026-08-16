@@ -76,6 +76,7 @@
                    Margin="0,0,2,0"
                    Command="{Binding DataContext.ToggleEnableCommand, RelativeSource={RelativeSource AncestorType=views:RemindersView}}"
                    CommandParameter="{Binding}"
+                   AutomationProperties.Name="{loc:Str Reminders_ToggleEnable}"
                    ToolTip="{loc:Str Reminders_ToggleEnable}">
           <ui:SymbolIcon Symbol="ToggleRight24" FontSize="14"/>
         </ui:Button>
@@ -84,6 +85,7 @@
                    Margin="0,0,2,0"
                    Command="{Binding DataContext.SnoozeCommand, RelativeSource={RelativeSource AncestorType=views:RemindersView}}"
                    CommandParameter="{Binding}"
+                   AutomationProperties.Name="{loc:Str Reminders_Snooze}"
                    ToolTip="{loc:Str Reminders_Snooze}">
           <ui:SymbolIcon Symbol="ClockAlarm24" FontSize="14"/>
         </ui:Button>
@@ -92,6 +94,7 @@
                    Margin="0,0,2,0"
                    Command="{Binding DataContext.DismissCommand, RelativeSource={RelativeSource AncestorType=views:RemindersView}}"
                    CommandParameter="{Binding}"
+                   AutomationProperties.Name="{loc:Str Reminders_Dismiss}"
                    ToolTip="{loc:Str Reminders_Dismiss}">
           <ui:SymbolIcon Symbol="Checkmark24" FontSize="14"/>
         </ui:Button>
@@ -99,6 +102,7 @@
                    Padding="4"
                    Command="{Binding DataContext.DeleteCommand, RelativeSource={RelativeSource AncestorType=views:RemindersView}}"
                    CommandParameter="{Binding}"
+                   AutomationProperties.Name="{loc:Str Reminders_Delete}"
                    ToolTip="{loc:Str Reminders_Delete}">
           <ui:SymbolIcon Symbol="Delete24" FontSize="14"
                          Foreground="{DynamicResource PiaDangerBrush}"/>

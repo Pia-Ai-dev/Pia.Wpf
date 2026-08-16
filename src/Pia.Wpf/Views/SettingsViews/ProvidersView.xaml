@@ -191,8 +191,9 @@
                               Appearance="Secondary"
                               Width="36"
                               Height="36"
-                              Padding="0"
-                              Margin="0,0,6,0">
+                               Padding="0"
+                               Margin="0,0,6,0"
+                               AutomationProperties.Name="{loc:Str Providers_Test}">
                       <Grid>
                         <ui:SymbolIcon Symbol="PlugConnected24" FontSize="16">
                           <ui:SymbolIcon.Visibility>
@@ -220,8 +221,9 @@
                               Appearance="Secondary"
                               Width="36"
                               Height="36"
-                              Padding="0"
-                              Margin="0,0,6,0">
+                               Padding="0"
+                               Margin="0,0,6,0"
+                               AutomationProperties.Name="{loc:Str Providers_Edit}">
                       <ui:SymbolIcon Symbol="Edit24" FontSize="16"/>
                       <ui:Button.ToolTip>
                         <ToolTip Content="{loc:Str Providers_Edit}"/>
@@ -232,8 +234,9 @@
                               Visibility="{Binding Provider.ProviderType, Converter={StaticResource ProviderTypeToVisibilityConverter}, ConverterParameter=Delete}"
                               Appearance="Secondary"
                               Width="36"
-                              Height="36"
-                              Padding="0">
+                               Height="36"
+                               Padding="0"
+                               AutomationProperties.Name="{loc:Str Providers_Delete}">
                       <ui:SymbolIcon Symbol="Delete24" FontSize="16"
                                      Foreground="{DynamicResource PiaDangerBrush}"/>
                       <ui:Button.ToolTip>

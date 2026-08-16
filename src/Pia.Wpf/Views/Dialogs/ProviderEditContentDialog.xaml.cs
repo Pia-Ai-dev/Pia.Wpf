@@ -33,8 +33,6 @@ public partial class ProviderEditContentDialog : ContentDialog
 
         FetchModelsButton.Click += OnFetchModelsClick;
         Provider.PropertyChanged += OnProviderPropertyChanged;
-
-        Closing += OnClosing;
     }
 
     private void OnProviderPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -75,32 +73,5 @@ public partial class ProviderEditContentDialog : ContentDialog
         {
             Provider.IsFetchingModels = false;
         }
-    }
-
-    private void OnClosing(ContentDialog sender, ContentDialogClosingEventArgs args)
-    {
-        if (args.Result != ContentDialogResult.Primary)
-        {
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(Provider.Name))
-        {
-            args.Cancel = true;
-            ShowValidationError("Provider name is required");
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(Provider.Endpoint))
-        {
-            args.Cancel = true;
-            ShowValidationError("Endpoint is required");
-            return;
-        }
-    }
-
-    private void ShowValidationError(string message)
-    {
-        System.Windows.MessageBox.Show(message, "Validation Error", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
     }
 }

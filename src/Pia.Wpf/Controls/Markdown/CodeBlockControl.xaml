@@ -38,6 +38,7 @@
                      Appearance="Transparent"
                      Padding="6,2"
                      Click="CopyButton_Click"
+                     AutomationProperties.Name="{loc:Str Assistant_Copy_Tooltip}"
                      ToolTip="{loc:Str Assistant_Copy_Tooltip}">
             <ui:SymbolIcon x:Name="CopyIcon" Symbol="Copy16" FontSize="12" />
           </ui:Button>

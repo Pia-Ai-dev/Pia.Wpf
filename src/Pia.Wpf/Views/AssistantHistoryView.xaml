@@ -147,6 +147,7 @@
                  Padding="0"
                  Margin="10,0,0,0"
                  VerticalAlignment="Center"
+                 AutomationProperties.Name="{loc:Str History_ClearFilters}"
                  ToolTip="{loc:Str History_ClearFilters}">
         <ui:SymbolIcon Symbol="FilterDismiss24" FontSize="16"/>
       </ui:Button>

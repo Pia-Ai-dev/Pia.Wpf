@@ -219,6 +219,7 @@
                                    Padding="4"
                                    FontSize="14"
                                    VerticalAlignment="Center"
+                                   AutomationProperties.Name="{loc:Str Kanban_ColumnOptions}"
                                    Click="OnColumnMenuClick">
                           <ui:Button.Style>
                             <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
@@ -251,6 +252,7 @@
                                    Grid.Column="4"
                                    Appearance="Transparent"
                                    Padding="4"
+                                   AutomationProperties.Name="{loc:Str Kanban_ExpandClosedColumn}"
                                    Click="OnCollapseClosedClick">
                           <ui:Button.Style>
                             <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
@@ -383,8 +385,9 @@
                                               Orientation="Horizontal"
                                               VerticalAlignment="Center">
                                     <ui:Button Appearance="Transparent"
-                                               Padding="3"
-                                               ToolTip="{loc:Str Todo_Edit}"
+                                                Padding="3"
+                                                AutomationProperties.Name="{loc:Str Todo_Edit}"
+                                                ToolTip="{loc:Str Todo_Edit}"
                                                Command="{Binding DataContext.StartEditCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                CommandParameter="{Binding}">
                                       <ui:Button.Style>
@@ -401,8 +404,9 @@
                                     </ui:Button>
 
                                     <ui:Button Appearance="Transparent"
-                                               Padding="3"
-                                               ToolTip="{loc:Str Todo_Delete}"
+                                                Padding="3"
+                                                AutomationProperties.Name="{loc:Str Todo_Delete}"
+                                                ToolTip="{loc:Str Todo_Delete}"
                                                Command="{Binding DataContext.DeleteTodoCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                CommandParameter="{Binding}">
                                       <ui:Button.Style>
@@ -498,6 +502,7 @@
                    Height="36"
                    Padding="0"
                    Margin="0,0,8,0"
+                   AutomationProperties.Name="{loc:Str TodoPanel_Record}"
                    ToolTip="{loc:Str TodoPanel_Record}">
           <ui:SymbolIcon Symbol="Record24" FontSize="16"/>
         </ui:Button>

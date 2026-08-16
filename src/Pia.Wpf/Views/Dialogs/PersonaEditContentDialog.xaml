@@ -9,7 +9,7 @@
                   PrimaryButtonText="{loc:Str Common_Save}"
                   CloseButtonText="{loc:Str Common_Cancel}"
                   DefaultButton="Primary"
-                  IsPrimaryButtonEnabled="True"
+                  IsPrimaryButtonEnabled="{Binding CanSave}"
                   DialogMaxWidth="640"
                   DialogMaxHeight="720">
   <ui:ContentDialog.Resources>
@@ -55,9 +55,13 @@
       </ui:Button>
 
       <!-- Name -->
-      <TextBlock Text="{loc:Str Dialog_PersonaEdit_Name}"
-                 FontWeight="SemiBold"
-                 Margin="0,0,0,4" />
+      <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+        <TextBlock Text="{loc:Str Dialog_PersonaEdit_Name}"
+                   FontWeight="SemiBold" />
+        <TextBlock Text="*"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+      </StackPanel>
       <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
                   Margin="0,0,0,16" />
 
@@ -69,9 +73,13 @@
                   Margin="0,0,0,16" />
 
       <!-- System prompt -->
-      <TextBlock Text="{loc:Str Dialog_PersonaEdit_SystemPrompt}"
-                 FontWeight="SemiBold"
-                 Margin="0,0,0,4" />
+      <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+        <TextBlock Text="{loc:Str Dialog_PersonaEdit_SystemPrompt}"
+                   FontWeight="SemiBold" />
+        <TextBlock Text="*"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+      </StackPanel>
       <TextBlock Text="{loc:Str Dialog_PersonaEdit_SystemPromptHint}"
                  Opacity="0.7"
                  FontSize="12"

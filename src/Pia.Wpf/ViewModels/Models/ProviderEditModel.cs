@@ -11,6 +11,7 @@ public partial class ProviderEditModel : ObservableValidator
     private Guid _id = Guid.NewGuid();
 
     [Required(ErrorMessage = "Provider name is required")]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
     [ObservableProperty]
     private string _name = string.Empty;
 
@@ -18,6 +19,7 @@ public partial class ProviderEditModel : ObservableValidator
     private AiProviderType _providerType;
 
     [Required(ErrorMessage = "Endpoint is required")]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
     [ObservableProperty]
     private string _endpoint = string.Empty;
 
@@ -66,6 +68,8 @@ public partial class ProviderEditModel : ObservableValidator
         if (string.IsNullOrWhiteSpace(value))
             EnableWebSearch = false;
     }
+
+    public bool CanSave => !string.IsNullOrWhiteSpace(Name) && !string.IsNullOrWhiteSpace(Endpoint);
 
     public bool IsMistralWebSearchAvailable =>
         ProviderType == AiProviderType.Mistral && !string.IsNullOrWhiteSpace(MistralAgentId);
