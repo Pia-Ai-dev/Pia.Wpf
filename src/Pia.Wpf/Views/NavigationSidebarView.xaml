@@ -21,11 +21,17 @@
                              IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Optimize}"
                              Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Optimize}">
         <ui:NavigationViewItem.Content>
-          <StackPanel Orientation="Horizontal">
-            <TextBlock Text="{loc:Str Nav_Optimize}" />
-            <TextBlock Text="{Binding OptimizeHotkeyHint, StringFormat=' ({0})'}"
-                       Opacity="0.5" />
-          </StackPanel>
+          <Button Style="{StaticResource NavItemInvokeButtonStyle}"
+                  Command="{Binding NavigationCommand}"
+                  CommandParameter="Optimize"
+                  AutomationProperties.AutomationId="NavItem_Optimize"
+                  AutomationProperties.Name="{loc:Str Nav_Optimize}">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="{loc:Str Nav_Optimize}" />
+              <TextBlock Text="{Binding OptimizeHotkeyHint, StringFormat=' ({0})'}"
+                         Opacity="0.5" />
+            </StackPanel>
+          </Button>
         </ui:NavigationViewItem.Content>
         <ui:NavigationViewItem.Icon>
           <ui:SymbolIcon Symbol="Sparkle24" />
@@ -38,11 +44,17 @@
                              IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Assistant}"
                              Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Assistant}">
         <ui:NavigationViewItem.Content>
-          <StackPanel Orientation="Horizontal">
-            <TextBlock Text="{loc:Str Nav_Assistant}" />
-            <TextBlock Text="{Binding AssistantHotkeyHint, StringFormat=' ({0})'}"
-                       Opacity="0.5" />
-          </StackPanel>
+          <Button Style="{StaticResource NavItemInvokeButtonStyle}"
+                  Command="{Binding NavigationCommand}"
+                  CommandParameter="Assistant"
+                  AutomationProperties.AutomationId="NavItem_Assistant"
+                  AutomationProperties.Name="{loc:Str Nav_Assistant}">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="{loc:Str Nav_Assistant}" />
+              <TextBlock Text="{Binding AssistantHotkeyHint, StringFormat=' ({0})'}"
+                         Opacity="0.5" />
+            </StackPanel>
+          </Button>
         </ui:NavigationViewItem.Content>
         <ui:NavigationViewItem.Icon>
           <ui:SymbolIcon Symbol="Chat24" />
@@ -50,74 +62,130 @@
       </ui:NavigationViewItem>
 
       <!-- History (Optimize only) -->
-      <ui:NavigationViewItem Content="{loc:Str Nav_History}"
-                             Command="{Binding NavigationCommand}"
+      <ui:NavigationViewItem Command="{Binding NavigationCommand}"
                              CommandParameter="History"
                              IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=History}"
                              Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Optimize}">
+        <ui:NavigationViewItem.Content>
+          <Button Style="{StaticResource NavItemInvokeButtonStyle}"
+                  Command="{Binding NavigationCommand}"
+                  CommandParameter="History"
+                  AutomationProperties.AutomationId="NavItem_History"
+                  AutomationProperties.Name="{loc:Str Nav_History}">
+            <TextBlock Text="{loc:Str Nav_History}" />
+          </Button>
+        </ui:NavigationViewItem.Content>
         <ui:NavigationViewItem.Icon>
           <ui:SymbolIcon Symbol="Clock24" />
         </ui:NavigationViewItem.Icon>
       </ui:NavigationViewItem>
 
       <!-- Chat history (Assistant only) -->
-      <ui:NavigationViewItem Content="{loc:Str AssistantHistory_Nav}"
-                             Command="{Binding NavigationCommand}"
+      <ui:NavigationViewItem Command="{Binding NavigationCommand}"
                              CommandParameter="AssistantHistory"
                              IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=AssistantHistory}"
                              Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Assistant}">
+        <ui:NavigationViewItem.Content>
+          <Button Style="{StaticResource NavItemInvokeButtonStyle}"
+                  Command="{Binding NavigationCommand}"
+                  CommandParameter="AssistantHistory"
+                  AutomationProperties.AutomationId="NavItem_AssistantHistory"
+                  AutomationProperties.Name="{loc:Str AssistantHistory_Nav}">
+            <TextBlock Text="{loc:Str AssistantHistory_Nav}" />
+          </Button>
+        </ui:NavigationViewItem.Content>
         <ui:NavigationViewItem.Icon>
           <ui:SymbolIcon Symbol="Clock24" />
         </ui:NavigationViewItem.Icon>
       </ui:NavigationViewItem>
 
       <!-- Memory (Assistant only) -->
-      <ui:NavigationViewItem Content="{loc:Str Nav_Memory}"
-                             Command="{Binding NavigationCommand}"
+      <ui:NavigationViewItem Command="{Binding NavigationCommand}"
                              CommandParameter="Memory"
                              IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Memory}"
                              Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Assistant}">
+        <ui:NavigationViewItem.Content>
+          <Button Style="{StaticResource NavItemInvokeButtonStyle}"
+                  Command="{Binding NavigationCommand}"
+                  CommandParameter="Memory"
+                  AutomationProperties.AutomationId="NavItem_Memory"
+                  AutomationProperties.Name="{loc:Str Nav_Memory}">
+            <TextBlock Text="{loc:Str Nav_Memory}" />
+          </Button>
+        </ui:NavigationViewItem.Content>
         <ui:NavigationViewItem.Icon>
           <ui:SymbolIcon Symbol="BrainCircuit24" />
         </ui:NavigationViewItem.Icon>
       </ui:NavigationViewItem>
 
       <!-- Reminders (Assistant only) -->
-      <ui:NavigationViewItem Content="{loc:Str Nav_Reminders}"
-                             Command="{Binding NavigationCommand}"
+      <ui:NavigationViewItem Command="{Binding NavigationCommand}"
                              CommandParameter="Reminders"
                              IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Reminders}"
                              Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Assistant}">
+        <ui:NavigationViewItem.Content>
+          <Button Style="{StaticResource NavItemInvokeButtonStyle}"
+                  Command="{Binding NavigationCommand}"
+                  CommandParameter="Reminders"
+                  AutomationProperties.AutomationId="NavItem_Reminders"
+                  AutomationProperties.Name="{loc:Str Nav_Reminders}">
+            <TextBlock Text="{loc:Str Nav_Reminders}" />
+          </Button>
+        </ui:NavigationViewItem.Content>
         <ui:NavigationViewItem.Icon>
           <ui:SymbolIcon Symbol="Alert24" />
         </ui:NavigationViewItem.Icon>
       </ui:NavigationViewItem>
 
       <!-- Background assignments (Assistant only, and only when the server offers the surface) -->
-      <ui:NavigationViewItem Content="{loc:Str Nav_Assignments}"
-                             Command="{Binding NavigationCommand}"
+      <ui:NavigationViewItem Command="{Binding NavigationCommand}"
                              CommandParameter="Assignments"
                              IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Assignments}"
                              Visibility="{Binding IsAssignmentsNavVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <ui:NavigationViewItem.Content>
+          <Button Style="{StaticResource NavItemInvokeButtonStyle}"
+                  Command="{Binding NavigationCommand}"
+                  CommandParameter="Assignments"
+                  AutomationProperties.AutomationId="NavItem_Assignments"
+                  AutomationProperties.Name="{loc:Str Nav_Assignments}">
+            <TextBlock Text="{loc:Str Nav_Assignments}" />
+          </Button>
+        </ui:NavigationViewItem.Content>
         <ui:NavigationViewItem.Icon>
           <ui:SymbolIcon Symbol="Rocket24" />
         </ui:NavigationViewItem.Icon>
       </ui:NavigationViewItem>
 
       <!-- Todo (all modes) -->
-      <ui:NavigationViewItem Content="{loc:Str Nav_Todo}"
-                             Command="{Binding NavigationCommand}"
+      <ui:NavigationViewItem Command="{Binding NavigationCommand}"
                              CommandParameter="Todo">
+        <ui:NavigationViewItem.Content>
+          <Button Style="{StaticResource NavItemInvokeButtonStyle}"
+                  Command="{Binding NavigationCommand}"
+                  CommandParameter="Todo"
+                  AutomationProperties.AutomationId="NavItem_Todo"
+                  AutomationProperties.Name="{loc:Str Nav_Todo}">
+            <TextBlock Text="{loc:Str Nav_Todo}" />
+          </Button>
+        </ui:NavigationViewItem.Content>
         <ui:NavigationViewItem.Icon>
           <ui:SymbolIcon Symbol="TaskListSquareLtr24" />
         </ui:NavigationViewItem.Icon>
       </ui:NavigationViewItem>
 
       <!-- Settings (all modes) -->
-      <ui:NavigationViewItem Content="{loc:Str Nav_Settings}"
-                             Command="{Binding NavigationCommand}"
+      <ui:NavigationViewItem Command="{Binding NavigationCommand}"
                              CommandParameter="Settings"
                              IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Settings}">
+        <ui:NavigationViewItem.Content>
+          <Button Style="{StaticResource NavItemInvokeButtonStyle}"
+                  Command="{Binding NavigationCommand}"
+                  CommandParameter="Settings"
+                  AutomationProperties.AutomationId="NavItem_Settings"
+                  AutomationProperties.Name="{loc:Str Nav_Settings}">
+            <TextBlock Text="{loc:Str Nav_Settings}" />
+          </Button>
+        </ui:NavigationViewItem.Content>
         <ui:NavigationViewItem.Icon>
           <ui:SymbolIcon Symbol="Settings24" />
         </ui:NavigationViewItem.Icon>
@@ -125,9 +193,15 @@
     </ui:NavigationView.MenuItems>
 
     <ui:NavigationView.FooterMenuItems>
-      <ui:NavigationViewItem Content="{loc:Str Nav_NewWindow}"
-                             x:Name="NewWindowNavItem"
+      <ui:NavigationViewItem x:Name="NewWindowNavItem"
                              ToolTip="{loc:Str Nav_NewWindow_Tooltip}">
+        <ui:NavigationViewItem.Content>
+          <Button Style="{StaticResource NavItemInvokeButtonStyle}"
+                  AutomationProperties.AutomationId="NavItem_NewWindow"
+                  AutomationProperties.Name="{loc:Str Nav_NewWindow}">
+            <TextBlock Text="{loc:Str Nav_NewWindow}" />
+          </Button>
+        </ui:NavigationViewItem.Content>
         <ui:NavigationViewItem.Icon>
           <ui:SymbolIcon Symbol="WindowNew20" />
         </ui:NavigationViewItem.Icon>
@@ -170,9 +244,16 @@
           </ContextMenu>
         </ui:NavigationViewItem.ContextMenu>
       </ui:NavigationViewItem>
-      <ui:NavigationViewItem Content="{Binding Theme}"
-                             Command="{Binding ToggleThemeCommand}"
+      <ui:NavigationViewItem Command="{Binding ToggleThemeCommand}"
                              Tag="ThemeToggle">
+        <ui:NavigationViewItem.Content>
+          <Button Style="{StaticResource NavItemInvokeButtonStyle}"
+                  Command="{Binding ToggleThemeCommand}"
+                  AutomationProperties.AutomationId="NavItem_ThemeToggle"
+                  AutomationProperties.Name="{Binding Theme}">
+            <TextBlock Text="{Binding Theme}" />
+          </Button>
+        </ui:NavigationViewItem.Content>
         <ui:NavigationViewItem.Icon>
           <ui:SymbolIcon>
             <ui:SymbolIcon.Style>

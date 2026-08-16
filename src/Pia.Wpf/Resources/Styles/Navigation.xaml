@@ -7,6 +7,27 @@
     <Setter Property="Margin" Value="0,0,12,0" />
   </Style>
 
+  <!-- ItemsControl items surface in UIA as a DataItem peer that hides the item's own patterns,
+       so a NavigationViewItem can never expose Invoke — an invokable element must live in its
+       content. Chromeless: the item itself supplies all hover/press feedback. -->
+  <Style x:Key="NavItemInvokeButtonStyle" TargetType="Button">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="KeyboardNavigation.IsTabStop" Value="False" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <ContentPresenter />
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <Style x:Key="ModeToggleStyle" TargetType="Button">
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="BorderThickness" Value="0" />
