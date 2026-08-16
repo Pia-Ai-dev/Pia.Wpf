@@ -3,8 +3,18 @@
 Answers `docs/2026-08-16-ui-howto-questions.md` against the docs in `Pia/src/Pia.Docs`
 (branch `feature/connector-abstraction-phase1`). English only; `de/` and `fr/` mirrors are owed.
 
-No FAQ entries were added. Every answer sits in the guide that owns the surface, so the server's
-knowledge base picks it up as ordinary prose rather than as a Q&A pair.
+No FAQ entries were added, and no question-shaped headings either. Every answer sits in the guide
+that owns the surface, as ordinary prose under a declarative topic heading — so the server's
+knowledge base indexes it as content rather than as a Q&A pair.
+
+**English-only is safe for the KB.** `src/Pia.Docs/scripts/build-kb.mjs` filters the corpus to the
+root locale (`.filter((p) => !/^(de|fr)\//.test(p))`, manifest `locale: 'en'`), so the stale German
+and French mirrors never reach the knowledge base and cannot contradict the corrected English pages
+inside the index. They are website translation debt, not a retrieval hazard.
+
+**Verified with `npm run build:kb:check`** — the same script that produces the KB preset. It resolves
+every internal link and anchor across the corpus: *67 documents, check passed*. `npm run build` also
+completes clean (208 pages).
 
 **Legend** — ✅ written this pass · ○ already covered · ⚠ corrected an existing claim
 
@@ -22,7 +32,7 @@ knowledge base picks it up as ordinary prose rather than as a Q&A pair.
 | Record vs Live transcription | ✅ `assistant.mdx` § Record versus the two transcription buttons |
 | Join a meeting vs Live transcription with consent | ✅ same section |
 | File types and size limit | ○ types / ✅ `attachments.mdx` § How large a file can be |
-| Does an attached file reach the AI provider | ✅ `attachments.mdx` § Does an attached file go to the AI provider? |
+| Does an attached file reach the AI provider | ✅ `attachments.mdx` § What an attachment sends to your AI provider |
 | Multi-line message without submitting | ✅ `assistant.mdx` § Writing more than one line |
 | What typing `@` does | ✅ `assistant.mdx` § Referencing your own items with `@`; ○ `memory.mdx` § @ Commands |
 | Chat title with auto-titling off; can I rename | ⚠ `assistant.mdx` § How a chat gets its title |
@@ -69,7 +79,7 @@ knowledge base picks it up as ordinary prose rather than as a Q&A pair.
 | Test a persona without making it active | ✅ § Trying a persona out |
 | Where a new persona shows up | ○ § Choosing a persona in chat |
 | Does switching re-run earlier turns | ○ same section (forward only) |
-| Do personas sync; encryption first | ✅ § Do personas sync to my other devices? |
+| Do personas sync; encryption first | ✅ § Persona sync and encryption |
 
 ## Optimize templates
 
@@ -87,7 +97,7 @@ knowledge base picks it up as ordinary prose rather than as a Q&A pair.
 | What View Prompt shows; copy a built-in's prompt | ✅ § Reading a template's prompt |
 | What Output Action controls | ✅ `optimize.mdx` § What Accept does, and where the result can go |
 | Use optimize templates inside an Assistant chat | ✅ `templates.mdx` intro |
-| Do templates sync | ✅ § Do optimize templates sync between devices? |
+| Do templates sync | ✅ § Optimize template sync between devices |
 | Reorder or group templates | ✅ § Ordering and grouping optimize templates |
 
 ## Memory / vault
@@ -95,12 +105,12 @@ knowledge base picks it up as ordinary prose rather than as a Q&A pair.
 | Question | Where it's answered |
 |---|---|
 | "memory" vs "vault" vs Assistant files folder | ✅ `memory.mdx` § Memory, vault, objects — the words Pia uses |
-| What an "object" is; is 48 a lot; prune | ✅ § Is 48 objects a lot? Should I prune? |
-| Add or edit an entry from this view | ✅ § Can I add a memory from this view?; ○ § Editing a memory |
+| What an "object" is; is 48 a lot; prune | ✅ § Vault size, and when to prune |
+| Add or edit an entry from this view | ✅ § Adding a memory yourself; ○ § Editing a memory |
 | Delete one thing without wiping everything | ○ § Editing a memory |
 | Where the categories come from | ✅ § Where the categories come from |
 | PROFILE / PREFERENCE / NOTE tags | ✅ § The PROFILE, PREFERENCE and NOTE tags on entries |
-| Is the composition bar telling me to act | ✅ § Is the composition bar telling me to do something? |
+| Is the composition bar telling me to act | ✅ § Reading the composition bar |
 | What Source documents are; how a file gets in | ○ § Vault at a glance; `auto-ingest.mdx` § Adding documents |
 | What "Compiled into N topic page(s)" means | ✅ § What "Compiled into 31 topic page(s)" means |
 | Edit a source file in Explorer — does Pia notice | ✅ `auto-ingest.mdx` § Editing a source file outside Pia |
@@ -163,9 +173,9 @@ knowledge base picks it up as ordinary prose rather than as a Q&A pair.
 ## Facts worth keeping (verified in code, not observed in the UI)
 
 - **`TemplateEditModel.CanSave => Name && GeneratedPrompt`.** Style Description is labelled `*` but
-  is *not* enforced — you can save without it if you typed the prompt yourself. The questions doc's
-  note 1 described the pre-fix behaviour (a stacking `MessageBox`); Save is now CanSave-gated with an
-  inline hint, so the doc describes the gated behaviour.
+  is *not* enforced — you can save without it if you typed the prompt yourself. This requirement is
+  the same in both the shipped and the unreleased build; only the way it is *enforced* differs (see
+  the version note below), so the guide states the requirement and describes both symptoms.
 - **`PersonaEditModel.CanSave => Name && SystemPrompt`.** Everything else is optional.
 - **Identity block order** is `SystemPrompt` → `Guardrails` → date line (`PersonaPromptShape`), with
   Output Format in a separate later section.
@@ -184,8 +194,18 @@ knowledge base picks it up as ordinary prose rather than as a Q&A pair.
 
 ## Open items
 
+- **The CanSave gating is not in a shipped build.** `86c43cb` / `86530d67` (Save gated on `CanSave`,
+  the inline *"Fill in the fields marked \* to enable Save"* hint, and the corrected `*` markers) are
+  on `feature/ui-automation-a11y` only — not on `main`, and carried by no tag. The latest tag is
+  `v1.3.389`, so users today still get the old stacking `MessageBox`. The template and persona guides
+  are therefore written to state the *requirement* rather than the mechanism, and name both symptoms.
+  Once the branch ships, those two paragraphs can be simplified to just the greyed-out Save.
+
 - **`de/` and `fr/` mirrors are not updated.** Every page touched here has a translation that now
-  lags. This was a deliberate scope call for this session.
+  lags. This was a deliberate scope call for this session, and it does not affect the knowledge base
+  (see the English-only note at the top) — but the published site now shows a German and French
+  `templates.mdx` describing a feature that does not exist. That is the highest-value translation to
+  port first, followed by the chat-rename correction in `assistant.mdx`.
 - **Two code bugs found while verifying** — reported separately, not documented as behaviour:
   - `Memory_Meta_ModelDefault` is the hardcoded literal `text-embedding-3-small` in all three resx
     files, but the embedding model is the local ONNX
