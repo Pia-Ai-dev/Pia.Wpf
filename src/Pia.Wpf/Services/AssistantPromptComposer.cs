@@ -1,8 +1,10 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.Text;
 using Microsoft.Extensions.AI;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Shared;
 
 namespace Pia.Services;
 
@@ -89,17 +91,15 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
     // Builds the persona-driven identity block (contract §8): the persona's SystemPrompt replaces the
     // hardcoded "You are Pia…" line, optional Guardrails follow as their own paragraph, then the
     // substrate date line. Everything below the identity stays owned by the substrate.
-    public static string BuildIdentityBlock(Persona activePersona)
-    {
-        var guardrails = string.IsNullOrWhiteSpace(activePersona.Guardrails)
-            ? string.Empty
-            : $"\n\n{activePersona.Guardrails.Trim()}";
-
-        return $"""
-            {activePersona.SystemPrompt.Trim()}{guardrails}
-            The current date and time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}).
-            """;
-    }
+    // The shape itself lives in Pia.Shared (PersonaPromptShape) because the server's admin
+    // managed-persona preview renders the same block — compose it there, not here, so the two
+    // cannot drift. CurrentCulture so the dddd weekday renders in the end user's language.
+    public static string BuildIdentityBlock(Persona activePersona) =>
+        PersonaPromptShape.BuildIdentityBlock(
+            activePersona.SystemPrompt,
+            activePersona.Guardrails,
+            DateTime.Now,
+            CultureInfo.CurrentCulture);
 
     // Output-format guidance the substrate falls back to when the active persona doesn't define its
     // own (personas created/synced before the field existed, or left blank). Kept byte-identical to
