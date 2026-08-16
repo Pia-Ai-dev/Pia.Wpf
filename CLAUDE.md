@@ -110,6 +110,10 @@ _logger.LogInformation("Fetching from {Url}", SafeUrl.Format(requestUrl));
 
 `Pia.Logging` does **not** belong to `Pia.Infrastructure` — ViewModels can import it without violating the layer rule.
 
+## UI Automation
+
+Driving the app with WinWright/UIA (walkthroughs, UI regression tests): read `docs/ui-automation-playbook.md` first. It lists the stable AutomationIds and the techniques that work; do not fall back to pixel-offset clicking.
+
 ## Rules
 
 - Do not read entire large files in a first run. Use grep or read file signatures first.
