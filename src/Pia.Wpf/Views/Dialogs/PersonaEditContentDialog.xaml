@@ -21,6 +21,15 @@
        must NOT add a second one — otherwise two vertical scrollbars stack up. -->
   <StackPanel Margin="0,4,0,0" Width="440">
 
+      <!-- ContentDialog hides the primary button when it is disabled, so the reason has to live here.
+           A Border/TextBlock rather than ui:InfoBar, which renders but exposes no automation peer. -->
+      <Border Style="{StaticResource PiaRequiredHintStyle}"
+              Visibility="{Binding CanSave, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+        <TextBlock Text="{loc:Str Dialog_Edit_RequiredHint}"
+                   AutomationProperties.AutomationId="Dialog_RequiredHint"
+                   TextWrapping="Wrap" />
+      </Border>
+
       <!-- AI-assist: draft from a description -->
       <TextBlock Text="{loc:Str Dialog_PersonaEdit_Describe}"
                  FontWeight="SemiBold"
@@ -55,14 +64,11 @@
       </ui:Button>
 
       <!-- Name -->
-      <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-        <TextBlock Text="{loc:Str Dialog_PersonaEdit_Name}"
-                   FontWeight="SemiBold" />
-        <TextBlock Text="*"
-                   FontWeight="SemiBold"
-                   Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
-      </StackPanel>
+      <TextBlock Text="{loc:Str Dialog_PersonaEdit_Name}"
+                 FontWeight="SemiBold"
+                 Margin="0,0,0,4" />
       <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                  AutomationProperties.AutomationId="PersonaEdit_Name"
                   Margin="0,0,0,16" />
 
       <!-- Tagline -->
@@ -73,13 +79,9 @@
                   Margin="0,0,0,16" />
 
       <!-- System prompt -->
-      <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-        <TextBlock Text="{loc:Str Dialog_PersonaEdit_SystemPrompt}"
-                   FontWeight="SemiBold" />
-        <TextBlock Text="*"
-                   FontWeight="SemiBold"
-                   Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
-      </StackPanel>
+      <TextBlock Text="{loc:Str Dialog_PersonaEdit_SystemPrompt}"
+                 FontWeight="SemiBold"
+                 Margin="0,0,0,4" />
       <TextBlock Text="{loc:Str Dialog_PersonaEdit_SystemPromptHint}"
                  Opacity="0.7"
                  FontSize="12"
@@ -91,6 +93,7 @@
                Height="120"
                VerticalScrollBarVisibility="Auto"
                IsReadOnly="{Binding IsGenerating}"
+               AutomationProperties.AutomationId="PersonaEdit_SystemPrompt"
                Margin="0,0,0,16" />
 
       <!-- Guardrails -->
@@ -139,6 +142,8 @@
           <TextBlock Text="{loc:Str Dialog_PersonaEdit_Archetype}" FontWeight="SemiBold" Margin="0,0,0,4" />
           <ComboBox ItemsSource="{Binding ArchetypeOptions}"
                     SelectedItem="{Binding Archetype}"
+                    AutomationProperties.AutomationId="PersonaEdit_Archetype"
+                    AutomationProperties.Name="{loc:Str Dialog_PersonaEdit_Archetype}"
                     HorizontalAlignment="Stretch" />
         </StackPanel>
         <StackPanel Grid.Column="2">
@@ -146,12 +151,16 @@
           <ComboBox ItemsSource="{Binding ModelTypeOptions}"
                     Text="{Binding ModelType, UpdateSourceTrigger=PropertyChanged}"
                     IsEditable="True"
+                    AutomationProperties.AutomationId="PersonaEdit_ModelType"
+                    AutomationProperties.Name="{loc:Str Dialog_PersonaEdit_ModelType}"
                     HorizontalAlignment="Stretch" />
         </StackPanel>
         <StackPanel Grid.Column="4">
           <TextBlock Text="{loc:Str Dialog_PersonaEdit_ToolScope}" FontWeight="SemiBold" Margin="0,0,0,4" />
           <ComboBox ItemsSource="{Binding ToolScopeOptions}"
                     SelectedItem="{Binding ToolScope}"
+                    AutomationProperties.AutomationId="PersonaEdit_ToolScope"
+                    AutomationProperties.Name="{loc:Str Dialog_PersonaEdit_ToolScope}"
                     HorizontalAlignment="Stretch" />
         </StackPanel>
       </Grid>
@@ -325,6 +334,8 @@
       <ComboBox ItemsSource="{Binding ProviderChoices}"
                 SelectedItem="{Binding SelectedProvider}"
                 DisplayMemberPath="Name"
+                AutomationProperties.AutomationId="PersonaEdit_PreferredProvider"
+                AutomationProperties.Name="{loc:Str Dialog_PersonaEdit_Provider}"
                 HorizontalAlignment="Stretch"
                 Margin="0,0,0,16" />
 
@@ -334,6 +345,8 @@
       <ComboBox ItemsSource="{Binding ReasoningEffortOptions}"
                 SelectedItem="{Binding SelectedReasoningEffort}"
                 DisplayMemberPath="Display"
+                AutomationProperties.AutomationId="PersonaEdit_ReasoningEffort"
+                AutomationProperties.Name="{loc:Str Dialog_PersonaEdit_ReasoningEffort}"
                 HorizontalAlignment="Stretch" />
   </StackPanel>
 </ui:ContentDialog>

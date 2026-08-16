@@ -630,6 +630,7 @@
   <data name="Dialog_SessionDetail_CopyOptimized" xml:space="preserve"><value>Copier l'optimisé</value></data>
   <data name="Dialog_SessionDetail_OriginalText" xml:space="preserve"><value>Texte original</value></data>
   <data name="Dialog_SessionDetail_OptimizedText" xml:space="preserve"><value>Texte optimisé</value></data>
+  <data name="Dialog_Edit_RequiredHint" xml:space="preserve"><value>Renseignez les champs marqués d'un * pour activer Enregistrer.</value></data>
   <data name="Dialog_ProviderEdit_Title" xml:space="preserve"><value>Modifier le fournisseur</value></data>
   <data name="Dialog_ProviderEdit_Name" xml:space="preserve"><value>Nom *</value></data>
   <data name="Dialog_ProviderEdit_ProviderType" xml:space="preserve"><value>Type de fournisseur *</value></data>
@@ -650,7 +651,7 @@
   <data name="Dialog_TemplateEdit_StyleHint" xml:space="preserve"><value>Décrivez le ton, le style et la structure souhaités pour ce modèle</value></data>
   <data name="Dialog_TemplateEdit_GeneratePrompt" xml:space="preserve"><value>Générer le prompt</value></data>
   <data name="Dialog_TemplateEdit_Generating" xml:space="preserve"><value>Génération...</value></data>
-  <data name="Dialog_TemplateEdit_GeneratedPrompt" xml:space="preserve"><value>Prompt généré</value></data>
+  <data name="Dialog_TemplateEdit_GeneratedPrompt" xml:space="preserve"><value>Prompt généré *</value></data>
   <data name="Dialog_TemplateEdit_PromptEditHint" xml:space="preserve"><value>Vous pouvez modifier le prompt généré manuellement</value></data>
   <data name="Dialog_PersonaEdit_Title" xml:space="preserve"><value>Modifier la persona</value></data>
   <data name="Dialog_PersonaEdit_Describe" xml:space="preserve"><value>Décrire cette persona</value></data>

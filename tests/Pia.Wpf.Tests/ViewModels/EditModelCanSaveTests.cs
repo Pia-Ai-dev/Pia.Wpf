@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Pia.Models;
 using Pia.ViewModels.Models;
 using Xunit;
 
@@ -45,14 +46,61 @@ public class ProviderEditModelCanSaveTests
     [InlineData("Name", "https://example.test/v1", true)]
     public void CanSave_RequiresNameAndEndpoint(string name, string endpoint, bool expected)
     {
-        var model = new ProviderEditModel { Name = name, Endpoint = endpoint };
+        var model = new ProviderEditModel
+        {
+            Name = name,
+            Endpoint = endpoint,
+            ProviderType = AiProviderType.OpenAICompatible,
+        };
         Assert.Equal(expected, model.CanSave);
+    }
+
+    /// <summary>The cloud provider's endpoint field is hidden, so gating Save on it stranded the dialog.</summary>
+    [Fact]
+    public void CanSave_CloudProvider_DoesNotRequireEndpoint()
+    {
+        var model = ProviderEditModel.FromProvider(new AiProvider
+        {
+            Name = "Pia Cloud",
+            ProviderType = AiProviderType.PiaCloud,
+            Endpoint = string.Empty,
+        });
+
+        Assert.False(model.RequiresEndpoint);
+        Assert.True(model.CanSave);
+    }
+
+    /// <summary>PiaCloud is enum 0, so a fresh Add lands there without the user choosing it.</summary>
+    [Fact]
+    public void CanSave_NewProviderDefaultingToCloudType_StillRequiresEndpoint()
+    {
+        var model = new ProviderEditModel { Name = "New" };
+
+        Assert.Equal(AiProviderType.PiaCloud, model.ProviderType);
+        Assert.True(model.RequiresEndpoint);
+        Assert.False(model.CanSave);
+    }
+
+    [Fact]
+    public void CloudProviderSwitchedToAnotherType_RequiresEndpointAgain()
+    {
+        var model = ProviderEditModel.FromProvider(new AiProvider
+        {
+            Name = "Pia Cloud",
+            ProviderType = AiProviderType.PiaCloud,
+            Endpoint = string.Empty,
+        });
+
+        model.ProviderType = AiProviderType.OpenAICompatible;
+
+        Assert.True(model.RequiresEndpoint);
+        Assert.False(model.CanSave);
     }
 
     [Fact]
     public void ChangingNameOrEndpoint_RaisesCanSave()
     {
-        var model = new ProviderEditModel();
+        var model = new ProviderEditModel { ProviderType = AiProviderType.OpenAICompatible };
         var raised = new List<string?>();
         ((INotifyPropertyChanged)model).PropertyChanged += (_, e) => raised.Add(e.PropertyName);
 
@@ -61,5 +109,17 @@ public class ProviderEditModelCanSaveTests
 
         Assert.Equal(2, raised.Count(n => n == nameof(ProviderEditModel.CanSave)));
         Assert.True(model.CanSave);
+    }
+
+    [Fact]
+    public void ChangingProviderType_RaisesCanSave()
+    {
+        var model = new ProviderEditModel { Name = "Name" };
+        var raised = new List<string?>();
+        ((INotifyPropertyChanged)model).PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        model.ProviderType = AiProviderType.Ollama;
+
+        Assert.Contains(nameof(ProviderEditModel.CanSave), raised);
     }
 }

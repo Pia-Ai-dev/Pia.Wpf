@@ -36,42 +36,52 @@
       </Grid.ColumnDefinitions>
 
       <!-- Left sidebar -->
+      <!-- Each item names itself: a ListBoxItem wrapping a StackPanel reports its raw type name to
+           UIA, which makes the categories unaddressable and unreadable to a screen reader. -->
       <ListBox Grid.Column="0"
                SelectedIndex="{Binding SelectedTabIndex}"
                Background="Transparent"
                BorderThickness="0"
+               AutomationProperties.AutomationId="Settings_CategoryList"
                ItemContainerStyle="{StaticResource PiaSettingsSidebarItemStyle}">
-        <ListBoxItem>
+        <ListBoxItem AutomationProperties.AutomationId="SettingsCategory_General"
+                     AutomationProperties.Name="{loc:Str Settings_Tab_General}">
           <StackPanel Orientation="Horizontal">
             <ui:SymbolIcon Symbol="Settings24" FontSize="16" Margin="0,0,10,0"/>
             <TextBlock Text="{loc:Str Settings_Tab_General}" VerticalAlignment="Center"/>
           </StackPanel>
         </ListBoxItem>
-        <ListBoxItem>
+        <ListBoxItem AutomationProperties.AutomationId="SettingsCategory_Providers"
+                     AutomationProperties.Name="{loc:Str Settings_Tab_Providers}">
           <StackPanel Orientation="Horizontal">
             <ui:SymbolIcon Symbol="PlugConnected24" FontSize="16" Margin="0,0,10,0"/>
             <TextBlock Text="{loc:Str Settings_Tab_Providers}" VerticalAlignment="Center"/>
           </StackPanel>
         </ListBoxItem>
-        <ListBoxItem>
+        <ListBoxItem AutomationProperties.AutomationId="SettingsCategory_Optimize"
+                     AutomationProperties.Name="{loc:Str Settings_Tab_Optimize}">
           <StackPanel Orientation="Horizontal">
             <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,10,0"/>
             <TextBlock Text="{loc:Str Settings_Tab_Optimize}" VerticalAlignment="Center"/>
           </StackPanel>
         </ListBoxItem>
-        <ListBoxItem>
+        <ListBoxItem AutomationProperties.AutomationId="SettingsCategory_Assistant"
+                     AutomationProperties.Name="{loc:Str Settings_Tab_Assistant}">
           <StackPanel Orientation="Horizontal">
             <ui:SymbolIcon Symbol="Chat24" FontSize="16" Margin="0,0,10,0"/>
             <TextBlock Text="{loc:Str Settings_Tab_Assistant}" VerticalAlignment="Center"/>
           </StackPanel>
         </ListBoxItem>
-        <ListBoxItem>
+        <ListBoxItem AutomationProperties.AutomationId="SettingsCategory_Account"
+                     AutomationProperties.Name="{loc:Str Settings_Tab_Account}">
           <StackPanel Orientation="Horizontal">
             <ui:SymbolIcon Symbol="Person24" FontSize="16" Margin="0,0,10,0"/>
             <TextBlock Text="{loc:Str Settings_Tab_Account}" VerticalAlignment="Center"/>
           </StackPanel>
         </ListBoxItem>
-        <ListBoxItem IsEnabled="{Binding PluginsVm.IsCloudConnected}">
+        <ListBoxItem IsEnabled="{Binding PluginsVm.IsCloudConnected}"
+                     AutomationProperties.AutomationId="SettingsCategory_Plugins"
+                     AutomationProperties.Name="{loc:Str Settings_Tab_Plugins}">
           <StackPanel Orientation="Horizontal">
             <ui:SymbolIcon Symbol="AppFolder24" FontSize="16" Margin="0,0,10,0"/>
             <TextBlock Text="{loc:Str Settings_Tab_Plugins}" VerticalAlignment="Center"/>

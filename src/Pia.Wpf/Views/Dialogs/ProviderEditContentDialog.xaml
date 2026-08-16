@@ -17,14 +17,20 @@
   </ui:ContentDialog.Resources>
 
   <StackPanel Margin="0,8,0,0" Width="400">
-    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-      <TextBlock Text="{loc:Str Dialog_ProviderEdit_Name}"
-                 FontWeight="SemiBold" />
-      <TextBlock Text="*"
-                 FontWeight="SemiBold"
-                 Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
-    </StackPanel>
+    <!-- ContentDialog hides the primary button when it is disabled, so the reason has to live here.
+         A Border/TextBlock rather than ui:InfoBar, which renders but exposes no automation peer. -->
+    <Border Style="{StaticResource PiaRequiredHintStyle}"
+            Visibility="{Binding CanSave, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+      <TextBlock Text="{loc:Str Dialog_Edit_RequiredHint}"
+                 AutomationProperties.AutomationId="Dialog_RequiredHint"
+                 TextWrapping="Wrap" />
+    </Border>
+
+    <TextBlock Text="{loc:Str Dialog_ProviderEdit_Name}"
+               FontWeight="SemiBold"
+               Margin="0,0,0,4" />
     <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                AutomationProperties.AutomationId="ProviderEdit_Name"
                 Margin="0,0,0,16" />
 
     <TextBlock Text="{loc:Str Dialog_ProviderEdit_ProviderType}"
@@ -32,18 +38,17 @@
                Margin="0,0,0,4" />
     <ComboBox ItemsSource="{Binding EditableProviderTypes}"
               SelectedItem="{Binding ProviderType}"
+              AutomationProperties.AutomationId="ProviderEdit_ProviderType"
+              AutomationProperties.Name="{loc:Str Dialog_ProviderEdit_ProviderType}"
               Margin="0,0,0,16" />
 
     <StackPanel Visibility="{Binding ProviderType, Converter={StaticResource ProviderTypeToVisibilityConverter}, ConverterParameter=Endpoint}">
-      <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-        <TextBlock Text="{loc:Str Dialog_ProviderEdit_Endpoint}"
-                   FontWeight="SemiBold" />
-        <TextBlock Text="*"
-                   FontWeight="SemiBold"
-                   Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
-      </StackPanel>
+      <TextBlock Text="{loc:Str Dialog_ProviderEdit_Endpoint}"
+                 FontWeight="SemiBold"
+                 Margin="0,0,0,4" />
       <ui:TextBox Text="{Binding Endpoint, UpdateSourceTrigger=PropertyChanged}"
                   PlaceholderText="http://localhost:11434/v1"
+                  AutomationProperties.AutomationId="ProviderEdit_Endpoint"
                   Margin="0,0,0,16" />
     </StackPanel>
 

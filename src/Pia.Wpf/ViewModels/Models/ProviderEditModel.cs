@@ -15,6 +15,7 @@ public partial class ProviderEditModel : ObservableValidator
     [ObservableProperty]
     private string _name = string.Empty;
 
+    [NotifyPropertyChangedFor(nameof(CanSave))]
     [ObservableProperty]
     private AiProviderType _providerType;
 
@@ -69,7 +70,16 @@ public partial class ProviderEditModel : ObservableValidator
             EnableWebSearch = false;
     }
 
-    public bool CanSave => !string.IsNullOrWhiteSpace(Name) && !string.IsNullOrWhiteSpace(Endpoint);
+    /// <summary>Set only when loaded from the built-in cloud provider, whose type is not selectable.</summary>
+    public bool IsCloudProvider { get; private init; }
+
+    // The dialog hides the endpoint field for the cloud provider, so requiring one there would leave
+    // Save unreachable. A fresh Add also sits at PiaCloud (enum 0) until a type is picked — that must
+    // still require an endpoint, hence the IsCloudProvider guard rather than a bare type check.
+    public bool RequiresEndpoint => !(IsCloudProvider && ProviderType == AiProviderType.PiaCloud);
+
+    public bool CanSave =>
+        !string.IsNullOrWhiteSpace(Name) && (!RequiresEndpoint || !string.IsNullOrWhiteSpace(Endpoint));
 
     public bool IsMistralWebSearchAvailable =>
         ProviderType == AiProviderType.Mistral && !string.IsNullOrWhiteSpace(MistralAgentId);
@@ -129,6 +139,7 @@ public partial class ProviderEditModel : ObservableValidator
             Id = provider.Id,
             Name = provider.Name,
             ProviderType = provider.ProviderType,
+            IsCloudProvider = provider.ProviderType == AiProviderType.PiaCloud,
             Endpoint = provider.Endpoint,
             ApiKey = null,
             ModelName = provider.ModelName,
