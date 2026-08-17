@@ -336,6 +336,39 @@ public class ScheduledJobBackgroundServiceTests
         Assert.Single(jobs.Completed);
     }
 
+    /// <summary>
+    /// The discriminating half of the dismissal fix. Skip (false) spends the occurrence; leaving the dialog
+    /// unanswered (null) must NOT — while both mapped to false, pressing Escape advanced the schedule and
+    /// logged a skip the user never chose.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteOnceAsync_LateBy20Min_AnUnansweredPromptLeavesTheScheduleAlone()
+    {
+        var jobs = new FakeJobService();
+        var late = new ScheduledJob
+        {
+            Name = "T", Query = "q", Recurrence = RecurrenceType.Daily,
+            TimeOfDay = TimeOnly.MinValue, NextFireAt = DateTime.Now.AddMinutes(-20)
+        };
+        jobs.SeedDue(late);
+
+        var notifications = new FakeNotificationSurface { AskAnswer = null };
+        var runner = new FakeRunner();
+        var providers = new FakeProviderResolver(NewProvider());
+
+        var sp = new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner);
+        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), providers, notifications, Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await TickAndSettleAsync(bg, CancellationToken.None);
+
+        Assert.Equal(1, notifications.AskCount);
+        Assert.Equal(0, runner.RunCount);
+        // The positive control is ExecuteOnceAsync_LateBy20Min_AsksUserAndSkipsIfDeclined, where the same
+        // fixture with AskAnswer=false DOES record an advance.
+        Assert.Empty(jobs.Advanced);
+        Assert.Empty(jobs.Failed);
+    }
+
     [Fact]
     public async Task ExecuteOnceAsync_LateBy20Min_DedupesPromptOnSecondTickIfUnanswered()
     {

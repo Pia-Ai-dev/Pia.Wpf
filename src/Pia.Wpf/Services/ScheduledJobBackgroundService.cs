@@ -121,12 +121,11 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
     /// user is never asked again and the occurrence is silently lost. A queued second prompt is strictly better.
     /// </para>
     /// <para>
-    /// ACCEPTED DEGRADE: the permit is released when the ask RESOLVES (including a dismissed dialog, which
-    /// resolves as null), so a dialog the user simply ignores forever holds it, and every OTHER late job's prompt
-    /// waits behind it for the session — those jobs are already deduped, so no later tick re-offers them. That is
-    /// the same shape as the defect this replaces, narrowed from "every due job on the device" to "the other LATE
-    /// jobs' prompts", and it is what one dialog host allows; the alternative above loses the prompt outright.
-    /// Bounded by shutdown either way: the wait below takes the tick's token.
+    /// The permit is released when the ask RESOLVES, so a dialog the user neither answers nor dismisses holds
+    /// it. That used to starve every OTHER late job's prompt for the whole session; the wait is now bounded by
+    /// <see cref="_missedPromptQueueLimit"/>, and a job that times out queueing keeps its
+    /// <see cref="_pendingMissedPrompts"/> entry, which leaves its occurrence due and re-offers it at next
+    /// launch rather than losing it. Bounded by shutdown as well: the wait takes the tick's token.
     /// </para>
     /// <para>
     /// Pinned by <c>ScheduledJobBackgroundServiceTests.ExecuteOnceAsync_TwoLateJobs_NeverOpensTwoDialogsAtOnce</c>,
@@ -135,6 +134,11 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
     /// </para>
     /// </summary>
     private readonly SemaphoreSlim _missedPromptGate = new(1, 1);
+
+    /// <summary>How long a late job's prompt waits for the dialog host before giving up for this session. Long
+    /// enough that a user reading the first dialog does not lose the second, short enough that an ignored one
+    /// stops holding the rest hostage.</summary>
+    private static readonly TimeSpan _missedPromptQueueLimit = TimeSpan.FromMinutes(10);
 
     /// <summary>
     /// Tracks jobs currently being prompted (or already prompted-and-unanswered) so we
@@ -355,7 +359,15 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
     {
         try
         {
-            await _missedPromptGate.WaitAsync(ct);
+            if (!await _missedPromptGate.WaitAsync(_missedPromptQueueLimit, ct))
+            {
+                // The dialog ahead of this one is being neither answered nor dismissed. Give up rather than
+                // hold the rest of the late jobs behind it: the pending entry stays, so the occurrence is left
+                // due and re-offered at next launch instead of being lost.
+                _logger.LogInformation(
+                    "Missed-run prompt for job {Id} gave up queueing behind an unanswered dialog", job.Id);
+                return;
+            }
         }
         catch (OperationCanceledException)
         {

@@ -6,7 +6,8 @@
                   xmlns:loc="clr-namespace:Pia.Localization"
                   Title="{loc:Str MissedRun_Dialog_Title}"
                   PrimaryButtonText="{loc:Str MissedRun_RunNow}"
-                  CloseButtonText="{loc:Str MissedRun_Skip}"
+                  SecondaryButtonText="{loc:Str MissedRun_Skip}"
+                  CloseButtonText="{loc:Str MissedRun_Later}"
                   DefaultButton="Primary">
   <ui:ContentDialog.Resources>
     <Style BasedOn="{StaticResource {x:Type ui:ContentDialog}}"

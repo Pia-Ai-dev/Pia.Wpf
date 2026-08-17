@@ -910,6 +910,7 @@
   <data name="MissedRun_Dialog_Body" xml:space="preserve"><value>'{0}' war für {1} geplant, aber die App war nicht geöffnet. Jetzt im Hintergrund ausführen?</value></data>
   <data name="MissedRun_RunNow" xml:space="preserve"><value>Jetzt ausführen</value></data>
   <data name="MissedRun_Skip" xml:space="preserve"><value>Diesen Lauf überspringen</value></data>
+  <data name="MissedRun_Later" xml:space="preserve"><value>Später entscheiden</value></data>
   <!-- First-Run Wizard E2EE Setup Step -->
   <data name="Wizard_E2EE_Title" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung aktivieren</value></data>
   <data name="Wizard_E2EE_Subtitle" xml:space="preserve"><value>Notizen, Aufgaben und Erinnerungen bleiben nur auf deinen Geräten lesbar.</value></data>

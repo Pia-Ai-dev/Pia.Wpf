@@ -161,11 +161,14 @@ public sealed class ScheduledJobNotificationSurface : IScheduledJobNotificationS
                 var dialog = new MissedScheduledJobDialog(dialogHost, body);
                 var result = await dialog.ShowAsync();
 
+                // None is what Wpf.Ui returns for the CLOSE button AND for Escape, so Skip has to sit on the
+                // SECONDARY button: while it shared None, dismissing the dialog silently advanced the schedule
+                // and logged a skip the user never chose. Null means "left unanswered", which the caller
+                // already handles by leaving the occurrence due and re-offering it at next launch.
                 tcs.TrySetResult(result switch
                 {
                     ContentDialogResult.Primary => true,
                     ContentDialogResult.Secondary => false,
-                    ContentDialogResult.None => false,
                     _ => null
                 });
             }

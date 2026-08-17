@@ -876,6 +876,7 @@
   <data name="MissedRun_Dialog_Body" xml:space="preserve"><value>'{0}' was scheduled for {1} but the app wasn't open. Run it now in the background?</value></data>
   <data name="MissedRun_RunNow" xml:space="preserve"><value>Run now</value></data>
   <data name="MissedRun_Skip" xml:space="preserve"><value>Skip this run</value></data>
+  <data name="MissedRun_Later" xml:space="preserve"><value>Decide later</value></data>
   <!-- First-Run Wizard E2EE Setup Step -->
   <data name="Wizard_E2EE_Title" xml:space="preserve"><value>Encrypt your data end-to-end</value></data>
   <data name="Wizard_E2EE_Subtitle" xml:space="preserve"><value>Your notes, todos, and memories stay readable only on your devices.</value></data>

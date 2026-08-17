@@ -910,6 +910,7 @@
   <data name="MissedRun_Dialog_Body" xml:space="preserve"><value>'{0}' était prévue à {1} mais l'application n'était pas ouverte. L'exécuter maintenant en arrière-plan ?</value></data>
   <data name="MissedRun_RunNow" xml:space="preserve"><value>Exécuter maintenant</value></data>
   <data name="MissedRun_Skip" xml:space="preserve"><value>Passer cette exécution</value></data>
+  <data name="MissedRun_Later" xml:space="preserve"><value>Décider plus tard</value></data>
   <!-- First-Run Wizard E2EE Setup Step -->
   <data name="Wizard_E2EE_Title" xml:space="preserve"><value>Chiffrer vos données de bout en bout</value></data>
   <data name="Wizard_E2EE_Subtitle" xml:space="preserve"><value>Vos notes, tâches et souvenirs restent lisibles uniquement sur vos appareils.</value></data>
