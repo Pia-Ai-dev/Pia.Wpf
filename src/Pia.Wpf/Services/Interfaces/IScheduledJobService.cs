@@ -24,6 +24,10 @@ public interface IScheduledJobService
     /// certainly may not fire.
     /// </summary>
     Task<bool> IsOwnedByThisDeviceAsync(Guid id);
+
+    /// <summary>The same rule for a job already in hand, so a list does not re-read every row it is holding.</summary>
+    Task<bool> IsOwnedByThisDeviceAsync(ScheduledJob job);
+
     Task<ScheduledJob?> GetAsync(Guid id);
     Task<IReadOnlyList<ScheduledJob>> GetDueJobsAsync();
     Task<IReadOnlyList<ScheduledJob>> GetModifiedSinceAsync(DateTime since);

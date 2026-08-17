@@ -135,9 +135,8 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
     /// </summary>
     private readonly SemaphoreSlim _missedPromptGate = new(1, 1);
 
-    /// <summary>How long a late job's prompt waits for the dialog host before giving up for this session. Long
-    /// enough that a user reading the first dialog does not lose the second, short enough that an ignored one
-    /// stops holding the rest hostage.</summary>
+    /// <summary>Long enough that a user reading one dialog does not lose the next prompt, short enough that an
+    /// ignored dialog stops holding the rest hostage.</summary>
     private static readonly TimeSpan _missedPromptQueueLimit = TimeSpan.FromMinutes(10);
 
     /// <summary>
@@ -361,9 +360,8 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
         {
             if (!await _missedPromptGate.WaitAsync(_missedPromptQueueLimit, ct))
             {
-                // The dialog ahead of this one is being neither answered nor dismissed. Give up rather than
-                // hold the rest of the late jobs behind it: the pending entry stays, so the occurrence is left
-                // due and re-offered at next launch instead of being lost.
+                // The dialog ahead of this one is neither answered nor dismissed. The pending entry stays, so
+                // giving up leaves the occurrence due and re-offers it at next launch rather than losing it.
                 _logger.LogInformation(
                     "Missed-run prompt for job {Id} gave up queueing behind an unanswered dialog", job.Id);
                 return;

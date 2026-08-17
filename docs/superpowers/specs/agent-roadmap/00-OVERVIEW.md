@@ -2329,14 +2329,15 @@ the opposite of what its diff did.
   requirement. What is *not* covered anywhere is the real cross-device path that produces one: the fact injects
   `(ScheduledJobStatus)7` directly. Confirming that a newer peer's ordinal survives a round trip through sync
   needs two devices on different builds.
-- **The list load is an N+1, knowingly.** `RefreshAsync` calls `IsOwnedByThisDeviceAsync` per row, and that
-  method re-`GetAsync`es a row the caller already holds — so opening the page costs one `GetAllAsync` plus one
-  redundant single-row SELECT per job. Left as-is rather than fixed the obvious way, because the obvious way
-  (compare `job.OwnerDeviceId` in the ViewModel) **duplicates the owner rule** that the interface doc
-  deliberately keeps in one place next to `GetDueJobsAsync`' SQL predicate — and a drifted copy of that rule is
-  a double-fire, while a few extra SELECTs on a settings page with a handful of rows is a non-event. If it ever
-  matters, the right fix is an overload taking the already-loaded job, not a second copy of the rule. Recorded
-  because no test can see it: the ViewModel tests substitute the service and the service tests never loop.
+- **The list load was an N+1 — CLOSED 2026-08-17 by the overload this bullet named.** `RefreshAsync` called
+  `IsOwnedByThisDeviceAsync(Guid)` per row, and that method re-`GetAsync`ed a row the caller already held, so
+  opening the page cost one `GetAllAsync` plus one redundant single-row SELECT per job. It was left as-is
+  because the obvious fix (compare `job.OwnerDeviceId` in the ViewModel) **duplicates the owner rule** that the
+  interface doc deliberately keeps in one place next to `GetDueJobsAsync`' SQL predicate, and a drifted copy of
+  that rule is a double-fire. The sanctioned alternative recorded here — an overload taking the already-loaded
+  job — now exists: `IsOwnedByThisDeviceAsync(ScheduledJob)` holds the single copy of the rule and the `Guid`
+  member delegates to it after its own read. Still invisible to tests: the ViewModel tests substitute the
+  service and the service tests never loop.
 - **`UpdateAsync` grew two parameters and the UPDATE statement grew two columns**, `SpecificDate` and `Kind`,
   neither of which it wrote before. Any future caller that assumed "UpdateAsync cannot change the date" is now
   wrong — and one comment in the service and one in its tests said exactly that, both corrected in place.

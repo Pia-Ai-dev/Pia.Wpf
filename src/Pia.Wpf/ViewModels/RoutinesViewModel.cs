@@ -11,16 +11,9 @@ using Pia.Services.Interfaces;
 
 namespace Pia.ViewModels;
 
-/// <summary>
-/// The routines surface: scheduled jobs as a top-level view rather than a section of the Assistant settings
-/// page. Master-detail, so a job's run history is a readable list instead of the tooltip it had to be in a
-/// settings panel, and so the recurrence has room for the day the engine has always supported.
-/// <para>
-/// Budget and autonomy policy are deliberately NOT per-job: they are resolved from global settings at fire
-/// time and stay in Settings, because a per-job autonomy list becomes peer-writable unvalidated input the
-/// moment it crosses the sync wire.
-/// </para>
-/// </summary>
+/// <summary>Scheduled jobs as a top-level master-detail view. Budget and autonomy are absent here by design —
+/// resolved from global settings at fire time, since per-job they would cross the sync wire as unvalidated
+/// peer-writable input.</summary>
 public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
 {
     /// <summary>How many firings the detail pane lists. A glance, not an audit — the chat list is the archive.</summary>
@@ -40,21 +33,14 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     /// <summary>Provider choices for the editor. The leading entry is the "use the default" null row.</summary>
     public ObservableCollection<RoutineProviderChoice> ProviderChoices { get; } = [];
 
-    /// <summary>
-    /// The editor's enum choices as (value, LOCALIZED label) pairs, not the bare enums. Binding a ComboBox
-    /// straight to <c>Enum.GetValues</c> renders the C# identifier ("AgentTask", "Weekly") in every locale,
-    /// which passes the localization parity tests while showing English to a German user. The XAML pairs these
-    /// with <c>SelectedValuePath</c> so the VM keeps holding the enum, and no converter is involved.
-    /// </summary>
+    /// <summary>(value, LOCALIZED label) pairs: a ComboBox bound straight to <c>Enum.GetValues</c> renders the
+    /// C# identifier in every locale, which the localization parity tests cannot see.</summary>
     public IReadOnlyList<RoutineKindChoice> JobKinds { get; }
 
     public IReadOnlyList<RoutineRecurrenceChoice> Recurrences { get; }
 
-    /// <summary>
-    /// Day and month names come from the culture <c>LocalizationService</c> installs as
-    /// <see cref="CultureInfo.DefaultThreadCurrentCulture"/>, not from resx keys — 19 hand-maintained
-    /// translations of "Tuesday" and "March" that .NET already ships correctly.
-    /// </summary>
+    /// <summary>Day and month names come from the culture, not from resx keys — .NET already ships the
+    /// translations of "Tuesday" and "March" correctly.</summary>
     public IReadOnlyList<RoutineDayOfWeekChoice> DayOfWeekChoices { get; }
 
     public IReadOnlyList<int> DayOfMonthChoices { get; } = [.. Enumerable.Range(1, 31)];
@@ -67,7 +53,6 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     /// <summary>True while a load, a save or a manual run is in flight. Every command's CanExecute reads it, so
     /// a double-click cannot fire a job twice.</summary>
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(RefreshCommand))]
     [NotifyCanExecuteChangedFor(nameof(StartCreateCommand))]
     [NotifyCanExecuteChangedFor(nameof(StartEditCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
@@ -223,7 +208,6 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     /// is how a view becomes a startup cost.</summary>
     public async Task OnNavigatedToAsync(object? parameter) => await RefreshAsync();
 
-    [RelayCommand(CanExecute = nameof(CanWork))]
     public async Task RefreshAsync()
     {
         if (IsBusy) return;
@@ -239,7 +223,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
                 var providerName = job.ProviderId is { } id
                     ? providers.FirstOrDefault(p => p.Id == id)?.Name
                     : null;
-                rows.Add(BuildRow(job, providerName, await _jobs.IsOwnedByThisDeviceAsync(job.Id),
+                rows.Add(BuildRow(job, providerName, await _jobs.IsOwnedByThisDeviceAsync(job),
                     await LoadRecentFiringsAsync(job.Id)));
             }
 
@@ -277,10 +261,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         }
     }
 
-    /// <summary>
-    /// This job's recent settled firings, from the RUN rows (<c>AgentRuns.TriggerRef</c>) rather than a second
-    /// store. Failure-isolated: history is decoration, and the list must still render without it.
-    /// </summary>
+    /// <summary>Failure-isolated on purpose: history is decoration, and the list must still render without
+    /// it.</summary>
     private async Task<IReadOnlyList<ScheduledFiringOutcome>> LoadRecentFiringsAsync(Guid jobId)
     {
         try
@@ -294,11 +276,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         }
     }
 
-    /// <summary>
-    /// The one-line history a person reads at a glance. <c>Completed</c> is the only success; <c>Failed</c> and
-    /// <c>Cancelled</c> count together, because this line answers "is this job working?" and a cancelled firing
-    /// did not deliver either. The detail list below keeps them apart.
-    /// </summary>
+    /// <summary><c>Cancelled</c> counts with <c>Failed</c>: this line answers "is this job working?" and a
+    /// cancelled firing did not deliver either. The detail list keeps them apart.</summary>
     private string BuildRecentRunsSummary(IReadOnlyList<ScheduledFiringOutcome> firings)
     {
         if (firings.Count == 0) return string.Empty;
@@ -322,10 +301,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     private RoutineRow BuildRow(ScheduledJob job, string? providerName, bool ownedHere,
         IReadOnlyList<ScheduledFiringOutcome> recentFirings)
     {
-        // An UNKNOWN status is a real possibility, not defensive padding: ScheduledJobStatus crosses the sync
-        // wire as an int and SyncMapper casts it back with no Enum.IsDefined check, so a newer peer's ordinal
-        // arrives here as an undefined value. Rendering it as its number and treating the row as inert is the
-        // honest reading — the one thing that must never happen is coercing it to Active.
+        // Not defensive padding: ScheduledJobStatus crosses the sync wire as an int that SyncMapper casts back
+        // with no Enum.IsDefined check, and coercing a newer peer's ordinal to Active is what must never happen.
         var known = Enum.IsDefined(job.Status);
         var statusLabel = known
             ? _localization[$"Settings_ScheduledJobs_Status_{job.Status}"]
@@ -445,9 +422,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        // Each field is carried only for the recurrences that read it. A value left behind on a job switched to
-        // another recurrence is inert — the calculator's switch only reads the field its own branch needs — and
-        // it is what lets the editor remember the old day if the user switches back.
+        // Each field is carried only for the recurrences that read it; a value left behind on a job switched to
+        // another recurrence is inert, and is what lets the editor remember the old day if the user switches back.
         var specificDate = EditRecurrence == RecurrenceType.Once ? EditSpecificDate : null;
         var dayOfWeek = EditorWantsDayOfWeek ? EditDayOfWeek : (DayOfWeek?)null;
         var dayOfMonth = EditorWantsDayOfMonth ? EditDayOfMonth : (int?)null;
@@ -497,6 +473,9 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         {
             _logger.LogWarning(ex, "Could not save scheduled job");
             StatusMessage = _localization["Settings_ScheduledJobs_SaveFailed"];
+            // Returning keeps the editing id and the user's input: the tail below clears the id, and its refresh
+            // re-resolves the selection to a fresh row instance, which cancels the editor.
+            return;
         }
         finally
         {
@@ -574,12 +553,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         await RefreshAsync();
     }
 
-    /// <summary>
-    /// Fires a job outside its schedule. DISPATCHES it, like the scheduler's own tick does, so the button frees
-    /// up as soon as the run has started rather than sitting busy for its whole wall clock. The status message
-    /// says "started" for that reason — claiming the job had finished would be a lie the moment the run
-    /// outlived this method.
-    /// </summary>
+    /// <summary>DISPATCHES, like the scheduler's own tick does, so the status message says "started": the run
+    /// outlives this method, and claiming it had finished would be a lie.</summary>
     [RelayCommand(CanExecute = nameof(CanActOnSelection))]
     private async Task RunNowAsync()
     {
@@ -655,10 +630,8 @@ public sealed class RoutineRunRow
     public bool HasChat => ChatId != Guid.Empty;
 }
 
-/// <summary>
-/// A display projection of one <see cref="ScheduledJob"/>. Everything the templates need is precomputed here —
-/// including the localized labels — so no converter has to guess what an unrecognised status means.
-/// </summary>
+/// <summary>A display projection of one <see cref="ScheduledJob"/>, labels included, so no converter has to
+/// guess what an unrecognised status means.</summary>
 public sealed class RoutineRow
 {
     public required Guid Id { get; init; }
@@ -714,8 +687,7 @@ public sealed class RoutineRow
     /// <summary>Only the owner device may advance a job, so "run now" is unavailable elsewhere.</summary>
     public required bool OwnedByThisDevice { get; init; }
 
-    /// <summary>Both conditions, because they refuse for different reasons: another device owns the schedule, or
-    /// this build cannot judge the job's state. The command re-checks the first anyway — a disabled button is a
-    /// courtesy, and the service call is the guardrail.</summary>
+    /// <summary>Two different refusals: another device owns the schedule, or this build cannot judge the state.
+    /// A disabled button is only the courtesy half — the service re-checks ownership itself.</summary>
     public bool CanRunNow => OwnedByThisDevice && StatusIsKnown;
 }

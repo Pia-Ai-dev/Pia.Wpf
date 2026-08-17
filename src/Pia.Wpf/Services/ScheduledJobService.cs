@@ -125,8 +125,11 @@ public class ScheduledJobService : IScheduledJobService
     public async Task<bool> IsOwnedByThisDeviceAsync(Guid id)
     {
         var job = await GetAsync(id);
-        if (job is null) return false;
+        return job is not null && await IsOwnedByThisDeviceAsync(job);
+    }
 
+    public async Task<bool> IsOwnedByThisDeviceAsync(ScheduledJob job)
+    {
         // Deliberately the same rule as GetDueJobsAsync' SQL predicate, expressed once more in C# rather than
         // re-queried: a NULL owner is a legacy row that stays device-local to whichever machine made it, so
         // it is runnable here. Anything owned by another device is not, which is what stops a manual run from

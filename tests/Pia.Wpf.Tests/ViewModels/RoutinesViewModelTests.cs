@@ -37,7 +37,7 @@ public class RoutinesViewModelTests
     {
         var service = Substitute.For<IScheduledJobService>();
         service.GetAllAsync().Returns(jobs);
-        service.IsOwnedByThisDeviceAsync(Arg.Any<Guid>()).Returns(true);
+        service.IsOwnedByThisDeviceAsync(Arg.Any<ScheduledJob>()).Returns(true);
 
         var providers = Substitute.For<IProviderService>();
         providers.GetProvidersAsync().Returns(Array.Empty<AiProvider>());
@@ -191,7 +191,7 @@ public class RoutinesViewModelTests
         // independently — this is the courtesy half, and it must agree with the enforcement half.
         var job = NewJob();
         var sut = CreateSut(job);
-        sut.Jobs.IsOwnedByThisDeviceAsync(job.Id).Returns(false);
+        sut.Jobs.IsOwnedByThisDeviceAsync(job).Returns(false);
 
         await sut.Vm.RefreshAsync();
 
@@ -403,6 +403,34 @@ public class RoutinesViewModelTests
             // The editor sends this on every save, so the matcher has to name it — NSubstitute matches on the
             // whole argument list.
             quietOnSuccess: Arg.Any<bool?>());
+    }
+
+    /// <summary>
+    /// A save that throws must leave the editor exactly as the user left it. Clearing <c>EditingJobId</c> turns
+    /// the retry into a duplicate CREATE, and the refresh that used to follow re-resolved the selection to a
+    /// fresh row instance, which cancelled the editor and discarded the input.
+    /// </summary>
+    [Fact]
+    public async Task AFailedSave_KeepsTheEditorOpen_WithItsEditingIdAndTheTypedInput()
+    {
+        var job = NewJob();
+        var sut = CreateSut(job);
+        sut.Jobs.When(x => x.UpdateAsync(job.Id, Arg.Any<string>(), Arg.Any<string>(),
+                Arg.Any<RecurrenceType?>(), Arg.Any<TimeOnly?>(), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(),
+                Arg.Any<int?>(), Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<DateTime?>(),
+                Arg.Any<ScheduledJobKind?>(), Arg.Any<bool?>()))
+            .Do(_ => throw new InvalidOperationException("db"));
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+        sut.Vm.StartEditCommand.Execute(null);
+        sut.Vm.EditName = "Renamed";
+
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        Assert.Equal("Settings_ScheduledJobs_SaveFailed", sut.Vm.StatusMessage);
+        Assert.True(sut.Vm.IsEditorOpen);
+        Assert.Equal(job.Id, sut.Vm.EditingJobId);
+        Assert.Equal("Renamed", sut.Vm.EditName);
     }
 
     /// <summary>Delete is irreversible and had no gate at all in the settings surface it replaces.</summary>

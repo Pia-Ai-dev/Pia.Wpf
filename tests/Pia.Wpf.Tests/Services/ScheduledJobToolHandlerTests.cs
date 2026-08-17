@@ -387,6 +387,8 @@ public class ScheduledJobToolHandlerTests
 
         public Task<bool> IsOwnedByThisDeviceAsync(Guid id) => Task.FromResult(true);
 
+        public Task<bool> IsOwnedByThisDeviceAsync(ScheduledJob job) => Task.FromResult(true);
+
         public Task DeleteAsync(Guid id)
         {
             Deleted.Add(id);

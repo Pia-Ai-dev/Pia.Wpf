@@ -152,7 +152,7 @@
                 <TextBlock Text="{Binding SelectedJob.RecurrenceLabel}"
                            Style="{StaticResource PiaSettingsDescriptionStyle}"
                            Margin="0,0,12,0"/>
-                <TextBlock Text="{Binding SelectedJob.TimeOfDay, StringFormat=hh\\:mm}"
+                <TextBlock Text="{Binding SelectedJob.TimeOfDay, StringFormat=HH\\:mm}"
                            Style="{StaticResource PiaSettingsDescriptionStyle}"
                            Margin="0,0,12,0"/>
                 <TextBlock Text="{Binding SelectedJob.StatusLabel}"
@@ -260,8 +260,7 @@
               <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Kind}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
               <!-- SelectedValuePath, not SelectedItem: the list carries localized (value, label) pairs so the
-                   ComboBox does not render the C# enum identifier in every locale, while the VM keeps holding
-                   the enum itself. -->
+                   ComboBox does not render the C# enum identifier, while the VM keeps holding the enum. -->
               <ComboBox ItemsSource="{Binding JobKinds}"
                         DisplayMemberPath="Label"
                         SelectedValuePath="Value"

@@ -1370,6 +1370,8 @@ public class ScheduledJobBackgroundServiceTests
 
         public Task<bool> IsOwnedByThisDeviceAsync(Guid id) => Task.FromResult(OwnedByThisDevice);
 
+        public Task<bool> IsOwnedByThisDeviceAsync(ScheduledJob job) => Task.FromResult(OwnedByThisDevice);
+
         public Task DeleteAsync(Guid id) => throw new NotImplementedException();
         public Task DisableAsync(Guid id) => throw new NotImplementedException();
         public Task EnableAsync(Guid id) => throw new NotImplementedException();
