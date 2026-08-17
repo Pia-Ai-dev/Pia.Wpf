@@ -340,6 +340,9 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
             case "Reminders":
                 _navigationService.NavigateTo<RemindersViewModel>();
                 break;
+            case "Routines":
+                _navigationService.NavigateTo<RoutinesViewModel>();
+                break;
             case "Assignments":
                 _navigationService.NavigateTo<AssignmentsViewModel>();
                 break;

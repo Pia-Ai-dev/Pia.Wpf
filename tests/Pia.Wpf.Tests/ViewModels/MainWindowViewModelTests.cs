@@ -125,6 +125,20 @@ public class MainWindowViewModelTests
         _navigation.Received(1).NavigateTo<AssignmentsViewModel>();
     }
 
+    /// <summary>The route string has to equal the ViewModel's type name minus "ViewModel", because that is how
+    /// <c>CurrentNavigationItem</c> derives the sidebar's active-item key. Nothing else enforces it, and a
+    /// mismatch fails silently as a dead highlight.</summary>
+    [Fact]
+    public void TheEntry_NavigatesToTheRoutinesView()
+    {
+        using var vm = CreateSut(WindowMode.Assistant);
+
+        vm.NavigationCommand.Execute("Routines");
+
+        _navigation.Received(1).NavigateTo<RoutinesViewModel>();
+        Assert.Equal("Routines", nameof(RoutinesViewModel).Replace("ViewModel", ""));
+    }
+
     [Fact]
     public void TheAssistantShortcuts_KeepTheirDestinations()
     {

@@ -137,6 +137,25 @@
         </ui:NavigationViewItem.Icon>
       </ui:NavigationViewItem>
 
+      <!-- Routines (Assistant only) -->
+      <ui:NavigationViewItem Command="{Binding NavigationCommand}"
+                             CommandParameter="Routines"
+                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Routines}"
+                             Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Assistant}">
+        <ui:NavigationViewItem.Content>
+          <Button Style="{StaticResource NavItemInvokeButtonStyle}"
+                  Command="{Binding NavigationCommand}"
+                  CommandParameter="Routines"
+                  AutomationProperties.AutomationId="NavItem_Routines"
+                  AutomationProperties.Name="{loc:Str Nav_Routines}">
+            <TextBlock Text="{loc:Str Nav_Routines}" />
+          </Button>
+        </ui:NavigationViewItem.Content>
+        <ui:NavigationViewItem.Icon>
+          <ui:SymbolIcon Symbol="CalendarClock24" />
+        </ui:NavigationViewItem.Icon>
+      </ui:NavigationViewItem>
+
       <!-- Background assignments (Assistant only, and only when the server offers the surface) -->
       <ui:NavigationViewItem Command="{Binding NavigationCommand}"
                              CommandParameter="Assignments"

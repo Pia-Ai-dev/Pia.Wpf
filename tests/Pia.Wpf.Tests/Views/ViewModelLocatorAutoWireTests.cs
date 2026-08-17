@@ -22,6 +22,7 @@ public class ViewModelLocatorAutoWireTests
         { typeof(Pia.Views.MemoryView), typeof(MemoryViewModel) },
         { typeof(Pia.Views.OptimizeView), typeof(OptimizeViewModel) },
         { typeof(Pia.Views.RemindersView), typeof(RemindersViewModel) },
+        { typeof(Pia.Views.RoutinesView), typeof(RoutinesViewModel) },
         { typeof(Pia.Views.SettingsView), typeof(SettingsViewModel) },
         { typeof(Pia.Views.TodoView), typeof(TodoViewModel) },
     };

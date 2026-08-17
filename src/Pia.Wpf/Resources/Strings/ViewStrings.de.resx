@@ -34,7 +34,7 @@
   <!-- Navigation -->
   <data name="Nav_Optimize" xml:space="preserve"><value>Optimieren</value></data>
   <data name="Nav_Assistant" xml:space="preserve"><value>Assistent</value></data>
-  <data name="Nav_Research" xml:space="preserve"><value>Recherche</value></data>
+  <data name="Nav_Routines" xml:space="preserve"><value>Routinen</value></data>
   <data name="Nav_History" xml:space="preserve"><value>Verlauf</value></data>
   <data name="Nav_Memory" xml:space="preserve"><value>Gedächtnis</value></data>
   <data name="Nav_Reminders" xml:space="preserve"><value>Erinnerungen</value></data>
@@ -1104,6 +1104,23 @@
   <data name="Settings_ScheduledJobs_RunState_Completed" xml:space="preserve"><value>Abgeschlossen</value></data>
   <data name="Settings_ScheduledJobs_RunState_Failed" xml:space="preserve"><value>Fehlgeschlagen</value></data>
   <data name="Settings_ScheduledJobs_RunState_Cancelled" xml:space="preserve"><value>Abgebrochen</value></data>
+  <!-- Routines view -->
+  <data name="Routines_Header" xml:space="preserve"><value>Routinen</value></data>
+  <data name="Routines_Description" xml:space="preserve"><value>Aufgaben, die Pia nach Zeitplan auf diesem Gerät erledigt – jeder Lauf legt seine Antwort in einem neuen Chat ab. Schritt- und Zeitgrenzen kommen aus den Einstellungen; die dortige Auto-Freigabe gilt nur für Routinen vom Typ Agentenlauf.</value></data>
+  <data name="Routines_Empty" xml:space="preserve"><value>Noch keine Routinen.</value></data>
+  <data name="Routines_EmptyHint" xml:space="preserve"><value>Erstelle eine, damit Pia etwas nach Zeitplan für dich erledigt – ein Morgenbriefing, eine wöchentliche Prüfung.</value></data>
+  <data name="Routines_Placeholder" xml:space="preserve"><value>Wähle eine Routine, um ihren Zeitplan und ihre letzten Läufe zu sehen.</value></data>
+  <data name="Routines_NotOwnedHere" xml:space="preserve"><value>Ein anderes Gerät besitzt den Zeitplan dieser Routine, sie läuft nur dort.</value></data>
+  <data name="Routines_Detail_NextRun" xml:space="preserve"><value>Nächster Lauf</value></data>
+  <data name="Routines_Detail_RecentRuns" xml:space="preserve"><value>Letzte Läufe</value></data>
+  <data name="Routines_Detail_NeverRun" xml:space="preserve"><value>Diese Routine ist noch nicht gelaufen.</value></data>
+  <data name="Routines_Detail_OpenChat" xml:space="preserve"><value>Chat öffnen</value></data>
+  <data name="Routines_Delete_Title" xml:space="preserve"><value>Diese Routine löschen?</value></data>
+  <data name="Routines_Delete_Confirm" xml:space="preserve"><value>„{0}“ wird entfernt und läuft nicht mehr. Die Chats vergangener Läufe bleiben erhalten.</value></data>
+  <data name="Routines_Field_DayOfWeek" xml:space="preserve"><value>Tag</value></data>
+  <data name="Routines_Field_Month" xml:space="preserve"><value>Monat</value></data>
+  <data name="Routines_Field_DayOfMonth" xml:space="preserve"><value>Tag im Monat</value></data>
+  <data name="Routines_Field_DayOfMonth_Hint" xml:space="preserve"><value>Monate, die für diesen Tag zu kurz sind, feuern an ihrem letzten Tag.</value></data>
   <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Standardanbieter</value></data>
   <data name="Settings_ScheduledJobs_NextRun" xml:space="preserve"><value>Nächste Ausführung</value></data>
   <data name="Settings_ScheduledJobs_LastRun" xml:space="preserve"><value>Letzte Ausführung</value></data>

@@ -34,7 +34,7 @@
   <!-- Navigation -->
   <data name="Nav_Optimize" xml:space="preserve"><value>Optimiser</value></data>
   <data name="Nav_Assistant" xml:space="preserve"><value>Assistant</value></data>
-  <data name="Nav_Research" xml:space="preserve"><value>Recherche</value></data>
+  <data name="Nav_Routines" xml:space="preserve"><value>Routines</value></data>
   <data name="Nav_History" xml:space="preserve"><value>Historique</value></data>
   <data name="Nav_Memory" xml:space="preserve"><value>Mémoire</value></data>
   <data name="Nav_Reminders" xml:space="preserve"><value>Rappels</value></data>
@@ -1104,6 +1104,23 @@
   <data name="Settings_ScheduledJobs_RunState_Completed" xml:space="preserve"><value>Terminée</value></data>
   <data name="Settings_ScheduledJobs_RunState_Failed" xml:space="preserve"><value>Échouée</value></data>
   <data name="Settings_ScheduledJobs_RunState_Cancelled" xml:space="preserve"><value>Annulée</value></data>
+  <!-- Routines view -->
+  <data name="Routines_Header" xml:space="preserve"><value>Routines</value></data>
+  <data name="Routines_Description" xml:space="preserve"><value>Des tâches que Pia exécute selon un calendrier, sur cet appareil — chaque exécution dépose sa réponse dans un nouveau chat. Les limites d'étapes et de durée viennent des Paramètres ; l'approbation automatique qui s'y trouve ne concerne que les routines de type exécution d'agent.</value></data>
+  <data name="Routines_Empty" xml:space="preserve"><value>Aucune routine pour l'instant.</value></data>
+  <data name="Routines_EmptyHint" xml:space="preserve"><value>Créez-en une pour que Pia fasse quelque chose pour vous selon un calendrier — un briefing matinal, une vérification hebdomadaire.</value></data>
+  <data name="Routines_Placeholder" xml:space="preserve"><value>Sélectionnez une routine pour voir son calendrier et ses exécutions récentes.</value></data>
+  <data name="Routines_NotOwnedHere" xml:space="preserve"><value>Un autre appareil possède le calendrier de cette routine ; elle ne s'exécute que là-bas.</value></data>
+  <data name="Routines_Detail_NextRun" xml:space="preserve"><value>Prochaine exécution</value></data>
+  <data name="Routines_Detail_RecentRuns" xml:space="preserve"><value>Exécutions récentes</value></data>
+  <data name="Routines_Detail_NeverRun" xml:space="preserve"><value>Cette routine ne s'est pas encore exécutée.</value></data>
+  <data name="Routines_Detail_OpenChat" xml:space="preserve"><value>Ouvrir le chat</value></data>
+  <data name="Routines_Delete_Title" xml:space="preserve"><value>Supprimer cette routine ?</value></data>
+  <data name="Routines_Delete_Confirm" xml:space="preserve"><value>« {0} » sera supprimée et ne s'exécutera plus. Les chats produits par ses exécutions passées sont conservés.</value></data>
+  <data name="Routines_Field_DayOfWeek" xml:space="preserve"><value>Jour</value></data>
+  <data name="Routines_Field_Month" xml:space="preserve"><value>Mois</value></data>
+  <data name="Routines_Field_DayOfMonth" xml:space="preserve"><value>Jour du mois</value></data>
+  <data name="Routines_Field_DayOfMonth_Hint" xml:space="preserve"><value>Les mois trop courts pour ce jour se déclenchent leur dernier jour.</value></data>
   <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Fournisseur par défaut</value></data>
   <data name="Settings_ScheduledJobs_NextRun" xml:space="preserve"><value>Prochaine exécution</value></data>
   <data name="Settings_ScheduledJobs_LastRun" xml:space="preserve"><value>Dernière exécution</value></data>

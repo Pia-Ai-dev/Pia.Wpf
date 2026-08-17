@@ -125,6 +125,9 @@
       <DataTemplate DataType="{x:Type viewModels:AssignmentsViewModel}">
         <views:AssignmentsView />
       </DataTemplate>
+      <DataTemplate DataType="{x:Type viewModels:RoutinesViewModel}">
+        <views:RoutinesView />
+      </DataTemplate>
     </ResourceDictionary>
   </Application.Resources>
 </Application>

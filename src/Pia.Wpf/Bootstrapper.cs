@@ -768,6 +768,7 @@ public static class Bootstrapper
         services.AddScoped<DirectTranscriptionViewModel>();
         services.AddScoped<AssistantHistoryViewModel>();
         services.AddScoped<MemoryViewModel>();
+        services.AddScoped<RoutinesViewModel>();
         services.AddScoped<RemindersViewModel>();
         services.AddScoped<AssignmentsViewModel>();
         services.AddScoped<TodoViewModel>();
