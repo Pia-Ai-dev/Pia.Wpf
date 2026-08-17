@@ -144,6 +144,23 @@ public interface IScheduledJobService
     Task MarkFiringOutcomeAsync(Guid id, DateTime firedAt, Guid? resultEntryId, bool succeeded);
 
     /// <summary>
+    /// Pins the day a recurring job fires on, for rows that never had one. Returns the number pinned.
+    /// <para>
+    /// Until the editor gained day pickers it never sent <c>DayOfWeek</c>/<c>DayOfMonth</c>/<c>Month</c>, and
+    /// <see cref="Scheduling.RecurrenceCalculator"/> substitutes the CURRENT day when the field is null. Since
+    /// every recompute passes <c>DateTime.Now</c>, one late or skipped run permanently relocated the job: a
+    /// Monday briefing that ran on a Wednesday next fired the following Wednesday. The stored
+    /// <c>NextFireAt</c> is the only record of the day such a job currently fires on, so it is the source here.
+    /// </para>
+    /// <para>
+    /// Owner device only, the same predicate <c>GetDueJobsAsync</c> uses — <c>NextFireAt</c> is device-local
+    /// and never synced, so a peer's copy carries no firing history and two devices would pin different days.
+    /// Idempotent by its WHERE clause rather than by a version flag: it only touches columns that are null.
+    /// </para>
+    /// </summary>
+    Task<int> BackfillRecurrenceDaysAsync();
+
+    /// <summary>
     /// Inserts a new job (no execution state) or updates the synced config of an existing one.
     /// Leaves NextFireAt/LastFiredAt/LastResultEntryId/ConsecutiveFailures untouched on update,
     /// since those are device-local execution state.

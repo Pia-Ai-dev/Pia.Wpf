@@ -156,8 +156,8 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         var recurrence = Enum.TryParse<RecurrenceType>(recurrenceStr, true, out var r) ? r : RecurrenceType.Daily;
         var timeOfDay = TimeOnly.TryParse(timeOfDayStr, out var t) ? t : new TimeOnly(8, 0);
         DayOfWeek? dayOfWeek = dayOfWeekStr is not null && Enum.TryParse<DayOfWeek>(dayOfWeekStr, true, out var dow) ? dow : null;
-        int? dayOfMonth = dayOfMonthStr is not null && int.TryParse(dayOfMonthStr, out var dom) ? dom : null;
-        int? month = monthStr is not null && int.TryParse(monthStr, out var m) ? m : null;
+        var dayOfMonth = ParseBoundedInt(dayOfMonthStr, 1, 31);
+        var month = ParseBoundedInt(monthStr, 1, 12);
         DateTime? specificDate = specificDateStr is not null && DateTime.TryParse(specificDateStr, out var sd) ? sd : null;
         var (grantedTools, rejectedTools) = ParseGrantedTools(grantedToolsStr);
         if (rejectedTools.Count > 0)
@@ -238,8 +238,8 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         RecurrenceType? recurrence = recurrenceStr is not null && Enum.TryParse<RecurrenceType>(recurrenceStr, true, out var r) ? r : null;
         TimeOnly? timeOfDay = timeOfDayStr is not null && TimeOnly.TryParse(timeOfDayStr, out var t) ? t : null;
         DayOfWeek? dayOfWeek = dayOfWeekStr is not null && Enum.TryParse<DayOfWeek>(dayOfWeekStr, true, out var dow) ? dow : null;
-        int? dayOfMonth = dayOfMonthStr is not null && int.TryParse(dayOfMonthStr, out var dom) ? dom : null;
-        int? month = monthStr is not null && int.TryParse(monthStr, out var m) ? m : null;
+        var dayOfMonth = ParseBoundedInt(dayOfMonthStr, 1, 31);
+        var month = ParseBoundedInt(monthStr, 1, 12);
         // null = leave existing grants unchanged; empty/whitespace string = clear all grants.
         List<string>? grantedTools = null;
         List<string> rejectedTools = [];
@@ -368,6 +368,14 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
     /// granting those is the user's explicit, auditable choice. Rejects come back too, so the approval card
     /// and the tool result can both tell the truth about the grant set that will be used.
     /// </summary>
+    /// <summary>
+    /// Clamps rather than rejects, because RecurrenceCalculator THROWS on an out-of-range value —
+    /// <c>DateTime.DaysInMonth</c> for a month outside 1-12, <c>new DateTime</c> for a day below 1 — and a
+    /// null would instead fall back to today's date, which is the drift the day fields exist to stop.
+    /// </summary>
+    private static int? ParseBoundedInt(string? raw, int min, int max) =>
+        raw is not null && int.TryParse(raw, out var value) ? Math.Clamp(value, min, max) : null;
+
     private static (List<string> Accepted, List<string> Rejected) ParseGrantedTools(string? csv)
     {
         if (string.IsNullOrWhiteSpace(csv))

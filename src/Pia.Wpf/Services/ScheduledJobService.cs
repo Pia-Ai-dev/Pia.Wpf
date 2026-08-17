@@ -590,6 +590,65 @@ public class ScheduledJobService : IScheduledJobService
         return nextFire;
     }
 
+    public async Task<int> BackfillRecurrenceDaysAsync()
+    {
+        var localDeviceId = await ResolveLocalDeviceIdAsync();
+        var localDeviceParam = localDeviceId.HasValue ? localDeviceId.Value.ToString() : (object)DBNull.Value;
+
+        var candidates = await ReadAsync(
+            """
+            WHERE (OwnerDeviceId IS NULL OR OwnerDeviceId = @LocalDevice)
+              AND ((Recurrence = 'Weekly'  AND DayOfWeek IS NULL)
+                OR (Recurrence = 'Monthly' AND DayOfMonth IS NULL)
+                OR (Recurrence = 'Yearly'  AND (Month IS NULL OR DayOfMonth IS NULL)))
+            """,
+            cmd => cmd.Parameters.AddWithValue("@LocalDevice", localDeviceParam));
+
+        var pinned = 0;
+        foreach (var job in candidates)
+        {
+            switch (job.Recurrence)
+            {
+                case RecurrenceType.Weekly:
+                    job.DayOfWeek = job.NextFireAt.DayOfWeek;
+                    break;
+                case RecurrenceType.Monthly:
+                    job.DayOfMonth = job.NextFireAt.Day;
+                    break;
+                case RecurrenceType.Yearly:
+                    job.Month ??= job.NextFireAt.Month;
+                    job.DayOfMonth ??= job.NextFireAt.Day;
+                    break;
+                default:
+                    continue;
+            }
+
+            // Deliberately NOT routed through UpdateAsync: that recomputes NextFireAt from DateTime.Now, which
+            // is the very drift being repaired — it would move the job to today on the way to pinning it.
+            var connection = _context.GetConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE ScheduledJobs
+                SET DayOfWeek=@DayOfWeek, DayOfMonth=@DayOfMonth, Month=@Month, UpdatedAt=@UpdatedAt
+                WHERE Id=@Id
+                """;
+            command.Parameters.AddWithValue("@Id", job.Id.ToString());
+            command.Parameters.AddWithValue("@DayOfWeek", job.DayOfWeek.HasValue ? (object)(int)job.DayOfWeek.Value : DBNull.Value);
+            command.Parameters.AddWithValue("@DayOfMonth", job.DayOfMonth.HasValue ? (object)job.DayOfMonth.Value : DBNull.Value);
+            command.Parameters.AddWithValue("@Month", job.Month.HasValue ? (object)job.Month.Value : DBNull.Value);
+            // Bumped, unlike the other execution-state writes here: the three day columns ARE synced config,
+            // so the pin has to outrank the peer's older copy on the next pull.
+            command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now.ToString("O"));
+            await command.ExecuteNonQueryAsync();
+            pinned++;
+        }
+
+        if (pinned > 0)
+            _logger.LogInformation("Pinned the recurrence day of {Count} scheduled job(s) that had none", pinned);
+
+        return pinned;
+    }
+
     public async Task UpsertFromSyncAsync(ScheduledJob job)
     {
         var existing = await GetAsync(job.Id);

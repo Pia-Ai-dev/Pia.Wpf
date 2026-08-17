@@ -178,6 +178,19 @@ public partial class App : Application
             System.Diagnostics.Debug.WriteLine($"Scheduled firing reconcile failed: {ex.Message}");
         }
 
+        // Pin the firing day of recurring jobs that never had one, before the scheduler below can recompute
+        // their NextFireAt off today's date and relocate them again. Own try/catch for the same reason as the
+        // reconcile above.
+        try
+        {
+            var jobService = Bootstrapper.ServiceProvider.GetRequiredService<IScheduledJobService>();
+            await jobService.BackfillRecurrenceDaysAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Scheduled job recurrence backfill failed: {ex.Message}");
+        }
+
         // Load persisted durable Flow items before the pollers run (the todo poller re-validates against them).
         var flowService = Bootstrapper.ServiceProvider.GetRequiredService<Services.Flow.IFlowService>();
         await flowService.LoadAsync();

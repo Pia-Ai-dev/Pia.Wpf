@@ -739,6 +739,7 @@ public sealed class D5PausePremiseTests : IDisposable
         public Task DisableAsync(Guid id) => throw new NotImplementedException();
         public Task EnableAsync(Guid id) => throw new NotImplementedException();
         public Task<IReadOnlyList<ScheduledJob>> GetModifiedSinceAsync(DateTime since) => throw new NotImplementedException();
+        public Task<int> BackfillRecurrenceDaysAsync() => throw new NotImplementedException();
         public Task UpsertFromSyncAsync(ScheduledJob job) => throw new NotImplementedException();
     }
 

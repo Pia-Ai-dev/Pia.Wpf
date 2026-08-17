@@ -630,6 +630,124 @@ public class ScheduledJobServiceTests : IDisposable
         await cmd.ExecuteNonQueryAsync();
     }
 
+    [Fact]
+    public async Task BackfillRecurrenceDays_PinsTheWeekdayAWeeklyJobCurrentlyFiresOn()
+    {
+        var job = await _service.CreateAsync("TEST_Weekly", "q", RecurrenceType.Weekly, new TimeOnly(7, 30));
+        Assert.Null(job.DayOfWeek);
+
+        // 31 days is deliberately not a multiple of 7, so this weekday cannot coincide with today's — which is
+        // what a backfill reading DateTime.Now instead of NextFireAt would produce.
+        var fired = DateTime.Now.Date.AddDays(-31).AddHours(7).AddMinutes(30);
+        await ForceNextFireAtAsync(job.Id, fired);
+
+        Assert.Equal(1, await _service.BackfillRecurrenceDaysAsync());
+
+        var pinned = await _service.GetAsync(job.Id);
+        Assert.Equal(fired.DayOfWeek, pinned!.DayOfWeek);
+        Assert.NotEqual(DateTime.Now.DayOfWeek, pinned.DayOfWeek);
+    }
+
+    [Fact]
+    public async Task BackfillRecurrenceDays_LeavesNextFireAtWhereItWas()
+    {
+        var job = await _service.CreateAsync("TEST_WeeklyKeepsFireAt", "q", RecurrenceType.Weekly, new TimeOnly(7, 30));
+        var fired = DateTime.Now.Date.AddDays(-31).AddHours(7).AddMinutes(30);
+        await ForceNextFireAtAsync(job.Id, fired);
+
+        await _service.BackfillRecurrenceDaysAsync();
+
+        // Routing the pin through UpdateAsync would recompute this off DateTime.Now — the drift being repaired.
+        var pinned = await _service.GetAsync(job.Id);
+        Assert.Equal(fired, pinned!.NextFireAt);
+    }
+
+    [Fact]
+    public async Task BackfillRecurrenceDays_PinsBothMonthAndDayForAYearlyJob()
+    {
+        var job = await _service.CreateAsync("TEST_Yearly", "q", RecurrenceType.Yearly, new TimeOnly(9, 0));
+        var fired = new DateTime(2026, 3, 9, 9, 0, 0);
+        await ForceNextFireAtAsync(job.Id, fired);
+
+        Assert.Equal(1, await _service.BackfillRecurrenceDaysAsync());
+
+        var pinned = await _service.GetAsync(job.Id);
+        Assert.Equal(3, pinned!.Month);
+        Assert.Equal(9, pinned.DayOfMonth);
+    }
+
+    [Fact]
+    public async Task BackfillRecurrenceDays_IsANoOpOnASecondRun()
+    {
+        var job = await _service.CreateAsync("TEST_Twice", "q", RecurrenceType.Monthly, new TimeOnly(9, 0));
+        await ForceNextFireAtAsync(job.Id, new DateTime(2026, 3, 9, 9, 0, 0));
+
+        Assert.Equal(1, await _service.BackfillRecurrenceDaysAsync());
+        Assert.Equal(0, await _service.BackfillRecurrenceDaysAsync());
+
+        var pinned = await _service.GetAsync(job.Id);
+        Assert.Equal(9, pinned!.DayOfMonth);
+    }
+
+    [Fact]
+    public async Task BackfillRecurrenceDays_LeavesADayTheUserAlreadyChoseAlone()
+    {
+        var job = await _service.CreateAsync(
+            "TEST_AlreadyPinned", "q", RecurrenceType.Weekly, new TimeOnly(9, 0), dayOfWeek: DayOfWeek.Tuesday);
+        await ForceNextFireAtAsync(job.Id, DateTime.Now.Date.AddDays(-31));
+
+        Assert.Equal(0, await _service.BackfillRecurrenceDaysAsync());
+        Assert.Equal(DayOfWeek.Tuesday, (await _service.GetAsync(job.Id))!.DayOfWeek);
+    }
+
+    [Fact]
+    public async Task BackfillRecurrenceDays_IgnoresRecurrencesWithNoDayToPin()
+    {
+        await _service.CreateAsync("TEST_Daily", "q", RecurrenceType.Daily, new TimeOnly(9, 0));
+        await _service.CreateAsync("TEST_Once", "q", RecurrenceType.Once, new TimeOnly(9, 0));
+
+        Assert.Equal(0, await _service.BackfillRecurrenceDaysAsync());
+    }
+
+    [Fact]
+    public async Task BackfillRecurrenceDays_LeavesAJobOwnedByAnotherDeviceAlone()
+    {
+        var job = await _service.CreateAsync("TEST_Foreign", "q", RecurrenceType.Weekly, new TimeOnly(9, 0));
+        await ForceNextFireAtAsync(job.Id, DateTime.Now.Date.AddDays(-31));
+        await ForceOwnerAsync(job.Id, Guid.NewGuid());
+
+        // Only the owner has real firing history: NextFireAt is device-local and never synced, so a peer
+        // pinning from its own copy would invent a day.
+        Assert.Equal(0, await _service.BackfillRecurrenceDaysAsync());
+        Assert.Null((await _service.GetAsync(job.Id))!.DayOfWeek);
+    }
+
+    [Fact]
+    public async Task MarkRunComplete_KeepsAPinnedWeeklyJobOnItsOwnDay_EvenWhenItRanLate()
+    {
+        var job = await _service.CreateAsync(
+            "TEST_LateWeekly", "q", RecurrenceType.Weekly, new TimeOnly(7, 30), dayOfWeek: DayOfWeek.Monday);
+        await ForceNextFireAtAsync(job.Id, DateTime.Now.AddDays(-2));
+
+        await _service.MarkRunCompleteAsync(job.Id, Guid.NewGuid());
+
+        // The regression the day pickers exist for: without a pinned day this lands on today's weekday and the
+        // job relocates there permanently.
+        var rescheduled = await _service.GetAsync(job.Id);
+        Assert.Equal(DayOfWeek.Monday, rescheduled!.NextFireAt.DayOfWeek);
+        Assert.True(rescheduled.NextFireAt > DateTime.Now);
+    }
+
+    private async Task ForceOwnerAsync(Guid id, Guid owner)
+    {
+        var conn = _ctx.GetConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE ScheduledJobs SET OwnerDeviceId = @o WHERE Id = @id";
+        cmd.Parameters.AddWithValue("@o", owner.ToString());
+        cmd.Parameters.AddWithValue("@id", id.ToString());
+        await cmd.ExecuteNonQueryAsync();
+    }
+
     private async Task ForceNextFireAtAsync(Guid id, DateTime when)
     {
         var conn = _ctx.GetConnection();
