@@ -74,6 +74,21 @@ public class RoutinesViewModelTests
         Status = status,
     };
 
+    /// <summary>Nothing else loads this view: the list and the provider ComboBox bind collections only
+    /// <c>RefreshAsync</c> fills, so without the navigation hook the view renders "no routines yet" forever —
+    /// a correct binding with no data behind it, which no parse test can see.</summary>
+    [Fact]
+    public async Task NavigatingToTheView_LoadsTheJobs()
+    {
+        var sut = CreateSut(NewJob());
+
+        await sut.Vm.OnNavigatedToAsync(null);
+
+        await sut.Jobs.Received(1).GetAllAsync();
+        Assert.True(sut.Vm.HasJobs);
+        Assert.NotEmpty(sut.Vm.ProviderChoices);
+    }
+
     /// <summary>The summary counts a CANCELLED firing with the failed ones, since it did not deliver either,
     /// while the detail list keeps every state apart.</summary>
     [Fact]

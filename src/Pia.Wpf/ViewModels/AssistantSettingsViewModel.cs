@@ -36,9 +36,6 @@ public partial class AssistantSettingsViewModel : ObservableObject
     public ToolPermissionsSettingsViewModel ToolPermissionsVm { get; }
     public MeetingSettingsViewModel MeetingVm { get; }
 
-    /// <summary>Batch 09: the scheduled-jobs section, re-rooted the same way the four above are.</summary>
-    public ScheduledJobsSettingsViewModel ScheduledJobsVm { get; }
-
     /// <summary>Index of the inner tab pill (0 = General, 1 = Personas, 2 = Tool access, 3 = Meeting, 4 = Agent runs).</summary>
     [ObservableProperty]
     private int _selectedInnerTabIndex;
@@ -48,7 +45,6 @@ public partial class AssistantSettingsViewModel : ObservableObject
         PersonaSettingsViewModel personasVm,
         ToolPermissionsSettingsViewModel toolPermissionsVm,
         MeetingSettingsViewModel meetingVm,
-        ScheduledJobsSettingsViewModel scheduledJobsVm,
         ILogger<SettingsViewModel> logger,
         ISettingsService settingsService,
         IAssistantChatService chatService,
@@ -66,7 +62,6 @@ public partial class AssistantSettingsViewModel : ObservableObject
         PersonasVm = personasVm;
         ToolPermissionsVm = toolPermissionsVm;
         MeetingVm = meetingVm;
-        ScheduledJobsVm = scheduledJobsVm;
         _logger = logger;
         _settingsService = settingsService;
         _chatService = chatService;
@@ -481,12 +476,6 @@ public partial class AssistantSettingsViewModel : ObservableObject
 
         await MeetingVm.InitializeAsync();
         await LoadAgentRosterOptionsAsync(settings);
-
-        // Batch 09. Nothing else calls it: the jobs section binds Jobs and ProviderChoices, both of which are
-        // populated only here, so without this line the section renders "no scheduled jobs yet" forever and
-        // the provider ComboBox is empty — a correct binding with no data behind it, which no parse test can
-        // see and no ViewModel test would catch either (they call RefreshAsync themselves).
-        await ScheduledJobsVm.RefreshAsync();
 
         _isLoading = false;
 

@@ -49,16 +49,8 @@ public class AssistantSettingsRunPoolTests
         var meetingVm = new MeetingSettingsViewModel(
             NullLogger<SettingsViewModel>.Instance, settingsService, localization);
 
-        var scheduledJobs = Substitute.For<IScheduledJobService>();
-        scheduledJobs.GetAllAsync().Returns(Array.Empty<ScheduledJob>());
-        var scheduledProviders = Substitute.For<IProviderService>();
-        scheduledProviders.GetProvidersAsync().Returns(Array.Empty<AiProvider>());
-        var scheduledJobsVm = new ScheduledJobsSettingsViewModel(
-            scheduledJobs, Substitute.For<IScheduledJobRunner>(),
-            scheduledProviders, localization, NullLogger<SettingsViewModel>.Instance);
-
         var sut = new AssistantSettingsViewModel(
-            providersVm, personasVm, toolPermissionsVm, meetingVm, scheduledJobsVm,
+            providersVm, personasVm, toolPermissionsVm, meetingVm,
             NullLogger<SettingsViewModel>.Instance, settingsService, Substitute.For<IAssistantChatService>(),
             dialogService, localization, Substitute.For<IAssistantFolderRelocationService>(),
             workingDirectoryService, personaService: null);

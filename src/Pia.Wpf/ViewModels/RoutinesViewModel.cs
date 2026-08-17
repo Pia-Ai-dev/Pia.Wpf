@@ -38,7 +38,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     public ObservableCollection<RoutineRow> Jobs { get; } = [];
 
     /// <summary>Provider choices for the editor. The leading entry is the "use the default" null row.</summary>
-    public ObservableCollection<ScheduledJobProviderChoice> ProviderChoices { get; } = [];
+    public ObservableCollection<RoutineProviderChoice> ProviderChoices { get; } = [];
 
     /// <summary>
     /// The editor's enum choices as (value, LOCALIZED label) pairs, not the bare enums. Binding a ComboBox
@@ -46,9 +46,9 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     /// which passes the localization parity tests while showing English to a German user. The XAML pairs these
     /// with <c>SelectedValuePath</c> so the VM keeps holding the enum, and no converter is involved.
     /// </summary>
-    public IReadOnlyList<ScheduledJobKindChoice> JobKinds { get; }
+    public IReadOnlyList<RoutineKindChoice> JobKinds { get; }
 
-    public IReadOnlyList<ScheduledJobRecurrenceChoice> Recurrences { get; }
+    public IReadOnlyList<RoutineRecurrenceChoice> Recurrences { get; }
 
     /// <summary>
     /// Day and month names come from the culture <c>LocalizationService</c> installs as
@@ -159,7 +159,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     private DateTime? _editSpecificDate;
 
     [ObservableProperty]
-    private ScheduledJobProviderChoice? _editProvider;
+    private RoutineProviderChoice? _editProvider;
 
     /// <summary>Comma-separated write-tool names. The stored field is a list; this is its flat form.</summary>
     [ObservableProperty]
@@ -203,9 +203,9 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         _logger = logger;
 
         JobKinds = [.. Enum.GetValues<ScheduledJobKind>()
-            .Select(k => new ScheduledJobKindChoice(k, _localization[$"Settings_ScheduledJobs_Kind_{k}"]))];
+            .Select(k => new RoutineKindChoice(k, _localization[$"Settings_ScheduledJobs_Kind_{k}"]))];
         Recurrences = [.. Enum.GetValues<RecurrenceType>()
-            .Select(r => new ScheduledJobRecurrenceChoice(
+            .Select(r => new RoutineRecurrenceChoice(
                 r, _localization[$"Settings_ScheduledJobs_Recurrence_{r}"]))];
 
         var names = CultureInfo.CurrentCulture.DateTimeFormat;
@@ -258,10 +258,10 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
                     : null;
 
                 ProviderChoices.Clear();
-                ProviderChoices.Add(new ScheduledJobProviderChoice(
+                ProviderChoices.Add(new RoutineProviderChoice(
                     null, _localization["Settings_ScheduledJobs_Provider_Default"]));
                 foreach (var provider in providers)
-                    ProviderChoices.Add(new ScheduledJobProviderChoice(provider.Id, provider.Name));
+                    ProviderChoices.Add(new RoutineProviderChoice(provider.Id, provider.Name));
             });
         }
         catch (Exception ex)
@@ -627,6 +627,15 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         }
     }
 }
+
+/// <summary>One provider the editor may pin a job to; <see cref="Id"/> null is "use the default".</summary>
+public sealed record RoutineProviderChoice(Guid? Id, string Name);
+
+/// <summary>A job type and the label a user should see for it.</summary>
+public sealed record RoutineKindChoice(ScheduledJobKind Value, string Label);
+
+/// <summary>A repeat interval and the label a user should see for it.</summary>
+public sealed record RoutineRecurrenceChoice(RecurrenceType Value, string Label);
 
 /// <summary>A weekday and the label a user should see for it.</summary>
 public sealed record RoutineDayOfWeekChoice(DayOfWeek Value, string Label);

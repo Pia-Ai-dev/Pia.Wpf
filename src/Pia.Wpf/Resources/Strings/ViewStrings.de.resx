@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:element name="root" msdata:IsDataSet="true">
@@ -1079,9 +1079,6 @@
   <data name="Assistant_OpenFolder_Tooltip" xml:space="preserve"><value>Enthaltenden Ordner öffnen</value></data>
   <data name="Assistant_OpenInCode_Tooltip" xml:space="preserve"><value>In VS Code öffnen</value></data>
   <data name="Assistant_MoreChips_Tooltip" xml:space="preserve"><value>Restliche Einträge anzeigen</value></data>
-  <data name="Settings_ScheduledJobs_Section_Header" xml:space="preserve"><value>Geplante Aufträge</value></data>
-  <data name="Settings_ScheduledJobs_Section_Description" xml:space="preserve"><value>Aufträge, die nach einem Zeitplan auf diesem Gerät laufen. Jeder läuft mit den Grenzen und der Auto-Freigabe von oben – beides wird nicht pro Auftrag festgelegt.</value></data>
-  <data name="Settings_ScheduledJobs_Empty" xml:space="preserve"><value>Noch keine geplanten Aufträge.</value></data>
   <data name="Settings_ScheduledJobs_Add" xml:space="preserve"><value>Neuer Auftrag</value></data>
   <data name="Settings_ScheduledJobs_Edit" xml:space="preserve"><value>Bearbeiten</value></data>
   <data name="Settings_ScheduledJobs_Delete" xml:space="preserve"><value>Löschen</value></data>
@@ -1122,9 +1119,6 @@
   <data name="Routines_Field_DayOfMonth" xml:space="preserve"><value>Tag im Monat</value></data>
   <data name="Routines_Field_DayOfMonth_Hint" xml:space="preserve"><value>Monate, die für diesen Tag zu kurz sind, feuern an ihrem letzten Tag.</value></data>
   <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Standardanbieter</value></data>
-  <data name="Settings_ScheduledJobs_NextRun" xml:space="preserve"><value>Nächste Ausführung</value></data>
-  <data name="Settings_ScheduledJobs_LastRun" xml:space="preserve"><value>Letzte Ausführung</value></data>
-  <data name="Settings_ScheduledJobs_NotOwnedHere" xml:space="preserve"><value>Ein anderes Gerät besitzt den Zeitplan dieses Auftrags.</value></data>
   <data name="Settings_ScheduledJobs_UnknownStatusInert" xml:space="preserve"><value>Dieser Auftrag hat einen Status, den diese Version nicht kennt, und wird nur lesend angezeigt. Aktualisiere Pia, um ihn zu verwalten.</value></data>
   <data name="Settings_ScheduledJobs_Running" xml:space="preserve"><value>Auftrag läuft …</value></data>
   <data name="Settings_ScheduledJobs_RunStarted" xml:space="preserve"><value>Der Auftrag läuft. Das Ergebnis steht anschließend im erzeugten Chat.</value></data>

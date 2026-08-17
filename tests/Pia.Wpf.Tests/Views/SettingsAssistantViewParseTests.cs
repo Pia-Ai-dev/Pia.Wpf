@@ -44,10 +44,10 @@ public class SettingsAssistantViewParseTests
         // PersonaSettingsViewModel if the re-root above it was understood.
         Assert.Contains(bindings, b => b.Contains("=AddPersonaCommand [PersonaSettingsViewModel]"));
 
-        // Both halves matter: the first is the re-root, the second proves the walk followed it — without it a
-        // section that silently stopped being walked would still satisfy the first.
-        Assert.Contains(bindings, b => b.Contains("=ScheduledJobsVm "));
-        Assert.Contains(bindings, b => b.Contains("=EditQuery [ScheduledJobsSettingsViewModel]"));
+        // The scheduled-jobs section moved out to the Routines view; the budget sliders above it did not, and
+        // they are what the two asserts below still hold here.
+        Assert.Contains(bindings, b => b.Contains("=ScheduledMaxSteps "));
+        Assert.Contains(bindings, b => b.Contains("=MaxParallelBackgroundRuns "));
 
         var unresolved = bindings.Where(b => b.EndsWith("UNRESOLVED", StringComparison.Ordinal)).ToArray();
         Assert.True(unresolved.Length == 0,

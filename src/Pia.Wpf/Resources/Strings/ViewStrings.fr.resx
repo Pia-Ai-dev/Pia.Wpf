@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:element name="root" msdata:IsDataSet="true">
@@ -1079,9 +1079,6 @@
   <data name="Assistant_OpenFolder_Tooltip" xml:space="preserve"><value>Ouvrir le dossier contenant</value></data>
   <data name="Assistant_OpenInCode_Tooltip" xml:space="preserve"><value>Ouvrir dans VS Code</value></data>
   <data name="Assistant_MoreChips_Tooltip" xml:space="preserve"><value>Afficher les entrées restantes</value></data>
-  <data name="Settings_ScheduledJobs_Section_Header" xml:space="preserve"><value>Tâches planifiées</value></data>
-  <data name="Settings_ScheduledJobs_Section_Description" xml:space="preserve"><value>Tâches qui s'exécutent selon un calendrier, sur cet appareil. Chacune utilise les limites et le réglage d'approbation automatique ci-dessus — ils ne se définissent pas par tâche.</value></data>
-  <data name="Settings_ScheduledJobs_Empty" xml:space="preserve"><value>Aucune tâche planifiée pour l'instant.</value></data>
   <data name="Settings_ScheduledJobs_Add" xml:space="preserve"><value>Nouvelle tâche</value></data>
   <data name="Settings_ScheduledJobs_Edit" xml:space="preserve"><value>Modifier</value></data>
   <data name="Settings_ScheduledJobs_Delete" xml:space="preserve"><value>Supprimer</value></data>
@@ -1122,9 +1119,6 @@
   <data name="Routines_Field_DayOfMonth" xml:space="preserve"><value>Jour du mois</value></data>
   <data name="Routines_Field_DayOfMonth_Hint" xml:space="preserve"><value>Les mois trop courts pour ce jour se déclenchent leur dernier jour.</value></data>
   <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Fournisseur par défaut</value></data>
-  <data name="Settings_ScheduledJobs_NextRun" xml:space="preserve"><value>Prochaine exécution</value></data>
-  <data name="Settings_ScheduledJobs_LastRun" xml:space="preserve"><value>Dernière exécution</value></data>
-  <data name="Settings_ScheduledJobs_NotOwnedHere" xml:space="preserve"><value>Un autre appareil possède le calendrier de cette tâche.</value></data>
   <data name="Settings_ScheduledJobs_UnknownStatusInert" xml:space="preserve"><value>Cette tâche a un statut que cette version ne reconnaît pas ; elle est affichée en lecture seule. Mettez Pia à jour pour la gérer.</value></data>
   <data name="Settings_ScheduledJobs_Running" xml:space="preserve"><value>Exécution de la tâche…</value></data>
   <data name="Settings_ScheduledJobs_RunStarted" xml:space="preserve"><value>La tâche a démarré. Son résultat se trouvera dans la conversation créée.</value></data>

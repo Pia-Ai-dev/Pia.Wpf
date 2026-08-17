@@ -20,7 +20,6 @@ public class AssistantSettingsRosterTests
     };
 
     // Safe as mutable fixture state: xunit builds one instance per fact, so nothing leaks between them.
-    private IScheduledJobService _scheduledJobs = null!;
 
     private (AssistantSettingsViewModel sut, ISettingsService settings, AppSettings stored) Create(
         AppSettings? initial, IPersonaService? personaService)
@@ -60,31 +59,13 @@ public class AssistantSettingsRosterTests
         var meetingVm = new MeetingSettingsViewModel(
             NullLogger<SettingsViewModel>.Instance, settingsService, localization);
 
-        _scheduledJobs = Substitute.For<IScheduledJobService>();
-        _scheduledJobs.GetAllAsync().Returns(Array.Empty<ScheduledJob>());
-        var scheduledProviders = Substitute.For<IProviderService>();
-        scheduledProviders.GetProvidersAsync().Returns(Array.Empty<AiProvider>());
-        var scheduledJobsVm = new ScheduledJobsSettingsViewModel(
-            _scheduledJobs, Substitute.For<IScheduledJobRunner>(),
-            scheduledProviders, localization, NullLogger<SettingsViewModel>.Instance);
-
         var sut = new AssistantSettingsViewModel(
-            providersVm, personasVm, toolPermissionsVm, meetingVm, scheduledJobsVm,
+            providersVm, personasVm, toolPermissionsVm, meetingVm,
             NullLogger<SettingsViewModel>.Instance, settingsService, Substitute.For<IAssistantChatService>(),
             dialogService, localization, Substitute.For<IAssistantFolderRelocationService>(),
             workingDirectoryService, personaService);
 
         return (sut, settingsService, stored);
-    }
-
-    [Fact]
-    public async Task Initialize_LoadsTheScheduledJobsSection()
-    {
-        var (sut, _, _) = Create(null, null);
-
-        await sut.InitializeAsync();
-
-        await _scheduledJobs.Received(1).GetAllAsync();
     }
 
     [Fact]

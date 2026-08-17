@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:element name="root" msdata:IsDataSet="true">
@@ -1089,9 +1089,6 @@
   <data name="Assistant_OpenFolder_Tooltip" xml:space="preserve"><value>Open containing folder</value></data>
   <data name="Assistant_OpenInCode_Tooltip" xml:space="preserve"><value>Open in VS Code</value></data>
   <data name="Assistant_MoreChips_Tooltip" xml:space="preserve"><value>Show the remaining entries</value></data>
-  <data name="Settings_ScheduledJobs_Section_Header" xml:space="preserve"><value>Scheduled jobs</value></data>
-  <data name="Settings_ScheduledJobs_Section_Description" xml:space="preserve"><value>Jobs that run on a schedule, on this device. Each one runs under the limits and the auto-approval setting above — they are not set per job.</value></data>
-  <data name="Settings_ScheduledJobs_Empty" xml:space="preserve"><value>No scheduled jobs yet.</value></data>
   <data name="Settings_ScheduledJobs_Add" xml:space="preserve"><value>New job</value></data>
   <data name="Settings_ScheduledJobs_Edit" xml:space="preserve"><value>Edit</value></data>
   <data name="Settings_ScheduledJobs_Delete" xml:space="preserve"><value>Delete</value></data>
@@ -1132,9 +1129,6 @@
   <data name="Routines_Field_DayOfMonth" xml:space="preserve"><value>Day of month</value></data>
   <data name="Routines_Field_DayOfMonth_Hint" xml:space="preserve"><value>Months too short for that day fire on their last day.</value></data>
   <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Default provider</value></data>
-  <data name="Settings_ScheduledJobs_NextRun" xml:space="preserve"><value>Next run</value></data>
-  <data name="Settings_ScheduledJobs_LastRun" xml:space="preserve"><value>Last run</value></data>
-  <data name="Settings_ScheduledJobs_NotOwnedHere" xml:space="preserve"><value>Another device owns this job's schedule.</value></data>
   <data name="Settings_ScheduledJobs_UnknownStatusInert" xml:space="preserve"><value>This job has a status this version does not recognise, so it is shown read-only. Update Pia to manage it.</value></data>
   <data name="Settings_ScheduledJobs_Running" xml:space="preserve"><value>Running the job…</value></data>
   <data name="Settings_ScheduledJobs_RunStarted" xml:space="preserve"><value>The job started. Its result will be in the chat it creates.</value></data>

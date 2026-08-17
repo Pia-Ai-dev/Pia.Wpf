@@ -52,12 +52,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
         IAssistantChatService assistantChatService,
         IToolPermissionService toolPermissionService,
         IAssistantFolderRelocationService folderRelocationService,
-        IWorkingDirectoryService workingDirectoryService,
-        IScheduledJobService scheduledJobService,
-        IScheduledJobRunner scheduledJobRunner,
-        // T2-18: the per-job run history the jobs list shows. The run rows ARE the history (AgentRuns.TriggerRef),
-        // so this is a read of an existing store, not a new one.
-        IAgentRunService agentRunService)
+        IWorkingDirectoryService workingDirectoryService)
     {
         _logger = logger;
 
@@ -69,8 +64,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
         var toolPermissionsVm = new ToolPermissionsSettingsViewModel(toolPermissionService, pluginService, logger);
         var meetingVm = new MeetingSettingsViewModel(logger, settingsService, localizationService);
-        var scheduledJobsVm = new ScheduledJobsSettingsViewModel(scheduledJobService, scheduledJobRunner, providerService, localizationService, logger, agentRunService);
-        AssistantVm = new AssistantSettingsViewModel(ProvidersVm, PersonasVm, toolPermissionsVm, meetingVm, scheduledJobsVm, logger, settingsService, assistantChatService, dialogService, localizationService, folderRelocationService, workingDirectoryService, personaService);
+        AssistantVm = new AssistantSettingsViewModel(ProvidersVm, PersonasVm, toolPermissionsVm, meetingVm, logger, settingsService, assistantChatService, dialogService, localizationService, folderRelocationService, workingDirectoryService, personaService);
 
         var privacyVm = new PrivacySettingsViewModel(logger, settingsService);
         GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService, policyService, privacyVm, syncClientService);
