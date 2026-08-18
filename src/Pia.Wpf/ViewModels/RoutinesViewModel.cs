@@ -208,7 +208,9 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     /// is how a view becomes a startup cost.</summary>
     public async Task OnNavigatedToAsync(object? parameter) => await RefreshAsync();
 
-    public async Task RefreshAsync()
+    /// <param name="selectJobId">Selected once the rows exist. The rebuild is marshalled, so a caller that
+    /// awaits this and then picks out of <c>Jobs</c> is reading the rows from before it.</param>
+    public async Task RefreshAsync(Guid? selectJobId = null)
     {
         if (IsBusy) return;
         IsBusy = true;
@@ -231,7 +233,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             {
                 // Rows are rebuilt wholesale, so the selection has to be re-resolved by id or every refresh
                 // would silently empty the detail pane the user is reading.
-                var selectedId = SelectedJob?.Id;
+                var selectedId = selectJobId ?? SelectedJob?.Id;
 
                 Jobs.Clear();
                 foreach (var row in rows) Jobs.Add(row);
@@ -485,9 +487,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         // Select what was just saved, so the detail pane shows it rather than reverting to the empty state.
         var savedId = EditingJobId;
         EditingJobId = null;
-        await RefreshAsync();
-        if (savedId is { } saved)
-            SelectedJob = Jobs.FirstOrDefault(j => j.Id == saved) ?? SelectedJob;
+        await RefreshAsync(savedId);
     }
 
     [RelayCommand(CanExecute = nameof(CanActOnSelection))]
@@ -603,20 +603,38 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     }
 }
 
+// Every ToString below is what a screen reader announces for the ComboBox item: the item peer reads the bound
+// object, not the DisplayMemberPath text, so the generated record ToString would spell out the field dump.
+
 /// <summary>One provider the editor may pin a job to; <see cref="Id"/> null is "use the default".</summary>
-public sealed record RoutineProviderChoice(Guid? Id, string Name);
+public sealed record RoutineProviderChoice(Guid? Id, string Name)
+{
+    public override string ToString() => Name;
+}
 
 /// <summary>A job type and the label a user should see for it.</summary>
-public sealed record RoutineKindChoice(ScheduledJobKind Value, string Label);
+public sealed record RoutineKindChoice(ScheduledJobKind Value, string Label)
+{
+    public override string ToString() => Label;
+}
 
 /// <summary>A repeat interval and the label a user should see for it.</summary>
-public sealed record RoutineRecurrenceChoice(RecurrenceType Value, string Label);
+public sealed record RoutineRecurrenceChoice(RecurrenceType Value, string Label)
+{
+    public override string ToString() => Label;
+}
 
 /// <summary>A weekday and the label a user should see for it.</summary>
-public sealed record RoutineDayOfWeekChoice(DayOfWeek Value, string Label);
+public sealed record RoutineDayOfWeekChoice(DayOfWeek Value, string Label)
+{
+    public override string ToString() => Label;
+}
 
 /// <summary>A month number and the label a user should see for it.</summary>
-public sealed record RoutineMonthChoice(int Value, string Label);
+public sealed record RoutineMonthChoice(int Value, string Label)
+{
+    public override string ToString() => Label;
+}
 
 /// <summary>One settled firing, as the detail pane lists it.</summary>
 public sealed class RoutineRunRow

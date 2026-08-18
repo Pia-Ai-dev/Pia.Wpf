@@ -519,6 +519,78 @@ public class RoutinesViewModelTests
         await Task.CompletedTask;
     }
 
+    /// <summary>Queues instead of running, which is what the VM's marshal does whenever the context captured at
+    /// construction is not the one the caller is on — the ordering the running app actually has.</summary>
+    private sealed class DeferringContext : SynchronizationContext
+    {
+        private readonly Queue<(SendOrPostCallback Callback, object? State)> _pending = new();
+
+        public override void Post(SendOrPostCallback d, object? state) => _pending.Enqueue((d, state));
+
+        public void Drain()
+        {
+            while (_pending.Count > 0)
+            {
+                var (callback, state) = _pending.Dequeue();
+                callback(state);
+            }
+        }
+    }
+
+    /// <summary>Under the default inline marshal every save looks right. Deferred — which is what the app does —
+    /// a save that picked its row out of <c>Jobs</c> after awaiting the refresh read the rows from before it, so
+    /// a new routine went unselected and the pane kept showing whichever one was selected before.</summary>
+    [Fact]
+    public async Task SavingANewRoutine_SelectsIt_WhenTheRebuildIsDeferred()
+    {
+        var existing = NewJob();
+        var created = NewJob();
+        var stored = new List<ScheduledJob> { existing };
+
+        var jobs = Substitute.For<IScheduledJobService>();
+        jobs.GetAllAsync().Returns(_ => stored.ToArray());
+        jobs.IsOwnedByThisDeviceAsync(Arg.Any<ScheduledJob>()).Returns(true);
+        jobs.CreateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(),
+                Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(),
+                Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<ScheduledJobKind>(), Arg.Any<bool>())
+            .Returns(_ => { stored.Add(created); return created; });
+
+        var providers = Substitute.For<IProviderService>();
+        providers.GetProvidersAsync().Returns(Array.Empty<AiProvider>());
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetFiringsForTriggerAsync(Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<ScheduledFiringOutcome>());
+
+        // Installed only for the constructor: the VM captures this instance, and the comparison against
+        // SynchronizationContext.Current then fails for every later call, exactly as it does under WPF.
+        var context = new DeferringContext();
+        var previous = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(context);
+        RoutinesViewModel vm;
+        try
+        {
+            vm = new RoutinesViewModel(jobs, Substitute.For<IScheduledJobRunner>(), providers, runs,
+                Substitute.For<IDialogService>(), Substitute.For<IWindowManagerService>(), Localizer(),
+                NullLogger<RoutinesViewModel>.Instance);
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(previous);
+        }
+
+        await vm.RefreshAsync();
+        context.Drain();
+        vm.SelectedJob = Assert.Single(vm.Jobs);
+
+        vm.StartCreateCommand.Execute(null);
+        vm.EditName = "Morning briefing";
+        vm.EditQuery = "what happened overnight";
+        await vm.SaveCommand.ExecuteAsync(null);
+        context.Drain();
+
+        Assert.Equal(created.Id, vm.SelectedJob?.Id);
+    }
+
     [Fact]
     public async Task AFailedLoad_SaysSo_RatherThanRenderingAnEmptyList()
     {
