@@ -16,7 +16,8 @@
   <Grid>
     <TabControl SelectedIndex="{Binding SelectedInnerTabIndex}" Style="{DynamicResource SettingsInnerTabControlStyle}">
       <!-- Application tab -->
-      <TabItem Header="{loc:Str Settings_InnerTab_Application}" Style="{DynamicResource SettingsInnerTabItemStyle}">
+      <TabItem Header="{loc:Str Settings_InnerTab_Application}" Style="{DynamicResource SettingsInnerTabItemStyle}"
+               AutomationProperties.AutomationId="Settings_General_Tab_Application">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel MaxWidth="640" HorizontalAlignment="Left">
             <StackPanel Margin="0,0,0,20">
@@ -24,6 +25,7 @@
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
               <ComboBox ItemsSource="{Binding UiLanguages}"
                         SelectedItem="{Binding UiLanguage}"
+                        AutomationProperties.AutomationId="Settings_General_UiLanguage"
                         IsEnabled="{Binding IsUiLanguageEnforced, Converter={StaticResource InverseBooleanConverter}}"
                         Width="400"
                         HorizontalAlignment="Left">
@@ -45,6 +47,7 @@
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
               <CheckBox Content="{loc:Str Settings_LaunchAtStartup}"
                         IsChecked="{Binding LaunchAtStartup}"
+                        AutomationProperties.AutomationId="Settings_General_LaunchAtStartup"
                         IsEnabled="{Binding IsLaunchAtStartupEnforced, Converter={StaticResource InverseBooleanConverter}}"
                         Margin="0,4,0,0"/>
               <TextBlock Text="{loc:Str Settings_LaunchAtStartup_Description}"
@@ -52,6 +55,7 @@
                          Margin="22,4,0,0"/>
               <CheckBox Content="{loc:Str Settings_StartMinimized}"
                         IsChecked="{Binding StartMinimized}"
+                        AutomationProperties.AutomationId="Settings_General_StartMinimized"
                         IsEnabled="{Binding IsStartMinimizedEnforced, Converter={StaticResource InverseBooleanConverter}}"
                         Margin="0,10,0,0"/>
               <TextBlock Text="{loc:Str Settings_StartMinimized_Description}"
@@ -59,6 +63,7 @@
                          Margin="22,4,0,0"/>
               <CheckBox Content="{loc:Str Settings_AutoCaptureSelectedText}"
                         IsChecked="{Binding AutoCaptureSelectedText}"
+                        AutomationProperties.AutomationId="Settings_General_AutoCaptureSelectedText"
                         Margin="0,10,0,0"/>
               <TextBlock Text="{loc:Str Settings_AutoCaptureSelectedText_Description}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"
@@ -79,6 +84,7 @@
                          TextWrapping="Wrap"
                          Margin="0,0,0,12"/>
               <ui:Button Command="{Binding ResetAppDataCommand}"
+                         AutomationProperties.AutomationId="Settings_General_ResetAppData"
                          Appearance="Secondary"
                          Foreground="{DynamicResource PiaDangerBrush}"
                          HorizontalAlignment="Left">
@@ -94,7 +100,8 @@
       </TabItem>
 
       <!-- Hotkeys tab -->
-      <TabItem Header="{loc:Str Settings_InnerTab_Hotkeys}" Style="{DynamicResource SettingsInnerTabItemStyle}">
+      <TabItem Header="{loc:Str Settings_InnerTab_Hotkeys}" Style="{DynamicResource SettingsInnerTabItemStyle}"
+               AutomationProperties.AutomationId="Settings_General_Tab_Hotkeys">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel MaxWidth="640" HorizontalAlignment="Left">
             <TextBlock Text="{loc:Str Settings_GlobalHotkeys}"
@@ -125,6 +132,7 @@
                 <ui:Button Grid.Column="2"
                            Appearance="Secondary"
                            Command="{Binding CaptureOptimizeHotkeyCommand}"
+                           AutomationProperties.AutomationId="Settings_General_CaptureOptimizeHotkey"
                            Margin="0,0,4,0">
                   <StackPanel Orientation="Horizontal">
                     <ui:SymbolIcon Symbol="Keyboard24" FontSize="14" Margin="0,0,6,0"/>
@@ -134,6 +142,7 @@
                 <ui:Button Grid.Column="3"
                            Appearance="Secondary"
                            Command="{Binding ClearOptimizeHotkeyCommand}"
+                           AutomationProperties.AutomationId="Settings_General_ClearOptimizeHotkey"
                            AutomationProperties.Name="{loc:Str Settings_Hotkey_ResetToDefault}"
                            ToolTip="{loc:Str Settings_Hotkey_ResetToDefault}">
                   <ui:SymbolIcon Symbol="ArrowReset24" FontSize="14"/>
@@ -166,6 +175,7 @@
                   <ui:Button Grid.Column="2"
                              Appearance="Secondary"
                              Command="{Binding CaptureFastPathHotkeyCommand}"
+                             AutomationProperties.AutomationId="Settings_General_CaptureFastPathHotkey"
                              Margin="0,0,4,0">
                     <StackPanel Orientation="Horizontal">
                       <ui:SymbolIcon Symbol="Keyboard24" FontSize="14" Margin="0,0,6,0"/>
@@ -174,9 +184,10 @@
                   </ui:Button>
                   <ui:Button Grid.Column="3"
                              Appearance="Secondary"
-                              Command="{Binding ClearFastPathHotkeyCommand}"
-                              AutomationProperties.Name="{loc:Str Settings_Hotkey_ClearHotkey}"
-                              ToolTip="{loc:Str Settings_Hotkey_ClearHotkey}">
+                             Command="{Binding ClearFastPathHotkeyCommand}"
+                             AutomationProperties.AutomationId="Settings_General_ClearFastPathHotkey"
+                             AutomationProperties.Name="{loc:Str Settings_Hotkey_ClearHotkey}"
+                             ToolTip="{loc:Str Settings_Hotkey_ClearHotkey}">
                     <ui:SymbolIcon Symbol="Dismiss24" FontSize="14"/>
                   </ui:Button>
                 </Grid>
@@ -209,6 +220,7 @@
                 <ui:Button Grid.Column="2"
                            Appearance="Secondary"
                            Command="{Binding CaptureAssistantHotkeyCommand}"
+                           AutomationProperties.AutomationId="Settings_General_CaptureAssistantHotkey"
                            Margin="0,0,4,0">
                   <StackPanel Orientation="Horizontal">
                     <ui:SymbolIcon Symbol="Keyboard24" FontSize="14" Margin="0,0,6,0"/>
@@ -218,6 +230,7 @@
                 <ui:Button Grid.Column="3"
                            Appearance="Secondary"
                            Command="{Binding ClearAssistantHotkeyCommand}"
+                           AutomationProperties.AutomationId="Settings_General_ClearAssistantHotkey"
                            AutomationProperties.Name="{loc:Str Settings_Hotkey_ClearHotkey}"
                            ToolTip="{loc:Str Settings_Hotkey_ClearHotkey}">
                   <ui:SymbolIcon Symbol="Dismiss24" FontSize="14"/>
@@ -230,7 +243,8 @@
       </TabItem>
 
       <!-- Speech tab -->
-      <TabItem Header="{loc:Str Settings_InnerTab_Speech}" Style="{DynamicResource SettingsInnerTabItemStyle}">
+      <TabItem Header="{loc:Str Settings_InnerTab_Speech}" Style="{DynamicResource SettingsInnerTabItemStyle}"
+               AutomationProperties.AutomationId="Settings_General_Tab_Speech">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel MaxWidth="640" HorizontalAlignment="Left">
             <!-- Speech-to-Text title -->
@@ -246,6 +260,7 @@
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
               <ComboBox ItemsSource="{Binding SttBackends}"
                         SelectedItem="{Binding SttBackend}"
+                        AutomationProperties.AutomationId="Settings_General_SttEngine"
                         IsEnabled="{Binding IsSttBackendEnforced, Converter={StaticResource InverseBooleanConverter}}"
                         Width="400"
                         HorizontalAlignment="Left">
@@ -266,6 +281,7 @@
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
               <ComboBox ItemsSource="{Binding WhisperModels}"
                         SelectedItem="{Binding WhisperModel}"
+                        AutomationProperties.AutomationId="Settings_General_WhisperModel"
                         IsEnabled="{Binding IsWhisperModelEnforced, Converter={StaticResource InverseBooleanConverter}}"
                         Width="400"
                         HorizontalAlignment="Left">
@@ -278,6 +294,7 @@
               <TextBlock Text="{loc:Str Settings_WhisperModel_Description}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>
               <ui:Button Command="{Binding DownloadWhisperModelCommand}"
+                         AutomationProperties.AutomationId="Settings_General_DownloadWhisperModel"
                          Appearance="Secondary"
                          Margin="0,10,0,0"
                          HorizontalAlignment="Left">
@@ -299,6 +316,7 @@
                          TextWrapping="Wrap"
                          Margin="0,0,0,8"/>
               <ui:Button Command="{Binding DownloadParakeetModelCommand}"
+                         AutomationProperties.AutomationId="Settings_General_DownloadParakeetModel"
                          Appearance="Secondary"
                          HorizontalAlignment="Left">
                 <StackPanel Orientation="Horizontal">
@@ -314,6 +332,7 @@
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
               <ComboBox ItemsSource="{Binding TargetSpeechLanguages}"
                         SelectedItem="{Binding TargetSpeechLanguage}"
+                        AutomationProperties.AutomationId="Settings_General_SttLanguage"
                         IsEnabled="{Binding IsTargetSpeechLanguageEnforced, Converter={StaticResource InverseBooleanConverter}}"
                         Width="400"
                         HorizontalAlignment="Left">
@@ -394,6 +413,7 @@
                       <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                         <ui:Button Command="{Binding DataContext.DownloadVoiceCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                    CommandParameter="{Binding}"
+                                   AutomationProperties.AutomationId="{Binding Key, StringFormat='Settings_General_DownloadVoice_{0}'}"
                                    Appearance="Secondary"
                                    Visibility="{Binding IsDownloaded, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
                           <ui:Button.Style>
@@ -413,6 +433,7 @@
 
                         <ui:Button Command="{Binding DataContext.SelectVoiceCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                    CommandParameter="{Binding}"
+                                   AutomationProperties.AutomationId="{Binding Key, StringFormat='Settings_General_SelectVoice_{0}'}"
                                    Appearance="Secondary"
                                    Visibility="{Binding IsDownloaded, Converter={StaticResource BooleanToVisibilityConverter}}">
                           <ui:Button.Style>
@@ -451,7 +472,8 @@
       </TabItem>
 
       <!-- Privacy tab (applies to all AI traffic, cloud-independent) -->
-      <TabItem Header="{loc:Str Settings_InnerTab_Privacy}" Style="{DynamicResource SettingsInnerTabItemStyle}">
+      <TabItem Header="{loc:Str Settings_InnerTab_Privacy}" Style="{DynamicResource SettingsInnerTabItemStyle}"
+               AutomationProperties.AutomationId="Settings_General_Tab_Privacy">
         <ScrollViewer VerticalScrollBarVisibility="Auto" DataContext="{Binding PrivacyVm}">
           <StackPanel MaxWidth="640" HorizontalAlignment="Left">
             <!-- Tokenization Toggle -->
@@ -460,6 +482,7 @@
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
               <CheckBox Content="{loc:Str Settings_Privacy_TokenizationEnabled}"
                         IsChecked="{Binding TokenizationEnabled}"
+                        AutomationProperties.AutomationId="Settings_General_TokenizationEnabled"
                         Margin="0,4,0,0"/>
               <TextBlock Text="{loc:Str Settings_Privacy_TokenizationDescription}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"
@@ -489,11 +512,13 @@
                 </Grid.ColumnDefinitions>
                 <ui:TextBox Grid.Column="0"
                             Text="{Binding NewKeywordInput, UpdateSourceTrigger=PropertyChanged}"
+                            AutomationProperties.AutomationId="Settings_General_NewKeywordInput"
                             PlaceholderText="{loc:Str Settings_Privacy_KeywordPlaceholder}"
                             Margin="0,0,8,0"/>
                 <ComboBox Grid.Column="1"
                           ItemsSource="{Binding AvailableCategories}"
                           SelectedItem="{Binding SelectedNewCategory}"
+                          AutomationProperties.AutomationId="Settings_General_NewKeywordCategory"
                           MinWidth="120"
                           Margin="0,0,8,0">
                   <ComboBox.ItemTemplate>
@@ -504,6 +529,7 @@
                 </ComboBox>
                 <ui:Button Grid.Column="2"
                            Command="{Binding AddPiiKeywordCommand}"
+                           AutomationProperties.AutomationId="Settings_General_AddPiiKeyword"
                            Appearance="Primary">
                   <StackPanel Orientation="Horizontal">
                     <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,6,0"/>
@@ -532,6 +558,7 @@
                         <ComboBox Grid.Column="1"
                                   ItemsSource="{Binding DataContext.AvailableCategories, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                   SelectedItem="{Binding Category}"
+                                  AutomationProperties.AutomationId="{Binding Keyword, StringFormat='Settings_General_KeywordCategory_{0}'}"
                                   MinWidth="120"
                                   Margin="8,0"
                                   VerticalAlignment="Center">
@@ -544,6 +571,7 @@
                         <ui:Button Grid.Column="2"
                                    Command="{Binding DataContext.RemovePiiKeywordCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                    CommandParameter="{Binding}"
+                                   AutomationProperties.AutomationId="{Binding Keyword, StringFormat='Settings_General_RemoveKeyword_{0}'}"
                                    Appearance="Secondary"
                                    Padding="4"
                                    AutomationProperties.Name="{loc:Str Settings_Privacy_RemoveKeyword}">

@@ -34,11 +34,11 @@
         },
         {
           "tool": "ww_set_checked",
-          "selector": "type=CheckBox[name='Start minimized to system tray']",
+          "selector": "automationId=Settings_General_StartMinimized",
           "extra": "check",
           "assertion": {
             "type": "assert",
-            "selector": "type=CheckBox[name='Start minimized to system tray']",
+            "selector": "automationId=Settings_General_StartMinimized",
             "property": "value",
             "op": "eq",
             "expected": "On",
@@ -60,11 +60,11 @@
         },
         {
           "tool": "ww_set_checked",
-          "selector": "type=CheckBox[name='Auto-paste selected text on hotkey']",
+          "selector": "automationId=Settings_General_AutoCaptureSelectedText",
           "extra": "uncheck",
           "assertion": {
             "type": "assert",
-            "selector": "type=CheckBox[name='Auto-paste selected text on hotkey']",
+            "selector": "automationId=Settings_General_AutoCaptureSelectedText",
             "property": "value",
             "op": "eq",
             "expected": "Off",

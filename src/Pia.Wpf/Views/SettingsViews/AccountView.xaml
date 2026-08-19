@@ -14,6 +14,7 @@
                    Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
         <ui:TextBox PlaceholderText="{loc:Str Sync_ServerUrl_Placeholder}"
                     Text="{Binding ServerUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                    AutomationProperties.AutomationId="Settings_Account_ServerUrl"
                     IsEnabled="{Binding IsServerUrlEditable}"
                     Width="400"
                     HorizontalAlignment="Left"/>
@@ -21,6 +22,7 @@
                    Style="{StaticResource PiaSettingsDescriptionStyle}"/>
         <CheckBox Content="{loc:Str Sync_TrustSelfSignedCertificates}"
                   IsChecked="{Binding TrustSelfSignedCertificates}"
+                  AutomationProperties.AutomationId="Settings_Account_TrustSelfSignedCertificates"
                   Margin="0,10,0,0"/>
         <TextBlock Text="{loc:Str Sync_TrustSelfSignedCertificates_Description}"
                    Style="{StaticResource PiaSettingsDescriptionStyle}"
@@ -42,6 +44,7 @@
                      Margin="0,0,0,4"/>
           <ui:TextBox PlaceholderText="email@example.com"
                       Text="{Binding LoginEmail, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                      AutomationProperties.AutomationId="Settings_Account_LoginEmail"
                       IsEnabled="{Binding IsSyncLoggingIn, Converter={StaticResource InverseBooleanConverter}}"
                       Margin="0,0,0,8"/>
           <TextBlock Text="{loc:Str Sync_LocalAuth_Password}"
@@ -50,6 +53,7 @@
                      Margin="0,0,0,4"/>
           <PasswordBox x:Name="LoginPasswordBox"
                        PasswordChanged="LoginPasswordBox_PasswordChanged"
+                       AutomationProperties.AutomationId="Settings_Account_LoginPassword"
                        IsEnabled="{Binding IsSyncLoggingIn, Converter={StaticResource InverseBooleanConverter}}"
                        Margin="0,0,0,4"/>
           <TextBlock Text="{Binding LoginErrorMessage}"
@@ -60,15 +64,18 @@
                      TextWrapping="Wrap"/>
           <ui:Button Content="{loc:Str Sync_LocalAuth_SignIn}"
                      Command="{Binding LoginWithPasswordCommand}"
+                     AutomationProperties.AutomationId="Settings_Account_LoginWithPassword"
                      Appearance="Primary"
                      IsEnabled="{Binding IsSyncLoggingIn, Converter={StaticResource InverseBooleanConverter}}"
                      Margin="0,0,0,8"/>
           <StackPanel Orientation="Horizontal">
             <ui:HyperlinkButton Content="{loc:Str Sync_LocalAuth_CreateAccount}"
                                 Command="{Binding OpenRegistrationPageCommand}"
+                                AutomationProperties.AutomationId="Settings_Account_OpenRegistrationPage"
                                 Margin="0,0,12,0"/>
             <ui:HyperlinkButton Content="{loc:Str Sync_LocalAuth_ForgotPassword}"
-                                Command="{Binding OpenForgotPasswordCommand}"/>
+                                Command="{Binding OpenForgotPasswordCommand}"
+                                AutomationProperties.AutomationId="Settings_Account_OpenForgotPassword"/>
           </StackPanel>
         </StackPanel>
 
@@ -103,6 +110,7 @@
         <WrapPanel Orientation="Horizontal"
                    Visibility="{Binding IsAnyOAuthLoginVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
           <ui:Button Command="{Binding LoginWithGoogleCommand}"
+                     AutomationProperties.AutomationId="Settings_Account_LoginWithGoogle"
                      Appearance="Secondary"
                      IsEnabled="False"
                      Margin="0,0,8,8"
@@ -113,6 +121,7 @@
             </StackPanel>
           </ui:Button>
           <ui:Button Command="{Binding LoginWithMicrosoftCommand}"
+                     AutomationProperties.AutomationId="Settings_Account_LoginWithMicrosoft"
                      Appearance="Secondary"
                      IsEnabled="{Binding IsSyncLoggingIn, Converter={StaticResource InverseBooleanConverter}}"
                      Margin="0,0,8,8"
@@ -123,6 +132,7 @@
             </StackPanel>
           </ui:Button>
           <ui:Button Command="{Binding LoginWithEntraIdCommand}"
+                     AutomationProperties.AutomationId="Settings_Account_LoginWithEntraId"
                      Appearance="Secondary"
                      IsEnabled="{Binding IsSyncLoggingIn, Converter={StaticResource InverseBooleanConverter}}"
                      Margin="0,0,8,8"
@@ -193,6 +203,7 @@
                        Icon="{ui:SymbolIcon ArrowSync24}"
                        Appearance="Secondary"
                        Command="{Binding SyncNowCommand}"
+                       AutomationProperties.AutomationId="Settings_Account_SyncNow"
                        IsEnabled="{Binding CanSyncNow}"
                        Margin="0,0,8,0"/>
             <ui:ProgressRing IsIndeterminate="True"
@@ -209,6 +220,7 @@
 
         <ui:Button Content="{loc:Str Sync_SignOut}"
                    Command="{Binding SyncLogoutCommand}"
+                   AutomationProperties.AutomationId="Settings_Account_SyncLogout"
                    Appearance="Secondary"
                    Foreground="{DynamicResource PiaDangerBrush}"
                    HorizontalAlignment="Left"/>
@@ -243,6 +255,7 @@
                    TextWrapping="Wrap"
                    Margin="0,0,0,10"/>
         <ui:ToggleSwitch IsChecked="{Binding IsE2EEEnabled, Mode=TwoWay}"
+                         AutomationProperties.AutomationId="Settings_Account_IsE2EEEnabled"
                          IsEnabled="{Binding IsE2EEToggleEnabled}"
                          Content="{loc:Str Settings_E2EE_Toggle}"
                          Margin="0,0,0,8"/>
@@ -275,6 +288,7 @@
                    Icon="{ui:SymbolIcon PeopleSearch24}"
                    Appearance="Secondary"
                    Command="{Binding CheckForPendingDevicesCommand}"
+                   AutomationProperties.AutomationId="Settings_Account_CheckForPendingDevices"
                    HorizontalAlignment="Left"
                    Margin="0,0,0,8"/>
       </StackPanel>

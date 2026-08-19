@@ -25,6 +25,12 @@ Companion to `docs/2026-08-16-ui-automation-gaps.md` (the findings that motivate
 | Tool-approval decisions | `ToolApproval_Decline`, `ToolApproval_AllowOnce`, `ToolApproval_AllowSession`, `ToolApproval_AlwaysAllow` |
 | Personas / Templates grids | `Personas_AddButton`, `Templates_AddButton`, per-item `Persona_Edit_<guid>` / `Persona_Delete_<guid>` / `Persona_Duplicate_<guid>` / `Template_Edit_<guid>` / `Template_Delete_<guid>` / `Template_ViewPrompt_<guid>` / `Template_SetDefault_<guid>` |
 | Settings categories | `Settings_CategoryList`, `SettingsCategory_General` / `_Providers` / `_Optimize` / `_Assistant` / `_Account` / `_Plugins` |
+| Settings inner tabs | `Settings_General_Tab_Application` / `_Hotkeys` / `_Speech` / `_Privacy`, `Settings_Assistant_Tab_General` / `_Personas` / `_ToolPermissions` / `_Meeting` / `_Agent` |
+| Settings → General | Application: `Settings_General_UiLanguage`, `_LaunchAtStartup`, `_StartMinimized`, `_AutoCaptureSelectedText`, `_ResetAppData`. Hotkeys: `_CaptureOptimizeHotkey` / `_ClearOptimizeHotkey`, `_CaptureFastPathHotkey` / `_ClearFastPathHotkey`, `_CaptureAssistantHotkey` / `_ClearAssistantHotkey`. Speech: `_SttEngine`, `_WhisperModel`, `_DownloadWhisperModel`, `_DownloadParakeetModel`, `_SttLanguage`, per-voice `_DownloadVoice_<voiceKey>` / `_SelectVoice_<voiceKey>`. Privacy: `_TokenizationEnabled`, `_NewKeywordInput`, `_NewKeywordCategory`, `_AddPiiKeyword`, per-row `_KeywordCategory_<keyword>` / `_RemoveKeyword_<keyword>` |
+| Settings → Assistant | General: `Settings_Assistant_GoToProvidersTab`, `_DefaultWindowMode`, `_SuggestionsEnabled`, `_FilesFolder`, `_ChangeFilesFolder`, `_FileToolsEnabled`, `_GitToolsEnabled`, `_DefaultWorkingDirectory`, `_ChatHistoryEnabled`, `_ChatHistoryRetentionDays`, `_ChatAutoTitleEnabled`, `_DeleteAllChatHistory`. Tool access: `_ToolPermissions_AutoApproveBuiltInWrites`, `_ToolCatalog`, per-tool `_ForgetSession_<toolName>` / `_Revoke_<toolName>` / `_AllowedForSession_<toolName>` / `_AllowedAlways_<toolName>`. Meeting: `_EnableMeetingDiarization`, `_MeetingSmartSpeakerDetection`, `_SpeakerEmbeddingThreshold`, `_MeetingMaxSpeakers`, `_MeetingMinSpeechSeconds`, `_MeetingBrowser`, `_MeetingAttendeeShowBrowserWindow`. Agent runs: `_AgentMaxSteps`, `_MaxToolRoundsPerStep`, `_AgentWallClockMinutes`, `_AgentMaxReplans`, `_AgentPlanReasoningTurnEnabled`, `_Agent_AutoApproveBuiltInWrites`, per-persona `_AgentRoster_<guid>`, `_ScheduledMaxSteps`, `_ScheduledWallClockMinutes`, `_ScheduledMaxReplans`, `_MaxParallelBackgroundRuns` |
+| Settings → Providers | `Settings_Providers_UseSameProviderForAllModes`, `_OptimizeProvider`, `_AssistantProvider`, `_AddProvider`, `_GoToCloudSync`, per-row `Provider_Test_<guid>` / `Provider_Edit_<guid>` / `Provider_Delete_<guid>` |
+| Settings → Account | `Settings_Account_ServerUrl`, `_TrustSelfSignedCertificates`, `_LoginEmail`, `_LoginPassword`, `_LoginWithPassword`, `_OpenRegistrationPage`, `_OpenForgotPassword`, `_LoginWithGoogle`, `_LoginWithMicrosoft`, `_LoginWithEntraId`, `_SyncNow`, `_SyncLogout`, `_IsE2EEEnabled`, `_CheckForPendingDevices` |
+| Settings → Optimize | `Settings_Optimize_GoToProvidersTab`, `_OutputAction`, `_AutoTypeDelayMs`; the template list uses the `Templates_*` / `Template_*` ids above |
 | Routines list / actions | `Routines_JobList`, `Routines_NewJob`, `Routines_Edit`, `Routines_Toggle`, `Routines_RunNow`, `Routines_Delete`, `Routines_StatusMessage`, `Routines_Detail_NextRun`, `Routines_RunHistory` |
 | Routines editor | `Routines_Field_Name`, `_Goal`, `_Kind`, `_Recurrence`, `_DayOfWeek`, `_Month`, `_DayOfMonth`, `_Time`, `_Date`, `_Provider`, `_GrantedTools`, `_Quiet`, plus `Routines_Save` / `Routines_Cancel` |
 | Persona dialog | `PersonaEdit_Name`, `PersonaEdit_SystemPrompt`, `PersonaEdit_Archetype`, `PersonaEdit_ModelType`, `PersonaEdit_ToolScope`, `PersonaEdit_PreferredProvider`, `PersonaEdit_ReasoningEffort` |
@@ -34,6 +40,23 @@ Companion to `docs/2026-08-16-ui-automation-gaps.md` (the findings that motivate
 
 Built-in personas expose only `Persona_Duplicate_<guid>`; edit/delete exist for user personas
 only. Use `automationId*=Persona_Edit_` to enumerate the editable ones.
+
+Per-item ids interpolate the row's identity. Two families end in a guid you have to discover at
+runtime — provider rows use `AiProvider.Id`, roster rows the persona guid — so enumerate with a
+prefix match (`automationId*=Provider_Edit_`, verified to return one hit per row) and read the id
+back instead of hardcoding one. The
+rest are stable strings you can write literally: the voice key (`en_US-lessac-medium`), the tool
+name, and for the PII rows the keyword you just typed. Tool name is *not* unique, so two plugins
+exposing the same tool produce the same id twice.
+
+Some settings ids are absent from the tree, not merely hidden, until the state that renders them:
+`Settings_General_WhisperModel` / `_DownloadWhisperModel` need Whisper selected in
+`Settings_General_SttEngine`, `_DownloadParakeetModel` needs Parakeet, each voice row exposes
+`_DownloadVoice_` or `_SelectVoice_` but never both, and the tool-catalog checkboxes only exist
+once `Settings_Assistant_ToolCatalog` (a `CardExpander`) is expanded. Note also that
+`Settings_Assistant_ToolPermissions_AutoApproveBuiltInWrites` and
+`Settings_Assistant_Agent_AutoApproveBuiltInWrites` are one property rendered on two tabs; either
+one moves the setting, and both share an accessible name.
 
 ## Navigation
 
@@ -53,9 +76,13 @@ correctly.
    `ww_select(selector="automationId=Settings_CategoryList", optionText="Assistant")`.
    `ww_get_value` on the same list reports the selected category by name. (Don't click the item's
    `Text` child — that returns success and does nothing.)
-3. Select the inner tab with `ww_select(selector="type=TabControl", optionText="Personas")`.
-   **The tab's content appears as children of the selected TabItem**, not as siblings of the tab
-   headers — scope searches as `type=TabItem[name='Personas'] >> ...`.
+3. Select the inner tab. `ww_select(selector="type=TabControl", optionText="Personas")` works but
+   matches a localized header; prefer
+   `ww_select(selector="type=TabControl", optionSelector="automationId=Settings_General_Tab_Speech")`,
+   which is language-independent and verified. **The tab's content appears as children of the
+   selected TabItem**, not as siblings of the tab headers, so scope name-based searches as
+   `type=TabItem[name='Personas'] >> ...`; an `automationId=` is unique within the view and
+   resolves on its own once the tab is selected.
 
 ## Chat and tool approval
 
@@ -106,21 +133,19 @@ Committed recordings, the settings fixture they start from and the replay harnes
   `settings.json` (recording captures actions, never preconditions). Flipping *Start minimized*
   makes the next run fail with "No main window found".
 - `ww_heal_script` / `winwright heal` only validate the steps whose targets are on screen *right
-  now*, and they ignore elements that have no AutomationId — so they cannot help in Settings.
+  now*, and they ignore elements that have no AutomationId — so they do cover the five settings
+  views, but not Plugins or the E2EE onboarding screen.
 
 ## Known gaps (don't burn time rediscovering these)
 
 - **`ui:InfoBar` exposes no automation peer at all** in this Wpf.Ui version — it renders, but
   neither its `AutomationId` nor its message reaches UIA. Don't put anything an assertion needs
   inside one.
-- **The settings views carry no AutomationIds at all** (`GeneralView.xaml`, `AssistantView.xaml`,
-  …) — only the category list, the inner tabs and the edit dialogs have them. CheckBoxes are
-  reachable by their `Content`-derived `Name` (locale-fragile), but the **Speech tab's two
-  ComboBoxes have neither name nor id and cannot be targeted at all**: the selector grammar has no
-  ordinal attribute, so no selector can distinguish them.
-- **The Providers grid has no per-row AutomationIds.** Its Edit / Delete buttons do carry
-  accessible names, so `type=Button[name='Edit']` works but matches every row; `ww_invoke` takes
-  the first. Disambiguate by scoping to the row, or add ids if a test needs a specific provider.
+- **`PluginsView.xaml` and the E2EE onboarding screen hosted inside Account still have no ids.**
+  The General, Assistant, Providers, Account and Optimize views are id-addressable throughout,
+  inner tab headers included, and `tests/Pia.Wpf.Tests/Views/SettingsViewAutomationIdTests.cs`
+  fails `dotnet test` if that stops being true. It is a test, not a build error — a missing id
+  compiles fine.
 
 ## Cross-checks
 

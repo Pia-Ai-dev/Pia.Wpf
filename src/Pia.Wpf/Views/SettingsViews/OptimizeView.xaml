@@ -18,6 +18,7 @@
         <TextBlock Text="{loc:Str Settings_ProviderHint}"
                    Style="{StaticResource PiaSettingsDescriptionStyle}"/>
         <ui:HyperlinkButton Content="{loc:Str Settings_ProviderHint_Link}"
+                            AutomationProperties.AutomationId="Settings_Optimize_GoToProvidersTab"
                             Command="{Binding ProvidersVm.GoToProvidersTabCommand}"
                             HorizontalAlignment="Left"
                             Margin="0,4,0,0"/>
@@ -34,7 +35,8 @@
       <StackPanel Margin="0,0,0,20">
         <TextBlock Text="{loc:Str Settings_OutputAction}"
                    Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-        <ComboBox ItemsSource="{Binding OutputActions}"
+        <ComboBox AutomationProperties.AutomationId="Settings_Optimize_OutputAction"
+                  ItemsSource="{Binding OutputActions}"
                   SelectedItem="{Binding OutputAction}"
                   IsEnabled="{Binding IsOutputActionEnforced, Converter={StaticResource InverseBooleanConverter}}"
                   Width="400"
@@ -61,7 +63,8 @@
         </StackPanel.Style>
         <TextBlock Text="{loc:Str Settings_AutoTypeDelay}"
                    Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-        <ui:NumberBox Value="{Binding AutoTypeDelayMs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+        <ui:NumberBox AutomationProperties.AutomationId="Settings_Optimize_AutoTypeDelayMs"
+                      Value="{Binding AutoTypeDelayMs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                       IsEnabled="{Binding IsAutoTypeDelayEnforced, Converter={StaticResource InverseBooleanConverter}}"
                       Minimum="5"
                       Maximum="100"

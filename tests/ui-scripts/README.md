@@ -56,8 +56,8 @@ resolver. That is also why "CI-ready" here means *verified on a developer machin
 run these on a clean agent with no providers configured.
 
 The fixture sets `syncEnabled: false` on purpose, so a replay never talks to your server or touches
-your account. It also pins `uiLanguage: 0` (English), because recorded selectors match localized
-control names — see below.
+your account. It also pins `uiLanguage: 0` (English), because any selector that falls back to a
+control's name matches a localized string — see below.
 
 ## Why the fixture exists
 
@@ -101,8 +101,13 @@ Rules that cost real time to learn:
   and passes on replay while doing nothing.
 - **Prefer `automationId=` selectors.** Name-based selectors are localized strings — they break when
   the UI language changes, and `winwright heal` cannot repair them (it only scores elements that have
-  an AutomationId). Most settings controls have no AutomationId yet; add one to the XAML rather than
-  recording a fragile selector.
+  an AutomationId). Every interactive control in the General, Assistant, Providers, Account and
+  Optimize settings views has one, inner tab headers included; where you still find one that does
+  not (Plugins, the E2EE onboarding screen), add it to the XAML rather than recording a fragile
+  selector. `tests/Pia.Wpf.Tests/Views/SettingsViewAutomationIdTests.cs` holds that line and is
+  part of the `dotnet test` gate — a new settings control turns that test red until it carries an
+  id, and the failure message names the control and the id form to use. It does not fail the
+  build; a missing id compiles fine.
 - Keep one scenario per script file. The runner stops at the first failure (`maxFailures: 0`) and a
   junit report then omits the remaining test cases entirely.
 

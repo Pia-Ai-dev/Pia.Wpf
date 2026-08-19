@@ -25,7 +25,8 @@
         <CheckBox Content="{loc:Str Providers_SameForAllModes}"
                   IsChecked="{Binding UseSameProviderForAllModes}"
                   IsEnabled="{Binding IsUseSameProviderEnforced, Converter={StaticResource InverseBooleanConverter}}"
-                  Margin="0,0,0,12"/>
+                  Margin="0,0,0,12"
+                  AutomationProperties.AutomationId="Settings_Providers_UseSameProviderForAllModes"/>
 
         <!-- Optimize / All Modes dropdown -->
         <TextBlock Text="{Binding OptimizeProviderLabel}"
@@ -34,7 +35,8 @@
                   SelectedValue="{Binding OptimizeProviderId}"
                   SelectedValuePath="Id"
                   DisplayMemberPath="Name"
-                  Margin="0,0,0,8"/>
+                  Margin="0,0,0,8"
+                  AutomationProperties.AutomationId="Settings_Providers_OptimizeProvider"/>
 
         <!-- Assistant dropdown only when "same for all" is unchecked -->
         <StackPanel Visibility="{Binding UseSameProviderForAllModes, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
@@ -43,7 +45,8 @@
           <ComboBox ItemsSource="{Binding Providers}"
                     SelectedValue="{Binding AssistantProviderId}"
                     SelectedValuePath="Id"
-                    DisplayMemberPath="Name"/>
+                    DisplayMemberPath="Name"
+                    AutomationProperties.AutomationId="Settings_Providers_AssistantProvider"/>
         </StackPanel>
       </StackPanel>
     </Border>
@@ -85,7 +88,8 @@
           <ui:Button Grid.Column="2"
                      Command="{Binding GoToCloudSyncCommand}"
                      Appearance="Primary"
-                     Margin="12,0,0,0">
+                     Margin="12,0,0,0"
+                     AutomationProperties.AutomationId="Settings_Providers_GoToCloudSync">
             <StackPanel Orientation="Horizontal">
               <ui:SymbolIcon Symbol="Cloud24" FontSize="16" Margin="0,0,8,0"/>
               <TextBlock Text="{loc:Str Providers_GoToCloudSync}"/>
@@ -107,7 +111,8 @@
                    VerticalAlignment="Center"/>
         <ui:Button Grid.Column="1"
                    Appearance="Secondary"
-                   Command="{Binding AddProviderCommand}">
+                   Command="{Binding AddProviderCommand}"
+                   AutomationProperties.AutomationId="Settings_Providers_AddProvider">
           <StackPanel Orientation="Horizontal">
             <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,6,0"/>
             <TextBlock Text="{loc:Str Providers_Add}"/>
@@ -193,7 +198,8 @@
                               Height="36"
                                Padding="0"
                                Margin="0,0,6,0"
-                               AutomationProperties.Name="{loc:Str Providers_Test}">
+                               AutomationProperties.Name="{loc:Str Providers_Test}"
+                               AutomationProperties.AutomationId="{Binding Provider.Id, StringFormat='Provider_Test_{0}'}">
                       <Grid>
                         <ui:SymbolIcon Symbol="PlugConnected24" FontSize="16">
                           <ui:SymbolIcon.Visibility>
@@ -223,7 +229,8 @@
                               Height="36"
                                Padding="0"
                                Margin="0,0,6,0"
-                               AutomationProperties.Name="{loc:Str Providers_Edit}">
+                               AutomationProperties.Name="{loc:Str Providers_Edit}"
+                               AutomationProperties.AutomationId="{Binding Provider.Id, StringFormat='Provider_Edit_{0}'}">
                       <ui:SymbolIcon Symbol="Edit24" FontSize="16"/>
                       <ui:Button.ToolTip>
                         <ToolTip Content="{loc:Str Providers_Edit}"/>
@@ -236,7 +243,8 @@
                               Width="36"
                                Height="36"
                                Padding="0"
-                               AutomationProperties.Name="{loc:Str Providers_Delete}">
+                               AutomationProperties.Name="{loc:Str Providers_Delete}"
+                               AutomationProperties.AutomationId="{Binding Provider.Id, StringFormat='Provider_Delete_{0}'}">
                       <ui:SymbolIcon Symbol="Delete24" FontSize="16"
                                      Foreground="{DynamicResource PiaDangerBrush}"/>
                       <ui:Button.ToolTip>
