@@ -24,9 +24,11 @@ tests/ui-scripts/Invoke-UiScripts.ps1 -Configuration Release -Screenshots
 tests/ui-scripts/Invoke-UiScripts.ps1 -ListScripts
 ```
 
-Exit codes: `0` all passed, `1` a script failed, `2` a setup problem (app not built, WinWright
-missing, Pia already running). With `-Format junit` the verdict is the exit code — the per-step
-summary goes only into the report file.
+You do **not** have to close Pia first, and the harness does not touch your own profile — see below.
+
+Exit codes: `0` all passed, `1` a script failed or the real profile was written, `2` a setup problem
+(app not built, WinWright missing, contradictory arguments). With `-Format junit` the verdict is the
+exit code — the per-step summary goes only into the report file.
 
 Requires WinWright at `%LOCALAPPDATA%\WinWright\Civyk.WinWright.Mcp.exe` (override with
 `-WinWrightPath`). Replay is a CLI verb on that binary, not an MCP tool:
@@ -35,29 +37,59 @@ screenshots, healed scripts) needs `Permissions.AllowFileWrite` in WinWright's `
 which is **off** in a fresh install — without it those flags fail with *"disabled by server
 configuration"*.
 
-**Close Pia first.** The harness refuses to run while `Pia.Wpf` is alive, because the app rewrites
-`settings.json` on every property change and would eat the seeded profile.
-
 ## What the harness does to your machine
 
-It replaces `%APPDATA%\Pia\settings.json` with the fixture, replays, waits for the app to exit, then
+By default it runs **hermetically**: it creates a throwaway data directory under `%TEMP%`, copies the
+fixture into it as `settings.json`, and points the app there with `PIA_DATA_DIR` /
+`PIA_LOCAL_DATA_DIR` (see `src/Pia.Wpf/Infrastructure/PiaPaths.cs`). `%APPDATA%\Pia` and
+`%LOCALAPPDATA%\Pia` are never seeded, written or restored, so:
+
+- **You do not have to close Pia.** A replay and your own instance share no settings file, no
+  `history.db` and no log directory. The harness notes that yours is running and carries on.
+- A crashed run cannot leave a fixture in your profile.
+- At the end the harness re-hashes your real `settings.json` and `history.db` and prints
+  `real profile untouched`. If either changed and no other Pia was running, that is a `LEAK` and the
+  run fails — this is the assertion that keeps the routing honest.
+
+```powershell
+tests/ui-scripts/Invoke-UiScripts.ps1 -DataDir C:\temp\pia-ui   # a named profile instead of %TEMP%
+tests/ui-scripts/Invoke-UiScripts.ps1 -KeepDataDir              # keep it after a pass, to read the logs
+```
+
+The temp profile is deleted after a passing run and kept after a failing one, so a red run leaves you
+its `local\Logs\pia-*.log` and `local\history.db` to read.
+
+### What a hermetic run still shares
+
+Downloaded artifacts stay on the **real** `%LOCALAPPDATA%\Pia` even under an override, because
+re-fetching them per run would cost gigabytes: `Models\` (Whisper, Parakeet, Silero, the speaker
+embedding, the embedding model), `Piper\`, `Browsers\` (Playwright's Chromium). Plugins (`plugins\`)
+and the consent trails (`ConsentAudit\`, `ConsentEvidence\`) are shared too, deliberately — a replay
+should see the same tool surface your real install has, and a consent decision belongs in one ledger.
+
+So a run is hermetic for **data** and shared for **downloaded artifacts and consent**. That is the
+qualifier on "CI-ready": a clean agent gets a clean profile but still downloads the models on first
+use, and nobody has yet run these on such an agent.
+
+### Driving your real profile on purpose
+
+```powershell
+tests/ui-scripts/Invoke-UiScripts.ps1 -KeepProfile
+```
+
+This is the pre-override behaviour and the one mode that **does** require Pia to be closed: it
+replaces `%APPDATA%\Pia\settings.json` with the fixture, replays, waits for the app to exit, then
 restores your file from a timestamped copy under `artifacts/profile-backup/` (printed at start and
-verified by hash at the end). `-KeepProfile` skips all of that and runs against your live settings.
+verified by hash at the end).
 
-The backups under `artifacts/profile-backup/` are copies of your **real** profile — DPAPI-encrypted
-tokens and account email included. They are gitignored; delete them when you are done.
-
-The fixture seeds `settings.json` only. `providers.json`, `templates.json` and
-`%LOCALAPPDATA%\Pia\history.db` stay whatever the machine already has, and the log directory is
-shared with your real install — so treat a run as "the app was opened once". Making this hermetic
-needs a data-directory override in the app; the ~23 call sites that read
-`SpecialFolder.ApplicationData` / `LocalApplicationData` directly would have to go through one
-resolver. That is also why "CI-ready" here means *verified on a developer machine* — nobody has yet
-run these on a clean agent with no providers configured.
+Those backups are copies of your **real** profile — DPAPI-encrypted tokens and account email
+included. They are gitignored; delete them when you are done.
 
 The fixture sets `syncEnabled: false` on purpose, so a replay never talks to your server or touches
 your account. It also pins `uiLanguage: 0` (English), because any selector that falls back to a
-control's name matches a localized string — see below.
+control's name matches a localized string — see below. `hasCompletedFirstRunWizard: true` matters more
+now than it used to: a throwaway profile is a first-run profile, and without that key every script
+would meet the wizard instead of the main window.
 
 ## Why the fixture exists
 
@@ -72,13 +104,15 @@ adding steps to arrange it.
 ## Recording a new script
 
 Record it **against the seeded fixture**, not your own profile — otherwise the start state you
-recorded is not the one the harness reproduces:
+recorded is not the one the harness reproduces. Build the throwaway profile first and hand it to
+`ww_launch` through its `env` parameter, which is the recording-time equivalent of what the harness
+does:
 
 ```powershell
-Copy-Item $env:APPDATA\Pia\settings.json $env:TEMP\settings.mine.json
-Copy-Item tests/ui-scripts/fixtures/settings.ui-test-seed.json $env:APPDATA\Pia\settings.json
-# ... record ...
-Copy-Item $env:TEMP\settings.mine.json $env:APPDATA\Pia\settings.json
+$p = "$env:TEMP\pia-record"
+New-Item -ItemType Directory -Force "$p\roaming", "$p\local" | Out-Null
+Copy-Item tests/ui-scripts/fixtures/settings.ui-test-seed.json "$p\roaming\settings.json"
+# then: ww_launch with env = { PIA_DATA_DIR = "$p\roaming"; PIA_LOCAL_DATA_DIR = "$p\local" }
 ```
 
 Then, driving the app through WinWright's MCP tools:

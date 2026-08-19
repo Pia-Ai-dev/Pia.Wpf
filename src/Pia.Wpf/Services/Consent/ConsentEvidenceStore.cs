@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
+using Pia.Paths;
 using Pia.Logging;
 
 namespace Pia.Services.Consent;
@@ -27,9 +28,7 @@ public sealed class ConsentEvidenceStore : IConsentEvidenceStore
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = false };
 
     /// <summary>Default root: <c>%LOCALAPPDATA%\Pia\ConsentEvidence</c>.</summary>
-    public static string DefaultRootDirectory => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Pia", "ConsentEvidence");
+    public static string DefaultRootDirectory => PiaPaths.ConsentEvidenceDirectory;
 
     private readonly string _rootDirectory;
     private readonly DpapiHelper _dpapi;

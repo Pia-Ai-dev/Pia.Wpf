@@ -1,4 +1,5 @@
 using System.IO;
+using Pia.Paths;
 
 namespace Pia.Infrastructure;
 
@@ -30,9 +31,7 @@ public static class AssistantWorkspace
     /// <c>%LOCALAPPDATA%\Pia</c> for migrate-in-place users whose folder stays there. New installs use
     /// <see cref="DefaultRoot"/>, which is outside every blocked root and needs no carve-out.
     /// </summary>
-    public static string LegacyWorkdir { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Pia", "workdir");
+    public static string LegacyWorkdir => Path.Combine(PiaPaths.LocalDataDirectory, "workdir");
 
     /// <summary>The vault root derived from an assistant files folder: <c>&lt;folder&gt;\Vault</c>.</summary>
     public static string VaultRootFor(string filesFolder) =>
@@ -45,6 +44,5 @@ public static class AssistantWorkspace
     /// be able to disagree about where it is (Batch 06 B1). <c>HeadlessRunLauncher</c> uses this as its default
     /// (an injected override keeps tests off the real user folder), and <c>RunWorkspaceService</c> uses it too.
     /// </summary>
-    public static string RunsRoot { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Pia", "runs");
+    public static string RunsRoot => Path.Combine(PiaPaths.LocalDataDirectory, "runs");
 }

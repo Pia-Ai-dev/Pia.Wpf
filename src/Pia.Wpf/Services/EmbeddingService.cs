@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using Microsoft.ML.Tokenizers;
+using Pia.Paths;
 using Pia.Services.Interfaces;
 
 namespace Pia.Services;
@@ -57,8 +58,7 @@ public class EmbeddingService : IEmbeddingService, IDisposable
         _logger = logger;
         _httpClientFactory = httpClientFactory;
 
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        _modelDirectory = Path.Combine(localAppData, "Pia", "Models", "Embeddings");
+        _modelDirectory = Path.Combine(PiaPaths.ModelsDirectory, "Embeddings");
         Directory.CreateDirectory(_modelDirectory);
     }
 

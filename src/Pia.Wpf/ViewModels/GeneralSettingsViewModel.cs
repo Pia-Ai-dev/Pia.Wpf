@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Models;
+using Pia.Paths;
 using Pia.Services.Interfaces;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -434,10 +435,8 @@ public partial class GeneralSettingsViewModel : ObservableObject
         {
             _syncClientService.StopBackgroundSync();
 
-            var roamingDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Pia");
-            var localDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Pia");
+            var roamingDir = PiaPaths.RoamingDataDirectory;
+            var localDir = PiaPaths.LocalDataDirectory;
 
             if (Directory.Exists(roamingDir))
                 Directory.Delete(roamingDir, recursive: true);

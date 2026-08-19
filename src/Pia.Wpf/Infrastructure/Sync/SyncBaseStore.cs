@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text;
+using Pia.Paths;
 
 namespace Pia.Infrastructure.Sync;
 
@@ -33,11 +34,7 @@ public sealed class SyncBaseStore
         _root = root;
     }
 
-    private static string DefaultRoot()
-    {
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return Path.Combine(localAppData, "Pia", "SyncBase");
-    }
+    private static string DefaultRoot() => Path.Combine(PiaPaths.LocalDataDirectory, "SyncBase");
 
     /// <summary>The stored base content for <paramref name="id"/>, or <c>null</c> if none is retained.</summary>
     public async Task<string?> ReadBaseAsync(Guid id)

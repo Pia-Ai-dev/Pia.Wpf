@@ -1,4 +1,5 @@
 using System.IO;
+using Pia.Paths;
 
 namespace Pia.Infrastructure;
 
@@ -62,7 +63,9 @@ public static class SensitivePathGuard
         return false;
     }
 
-    private static string[] BuildBlockedRoots()
+    /// <summary>Internal so a test can assert what an override produces: the array itself is built once per
+    /// process, long before a test could swing the data roots.</summary>
+    internal static string[] BuildBlockedRoots()
     {
         var roots = new List<string?>();
 
@@ -86,12 +89,25 @@ public static class SensitivePathGuard
         AddEnv("USERPROFILE", ".aws");                      // cloud credentials
         AddEnv("USERPROFILE", ".gnupg");
 
-        return roots
+        var canonical = roots
             .Where(r => !string.IsNullOrEmpty(r))
             .Select(r => SafeCanonical(r!))
             .Where(r => r is not null)
             .Select(r => r!)
-            .ToArray();
+            .ToList();
+
+        // The two entries above cover the real profile; these cover a redirected data directory, which is the
+        // same category of secret. Canonicalized as an island rather than through SafeCanonical because a
+        // throwaway data directory routinely does not exist yet when this array is built, and SafeCanonical
+        // drops what it cannot resolve.
+        foreach (var dataRoot in new[] { PiaPaths.LocalDataDirectory, PiaPaths.RoamingDataDirectory })
+        {
+            var island = CanonicalizeAllowedIsland(dataRoot);
+            if (island is not null && !canonical.Contains(island, StringComparer.OrdinalIgnoreCase))
+                canonical.Add(island);
+        }
+
+        return canonical.ToArray();
     }
 
     /// <summary>

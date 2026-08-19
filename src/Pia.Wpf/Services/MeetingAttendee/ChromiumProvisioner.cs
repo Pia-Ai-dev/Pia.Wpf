@@ -1,5 +1,6 @@
 using System.IO;
 using Microsoft.Extensions.Logging;
+using Pia.Paths;
 
 namespace Pia.Services.MeetingAttendee;
 
@@ -20,9 +21,7 @@ public sealed class ChromiumProvisioner : IBrowserProvisioner
     private readonly ILogger<ChromiumProvisioner> _logger;
 
     /// <summary>Cache root for downloaded browsers (the <c>PLAYWRIGHT_BROWSERS_PATH</c> value).</summary>
-    public static string BrowsersDirectory { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Pia", "Browsers");
+    public static string BrowsersDirectory => PiaPaths.BrowsersDirectory;
 
     /// <summary>
     /// Optional override for the Playwright download host (CDN), wired to the

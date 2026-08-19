@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using Pia.Paths;
 
 namespace Pia.Services;
 
@@ -10,8 +11,9 @@ namespace Pia.Services;
 /// <typeparam name="T">The type of data to persist</typeparam>
 public abstract class JsonPersistenceService<T> where T : class
 {
-    protected static readonly string SettingsDirectory = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Pia");
+    /// <summary>A property, not a <c>static readonly</c> field: a field would freeze at type load, which can
+    /// precede any data-directory override.</summary>
+    protected static string SettingsDirectory => PiaPaths.RoamingDataDirectory;
 
     protected static readonly JsonSerializerOptions JsonOptions = new()
     {

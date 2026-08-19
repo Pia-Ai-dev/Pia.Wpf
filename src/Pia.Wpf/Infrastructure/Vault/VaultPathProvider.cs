@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using Pia.Paths;
 
 namespace Pia.Infrastructure.Vault;
 
@@ -38,9 +39,5 @@ public sealed class VaultPathProvider
         _vaultRoot = root;
     }
 
-    private static string DefaultRoot()
-    {
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return Path.Combine(localAppData, "Pia", "Vault");
-    }
+    private static string DefaultRoot() => Path.Combine(PiaPaths.LocalDataDirectory, "Vault");
 }

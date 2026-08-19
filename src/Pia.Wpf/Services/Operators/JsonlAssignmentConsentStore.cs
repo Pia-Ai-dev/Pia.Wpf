@@ -2,6 +2,7 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Pia.Paths;
 
 namespace Pia.Services.Operators;
 
@@ -49,8 +50,7 @@ public sealed class JsonlAssignmentConsentStore : IAssignmentConsentStore
     /// different lifecycle, and mixing them would make either one harder to read.</summary>
     public static JsonlAssignmentConsentStore CreateDefault(ILogger<JsonlAssignmentConsentStore> logger)
     {
-        var directory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Pia", "ConsentAudit");
+        var directory = PiaPaths.ConsentAuditDirectory;
         Directory.CreateDirectory(directory);
         return new JsonlAssignmentConsentStore(Path.Combine(directory, "assignments.jsonl"), logger);
     }

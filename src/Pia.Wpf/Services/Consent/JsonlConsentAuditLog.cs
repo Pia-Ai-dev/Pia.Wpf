@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
+using Pia.Paths;
 
 namespace Pia.Services.Consent;
 
@@ -49,11 +50,8 @@ public sealed class JsonlConsentAuditLog : IConsentAuditLog
     /// </summary>
     public static JsonlConsentAuditLog CreateForSession(ILogger<JsonlConsentAuditLog> logger)
     {
-        var dir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Pia", "ConsentAudit");
         var sessionId = Guid.NewGuid().ToString("N");
-        var path = Path.Combine(dir, $"session_{sessionId}.jsonl");
+        var path = Path.Combine(PiaPaths.ConsentAuditDirectory, $"session_{sessionId}.jsonl");
         return new JsonlConsentAuditLog(path, logger);
     }
 

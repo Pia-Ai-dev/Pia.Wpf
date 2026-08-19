@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Pia.Paths;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 
@@ -20,9 +21,7 @@ public class CabManagerService
     private readonly IAuthService _authService;
     private readonly ISettingsService _settingsService;
 
-    private static readonly string PluginsBasePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Pia", "plugins");
+    private static string PluginsBasePath => PiaPaths.PluginsDirectory;
 
     private bool SigningRequired => _configuration.GetValue<bool>("Plugins:SigningRequired", true);
 

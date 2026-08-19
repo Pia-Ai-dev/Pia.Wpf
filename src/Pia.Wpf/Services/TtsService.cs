@@ -3,6 +3,7 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using NAudio.Wave;
 using Pia.Models;
+using Pia.Paths;
 using Pia.Services.Interfaces;
 using PiperSharp;
 using PiperSharp.Models;
@@ -160,9 +161,7 @@ public class TtsService : ITtsService, IDisposable
     {
         _logger = logger;
         _settingsService = settingsService;
-        _baseDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Pia", "Piper");
+        _baseDirectory = PiaPaths.PiperDirectory;
         _piperDirectory = Path.Combine(_baseDirectory, "piper");
         _modelsDirectory = Path.Combine(_baseDirectory, "models");
 

@@ -10,6 +10,7 @@ using Pia.Infrastructure.Vault;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Navigation;
+using Pia.Paths;
 using Pia.Services;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
@@ -61,6 +62,13 @@ public static class Bootstrapper
         _serviceProvider = services.BuildServiceProvider(options);
 
         var bootstrapLogger = _serviceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Bootstrapper");
+
+        // Effective, not configured: the whole point is to make an overridden run visibly distinguishable in a
+        // log a user attaches to a support request.
+        bootstrapLogger.LogInformation(
+            "Data directories: Roaming={Roaming}, Local={Local}, Overridden={Overridden}",
+            PiaPaths.RoamingDataDirectory, PiaPaths.LocalDataDirectory, PiaPaths.IsOverridden);
+
         var envServerUrl = Environment.GetEnvironmentVariable(ServerUrlEnvVar);
 #if DEBUG
         bootstrapLogger.LogInformation(
@@ -272,9 +280,7 @@ public static class Bootstrapper
         // One-shot in-place nesting: move legacy %LOCALAPPDATA%\Pia\Vault under the folder.
         if (settings.AssistantFolderLayoutVersion < 1)
         {
-            var legacyVault = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Pia", "Vault");
+            var legacyVault = Path.Combine(PiaPaths.LocalDataDirectory, "Vault");
             var derivedVault = AssistantWorkspace.VaultRootFor(folder!);
             try
             {
@@ -312,9 +318,7 @@ public static class Bootstrapper
             builder.AddDebug();
             builder.SetMinimumLevel(IsDevMode ? LogLevel.Debug : LogLevel.Information);
 
-            var logDirectory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Pia", "Logs");
+            var logDirectory = Path.Combine(PiaPaths.LocalDataDirectory, "Logs");
             Directory.CreateDirectory(logDirectory);
 
             var fileOptions = new FileLoggerOptions
@@ -691,10 +695,8 @@ public static class Bootstrapper
         // Sync services
         services.AddSingleton<SyncDeleteTrackerService>(sp =>
         {
-            var dataDirectory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Pia");
             var logger = sp.GetRequiredService<ILogger<SyncDeleteTrackerService>>();
-            return new SyncDeleteTrackerService(dataDirectory, logger);
+            return new SyncDeleteTrackerService(PiaPaths.RoamingDataDirectory, logger);
         });
         services.AddSingleton<SyncMapper>();
         services.AddSingleton<IAuthService, AuthService>();

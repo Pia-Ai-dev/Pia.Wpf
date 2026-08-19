@@ -58,6 +58,12 @@ A feature is not commit-ready until the build reports **`0 Warning(s)` and `0 Er
 - Fields: `_camelCase`. Properties/Methods/Classes: `PascalCase`. Interfaces: `IName`.
 - MVVM: logic in ViewModels, not Views. Use `[ObservableProperty]` and `[RelayCommand]`.
 - Namespaces use `Pia` (not `Pia.Wpf`) — the project was renamed but namespaces were kept.
+- Data paths: never call `Environment.GetFolderPath(SpecialFolder.ApplicationData/.LocalApplicationData)`.
+  Go through `Pia.Paths.PiaPaths` (`src/Pia.Wpf/Paths/`), which is overridable by `PIA_DATA_DIR` /
+  `PIA_LOCAL_DATA_DIR` so UI tests get a throwaway profile. Like `Pia.Logging`, it deliberately sits
+  outside `Pia.Infrastructure` so ViewModels can use it without breaking the layer rule. Expose a routed
+  path as a **property**, never a `static readonly` field or `{ get; } = …` — those freeze at type load.
+  `DataDirectoryRoutingTests` and `PiaPathsTests` hold both lines.
 
 ## Comment Discipline
 
@@ -116,10 +122,11 @@ Driving the app with WinWright/UIA (walkthroughs, UI regression tests): read `do
 
 Recorded UI flows live in `tests/ui-scripts/` and replay through `Invoke-UiScripts.ps1` (WinWright's
 CLI `run` verb, not an MCP tool). They are **not** part of the `dotnet test` gate — they launch the
-real app and drive the real desktop, so close Pia first and expect the harness to swap
-`%APPDATA%\Pia\settings.json` for its fixture and restore it afterwards. Read that folder's README
-before recording a new one; the recorder has sharp edges (`stop` is a one-way door, only
-`ww_assert_value` is recorded).
+real app and drive the real desktop. The harness runs the app against a throwaway data directory, so
+Pia may stay open and your profile is never touched; it verifies that by hash and fails on a leak.
+`-KeepProfile` restores the old seed-and-restore behaviour and does require Pia to be closed. Read
+that folder's README before recording a new one; the recorder has sharp edges (`stop` is a one-way
+door, only `ww_assert_value` is recorded).
 
 ## Rules
 

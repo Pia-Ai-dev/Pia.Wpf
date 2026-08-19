@@ -2,6 +2,7 @@ using System.IO;
 using System.Net.Http;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
+using Pia.Paths;
 using Pia.Services.Interfaces;
 using SharpCompress.Common;
 using SharpCompress.Readers;
@@ -33,9 +34,7 @@ public static class LiveTranscriptionModels
     private const string SpeakerEmbeddingFileName =
         "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx";
 
-    public static string ModelsDirectory { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Pia", "Models");
+    public static string ModelsDirectory => PiaPaths.ModelsDirectory;
 
     /// <summary>
     /// Flat path of the speaker-embedding model (mirrors the Silero VAD layout — the model is

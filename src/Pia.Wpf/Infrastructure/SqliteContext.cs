@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
+using Pia.Paths;
 
 namespace Pia.Infrastructure;
 
@@ -41,12 +42,7 @@ public class SqliteContext : IDisposable
     /// </summary>
     public string ConnectionString => _connectionString;
 
-    private static string DefaultDbPath()
-    {
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var dbDirectory = Path.Combine(localAppData, "Pia");
-        return Path.Combine(dbDirectory, "history.db");
-    }
+    private static string DefaultDbPath() => Path.Combine(PiaPaths.LocalDataDirectory, "history.db");
 
     public SqliteConnection GetConnection()
     {

@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Models;
+using Pia.Paths;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Velopack;
@@ -325,8 +326,8 @@ public partial class App : Application
     {
         try
         {
-            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var oldModelPath = System.IO.Path.Combine(localAppData, "Pia", "Models", "Embeddings", "all-MiniLM-L6-v2.onnx");
+            var oldModelPath = System.IO.Path.Combine(
+                PiaPaths.ModelsDirectory, "Embeddings", "all-MiniLM-L6-v2.onnx");
             if (System.IO.File.Exists(oldModelPath))
                 System.IO.File.Delete(oldModelPath);
         }
