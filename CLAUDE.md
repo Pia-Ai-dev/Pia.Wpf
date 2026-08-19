@@ -114,6 +114,13 @@ _logger.LogInformation("Fetching from {Url}", SafeUrl.Format(requestUrl));
 
 Driving the app with WinWright/UIA (walkthroughs, UI regression tests): read `docs/ui-automation-playbook.md` first. It lists the stable AutomationIds and the techniques that work; do not fall back to pixel-offset clicking.
 
+Recorded UI flows live in `tests/ui-scripts/` and replay through `Invoke-UiScripts.ps1` (WinWright's
+CLI `run` verb, not an MCP tool). They are **not** part of the `dotnet test` gate — they launch the
+real app and drive the real desktop, so close Pia first and expect the harness to swap
+`%APPDATA%\Pia\settings.json` for its fixture and restore it afterwards. Read that folder's README
+before recording a new one; the recorder has sharp edges (`stop` is a one-way door, only
+`ww_assert_value` is recorded).
+
 ## Rules
 
 - Do not read entire large files in a first run. Use grep or read file signatures first.

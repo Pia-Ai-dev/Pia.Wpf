@@ -1,0 +1,78 @@
+{
+  "version": "1",
+  "mode": "test",
+  "launchPath": "{{APP_EXE}}",
+  "runConfig": {
+    "captureScreenshots": false,
+    "screenshotFormat": "png",
+    "screenshotOnFailureOnly": false,
+    "continueOnFailure": false,
+    "stepTimeoutMs": 10000,
+    "maxFailures": 0
+  },
+  "testCases": [
+    {
+      "id": "TC-001",
+      "title": "Settings General: enable Start minimized to system tray",
+      "steps": [
+        {
+          "tool": "ww_invoke",
+          "selector": "automationId=NavItem_Settings",
+          "testCaseId": "TC-001"
+        },
+        {
+          "tool": "ww_select",
+          "selector": "automationId=Settings_CategoryList",
+          "extra": "General",
+          "testCaseId": "TC-001"
+        },
+        {
+          "tool": "ww_select",
+          "selector": "type=TabControl",
+          "extra": "Application",
+          "testCaseId": "TC-001"
+        },
+        {
+          "tool": "ww_set_checked",
+          "selector": "type=CheckBox[name='Start minimized to system tray']",
+          "extra": "check",
+          "assertion": {
+            "type": "assert",
+            "selector": "type=CheckBox[name='Start minimized to system tray']",
+            "property": "value",
+            "op": "eq",
+            "expected": "On",
+            "message": "Start-minimized checkbox should be checked after set_checked"
+          },
+          "testCaseId": "TC-001"
+        }
+      ]
+    },
+    {
+      "id": "TC-002",
+      "title": "Settings General: disable Auto-paste selected text on hotkey",
+      "steps": [
+        {
+          "tool": "ww_select",
+          "selector": "type=TabControl",
+          "extra": "Application",
+          "testCaseId": "TC-002"
+        },
+        {
+          "tool": "ww_set_checked",
+          "selector": "type=CheckBox[name='Auto-paste selected text on hotkey']",
+          "extra": "uncheck",
+          "assertion": {
+            "type": "assert",
+            "selector": "type=CheckBox[name='Auto-paste selected text on hotkey']",
+            "property": "value",
+            "op": "eq",
+            "expected": "Off",
+            "message": "Auto-paste checkbox should be unchecked"
+          },
+          "testCaseId": "TC-002"
+        }
+      ]
+    }
+  ]
+}

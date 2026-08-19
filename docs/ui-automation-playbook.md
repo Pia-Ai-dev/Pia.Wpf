@@ -86,11 +86,38 @@ correctly.
   and `ww_list_windows`. Better: `ww_dialog(action=expect)` *before* the click to pre-register
   a handler and avoid the race. (Startup-failure is the one remaining native box, by design.)
 
+## Recording a walkthrough (`ww_record`)
+
+Committed recordings, the settings fixture they start from and the replay harness live in
+`tests/ui-scripts/` (read its README before adding one). Full evaluation of the feature in
+`docs/2026-08-18-winwright-recording-eval.md`. The short version:
+
+- The recorder captures **your tool calls**, so the script is only as good as the selectors you
+  typed. Pass `record: false` on discovery calls; read-only tools are never recorded.
+- Wrap scenarios in `test_start` / `test_end`, and use **`ww_assert_value`** for checks —
+  `ww_assert` is not recorded. On a `CheckBox`, `property=value` with `On`/`Off` works
+  (TogglePattern).
+- **Never call `stop` to peek**: it ends the session, `pop` then refuses, and `start` clears the
+  buffer. `pop`'s `remaining` count is the only mid-run read.
+- Replay is **not** in the MCP surface — it is a CLI verb on the same binary:
+  `%LOCALAPPDATA%\WinWright\Civyk.WinWright.Mcp.exe run <script.json> --format junit`. It launches
+  the app from the script's `launchPath`, evaluates the embedded assertions and exits 0/1.
+- A script that changes persisted app state **only passes once**: give it a seeded
+  `settings.json` (recording captures actions, never preconditions). Flipping *Start minimized*
+  makes the next run fail with "No main window found".
+- `ww_heal_script` / `winwright heal` only validate the steps whose targets are on screen *right
+  now*, and they ignore elements that have no AutomationId — so they cannot help in Settings.
+
 ## Known gaps (don't burn time rediscovering these)
 
 - **`ui:InfoBar` exposes no automation peer at all** in this Wpf.Ui version — it renders, but
   neither its `AutomationId` nor its message reaches UIA. Don't put anything an assertion needs
   inside one.
+- **The settings views carry no AutomationIds at all** (`GeneralView.xaml`, `AssistantView.xaml`,
+  …) — only the category list, the inner tabs and the edit dialogs have them. CheckBoxes are
+  reachable by their `Content`-derived `Name` (locale-fragile), but the **Speech tab's two
+  ComboBoxes have neither name nor id and cannot be targeted at all**: the selector grammar has no
+  ordinal attribute, so no selector can distinguish them.
 - **The Providers grid has no per-row AutomationIds.** Its Edit / Delete buttons do carry
   accessible names, so `type=Button[name='Edit']` works but matches every row; `ww_invoke` takes
   the first. Disambiguate by scoping to the row, or add ids if a test needs a specific provider.
@@ -104,6 +131,12 @@ correctly.
   - `ww_click` false-success (above).
   - `ww_dialog handle` can report success without dismissing.
   - Window-scoped screenshots never show native dialogs.
+  - `ww_snapshot`'s `label` is **not** a selectable `name` — it is inferred from neighbouring text,
+    so a `[name='<that label>']` selector can resolve 0 elements.
+  - `ww_get_tree_path` emits ordinal paths (`type=Pane[0] >> type=ComboBox[0]`) that the selector
+    parser **rejects**, despite the tool calling them "suitable for use as a selector".
+  - `ww_inspect label_map` pairs the settings checkboxes with the *previous* row's description
+    (`SpatialAbove` off-by-one) — plausible-looking and wrong.
   - The `value` **selector filter reads ValuePattern only**, not SelectionPattern:
     `type=ComboBox[value='visionary']` resolves 0 elements while `ww_get_value` on the same
     element returns `visionary`. Filter on snapshot output instead of on the selector.
