@@ -7,6 +7,7 @@ using NSubstitute;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
+using Pia.Tests.TestInfrastructure;
 using Pia.ViewModels.Models;
 using Xunit;
 
@@ -279,8 +280,8 @@ public class ChatSessionManagerTests
 
         // The lookup is fire-and-forget off the UI thread (an activation must never stall on it), so wait
         // for it rather than assuming it already landed.
-        for (var i = 0; i < 200 && session.ActiveRunId is null; i++)
-            await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Eventually.TrueAsync(() => session.ActiveRunId is not null,
+            "the fire-and-forget restore to attach the parked run", TestContext.Current.CancellationToken);
 
         Assert.Equal(parked.Id, session.ActiveRunId);
         // Late subscribers still get the panel: AssistantViewModel reads ActiveRunId when it attaches.
@@ -348,17 +349,19 @@ public class ChatSessionManagerTests
 
         var sut = CreateSut();
         var session = await sut.ActivateAsync(chatId);
-        session!.SetActiveRun(null);
-        await sut.RestoreActiveRunAsync(session);
-        Assert.True(session.ForeignRunActive);
+        Assert.NotNull(session);
 
-        // AgentRunService raises RunChanged from a pool thread; the manager marshals the flip, so poll.
+        // ActivateAsync's own fire-and-forget restore IS the arrangement: forcing a second one raced it, and the
+        // loser could return with the flag unset or write its stale snapshot back over the flip below.
+        await Eventually.TrueAsync(() => session!.ForeignRunActive,
+            "the restored running run to be flagged foreign", TestContext.Current.CancellationToken);
+
         _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(running.Id, AgentRunState.Paused));
 
-        for (var i = 0; i < 200 && session.ForeignRunActive; i++)
-            await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Eventually.TrueAsync(() => !session!.ForeignRunActive,
+            "the paused run's foreign flag to clear", TestContext.Current.CancellationToken);
 
-        Assert.False(session.ForeignRunActive);
+        Assert.False(session!.ForeignRunActive);
     }
 
     // ---- PlanApprovalParkActive: narrower than ForeignRunActive, and it needs the pause REASON ----
@@ -388,8 +391,8 @@ public class ChatSessionManagerTests
 
         // ActivateAsync also restores fire-and-forget, so that call can win the attach and leave this one
         // early-returning while its own post-attach reason read is still in flight.
-        for (var i = 0; i < 200 && !session.PlanApprovalParkActive; i++)
-            await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Eventually.TrueAsync(() => session.PlanApprovalParkActive,
+            "the plan-approval park flag to be set", TestContext.Current.CancellationToken);
 
         Assert.True(session.PlanApprovalParkActive);
         Assert.False(session.ForeignRunActive); // still the parked "continue in chat" shape for THAT flag
@@ -470,15 +473,15 @@ public class ChatSessionManagerTests
         });
         _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(running.Id, AgentRunState.WaitingForInput));
 
-        for (var i = 0; i < 200 && !session.PlanApprovalParkActive; i++)
-            await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Eventually.TrueAsync(() => session.PlanApprovalParkActive,
+            "the plan-approval park flag to be set", TestContext.Current.CancellationToken);
         Assert.True(session.PlanApprovalParkActive);
 
         // Reject lands: Cancelled.
         _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(running.Id, AgentRunState.Cancelled));
 
-        for (var i = 0; i < 200 && session.PlanApprovalParkActive; i++)
-            await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Eventually.TrueAsync(() => !session.PlanApprovalParkActive,
+            "the rejected run's plan-approval park flag to clear", TestContext.Current.CancellationToken);
         Assert.False(session.PlanApprovalParkActive);
     }
 
@@ -491,8 +494,8 @@ public class ChatSessionManagerTests
         _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.WaitingForInput));
         read.SetResult(ParkedForPlanApproval(runId, session.Id!.Value));
 
-        for (var i = 0; i < 200 && !session.PlanApprovalParkActive; i++)
-            await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Eventually.TrueAsync(() => session.PlanApprovalParkActive,
+            "the gated reason read to set the plan-approval park flag", TestContext.Current.CancellationToken);
         Assert.True(session.PlanApprovalParkActive);
     }
 
@@ -508,8 +511,8 @@ public class ChatSessionManagerTests
         _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Running));
         read.SetResult(ParkedForPlanApproval(runId, session.Id!.Value));
 
-        for (var i = 0; i < 200 && !session.PlanApprovalParkActive; i++)
-            await Task.Delay(10, TestContext.Current.CancellationToken);
+        // Nothing to wait FOR here — the overtaken read must never land — so give its continuation a window.
+        await Eventually.SettleAsync(() => session.PlanApprovalParkActive, TestContext.Current.CancellationToken);
 
         Assert.False(session.PlanApprovalParkActive);
         // Non-vacuity: the read really did run and really did answer "parked for plan approval".
@@ -562,8 +565,8 @@ public class ChatSessionManagerTests
         // The user hit Continue on the Flow card: the run resumes HEADLESSLY, so it becomes a writer again.
         _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(parked.Id, AgentRunState.Running));
 
-        for (var i = 0; i < 200 && !session.ForeignRunActive; i++)
-            await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Eventually.TrueAsync(() => session.ForeignRunActive,
+            "the resumed run to be flagged foreign", TestContext.Current.CancellationToken);
 
         Assert.True(session.ForeignRunActive);
     }
@@ -658,8 +661,8 @@ public class ChatSessionManagerTests
 
         // Continue -> HeadlessRunLauncher.ResumeAsync -> TryBeginResumeAsync CAS'd it to Running.
         _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Running));
-        for (var i = 0; i < 200 && !session.ForeignRunActive; i++)
-            await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Eventually.TrueAsync(() => session.ForeignRunActive,
+            "the handed-back run to be flagged foreign", TestContext.Current.CancellationToken);
 
         Assert.True(session.ForeignRunActive);
     }
@@ -691,8 +694,8 @@ public class ChatSessionManagerTests
         Assert.False(session.ForeignRunActive);
 
         _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Running));
-        for (var i = 0; i < 200 && !session.ForeignRunActive; i++)
-            await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Eventually.TrueAsync(() => session.ForeignRunActive,
+            "the post-terminal executing state to be flagged foreign", TestContext.Current.CancellationToken);
 
         Assert.True(session.ForeignRunActive);
     }
@@ -888,8 +891,8 @@ public class ChatSessionManagerTests
         session.RaiseTurnCompleted(new TurnCompletedEventArgs { Succeeded = true });
 
         // Terminal persist + rename are both fire-and-forget; wait for the rename to land.
-        for (var i = 0; i < 200 && session.Title != "Weekly plan"; i++)
-            await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Eventually.TrueAsync(() => session.Title == "Weekly plan",
+            "the auto-title rename to reach the session", TestContext.Current.CancellationToken);
 
         Assert.Equal("Weekly plan", session.Title);
         await _chatService.Received(1).SetTitleAsync(session.Id!.Value, "Weekly plan", Arg.Any<CancellationToken>());
@@ -917,12 +920,9 @@ public class ChatSessionManagerTests
 
         session.RaiseTurnCompleted(new TurnCompletedEventArgs { Succeeded = true });
 
-        for (var i = 0; i < 200; i++)
-        {
-            if (_chatService.ReceivedCalls().Any(c => c.GetMethodInfo().Name == nameof(IAssistantChatService.SetTitleAsync)))
-                break;
-            await Task.Delay(10, TestContext.Current.CancellationToken);
-        }
+        await Eventually.TrueAsync(
+            () => _chatService.ReceivedCalls().Any(c => c.GetMethodInfo().Name == nameof(IAssistantChatService.SetTitleAsync)),
+            "the fire-and-forget rename to call SetTitleAsync", TestContext.Current.CancellationToken);
 
         await _chatService.Received(1).SetTitleAsync(session.Id!.Value, "Weekly plan", Arg.Any<CancellationToken>());
         // The terminal persist's derived title stands; the LLM title is NOT applied to a chat that is gone.
@@ -1482,8 +1482,8 @@ public class ChatSessionManagerTests
         // The handler releases BEFORE it recomputes, so a cleared flag proves the release already landed.
         _runService.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Completed));
 
-        for (var i = 0; i < 200 && session.ForeignRunActive; i++)
-            await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Eventually.TrueAsync(() => !session.ForeignRunActive,
+            "the completed run's foreign flag to clear", TestContext.Current.CancellationToken);
 
         Assert.False(session.ForeignRunActive);
         Assert.Null(_executingRuns.GetChatId(runId)); // reverse-looked-up from the run id alone

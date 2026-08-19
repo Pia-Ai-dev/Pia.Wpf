@@ -1,6 +1,7 @@
 using System.IO;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Infrastructure;
@@ -102,7 +103,7 @@ public class SqliteContextIntegrityTests : IDisposable
 
         // Disposing returns the connection to the driver's POOL rather than closing it, so without this the side
         // files stay locked and the pooled handle would serve pre-damage pages back.
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        SqlitePool.ClearFor($"Data Source={path}");
 
         // WAL side files would otherwise re-supply the pages this test is about to destroy.
         foreach (var side in new[] { path + "-wal", path + "-shm" })

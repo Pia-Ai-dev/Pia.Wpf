@@ -7,6 +7,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -280,7 +281,7 @@ public sealed class AgentTimelineObserverTests : IDisposable
         foreach (var svc in _services) svc.Dispose();
         _runs.Dispose();
         _ctx.Dispose();
-        SqliteConnection.ClearAllPools();
+        SqlitePool.ClearFor(_ctx.ConnectionString);
         try { Directory.Delete(_tmpDir, recursive: true); } catch { /* best effort */ }
     }
 

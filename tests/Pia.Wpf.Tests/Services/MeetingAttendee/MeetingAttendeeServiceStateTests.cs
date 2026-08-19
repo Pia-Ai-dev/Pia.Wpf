@@ -10,6 +10,7 @@ using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 using Pia.Services.LiveTranscription;
 using Pia.Services.MeetingAttendee;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services.MeetingAttendee;
@@ -718,29 +719,23 @@ public sealed class MeetingAttendeeServiceStateTests
 
     private static async Task WaitForStateAsync(IMeetingAttendeeService service, MeetingAttendeeState target)
     {
-        for (var i = 0; i < 200 && service.State != target; i++)
-        {
-            await Task.Delay(10);
-        }
+        await Eventually.TrueAsync(() => service.State == target, $"the service to reach {target}",
+            TestContext.Current.CancellationToken);
         Assert.Equal(target, service.State);
     }
 
     private static async Task WaitForAttendeesAsync(IMeetingAttendeeService service, int atLeast)
     {
-        for (var i = 0; i < 200 && service.ObservedAttendees.Count < atLeast; i++)
-        {
-            await Task.Delay(10);
-        }
+        await Eventually.TrueAsync(() => service.ObservedAttendees.Count >= atLeast,
+            $"at least {atLeast} observed attendees", TestContext.Current.CancellationToken);
         Assert.True(service.ObservedAttendees.Count >= atLeast,
             $"Expected at least {atLeast} observed attendees, saw {service.ObservedAttendees.Count}.");
     }
 
     private static async Task WaitForExpectedSpeakersAsync(FakeSpeakerId speakerId)
     {
-        for (var i = 0; i < 200 && speakerId.ExpectedSpeakers.Count == 0; i++)
-        {
-            await Task.Delay(10);
-        }
+        await Eventually.TrueAsync(() => speakerId.ExpectedSpeakers.Count > 0, "an expected-speaker hint",
+            TestContext.Current.CancellationToken);
         Assert.NotEmpty(speakerId.ExpectedSpeakers);
     }
 

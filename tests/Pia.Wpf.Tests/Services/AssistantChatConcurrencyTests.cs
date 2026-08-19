@@ -450,45 +450,71 @@ public sealed class AssistantChatConcurrencyTests : IDisposable
         await ExecAsync(writer, "PRAGMA busy_timeout=100;");
         await ExecAsync(writer, "CREATE TABLE IF NOT EXISTS BusySnapshotProbe (V TEXT)");
 
+        // The writer runs one AWAITED attempt per released permit rather than a free-running loop: a loop's
+        // commit count is a scheduling outcome, and a saturated pool can withhold the task for the whole test,
+        // so the precondition failed instead of the behaviour.
+        const int rounds = 5;
         using var stopWriting = new CancellationTokenSource();
+        using var attemptRequested = new SemaphoreSlim(0);
+        using var attemptFinished = new SemaphoreSlim(0);
         var committed = 0;
+        var refused = 0;
+        Exception? writerFault = null;
         var committer = Task.Run(async () =>
         {
-            while (!stopWriting.IsCancellationRequested)
+            while (true)
             {
-                // The delete transaction holds the write lock from BEGIN, so THIS writer's commits are the ones
-                // expected to be refused while it runs. Only the delete's outcome is asserted.
+                try { await attemptRequested.WaitAsync(stopWriting.Token); }
+                catch (OperationCanceledException) { return; }
+
+                // The delete transaction holds the write lock from BEGIN, so a refusal here is contention, not
+                // a failure. Either outcome proves the foreign connection was live; only the delete is asserted.
                 try
                 {
                     await ExecAsync(writer, "INSERT INTO BusySnapshotProbe VALUES ('w')");
                     committed++;
                 }
-                catch (SqliteException) { }
-                await Task.Delay(1, TestContext.Current.CancellationToken);
+                catch (SqliteException ex) when (ex.SqliteErrorCode == 5) { refused++; }
+                catch (Exception ex) { writerFault ??= ex; }
+                finally { attemptFinished.Release(); }
             }
         }, TestContext.Current.CancellationToken);
 
+        // Nothing holds the write lock yet, so this first attempt MUST commit — the precondition "a foreign
+        // connection really writes this file" is established here rather than counted at the end.
+        attemptRequested.Release();
+        await attemptFinished.WaitAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(1, committed);
+
         var errors = new List<Exception>();
-        for (var round = 0; round < 5; round++)
+        for (var round = 0; round < rounds; round++)
         {
-            // Seeds and delete share one try so that a throw cannot skip the cancel-then-await below and leave
-            // the writer task running against a connection this method is about to dispose.
+            // Seeds and delete are caught separately so that a throw cannot skip the permit below and leave the
+            // round waiting on an attempt that was never requested.
             try
             {
                 for (var i = 0; i < 3; i++)
                     await _chats.SaveAsync(Chat(Guid.NewGuid(), $"round {round} chat {i}", "body"),
                         TestContext.Current.CancellationToken);
+            }
+            catch (Exception ex) { errors.Add(ex); }
 
+            attemptRequested.Release();
+            try
+            {
                 await _chats.DeleteAllAsync(TestContext.Current.CancellationToken);
             }
             catch (Exception ex) { errors.Add(ex); }
+
+            await attemptFinished.WaitAsync(TestContext.Current.CancellationToken);
         }
 
         await stopWriting.CancelAsync();
         await committer;
 
+        Assert.Null(writerFault);
         Assert.Empty(errors);
-        Assert.True(committed > 0, "the foreign writer never committed, so nothing actually raced the delete");
+        Assert.Equal(rounds + 1, committed + refused);   // every requested attempt was awaited and accounted for
         Assert.Empty(await _chats.GetAllIdsAsync(TestContext.Current.CancellationToken));
     }
 

@@ -1,6 +1,7 @@
 using System.IO;
 using Microsoft.Data.Sqlite;
 using Pia.Infrastructure;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Infrastructure;
@@ -24,7 +25,7 @@ public class AssistantChatsMigrationTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
+        SqlitePool.ClearFor($"Data Source={_dbPath}");
         try { Directory.Delete(_tmpDir, recursive: true); } catch { /* best effort */ }
     }
 
@@ -66,7 +67,7 @@ public class AssistantChatsMigrationTests : IDisposable
                 insert.ExecuteNonQuery();
             }
         }
-        SqliteConnection.ClearAllPools();
+        SqlitePool.ClearFor($"Data Source={_dbPath}");
 
         // Open via SqliteContext — GetConnection() runs EnsureSchema()/MigrateSchema(), which adds the column.
         using var ctx = new SqliteContext(_dbPath);
