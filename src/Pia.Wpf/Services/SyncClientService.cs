@@ -1614,7 +1614,8 @@ public class SyncClientService : ISyncClientService, IDisposable
         {
             await _policyService.ReplaceServerPolicyAsync(policy.Document);
             _logger.LogInformation(
-                "Stored client policy document: {Length} chars, effective at the next start", policy.Document.Length);
+                "Stored client policy document: {Length} chars; a change takes effect within this sync cycle",
+                policy.Document.Length);
         }
 
         // Persist the server's current catalog version now that every entity in this page (including

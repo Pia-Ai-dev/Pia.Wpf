@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services;
+using Pia.Services.Interfaces;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
@@ -795,6 +796,10 @@ public class PolicyServiceTests : IDisposable
         Assert.True(service.IsEnforced(nameof(AppSettings.Theme)));
 
         await service.ReplaceServerPolicyAsync("{}");
+
+        Assert.False(service.IsEnforced(nameof(AppSettings.Theme)));
+        Assert.True(service.IsEnforced(nameof(AppSettings.StartMinimized)));
+
         var restarted = CreateService();
         await restarted.GetPolicyAsync();
 
@@ -807,36 +812,37 @@ public class PolicyServiceTests : IDisposable
     {
         // Withdrawal keeps the applied-defaults record, unlike a logout, so the republished value still
         // counts the user as sitting on a policy value rather than one they chose.
-        var first = await LoadedService(null, """{ "defaults": { "targetSpeechLanguage": "DE" } }""");
+        var service = await LoadedService(null, """{ "defaults": { "targetSpeechLanguage": "DE" } }""");
         var settings = new AppSettings();
-        first.ApplyPolicy(settings);
+        service.ApplyPolicy(settings);
         Assert.Equal(TargetSpeechLanguage.DE, settings.TargetSpeechLanguage);
 
-        await first.ReplaceServerPolicyAsync("{}");
-        var withdrawn = CreateService();
-        await withdrawn.GetPolicyAsync();
-        withdrawn.ApplyPolicy(settings);
+        await service.ReplaceServerPolicyAsync("{}");
+        service.ApplyPolicy(settings);
         Assert.Equal(TargetSpeechLanguage.DE, settings.TargetSpeechLanguage);
 
-        await SeedServerPolicy("""{ "defaults": { "targetSpeechLanguage": "FR" } }""");
-        var republished = CreateService();
-        await republished.GetPolicyAsync();
-        republished.ApplyPolicy(settings);
-
+        await service.ReplaceServerPolicyAsync("""{ "defaults": { "targetSpeechLanguage": "FR" } }""");
+        service.ApplyPolicy(settings);
         Assert.Equal(TargetSpeechLanguage.FR, settings.TargetSpeechLanguage);
+
+        var restarted = CreateService();
+        await restarted.GetPolicyAsync();
+        var afterRestart = new AppSettings();
+        restarted.ApplyPolicy(afterRestart);
+
+        Assert.Equal(TargetSpeechLanguage.FR, afterRestart.TargetSpeechLanguage);
     }
 
     [Fact]
-    public async Task ReplaceServerPolicyAsync_DoesNotChangeEnforcementInTheSameProcess()
+    public async Task ReplaceServerPolicyAsync_MovesAChangedPinInTheSameProcess()
     {
-        // A changed pin must not move values while the enforcement getters still report the old lock.
         var service = await LoadedService(null, """{ "enforce": { "uiLanguage": "DE" } }""");
 
         await service.ReplaceServerPolicyAsync("""{ "enforce": { "uiLanguage": "FR" } }""");
 
         var settings = new AppSettings();
         service.ApplyPolicy(settings);
-        Assert.Equal(TargetLanguage.DE, settings.UiLanguage);
+        Assert.Equal(TargetLanguage.FR, settings.UiLanguage);
         Assert.True(service.IsEnforced(nameof(AppSettings.UiLanguage)));
 
         var restarted = CreateService();
@@ -1091,6 +1097,284 @@ public class PolicyServiceTests : IDisposable
         service.ApplyPolicy(settings);
 
         Assert.Equal(new KeyboardShortcut(KeyModifiers.None, Key.J, 0), settings.AssistantHotkey);
+    }
+
+    // ---- live re-apply ---------------------------------------------------------------------------
+
+    private static List<PolicyChangedEventArgs> Observe(PolicyService service)
+    {
+        var raised = new List<PolicyChangedEventArgs>();
+        service.PolicyChanged += (_, e) => raised.Add(e);
+        return raised;
+    }
+
+    [Fact]
+    public async Task ReplaceServerPolicyAsync_ChangedPin_RaisesTheValueOnly()
+    {
+        var service = await LoadedService(null, """{ "enforce": { "uiLanguage": "DE" } }""");
+        var raised = Observe(service);
+
+        await service.ReplaceServerPolicyAsync("""{ "enforce": { "uiLanguage": "FR" } }""");
+
+        var change = Assert.Single(raised);
+        Assert.Equal(nameof(AppSettings.UiLanguage), Assert.Single(change.ValuesChanged));
+        Assert.Empty(change.EnforcementChanged);
+    }
+
+    [Fact]
+    public async Task ReplaceServerPolicyAsync_NewPin_RaisesTheValueAndTheLock()
+    {
+        var service = await LoadedService(null, """{ "enforce": { "uiLanguage": "DE" } }""");
+        var raised = Observe(service);
+
+        await service.ReplaceServerPolicyAsync("""{ "enforce": { "uiLanguage": "DE", "theme": "Dark" } }""");
+
+        var change = Assert.Single(raised);
+        Assert.Equal(nameof(AppSettings.Theme), Assert.Single(change.ValuesChanged));
+        Assert.Equal(nameof(AppSettings.Theme), Assert.Single(change.EnforcementChanged));
+        Assert.True(service.IsEnforced(nameof(AppSettings.Theme)));
+    }
+
+    [Fact]
+    public async Task ReplaceServerPolicyAsync_Withdrawal_RaisesTheLockWithoutAValue()
+    {
+        var service = await LoadedService(null, """{ "enforce": { "uiLanguage": "DE" } }""");
+        var raised = Observe(service);
+
+        await service.ReplaceServerPolicyAsync("{}");
+
+        var change = Assert.Single(raised);
+        Assert.Equal(nameof(AppSettings.UiLanguage), Assert.Single(change.EnforcementChanged));
+        Assert.Empty(change.ValuesChanged);
+        Assert.False(service.IsEnforced(nameof(AppSettings.UiLanguage)));
+    }
+
+    [Fact]
+    public async Task ReplaceServerPolicyAsync_NewDefault_RaisesTheValueWithoutALock()
+    {
+        var service = await LoadedService(null, """{ "defaults": { "theme": "Dark" } }""");
+        var raised = Observe(service);
+
+        await service.ReplaceServerPolicyAsync(
+            """{ "defaults": { "theme": "Dark", "targetSpeechLanguage": "FR" } }""");
+
+        var change = Assert.Single(raised);
+        Assert.Equal(nameof(AppSettings.TargetSpeechLanguage), Assert.Single(change.ValuesChanged));
+        Assert.Empty(change.EnforcementChanged);
+    }
+
+    [Fact]
+    public async Task ReplaceServerPolicyAsync_ByteIdenticalDocument_SkipsTheRebuild()
+    {
+        const string document = """{ "enforce": { "uiLanguage": "DE" } }""";
+        var service = await LoadedService(null, document);
+        var raised = Observe(service);
+
+        // A key that only a rebuild could pick up: the policy file was empty when the service loaded.
+        WritePolicy("""{ "enforce": { "startMinimized": true } }""");
+        await service.ReplaceServerPolicyAsync(document);
+        await service.ReplaceServerPolicyAsync(document);
+
+        Assert.Empty(raised);
+        Assert.False(service.IsEnforced(nameof(AppSettings.StartMinimized)));
+    }
+
+    [Fact]
+    public async Task ReplaceServerPolicyAsync_BeforeTheFirstLoad_PublishesNothingAndRaisesNothing()
+    {
+        var service = CreateService();
+        var raised = Observe(service);
+
+        await service.ReplaceServerPolicyAsync("""{ "enforce": { "uiLanguage": "FR" } }""");
+
+        Assert.Empty(raised);
+        Assert.False(service.IsEnforced(nameof(AppSettings.UiLanguage)));
+        var untouched = new AppSettings();
+        service.ApplyPolicy(untouched);
+        Assert.Equal(TargetLanguage.EN, untouched.UiLanguage);
+
+        await service.GetPolicyAsync();
+
+        Assert.True(service.IsEnforced(nameof(AppSettings.UiLanguage)));
+        var settings = new AppSettings();
+        service.ApplyPolicy(settings);
+        Assert.Equal(TargetLanguage.FR, settings.UiLanguage);
+        Assert.Empty(raised);
+    }
+
+    [Fact]
+    public async Task ReplaceServerPolicyAsync_AThrowingSubscriber_NeitherPropagatesNorStrandsTheChange()
+    {
+        var service = await LoadedService(null, """{ "enforce": { "uiLanguage": "DE" } }""");
+        var seen = new List<PolicyChangedEventArgs>();
+        service.PolicyChanged += (_, e) =>
+        {
+            seen.Add(e);
+            throw new InvalidOperationException("subscriber");
+        };
+
+        await service.ReplaceServerPolicyAsync("""{ "enforce": { "uiLanguage": "FR" } }""");
+
+        Assert.Single(seen);
+        var applied = new AppSettings();
+        service.ApplyPolicy(applied);
+        Assert.Equal(TargetLanguage.FR, applied.UiLanguage);
+
+        await service.ReplaceServerPolicyAsync("""{ "enforce": { "uiLanguage": "FR" } }""");
+        Assert.Single(seen);
+
+        await service.ReplaceServerPolicyAsync("""{ "enforce": { "uiLanguage": "EN" } }""");
+        Assert.Equal(2, seen.Count);
+    }
+
+    [Fact]
+    public async Task ReplaceServerPolicyAsync_AfterAFailedCacheWrite_StillAppliesTheSameDocument()
+    {
+        const string document = """{ "enforce": { "uiLanguage": "FR" } }""";
+        var service = await LoadedService(null, null);
+        var raised = Observe(service);
+
+        // A directory in the cache file's place fails the write while the store keeps the record it
+        // already mutated, which is why the change baseline cannot be read back off that record.
+        Directory.CreateDirectory(CacheFilePath);
+        await Assert.ThrowsAnyAsync<SystemException>(() => service.ReplaceServerPolicyAsync(document));
+        Directory.Delete(CacheFilePath);
+
+        await service.ReplaceServerPolicyAsync(document);
+
+        Assert.Single(raised);
+        Assert.True(service.IsEnforced(nameof(AppSettings.UiLanguage)));
+    }
+
+    [Fact]
+    public async Task ClearServerPolicyAsync_DropsEnforcementOnTheSameInstance()
+    {
+        var service = await LoadedService(
+            """{ "enforce": { "startMinimized": true } }""",
+            """{ "enforce": { "theme": "Dark" } }""");
+        Assert.True(service.IsEnforced(nameof(AppSettings.Theme)));
+        var raised = Observe(service);
+
+        await service.ClearServerPolicyAsync();
+
+        Assert.False(service.IsEnforced(nameof(AppSettings.Theme)));
+        Assert.True(service.IsEnforced(nameof(AppSettings.StartMinimized)));
+
+        var change = Assert.Single(raised);
+        Assert.Equal(nameof(AppSettings.Theme), Assert.Single(change.EnforcementChanged));
+        Assert.Empty(change.ValuesChanged);
+        Assert.False(File.Exists(CacheFilePath));
+    }
+
+    [Fact]
+    public async Task ReplaceServerPolicyAsync_NewlyEnforcedKey_AppliesTheAdminValueNotABuiltInDefault()
+    {
+        var service = await LoadedService(null, """{ "enforce": { "theme": "Dark" } }""");
+        var settings = new AppSettings();
+        service.ApplyPolicy(settings);
+
+        await service.ReplaceServerPolicyAsync("""{ "enforce": { "theme": "Dark", "autoTypeDelayMs": 250 } }""");
+        service.ApplyPolicy(settings);
+
+        Assert.Equal(250, settings.AutoTypeDelayMs);
+        Assert.NotEqual(new AppSettings().AutoTypeDelayMs, settings.AutoTypeDelayMs);
+        Assert.Equal(AppTheme.Dark, settings.Theme);
+    }
+
+    [Fact]
+    public async Task ReplaceServerPolicyAsync_ASubscriberThatCallsBackAndWaits_IsNotBlocked()
+    {
+        var service = await LoadedService(null, """{ "enforce": { "uiLanguage": "DE" } }""");
+        var reentered = false;
+        var completed = false;
+        service.PolicyChanged += (_, _) =>
+        {
+            if (reentered)
+                return;
+
+            // Blocking is the point: raising while the write gate is still held would deadlock here,
+            // and the semaphore is not reentrant.
+            reentered = true;
+            completed = service.ClearServerPolicyAsync().Wait(TimeSpan.FromSeconds(10));
+        };
+
+        await service.ReplaceServerPolicyAsync("""{ "enforce": { "uiLanguage": "FR" } }""");
+
+        Assert.True(reentered);
+        Assert.True(completed);
+        Assert.False(service.IsEnforced(nameof(AppSettings.UiLanguage)));
+    }
+
+    [Fact]
+    public async Task ReplaceServerPolicyAsync_WhenThePolicyFileFailsToLoad_KeepsTheLastFileLayer()
+    {
+        var service = await LoadedService(
+            """{ "enforce": { "startMinimized": true } }""",
+            """{ "enforce": { "theme": "Dark" } }""");
+        Assert.True(service.IsEnforced(nameof(AppSettings.StartMinimized)));
+
+        WritePolicy("{ invalid json }}}");
+        await service.ReplaceServerPolicyAsync("""{ "enforce": { "theme": "Light" } }""");
+
+        Assert.True(service.IsEnforced(nameof(AppSettings.StartMinimized)));
+        var settings = new AppSettings();
+        service.ApplyPolicy(settings);
+        Assert.True(settings.StartMinimized);
+        Assert.Equal(AppTheme.Light, settings.Theme);
+    }
+
+    [Fact]
+    public async Task ReplaceServerPolicyAsync_AfterTheUserEditedADefaultedObject_ReportsOnlyTheAdminsChange()
+    {
+        var service = await LoadedService(null, """
+            { "defaults": { "privacy": { "tokenizationEnabled": true }, "modeProviderDefaults": {} } }
+            """);
+        var settings = new AppSettings();
+        service.ApplyPolicy(settings);
+
+        // ApplyDefaults aliases the merged object into AppSettings on purpose, and the Settings pages and
+        // the sync pull then mutate it in place.
+        settings.Privacy.TokenizationEnabled = false;
+        settings.ModeProviderDefaults[WindowMode.Assistant] = Guid.NewGuid();
+        var raised = Observe(service);
+
+        await service.ReplaceServerPolicyAsync("""
+            { "defaults": { "privacy": { "tokenizationEnabled": true }, "modeProviderDefaults": {}, "theme": "Dark" } }
+            """);
+
+        var change = Assert.Single(raised);
+        Assert.Equal(nameof(AppSettings.Theme), Assert.Single(change.ValuesChanged));
+    }
+
+    [Fact]
+    public async Task ReplaceServerPolicyAsync_ADocumentWithAnUnknownEnumValue_KeepsTheLastServerLayer()
+    {
+        var service = await LoadedService(null, """{ "enforce": { "uiLanguage": "DE" } }""");
+        var raised = Observe(service);
+
+        await service.ReplaceServerPolicyAsync("""{ "enforce": { "uiLanguage": "DE", "theme": "Purple" } }""");
+
+        Assert.True(service.IsEnforced(nameof(AppSettings.UiLanguage)));
+        Assert.False(service.IsEnforced(nameof(AppSettings.Theme)));
+        Assert.Empty(raised);
+
+        var settings = new AppSettings();
+        service.ApplyPolicy(settings);
+        Assert.Equal(TargetLanguage.DE, settings.UiLanguage);
+    }
+
+    [Fact]
+    public async Task ReplaceServerPolicyAsync_AnUnparseableDocumentTwice_RebuildsOnlyOnce()
+    {
+        const string malformed = """{ "enforce": { "uiLanguage": "DE", "theme": "Purple" } }""";
+        var service = await LoadedService(null, """{ "enforce": { "uiLanguage": "DE" } }""");
+        await service.ReplaceServerPolicyAsync(malformed);
+
+        // A key that only a rebuild could pick up: the policy file was empty when the service loaded.
+        WritePolicy("""{ "enforce": { "startMinimized": true } }""");
+        await service.ReplaceServerPolicyAsync(malformed);
+
+        Assert.False(service.IsEnforced(nameof(AppSettings.StartMinimized)));
     }
 
     private static string Serialize(object value) => JsonSerializer.Serialize(

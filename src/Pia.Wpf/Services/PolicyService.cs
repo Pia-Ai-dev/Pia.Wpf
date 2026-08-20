@@ -45,14 +45,13 @@ public class PolicyService : IPolicyService
     private readonly ILogger<PolicyService> _logger;
     private readonly string[] _candidatePaths;
     private readonly ClientPolicyCacheStore _cacheStore;
-    private PolicySettings? _cached;
-    private CachedClientPolicy? _cacheRecord;
+    private readonly SemaphoreSlim _writeGate = new(1, 1);
 
-    // The keys the admin actually wrote, per section. Presence in the file is what "set" means —
-    // never a comparison against the built-in default, which cannot distinguish "absent" from
-    // "deliberately set to the default" and is reference equality for every collection.
-    private HashSet<string> _enforcedProperties = new(StringComparer.OrdinalIgnoreCase);
-    private HashSet<string> _defaultedProperties = new(StringComparer.OrdinalIgnoreCase);
+    private PolicySnapshot? _snapshot;
+
+    // Assigned only where a snapshot is published: a baseline that advanced on a write the snapshot
+    // never saw would strand the change for as long as the document stays the same.
+    private string? _publishedDocument;
 
     public PolicyService(ILogger<PolicyService> logger)
         : this(logger, GetDefaultCandidatePaths(), null)
@@ -106,27 +105,45 @@ public class PolicyService : IPolicyService
             ?? Path.Combine(candidateDirectories[^1], PolicyFileName);
     }
 
+    public event EventHandler<PolicyChangedEventArgs>? PolicyChanged;
+
     public async Task<PolicySettings> GetPolicyAsync()
     {
-        if (_cached is not null)
-            return _cached;
+        // Gate-free on purpose: a subscriber re-entering through GetSettingsAsync must not need the
+        // semaphore, which is not reentrant.
+        if (Volatile.Read(ref _snapshot) is { } cached)
+            return cached.Merged;
 
-        _cached = await LoadPolicyAsync();
-        return _cached;
+        await _writeGate.WaitAsync();
+        try
+        {
+            if (Volatile.Read(ref _snapshot) is { } loaded)
+                return loaded.Merged;
+
+            return (await LoadAndPublishAsync()).Merged;
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
     }
 
-    public bool IsEnforced(string propertyName) => _enforcedProperties.Contains(propertyName);
+    public bool IsEnforced(string propertyName) =>
+        Volatile.Read(ref _snapshot)?.Enforced.Contains(propertyName) == true;
 
     public bool IsLoginProviderAllowed(string provider)
     {
         if (string.IsNullOrEmpty(provider))
             return false;
 
-        var allowList = _enforcedProperties.Contains(nameof(AppSettings.AllowedSyncProviders))
-            ? _cached?.Enforce?.AllowedSyncProviders
-            : _defaultedProperties.Contains(nameof(AppSettings.AllowedSyncProviders))
-                ? _cached?.Defaults?.AllowedSyncProviders
-                : null;
+        var snapshot = Volatile.Read(ref _snapshot);
+        var allowList = snapshot is null
+            ? null
+            : snapshot.Enforced.Contains(nameof(AppSettings.AllowedSyncProviders))
+                ? snapshot.Merged.Enforce?.AllowedSyncProviders
+                : snapshot.Defaulted.Contains(nameof(AppSettings.AllowedSyncProviders))
+                    ? snapshot.Merged.Defaults?.AllowedSyncProviders
+                    : null;
 
         if (allowList is null || allowList.Count == 0)
             return true;
@@ -136,15 +153,15 @@ public class PolicyService : IPolicyService
 
     public void ApplyPolicy(AppSettings userSettings)
     {
-        if (_cached is null)
+        if (Volatile.Read(ref _snapshot) is not { } snapshot)
             return;
 
-        if (_cached.Defaults is { } defaults && _defaultedProperties.Count > 0)
-            ApplyDefaults(userSettings, defaults);
+        if (snapshot.Merged.Defaults is { } defaults && snapshot.Defaulted.Count > 0)
+            ApplyDefaults(snapshot, userSettings, defaults);
 
-        if (_cached.Enforce is { } enforce && _enforcedProperties.Count > 0)
+        if (snapshot.Merged.Enforce is { } enforce && snapshot.Enforced.Count > 0)
         {
-            foreach (var name in _enforcedProperties)
+            foreach (var name in snapshot.Enforced)
             {
                 if (PropertiesByName.TryGetValue(name, out var prop))
                     prop.SetValue(userSettings, CloneEnforcedValue(prop, prop.GetValue(enforce)));
@@ -158,38 +175,140 @@ public class PolicyService : IPolicyService
         if (normalized is not null && !ClientPolicyContract.TryValidate(normalized, out var error))
             _logger.LogWarning("Server policy document is malformed, caching it anyway: {Error}", error);
 
-        var record = await _cacheStore.GetAsync();
-        record.Document = normalized ?? ClientPolicyContract.EmptyDocument;
-        _cacheRecord = record;
-        await _cacheStore.SetAsync(record);
-
-        _logger.LogInformation("Server policy document cached: {Length} char(s)", record.Document.Length);
+        var stored = normalized ?? ClientPolicyContract.EmptyDocument;
+        await MutateAndPublishAsync(
+            mutate: async () =>
+            {
+                var record = await _cacheStore.GetAsync();
+                record.Document = stored;
+                await _cacheStore.SetAsync(record);
+                return !string.Equals(_publishedDocument, normalized, StringComparison.Ordinal);
+            },
+            logResult: outcome => _logger.LogInformation(
+                outcome switch
+                {
+                    PublishOutcome.Republished => "Server policy document cached and applied: {Length} char(s)",
+                    PublishOutcome.DeferredToFirstRead =>
+                        "Server policy document cached, applies at the first policy read: {Length} char(s)",
+                    _ => "Server policy document cached, unchanged: {Length} char(s)"
+                },
+                stored.Length));
     }
 
-    public Task ClearServerPolicyAsync()
+    public async Task ClearServerPolicyAsync()
     {
+        await MutateAndPublishAsync(
+            mutate: () =>
+            {
+                try
+                {
+                    _cacheStore.Delete();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to delete the cached server policy");
+                }
+
+                return Task.FromResult(true);
+            },
+            logResult: _ => _logger.LogInformation("Cached server policy cleared"));
+    }
+
+    private enum PublishOutcome
+    {
+        Unchanged,
+        Republished,
+        DeferredToFirstRead
+    }
+
+    private async Task MutateAndPublishAsync(Func<Task<bool>> mutate, Action<PublishOutcome> logResult)
+    {
+        PolicyChangedEventArgs? change = null;
+        var outcome = PublishOutcome.Unchanged;
+        await _writeGate.WaitAsync();
         try
         {
-            _cacheStore.Delete();
+            if (await mutate())
+            {
+                if (Volatile.Read(ref _snapshot) is { } previous)
+                {
+                    change = Diff(previous, await LoadAndPublishAsync());
+                    outcome = PublishOutcome.Republished;
+                }
+                else
+                {
+                    outcome = PublishOutcome.DeferredToFirstRead;
+                }
+            }
+
+            logResult(outcome);
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
+
+        RaisePolicyChanged(change);
+    }
+
+    private async Task<PolicySnapshot> LoadAndPublishAsync()
+    {
+        var snapshot = await LoadPolicyAsync();
+        Volatile.Write(ref _snapshot, snapshot);
+        _publishedDocument = snapshot.ServerDocument;
+        return snapshot;
+    }
+
+    private void RaisePolicyChanged(PolicyChangedEventArgs? change)
+    {
+        if (change is null)
+            return;
+
+        try
+        {
+            PolicyChanged?.Invoke(this, change);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to delete the cached server policy");
+            // A throw here would abort the sync pull before it persists its catalog version and ETag.
+            _logger.LogWarning(ex, "A policy-changed subscriber threw");
+        }
+    }
+
+    private static PolicyChangedEventArgs? Diff(PolicySnapshot previous, PolicySnapshot current)
+    {
+        var enforcementChanged = new HashSet<string>(previous.Enforced, StringComparer.OrdinalIgnoreCase);
+        enforcementChanged.SymmetricExceptWith(current.Enforced);
+
+        // Only keys the new document still sets: nothing records the value an unpin displaced, so a
+        // withdrawal moves nothing.
+        var valuesChanged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, value) in current.EffectiveValues)
+        {
+            previous.EffectiveValues.TryGetValue(name, out var before);
+            if (value != before)
+                valuesChanged.Add(name);
         }
 
-        _cacheRecord = null;
-        _logger.LogInformation("Cached server policy cleared");
-        return Task.CompletedTask;
+        if (enforcementChanged.Count == 0 && valuesChanged.Count == 0)
+            return null;
+
+        return new PolicyChangedEventArgs
+        {
+            ValuesChanged = valuesChanged,
+            EnforcementChanged = enforcementChanged
+        };
     }
 
     /// <summary>Re-applies a changed default unless the user has changed the value themselves.</summary>
-    private void ApplyDefaults(AppSettings userSettings, AppSettings defaults)
+    private void ApplyDefaults(PolicySnapshot snapshot, AppSettings userSettings, AppSettings defaults)
     {
         var builtIn = new AppSettings();
-        var applied = _cacheRecord?.AppliedDefaults;
+        var record = snapshot.Record;
+        var applied = record?.AppliedDefaults;
         var recordChanged = false;
 
-        foreach (var name in _defaultedProperties)
+        foreach (var name in snapshot.Defaulted)
         {
             if (!PropertiesByName.TryGetValue(name, out var prop))
                 continue;
@@ -213,8 +332,11 @@ public class PolicyService : IPolicyService
             recordChanged = true;
         }
 
-        if (recordChanged)
-            PersistCacheRecord();
+        // Not snapshot identity: a republish reuses the store's record and only a delete replaces it,
+        // and saving a replaced one would put a cleared policy back on disk.
+        if (recordChanged && record is not null
+            && ReferenceEquals(Volatile.Read(ref _snapshot)?.Record, record))
+            PersistCacheRecord(record);
     }
 
     /// <summary>Value comparison that also works for the collection- and object-typed settings, whose
@@ -270,14 +392,11 @@ public class PolicyService : IPolicyService
         }
     }
 
-    private void PersistCacheRecord()
+    private void PersistCacheRecord(CachedClientPolicy record)
     {
-        if (_cacheRecord is null)
-            return;
-
         try
         {
-            _cacheStore.SaveNow(_cacheRecord);
+            _cacheStore.SaveNow(record);
         }
         catch (Exception ex)
         {
@@ -285,30 +404,38 @@ public class PolicyService : IPolicyService
         }
     }
 
-    private async Task<PolicySettings> LoadPolicyAsync()
+    private async Task<PolicySnapshot> LoadPolicyAsync()
     {
-        var file = await LoadFileLayerAsync();
+        // A load failure is not a removed key, so neither layer may unlock for a cycle.
+        var file = await LoadFileLayerAsync() ?? Volatile.Read(ref _snapshot)?.FileLayer ?? EmptyLayer();
         var server = await LoadServerLayerAsync();
+        var serverLayer = server.Layer ?? Volatile.Read(ref _snapshot)?.ServerLayer ?? EmptyLayer();
 
         var defaulted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var enforced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         var mergedDefaults = FlattenSection(null, file.Typed.Defaults, file.DefaultKeys, defaulted);
-        mergedDefaults = FlattenSection(mergedDefaults, server.Typed.Defaults, server.DefaultKeys, defaulted);
+        mergedDefaults = FlattenSection(mergedDefaults, serverLayer.Typed.Defaults, serverLayer.DefaultKeys, defaulted);
 
         var mergedEnforce = FlattenSection(null, file.Typed.Enforce, file.EnforceKeys, enforced);
-        mergedEnforce = FlattenSection(mergedEnforce, server.Typed.Enforce, server.EnforceKeys, enforced);
-
-        _defaultedProperties = defaulted;
-        _enforcedProperties = enforced;
+        mergedEnforce = FlattenSection(mergedEnforce, serverLayer.Typed.Enforce, serverLayer.EnforceKeys, enforced);
 
         _logger.LogInformation(
             "Enterprise policy resolved: {DefaultCount} default(s), {EnforcedCount} enforced; {FileCount} key(s) from the policy file, {ServerCount} from the server document",
             defaulted.Count, enforced.Count,
             file.DefaultKeys.Count + file.EnforceKeys.Count,
-            server.DefaultKeys.Count + server.EnforceKeys.Count);
+            serverLayer.DefaultKeys.Count + serverLayer.EnforceKeys.Count);
 
-        return new PolicySettings { Defaults = mergedDefaults, Enforce = mergedEnforce };
+        var merged = new PolicySettings { Defaults = mergedDefaults, Enforce = mergedEnforce };
+        return new PolicySnapshot(
+            merged,
+            enforced,
+            defaulted,
+            server.Record,
+            server.Document,
+            file,
+            serverLayer,
+            BuildEffectiveValues(merged, enforced, defaulted));
     }
 
     private static AppSettings? FlattenSection(
@@ -332,7 +459,29 @@ public class PolicyService : IPolicyService
         return merged;
     }
 
-    private async Task<(PolicySettings Typed, HashSet<string> DefaultKeys, HashSet<string> EnforceKeys)> LoadFileLayerAsync()
+    // Taken while the merged objects are still pristine: ApplyDefaults aliases them into AppSettings and
+    // the app mutates them in place, so reading them at diff time compares a value against itself.
+    private static Dictionary<string, string?> BuildEffectiveValues(
+        PolicySettings merged, HashSet<string> enforced, HashSet<string> defaulted)
+    {
+        var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var name in enforced)
+        {
+            if (PropertiesByName.TryGetValue(name, out var prop))
+                values[name] = merged.Enforce is { } enforce ? SerializeValue(prop, prop.GetValue(enforce)) : null;
+        }
+
+        foreach (var name in defaulted)
+        {
+            if (!values.ContainsKey(name) && PropertiesByName.TryGetValue(name, out var prop))
+                values[name] = merged.Defaults is { } defaults ? SerializeValue(prop, prop.GetValue(defaults)) : null;
+        }
+
+        return values;
+    }
+
+    private async Task<PolicyLayer?> LoadFileLayerAsync()
     {
         var path = _candidatePaths.FirstOrDefault(File.Exists);
         if (path is null)
@@ -353,44 +502,53 @@ public class PolicyService : IPolicyService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to load enterprise policy from {Path}, ignoring", path);
-            return EmptyLayer();
+            _logger.LogWarning(ex, "Failed to load enterprise policy from {Path}, keeping the last load", path);
+            return null;
         }
     }
 
-    private async Task<(PolicySettings Typed, HashSet<string> DefaultKeys, HashSet<string> EnforceKeys)> LoadServerLayerAsync()
+    private async Task<(PolicyLayer? Layer, CachedClientPolicy? Record, string? Document)> LoadServerLayerAsync()
     {
+        CachedClientPolicy record;
         try
         {
-            var record = await _cacheStore.GetAsync();
-            _cacheRecord = record;
-
-            var document = ClientPolicyContract.Normalize(record.Document);
-            if (document is null)
-                return EmptyLayer();
-
-            return LoadLayer(document, allowDeviceSettableKeys: false);
+            record = await _cacheStore.GetAsync();
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to load the cached server policy, ignoring");
-            return EmptyLayer();
+            _logger.LogWarning(ex, "Failed to read the cached server policy, keeping the last load");
+            return (null, null, Volatile.Read(ref _snapshot)?.ServerDocument);
+        }
+
+        var document = ClientPolicyContract.Normalize(record.Document);
+        if (document is null)
+            return (EmptyLayer(), record, null);
+
+        try
+        {
+            return (LoadLayer(document, allowDeviceSettableKeys: false), record, document);
+        }
+        catch (Exception ex)
+        {
+            // Reported as published although it did not parse, so the same bad document stays unchanged.
+            _logger.LogWarning(ex, "The cached server policy is malformed, keeping the last load");
+            return (null, record, document);
         }
     }
 
-    private (PolicySettings Typed, HashSet<string> DefaultKeys, HashSet<string> EnforceKeys) LoadLayer(
-        string json, bool allowDeviceSettableKeys)
+    private PolicyLayer LoadLayer(string json, bool allowDeviceSettableKeys)
     {
         var typed = JsonSerializer.Deserialize<PolicySettings>(json, JsonOptions) ?? new PolicySettings();
         var root = JsonNode.Parse(json) as JsonObject;
 
-        return (Typed: typed,
-            DefaultKeys: ReadPresentKeys(root, ClientPolicyContract.DefaultsSection, allowDeviceSettableKeys),
-            EnforceKeys: ReadPresentKeys(root, ClientPolicyContract.EnforceSection, allowDeviceSettableKeys));
+        return new PolicyLayer(
+            typed,
+            ReadPresentKeys(root, ClientPolicyContract.DefaultsSection, allowDeviceSettableKeys),
+            ReadPresentKeys(root, ClientPolicyContract.EnforceSection, allowDeviceSettableKeys));
     }
 
-    private static (PolicySettings Typed, HashSet<string> DefaultKeys, HashSet<string> EnforceKeys) EmptyLayer() =>
-        (new PolicySettings(),
+    private static PolicyLayer EmptyLayer() =>
+        new(new PolicySettings(),
             new HashSet<string>(StringComparer.OrdinalIgnoreCase),
             new HashSet<string>(StringComparer.OrdinalIgnoreCase));
 
@@ -417,4 +575,18 @@ public class PolicyService : IPolicyService
 
         return set;
     }
+
+    /// <summary>The key sets record which keys the admin actually wrote, never a comparison against the
+    /// built-in default, which cannot tell "absent" from "deliberately set to the default".</summary>
+    private sealed record PolicySnapshot(
+        PolicySettings Merged,
+        HashSet<string> Enforced,
+        HashSet<string> Defaulted,
+        CachedClientPolicy? Record,
+        string? ServerDocument,
+        PolicyLayer FileLayer,
+        PolicyLayer ServerLayer,
+        IReadOnlyDictionary<string, string?> EffectiveValues);
+
+    private sealed record PolicyLayer(PolicySettings Typed, HashSet<string> DefaultKeys, HashSet<string> EnforceKeys);
 }

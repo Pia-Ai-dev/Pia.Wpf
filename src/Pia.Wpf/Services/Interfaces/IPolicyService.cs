@@ -29,14 +29,15 @@ public interface IPolicyService
     /// </summary>
     bool IsLoginProviderAllowed(string provider);
 
-    /// <summary>
-    /// Stores the pull's authoritative document in the cache file only. A live re-apply would move values
-    /// while every enforcement getter still reported the old lock state, so a changed pin waits for restart.
-    /// </summary>
+    /// <summary>Caches the pull's authoritative document and re-applies it when it differs from the
+    /// published one, which lands within one sync cycle rather than immediately.</summary>
     Task ReplaceServerPolicyAsync(string document);
 
-    /// <summary>
-    /// Drops the cached document and the applied-defaults record, so a later user's values count as their own.
-    /// </summary>
+    /// <summary>Drops the cached document and the applied-defaults record and re-publishes without the
+    /// server layer, so a later user's values count as their own.</summary>
     Task ClearServerPolicyAsync();
+
+    /// <summary>Raised after a changed server document has been re-merged and published; exactly one
+    /// subscriber owns the resulting ordering, so nothing else may subscribe.</summary>
+    event EventHandler<PolicyChangedEventArgs>? PolicyChanged;
 }
