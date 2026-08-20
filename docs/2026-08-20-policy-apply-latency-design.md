@@ -380,7 +380,7 @@ CanShowPolicyRestartOverlay = RestartRequired   // evaluated to decide WHEN to c
     && !directTranscription.IsActive        // State is Starting/Running/Stopping
     && !meetingAttendee.IsActive            // State is Joining/InLobby/Attending/Stopping
     && !executingRuns.IsAnyExecuting        // one-line add on ExecutingRunStore
-    && !anyLiveSession.IsStreaming          // ChatSession.State is Running or WaitingForTool
+    && !volatileWork.HasVolatileWork        // open transcript overlay, streaming turn, voice mode
 ```
 
 Without that gate the overlay is not merely rude, it is destructive, and `DialogOverlayHost`'s
@@ -429,6 +429,29 @@ no window shown there is nothing to paint and nothing is forced. **Owner decisio
 point of the overlay is to prevent *unwanted usage*, and from the tray the app is not being used. The
 ctor-seeding above makes the overlay appear the moment a window is shown, which is exactly when usage
 starts. Do not add a tray bridge or force a window open; record this so nobody later "fixes" it.
+One qualification found in review: the fast-path hotkey (`TrayIconService.OnFastPathHotkeyPressed` →
+`FastPathOptimizerService.RunAsync`) is registered independently of any window and runs a whole
+capture-optimize-autotype cycle with no window interaction, so it still completes an AI round trip while
+both windows are scrimmed. Gating it is a behaviour change outside this design; the overlay copy
+therefore says "Pia's window stays locked" rather than "Pia stays locked" so it does not overclaim.
+
+**Where the presenter ended up, and why not `Pia.Services`.** `PolicyRestartOverlayPresenter` lives in
+`src/Pia.Wpf/Views/Overlays/` (namespace `Pia.Views.Overlays`), not under `Services/`, because two
+architecture rules forbid the obvious home: `LayerDependencyTests.Services_ShouldNot_DependOn_ViewModels`
+bans any `Pia.Services` type from touching `IChatSessionManager` (which is `Pia.ViewModels.Models`), and
+`NamingConventionTests` restricts `Pia.Services` class names to a fixed suffix list that has no
+"Presenter". It is registered `AddScoped`, resolved from `MainWindow`'s ctor (so it seeds
+`IsRestartRequired` even in a window opened later) and armed from `OnLoaded`, after `SetOverlayHost`.
+
+**The per-window inputs are published into a singleton, not injected into the presenter.**
+`IChatSessionManager` is scoped and the Assistant nav entry is mode-gated
+(`NavigationSidebarView.xaml:45`), so an Optimize window never builds one; injecting it would build a
+second manager per Optimize window that never owns a session, and that window's presenter would then
+answer "nothing is streaming" while the Assistant window is mid-turn — and offer the one button that
+kills the turn. `AssistantViewModel` therefore reports an open transcript overlay, a streaming turn and
+an active voice-mode conversation into the singleton `IVolatileWorkStore`, which every window's
+presenter reads. `Start()` takes no parameters and `MainWindow` never resolves the manager. The
+corrections below record why the per-window shape was rejected.
 
 **The first-run wizard: let it finish, then let the main window carry the overlay.** Owner decision. Do
 not try to live-refresh the wizard. The reason it cannot be fixed in place is structural, not effort:
@@ -470,6 +493,45 @@ The flag must be **process-wide, not per-instance**: the decorator is registered
 `SuggestionService`), so an instance-level flag would answer for one of them at random. This is also the
 groundwork for eventually emptying the restart list altogether (§8.6): a latch you can *observe* is one
 step from a latch you can *reset*.
+
+#### Corrections to the gate, found in review (as built)
+
+Five things in the pseudocode above are wrong, and each of them was destructive or unrecoverable:
+
+- **The capture states are the wrong input for the transcript legs.** `StopCoreAsync` transitions to
+  `Prepared` (direct transcription) / `Idle` (meeting), and `CanSaveTranscript() => !IsRunning &&
+  Bubbles.Count > 0` means those are the *only* states in which Save-to-file / Save-to-vault work. So the
+  gate as written opened at exactly the instant the transcript became saveable and painted a ZIndex-20
+  scrim over the Save button, with no dismiss, no Escape and no way out but "Restart Pia". Widening the
+  state set does not fix it either: `Prepared` is only left by `EndSessionAsync`, which nothing but the
+  next *open* calls, so a state-based gate would defer for the rest of the process. The gate now defers
+  while a transcript overlay is **open** (`AssistantViewModel.IsDirectTranscriptionVisible` /
+  `IsMeetingAttendeeVisible`), which is true through the whole post-Stop review window and false once the
+  user closes the overlay — at which point the transcript is unreachable anyway, since the next open
+  clears it. The capture-state checks are kept as a second line.
+- **The chat-streaming leg cannot be per-window.** `IChatSessionManager` is scoped and only the Assistant
+  window builds one, so an Optimize window answering from its own scope answers "nothing is streaming"
+  while the Assistant window is mid-turn — and then offers the one button that kills the turn. The
+  per-window inputs now publish into a singleton `IVolatileWorkStore` (reference-keyed, so one window's
+  report cannot clear another's, and `Forget` on dispose so a closed window cannot defer forever), which
+  every window's presenter reads. `Start` no longer takes the manager.
+- **The terminal `RunChanged` must not re-read `IsAnyExecuting`.** `AgentRunService` raises it *before* the
+  launcher's `finally` closes the bracket, so the re-read answers "still executing" for a run that is over
+  and nothing ever fires again — the policy is then silently never applied.
+  `IExecutingRunStore.IsAnyExecutingExcept(runId)` is the fix; `Release` is **not**, because it would erase
+  the `GetChatId` answer `ChatSessionManager`'s own posted handler still needs (a dead composer).
+- **The panel must not raise a result.** `DialogOverlayHost.ShowAsync` runs the hide animation and
+  collapses its content *before* returning, so restarting off the awaited result hands back a fully
+  interactive app for the whole pre-exit sequence. `PolicyRestartOverlayPanel` therefore overrides
+  `RaiseResultChosen` to swallow every result, disable its button, relabel it and raise its own
+  `RestartRequested` — the scrim stays up until the process ends. The pre-exit sync wait is capped
+  (§7.2 says a push in flight costs nothing), because it is otherwise unbounded behind a 60 s-per-request
+  `HttpClient` and the user is looking at an undismissable scrim for all of it.
+- **Voice mode is a per-window input the streaming leg misses.** `ExecuteEnterVoiceMode` streams every
+  reply through `IAiClientService` directly and never creates a `ChatSession`, so `IsAnyStreaming` is
+  false for the whole hands-free conversation. The scrim would cover the voice overlay's only exit while
+  it kept recording and speaking through the very latched decorator the restart exists to refresh.
+  `IsVoiceModeActive` reports into the same `IVolatileWorkStore`.
 
 ### 6.5 The live-change notice
 
@@ -516,6 +578,12 @@ Points that matter:
   `ValuesChanged` being non-empty, the same input the overlay uses.
 - New keys go in all three `ViewStrings` resx files (parity is test-enforced). `Settings_ManagedByOrganization`
   already exists in en/de/fr as the vocabulary to match.
+- **The body has to know whether a restart is pending** (correction, as built). The first cut said "The new
+  settings are now in effect", which is false for the one key that raises the overlay — and when the overlay
+  is deferred, the notice is the *only* thing the user sees. The coordinator decides
+  `restartRequired` before publishing and picks between `Flow_PolicyUpdated_Body` and
+  `Flow_PolicyUpdated_Body_Restart`. The restart flag is still set last, so the overlay cannot preempt the
+  notice.
 
 ---
 
@@ -562,6 +630,25 @@ Points that belong in the implementation:
   place, that is a one-line fix when the branch arrives — write the constraint down for that work.
 - `ITrayIconService` declares only three members and the concrete type is not DI-resolvable, so
   `PrepareForExit()` has to be added to the interface. No test fakes it, so the ripple stays in `src/`.
+
+#### Implementation notes (as built)
+
+- **The one spawn site is `App.Relaunch()`**, called from `App.Main` after `app.Run()` returns and gated by
+  the static flag `App.RequestRestart()` sets. `AppRestartService.RequestRestartAndShutdown()` is the only
+  caller of that flag. **When single-instance wiring lands, the child must wait for the parent to exit (or
+  for the mutex to be released) before it acquires the mutex** — otherwise this restart degrades silently
+  into a quit. The wait belongs in `App.Relaunch()`, and nowhere else has to change.
+- `Environment.ProcessPath` is null-guarded; the fallback shows a localized "please open Pia again" message
+  box and returns without `Environment.Exit`, so the process ends normally rather than pretending it
+  relaunched.
+- `AppRestartService` wraps **both** pre-exit steps in try/catch. With no dismiss on the overlay, a throwing
+  sync-stop would otherwise leave the user staring at a scrim with the shutdown never reached.
+- Correction to the reuse claim above: the `OverlayDialogPanel` style lives in `App.xaml` as an **implicit**
+  style, so it keys on the element's exact runtime type and does **not** reach a subclass. The policy panel
+  therefore declares `Style="{StaticResource {x:Type controls:OverlayDialogPanel}}"` explicitly; without it
+  the panel realizes untemplated, with no buttons at all. Verified by a layout-pass test.
+- Correction to the ripple claim above: `IExecutingRunStore` **is** hand-implemented once in the test project
+  (`HeadlessRunLauncherTests.RampUpGate`), so adding `IsAnyExecuting` touched `tests/` as well.
 
 ### 7.2 What a restart costs, and what needs no flush
 

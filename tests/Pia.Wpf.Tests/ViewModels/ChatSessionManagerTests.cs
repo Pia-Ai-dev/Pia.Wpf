@@ -115,6 +115,35 @@ public class ChatSessionManagerTests
         Assert.Equal(ChatState.Idle, session.State);
     }
 
+    /// <summary>The policy-restart overlay defers on this, so the aggregate has to cover a tool call awaiting
+    /// approval as well as a running turn, and a first-turn session that has no id to be keyed under yet.</summary>
+    [Theory]
+    [InlineData(ChatState.Running)]
+    [InlineData(ChatState.WaitingForTool)]
+    public void IsAnyStreaming_CoversASessionMidTurnBeforeItHasAnId(ChatState state)
+    {
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        Assert.Null(session.Id);
+        Assert.False(sut.IsAnyStreaming);
+
+        session.SetState(state);
+
+        Assert.True(sut.IsAnyStreaming);
+    }
+
+    [Fact]
+    public void IsAnyStreaming_IsFalseOnceTheTurnHasSettled()
+    {
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        session.SetState(ChatState.Running);
+
+        session.SetState(ChatState.Completed);
+
+        Assert.False(sut.IsAnyStreaming);
+    }
+
     [Fact]
     public async Task ActivateAsync_NoLiveSession_LoadsFromStore_AndTouches()
     {

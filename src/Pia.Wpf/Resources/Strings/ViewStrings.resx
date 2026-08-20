@@ -1214,4 +1214,13 @@
   <data name="Settings_Privacy_RemoveKeyword" xml:space="preserve"><value>Remove keyword</value></data>
   <data name="Assistant_RateUp_Tooltip" xml:space="preserve"><value>Good answer</value></data>
   <data name="Assistant_RateDown_Tooltip" xml:space="preserve"><value>Bad answer</value></data>
+  <data name="PolicyRestart_Title" xml:space="preserve"><value>Restart Pia to apply your organization's settings</value></data>
+  <data name="PolicyRestart_Body" xml:space="preserve"><value>Your organization changed a setting that Pia only reads when it starts. Pia's window stays locked until you restart. Anything you have typed but not sent is lost.</value></data>
+  <data name="PolicyRestart_Restart" xml:space="preserve"><value>Restart Pia</value></data>
+  <data name="PolicyRestart_Restarting" xml:space="preserve"><value>Restarting…</value></data>
+  <data name="Flow_PolicyUpdated_Title" xml:space="preserve"><value>Your organization updated Pia's settings</value></data>
+  <data name="Flow_PolicyUpdated_Body" xml:space="preserve"><value>The new settings are now in effect. Some options may be locked from here on.</value></data>
+  <data name="Flow_PolicyUpdated_Body_Restart" xml:space="preserve"><value>Some of the new settings take effect when you restart Pia. Some options may be locked from here on.</value></data>
+  <data name="Restart_ManualRelaunchRequired_Title" xml:space="preserve"><value>Restart Pia</value></data>
+  <data name="Restart_ManualRelaunchRequired" xml:space="preserve"><value>Pia could not start itself again. Please open Pia to finish applying your organization's settings.</value></data>
 </root>

@@ -454,6 +454,10 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     public ChatState GetState(Guid chatId) =>
         _sessions.TryGetValue(chatId, out var session) ? session.State : ChatState.Idle;
 
+    // _allSessions, not _sessions: a first-turn session is only keyed in once it has an id, and it streams
+    // either side of that. Both are UI-thread-only, so this read has to stay there too.
+    public bool IsAnyStreaming => _allSessions.Any(s => s.IsStreaming);
+
     public void SetActive(ChatSession session)
     {
         if (ReferenceEquals(session, ActiveSession)) return;

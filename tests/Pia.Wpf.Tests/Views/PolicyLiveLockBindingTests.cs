@@ -92,7 +92,10 @@ public class PolicyLiveLockBindingTests : IDisposable
             NullLogger<PolicyService>.Instance, _policyFilePath, _cacheDir);
         var settingsService = new PolicyAppliedSettingsService(policyService);
         var coordinator = new PolicyChangeCoordinator(
-            policyService, settingsService, NullLogger<PolicyChangeCoordinator>.Instance);
+            policyService,
+            settingsService,
+            Substitute.For<IPolicyNotificationSurface>(),
+            NullLogger<PolicyChangeCoordinator>.Instance);
 
         // Without a published snapshot the publish below defers to the first read and raises nothing.
         await policyService.GetPolicyAsync();

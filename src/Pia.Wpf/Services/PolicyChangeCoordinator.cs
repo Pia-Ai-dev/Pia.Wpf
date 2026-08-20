@@ -15,16 +15,19 @@ public sealed class PolicyChangeCoordinator
 
     private readonly IPolicyService _policyService;
     private readonly ISettingsService _settingsService;
+    private readonly IPolicyNotificationSurface _notificationSurface;
     private readonly ILogger<PolicyChangeCoordinator> _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     public PolicyChangeCoordinator(
         IPolicyService policyService,
         ISettingsService settingsService,
+        IPolicyNotificationSurface notificationSurface,
         ILogger<PolicyChangeCoordinator> logger)
     {
         _policyService = policyService;
         _settingsService = settingsService;
+        _notificationSurface = notificationSurface;
         _logger = logger;
         _policyService.PolicyChanged += OnPolicyChanged;
     }
@@ -69,7 +72,26 @@ public sealed class PolicyChangeCoordinator
                 _logger.LogWarning(ex, "A policy-lock subscriber threw");
             }
 
-            if (applied is { } settings && change.ValuesChanged.Any(key => RequiresRestart(key, settings)))
+            // Decided before the notice: a body claiming the new settings are already in effect would be
+            // false for exactly the key that raises the restart overlay.
+            var restartRequired = applied is { } settings
+                && change.ValuesChanged.Any(key => RequiresRestart(key, settings));
+
+            // Last of the three, and keyed on a value actually moving: an unpin moves none and a failed
+            // apply moves none, so "we updated your settings" would be a lie either way.
+            if (applied is not null && change.ValuesChanged.Count > 0)
+            {
+                try
+                {
+                    _notificationSurface.NotifyValuesChanged(restartRequired);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to announce a changed policy");
+                }
+            }
+
+            if (restartRequired)
                 _policyService.SetRestartRequired();
         }
         finally

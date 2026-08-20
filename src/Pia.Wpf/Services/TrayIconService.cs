@@ -328,10 +328,15 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
         });
     }
 
-    private void ExitApplication()
+    public void PrepareForExit()
     {
         _windowManagerService.CloseAndDisposeAll();
         Unregister();
+    }
+
+    private void ExitApplication()
+    {
+        PrepareForExit();
         Application.Current.Shutdown();
     }
 }

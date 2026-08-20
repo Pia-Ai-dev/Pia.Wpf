@@ -28,4 +28,8 @@ public sealed class ExecutingRunStore : IExecutingRunStore
 
     // Enumerates the dictionary itself, not Values — see the type doc.
     public bool IsExecuting(Guid chatId) => _chatByRun.Any(e => e.Value == chatId);
+
+    public bool IsAnyExecuting => !_chatByRun.IsEmpty;
+
+    public bool IsAnyExecutingExcept(Guid runId) => _chatByRun.Any(e => e.Key != runId);
 }

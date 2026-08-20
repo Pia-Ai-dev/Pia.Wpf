@@ -1204,4 +1204,13 @@
   <data name="Settings_Privacy_RemoveKeyword" xml:space="preserve"><value>Stichwort entfernen</value></data>
   <data name="Assistant_RateUp_Tooltip" xml:space="preserve"><value>Gute Antwort</value></data>
   <data name="Assistant_RateDown_Tooltip" xml:space="preserve"><value>Schlechte Antwort</value></data>
+  <data name="PolicyRestart_Title" xml:space="preserve"><value>Starten Sie Pia neu, um die Einstellungen Ihrer Organisation anzuwenden</value></data>
+  <data name="PolicyRestart_Body" xml:space="preserve"><value>Ihre Organisation hat eine Einstellung geändert, die Pia nur beim Start liest. Das Pia-Fenster bleibt gesperrt, bis Sie neu starten. Eingegebener, aber nicht gesendeter Text geht verloren.</value></data>
+  <data name="PolicyRestart_Restart" xml:space="preserve"><value>Pia neu starten</value></data>
+  <data name="PolicyRestart_Restarting" xml:space="preserve"><value>Neustart…</value></data>
+  <data name="Flow_PolicyUpdated_Title" xml:space="preserve"><value>Ihre Organisation hat die Einstellungen von Pia aktualisiert</value></data>
+  <data name="Flow_PolicyUpdated_Body" xml:space="preserve"><value>Die neuen Einstellungen sind jetzt aktiv. Einige Optionen können ab jetzt gesperrt sein.</value></data>
+  <data name="Flow_PolicyUpdated_Body_Restart" xml:space="preserve"><value>Einige der neuen Einstellungen werden mit dem Neustart von Pia aktiv. Einige Optionen können ab jetzt gesperrt sein.</value></data>
+  <data name="Restart_ManualRelaunchRequired_Title" xml:space="preserve"><value>Pia neu starten</value></data>
+  <data name="Restart_ManualRelaunchRequired" xml:space="preserve"><value>Pia konnte sich nicht selbst neu starten. Bitte öffnen Sie Pia, um die Einstellungen Ihrer Organisation vollständig anzuwenden.</value></data>
 </root>

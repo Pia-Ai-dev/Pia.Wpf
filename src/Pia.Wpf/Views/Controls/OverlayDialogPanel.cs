@@ -99,7 +99,7 @@ public class OverlayDialogPanel : ContentControl
         RaiseResultChosen(OverlayDialogResult.Close);
     }
 
-    protected void RaiseResultChosen(object result)
+    protected virtual void RaiseResultChosen(object result)
     {
         ResultChosen?.Invoke(result);
     }

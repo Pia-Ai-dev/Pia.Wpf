@@ -38,6 +38,13 @@ public interface IExecutingRunStore
     /// <summary>True while ANY run has an open bracket on <paramref name="chatId"/>.</summary>
     bool IsExecuting(Guid chatId);
 
+    /// <summary>True while ANY run has an open bracket at all.</summary>
+    bool IsAnyExecuting { get; }
+
+    /// <summary><see cref="IsAnyExecuting"/> ignoring <paramref name="runId"/> — for a terminal
+    /// <c>RunChanged</c> handler, whose own bracket is still open when the event fires.</summary>
+    bool IsAnyExecutingExcept(Guid runId);
+
     /// <summary>
     /// The chat <paramref name="runId"/> is bracketed on, or null when its bracket is closed. Lets a
     /// chat-id-less <c>RunChanged</c> handler work out which session the event can speak for.

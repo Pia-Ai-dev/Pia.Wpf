@@ -55,6 +55,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IMarkdownExportService _markdownExportService;
     private readonly IDialogService _dialogService;
     private readonly IUiDispatcher _uiDispatcher;
+    private readonly IVolatileWorkStore? _volatileWork;
 
     /// <summary>Tool-permission state consulted by the voice-mode gate.</summary>
     private readonly IToolPermissionService _permissions;
@@ -296,7 +297,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // Trailing and defaulted for the same reason as the five above; null ⇒ the background-assignment
         // action never appears, which is also what an unavailable surface looks like.
         IAssignmentApiClient? assignmentApiClient = null,
-        Func<AssignmentConsentViewModel>? assignmentConsentFactory = null)
+        Func<AssignmentConsentViewModel>? assignmentConsentFactory = null,
+        // Where this window publishes "a restart would destroy something here" so the policy-restart overlay
+        // in EVERY window defers. Trailing and defaulted; null ⇒ nothing is published.
+        IVolatileWorkStore? volatileWork = null)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -338,6 +342,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _timelineWatcher = timelineWatcher;
         _assignmentApiClient = assignmentApiClient;
         _assignmentConsentFactory = assignmentConsentFactory;
+        _volatileWork = volatileWork;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         RunInBackgroundCommand = new AsyncRelayCommand(ExecuteRunInBackground, CanExecuteRunInBackground);
@@ -583,7 +588,22 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         if (e.ChatId is { } chatId)
             ChatTitleChip.RefreshMatchState(chatId, e.NewState);
+
+        ReportVolatileWork();
     }
+
+    partial void OnIsMeetingAttendeeVisibleChanged(bool value) => ReportVolatileWork();
+
+    partial void OnIsDirectTranscriptionVisibleChanged(bool value) => ReportVolatileWork();
+
+    partial void OnIsVoiceModeActiveChanged(bool value) => ReportVolatileWork();
+
+    // An open transcript overlay counts whatever the capture state is, because Save only lights up after
+    // Stop; voice mode counts because it streams without ever creating a session.
+    private void ReportVolatileWork() => _volatileWork?.Report(
+        this,
+        IsDirectTranscriptionVisible || IsMeetingAttendeeVisible || IsVoiceModeActive
+            || _chatSessionManager.IsAnyStreaming);
 
     private async Task RunActiveTurnSideEffectsAsync(ChatSession session, bool succeeded)
     {
@@ -1979,6 +1999,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             return;
 
         _disposed = true;
+        // Before anything else: a report left behind would defer the restart overlay for the whole process.
+        _volatileWork?.Forget(this);
         VoiceMode?.Dispose();
         VoiceMode = null;
         MeetingAttendee.CloseRequested -= OnMeetingAttendeeCloseRequested;

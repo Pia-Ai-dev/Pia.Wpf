@@ -1204,4 +1204,13 @@
   <data name="Settings_Privacy_RemoveKeyword" xml:space="preserve"><value>Supprimer le mot-clé</value></data>
   <data name="Assistant_RateUp_Tooltip" xml:space="preserve"><value>Bonne réponse</value></data>
   <data name="Assistant_RateDown_Tooltip" xml:space="preserve"><value>Mauvaise réponse</value></data>
+  <data name="PolicyRestart_Title" xml:space="preserve"><value>Redémarrez Pia pour appliquer les paramètres de votre organisation</value></data>
+  <data name="PolicyRestart_Body" xml:space="preserve"><value>Votre organisation a modifié un paramètre que Pia ne lit qu'au démarrage. La fenêtre de Pia reste bloquée jusqu'au redémarrage. Tout texte saisi mais non envoyé sera perdu.</value></data>
+  <data name="PolicyRestart_Restart" xml:space="preserve"><value>Redémarrer Pia</value></data>
+  <data name="PolicyRestart_Restarting" xml:space="preserve"><value>Redémarrage…</value></data>
+  <data name="Flow_PolicyUpdated_Title" xml:space="preserve"><value>Votre organisation a mis à jour les paramètres de Pia</value></data>
+  <data name="Flow_PolicyUpdated_Body" xml:space="preserve"><value>Les nouveaux paramètres sont désormais actifs. Certaines options peuvent être verrouillées à partir de maintenant.</value></data>
+  <data name="Flow_PolicyUpdated_Body_Restart" xml:space="preserve"><value>Certains des nouveaux paramètres prendront effet au redémarrage de Pia. Certaines options peuvent être verrouillées à partir de maintenant.</value></data>
+  <data name="Restart_ManualRelaunchRequired_Title" xml:space="preserve"><value>Redémarrer Pia</value></data>
+  <data name="Restart_ManualRelaunchRequired" xml:space="preserve"><value>Pia n'a pas pu se relancer. Veuillez ouvrir Pia pour terminer l'application des paramètres de votre organisation.</value></data>
 </root>

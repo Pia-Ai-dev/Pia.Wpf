@@ -17,6 +17,8 @@ namespace Pia;
 /// </summary>
 public partial class App : Application
 {
+    private static int _restartRequested;
+
     [STAThread]
     public static void Main(string[] args)
     {
@@ -29,6 +31,42 @@ public partial class App : Application
         var app = new App();
         app.InitializeComponent();
         app.Run();
+
+        if (Volatile.Read(ref _restartRequested) != 0)
+            Relaunch();
+    }
+
+    /// <summary>Asks <see cref="Main"/> to spawn a replacement once the message loop has drained.</summary>
+    internal static void RequestRestart() => Volatile.Write(ref _restartRequested, 1);
+
+    /// <summary>The only place Pia re-launches itself. No args: only Velopack reads <see cref="Main"/>'s.</summary>
+    private static void Relaunch()
+    {
+        var path = Environment.ProcessPath;
+        if (path is not null)
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path)
+                {
+                    UseShellExecute = true
+                });
+
+                // Immediately, so two instances never overlap on one profile for long: settings.json is
+                // written from an in-memory cache with no cross-process guard.
+                Environment.Exit(0);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to relaunch Pia: {ex.Message}");
+            }
+        }
+
+        MessageBox.Show(
+            Localization.LocalizationSource.Instance["Restart_ManualRelaunchRequired"],
+            Localization.LocalizationSource.Instance["Restart_ManualRelaunchRequired_Title"],
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
     }
 
     [LibraryImport("shell32.dll", StringMarshalling = StringMarshalling.Utf16)]

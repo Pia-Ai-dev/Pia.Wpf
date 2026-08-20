@@ -1,0 +1,31 @@
+<!-- Style is set explicitly because the app-level one is implicit and keys on the exact type,
+     which would leave this subclass untemplated. -->
+<controls:OverlayDialogPanel x:Class="Pia.Views.Dialogs.Overlay.PolicyRestartOverlayPanel"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+  xmlns:loc="clr-namespace:Pia.Localization"
+  xmlns:controls="clr-namespace:Pia.Views.Controls"
+  mc:Ignorable="d"
+  Style="{StaticResource {x:Type controls:OverlayDialogPanel}}"
+  MaxPanelWidth="460"
+  PrimaryButtonText="{loc:Str PolicyRestart_Restart}">
+
+  <StackPanel>
+    <ui:SymbolIcon Symbol="Shield24"
+                   FontSize="28"
+                   HorizontalAlignment="Left"
+                   Margin="0,0,0,12" />
+    <TextBlock Text="{loc:Str PolicyRestart_Title}"
+               FontSize="18"
+               FontWeight="SemiBold"
+               TextWrapping="Wrap"
+               Margin="0,0,0,10" />
+    <TextBlock Text="{loc:Str PolicyRestart_Body}"
+               FontSize="14"
+               TextWrapping="Wrap"
+               Opacity="0.85" />
+  </StackPanel>
+</controls:OverlayDialogPanel>

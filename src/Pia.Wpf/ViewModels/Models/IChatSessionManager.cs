@@ -66,6 +66,9 @@ public interface IChatSessionManager
     /// <summary>Live state for <paramref name="chatId"/>, or <see cref="ChatState.Idle"/> if not live.</summary>
     ChatState GetState(Guid chatId);
 
+    /// <summary>True while any owned session is mid-turn. Read on the UI thread only.</summary>
+    bool IsAnyStreaming { get; }
+
     /// <summary>Persist the given session to the chat store (no-op when it has no messages).</summary>
     Task PersistAsync(ChatSession session);
 }

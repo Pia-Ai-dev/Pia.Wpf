@@ -13,6 +13,7 @@ public partial class MainWindow : FluentWindow
 {
     private readonly INavigationService _navigationService;
     private readonly ISettingsService _settingsService;
+    private readonly Views.Overlays.PolicyRestartOverlayPresenter _policyRestartOverlay;
 
     public MainWindow(
         MainWindowViewModel viewModel,
@@ -39,6 +40,10 @@ public partial class MainWindow : FluentWindow
         // Flow rail: per-window VM resolved from this window's scope (mirrors the singleton store).
         RootFlowView.DataContext = serviceProvider.GetRequiredService<ViewModels.Flow.FlowViewModel>();
 
+        // Resolved here so it seeds the restart flag even in a window opened after the policy landed;
+        // armed from OnLoaded, once SetOverlayHost above has a live host to show into.
+        _policyRestartOverlay = serviceProvider.GetRequiredService<Views.Overlays.PolicyRestartOverlayPresenter>();
+
         Loaded += OnLoaded;
     }
 
@@ -46,9 +51,16 @@ public partial class MainWindow : FluentWindow
     {
         Loaded -= OnLoaded;
 
-        if (DataContext is MainWindowViewModel viewModel)
+        try
         {
-            await viewModel.InitializeAsync();
+            if (DataContext is MainWindowViewModel viewModel)
+                await viewModel.InitializeAsync();
+        }
+        finally
+        {
+            // In a finally: a throw out of the init above is handled process-wide and leaves the window
+            // interactive, so arming here is the only thing that keeps the forcing overlay from being lost.
+            _policyRestartOverlay.Start();
         }
 
         await RestoreWindowStateAsync();

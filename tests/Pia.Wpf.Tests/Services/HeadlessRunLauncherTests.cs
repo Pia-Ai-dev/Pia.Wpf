@@ -1847,6 +1847,10 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
         public bool IsExecuting(Guid chatId) => _inner.IsExecuting(chatId);
 
+        public bool IsAnyExecuting => _inner.IsAnyExecuting;
+
+        public bool IsAnyExecutingExcept(Guid runId) => _inner.IsAnyExecutingExcept(runId);
+
         public Guid? GetChatId(Guid runId) => _inner.GetChatId(runId);
     }
 

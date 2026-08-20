@@ -24,6 +24,7 @@ public class PolicyChangeCoordinatorTests : IDisposable
     private readonly string _cacheDir;
     private readonly ILogger<PolicyService> _policyLogger = Substitute.For<ILogger<PolicyService>>();
     private readonly ISettingsService _settingsService = Substitute.For<ISettingsService>();
+    private readonly IPolicyNotificationSurface _notificationSurface = Substitute.For<IPolicyNotificationSurface>();
     private readonly List<string> _steps = [];
     private readonly AppSettings _shared = new();
     private IPolicyService? _appliedBy;
@@ -80,6 +81,11 @@ public class PolicyChangeCoordinatorTests : IDisposable
     private void FailTheSave() => _settingsService.SaveSettingsAsync(Arg.Any<AppSettings>())
         .Returns(_ => Task.FromException(new InvalidOperationException("a settings-changed subscriber threw")));
 
+    /// <summary>The Get is what applies the policy to the shared instance, so failing it moves no value at
+    /// all — unlike a failing Save, which fails after the move.</summary>
+    private void FailTheGet() => _settingsService.GetSettingsAsync()
+        .Returns(_ => Task.FromException<AppSettings>(new IOException("settings.json is locked")));
+
     private static PolicyChangedEventArgs PrivacyValueChanged() => new()
     {
         ValuesChanged = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { nameof(AppSettings.Privacy) },
@@ -106,7 +112,7 @@ public class PolicyChangeCoordinatorTests : IDisposable
     }
 
     private PolicyChangeCoordinator Coordinate(IPolicyService service) =>
-        new(service, _settingsService, NullLogger<PolicyChangeCoordinator>.Instance);
+        new(service, _settingsService, _notificationSurface, NullLogger<PolicyChangeCoordinator>.Instance);
 
     [Fact]
     public async Task AChangedPolicy_IsBothAppliedAndSaved()
@@ -346,5 +352,116 @@ public class PolicyChangeCoordinatorTests : IDisposable
 
         policy.Received(1).NotifyLocksChanged();
         policy.DidNotReceive().SetRestartRequired();
+    }
+
+    [Fact]
+    public async Task AChangedValue_AnnouncesThePolicyUpdateAfterTheLocks()
+    {
+        var service = await LoadedService("""{ "enforce": { "uiLanguage": "DE" } }""");
+        service.LocksChanged += (_, _) => Record("locks");
+        _notificationSurface.When(s => s.NotifyValuesChanged(Arg.Any<bool>())).Do(_ => Record("notice"));
+        _saveCompleted = new TaskCompletionSource();
+        var coordinator = Coordinate(service);
+
+        await service.ReplaceServerPolicyAsync("""{ "enforce": { "uiLanguage": "FR" } }""");
+        _saveCompleted.SetResult();
+        await coordinator.InFlightApply;
+
+        Assert.Equal(new[] { "get", "save", "locks", "notice" }, _steps);
+    }
+
+    /// <summary>An unpin moves no value, so "we updated your settings" would be a lie.</summary>
+    [Fact]
+    public async Task AnUnpinOnlyChange_AnnouncesNothing()
+    {
+        var service = await LoadedService("""{ "enforce": { "uiLanguage": "DE" } }""");
+        service.ApplyPolicy(_shared);
+        var coordinator = Coordinate(service);
+
+        await service.ReplaceServerPolicyAsync("{}");
+        await coordinator.InFlightApply;
+
+        Assert.False(service.IsEnforced(nameof(AppSettings.UiLanguage)));
+        _notificationSurface.DidNotReceive().NotifyValuesChanged(Arg.Any<bool>());
+    }
+
+    [Fact]
+    public async Task AWithdrawnServerPolicy_AnnouncesNothing()
+    {
+        var service = await LoadedService("""{ "enforce": { "uiLanguage": "DE" } }""");
+        service.ApplyPolicy(_shared);
+        var locks = 0;
+        service.LocksChanged += (_, _) => locks++;
+        var coordinator = Coordinate(service);
+
+        await service.ClearServerPolicyAsync();
+        await coordinator.InFlightApply;
+
+        // The change really did reach the coordinator; it just moved no value.
+        Assert.Equal(1, locks);
+        _notificationSurface.DidNotReceive().NotifyValuesChanged(Arg.Any<bool>());
+    }
+
+    /// <summary>The notice is the only thing a user with a deferred overlay sees, so it must not claim the
+    /// value is in force when it is not.</summary>
+    [Fact]
+    public async Task AChangeThatNeedsARestart_AnnouncesItselfAsPending()
+    {
+        var service = await LoadedService();
+        LatchNow();
+        var coordinator = Coordinate(service);
+
+        await service.ReplaceServerPolicyAsync(PrivacyOff);
+        await coordinator.InFlightApply;
+
+        Assert.True(service.IsRestartRequired);
+        _notificationSurface.Received(1).NotifyValuesChanged(true);
+    }
+
+    [Fact]
+    public async Task AChangeThatAppliedLive_AnnouncesItselfAsInEffect()
+    {
+        var service = await LoadedService("""{ "enforce": { "uiLanguage": "DE" } }""");
+        var coordinator = Coordinate(service);
+
+        await service.ReplaceServerPolicyAsync("""{ "enforce": { "uiLanguage": "FR" } }""");
+        await coordinator.InFlightApply;
+
+        Assert.False(service.IsRestartRequired);
+        _notificationSurface.Received(1).NotifyValuesChanged(false);
+    }
+
+    /// <summary>The apply itself failed, so no value moved and "the new settings are now in effect" would be
+    /// false — the notice is the only thing a user with a deferred overlay sees.</summary>
+    [Fact]
+    public async Task AFailingApply_AnnouncesNothing()
+    {
+        var service = await LoadedService("""{ "enforce": { "uiLanguage": "DE" } }""");
+        var locks = 0;
+        service.LocksChanged += (_, _) => locks++;
+        FailTheGet();
+        var coordinator = Coordinate(service);
+
+        await service.ReplaceServerPolicyAsync("""{ "enforce": { "uiLanguage": "FR" } }""");
+        await coordinator.InFlightApply;
+
+        // The locks still refresh: enforcement is read off the policy, not off the settings.
+        Assert.Equal(1, locks);
+        _notificationSurface.DidNotReceive().NotifyValuesChanged(Arg.Any<bool>());
+    }
+
+    [Fact]
+    public async Task AThrowingNoticeSubscriber_StillFlagsTheRestart()
+    {
+        var service = await LoadedService();
+        _notificationSurface.When(s => s.NotifyValuesChanged(Arg.Any<bool>()))
+            .Do(_ => throw new InvalidOperationException("the flow store threw"));
+        LatchNow();
+        var coordinator = Coordinate(service);
+
+        await service.ReplaceServerPolicyAsync(PrivacyOff);
+        await coordinator.InFlightApply;
+
+        Assert.True(service.IsRestartRequired);
     }
 }

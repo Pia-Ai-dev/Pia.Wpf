@@ -22,6 +22,7 @@ public class AssistantViewModelOverlayHostingTests
     private readonly ISettingsService _settings = Substitute.For<ISettingsService>();
     private readonly IMeetingAttendeeService _meetingService = Substitute.For<IMeetingAttendeeService>();
     private readonly IDirectTranscriptionService _directService = Substitute.For<IDirectTranscriptionService>();
+    private readonly VolatileWorkStore _work = new();
 
     [Fact]
     public async Task OpeningDirectTranscription_ClosesTheMeetingAttendee()
@@ -98,6 +99,80 @@ public class AssistantViewModelOverlayHostingTests
 
         Assert.False(vm.IsDirectTranscriptionVisible);
         await _directService.Received(1).StopAsync(Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>The policy-restart overlay covers the whole window including these overlays, and Save only
+    /// lights up once the session has stopped — so an open transcript overlay has to hold it off.</summary>
+    [Fact]
+    public async Task AnOpenTranscriptOverlay_IsReportedAsWorkARestartWouldDestroy()
+    {
+        var vm = CreateSut();
+        Assert.False(_work.HasVolatileWork);
+
+        await vm.ToggleDirectTranscriptionCommand.ExecuteAsync(null);
+        Assert.True(_work.HasVolatileWork);
+
+        await vm.ToggleDirectTranscriptionCommand.ExecuteAsync(null);
+        Assert.False(_work.HasVolatileWork);
+    }
+
+    [Fact]
+    public async Task AnOpenMeetingOverlay_IsReportedAsWorkARestartWouldDestroy()
+    {
+        var vm = CreateSut();
+
+        await vm.ToggleMeetingAttendeeCommand.ExecuteAsync(null);
+
+        Assert.True(_work.HasVolatileWork);
+    }
+
+    /// <summary>Published cross-window so an Optimize window cannot offer Restart mid-turn.</summary>
+    [Fact]
+    public void AStreamingTurn_IsReportedAsWorkARestartWouldDestroy()
+    {
+        var vm = CreateSut();
+        _manager.IsAnyStreaming.Returns(true);
+
+        _manager.SessionStateChanged += Raise.Event<EventHandler<SessionStateChangedEventArgs>>(
+            _manager,
+            new SessionStateChangedEventArgs
+            {
+                ChatId = Guid.NewGuid(),
+                OldState = ChatState.Idle,
+                NewState = ChatState.Running,
+                IsActive = true,
+            });
+
+        Assert.True(_work.HasVolatileWork);
+        Assert.NotNull(vm);
+    }
+
+    /// <summary>Voice mode streams straight through the AI client and never creates a session, so
+    /// <c>IsAnyStreaming</c> is false for the whole conversation while the scrim covers its only exit.</summary>
+    [Fact]
+    public void AnActiveVoiceMode_IsReportedAsWorkARestartWouldDestroy()
+    {
+        var vm = CreateSut();
+        Assert.False(_work.HasVolatileWork);
+
+        vm.IsVoiceModeActive = true;
+        Assert.True(_work.HasVolatileWork);
+
+        vm.IsVoiceModeActive = false;
+        Assert.False(_work.HasVolatileWork);
+    }
+
+    /// <summary>A report left behind by a closed window would defer the overlay for the whole process.</summary>
+    [Fact]
+    public async Task Dispose_DropsTheReport()
+    {
+        var vm = CreateSut();
+        await vm.ToggleDirectTranscriptionCommand.ExecuteAsync(null);
+        Assert.True(_work.HasVolatileWork);
+
+        vm.Dispose();
+
+        Assert.False(_work.HasVolatileWork);
     }
 
     /// <summary>Minimal 1x1 attachment, mirroring <c>AssistantMessageFileRefsTests.NewAttachment</c> —
@@ -191,6 +266,7 @@ public class AssistantViewModelOverlayHostingTests
             Substitute.For<IMarkdownExportService>(),
             Substitute.For<IDialogService>(),
             new InlineUiDispatcher(),
-            Substitute.For<IToolPermissionService>());
+            Substitute.For<IToolPermissionService>(),
+            volatileWork: _work);
     }
 }

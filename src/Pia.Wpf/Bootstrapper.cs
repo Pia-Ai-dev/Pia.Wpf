@@ -440,6 +440,12 @@ public static class Bootstrapper
         // Enterprise policy
         services.AddSingleton<IPolicyService, PolicyService>();
         services.AddSingleton<PolicyChangeCoordinator>();
+        services.AddSingleton<IPolicyNotificationSurface, PolicyNotificationSurface>();
+        // Singleton so one latch covers both windows' overlays; scoped would let each spawn a child.
+        services.AddSingleton<IAppRestartService, AppRestartService>();
+        // Singleton on purpose: the reporters are per-window, the overlay that obeys them is in every window.
+        services.AddSingleton<IVolatileWorkStore, VolatileWorkStore>();
+        services.AddScoped<Views.Overlays.PolicyRestartOverlayPresenter>();
 
         // Services - Singleton (shared across all windows)
         services.AddSingleton<IMemoryService, MemoryService>();

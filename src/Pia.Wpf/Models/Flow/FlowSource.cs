@@ -15,4 +15,5 @@ public enum FlowSource
     // Appended (persisted as int, append-only). Terminal agent-run notification.
     AgentRun,
     Assignment,
+    Policy,
 }
