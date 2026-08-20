@@ -678,6 +678,7 @@
   <data name="Settings_Tab_Personas" xml:space="preserve"><value>Personas</value></data>
   <data name="Personas_Subtitle" xml:space="preserve"><value>Personas prägen Identität, Stimme und Fachwissen des Assistenten.</value></data>
   <data name="Personas_AddPersona" xml:space="preserve"><value>Persona hinzufügen</value></data>
+  <data name="Settings_ManagedByOrganization" xml:space="preserve"><value>Von Ihrer Organisation verwaltet</value></data>
   <data name="Personas_Duplicate" xml:space="preserve"><value>Duplizieren</value></data>
   <data name="Personas_BuiltIn" xml:space="preserve"><value>Integriert</value></data>
   <data name="Personas_Managed" xml:space="preserve"><value>Verwaltet</value></data>

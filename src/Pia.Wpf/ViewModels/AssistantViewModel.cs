@@ -140,10 +140,17 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     [ObservableProperty]
     private bool _isMeetingAttendeeVisible;
 
+    /// <summary>False hides the toolbar toggle; policy can remove either meeting feature on its own.</summary>
+    [ObservableProperty]
+    private bool _isMeetingAttendeeAvailable = true;
+
     public DirectTranscriptionViewModel DirectTranscription { get; }
 
     [ObservableProperty]
     private bool _isDirectTranscriptionVisible;
+
+    [ObservableProperty]
+    private bool _isDirectTranscriptionAvailable = true;
 
     [ObservableProperty]
     private string _suggestionReminder = string.Empty;
@@ -391,6 +398,17 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // "+ New chat" and Clear for free — the chip re-seeds its pending folder from the active
         // chat's dir on flyout-open.
         ApplyDefaultWorkingDirectoryAsync().SafeFireAndForget(_logger);
+        ApplyMeetingFeaturePolicyAsync().SafeFireAndForget(_logger);
+    }
+
+    private async Task ApplyMeetingFeaturePolicyAsync()
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        await _uiDispatcher.PostAsync(() =>
+        {
+            IsMeetingAttendeeAvailable = settings.MeetingAttendeeEnabled;
+            IsDirectTranscriptionAvailable = settings.DirectTranscriptionEnabled;
+        });
     }
 
     /// <summary>
@@ -766,6 +784,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             return;
         }
 
+        if (!IsMeetingAttendeeAvailable)
+            return;
+
         // Direct transcription and meeting-attendee both own the local audio stack, so only one may be
         // open at a time — opening this one closes the other first.
         if (IsDirectTranscriptionVisible)
@@ -797,6 +818,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             IsDirectTranscriptionVisible = false;
             return;
         }
+
+        if (!IsDirectTranscriptionAvailable)
+            return;
 
         if (IsMeetingAttendeeVisible)
         {

@@ -147,6 +147,7 @@
                     </ui:Button>
                     <ui:Button Command="{Binding DataContext.SetDefaultTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                CommandParameter="{Binding}"
+                               IsEnabled="{Binding DataContext.Policy[DefaultTemplateId], RelativeSource={RelativeSource AncestorType=UserControl}}"
                                Appearance="Secondary"
                                Height="30"
                                Padding="8,0"

@@ -109,9 +109,9 @@
           </Ellipse>
         </StackPanel>
 
-        <!-- Dot 3 + connectors: Provider Setup (hidden when logged in) -->
+        <!-- Dot 3 + connectors: Provider Setup (hidden when logged in or locked by policy) -->
         <StackPanel Orientation="Horizontal"
-                    Visibility="{Binding IsLoggedIn, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                    Visibility="{Binding IsProviderStepVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
           <Rectangle Width="32" Height="2" VerticalAlignment="Center"
                      Fill="{DynamicResource ControlStrongStrokeColorDefaultBrush}" />
           <Ellipse>

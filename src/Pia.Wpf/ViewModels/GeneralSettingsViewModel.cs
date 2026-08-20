@@ -5,6 +5,7 @@ using Pia.Helpers;
 using Pia.Models;
 using Pia.Paths;
 using Pia.Services.Interfaces;
+using Pia.ViewModels.Models;
 using System.Collections.ObjectModel;
 using System.IO;
 
@@ -22,6 +23,9 @@ public partial class GeneralSettingsViewModel : ObservableObject
     private readonly ILocalizationService _localizationService;
     private readonly IAutostartService _autostartService;
     private readonly IPolicyService _policyService;
+
+    /// <summary>Bind IsEnabled to Policy[nameof(AppSettings.X)] to grey a control out while policy enforces it.</summary>
+    public PolicyLock Policy { get; }
     private readonly ISyncClientService _syncClientService;
     private bool _isLoading;
 
@@ -51,6 +55,7 @@ public partial class GeneralSettingsViewModel : ObservableObject
         _localizationService = localizationService;
         _autostartService = autostartService;
         _policyService = policyService;
+        Policy = new PolicyLock(policyService);
         _syncClientService = syncClientService;
         PrivacyVm = privacyVm;
 

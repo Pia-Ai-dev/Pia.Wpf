@@ -376,6 +376,7 @@
               <ui:Button Command="{Binding ToggleMeetingAttendeeCommand}"
                          Padding="6,4"
                          Margin="2,0"
+                         Visibility="{Binding IsMeetingAttendeeAvailable, Converter={StaticResource BooleanToVisibilityConverter}}"
                          AutomationProperties.Name="{loc:Str MeetingAttendee_ToggleButton_Tooltip}"
                          ToolTip="{loc:Str MeetingAttendee_ToggleButton_Tooltip}">
                 <ui:Button.Style>
@@ -395,6 +396,7 @@
               <ui:Button Command="{Binding ToggleDirectTranscriptionCommand}"
                          Padding="6,4"
                          Margin="2,0"
+                         Visibility="{Binding IsDirectTranscriptionAvailable, Converter={StaticResource BooleanToVisibilityConverter}}"
                          AutomationProperties.Name="{loc:Str DirectTrans_ToggleButton_Tooltip}"
                          ToolTip="{loc:Str DirectTrans_ToggleButton_Tooltip}">
                 <ui:Button.Style>

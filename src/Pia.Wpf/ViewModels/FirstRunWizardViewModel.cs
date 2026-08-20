@@ -3,6 +3,7 @@ using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
@@ -45,7 +46,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
     /// </summary>
     public int VisibleStepCount => IsLoggedIn
         ? (_cloudAccountHasE2EE || IsE2EEOnboardingRequired ? 5 : 6)
-        : 6;
+        : (IsProviderStepVisible ? 6 : 5);
 
     /// <summary>
     /// Show the E2EE setup step only when the user is signed in to cloud
@@ -53,7 +54,14 @@ public partial class FirstRunWizardViewModel : ObservableObject
     /// </summary>
     public bool IsE2EESetupVisible => IsLoggedIn && !IsE2EEOnboardingRequired && !_cloudAccountHasE2EE;
 
+    /// <summary>
+    /// The provider step is the one place outside settings that creates a provider, so the policy lock
+    /// has to reach it too — otherwise a managed machine hands the user a provider form on first launch.
+    /// </summary>
+    public bool IsProviderStepVisible => !IsLoggedIn && _allowProviderManagement;
+
     private bool _cloudAccountHasE2EE;
+    private bool _allowProviderManagement = true;
 
     // --- Profile (existing) ---
 
@@ -86,6 +94,13 @@ public partial class FirstRunWizardViewModel : ObservableObject
     {
         _localizationService.SetLanguage(value);
         _ = PersistLanguageAsync(value);
+    }
+
+    private async Task LoadProviderPolicyAsync()
+    {
+        _allowProviderManagement = (await _settingsService.GetSettingsAsync()).AllowProviderManagement;
+        OnPropertyChanged(nameof(IsProviderStepVisible));
+        OnPropertyChanged(nameof(VisibleStepCount));
     }
 
     private async Task PersistLanguageAsync(TargetLanguage language)
@@ -298,6 +313,8 @@ public partial class FirstRunWizardViewModel : ObservableObject
             }
         };
         SkipCommand = new AsyncRelayCommand(ExecuteSkipAsync);
+
+        LoadProviderPolicyAsync().SafeFireAndForget(_logger);
         FinishCommand = new AsyncRelayCommand(ExecuteFinishAsync);
         VoiceInputNameCommand = new AsyncRelayCommand(ExecuteVoiceInputNameAsync);
         VoiceInputNicknameCommand = new AsyncRelayCommand(ExecuteVoiceInputNicknameAsync);
@@ -331,7 +348,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
         }
 
         // Provider step (step 3): block Next unless connection test passed (only when shown)
-        if (CurrentStep == 3 && !IsLoggedIn && !ConnectionTestPassed) return false;
+        if (CurrentStep == 3 && IsProviderStepVisible && !ConnectionTestPassed) return false;
 
         return true;
     }
@@ -350,9 +367,9 @@ public partial class FirstRunWizardViewModel : ObservableObject
         CurrentStep = CurrentStep switch
         {
             1 when IsE2EESetupVisible => 2,
-            1 when IsLoggedIn => 4,     // skip both E2EE (2) and Provider (3)
-            1 => 3,                     // not logged in: go to Provider
-            2 => IsLoggedIn ? 4 : 3,    // E2EE step is only reachable when visible
+            1 when !IsProviderStepVisible => 4,     // skip both E2EE (2) and Provider (3)
+            1 => 3,                                 // provider step is shown: go to it
+            2 => IsProviderStepVisible ? 3 : 4,     // E2EE step is only reachable when visible
             _ => CurrentStep + 1,
         };
 
@@ -367,7 +384,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
         {
             2 => 1,
             3 => IsE2EESetupVisible ? 2 : 1,
-            4 when IsLoggedIn => IsE2EESetupVisible ? 2 : 1,
+            4 when !IsProviderStepVisible => IsE2EESetupVisible ? 2 : 1,
             4 => 3,
             _ => CurrentStep - 1,
         };
@@ -377,8 +394,8 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
     private void AdvanceFromE2EEStep(bool e2eeEnabled)
     {
-        // Always called from CurrentStep == 2; skip Provider when logged in.
-        CurrentStep = IsLoggedIn ? 4 : 3;
+        // Always called from CurrentStep == 2; skip Provider when it is not shown.
+        CurrentStep = IsProviderStepVisible ? 3 : 4;
         NotifyNavigationChanged();
     }
 
@@ -683,7 +700,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
             }
 
             // Persist provider configured during wizard (skip-login path)
-            if (!IsLoggedIn && ConnectionTestPassed)
+            if (IsProviderStepVisible && ConnectionTestPassed)
             {
                 var provider = new AiProvider
                 {

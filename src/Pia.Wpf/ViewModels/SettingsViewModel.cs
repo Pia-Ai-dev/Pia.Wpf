@@ -60,13 +60,13 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
         OptimizeVm = new OptimizeSettingsViewModel(ProvidersVm, logger, templateService, settingsService, textOptimizationService, dialogService, snackbarService, localizationService, policyService, authService);
 
-        PersonasVm = new PersonaSettingsViewModel(logger, personaService, providerService, textOptimizationService, dialogService, snackbarService, localizationService, authService);
+        PersonasVm = new PersonaSettingsViewModel(logger, personaService, providerService, textOptimizationService, dialogService, snackbarService, localizationService, authService, settingsService, policyService);
 
         var toolPermissionsVm = new ToolPermissionsSettingsViewModel(toolPermissionService, pluginService, logger);
-        var meetingVm = new MeetingSettingsViewModel(logger, settingsService, localizationService);
-        AssistantVm = new AssistantSettingsViewModel(ProvidersVm, PersonasVm, toolPermissionsVm, meetingVm, logger, settingsService, assistantChatService, dialogService, localizationService, folderRelocationService, workingDirectoryService, personaService);
+        var meetingVm = new MeetingSettingsViewModel(logger, settingsService, localizationService, policyService);
+        AssistantVm = new AssistantSettingsViewModel(ProvidersVm, PersonasVm, toolPermissionsVm, meetingVm, logger, settingsService, assistantChatService, dialogService, localizationService, folderRelocationService, workingDirectoryService, policyService, personaService);
 
-        var privacyVm = new PrivacySettingsViewModel(logger, settingsService);
+        var privacyVm = new PrivacySettingsViewModel(logger, settingsService, policyService);
         GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService, policyService, privacyVm, syncClientService);
 
         AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, memoryService, policyService, onboardingViewModel);

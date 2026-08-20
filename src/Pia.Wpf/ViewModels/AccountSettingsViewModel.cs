@@ -5,6 +5,7 @@ using Pia.Models;
 using Pia.Services.E2EE;
 using Pia.Helpers;
 using Pia.Services.Interfaces;
+using Pia.ViewModels.Models;
 using Pia.Shared.E2EE;
 using System.Text.Json;
 
@@ -23,6 +24,9 @@ public partial class AccountSettingsViewModel : UiThreadViewModel
     private readonly IDeviceKeyService _deviceKeys;
     private readonly IMemoryService _memoryService;
     private readonly IPolicyService _policyService;
+
+    /// <summary>Bind IsEnabled to Policy[nameof(AppSettings.X)] to grey a control out while policy enforces it.</summary>
+    public PolicyLock Policy { get; }
     private bool _isLoading;
 
     public E2EEOnboardingViewModel OnboardingViewModel { get; }
@@ -53,6 +57,7 @@ public partial class AccountSettingsViewModel : UiThreadViewModel
         _deviceKeys = deviceKeys;
         _memoryService = memoryService;
         _policyService = policyService;
+        Policy = new PolicyLock(policyService);
         OnboardingViewModel = onboardingViewModel;
 
         OnboardingViewModel.OnboardingCompleted += async (_, _) =>

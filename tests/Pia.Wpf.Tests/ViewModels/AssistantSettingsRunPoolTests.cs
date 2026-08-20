@@ -40,20 +40,20 @@ public class AssistantSettingsRunPoolTests
             NullLogger<SettingsViewModel>.Instance, Substitute.For<IPersonaService>(),
             Substitute.For<IProviderService>(), Substitute.For<ITextOptimizationService>(),
             dialogService, Substitute.For<global::Wpf.Ui.ISnackbarService>(), localization,
-            Substitute.For<IAuthService>());
+            Substitute.For<IAuthService>(), settingsService, Substitute.For<IPolicyService>());
 
         var toolPermissionsVm = new ToolPermissionsSettingsViewModel(
             Substitute.For<IToolPermissionService>(), Substitute.For<IPluginService>(),
             NullLogger<SettingsViewModel>.Instance);
 
         var meetingVm = new MeetingSettingsViewModel(
-            NullLogger<SettingsViewModel>.Instance, settingsService, localization);
+            NullLogger<SettingsViewModel>.Instance, settingsService, localization, Substitute.For<IPolicyService>());
 
         var sut = new AssistantSettingsViewModel(
             providersVm, personasVm, toolPermissionsVm, meetingVm,
             NullLogger<SettingsViewModel>.Instance, settingsService, Substitute.For<IAssistantChatService>(),
             dialogService, localization, Substitute.For<IAssistantFolderRelocationService>(),
-            workingDirectoryService, personaService: null);
+            workingDirectoryService, Substitute.For<IPolicyService>(), personaService: null);
 
         return (sut, stored, settingsService);
     }

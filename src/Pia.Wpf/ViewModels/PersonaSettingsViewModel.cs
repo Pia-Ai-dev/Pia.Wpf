@@ -24,9 +24,20 @@ public partial class PersonaSettingsViewModel : UiThreadViewModel
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly ILocalizationService _localizationService;
     private readonly IAuthService _authService;
+    private readonly ISettingsService _settingsService;
 
     [ObservableProperty]
     private ObservableCollection<Persona> _personas;
+
+    /// <summary>Bind IsEnabled to Policy[nameof(AppSettings.X)] to grey a control out while policy enforces it.</summary>
+    public PolicyLock Policy { get; }
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(AddPersonaCommand))]
+    [NotifyCanExecuteChangedFor(nameof(EditPersonaCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DeletePersonaCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DuplicatePersonaCommand))]
+    private bool _canManagePersonas = true;
 
     public PersonaSettingsViewModel(
         ILogger<SettingsViewModel> logger,
@@ -36,8 +47,11 @@ public partial class PersonaSettingsViewModel : UiThreadViewModel
         IDialogService dialogService,
         Wpf.Ui.ISnackbarService snackbarService,
         ILocalizationService localizationService,
-        IAuthService authService)
+        IAuthService authService,
+        ISettingsService settingsService,
+        IPolicyService policyService)
     {
+        Policy = new PolicyLock(policyService);
         _logger = logger;
         _personaService = personaService;
         _providerService = providerService;
@@ -46,6 +60,7 @@ public partial class PersonaSettingsViewModel : UiThreadViewModel
         _snackbarService = snackbarService;
         _localizationService = localizationService;
         _authService = authService;
+        _settingsService = settingsService;
         Personas = new ObservableCollection<Persona>();
 
         _personaService.PersonasChanged += OnPersonasChanged;
@@ -61,11 +76,20 @@ public partial class PersonaSettingsViewModel : UiThreadViewModel
             RefreshPersonasAsync().SafeFireAndForget(_logger);
     }
 
-    public async Task InitializeAsync() => await RefreshPersonasAsync();
+    public async Task InitializeAsync()
+    {
+        CanManagePersonas = (await _settingsService.GetSettingsAsync()).AllowPersonaManagement;
+        await RefreshPersonasAsync();
+    }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanManagePersonas))]
     private async Task AddPersonaAsync()
     {
+        // CanExecute only greys the button out; ExecuteAsync does not consult it, so every command the
+        // lock covers re-checks here.
+        if (!CanManagePersonas)
+            return;
+
         var editModel = new PersonaEditModel(_textOptimizationService);
         await PopulateProvidersAsync(editModel, null);
 
@@ -77,10 +101,13 @@ public partial class PersonaSettingsViewModel : UiThreadViewModel
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanManagePersonas))]
     private async Task EditPersonaAsync(Persona? persona)
     {
         if (persona is null)
+            return;
+
+        if (!CanManagePersonas)
             return;
 
         // One gate for both read-only flavours, so a third one would be caught here too. Only the managed
@@ -110,6 +137,9 @@ public partial class PersonaSettingsViewModel : UiThreadViewModel
         if (persona is null)
             return;
 
+        if (!CanManagePersonas)
+            return;
+
         if (persona.IsBuiltIn)
         {
             _snackbarService.Show(_localizationService["Msg_Warning"], _localizationService["Msg_Settings_CannotDeleteBuiltInPersona"], Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(3));
@@ -131,10 +161,13 @@ public partial class PersonaSettingsViewModel : UiThreadViewModel
 
     /// <summary>Creates a new user persona seeded from an existing one (incl. a read-only built-in or
     /// managed one — this is the escape hatch for those) and opens the editor.</summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanManagePersonas))]
     private async Task DuplicatePersonaAsync(Persona? persona)
     {
         if (persona is null)
+            return;
+
+        if (!CanManagePersonas)
             return;
 
         var editModel = PersonaEditModel.FromPersona(persona, _textOptimizationService);
@@ -152,7 +185,7 @@ public partial class PersonaSettingsViewModel : UiThreadViewModel
 
     // IsReadOnly covers built-in OR managed, so the command is disabled for both flavours of
     // admin/app-owned persona and the XAML can key off the same one flag.
-    private static bool CanDeletePersona(Persona? persona) => persona is { IsReadOnly: false };
+    private bool CanDeletePersona(Persona? persona) => CanManagePersonas && persona is { IsReadOnly: false };
 
     private async Task PopulateProvidersAsync(PersonaEditModel editModel, Guid? selectedId)
     {

@@ -36,7 +36,8 @@ public class MeetingSettingsViewModelTests
         var sut = new MeetingSettingsViewModel(
             NullLogger<SettingsViewModel>.Instance,
             settingsService,
-            localization);
+            localization,
+            Substitute.For<IPolicyService>());
 
         return (sut, settingsService, stored);
     }

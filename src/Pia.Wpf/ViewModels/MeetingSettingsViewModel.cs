@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.ViewModels.Models;
 using System.Collections.Generic;
 
 namespace Pia.ViewModels;
@@ -14,14 +15,19 @@ public partial class MeetingSettingsViewModel : ObservableObject
     private readonly ILocalizationService _localizationService;
     private bool _isLoading;
 
+    /// <summary>Bind IsEnabled to Policy[nameof(AppSettings.X)] to grey a control out while policy enforces it.</summary>
+    public PolicyLock Policy { get; }
+
     public MeetingSettingsViewModel(
         ILogger<SettingsViewModel> logger,
         ISettingsService settingsService,
-        ILocalizationService localizationService)
+        ILocalizationService localizationService,
+        IPolicyService policyService)
     {
         _logger = logger;
         _settingsService = settingsService;
         _localizationService = localizationService;
+        Policy = new PolicyLock(policyService);
 
         _localizationService.LanguageChanged += (_, _) =>
         {
@@ -33,7 +39,12 @@ public partial class MeetingSettingsViewModel : ObservableObject
 
     // Meeting per-speaker diarization
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SmartSpeakerDetectionEditable))]
     private bool _enableMeetingDiarization = true;
+
+    /// <summary>The diarization sub-controls need diarization on AND no policy lock, so both gates AND.</summary>
+    public bool SmartSpeakerDetectionEditable =>
+        EnableMeetingDiarization && Policy[nameof(AppSettings.MeetingSmartSpeakerDetection)];
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SpeakerEmbeddingThresholdDisplay))]

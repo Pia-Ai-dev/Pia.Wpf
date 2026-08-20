@@ -177,4 +177,30 @@ public static class BuiltInPersonas
             "#FF6D00",
             ToolScopeNone)
     ];
+
+    /// <summary>Stable key → id, so a deployment can name a built-in without pasting its Guid.</summary>
+    public static IReadOnlyDictionary<string, Guid> ByKey { get; } =
+        new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["PiaPersonal"] = PiaPersonalId,
+            ["PiaBusiness"] = PiaBusinessId,
+            ["ExperiencedCoder"] = ExperiencedCoderId,
+            ["MarketingWriter"] = MarketingWriterId,
+            ["FinancialExpert"] = FinancialExpertId,
+            ["WorldwideCompanyCeo"] = WorldwideCompanyCeoId,
+            ["ExplainItSimply"] = ExplainItSimplyId,
+        };
+
+    /// <summary>Resolves a key or a Guid string to a built-in id; null when it names no built-in.</summary>
+    public static Guid? Resolve(string? keyOrId)
+    {
+        if (string.IsNullOrWhiteSpace(keyOrId))
+            return null;
+
+        var trimmed = keyOrId.Trim();
+        if (ByKey.TryGetValue(trimmed, out var byKey))
+            return byKey;
+
+        return Guid.TryParse(trimmed, out var id) && ByKey.Values.Contains(id) ? id : null;
+    }
 }

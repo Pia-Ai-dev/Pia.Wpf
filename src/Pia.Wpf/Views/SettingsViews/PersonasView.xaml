@@ -23,12 +23,20 @@
                    Appearance="Secondary"
                    AutomationProperties.AutomationId="Personas_AddButton"
                    AutomationProperties.Name="{loc:Str Personas_AddPersona}"
+                   Visibility="{Binding CanManagePersonas, Converter={StaticResource BooleanToVisibilityConverter}}"
                    Command="{Binding AddPersonaCommand}">
           <StackPanel Orientation="Horizontal">
             <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,6,0"/>
             <TextBlock Text="{loc:Str Personas_AddPersona}"/>
           </StackPanel>
         </ui:Button>
+        <TextBlock Grid.Column="1"
+                   Text="{loc:Str Settings_ManagedByOrganization}"
+                   AutomationProperties.AutomationId="Personas_ManagedNotice"
+                   FontSize="12"
+                   VerticalAlignment="Center"
+                   Foreground="{DynamicResource TextMutedBrush}"
+                   Visibility="{Binding CanManagePersonas, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
       </Grid>
 
       <TextBlock Text="{loc:Str Personas_Subtitle}"

@@ -98,11 +98,38 @@ public class AppSettings
     /// </summary>
     public List<ToolGrant> AlwaysAllowedTools { get; set; } = new();
 
+    /// <summary>
+    /// False hides add/edit/delete on AI providers; the configured ones stay usable. Belongs in the
+    /// policy's <c>enforce</c> block — under <c>defaults</c> the user can simply switch it back on.
+    /// </summary>
+    public bool AllowProviderManagement { get; set; } = true;
+
+    /// <summary>
+    /// False hides add/edit/delete on personas, leaving built-in and managed ones. Same enforce-only
+    /// caveat as <see cref="AllowProviderManagement"/>.
+    /// </summary>
+    public bool AllowPersonaManagement { get; set; } = true;
+
+    /// <summary>
+    /// Built-in personas to hide, by key (<c>PiaPersonal</c>, <c>ExperiencedCoder</c>, …) or Guid.
+    /// Hides them from the picker only — the ids stay reserved, so a hidden built-in can never be
+    /// re-created as a user persona under the same Guid.
+    /// </summary>
+    public List<string>? BlockedBuiltInPersonas { get; set; }
+
     // TTS settings
     public bool TtsEnabled { get; set; } = false;
     public string TtsVoiceModelKey { get; set; } = "en_US-lessac-medium";
 
     // Meeting attendee / live transcription settings
+
+    /// <summary>False hides the Teams meeting-attendee toggle (the browser bot that joins a call).
+    /// Independent of <see cref="DirectTranscriptionEnabled"/>. Enforce-only, like the other locks.</summary>
+    public bool MeetingAttendeeEnabled { get; set; } = true;
+
+    /// <summary>False hides the in-room microphone transcription toggle.</summary>
+    public bool DirectTranscriptionEnabled { get; set; } = true;
+
     public string? LastCounterpartName { get; set; }
     // The display name the assistant joins meetings under (editable in the join dialog). Blank/null
     // falls back to the auto-built "{user}'s assistant" (see MeetingAttendeeService.BuildDisplayName).

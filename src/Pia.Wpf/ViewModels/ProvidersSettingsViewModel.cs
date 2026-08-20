@@ -20,6 +20,9 @@ public partial class ProvidersSettingsViewModel : UiThreadViewModel
     private readonly IAuthService _authService;
     private readonly ILocalizationService _localizationService;
     private readonly IPolicyService _policyService;
+
+    /// <summary>Bind IsEnabled to Policy[nameof(AppSettings.X)] to grey a control out while policy enforces it.</summary>
+    public PolicyLock Policy { get; }
     private readonly ISyncClientService? _syncClientService;
     private bool _isLoading;
 
@@ -45,6 +48,7 @@ public partial class ProvidersSettingsViewModel : UiThreadViewModel
         _authService = authService;
         _localizationService = localizationService;
         _policyService = policyService;
+        Policy = new PolicyLock(policyService);
         _syncClientService = syncClientService;
 
         Providers = new ObservableCollection<AiProvider>();
@@ -105,6 +109,12 @@ public partial class ProvidersSettingsViewModel : UiThreadViewModel
     // Enterprise policy enforcement
     public bool IsUseSameProviderEnforced => _policyService.IsEnforced(nameof(AppSettings.UseSameProviderForAllModes));
 
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(AddProviderCommand))]
+    [NotifyCanExecuteChangedFor(nameof(EditProviderCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DeleteProviderCommand))]
+    private bool _canManageProviders = true;
+
     public List<AiProvider> OptimizeProviderOptions => Providers.ToList();
 
     public List<AiProvider> NonCloudProviders =>
@@ -163,6 +173,7 @@ public partial class ProvidersSettingsViewModel : UiThreadViewModel
 
         var providersList = await _providerService.GetProvidersAsync();
         var settings = await _settingsService.GetSettingsAsync();
+        CanManageProviders = settings.AllowProviderManagement;
         var optimizeId = ResolveOrDefault(settings, WindowMode.Optimize, providersList);
         var assistantId = ResolveOrDefault(settings, WindowMode.Assistant, providersList);
         var displayItems = await BuildProviderDisplayItemsAsync(providersList, optimizeId, assistantId);
@@ -196,9 +207,13 @@ public partial class ProvidersSettingsViewModel : UiThreadViewModel
     [RelayCommand]
     private void GoToProvidersTab() => _parent.SelectedTabIndex = (int)SettingsTab.Providers;
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanManageProviders))]
     private async Task AddProviderAsync()
     {
+        // CanExecute only greys the button out; ExecuteAsync does not consult it.
+        if (!CanManageProviders)
+            return;
+
         var editModel = new ProviderEditModel();
 
         if (await _dialogService.ShowProviderEditDialogAsync(editModel, _providerService))
@@ -212,10 +227,13 @@ public partial class ProvidersSettingsViewModel : UiThreadViewModel
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanManageProviders))]
     private async Task EditProviderAsync(AiProvider? provider)
     {
         if (provider is null)
+            return;
+
+        if (!CanManageProviders)
             return;
 
         var editModel = ProviderEditModel.FromProvider(provider);
@@ -235,6 +253,9 @@ public partial class ProvidersSettingsViewModel : UiThreadViewModel
     private async Task DeleteProviderAsync(AiProvider? provider)
     {
         if (provider is null)
+            return;
+
+        if (!CanManageProviders)
             return;
 
         var isUsedByAnyMode = OptimizeProviderId == provider.Id
@@ -302,6 +323,7 @@ public partial class ProvidersSettingsViewModel : UiThreadViewModel
     private bool CanDeleteProvider(AiProvider? provider)
     {
         if (provider is null) return false;
+        if (!CanManageProviders) return false;
         if (provider.ProviderType == AiProviderType.PiaCloud) return false;
         return provider.Id != OptimizeProviderId
             && provider.Id != AssistantProviderId;

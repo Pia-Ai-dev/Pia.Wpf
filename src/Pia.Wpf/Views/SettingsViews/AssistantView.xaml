@@ -63,6 +63,7 @@
                    Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
         <ComboBox ItemsSource="{Binding WindowModes}"
                   SelectedItem="{Binding DefaultWindowMode}"
+                  IsEnabled="{Binding Policy[DefaultWindowMode]}"
                   AutomationProperties.AutomationId="Settings_Assistant_DefaultWindowMode"
                   Width="400"
                   HorizontalAlignment="Left">
@@ -80,6 +81,7 @@
       <StackPanel Margin="0,0,0,20">
         <CheckBox Content="{loc:Str Settings_AssistantSuggestions}"
                   IsChecked="{Binding SuggestionsEnabled}"
+                  IsEnabled="{Binding Policy[AssistantSuggestionsEnabled]}"
                   AutomationProperties.AutomationId="Settings_Assistant_SuggestionsEnabled"/>
         <TextBlock Text="{loc:Str Settings_AssistantSuggestions_Description}"
                    Style="{StaticResource PiaSettingsDescriptionStyle}"
@@ -112,12 +114,13 @@
                    Margin="0,6,0,0"/>
         <CheckBox Content="{loc:Str Settings_AssistantFileToolsEnabled}"
                   IsChecked="{Binding FileToolsEnabled}"
+                  IsEnabled="{Binding Policy[AssistantFileToolsEnabled]}"
                   AutomationProperties.AutomationId="Settings_Assistant_FileToolsEnabled"
                   Margin="0,10,0,0"/>
         <CheckBox Content="{loc:Str Settings_AssistantGitToolsEnabled}"
                   IsChecked="{Binding GitToolsEnabled}"
                   AutomationProperties.AutomationId="Settings_Assistant_GitToolsEnabled"
-                  IsEnabled="{Binding GitToolsAvailable}"
+                  IsEnabled="{Binding GitToolsEditable}"
                   Margin="0,10,0,0"/>
         <TextBlock Text="{loc:Str Settings_AssistantGitToolsUnavailable}"
                    Style="{StaticResource PiaSettingsDescriptionStyle}"
@@ -136,6 +139,7 @@
                   HorizontalAlignment="Left"
                   IsEditable="True"
                   Text="{Binding DefaultWorkingDirectory, UpdateSourceTrigger=LostFocus}"
+                  IsEnabled="{Binding Policy[AssistantDefaultWorkingDirectory]}"
                   ItemsSource="{Binding AvailableWorkingDirectories}"
                   AutomationProperties.AutomationId="Settings_Assistant_DefaultWorkingDirectory"/>
         <TextBlock Text="{loc:Str Settings_Assistant_DefaultWorkingDirectory_Description}"
@@ -151,6 +155,7 @@
       <StackPanel Margin="0,0,0,20">
         <CheckBox Content="{loc:Str Settings_Chat_HistoryEnabled}"
                   IsChecked="{Binding ChatHistoryEnabled}"
+                  IsEnabled="{Binding Policy[ChatHistoryEnabled]}"
                   AutomationProperties.AutomationId="Settings_Assistant_ChatHistoryEnabled"/>
         <TextBlock Text="{loc:Str Settings_Chat_HistoryEnabled_Description}"
                    Style="{StaticResource PiaSettingsDescriptionStyle}"
@@ -168,6 +173,7 @@
                 TickFrequency="1"
                 IsSnapToTickEnabled="True"
                 Value="{Binding ChatHistoryRetentionDays, Mode=TwoWay}"
+                IsEnabled="{Binding Policy[ChatHistoryRetentionDays]}"
                 AutomationProperties.AutomationId="Settings_Assistant_ChatHistoryRetentionDays"
                 VerticalAlignment="Center"/>
         <TextBlock Text="{Binding RetentionDaysDisplay}"
@@ -177,6 +183,7 @@
       <StackPanel Margin="0,0,0,20">
         <CheckBox Content="{loc:Str Settings_Chat_AutoTitle}"
                   IsChecked="{Binding ChatAutoTitleEnabled}"
+                  IsEnabled="{Binding Policy[ChatAutoTitleEnabled]}"
                   AutomationProperties.AutomationId="Settings_Assistant_ChatAutoTitleEnabled"/>
         <TextBlock Text="{loc:Str Settings_Chat_AutoTitle_Hint}"
                    Style="{StaticResource PiaSettingsDescriptionStyle}"
@@ -409,6 +416,7 @@
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
               <CheckBox Content="{loc:Str Settings_Diarization_Enable}"
                         IsChecked="{Binding EnableMeetingDiarization}"
+                        IsEnabled="{Binding Policy[EnableMeetingDiarization]}"
                         AutomationProperties.AutomationId="Settings_Assistant_EnableMeetingDiarization"
                         Margin="0,4,0,0"/>
               <TextBlock Text="{loc:Str Settings_Diarization_Enable_Description}"
@@ -417,7 +425,7 @@
               <CheckBox Content="{loc:Str Settings_Diarization_SmartAuto}"
                         IsChecked="{Binding MeetingSmartSpeakerDetection}"
                         AutomationProperties.AutomationId="Settings_Assistant_MeetingSmartSpeakerDetection"
-                        IsEnabled="{Binding EnableMeetingDiarization}"
+                        IsEnabled="{Binding SmartSpeakerDetectionEditable}"
                         Margin="0,12,0,0"/>
               <TextBlock Text="{loc:Str Settings_Diarization_SmartAuto_Description}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"
@@ -437,6 +445,7 @@
                       TickFrequency="0.05"
                       IsSnapToTickEnabled="True"
                       Value="{Binding SpeakerEmbeddingThreshold, Mode=TwoWay}"
+                      IsEnabled="{Binding Policy[SpeakerEmbeddingThreshold]}"
                       AutomationProperties.AutomationId="Settings_Assistant_SpeakerEmbeddingThreshold"
                       VerticalAlignment="Center"/>
               <TextBlock Text="{Binding SpeakerEmbeddingThresholdDisplay}"
@@ -459,6 +468,7 @@
                       TickFrequency="1"
                       IsSnapToTickEnabled="True"
                       Value="{Binding MeetingMaxSpeakers, Mode=TwoWay}"
+                      IsEnabled="{Binding Policy[MeetingMaxSpeakers]}"
                       AutomationProperties.AutomationId="Settings_Assistant_MeetingMaxSpeakers"
                       VerticalAlignment="Center"/>
               <TextBlock Text="{Binding MeetingMaxSpeakersDisplay}"
@@ -481,6 +491,7 @@
                       TickFrequency="0.5"
                       IsSnapToTickEnabled="True"
                       Value="{Binding MeetingMinSpeechSeconds, Mode=TwoWay}"
+                      IsEnabled="{Binding Policy[MeetingMinSpeechSeconds]}"
                       AutomationProperties.AutomationId="Settings_Assistant_MeetingMinSpeechSeconds"
                       VerticalAlignment="Center"/>
               <TextBlock Text="{Binding MeetingMinSpeechDisplay}"
@@ -496,6 +507,7 @@
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
               <ComboBox ItemsSource="{Binding MeetingBrowserSelections}"
                         SelectedItem="{Binding MeetingBrowserSelection}"
+                        IsEnabled="{Binding Policy[MeetingBrowserSelection]}"
                         AutomationProperties.AutomationId="Settings_Assistant_MeetingBrowser"
                         Width="400"
                         HorizontalAlignment="Left">
@@ -509,6 +521,7 @@
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>
               <CheckBox Content="{loc:Str Settings_MeetingBrowser_ShowWindow}"
                         IsChecked="{Binding MeetingAttendeeShowBrowserWindow}"
+                        IsEnabled="{Binding Policy[MeetingAttendeeShowBrowserWindow]}"
                         AutomationProperties.AutomationId="Settings_Assistant_MeetingAttendeeShowBrowserWindow"
                         Margin="0,8,0,0"/>
               <TextBlock Text="{loc:Str Settings_MeetingBrowser_ShowWindow_Description}"
@@ -536,6 +549,7 @@
                       Minimum="1" Maximum="48"
                       TickFrequency="1" IsSnapToTickEnabled="True"
                       Value="{Binding AgentMaxSteps, Mode=TwoWay}"
+                      IsEnabled="{Binding Policy[AgentMaxSteps]}"
                       AutomationProperties.AutomationId="Settings_Assistant_AgentMaxSteps"/>
               <TextBlock Text="{Binding AgentMaxStepsDisplay}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>
@@ -551,6 +565,7 @@
                       Minimum="1" Maximum="48"
                       TickFrequency="1" IsSnapToTickEnabled="True"
                       Value="{Binding MaxToolRoundsPerStep, Mode=TwoWay}"
+                      IsEnabled="{Binding Policy[MaxToolRoundsPerStep]}"
                       AutomationProperties.AutomationId="Settings_Assistant_MaxToolRoundsPerStep"/>
               <TextBlock Text="{Binding MaxToolRoundsDisplay}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>
@@ -566,6 +581,7 @@
                       Minimum="1" Maximum="120"
                       TickFrequency="1" IsSnapToTickEnabled="True"
                       Value="{Binding AgentWallClockMinutes, Mode=TwoWay}"
+                      IsEnabled="{Binding Policy[AgentWallClockMinutes]}"
                       AutomationProperties.AutomationId="Settings_Assistant_AgentWallClockMinutes"/>
               <TextBlock Text="{Binding AgentWallClockDisplay}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>
@@ -581,6 +597,7 @@
                       Minimum="0" Maximum="5"
                       TickFrequency="1" IsSnapToTickEnabled="True"
                       Value="{Binding AgentMaxReplans, Mode=TwoWay}"
+                      IsEnabled="{Binding Policy[AgentMaxReplans]}"
                       AutomationProperties.AutomationId="Settings_Assistant_AgentMaxReplans"/>
               <TextBlock Text="{Binding AgentMaxReplansDisplay}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>
@@ -596,6 +613,7 @@
             <StackPanel Margin="0,0,0,20">
               <CheckBox Content="{loc:Str Settings_Agent_PlanReasoningTurn}"
                         IsChecked="{Binding AgentPlanReasoningTurnEnabled}"
+                        IsEnabled="{Binding Policy[AgentPlanReasoningTurnEnabled]}"
                         AutomationProperties.AutomationId="Settings_Assistant_AgentPlanReasoningTurnEnabled"
                         Margin="0,8,0,0"/>
               <TextBlock Text="{loc:Str Settings_Agent_PlanReasoningTurn_Description}"
@@ -612,6 +630,7 @@
             <StackPanel Margin="0,0,0,20">
               <CheckBox Content="{loc:Str Settings_Agent_AutoApproveBuiltInWrites}"
                         IsChecked="{Binding AgentRunAutoApproveBuiltInWrites}"
+                        IsEnabled="{Binding Policy[AgentRunAutoApproveBuiltInWrites]}"
                         AutomationProperties.AutomationId="Settings_Assistant_Agent_AutoApproveBuiltInWrites"
                         Margin="0,8,0,0"/>
               <TextBlock Text="{loc:Str Settings_Agent_AutoApproveBuiltInWrites_Description}"
@@ -675,6 +694,7 @@
                       Minimum="1" Maximum="48"
                       TickFrequency="1" IsSnapToTickEnabled="True"
                       Value="{Binding ScheduledMaxSteps, Mode=TwoWay}"
+                      IsEnabled="{Binding Policy[ScheduledMaxSteps]}"
                       AutomationProperties.AutomationId="Settings_Assistant_ScheduledMaxSteps"/>
               <TextBlock Text="{Binding ScheduledMaxStepsDisplay}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>
@@ -687,6 +707,7 @@
                       Minimum="1" Maximum="120"
                       TickFrequency="1" IsSnapToTickEnabled="True"
                       Value="{Binding ScheduledWallClockMinutes, Mode=TwoWay}"
+                      IsEnabled="{Binding Policy[ScheduledWallClockMinutes]}"
                       AutomationProperties.AutomationId="Settings_Assistant_ScheduledWallClockMinutes"/>
               <TextBlock Text="{Binding ScheduledWallClockDisplay}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>
@@ -699,6 +720,7 @@
                       Minimum="0" Maximum="5"
                       TickFrequency="1" IsSnapToTickEnabled="True"
                       Value="{Binding ScheduledMaxReplans, Mode=TwoWay}"
+                      IsEnabled="{Binding Policy[ScheduledMaxReplans]}"
                       AutomationProperties.AutomationId="Settings_Assistant_ScheduledMaxReplans"/>
               <TextBlock Text="{Binding ScheduledMaxReplansDisplay}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>
@@ -714,6 +736,7 @@
                       Minimum="1" Maximum="8"
                       TickFrequency="1" IsSnapToTickEnabled="True"
                       Value="{Binding MaxParallelBackgroundRuns, Mode=TwoWay}"
+                      IsEnabled="{Binding Policy[MaxParallelBackgroundRuns]}"
                       AutomationProperties.AutomationId="Settings_Assistant_MaxParallelBackgroundRuns"/>
               <TextBlock Text="{Binding MaxParallelBackgroundRunsDisplay}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>

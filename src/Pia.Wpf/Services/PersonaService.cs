@@ -59,7 +59,10 @@ public class PersonaService : IPersonaService
         //  - managed before user personas because they are org-level and should not be buried under a long
         //    personal list;
         //  - both trailing blocks stay internally ordered by CreatedAt ASC, matching today's user ordering.
-        var merged = new List<Persona>(_builtIns);
+        // Policy may hide built-ins from the picker. Filtered here only — _builtInIds keeps treating a
+        // hidden id as reserved, so it can never be re-created as a user persona.
+        var blocked = await GetBlockedBuiltInIdsAsync();
+        var merged = new List<Persona>(blocked.Count == 0 ? _builtIns : _builtIns.Where(p => !blocked.Contains(p.Id)));
 
         // Id-collision precedence is built-in > managed > user. Guard 1: a managed id equal to a BUILT-IN id
         // is dropped from the managed block. The server always mints a fresh GUID so this should be
@@ -414,8 +417,26 @@ public class PersonaService : IPersonaService
             ? BuiltInPersonas.PiaBusinessId
             : BuiltInPersonas.PiaPersonalId;
 
-        // Built-ins are always present, so First never throws here.
-        return personas.First(p => p.Id == fallbackId);
+        // Policy can hide the operating-mode built-in, so degrade instead of assuming it is listed.
+        // The last leg ignores the block-list: never returning null outranks honouring it.
+        return personas.FirstOrDefault(p => p.Id == fallbackId)
+            ?? personas.FirstOrDefault()
+            ?? _builtIns.First(p => p.Id == fallbackId);
+    }
+
+    private async Task<HashSet<Guid>> GetBlockedBuiltInIdsAsync() =>
+        ResolveBlockedBuiltInIds(await _settingsService.GetSettingsAsync());
+
+    internal static HashSet<Guid> ResolveBlockedBuiltInIds(AppSettings settings)
+    {
+        var blocked = new HashSet<Guid>();
+        foreach (var entry in settings.BlockedBuiltInPersonas ?? [])
+        {
+            if (BuiltInPersonas.Resolve(entry) is { } id)
+                blocked.Add(id);
+        }
+
+        return blocked;
     }
 
     /// <summary>Single-row managed read, mirroring the <c>Personas</c> lookup in <see cref="GetPersonaAsync"/>.</summary>

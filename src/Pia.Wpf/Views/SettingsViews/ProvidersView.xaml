@@ -112,12 +112,20 @@
         <ui:Button Grid.Column="1"
                    Appearance="Secondary"
                    Command="{Binding AddProviderCommand}"
+                   Visibility="{Binding CanManageProviders, Converter={StaticResource BooleanToVisibilityConverter}}"
                    AutomationProperties.AutomationId="Settings_Providers_AddProvider">
           <StackPanel Orientation="Horizontal">
             <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,6,0"/>
             <TextBlock Text="{loc:Str Providers_Add}"/>
           </StackPanel>
         </ui:Button>
+        <TextBlock Grid.Column="1"
+                   Text="{loc:Str Settings_ManagedByOrganization}"
+                   AutomationProperties.AutomationId="Settings_Providers_ManagedNotice"
+                   FontSize="12"
+                   VerticalAlignment="Center"
+                   Foreground="{DynamicResource TextMutedBrush}"
+                   Visibility="{Binding CanManageProviders, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
       </Grid>
 
       <!-- Provider cards -->

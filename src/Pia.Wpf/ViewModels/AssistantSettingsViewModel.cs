@@ -7,6 +7,7 @@ using Pia.Helpers;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.ViewModels.Models;
 
 namespace Pia.ViewModels;
 
@@ -40,6 +41,9 @@ public partial class AssistantSettingsViewModel : ObservableObject
     [ObservableProperty]
     private int _selectedInnerTabIndex;
 
+    /// <summary>Bind IsEnabled to Policy[nameof(AppSettings.X)] to grey a control out while policy enforces it.</summary>
+    public PolicyLock Policy { get; }
+
     public AssistantSettingsViewModel(
         ProvidersSettingsViewModel providersVm,
         PersonaSettingsViewModel personasVm,
@@ -52,6 +56,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         ILocalizationService localizationService,
         IAssistantFolderRelocationService relocationService,
         IWorkingDirectoryService workingDirectoryService,
+        IPolicyService policyService,
         // Batch 07: trailing and defaulted — this VM already owns PersonasVm but had no IPersonaService of
         // its own (R27), and going through PersonasVm.Personas would couple the roster surface to another
         // VM's load ordering. Null ⇒ the roster surface renders empty and no toggle can be made — the
@@ -69,6 +74,7 @@ public partial class AssistantSettingsViewModel : ObservableObject
         _localizationService = localizationService;
         _relocationService = relocationService;
         _workingDirectoryService = workingDirectoryService;
+        Policy = new PolicyLock(policyService);
         _personaService = personaService;
         _localizationService.LanguageChanged += (_, _) => OnPropertyChanged(nameof(RetentionDaysDisplay));
     }
@@ -94,7 +100,11 @@ public partial class AssistantSettingsViewModel : ObservableObject
     // toggle's enabled state (greyed out when git is absent). The stored bool is inert when git is
     // absent because GitToolHandler.IsAvailable also requires GitLocator.IsAvailable.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(GitToolsEditable))]
     private bool _gitToolsAvailable;
+
+    /// <summary>Git tools need both a git install and no policy lock, so the two gates AND together.</summary>
+    public bool GitToolsEditable => GitToolsAvailable && Policy[nameof(AppSettings.AssistantGitToolsEnabled)];
 
     // "<folder>\Vault" — shown beneath the folder so the user sees where memory lives.
     [ObservableProperty]
@@ -637,7 +647,12 @@ public partial class AssistantSettingsViewModel : ObservableObject
         if (_rosterLoaded)
         {
             var mode = settings.UserOperatingMode ?? UserOperatingMode.Personal;
-            settings.SetAgentPersonaRoster(mode, AgentRosterOptions.Where(o => o.IsSelected).Select(o => o.Id).ToList());
+            // A policy-hidden built-in never reaches the surface, so rebuilding from it alone would prune
+            // that id on the next unrelated save and unblocking would not bring it back. Carry it over.
+            var blocked = PersonaService.ResolveBlockedBuiltInIds(settings);
+            var hidden = settings.GetAgentPersonaRoster(mode).Where(blocked.Contains);
+            settings.SetAgentPersonaRoster(mode,
+                AgentRosterOptions.Where(o => o.IsSelected).Select(o => o.Id).Concat(hidden).ToList());
         }
         await _settingsService.SaveSettingsAsync(settings);
     }

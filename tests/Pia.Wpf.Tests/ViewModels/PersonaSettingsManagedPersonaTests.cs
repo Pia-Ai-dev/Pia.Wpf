@@ -61,10 +61,13 @@ public class PersonaSettingsManagedPersonaTests
         var localization = Substitute.For<ILocalizationService>();
         localization[Arg.Any<string>()].Returns(call => call.Arg<string>());
 
+        var settingsService = Substitute.For<ISettingsService>();
+        settingsService.GetSettingsAsync().Returns(_ => Task.FromResult(new AppSettings()));
+
         var sut = new PersonaSettingsViewModel(
             NullLogger<SettingsViewModel>.Instance, personas, providers,
             Substitute.For<ITextOptimizationService>(), dialogs, snackbar, localization,
-            Substitute.For<IAuthService>());
+            Substitute.For<IAuthService>(), settingsService, Substitute.For<IPolicyService>());
 
         return new Harness(sut, personas, dialogs, snackbar);
     }

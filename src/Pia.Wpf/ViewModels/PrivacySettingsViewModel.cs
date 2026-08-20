@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.ViewModels.Models;
 using System.Collections.ObjectModel;
 
 namespace Pia.ViewModels;
@@ -18,12 +19,17 @@ public partial class PrivacySettingsViewModel : ObservableObject
     private readonly ISettingsService _settingsService;
     private bool _isLoading;
 
+    /// <summary>Bind IsEnabled to Policy[nameof(AppSettings.X)] to grey a control out while policy enforces it.</summary>
+    public PolicyLock Policy { get; }
+
     public PrivacySettingsViewModel(
         ILogger<SettingsViewModel> logger,
-        ISettingsService settingsService)
+        ISettingsService settingsService,
+        IPolicyService policyService)
     {
         _logger = logger;
         _settingsService = settingsService;
+        Policy = new PolicyLock(policyService);
     }
 
     [ObservableProperty]

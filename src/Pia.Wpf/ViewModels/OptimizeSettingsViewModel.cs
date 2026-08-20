@@ -19,6 +19,9 @@ public partial class OptimizeSettingsViewModel : UiThreadViewModel
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly ILocalizationService _localizationService;
     private readonly IPolicyService _policyService;
+
+    /// <summary>Bind IsEnabled to Policy[nameof(AppSettings.X)] to grey a control out while policy enforces it.</summary>
+    public PolicyLock Policy { get; }
     private readonly IAuthService _authService;
     private readonly ProvidersSettingsViewModel _providersVm;
     private bool _isLoading;
@@ -44,6 +47,7 @@ public partial class OptimizeSettingsViewModel : UiThreadViewModel
         _snackbarService = snackbarService;
         _localizationService = localizationService;
         _policyService = policyService;
+        Policy = new PolicyLock(policyService);
         _authService = authService;
         Templates = new ObservableCollection<OptimizationTemplate>();
 

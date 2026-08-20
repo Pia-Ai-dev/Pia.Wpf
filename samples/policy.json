@@ -1,22 +1,13 @@
 {
+  "_comment": "Minimal machine-wide policy. Copy to the install root next to Pia.Wpf.exe. Every key present here takes effect, so add lock settings deliberately — see docs/preset-settings.md for the full list.",
   "defaults": {
     "theme": "Dark",
     "uiLanguage": "DE",
     "targetLanguage": "DE",
-    "syncEnabled": true,
-    "autoUpdateEnabled": true,
-    "ttsEnabled": false,
-    "startMinimized": false,
-    "launchAtStartup": true,
-    "chatHistoryEnabled": true,
-    "chatHistoryRetentionDays": 30
+    "chatHistoryRetentionDays": 14
   },
   "enforce": {
     "serverUrl": "https://pia.corp.example.com",
-    "trustSelfSignedCertificates": false,
-    "allowedSyncProviders": ["entraid"],
-    "autoUpdateEnabled": true,
-    "assistantFileToolsEnabled": false,
-    "autoIngestSources": false
+    "allowedSyncProviders": ["entraid"]
   }
 }

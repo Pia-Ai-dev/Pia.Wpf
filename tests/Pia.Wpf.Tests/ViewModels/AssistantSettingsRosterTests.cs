@@ -3,6 +3,7 @@ using NSubstitute;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Shared;
 using Pia.ViewModels;
 using Xunit;
 
@@ -50,20 +51,20 @@ public class AssistantSettingsRosterTests
             NullLogger<SettingsViewModel>.Instance, Substitute.For<IPersonaService>(),
             Substitute.For<IProviderService>(), Substitute.For<ITextOptimizationService>(),
             dialogService, Substitute.For<global::Wpf.Ui.ISnackbarService>(), localization,
-            Substitute.For<IAuthService>());
+            Substitute.For<IAuthService>(), settingsService, Substitute.For<IPolicyService>());
 
         var toolPermissionsVm = new ToolPermissionsSettingsViewModel(
             Substitute.For<IToolPermissionService>(), Substitute.For<IPluginService>(),
             NullLogger<SettingsViewModel>.Instance);
 
         var meetingVm = new MeetingSettingsViewModel(
-            NullLogger<SettingsViewModel>.Instance, settingsService, localization);
+            NullLogger<SettingsViewModel>.Instance, settingsService, localization, Substitute.For<IPolicyService>());
 
         var sut = new AssistantSettingsViewModel(
             providersVm, personasVm, toolPermissionsVm, meetingVm,
             NullLogger<SettingsViewModel>.Instance, settingsService, Substitute.For<IAssistantChatService>(),
             dialogService, localization, Substitute.For<IAssistantFolderRelocationService>(),
-            workingDirectoryService, personaService);
+            workingDirectoryService, personaService: personaService, policyService: Substitute.For<IPolicyService>());
 
         return (sut, settingsService, stored);
     }
@@ -179,5 +180,27 @@ public class AssistantSettingsRosterTests
         Assert.Equal(AppSettings.MaxAgentPersonaRoster, sut.AgentRosterOptions.Count(o => o.IsSelected));
         Assert.Equal(AppSettings.MaxAgentPersonaRoster,
             stored.GetAgentPersonaRoster(UserOperatingMode.Personal).Count);
+    }
+
+    [Fact]
+    public async Task AnUnrelatedSave_KeepsARosterEntryThatPolicyHasHidden()
+    {
+        // A policy-blocked built-in never reaches AgentRosterOptions, so rebuilding the roster from the
+        // surface alone would prune it — and unblocking later would not bring it back.
+        var alice = MakePersona("Alice");
+        var stored = new AppSettings { BlockedBuiltInPersonas = ["ExperiencedCoder"] };
+        stored.SetAgentPersonaRoster(UserOperatingMode.Personal, [alice.Id, BuiltInPersonas.ExperiencedCoderId]);
+
+        var personaService = Substitute.For<IPersonaService>();
+        personaService.GetPersonasAsync().Returns(Task.FromResult<IReadOnlyList<Persona>>([alice]));
+
+        var (sut, _, resultStored) = Create(stored, personaService);
+        await sut.InitializeAsync();
+
+        sut.AgentMaxSteps += 1;
+
+        var roster = resultStored.GetAgentPersonaRoster(UserOperatingMode.Personal);
+        Assert.Contains(alice.Id, roster);
+        Assert.Contains(BuiltInPersonas.ExperiencedCoderId, roster);
     }
 }
