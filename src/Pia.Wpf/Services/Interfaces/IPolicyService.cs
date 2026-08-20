@@ -28,4 +28,15 @@ public interface IPolicyService
     /// enforce). When no allow-list is configured by policy, all providers are allowed.
     /// </summary>
     bool IsLoginProviderAllowed(string provider);
+
+    /// <summary>
+    /// Stores the pull's authoritative document in the cache file only. A live re-apply would move values
+    /// while every enforcement getter still reported the old lock state, so a changed pin waits for restart.
+    /// </summary>
+    Task ReplaceServerPolicyAsync(string document);
+
+    /// <summary>
+    /// Drops the cached document and the applied-defaults record, so a later user's values count as their own.
+    /// </summary>
+    Task ClearServerPolicyAsync();
 }

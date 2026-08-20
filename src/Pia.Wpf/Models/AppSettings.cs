@@ -451,6 +451,11 @@ public class AppSettings
     /// </para>
     /// </remarks>
     public bool ManagedPersonaStoreInitialized { get; set; }
+    /// <summary>
+    /// Gates one unconditional catalog pull for the group-policy channel, so an upgrading client cannot
+    /// echo an already-current <c>catalogVersion</c> and never receive its policy. Device-local, never synced.
+    /// </summary>
+    public bool ClientPolicyInitialized { get; set; }
     // ETag from the last successful assistant-chat startup pull (GET /api/v1/chats). Echoed as
     // If-None-Match so an unchanged chat set answers 304 with no body. Mirrors LastPullETag.
     public string? LastChatPullETag { get; set; }

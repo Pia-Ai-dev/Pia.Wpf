@@ -34,6 +34,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     private readonly IDeviceManagementService? _deviceMgmt;
     private readonly IDeviceKeyService? _deviceKeys;
     private readonly IPluginService? _pluginService;
+    private readonly IPolicyService? _policyService;
     private readonly SyncMapper _mapper;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<SyncClientService> _logger;
@@ -132,7 +133,8 @@ public class SyncClientService : ISyncClientService, IDisposable
         IDeviceManagementService? deviceMgmt = null,
         IDeviceKeyService? deviceKeys = null,
         IPluginService? pluginService = null,
-        IPersonaService? personaService = null)
+        IPersonaService? personaService = null,
+        IPolicyService? policyService = null)
     {
         _authService = authService;
         _settingsService = settingsService;
@@ -148,6 +150,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         _deviceMgmt = deviceMgmt;
         _deviceKeys = deviceKeys;
         _pluginService = pluginService;
+        _policyService = policyService;
         _mapper = mapper;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
@@ -953,14 +956,15 @@ public class SyncClientService : ISyncClientService, IDisposable
     {
         var since = sinceUtc.ToString("O");
 
-        // Managed-persona first-run rule (managed-personas handoff §2.1.3): exactly one pull with BOTH
-        // conditional mechanisms disabled, to force a full catalog snapshot. Needed because a build that
-        // predates the managedPersonas channel still stored the catalogVersion it arrived with, so this
-        // profile can be echoing an already-current token while holding no managed rows at all — the
-        // server would fast-skip the catalog forever. Same hole after a profile reset or DB rebuild.
-        // Both mechanisms have to go: ?catalogVersion= gates the catalog block, If-None-Match gates the
-        // entire body (a 304 carries no managedPersonas either).
-        var forceFullCatalog = isFirstPage && !settings.ManagedPersonaStoreInitialized;
+        // Catalog first-run rule, one flag per catalog channel: exactly one pull with BOTH conditional
+        // mechanisms disabled, to force a full catalog snapshot. Needed because a build that predates a
+        // channel still stored the catalogVersion it arrived with, so this profile can be echoing an
+        // already-current token while holding no managed rows and no group policy at all — the server
+        // would fast-skip the catalog forever. Same hole after a profile reset or DB rebuild. Both
+        // mechanisms have to go: ?catalogVersion= gates the catalog block, If-None-Match gates the entire
+        // body (a 304 carries neither managedPersonas nor clientPolicy).
+        var forceFullCatalog = isFirstPage
+            && (!settings.ManagedPersonaStoreInitialized || !settings.ClientPolicyInitialized);
 
         // ?limit caps each collection (Sec 6.3); ?catalogVersion lets the server skip re-sending the
         // full plugin catalog when it is unchanged (Sec 3.5). Both are opt-in — a pre-upgrade server
@@ -978,7 +982,9 @@ public class SyncClientService : ISyncClientService, IDisposable
             pullRequest.Headers.IfNoneMatch.Add(lastPullTag);
 
         if (forceFullCatalog)
-            _logger.LogInformation("Pull forced unconditional: the managed-persona store has not been initialized yet");
+            _logger.LogInformation(
+                "Pull forced unconditional: a catalog channel is uninitialized (managed personas: {Personas}, client policy: {Policy})",
+                settings.ManagedPersonaStoreInitialized, settings.ClientPolicyInitialized);
 
         var pullSw = Stopwatch.StartNew();
         var response = await client.SendAsync(pullRequest);
@@ -1031,7 +1037,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         // reads the same whether the key was absent or present-and-empty; the two are distinguished at the
         // apply site below, not here.
         _logger.LogInformation(
-            "Pull response — ServerTimestamp: {ServerTs}, Templates: {TU}u/{TD}d, Personas: {PeU}u/{PeD}d, Providers: {PU}u/{PD}d, Sessions: {SA}a/{SD}d, Memories: {MU}u/{MD}d, KanbanColumns: {KCU}u/{KCD}d, Todos: {ToU}u/{ToD}d, Plugins: {PlU}u/{PlD}d, ManagedPersonas: {MpU}u/{MpD}d",
+            "Pull response — ServerTimestamp: {ServerTs}, Templates: {TU}u/{TD}d, Personas: {PeU}u/{PeD}d, Providers: {PU}u/{PD}d, Sessions: {SA}a/{SD}d, Memories: {MU}u/{MD}d, KanbanColumns: {KCU}u/{KCD}d, Todos: {ToU}u/{ToD}d, Plugins: {PlU}u/{PlD}d, ManagedPersonas: {MpU}u/{MpD}d, ClientPolicy: {PolicyPresent}",
             pullResponse.ServerTimestamp,
             pullResponse.Templates.Upserted.Count, pullResponse.Templates.Deleted.Count,
             pullResponse.Personas.Upserted.Count, pullResponse.Personas.Deleted.Count,
@@ -1042,7 +1048,8 @@ public class SyncClientService : ISyncClientService, IDisposable
             pullResponse.Todos.Upserted.Count, pullResponse.Todos.Deleted.Count,
             pullResponse.Plugins.Upserted.Count, pullResponse.Plugins.Deleted.Count,
             pullResponse.ManagedPersonas?.Personas.Count ?? 0,
-            pullResponse.ManagedPersonas?.RecentlyRemoved.Count ?? 0);
+            pullResponse.ManagedPersonas?.RecentlyRemoved.Count ?? 0,
+            pullResponse.ClientPolicy is not null);
 
         var userId = settings.SyncUserId;
 
@@ -1601,39 +1608,51 @@ public class SyncClientService : ISyncClientService, IDisposable
             }
         }
 
+        // A present clientPolicy is authoritative, "{}" included — that is how a withdrawn policy arrives,
+        // and it clears the cache. Absent (null) means the catalog fast-skip fired: keep what is cached.
+        if (isFirstPage && _policyService is not null && pullResponse.ClientPolicy is { } policy)
+        {
+            await _policyService.ReplaceServerPolicyAsync(policy.Document);
+            _logger.LogInformation(
+                "Stored client policy document: {Length} chars, effective at the next start", policy.Document.Length);
+        }
+
         // Persist the server's current catalog version now that every entity in this page (including
-        // plugins and the managed snapshot, applied just above) has been applied without throwing. Storing
-        // it only here — not when it was first read off the response, further up — means a mid-apply
-        // exception leaves the stored version unchanged, so the next pull still omits/mismatches
-        // ?catalogVersion= and the server resends the full catalog instead of skipping the un-applied
-        // changes. LastPullETag rides the same save for the same reason (see where it is read, above),
-        // because a stored ETag would otherwise 304 away the retry the un-applied page needs.
+        // plugins, the managed snapshot and the policy document, applied just above) has been applied
+        // without throwing. Storing it only here, not when it was first read off the response further up,
+        // means a mid-apply exception leaves the stored version unchanged, so the next pull still
+        // omits/mismatches ?catalogVersion= and the server resends the full catalog instead of skipping the
+        // un-applied changes. LastPullETag rides the same save for the same reason (see where it is read,
+        // above), because a stored ETag would otherwise 304 away the retry the un-applied page needs.
         //
-        // The managed-persona first-run latch closes here too (handoff §2.1.3), on ONE rule: the forced
-        // unconditional pull reached this point — i.e. it returned 2xx with a body whose applies all
-        // succeeded. Deliberately NOT "a managedPersonas block arrived": a pre-upgrade server has no such
-        // channel, so waiting for a non-null block would keep every future pull unconditional and
-        // permanently lose the 304 fast path. Closing it blind is safe because the server folds the caller's
-        // group into catalogVersion (Q10) — a token stored before the server upgrade can never equal a mixed
-        // one, so the upgrade itself forces exactly one full-catalog pull anyway. Never latched on a 304, a
-        // non-2xx or a null body: all three return above, before this point. forceFullCatalog already
-        // carries `isFirstPage && !ManagedPersonaStoreInitialized`, so it is the whole condition.
-        var latchStoreInitialized = forceFullCatalog;
+        // Both catalog first-run latches close here, on ONE rule: the forced unconditional pull reached
+        // this point — i.e. it returned 2xx with a body whose applies all succeeded. Deliberately NOT "the
+        // channel's own block arrived": a pre-upgrade server has no such channel, so waiting for a non-null
+        // block would keep every future pull unconditional and permanently lose the 304 fast path. Closing
+        // it blind is safe because the server folds the caller's group into catalogVersion — a token
+        // stored before the server upgrade can never equal a mixed one, so the upgrade itself forces exactly
+        // one full-catalog pull anyway. Never latched on a 304, a non-2xx or a null body: all three return
+        // above, before this point. forceFullCatalog already carries isFirstPage and both channel flags, so
+        // it is the whole condition.
+        var latchCatalogChannels = forceFullCatalog;
         var storePullETag = newPullETag is not null && newPullETag != settings.LastPullETag;
 
-        if (newCatalogVersion.HasValue || latchStoreInitialized || storePullETag)
+        if (newCatalogVersion.HasValue || latchCatalogChannels || storePullETag)
         {
             if (newCatalogVersion.HasValue)
                 settings.LastCatalogVersion = newCatalogVersion;
-            if (latchStoreInitialized)
+            if (latchCatalogChannels)
+            {
                 settings.ManagedPersonaStoreInitialized = true;
+                settings.ClientPolicyInitialized = true;
+            }
             if (storePullETag)
                 settings.LastPullETag = newPullETag;
 
             await _settingsService.SaveSettingsAsync(settings);
             _logger.LogDebug(
-                "Pull catalog version stored: {CatalogVersion} (managed store initialized: {Initialized}, ETag stored: {ETagStored})",
-                newCatalogVersion, settings.ManagedPersonaStoreInitialized, storePullETag);
+                "Pull catalog version stored: {CatalogVersion} (managed store initialized: {Initialized}, client policy initialized: {PolicyInitialized}, ETag stored: {ETagStored})",
+                newCatalogVersion, settings.ManagedPersonaStoreInitialized, settings.ClientPolicyInitialized, storePullETag);
         }
 
         var pulledCount = pullResponse.Templates.Upserted.Count

@@ -15,6 +15,9 @@ public abstract class JsonPersistenceService<T> where T : class
     /// precede any data-directory override.</summary>
     protected static string SettingsDirectory => PiaPaths.RoamingDataDirectory;
 
+    /// <summary>Overridable so a test can point one store at a directory of its own.</summary>
+    protected virtual string DirectoryPath => SettingsDirectory;
+
     protected static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -31,7 +34,7 @@ public abstract class JsonPersistenceService<T> where T : class
     /// <summary>
     /// Gets the full path to the JSON file.
     /// </summary>
-    protected string FilePath => Path.Combine(SettingsDirectory, FileName);
+    protected string FilePath => Path.Combine(DirectoryPath, FileName);
 
     /// <summary>
     /// Creates the default value when the file doesn't exist or is invalid.
@@ -47,7 +50,7 @@ public abstract class JsonPersistenceService<T> where T : class
         if (_cached is not null)
             return _cached;
 
-        Directory.CreateDirectory(SettingsDirectory);
+        Directory.CreateDirectory(DirectoryPath);
 
         if (!File.Exists(FilePath))
         {
@@ -77,7 +80,7 @@ public abstract class JsonPersistenceService<T> where T : class
     /// </summary>
     protected async Task SaveAsync(T data)
     {
-        Directory.CreateDirectory(SettingsDirectory);
+        Directory.CreateDirectory(DirectoryPath);
         var json = JsonSerializer.Serialize(data, JsonOptions);
         await File.WriteAllTextAsync(FilePath, json);
         _cached = data;

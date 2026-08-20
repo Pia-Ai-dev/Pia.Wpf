@@ -19,6 +19,7 @@ public class AuthService : IAuthService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILocalizationService _localizationService;
     private readonly ILogger<AuthService> _logger;
+    private readonly IPolicyService? _policyService;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private readonly Task _loadStoredTokensTask;
 
@@ -51,13 +52,15 @@ public class AuthService : IAuthService
         DpapiHelper dpapiHelper,
         IHttpClientFactory httpClientFactory,
         ILocalizationService localizationService,
-        ILogger<AuthService> logger)
+        ILogger<AuthService> logger,
+        IPolicyService? policyService = null)
     {
         _settingsService = settingsService;
         _dpapiHelper = dpapiHelper;
         _httpClientFactory = httpClientFactory;
         _localizationService = localizationService;
         _logger = logger;
+        _policyService = policyService;
 
         _loadStoredTokensTask = LoadStoredTokensAsync();
     }
@@ -302,7 +305,22 @@ public class AuthService : IAuthService
             settings.LastPushedSettingsHash = null;
             settings.LastChatPullETag = null;
             settings.LastPullETag = null;
+            settings.ClientPolicyInitialized = false;
             await _settingsService.SaveSettingsAsync(settings);
+
+            // Sync stays off until the next login, so a kept group policy would go on being applied
+            // until then. Cleared after the save, which re-applies policy and would rewrite the cache.
+            if (_policyService is not null)
+            {
+                try
+                {
+                    await _policyService.ClearServerPolicyAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to clear the cached group policy");
+                }
+            }
 
             LoginStateChanged?.Invoke(this, false);
         }

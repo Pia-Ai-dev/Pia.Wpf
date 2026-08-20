@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Shared.Policy;
 
 namespace Pia.Services;
 
@@ -33,9 +34,19 @@ public class PolicyService : IPolicyService
     private static readonly Dictionary<string, PropertyInfo> PropertiesByName =
         SettableProperties().ToDictionary(p => p.Name, StringComparer.OrdinalIgnoreCase);
 
+    // Refused from the server but still settable in the device file: they are how the client reaches a server.
+    private static readonly HashSet<string> DeviceSettableDeniedKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "serverUrl",
+        "syncEnabled",
+        "trustSelfSignedCertificates"
+    };
+
     private readonly ILogger<PolicyService> _logger;
     private readonly string[] _candidatePaths;
+    private readonly ClientPolicyCacheStore _cacheStore;
     private PolicySettings? _cached;
+    private CachedClientPolicy? _cacheRecord;
 
     // The keys the admin actually wrote, per section. Presence in the file is what "set" means —
     // never a comparison against the built-in default, which cannot distinguish "absent" from
@@ -44,19 +55,25 @@ public class PolicyService : IPolicyService
     private HashSet<string> _defaultedProperties = new(StringComparer.OrdinalIgnoreCase);
 
     public PolicyService(ILogger<PolicyService> logger)
-        : this(logger, GetDefaultCandidatePaths())
+        : this(logger, GetDefaultCandidatePaths(), null)
     {
     }
 
     public PolicyService(ILogger<PolicyService> logger, string policyFilePath)
-        : this(logger, new[] { policyFilePath })
+        : this(logger, new[] { policyFilePath }, null)
     {
     }
 
-    private PolicyService(ILogger<PolicyService> logger, string[] candidatePaths)
+    public PolicyService(ILogger<PolicyService> logger, string policyFilePath, string cacheDirectory)
+        : this(logger, new[] { policyFilePath }, cacheDirectory)
+    {
+    }
+
+    private PolicyService(ILogger<PolicyService> logger, string[] candidatePaths, string? cacheDirectory)
     {
         _logger = logger;
         _candidatePaths = candidatePaths;
+        _cacheStore = new ClientPolicyCacheStore(cacheDirectory);
     }
 
     private static IEnumerable<PropertyInfo> SettableProperties() =>
@@ -122,20 +139,8 @@ public class PolicyService : IPolicyService
         if (_cached is null)
             return;
 
-        // Defaults are a recommendation: they land only while the user is still sitting on the
-        // built-in value, so an explicit user choice always survives.
         if (_cached.Defaults is { } defaults && _defaultedProperties.Count > 0)
-        {
-            var builtIn = new AppSettings();
-            foreach (var name in _defaultedProperties)
-            {
-                if (!PropertiesByName.TryGetValue(name, out var prop))
-                    continue;
-
-                if (MatchesBuiltInDefault(prop, prop.GetValue(userSettings), prop.GetValue(builtIn)))
-                    prop.SetValue(userSettings, prop.GetValue(defaults));
-            }
-        }
+            ApplyDefaults(userSettings, defaults);
 
         if (_cached.Enforce is { } enforce && _enforcedProperties.Count > 0)
         {
@@ -147,6 +152,71 @@ public class PolicyService : IPolicyService
         }
     }
 
+    public async Task ReplaceServerPolicyAsync(string document)
+    {
+        var normalized = ClientPolicyContract.Normalize(document);
+        if (normalized is not null && !ClientPolicyContract.TryValidate(normalized, out var error))
+            _logger.LogWarning("Server policy document is malformed, caching it anyway: {Error}", error);
+
+        var record = await _cacheStore.GetAsync();
+        record.Document = normalized ?? ClientPolicyContract.EmptyDocument;
+        _cacheRecord = record;
+        await _cacheStore.SetAsync(record);
+
+        _logger.LogInformation("Server policy document cached: {Length} char(s)", record.Document.Length);
+    }
+
+    public Task ClearServerPolicyAsync()
+    {
+        try
+        {
+            _cacheStore.Delete();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete the cached server policy");
+        }
+
+        _cacheRecord = null;
+        _logger.LogInformation("Cached server policy cleared");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Re-applies a changed default unless the user has changed the value themselves.</summary>
+    private void ApplyDefaults(AppSettings userSettings, AppSettings defaults)
+    {
+        var builtIn = new AppSettings();
+        var applied = _cacheRecord?.AppliedDefaults;
+        var recordChanged = false;
+
+        foreach (var name in _defaultedProperties)
+        {
+            if (!PropertiesByName.TryGetValue(name, out var prop))
+                continue;
+
+            var userValue = prop.GetValue(userSettings);
+            if (!MatchesBuiltInDefault(prop, userValue, prop.GetValue(builtIn))
+                && !MatchesAppliedDefault(prop, userValue, applied, name))
+                continue;
+
+            var policyValue = prop.GetValue(defaults);
+            prop.SetValue(userSettings, policyValue);
+
+            if (applied is null)
+                continue;
+
+            var serialized = SerializeValue(prop, policyValue);
+            if (serialized is null || (applied.TryGetValue(name, out var previous) && previous == serialized))
+                continue;
+
+            applied[name] = serialized;
+            recordChanged = true;
+        }
+
+        if (recordChanged)
+            PersistCacheRecord();
+    }
+
     /// <summary>Value comparison that also works for the collection- and object-typed settings, whose
     /// built-in default is a fresh instance and therefore never reference-equal.</summary>
     private static bool MatchesBuiltInDefault(PropertyInfo prop, object? userValue, object? builtInValue)
@@ -156,48 +226,156 @@ public class PolicyService : IPolicyService
         if (userValue is null || builtInValue is null)
             return false;
 
+        var user = SerializeValue(prop, userValue);
+        return user is not null && user == SerializeValue(prop, builtInValue);
+    }
+
+    private static bool MatchesAppliedDefault(
+        PropertyInfo prop, object? userValue, Dictionary<string, string>? applied, string name)
+    {
+        if (applied is null || !applied.TryGetValue(name, out var recorded))
+            return false;
+
+        return recorded == SerializeValue(prop, userValue);
+    }
+
+    private static string? SerializeValue(PropertyInfo prop, object? value)
+    {
         try
         {
-            return JsonSerializer.Serialize(userValue, prop.PropertyType, JsonOptions)
-                == JsonSerializer.Serialize(builtInValue, prop.PropertyType, JsonOptions);
+            return JsonSerializer.Serialize(value, prop.PropertyType, JsonOptions);
         }
         catch (NotSupportedException)
         {
-            return false;
+            return null;
+        }
+    }
+
+    private void PersistCacheRecord()
+    {
+        if (_cacheRecord is null)
+            return;
+
+        try
+        {
+            _cacheStore.SaveNow(_cacheRecord);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to record the policy defaults that were applied");
         }
     }
 
     private async Task<PolicySettings> LoadPolicyAsync()
     {
+        var file = await LoadFileLayerAsync();
+        var server = await LoadServerLayerAsync();
+
+        var defaulted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var enforced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var mergedDefaults = FlattenSection(null, file.Typed.Defaults, file.DefaultKeys, defaulted);
+        mergedDefaults = FlattenSection(mergedDefaults, server.Typed.Defaults, server.DefaultKeys, defaulted);
+
+        var mergedEnforce = FlattenSection(null, file.Typed.Enforce, file.EnforceKeys, enforced);
+        mergedEnforce = FlattenSection(mergedEnforce, server.Typed.Enforce, server.EnforceKeys, enforced);
+
+        _defaultedProperties = defaulted;
+        _enforcedProperties = enforced;
+
+        _logger.LogInformation(
+            "Enterprise policy resolved: {DefaultCount} default(s), {EnforcedCount} enforced; {FileCount} key(s) from the policy file, {ServerCount} from the server document",
+            defaulted.Count, enforced.Count,
+            file.DefaultKeys.Count + file.EnforceKeys.Count,
+            server.DefaultKeys.Count + server.EnforceKeys.Count);
+
+        return new PolicySettings { Defaults = mergedDefaults, Enforce = mergedEnforce };
+    }
+
+    private static AppSettings? FlattenSection(
+        AppSettings? merged, AppSettings? layer, HashSet<string> layerKeys, HashSet<string> mergedKeys)
+    {
+        if (layer is null || layerKeys.Count == 0)
+            return merged;
+
+        // Non-null once any layer set a key: IsLoginProviderAllowed reads it through a ?. chain and fails open.
+        merged ??= new AppSettings();
+
+        foreach (var name in layerKeys)
+        {
+            if (!PropertiesByName.TryGetValue(name, out var prop))
+                continue;
+
+            prop.SetValue(merged, prop.GetValue(layer));
+            mergedKeys.Add(name);
+        }
+
+        return merged;
+    }
+
+    private async Task<(PolicySettings Typed, HashSet<string> DefaultKeys, HashSet<string> EnforceKeys)> LoadFileLayerAsync()
+    {
         var path = _candidatePaths.FirstOrDefault(File.Exists);
         if (path is null)
         {
             _logger.LogInformation("No enterprise policy file found. Searched: {Paths}", string.Join("; ", _candidatePaths));
-            return new PolicySettings();
+            return EmptyLayer();
         }
 
         try
         {
             var json = await File.ReadAllTextAsync(path);
-            var policy = JsonSerializer.Deserialize<PolicySettings>(json, JsonOptions) ?? new PolicySettings();
-
-            var root = JsonNode.Parse(json) as JsonObject;
-            _defaultedProperties = ReadPresentKeys(root, "defaults");
-            _enforcedProperties = ReadPresentKeys(root, "enforce");
+            var layer = LoadLayer(json, allowDeviceSettableKeys: true);
 
             _logger.LogInformation(
                 "Loaded enterprise policy from {Path}: {DefaultCount} default(s), {EnforcedCount} enforced",
-                path, _defaultedProperties.Count, _enforcedProperties.Count);
-            return policy;
+                path, layer.DefaultKeys.Count, layer.EnforceKeys.Count);
+            return layer;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to load enterprise policy from {Path}, ignoring", path);
-            return new PolicySettings();
+            return EmptyLayer();
         }
     }
 
-    private HashSet<string> ReadPresentKeys(JsonObject? root, string sectionName)
+    private async Task<(PolicySettings Typed, HashSet<string> DefaultKeys, HashSet<string> EnforceKeys)> LoadServerLayerAsync()
+    {
+        try
+        {
+            var record = await _cacheStore.GetAsync();
+            _cacheRecord = record;
+
+            var document = ClientPolicyContract.Normalize(record.Document);
+            if (document is null)
+                return EmptyLayer();
+
+            return LoadLayer(document, allowDeviceSettableKeys: false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load the cached server policy, ignoring");
+            return EmptyLayer();
+        }
+    }
+
+    private (PolicySettings Typed, HashSet<string> DefaultKeys, HashSet<string> EnforceKeys) LoadLayer(
+        string json, bool allowDeviceSettableKeys)
+    {
+        var typed = JsonSerializer.Deserialize<PolicySettings>(json, JsonOptions) ?? new PolicySettings();
+        var root = JsonNode.Parse(json) as JsonObject;
+
+        return (Typed: typed,
+            DefaultKeys: ReadPresentKeys(root, ClientPolicyContract.DefaultsSection, allowDeviceSettableKeys),
+            EnforceKeys: ReadPresentKeys(root, ClientPolicyContract.EnforceSection, allowDeviceSettableKeys));
+    }
+
+    private static (PolicySettings Typed, HashSet<string> DefaultKeys, HashSet<string> EnforceKeys) EmptyLayer() =>
+        (new PolicySettings(),
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+    private HashSet<string> ReadPresentKeys(JsonObject? root, string sectionName, bool allowDeviceSettableKeys)
     {
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (root is null || root[sectionName] is not JsonObject section)
@@ -205,6 +383,13 @@ public class PolicyService : IPolicyService
 
         foreach (var (key, _) in section)
         {
+            if (ClientPolicyContract.IsDenied(key)
+                && !(allowDeviceSettableKeys && DeviceSettableDeniedKeys.Contains(key)))
+            {
+                _logger.LogWarning("Policy key {Section}.{Key} cannot be set from this source and was ignored", sectionName, key);
+                continue;
+            }
+
             if (PropertiesByJsonName.TryGetValue(key, out var prop))
                 set.Add(prop.Name);
             else

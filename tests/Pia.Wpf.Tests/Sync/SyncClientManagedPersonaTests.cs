@@ -259,13 +259,14 @@ public class SyncClientManagedPersonaTests
             sut, [client, "http://test", settings])!;
     }
 
-    /// <summary>Settings of a client that has already synced once and initialized its managed store.</summary>
+    /// <summary>Settings of a client that has already synced once and initialized both catalog channels.</summary>
     private static AppSettings SyncedSettings() => new()
     {
         LastSyncTimestamp = new DateTime(2026, 8, 1, 9, 0, 0, DateTimeKind.Utc),
         LastCatalogVersion = OpaqueCatalogVersion,
         LastPullETag = "\"v9-c4194235871203344761-s0\"",
         ManagedPersonaStoreInitialized = true,
+        ClientPolicyInitialized = true,
     };
 
     [Fact]

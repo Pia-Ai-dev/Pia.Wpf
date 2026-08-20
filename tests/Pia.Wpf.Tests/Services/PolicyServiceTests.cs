@@ -3,6 +3,7 @@ using NSubstitute;
 using Pia.Models;
 using Pia.Services;
 using System.IO;
+using System.Text.Json;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -11,6 +12,7 @@ public class PolicyServiceTests : IDisposable
 {
     private readonly string _testDir;
     private readonly string _policyFilePath;
+    private readonly string _cacheDir;
     private readonly ILogger<PolicyService> _logger;
 
     public PolicyServiceTests()
@@ -18,6 +20,8 @@ public class PolicyServiceTests : IDisposable
         _testDir = Path.Combine(Path.GetTempPath(), $"pia-test-{Guid.NewGuid()}");
         Directory.CreateDirectory(_testDir);
         _policyFilePath = Path.Combine(_testDir, "policy.json");
+        _cacheDir = Path.Combine(_testDir, "cache");
+        Directory.CreateDirectory(_cacheDir);
         _logger = Substitute.For<ILogger<PolicyService>>();
     }
 
@@ -27,9 +31,10 @@ public class PolicyServiceTests : IDisposable
             Directory.Delete(_testDir, true);
     }
 
+    /// <summary>The cache directory is per-test: the real one is process-global and shared.</summary>
     private PolicyService CreateService()
     {
-        return new PolicyService(_logger, _policyFilePath);
+        return new PolicyService(_logger, _policyFilePath, _cacheDir);
     }
 
     /// <summary>Hand-authored JSON, never a serialized <c>AppSettings</c>: the engine keys off which
@@ -468,7 +473,7 @@ public class PolicyServiceTests : IDisposable
         var rootPolicyPath = Path.Combine(installRoot, "policy.json");
         File.WriteAllText(rootPolicyPath, """{ "enforce": { "theme": "Dark" } }""");
 
-        var service = new PolicyService(_logger, rootPolicyPath);
+        var service = new PolicyService(_logger, rootPolicyPath, _cacheDir);
         var policy = await service.GetPolicyAsync();
 
         Assert.NotNull(policy.Enforce);
@@ -485,5 +490,422 @@ public class PolicyServiceTests : IDisposable
         var second = await service.GetPolicyAsync();
 
         Assert.Same(second, first);
+    }
+
+    // ---- server layer ----------------------------------------------------------------------------
+
+    private string CacheFilePath => Path.Combine(_cacheDir, "policy-cache.json");
+
+    /// <summary>Seeds the server layer through the pull's own entry point, so a service created afterwards
+    /// reads it the way a restart would.</summary>
+    private Task SeedServerPolicy(string document) => CreateService().ReplaceServerPolicyAsync(document);
+
+    private async Task<PolicyService> LoadedService(string? fileJson, string? serverDocument)
+    {
+        if (fileJson is not null)
+            WritePolicy(fileJson);
+        if (serverDocument is not null)
+            await SeedServerPolicy(serverDocument);
+
+        var service = CreateService();
+        await service.GetPolicyAsync();
+        return service;
+    }
+
+    private void WriteRawCache(CachedClientPolicy record) => File.WriteAllText(
+        CacheFilePath,
+        JsonSerializer.Serialize(record, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
+
+    [Fact]
+    public async Task ApplyPolicy_ServerDefaultsOnly_SetsUnsetValues()
+    {
+        var service = await LoadedService(null, """{ "defaults": { "theme": "Dark" } }""");
+
+        var settings = new AppSettings();
+        service.ApplyPolicy(settings);
+
+        Assert.Equal(AppTheme.Dark, settings.Theme);
+    }
+
+    [Fact]
+    public async Task ApplyPolicy_ServerDefaultsOnly_PreservesUserOverrides()
+    {
+        var service = await LoadedService(null, """{ "defaults": { "theme": "Dark" } }""");
+
+        var settings = new AppSettings { Theme = AppTheme.Light };
+        service.ApplyPolicy(settings);
+
+        Assert.Equal(AppTheme.Light, settings.Theme);
+    }
+
+    [Fact]
+    public async Task ApplyPolicy_ServerEnforceOnly_OverwritesUserValues()
+    {
+        var service = await LoadedService(null, """{ "enforce": { "theme": "Dark" } }""");
+
+        var settings = new AppSettings { Theme = AppTheme.Light };
+        service.ApplyPolicy(settings);
+
+        Assert.Equal(AppTheme.Dark, settings.Theme);
+    }
+
+    [Fact]
+    public async Task IsEnforced_ServerEnforceKey_ReturnsTrue()
+    {
+        var service = await LoadedService(null, """{ "enforce": { "theme": "Dark" } }""");
+
+        Assert.True(service.IsEnforced(nameof(AppSettings.Theme)));
+        Assert.False(service.IsEnforced(nameof(AppSettings.StartMinimized)));
+    }
+
+    [Fact]
+    public async Task ApplyPolicy_BothLayersDefaultSameKey_ServerWins()
+    {
+        var service = await LoadedService(
+            """{ "defaults": { "theme": "Light" } }""",
+            """{ "defaults": { "theme": "Dark" } }""");
+
+        var settings = new AppSettings();
+        service.ApplyPolicy(settings);
+
+        Assert.Equal(AppTheme.Dark, settings.Theme);
+    }
+
+    [Fact]
+    public async Task ApplyPolicy_BothLayersEnforceSameKey_ServerWins()
+    {
+        var service = await LoadedService(
+            """{ "enforce": { "theme": "Light" } }""",
+            """{ "enforce": { "theme": "Dark" } }""");
+
+        var settings = new AppSettings();
+        service.ApplyPolicy(settings);
+
+        Assert.Equal(AppTheme.Dark, settings.Theme);
+        Assert.True(service.IsEnforced(nameof(AppSettings.Theme)));
+    }
+
+    [Fact]
+    public async Task ApplyPolicy_LocalEnforceBeatsServerDefault()
+    {
+        var service = await LoadedService(
+            """{ "enforce": { "theme": "Light" } }""",
+            """{ "defaults": { "theme": "Dark" } }""");
+
+        var settings = new AppSettings();
+        service.ApplyPolicy(settings);
+
+        Assert.Equal(AppTheme.Light, settings.Theme);
+    }
+
+    [Fact]
+    public async Task ApplyPolicy_KeyOnlyInFileLayer_SurvivesServerDocumentOmittingIt()
+    {
+        var service = await LoadedService(
+            """{ "defaults": { "theme": "Light" }, "enforce": { "startMinimized": true } }""",
+            """{ "enforce": { "autoUpdateEnabled": false } }""");
+
+        var settings = new AppSettings();
+        service.ApplyPolicy(settings);
+
+        Assert.Equal(AppTheme.Light, settings.Theme);
+        Assert.True(settings.StartMinimized);
+        Assert.False(settings.AutoUpdateEnabled);
+        Assert.True(service.IsEnforced(nameof(AppSettings.StartMinimized)));
+        Assert.True(service.IsEnforced(nameof(AppSettings.AutoUpdateEnabled)));
+    }
+
+    // A merged section left null would allow every provider, so both of these pin the non-null merge.
+
+    [Fact]
+    public async Task IsLoginProviderAllowed_ServerEnforceListOnly_Restricts()
+    {
+        var service = await LoadedService(
+            null, """{ "enforce": { "allowedSyncProviders": ["microsoft"] } }""");
+
+        Assert.False(service.IsLoginProviderAllowed("local"));
+        Assert.True(service.IsLoginProviderAllowed("microsoft"));
+    }
+
+    [Fact]
+    public async Task IsLoginProviderAllowed_FileDefaultsListOnly_Restricts()
+    {
+        var service = await LoadedService(
+            """{ "defaults": { "allowedSyncProviders": ["local"] } }""", "{}");
+
+        Assert.True(service.IsLoginProviderAllowed("local"));
+        Assert.False(service.IsLoginProviderAllowed("microsoft"));
+    }
+
+    // ---- keys the server may not set -------------------------------------------------------------
+
+    [Fact]
+    public async Task ApplyPolicy_BootstrapKeysInServerLayer_AreIgnored()
+    {
+        var service = await LoadedService(null, """
+        {
+          "enforce": {
+            "serverUrl": "https://rogue.example.com",
+            "syncEnabled": false,
+            "trustSelfSignedCertificates": true,
+            "isE2EEEnabled": true,
+            "theme": "Dark"
+          }
+        }
+        """);
+
+        var settings = new AppSettings { ServerUrl = "https://own.example.com", SyncEnabled = true };
+        service.ApplyPolicy(settings);
+
+        Assert.Equal("https://own.example.com", settings.ServerUrl);
+        Assert.True(settings.SyncEnabled);
+        Assert.False(settings.TrustSelfSignedCertificates);
+        Assert.False(settings.IsE2EEEnabled);
+        Assert.False(service.IsEnforced(nameof(AppSettings.ServerUrl)));
+        Assert.False(service.IsEnforced(nameof(AppSettings.SyncEnabled)));
+        Assert.False(service.IsEnforced(nameof(AppSettings.TrustSelfSignedCertificates)));
+        Assert.False(service.IsEnforced(nameof(AppSettings.IsE2EEEnabled)));
+        Assert.Equal(AppTheme.Dark, settings.Theme);
+    }
+
+    [Fact]
+    public async Task IsEnforced_BootstrapKeysInFileLayer_StillEnforced()
+    {
+        // Pinning the three keys that reach a server is shipped device-management behaviour; only the
+        // server layer refuses them, where a bad value could strand a whole group.
+        var service = await LoadedService("""
+        {
+          "enforce": {
+            "serverUrl": "https://managed.example.com",
+            "syncEnabled": true,
+            "trustSelfSignedCertificates": true
+          }
+        }
+        """, null);
+
+        var settings = new AppSettings { ServerUrl = "https://own.example.com", SyncEnabled = false };
+        service.ApplyPolicy(settings);
+
+        Assert.Equal("https://managed.example.com", settings.ServerUrl);
+        Assert.True(settings.SyncEnabled);
+        Assert.True(settings.TrustSelfSignedCertificates);
+        Assert.True(service.IsEnforced(nameof(AppSettings.ServerUrl)));
+        Assert.True(service.IsEnforced(nameof(AppSettings.SyncEnabled)));
+        Assert.True(service.IsEnforced(nameof(AppSettings.TrustSelfSignedCertificates)));
+    }
+
+    [Fact]
+    public async Task ApplyPolicy_CursorKeysInServerLayer_AreIgnored()
+    {
+        var service = await LoadedService(
+            null, """{ "enforce": { "lastPullETag": "policy", "vaultVersion": 99, "theme": "Dark" } }""");
+
+        var settings = new AppSettings { LastPullETag = "own", VaultVersion = 3 };
+        service.ApplyPolicy(settings);
+
+        Assert.Equal("own", settings.LastPullETag);
+        Assert.Equal(3, settings.VaultVersion);
+        Assert.False(service.IsEnforced(nameof(AppSettings.LastPullETag)));
+        Assert.False(service.IsEnforced(nameof(AppSettings.VaultVersion)));
+        Assert.Equal(AppTheme.Dark, settings.Theme);
+    }
+
+    [Fact]
+    public async Task ApplyPolicy_CursorKeysInFileLayer_AreIgnored()
+    {
+        var service = await LoadedService(
+            """{ "enforce": { "lastPullETag": "policy", "vaultVersion": 99, "theme": "Dark" } }""", null);
+
+        var settings = new AppSettings { LastPullETag = "own", VaultVersion = 3 };
+        service.ApplyPolicy(settings);
+
+        Assert.Equal("own", settings.LastPullETag);
+        Assert.Equal(3, settings.VaultVersion);
+        Assert.False(service.IsEnforced(nameof(AppSettings.LastPullETag)));
+        Assert.False(service.IsEnforced(nameof(AppSettings.VaultVersion)));
+        Assert.Equal(AppTheme.Dark, settings.Theme);
+    }
+
+    // ---- re-applying a changed default -----------------------------------------------------------
+
+    [Fact]
+    public async Task ApplyPolicy_ChangedServerDefault_ReAppliesOnNextLoad()
+    {
+        var first = await LoadedService(null, """{ "defaults": { "targetSpeechLanguage": "DE" } }""");
+        var applied = new AppSettings();
+        first.ApplyPolicy(applied);
+        Assert.Equal(TargetSpeechLanguage.DE, applied.TargetSpeechLanguage);
+
+        await SeedServerPolicy("""{ "defaults": { "targetSpeechLanguage": "FR" } }""");
+        var restarted = CreateService();
+        await restarted.GetPolicyAsync();
+
+        var settings = new AppSettings { TargetSpeechLanguage = TargetSpeechLanguage.DE };
+        restarted.ApplyPolicy(settings);
+
+        Assert.Equal(TargetSpeechLanguage.FR, settings.TargetSpeechLanguage);
+    }
+
+    [Fact]
+    public async Task ApplyPolicy_DefaultTheUserChanged_IsNotReApplied()
+    {
+        var first = await LoadedService(null, """{ "defaults": { "targetSpeechLanguage": "DE" } }""");
+        first.ApplyPolicy(new AppSettings());
+
+        await SeedServerPolicy("""{ "defaults": { "targetSpeechLanguage": "FR" } }""");
+        var restarted = CreateService();
+        await restarted.GetPolicyAsync();
+
+        var settings = new AppSettings { TargetSpeechLanguage = TargetSpeechLanguage.EN };
+        restarted.ApplyPolicy(settings);
+
+        Assert.Equal(TargetSpeechLanguage.EN, settings.TargetSpeechLanguage);
+    }
+
+    [Fact]
+    public async Task ApplyPolicy_ChangedServerCollectionDefault_ReAppliesOnNextLoad()
+    {
+        var first = await LoadedService(null, """{ "defaults": { "allowedSyncProviders": ["local"] } }""");
+        var applied = new AppSettings();
+        first.ApplyPolicy(applied);
+        Assert.Equal("local", Assert.Single(applied.AllowedSyncProviders!));
+
+        await SeedServerPolicy("""{ "defaults": { "allowedSyncProviders": ["microsoft"] } }""");
+        var restarted = CreateService();
+        await restarted.GetPolicyAsync();
+
+        // A fresh list, as a restart would deserialize it: reference equality would pin nothing here.
+        var settings = new AppSettings { AllowedSyncProviders = new List<string> { "local" } };
+        restarted.ApplyPolicy(settings);
+
+        Assert.Equal("microsoft", Assert.Single(settings.AllowedSyncProviders!));
+    }
+
+    // ---- cache writes ----------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ReplaceServerPolicyAsync_EmptyDocument_ClearsServerLayerAndKeepsFileLayer()
+    {
+        var service = await LoadedService(
+            """{ "enforce": { "startMinimized": true } }""",
+            """{ "enforce": { "theme": "Dark" } }""");
+        Assert.True(service.IsEnforced(nameof(AppSettings.Theme)));
+
+        await service.ReplaceServerPolicyAsync("{}");
+        var restarted = CreateService();
+        await restarted.GetPolicyAsync();
+
+        Assert.False(restarted.IsEnforced(nameof(AppSettings.Theme)));
+        Assert.True(restarted.IsEnforced(nameof(AppSettings.StartMinimized)));
+    }
+
+    [Fact]
+    public async Task ApplyPolicy_ServerDefaultWithdrawnThenRepublished_ReAppliesTheNewValue()
+    {
+        // Withdrawal keeps the applied-defaults record, unlike a logout, so the republished value still
+        // counts the user as sitting on a policy value rather than one they chose.
+        var first = await LoadedService(null, """{ "defaults": { "targetSpeechLanguage": "DE" } }""");
+        var settings = new AppSettings();
+        first.ApplyPolicy(settings);
+        Assert.Equal(TargetSpeechLanguage.DE, settings.TargetSpeechLanguage);
+
+        await first.ReplaceServerPolicyAsync("{}");
+        var withdrawn = CreateService();
+        await withdrawn.GetPolicyAsync();
+        withdrawn.ApplyPolicy(settings);
+        Assert.Equal(TargetSpeechLanguage.DE, settings.TargetSpeechLanguage);
+
+        await SeedServerPolicy("""{ "defaults": { "targetSpeechLanguage": "FR" } }""");
+        var republished = CreateService();
+        await republished.GetPolicyAsync();
+        republished.ApplyPolicy(settings);
+
+        Assert.Equal(TargetSpeechLanguage.FR, settings.TargetSpeechLanguage);
+    }
+
+    [Fact]
+    public async Task ReplaceServerPolicyAsync_DoesNotChangeEnforcementInTheSameProcess()
+    {
+        // A changed pin must not move values while the enforcement getters still report the old lock.
+        var service = await LoadedService(null, """{ "enforce": { "uiLanguage": "DE" } }""");
+
+        await service.ReplaceServerPolicyAsync("""{ "enforce": { "uiLanguage": "FR" } }""");
+
+        var settings = new AppSettings();
+        service.ApplyPolicy(settings);
+        Assert.Equal(TargetLanguage.DE, settings.UiLanguage);
+        Assert.True(service.IsEnforced(nameof(AppSettings.UiLanguage)));
+
+        var restarted = CreateService();
+        await restarted.GetPolicyAsync();
+        var afterRestart = new AppSettings();
+        restarted.ApplyPolicy(afterRestart);
+
+        Assert.Equal(TargetLanguage.FR, afterRestart.UiLanguage);
+    }
+
+    [Fact]
+    public async Task ClearServerPolicyAsync_DropsDocumentAndAppliedDefaults()
+    {
+        var service = await LoadedService(null, """{ "defaults": { "targetSpeechLanguage": "DE" } }""");
+        service.ApplyPolicy(new AppSettings());
+        Assert.True(File.Exists(CacheFilePath));
+
+        await service.ClearServerPolicyAsync();
+
+        Assert.False(File.Exists(CacheFilePath));
+
+        // DE belongs to the next user now, not to this mechanism, so a file default leaves it alone.
+        WritePolicy("""{ "defaults": { "targetSpeechLanguage": "FR" } }""");
+        var restarted = CreateService();
+        await restarted.GetPolicyAsync();
+        var settings = new AppSettings { TargetSpeechLanguage = TargetSpeechLanguage.DE };
+        restarted.ApplyPolicy(settings);
+
+        Assert.Equal(TargetSpeechLanguage.DE, settings.TargetSpeechLanguage);
+    }
+
+    [Fact]
+    public async Task ApplyPolicy_NothingNewToApply_DoesNotRewriteCacheFile()
+    {
+        var service = await LoadedService(null, """{ "defaults": { "theme": "Dark" } }""");
+        var settings = new AppSettings();
+        service.ApplyPolicy(settings);
+        Assert.True(File.Exists(CacheFilePath));
+
+        // Deleting the record makes any further write visible; repeated passes must not produce one.
+        File.Delete(CacheFilePath);
+        service.ApplyPolicy(settings);
+        service.ApplyPolicy(new AppSettings { Theme = AppTheme.Light });
+
+        // The literal unrelated-save case: a draft or a window move must not rewrite the record.
+        service.ApplyPolicy(new AppSettings { Theme = AppTheme.Dark, DraftText = "typing", WindowLeft = 42 });
+
+        Assert.False(File.Exists(CacheFilePath));
+    }
+
+    [Fact]
+    public async Task GetPolicyAsync_UnparseableServerDocument_KeepsFileLayer()
+    {
+        WriteRawCache(new CachedClientPolicy { Document = "{ not json" });
+
+        var service = await LoadedService("""{ "enforce": { "startMinimized": true } }""", null);
+        var settings = new AppSettings();
+        service.ApplyPolicy(settings);
+
+        Assert.True(settings.StartMinimized);
+        Assert.False(service.IsEnforced(nameof(AppSettings.Theme)));
+    }
+
+    [Fact]
+    public async Task GetPolicyAsync_CorruptCacheFile_KeepsFileLayer()
+    {
+        File.WriteAllText(CacheFilePath, "{ invalid json }}}");
+
+        var service = await LoadedService("""{ "enforce": { "theme": "Dark" } }""", null);
+        var settings = new AppSettings();
+        service.ApplyPolicy(settings);
+
+        Assert.Equal(AppTheme.Dark, settings.Theme);
     }
 }

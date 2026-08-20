@@ -40,6 +40,10 @@ public class SyncPullResponse
     /// </remarks>
     public SyncManagedPersonaSnapshot? ManagedPersonas { get; set; }
 
+    /// <summary>The caller's group policy, replace-all. Must stay nullable with no initializer: null
+    /// deserializes from an absent key, which means keep the cached policy, not "no policy".</summary>
+    public SyncClientPolicySnapshot? ClientPolicy { get; set; }
+
     /// <summary>Current plugin catalog version echoed back for the client's next pull; null when not provided.
     /// Treat it as an OPAQUE token: it is compared for equality only and is NOT monotonic — the server folds
     /// the caller's group into it so a group reassignment self-invalidates. Store it and echo it back
@@ -96,6 +100,18 @@ public class SyncManagedPersonaSnapshot
     /// mechanism: it does not, and cannot, cover unassignment.
     /// </summary>
     public List<Guid> RecentlyRemoved { get; set; } = [];
+}
+
+/// <summary>The group's enterprise-policy document, carried whole. A raw string rather than typed sections
+/// because the client needs to know which keys are PRESENT, and this document spells enums as strings while
+/// the rest of the wire uses ints.</summary>
+public class SyncClientPolicySnapshot
+{
+    /// <summary>A JSON object with optional <c>defaults</c> and <c>enforce</c> sections. <c>{}</c> is an
+    /// authoritative "this group has no policy" and must clear whatever the client cached.</summary>
+    public string Document { get; set; } = "{}";
+
+    public DateTime? UpdatedAt { get; set; }
 }
 
 /// <summary>
