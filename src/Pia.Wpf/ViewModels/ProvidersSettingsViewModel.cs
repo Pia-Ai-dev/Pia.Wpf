@@ -10,7 +10,7 @@ using System.Collections.ObjectModel;
 
 namespace Pia.ViewModels;
 
-public partial class ProvidersSettingsViewModel : UiThreadViewModel
+public partial class ProvidersSettingsViewModel : UiThreadViewModel, IDisposable
 {
     private readonly ILogger<SettingsViewModel> _logger;
     private readonly IProviderService _providerService;
@@ -25,6 +25,7 @@ public partial class ProvidersSettingsViewModel : UiThreadViewModel
     public PolicyLock Policy { get; }
     private readonly ISyncClientService? _syncClientService;
     private bool _isLoading;
+    private bool _disposed;
 
     private readonly SettingsViewModel _parent;
 
@@ -61,7 +62,38 @@ public partial class ProvidersSettingsViewModel : UiThreadViewModel
         _providerService.ProvidersChanged += OnProvidersChanged;
         if (_syncClientService is not null)
             _syncClientService.SyncCompleted += OnSyncCompleted;
+        _policyService.LocksChanged += OnLocksChanged;
+        _settingsService.SettingsChanged += OnSettingsChanged;
     }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        _policyService.LocksChanged -= OnLocksChanged;
+        _settingsService.SettingsChanged -= OnSettingsChanged;
+        Policy.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    // Deliberately not RefreshProvidersAsync/ResolveOrDefault: on an app-wide save the configured provider
+    // may not have synced down yet, and their PiaCloud fallback would strand that policy default for good.
+    private void OnSettingsChanged(object? sender, AppSettings settings) => Post(() =>
+    {
+        _isLoading = true;
+
+        CanManageProviders = settings.AllowProviderManagement;
+        UseSameProviderForAllModes = settings.UseSameProviderForAllModes;
+
+        if (ConfiguredIfKnown(settings, WindowMode.Optimize) is { } optimizeId)
+            OptimizeProviderId = optimizeId;
+        if (ConfiguredIfKnown(settings, WindowMode.Assistant) is { } assistantId)
+            AssistantProviderId = assistantId;
+
+        _isLoading = false;
+    });
 
     private void OnSyncCompleted(object? sender, SyncCompletedEventArgs e)
     {
@@ -108,6 +140,10 @@ public partial class ProvidersSettingsViewModel : UiThreadViewModel
 
     // Enterprise policy enforcement
     public bool IsUseSameProviderEnforced => _policyService.IsEnforced(nameof(AppSettings.UseSameProviderForAllModes));
+
+    // The indexer bindings are covered by PolicyLock; this getter is a separate binding target.
+    private void OnLocksChanged(object? sender, EventArgs e) =>
+        Post(() => OnPropertyChanged(nameof(IsUseSameProviderEnforced)));
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(AddProviderCommand))]
@@ -185,6 +221,12 @@ public partial class ProvidersSettingsViewModel : UiThreadViewModel
             "Settings page initialized: providers={Count}, modeDefaults Optimize={OptId} Assistant={AsstId}, useSame={UseSame}",
             providersList.Count, optimizeId, assistantId, settings.UseSameProviderForAllModes);
     }
+
+    private Guid? ConfiguredIfKnown(AppSettings settings, WindowMode mode) =>
+        settings.ModeProviderDefaults.TryGetValue(mode, out var configured)
+        && Providers.Any(p => p.Id == configured)
+            ? configured
+            : null;
 
     private static Guid? ResolveOrDefault(
         AppSettings settings, WindowMode mode, IReadOnlyList<AiProvider> providers)

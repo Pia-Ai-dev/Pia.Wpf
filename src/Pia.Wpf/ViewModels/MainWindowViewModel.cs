@@ -20,6 +20,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
     private readonly Services.Interfaces.IAuthService _authService;
     private readonly Services.Interfaces.ISyncClientService _syncClientService;
     private readonly Services.Operators.IAssignmentApiClient _assignmentApiClient;
+    private readonly Services.Interfaces.IPolicyService _policyService;
     private Timer? _updateTimer;
     private bool _assignmentSurfaceAvailable;
 
@@ -94,7 +95,8 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         Pia.Services.Interfaces.IProviderService providerService,
         Pia.Services.Interfaces.IAuthService authService,
         Pia.Services.Interfaces.ISyncClientService syncClientService,
-        Pia.Services.Operators.IAssignmentApiClient assignmentApiClient)
+        Pia.Services.Operators.IAssignmentApiClient assignmentApiClient,
+        Pia.Services.Interfaces.IPolicyService policyService)
         : base(requireUiThread: true)
     {
         _logger = logger;
@@ -107,6 +109,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         _authService = authService;
         _syncClientService = syncClientService;
         _assignmentApiClient = assignmentApiClient;
+        _policyService = policyService;
         IsE2EEOnboardingRequired = _syncClientService.IsE2EEOnboardingRequired;
 
         AppVersion = updateService.CurrentVersion
@@ -114,7 +117,10 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
             ?? "unknown";
 
         NavigationCommand = new RelayCommand<string>(ExecuteNavigationCommand);
-        ToggleThemeCommand = new AsyncRelayCommand(ExecuteToggleThemeAsync);
+        // The toggle is a nav item bound twice at the same site, so one CanExecute disables both.
+        ToggleThemeCommand = new AsyncRelayCommand(
+            ExecuteToggleThemeAsync,
+            () => !_policyService.IsEnforced(nameof(AppSettings.Theme)));
         OpenDefaultWindowCommand = new AsyncRelayCommand(ExecuteOpenDefaultWindowAsync);
         OpenNewWindowCommand = new RelayCommand<WindowMode>(ExecuteOpenNewWindow);
 
@@ -124,6 +130,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         _authService.LoginStateChanged += OnLoginStateChanged;
         _syncClientService.E2EEOnboardingRequired += OnE2EEOnboardingRequired;
         _syncClientService.E2EEOnboardingCleared += OnE2EEOnboardingCleared;
+        _policyService.LocksChanged += OnPolicyLocksChanged;
 
         // Poll for update readiness (background download is fire-and-forget)
         _updateTimer = new Timer(_ =>
@@ -225,6 +232,9 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
             _ = RefreshSetupRequiredAsync();
         });
     }
+
+    private void OnPolicyLocksChanged(object? sender, EventArgs e) =>
+        Post(() => ToggleThemeCommand.NotifyCanExecuteChanged());
 
     private void OnSettingsChanged(object? sender, AppSettings settings)
     {
@@ -433,6 +443,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         _authService.LoginStateChanged -= OnLoginStateChanged;
         _syncClientService.E2EEOnboardingRequired -= OnE2EEOnboardingRequired;
         _syncClientService.E2EEOnboardingCleared -= OnE2EEOnboardingCleared;
+        _policyService.LocksChanged -= OnPolicyLocksChanged;
 
         GC.SuppressFinalize(this);
     }

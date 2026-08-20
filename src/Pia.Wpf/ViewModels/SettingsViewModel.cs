@@ -9,9 +9,10 @@ using Pia.Navigation;
 
 namespace Pia.ViewModels;
 
-public partial class SettingsViewModel : ObservableObject, INavigationAware
+public partial class SettingsViewModel : ObservableObject, INavigationAware, IDisposable
 {
     private readonly ILogger<SettingsViewModel> _logger;
+    private bool _disposed;
 
     public ProvidersSettingsViewModel ProvidersVm { get; }
     public OptimizeSettingsViewModel OptimizeVm { get; }
@@ -113,5 +114,26 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware
 
     public void OnNavigatedFrom()
     {
+    }
+
+    // Reached through the window's DI scope (AddScoped + ManagedWindow.Dispose). Every sub-VM this owns
+    // holds a handler on a singleton service, including the two only reachable through another sub-VM.
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+
+        ProvidersVm.Dispose();
+        OptimizeVm.Dispose();
+        PersonasVm.Dispose();
+        AssistantVm.MeetingVm.Dispose();
+        AssistantVm.Dispose();
+        GeneralVm.PrivacyVm.Dispose();
+        GeneralVm.Dispose();
+        AccountVm.Dispose();
+
+        GC.SuppressFinalize(this);
     }
 }

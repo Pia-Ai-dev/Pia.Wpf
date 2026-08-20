@@ -8,12 +8,14 @@ using System.Collections.Generic;
 
 namespace Pia.ViewModels;
 
-public partial class MeetingSettingsViewModel : ObservableObject
+public partial class MeetingSettingsViewModel : UiThreadViewModel, IDisposable
 {
     private readonly ILogger<SettingsViewModel> _logger;
     private readonly ISettingsService _settingsService;
     private readonly ILocalizationService _localizationService;
+    private readonly IPolicyService _policyService;
     private bool _isLoading;
+    private bool _disposed;
 
     /// <summary>Bind IsEnabled to Policy[nameof(AppSettings.X)] to grey a control out while policy enforces it.</summary>
     public PolicyLock Policy { get; }
@@ -27,6 +29,7 @@ public partial class MeetingSettingsViewModel : ObservableObject
         _logger = logger;
         _settingsService = settingsService;
         _localizationService = localizationService;
+        _policyService = policyService;
         Policy = new PolicyLock(policyService);
 
         _localizationService.LanguageChanged += (_, _) =>
@@ -35,7 +38,26 @@ public partial class MeetingSettingsViewModel : ObservableObject
             OnPropertyChanged(nameof(MeetingMaxSpeakersDisplay));
             OnPropertyChanged(nameof(MeetingMinSpeechDisplay));
         };
+
+        _settingsService.SettingsChanged += OnSettingsChanged;
+        _policyService.LocksChanged += OnLocksChanged;
     }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        _settingsService.SettingsChanged -= OnSettingsChanged;
+        _policyService.LocksChanged -= OnLocksChanged;
+        Policy.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    // SmartSpeakerDetectionEditable ANDs the lock into its own value, so the indexer raise cannot reach it.
+    private void OnLocksChanged(object? sender, EventArgs e) =>
+        Post(() => OnPropertyChanged(nameof(SmartSpeakerDetectionEditable)));
 
     // Meeting per-speaker diarization
     [ObservableProperty]
@@ -158,9 +180,18 @@ public partial class MeetingSettingsViewModel : ObservableObject
 
     public async Task InitializeAsync()
     {
+        // Set before the await so a click landing mid-load cannot save the defaults.
+        _isLoading = true;
+        ApplySettings(await _settingsService.GetSettingsAsync());
+    }
+
+    // Raised from the policy pull thread, so the mirror has to be marshalled.
+    private void OnSettingsChanged(object? sender, AppSettings settings) => Post(() => ApplySettings(settings));
+
+    private void ApplySettings(AppSettings settings)
+    {
         _isLoading = true;
 
-        var settings = await _settingsService.GetSettingsAsync();
         EnableMeetingDiarization = settings.EnableMeetingDiarization;
         SpeakerEmbeddingThreshold = SnapThreshold(settings.SpeakerEmbeddingThreshold);
         MeetingMaxSpeakers = Math.Clamp(settings.MeetingMaxSpeakers, 0, 12);

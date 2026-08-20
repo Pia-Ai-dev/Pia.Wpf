@@ -9,7 +9,7 @@ using System.Collections.ObjectModel;
 
 namespace Pia.ViewModels;
 
-public partial class OptimizeSettingsViewModel : UiThreadViewModel
+public partial class OptimizeSettingsViewModel : UiThreadViewModel, IDisposable
 {
     private readonly ILogger<SettingsViewModel> _logger;
     private readonly ITemplateService _templateService;
@@ -25,6 +25,7 @@ public partial class OptimizeSettingsViewModel : UiThreadViewModel
     private readonly IAuthService _authService;
     private readonly ProvidersSettingsViewModel _providersVm;
     private bool _isLoading;
+    private bool _disposed;
 
     public OptimizeSettingsViewModel(
         ProvidersSettingsViewModel providersVm,
@@ -53,6 +54,20 @@ public partial class OptimizeSettingsViewModel : UiThreadViewModel
 
         _templateService.TemplatesChanged += OnTemplatesChanged;
         _authService.LoginStateChanged += OnLoginStateChanged;
+        _policyService.LocksChanged += OnLocksChanged;
+        _settingsService.SettingsChanged += OnSettingsChanged;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        _policyService.LocksChanged -= OnLocksChanged;
+        _settingsService.SettingsChanged -= OnSettingsChanged;
+        Policy.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     private void OnTemplatesChanged(object? sender, EventArgs e)
@@ -69,6 +84,13 @@ public partial class OptimizeSettingsViewModel : UiThreadViewModel
     // Enterprise policy enforcement
     public bool IsOutputActionEnforced => _policyService.IsEnforced(nameof(AppSettings.DefaultOutputAction));
     public bool IsAutoTypeDelayEnforced => _policyService.IsEnforced(nameof(AppSettings.AutoTypeDelayMs));
+
+    // The indexer bindings are covered by PolicyLock; these getters are separate binding targets.
+    private void OnLocksChanged(object? sender, EventArgs e) => Post(() =>
+    {
+        OnPropertyChanged(nameof(IsOutputActionEnforced));
+        OnPropertyChanged(nameof(IsAutoTypeDelayEnforced));
+    });
 
     // Expose provider VM for bindings
     public ProvidersSettingsViewModel ProvidersVm => _providersVm;
@@ -111,12 +133,24 @@ public partial class OptimizeSettingsViewModel : UiThreadViewModel
         foreach (var template in templatesList)
             Templates.Add(template);
 
-        var settings = await _settingsService.GetSettingsAsync();
+        ApplySettings(await _settingsService.GetSettingsAsync());
+
+        _isLoading = false;
+    }
+
+    // Raised from the policy pull thread, so the mirror has to be marshalled.
+    private void OnSettingsChanged(object? sender, AppSettings settings) => Post(() =>
+    {
+        _isLoading = true;
+        ApplySettings(settings);
+        _isLoading = false;
+    });
+
+    private void ApplySettings(AppSettings settings)
+    {
         DefaultTemplateId = settings.DefaultTemplateId;
         OutputAction = settings.DefaultOutputAction;
         AutoTypeDelayMs = settings.AutoTypeDelayMs;
-
-        _isLoading = false;
     }
 
     [RelayCommand]

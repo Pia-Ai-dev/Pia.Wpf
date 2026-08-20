@@ -11,7 +11,7 @@ using System.IO;
 
 namespace Pia.ViewModels;
 
-public partial class GeneralSettingsViewModel : ObservableObject
+public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
 {
     private readonly ILogger<SettingsViewModel> _logger;
     private readonly ISettingsService _settingsService;
@@ -28,6 +28,7 @@ public partial class GeneralSettingsViewModel : ObservableObject
     public PolicyLock Policy { get; }
     private readonly ISyncClientService _syncClientService;
     private bool _isLoading;
+    private bool _disposed;
 
     public PrivacySettingsViewModel PrivacyVm { get; }
 
@@ -60,6 +61,21 @@ public partial class GeneralSettingsViewModel : ObservableObject
         PrivacyVm = privacyVm;
 
         _uiLanguage = _localizationService.CurrentLanguage;
+
+        _policyService.LocksChanged += OnLocksChanged;
+        _settingsService.SettingsChanged += OnSettingsChanged;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        _policyService.LocksChanged -= OnLocksChanged;
+        _settingsService.SettingsChanged -= OnSettingsChanged;
+        Policy.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     // Enterprise policy enforcement
@@ -69,7 +85,17 @@ public partial class GeneralSettingsViewModel : ObservableObject
     public bool IsSttBackendEnforced => _policyService.IsEnforced(nameof(AppSettings.SttBackend));
     public bool IsWhisperModelEnforced => _policyService.IsEnforced(nameof(AppSettings.WhisperModel));
     public bool IsTargetSpeechLanguageEnforced => _policyService.IsEnforced(nameof(AppSettings.TargetSpeechLanguage));
-    public bool IsThemeEnforced => _policyService.IsEnforced(nameof(AppSettings.Theme));
+
+    // The indexer bindings are covered by PolicyLock; these getters are separate binding targets.
+    private void OnLocksChanged(object? sender, EventArgs e) => Post(() =>
+    {
+        OnPropertyChanged(nameof(IsUiLanguageEnforced));
+        OnPropertyChanged(nameof(IsStartMinimizedEnforced));
+        OnPropertyChanged(nameof(IsLaunchAtStartupEnforced));
+        OnPropertyChanged(nameof(IsSttBackendEnforced));
+        OnPropertyChanged(nameof(IsWhisperModelEnforced));
+        OnPropertyChanged(nameof(IsTargetSpeechLanguageEnforced));
+    });
 
     // Appearance
     [ObservableProperty]
@@ -180,6 +206,31 @@ public partial class GeneralSettingsViewModel : ObservableObject
 
         var settings = await _settingsService.GetSettingsAsync();
         UiLanguage = _localizationService.CurrentLanguage;
+        ApplySettings(settings);
+        await LoadTtsVoicesAsync();
+
+        _isLoading = false;
+
+        await PrivacyVm.InitializeAsync();
+    }
+
+    // Raised from the policy pull thread, so the mirror has to be marshalled. PrivacyVm reloads itself.
+    private void OnSettingsChanged(object? sender, AppSettings settings) => Post(() =>
+    {
+        _isLoading = true;
+        ApplySettings(settings);
+        foreach (var voice in TtsVoices)
+            voice.IsSelected = voice.Key == SelectedVoiceKey;
+        _isLoading = false;
+    });
+
+    private void ApplySettings(AppSettings settings)
+    {
+        // Unenforced, the live language is ILocalizationService.CurrentLanguage, which an auto-detected
+        // first run leaves diverged from the never-saved settings.UiLanguage.
+        if (_policyService.IsEnforced(nameof(AppSettings.UiLanguage)))
+            UiLanguage = settings.UiLanguage;
+
         StartMinimized = settings.StartMinimized;
         LaunchAtStartup = settings.LaunchAtStartup;
         AutoCaptureSelectedText = settings.AutoCaptureSelectedText;
@@ -194,13 +245,7 @@ public partial class GeneralSettingsViewModel : ObservableObject
         _fastPathHotkey = settings.FastPathHotkey;
         FastPathHotkeyDisplayText = _fastPathHotkey?.DisplayText ?? _localizationService["Msg_Settings_HotkeyNotSet"];
 
-        // Load TTS
         SelectedVoiceKey = settings.TtsVoiceModelKey;
-        await LoadTtsVoicesAsync();
-
-        _isLoading = false;
-
-        await PrivacyVm.InitializeAsync();
     }
 
     [RelayCommand]

@@ -7,6 +7,7 @@ using Pia.Navigation;
 using Pia.Services.Interfaces;
 using Pia.Services.Operators;
 using Pia.Shared.Operators;
+using Pia.Tests.TestInfrastructure;
 using Pia.ViewModels;
 using Xunit;
 
@@ -19,6 +20,7 @@ public class MainWindowViewModelTests
     private readonly ISettingsService _settings = Substitute.For<ISettingsService>();
     private readonly IAssignmentApiClient _assignments = Substitute.For<IAssignmentApiClient>();
     private readonly IAuthService _auth = Substitute.For<IAuthService>();
+    private readonly IPolicyService _policy = Substitute.For<IPolicyService>();
 
     private MainWindowViewModel CreateSut(WindowMode mode)
     {
@@ -37,7 +39,8 @@ public class MainWindowViewModelTests
             Substitute.For<IProviderService>(),
             _auth,
             Substitute.For<ISyncClientService>(),
-            _assignments)
+            _assignments,
+            _policy)
         {
             Mode = mode,
         };
@@ -150,5 +153,41 @@ public class MainWindowViewModelTests
         _navigation.Received(1).NavigateTo<RemindersViewModel>();
         _navigation.Received(1).NavigateTo<SettingsViewModel>();
         _navigation.DidNotReceive().NavigateTo<AssignmentsViewModel>();
+    }
+
+    // The theme toggle is a nav item, not a Settings control, so the lock has to live on the command.
+    [Fact]
+    public void AnEnforcedTheme_DisablesTheThemeToggle()
+    {
+        _policy.IsEnforced(nameof(AppSettings.Theme)).Returns(true);
+
+        using var vm = CreateSut(WindowMode.Assistant);
+
+        Assert.False(vm.ToggleThemeCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void TheThemeToggle_ReEvaluatesWhenTheLocksMove()
+    {
+        // The handler marshals, and CreateSut's plain context posts to the thread pool.
+        var previous = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        try
+        {
+            using var vm = CreateSut(WindowMode.Assistant);
+            Assert.True(vm.ToggleThemeCommand.CanExecute(null));
+
+            var reEvaluations = 0;
+            vm.ToggleThemeCommand.CanExecuteChanged += (_, _) => reEvaluations++;
+            _policy.IsEnforced(nameof(AppSettings.Theme)).Returns(true);
+            _policy.LocksChanged += Raise.EventWith(EventArgs.Empty);
+
+            Assert.Equal(1, reEvaluations);
+            Assert.False(vm.ToggleThemeCommand.CanExecute(null));
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(previous);
+        }
     }
 }

@@ -14,7 +14,7 @@ namespace Pia.ViewModels;
 /// admin-published managed personas are shown read-only; Duplicate is the escape hatch for both.
 /// Mirrors <see cref="OptimizeSettingsViewModel"/>.
 /// </summary>
-public partial class PersonaSettingsViewModel : UiThreadViewModel
+public partial class PersonaSettingsViewModel : UiThreadViewModel, IDisposable
 {
     private readonly ILogger<SettingsViewModel> _logger;
     private readonly IPersonaService _personaService;
@@ -25,6 +25,7 @@ public partial class PersonaSettingsViewModel : UiThreadViewModel
     private readonly ILocalizationService _localizationService;
     private readonly IAuthService _authService;
     private readonly ISettingsService _settingsService;
+    private bool _disposed;
 
     [ObservableProperty]
     private ObservableCollection<Persona> _personas;
@@ -65,7 +66,24 @@ public partial class PersonaSettingsViewModel : UiThreadViewModel
 
         _personaService.PersonasChanged += OnPersonasChanged;
         _authService.LoginStateChanged += OnLoginStateChanged;
+        _settingsService.SettingsChanged += OnSettingsChanged;
     }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        _settingsService.SettingsChanged -= OnSettingsChanged;
+        Policy.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    // Raised from the policy pull thread, so the mirror has to be marshalled. No _isLoading guard is
+    // needed: CanManagePersonas has no change handler and is never written back.
+    private void OnSettingsChanged(object? sender, AppSettings settings) =>
+        Post(() => CanManagePersonas = settings.AllowPersonaManagement);
 
     private void OnPersonasChanged(object? sender, EventArgs e) =>
         RefreshPersonasAsync().SafeFireAndForget(_logger);

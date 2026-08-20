@@ -11,7 +11,7 @@ using Pia.ViewModels.Models;
 
 namespace Pia.ViewModels;
 
-public partial class AssistantSettingsViewModel : ObservableObject
+public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
 {
     private readonly ILogger<SettingsViewModel> _logger;
     private readonly ISettingsService _settingsService;
@@ -21,7 +21,9 @@ public partial class AssistantSettingsViewModel : ObservableObject
     private readonly IAssistantFolderRelocationService _relocationService;
     private readonly IWorkingDirectoryService _workingDirectoryService;
     private readonly IPersonaService? _personaService;
+    private readonly IPolicyService _policyService;
     private bool _isLoading;
+    private bool _disposed;
     // Guards the programmatic revert below from re-entering OnRosterOptionToggled and saving a state
     // nobody chose (07 D-G7.2, the checkbox-cap re-entrancy hazard).
     private bool _isSuppressingRosterToggle;
@@ -74,10 +76,31 @@ public partial class AssistantSettingsViewModel : ObservableObject
         _localizationService = localizationService;
         _relocationService = relocationService;
         _workingDirectoryService = workingDirectoryService;
+        _policyService = policyService;
         Policy = new PolicyLock(policyService);
         _personaService = personaService;
         _localizationService.LanguageChanged += (_, _) => OnPropertyChanged(nameof(RetentionDaysDisplay));
+
+        _settingsService.SettingsChanged += OnSettingsChanged;
+        _policyService.LocksChanged += OnLocksChanged;
     }
+
+    // The four composed sub-VMs subscribe for themselves; disposing them is the parent's job.
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        _settingsService.SettingsChanged -= OnSettingsChanged;
+        _policyService.LocksChanged -= OnLocksChanged;
+        Policy.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    // GitToolsEditable ANDs the lock into its own value, so the indexer raise cannot reach it.
+    private void OnLocksChanged(object? sender, EventArgs e) =>
+        Post(() => OnPropertyChanged(nameof(GitToolsEditable)));
 
     [ObservableProperty]
     private WindowMode _defaultWindowMode;
@@ -457,15 +480,38 @@ public partial class AssistantSettingsViewModel : ObservableObject
         _isLoading = true;
 
         var settings = await _settingsService.GetSettingsAsync();
+        ApplySettings(settings);
+        GitToolsAvailable = GitLocator.IsAvailable; // decided at startup (prewarmed), cached
+        RefreshAvailableWorkingDirectories();
+
+        await MeetingVm.InitializeAsync();
+        await LoadAgentRosterOptionsAsync(settings);
+
+        _isLoading = false;
+
+        RaiseComputedDisplays();
+    }
+
+    // Raised from the policy pull thread, so the mirror has to be marshalled. Omits the persona read and
+    // directory enumeration on purpose (every save app-wide lands here); MeetingVm reloads itself.
+    private void OnSettingsChanged(object? sender, AppSettings settings) => Post(() =>
+    {
+        _isLoading = true;
+        ApplySettings(settings);
+        _isLoading = false;
+
+        RaiseComputedDisplays();
+    });
+
+    private void ApplySettings(AppSettings settings)
+    {
         DefaultWindowMode = settings.DefaultWindowMode;
         SuggestionsEnabled = settings.AssistantSuggestionsEnabled;
         FilesFolder = settings.AssistantFilesFolder; // OnFilesFolderChanged sets VaultLocationDisplay
         FileToolsEnabled = settings.AssistantFileToolsEnabled;
         GitToolsEnabled = settings.AssistantGitToolsEnabled;
-        GitToolsAvailable = GitLocator.IsAvailable; // decided at startup (prewarmed), cached
 
         DefaultWorkingDirectory = settings.AssistantDefaultWorkingDirectory;
-        RefreshAvailableWorkingDirectories();
         ChatHistoryEnabled = settings.ChatHistoryEnabled;
         ChatHistoryRetentionDays = Math.Clamp(settings.ChatHistoryRetentionDays, 1, 365);
         ChatAutoTitleEnabled = settings.ChatAutoTitleEnabled;
@@ -484,11 +530,20 @@ public partial class AssistantSettingsViewModel : ObservableObject
         // slider can never show a width the pool is not actually running at.
         MaxParallelBackgroundRuns = settings.GetMaxParallelBackgroundRuns();
 
-        await MeetingVm.InitializeAsync();
-        await LoadAgentRosterOptionsAsync(settings);
+        // Re-mirror the selection over the already-loaded options rather than re-reading the personas; a
+        // stale surface is what a later unrelated save would persist over a policy-set roster.
+        if (_rosterLoaded)
+        {
+            var mode = settings.UserOperatingMode ?? UserOperatingMode.Personal;
+            var roster = settings.GetAgentPersonaRoster(mode).ToHashSet();
+            foreach (var option in AgentRosterOptions)
+                option.IsSelected = roster.Contains(option.Id);
+            HasSelectedRoster = AgentRosterOptions.Any(o => o.IsSelected);
+        }
+    }
 
-        _isLoading = false;
-
+    private void RaiseComputedDisplays()
+    {
         // Displays are computed; refresh them once now that the values are loaded (OnXChanged skips
         // while _isLoading). Subsequent slider edits raise them individually.
         OnPropertyChanged(nameof(AgentMaxStepsDisplay));

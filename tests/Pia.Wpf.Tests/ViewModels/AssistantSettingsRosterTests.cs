@@ -203,4 +203,29 @@ public class AssistantSettingsRosterTests
         Assert.Contains(alice.Id, roster);
         Assert.Contains(BuiltInPersonas.ExperiencedCoderId, roster);
     }
+
+    [Fact]
+    public async Task SettingsChanged_MirrorsTheRosterWithoutSavingItBack()
+    {
+        // The mirror flips IsSelected on already-realized rows, which is the same setter a user's click
+        // uses to trigger a save — this pins that the _isLoading bracket around ApplySettings covers it too.
+        var alice = MakePersona("Alice");
+        var bob = MakePersona("Bob");
+        var stored = new AppSettings();
+        stored.SetAgentPersonaRoster(UserOperatingMode.Personal, [alice.Id]);
+
+        var personaService = Substitute.For<IPersonaService>();
+        personaService.GetPersonasAsync().Returns(Task.FromResult<IReadOnlyList<Persona>>([alice, bob]));
+
+        var (sut, settingsService, resultStored) = Create(stored, personaService);
+        await sut.InitializeAsync();
+        settingsService.ClearReceivedCalls();
+
+        resultStored.SetAgentPersonaRoster(UserOperatingMode.Personal, [bob.Id]);
+        settingsService.SettingsChanged += Raise.Event<EventHandler<AppSettings>>(settingsService, resultStored);
+
+        Assert.False(sut.AgentRosterOptions.Single(o => o.Id == alice.Id).IsSelected);
+        Assert.True(sut.AgentRosterOptions.Single(o => o.Id == bob.Id).IsSelected);
+        await settingsService.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
+    }
 }

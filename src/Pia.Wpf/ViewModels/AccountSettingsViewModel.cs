@@ -11,7 +11,7 @@ using System.Text.Json;
 
 namespace Pia.ViewModels;
 
-public partial class AccountSettingsViewModel : UiThreadViewModel
+public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
 {
     private readonly ILogger<SettingsViewModel> _logger;
     private readonly ISettingsService _settingsService;
@@ -28,6 +28,7 @@ public partial class AccountSettingsViewModel : UiThreadViewModel
     /// <summary>Bind IsEnabled to Policy[nameof(AppSettings.X)] to grey a control out while policy enforces it.</summary>
     public PolicyLock Policy { get; }
     private bool _isLoading;
+    private bool _disposed;
 
     public E2EEOnboardingViewModel OnboardingViewModel { get; }
 
@@ -140,7 +141,42 @@ public partial class AccountSettingsViewModel : UiThreadViewModel
                     Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(8));
             });
         };
+
+        _policyService.LocksChanged += OnLocksChanged;
+        _settingsService.SettingsChanged += OnSettingsChanged;
     }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        _policyService.LocksChanged -= OnLocksChanged;
+        _settingsService.SettingsChanged -= OnSettingsChanged;
+        Policy.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    // IsServerUrlEnforced itself is unbound; the markup binds the derived property. The login-visibility
+    // getters read allowedSyncProviders, which PolicyLock cannot reach.
+    private void OnLocksChanged(object? sender, EventArgs e) => Post(() =>
+    {
+        OnPropertyChanged(nameof(IsServerUrlEditable));
+        OnPropertyChanged(nameof(IsLocalLoginVisible));
+        OnPropertyChanged(nameof(IsGoogleLoginVisible));
+        OnPropertyChanged(nameof(IsMicrosoftLoginVisible));
+        OnPropertyChanged(nameof(IsEntraIdLoginVisible));
+        OnPropertyChanged(nameof(IsAnyOAuthLoginVisible));
+    });
+
+    // Raised from the policy pull thread, so the mirror has to be marshalled.
+    private void OnSettingsChanged(object? sender, AppSettings settings) => Post(() =>
+    {
+        _isLoading = true;
+        ApplySettings(settings);
+        _isLoading = false;
+    });
 
     // Sync properties
     [ObservableProperty]
@@ -260,11 +296,10 @@ public partial class AccountSettingsViewModel : UiThreadViewModel
 
         var settings = await _settingsService.GetSettingsAsync();
 
-        // Sync state
+        // Not in ApplySettings: a reload mid-typing would wipe the box, and ServerUrl is a denied key anyway.
         ServerUrl = settings.ServerUrl ?? "";
-        TrustSelfSignedCertificates = settings.TrustSelfSignedCertificates;
+        ApplySettings(settings);
         UpdateSyncState();
-        LastSyncText = FormatRelativeTime(settings.LastSyncTimestamp);
 
         // E2EE state
         IsE2EEEnabled = settings.IsE2EEEnabled;
@@ -272,6 +307,13 @@ public partial class AccountSettingsViewModel : UiThreadViewModel
             DeviceFingerprint = _deviceKeys.GetFingerprint();
 
         _isLoading = false;
+    }
+
+    // IsE2EEEnabled is hand-managed across onboarding and revocation, so it is not mirrored here.
+    private void ApplySettings(AppSettings settings)
+    {
+        TrustSelfSignedCertificates = settings.TrustSelfSignedCertificates;
+        LastSyncText = FormatRelativeTime(settings.LastSyncTimestamp);
     }
 
     private void UpdateSyncState()
