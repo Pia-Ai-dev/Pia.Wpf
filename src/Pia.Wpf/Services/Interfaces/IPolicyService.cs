@@ -40,4 +40,20 @@ public interface IPolicyService
     /// <summary>Raised after a changed server document has been re-merged and published; exactly one
     /// subscriber owns the resulting ordering, so nothing else may subscribe.</summary>
     event EventHandler<PolicyChangedEventArgs>? PolicyChanged;
+
+    /// <summary>Raised when the enforced set may have moved, after the new values have been applied.</summary>
+    event EventHandler? LocksChanged;
+
+    /// <summary>Raised on the first change whose value cannot take effect before a restart.</summary>
+    event EventHandler? RestartRequiredChanged;
+
+    /// <summary>In-memory on purpose: a restart dissolves the condition, and a later change re-arms it.</summary>
+    bool IsRestartRequired { get; }
+
+    /// <summary>Raises <see cref="LocksChanged"/>. Called by the policy-change coordinator only.</summary>
+    void NotifyLocksChanged();
+
+    /// <summary>Sets <see cref="IsRestartRequired"/>, raising the event on the first call only. Called by
+    /// the policy-change coordinator only.</summary>
+    void SetRestartRequired();
 }

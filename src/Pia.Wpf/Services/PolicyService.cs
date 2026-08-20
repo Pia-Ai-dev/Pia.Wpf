@@ -53,6 +53,8 @@ public class PolicyService : IPolicyService
     // never saw would strand the change for as long as the document stays the same.
     private string? _publishedDocument;
 
+    private int _restartRequired;
+
     public PolicyService(ILogger<PolicyService> logger)
         : this(logger, GetDefaultCandidatePaths(), null)
     {
@@ -106,6 +108,20 @@ public class PolicyService : IPolicyService
     }
 
     public event EventHandler<PolicyChangedEventArgs>? PolicyChanged;
+
+    public event EventHandler? LocksChanged;
+
+    public event EventHandler? RestartRequiredChanged;
+
+    public bool IsRestartRequired => Volatile.Read(ref _restartRequired) != 0;
+
+    public void NotifyLocksChanged() => LocksChanged?.Invoke(this, EventArgs.Empty);
+
+    public void SetRestartRequired()
+    {
+        if (Interlocked.Exchange(ref _restartRequired, 1) == 0)
+            RestartRequiredChanged?.Invoke(this, EventArgs.Empty);
+    }
 
     public async Task<PolicySettings> GetPolicyAsync()
     {

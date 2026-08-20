@@ -85,6 +85,9 @@ public static class Bootstrapper
         await policyService.GetPolicyAsync();
         var serverUrlEnforced = policyService.IsEnforced(nameof(AppSettings.ServerUrl));
 
+        // Nothing else resolves it, and a policy can arrive as early as the first-run wizard's sign-in.
+        _ = _serviceProvider.GetRequiredService<PolicyChangeCoordinator>();
+
         if (!IsDevMode)
         {
             if (serverUrlEnforced)
@@ -436,6 +439,7 @@ public static class Bootstrapper
 
         // Enterprise policy
         services.AddSingleton<IPolicyService, PolicyService>();
+        services.AddSingleton<PolicyChangeCoordinator>();
 
         // Services - Singleton (shared across all windows)
         services.AddSingleton<IMemoryService, MemoryService>();

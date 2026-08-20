@@ -60,10 +60,12 @@ public class TokenizingAiClientService : IAiClientService
         if (tokenMapService is null)
         {
             _enabled = false;
+            TokenizationLatch.Latch(null);
             return false;
         }
         var settings = await _settingsService.GetSettingsAsync();
         _enabled = settings.Privacy.TokenizationEnabled;
+        TokenizationLatch.Latch(settings.Privacy);
 
         if (_enabled.Value && !_initialized)
         {

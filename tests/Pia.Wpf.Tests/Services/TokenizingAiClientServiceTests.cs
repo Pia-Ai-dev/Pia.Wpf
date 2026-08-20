@@ -10,6 +10,8 @@ using Xunit;
 namespace Pia.Tests.Services;
 
 /// <summary>Guards the write allow-list that gates argument detokenization; recall is read-only and must NOT count as a write.</summary>
+// Shares a collection with TokenizationLatchTests: these tests set the process-wide latch it asserts on.
+[Collection("TokenizationLatchStatic")]
 public class TokenizingAiClientServiceTests
 {
     [Theory]

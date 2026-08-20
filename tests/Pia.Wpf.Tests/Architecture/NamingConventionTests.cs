@@ -32,7 +32,7 @@ public class NamingConventionTests
             "Service", "Handler", "Mapper", "Parser", "Detector", "Factory", "Client", "Engine",
             "Calculator", "Resolver", "Surface", "Buffer", "Builder", "Composer", "Store", "Runner",
             "Indexer", "Watcher", "Renderer", "Clusterer", "Extractor",
-            "Planner", "Orchestrator", "Verifier", "Launcher", "Executor", "Context",
+            "Planner", "Orchestrator", "Coordinator", "Verifier", "Launcher", "Executor", "Context",
             "Provisioner", "Session", "Resampler", "Reconciler", "Pool", "Throttle",
         };
 
