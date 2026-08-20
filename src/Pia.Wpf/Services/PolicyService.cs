@@ -147,7 +147,7 @@ public class PolicyService : IPolicyService
             foreach (var name in _enforcedProperties)
             {
                 if (PropertiesByName.TryGetValue(name, out var prop))
-                    prop.SetValue(userSettings, prop.GetValue(enforce));
+                    prop.SetValue(userSettings, CloneEnforcedValue(prop, prop.GetValue(enforce)));
             }
         }
     }
@@ -237,6 +237,25 @@ public class PolicyService : IPolicyService
             return false;
 
         return recorded == SerializeValue(prop, userValue);
+    }
+
+    /// <summary>Copies a reference-typed enforce value so a settings page cannot mutate the policy in place.</summary>
+    private static object? CloneEnforcedValue(PropertyInfo prop, object? value)
+    {
+        if (value is null || prop.PropertyType.IsValueType || prop.PropertyType == typeof(string))
+            return value;
+
+        try
+        {
+            var json = SerializeValue(prop, value);
+            return json is null
+                ? value
+                : JsonSerializer.Deserialize(json, prop.PropertyType, JsonOptions) ?? value;
+        }
+        catch (Exception ex) when (ex is NotSupportedException or JsonException)
+        {
+            return value;
+        }
     }
 
     private static string? SerializeValue(PropertyInfo prop, object? value)

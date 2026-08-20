@@ -3,7 +3,10 @@ using NSubstitute;
 using Pia.Models;
 using Pia.Services;
 using System.IO;
+using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Windows.Input;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -908,4 +911,188 @@ public class PolicyServiceTests : IDisposable
 
         Assert.Equal(AppTheme.Dark, settings.Theme);
     }
+
+    // ---- reference-typed enforce values are copied, not aliased ----------------------------------
+
+    private static readonly string[] ReferenceTypedEnforceKeys =
+    [
+        nameof(AppSettings.Privacy),
+        nameof(AppSettings.ModeProviderDefaults),
+        nameof(AppSettings.ModePersonaDefaults),
+        nameof(AppSettings.AgentPersonaRoster),
+        nameof(AppSettings.AllowedSyncProviders),
+        nameof(AppSettings.AlwaysAllowedTools),
+        nameof(AppSettings.BlockedBuiltInPersonas),
+        nameof(AppSettings.TodoColumnWidths)
+    ];
+
+    // Also cloned, but KeyboardShortcut is an immutable record, so aliasing one was never exploitable.
+    private static readonly string[] ImmutableReferenceTypedEnforceKeys =
+    [
+        nameof(AppSettings.AssistantHotkey),
+        nameof(AppSettings.FastPathHotkey),
+        nameof(AppSettings.OptimizeHotkey)
+    ];
+
+    private const string ReferenceTypedEnforceDocument = """
+    {
+      "enforce": {
+        "privacy": { "tokenizationEnabled": true, "piiKeywords": [ { "keyword": "Contoso", "category": "Company" } ] },
+        "modeProviderDefaults": { "Assistant": "11111111-1111-1111-1111-111111111111" },
+        "modePersonaDefaults": { "Optimize": "22222222-2222-2222-2222-222222222222" },
+        "agentPersonaRoster": { "Business": [ "33333333-3333-3333-3333-333333333333" ] },
+        "allowedSyncProviders": [ "microsoft" ],
+        "alwaysAllowedTools": [ { "pluginId": "44444444-4444-4444-4444-444444444444", "toolName": "read_file", "grantedAt": "2026-01-01T00:00:00+00:00" } ],
+        "blockedBuiltInPersonas": [ "coach" ],
+        "todoColumnWidths": { "55555555-5555-5555-5555-555555555555": 240.0 },
+        "assistantHotkey": { "modifiers": "Control, Alt", "key": "J", "virtualKeyCode": 74 },
+        "fastPathHotkey": { "modifiers": "Control, Shift", "key": "K", "virtualKeyCode": 75 },
+        "optimizeHotkey": { "modifiers": "Alt", "key": "L", "virtualKeyCode": 76 }
+      }
+    }
+    """;
+
+    [Fact]
+    public async Task ApplyPolicy_EnforcedPrivacy_SurvivesAnInPlaceEditOfTheAppliedValue()
+    {
+        var service = await LoadedService("""
+        {
+          "enforce": {
+            "privacy": {
+              "tokenizationEnabled": true,
+              "piiKeywords": [ { "keyword": "Contoso", "category": "Company" } ]
+            }
+          }
+        }
+        """);
+
+        var applied = new AppSettings();
+        service.ApplyPolicy(applied);
+
+        applied.Privacy.TokenizationEnabled = false;
+        applied.Privacy.PiiKeywords.Clear();
+
+        var fresh = new AppSettings { Privacy = new PrivacySettings { TokenizationEnabled = false } };
+        service.ApplyPolicy(fresh);
+
+        Assert.True(fresh.Privacy.TokenizationEnabled);
+        Assert.Equal("Contoso", Assert.Single(fresh.Privacy.PiiKeywords).Keyword);
+    }
+
+    [Fact]
+    public async Task ApplyPolicy_EnforcedCollection_SurvivesAnInPlaceEditOfTheAppliedValue()
+    {
+        var service = await LoadedService("""{ "enforce": { "allowedSyncProviders": ["microsoft"] } }""");
+
+        var applied = new AppSettings();
+        service.ApplyPolicy(applied);
+
+        applied.AllowedSyncProviders!.Add("local");
+
+        var fresh = new AppSettings();
+        service.ApplyPolicy(fresh);
+
+        Assert.Equal("microsoft", Assert.Single(fresh.AllowedSyncProviders!));
+        Assert.True(service.IsLoginProviderAllowed("microsoft"));
+        Assert.False(service.IsLoginProviderAllowed("local"));
+    }
+
+    [Fact]
+    public async Task ApplyPolicy_ReferenceTypedEnforceValues_GiveEveryTargetItsOwnCopy()
+    {
+        var service = await LoadedService(ReferenceTypedEnforceDocument);
+        var policy = await service.GetPolicyAsync();
+
+        var first = new AppSettings();
+        var second = new AppSettings();
+        service.ApplyPolicy(first);
+        service.ApplyPolicy(second);
+
+        foreach (var name in ReferenceTypedEnforceKeys.Concat(ImmutableReferenceTypedEnforceKeys))
+        {
+            Assert.True(service.IsEnforced(name));
+
+            var prop = typeof(AppSettings).GetProperty(name);
+            Assert.NotNull(prop);
+
+            var enforced = prop.GetValue(policy.Enforce);
+            var applied = prop.GetValue(first);
+            Assert.NotNull(enforced);
+            Assert.NotNull(applied);
+
+            Assert.NotSame(enforced, applied);
+            Assert.NotSame(applied, prop.GetValue(second));
+            Assert.Equal(Serialize(enforced), Serialize(applied));
+        }
+    }
+
+    [Fact]
+    public async Task ApplyPolicy_EnforcedHotkey_KeepsItsValueThroughTheClone()
+    {
+        var service = await LoadedService(ReferenceTypedEnforceDocument);
+
+        var settings = new AppSettings();
+        service.ApplyPolicy(settings);
+
+        Assert.Equal(
+            new KeyboardShortcut(KeyModifiers.Control | KeyModifiers.Alt, Key.J, 74),
+            settings.AssistantHotkey);
+    }
+
+    [Fact]
+    public void ReferenceTypedEnforceKeys_CoverEveryReferenceTypedSetting()
+    {
+        var reachable = typeof(AppSettings)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => p.CanRead && p.CanWrite)
+            .Where(p => !p.PropertyType.IsValueType && p.PropertyType != typeof(string))
+            .Select(p => p.Name)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToArray();
+
+        var classified = ReferenceTypedEnforceKeys
+            .Concat(ImmutableReferenceTypedEnforceKeys)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(reachable, classified);
+        Assert.Empty(ReferenceTypedEnforceKeys.Intersect(ImmutableReferenceTypedEnforceKeys, StringComparer.Ordinal));
+    }
+
+    // ---- an enforce pin is whole-object ----------------------------------------------------------
+    // Key presence is read at the section's top level, so pinning one leaf writes the type's own
+    // defaults over every sibling the admin left out.
+
+    [Fact]
+    public async Task ApplyPolicy_EnforcedPrivacyWithoutKeywords_ClearsTheUsersKeywords()
+    {
+        var service = await LoadedService("""{ "enforce": { "privacy": { "tokenizationEnabled": true } } }""");
+
+        var settings = new AppSettings { Privacy = new PrivacySettings { TokenizationEnabled = false } };
+        settings.Privacy.PiiKeywords.Add(new PiiKeywordEntry { Keyword = "Acme", Category = "Custom" });
+        service.ApplyPolicy(settings);
+
+        Assert.True(settings.Privacy.TokenizationEnabled);
+        Assert.Empty(settings.Privacy.PiiKeywords);
+
+        // Every save re-applies the policy first, so the user cannot add one back either.
+        settings.Privacy.PiiKeywords.Add(new PiiKeywordEntry { Keyword = "Acme", Category = "Custom" });
+        service.ApplyPolicy(settings);
+
+        Assert.Empty(settings.Privacy.PiiKeywords);
+    }
+
+    [Fact]
+    public async Task ApplyPolicy_EnforcedHotkeyWithoutAVirtualKeyCode_LeavesItUnregisterable()
+    {
+        var service = await LoadedService("""{ "enforce": { "assistantHotkey": { "key": "J" } } }""");
+
+        var settings = new AppSettings();
+        service.ApplyPolicy(settings);
+
+        Assert.Equal(new KeyboardShortcut(KeyModifiers.None, Key.J, 0), settings.AssistantHotkey);
+    }
+
+    private static string Serialize(object value) => JsonSerializer.Serialize(
+        value, new JsonSerializerOptions { Converters = { new JsonStringEnumConverter() } });
 }
