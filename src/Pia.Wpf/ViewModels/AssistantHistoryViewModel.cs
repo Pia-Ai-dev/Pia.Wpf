@@ -624,7 +624,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
     /// the default 30-day window and carry no provider, so an unchanged filter would hide every one of
     /// them and the import would read as a silent failure.
     /// </summary>
-    private async Task RevealImportedChatsAsync(ChatImportResult result)
+    internal async Task RevealImportedChatsAsync(ChatImportResult result)
     {
         _suppressReload = true;
         try
@@ -736,7 +736,9 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
 
     private void OnChatsChanged(object? sender, AssistantChatChangedEventArgs e)
     {
-        Post(() => LoadChatsAsync().SafeFireAndForget(_logger));
+        // Debounced, not reloaded per event: a bulk writer such as an import saves each chat
+        // separately, and one search per save contends for the same write gate its next save needs.
+        Post(DebounceReload);
     }
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
