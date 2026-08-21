@@ -510,6 +510,7 @@ public static class Bootstrapper
         services.AddSingleton<IPersonaService, PersonaService>();
         services.AddSingleton<IHistoryService, HistoryService>();
         services.AddSingleton<IAssistantChatService, AssistantChatService>();
+        services.AddSingleton<IChatArchiveService, ChatArchiveService>();
         services.AddSingleton<IAgentRunService, AgentRunService>();
         // The per-run audit timeline (Batch 03). Singleton for the same reason AgentRunService is: it owns a
         // dedicated SQLite connection and a per-run Seq allocator, and a second instance would allocate

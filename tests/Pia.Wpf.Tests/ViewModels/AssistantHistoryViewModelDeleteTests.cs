@@ -37,7 +37,8 @@ public class AssistantHistoryViewModelDeleteTests
             Substitute.For<INavigationService>(),
             Substitute.For<global::Wpf.Ui.ISnackbarService>(),
             _sessions,
-            Substitute.For<IMarkdownExportService>());
+            Substitute.For<IMarkdownExportService>(),
+            Substitute.For<IChatArchiveService>());
     }
 
     private static ChatSession NewSession() => new(

@@ -1218,4 +1218,11 @@
   <data name="Flow_PolicyUpdated_Body_Restart" xml:space="preserve"><value>Certains des nouveaux paramètres prendront effet au redémarrage de Pia. Certaines options peuvent être verrouillées à partir de maintenant.</value></data>
   <data name="Restart_ManualRelaunchRequired_Title" xml:space="preserve"><value>Redémarrer Pia</value></data>
   <data name="Restart_ManualRelaunchRequired" xml:space="preserve"><value>Pia n'a pas pu se relancer. Veuillez ouvrir Pia pour terminer l'application des paramètres de votre organisation.</value></data>
+  <data name="AssistantHistory_Import" xml:space="preserve"><value>Importer</value></data>
+  <data name="AssistantHistory_ImportTooltip" xml:space="preserve"><value>Importer des conversations depuis une archive Pia ou un export Open WebUI</value></data>
+  <data name="AssistantHistory_ExportAll" xml:space="preserve"><value>Tout exporter</value></data>
+  <data name="AssistantHistory_ExportAllTooltip" xml:space="preserve"><value>Écrire toutes les conversations enregistrées dans une archive Pia réimportable</value></data>
+  <data name="AssistantHistory_ExportArchive" xml:space="preserve"><value>Exporter en archive Pia</value></data>
+  <data name="AssistantHistory_ImportFormat_Pia" xml:space="preserve"><value>Archive Pia</value></data>
+  <data name="AssistantHistory_ImportFormat_OpenWebUi" xml:space="preserve"><value>Export Open WebUI</value></data>
 </root>

@@ -387,4 +387,12 @@ Les modifications seront appliquées.</value></data>
   <data name="Msg_Assistant_ExportedTo" xml:space="preserve"><value>Enregistré dans {0}</value></data>
   <data name="Msg_Assistant_ExportFailed" xml:space="preserve"><value>Impossible d'exporter la réponse.</value></data>
   <data name="Msg_Assistant_ExportDefaultTitle" xml:space="preserve"><value>Réponse Pia</value></data>
+  <data name="Msg_AssistantHistory_ArchiveExported" xml:space="preserve"><value>{0} conversations exportées vers {1}</value></data>
+  <data name="Msg_AssistantHistory_ImportSummary" xml:space="preserve"><value>{0} reconnu. {1} conversations importées sur {2}.</value></data>
+  <data name="Msg_AssistantHistory_ImportSkippedUpToDate" xml:space="preserve"><value>{0} étaient déjà enregistrées dans une version identique ou plus récente.</value></data>
+  <data name="Msg_AssistantHistory_ImportSkippedEmpty" xml:space="preserve"><value>{0} ne contenaient aucun message et ont été ignorées.</value></data>
+  <data name="Msg_AssistantHistory_ImportDroppedAttachments" xml:space="preserve"><value>{0} pièces jointes n'ont pas été reprises — l'historique ne stocke que du texte.</value></data>
+  <data name="Msg_AssistantHistory_ImportFailedCount" xml:space="preserve"><value>{0} conversations n'ont pu être écrites ; voir le journal pour les détails.</value></data>
+  <data name="Msg_AssistantHistory_ImportUnrecognized" xml:space="preserve"><value>Ce fichier n'est ni une archive de conversations Pia ni un export Open WebUI.</value></data>
+  <data name="Msg_AssistantHistory_ImportFailed" xml:space="preserve"><value>Échec de l'importation des conversations : {0}</value></data>
 </root>

@@ -23,6 +23,7 @@
             <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="Auto"/>
           </Grid.ColumnDefinitions>
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -57,6 +58,14 @@
                      Command="{Binding DataContext.ExportChatCommand, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"/>
 
           <ui:Button Grid.Row="0" Grid.Column="3"
+                     Icon="{ui:SymbolIcon Symbol=ArrowExport20}"
+                     Appearance="Transparent"
+                     ToolTip="{loc:Str AssistantHistory_ExportArchive}"
+                     Margin="6,0,0,0"
+                     AutomationProperties.AutomationId="AssistantHistory_ExportArchive"
+                     Command="{Binding DataContext.ExportChatArchiveCommand, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"/>
+
+          <ui:Button Grid.Row="0" Grid.Column="4"
                      Icon="{ui:SymbolIcon Symbol=Delete20}"
                      Appearance="Transparent"
                      ToolTip="{loc:Str History_Delete}"
@@ -64,7 +73,7 @@
                      Foreground="{DynamicResource PiaDangerBrush}"
                      Command="{Binding DataContext.DeleteChatCommand, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"/>
 
-          <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4"
+          <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="5"
                      Margin="0,8,0,0"
                      FontSize="11.5"
                      TextWrapping="Wrap">
