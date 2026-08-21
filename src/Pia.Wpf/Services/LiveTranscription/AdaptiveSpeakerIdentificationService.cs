@@ -368,6 +368,8 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
         // Labels can carry user-typed names after a rename → DEBUG-only.
         _logger.SensitiveInformation("Adaptive pass labels: [{Labels}]",
             string.Join(", ", _labelByCluster.Values));
+        // A cleared label renders as a bare "123=" — the log's spelling of "this segment has no
+        // speaker any more". Measure-SpeakerAttribution.ps1 relies on that shape.
         if (reassignments.Count > 0)
             _logger.SensitiveDebug("Adaptive pass reassigned: [{Pairs}]",
                 string.Join(", ", reassignments.Select(r => $"{r.SegmentId}={r.NewLabel}")));

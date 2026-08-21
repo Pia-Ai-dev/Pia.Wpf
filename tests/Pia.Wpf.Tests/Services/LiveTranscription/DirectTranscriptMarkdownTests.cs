@@ -95,6 +95,23 @@ public class DirectTranscriptMarkdownTests
     }
 
     [Fact]
+    public void Render_VoiceStats_UseTheSameDisplayLabelAsTheSpeakersList()
+    {
+        // Stats are keyed by the diarizer's label, bubbles by the renumbered one; one document must
+        // not name the same person twice over.
+        var bubbles = new[]
+        {
+            new TranscriptBubble(TranscriptSpeaker.Them, SessionStart, "hi", "Speaker 17", "Speaker 1"),
+        };
+        var stats = new[] { new SpeakerVoiceStats(TranscriptSpeaker.Them, "Speaker 17", 1, 4.0, 4.0, 1.0) };
+
+        var md = DirectTranscriptMarkdown.Render("Title", SessionStart, SessionEnd, bubbles, stats, null);
+
+        Assert.Contains("- speaker: Speaker 1\n", md, StringComparison.Ordinal);
+        Assert.DoesNotContain("Speaker 17", md, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Render_VoiceStatsBlock_HasOneEntryPerStat_WithInvariantCultureDecimals()
     {
         var bubbles = Array.Empty<TranscriptBubble>();

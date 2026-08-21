@@ -101,7 +101,12 @@ public static class DirectTranscriptMarkdown
         sb.Append("voiceStats:\n");
         foreach (var stat in voiceStats)
         {
-            var label = SpeakerToDisplayNameConverter.Resolve(stat.Speaker, stat.SpeakerLabel, counterpartName);
+            // Stats are keyed by the diarizer's label, the bubbles by the renumbered one. Without this
+            // lookup one document says "Speaker 1" in speakers: and "Speaker 17" in voiceStats:.
+            var displayLabel = bubbles.FirstOrDefault(b =>
+                string.Equals(b.SpeakerLabel, stat.SpeakerLabel, StringComparison.Ordinal))?.DisplayLabel
+                ?? stat.SpeakerLabel;
+            var label = SpeakerToDisplayNameConverter.Resolve(stat.Speaker, displayLabel, counterpartName);
             sb.Append("  - speaker: ").Append(YamlText.Scalar(label)).Append('\n');
             sb.Append("    utterances: ").Append(stat.UtteranceCount.ToString(CultureInfo.InvariantCulture)).Append('\n');
             sb.Append("    totalSeconds: ").Append(stat.TotalSpeechSeconds.ToString("F1", CultureInfo.InvariantCulture)).Append('\n');

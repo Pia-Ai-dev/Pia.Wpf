@@ -98,7 +98,10 @@ for ($i = $from; $i -le $to; $i++) {
         $batch = @()
         foreach ($pair in ($Matches[1] -split ', ')) {
             $eq = $pair.IndexOf('=')
-            if ($eq -gt 0) { $batch += @{ SegId = [long]$pair.Substring(0, $eq); Label = $pair.Substring($eq + 1) } }
+            if ($eq -lt 1) { continue }
+            # A bare "123=" is the pass clearing a label it can no longer stand behind, not an empty one.
+            $label = $pair.Substring($eq + 1)
+            $batch += @{ SegId = [long]$pair.Substring(0, $eq); Label = if ($label) { $label } else { $null } }
         }
         $pendingBatches.Enqueue($batch); continue
     }
