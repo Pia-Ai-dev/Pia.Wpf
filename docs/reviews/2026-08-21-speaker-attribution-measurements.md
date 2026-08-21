@@ -234,3 +234,95 @@ Measured, because it is a reasonable thing to want to speed up:
 * The lever that would actually shorten a replay is a rate multiplier on that `Task.Delay`. It is not
   free: at 4x the 30 s latency trigger essentially stops firing, so the pass sequence changes. Fine
   for a smoke test, not for a number that goes in this document.
+
+## LSP — the recording that actually settles it
+
+50 minutes, roster 5, all 5 speak, and its reference covers all but 0.5 s of the video. That makes it
+the trustworthy half of the fixture: the workshop recording loses 95 s to a layout change and another
+191 s to silence, which flattens the alignment objective and lets the fit wander.
+
+| | HEAD + Task 1a | end state |
+|---|---|---|
+| distinct labels ever registered | **26** | **13** |
+| distinct labels in the final pass | **16** | **6** |
+| distinct labels in the transcript | 16 | 6 |
+| true talkers | 5 | 5 |
+| corrections aimed at an in-flight segment | **9** (dropped) | 4 (parked, then applied) |
+| speech-mask agreement | 90.4 % | 95.4 % |
+| attribution, by segment | **73.4 %** | **92.1 %** |
+| attribution, by duration | **77.4 %** | **93.5 %** |
+
+Whole-plan acceptance #4 asked for "≤ 6 distinct labels numbered from 1 for the 5-talker recording".
+The final pass holds exactly 6 service-side labels, which `DisplayLabel` renders as Speaker 1–6.
+
+### The gain here is not an alignment artefact
+
+Unlike the workshop, this result survives every way of fitting the wall-clock→stream map — offset only
+at the anchor rate, offset pinned at either run's value, and a joint rate+offset fit:
+
+| fit | HEAD | end state |
+|---|---|---|
+| offset only, anchor rate | 73.9 % | 92.1 % |
+| offset pinned −0.55 s | 73.9 % | 92.3 % |
+| offset pinned +0.40 s | 74.1 % | 92.1 % |
+| joint rate + offset | 73.4 % | 92.1 % |
+
+An upper bound on the alignment contribution: the head run's speech mask disagrees with the reference
+on 9.6 % of frames against the end run's 4.6 %, so at most ~5 points of the ~18 can be mapping error.
+The rest is real.
+
+### Why it moved, which contradicts the prediction
+
+The confusion matrices show a structural change no two-second time shift can produce:
+
+```
+HEAD    Speaker 2  : Marco 1302.7  Andreas 147.9  Alexander 24.1  Dirk 34.8
+        Speaker 11 : Marco  128.0  Andreas 403.9  Alexander 98.5
+        …plus 12 more labels holding 1–25 s each
+
+END     Speaker 1  : Marco 1559.7  Andreas   3.6                      → 99.8 % pure
+        Speaker 10 :               Andreas 570.6  Alexander 142.1
+        Speaker 13 : Dirk    81.6                                     → pure
+        Speaker 8  : Martin   9.1                                     → pure
+```
+
+Marco was split across two labels and Andreas's label held 128 s of Marco; afterwards Marco's label is
+99.8 % Marco. **I predicted this could not happen** — "nothing in Tasks 2–6 touches which voice matches
+which centroid" — and that was wrong in a way worth naming. Task 3 does not change centroids or cluster
+shapes (the 111-pass cluster-count sequence is byte-identical between the runs), but it does change
+`_clusterBySegment`: removing the spurious sub-floor clusters removes them from the greedy
+overlap match, so each new cluster inherits the *right* stable id instead of losing the tie to a
+one-segment mint. The mint path was polluting identity assignment, not cluster geometry. Nine dropped
+corrections on HEAD, all of them permanent mis-attributions, are the second contribution.
+
+So the plan's expectation that Tasks 2–6 are label-count-only was too conservative: they are, on cluster
+geometry, and they are not, on which cluster keeps which label.
+
+### The residue is the deferred defect
+
+`Speaker 10` still holds 142.1 s of Alexander inside Andreas's label. Alexander (204 s of speech) never
+gets a label of his own worth the name — 8 s on `Speaker 7`. That is the cut→threshold loop, untouched
+by design, and it is the next thing to fix.
+
+## Task 7 acceptance — the dump round-trips
+
+Setting both the replay path and the dump path tees the replay itself, so the mechanism is verifiable
+without a live meeting:
+
+```
+run 1  PIA_DEBUG_MEETING_ATTENDEE_AUDIO_FILE=<45 s clip>
+       PIA_DEBUG_MEETING_ATTENDEE_AUDIO_DUMP=<...>\tee.wav
+       → tee-replay.wav : pcm_s16le, 16000 Hz, mono, 47.1 s;  13 VAD segments closed
+
+run 2  PIA_DEBUG_MEETING_ATTENDEE_AUDIO_FILE=<...>\tee-replay.wav
+       → 13 VAD segments closed, 14 utterances, 3 labels
+```
+
+Same segment count out of the dump as out of the original, which is what the tee promises: the WAV and
+the pipeline saw the same stream. (The WAV runs 2 s longer than the clip — AAC decoder priming and
+padding, not the tee.)
+
+**This proves the mechanism, not the thing the task exists for.** These recordings are cloud-mixed
+Teams audio; Pia captures device loopback of a browser tab, with a second D/A→A/D pass and different
+AGC. The delta between the two — how optimistic the `artifacts/` fixture is — still needs one live
+capture with `PIA_DEBUG_MEETING_ATTENDEE_AUDIO_DUMP` set and no replay path. That half stays open.

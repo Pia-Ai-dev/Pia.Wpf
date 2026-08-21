@@ -181,6 +181,13 @@ function Get-RefMask([object]$reference, [double]$step) {
 $step = $OffsetStepSeconds
 $refMask = Get-RefMask $reference $step
 
+# The two anchors give the average rate, but Task.Delay jitter is not uniform, so two runs of the
+# same recording end up on rates ~1.5 % apart — which over 50 minutes is tens of seconds of drift, far
+# more than any offset can absorb. Fit rate and offset together against the reference's own speech
+# mask instead, seeded from the anchors, so each run lands on its true stream mapping and two runs
+# become comparable. Scored by mask overlap, which penalizes speech landing on silence as well as
+# rewarding a hit — a plain hit count is maximized by shoving every segment into the densest speech,
+# and fits visibly worse.
 function Get-MaskScore([object[]]$segments, [bool[]]$refMask, [double]$rate, [double]$offset, [double]$step) {
     $score = 0
     foreach ($s in $segments) {
@@ -194,13 +201,23 @@ function Get-MaskScore([object[]]$segments, [bool[]]$refMask, [double]$rate, [do
     $score
 }
 
-$best = @{ Offset = 0.0; Score = [int]::MinValue }
-$sweep = [int]($OffsetSearchSeconds / $step)
-for ($o = -$sweep; $o -le $sweep; $o++) {
-    $candidate = $o * $step
-    $score = Get-MaskScore $segments $refMask $rate $candidate $step
-    if ($score -gt $best.Score) { $best = @{ Offset = $candidate; Score = $score } }
+$anchorRate = $rate
+$best = @{ Offset = 0.0; Rate = $anchorRate; Score = [int]::MinValue }
+# Coarse joint pass, then refine the offset at full resolution around the winner.
+foreach ($m in -10..10) {
+    $candidateRate = $anchorRate * (1.0 + $m * 0.001)
+    for ($o = -24; $o -le 24; $o++) {
+        $candidateOffset = $o * 0.25
+        $s = Get-MaskScore $segments $refMask $candidateRate $candidateOffset $step
+        if ($s -gt $best.Score) { $best = @{ Offset = $candidateOffset; Rate = $candidateRate; Score = $s } }
+    }
 }
+for ($o = -10; $o -le 10; $o++) {
+    $candidateOffset = $best.Offset + $o * $step
+    $s = Get-MaskScore $segments $refMask $best.Rate $candidateOffset $step
+    if ($s -gt $best.Score) { $best.Offset = $candidateOffset; $best.Score = $s }
+}
+$rate = $best.Rate
 $fitted = $best.Offset
 $pinned = -not [double]::IsNaN($Offset)
 $offset = if ($pinned) { $Offset } else { $fitted }
@@ -276,9 +293,9 @@ $expected = @($passes | ForEach-Object { $_.Expected } | Sort-Object -Unique)
 
 Write-Host ''
 Write-Host "Replay  : $($reference.layout)  ($LogPath, run $(if ($RunIndex -lt 0) { 'last' } else { $RunIndex }))"
-Write-Host ("Pacing  : {0:N1} s of audio in {1} s wall clock → rate {2:N3}x{3}" -f `
-    $refDuration, $(if ($elapsed) { [Math]::Round($elapsed, 1) } else { 'n/a' }), $rate,
-    $(if ($tEnd) { '' } else { '  (no EOF marker — rate assumed 1.0)' }))
+Write-Host ("Pacing  : {0:N1} s of audio in {1} s wall clock → anchor rate {2:N4}x, fitted {3:N4}x{4}" -f `
+    $refDuration, $(if ($elapsed) { [Math]::Round($elapsed, 1) } else { 'n/a' }), $anchorRate, $rate,
+    $(if ($tEnd) { '' } else { '  (no EOF marker — anchor rate assumed 1.0)' }))
 Write-Host ("Align   : offset {0:N2} s{1}, speech-mask agreement {2:P1}" -f `
     $offset, $(if ($pinned) { " (PINNED; best fit was $([Math]::Round($fitted, 2)) s)" } else { '' }), $agreement)
 Write-Host ''
@@ -292,9 +309,11 @@ Write-Host "  distinct labels in the transcript: $($finalLabels.Count)   [$(($fi
 Write-Host "  true talkers in the recording   : $($reference.speakers.Count)"
 Write-Host ''
 Write-Host "RETRO-CORRECTIONS"
-Write-Host "  emitted            : $($corrections.Count)"
-Write-Host "  reached a bubble   : $(($corrections | Where-Object { $_.Applied }).Count)"
-Write-Host "  lost (not journaled yet): $(($corrections | Where-Object { -not $_.Applied }).Count)"
+Write-Host "  emitted                          : $($corrections.Count)"
+Write-Host "  matched an utterance already seen: $(($corrections | Where-Object { $_.Applied }).Count)"
+# The log line cannot say which happened — it reports "the ViewModel had not journaled this segment",
+# and what follows from that is the build's business: dropped before the parking fix, parked after.
+Write-Host "  aimed at a segment still in flight: $(($corrections | Where-Object { -not $_.Applied }).Count) (dropped pre-fix, parked post-fix)"
 Write-Host ''
 Write-Host "ATTRIBUTION  (segment midpoint vs the recording's active-speaker indicator)"
 if ($scored -gt 0) {
