@@ -81,6 +81,11 @@ afterwards. Whole-plan acceptance #5 asks for attribution to be *reported*, not 
 * If accuracy moves more than a few points in either direction, that is an unplanned side effect to
   understand before merging, not a win.
 
+**How this prediction held up: partly wrong, and in an interesting place.** The cascade it feared did
+not happen — cluster geometry is byte-identical. But accuracy moved ~18 points on the LSP recording for
+a mechanism the prediction explicitly ruled out. See "Why it moved, which contradicts the prediction"
+below before treating anything in this section as the conclusion.
+
 ## HEAD + Task 1a — workshop
 
 ```
@@ -135,9 +140,18 @@ Three things worth reading off this rather than the headline:
 
 ## Still open
 
+* **Nothing here has been through a real meeting.** Every number in this document comes from a replay
+  against `DebugNoOpMeetingSession`: the roster arrives from an env var, `TeamsMeetingSession` never
+  runs, and the six new AutomationIds have only ever been driven by `Invoke-MeetingReplay.ps1`. The
+  renumbering in particular has never been *seen* — the metric reads service-side labels, and the
+  replay script clicks Stop but never Save. **This needs a human smoke test before it is trusted**, and
+  it is the one acceptance item genuinely outstanding.
 * **The cut → threshold feedback loop.** Deliberately deferred, and it is what decides accuracy. The
   baseline shows why: `_matchSimilarity` is re-derived from the dendrogram cut every pass, and the two
-  quietest talkers never earned a label of their own at any cut the run visited.
+  quietest talkers never earned a label of their own at any cut the run visited. **The fixture is now
+  the arbiter for it** — which was the whole reason for deferring — and the LSP confusion matrix is its
+  best input: `Speaker 10` holds 142 s of Alexander inside Andreas's label while Alexander's own label
+  holds 8 s.
 * **Embedding discriminability.** CAM++ `zh_en` on German over the Teams codec. Unblocked now: the
   fixture makes a model A/B a measurable one-line experiment.
 * **The loopback-fidelity delta.** `PIA_DEBUG_MEETING_ATTENDEE_AUDIO_DUMP` proves the tee works, but

@@ -1012,6 +1012,30 @@ public class MeetingAttendeeViewModelTests
         Assert.Equal(["Speaker 9", "Speaker 4"], vm.Bubbles.Select(b => b.SpeakerLabel));
     }
 
+    /// <summary>
+    /// Segment ids stay monotonic across the diarizer's Reset while its labels restart at "Speaker 1",
+    /// so anything the ViewModel keeps keyed by segment id or by label has to go at meeting start —
+    /// otherwise the next meeting's first speaker inherits the last one's number, or worse, its label.
+    /// </summary>
+    [Fact]
+    public async Task StartingASecondMeeting_CarriesNoNumberingOrParkedCorrectionOver()
+    {
+        var (vm, _) = CreateSut();
+        Utter(vm, "Speaker 4", "a", 0, segmentId: 10);
+        Utter(vm, "Speaker 9", "b", 30, segmentId: 11);
+        vm.ApplyReassignments([new SpeakerReassignment(99, "Speaker 9")]);   // parked, never claimed
+
+        vm.MeetingUrl = ValidUrl;
+        vm.ConsentAcknowledged = true;
+        await vm.StartCommand.ExecuteAsync(null);
+
+        Utter(vm, "Speaker 1", "c", 0, segmentId: 99);
+
+        var bubble = Assert.Single(vm.Bubbles);
+        Assert.Equal("Speaker 1", bubble.SpeakerLabel);   // the stale parked correction did not apply
+        Assert.Equal("Speaker 1", bubble.DisplayLabel);   // numbering restarted at 1
+    }
+
     [Fact]
     public void DisplayLabel_LeavesARenamedSpeakerAlone()
     {
