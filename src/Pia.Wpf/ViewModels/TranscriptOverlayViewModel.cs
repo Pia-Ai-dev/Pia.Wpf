@@ -388,8 +388,9 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     private void TrimPendingReassignments()
     {
         if (_pendingReassignments.Count <= JournalCap) return;
-        foreach (var id in _pendingReassignments.Keys.Order().Take(_pendingReassignments.Count - JournalCap))
-            _pendingReassignments.Remove(id);
+        // Materialize before removing: iterating the live key view while mutating it is undefined.
+        var dead = _pendingReassignments.Keys.Order().Take(_pendingReassignments.Count - JournalCap).ToArray();
+        foreach (var id in dead) _pendingReassignments.Remove(id);
     }
 
     /// <summary>Clears the visible transcript AND its journal — they must never diverge.</summary>

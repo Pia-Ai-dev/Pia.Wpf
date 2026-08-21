@@ -942,6 +942,33 @@ public class MeetingAttendeeViewModelTests
         Assert.Empty(stale);
     }
 
+    [Fact]
+    public void Reassignment_ForASegmentNotYetSeen_IsAppliedWhenItsUtteranceArrives()
+    {
+        var (vm, _) = CreateSut();
+
+        // Production order: the pass corrects the segment it is running inside, seconds before that
+        // segment finishes transcribing and becomes an utterance.
+        vm.ApplyReassignments([new SpeakerReassignment(7, "Speaker 2")]);
+        Utter(vm, "Speaker 1", "a", 0, segmentId: 7);
+
+        var bubble = Assert.Single(vm.Bubbles);
+        Assert.Equal("Speaker 2", bubble.SpeakerLabel);
+    }
+
+    [Fact]
+    public void Reassignment_ClearingALabel_LeavesTheBubbleUnlabelled()
+    {
+        var (vm, _) = CreateSut();
+        Utter(vm, "Speaker 3", "a", 0, segmentId: 1);
+
+        // A pass that drops the cluster a segment pointed at says so with no label at all, rather
+        // than confidently moving it onto a different voice.
+        vm.ApplyReassignments([new SpeakerReassignment(1, null)]);
+
+        Assert.Null(Assert.Single(vm.Bubbles).SpeakerLabel);
+    }
+
     // ---- display renumbering ----------------------------------------------------------------------
 
     [Fact]
