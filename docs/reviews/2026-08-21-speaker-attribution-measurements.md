@@ -121,3 +121,116 @@ Three things worth reading off this rather than the headline:
    the 2026-08-21 live log and by a unit test that fails without the fix — but it did not fire here.
    It needs a pass to move the *triggering* segment specifically, and in this replay none did. Worth
    stating plainly: this recording does not exercise that defect.
+
+## Where this diverged from the plan, and why
+
+| Plan said | What shipped |
+|---|---|
+| Task 2's invariant "fails on HEAD and passes after Task 3" — the cheapest hypothesis being that a gated segment is never iterated | **The cheapest hypothesis is wrong** and the log rules it out: on the parent commit `RunPassUnderLock` writes every `gatedCluster` straight back into `newLabelByCluster`, so a sub-floor segment's label *cannot* be the one that vanishes. The real mechanism is the correction/utterance race, and the fix is in the ViewModel. Task 5's hard gate therefore depended on that, not on Task 3. Full argument in the diagnosis. |
+| Task 3: deleting the `gatedClusters` carry-over leaves dead code behind | It leaves a **new** way to break the same invariant. "A cluster whose only members are sub-floor cannot exist" does not hold: a cluster minted by an eligible segment can lose every eligible member to a later pass while a sub-floor segment still points at it, and with the carry-over gone that cluster is droppable. So the pass now also sweeps dangling `_clusterBySegment` entries and clears their label. That made `SpeakerReassignment.NewLabel` nullable — the symmetric partner of Task 3's own `SpeakerSegmentResult.Label` change, not a second unrelated one. |
+| Task 5 lists the two overlays' bindings, `BuildMarkdown` and `DefaultAttendees` | Also `DirectTranscriptMarkdown`, which both overlays use for the **vault** copy — the one that gets ingested and summarized. Leaving it out would have shown Speaker 3 in the export and Speaker 17 in the vault. The `voiceStats:` block is keyed by the diarizer's label rather than a bubble, so it maps through the bubbles to stay consistent inside one document. |
+| Task 7 names the type `DebugWavTeeAudioCaptureSource` | `DebugWavTeeAudioCaptureService`. `NamingConventionTests` requires an approved suffix and `Source` is not one; its three siblings (`Mic`/`Loopback`/`DebugFile`) all end in `Service`. |
+| Task 1: "three pieces, none of which touches production code paths" | Two small additions were unavoidable. **Three log lines** (the per-segment label, a pass's reassignment pairs, and what the ViewModel did with them) — without them a replay's labels are not recoverable from the log and there is no metric at all. **Six AutomationIds** on the attendee join form, because it had none and the playbook's own rule is not to fall back to pixel-offset clicking; that is what makes the replay a script instead of a manual click-through. |
+| Optional: an unlabelled-transcript switch | Left out. The plan marks the default as an owner call, and it is the one item here that changes what users see rather than what the code does. Still worth doing: on this recording two of four talkers never got a label of their own, so the summary will confidently mis-attribute them. |
+
+## Still open
+
+* **The cut → threshold feedback loop.** Deliberately deferred, and it is what decides accuracy. The
+  baseline shows why: `_matchSimilarity` is re-derived from the dendrogram cut every pass, and the two
+  quietest talkers never earned a label of their own at any cut the run visited.
+* **Embedding discriminability.** CAM++ `zh_en` on German over the Teams codec. Unblocked now: the
+  fixture makes a model A/B a measurable one-line experiment.
+* **The loopback-fidelity delta.** `PIA_DEBUG_MEETING_ATTENDEE_AUDIO_DUMP` proves the tee works, but
+  the recordings are cloud-mixed Teams audio and Pia captures device loopback. Only a live capture
+  produces the number that says how optimistic this fixture is.
+* **The consent gate is still absent from the attendee path**, as the assessment found. Unchanged here.
+
+## End state — workshop
+
+```
+Align   : offset 0.90 s, speech-mask agreement 81.5 %
+Segments: 234 emitted, 234 transcribed, 28 below the diarization floor
+Passes  : 42, expected=10   ← cluster-count sequence byte-identical to the baseline
+
+LABEL COUNT
+  distinct labels ever registered  : 10   (was 12)
+  distinct labels in the final pass:  5   (was 7)   [1, 2, 4, 5, 10]
+  distinct labels in the transcript:  5   (was 7)
+  true talkers in the recording    :  4
+
+RETRO-CORRECTIONS
+  emitted: 38    reached a bubble: 38    lost: 0
+
+ATTRIBUTION
+  scored 159 segments (565.2 s) — 91.2 % by segment, 91.9 % by duration
+  unlabelled (no placeable speaker): 37   (was 28)
+```
+
+### What actually changed, measured without the reference
+
+The two runs emit the same 234 segments with the same sample counts and the same 42-pass
+cluster-count sequence, so a direct label diff needs no reference and no alignment at all:
+
+```
+206 diarized segments in both runs
+  190 carry an identical label   (92.2 %)
+   16 changed — every one of them off a label that only existed because of the mint bug:
+        7 × Speaker 7  → no label / Speaker 10
+        3 × Speaker 11 → no label / Speaker 2
+        2 × Speaker 6  → no label / Speaker 2
+        4 × folded into an existing cluster
+```
+
+That is the honest statement of the code's effect: **16 of 206 labels moved, all of them off
+sub-floor mints, and the clustering trajectory did not change.**
+
+### The accuracy delta is not worth 12 points, and the fixture says so
+
+79.0 % → 91.2 % is the headline, and most of it is not the fix. Scoring both logs at both offsets:
+
+| pinned offset | HEAD | end state |
+|---|---|---|
+| −2.95 s (HEAD's own fit) | **79.0 %** | 71.8 % |
+| +0.90 s (end state's own fit) | 70.4 % | **91.2 %** |
+
+Each run scores best at its own fitted offset and ~8 points worse at the other's, so the offset is a
+property of the *run*, not of the recording: `Task.Delay` pacing jitter is not uniform, and a
+two-anchor linear map leaves a time-varying residual that a single offset can only compromise on.
+
+Decomposing by duration instead, which needs no cross-run alignment: the baseline's `Speaker 7` and
+`Speaker 11` held 22.9 s of speech and mapped to no reference speaker at all, so every second of it
+scored wrong. Removing exactly that from the baseline's own numbers gives 413.8 / (497.4 − 22.9) =
+**87.2 %**, i.e. about **+4 points by duration is attributable to the fix**, and the remaining ~5 is
+alignment residual. That is consistent with the prediction above — a denominator effect — and *not*
+with the centroid cascade, which the identical cluster sequence rules out.
+
+**Fixture limitation to fix before the next comparison:** `DebugFileAudioCaptureService` logs only
+"playing" and "finished playing", so the wall-clock→stream map has two anchors and no way to follow
+drift. A periodic hop-count line (as `BrowserAudioCaptureService` already emits) would make the map
+piecewise-exact and remove this term entirely. Until then, treat a cross-run attribution delta under
+~8 points as noise, and read the label counts and the label diff instead — both are exact.
+
+**A bug found in the metric script while doing this, worth knowing:** the structured logger renders a
+null label as the literal `(null)`, which the parser first counted as a real speaker. It inflated the
+end state's label count by one and scored its unplaceable segments as wrong. Fixed; every number above
+is post-fix.
+
+## Does the STT engine matter here?
+
+Measured, because it is a reasonable thing to want to speed up:
+
+* **Whisper medium is not the bottleneck and switching it saves nothing.** 773.5 s of speech
+  transcribed in 803.7 s of engine time (1.04x real time), inside a replay whose wall clock is set by
+  `DebugFileAudioCaptureService`'s per-hop `Task.Delay` at 0.836x. Transcription had headroom
+  throughout and produced **zero** empty results in 234 segments.
+* **Text quality is almost irrelevant to what this fixture measures.** `IdentifyOrRegisterSegment`
+  runs *before* `TranscribeAsync` on the same samples, so segmentation, embeddings, clustering, cuts,
+  minting and the roster ceiling are all upstream of the text.
+* Two exceptions, both arguing for keeping the stronger model. An **empty** transcription suppresses
+  the utterance entirely, so a weaker model silently shrinks the scored set. And transcription
+  *latency* is the width of the correction/utterance race window, and it also decides when the
+  diarizer's 30 s wall-clock pass trigger fires — 4 of this run's 41 pass intervals came from that
+  trigger rather than the segment stride, and they landed identically in both runs at the same model.
+* The lever that would actually shorten a replay is a rate multiplier on that `Task.Delay`. It is not
+  free: at 4x the 30 s latency trigger essentially stops firing, so the pass sequence changes. Fine
+  for a smoke test, not for a number that goes in this document.

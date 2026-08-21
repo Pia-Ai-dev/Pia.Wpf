@@ -32,6 +32,10 @@ param(
     [int]$RunIndex = -1,
     [double]$OffsetSearchSeconds = 4.0,
     [double]$OffsetStepSeconds = 0.05,
+    # Pin the alignment instead of fitting it. Two runs of the same recording do not pace identically,
+    # so their best-fit offsets differ by seconds — and comparing accuracy across a moved offset
+    # compares two different questions. Pin it to compare a code change.
+    [double]$Offset = [double]::NaN,
     [string]$NameMapPath
 )
 
@@ -81,7 +85,10 @@ for ($i = $from; $i -le $to; $i++) {
         $engineStarts.Add(@{ Stamp = Get-Stamp $line; Samples = [int]$Matches[1] }); continue
     }
     if ($line -match 'Segment identified: seg=(\d+) label=(.*) samples=(\d+)$') {
-        $identified.Add(@{ SegId = [long]$Matches[1]; Label = $Matches[2]; Samples = [int]$Matches[3] }); continue
+        # The structured logger renders a null label as the literal "(null)" — an unplaceable segment,
+        # not a speaker called that.
+        $seen = if ($Matches[2] -eq '(null)') { $null } else { $Matches[2] }
+        $identified.Add(@{ SegId = [long]$Matches[1]; Label = $seen; Samples = [int]$Matches[3] }); continue
     }
     if ($line -match 'Engine done: \w+ \d+ms') { $outcomes.Add('text'); continue }
     if ($line -match 'Engine produced empty result') { $outcomes.Add('empty'); continue }
@@ -173,10 +180,8 @@ function Get-RefMask([object]$reference, [double]$step) {
 
 $step = $OffsetStepSeconds
 $refMask = Get-RefMask $reference $step
-$best = @{ Offset = 0.0; Score = -1 }
-$sweep = [int]($OffsetSearchSeconds / $step)
-for ($o = -$sweep; $o -le $sweep; $o++) {
-    $offset = $o * $step
+
+function Get-MaskScore([object[]]$segments, [bool[]]$refMask, [double]$rate, [double]$offset, [double]$step) {
     $score = 0
     foreach ($s in $segments) {
         $end = $s.Closed * $rate + $offset
@@ -186,12 +191,23 @@ for ($o = -$sweep; $o -le $sweep; $o++) {
             if ($refMask[$k]) { $score++ } else { $score-- }
         }
     }
-    if ($score -gt $best.Score) { $best = @{ Offset = $offset; Score = $score } }
+    $score
 }
-$offset = $best.Offset
+
+$best = @{ Offset = 0.0; Score = [int]::MinValue }
+$sweep = [int]($OffsetSearchSeconds / $step)
+for ($o = -$sweep; $o -le $sweep; $o++) {
+    $candidate = $o * $step
+    $score = Get-MaskScore $segments $refMask $rate $candidate $step
+    if ($score -gt $best.Score) { $best = @{ Offset = $candidate; Score = $score } }
+}
+$fitted = $best.Offset
+$pinned = -not [double]::IsNaN($Offset)
+$offset = if ($pinned) { $Offset } else { $fitted }
+$score = if ($pinned) { Get-MaskScore $segments $refMask $rate $offset $step } else { $best.Score }
 $speechSamples = 0
 foreach ($s in $segments) { $speechSamples += [int][Math]::Ceiling($s.Duration / $step) }
-$agreement = if ($speechSamples -gt 0) { ($best.Score + $speechSamples) / (2.0 * $speechSamples) } else { 0 }
+$agreement = if ($speechSamples -gt 0) { ($score + $speechSamples) / (2.0 * $speechSamples) } else { 0 }
 
 # ---- Score --------------------------------------------------------------------------------------
 
@@ -263,7 +279,8 @@ Write-Host "Replay  : $($reference.layout)  ($LogPath, run $(if ($RunIndex -lt 0
 Write-Host ("Pacing  : {0:N1} s of audio in {1} s wall clock → rate {2:N3}x{3}" -f `
     $refDuration, $(if ($elapsed) { [Math]::Round($elapsed, 1) } else { 'n/a' }), $rate,
     $(if ($tEnd) { '' } else { '  (no EOF marker — rate assumed 1.0)' }))
-Write-Host ("Align   : offset {0:N2} s, speech-mask agreement {1:P1}" -f $offset, $agreement)
+Write-Host ("Align   : offset {0:N2} s{1}, speech-mask agreement {2:P1}" -f `
+    $offset, $(if ($pinned) { " (PINNED; best fit was $([Math]::Round($fitted, 2)) s)" } else { '' }), $agreement)
 Write-Host ''
 Write-Host "Segments: $($segments.Count) emitted, $(($segments | Where-Object { $_.Outcome -eq 'text' }).Count) transcribed, $(($segments | Where-Object { $null -eq $_.SegId }).Count) below the diarization floor"
 Write-Host "Passes  : $($passes.Count), expected=$($expected -join '/'), clusters $(($passes | ForEach-Object { $_.Clusters }) -join ',')"
