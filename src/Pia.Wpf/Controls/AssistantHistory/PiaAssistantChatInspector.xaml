@@ -58,7 +58,7 @@
                      Command="{Binding DataContext.ExportChatCommand, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"/>
 
           <ui:Button Grid.Row="0" Grid.Column="3"
-                     Icon="{ui:SymbolIcon Symbol=ArrowExport20}"
+                     Icon="{ui:SymbolIcon Symbol=ArrowExportLtr20}"
                      Appearance="Transparent"
                      ToolTip="{loc:Str AssistantHistory_ExportArchive}"
                      Margin="6,0,0,0"

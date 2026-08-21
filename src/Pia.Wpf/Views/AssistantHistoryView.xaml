@@ -75,7 +75,7 @@
                  ToolTip="{loc:Str AssistantHistory_ExportAllTooltip}"
                  AutomationProperties.AutomationId="AssistantHistory_ExportAll">
         <StackPanel Orientation="Horizontal">
-          <ui:SymbolIcon Symbol="ArrowExport24" FontSize="16" Margin="0,0,6,0"/>
+          <ui:SymbolIcon Symbol="ArrowExportLtr24" FontSize="16" Margin="0,0,6,0"/>
           <TextBlock Text="{loc:Str AssistantHistory_ExportAll}"/>
         </StackPanel>
       </ui:Button>
