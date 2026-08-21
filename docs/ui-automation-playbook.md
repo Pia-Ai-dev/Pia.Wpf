@@ -37,6 +37,8 @@ Companion to `docs/2026-08-16-ui-automation-gaps.md` (the findings that motivate
 | Template dialog | `TemplateEdit_Name`, `TemplateEdit_StyleDescription`, `TemplateEdit_GeneratedPrompt` |
 | Provider dialog | `ProviderEdit_Name`, `ProviderEdit_ProviderType`, `ProviderEdit_Endpoint` |
 | Edit dialogs (shared) | `PrimaryButton` (Save), `CloseButton` (Cancel), `Dialog_RequiredHint` |
+| Page-header help hints | `Routines_Help`, `Assignments_Help`, `History_Help`, `AssistantHistory_Help`, `Memory_Help`, `Todo_Help`, `Reminders_Help` |
+| Settings help hints | `Settings_ToolPermissions_Page_Help` (tab intro), `Settings_ToolPermissions_Session_Help` (session tier), `Settings_ToolPermissions_Help` (always-allowed list), `Settings_MeetingBrowser_Help`, `Settings_Agent_Roster_Help`, `Settings_Scheduled_Help` |
 
 Built-in personas expose only `Persona_Duplicate_<guid>`; edit/delete exist for user personas
 only. Use `automationId*=Persona_Edit_` to enumerate the editable ones.
@@ -48,6 +50,13 @@ back instead of hardcoding one. The
 rest are stable strings you can write literally: the voice key (`en_US-lessac-medium`), the tool
 name, and for the PII rows the keyword you just typed. Tool name is *not* unique, so two plugins
 exposing the same tool produce the same id twice.
+
+The help hints (`PiaHelpHint`) render their text only in a hover tooltip, which is a separate
+popup HWND — a window-scoped `ww_screenshot` will not contain it, and `ww_list_windows` does not
+enumerate it. Read the text with `ww_inspect(action="attribute", property="HelpText")`, which
+returns it without hovering at all. If you do need the rendered tooltip in an image, the window
+must be foreground (`ww_window activate`) and the mouse must *enter* the element, so hover
+somewhere else first; capture the screen region rather than the window.
 
 Some settings ids are absent from the tree, not merely hidden, until the state that renders them:
 `Settings_General_WhisperModel` / `_DownloadWhisperModel` need Whisper selected in
