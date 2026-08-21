@@ -7,6 +7,7 @@
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:nav="clr-namespace:Pia.Navigation"
              xmlns:vm="clr-namespace:Pia.ViewModels.Models"
+             xmlns:shared="clr-namespace:Pia.Controls.Shared"
              mc:Ignorable="d"
              d:DesignHeight="700" d:DesignWidth="1100"
              nav:ViewModelLocator.AutoWireViewModel="True">
@@ -69,16 +70,10 @@
 
       <StackPanel Grid.Column="0" VerticalAlignment="Center">
         <TextBlock Text="{loc:Str Assignments_Title}"
-                   FontSize="20"
-                   FontWeight="SemiBold"
-                   Foreground="{DynamicResource TextDefaultBrush}"/>
+                   Style="{StaticResource PiaPageTitleStyle}"/>
         <TextBlock Text="{loc:Str Assignments_Subtitle}"
-                   Margin="0,4,0,0"
-                   FontSize="12"
-                   TextWrapping="Wrap"
-                   MaxWidth="560"
-                   HorizontalAlignment="Left"
-                   Foreground="{DynamicResource TextMutedBrush}"/>
+                   Style="{StaticResource PiaPageSubtitleStyle}"
+                   MaxWidth="560"/>
       </StackPanel>
 
       <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -96,15 +91,11 @@
     </Grid>
 
     <Border Grid.Row="1"
+            Style="{StaticResource PiaStatusBannerStyle}"
             Margin="24,0,24,12"
-            Padding="12,8"
-            CornerRadius="6"
-            Background="{DynamicResource SurfaceMutedBrush}"
             Visibility="{Binding HasNotice, Converter={StaticResource BooleanToVisibilityConverter}}">
       <TextBlock Text="{Binding Notice}"
-                 FontSize="12"
-                 TextWrapping="Wrap"
-                 Foreground="{DynamicResource TextSubtleBrush}"/>
+                 Style="{StaticResource PiaDetailValueStyle}"/>
     </Border>
 
     <ScrollViewer Grid.Row="2"
@@ -119,23 +110,10 @@
                          Margin="0,60,0,0"
                          Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
-        <StackPanel HorizontalAlignment="Center"
-                    VerticalAlignment="Top"
-                    Margin="0,60,0,0"
-                    Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
-          <ui:SymbolIcon Symbol="Rocket24"
-                         FontSize="48"
-                         HorizontalAlignment="Center"
-                         Margin="0,0,0,16"
-                         Foreground="{DynamicResource PiaAccentBrush}"/>
-          <TextBlock Text="{loc:Str Assignments_EmptyState}"
-                     FontSize="14"
-                     HorizontalAlignment="Center"
-                     TextAlignment="Center"
-                     MaxWidth="380"
-                     TextWrapping="Wrap"
-                     Foreground="{DynamicResource TextMutedBrush}"/>
-        </StackPanel>
+        <shared:PiaEmptyState Symbol="Rocket24"
+                              Title="{loc:Str Assignments_EmptyState}"
+                              MaxTextWidth="380"
+                              Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
         <ItemsControl ItemsSource="{Binding Rows}">
           <ItemsControl.ItemsPanel>
@@ -165,12 +143,10 @@
                     </StackPanel>
 
                     <TextBlock Text="{Binding Prompt}"
+                               Style="{StaticResource PiaDetailValueStyle}"
                                Margin="0,8,0,0"
-                               FontSize="12"
-                               TextWrapping="Wrap"
                                MaxHeight="54"
                                TextTrimming="CharacterEllipsis"
-                               Foreground="{DynamicResource TextSubtleBrush}"
                                Visibility="{Binding HasPrompt, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
                     <TextBlock Text="{loc:Str Assignments_OtherDevice}"
@@ -182,17 +158,12 @@
 
                     <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                       <TextBlock Text="{Binding StepCountLabel}"
-                                 FontSize="11"
-                                 Foreground="{DynamicResource TextMutedBrush}"
+                                 Style="{StaticResource PiaMetaTextStyle}"
                                  Visibility="{Binding HasSteps, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                      <TextBlock Text="·"
-                                 Margin="6,0"
-                                 FontSize="11"
-                                 Foreground="{DynamicResource TextGhostBrush}"
+                      <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"
                                  Visibility="{Binding HasSteps, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                       <TextBlock Text="{Binding ElapsedLabel}"
-                                 FontSize="11"
-                                 Foreground="{DynamicResource TextMutedBrush}"/>
+                                 Style="{StaticResource PiaMetaTextStyle}"/>
                     </StackPanel>
                   </StackPanel>
 

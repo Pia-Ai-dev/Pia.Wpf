@@ -3,8 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:mem="clr-namespace:Pia.Controls.Memory"
+             xmlns:shared="clr-namespace:Pia.Controls.Shared"
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:nav="clr-namespace:Pia.Navigation"
              mc:Ignorable="d"
@@ -34,25 +34,11 @@
 
       <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
         <Grid>
-          <StackPanel HorizontalAlignment="Center"
-                      VerticalAlignment="Top"
-                      Margin="0,60,0,0"
-                      Visibility="{Binding MemoryGroups.Count, Converter={StaticResource ZeroToVisibilityConverter}}">
-            <ui:SymbolIcon Symbol="BrainCircuit24"
-                           FontSize="48"
-                           HorizontalAlignment="Center"
-                           Margin="0,0,0,16"
-                           Foreground="{DynamicResource TextSubtleBrush}"/>
-            <TextBlock Text="{loc:Str Memory_EmptyState}"
-                       FontSize="14"
-                       HorizontalAlignment="Center"
-                       Foreground="{DynamicResource TextMutedBrush}"/>
-            <TextBlock Text="{loc:Str Memory_EmptyStateHint}"
-                       FontSize="12"
-                       HorizontalAlignment="Center"
-                       Margin="0,4,0,0"
-                       Foreground="{DynamicResource TextSubtleBrush}"/>
-          </StackPanel>
+          <shared:PiaEmptyState Symbol="BrainCircuit24"
+                                IconBrush="{DynamicResource TextSubtleBrush}"
+                                Title="{loc:Str Memory_EmptyState}"
+                                Hint="{loc:Str Memory_EmptyStateHint}"
+                                Visibility="{Binding MemoryGroups.Count, Converter={StaticResource ZeroToVisibilityConverter}}"/>
 
           <ItemsControl ItemsSource="{Binding MemoryGroups}">
             <ItemsControl.ItemsPanel>

@@ -6,9 +6,65 @@
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:nav="clr-namespace:Pia.Navigation"
+             xmlns:models="clr-namespace:Pia.Models"
+             xmlns:shared="clr-namespace:Pia.Controls.Shared"
              mc:Ignorable="d"
              d:DesignHeight="700" d:DesignWidth="1200"
              nav:ViewModelLocator.AutoWireViewModel="True">
+  <UserControl.Resources>
+    <Style x:Key="RoutineStatusPillStyle" TargetType="Border" BasedOn="{StaticResource PiaLabelChipStyle}">
+      <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}"/>
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding Status}" Value="{x:Static models:ScheduledJobStatus.Active}">
+          <Setter Property="Background" Value="{DynamicResource PiaAccentSoftBrush}"/>
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Status}" Value="{x:Static models:ScheduledJobStatus.Completed}">
+          <Setter Property="Background" Value="{DynamicResource SuccessSoftBrush}"/>
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Status}" Value="{x:Static models:ScheduledJobStatus.Failed}">
+          <Setter Property="Background" Value="{DynamicResource DangerSoftBrush}"/>
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+
+    <Style x:Key="RoutineStatusTextStyle" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding Status}" Value="{x:Static models:ScheduledJobStatus.Active}">
+          <Setter Property="Foreground" Value="{DynamicResource PiaAccentBrush}"/>
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Status}" Value="{x:Static models:ScheduledJobStatus.Completed}">
+          <Setter Property="Foreground" Value="{DynamicResource PiaSuccessBrush}"/>
+        </DataTrigger>
+        <DataTrigger Binding="{Binding Status}" Value="{x:Static models:ScheduledJobStatus.Failed}">
+          <Setter Property="Foreground" Value="{DynamicResource PiaDangerBrush}"/>
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+
+    <!-- Cursor belongs on the template Border, not the container: set on a ListBoxItem it inherits
+         into the content and cannot be taken back. -->
+    <Style x:Key="RoutineRowStyle" TargetType="Border" BasedOn="{StaticResource PiaCardStyle}">
+      <Setter Property="Padding" Value="14,12"/>
+      <Setter Property="Margin" Value="0,0,0,10"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Style.Triggers>
+        <Trigger Property="IsMouseOver" Value="True">
+          <Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}"/>
+        </Trigger>
+        <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}"
+                     Value="True">
+          <Setter Property="Background" Value="{DynamicResource PiaAccentSoftBrush}"/>
+          <Setter Property="BorderBrush" Value="{DynamicResource PiaAccentBrush}"/>
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+
+  </UserControl.Resources>
+
   <Grid Background="Transparent">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
@@ -21,31 +77,34 @@
         <ColumnDefinition Width="*"/>
         <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
-      <StackPanel Grid.Column="0">
+      <StackPanel Grid.Column="0" VerticalAlignment="Center">
         <TextBlock Text="{loc:Str Routines_Header}"
-                   FontSize="20"
-                   FontWeight="SemiBold"
-                   Foreground="{DynamicResource TextDefaultBrush}"/>
+                   Style="{StaticResource PiaPageTitleStyle}"/>
         <TextBlock Text="{loc:Str Routines_Description}"
-                   Style="{StaticResource PiaSettingsDescriptionStyle}"
-                   TextWrapping="Wrap"
-                   Margin="0,4,0,0"/>
+                   Style="{StaticResource PiaPageSubtitleStyle}"
+                   MaxWidth="620"/>
       </StackPanel>
       <ui:Button Grid.Column="1"
-                 Content="{loc:Str Routines_New}"
-                 Appearance="Primary"
-                 VerticalAlignment="Top"
+                 Appearance="Secondary"
+                 VerticalAlignment="Center"
+                 ToolTip="{loc:Str Routines_New}"
                  AutomationProperties.AutomationId="Routines_NewJob"
-                 Command="{Binding StartCreateCommand}"/>
+                 Command="{Binding StartCreateCommand}">
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,6,0"/>
+          <TextBlock Text="{loc:Str Routines_New}"/>
+        </StackPanel>
+      </ui:Button>
     </Grid>
 
-    <TextBlock Grid.Row="1"
-               Text="{Binding StatusMessage}"
-               Style="{StaticResource PiaSettingsDescriptionStyle}"
-               TextWrapping="Wrap"
-               Margin="24,0,24,10"
-               AutomationProperties.AutomationId="Routines_StatusMessage"
-               Visibility="{Binding HasStatusMessage, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+    <Border Grid.Row="1"
+            Style="{StaticResource PiaStatusBannerStyle}"
+            Margin="24,0,24,12"
+            Visibility="{Binding HasStatusMessage, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <TextBlock Text="{Binding StatusMessage}"
+                 Style="{StaticResource PiaDetailValueStyle}"
+                 AutomationProperties.AutomationId="Routines_StatusMessage"/>
+    </Border>
 
     <Grid Grid.Row="2" Margin="24,0,24,20">
       <Grid.ColumnDefinitions>
@@ -55,68 +114,62 @@
       </Grid.ColumnDefinitions>
 
       <Grid Grid.Column="0">
-        <StackPanel HorizontalAlignment="Center"
-                    VerticalAlignment="Top"
-                    Margin="0,60,0,0"
-                    Visibility="{Binding HasJobs, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-          <ui:SymbolIcon Symbol="CalendarClock24"
-                         FontSize="48"
+        <ui:ProgressRing IsIndeterminate="True"
+                         Width="40" Height="40"
+                         VerticalAlignment="Top"
                          HorizontalAlignment="Center"
-                         Margin="0,0,0,16"
-                         Foreground="{DynamicResource TextSubtleBrush}"/>
-          <TextBlock Text="{loc:Str Routines_Empty}"
-                     FontSize="14"
-                     HorizontalAlignment="Center"
-                     Foreground="{DynamicResource TextMutedBrush}"/>
-          <TextBlock Text="{loc:Str Routines_EmptyHint}"
-                     FontSize="12"
-                     TextWrapping="Wrap"
-                     TextAlignment="Center"
-                     HorizontalAlignment="Center"
-                     Margin="0,4,0,0"
-                     Foreground="{DynamicResource TextSubtleBrush}"/>
-        </StackPanel>
+                         Margin="0,60,0,0"
+                         Panel.ZIndex="1"
+                         Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
+        <shared:PiaEmptyState Symbol="CalendarClock24"
+                              Title="{loc:Str Routines_Empty}"
+                              Hint="{loc:Str Routines_EmptyHint}"
+                              Visibility="{Binding HasJobs, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
 
         <ListBox ItemsSource="{Binding Jobs}"
                  SelectedItem="{Binding SelectedJob, Mode=TwoWay}"
                  BorderThickness="0"
                  Background="Transparent"
+                 Padding="0,0,4,0"
+                 ItemContainerStyle="{StaticResource PiaMemoryRowItemStyle}"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  AutomationProperties.AutomationId="Routines_JobList"
                  Visibility="{Binding HasJobs, Converter={StaticResource BooleanToVisibilityConverter}}">
-          <ListBox.ItemContainerStyle>
-            <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
-              <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-              <Setter Property="Padding" Value="8"/>
-              <Setter Property="Margin" Value="0,0,0,4"/>
-            </Style>
-          </ListBox.ItemContainerStyle>
           <ListBox.ItemTemplate>
             <DataTemplate>
-              <StackPanel>
-                <TextBlock Text="{Binding Name}"
-                           FontWeight="SemiBold"
-                           TextTrimming="CharacterEllipsis"
-                           Foreground="{DynamicResource TextDefaultBrush}"/>
-                <TextBlock Text="{Binding Query}"
-                           Style="{StaticResource PiaSettingsDescriptionStyle}"
-                           TextTrimming="CharacterEllipsis"
-                           Margin="0,2,0,0"/>
-                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                  <TextBlock Text="{Binding KindLabel}"
-                             Style="{StaticResource PiaSettingsDescriptionStyle}"
-                             Margin="0,0,12,0"/>
-                  <TextBlock Text="{Binding RecurrenceLabel}"
-                             Style="{StaticResource PiaSettingsDescriptionStyle}"
-                             Margin="0,0,12,0"/>
-                  <TextBlock Text="{Binding StatusLabel}"
-                             Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+              <Border Style="{StaticResource RoutineRowStyle}">
+                <StackPanel>
+                  <StackPanel Orientation="Horizontal">
+                    <Border Style="{StaticResource RoutineStatusPillStyle}" Margin="0,0,8,0">
+                      <TextBlock Text="{Binding StatusLabel}" Style="{StaticResource RoutineStatusTextStyle}"/>
+                    </Border>
+                    <TextBlock Text="{Binding Name}"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource TextDefaultBrush}"/>
+                  </StackPanel>
+
+                  <TextBlock Text="{Binding Query}"
+                             Margin="0,8,0,0"
+                             FontSize="12"
+                             TextTrimming="CharacterEllipsis"
+                             Foreground="{DynamicResource TextSubtleBrush}"/>
+
+                  <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <TextBlock Text="{Binding KindLabel}" Style="{StaticResource PiaMetaTextStyle}"/>
+                    <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"/>
+                    <TextBlock Text="{Binding RecurrenceLabel}" Style="{StaticResource PiaMetaTextStyle}"/>
+                    <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"
+                               Visibility="{Binding HasRecentRuns, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    <TextBlock Text="{Binding RecentRunsSummary}"
+                               Style="{StaticResource PiaMetaTextStyle}"
+                               Visibility="{Binding HasRecentRuns, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                  </StackPanel>
                 </StackPanel>
-                <TextBlock Text="{Binding RecentRunsSummary}"
-                           Style="{StaticResource PiaSettingsDescriptionStyle}"
-                           Margin="0,4,0,0"
-                           Visibility="{Binding HasRecentRuns, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-              </StackPanel>
+              </Border>
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
@@ -124,115 +177,143 @@
 
       <!-- Right pane, three states: the editor, the selected job, or the placeholder. -->
       <Border Grid.Column="2"
-              Padding="16"
-              CornerRadius="{StaticResource SmallRadius}"
-              BorderThickness="1"
-              BorderBrush="{DynamicResource ControlStrokeBrush}">
+              Style="{StaticResource PiaCardStyle}"
+              Padding="16">
         <Grid>
-          <TextBlock Text="{loc:Str Routines_Placeholder}"
-                     HorizontalAlignment="Center"
-                     VerticalAlignment="Center"
-                     TextWrapping="Wrap"
-                     TextAlignment="Center"
-                     Foreground="{DynamicResource TextSubtleBrush}"
-                     Visibility="{Binding ShowsPlaceholder, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+          <StackPanel HorizontalAlignment="Center"
+                      VerticalAlignment="Center"
+                      MaxWidth="320"
+                      Visibility="{Binding ShowsPlaceholder, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <ui:SymbolIcon Symbol="CalendarClock24"
+                           FontSize="36"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,12"
+                           Foreground="{DynamicResource PiaAccentBrush}"/>
+            <TextBlock Text="{loc:Str Routines_Placeholder}"
+                       FontSize="13"
+                       HorizontalAlignment="Center"
+                       TextWrapping="Wrap"
+                       TextAlignment="Center"
+                       Foreground="{DynamicResource TextMutedBrush}"/>
+          </StackPanel>
 
           <ScrollViewer VerticalScrollBarVisibility="Auto"
                         Visibility="{Binding ShowsDetail, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <StackPanel>
+            <StackPanel Margin="0,0,10,0">
+              <Border Style="{StaticResource RoutineStatusPillStyle}"
+                      DataContext="{Binding SelectedJob}"
+                      HorizontalAlignment="Left">
+                <TextBlock Text="{Binding StatusLabel}" Style="{StaticResource RoutineStatusTextStyle}"/>
+              </Border>
               <TextBlock Text="{Binding SelectedJob.Name}"
-                         FontSize="16"
+                         FontSize="18"
                          FontWeight="SemiBold"
                          TextWrapping="Wrap"
+                         Margin="0,8,0,0"
                          Foreground="{DynamicResource TextDefaultBrush}"/>
-              <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                <TextBlock Text="{Binding SelectedJob.KindLabel}"
-                           Style="{StaticResource PiaSettingsDescriptionStyle}"
-                           Margin="0,0,12,0"/>
-                <TextBlock Text="{Binding SelectedJob.RecurrenceLabel}"
-                           Style="{StaticResource PiaSettingsDescriptionStyle}"
-                           Margin="0,0,12,0"/>
+              <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                <TextBlock Text="{Binding SelectedJob.KindLabel}" Style="{StaticResource PiaMetaTextStyle}"/>
+                <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"/>
+                <TextBlock Text="{Binding SelectedJob.RecurrenceLabel}" Style="{StaticResource PiaMetaTextStyle}"/>
+                <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"/>
                 <TextBlock Text="{Binding SelectedJob.TimeOfDay, StringFormat=HH\\:mm}"
-                           Style="{StaticResource PiaSettingsDescriptionStyle}"
-                           Margin="0,0,12,0"/>
-                <TextBlock Text="{Binding SelectedJob.StatusLabel}"
-                           Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+                           Style="{StaticResource PiaMetaTextStyle}"/>
               </StackPanel>
 
               <TextBlock Text="{loc:Str Routines_Detail_NextRun}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"
-                         Margin="0,14,0,0"/>
+                         Margin="0,18,0,6"/>
               <TextBlock Text="{Binding SelectedJob.NextFireAt, StringFormat=g}"
-                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         Style="{StaticResource PiaDetailValueStyle}"
                          AutomationProperties.AutomationId="Routines_Detail_NextRun"/>
 
-              <TextBlock Text="{loc:Str Routines_NotOwnedHere}"
-                         Style="{StaticResource PiaSettingsDescriptionStyle}"
-                         FontStyle="Italic"
-                         TextWrapping="Wrap"
-                         Margin="0,8,0,0"
-                         Visibility="{Binding SelectedJob.OwnedByThisDevice, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+              <Border Margin="0,12,0,0"
+                      Padding="12,8"
+                      CornerRadius="6"
+                      Background="{DynamicResource WarnSoftBrush}"
+                      Visibility="{Binding SelectedJob.OwnedByThisDevice, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                <TextBlock Text="{loc:Str Routines_NotOwnedHere}"
+                           FontSize="12"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextSubtleBrush}"/>
+              </Border>
 
               <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Goal}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"
-                         Margin="0,14,0,0"/>
+                         Margin="0,18,0,6"/>
               <TextBlock Text="{Binding SelectedJob.Query}"
-                         Style="{StaticResource PiaSettingsDescriptionStyle}"
-                         TextWrapping="Wrap"/>
+                         Style="{StaticResource PiaDetailValueStyle}"/>
 
               <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_GrantedTools}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"
-                         Margin="0,14,0,0"
+                         Margin="0,18,0,6"
                          Visibility="{Binding SelectedJob.HasGrantedTools, Converter={StaticResource BooleanToVisibilityConverter}}"/>
               <TextBlock Text="{Binding SelectedJob.GrantedTools}"
-                         Style="{StaticResource PiaSettingsDescriptionStyle}"
-                         TextWrapping="Wrap"
+                         Style="{StaticResource PiaDetailValueStyle}"
                          Visibility="{Binding SelectedJob.HasGrantedTools, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
               <TextBlock Text="{loc:Str Routines_Detail_RecentRuns}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"
-                         Margin="0,14,0,0"/>
+                         Margin="0,18,0,6"/>
               <TextBlock Text="{loc:Str Routines_Detail_NeverRun}"
-                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         FontSize="12"
                          FontStyle="Italic"
+                         Foreground="{DynamicResource TextGhostBrush}"
                          Visibility="{Binding SelectedJob.HasRecentRuns, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
               <ItemsControl ItemsSource="{Binding SelectedJob.RecentRuns}"
                             AutomationProperties.AutomationId="Routines_RunHistory">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
-                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                      <TextBlock Text="{Binding SettledAt, StringFormat=g}"
-                                 Style="{StaticResource PiaSettingsDescriptionStyle}"
-                                 Margin="0,0,10,0"/>
-                      <TextBlock Text="{Binding StateLabel}"
-                                 Style="{StaticResource PiaSettingsDescriptionStyle}"
-                                 Margin="0,0,10,0"/>
-                      <!-- A failed firing produced no chat, so the link is hidden rather than dead. -->
-                      <ui:HyperlinkButton Content="{loc:Str Routines_Detail_OpenChat}"
-                                          Padding="0"
-                                          Visibility="{Binding HasChat, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                          Command="{Binding DataContext.OpenRunChatCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                          CommandParameter="{Binding}"/>
-                    </StackPanel>
+                    <Border Background="{DynamicResource SurfaceSunkBrush}"
+                            CornerRadius="6"
+                            Padding="10,6"
+                            Margin="0,0,0,4">
+                      <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding SettledAt, StringFormat=g}"
+                                   Style="{StaticResource PiaMetaTextStyle}"/>
+                        <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"/>
+                        <TextBlock Text="{Binding StateLabel}"
+                                   Style="{StaticResource PiaMetaTextStyle}"
+                                   FontWeight="SemiBold"/>
+                        <!-- A failed firing produced no chat, so the link is hidden rather than dead. -->
+                        <ui:HyperlinkButton Content="{loc:Str Routines_Detail_OpenChat}"
+                                            Padding="0"
+                                            Margin="10,0,0,0"
+                                            FontSize="11"
+                                            VerticalAlignment="Center"
+                                            Visibility="{Binding HasChat, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                            Command="{Binding DataContext.OpenRunChatCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                            CommandParameter="{Binding}"/>
+                      </StackPanel>
+                    </Border>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
 
-              <StackPanel Orientation="Horizontal" Margin="0,18,0,0">
+              <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
                 <ui:Button Content="{loc:Str Settings_ScheduledJobs_Edit}"
-                           Margin="0,0,6,0"
+                           Icon="{ui:SymbolIcon Edit24}"
+                           Appearance="Secondary"
+                           Margin="0,0,8,0"
                            AutomationProperties.AutomationId="Routines_Edit"
                            Command="{Binding StartEditCommand}"/>
                 <ui:Button Content="{Binding SelectedJob.ToggleLabel}"
-                           Margin="0,0,6,0"
+                           Icon="{ui:SymbolIcon Power24}"
+                           Appearance="Secondary"
+                           Margin="0,0,8,0"
                            AutomationProperties.AutomationId="Routines_Toggle"
                            Command="{Binding ToggleEnabledCommand}"/>
                 <ui:Button Content="{loc:Str Settings_ScheduledJobs_RunNow}"
-                           Margin="0,0,6,0"
+                           Icon="{ui:SymbolIcon Play24}"
+                           Appearance="Secondary"
+                           Margin="0,0,8,0"
                            IsEnabled="{Binding SelectedJob.CanRunNow}"
                            AutomationProperties.AutomationId="Routines_RunNow"
                            Command="{Binding RunNowCommand}"/>
                 <ui:Button Content="{loc:Str Settings_ScheduledJobs_Delete}"
+                           Icon="{ui:SymbolIcon Delete24}"
+                           Appearance="Secondary"
+                           Foreground="{DynamicResource PiaDangerBrush}"
                            AutomationProperties.AutomationId="Routines_Delete"
                            Command="{Binding DeleteCommand}"/>
               </StackPanel>
@@ -241,7 +322,7 @@
 
           <ScrollViewer VerticalScrollBarVisibility="Auto"
                         Visibility="{Binding IsEditorOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <StackPanel>
+            <StackPanel Margin="0,0,10,0">
               <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Name}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
               <ui:TextBox Text="{Binding EditName, UpdateSourceTrigger=PropertyChanged}"
@@ -360,13 +441,15 @@
                          TextWrapping="Wrap"
                          Margin="0,0,0,8"/>
 
-              <StackPanel Orientation="Horizontal">
+              <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                 <ui:Button Content="{loc:Str Settings_ScheduledJobs_Save}"
+                           Icon="{ui:SymbolIcon Save24}"
                            Appearance="Primary"
-                           Margin="0,0,6,0"
+                           Margin="0,0,8,0"
                            AutomationProperties.AutomationId="Routines_Save"
                            Command="{Binding SaveCommand}"/>
                 <ui:Button Content="{loc:Str Settings_ScheduledJobs_Cancel}"
+                           Appearance="Secondary"
                            AutomationProperties.AutomationId="Routines_Cancel"
                            Command="{Binding CancelEditCommand}"/>
               </StackPanel>

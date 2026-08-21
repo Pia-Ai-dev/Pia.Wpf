@@ -1,0 +1,54 @@
+<UserControl x:Class="Pia.Controls.Shared.PiaEmptyState"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             x:Name="EmptyStateRoot"
+             HorizontalAlignment="Center"
+             VerticalAlignment="Top"
+             Margin="0,60,0,0">
+  <StackPanel>
+    <ui:SymbolIcon Symbol="{Binding Symbol, ElementName=EmptyStateRoot}"
+                   FontSize="48"
+                   HorizontalAlignment="Center"
+                   Margin="0,0,0,16">
+      <!-- The binding lives in the style so the null trigger can outrank it; a local value could not be. -->
+      <ui:SymbolIcon.Style>
+        <Style TargetType="ui:SymbolIcon">
+          <Setter Property="Foreground" Value="{Binding IconBrush, ElementName=EmptyStateRoot}"/>
+          <Style.Triggers>
+            <DataTrigger Binding="{Binding IconBrush, ElementName=EmptyStateRoot}" Value="{x:Null}">
+              <Setter Property="Foreground" Value="{DynamicResource PiaAccentBrush}"/>
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </ui:SymbolIcon.Style>
+    </ui:SymbolIcon>
+
+    <TextBlock Text="{Binding Title, ElementName=EmptyStateRoot}"
+               FontSize="14"
+               MaxWidth="{Binding MaxTextWidth, ElementName=EmptyStateRoot}"
+               HorizontalAlignment="Center"
+               TextAlignment="Center"
+               TextWrapping="Wrap"
+               Foreground="{DynamicResource TextMutedBrush}"/>
+
+    <TextBlock Text="{Binding Hint, ElementName=EmptyStateRoot}"
+               FontSize="12"
+               MaxWidth="{Binding MaxTextWidth, ElementName=EmptyStateRoot}"
+               HorizontalAlignment="Center"
+               TextAlignment="Center"
+               TextWrapping="Wrap"
+               Margin="0,4,0,0"
+               Foreground="{DynamicResource TextSubtleBrush}">
+      <TextBlock.Style>
+        <Style TargetType="TextBlock">
+          <Style.Triggers>
+            <DataTrigger Binding="{Binding Hint, ElementName=EmptyStateRoot}" Value="{x:Null}">
+              <Setter Property="Visibility" Value="Collapsed"/>
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </TextBlock.Style>
+    </TextBlock>
+  </StackPanel>
+</UserControl>

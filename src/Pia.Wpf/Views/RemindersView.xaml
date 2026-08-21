@@ -5,6 +5,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:rem="clr-namespace:Pia.Controls.Reminders"
+             xmlns:shared="clr-namespace:Pia.Controls.Shared"
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:nav="clr-namespace:Pia.Navigation"
              mc:Ignorable="d"
@@ -35,23 +36,9 @@
                          Margin="0,60,0,0"
                          Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
-        <StackPanel HorizontalAlignment="Center"
-                    VerticalAlignment="Top"
-                    Margin="0,60,0,0"
-                    Visibility="{Binding ReminderGroups.Count, Converter={StaticResource ZeroToVisibilityConverter}}">
-          <ui:SymbolIcon Symbol="Alert24"
-                         FontSize="48"
-                         HorizontalAlignment="Center"
-                         Margin="0,0,0,16"
-                         Foreground="{DynamicResource PiaAccentBrush}"/>
-          <TextBlock Text="{loc:Str Reminders_EmptyState}"
-                     FontSize="14"
-                     HorizontalAlignment="Center"
-                     TextAlignment="Center"
-                     MaxWidth="360"
-                     TextWrapping="Wrap"
-                     Foreground="{DynamicResource TextMutedBrush}"/>
-        </StackPanel>
+        <shared:PiaEmptyState Symbol="Alert24"
+                              Title="{loc:Str Reminders_EmptyState}"
+                              Visibility="{Binding ReminderGroups.Count, Converter={StaticResource ZeroToVisibilityConverter}}"/>
 
         <ItemsControl ItemsSource="{Binding ReminderGroups}">
           <ItemsControl.ItemsPanel>

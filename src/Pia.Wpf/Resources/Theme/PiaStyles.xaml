@@ -387,11 +387,55 @@
     <Setter Property="Margin"       Value="0,6,0,0"/>
   </Style>
 
-  <!-- Settings — large page title (matches History/Memory/Todo headers). -->
-  <Style x:Key="PiaSettingsPageTitleStyle" TargetType="TextBlock">
-    <Setter Property="FontSize"   Value="22"/>
-    <Setter Property="FontWeight" Value="SemiBold"/>
-    <Setter Property="Foreground" Value="{DynamicResource TextDefaultBrush}"/>
+  <!-- Large page title, shared by every top-level view header. -->
+  <Style x:Key="PiaPageTitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize"          Value="22"/>
+    <Setter Property="FontWeight"        Value="SemiBold"/>
+    <Setter Property="Foreground"        Value="{DynamicResource TextDefaultBrush}"/>
+    <Setter Property="VerticalAlignment" Value="Center"/>
+  </Style>
+
+  <!-- Sentence under a page title. MaxWidth stays with the caller — it depends on the header layout. -->
+  <Style x:Key="PiaPageSubtitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize"            Value="12"/>
+    <Setter Property="TextWrapping"        Value="Wrap"/>
+    <Setter Property="HorizontalAlignment" Value="Left"/>
+    <Setter Property="Foreground"          Value="{DynamicResource TextMutedBrush}"/>
+    <Setter Property="Margin"              Value="0,8,0,0"/>
+  </Style>
+
+  <!-- Counts line under a page title. -->
+  <Style x:Key="PiaPageStatsStyle" TargetType="TextBlock">
+    <Setter Property="FontSize"   Value="12"/>
+    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+    <Setter Property="Margin"     Value="0,8,0,0"/>
+  </Style>
+
+  <!-- Row metadata — the small muted facts under a list row's title. -->
+  <Style x:Key="PiaMetaTextStyle" TargetType="TextBlock">
+    <Setter Property="FontSize"          Value="11"/>
+    <Setter Property="VerticalAlignment" Value="Center"/>
+    <Setter Property="Foreground"        Value="{DynamicResource TextMutedBrush}"/>
+  </Style>
+
+  <Style x:Key="PiaMetaSeparatorStyle" TargetType="TextBlock" BasedOn="{StaticResource PiaMetaTextStyle}">
+    <Setter Property="Text"       Value="&#183;"/>
+    <Setter Property="Margin"     Value="6,0"/>
+    <Setter Property="Foreground" Value="{DynamicResource TextGhostBrush}"/>
+  </Style>
+
+  <!-- Read-only value in a detail pane. -->
+  <Style x:Key="PiaDetailValueStyle" TargetType="TextBlock">
+    <Setter Property="FontSize"     Value="12"/>
+    <Setter Property="TextWrapping" Value="Wrap"/>
+    <Setter Property="Foreground"   Value="{DynamicResource TextSubtleBrush}"/>
+  </Style>
+
+  <!-- Inline notice strip between a page header and its content. -->
+  <Style x:Key="PiaStatusBannerStyle" TargetType="Border">
+    <Setter Property="Padding"      Value="12,8"/>
+    <Setter Property="CornerRadius" Value="6"/>
+    <Setter Property="Background"   Value="{DynamicResource SurfaceMutedBrush}"/>
   </Style>
 
   <!-- Settings — content card. Lighter than PiaCardStyle (no shadow) so that

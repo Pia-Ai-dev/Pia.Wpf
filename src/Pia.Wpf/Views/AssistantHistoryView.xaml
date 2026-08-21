@@ -5,6 +5,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:ah="clr-namespace:Pia.Controls.AssistantHistory"
+             xmlns:shared="clr-namespace:Pia.Controls.Shared"
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:nav="clr-namespace:Pia.Navigation"
              mc:Ignorable="d"
@@ -32,10 +33,7 @@
 
       <TextBlock Grid.Column="0"
                  Text="{loc:Str AssistantHistory_Title}"
-                 FontSize="22"
-                 FontWeight="SemiBold"
-                 Foreground="{DynamicResource TextDefaultBrush}"
-                 VerticalAlignment="Center"/>
+                 Style="{StaticResource PiaPageTitleStyle}"/>
 
       <ui:Button Grid.Column="1"
                  Appearance="Secondary"
@@ -169,25 +167,10 @@
                            Margin="0,60,0,0"
                            Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
-          <StackPanel HorizontalAlignment="Center"
-                      VerticalAlignment="Top"
-                      Margin="0,60,0,0"
-                      Visibility="{Binding Chats.Count, Converter={StaticResource ZeroToVisibilityConverter}}">
-            <ui:SymbolIcon Symbol="Chat48"
-                           FontSize="48"
-                           HorizontalAlignment="Center"
-                           Margin="0,0,0,16"
-                           Foreground="{DynamicResource PiaAccentBrush}"/>
-            <TextBlock Text="{loc:Str AssistantHistory_EmptyState}"
-                       FontSize="14"
-                       HorizontalAlignment="Center"
-                       Foreground="{DynamicResource TextMutedBrush}"/>
-            <TextBlock Text="{loc:Str AssistantHistory_EmptyStateHint}"
-                       FontSize="12"
-                       HorizontalAlignment="Center"
-                       Margin="0,4,0,0"
-                       Foreground="{DynamicResource TextSubtleBrush}"/>
-          </StackPanel>
+          <shared:PiaEmptyState Symbol="Chat48"
+                                Title="{loc:Str AssistantHistory_EmptyState}"
+                                Hint="{loc:Str AssistantHistory_EmptyStateHint}"
+                                Visibility="{Binding Chats.Count, Converter={StaticResource ZeroToVisibilityConverter}}"/>
 
           <ItemsControl ItemsSource="{Binding ChatGroups}">
             <ItemsControl.ItemsPanel>

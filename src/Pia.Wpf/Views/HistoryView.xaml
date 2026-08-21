@@ -5,6 +5,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:hist="clr-namespace:Pia.Controls.History"
+             xmlns:shared="clr-namespace:Pia.Controls.Shared"
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:nav="clr-namespace:Pia.Navigation"
              mc:Ignorable="d"
@@ -48,25 +49,10 @@
                            Margin="0,60,0,0"
                            Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
-          <StackPanel HorizontalAlignment="Center"
-                      VerticalAlignment="Top"
-                      Margin="0,60,0,0"
-                      Visibility="{Binding Sessions.Count, Converter={StaticResource ZeroToVisibilityConverter}}">
-            <ui:SymbolIcon Symbol="History24"
-                           FontSize="48"
-                           HorizontalAlignment="Center"
-                           Margin="0,0,0,16"
-                           Foreground="{DynamicResource PiaAccentBrush}"/>
-            <TextBlock Text="{loc:Str History_EmptyState}"
-                       FontSize="14"
-                       HorizontalAlignment="Center"
-                       Foreground="{DynamicResource TextMutedBrush}"/>
-            <TextBlock Text="{loc:Str History_EmptyStateHint}"
-                       FontSize="12"
-                       HorizontalAlignment="Center"
-                       Margin="0,4,0,0"
-                       Foreground="{DynamicResource TextSubtleBrush}"/>
-          </StackPanel>
+          <shared:PiaEmptyState Symbol="History24"
+                                Title="{loc:Str History_EmptyState}"
+                                Hint="{loc:Str History_EmptyStateHint}"
+                                Visibility="{Binding Sessions.Count, Converter={StaticResource ZeroToVisibilityConverter}}"/>
 
           <ItemsControl ItemsSource="{Binding SessionGroups}">
             <ItemsControl.ItemsPanel>

@@ -15,10 +15,7 @@
 
     <TextBlock Grid.Row="0" Grid.Column="0"
                Text="{loc:Str Memory_Title}"
-               FontSize="22"
-               FontWeight="SemiBold"
-               Foreground="{DynamicResource TextDefaultBrush}"
-               VerticalAlignment="Center"/>
+               Style="{StaticResource PiaPageTitleStyle}"/>
 
     <StackPanel Grid.Row="0" Grid.Column="1"
                 Orientation="Horizontal"
@@ -60,9 +57,7 @@
     </StackPanel>
 
     <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
-               Margin="0,8,0,0"
-               FontSize="12"
-               Foreground="{DynamicResource TextMutedBrush}">
+               Style="{StaticResource PiaPageStatsStyle}">
       <Run Text="{Binding TotalObjectCount, Mode=OneWay}"/><Run Text=" "/><Run Text="{loc:Str Memory_StatsObjects}"/>
       <Run Text=" · "/>
       <Run Text="{Binding StorageSizeText, Mode=OneWay}"/>

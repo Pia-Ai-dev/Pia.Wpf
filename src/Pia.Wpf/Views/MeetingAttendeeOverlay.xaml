@@ -38,7 +38,7 @@
                   Orientation="Horizontal"
                   VerticalAlignment="Center">
         <TextBlock Text="{loc:Str MeetingAttendee_Title}"
-                   Style="{StaticResource PiaSettingsPageTitleStyle}"
+                   Style="{StaticResource PiaPageTitleStyle}"
                    VerticalAlignment="Center" />
         <!-- Beta badge — mirrors the Meeting settings tab (WarnSoft pill). -->
         <Border Background="{DynamicResource WarnSoftBrush}"

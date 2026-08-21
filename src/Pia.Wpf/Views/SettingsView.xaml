@@ -24,7 +24,7 @@
 
     <!-- Page header -->
     <TextBlock Grid.Row="0"
-               Style="{StaticResource PiaSettingsPageTitleStyle}"
+               Style="{StaticResource PiaPageTitleStyle}"
                Text="{loc:Str Nav_Settings}"
                Margin="24,20,24,14"/>
 
