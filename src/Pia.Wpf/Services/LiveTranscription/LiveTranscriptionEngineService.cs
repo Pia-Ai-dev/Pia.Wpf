@@ -161,6 +161,9 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
                     var seg = _speakerId.IdentifyOrRegisterSegment(samples, 16000);
                     speakerLabel = seg.Label;
                     segmentId = seg.SegmentId;
+                    _logger.SensitiveDebug(
+                        "Segment identified: seg={SegmentId} label={Label} samples={Samples}",
+                        seg.SegmentId, seg.Label, samples.Length);
                 }
                 catch (Exception ex) { _logger.LogWarning(ex, "Speaker identification failed for {Speaker}", _speaker); }
             }

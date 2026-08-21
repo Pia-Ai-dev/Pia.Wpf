@@ -386,7 +386,9 @@ public class DirectTranscriptionViewModelTests
         await ((IAsyncRelayCommand)vm.SaveToVaultCommand).ExecuteAsync(null);
 
         Assert.NotNull(seen);
-        Assert.Equal("Speaker 2", seen!.Attendees);
+        // The prefill uses the display label, so the sole speaker reads as 1 rather than exposing the
+        // diarizer's mint counter.
+        Assert.Equal("Speaker 1", seen!.Attendees);
 
         var call = Assert.Single(
             memory.ReceivedCalls(), c => c.GetMethodInfo().Name == nameof(IMemoryService.CreateSourceAsync));

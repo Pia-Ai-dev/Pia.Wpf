@@ -28,6 +28,10 @@ public interface ISpeakerIdentificationService : IDisposable
     /// <see cref="SpeakersReassigned"/> events can retarget the utterance. The manual
     /// implementation hands out monotonically increasing ids too — they are simply never
     /// reassigned.
+    ///
+    /// <para>A null label means the segment could not be placed: it is too short for the adaptive
+    /// implementation to cluster and matched no known voice, so inventing a speaker for it would
+    /// create one nothing can later correct.</para>
     /// </summary>
     SpeakerSegmentResult IdentifyOrRegisterSegment(float[] segmentSamples, int sampleRate);
 
@@ -68,7 +72,7 @@ public interface ISpeakerIdentificationService : IDisposable
 }
 
 /// <summary>Identify-or-register result carrying the journal id for the segment's embedding.</summary>
-public readonly record struct SpeakerSegmentResult(long SegmentId, string Label);
+public readonly record struct SpeakerSegmentResult(long SegmentId, string? Label);
 
 /// <summary>One retroactive label correction produced by an adaptive re-cluster pass.</summary>
-public readonly record struct SpeakerReassignment(long SegmentId, string NewLabel);
+public readonly record struct SpeakerReassignment(long SegmentId, string? NewLabel);

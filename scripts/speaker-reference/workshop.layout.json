@@ -1,0 +1,18 @@
+{
+  "name": "workshop",
+  "note": "Teams 2x5 avatar grid on the right of a screen share, 1920x1080 letterboxed. Tile ids run left-to-right, top-to-bottom. Rects cover each tile's name label, where Teams paints the active-speaker pill.",
+  "frameWidth": 1920,
+  "frameHeight": 1080,
+  "tiles": [
+    { "id": "A", "x": 1687, "y": 343, "w": 100, "h": 26 },
+    { "id": "B", "x": 1795, "y": 343, "w": 100, "h": 26 },
+    { "id": "C", "x": 1687, "y": 453, "w": 100, "h": 26 },
+    { "id": "D", "x": 1795, "y": 453, "w": 100, "h": 26 },
+    { "id": "E", "x": 1687, "y": 563, "w": 100, "h": 26 },
+    { "id": "F", "x": 1795, "y": 563, "w": 100, "h": 26 },
+    { "id": "G", "x": 1687, "y": 673, "w": 100, "h": 26 },
+    { "id": "H", "x": 1795, "y": 673, "w": 100, "h": 26 },
+    { "id": "I", "x": 1687, "y": 783, "w": 100, "h": 26 },
+    { "id": "J", "x": 1795, "y": 783, "w": 100, "h": 26 }
+  ]
+}

@@ -6,51 +6,17 @@ namespace Pia.Tests.Services.LiveTranscription;
 
 public class AdaptiveSpeakerIdentificationServiceTests
 {
-    private sealed class FakeExtractor : IEmbeddingExtractor
-    {
-        public int Dim => 2;
-        public bool Disposed;
-        public float[] Compute(float[] samples, int sampleRate)
-        {
-            var r = Math.PI * samples[0] / 180.0;
-            return new[] { (float)Math.Cos(r), (float)Math.Sin(r) };
-        }
-        public void Dispose() => Disposed = true;
-    }
-
-    /// <summary>Records what each pass asked the clusterer for, and can answer from a script
-    /// instead of running the real algorithm.</summary>
-    private sealed class RecordingClusterer : SpeakerClusterer
-    {
-        public List<(int Inputs, int PreviousClusterCount, int ExpectedSpeakers)> Calls { get; } = new();
-        public Queue<ClusterResult> Scripted { get; } = new();
-
-        public override ClusterResult Cluster(
-            IReadOnlyList<float[]> embeddings, int previousClusterCount = 0, int expectedSpeakers = 0)
-        {
-            Calls.Add((embeddings.Count, previousClusterCount, expectedSpeakers));
-            return Scripted.Count > 0
-                ? Scripted.Dequeue()
-                : base.Cluster(embeddings, previousClusterCount, expectedSpeakers);
-        }
-    }
-
-    /// <summary>A "segment" whose first sample encodes the voice direction in degrees and whose
-    /// length encodes its duration — 2 s by default, i.e. eligible for clustering.</summary>
     private static float[] Seg(double degrees, double seconds = 2.0)
-    {
-        var samples = new float[Math.Max(1, (int)(seconds * 16000))];
-        samples[0] = (float)degrees;
-        return samples;
-    }
+        => SpeakerSegments.Seg(degrees, seconds);
 
     private static AdaptiveSpeakerIdentificationService Create(
-        FakeExtractor? extractor = null, Func<DateTimeOffset>? now = null)
-        => new(extractor ?? new FakeExtractor(), NullLogger<AdaptiveSpeakerIdentificationService>.Instance, now);
+        DegreeEmbeddingExtractor? extractor = null, Func<DateTimeOffset>? now = null)
+        => new(extractor ?? new DegreeEmbeddingExtractor(),
+            NullLogger<AdaptiveSpeakerIdentificationService>.Instance, now);
 
     private static AdaptiveSpeakerIdentificationService Create(
         RecordingClusterer clusterer, Func<DateTimeOffset>? now = null)
-        => new(new FakeExtractor(), NullLogger<AdaptiveSpeakerIdentificationService>.Instance, now,
+        => new(new DegreeEmbeddingExtractor(), NullLogger<AdaptiveSpeakerIdentificationService>.Instance, now,
             AdaptiveSpeakerIdentificationService.DefaultMaxJournaledSegments, clusterer);
 
     [Fact]
@@ -163,7 +129,7 @@ public class AdaptiveSpeakerIdentificationServiceTests
     [Fact]
     public void Dispose_DisposesTheExtractor()
     {
-        var extractor = new FakeExtractor();
+        var extractor = new DegreeEmbeddingExtractor();
         var svc = Create(extractor);
         svc.IdentifyOrRegisterSegment(Seg(0), 16000);
         svc.Dispose();
@@ -183,7 +149,7 @@ public class AdaptiveSpeakerIdentificationServiceTests
     public void JournalCap_DropsOldest_WithoutBreakingLabeling()
     {
         using var svc = new AdaptiveSpeakerIdentificationService(
-            new FakeExtractor(), NullLogger<AdaptiveSpeakerIdentificationService>.Instance,
+            new DegreeEmbeddingExtractor(), NullLogger<AdaptiveSpeakerIdentificationService>.Instance,
             now: null, maxJournaledSegments: 8);
 
         for (var i = 0; i < 20; i++)
@@ -220,7 +186,7 @@ public class AdaptiveSpeakerIdentificationServiceTests
         using var svc = Create();
         svc.SetExpectedSpeakers(expectedSpeakers);
 
-        var labelBySegment = new Dictionary<long, string>();
+        var labelBySegment = new Dictionary<long, string?>();
         svc.SpeakersReassigned += (_, changes) =>
         {
             foreach (var c in changes) labelBySegment[c.SegmentId] = c.NewLabel;
@@ -313,11 +279,13 @@ public class AdaptiveSpeakerIdentificationServiceTests
         using var svc = Create(clusterer);
 
         // Ten 1 s interjections clear the stride and the segment count but never the eligible
-        // warm-up — a pass here would rebuild the label maps from an empty clustering.
+        // warm-up — a pass here would rebuild the label maps from an empty clustering. With no
+        // cluster yet to match, they are unplaceable rather than a speaker of their own.
         for (var i = 0; i < 10; i++)
-            Assert.Equal("Speaker 1", svc.IdentifyOrRegisterSegment(Seg(i, seconds: 1.0), 16000).Label);
+            Assert.Null(svc.IdentifyOrRegisterSegment(Seg(i, seconds: 1.0), 16000).Label);
 
         Assert.Empty(clusterer.Calls);
+        Assert.Empty(svc.KnownLabels);
     }
 
     [Fact]
@@ -326,25 +294,99 @@ public class AdaptiveSpeakerIdentificationServiceTests
         var clusterer = new RecordingClusterer();
         using var svc = Create(clusterer);
 
+        for (var i = 0; i < 6; i++) svc.IdentifyOrRegisterSegment(Seg(i), 16000);
         foreach (var deg in new[] { 0.0, 1, 2 })
             Assert.Equal("Speaker 1", svc.IdentifyOrRegisterSegment(Seg(deg, seconds: 1.0), 16000).Label);
-        for (var i = 0; i < 6; i++) svc.IdentifyOrRegisterSegment(Seg(i), 16000);
+        for (var i = 0; i < 5; i++) svc.IdentifyOrRegisterSegment(Seg(i), 16000);
 
-        var call = Assert.Single(clusterer.Calls);
-        Assert.Equal(6, call.Inputs);   // the three interjections stayed out of the dendrogram
+        Assert.Equal(2, clusterer.Calls.Count);
+        // The second pass fires on the fifth segment since the first, i.e. 11 journaled — of which
+        // 8 are eligible: the interjections took the label but stayed out of the dendrogram.
+        Assert.Equal(8, clusterer.Calls[1].Inputs);
     }
 
     [Fact]
-    public void Pass_CarriesOverAClusterOnlyReferencedBySubFloorSegments()
+    public void SubFloorSegment_TakesBestMatch_WithoutMintingOrMovingTheCentroid()
+    {
+        using var svc = Create();
+        // One voice at 0°, then a 1 s segment 50° off: sim ≈ cos 50° ≈ 0.64, over the 0.60 ceiling
+        // the derived threshold is clamped to, so it matches rather than minting.
+        for (var i = 0; i < 6; i++) svc.IdentifyOrRegisterSegment(Seg(0), 16000);
+        Assert.Equal("Speaker 1", svc.IdentifyOrRegisterSegment(Seg(50, seconds: 1.0), 16000).Label);
+        Assert.Single(svc.KnownLabels);
+
+        // The centroid did not follow it: a full-length segment 55° the other way still misses, which
+        // it would not have if the centroid had been dragged toward 50°.
+        Assert.Equal("Speaker 2", svc.IdentifyOrRegisterSegment(Seg(-55), 16000).Label);
+    }
+
+    [Fact]
+    public void SubFloorSegment_MintsOnlyWhenNoClusterExists()
+    {
+        using var svc = Create();
+
+        // Nothing to match against, and warm-up has not run: no label, and no cluster invented.
+        Assert.Null(svc.IdentifyOrRegisterSegment(Seg(0, seconds: 1.0), 16000).Label);
+        Assert.Empty(svc.KnownLabels);
+
+        // A far-off sub-floor segment stays unplaceable even once a voice exists.
+        Assert.Equal("Speaker 1", svc.IdentifyOrRegisterSegment(Seg(0), 16000).Label);
+        Assert.Null(svc.IdentifyOrRegisterSegment(Seg(170, seconds: 1.0), 16000).Label);
+        Assert.Single(svc.KnownLabels);
+    }
+
+    // ---- roster ceiling on the provisional path ---------------------------------------------------
+
+    [Fact]
+    public void ProvisionalPath_AtTheRosterCeiling_ForcesBestMatchInsteadOfMinting()
+    {
+        using var svc = Create();
+        svc.SetExpectedSpeakers(2);   // ceiling = 2 + ExpectedSpeakerSlack = 3
+
+        Assert.Equal("Speaker 1", svc.IdentifyOrRegisterSegment(Seg(0), 16000).Label);
+        Assert.Equal("Speaker 2", svc.IdentifyOrRegisterSegment(Seg(120), 16000).Label);
+        Assert.Equal("Speaker 3", svc.IdentifyOrRegisterSegment(Seg(240), 16000).Label);
+
+        // A fourth distinct voice would exceed the roster: it takes its nearest match instead.
+        Assert.Equal("Speaker 1", svc.IdentifyOrRegisterSegment(Seg(60), 16000).Label);
+        Assert.Equal(3, svc.KnownLabels.Count);
+    }
+
+    [Fact]
+    public void ProvisionalPath_BelowTheCeiling_IsUnchanged()
+    {
+        using var svc = Create();
+        svc.SetExpectedSpeakers(4);   // ceiling = 5
+
+        foreach (var deg in new double[] { 0, 72, 144, 216 })
+            svc.IdentifyOrRegisterSegment(Seg(deg), 16000);
+
+        Assert.Equal(4, svc.KnownLabels.Count);
+    }
+
+    [Fact]
+    public void ProvisionalPath_WithNoRoster_IsUnchanged()
+    {
+        using var svc = Create();
+
+        foreach (var deg in new double[] { 0, 72, 144, 216, 288 })
+            svc.IdentifyOrRegisterSegment(Seg(deg), 16000);
+
+        Assert.Equal(5, svc.KnownLabels.Count);
+    }
+
+    [Fact]
+    public void Pass_HasNoClusterDefinedOnlyBySubFloorSegments()
     {
         using var svc = Create();
         for (var i = 0; i < 6; i++) svc.IdentifyOrRegisterSegment(Seg(i), 16000);
 
-        // A participant who only ever produced a short interjection: labeled provisionally, and
-        // invisible to every pass. Dropping their cluster would re-register them from scratch.
-        Assert.Equal("Speaker 2", svc.IdentifyOrRegisterSegment(Seg(90, seconds: 1.0), 16000).Label);
-        for (var i = 0; i < 4; i++) svc.IdentifyOrRegisterSegment(Seg(i), 16000);
+        // A participant who only ever produced a short interjection cannot define a cluster: it
+        // would be excluded from every dendrogram and so unreachable by every correction.
+        Assert.Null(svc.IdentifyOrRegisterSegment(Seg(90, seconds: 1.0), 16000).Label);
+        Assert.Single(svc.KnownLabels);
 
-        Assert.Equal("Speaker 2", svc.IdentifyOrRegisterSegment(Seg(90, seconds: 1.0), 16000).Label);
+        for (var i = 0; i < 5; i++) svc.IdentifyOrRegisterSegment(Seg(i), 16000);
+        Assert.Single(svc.KnownLabels);
     }
 }

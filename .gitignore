@@ -213,3 +213,6 @@ appsettings.local.json
 
 # macOS
 .DS_Store
+
+# Hand-read tile-to-name maps for the speaker-attribution fixture: real meeting participants.
+scripts/speaker-reference/*.names.local.json

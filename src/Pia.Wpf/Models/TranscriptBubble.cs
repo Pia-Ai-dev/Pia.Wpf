@@ -32,6 +32,14 @@ public sealed partial class TranscriptBubble : ObservableObject
     private string? _speakerLabel;
 
     /// <summary>
+    /// What the UI shows for <see cref="SpeakerLabel"/>: auto-generated labels are renumbered 1..k in
+    /// first-appearance order, because the raw number is a mint counter that only ever grows. Identity
+    /// stays on <see cref="SpeakerLabel"/> — it keys the palette, the consent map and rename.
+    /// </summary>
+    [ObservableProperty]
+    private string? _displayLabel;
+
+    /// <summary>
     /// View-side palette slot (0..4) assigned by the view model from <see cref="SpeakerLabel"/>.
     /// Identity (the label) stays decoupled from the view (this color index).
     /// </summary>
@@ -39,13 +47,14 @@ public sealed partial class TranscriptBubble : ObservableObject
     private int _colorIndex;
 
     public TranscriptBubble(TranscriptSpeaker speaker, DateTimeOffset startTimestamp,
-                            string text = "", string? speakerLabel = null)
+                            string text = "", string? speakerLabel = null, string? displayLabel = null)
     {
         Speaker = speaker;
         StartTimestamp = startTimestamp;
         _endTimestamp = startTimestamp;
         _text = text ?? string.Empty;
         _speakerLabel = speakerLabel;
+        _displayLabel = displayLabel ?? speakerLabel;
     }
 
     public void Append(string text, DateTimeOffset endTimestamp)

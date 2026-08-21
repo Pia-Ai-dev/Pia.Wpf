@@ -31,6 +31,13 @@ public static class Bootstrapper
     // audio, so the real overlay UI can be exercised against a recording. DEBUG builds only.
     public const string DebugDirectTranscriptionAudioFileEnvVar = "PIA_DEBUG_DIRECT_TRANSCRIPTION_AUDIO_FILE";
     public const string DebugMeetingAttendeeAudioFileEnvVar = "PIA_DEBUG_MEETING_ATTENDEE_AUDIO_FILE";
+    // Semicolon-separated attendee names the replay session reports. Without it a replay measures
+    // expected=0, i.e. the roster ceiling off — not the shipping configuration.
+    public const string DebugMeetingAttendeeRosterEnvVar = "PIA_DEBUG_MEETING_ATTENDEE_ROSTER";
+    // Base path for a WAV dump of the captured audio (see DebugWavTeeAudioCaptureService). Wraps the
+    // production capture instead of replacing it, so the dump is the stream the pipeline really heard.
+    public const string DebugMeetingAttendeeAudioDumpEnvVar = "PIA_DEBUG_MEETING_ATTENDEE_AUDIO_DUMP";
+    public const string DebugDirectTranscriptionAudioDumpEnvVar = "PIA_DEBUG_DIRECT_TRANSCRIPTION_AUDIO_DUMP";
 
     public static string ProductionServerUrl =>
         Environment.GetEnvironmentVariable(ServerUrlEnvVar) is { Length: > 0 } envUrl
@@ -39,6 +46,14 @@ public static class Bootstrapper
 
 #if DEBUG
     public static bool IsDevMode => true;
+
+    /// <summary>Suffixes an audio-dump base path so two captures in one session cannot share a file.</summary>
+    private static string DebugDumpPath(string basePath, object suffix)
+    {
+        var directory = System.IO.Path.GetDirectoryName(basePath) ?? string.Empty;
+        var name = System.IO.Path.GetFileNameWithoutExtension(basePath);
+        return System.IO.Path.Combine(directory, $"{name}-{suffix}.wav");
+    }
 #else
     public static bool IsDevMode => false;
 #endif
@@ -599,6 +614,8 @@ public static class Bootstrapper
         var debugMeetingAttendeeAudioFile = Environment.GetEnvironmentVariable(DebugMeetingAttendeeAudioFileEnvVar);
         if (!string.IsNullOrEmpty(debugMeetingAttendeeAudioFile))
         {
+            var debugRoster = Services.MeetingAttendee.DebugNoOpMeetingSession.ParseRoster(
+                Environment.GetEnvironmentVariable(DebugMeetingAttendeeRosterEnvVar));
             services.AddSingleton<Services.MeetingAttendee.IMeetingAttendeeService>(sp =>
                 new Services.MeetingAttendee.MeetingAttendeeService(
                     sp.GetRequiredService<ISettingsService>(),
@@ -608,12 +625,41 @@ public static class Bootstrapper
                         sp.GetRequiredService<ISettingsService>(),
                         sp.GetRequiredService<IHttpClientFactory>(),
                         sp.GetRequiredService<ILoggerFactory>()),
-                    sessionFactory: _ => new Services.MeetingAttendee.DebugNoOpMeetingSession(),
+                    sessionFactory: _ => new Services.MeetingAttendee.DebugNoOpMeetingSession(debugRoster),
                     audioSourceFactory: (_, _) => new Services.LiveTranscription.DebugFileAudioCaptureService(
                         debugMeetingAttendeeAudioFile,
                         sp.GetRequiredService<ILoggerFactory>().CreateLogger<Services.LiveTranscription.DebugFileAudioCaptureService>()),
                     engineServiceFactory: Services.MeetingAttendee.MeetingAttendeeService.CreateEngineServiceFactory(
                         sp.GetRequiredService<ILoggerFactory>())));
+        }
+        else if (Environment.GetEnvironmentVariable(DebugMeetingAttendeeAudioDumpEnvVar) is { Length: > 0 } attendeeDump)
+        {
+            // The factory runs a second time when silent capture fails, so each instance gets its own
+            // ordinal: the two captures are not contiguous and must not share a file.
+            var instance = 0;
+            services.AddSingleton<Services.MeetingAttendee.IMeetingAttendeeService>(sp =>
+            {
+                var settings = sp.GetRequiredService<ISettingsService>();
+                var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+                var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+                var provisioner = sp.GetRequiredService<Services.MeetingAttendee.IBrowserProvisioner>();
+                var production = Services.MeetingAttendee.MeetingAttendeeService.CreateDefaultAudioSourceFactory(loggerFactory);
+                return new Services.MeetingAttendee.MeetingAttendeeService(
+                    settings,
+                    loggerFactory,
+                    provisionChromium: (progress, ct) => provisioner.EnsureChromiumAsync(progress, ct),
+                    createTranscription: Services.MeetingAttendee.MeetingAttendeeService.CreateProductionTranscriptionFactory(
+                        settings, httpClientFactory, loggerFactory),
+                    sessionFactory: spec => new Services.MeetingAttendee.TeamsMeetingSession(
+                        spec, httpClientFactory,
+                        loggerFactory.CreateLogger<Services.MeetingAttendee.TeamsMeetingSession>()),
+                    audioSourceFactory: (session, useSilentCapture) => new Services.LiveTranscription.DebugWavTeeAudioCaptureService(
+                        production(session, useSilentCapture),
+                        DebugDumpPath(attendeeDump, ++instance),
+                        loggerFactory.CreateLogger<Services.LiveTranscription.DebugWavTeeAudioCaptureService>()),
+                    engineServiceFactory: Services.MeetingAttendee.MeetingAttendeeService.CreateEngineServiceFactory(loggerFactory),
+                    defaultBrowserResolver: sp.GetRequiredService<Services.MeetingAttendee.IDefaultBrowserResolver>());
+            });
         }
         else
         {
@@ -661,6 +707,37 @@ public static class Bootstrapper
                         sp.GetRequiredService<ILoggerFactory>().CreateLogger<Services.LiveTranscription.DebugFileAudioCaptureService>()),
                     engineServiceFactory: Services.LiveTranscription.DirectTranscriptionService.CreateEngineServiceFactory(
                         sp.GetRequiredService<ILoggerFactory>())));
+        }
+        else if (Environment.GetEnvironmentVariable(DebugDirectTranscriptionAudioDumpEnvVar) is { Length: > 0 } directDump)
+        {
+            services.AddSingleton<IDirectTranscriptionService>(sp =>
+            {
+                var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+                var teeLogger = loggerFactory.CreateLogger<Services.LiveTranscription.DebugWavTeeAudioCaptureService>();
+                return new Services.LiveTranscription.DirectTranscriptionService(
+                    sp.GetRequiredService<ISettingsService>(),
+                    loggerFactory,
+                    sp.GetRequiredService<Services.Consent.IConsentStateManager>(),
+                    sp.GetRequiredService<Services.Consent.INamedConsentClassifier>(),
+                    sp.GetRequiredService<Services.Consent.IConsentAuditLog>(),
+                    sp.GetRequiredService<Services.Consent.IConsentEvidenceStore>(),
+                    createTranscription: Services.LiveTranscription.DirectTranscriptionService.CreateProductionTranscriptionFactory(
+                        sp.GetRequiredService<ISettingsService>(),
+                        sp.GetRequiredService<IHttpClientFactory>(),
+                        loggerFactory),
+                    // Two files, never one: the mic and the loopback are different speakers, and mixing
+                    // them into a single WAV would make the dump unusable as a diarization fixture.
+                    micSourceFactory: () => new Services.LiveTranscription.DebugWavTeeAudioCaptureService(
+                        new Services.LiveTranscription.MicAudioCaptureService(
+                            loggerFactory.CreateLogger<Services.LiveTranscription.MicAudioCaptureService>()),
+                        DebugDumpPath(directDump, "mic"), teeLogger),
+                    loopbackSourceFactory: () => new Services.LiveTranscription.DebugWavTeeAudioCaptureService(
+                        new Services.LiveTranscription.LoopbackAudioCaptureService(
+                            loggerFactory.CreateLogger<Services.LiveTranscription.LoopbackAudioCaptureService>()),
+                        DebugDumpPath(directDump, "loopback"), teeLogger),
+                    engineServiceFactory: Services.LiveTranscription.DirectTranscriptionService.CreateEngineServiceFactory(
+                        loggerFactory));
+            });
         }
         else
         {

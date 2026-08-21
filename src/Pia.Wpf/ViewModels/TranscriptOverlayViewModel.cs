@@ -40,10 +40,23 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     private readonly Dictionary<string, int> _speakerColorIndex = new(StringComparer.Ordinal);
     private int _nextSpeakerColorIndex;
 
+    // Display numbering, in first-appearance order. Matches the diarizer's own "Speaker {n}" format,
+    // so a user who renames a speaker to "Speaker 12" is renumbered too — harmless, since Rename's
+    // collision guard already stops two identities sharing a display string.
+    private static readonly System.Text.RegularExpressions.Regex AutoSpeakerLabel =
+        new(@"^Speaker \d+$", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private readonly Dictionary<string, int> _displayNumberByLabel = new(StringComparer.Ordinal);
+
     // Per-utterance retention so adaptive reassignments can rebuild bubbles retroactively.
     // Comfortably above MaxBubbles; the rebuild trims to MaxBubbles at the end.
     private const int JournalCap = 1000;
     private readonly List<UtteranceEntry> _journal = [];
+
+    // A re-cluster pass runs inside the diarizer call for the segment that triggered it, so its
+    // correction arrives BEFORE that segment's utterance — which only appears once transcription
+    // finishes, seconds later. Dropping such a correction leaves the bubble on the stale pre-pass
+    // label for good, so it is parked here and applied when the utterance lands.
+    private readonly Dictionary<long, string?> _pendingReassignments = [];
 
     protected readonly ISettingsService _settingsService;
     protected readonly ILocalizationService _localizationService;
@@ -129,7 +142,7 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     /// </summary>
     protected virtual IReadOnlyCollection<string> DefaultAttendees
         => Bubbles
-            .Select(b => SpeakerToDisplayNameConverter.Resolve(b.Speaker, b.SpeakerLabel, CounterpartName))
+            .Select(b => SpeakerToDisplayNameConverter.Resolve(b.Speaker, b.DisplayLabel, CounterpartName))
             .Distinct(StringComparer.Ordinal)
             .ToList();
 
@@ -197,17 +210,22 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         {
             try
             {
+                var label = utterance.SpeakerLabel;
+                if (utterance.SegmentId is long pending
+                    && _pendingReassignments.Remove(pending, out var corrected))
+                    label = corrected;
+
                 _journal.Add(new UtteranceEntry
                 {
                     Speaker = utterance.Speaker,
                     Text = utterance.Text,
                     Timestamp = utterance.Timestamp,
-                    Label = utterance.SpeakerLabel,
+                    Label = label,
                     SegmentId = utterance.SegmentId,
                 });
                 if (_journal.Count > JournalCap) _journal.RemoveAt(0);
 
-                var bubble = GetOrCreateBubble(utterance.Speaker, utterance.Timestamp, utterance.SpeakerLabel, createIfMissing: true);
+                var bubble = GetOrCreateBubble(utterance.Speaker, utterance.Timestamp, label, createIfMissing: true);
                 bubble!.Append(utterance.Text, utterance.Timestamp);
                 TrimIfNeeded();
             }
@@ -250,12 +268,30 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
 
         if (!createIfMissing) return null;
 
-        var bubble = new TranscriptBubble(speaker, timestamp, speakerLabel: speakerLabel)
+        var bubble = new TranscriptBubble(
+            speaker, timestamp, speakerLabel: speakerLabel, displayLabel: ResolveDisplayLabel(speakerLabel))
         {
             ColorIndex = GetOrAssignSpeakerColorIndex(speakerLabel),
         };
         Bubbles.Add(bubble);
         return bubble;
+    }
+
+    /// <summary>
+    /// Numbers auto-generated labels 1..k by first appearance. <c>Speaker 17</c> for the fourth voice
+    /// is <see cref="ISpeakerIdentificationService"/>'s mint counter leaking into the UI; a user-renamed
+    /// label carries a real name and passes through untouched.
+    /// </summary>
+    private string? ResolveDisplayLabel(string? speakerLabel)
+    {
+        if (string.IsNullOrWhiteSpace(speakerLabel) || !AutoSpeakerLabel.IsMatch(speakerLabel))
+            return speakerLabel;
+        if (!_displayNumberByLabel.TryGetValue(speakerLabel, out var number))
+        {
+            number = _displayNumberByLabel.Count + 1;
+            _displayNumberByLabel[speakerLabel] = number;
+        }
+        return $"Speaker {number}";
     }
 
     /// <summary>
@@ -294,19 +330,29 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         {
             try
             {
-                var labelBySegment = new Dictionary<long, string>(changes.Count);
+                var labelBySegment = new Dictionary<long, string?>(changes.Count);
                 foreach (var c in changes) labelBySegment[c.SegmentId] = c.NewLabel;
 
                 var any = false;
+                var seen = new HashSet<long>();
                 foreach (var entry in _journal)
                 {
                     if (entry.SegmentId is not long id) continue;
                     if (!labelBySegment.TryGetValue(id, out var newLabel)) continue;
+                    seen.Add(id);
                     if (string.Equals(entry.Label, newLabel, StringComparison.Ordinal)) continue;
                     entry.Label = newLabel;
                     any = true;
                 }
                 if (any) RebuildBubblesFromJournal();
+
+                foreach (var (id, newLabel) in labelBySegment)
+                {
+                    if (!seen.Contains(id)) _pendingReassignments[id] = newLabel;
+                }
+                TrimPendingReassignments();
+                _logger.SensitiveDebug("Reassignments: applied={Applied} unjournaled=[{Unjournaled}]",
+                    seen.Count, string.Join(",", labelBySegment.Keys.Where(k => !seen.Contains(k))));
             }
             catch (Exception ex)
             {
@@ -324,6 +370,9 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     private void RebuildBubblesFromJournal()
     {
         Bubbles.Clear();
+        // Rebuilt from scratch, unlike the palette map: a stale label dropped by a pass must not keep
+        // its number, or the renumbering would not close the gaps it exists to close.
+        _displayNumberByLabel.Clear();
         foreach (var entry in _journal)
         {
             var bubble = GetOrCreateBubble(entry.Speaker, entry.Timestamp, entry.Label, createIfMissing: true);
@@ -332,11 +381,24 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         while (Bubbles.Count > MaxBubbles) Bubbles.RemoveAt(0);
     }
 
+    /// <summary>
+    /// A segment whose transcription came back empty never produces an utterance, so its parked
+    /// correction is never claimed. Segment ids are monotonic, so the oldest keys are the dead ones.
+    /// </summary>
+    private void TrimPendingReassignments()
+    {
+        if (_pendingReassignments.Count <= JournalCap) return;
+        foreach (var id in _pendingReassignments.Keys.Order().Take(_pendingReassignments.Count - JournalCap))
+            _pendingReassignments.Remove(id);
+    }
+
     /// <summary>Clears the visible transcript AND its journal — they must never diverge.</summary>
     protected void ClearTranscript()
     {
         Bubbles.Clear();
         _journal.Clear();
+        _pendingReassignments.Clear();
+        _displayNumberByLabel.Clear();
     }
 
     /// <summary>
@@ -359,8 +421,9 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         {
             foreach (var bubble in Bubbles)
             {
-                if (bubble.SpeakerLabel == oldLabel)
-                    bubble.SpeakerLabel = newLabel;
+                if (bubble.SpeakerLabel != oldLabel) continue;
+                bubble.SpeakerLabel = newLabel;
+                bubble.DisplayLabel = ResolveDisplayLabel(newLabel);
             }
 
             foreach (var entry in _journal)
@@ -556,7 +619,7 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         sb.AppendLine();
         foreach (var bubble in Bubbles)
         {
-            var label = SpeakerToDisplayNameConverter.Resolve(bubble.Speaker, bubble.SpeakerLabel, CounterpartName);
+            var label = SpeakerToDisplayNameConverter.Resolve(bubble.Speaker, bubble.DisplayLabel, CounterpartName);
             sb.Append("**").Append(label).Append("** _")
               .Append(bubble.StartTimestamp.LocalDateTime.ToString("HH:mm:ss"));
             if (bubble.EndTimestamp != bubble.StartTimestamp)

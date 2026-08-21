@@ -731,6 +731,14 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     internal static bool UseSilentBrowserCapture(AppSettings settings)
         => !settings.MeetingAttendeeShowBrowserWindow;
 
+    /// <summary>
+    /// The production audio-source factory, exposed so a dev-only decorator can wrap it instead of
+    /// replacing it — mirroring <see cref="CreateProductionTranscriptionFactory"/>.
+    /// </summary>
+    internal static Func<IMeetingSession, bool, IAudioCaptureSource> CreateDefaultAudioSourceFactory(
+        ILoggerFactory loggerFactory)
+        => (session, useSilentCapture) => CreateDefaultAudioSource(session, useSilentCapture, loggerFactory);
+
     private static IAudioCaptureSource CreateDefaultAudioSource(
         IMeetingSession session, bool useSilentCapture, ILoggerFactory loggerFactory)
     {

@@ -80,8 +80,10 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
             extractor.Dim, WarmupSegments, PassSegmentStride, _maxJournaledSegments);
     }
 
+    // These two promise a label, so an unplaceable segment collapses to blank rather than null.
+    // Only IdentifyOrRegisterSegment models "no speaker" properly, and it is what the engine calls.
     public string IdentifyOrRegister(float[] segmentSamples, int sampleRate)
-        => IdentifyOrRegisterSegment(segmentSamples, sampleRate).Label;
+        => IdentifyOrRegisterSegment(segmentSamples, sampleRate).Label ?? string.Empty;
 
     public (string Label, float[] Embedding) IdentifyOrRegisterWithEmbedding(float[] segmentSamples, int sampleRate)
     {
@@ -89,7 +91,7 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
         var result = ProcessEmbedding(embedding, DurationSeconds(segmentSamples, sampleRate));
         // The journal owns its copy; hand the caller an independent one so the biometric wipe
         // cannot zero a buffer the caller still holds (and vice versa).
-        return (result.Label, (float[])embedding.Clone());
+        return (result.Label ?? string.Empty, (float[])embedding.Clone());
     }
 
     public SpeakerSegmentResult IdentifyOrRegisterSegment(float[] segmentSamples, int sampleRate)
@@ -101,6 +103,12 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
     public void SetExpectedSpeakers(int count)
     {
         lock (_lock) _expectedSpeakers = Math.Max(0, count);
+    }
+
+    /// <summary>Snapshot of the live label set — a copy, so it cannot mutate after the lock releases.</summary>
+    internal IReadOnlyCollection<string> KnownLabels
+    {
+        get { lock (_lock) return [.. _labelByCluster.Values]; }
     }
 
     private static float DurationSeconds(float[] samples, int sampleRate)
@@ -130,23 +138,44 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
 
             // Instant provisional label: nearest centroid at the adaptive similarity threshold.
             var (bestCluster, bestSim) = BestClusterUnderLock(embedding);
-            int cluster;
-            if (bestCluster < 0 || bestSim < _matchSimilarity)
+            var matched = bestCluster >= 0 && bestSim >= _matchSimilarity;
+            int? cluster = null;
+            if (durationSeconds >= MinClusterSegmentSeconds)
             {
-                cluster = _nextClusterId++;
-                var label = $"Speaker {++_speakerCounter}";
-                _labelByCluster[cluster] = label;
-                _centroidByCluster[cluster] = new RunningCentroid(embedding);
-                newLabel = label;
+                if (matched)
+                {
+                    cluster = bestCluster;
+                    _centroidByCluster[bestCluster].Add(embedding);
+                }
+                else if (_expectedSpeakers > 0 && bestCluster >= 0
+                         && _labelByCluster.Count >= _expectedSpeakers + SpeakerClusterer.ExpectedSpeakerSlack)
+                {
+                    // At the roster ceiling. Take the nearest voice instead of minting one the roster
+                    // says cannot exist; no centroid update, because the match was forced not earned.
+                    cluster = bestCluster;
+                }
+                else
+                {
+                    cluster = _nextClusterId++;
+                    var label = $"Speaker {++_speakerCounter}";
+                    _labelByCluster[cluster.Value] = label;
+                    _centroidByCluster[cluster.Value] = new RunningCentroid(embedding);
+                    newLabel = label;
+                }
             }
-            else
+            else if (matched)
             {
+                // A sub-floor segment may take a label but must never move a centroid: it is mostly
+                // silence, and no pass will ever see it to undo the drift.
                 cluster = bestCluster;
-                _centroidByCluster[cluster].Add(embedding);
             }
-            _clusterBySegment[segId] = cluster;
+            // Sub-floor and matching nothing: no label. Minting here would create a speaker that the
+            // 2 s clustering floor keeps out of reach of every correction mechanism.
+
+            if (cluster is int assigned) _clusterBySegment[segId] = assigned;
             _segmentsSinceLastPass++;
-            result = new SpeakerSegmentResult(segId, _labelByCluster[cluster]);
+            result = new SpeakerSegmentResult(
+                segId, cluster is int c ? _labelByCluster[c] : null);
 
             // Warm-up counts ELIGIBLE embeddings: a pass over a handful of short interjections would
             // rebuild the label/centroid maps from near-empty output and wipe every known speaker.
@@ -254,26 +283,13 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
             takenPrev.Add(c.PrevCluster);
         }
 
-        // Stable ids the pass never saw because only sub-floor segments point at them: a participant
-        // who contributed nothing but short interjections must keep their cluster instead of
-        // re-registering as a new "Speaker N" on their next utterance.
-        var gatedClusters = new HashSet<int>();
-        foreach (var (segId, _, duration) in _segments)
-        {
-            if (duration >= MinClusterSegmentSeconds) continue;
-            if (_clusterBySegment.TryGetValue(segId, out var cluster) && _labelByCluster.ContainsKey(cluster))
-                gatedClusters.Add(cluster);
-        }
-        gatedClusters.ExceptWith(takenPrev);
-
         // Labels this rebuild orphaned — nothing references them any more. Recycling them before
         // minting keeps the numbering close to the distinct voices instead of only ever growing;
         // user-renamed labels are never handed to a different voice.
         var orphans = new List<int>();
         foreach (var cluster in _labelByCluster.Keys)
         {
-            if (takenPrev.Contains(cluster) || gatedClusters.Contains(cluster)) continue;
-            if (_renamedClusters.Contains(cluster)) continue;
+            if (takenPrev.Contains(cluster) || _renamedClusters.Contains(cluster)) continue;
             orphans.Add(cluster);
         }
         orphans.Sort();
@@ -304,15 +320,7 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
                 newLabels.Add(label);
             }
         }
-        foreach (var cluster in gatedClusters)
-        {
-            newLabelByCluster[cluster] = _labelByCluster[cluster];
-            if (_renamedClusters.Contains(cluster)) newRenamed.Add(cluster);
-        }
-
-        // Apply: new assignment + per-cluster mean centroids; diff labels for the event. Gated
-        // segments keep the assignment and label they already had — no cluster they point at is
-        // ever recycled, so their label cannot silently move to another voice.
+        // Apply: new assignment + per-cluster mean centroids; diff labels for the event.
         var reassignments = new List<SpeakerReassignment>();
         for (int i = 0; i < journalIndex.Count; i++)
         {
@@ -334,17 +342,24 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
         }
 
         // Old centroids are biometric state too — zero every one the rebuild did not carry over.
-        foreach (var (cluster, old) in _centroidByCluster)
-        {
-            if (gatedClusters.Contains(cluster)) newCentroidByCluster[cluster] = old;
-            else old.Wipe();
-        }
+        foreach (var (_, old) in _centroidByCluster) old.Wipe();
         _centroidByCluster.Clear();
         foreach (var (k, v) in newCentroidByCluster) _centroidByCluster[k] = v;
         _labelByCluster.Clear();
         foreach (var (k, v) in newLabelByCluster) _labelByCluster[k] = v;
         _renamedClusters.Clear();
         foreach (var k in newRenamed) _renamedClusters.Add(k);
+
+        // A pass must not leave a segment pointing at a cluster it just dropped, or the bubble keeps a
+        // label the service no longer knows. Only segments the pass did not iterate can be left
+        // dangling — the sub-floor ones — and "no label" is the honest answer for a segment no
+        // clustering ever saw.
+        foreach (var segId in _clusterBySegment.Keys.ToArray())
+        {
+            if (_labelByCluster.ContainsKey(_clusterBySegment[segId])) continue;
+            _clusterBySegment.Remove(segId);
+            reassignments.Add(new SpeakerReassignment(segId, null));
+        }
 
         _logger.LogDebug(
             "Adaptive pass: {Eligible}/{Segments} segments → {Clusters} clusters cut={Cut:F2} expected={Expected} changed={Changed} ({Ms}ms)",
@@ -353,6 +368,9 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
         // Labels can carry user-typed names after a rename → DEBUG-only.
         _logger.SensitiveInformation("Adaptive pass labels: [{Labels}]",
             string.Join(", ", _labelByCluster.Values));
+        if (reassignments.Count > 0)
+            _logger.SensitiveDebug("Adaptive pass reassigned: [{Pairs}]",
+                string.Join(", ", reassignments.Select(r => $"{r.SegmentId}={r.NewLabel}")));
 
         return (reassignments, newLabels);
     }
@@ -451,18 +469,12 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
     private sealed class RunningCentroid
     {
         private readonly float[] _sum;
-        private int _count;
 
-        public RunningCentroid(float[] first)
-        {
-            _sum = (float[])first.Clone();
-            _count = 1;
-        }
+        public RunningCentroid(float[] first) => _sum = (float[])first.Clone();
 
         public void Add(float[] embedding)
         {
             for (int i = 0; i < _sum.Length; i++) _sum[i] += embedding[i];
-            _count++;
         }
 
         public float Similarity(float[] embedding)

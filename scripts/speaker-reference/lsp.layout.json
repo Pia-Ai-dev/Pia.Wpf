@@ -1,0 +1,13 @@
+{
+  "name": "lsp",
+  "note": "Teams single right-hand column beside a screen share, 1920x1080. Three camera tiles (large) then two avatar tiles side by side at the bottom. The burned-in bottom-left caption is the presenter's name, not the active speaker, and is deliberately not sampled.",
+  "frameWidth": 1920,
+  "frameHeight": 1080,
+  "tiles": [
+    { "id": "A", "x": 1690, "y": 280, "w": 100, "h": 22 },
+    { "id": "B", "x": 1690, "y": 588, "w": 100, "h": 22 },
+    { "id": "C", "x": 1690, "y": 900, "w": 100, "h": 22 },
+    { "id": "D", "x": 1698, "y": 1032, "w": 84, "h": 20 },
+    { "id": "E", "x": 1808, "y": 1032, "w": 76, "h": 20 }
+  ]
+}

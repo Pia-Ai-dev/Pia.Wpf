@@ -151,7 +151,8 @@
           <StackPanel>
             <TextBlock Text="{loc:Str MeetingAttendee_Url_Label}"
                        Style="{StaticResource PiaSettingsSectionLabelStyle}" />
-            <ui:TextBox Text="{Binding MeetingUrl, UpdateSourceTrigger=PropertyChanged}"
+            <ui:TextBox AutomationProperties.AutomationId="MeetingAttendee_Url"
+                        Text="{Binding MeetingUrl, UpdateSourceTrigger=PropertyChanged}"
                         PlaceholderText="{loc:Str MeetingAttendee_Url_Placeholder}"
                         PlaceholderEnabled="True"
                         FontSize="13" />
@@ -160,12 +161,14 @@
             <TextBlock Text="{loc:Str MeetingAttendee_DisplayName_Label}"
                        Style="{StaticResource PiaSettingsSectionLabelStyle}"
                        Margin="0,12,0,6" />
-            <ui:TextBox Text="{Binding AssistantDisplayName, UpdateSourceTrigger=PropertyChanged}"
+            <ui:TextBox AutomationProperties.AutomationId="MeetingAttendee_DisplayName"
+                        Text="{Binding AssistantDisplayName, UpdateSourceTrigger=PropertyChanged}"
                         PlaceholderText="{loc:Str MeetingAttendee_DisplayName_Placeholder}"
                         PlaceholderEnabled="True"
                         FontSize="13" />
 
-            <CheckBox IsChecked="{Binding ConsentAcknowledged}"
+            <CheckBox AutomationProperties.AutomationId="MeetingAttendee_Consent"
+                      IsChecked="{Binding ConsentAcknowledged}"
                       Margin="0,14,0,0"
                       Content="{loc:Str MeetingAttendee_Consent_Label}" />
           </StackPanel>
@@ -174,7 +177,8 @@
         <!-- Join + a quick link to the meeting settings (Assistant settings -> Meeting tab):
              diarization, speaker matching, browser choice. Only shown on this join page. -->
         <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-          <ui:Button Command="{Binding StartCommand}"
+          <ui:Button AutomationProperties.AutomationId="MeetingAttendee_Join"
+                     Command="{Binding StartCommand}"
                      Padding="20,8"
                      Appearance="Primary"
                      Content="{loc:Str MeetingAttendee_Join}" />
@@ -242,7 +246,7 @@
                       <TextBlock.Text>
                         <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
                           <Binding Path="Speaker" />
-                          <Binding Path="SpeakerLabel" />
+                          <Binding Path="DisplayLabel" />
                           <Binding Path="DataContext.CounterpartName"
                                    RelativeSource="{RelativeSource AncestorType=UserControl}" />
                         </MultiBinding>
@@ -305,7 +309,7 @@
                           <TextBlock.Text>
                             <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
                               <Binding Path="Speaker" />
-                              <Binding Path="SpeakerLabel" />
+                              <Binding Path="DisplayLabel" />
                               <Binding Path="DataContext.CounterpartName"
                                        RelativeSource="{RelativeSource AncestorType=UserControl}" />
                             </MultiBinding>
@@ -398,12 +402,14 @@
             Visibility="{Binding IsJoinSetupVisible, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
       <StackPanel HorizontalAlignment="Center"
                   Orientation="Horizontal">
-        <ui:Button Command="{Binding StopCommand}"
+        <ui:Button AutomationProperties.AutomationId="MeetingAttendee_Stop"
+                   Command="{Binding StopCommand}"
                    Padding="20,10"
                    Appearance="Danger"
                    Content="{loc:Str MeetingAttendee_Stop}"
                    Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}" />
-        <ui:Button Command="{Binding SaveTranscriptCommand}"
+        <ui:Button AutomationProperties.AutomationId="MeetingAttendee_Save"
+                   Command="{Binding SaveTranscriptCommand}"
                    Margin="8,0,0,0"
                    Padding="20,10"
                    Appearance="Primary"

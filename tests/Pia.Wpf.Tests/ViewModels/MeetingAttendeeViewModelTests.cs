@@ -7,6 +7,7 @@ using Pia.Services.Interfaces;
 using Pia.Services.LiveTranscription;
 using Pia.Services.MeetingAttendee;
 using Pia.Tests.Services;
+using Pia.Tests.Services.LiveTranscription;
 using Pia.ViewModels;
 using Pia.ViewModels.Models;
 using Xunit;
@@ -896,6 +897,125 @@ public class MeetingAttendeeViewModelTests
         service.RaiseState(MeetingAttendeeState.Attending);
         Assert.False(vm.SaveToVaultCommand.CanExecute(null));
     }
+
+    // ---- service + VM pair: the label invariant ---------------------------------------------------
+
+    /// <summary>
+    /// No bubble may carry a speaker label that is absent from the diarizer's live label set.
+    ///
+    /// <para>Each side is separately correct, which is why the suite could stay green while the pair
+    /// produced 11 labels for 4 clusters. The pair breaks because a re-cluster pass runs INSIDE the
+    /// identify call for the segment that triggered it, so its correction is emitted before that
+    /// segment's utterance — which only arrives once transcription finishes, seconds later. Order
+    /// below is the production order: identify, then the reassignment event, then the utterance.</para>
+    /// </summary>
+    [Fact]
+    public void Bubbles_NeverCarryALabelTheDiarizerHasDropped()
+    {
+        var (vm, _) = CreateSut();
+        // Five voices 72° apart (cos 72° ≈ 0.31, under every threshold in the band) so each mints its
+        // own label, then a scripted pass that merges the fifth voice into the first while leaving
+        // every other cluster matched — so its label is dropped outright rather than recycled.
+        var clusterer = new RecordingClusterer();
+        clusterer.Scripted.Enqueue(new ClusterResult([0, 1, 2, 3, 4, 0], 5, 0.5f));
+        clusterer.Scripted.Enqueue(new ClusterResult([0, 1, 2, 3, 0, 0, 1, 2, 3, 0, 0], 4, 0.5f));
+        using var svc = new AdaptiveSpeakerIdentificationService(
+            new DegreeEmbeddingExtractor(), NullLogger<AdaptiveSpeakerIdentificationService>.Instance,
+            now: null, AdaptiveSpeakerIdentificationService.DefaultMaxJournaledSegments, clusterer);
+        svc.SpeakersReassigned += (_, changes) => vm.ApplyReassignments(changes);
+
+        var t = new DateTimeOffset(2026, 8, 21, 14, 0, 0, TimeSpan.Zero);
+        foreach (var degrees in new double[] { 0, 72, 144, 216, 288, 0, 72, 144, 216, 0, 288 })
+        {
+            var seg = svc.IdentifyOrRegisterSegment(SpeakerSegments.Seg(degrees), 16000);
+            vm.AddUtterance(new TranscriptUtterance(
+                TranscriptSpeaker.Them, $"{degrees}", t, seg.Label, seg.SegmentId));
+            t = t.AddSeconds(30);       // outside the bubble window, so every utterance is its own bubble
+        }
+
+        var known = svc.KnownLabels;
+        var stale = vm.Bubbles
+            .Select(b => b.SpeakerLabel)
+            .Where(label => label is not null && !known.Contains(label))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        Assert.Empty(stale);
+    }
+
+    // ---- display renumbering ----------------------------------------------------------------------
+
+    [Fact]
+    public void DisplayLabel_NumbersSpeakersInFirstAppearanceOrder()
+    {
+        var (vm, _) = CreateSut();
+
+        Utter(vm, "Speaker 4", "a", 0);
+        Utter(vm, "Speaker 1", "b", 30);
+        Utter(vm, "Speaker 4", "c", 60);
+
+        Assert.Equal(["Speaker 1", "Speaker 2", "Speaker 1"], vm.Bubbles.Select(b => b.DisplayLabel));
+        // Identity is untouched: it keys the palette, the consent map and rename.
+        Assert.Equal(["Speaker 4", "Speaker 1", "Speaker 4"], vm.Bubbles.Select(b => b.SpeakerLabel));
+    }
+
+    [Fact]
+    public void DisplayLabel_ClosesTheGapsAMintCounterLeaves()
+    {
+        var (vm, _) = CreateSut();
+
+        Utter(vm, "Speaker 1", "a", 0);
+        Utter(vm, "Speaker 2", "b", 30);
+        Utter(vm, "Speaker 17", "c", 60);
+
+        Assert.Equal(["Speaker 1", "Speaker 2", "Speaker 3"], vm.Bubbles.Select(b => b.DisplayLabel));
+    }
+
+    [Fact]
+    public void DisplayLabel_SurvivesARebuildIdentically()
+    {
+        var (vm, _) = CreateSut();
+        Utter(vm, "Speaker 9", "a", 0, segmentId: 1);
+        Utter(vm, "Speaker 3", "b", 30, segmentId: 2);
+        var before = vm.Bubbles.Select(b => b.DisplayLabel).ToArray();
+
+        // A reassignment that changes nothing still has to leave the numbering where it was.
+        vm.ApplyReassignments([new SpeakerReassignment(2, "Speaker 4")]);
+
+        Assert.Equal(before, vm.Bubbles.Select(b => b.DisplayLabel));
+        Assert.Equal(["Speaker 9", "Speaker 4"], vm.Bubbles.Select(b => b.SpeakerLabel));
+    }
+
+    [Fact]
+    public void DisplayLabel_LeavesARenamedSpeakerAlone()
+    {
+        var (vm, _) = CreateSut();
+        Utter(vm, "Speaker 7", "a", 0);
+
+        vm.RelabelSpeakerForTest("Speaker 7", "Andreas");
+
+        var bubble = Assert.Single(vm.Bubbles);
+        Assert.Equal("Andreas", bubble.SpeakerLabel);
+        Assert.Equal("Andreas", bubble.DisplayLabel);
+    }
+
+    [Fact]
+    public void BuildMarkdown_EmitsDisplayLabels()
+    {
+        var (vm, _) = CreateSut();
+        Utter(vm, "Speaker 12", "hello", 0);
+
+        var markdown = vm.BuildMarkdown();
+
+        Assert.Contains("**Speaker 1**", markdown);
+        Assert.DoesNotContain("Speaker 12", markdown);
+    }
+
+    private static void Utter(
+        MeetingAttendeeViewModel vm, string? label, string text, int atSeconds, long? segmentId = null)
+        => vm.AddUtterance(new TranscriptUtterance(
+            TranscriptSpeaker.Them, text,
+            new DateTimeOffset(2026, 8, 21, 14, 0, 0, TimeSpan.Zero).AddSeconds(atSeconds),
+            label, segmentId));
 
     // ---- helpers ----------------------------------------------------------------------------------
 

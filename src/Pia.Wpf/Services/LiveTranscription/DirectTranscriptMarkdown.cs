@@ -65,7 +65,7 @@ public static class DirectTranscriptMarkdown
 
         foreach (var bubble in bubbles)
         {
-            var label = SpeakerToDisplayNameConverter.Resolve(bubble.Speaker, bubble.SpeakerLabel, counterpartName);
+            var label = SpeakerToDisplayNameConverter.Resolve(bubble.Speaker, bubble.DisplayLabel, counterpartName);
             sb.Append("**").Append(label).Append("** _")
               .Append(bubble.StartTimestamp.LocalDateTime.ToString("HH:mm:ss", CultureInfo.InvariantCulture));
             if (bubble.EndTimestamp != bubble.StartTimestamp)
@@ -115,7 +115,7 @@ public static class DirectTranscriptMarkdown
     private static List<string> ResolveDeduplicatedSpeakers(IReadOnlyList<TranscriptBubble> bubbles, string? counterpartName)
     {
         return bubbles
-            .Select(b => SpeakerToDisplayNameConverter.Resolve(b.Speaker, b.SpeakerLabel, counterpartName))
+            .Select(b => SpeakerToDisplayNameConverter.Resolve(b.Speaker, b.DisplayLabel, counterpartName))
             .Distinct(StringComparer.Ordinal)
             .ToList();
     }

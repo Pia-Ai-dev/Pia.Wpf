@@ -292,7 +292,7 @@
                         <TextBlock.Text>
                           <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
                             <Binding Path="Speaker" />
-                            <Binding Path="SpeakerLabel" />
+                            <Binding Path="DisplayLabel" />
                             <Binding Path="DataContext.CounterpartName"
                                      RelativeSource="{RelativeSource AncestorType=UserControl}" />
                           </MultiBinding>
@@ -345,7 +345,7 @@
                       <TextBlock.Text>
                         <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
                           <Binding Path="Speaker" />
-                          <Binding Path="SpeakerLabel" />
+                          <Binding Path="DisplayLabel" />
                           <Binding Path="DataContext.CounterpartName"
                                    RelativeSource="{RelativeSource AncestorType=UserControl}" />
                         </MultiBinding>
@@ -409,7 +409,7 @@
                           <TextBlock.Text>
                             <MultiBinding Converter="{StaticResource SpeakerToDisplayNameConverter}">
                               <Binding Path="Speaker" />
-                              <Binding Path="SpeakerLabel" />
+                              <Binding Path="DisplayLabel" />
                               <Binding Path="DataContext.CounterpartName"
                                        RelativeSource="{RelativeSource AncestorType=UserControl}" />
                             </MultiBinding>
