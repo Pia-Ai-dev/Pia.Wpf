@@ -190,6 +190,7 @@
   <data name="Nav_ResearchHistory" xml:space="preserve"><value>Historique</value></data>
   <!-- History View -->
   <data name="History_Title" xml:space="preserve"><value>Historique</value></data>
+  <data name="History_HeaderHelp" xml:space="preserve"><value>Chaque prompt optimisé sur cet appareil. Sélectionner une session pour comparer l'original et le résultat.</value></data>
   <data name="History_DateRangeTo" xml:space="preserve"><value>au</value></data>
   <data name="History_ClearFilters" xml:space="preserve"><value>Effacer les filtres</value></data>
   <data name="History_Refresh" xml:space="preserve"><value>Actualiser</value></data>
@@ -233,6 +234,7 @@
   <data name="History_DeleteAllConfirmBody" xml:space="preserve"><value>Supprimer toutes les sessions correspondant au filtre actuel ? Cette action est irréversible.</value></data>
   <!-- Assistant chat history view -->
   <data name="AssistantHistory_Title" xml:space="preserve"><value>Historique des chats</value></data>
+  <data name="AssistantHistory_HeaderHelp" xml:space="preserve"><value>Toutes les conversations avec Pia. En ouvrir une pour la relire ou la poursuivre.</value></data>
   <data name="AssistantHistory_EmptyState" xml:space="preserve"><value>Aucun chat pour l'instant</value></data>
   <data name="AssistantHistory_EmptyStateHint" xml:space="preserve"><value>Démarrez un chat en mode Assistant pour alimenter l'historique</value></data>
   <data name="AssistantHistory_Resume" xml:space="preserve"><value>Reprendre ce chat</value></data>
@@ -241,6 +243,7 @@
   <data name="AssistantHistory_ExportMarkdown" xml:space="preserve"><value>Exporter en Markdown</value></data>
   <!-- Todo View -->
   <data name="Todo_Title" xml:space="preserve"><value>Liste des tâches</value></data>
+  <data name="Todo_HeaderHelp" xml:space="preserve"><value>Un tableau pour les tâches. Les ajouter ici ou demander à Pia de le faire, puis glisser les cartes entre les colonnes.</value></data>
   <data name="Todo_Refresh" xml:space="preserve"><value>Actualiser</value></data>
   <data name="Todo_EmptyState" xml:space="preserve"><value>Aucune tâche</value></data>
   <data name="Todo_EmptyStateHint" xml:space="preserve"><value>Ajoutez une tâche ci-dessous ou demandez à l'Assistant</value></data>
@@ -283,6 +286,7 @@
   <data name="Kanban_SetDefault" xml:space="preserve"><value>Définir comme vue par défaut</value></data>
   <!-- Memory View -->
   <data name="Memory_Title" xml:space="preserve"><value>Mémoire</value></data>
+  <data name="Memory_HeaderHelp" xml:space="preserve"><value>Ce que Pia a retenu des conversations — préférences, personnes, projets et dates — sous forme de fichiers consultables et modifiables.</value></data>
   <data name="Memory_Export" xml:space="preserve"><value>Exporter</value></data>
   <data name="Memory_ExportTooltip" xml:space="preserve"><value>Exporter toutes les mémoires en JSON</value></data>
   <data name="Memory_ReviewStale" xml:space="preserve"><value>Examiner les anciennes</value></data>
@@ -356,6 +360,7 @@
   <data name="Memory_OpenFolder" xml:space="preserve"><value>Ouvrir le coffre de mémoire</value></data>
   <!-- Reminders View -->
   <data name="Reminders_Title" xml:space="preserve"><value>Rappels</value></data>
+  <data name="Reminders_HeaderHelp" xml:space="preserve"><value>Des rappels que Pia signale à l'échéance. Demander à l'assistant d'en créer un.</value></data>
   <data name="Reminders_Refresh" xml:space="preserve"><value>Actualiser</value></data>
   <data name="Reminders_DescriptionColumn" xml:space="preserve"><value>Description</value></data>
   <data name="Reminders_RecurrenceColumn" xml:space="preserve"><value>Récurrence</value></data>

@@ -2,7 +2,8 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-             xmlns:loc="clr-namespace:Pia.Localization">
+             xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:shared="clr-namespace:Pia.Controls.Shared">
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
@@ -13,9 +14,13 @@
       <ColumnDefinition Width="Auto"/>
     </Grid.ColumnDefinitions>
 
-    <TextBlock Grid.Row="0" Grid.Column="0"
-               Text="{loc:Str Reminders_Title}"
-               Style="{StaticResource PiaPageTitleStyle}"/>
+    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+      <TextBlock Text="{loc:Str Reminders_Title}"
+                 Style="{StaticResource PiaPageTitleStyle}"/>
+      <shared:PiaHelpHint Text="{loc:Str Reminders_HeaderHelp}"
+                          Margin="2,0,0,0"
+                          AutomationProperties.AutomationId="Reminders_Help"/>
+    </StackPanel>
 
     <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
       <ui:Button Appearance="Secondary"

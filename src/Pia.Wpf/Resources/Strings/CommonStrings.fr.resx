@@ -57,6 +57,7 @@
   <data name="Common_End" xml:space="preserve"><value>Fin</value></data>
   <data name="Common_Finish" xml:space="preserve"><value>Terminer</value></data>
   <data name="Common_Dismiss" xml:space="preserve"><value>Ignorer</value></data>
+  <data name="Common_Help" xml:space="preserve"><value>Aide</value></data>
   <data name="MeetingAttendee_Title" xml:space="preserve"><value>Participant à la réunion</value></data>
   <data name="MeetingAttendee_ToggleButton_Tooltip" xml:space="preserve"><value>Rejoindre une réunion et transcrire</value></data>
   <data name="MeetingAttendee_Close" xml:space="preserve"><value>Fermer</value></data>

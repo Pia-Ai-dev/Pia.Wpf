@@ -31,9 +31,13 @@
         <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
 
-      <TextBlock Grid.Column="0"
-                 Text="{loc:Str AssistantHistory_Title}"
-                 Style="{StaticResource PiaPageTitleStyle}"/>
+      <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+        <TextBlock Text="{loc:Str AssistantHistory_Title}"
+                   Style="{StaticResource PiaPageTitleStyle}"/>
+        <shared:PiaHelpHint Text="{loc:Str AssistantHistory_HeaderHelp}"
+                            Margin="2,0,0,0"
+                            AutomationProperties.AutomationId="AssistantHistory_Help"/>
+      </StackPanel>
 
       <ui:Button Grid.Column="1"
                  Appearance="Secondary"

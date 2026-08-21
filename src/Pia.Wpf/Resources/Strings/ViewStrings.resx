@@ -156,6 +156,7 @@
   <data name="Nav_ResearchHistory" xml:space="preserve"><value>History</value></data>
   <!-- History View -->
   <data name="History_Title" xml:space="preserve"><value>History</value></data>
+  <data name="History_HeaderHelp" xml:space="preserve"><value>Every prompt you have optimized on this device. Pick a session to compare the original with the result.</value></data>
   <data name="History_DateRangeTo" xml:space="preserve"><value>to</value></data>
   <data name="History_ClearFilters" xml:space="preserve"><value>Clear Filters</value></data>
   <data name="History_Refresh" xml:space="preserve"><value>Refresh</value></data>
@@ -199,6 +200,7 @@
   <data name="History_DeleteAllConfirmBody" xml:space="preserve"><value>Delete all sessions matching the current filter? This cannot be undone.</value></data>
   <!-- Assistant chat history view -->
   <data name="AssistantHistory_Title" xml:space="preserve"><value>Chat history</value></data>
+  <data name="AssistantHistory_HeaderHelp" xml:space="preserve"><value>Every chat you have had with Pia. Open one to read it again or to pick up where you left off.</value></data>
   <data name="AssistantHistory_EmptyState" xml:space="preserve"><value>No chats yet</value></data>
   <data name="AssistantHistory_EmptyStateHint" xml:space="preserve"><value>Start a chat in Assistant mode to build history</value></data>
   <data name="AssistantHistory_Resume" xml:space="preserve"><value>Resume this chat</value></data>
@@ -207,6 +209,7 @@
   <data name="AssistantHistory_ExportMarkdown" xml:space="preserve"><value>Export as Markdown</value></data>
   <!-- Todo View -->
   <data name="Todo_Title" xml:space="preserve"><value>Todo List</value></data>
+  <data name="Todo_HeaderHelp" xml:space="preserve"><value>A board for your own tasks. Add them here or ask Pia to, and drag cards between columns.</value></data>
   <data name="Todo_Refresh" xml:space="preserve"><value>Refresh</value></data>
   <data name="Todo_EmptyState" xml:space="preserve"><value>No todos yet</value></data>
   <data name="Todo_EmptyStateHint" xml:space="preserve"><value>Add a todo below or ask the Assistant</value></data>
@@ -249,6 +252,7 @@
   <data name="Kanban_SetDefault" xml:space="preserve"><value>Set as Default View</value></data>
   <!-- Memory View -->
   <data name="Memory_Title" xml:space="preserve"><value>Memory</value></data>
+  <data name="Memory_HeaderHelp" xml:space="preserve"><value>What Pia has remembered from your chats — preferences, people, projects and dates — kept as files you can browse and edit.</value></data>
   <data name="Memory_Export" xml:space="preserve"><value>Export</value></data>
   <data name="Memory_ExportTooltip" xml:space="preserve"><value>Export all memories as JSON</value></data>
   <data name="Memory_ReviewStale" xml:space="preserve"><value>Review Stale</value></data>
@@ -322,6 +326,7 @@
   <data name="Memory_OpenFolder" xml:space="preserve"><value>Open memory vault</value></data>
   <!-- Reminders View -->
   <data name="Reminders_Title" xml:space="preserve"><value>Reminders</value></data>
+  <data name="Reminders_HeaderHelp" xml:space="preserve"><value>Time-based nudges Pia surfaces when they are due. Ask the Assistant to create one.</value></data>
   <data name="Reminders_Refresh" xml:space="preserve"><value>Refresh</value></data>
   <data name="Reminders_DescriptionColumn" xml:space="preserve"><value>Description</value></data>
   <data name="Reminders_RecurrenceColumn" xml:space="preserve"><value>Recurrence</value></data>

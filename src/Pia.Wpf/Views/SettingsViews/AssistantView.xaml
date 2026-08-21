@@ -5,7 +5,8 @@
              xmlns:converters="clr-namespace:Pia.Converters"
              xmlns:controls="clr-namespace:Pia.Controls"
              xmlns:local="clr-namespace:Pia.Views.SettingsViews"
-             xmlns:loc="clr-namespace:Pia.Localization">
+             xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:shared="clr-namespace:Pia.Controls.Shared">
   <UserControl.Resources>
     <converters:EnumToLocalizedStringConverter x:Key="EnumToLocalizedStringConverter"/>
 
@@ -212,14 +213,15 @@
                AutomationProperties.AutomationId="Settings_Assistant_Tab_ToolPermissions">
         <ScrollViewer VerticalScrollBarVisibility="Auto" DataContext="{Binding ToolPermissionsVm}">
           <StackPanel MaxWidth="640" HorizontalAlignment="Left">
-            <TextBlock Text="{loc:Str Settings_ToolPermissions_Page_Title}"
-                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
-                       FontSize="15"
-                       TextWrapping="Wrap"
-                       Margin="0,0,0,4"/>
-            <TextBlock Text="{loc:Str Settings_ToolPermissions_Page_Description}"
-                       Style="{StaticResource PiaSettingsDescriptionStyle}"
-                       Margin="0,0,0,16"/>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+              <TextBlock Text="{loc:Str Settings_ToolPermissions_Page_Title}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         FontSize="15"
+                         Margin="0"
+                         VerticalAlignment="Center"/>
+              <shared:PiaHelpHint Text="{loc:Str Settings_ToolPermissions_Page_Description}"
+                                  AutomationProperties.AutomationId="Settings_ToolPermissions_Page_Help"/>
+            </StackPanel>
 
             <TextBlock Text="{loc:Str Settings_ToolPermissions_Autonomy_Section}"
                        Style="{StaticResource PiaSettingsSectionLabelStyle}"
@@ -241,12 +243,15 @@
             <!-- Session tier: hidden entirely when empty rather than carrying its own empty state. -->
             <StackPanel Margin="0,0,0,20"
                         Visibility="{Binding HasSessionGrants, Converter={StaticResource BooleanToVisibilityConverter}}">
-              <TextBlock Text="{loc:Str Settings_ToolPermissions_Session_Title}"
-                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
-                         Margin="0,0,0,4"/>
-              <TextBlock Text="{loc:Str Settings_ToolPermissions_Session_Description}"
-                         Style="{StaticResource PiaSettingsDescriptionStyle}"
-                         Margin="0,0,0,12"/>
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                <TextBlock Text="{loc:Str Settings_ToolPermissions_Session_Title}"
+                           Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                           Margin="0"
+                           VerticalAlignment="Center"/>
+                <shared:PiaHelpHint Text="{loc:Str Settings_ToolPermissions_Session_Description}"
+                                    IconSize="14"
+                                    AutomationProperties.AutomationId="Settings_ToolPermissions_Session_Help"/>
+              </StackPanel>
 
               <ItemsControl ItemsSource="{Binding SessionGrants}">
                 <ItemsControl.ItemTemplate>
@@ -278,12 +283,15 @@
               </ItemsControl>
             </StackPanel>
 
-            <TextBlock Text="{loc:Str Settings_ToolPermissions_Title}"
-                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
-                       Margin="0,0,0,4"/>
-            <TextBlock Text="{loc:Str Settings_ToolPermissions_Description}"
-                       Style="{StaticResource PiaSettingsDescriptionStyle}"
-                       Margin="0,0,0,12"/>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+              <TextBlock Text="{loc:Str Settings_ToolPermissions_Title}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0"
+                         VerticalAlignment="Center"/>
+              <shared:PiaHelpHint Text="{loc:Str Settings_ToolPermissions_Description}"
+                                  IconSize="14"
+                                  AutomationProperties.AutomationId="Settings_ToolPermissions_Help"/>
+            </StackPanel>
 
             <!-- Empty state -->
             <TextBlock Text="{loc:Str ToolPermissions_Empty}"
@@ -503,8 +511,15 @@
 
             <!-- Meeting browser -->
             <StackPanel Margin="0,0,0,20">
-              <TextBlock Text="{loc:Str Settings_MeetingBrowser_Section}"
-                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                <TextBlock Text="{loc:Str Settings_MeetingBrowser_Section}"
+                           Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                           Margin="0"
+                           VerticalAlignment="Center"/>
+                <shared:PiaHelpHint Text="{loc:Str Settings_MeetingBrowser_Description}"
+                                    IconSize="14"
+                                    AutomationProperties.AutomationId="Settings_MeetingBrowser_Help"/>
+              </StackPanel>
               <ComboBox ItemsSource="{Binding MeetingBrowserSelections}"
                         SelectedItem="{Binding MeetingBrowserSelection}"
                         IsEnabled="{Binding Policy[MeetingBrowserSelection]}"
@@ -517,8 +532,6 @@
                   </DataTemplate>
                 </ComboBox.ItemTemplate>
               </ComboBox>
-              <TextBlock Text="{loc:Str Settings_MeetingBrowser_Description}"
-                         Style="{StaticResource PiaSettingsDescriptionStyle}"/>
               <CheckBox Content="{loc:Str Settings_MeetingBrowser_ShowWindow}"
                         IsChecked="{Binding MeetingAttendeeShowBrowserWindow}"
                         IsEnabled="{Binding Policy[MeetingAttendeeShowBrowserWindow]}"
@@ -642,14 +655,16 @@
             <!-- Step specialists (Batch 07): global; the roster IS the opt-in for per-step personas (D1),
                  so it is placed with the other global Agent knobs, before the Scheduled section, for the
                  same reason the Autonomy block above is (R28). -->
-            <TextBlock Text="{loc:Str Settings_Agent_Roster_Section_Header}"
-                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
-                       Margin="0,12,0,0"/>
+            <StackPanel Orientation="Horizontal" Margin="0,12,0,6">
+              <TextBlock Text="{loc:Str Settings_Agent_Roster_Section_Header}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0"
+                         VerticalAlignment="Center"/>
+              <shared:PiaHelpHint Text="{loc:Str Settings_Agent_Roster_Description}"
+                                  IconSize="14"
+                                  AutomationProperties.AutomationId="Settings_Agent_Roster_Help"/>
+            </StackPanel>
             <StackPanel Margin="0,0,0,20">
-              <TextBlock Text="{loc:Str Settings_Agent_Roster_Description}"
-                         Style="{StaticResource PiaSettingsDescriptionStyle}"
-                         TextWrapping="Wrap"
-                         Margin="0,4,0,8"/>
               <TextBlock Text="{loc:Str Settings_Agent_Roster_Empty}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"
                          FontStyle="Italic"
@@ -679,13 +694,15 @@
             </StackPanel>
 
             <!-- Scheduled / background-run budget (§17.5): the separate envelope an unattended run stops at. -->
-            <TextBlock Text="{loc:Str Settings_Scheduled_Section_Header}"
-                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
-                       Margin="0,12,0,0"/>
-            <TextBlock Text="{loc:Str Settings_Scheduled_Section_Description}"
-                       Style="{StaticResource PiaSettingsDescriptionStyle}"
-                       TextWrapping="Wrap"
-                       Margin="0,0,0,16"/>
+            <StackPanel Orientation="Horizontal" Margin="0,12,0,16">
+              <TextBlock Text="{loc:Str Settings_Scheduled_Section_Header}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0"
+                         VerticalAlignment="Center"/>
+              <shared:PiaHelpHint Text="{loc:Str Settings_Scheduled_Section_Description}"
+                                  IconSize="14"
+                                  AutomationProperties.AutomationId="Settings_Scheduled_Help"/>
+            </StackPanel>
 
             <StackPanel Margin="0,0,0,20">
               <TextBlock Text="{loc:Str Settings_Scheduled_MaxSteps_Label}"
