@@ -20,7 +20,7 @@ public class DataTemplateHostedViewParseTests
         { typeof(AssignmentsViewModel), typeof(Pia.Views.AssignmentsView), 6 },
         { typeof(AssistantHistoryViewModel), typeof(Pia.Views.AssistantHistoryView), 14 },
         { typeof(HistoryViewModel), typeof(Pia.Views.HistoryView), 18 },
-        { typeof(MemoryViewModel), typeof(Pia.Views.MemoryView), 19 },
+        { typeof(VaultViewModel), typeof(Pia.Views.VaultView), 19 },
         { typeof(OptimizeViewModel), typeof(Pia.Views.OptimizeView), 20 },
         { typeof(RemindersViewModel), typeof(Pia.Views.RemindersView), 8 },
         { typeof(RoutinesViewModel), typeof(Pia.Views.RoutinesView), 25 },

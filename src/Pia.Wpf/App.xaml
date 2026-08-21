@@ -113,8 +113,8 @@
       <DataTemplate DataType="{x:Type viewModels:AssistantHistoryViewModel}">
         <views:AssistantHistoryView />
       </DataTemplate>
-      <DataTemplate DataType="{x:Type viewModels:MemoryViewModel}">
-        <views:MemoryView />
+      <DataTemplate DataType="{x:Type viewModels:VaultViewModel}">
+        <views:VaultView />
       </DataTemplate>
       <DataTemplate DataType="{x:Type viewModels:RemindersViewModel}">
         <views:RemindersView />

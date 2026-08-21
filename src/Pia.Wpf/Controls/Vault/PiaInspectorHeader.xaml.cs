@@ -1,6 +1,6 @@
 using System.Windows.Controls;
 
-namespace Pia.Controls.Memory;
+namespace Pia.Controls.Vault;
 
 public partial class PiaInspectorHeader : UserControl
 {

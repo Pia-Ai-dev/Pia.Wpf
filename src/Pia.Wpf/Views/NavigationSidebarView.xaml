@@ -101,13 +101,13 @@
 
       <!-- Memory (Assistant only) -->
       <ui:NavigationViewItem Command="{Binding NavigationCommand}"
-                             CommandParameter="Memory"
-                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Memory}"
+                             CommandParameter="Vault"
+                             IsActive="{Binding CurrentNavigationItem, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Vault}"
                              Visibility="{Binding Mode, Converter={StaticResource WindowModeToVisibilityConverter}, ConverterParameter=Assistant}">
         <ui:NavigationViewItem.Content>
           <Button Style="{StaticResource NavItemInvokeButtonStyle}"
                   Command="{Binding NavigationCommand}"
-                  CommandParameter="Memory"
+                  CommandParameter="Vault"
                   AutomationProperties.AutomationId="NavItem_Memory"
                   AutomationProperties.Name="{loc:Str Nav_Memory}">
             <TextBlock Text="{loc:Str Nav_Memory}" />

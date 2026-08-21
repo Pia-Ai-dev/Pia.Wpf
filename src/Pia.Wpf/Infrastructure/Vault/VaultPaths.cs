@@ -2,7 +2,7 @@ namespace Pia.Infrastructure.Vault;
 
 /// <summary>
 /// Path predicates over the vault tree. A <em>record file</em> is a user-facing memory document — the
-/// source of truth for the assistant's recall and the Memory view — as opposed to Pia's housekeeping
+/// source of truth for the assistant's recall and the Vault view — as opposed to Pia's housekeeping
 /// documents (<c>AGENTS.md</c>, <c>index.md</c>, <c>log.md</c>), the recoverable <c>.archive/</c>
 /// snapshots, or the <c>sources/</c> RAW layer (read-only except for a corrective <c>update_source</c>).
 ///

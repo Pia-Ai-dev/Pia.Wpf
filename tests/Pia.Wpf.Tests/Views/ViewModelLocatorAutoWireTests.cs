@@ -19,7 +19,7 @@ public class ViewModelLocatorAutoWireTests
         { typeof(Pia.Views.AssistantHistoryView), typeof(AssistantHistoryViewModel) },
         { typeof(Pia.Views.AssistantView), typeof(AssistantViewModel) },
         { typeof(Pia.Views.HistoryView), typeof(HistoryViewModel) },
-        { typeof(Pia.Views.MemoryView), typeof(MemoryViewModel) },
+        { typeof(Pia.Views.VaultView), typeof(VaultViewModel) },
         { typeof(Pia.Views.OptimizeView), typeof(OptimizeViewModel) },
         { typeof(Pia.Views.RemindersView), typeof(RemindersViewModel) },
         { typeof(Pia.Views.RoutinesView), typeof(RoutinesViewModel) },

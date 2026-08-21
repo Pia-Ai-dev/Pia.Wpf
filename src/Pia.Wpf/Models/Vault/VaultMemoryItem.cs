@@ -1,7 +1,7 @@
 namespace Pia.Models.Vault;
 
 /// <summary>
-/// A single user-facing memory as the Memory view consumes it: one <c>## section</c> of a structured
+/// A single user-facing memory as the Vault view consumes it: one <c>## section</c> of a structured
 /// document (<c>profile</c>/<c>contacts</c>/<c>preferences</c>), or the whole body of a freeform
 /// (<c>note</c>/<c>project</c>/<c>topic</c>) file. Keyed by <see cref="Reference"/> (a
 /// <c>path#heading</c> address, or a bare path for freeform files), which is the verb argument for
@@ -13,7 +13,7 @@ namespace Pia.Models.Vault;
 /// </summary>
 /// <param name="Category">
 /// The frontmatter <c>category</c> for a topic page (e.g. <c>person</c>/<c>organization</c>), used to
-/// group topics in the Memory view; <c>null</c> for non-topic records that carry no category.
+/// group topics in the Vault view; <c>null</c> for non-topic records that carry no category.
 /// </param>
 public sealed record VaultMemoryItem(
     string Reference, string FilePath, string Type, string Title, string Body, DateTime? Updated,

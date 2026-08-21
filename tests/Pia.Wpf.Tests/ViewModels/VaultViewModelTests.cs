@@ -12,9 +12,9 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-public class MemoryViewModelTests
+public class VaultViewModelTests
 {
-    private static (MemoryViewModel Vm, IMemoryService Memory, IDialogService Dialog) Create(
+    private static (VaultViewModel Vm, IMemoryService Memory, IDialogService Dialog) Create(
         VaultMemoryItem[] items, long bytes = 0, VaultSourceItem[]? sources = null)
     {
         var memory = Substitute.For<IMemoryService>();
@@ -29,8 +29,8 @@ public class MemoryViewModelTests
         localization[Arg.Any<string>()].Returns(ci => ci.ArgAt<string>(0));
 
         var dialog = Substitute.For<IDialogService>();
-        var vm = new MemoryViewModel(
-            NullLogger<MemoryViewModel>.Instance,
+        var vm = new VaultViewModel(
+            NullLogger<VaultViewModel>.Instance,
             memory,
             Substitute.For<IEmbeddingService>(),
             dialog,
@@ -42,7 +42,7 @@ public class MemoryViewModelTests
         return (vm, memory, dialog);
     }
 
-    private static (MemoryViewModel Vm, IMemoryService Memory, global::Wpf.Ui.ISnackbarService Snackbar) CreateWithSnackbar(
+    private static (VaultViewModel Vm, IMemoryService Memory, global::Wpf.Ui.ISnackbarService Snackbar) CreateWithSnackbar(
         VaultMemoryItem[] items, long bytes = 0)
     {
         var memory = Substitute.For<IMemoryService>();
@@ -57,8 +57,8 @@ public class MemoryViewModelTests
         localization[Arg.Any<string>()].Returns(ci => ci.ArgAt<string>(0));
 
         var snackbar = Substitute.For<global::Wpf.Ui.ISnackbarService>();
-        var vm = new MemoryViewModel(
-            NullLogger<MemoryViewModel>.Instance,
+        var vm = new VaultViewModel(
+            NullLogger<VaultViewModel>.Instance,
             memory,
             Substitute.For<IEmbeddingService>(),
             Substitute.For<IDialogService>(),
@@ -103,8 +103,8 @@ public class MemoryViewModelTests
             scheduler.RunAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
                 .Returns(new IngestResult("x", []));
 
-            var vm = new MemoryViewModel(
-                NullLogger<MemoryViewModel>.Instance,
+            var vm = new VaultViewModel(
+                NullLogger<VaultViewModel>.Instance,
                 memory,
                 Substitute.For<IEmbeddingService>(),
                 Substitute.For<IDialogService>(),
@@ -158,8 +158,8 @@ public class MemoryViewModelTests
             scheduler.RunAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
                 .Returns(new IngestResult("x", []));
 
-            var vm = new MemoryViewModel(
-                NullLogger<MemoryViewModel>.Instance,
+            var vm = new VaultViewModel(
+                NullLogger<VaultViewModel>.Instance,
                 memory,
                 Substitute.For<IEmbeddingService>(),
                 Substitute.For<IDialogService>(),
@@ -198,8 +198,8 @@ public class MemoryViewModelTests
         var scheduler = Substitute.For<IIngestScheduler>();
         scheduler.CurrentSourceRef.Returns("sources/running.txt"); // an ingest is already in flight
 
-        var vm = new MemoryViewModel(
-            NullLogger<MemoryViewModel>.Instance,
+        var vm = new VaultViewModel(
+            NullLogger<VaultViewModel>.Instance,
             memory,
             Substitute.For<IEmbeddingService>(),
             Substitute.For<IDialogService>(),
@@ -408,7 +408,7 @@ public class MemoryViewModelTests
         vm.SelectedMemory = item;
 
         Assert.False(vm.IsVaultOverviewVisible);
-        Assert.Contains(nameof(MemoryViewModel.IsVaultOverviewVisible), raised);
+        Assert.Contains(nameof(VaultViewModel.IsVaultOverviewVisible), raised);
 
         vm.Dispose();
     }

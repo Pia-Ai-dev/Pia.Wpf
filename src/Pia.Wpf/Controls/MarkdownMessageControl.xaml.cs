@@ -160,7 +160,7 @@ public partial class MarkdownMessageControl : UserControl
     {
         e.Handled = true;
 
-        // In-app wikilinks navigate within the app (the Memory view), NOT the browser.
+        // In-app wikilinks navigate within the app (the Vault view), NOT the browser.
         if (WikiLinkScheme.TryGetTarget(e.Uri, out var target))
         {
             WikiLinkNavigate?.Invoke(this, target);

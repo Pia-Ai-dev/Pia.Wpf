@@ -115,7 +115,7 @@ public class DialogService : IDialogService
     {
         var dialogHost = _contentDialogService.GetDialogHostEx()
             ?? throw new InvalidOperationException("No dialog host available");
-        var dialog = new MemoryHelpContentDialog(dialogHost, vaultRoot);
+        var dialog = new VaultHelpContentDialog(dialogHost, vaultRoot);
         await dialog.ShowAsync();
     }
 

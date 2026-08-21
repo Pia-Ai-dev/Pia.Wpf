@@ -2,9 +2,9 @@ using System.Windows.Controls;
 
 namespace Pia.Views;
 
-public partial class MemoryView : UserControl
+public partial class VaultView : UserControl
 {
-    public MemoryView()
+    public VaultView()
     {
         InitializeComponent();
     }

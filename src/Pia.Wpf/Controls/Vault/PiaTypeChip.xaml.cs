@@ -2,7 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Pia.Models;
 
-namespace Pia.Controls.Memory;
+namespace Pia.Controls.Vault;
 
 public partial class PiaTypeChip : UserControl
 {

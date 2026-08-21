@@ -26,7 +26,7 @@ public sealed class VaultIndexService
 
     // §8 canonical type order with the spec's display-name headings. NOT MemoryObjectTypes.GetDisplayName,
     // which renders "Notes & Knowledge"/"Contacts" and lacks a `topic` row — §8's example uses the short
-    // display names "Notes"/"Topics" and is the byte-for-byte authority. Public so the Memory view groups
+    // display names "Notes"/"Topics" and is the byte-for-byte authority. Public so the Vault view groups
     // by the same authoritative order/display names rather than re-deriving them.
     public static readonly (string Type, string Display)[] CanonicalGroups =
     [
@@ -39,12 +39,12 @@ public sealed class VaultIndexService
     ];
 
     // The bucket for topics whose frontmatter `category` is missing or unrecognized. Public so the
-    // Memory view uses the same fallback key when it elevates category to a top-level group.
+    // Vault view uses the same fallback key when it elevates category to a top-level group.
     public const string DefaultCategory = "other";
 
     // §8 canonical category order + display headings for sub-grouping the `## Topics` group. Mirrors
     // the ingest extractor's category vocabulary; any page whose `category` is missing/unrecognized
-    // falls under "Other". Public so the Memory view groups topics by the same authoritative
+    // falls under "Other". Public so the Vault view groups topics by the same authoritative
     // order/display names rather than re-deriving them.
     public static readonly (string Category, string Display)[] TopicCategories =
     [
@@ -63,7 +63,7 @@ public sealed class VaultIndexService
     /// <summary>
     /// Normalizes a raw frontmatter <c>category</c> value to one of the known <see cref="TopicCategories"/>
     /// keys, falling back to <see cref="DefaultCategory"/> when missing or unrecognized. Shared with the
-    /// Memory view so its top-level topic grouping mirrors the index sub-grouping.
+    /// Vault view so its top-level topic grouping mirrors the index sub-grouping.
     /// </summary>
     public static string NormalizeTopicCategory(string? category)
     {
@@ -81,7 +81,7 @@ public sealed class VaultIndexService
 
     /// <summary>
     /// The candidate vault references (most-specific first) a §5 wikilink <paramref name="target"/> denotes,
-    /// for the Memory view to resolve an in-app <c>[[...]]</c> link to a loaded item. The primary mapping is
+    /// for the Vault view to resolve an in-app <c>[[...]]</c> link to a loaded item. The primary mapping is
     /// the inverse of <see cref="LinkTarget"/>: <c>memory/&lt;target&gt;.md</c>, preserving any
     /// <c>#heading</c>. For a headingless page link a second candidate re-slugs the final path segment
     /// through <see cref="VaultSlug"/> — the SAME algorithm the write path (<c>IngestService</c>) names topic

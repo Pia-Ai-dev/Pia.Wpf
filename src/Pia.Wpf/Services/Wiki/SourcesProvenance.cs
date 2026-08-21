@@ -5,7 +5,7 @@ namespace Pia.Services.Wiki;
 /// <summary>
 /// Shared conventions between the ingest writer (<see cref="IngestService"/>, which records provenance
 /// on topic pages) and the sources reader (<see cref="VaultSourcesService"/>, which surfaces the RAW
-/// layer in the Memory view): which <c>sources/</c> files count as ingestable text, and how the
+/// layer in the Vault view): which <c>sources/</c> files count as ingestable text, and how the
 /// best-effort <c>sources: [sources/a, sources/b]</c> frontmatter flow list is read back. Kept in one
 /// place so the writer and the reader can never drift on the lenient parse.
 /// </summary>

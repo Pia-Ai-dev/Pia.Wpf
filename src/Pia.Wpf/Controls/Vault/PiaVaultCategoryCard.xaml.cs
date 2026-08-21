@@ -7,13 +7,13 @@ using Pia.Helpers;
 using Pia.Models.Vault;
 using Pia.ViewModels;
 
-namespace Pia.Controls.Memory;
+namespace Pia.Controls.Vault;
 
-public partial class PiaMemoryCategoryCard : UserControl
+public partial class PiaVaultCategoryCard : UserControl
 {
-    private MemoryViewModel? _vm;
+    private VaultViewModel? _vm;
 
-    public PiaMemoryCategoryCard()
+    public PiaVaultCategoryCard()
     {
         InitializeComponent();
         Loaded += OnLoaded;
@@ -22,8 +22,8 @@ public partial class PiaMemoryCategoryCard : UserControl
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        var view = this.FindAncestor<Views.MemoryView>();
-        _vm = view?.DataContext as MemoryViewModel;
+        var view = this.FindAncestor<Views.VaultView>();
+        _vm = view?.DataContext as VaultViewModel;
         if (_vm is not null)
             _vm.PropertyChanged += OnVmPropertyChanged;
         SyncFromVm();
@@ -38,7 +38,7 @@ public partial class PiaMemoryCategoryCard : UserControl
 
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(MemoryViewModel.SelectedMemory))
+        if (e.PropertyName == nameof(VaultViewModel.SelectedMemory))
             SyncFromVm();
     }
 

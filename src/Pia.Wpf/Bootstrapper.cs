@@ -779,7 +779,7 @@ public static class Bootstrapper
         services.AddScoped<MeetingAttendeeViewModel>();
         services.AddScoped<DirectTranscriptionViewModel>();
         services.AddScoped<AssistantHistoryViewModel>();
-        services.AddScoped<MemoryViewModel>();
+        services.AddScoped<VaultViewModel>();
         services.AddScoped<RoutinesViewModel>();
         services.AddScoped<RemindersViewModel>();
         services.AddScoped<AssignmentsViewModel>();

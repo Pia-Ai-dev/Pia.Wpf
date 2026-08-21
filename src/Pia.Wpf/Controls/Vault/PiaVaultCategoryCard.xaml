@@ -1,8 +1,8 @@
-<UserControl x:Class="Pia.Controls.Memory.PiaMemoryCategoryCard"
+<UserControl x:Class="Pia.Controls.Vault.PiaVaultCategoryCard"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-             xmlns:mem="clr-namespace:Pia.Controls.Memory"
+             xmlns:mem="clr-namespace:Pia.Controls.Vault"
              xmlns:views="clr-namespace:Pia.Views"
              x:Name="Root">
   <Border CornerRadius="{StaticResource LargeRadius}"
@@ -79,7 +79,7 @@
                Visibility="{Binding IsExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
         <ListBox.ItemTemplate>
           <DataTemplate>
-            <mem:PiaMemoryRow/>
+            <mem:PiaVaultRow/>
           </DataTemplate>
         </ListBox.ItemTemplate>
       </ListBox>

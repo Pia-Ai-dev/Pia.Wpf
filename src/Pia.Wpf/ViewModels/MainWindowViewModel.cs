@@ -310,7 +310,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
             "Shortcut2" => Mode switch
             {
                 WindowMode.Optimize => "History",
-                WindowMode.Assistant => "Memory",
+                WindowMode.Assistant => "Vault",
                 _ => null
             },
             "Shortcut3" => Mode switch
@@ -344,8 +344,8 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
             case "AssistantHistory":
                 _navigationService.NavigateTo<AssistantHistoryViewModel>();
                 break;
-            case "Memory":
-                _navigationService.NavigateTo<MemoryViewModel>();
+            case "Vault":
+                _navigationService.NavigateTo<VaultViewModel>();
                 break;
             case "Reminders":
                 _navigationService.NavigateTo<RemindersViewModel>();

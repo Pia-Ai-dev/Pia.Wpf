@@ -142,6 +142,28 @@ public class MainWindowViewModelTests
         Assert.Equal("Routines", nameof(RoutinesViewModel).Replace("ViewModel", ""));
     }
 
+    /// <summary>The sidebar label stays "Memory" while the route string is "Vault" — they differ on purpose.</summary>
+    [Fact]
+    public void TheEntry_NavigatesToTheVaultView()
+    {
+        using var vm = CreateSut(WindowMode.Assistant);
+
+        vm.NavigationCommand.Execute("Vault");
+
+        _navigation.Received(1).NavigateTo<VaultViewModel>();
+        Assert.Equal("Vault", nameof(VaultViewModel).Replace("ViewModel", ""));
+    }
+
+    [Fact]
+    public void TheAssistantShortcut_StillReachesTheVault()
+    {
+        using var vm = CreateSut(WindowMode.Assistant);
+
+        vm.NavigationCommand.Execute("Shortcut2");
+
+        _navigation.Received(1).NavigateTo<VaultViewModel>();
+    }
+
     [Fact]
     public void TheAssistantShortcuts_KeepTheirDestinations()
     {

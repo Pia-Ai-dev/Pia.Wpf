@@ -59,7 +59,7 @@ public static class WikiLinkReconciler
             var label = match.Groups["label"].Success ? match.Groups["label"].Value : null;
 
             // Trim surrounding slashes then strip a leading "topics/" — mirroring the click-time resolution
-            // in VaultIndexService.WikiTargetReferences / MemoryViewModel, so "[[/topics/foo]]" is treated
+            // in VaultIndexService.WikiTargetReferences / VaultViewModel, so "[[/topics/foo]]" is treated
             // the same here as it is there.
             var segment = match.Groups["target"].Value.Trim('/');
             if (segment.StartsWith(TopicsPrefix, StringComparison.OrdinalIgnoreCase))

@@ -1,4 +1,4 @@
-<ui:ContentDialog x:Class="Pia.Views.Dialogs.MemoryHelpContentDialog"
+<ui:ContentDialog x:Class="Pia.Views.Dialogs.VaultHelpContentDialog"
                   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                   xmlns:local="clr-namespace:Pia.Views.Dialogs"
                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -10,7 +10,7 @@
                   DialogMaxWidth="600">
   <ui:ContentDialog.Resources>
     <Style BasedOn="{StaticResource {x:Type ui:ContentDialog}}"
-           TargetType="{x:Type local:MemoryHelpContentDialog}" />
+           TargetType="{x:Type local:VaultHelpContentDialog}" />
   </ui:ContentDialog.Resources>
 
   <StackPanel MaxWidth="520" Margin="0,8,0,0">

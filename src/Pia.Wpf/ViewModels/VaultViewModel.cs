@@ -13,15 +13,15 @@ using Pia.ViewModels.Models;
 namespace Pia.ViewModels;
 
 /// <summary>
-/// Drives the Memory screen from the on-disk markdown vault — the source of truth for the assistant's
+/// Drives the Vault view from the on-disk markdown vault — the source of truth for the assistant's
 /// recall — rather than the legacy SQLite JSON store. Items are <see cref="VaultMemoryItem"/> sections
 /// addressed by <c>path#heading</c>; edits and deletes go through the vault verbs
 /// (<see cref="IMemoryService.UpdateSectionAsync"/> / <see cref="IMemoryService.ForgetAsync"/>) and the
 /// vault watcher owns embedding reindex, so this view never generates embeddings.
 /// </summary>
-public partial class MemoryViewModel : UiThreadViewModel, INavigationAware, IDisposable
+public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisposable
 {
-    private readonly ILogger<MemoryViewModel> _logger;
+    private readonly ILogger<VaultViewModel> _logger;
     private readonly IMemoryService _memoryService;
     private readonly IEmbeddingService _embeddingService;
     private readonly IDialogService _dialogService;
@@ -123,8 +123,8 @@ public partial class MemoryViewModel : UiThreadViewModel, INavigationAware, IDis
     public IRelayCommand OpenVaultFolderCommand { get; }
     public IAsyncRelayCommand<IReadOnlyList<string>> AddSourceFilesCommand { get; }
 
-    public MemoryViewModel(
-        ILogger<MemoryViewModel> logger,
+    public VaultViewModel(
+        ILogger<VaultViewModel> logger,
         IMemoryService memoryService,
         IEmbeddingService embeddingService,
         IDialogService dialogService,
@@ -343,7 +343,7 @@ public partial class MemoryViewModel : UiThreadViewModel, INavigationAware, IDis
         return results;
     }
 
-    // The §8 canonical type set (case-insensitive) — the types the Memory view can group and display.
+    // The §8 canonical type set (case-insensitive) — the types the Vault view can group and display.
     private static readonly HashSet<string> DisplayableTypes =
         new(VaultIndexService.CanonicalGroups.Select(g => g.Type), StringComparer.OrdinalIgnoreCase);
 

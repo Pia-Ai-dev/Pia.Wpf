@@ -950,7 +950,7 @@ public class MemoryService : IMemoryService
         return true;
     }
 
-    // Mirrors MemoryViewModel.EnumerateDisplayGroups so browse_index and the Memory view can't drift:
+    // Mirrors VaultViewModel.EnumerateDisplayGroups so browse_index and the Vault view can't drift:
     // §8 CanonicalGroups order, exploding the `topic` type into one group per frontmatter `category`
     // (TopicCategories order, "Other" bucket for missing/unknown).
     private static IEnumerable<(string Key, string Display, List<VaultMemoryItem> Items)>
@@ -1507,7 +1507,7 @@ public class MemoryService : IMemoryService
 
             var type = ResolveItemType(doc, filePath);
             var updated = ParseFrontmatterUpdated(doc);
-            // Topic pages carry a frontmatter `category` the Memory view groups on (null otherwise). Read
+            // Topic pages carry a frontmatter `category` the Vault view groups on (null otherwise). Read
             // it BEFORE the section split so a topic whose synthesized body has `##` headings — which
             // pushes it down the structured branch — still carries its category on every section item.
             var category = doc.Frontmatter.TryGetValue("category", out var c) && !string.IsNullOrWhiteSpace(c)

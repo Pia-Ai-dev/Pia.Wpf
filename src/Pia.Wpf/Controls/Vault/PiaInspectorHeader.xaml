@@ -1,8 +1,8 @@
-<UserControl x:Class="Pia.Controls.Memory.PiaInspectorHeader"
+<UserControl x:Class="Pia.Controls.Vault.PiaInspectorHeader"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-             xmlns:mem="clr-namespace:Pia.Controls.Memory"
+             xmlns:mem="clr-namespace:Pia.Controls.Vault"
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:behaviors="clr-namespace:Pia.Behaviors"
              xmlns:views="clr-namespace:Pia.Views">
@@ -33,18 +33,18 @@
         <ui:Button Icon="{ui:SymbolIcon Symbol=Edit20}"
                    Appearance="Transparent"
                    ToolTip="{loc:Str Memory_Edit}"
-                   Command="{Binding DataContext.EditMemoryCommand, RelativeSource={RelativeSource AncestorType=views:MemoryView}}"
+                   Command="{Binding DataContext.EditMemoryCommand, RelativeSource={RelativeSource AncestorType=views:VaultView}}"
                    CommandParameter="{Binding}"/>
         <ui:Button Icon="{ui:SymbolIcon Symbol=Copy20}"
                    Appearance="Transparent"
                    ToolTip="{loc:Str Common_Copy}"
-                   Command="{Binding DataContext.CopyMarkdownCommand, RelativeSource={RelativeSource AncestorType=views:MemoryView}}"
+                   Command="{Binding DataContext.CopyMarkdownCommand, RelativeSource={RelativeSource AncestorType=views:VaultView}}"
                    CommandParameter="{Binding}"/>
         <ui:Button Icon="{ui:SymbolIcon Symbol=Delete20}"
                    Appearance="Transparent"
                    ToolTip="{loc:Str Memory_Delete}"
                    Foreground="{DynamicResource PiaDangerBrush}"
-                   Command="{Binding DataContext.DeleteMemoryCommand, RelativeSource={RelativeSource AncestorType=views:MemoryView}}"
+                   Command="{Binding DataContext.DeleteMemoryCommand, RelativeSource={RelativeSource AncestorType=views:VaultView}}"
                    CommandParameter="{Binding}"/>
       </StackPanel>
 

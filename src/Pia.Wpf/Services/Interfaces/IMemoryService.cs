@@ -76,7 +76,7 @@ public record SourceCreatePreview(bool CanWrite, string Ref, string? Error);
 /// The <c>recall</c> tool's result shape: the ranked <see cref="Hits"/> plus a standing <see cref="Note"/>
 /// telling the model topic hits are summaries expandable via <c>read_topic</c>/<c>read_source</c>. This
 /// wrapper lives only at the tool boundary — <see cref="IMemoryService.RecallAsync"/> still returns the
-/// bare hit list, which the Memory view consumes directly. (A result-DTO record, co-located with
+/// bare hit list, which the Vault view consumes directly. (A result-DTO record, co-located with
 /// <see cref="RecallHit"/> under Services.Interfaces — the sanctioned home for return-shape carriers.)
 /// </summary>
 public record RecallResult(IReadOnlyList<RecallHit> Hits, string Note);
@@ -91,7 +91,7 @@ public record RecallResult(IReadOnlyList<RecallHit> Hits, string Note);
 public record RememberOutcome(UpsertBand Band, string Reference, IReadOnlyList<string> Candidates);
 
 /// <summary>
-/// A single-pass view of the vault for the Memory screen: the section/freeform <see cref="Items"/> plus
+/// A single-pass projection of the vault for the Vault view: the section/freeform <see cref="Items"/> plus
 /// <see cref="Bytes"/>, the total on-disk size of the record files backing them (the header metric).
 /// Both are produced from one enumeration so the view does not re-walk the vault for the count.
 /// </summary>
@@ -224,7 +224,7 @@ public interface IMemoryService
 
     /// <summary>
     /// Absolute path of the vault root — the user-facing "memory vault" folder holding both
-    /// <c>memory/</c> (the records shown in the memory views) and <c>sources/</c> (the RAW layer,
+    /// <c>memory/</c> (the records shown in the Vault view) and <c>sources/</c> (the RAW layer,
     /// read-only to Pia except for a corrective <see cref="UpdateSourceAsync"/>). Exposed here (not via
     /// <c>IVaultStore</c>) so ViewModels can surface it — e.g. "open memory vault" — without depending
     /// on Infrastructure. Tracks folder relocation live.

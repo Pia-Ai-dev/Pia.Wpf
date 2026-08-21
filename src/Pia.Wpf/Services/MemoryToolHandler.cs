@@ -152,7 +152,7 @@ public class MemoryToolHandler : IMemoryToolHandler
         var hits = await _memoryService.RecallAsync(query);
         _logger.LogInformation("Recall returned {Count} hit(s)", hits.Count);
         _logger.SensitiveDebug("Recall query: {Query}", query);
-        // Wrap here (never in RecallAsync — MemoryViewModel consumes the service's list directly).
+        // Wrap here (never in RecallAsync — VaultViewModel consumes the service's list directly).
         return new RecallResult(hits, RecallNote);
     }
 

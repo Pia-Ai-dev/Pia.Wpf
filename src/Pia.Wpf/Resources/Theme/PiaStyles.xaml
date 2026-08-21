@@ -97,7 +97,7 @@
   </Style>
 
   <!-- Small static label chip (a word or two, no interaction) — the geometry of
-       Controls/Memory/PiaTypeChip.xaml, lifted so other surfaces can share the look.
+       Controls/Vault/PiaTypeChip.xaml, lifted so other surfaces can share the look.
        Background is deliberately NOT set: callers pick the tint that carries their meaning.
        PiaTypeChip itself is intentionally NOT refactored onto this style yet — it is hardwired to
        MemoryType through three converters, and rewiring it is how a contained addition becomes a

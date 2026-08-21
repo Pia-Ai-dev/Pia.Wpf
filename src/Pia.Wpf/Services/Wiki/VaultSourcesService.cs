@@ -11,7 +11,7 @@ namespace Pia.Services.Wiki;
 /// Enumerates the vault's <c>sources/</c> RAW layer (any extension — sources are not Pia-managed
 /// markdown, so this walks the filesystem rather than <see cref="IVaultStore.EnumerateAsync"/>) and
 /// joins each file against the provenance that <see cref="IngestService"/> records in topic-page
-/// <c>sources:</c> frontmatter, so the Memory view can show which raw documents were compiled into the
+/// <c>sources:</c> frontmatter, so the Vault view can show which raw documents were compiled into the
 /// wiki and which are still waiting. Read-only and best-effort: hand-edited frontmatter degrades a
 /// file's status to "not ingested" rather than failing the listing.
 /// </summary>

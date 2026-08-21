@@ -142,7 +142,7 @@ public class MemoryToolIntegrationTests : IDisposable
 
         // recall is immediate: a result object, never a pending action. The tool now wraps the hits in a
         // RecallResult that carries the standing "topic hits are expandable" Note (the drill nudge); the
-        // bare hit list stays on IMemoryService.RecallAsync for the Memory view.
+        // bare hit list stays on IMemoryService.RecallAsync for the Vault view.
         Assert.Null(recallPending);
         Assert.NotNull(result);
         var recallResult = Assert.IsType<RecallResult>(result);

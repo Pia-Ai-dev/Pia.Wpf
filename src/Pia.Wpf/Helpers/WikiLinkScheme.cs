@@ -5,7 +5,7 @@ namespace Pia.Helpers;
 /// clickable in-app navigation rather than external browser opens. <see cref="WikiLinkConverter"/> rewrites
 /// the wikilink into a markdown link whose destination is <c>pia-memory:&lt;target&gt;</c>; the shared
 /// <c>MarkdownMessageControl</c> recognizes the scheme in its navigation handler and raises an in-app event
-/// (instead of <c>Process.Start</c>), which the Memory view resolves back to a <c>VaultMemoryItem</c>.
+/// (instead of <c>Process.Start</c>), which the Vault view resolves back to a <c>VaultMemoryItem</c>.
 ///
 /// <para>The scheme is inert everywhere the converter is not applied: no other content produces this scheme,
 /// so assistant chat and other markdown surfaces are unaffected.</para>

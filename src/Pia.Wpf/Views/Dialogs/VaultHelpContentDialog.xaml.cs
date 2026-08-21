@@ -9,9 +9,9 @@ namespace Pia.Views.Dialogs;
 /// help text overlays the page rather than pushing all content down. The "open memory vault" affordance
 /// reveals <c>vaultRoot</c> in Explorer.
 /// </summary>
-public partial class MemoryHelpContentDialog : ContentDialog
+public partial class VaultHelpContentDialog : ContentDialog
 {
-    public MemoryHelpContentDialog(ContentDialogHost dialogHost, string vaultRoot)
+    public VaultHelpContentDialog(ContentDialogHost dialogHost, string vaultRoot)
         : base(dialogHost)
     {
         DataContext = new MemoryHelpDialogViewModel(vaultRoot);
