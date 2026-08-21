@@ -110,6 +110,55 @@ public class AssistantHistoryViewModelImportTests
         sut.Dispose();
     }
 
+    /// <summary>
+    /// History only ever queried one page of 50 with no way to reach the rest. Nobody had more than 50
+    /// chats before imports existed; a 573-chat migration reads as data loss.
+    /// </summary>
+    [Fact]
+    public async Task LoadMore_AppendsTheNextPage_AndStopsAtTheTotal()
+    {
+        var all = Enumerable.Range(0, 120)
+            .Select(i => new SyncAssistantChat
+            {
+                Id = Guid.NewGuid(),
+                Title = $"chat {i}",
+                UpdatedAt = DateTime.UtcNow.AddMinutes(-i),
+                Messages = [new SyncAssistantChatMessage { Id = Guid.NewGuid(), Content = "x" }],
+            })
+            .ToList();
+
+        var sut = CreateSut();
+
+        _chatService.CountAsync(Arg.Any<string>(), Arg.Any<DateTime?>(), Arg.Any<DateTime?>(),
+            Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(all.Count);
+        _chatService.SearchAsync(Arg.Any<string>(), Arg.Any<DateTime?>(), Arg.Any<DateTime?>(),
+            Arg.Any<Guid?>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(call =>
+        {
+            var offset = (int)call[4]!;
+            var limit = (int)call[5]!;
+            return Task.FromResult<IReadOnlyList<SyncAssistantChat>>(all.Skip(offset).Take(limit).ToList());
+        });
+        await sut.OnNavigatedToAsync(null);
+
+        Assert.Equal(50, sut.Chats.Count);
+        Assert.Equal(120, sut.TotalCount);
+        Assert.True(sut.HasMoreChats);
+
+        await sut.LoadMoreChatsCommand.ExecuteAsync(null);
+        Assert.Equal(100, sut.Chats.Count);
+        Assert.True(sut.HasMoreChats);
+
+        await sut.LoadMoreChatsCommand.ExecuteAsync(null);
+        Assert.Equal(120, sut.Chats.Count);
+        Assert.False(sut.HasMoreChats);
+
+        // A filter change must restart at page one rather than appending to a stale list.
+        sut.SearchQuery = "chat";
+        await sut.RefreshCommand.ExecuteAsync(null);
+        Assert.Equal(50, sut.Chats.Count);
+        sut.Dispose();
+    }
+
     [Fact]
     public async Task RevealingAnImport_LeavesAnAlreadyWiderFilterAlone()
     {

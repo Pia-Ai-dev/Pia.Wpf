@@ -51,6 +51,14 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
     [ObservableProperty]
     private int _visibleCount;
 
+    /// <summary>How many chats the current filter matches in the store, loaded or not.</summary>
+    [ObservableProperty]
+    private int _totalCount;
+
+    /// <summary>True while the store holds chats past the last loaded page — drives the Load more row.</summary>
+    [ObservableProperty]
+    private bool _hasMoreChats;
+
     /// <summary>"All states" + one option per live <see cref="ChatState"/> (action-needed first).</summary>
     public IReadOnlyList<ChatStateFilterOption> StateFilterOptions { get; }
 
@@ -90,6 +98,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
     public IAsyncRelayCommand ExportChatArchiveCommand { get; }
     public IAsyncRelayCommand ExportAllChatsCommand { get; }
     public IAsyncRelayCommand ImportChatsCommand { get; }
+    public IAsyncRelayCommand LoadMoreChatsCommand { get; }
 
     public AssistantHistoryViewModel(
         ILogger<AssistantHistoryViewModel> logger,
@@ -129,6 +138,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         ExportChatArchiveCommand = new AsyncRelayCommand(ExecuteExportChatArchiveAsync, CanExecuteExport);
         ExportAllChatsCommand = new AsyncRelayCommand(ExecuteExportAllChatsAsync);
         ImportChatsCommand = new AsyncRelayCommand(ExecuteImportChatsAsync);
+        LoadMoreChatsCommand = new AsyncRelayCommand(ExecuteLoadMoreChatsAsync, () => HasMoreChats && !IsLoading);
 
         PropertyChanged += OnPropertyChanged;
         _chatService.ChatsChanged += OnChatsChanged;
@@ -167,29 +177,42 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
 
     public void OnNavigatedFrom() { }
 
-    private async Task LoadChatsAsync()
+    private Task LoadChatsAsync() => LoadChatsAsync(append: false);
+
+    private async Task LoadChatsAsync(bool append)
     {
         try
         {
             IsLoading = true;
+            var offset = append ? Chats.Count : 0;
 
             var chats = await _chatService.SearchAsync(
                 searchText: string.IsNullOrWhiteSpace(SearchQuery) ? null : SearchQuery,
                 fromDate: FilterStartDate,
                 toDate: FilterEndDate,
                 providerId: SelectedProviderId,
-                offset: 0,
+                offset: offset,
                 limit: PageSize);
+
+            TotalCount = await _chatService.CountAsync(
+                searchText: string.IsNullOrWhiteSpace(SearchQuery) ? null : SearchQuery,
+                fromDate: FilterStartDate,
+                toDate: FilterEndDate,
+                providerId: SelectedProviderId);
 
             var previousSelectedId = SelectedChat?.Id;
 
-            Chats.Clear();
+            if (!append)
+                Chats.Clear();
             foreach (var chat in chats)
                 Chats.Add(new AssistantChatRowViewModel(chat, _chatSessionManager.GetState(chat.Id)));
 
+            HasMoreChats = Chats.Count < TotalCount;
+
             _logger.LogInformation(
-                "AssistantHistory loaded {Count} chats (hasQuery={HasQuery}, providerFilter={HasProvider})",
-                chats.Count,
+                "AssistantHistory showing {Loaded} of {Total} chats (hasQuery={HasQuery}, providerFilter={HasProvider})",
+                Chats.Count,
+                TotalCount,
                 !string.IsNullOrWhiteSpace(SearchQuery),
                 SelectedProviderId.HasValue);
             _logger.SensitiveDebug("AssistantHistory query: {Query}", SearchQuery);
@@ -329,6 +352,9 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
     }
 
     private Task ExecuteRefreshAsync() => LoadChatsAsync();
+
+    /// <summary>Appends the next page. History is capped at one page, which a migration import blows past.</summary>
+    private Task ExecuteLoadMoreChatsAsync() => LoadChatsAsync(append: true);
 
     private void DebounceReload()
     {
@@ -509,6 +535,23 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         }
     }
 
+    /// <summary>
+    /// Dev-only: a preset path that stands in for the file picker, so a UI script can drive the real
+    /// Import/Export buttons without automating a native dialog. Always null in release.
+    /// </summary>
+    private string? DebugPresetPath(string environmentVariable)
+    {
+#if DEBUG
+        if (Environment.GetEnvironmentVariable(environmentVariable) is not { Length: > 0 } path)
+            return null;
+
+        _logger.LogWarning("Chat archive path preset by {EnvVar}; the file picker is bypassed", environmentVariable);
+        return path;
+#else
+        return null;
+#endif
+    }
+
     private async Task ExecuteExportChatArchiveAsync()
     {
         var chat = SelectedChatDetail;
@@ -527,18 +570,22 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
     /// <summary>Writes a re-importable archive; a null <paramref name="chatIds"/> means every stored chat.</summary>
     private async Task ExportToArchiveFileAsync(string defaultName, IReadOnlyList<Guid>? chatIds)
     {
-        var dialog = new SaveFileDialog
+        var filePath = DebugPresetPath(Bootstrapper.DebugChatExportFileEnvVar);
+        if (filePath is null)
         {
-            Title = _localizationService["AssistantHistory_ExportArchive"],
-            FileName = defaultName,
-            Filter = "Pia chat archive (*.json)|*.json",
-            DefaultExt = ".json",
-        };
+            var dialog = new SaveFileDialog
+            {
+                Title = _localizationService["AssistantHistory_ExportArchive"],
+                FileName = defaultName,
+                Filter = "Pia chat archive (*.json)|*.json",
+                DefaultExt = ".json",
+            };
 
-        if (dialog.ShowDialog() != true)
-            return;
+            if (dialog.ShowDialog() != true)
+                return;
 
-        var filePath = dialog.FileName;
+            filePath = dialog.FileName;
+        }
         try
         {
             IsLoading = true;
@@ -566,23 +613,29 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
 
     private async Task ExecuteImportChatsAsync()
     {
-        var dialog = new OpenFileDialog
+        var filePath = DebugPresetPath(Bootstrapper.DebugChatImportFileEnvVar);
+        if (filePath is null)
         {
-            Title = _localizationService["AssistantHistory_Import"],
-            Filter = "Chat export (*.json)|*.json|All files (*.*)|*.*",
-            DefaultExt = ".json",
-            CheckFileExists = true,
-        };
+            var dialog = new OpenFileDialog
+            {
+                Title = _localizationService["AssistantHistory_Import"],
+                Filter = "Chat export (*.json)|*.json|All files (*.*)|*.*",
+                DefaultExt = ".json",
+                CheckFileExists = true,
+            };
 
-        if (dialog.ShowDialog() != true)
-            return;
+            if (dialog.ShowDialog() != true)
+                return;
+
+            filePath = dialog.FileName;
+        }
 
         ChatImportResult result;
         Exception? failure = null;
         try
         {
             IsLoading = true;
-            result = await _chatArchiveService.ImportAsync(dialog.FileName);
+            result = await _chatArchiveService.ImportAsync(filePath);
         }
         catch (Exception ex)
         {
@@ -732,6 +785,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         DeleteChatCommand.NotifyCanExecuteChanged();
         ResumeChatCommand.NotifyCanExecuteChanged();
         ExportChatArchiveCommand.NotifyCanExecuteChanged();
+        LoadMoreChatsCommand.NotifyCanExecuteChanged();
     }
 
     private void OnChatsChanged(object? sender, AssistantChatChangedEventArgs e)
@@ -764,7 +818,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
             ExportChatArchiveCommand.NotifyCanExecuteChanged();
         }
 
-        if (e.PropertyName == nameof(IsLoading))
+        if (e.PropertyName is nameof(IsLoading) or nameof(HasMoreChats))
             UpdateCommandStates();
     }
 

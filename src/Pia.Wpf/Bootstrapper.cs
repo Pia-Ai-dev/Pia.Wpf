@@ -32,6 +32,11 @@ public static class Bootstrapper
     public const string DebugDirectTranscriptionAudioFileEnvVar = "PIA_DEBUG_DIRECT_TRANSCRIPTION_AUDIO_FILE";
     public const string DebugMeetingAttendeeAudioFileEnvVar = "PIA_DEBUG_MEETING_ATTENDEE_AUDIO_FILE";
 
+    // Dev-only hooks: when set, chat import/export skip their file pickers and use this path, so a
+    // UI script can drive the real buttons without automating a native dialog. DEBUG builds only.
+    public const string DebugChatImportFileEnvVar = "PIA_DEBUG_CHAT_IMPORT_FILE";
+    public const string DebugChatExportFileEnvVar = "PIA_DEBUG_CHAT_EXPORT_FILE";
+
     public static string ProductionServerUrl =>
         Environment.GetEnvironmentVariable(ServerUrlEnvVar) is { Length: > 0 } envUrl
             ? envUrl

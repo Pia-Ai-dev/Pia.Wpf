@@ -1225,4 +1225,5 @@
   <data name="AssistantHistory_ExportArchive" xml:space="preserve"><value>Als Pia-Archiv exportieren</value></data>
   <data name="AssistantHistory_ImportFormat_Pia" xml:space="preserve"><value>Pia-Archiv</value></data>
   <data name="AssistantHistory_ImportFormat_OpenWebUi" xml:space="preserve"><value>Open-WebUI-Export</value></data>
+  <data name="AssistantHistory_LoadMore" xml:space="preserve"><value>Mehr laden</value></data>
 </root>

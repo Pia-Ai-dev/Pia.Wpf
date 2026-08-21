@@ -486,6 +486,9 @@ public sealed class HeadlessTurnExecutorTests
         public Task<IReadOnlyList<SyncAssistantChat>> SearchAsync(string? searchText = null, DateTime? fromDate = null,
             DateTime? toDate = null, Guid? providerId = null, int offset = 0, int limit = 50, CancellationToken ct = default)
             => _inner.SearchAsync(searchText, fromDate, toDate, providerId, offset, limit, ct);
+        public Task<int> CountAsync(string? searchText = null, DateTime? fromDate = null,
+            DateTime? toDate = null, Guid? providerId = null, CancellationToken ct = default)
+            => _inner.CountAsync(searchText, fromDate, toDate, providerId, ct);
         public Task DeleteAsync(Guid id, CancellationToken ct = default) => _inner.DeleteAsync(id, ct);
         public Task DeleteFromRemoteAsync(Guid id, CancellationToken ct = default) => _inner.DeleteFromRemoteAsync(id, ct);
         public Task TouchLastAccessedAsync(Guid id, CancellationToken ct = default) => _inner.TouchLastAccessedAsync(id, ct);

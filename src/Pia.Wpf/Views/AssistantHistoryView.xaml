@@ -202,18 +202,29 @@
                                 Hint="{loc:Str AssistantHistory_EmptyStateHint}"
                                 Visibility="{Binding Chats.Count, Converter={StaticResource ZeroToVisibilityConverter}}"/>
 
-          <ItemsControl ItemsSource="{Binding ChatGroups}">
-            <ItemsControl.ItemsPanel>
-              <ItemsPanelTemplate>
-                <StackPanel Orientation="Vertical"/>
-              </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate>
-              <DataTemplate>
-                <ah:PiaAssistantChatGroupCard Margin="0,0,0,10"/>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
+          <StackPanel Orientation="Vertical">
+            <ItemsControl ItemsSource="{Binding ChatGroups}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Vertical"/>
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <ah:PiaAssistantChatGroupCard Margin="0,0,0,10"/>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <ui:Button HorizontalAlignment="Center"
+                       Margin="0,2,0,16"
+                       Appearance="Secondary"
+                       Command="{Binding LoadMoreChatsCommand}"
+                       Visibility="{Binding HasMoreChats, Converter={StaticResource BooleanToVisibilityConverter}}"
+                       AutomationProperties.AutomationId="AssistantHistory_LoadMore">
+              <TextBlock Text="{loc:Str AssistantHistory_LoadMore}"/>
+            </ui:Button>
+          </StackPanel>
         </Grid>
       </ScrollViewer>
 
@@ -260,6 +271,8 @@
                  FontSize="12"
                  Foreground="{DynamicResource TextMutedBrush}">
         <Run Text="{Binding VisibleCount, Mode=OneWay}"/>
+        <Run Text=" / "/>
+        <Run Text="{Binding TotalCount, Mode=OneWay}"/>
         <Run Text=" chats"/>
       </TextBlock>
     </Border>
