@@ -54,6 +54,15 @@ public static class Bootstrapper
         var name = System.IO.Path.GetFileNameWithoutExtension(basePath);
         return System.IO.Path.Combine(directory, $"{name}-{suffix}.wav");
     }
+
+    /// <summary>Wraps a capture source in the WAV tee when <paramref name="envVar"/> names a dump path.</summary>
+    private static Services.LiveTranscription.IAudioCaptureSource DebugTee(
+        Services.LiveTranscription.IAudioCaptureSource inner, string envVar, object suffix, ILoggerFactory loggerFactory)
+        => Environment.GetEnvironmentVariable(envVar) is { Length: > 0 } dump
+            ? new Services.LiveTranscription.DebugWavTeeAudioCaptureService(
+                inner, DebugDumpPath(dump, suffix),
+                loggerFactory.CreateLogger<Services.LiveTranscription.DebugWavTeeAudioCaptureService>())
+            : inner;
 #else
     public static bool IsDevMode => false;
 #endif
@@ -626,13 +635,17 @@ public static class Bootstrapper
                         sp.GetRequiredService<IHttpClientFactory>(),
                         sp.GetRequiredService<ILoggerFactory>()),
                     sessionFactory: _ => new Services.MeetingAttendee.DebugNoOpMeetingSession(debugRoster),
-                    audioSourceFactory: (_, _) => new Services.LiveTranscription.DebugFileAudioCaptureService(
-                        debugMeetingAttendeeAudioFile,
-                        sp.GetRequiredService<ILoggerFactory>().CreateLogger<Services.LiveTranscription.DebugFileAudioCaptureService>()),
+                    // Both vars set tees the replay itself, which is how the dump's round trip is
+                    // verifiable without a live meeting.
+                    audioSourceFactory: (_, _) => DebugTee(
+                        new Services.LiveTranscription.DebugFileAudioCaptureService(
+                            debugMeetingAttendeeAudioFile,
+                            sp.GetRequiredService<ILoggerFactory>().CreateLogger<Services.LiveTranscription.DebugFileAudioCaptureService>()),
+                        DebugMeetingAttendeeAudioDumpEnvVar, "replay", sp.GetRequiredService<ILoggerFactory>()),
                     engineServiceFactory: Services.MeetingAttendee.MeetingAttendeeService.CreateEngineServiceFactory(
                         sp.GetRequiredService<ILoggerFactory>())));
         }
-        else if (Environment.GetEnvironmentVariable(DebugMeetingAttendeeAudioDumpEnvVar) is { Length: > 0 } attendeeDump)
+        else if (Environment.GetEnvironmentVariable(DebugMeetingAttendeeAudioDumpEnvVar) is { Length: > 0 })
         {
             // The factory runs a second time when silent capture fails, so each instance gets its own
             // ordinal: the two captures are not contiguous and must not share a file.
@@ -653,10 +666,9 @@ public static class Bootstrapper
                     sessionFactory: spec => new Services.MeetingAttendee.TeamsMeetingSession(
                         spec, httpClientFactory,
                         loggerFactory.CreateLogger<Services.MeetingAttendee.TeamsMeetingSession>()),
-                    audioSourceFactory: (session, useSilentCapture) => new Services.LiveTranscription.DebugWavTeeAudioCaptureService(
+                    audioSourceFactory: (session, useSilentCapture) => DebugTee(
                         production(session, useSilentCapture),
-                        DebugDumpPath(attendeeDump, ++instance),
-                        loggerFactory.CreateLogger<Services.LiveTranscription.DebugWavTeeAudioCaptureService>()),
+                        DebugMeetingAttendeeAudioDumpEnvVar, ++instance, loggerFactory),
                     engineServiceFactory: Services.MeetingAttendee.MeetingAttendeeService.CreateEngineServiceFactory(loggerFactory),
                     defaultBrowserResolver: sp.GetRequiredService<Services.MeetingAttendee.IDefaultBrowserResolver>());
             });
@@ -700,20 +712,23 @@ public static class Bootstrapper
                         sp.GetRequiredService<ISettingsService>(),
                         sp.GetRequiredService<IHttpClientFactory>(),
                         sp.GetRequiredService<ILoggerFactory>()),
-                    micSourceFactory: () => new Services.LiveTranscription.MicAudioCaptureService(
-                        sp.GetRequiredService<ILoggerFactory>().CreateLogger<Services.LiveTranscription.MicAudioCaptureService>()),
-                    loopbackSourceFactory: () => new Services.LiveTranscription.DebugFileAudioCaptureService(
-                        debugDirectTranscriptionAudioFile,
-                        sp.GetRequiredService<ILoggerFactory>().CreateLogger<Services.LiveTranscription.DebugFileAudioCaptureService>()),
+                    micSourceFactory: () => DebugTee(
+                        new Services.LiveTranscription.MicAudioCaptureService(
+                            sp.GetRequiredService<ILoggerFactory>().CreateLogger<Services.LiveTranscription.MicAudioCaptureService>()),
+                        DebugDirectTranscriptionAudioDumpEnvVar, "mic", sp.GetRequiredService<ILoggerFactory>()),
+                    loopbackSourceFactory: () => DebugTee(
+                        new Services.LiveTranscription.DebugFileAudioCaptureService(
+                            debugDirectTranscriptionAudioFile,
+                            sp.GetRequiredService<ILoggerFactory>().CreateLogger<Services.LiveTranscription.DebugFileAudioCaptureService>()),
+                        DebugDirectTranscriptionAudioDumpEnvVar, "replay", sp.GetRequiredService<ILoggerFactory>()),
                     engineServiceFactory: Services.LiveTranscription.DirectTranscriptionService.CreateEngineServiceFactory(
                         sp.GetRequiredService<ILoggerFactory>())));
         }
-        else if (Environment.GetEnvironmentVariable(DebugDirectTranscriptionAudioDumpEnvVar) is { Length: > 0 } directDump)
+        else if (Environment.GetEnvironmentVariable(DebugDirectTranscriptionAudioDumpEnvVar) is { Length: > 0 })
         {
             services.AddSingleton<IDirectTranscriptionService>(sp =>
             {
                 var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
-                var teeLogger = loggerFactory.CreateLogger<Services.LiveTranscription.DebugWavTeeAudioCaptureService>();
                 return new Services.LiveTranscription.DirectTranscriptionService(
                     sp.GetRequiredService<ISettingsService>(),
                     loggerFactory,
@@ -727,14 +742,14 @@ public static class Bootstrapper
                         loggerFactory),
                     // Two files, never one: the mic and the loopback are different speakers, and mixing
                     // them into a single WAV would make the dump unusable as a diarization fixture.
-                    micSourceFactory: () => new Services.LiveTranscription.DebugWavTeeAudioCaptureService(
+                    micSourceFactory: () => DebugTee(
                         new Services.LiveTranscription.MicAudioCaptureService(
                             loggerFactory.CreateLogger<Services.LiveTranscription.MicAudioCaptureService>()),
-                        DebugDumpPath(directDump, "mic"), teeLogger),
-                    loopbackSourceFactory: () => new Services.LiveTranscription.DebugWavTeeAudioCaptureService(
+                        DebugDirectTranscriptionAudioDumpEnvVar, "mic", loggerFactory),
+                    loopbackSourceFactory: () => DebugTee(
                         new Services.LiveTranscription.LoopbackAudioCaptureService(
                             loggerFactory.CreateLogger<Services.LiveTranscription.LoopbackAudioCaptureService>()),
-                        DebugDumpPath(directDump, "loopback"), teeLogger),
+                        DebugDirectTranscriptionAudioDumpEnvVar, "loopback", loggerFactory),
                     engineServiceFactory: Services.LiveTranscription.DirectTranscriptionService.CreateEngineServiceFactory(
                         loggerFactory));
             });
