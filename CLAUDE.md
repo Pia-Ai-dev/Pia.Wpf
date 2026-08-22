@@ -116,6 +116,33 @@ _logger.LogInformation("Fetching from {Url}", SafeUrl.Format(requestUrl));
 
 `Pia.Logging` does **not** belong to `Pia.Infrastructure` — ViewModels can import it without violating the layer rule.
 
+## Documentation Layout
+
+Every doc lives in a **topic subfolder** under `docs/` — `docs/<topic_name>/`. This applies to new docs *and* to any md file you update below docs/: moving it into a topic folder is part of that change.
+
+- **Folder name** = the topic, snake_case, no date, and not the doc *type*: `docs/speaker_attribution/`, never `docs/2026-08-22/` or `docs/plans/`.
+- The existing type-named folders (`docs/plans/`, `docs/reviews/`, `docs/specs/`, `docs/server/`) are **legacy — do not add to them.** A new plan goes in its own topic folder, next to the review or spec that spawned it.
+- **File name** = `YYYY-MM-DD-<slug>.md`, dated when written. The date does not change when the doc is later revised.
+- Links between docs in the same folder are **relative** (`[2026-08-22-foo.md](2026-08-22-foo.md)`), so the folder reads on its own.
+- An analysis or plan doc opens with **Status**, **Owner**, **Written**, and **Origin** (the doc or decision it came from), and is **self-contained** — executable cold, without the conversation that produced it.
+- Two carve-outs stay where they are: `docs/ui-automation-playbook.md` and the `docs/superpowers/specs/` tree are referenced by path from CLAUDE.md and from skill definitions. Whenever you do move a doc, fix every inbound reference in the same commit.
+
+### Checklist for medium-to-large work
+
+Planned work at **`M` or larger**, or work spanning more than one plan doc, also gets a `YYYY-MM-DD-<topic>-checklist.md` in the same topic folder. That file is the tracking surface: tick boxes as steps land, in the commit that lands them.
+
+Required:
+
+- One `- [ ]` per step — bold title, then one sentence saying what it is.
+- `*Deps:* · *Effort:* · *Value:*` on every step, with both scales spelled out at the top of the file. Effort: `XS` under a day, no new types · `S` 1–2 days · `M` 3–5 days, new types or a new surface · `L` a week or more, a new subsystem. Value: `High` user-visible or a real risk closed · `Med` worthwhile, not headline · `Enabler` little standalone value, unblocks a High.
+- A **suggested order** at the end — cheapest decisive work first, then the vertical slices.
+
+When applicable:
+
+- A table at the top mapping each group letter to its plan doc — only when several plans feed one checklist.
+- A **decision gates** table for steps whose answer can cancel the steps below them, naming the question each one answers. Do not tick a dependant of an open gate without revisiting it.
+- A **not yet planned** list, so candidates that never got a plan doc are not lost.
+
 ## UI Automation
 
 Driving the app with WinWright/UIA (walkthroughs, UI regression tests): read `docs/ui-automation-playbook.md` first. It lists the stable AutomationIds and the techniques that work; do not fall back to pixel-offset clicking.
