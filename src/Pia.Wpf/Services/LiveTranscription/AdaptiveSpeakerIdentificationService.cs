@@ -76,7 +76,7 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
         _maxJournaledSegments = maxJournaledSegments;
         _options = options ?? AdaptiveSpeakerOptions.Default;
         _matchSimilarity = _options.InitialMatchSimilarity;
-        _clusterer = clusterer ?? new SpeakerClusterer();
+        _clusterer = clusterer ?? new SpeakerClusterer(_options.Split);
         _lastPassAt = _now();
         _logger.LogInformation(
             "Adaptive speaker identification active. dim={Dim} warmup={Warmup} stride={Stride} maxJournal={MaxJournal}",

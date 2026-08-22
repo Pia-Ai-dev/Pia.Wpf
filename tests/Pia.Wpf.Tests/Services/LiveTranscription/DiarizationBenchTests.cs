@@ -40,7 +40,10 @@ public class DiarizationBenchTests
         var modelPath = Environment.GetEnvironmentVariable("PIA_BENCH_MODEL")
             ?? LiveTranscriptionModels.SpeakerEmbeddingModelPath;
         var referencePath = Environment.GetEnvironmentVariable("PIA_BENCH_REFERENCE");
-        var settings = ParseThresholds(Environment.GetEnvironmentVariable("PIA_BENCH_MATCH"));
+        var splitSpec = Environment.GetEnvironmentVariable("PIA_BENCH_SPLIT");
+        var settings = string.IsNullOrWhiteSpace(splitSpec)
+            ? ParseThresholds(Environment.GetEnvironmentVariable("PIA_BENCH_MATCH"))
+            : ParseSplits(splitSpec);
 
         Directory.CreateDirectory(outDir);
         var name = Path.GetFileNameWithoutExtension(wav);
@@ -176,6 +179,28 @@ public class DiarizationBenchTests
             if (!float.TryParse(entry, CultureInfo.InvariantCulture, out var threshold))
                 throw new ArgumentException($"PIA_BENCH_MATCH: {entry} is not a similarity threshold.");
             parsed.Add(($"fixed-{entry}", new AdaptiveSpeakerOptions { FixedMatchSimilarity = threshold }));
+        }
+        return parsed;
+    }
+
+    /// <summary>
+    /// Split-candidate settings, one bench run each:
+    /// <c>margin[:minSegments[:minHalf[:extraSlots]]]</c>. Composes with nothing — a sweep is either
+    /// thresholds or splits, so each keeps its own variable.
+    /// </summary>
+    private static List<(string Tag, AdaptiveSpeakerOptions Options)> ParseSplits(string spec)
+    {
+        var parsed = new List<(string, AdaptiveSpeakerOptions)>();
+        foreach (var entry in spec.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = entry.Split(':', StringSplitOptions.TrimEntries);
+            if (!float.TryParse(parts[0], CultureInfo.InvariantCulture, out var margin))
+                throw new ArgumentException($"PIA_BENCH_SPLIT: {entry} is not a margin.");
+            var split = SpeakerSplitOptions.Off with { Margin = margin };
+            if (parts.Length > 1) split = split with { MinSegments = int.Parse(parts[1], CultureInfo.InvariantCulture) };
+            if (parts.Length > 2) split = split with { MinHalf = int.Parse(parts[2], CultureInfo.InvariantCulture) };
+            if (parts.Length > 3) split = split with { ExtraSlots = int.Parse(parts[3], CultureInfo.InvariantCulture) };
+            parsed.Add(($"split-{entry.Replace(':', '-')}", new AdaptiveSpeakerOptions { Split = split }));
         }
         return parsed;
     }

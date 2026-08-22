@@ -200,6 +200,66 @@ public class SpeakerClustererTests
         Assert.Equal(2, new SpeakerClusterer().Cluster(e, previousClusterCount: 0, expectedSpeakers: 1).ClusterCount);
     }
 
+    // ---- Split candidates -----------------------------------------------------------------------
+
+    /// <summary>Two voices 22° apart plus a third far away: the global cut merges the close pair.</summary>
+    private static float[][] ClosePairPlusOutlier() =>
+    [
+        Vec(0), Vec(2), Vec(4), Vec(6), Vec(8),
+        Vec(22), Vec(24), Vec(26), Vec(28), Vec(30),
+        Vec(150), Vec(152), Vec(154),
+    ];
+
+    [Fact]
+    public void Cluster_SplitOffByDefault_LeavesTheMergedPairMerged()
+    {
+        var r = new SpeakerClusterer().Cluster(ClosePairPlusOutlier());
+
+        Assert.Equal(2, r.ClusterCount);
+        Assert.Equal(r.AssignmentPerSegment[0], r.AssignmentPerSegment[9]);
+    }
+
+    [Fact]
+    public void Cluster_SplitCandidate_SeparatesThePairTheGlobalCutMerged()
+    {
+        var split = new SpeakerSplitOptions(Margin: 0.02f, MinSegments: 8, MinHalf: 3);
+        var r = new SpeakerClusterer(split).Cluster(ClosePairPlusOutlier());
+
+        Assert.Equal(3, r.ClusterCount);
+        Assert.NotEqual(r.AssignmentPerSegment[0], r.AssignmentPerSegment[9]);
+        Assert.Equal(r.AssignmentPerSegment[0], r.AssignmentPerSegment[4]);
+        Assert.Equal(r.AssignmentPerSegment[5], r.AssignmentPerSegment[9]);
+    }
+
+    [Fact]
+    public void Cluster_SplitCandidate_MarginTooHigh_Refuses()
+    {
+        var split = new SpeakerSplitOptions(Margin: 0.9f, MinSegments: 8, MinHalf: 3);
+        var r = new SpeakerClusterer(split).Cluster(ClosePairPlusOutlier());
+
+        Assert.Equal(2, r.ClusterCount);
+    }
+
+    [Fact]
+    public void Cluster_SplitCandidate_AtTheRosterCeiling_NeedsASlot()
+    {
+        var e = ClosePairPlusOutlier();
+        var split = new SpeakerSplitOptions(Margin: 0.02f, MinSegments: 8, MinHalf: 3);
+
+        // A 1-person roster caps at 2, which the un-split partition already fills.
+        Assert.Equal(2, new SpeakerClusterer(split).Cluster(e, 0, expectedSpeakers: 1).ClusterCount);
+        Assert.Equal(3, new SpeakerClusterer(split with { ExtraSlots = 1 })
+            .Cluster(e, 0, expectedSpeakers: 1).ClusterCount);
+    }
+
+    [Fact]
+    public void Cluster_SplitCandidate_HonoursMinHalf()
+    {
+        // The pair's second half has 5 members, so a MinHalf above that refuses the split.
+        var split = new SpeakerSplitOptions(Margin: 0.02f, MinSegments: 8, MinHalf: 6);
+        Assert.Equal(2, new SpeakerClusterer(split).Cluster(ClosePairPlusOutlier()).ClusterCount);
+    }
+
     [Fact]
     public void Cluster_EdgeCases_EmptyAndSingle()
     {

@@ -15,6 +15,7 @@ internal sealed record AdaptiveSpeakerOptions
     public float MinClusterSegmentSeconds { get; init; } = AdaptiveSpeakerIdentificationService.MinClusterSegmentSeconds;
     public int WarmupSegments { get; init; } = AdaptiveSpeakerIdentificationService.WarmupSegments;
     public int PassSegmentStride { get; init; } = AdaptiveSpeakerIdentificationService.PassSegmentStride;
+    public SpeakerSplitOptions Split { get; init; } = SpeakerSplitOptions.Off;
 
     public static AdaptiveSpeakerOptions Default { get; } = new();
 }

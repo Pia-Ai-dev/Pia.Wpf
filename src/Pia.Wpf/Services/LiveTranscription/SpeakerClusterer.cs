@@ -10,6 +10,22 @@ namespace Pia.Services.LiveTranscription;
 public sealed record ClusterResult(int[] AssignmentPerSegment, int ClusterCount, float CutDistance);
 
 /// <summary>
+/// Split-candidate pass. A global cut optimises the whole partition, so two voices that are close to
+/// each other but far from everyone else are merged by a cut that is right for every other pair; this
+/// re-asks the question one cluster at a time. <see cref="Margin"/> 0 leaves the partition alone, which
+/// is the shipping behaviour.
+/// </summary>
+/// <param name="Margin">Required lead of the tighter half's self-similarity over the two halves'
+/// cross-similarity — the same statistic the bench reports for a recording's closest pair.</param>
+/// <param name="ExtraSlots">Clusters a split may add beyond the roster ceiling. At 0 a meeting already
+/// at the ceiling can never be split, however strong the evidence.</param>
+public sealed record SpeakerSplitOptions(
+    float Margin = 0f, int MinSegments = 8, int MinHalf = 3, int ExtraSlots = 0)
+{
+    public static SpeakerSplitOptions Off { get; } = new();
+}
+
+/// <summary>
 /// Average-linkage agglomerative clustering (AHC) over L2-NORMALIZED speaker embeddings with a
 /// data-derived cut: instead of a user-tuned similarity threshold, the cut falls into the largest
 /// gap of the dendrogram's merge-distance sequence — the natural boundary between within-speaker
@@ -19,6 +35,14 @@ public sealed record ClusterResult(int[] AssignmentPerSegment, int ClusterCount,
 /// <remarks>Overridable so tests can observe what a re-cluster pass asks for.</remarks>
 public class SpeakerClusterer
 {
+    private readonly SpeakerSplitOptions _split;
+
+    public SpeakerClusterer() : this(null)
+    {
+    }
+
+    public SpeakerClusterer(SpeakerSplitOptions? split) => _split = split ?? SpeakerSplitOptions.Off;
+
     // Guardrail band for the cut (cosine distance = 1 − cosine similarity). A cut outside this
     // band would mean an implausible speaker geometry — likely a degenerate gap — so we never cut
     // there. 0.50 distance == today's default manual threshold (sim 0.50).
@@ -165,7 +189,102 @@ public class SpeakerClusterer
             assignment[i] = idx;
         }
 
-        return new ClusterResult(assignment, indexByRoot.Count, Math.Clamp(cut, CutMin, CutMax));
+        var count = indexByRoot.Count;
+        if (_split.Margin > 0) count = ApplySplitCandidates(embeddings, assignment, count, cap);
+
+        return new ClusterResult(assignment, count, Math.Clamp(cut, CutMin, CutMax));
+    }
+
+    /// <summary>
+    /// Re-asks the 2-way question inside each cluster the global cut produced, keeping a split only
+    /// when the halves separate by <see cref="SpeakerSplitOptions.Margin"/>. Splits are applied best
+    /// margin first and stop at the roster ceiling, so a split competes for a slot rather than
+    /// inflating the label count past what the roster allows. Mutates
+    /// <paramref name="assignment"/> and returns the new cluster count.
+    /// </summary>
+    private int ApplySplitCandidates(
+        IReadOnlyList<float[]> embeddings, int[] assignment, int clusterCount, int cap)
+    {
+        var budget = Math.Min(cap + _split.ExtraSlots, MaxClusters) - clusterCount;
+        if (budget <= 0) return clusterCount;
+
+        var members = new List<int>[clusterCount];
+        for (int c = 0; c < clusterCount; c++) members[c] = new List<int>();
+        for (int i = 0; i < assignment.Length; i++) members[assignment[i]].Add(i);
+
+        var candidates = new List<(float Margin, int Cluster, List<int> Half)>();
+        for (int c = 0; c < clusterCount; c++)
+        {
+            if (members[c].Count < _split.MinSegments) continue;
+            var (a, b) = SplitInTwo(embeddings, members[c]);
+            if (a.Count < _split.MinHalf || b.Count < _split.MinHalf) continue;
+
+            var margin = Math.Min(SelfSimilarity(embeddings, a), SelfSimilarity(embeddings, b))
+                         - CrossSimilarity(embeddings, a, b);
+            if (margin >= _split.Margin) candidates.Add((margin, c, b));
+        }
+
+        candidates.Sort((x, y) => y.Margin.CompareTo(x.Margin));
+        var next = clusterCount;
+        foreach (var candidate in candidates)
+        {
+            if (budget-- <= 0) break;
+            foreach (var i in candidate.Half) assignment[i] = next;
+            next++;
+        }
+        return next;
+    }
+
+    /// <summary>Cuts a single cluster's own dendrogram one merge short of the root.</summary>
+    private static (List<int> A, List<int> B) SplitInTwo(
+        IReadOnlyList<float[]> embeddings, List<int> members)
+    {
+        var local = new float[members.Count][];
+        for (int i = 0; i < members.Count; i++) local[i] = embeddings[members[i]];
+
+        var parent = new int[members.Count];
+        for (int i = 0; i < members.Count; i++) parent[i] = i;
+        int Find(int x) { while (parent[x] != x) x = parent[x] = parent[parent[x]]; return x; }
+
+        var groups = members.Count;
+        foreach (var m in BuildDendrogram(local))
+        {
+            if (groups <= 2) break;
+            var (ra, rb) = (Find(m.A), Find(m.B));
+            if (ra == rb) continue;
+            parent[rb] = ra;
+            groups--;
+        }
+
+        List<int> a = new(), b = new();
+        var firstRoot = Find(0);
+        for (int i = 0; i < members.Count; i++) (Find(i) == firstRoot ? a : b).Add(members[i]);
+        return (a, b);
+    }
+
+    private static float SelfSimilarity(IReadOnlyList<float[]> embeddings, List<int> group)
+    {
+        if (group.Count < 2) return 1f;
+        float sum = 0;
+        var pairs = 0;
+        for (int i = 0; i < group.Count; i++)
+        {
+            for (int j = i + 1; j < group.Count; j++)
+            {
+                sum += Dot(embeddings[group[i]], embeddings[group[j]]);
+                pairs++;
+            }
+        }
+        return sum / pairs;
+    }
+
+    private static float CrossSimilarity(
+        IReadOnlyList<float[]> embeddings, List<int> a, List<int> b)
+    {
+        float sum = 0;
+        foreach (var i in a)
+            foreach (var j in b) sum += Dot(embeddings[i], embeddings[j]);
+        return sum / (a.Count * b.Count);
     }
 
     /// <summary>
