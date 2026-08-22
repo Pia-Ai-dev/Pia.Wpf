@@ -185,8 +185,8 @@ public class DiarizationBenchTests
 
     /// <summary>
     /// Split-candidate settings, one bench run each:
-    /// <c>margin[:minSegments[:minHalf[:extraSlots]]]</c>. Composes with nothing — a sweep is either
-    /// thresholds or splits, so each keeps its own variable.
+    /// <c>margin[:minSegments[:minHalf[:extraSlots[:absorbBelow]]]]</c>. Composes with nothing — a
+    /// sweep is either thresholds or splits, so each keeps its own variable.
     /// </summary>
     private static List<(string Tag, AdaptiveSpeakerOptions Options)> ParseSplits(string spec)
     {
@@ -200,6 +200,8 @@ public class DiarizationBenchTests
             if (parts.Length > 1) split = split with { MinSegments = int.Parse(parts[1], CultureInfo.InvariantCulture) };
             if (parts.Length > 2) split = split with { MinHalf = int.Parse(parts[2], CultureInfo.InvariantCulture) };
             if (parts.Length > 3) split = split with { ExtraSlots = int.Parse(parts[3], CultureInfo.InvariantCulture) };
+            if (parts.Length > 4) split = split with { AbsorbBelow = int.Parse(parts[4], CultureInfo.InvariantCulture) };
+            if (parts.Length > 5) split = split with { AbsorbAfterSplit = parts[5] == "after" };
             parsed.Add(($"split-{entry.Replace(':', '-')}", new AdaptiveSpeakerOptions { Split = split }));
         }
         return parsed;

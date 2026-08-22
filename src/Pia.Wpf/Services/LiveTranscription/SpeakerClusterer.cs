@@ -19,8 +19,15 @@ public sealed record ClusterResult(int[] AssignmentPerSegment, int ClusterCount,
 /// cross-similarity — the same statistic the bench reports for a recording's closest pair.</param>
 /// <param name="ExtraSlots">Clusters a split may add beyond the roster ceiling. At 0 a meeting already
 /// at the ceiling can never be split, however strong the evidence.</param>
+/// <param name="AbsorbBelow">Clusters holding fewer segments than this are folded into their nearest
+/// neighbour before splits are considered, so a split can take a slot a fragment was holding instead
+/// of needing a new one.</param>
+/// <param name="AbsorbAfterSplit">Absorb after splitting rather than before, so a split pays for its
+/// slot by evicting a fragment instead of being handed one. Absorbing first also folds the fragment
+/// INTO the cluster that is about to be split, which can be what stops it splitting.</param>
 public sealed record SpeakerSplitOptions(
-    float Margin = 0f, int MinSegments = 8, int MinHalf = 3, int ExtraSlots = 0)
+    float Margin = 0f, int MinSegments = 8, int MinHalf = 3, int ExtraSlots = 0, int AbsorbBelow = 0,
+    bool AbsorbAfterSplit = false)
 {
     public static SpeakerSplitOptions Off { get; } = new();
 }
@@ -190,7 +197,8 @@ public class SpeakerClusterer
         }
 
         var count = indexByRoot.Count;
-        if (_split.Margin > 0) count = ApplySplitCandidates(embeddings, assignment, count, cap);
+        if (_split.Margin > 0 || _split.AbsorbBelow > 0)
+            count = ApplySplitCandidates(embeddings, assignment, count, cap);
 
         return new ClusterResult(assignment, count, Math.Clamp(cut, CutMin, CutMax));
     }
@@ -205,8 +213,18 @@ public class SpeakerClusterer
     private int ApplySplitCandidates(
         IReadOnlyList<float[]> embeddings, int[] assignment, int clusterCount, int cap)
     {
+        if (_split.AbsorbBelow > 0 && !_split.AbsorbAfterSplit)
+            clusterCount = AbsorbFragments(embeddings, assignment, clusterCount);
+        if (_split.Margin <= 0)
+            return _split.AbsorbBelow > 0 && _split.AbsorbAfterSplit
+                ? AbsorbFragments(embeddings, assignment, clusterCount)
+                : clusterCount;
+
         var budget = Math.Min(cap + _split.ExtraSlots, MaxClusters) - clusterCount;
-        if (budget <= 0) return clusterCount;
+        if (budget <= 0)
+            return _split.AbsorbBelow > 0 && _split.AbsorbAfterSplit
+                ? AbsorbFragments(embeddings, assignment, clusterCount)
+                : clusterCount;
 
         var members = new List<int>[clusterCount];
         for (int c = 0; c < clusterCount; c++) members[c] = new List<int>();
@@ -232,7 +250,75 @@ public class SpeakerClusterer
             foreach (var i in candidate.Half) assignment[i] = next;
             next++;
         }
-        return next;
+        // A split's half takes the next free id, which is not where it first appears.
+        var split = Renumber(assignment);
+        return _split.AbsorbBelow > 0 && _split.AbsorbAfterSplit
+            ? AbsorbFragments(embeddings, assignment, split)
+            : split;
+    }
+
+    /// <summary>
+    /// Folds every cluster below the support floor into the nearest cluster that clears it. A meeting
+    /// at the roster ceiling is usually holding a slot or two with a couple of seconds of speech, and
+    /// a slot spent that way is a slot a real split cannot have. Renumbers to first-appearance order
+    /// and returns the new cluster count.
+    /// </summary>
+    private int AbsorbFragments(IReadOnlyList<float[]> embeddings, int[] assignment, int clusterCount)
+    {
+        var members = new List<int>[clusterCount];
+        for (int c = 0; c < clusterCount; c++) members[c] = new List<int>();
+        for (int i = 0; i < assignment.Length; i++) members[assignment[i]].Add(i);
+
+        var survivors = new List<int>();
+        for (int c = 0; c < clusterCount; c++)
+            if (members[c].Count >= _split.AbsorbBelow) survivors.Add(c);
+        if (survivors.Count == 0 || survivors.Count == clusterCount) return clusterCount;
+
+        var centroid = new Dictionary<int, float[]>(survivors.Count);
+        foreach (var c in survivors) centroid[c] = Centroid(embeddings, members[c]);
+
+        for (int c = 0; c < clusterCount; c++)
+        {
+            if (members[c].Count >= _split.AbsorbBelow) continue;
+            var mean = Centroid(embeddings, members[c]);
+            var best = survivors[0];
+            var bestSim = float.NegativeInfinity;
+            foreach (var s in survivors)
+            {
+                var sim = Dot(mean, centroid[s]);
+                if (sim > bestSim) { bestSim = sim; best = s; }
+            }
+            foreach (var i in members[c]) assignment[i] = best;
+        }
+        return Renumber(assignment);
+    }
+
+    private static float[] Centroid(IReadOnlyList<float[]> embeddings, List<int> group)
+    {
+        var sum = new float[embeddings[group[0]].Length];
+        foreach (var i in group)
+            for (int d = 0; d < sum.Length; d++) sum[d] += embeddings[i][d];
+
+        double norm = 0;
+        for (int d = 0; d < sum.Length; d++) norm += sum[d] * (double)sum[d];
+        var scale = norm > 1e-24 ? (float)(1.0 / Math.Sqrt(norm)) : 0f;
+        for (int d = 0; d < sum.Length; d++) sum[d] *= scale;
+        return sum;
+    }
+
+    private static int Renumber(int[] assignment)
+    {
+        var indexByOld = new Dictionary<int, int>();
+        for (int i = 0; i < assignment.Length; i++)
+        {
+            if (!indexByOld.TryGetValue(assignment[i], out var idx))
+            {
+                idx = indexByOld.Count;
+                indexByOld[assignment[i]] = idx;
+            }
+            assignment[i] = idx;
+        }
+        return indexByOld.Count;
     }
 
     /// <summary>Cuts a single cluster's own dendrogram one merge short of the root.</summary>

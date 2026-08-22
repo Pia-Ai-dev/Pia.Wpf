@@ -252,6 +252,42 @@ public class SpeakerClustererTests
             .Cluster(e, 0, expectedSpeakers: 1).ClusterCount);
     }
 
+    /// <summary>The close pair, the far speaker, and a one-segment fragment nobody else is near.</summary>
+    private static float[][] ClosePairPlusOutlierPlusFragment() =>
+    [
+        Vec(0), Vec(2), Vec(4), Vec(6), Vec(8),
+        Vec(22), Vec(24), Vec(26), Vec(28), Vec(30),
+        Vec(150), Vec(152), Vec(154),
+        Vec(250),
+    ];
+
+    [Fact]
+    public void Cluster_AbsorbBelow_FoldsAFragmentIntoItsNearestNeighbour()
+    {
+        var e = ClosePairPlusOutlierPlusFragment();
+        Assert.Equal(3, new SpeakerClusterer().Cluster(e).ClusterCount);
+
+        var absorbed = new SpeakerClusterer(new SpeakerSplitOptions(AbsorbBelow: 2)).Cluster(e);
+        Assert.Equal(2, absorbed.ClusterCount);
+        Assert.Equal(absorbed.AssignmentPerSegment[10], absorbed.AssignmentPerSegment[13]);
+    }
+
+    [Fact]
+    public void Cluster_SplitPaysForItsSlotByEvictingAFragment()
+    {
+        var e = ClosePairPlusOutlierPlusFragment();
+        var split = new SpeakerSplitOptions(
+            Margin: 0.02f, MinSegments: 8, MinHalf: 3, ExtraSlots: 1, AbsorbBelow: 2,
+            AbsorbAfterSplit: true);
+
+        // A 2-person roster caps at 3, which the un-split partition already fills. The split takes a
+        // fourth slot and the fragment then gives one back, so the count lands where it started.
+        var r = new SpeakerClusterer(split).Cluster(e, 0, expectedSpeakers: 2);
+
+        Assert.Equal(3, r.ClusterCount);
+        Assert.NotEqual(r.AssignmentPerSegment[0], r.AssignmentPerSegment[9]);
+    }
+
     [Fact]
     public void Cluster_SplitCandidate_HonoursMinHalf()
     {
