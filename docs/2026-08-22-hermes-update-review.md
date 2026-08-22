@@ -7,6 +7,14 @@ _Follow-up to [`docs/superpowers/specs/agent-roadmap/hermes-comparison.md`](supe
 - **Method:** structural diff of both trees, not a re-read. New top-level areas, new files under `agent/`, new skills, new blueprint/toolset registries, and the `feat(*)` subject lines were used to find what is *new in kind*; each candidate was then checked against the Pia source before it was recommended.
 - **Not done:** no build, no `dotnet test`, no hermes execution. Every Pia-side "absent" below is a source grep, not a runtime observation.
 
+**Follow-up plans** (each self-contained, written to be picked up cold):
+
+| Item | Plan |
+|---|---|
+| §3.1 · Routine blueprint catalog | [`2026-08-22-routine-blueprints-plan.md`](2026-08-22-routine-blueprints-plan.md) |
+| §3.3 · Compaction recall measurement | [`2026-08-22-compaction-recall-test-plan.md`](2026-08-22-compaction-recall-test-plan.md) |
+| §3.4 · Guided-tour tool | [`2026-08-22-guided-tour-tool-plan.md`](2026-08-22-guided-tour-tool-plan.md) |
+
 ---
 
 ## 1. Verdict
