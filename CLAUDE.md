@@ -122,10 +122,10 @@ Every doc lives in a **topic subfolder** under `docs/` — `docs/<topic_name>/`.
 
 - **Folder name** = the topic, snake_case, no date, and not the doc *type*: `docs/speaker_attribution/`, never `docs/2026-08-22/` or `docs/plans/`.
 - The existing type-named folders (`docs/plans/`, `docs/reviews/`, `docs/specs/`, `docs/server/`) are **legacy — do not add to them.** A new plan goes in its own topic folder, next to the review or spec that spawned it.
-- **File name** = `YYYY-MM-DD-<slug>.md`, dated when written. The date does not change when the doc is later revised.
+- **File name** = `YYYY-MM-DD-<slug>.md`, dated when written. The date does not change when the doc is later revised. A *living* reference that gets rewritten in place rather than superseded — a playbook, a folder README — drops the date.
 - Links between docs in the same folder are **relative** (`[2026-08-22-foo.md](2026-08-22-foo.md)`), so the folder reads on its own.
 - An analysis or plan doc opens with **Status**, **Owner**, **Written**, and **Origin** (the doc or decision it came from), and is **self-contained** — executable cold, without the conversation that produced it.
-- Two carve-outs stay where they are: `docs/ui-automation-playbook.md` and the `docs/superpowers/specs/` tree are referenced by path from CLAUDE.md and from skill definitions. Whenever you do move a doc, fix every inbound reference in the same commit.
+- One carve-out: the `docs/superpowers/specs/` tree is addressed by path from skill definitions that live outside this repo, so leave it where it is. Everything else moves — and whenever you move a doc, fix every inbound reference in the same commit, including the ones in this file and under `tests/`.
 
 ### Checklist for medium-to-large work
 
@@ -145,7 +145,7 @@ When applicable:
 
 ## UI Automation
 
-Driving the app with WinWright/UIA (walkthroughs, UI regression tests): read `docs/ui-automation-playbook.md` first. It lists the stable AutomationIds and the techniques that work; do not fall back to pixel-offset clicking.
+Driving the app with WinWright/UIA (walkthroughs, UI regression tests): read `docs/ui_automation/ui-automation-playbook.md` first. It lists the stable AutomationIds and the techniques that work; do not fall back to pixel-offset clicking.
 
 Recorded UI flows live in `tests/ui-scripts/` and replay through `Invoke-UiScripts.ps1` (WinWright's
 CLI `run` verb, not an MCP tool). They are **not** part of the `dotnet test` gate — they launch the

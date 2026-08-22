@@ -4,8 +4,8 @@ WinWright recordings of real UI flows, plus a harness that replays them. These a
 the `dotnet test` gate — they launch the actual desktop client and drive the actual Windows UI, so
 they run on demand on a Windows desktop session.
 
-Background and the traps behind every rule here: `docs/2026-08-18-winwright-recording-eval.md`.
-Selector reference: `docs/ui-automation-playbook.md`.
+Background and the traps behind every rule here: `docs/ui_automation/2026-08-18-winwright-recording-eval.md`.
+Selector reference: `docs/ui_automation/ui-automation-playbook.md`.
 
 ```
 Invoke-UiScripts.ps1                    the harness

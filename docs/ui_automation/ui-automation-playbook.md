@@ -2,8 +2,8 @@
 
 Guidance for agents running UI walkthroughs or UI regression tests against a running Pia
 instance. Read this before starting a run; it replaces guesswork with what is verified to work.
-Companion to `docs/ui_automation/2026-08-16-ui-automation-gaps.md` (the findings that motivated the fixes) and
-`docs/2026-08-16-ui-automation-validation.md` (the live re-run that confirmed them).
+Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the fixes) and
+`2026-08-16-ui-automation-validation.md` (the live re-run that confirmed them).
 
 ## Ground rules
 
@@ -133,7 +133,7 @@ correctly.
 
 Committed recordings, the settings fixture they start from and the replay harness live in
 `tests/ui-scripts/` (read its README before adding one). Full evaluation of the feature in
-`docs/2026-08-18-winwright-recording-eval.md`. The short version:
+`2026-08-18-winwright-recording-eval.md`. The short version:
 
 - The recorder captures **your tool calls**, so the script is only as good as the selectors you
   typed. Pass `record: false` on discovery calls; read-only tools are never recorded.

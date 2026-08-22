@@ -30,8 +30,8 @@ Pia has already built both halves of the better answer, for entirely unrelated r
 
 | Half | Built for | Where |
 |---|---|---|
-| The app is **addressable** — 183 `AutomationProperties.AutomationId` values across 20 XAML files, with the stable ones catalogued | UI test automation (WinWright/UIA), 2026-08-16 onward | `docs/ui-automation-playbook.md`, `tests/ui-scripts/` |
-| The **answers exist** — every how-to question is covered in the docs corpus and indexed into the server knowledge base (67 documents, link-check passing) | Support/KB work | `docs/2026-08-16-ui-howto-coverage.md`; corpus lives in the sibling repo at `../Pia/src/Pia.Docs` |
+| The app is **addressable** — 183 `AutomationProperties.AutomationId` values across 20 XAML files, with the stable ones catalogued | UI test automation (WinWright/UIA), 2026-08-16 onward | `docs/ui_automation/ui-automation-playbook.md`, `tests/ui-scripts/` |
+| The **answers exist** — every how-to question is covered in the docs corpus and indexed into the server knowledge base (67 documents, link-check passing) | Support/KB work | `docs/user_questions/2026-08-16-ui-howto-coverage.md`; corpus lives in the sibling repo at `../Pia/src/Pia.Docs` |
 
 The KB knows the answer. The AutomationIds make the app pointable. **Neither was built with tours in
 mind, and the tour is the thing that joins them** — showing the answer in the running app instead of
@@ -145,7 +145,7 @@ gate means. Two rules:
 Walk the visual tree from the active window; collect elements with a non-empty `AutomationId` that are
 visible and hit-testable; return them with `Name` and `ControlType`. Cap the count.
 
-`docs/ui-automation-playbook.md` is the existing registry of stable ids and should stay the source of
+`docs/ui_automation/ui-automation-playbook.md` is the existing registry of stable ids and should stay the source of
 truth — if a surface a tour needs has no id, **the fix is to add the AutomationId**, which also makes
 that surface testable. The two features reinforce each other; that is the point of §2.
 
@@ -222,7 +222,7 @@ interactive-only gating.
 | 4 | `start` / `next` / `prev` with the paging chrome |
 | 5 | Cross-view navigation and the resolve → navigate → re-resolve sequence |
 | 6 | Virtualized-list scroll-into-view; overlay/adorner-layer handling |
-| 7 | AutomationId gap-fill for surfaces a tour needs but cannot address — feeds `docs/ui-automation-playbook.md` |
+| 7 | AutomationId gap-fill for surfaces a tour needs but cannot address — feeds `docs/ui_automation/ui-automation-playbook.md` |
 | 8 | A recorded UI script in `tests/ui-scripts/` that runs a two-step tour end to end |
 
 Steps 1–3 are the vertical slice and demo the whole idea. Step 5 is where the real value is.

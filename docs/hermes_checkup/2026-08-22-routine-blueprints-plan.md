@@ -250,7 +250,7 @@ that adds a blueprint: **every new blueprint declares the narrowest grant set th
 |---|---|---|
 | 1 | 0 | `RoutineBlueprint` record + `RoutineBlueprintCatalog` with `topic-digest` only |
 | 2 | 0 | `.resx` entries (en/de/fr) for that one blueprint — proves the localization shape before ×8 |
-| 3 | 0 | Card list in `RoutinesView`; click → existing editor, prefilled, focused. AutomationIds per `docs/ui-automation-playbook.md` |
+| 3 | 0 | Card list in `RoutinesView`; click → existing editor, prefilled, focused. AutomationIds per `docs/ui_automation/ui-automation-playbook.md` |
 | 4 | 0 | Remaining seven blueprints + their strings |
 | 5 | 1 | `RoutineSlot` + `RoutineBlueprintFill.ToCreateArgs` with the four §6 rules |
 | 6 | 1 | A slot-prompt step before the editor opens, for blueprints with text slots |

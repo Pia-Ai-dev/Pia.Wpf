@@ -1,7 +1,7 @@
 # Prompts: code changes that make Pia easier to test
 
 Two self-contained prompts, in dependency order. Both come out of
-`docs/2026-08-18-winwright-recording-eval.md` (what actually blocked recorded UI tests) and target the
+`2026-08-18-winwright-recording-eval.md` (what actually blocked recorded UI tests) and target the
 harness in `tests/ui-scripts/`. Hand them over one at a time — prompt 1 is mechanical and unblocks
 everything; prompt 2 is a refactor.
 
@@ -13,7 +13,7 @@ everything; prompt 2 is a refactor.
 Make Pia's settings UI addressable by UI automation.
 
 Context: we can now record and replay UI tests (WinWright `ww_record` → `winwright run`; see
-docs/2026-08-18-winwright-recording-eval.md and tests/ui-scripts/README.md), but the settings views
+2026-08-18-winwright-recording-eval.md and tests/ui-scripts/README.md), but the settings views
 carry almost no AutomationIds, so recorded tests either depend on localized control names or cannot
 target a control at all:
 
@@ -67,7 +67,7 @@ Definition of done:
 - `dotnet test` with no filter: failed: 0.
 - The new guard fact fails if you delete one AutomationId (check this, don't assume it).
 - `Invoke-UiScripts.ps1` passes twice in a row.
-- Update the AutomationId table in docs/ui-automation-playbook.md and drop the now-stale "settings
+- Update the AutomationId table in ui-automation-playbook.md and drop the now-stale "settings
   views carry no AutomationIds" known-gap bullet.
 - Follow CLAUDE.md comment discipline: default to no comment, one short line when the WHY is
   non-obvious, and never cite a task/spec id in source.

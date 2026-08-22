@@ -157,7 +157,7 @@ Three steps can close work below them. Do not tick their dependants without revi
   *Deps:* D5 · *Effort:* **M** · *Value:* **Med**
 
 - [ ] **D7 · AutomationId gap-fill** for surfaces a tour needs but cannot address; feeds
-  `docs/ui-automation-playbook.md`. Also improves UI-test coverage.
+  `docs/ui_automation/ui-automation-playbook.md`. Also improves UI-test coverage.
   *Deps:* D1 · *Effort:* **S** · *Value:* **Med**
 
 - [ ] **D8 · Recorded UI script in `tests/ui-scripts/`** running a two-step tour end to end.
