@@ -48,7 +48,7 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Reminders header / filters | `Reminders_Refresh`, `_DismissAll`, `_DisableAll`, `_DeleteAll`; filter bar (static `RadioButton`s, not per-item): `Reminders_Filter_All` / `_Active` / `_Snoozed` / `_Disabled` / `_Completed` |
 | History (Optimize sessions) header / search | `History_Refresh`, `_DeleteAll`, `_SearchQuery`, `_TemplateFilter`, `_ClearFilters`; `_StartDate` / `_EndDate` on the two `DatePicker`s carry ids too but have no test lock (see Known gaps) |
 | Todo header / search | `Todo_AddColumn`, `_Refresh`, `_SearchQuery` |
-| Assistant reply toolbar (`PiaAnswerToolbar`) | Per-reply, keyed by `AssistantMessage.Id`: `Answer_Copy_<id>`, `_Speak_<id>`, `_Regenerate_<id>`, `_RegenerateOptions_<id>`, `_Export_<id>`, `_RateUp_<id>`, `_RateDown_<id>`. Deliberately not prefixed `Assistant_` — that already means the user-bubble copy button (`Assistant_CopyMessage_<guid>`). The regenerate-style context menu's 3 items are literal (`Answer_RegenerateOptions_Shorten` / `_Detailed` / `_Exportable`) since only one can be open at a time; no test lock. |
+| Assistant reply toolbar (`PiaAnswerToolbar`) | Per-reply, keyed by `AssistantMessage.Id`: `Answer_Copy_<id>`, `_Speak_<id>`, `_Regenerate_<id>`, `_RegenerateOptions_<id>`, `_Export_<id>`, `_RateUp_<id>`, `_RateDown_<id>`. Deliberately not prefixed `Assistant_` — that already means the user-bubble copy button (`Assistant_CopyMessage_<guid>`). The regenerate-style context menu's 3 items are literal and deliberately a *different* prefix, `Answer_RegenerateStyle_Shorten` / `_Detailed` / `_Exportable` — reusing `Answer_RegenerateOptions_` here would make `automationId*=Answer_RegenerateOptions_` match the chevron button plus all three menu items once opened, the same collision the `Assistant_`/`Answer_` split above exists to avoid. No test lock on the menu items. |
 | Markdown code block (`CodeBlockControl`) | `CodeBlock_Copy`, `CodeBlock_Content` — literal; a message with two+ code fences repeats these ids (see Known gaps) |
 
 Import and Export open a native file picker, which is not reliably scriptable: `ww_dialog handle_file`
@@ -179,7 +179,7 @@ Committed recordings, the settings fixture they start from and the replay harnes
   `UserControl`, so these still have **no ids of their own**: `RunProgressPanel`,
   `PiaChatTitleChip`, `PiaChatQuickSwitcher`, `TodoPanelControl`, `VoiceModeOverlay`,
   `DirectTranscriptionOverlay` and `AutocompletePopup`. `PiaAssistantMessage` itself declares no
-  direct controls (pure composition, same shape as `VaultView`/`TodoView` below); its
+  direct controls (pure composition, same shape as `VaultView` below); its
   Copy/Speak/Regenerate/Export/rate buttons are now ided per-reply via `PiaAnswerToolbar`
   (`Answer_*_<messageId>`, table above), but Suggestion/SwitchToAgent (`PiaSuggestionChips` /
   `PiaAgentModeChip`) and ManageToolPermissions (`ActionCardControl`) are separate nested controls
@@ -196,12 +196,15 @@ Committed recordings, the settings fixture they start from and the replay harnes
   with two or more code blocks repeats `CodeBlock_Copy` / `CodeBlock_Content`. Same class of
   caveat as the tool-name rows below; disambiguate with ordinal indexing if a script needs a
   specific block.
-- **`VaultView`, `TodoView`, `HistoryView` and `RemindersView` are pure composition** — the
-  top-level view itself declares zero interactive controls; every button/search-box/row lives in
-  a nested `Pia<Area><Thing>` control (`PiaVaultHeader`, `PiaVaultSearchBar`,
-  `PiaVaultCategoryCard`, `PiaTodoHeader`, `PiaReminderRow`, `PiaHistoryGroupCard`, …). A test row
-  or an id on the top-level view accomplishes nothing; the fix has to happen one nested control at
-  a time. Same is true of the top-level `OptimizeView` (the Optimize hotkey window, distinct from
+- **`VaultView`, `HistoryView` and `RemindersView` are pure composition** — the top-level view
+  itself declares zero interactive controls; every button/search-box/row lives in a nested
+  `Pia<Area><Thing>` control. The header and search-bar controls now have ids (table above), but
+  the per-item rows still don't: `PiaVaultCategoryCard`, `PiaReminderRow`, `PiaHistoryGroupCard`,
+  and (same shape, under `AssistantHistoryView`) `PiaAssistantChatRow`. A test row or an id on the
+  top-level view accomplishes nothing; the fix has to happen one nested control at a time.
+  `TodoView` is the exception — it declares ~43 direct interactive controls of its own (filters,
+  add box, list), not pure composition; see the checklist's B1. Same nested-control shape is true
+  of the top-level `OptimizeView` (the Optimize hotkey window, distinct from
   `SettingsViews/OptimizeView`), the first-run wizard (`FirstRunWizardWindow` and all of
   `WizardSteps/`), and most content dialogs beyond the shared `PrimaryButton` / `CloseButton` /
   `Dialog_RequiredHint` ids. See the checklist doc below for the file-by-file work list.

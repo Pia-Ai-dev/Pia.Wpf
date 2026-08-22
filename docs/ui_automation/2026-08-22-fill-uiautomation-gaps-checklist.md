@@ -117,8 +117,11 @@ mechanism too, and it already has an id.
   / `_Speak_` / `_Regenerate_` / `_RegenerateOptions_` / `_Export_` / `_RateUp_` / `_RateDown_`.
   Deliberately **not** prefixed `Assistant_` — that would collide with the existing
   `Assistant_CopyMessage_<guid>` (user bubble) under a prefix-match enumeration. Also ided the 3
-  regenerate-style `MenuItem`s (`Answer_RegenerateOptions_Shorten`/`_Detailed`/`_Exportable`,
-  literal — only one context menu is ever open at a time; not walker-visible, no test lock).
+  regenerate-style `MenuItem`s — deliberately a *different* prefix,
+  `Answer_RegenerateStyle_Shorten`/`_Detailed`/`_Exportable`, since reusing
+  `Answer_RegenerateOptions_` would make a prefix-match enumeration hit the chevron button plus
+  all three menu items once opened. Literal ids are fine here since only one context menu is ever
+  open at a time; not walker-visible, no test lock.
   Suggestion/SwitchToAgent live in `PiaSuggestionChips`/`PiaAgentModeChip` (E8) and
   ManageToolPermissions in `ActionCardControl` (G2) — both still open, not closed by this item.
   Highest-traffic item in this whole checklist: every assistant reply renders this.

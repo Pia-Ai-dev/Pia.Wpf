@@ -256,15 +256,15 @@
           <ContextMenu>
             <MenuItem Header="{loc:Str Assistant_Regenerate_Shorten}"
                       Tag="{x:Static vm:RegenerateStyle.Shorten}"
-                      AutomationProperties.AutomationId="Answer_RegenerateOptions_Shorten"
+                      AutomationProperties.AutomationId="Answer_RegenerateStyle_Shorten"
                       Click="OnRegenerateStyleClick" />
             <MenuItem Header="{loc:Str Assistant_Regenerate_Detailed}"
                       Tag="{x:Static vm:RegenerateStyle.Detailed}"
-                      AutomationProperties.AutomationId="Answer_RegenerateOptions_Detailed"
+                      AutomationProperties.AutomationId="Answer_RegenerateStyle_Detailed"
                       Click="OnRegenerateStyleClick" />
             <MenuItem Header="{loc:Str Assistant_Regenerate_Exportable}"
                       Tag="{x:Static vm:RegenerateStyle.Exportable}"
-                      AutomationProperties.AutomationId="Answer_RegenerateOptions_Exportable"
+                      AutomationProperties.AutomationId="Answer_RegenerateStyle_Exportable"
                       Click="OnRegenerateStyleClick" />
           </ContextMenu>
         </Button.ContextMenu>
