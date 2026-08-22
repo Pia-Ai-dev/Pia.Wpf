@@ -4,7 +4,7 @@ Date: 2026-08-22 (Saturday). The next real Teams meeting is **Monday 2026-08-24*
 outstanding acceptance item of `2026-08-21-speaker-attribution-fixes.md`. This plan is what to build
 in the two days before it.
 
-Grounding: `docs/reviews/2026-08-21-speaker-attribution-measurements.md` (what the fixture measured),
+Grounding: `docs/speaker_attribution/2026-08-21-speaker-attribution-measurements.md` (what the fixture measured),
 `docs/reviews/2026-08-21-speaker-attribution-assessment.md` (Defects 1 and 4, still open),
 `1c329d9f`…`9cd3bd60` (what shipped).
 
@@ -329,7 +329,7 @@ more than a silent one.
 
 ## Task 10 — Report
 
-Update `docs/reviews/2026-08-21-speaker-attribution-measurements.md` in place (it is the fixture's
+Update `docs/speaker_attribution/2026-08-21-speaker-attribution-measurements.md` in place (it is the fixture's
 running record, not a per-plan artifact): the exact-alignment numbers from Task 1, the drop counts
 from Task 3, the bench-vs-app reconciliation from Task 4, Task 7's bound, and the Phase-4 result with
 the Alexander/Andreas confusion matrix. Say which caveats are now retired, and keep the ones that are
@@ -426,9 +426,10 @@ complete de/fr translations.
 
 ## Run book — the next Windows session starts here
 
-Everything below is written but **unrun**: no test has executed, the bench has never run, and the
-PowerShell was never even syntax-checked (no `pwsh` on the machine that wrote it). Expect to fix a typo
-before you read a number. Work is on `feature/speaker-attribution`, **uncommitted**.
+**Superseded on 2026-08-22: Phases 0–3 have now been run on Windows, on both recordings.** The results,
+the two bugs the run found, and the Task 7 decision are in
+`docs/speaker_attribution/2026-08-21-speaker-attribution-measurements.md`. The steps below are kept as
+the reproduction recipe, with the traps corrected. Work is on `feature/speaker-attribution`.
 
 ### 0. Sanity, two minutes
 
@@ -448,8 +449,9 @@ plus three `SuppressSpeakerLabels_*` and `BuildMarkdown_CarriesNoSpeakerLabel_Wh
 
 ```powershell
 Get-ChildItem artifacts/meeting_recording          # confirm the exact file names first
-$lsp      = 'artifacts/meeting_recording/Hilfesystem LSP - SP-20260615_133248.mp4'
-$workshop = 'artifacts/meeting_recording/MMS & PR PRO Workshop-20260721_112529.mp4'
+# Both files carry a -Besprechungsaufzeichnung suffix; Resolve-Path throws without it.
+$lsp      = 'artifacts/meeting_recording/Hilfesystem LSP - SP-20260615_133248-Besprechungsaufzeichnung.mp4'
+$workshop = 'artifacts/meeting_recording/MMS & PR PRO Workshop-20260721_112529-Besprechungsaufzeichnung.mp4'
 
 # Workshop first: 16 minutes of audio, so it fails fast if anything is wrong.
 ./scripts/Invoke-MeetingReplay.ps1 -AudioPath $workshop -RosterSize 10 `
@@ -465,12 +467,13 @@ the rendered numbering.
 ### 2. Re-score those runs at exact alignment (Tasks 1 + 5)
 
 ```powershell
+# Use the reference matching the run: lsp.* for LSP, workshop.* for the workshop.
 ./scripts/Measure-SpeakerAttribution.ps1 -LogPath <log from step 1> `
     -ReferencePath scripts/speaker-reference/lsp.reference.json `
     -NameMapPath scripts/speaker-reference/lsp.names.local.json
 ```
 
-Expect the header to read `Align : exact — every segment reported its own stream position`. If it still
+Expect the header to read `Align : exact — every identified segment reported its own stream position`. If it still
 prints a fitted offset, the log has no `start=` field and step 1 ran an old build.
 
 **What to compare against.** The end-state LSP run measured 92.1 % by segment / 93.5 % by duration with
@@ -525,7 +528,7 @@ Then re-run the same command to confirm the cache works: second run should repor
 The bench report ends with the two oracle lines. Read `ORACLE enrollment (30 s/speaker)` against the
 live figure from step 2 using the table in Task 7 — ≥ 97 % puts the whole gap in the matching policy,
 < 88 % makes CAM++ `zh_en` the ceiling and Task 8 mostly wasted effort. **Write the number and the
-decision into `docs/reviews/2026-08-21-speaker-attribution-measurements.md` before doing anything with
+decision into `docs/speaker_attribution/2026-08-21-speaker-attribution-measurements.md` before doing anything with
 it**, because that is the document the next plan will be argued from.
 
 Run it for the workshop recording too. Its reference is the weak one (95 s lost to a layout change,
@@ -565,40 +568,63 @@ flattening it would cost readability for no honesty gained.
 
 **Scope for the weekend: through Task 7.** Tasks 8+ wait for Monday.
 
-## Status, 2026-08-22
+## Status, 2026-08-22 — Phases 0–3 run on Windows
+
+Numbers, per-speaker breakdowns and the reasoning live in
+`docs/speaker_attribution/2026-08-21-speaker-attribution-measurements.md`. This table is the index.
 
 | # | Task | State |
 |---|---|---|
-| 0 | Tee both recordings to WAV | **needs Windows** — nothing else in Phase 2 can run until this exists |
-| 1 | Exact stream offsets | done: `VadSegment.StartSample`, `start=` on the identify line, 5 tests |
-| 2 | Replay script reads the numbering back | done, **as an on-screen read rather than an export check** — see below |
-| 3 | Segment drops made visible | done, and the existing warning turned out to be unreachable — see below |
-| 4 | Offline diarization bench | done (`DiarizationBench`, `[BenchFact]`), unrun: needs Task 0 |
-| 5 | Exact-time + bench scoring in the metric | done (`-SegmentsPath`, exact alignment), unrun on Windows |
-| 6 | Embedding cache | done (`EmbeddingCache`, keyed by stream position). **Sweep driver deliberately not built** — see below |
-| 7 | Oracle-enrollment upper bound | done (`DiarizationOracle`), arithmetic unit-tested, unrun on a recording |
-| 14 | Unlabelled-transcript switch + capability disclaimer | done |
+| 0 | Tee both recordings to WAV | **done** — `artifacts/wav/{workshop,lsp}-replay.wav`, format/duration/segment-count verified |
+| 1 | Exact stream offsets | **done and verified on both recordings**; the alignment caveat is retired |
+| 2 | Replay script reads the numbering back | **done, and observed**: `Speaker 1..5` (roster 10) and `Speaker 1..6` (roster 5) |
+| 3 | Segment drops made visible | **done; 0 drops on both replays.** The old warning was provably unreachable |
+| 4 | Offline diarization bench | **run.** Segmentation and speech mask reproduce the app exactly; attribution is ±2.3 pts and one label out, cause observed — good for deltas, not absolutes |
+| 5 | Exact-time + bench scoring in the metric | **done and run.** `-Baseline` delta table was never built; it has no consumer until Task 8 |
+| 6 | Embedding cache | **done, and fixed a bug that made it useless** — it saved zero vectors. Cold and warm runs now agree to the digit |
+| 7 | Oracle-enrollment upper bound | **done on both recordings, with per-speaker breakdown.** LSP 95.2 % by segment → the `88–96 %` bucket |
+| 14 | Unlabelled-transcript switch + capability disclaimer | done (unchanged this session) |
+
+**The Task 7 answer, which is what the rest of the plan hangs on:** LSP oracle nearest-centroid is
+**95.2 % by segment / 97.8 % by duration** against a live 92.1 % / 93.2 %. That is the `88–96 %` bucket
+— *"real headroom in both; Tasks 8 + 9 first (cheaper), then Task 11."* The `< 88 %` bucket that would
+have made an embedding swap a precondition is excluded on both recordings by a wide margin, so **Tasks
+8 and 9 are confirmed as the next work and Task 11 is a follow-up, not a gate.**
+
+Supporting evidence for Task 8, measured rather than argued: the best fixed similarity threshold is
+**0.345 on LSP** and **0.400 on the workshop**, while production uses
+`clamp(1 − cut, 0.40, 0.60)` and the baseline sits pinned at 0.60 for passes 1–10. The optimum is at
+the clamp's floor on one recording and below its reachable range on the other.
+
+Expect Task 9 to come back negative: pinning k to the true talker count scores *below* the shipping
+pipeline on both recordings (87.8 % vs 91.9 % workshop, 89.4 % vs 92.1 % LSP).
 
 ### Where this diverged from the plan
 
 | Planned | What happened |
 |---|---|
-| Task 2 verifies the numbering from a **saved export** | It reads the **rendered** labels out of the UIA tree instead. Both Save paths need a dialog (a Win32 file dialog, or the vault's title dialog), which an unattended script should not have to drive on a German-locale desktop. The export path is already covered by `BuildMarkdown_EmitsDisplayLabels`; the *rendering* had no coverage at all, and that is the claim the measurements doc calls unobserved. Strictly better evidence, so the substitution is deliberate. |
-| Task 3 counts drops on the existing "falling behind" warning | **That warning is unreachable.** The queue is `BoundedChannelFullMode.DropOldest`, under which `TryWrite` never fails — it evicts silently and returns true. So the loss has never been logged, not once, and every "no drops observed" reading to date means nothing. The counter now hangs off the channel's own `itemDropped` callback, which changes no behaviour: the same segment is still the one discarded. |
-| Task 6 ships a sweep driver | Not built, and it would have been theatre: every knob the threshold work needs (`MatchSimilarityMin/Max`, `MinClusterSegmentSeconds`, the `1 − cut` derivation) is an `internal const`. Making them injectable *is* Task 8, which is after Monday. The cache is the part that makes a sweep cheap, and it exists. |
-| Task 7 needs embeddings from the service | The service computes them internally and returns only a label, so the bench reads them back out of the cache after the run. Working as intended, but it means the oracle is only available when the cache is writable. |
+| Task 2 verifies the numbering from a **saved export** | It reads the **rendered** labels out of the UIA tree instead. Both Save paths need a dialog (a Win32 file dialog, or the vault's title dialog), which an unattended script should not have to drive on a German-locale desktop. The export path is already covered by `BuildMarkdown_EmitsDisplayLabels`; the *rendering* had no coverage at all, and that is the claim the measurements doc calls unobserved. Strictly better evidence, so the substitution is deliberate — and it passed on both recordings. |
+| Task 3 counts drops on the existing "falling behind" warning | **That warning is unreachable.** The queue is `BoundedChannelFullMode.DropOldest`, under which `TryWrite` never fails — it evicts silently and returns true. So the loss had never been logged, not once, and every "no drops observed" reading before this session meant nothing. The counter now hangs off the channel's own `itemDropped` callback, which changes no behaviour: the same segment is still the one discarded. |
+| Task 6 ships a sweep driver | Not built, and it would have been theatre: every knob the threshold work needs (`MatchSimilarityMin/Max`, `MinClusterSegmentSeconds`, the `1 − cut` derivation) is an `internal const`. Making them injectable *is* Task 8, which is after Monday. The cache is the part that makes a sweep cheap, and warm identification now costs 0.1 s. |
+| Task 6's cache is a straightforward store | It **saved zero vectors**, silently. `Normalize` mutates in place and returns the same array, the cache stored that instance, and the service zeroes every embedding it holds on dispose (deliberate biometric hygiene) before the cache was written. It now copies on both `Put` and `TryGet`, with a regression test. |
+| Task 7 needs embeddings from the service | The service computes them internally and returns only a label, so the bench reads them back out of the cache after the run. That indirection is what let the zeroed-cache bug reach the oracle: it reported 86.3 %, the `< 88 %` bucket, which would have redirected the plan to Task 11 and written off Tasks 8 and 9. The real figure is 98.7 % on that recording. **Sanity-check `d'` before trusting any oracle number** — the broken run showed `d' NaN` and a 50.0 % pair-decision error, i.e. chance. |
+| Task 7 reports pooled accuracy | Pooled accuracy hides speakers the 30 s enrollment budget consumes whole. Two of four workshop speakers and one of five LSP speakers score **zero** segments, so the bench now prints a per-speaker line and the workshop's 98.7 % is not a bound on that recording. |
+| `-DumpPath` accepts a relative path | It did, and resolved it against the *app's* working directory, dropping the WAV under `bin/` where a rebuild deletes it. Now resolved against the repo root. The tee also names its output `<name>-replay.wav` when both the replay and dump vars are set. |
 
-### What is measured and what is not
+### What is measured, and what still is not
 
-Everything above compiles clean in Debug and Release, and the new unit tests are written — but they have
-**not been run**: `dotnet test` needs Windows, and this work was done on macOS. The bench and the metric
-script have never executed at all. Neither has the PowerShell: there is no `pwsh` on the machine that
-wrote it. First Windows run should therefore expect to fix a typo, not to read a number.
+Verified this session: `dotnet test` **4432 total, failed: 0**, 54 skipped, bench `Not Run`; Debug and
+Release rebuilds at `0 Warning(s)`; both replays end to end; the bench on both WAVs, cold and warm; the
+metric on four inputs (two logs, two JSONL).
 
-Two things to check early on Windows, both cheap and both able to invalidate a day's work:
+Retired caveats: the PowerShell runs (`pwsh` 7.6 is present); the sherpa **native** loads from the test
+host with no added `PackageReference`; the wall-clock→stream fit is gone.
 
-1. `dotnet test` with no filter, `failed: 0`, and the bench still reported as `Not Run`.
-2. That the sherpa **native** runtime reaches the test output. Nothing in the suite has ever loaded
-   one — `SileroVadDetectorSpeechEventsTests` passes an empty model path and the VAD discards it — so a
-   cold-cache bench run is the first time it is exercised from the test host. If it fails, add a direct
-   `PackageReference` to the test project.
+Still not measured, and only a live meeting can do it:
+
+1. Dropped segments at 1.0x. Both replays run at ~0.83x and dropped nothing; the plan's own arithmetic
+   puts the live pipeline at ~17 % headroom.
+2. The roster size `TeamsMeetingSession` actually reports. Every number here used an env-var roster.
+3. How optimistic the whole `artifacts/` fixture is. These are cloud-mixed recordings; Pia captures
+   device loopback. Set `PIA_DEBUG_MEETING_ATTENDEE_AUDIO_DUMP` with **no** replay path on Monday and
+   bench the result against these two.

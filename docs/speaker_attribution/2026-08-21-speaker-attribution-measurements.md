@@ -340,3 +340,329 @@ padding, not the tee.)
 Teams audio; Pia captures device loopback of a browser tab, with a second D/A→A/D pass and different
 AGC. The delta between the two — how optimistic the `artifacts/` fixture is — still needs one live
 capture with `PIA_DEBUG_MEETING_ATTENDEE_AUDIO_DUMP` set and no replay path. That half stays open.
+
+---
+
+# 2026-08-22 — exact alignment, the bench, and two bugs the fixture was hiding
+
+Written while executing `docs/superpowers/plans/2026-08-22-diarization-bench-and-threshold.md`
+(Phases 0–3), on both fixture recordings.
+
+## The alignment caveat is retired, and the old fit was worse than advertised
+
+Every attribution number above carries a fitted wall-clock→stream mapping. `SileroVadDetector` now
+reports the sample index each segment opened at, `Segment identified:` carries `start=`, and the
+metric drops the fit entirely when every identified segment has one.
+
+The re-measurement is not a small correction to the *method* — it caught the fit failing outright on a
+fresh replay of the same recording:
+
+| workshop, end-state code | recorded above (fitted 0.90 s) | this run, fitted | this run, **exact** |
+|---|---|---|---|
+| attribution by segment | 91.2 % | 77.1 % | **91.9 %** |
+| attribution by duration | 91.9 % | 77.4 % | **91.5 %** |
+| speech-mask agreement | 81.5 % | 76.2 % | 83.7 % |
+| scored segments | 159 (565.2 s) | 144 (514.2 s) | 172 (607.1 s) |
+| excluded as "no speaker lit" | — | 25 (78.4 s) | **0 (0.0 s)** |
+
+The fitted offset came back as **6.30 s**, against a coarse sweep spanning ±6.0 s — it saturated its
+own search bound, which is a clamp reported as a fit. The `no speaker lit` bucket collapsing from
+78.4 s to zero is the mechanism: the offset had been pushing segments into stretches where the
+reference's indicator is off. Exact alignment reproduces the previously recorded figure to within
+0.7 points and needs no rate, no offset and no residual.
+
+So the swing this document warned about is real, and it is a property of the *fixture* rather than of
+the code: the workshop recording loses 95 s to a layout change and 191 s to silence, which flattens
+the alignment objective enough that two replays of the same audio land 15 points apart. Any workshop
+number quoted from a fitted log should be treated as unusable.
+
+One stated divergence: segments below the 1.5 s diarization gate never reach identification, so they
+never report a position. The exact path requires a position from every segment that *was* identified,
+and the speech-mask check therefore covers labelled speech only (206 of 234 segments here).
+
+## The rendered numbering is now observed, not inferred
+
+`Invoke-MeetingReplay.ps1` walks the UIA tree after Stop and reads the labels the transcript is
+actually rendering. Workshop, roster 10:
+
+```
+rendered: 73 labelled bubbles, 5 distinct
+LABEL CHECK: pass (Speaker 1..5, roster 10)
+```
+
+Service-side the final pass holds `[Speaker 1, 2, 4, 5, 10]` — five labels with gaps. On screen they
+are `Speaker 1..5`. That is the renumbering layer doing its job, and the two observations together are
+stronger than either alone: the count *and* the numbering are now measured.
+
+## Dropped segments: zero here, and the old warning could never have fired
+
+The queue is `BoundedChannelFullMode.DropOldest`, under which `TryWrite` never fails — it evicts and
+returns true. The "transcription is falling behind" branch was therefore unreachable, so every earlier
+"no drops observed" reading meant nothing. The counter now hangs off the channel's `itemDropped`
+callback, which discards the same segment as before.
+
+**Workshop replay: 0 dropped segments.** No per-drop warning appears anywhere in the log; the
+stop-time summary only prints when the count is non-zero, so a zero is evidenced by absence. At the
+replay's 0.836x this is the easy case — the live 1.0x reading is Monday's.
+
+## The bench reproduces the app, with a named divergence
+
+`artifacts/wav/workshop-replay.wav`: 30,863,406 bytes = 964.48 s at 16 kHz mono s16le, against 964.6 s
+of source audio — 0.12 s short, inside AAC priming and padding. The header confirms PCM, 1 channel,
+16000 Hz, 16-bit.
+
+| | app replay | bench | Task 4 tolerance |
+|---|---|---|---|
+| segments above the gate | 206 | 206 | ±2 % — pass |
+| speech-mask agreement | 83.7 % | 83.7 % | — pass |
+| attribution by segment | 91.9 % | 94.2 % | ±2 pts — **2.3, marginal** |
+| distinct labels, final state | 5 `[1,2,4,5,10]` | 4 `[1,2,4,5]` | same count — **off by one** |
+
+Both misses have one observed cause rather than a plausible one. The pass sequences agree exactly for
+28 passes and then diverge:
+
+```
+app   (42): 5,4,4,4,4,4,4,4,4,4,4,5,5,5,4,4,4,4,5,5,5,5,5,5,5,5,5,5, 5,5, 4,4, 5,5,5,5,5,5,5,5,5,5
+bench (41): 5,4,4,4,4,4,4,4,4,4,4,5,5,5,4,4,4,4,5,5,5,5,5,5,5,5,5,5, 4,4, 5,5, 5,5,5,5,5,5, 4,4,4
+```
+
+A two-pass phase shift, then a tail that settles on 4 clusters where the app settles on 5 — the
+latency-trigger difference the bench documents (the app's 30 s trigger measures wall clock between
+identify calls, which STT throughput gates; the bench measures stream time). The label disagreement is
+also much smaller than the unlabelled counts suggest: app 206 − 7 nulls = 199 labelled, bench
+206 − 8 = 198. **One segment.**
+
+Cost: 0.5 s segmenting plus 8.5 s identifying for 964 s of audio, about 100x realtime, against a
+3-minute target for a 50-minute recording. The sherpa native loads from the test host with no added
+`PackageReference`.
+
+## Two bugs, and the second one inverted the plan's conclusion
+
+**1. A relative `-DumpPath` landed the WAV under `bin/`.** The app runs with its own working
+directory, so `artifacts/wav/x.wav` resolved against the build output — where a `-t:Rebuild` deletes
+it. Now resolved against the repo root. The tee also names its file `<name>-replay.wav` when both the
+replay and dump vars are set, which the script now states.
+
+**2. The embedding cache did not own its vectors, and every oracle number was computed from zeros.**
+`Normalize` mutates in place and returns the same array; the cache stored that instance; the
+identification service zeroes every embedding it holds on dispose, which is deliberate biometric
+hygiene. The bench disposes the service before saving, so the file was written after the wipe:
+160,019 of 160,698 bytes were `0x00`. The keys were perfect, which is why it looked plausible.
+
+The signature was diagnosable from the report alone: intra and inter similarity both exactly 0.000
+with σ 0.000, d' NaN, and a "best" threshold of 0.000 at a 50.0 % pair-decision error — chance. With
+all similarities tied, nearest-centroid returns the first centroid every time and scores the dominant
+speaker's share, which is why the result looked like a number rather than a failure.
+
+`EmbeddingCache` now copies on both `Put` and `TryGet`, with a regression test that wipes the caller's
+array after handing it over. What it changed:
+
+| workshop oracle | from zeroed vectors | **from real vectors** |
+|---|---|---|
+| intra / inter similarity | 0.000 / 0.000, d' NaN | **0.506 ± 0.159 / 0.254 ± 0.116, d' 1.82** |
+| best fixed threshold, pair error | 0.000, 50.0 % | **0.400, 16.6 %** |
+| ORACLE enrollment (30 s/speaker) | 86.3 % | **98.7 % / 99.3 %** |
+| ORACLE clusterer (k = 4 true talkers) | 74.4 % | **87.8 % / 89.4 %** |
+
+**This reverses Task 7's decision.** 86.3 % sits in the plan's `< 88 %` bucket — "CAM++ `zh_en` is the
+ceiling, Task 11 before any threshold tuning", which writes off Tasks 8 and 9. 98.7 % sits in `≥ 97 %`
+— "the embedding is fine; the clustering and the threshold loop are the entire gap", which makes
+Tasks 8 and 9 the work and consent enrollment the strongest product lever. The broken number pointed
+exactly the wrong way, and it pointed there confidently.
+
+Cache acceptance now holds: a warm run differs from cold in two lines only, the compute count
+(206 → 0) and timing (8.5 s → **0.1 s**). Every measured value is identical.
+
+## What Task 7 says on the workshop, and what it does not
+
+- **Discriminability:** intra 0.506 ± 0.159 against inter 0.254 ± 0.116, d' **1.82**. The distributions
+  separate. Best single fixed threshold **0.400**, at a 16.6 % pair-decision error.
+- **Oracle nearest-centroid:** **98.7 %** by segment, 99.3 % by duration, over 153 segments. Read
+  the per-speaker table in the LSP section below before using this: two of the four speakers were
+  never scored, so it is not a bound on this recording.
+- **Oracle k pinned to the true talker count (4):** 87.8 % / 89.4 % — *below* the live run's 91.9 %.
+  Pinning k changes nothing on this recording: `expectedSpeakers` is a downward-only cap and the
+  natural cut already sat at 4 or fewer, so 10 and 4 give the same answer. The adaptive
+  online-plus-repass pipeline already beats naive offline clustering with k known.
+
+Two things worth holding against the headline number.
+
+**The best fixed threshold is 0.400 — the exact floor of the production clamp.** Today
+`_matchSimilarity = clamp(1 − cut, 0.40, 0.60)`, and the baseline sits pinned at 0.60 for passes 1–10.
+The optimum for this audio is the bottom of the band, so the derived threshold is systematically too
+high. That is direct evidence for Task 8, from a recording rather than from an argument.
+
+**98.7 % is not a bound on the quiet speakers.** `NearestCentroid` spends each speaker's first 30 s on
+enrollment and scores the remainder, so a speaker with less than 30 s of speech contributes zero
+scored segments. Workshop talk time is D 37.0 s, E 9.75 s, H 508.5 s, I 176.75 s — E is consumed
+entirely, D nearly so, and 180 scoreable segments became 153 scored. The pooled figure is therefore
+close to the accuracy on the two talkative speakers, while the confusions this fixture cares about
+live among the quiet ones. A per-speaker breakdown is printed for exactly this reason; the numbers
+above predate it.
+
+## LSP — the recording that settles it, now measured without a fit
+
+`artifacts/wav/lsp-replay.wav`: 95,926,318 bytes = 2997.7 s at 16 kHz mono s16le against 2997 s of
+source, header PCM / 1 channel / 16000 Hz / 16-bit. Task 0 accepted on both recordings.
+
+**The numbering claim is now observed on the recording the acceptance criterion was written about.**
+
+```
+rendered: 161 labelled bubbles, 6 distinct
+LABEL CHECK: pass (Speaker 1..6, roster 5)
+```
+
+Whole-plan acceptance #4 asked for "≤ 6 distinct labels numbered from 1 for the 5-talker recording".
+Service-side the final pass holds `[Speaker 1, 7, 8, 9, 10, 13]` — six labels with gaps — and the
+screen shows `Speaker 1..6`. That inference is now an observation.
+
+**Dropped segments: 0.** 537 segments queued, 474 identified, 63 below the 1.5 s gate, and no
+per-drop warning anywhere in the log. Both fixture replays are clean, so transcription backpressure is
+a live-only risk and Monday's 1.0x run is the first chance to see it.
+
+### Exact alignment reproduces the recorded figure exactly
+
+| LSP, end-state code | recorded above (fitted) | this run, **exact** |
+|---|---|---|
+| attribution by segment | 92.1 % | **92.1 %** |
+| attribution by duration | 93.5 % | **93.2 %** |
+| speech-mask agreement | 95.4 % | **95.4 %** |
+| distinct labels ever registered | 13 | 13 |
+| distinct labels in the final pass | 6 | 6 |
+| corrections aimed at an in-flight segment | 4 (parked) | 4 (parked) |
+
+The plan asked that exact alignment land inside the 92.1–92.3 % band the three fits bracketed. It
+lands on 92.1 % with no rate, no offset and no residual. **The alignment caveat is retired**: every
+attribution number from here on is reported against the VAD's own sample positions.
+
+Note the contrast with the workshop. There, exact alignment agreed with the recorded figure while a
+*fresh* fit of the same audio was 15 points out. Here the fit was never in trouble — which is exactly
+what this document already said about the two recordings, now confirmed from the other direction.
+
+### The Alexander/Andreas residue, at exact alignment
+
+| label | → | A | B | C | D | E |
+|---|---|---|---|---|---|---|
+| Speaker 1 | A | 1609.4 | 27.7 | . | . | . |
+| Speaker 10 | B | . | 572.5 | **127.4** | . | . |
+| Speaker 7 | C | 3.9 | . | **8.0** | . | 2.2 |
+| Speaker 8 | D | . | . | . | 9.1 | . |
+| Speaker 13 | E | . | . | . | . | 81.6 |
+| Speaker 9 | — | 5.5 | . | . | . | . |
+
+C (Alexander) is still filed inside B's (Andreas's) label: **127.4 s there against 8.0 s in his own**,
+where the fitted measurement said 142.1 s / 8.0 s. The residue is confirmed and slightly smaller than
+previously reported. `Speaker 9` is a 5.5 s spurious cluster that wins no speaker at all.
+
+### The bench: same segmentation, diverging pass sequence
+
+474 of 537 segments above the gate — identical to the app — and **34 s wall clock for a 50-minute
+recording**, against a 3-minute target.
+
+| | app replay | bench | Task 4 tolerance |
+|---|---|---|---|
+| segments above the gate | 474 | 474 | ±2 % — pass |
+| speech-mask agreement | 95.4 % | 95.4 % | — pass |
+| labels ever minted | 13 | 14 | — |
+| distinct labels, final state | 6 | 7 | same count — **off by one** |
+| attribution by segment | 92.1 % | 89.8 % | ±2 pts — **2.3, marginal** |
+| `Adaptive pass:` count | 110 | 101 | — |
+
+The same shape as the workshop, and the same observed cause: the app's 30 s pass trigger measures wall
+clock between identify calls, which STT throughput gates, while the bench measures stream time. Over
+60 minutes of wall clock that costs 9 passes. The consequence is visible in the matrix — the bench
+folds E's 81.6 s into `Speaker 1` where the app kept E on its own label, which is most of the 2.3
+points.
+
+**What this does and does not invalidate.** Task 4's tolerance is missed marginally on both
+recordings, in opposite directions (+2.3 on the workshop, −2.3 here), so it is not a constant offset
+that could simply be subtracted. Two things follow:
+
+- **Task 7 is unaffected.** `Similarity` and `NearestCentroid` consume only (embedding, true speaker,
+  duration). They never touch the bench's clustering, its labels or its pass sequence, and the
+  segmentation is identical to the app's. The oracle bound rests on the part that reproduces exactly.
+- **The bench is still the right harness for Task 8, but only for deltas.** It is deterministic — a
+  warm run reproduces a cold one to the digit — so comparing threshold policies on it is sound. Its
+  *absolute* attribution is not the app's, and a policy change worth less than about 2.5 points cannot
+  be told from the app-versus-bench gap on a single recording. Report Task 8 as bench-relative, and
+  confirm the winner on an app replay before believing a small margin.
+
+### Task 7 on LSP, with the per-speaker breakdown
+
+- **Discriminability:** intra 0.539 ± 0.183 against inter 0.222 ± 0.122, **d' 2.04** — better separated
+  than the workshop's 1.82. Best single fixed threshold **0.345** at a 15.6 % pair-decision error.
+- **Oracle nearest-centroid: 95.2 % by segment, 97.8 % by duration**, over 420 of 445 scoreable
+  segments.
+- **Oracle k pinned to the true talker count (5):** 89.4 % / 90.6 % — again *below* the live run's
+  92.1 %.
+
+| speaker | enrolled | scored | accuracy |
+|---|---|---|---|
+| A (Marco) | 30.3 s | 292 seg / 1605.5 s | 94.2 % |
+| B (Andreas) | 32.2 s | 99 seg / 568.0 s | 99.0 % |
+| C (Alexander) | 30.2 s | 23 seg / 108.2 s | **91.3 %** |
+| E (Dirk) | 35.5 s | 6 seg / 48.2 s | 100.0 % |
+| D (Martin) | 9.1 s | **0 seg** | untested — enrollment took every segment |
+
+And the workshop's headline figure has to be withdrawn as a bound now that the same breakdown exists:
+
+| speaker | enrolled | scored | accuracy |
+|---|---|---|---|
+| H | 31.0 s | 132 seg / 386.5 s | 99.2 % |
+| I | 38.8 s | 21 seg / 121.7 s | 95.2 % |
+| D | 31.0 s | **0 seg** | untested |
+| E | 11.4 s | **0 seg** | untested |
+
+**Two of four workshop speakers were never scored**, so 98.7 % is the accuracy on H and I and nothing
+more. LSP's 95.2 % covers four of five speakers and 420 of 445 segments, and is the number to quote.
+
+## The decision Task 7 exists to make
+
+**LSP oracle nearest-centroid is 95.2 % by segment, which is the plan's `88–96 %` bucket: "Real
+headroom in both — Tasks 8 + 9 first (cheaper), then Task 11."**
+
+Reading it out properly:
+
+- The live run is 92.1 %. Perfect enrollment on the *current* embedding model buys **3.1 points by
+  segment / 4.6 by duration**. That headroom is real and it belongs to the matching policy. The two
+  figures are not scored over quite the same set — the oracle scores 420 segments against the live
+  run's 433, because 25 went to enrollment — so treat the delta as indicative rather than exact.
+- The `< 88 %` bucket, which would have made an embedding-model swap a precondition and Tasks 8–9
+  mostly wasted effort, is excluded on both recordings by a wide margin.
+- By duration LSP reaches 97.8 %, and the workshop's (inflated) 98.7 % is in the `≥ 97 %` bucket too.
+  Every reading of the fixture puts Tasks 8 and 9 first. Task 11 stays a follow-up, not a gate.
+- Consent-phase enrollment is confirmed as the strongest product lever the assessment named: named
+  enrollment is precisely what the oracle simulates.
+
+**The concrete Task 8 finding, measured rather than argued.** The best fixed similarity threshold is
+**0.345 on LSP** and **0.400 on the workshop**. Production computes
+`_matchSimilarity = clamp(1 − cut, 0.40, 0.60)` and the baseline sits pinned at 0.60 for passes 1–10.
+So the optimum is at the very floor of the clamp on one recording and *below the clamp's reachable
+range* on the other, while the live policy spends its first ten passes at the opposite end of the
+band. Task 8's option (b), a fixed threshold, now has a value to try and a reason to try it.
+
+A caveat to carry into Task 8: pinning k does *worse* than the shipping pipeline on both recordings
+(87.8 % vs 91.9 % on the workshop, 89.4 % vs 92.1 % here). The adaptive online-plus-repass design
+already beats naive offline clustering with the answer key for k, so Task 9's "roster as a target for
+k" should expect to find little, and the plan's instruction to write down a measured refusal looks
+likely to be the outcome.
+
+## Task-by-task state after this session
+
+| # | Task | State |
+|---|---|---|
+| 0 | Tee both recordings | **done** — both WAVs verified for format, duration and segment count |
+| 1 | Exact stream offsets | **done and verified on both recordings** — alignment caveat retired |
+| 2 | Numbering read back | **observed**: `Speaker 1..5` (roster 10) and `Speaker 1..6` (roster 5) |
+| 3 | Segment drops visible | **0 drops on both replays**; the old warning was unreachable |
+| 4 | Offline bench | segmentation and mask exact; attribution ±2.3 pts and one label out, cause observed — usable for deltas, not absolutes |
+| 5 | Exact-time scoring | done; `-Baseline` delta table still unbuilt, no consumer yet |
+| 6 | Embedding cache | **fixed** — was saving zeros; cold and warm now identical |
+| 7 | Oracle bound | **done, both recordings, with per-speaker breakdown** → `88–96 %` → Tasks 8 + 9 |
+
+Gate after this session: `dotnet test` **4432 total, failed: 0**, 54 skipped, bench `Not Run`. Debug
+and Release rebuilds at `0 Warning(s)`.
+
+**Not done, and deliberately so:** nothing in Phase 4. Tasks 8 and 9 change which voice gets which
+label, and Monday's meeting is the acceptance test for the end state measured above. They belong on
+`feature/diarization-threshold` afterwards.

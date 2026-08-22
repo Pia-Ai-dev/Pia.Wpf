@@ -22,7 +22,16 @@ internal sealed record SimilarityStats(
         (IntraMean - InterMean) / Math.Sqrt((IntraStdDev * IntraStdDev + InterStdDev * InterStdDev) / 2.0);
 }
 
-internal sealed record OracleResult(int Correct, int Total, double CorrectSeconds, double TotalSeconds)
+/// <summary>One true speaker's share of an oracle run. Zero <see cref="Scored"/> means the enrollment
+/// budget swallowed every segment they had, so the pooled figure says nothing at all about them.</summary>
+internal sealed record SpeakerTally(
+    string Speaker, double EnrolledSeconds, int Scored, int Correct, double ScoredSeconds)
+{
+    public double BySegment => Scored == 0 ? 0 : (double)Correct / Scored;
+}
+
+internal sealed record OracleResult(
+    int Correct, int Total, double CorrectSeconds, double TotalSeconds, SpeakerTally[]? PerSpeaker = null)
 {
     public double BySegment => Total == 0 ? 0 : (double)Correct / Total;
     public double ByDuration => TotalSeconds <= 0 ? 0 : CorrectSeconds / TotalSeconds;
@@ -121,9 +130,15 @@ internal static class DiarizationOracle
         var centroids = sums.ToDictionary(kv => kv.Key, kv => Normalize(kv.Value), StringComparer.Ordinal);
         int correct = 0;
         double correctSeconds = 0, totalSeconds = 0;
+        var scoredCount = new Dictionary<string, int>(StringComparer.Ordinal);
+        var correctCount = new Dictionary<string, int>(StringComparer.Ordinal);
+        var scoredSeconds = new Dictionary<string, double>(StringComparer.Ordinal);
         foreach (var segment in scored)
         {
             totalSeconds += segment.DurationSeconds;
+            scoredCount[segment.Speaker] = scoredCount.GetValueOrDefault(segment.Speaker) + 1;
+            scoredSeconds[segment.Speaker] =
+                scoredSeconds.GetValueOrDefault(segment.Speaker) + segment.DurationSeconds;
             var vector = Normalize(segment.Embedding);
             string? best = null;
             var bestSimilarity = double.NegativeInfinity;
@@ -136,10 +151,17 @@ internal static class DiarizationOracle
             {
                 correct++;
                 correctSeconds += segment.DurationSeconds;
+                correctCount[segment.Speaker] = correctCount.GetValueOrDefault(segment.Speaker) + 1;
             }
         }
 
-        return new OracleResult(correct, scored.Count, correctSeconds, totalSeconds);
+        var tallies = enrolledSeconds.Keys
+            .OrderByDescending(s => scoredSeconds.GetValueOrDefault(s) + enrolledSeconds[s])
+            .Select(s => new SpeakerTally(
+                s, enrolledSeconds[s], scoredCount.GetValueOrDefault(s),
+                correctCount.GetValueOrDefault(s), scoredSeconds.GetValueOrDefault(s)))
+            .ToArray();
+        return new OracleResult(correct, scored.Count, correctSeconds, totalSeconds, tallies);
     }
 
     /// <summary>The production clusterer with the talker count known, scored by the same greedy

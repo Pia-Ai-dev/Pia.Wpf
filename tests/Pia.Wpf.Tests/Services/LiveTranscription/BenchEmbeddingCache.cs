@@ -34,13 +34,24 @@ internal sealed class EmbeddingCache
     public bool Dirty { get; private set; }
     public int Count => _entries.Count;
 
+    // Both sides copy. The identification service zeroes every embedding it holds when it disposes
+    // (deliberate biometric hygiene), and it normalizes in place, so sharing an array with the cache
+    // means the cache is wiped along with it — silently, after the run that filled it.
     public bool TryGet(long start, int count, out float[] embedding)
-        => _entries.TryGetValue((start, count), out embedding!);
+    {
+        if (!_entries.TryGetValue((start, count), out var stored))
+        {
+            embedding = null!;
+            return false;
+        }
+        embedding = (float[])stored.Clone();
+        return true;
+    }
 
     public void Put(long start, int count, float[] embedding)
     {
         if (Dim == 0) Dim = embedding.Length;
-        _entries[(start, count)] = embedding;
+        _entries[(start, count)] = (float[])embedding.Clone();
         Dirty = true;
     }
 

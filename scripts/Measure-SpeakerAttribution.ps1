@@ -229,12 +229,16 @@ $refMask = Get-RefMask $reference $step
 # no rate, no offset and no residual. -Offset still forces the old path, for comparing against a log
 # written before the VAD reported them.
 $pinned = -not [double]::IsNaN($Offset)
-$useExact = ($segments.Count -gt 0) -and (-not $pinned) -and
-    -not @($segments | Where-Object { $null -eq $_.Start }).Count
+# Segments below the diarization floor never reach identification, so they never report a position.
+# Demanding one from every queued segment would disable exact mode on every real run.
+$placed = @($segments | Where-Object { $null -ne $_.Start })
+$useExact = ($placed.Count -gt 0) -and (-not $pinned) -and
+    ($placed.Count -eq @($segments | Where-Object { $null -ne $_.SegId }).Count)
 
 function Get-ExactMaskScore([object[]]$segments, [bool[]]$refMask, [double]$step) {
     $score = 0
     foreach ($s in $segments) {
+        if ($null -eq $s.Start) { continue }
         $a = [int][Math]::Floor($s.Start / $step)
         $b = [int][Math]::Ceiling(($s.Start + $s.Duration) / $step)
         for ($k = [Math]::Max($a, 0); $k -lt [Math]::Min($b, $refMask.Length); $k++) {
@@ -293,7 +297,10 @@ else {
     $score = if ($pinned) { Get-MaskScore $segments $refMask $rate $offset $step } else { $best.Score }
 }
 $speechSamples = 0
-foreach ($s in $segments) { $speechSamples += [int][Math]::Ceiling($s.Duration / $step) }
+foreach ($s in $segments) {
+    if ($useExact -and $null -eq $s.Start) { continue }
+    $speechSamples += [int][Math]::Ceiling($s.Duration / $step)
+}
 $agreement = if ($speechSamples -gt 0) { ($score + $speechSamples) / (2.0 * $speechSamples) } else { 0 }
 
 # ---- Score --------------------------------------------------------------------------------------
@@ -372,7 +379,7 @@ else {
     Write-Host ("Pacing  : {0:N1} s of audio, no wall clock in this input" -f $refDuration)
 }
 if ($useExact) {
-    Write-Host ("Align   : exact — every segment reported its own stream position; speech-mask agreement {0:P1}" -f $agreement)
+    Write-Host ("Align   : exact — every identified segment reported its own stream position; speech-mask agreement {0:P1}" -f $agreement)
 }
 else {
     Write-Host ("Align   : offset {0:N2} s{1}, speech-mask agreement {2:P1}" -f `

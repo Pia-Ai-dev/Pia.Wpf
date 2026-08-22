@@ -71,6 +71,9 @@ $env:PIA_LOCAL_DATA_DIR = $local
 $env:PIA_DEBUG_MEETING_ATTENDEE_AUDIO_FILE = $audio
 $env:PIA_DEBUG_MEETING_ATTENDEE_ROSTER = $roster
 if ($DumpPath) {
+    # Absolute: the app runs from its own working directory, so a relative dump path would land
+    # under bin/, where a rebuild deletes it.
+    if (-not [System.IO.Path]::IsPathRooted($DumpPath)) { $DumpPath = Join-Path $repoRoot $DumpPath }
     $dumpDir = Split-Path -Parent $DumpPath
     if ($dumpDir -and -not (Test-Path -LiteralPath $dumpDir)) { New-Item -ItemType Directory -Path $dumpDir -Force | Out-Null }
     $env:PIA_DEBUG_MEETING_ATTENDEE_AUDIO_DUMP = $DumpPath
@@ -83,7 +86,7 @@ Write-Host "Replay '$RunName'"
 Write-Host "  audio   : $audio"
 Write-Host "  roster  : $RosterSize participants"
 Write-Host "  profile : $runDir"
-if ($DumpPath) { Write-Host "  dump    : $DumpPath" }
+if ($DumpPath) { Write-Host "  dump    : $DumpPath (the tee adds a -replay suffix)" }
 
 $proc = Start-Process -FilePath $exe -WorkingDirectory $AppDir -PassThru
 Write-Host "  pid     : $($proc.Id)"

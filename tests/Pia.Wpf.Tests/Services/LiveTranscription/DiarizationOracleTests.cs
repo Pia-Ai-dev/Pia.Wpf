@@ -48,6 +48,29 @@ public class DiarizationOracleTests
     }
 
     [Fact]
+    public void NearestCentroid_ReportsASpeakerTheEnrollmentBudgetSwallowed()
+    {
+        // B speaks for less than the enrollment budget, so none of B is ever scored — and a pooled
+        // number that hides that is not a bound on B at all.
+        List<LabelledSegment> lopsided =
+        [
+            new("A", Voice(0), 20.0),
+            new("B", Voice(90), 2.0),
+            new("A", Voice(2), 20.0),
+            new("A", Voice(4), 20.0),
+        ];
+
+        var result = DiarizationOracle.NearestCentroid(lopsided, enrollSeconds: 30);
+
+        var b = Assert.Single(result.PerSpeaker!, t => t.Speaker == "B");
+        Assert.Equal(0, b.Scored);
+        Assert.Equal(2.0, b.EnrolledSeconds);
+        var a = Assert.Single(result.PerSpeaker!, t => t.Speaker == "A");
+        Assert.Equal(1, a.Scored);
+        Assert.Equal(40.0, a.EnrolledSeconds);
+    }
+
+    [Fact]
     public void NearestCentroid_MisattributesVoicesTheEmbeddingCannotSeparate()
     {
         // Two "speakers" one degree apart: perfect enrollment cannot fix an embedding that does not
@@ -122,6 +145,23 @@ public class BenchEmbeddingCacheTests
         {
             if (File.Exists(path)) File.Delete(path);
         }
+    }
+
+    [Fact]
+    public void Cache_OwnsItsVectors_WhenTheCallerWipesThem()
+    {
+        var cache = new EmbeddingCache();
+        var vector = new float[] { 1f, 2f, 3f };
+        cache.Put(0, 32000, vector);
+
+        // What the identification service does to every embedding it holds when it disposes.
+        Array.Clear(vector);
+        Assert.True(cache.TryGet(0, 32000, out var stored));
+        Assert.Equal([1f, 2f, 3f], stored);
+
+        Array.Clear(stored);
+        Assert.True(cache.TryGet(0, 32000, out var again));
+        Assert.Equal([1f, 2f, 3f], again);
     }
 
     [Fact]

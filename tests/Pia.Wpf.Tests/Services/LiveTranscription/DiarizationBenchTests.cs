@@ -81,14 +81,14 @@ public class DiarizationBenchTests
         File.WriteAllLines(Path.Combine(outDir, $"{name}.passes.log"), passLines);
 
         if (!string.IsNullOrWhiteSpace(referencePath) && File.Exists(referencePath))
-            AppendOracle(Say, segments, referencePath, roster);
+            AppendOracle(Say, segments, referencePath);
 
         File.WriteAllText(Path.Combine(outDir, $"{name}.report.txt"), report.ToString());
         Assert.NotEmpty(segments);
     }
 
     private static void AppendOracle(
-        Action<string> say, List<BenchSegment> segments, string referencePath, int roster)
+        Action<string> say, List<BenchSegment> segments, string referencePath)
     {
         var reference = DiarizationOracle.LoadReference(referencePath);
         var truthful = new List<LabelledSegment>();
@@ -113,9 +113,15 @@ public class DiarizationBenchTests
         var enrolled = DiarizationOracle.NearestCentroid(truthful, enrollSeconds: 30);
         say($"ORACLE enrollment (30 s/speaker): {enrolled.BySegment:P1} by segment, "
             + $"{enrolled.ByDuration:P1} by duration, over {enrolled.Total} segments");
+        foreach (var tally in enrolled.PerSpeaker ?? [])
+            say($"  {tally.Speaker,-4} enrolled {tally.EnrolledSeconds,6:F1} s | scored {tally.Scored,4} seg "
+                + $"{tally.ScoredSeconds,7:F1} s | "
+                + (tally.Scored == 0 ? "untested: enrollment took every segment" : $"{tally.BySegment:P1}"));
 
-        var pinned = DiarizationOracle.PinnedClusterer(truthful, roster);
-        say($"ORACLE clusterer (k from the roster): {pinned.BySegment:P1} by segment, "
+        // The true talker count, not the roster: this separates "inferring k is the problem" from
+        // "matching is the problem", and on a mostly-muted recording the roster is neither.
+        var pinned = DiarizationOracle.PinnedClusterer(truthful, reference.Speakers.Length);
+        say($"ORACLE clusterer (k = {reference.Speakers.Length} true talkers): {pinned.BySegment:P1} by segment, "
             + $"{pinned.ByDuration:P1} by duration");
         say("Read the enrollment number against the live run: if it is not clearly higher, the ceiling "
             + "is the embedding model, not the matching policy.");
