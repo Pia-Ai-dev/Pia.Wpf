@@ -47,6 +47,18 @@ ancestor group-card's inspected set — true for `PiaReminderGroupCard`/`PiaRemi
 since the interesting control (`PiaAssistantChatRowContent`) sits one level deeper than the
 template root.
 
+**Slice 5** (this session, committed, gate green): `B1`+`B4`, the Todo view family. `TodoView`
+turned out to hold 9 walker-visible controls, not the ~43 an earlier estimate guessed (that
+number was never measured) — an add-todo bar (title/priority/due-date/record/add), a per-column
+"..." menu plus its 3 context-menu items and a closed-column chevron (keyed on
+`KanbanColumnViewModel.Id`), and per-todo complete/edit/delete (keyed on `TodoItem.Id`).
+`TodoPanelControl` (the same board embedded read-only in `AssistantView`) got its own
+`TodoPanel_`-prefixed ids — deliberately not `Todo_`, since both surfaces have a close/record/add/
+new-title field and a shared prefix would make a script's `automationId*=Todo_` match rows on
+whichever surface happened to be open. This closes the `TodoPanelControl` entry in the playbook's
+`AssistantView` nested-view gap list (it is still a nested-view *stop* when walking `AssistantView`
+itself — only its own `[InlineData]` row was missing).
+
 **Excluded, not just deferred** — `NavigationSidebarView`: its 12 `NavItem_*` buttons already all
 carry ids (verified by hand), but they hang off `ui:NavigationView.MenuItems`, which
 `LogicalTreeHelper` reports zero children for — a test row here would pass at a vacuous floor of
@@ -79,15 +91,22 @@ mechanism too, and it already has an id.
 
 ## B — Todo
 
-- [ ] **B1 · `TodoView` itself.** Unlike Vault/History/Reminders this view has ~43 direct
-  interactive controls (filters, add box, list) — the biggest single-file item on this list.
+- [x] **B1 · `TodoView` itself.** Unlike Vault/History/Reminders this view has direct interactive
+  controls of its own — measured at 9, not the ~43 an earlier unmeasured estimate guessed. Add-todo
+  bar (`Todo_NewTitle`/`_NewPriority`/`_NewDueDate`/`_Record`/`_AddTodo`), per-column
+  (`KanbanColumnViewModel.Id`): `Todo_ColumnMenu_<id>` plus its 3 context-menu items and
+  `Todo_ExpandColumn_<id>`, per-todo (`TodoItem.Id`): `Todo_Complete_<id>`/`_Edit_<id>`/
+  `_Delete_<id>`. `Todo_AddTodo`, not `Todo_Add`, to keep it disjoint from B2's `Todo_AddColumn`
+  under a prefix match.
   *Deps:* none · *Effort:* **M** · *Value:* **High**
 - [x] **B2 · `PiaTodoHeader`.** Already has `Todo_Help`; ided `AddColumn`/`Refresh`.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
 - [x] **B3 · `PiaTodoSearchBar`.** Query box ided (`Todo_SearchQuery`); no clear button exists.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
-- [ ] **B4 · `TodoPanelControl`.** The right-side panel embedded in `AssistantView` — already
-  listed as a nested-view gap there; fixing it here closes both.
+- [x] **B4 · `TodoPanelControl`.** The right-side panel embedded in `AssistantView` — was already
+  listed as a nested-view gap there; fixing it here closes both. `TodoPanel_Close`/`_NewTitle`/
+  `_Record`/`_Add`/`_OpenFullView`, per-todo (`TodoItem.Id`): `TodoPanel_Complete_<id>`. Prefixed
+  `TodoPanel_`, not `Todo_` — this panel and `TodoView` both have a record/add/new-title field.
   *Deps:* none · *Effort:* **S** · *Value:* **High** (shared by two surfaces)
 
 ## C — Reminders
@@ -278,8 +297,8 @@ Cheapest decisive work first, then the highest-traffic vertical slices.
 G1 → A1 → A2 → C1 → C2 → D1 → D2 → B2 → B3 → J1 → J2   # DONE (slice 2 + slice 3)
 E1                                                      # DONE (slice 3) — highest-traffic single item
 A3 → C3 → C4 → D3 → F1 → F2                             # DONE (slice 4) — the four per-item row types
-B1 → B4                                                 # Todo view + its embedded panel — next up
-E2 → E4 → E7 → E9 → E8                                  # remaining composer-adjacent controls
+B1 → B4                                                 # DONE (slice 5) — Todo view + its embedded panel
+E2 → E4 → E7 → E9 → E8                                  # remaining composer-adjacent controls — next up
 G2 → G3 → G4                                            # Cards & Flow
 H1 → H2 → H3 → H4 → I5                                  # dialogs + Assignments (shares H4's dialog)
 I3 → I4                                                 # the long-standing Settings gaps

@@ -52,6 +52,8 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | History (Optimize sessions) header / search | `History_Refresh`, `_DeleteAll`, `_SearchQuery`, `_TemplateFilter`, `_ClearFilters`; `_StartDate` / `_EndDate` on the two `DatePicker`s carry ids too but have no test lock (see Known gaps) |
 | History group card (`PiaHistoryGroupCard`) | Expand/collapse toggle, per-bucket: `History_GroupToggle_<bucket>`, keyed on `SessionGroupViewModel.Bucket`. `PiaHistorySessionRow` (the per-item row inside) has no walker-recognized controls of its own — nothing else to id there. |
 | Todo header / search | `Todo_AddColumn`, `_Refresh`, `_SearchQuery` |
+| Todo kanban board (`TodoView`) | Add-todo bar: `Todo_NewTitle`, `_NewPriority`, `_NewDueDate` (no test lock, same `DatePicker` caveat as History), `_Record`, `_AddTodo`. Per-column (keyed on `KanbanColumnViewModel.Id`): `Todo_ColumnMenu_<id>` (the "..." button) plus its 3 context-menu items `Todo_ColumnMenu_SetDefault_<id>` / `_Rename_<id>` / `_Delete_<id>` (no test lock, same `MenuItem` caveat as `PiaAnswerToolbar`), and `Todo_ExpandColumn_<id>` (the closed-column chevron). Per-todo (keyed on `TodoItem.Id`): `Todo_Complete_<id>`, `Todo_Edit_<id>`, `Todo_Delete_<id>`. |
+| Todo panel (`TodoPanelControl`, embedded in `AssistantView`) | `TodoPanel_Close`, `_NewTitle`, `_Record`, `_Add`, `_OpenFullView`; per-todo (keyed on `TodoItem.Id`): `TodoPanel_Complete_<id>`. Prefixed `TodoPanel_`, not `Todo_`, so a script targeting one surface's fields never prefix-matches the other's. |
 | Assistant reply toolbar (`PiaAnswerToolbar`) | Per-reply, keyed by `AssistantMessage.Id`: `Answer_Copy_<id>`, `_Speak_<id>`, `_Regenerate_<id>`, `_RegenerateOptions_<id>`, `_Export_<id>`, `_RateUp_<id>`, `_RateDown_<id>`. Deliberately not prefixed `Assistant_` — that already means the user-bubble copy button (`Assistant_CopyMessage_<guid>`). The regenerate-style context menu's 3 items are literal and deliberately a *different* prefix, `Answer_RegenerateStyle_Shorten` / `_Detailed` / `_Exportable` — reusing `Answer_RegenerateOptions_` here would make `automationId*=Answer_RegenerateOptions_` match the chevron button plus all three menu items once opened, the same collision the `Assistant_`/`Answer_` split above exists to avoid. No test lock on the menu items. |
 | Markdown code block (`CodeBlockControl`) | `CodeBlock_Copy`, `CodeBlock_Content` — literal; a message with two+ code fences repeats these ids (see Known gaps) |
 
@@ -181,8 +183,10 @@ Committed recordings, the settings fixture they start from and the replay harnes
   meeting overlay's close/settings/save-to-vault/summarize/rename-speaker, the run-history
   open-chat link — table above), but the walk that backs that test stops at every nested
   `UserControl`, so these still have **no ids of their own**: `RunProgressPanel`,
-  `PiaChatTitleChip`, `PiaChatQuickSwitcher`, `TodoPanelControl`, `VoiceModeOverlay`,
-  `DirectTranscriptionOverlay` and `AutocompletePopup`. `PiaAssistantMessage` itself declares no
+  `PiaChatTitleChip`, `PiaChatQuickSwitcher`, `VoiceModeOverlay`,
+  `DirectTranscriptionOverlay` and `AutocompletePopup`. `TodoPanelControl` closed this gap (table
+  above), even though it is still a nested-view stop when walking `AssistantView` itself.
+  `PiaAssistantMessage` itself declares no
   direct controls (pure composition, same shape as `VaultView` below); its
   Copy/Speak/Regenerate/Export/rate buttons are now ided per-reply via `PiaAnswerToolbar`
   (`Answer_*_<messageId>`, table above), but Suggestion/SwitchToAgent (`PiaSuggestionChips` /
@@ -209,9 +213,10 @@ Committed recordings, the settings fixture they start from and the replay harnes
   `PiaAssistantChatRowContent`'s delete button plus `PiaAssistantChatGroupCard`'s bucket toggle.
   Still open in this family: the inspector panes (`PiaVaultInspector`, `PiaHistoryInspector*`)
   and the status bars. A test row or an id on the top-level view accomplishes nothing; the fix
-  has to happen one nested control at a time. `TodoView` is the exception — it declares ~43
-  direct interactive controls of its own (filters,
-  add box, list), not pure composition; see the checklist's B1. Same nested-control shape is true
+  has to happen one nested control at a time. `TodoView` is the exception — unlike Vault/
+  History/Reminders it declares interactive controls of its own (kanban add-bar, per-column and
+  per-todo actions, table above), not pure composition; it turned out to be 9 controls, not the
+  ~43 an earlier estimate guessed. Same nested-control shape is true
   of the top-level `OptimizeView` (the Optimize hotkey window, distinct from
   `SettingsViews/OptimizeView`), the first-run wizard (`FirstRunWizardWindow` and all of
   `WizardSteps/`), and most content dialogs beyond the shared `PrimaryButton` / `CloseButton` /

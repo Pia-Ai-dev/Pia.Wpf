@@ -220,6 +220,7 @@
                                    FontSize="14"
                                    VerticalAlignment="Center"
                                    AutomationProperties.Name="{loc:Str Kanban_ColumnOptions}"
+                                   AutomationProperties.AutomationId="{Binding Id, StringFormat='Todo_ColumnMenu_{0}'}"
                                    Click="OnColumnMenuClick">
                           <ui:Button.Style>
                             <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
@@ -235,13 +236,16 @@
                           <ui:Button.ContextMenu>
                             <ContextMenu>
                               <MenuItem Header="{loc:Str Kanban_SetDefault}"
+                                        AutomationProperties.AutomationId="{Binding Id, StringFormat='Todo_ColumnMenu_SetDefault_{0}'}"
                                         Click="OnSetDefaultColumnClick"
                                         Tag="{Binding}"/>
                               <MenuItem Header="{loc:Str Kanban_RenameColumn}"
+                                        AutomationProperties.AutomationId="{Binding Id, StringFormat='Todo_ColumnMenu_Rename_{0}'}"
                                         Click="OnRenameColumnClick"
                                         Tag="{Binding}"/>
                               <Separator/>
                               <MenuItem Header="{loc:Str Kanban_DeleteColumn}"
+                                        AutomationProperties.AutomationId="{Binding Id, StringFormat='Todo_ColumnMenu_Delete_{0}'}"
                                         Click="OnDeleteColumnClick"
                                         Tag="{Binding}"/>
                             </ContextMenu>
@@ -253,6 +257,7 @@
                                    Appearance="Transparent"
                                    Padding="4"
                                    AutomationProperties.Name="{loc:Str Kanban_ExpandClosedColumn}"
+                                   AutomationProperties.AutomationId="{Binding Id, StringFormat='Todo_ExpandColumn_{0}'}"
                                    Click="OnCollapseClosedClick">
                           <ui:Button.Style>
                             <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
@@ -314,6 +319,7 @@
                                   <CheckBox Grid.Column="0"
                                             VerticalAlignment="Center"
                                             Margin="0,0,6,0"
+                                            AutomationProperties.AutomationId="{Binding Id, StringFormat='Todo_Complete_{0}'}"
                                             Loaded="OnTodoCheckBoxLoaded"
                                             Checked="OnTodoCheckBoxChecked"
                                             Unchecked="OnTodoCheckBoxUnchecked"
@@ -387,6 +393,7 @@
                                     <ui:Button Appearance="Transparent"
                                                 Padding="3"
                                                 AutomationProperties.Name="{loc:Str Todo_Edit}"
+                                                AutomationProperties.AutomationId="{Binding Id, StringFormat='Todo_Edit_{0}'}"
                                                 ToolTip="{loc:Str Todo_Edit}"
                                                Command="{Binding DataContext.StartEditCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                CommandParameter="{Binding}">
@@ -406,6 +413,7 @@
                                     <ui:Button Appearance="Transparent"
                                                 Padding="3"
                                                 AutomationProperties.Name="{loc:Str Todo_Delete}"
+                                                AutomationProperties.AutomationId="{Binding Id, StringFormat='Todo_Delete_{0}'}"
                                                 ToolTip="{loc:Str Todo_Delete}"
                                                Command="{Binding DataContext.DeleteTodoCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                CommandParameter="{Binding}">
@@ -475,6 +483,7 @@
                     PlaceholderText="{loc:Str Todo_AddPlaceholder}"
                     PlaceholderEnabled="True"
                     ClearButtonEnabled="False"
+                    AutomationProperties.AutomationId="Todo_NewTitle"
                     Margin="0,0,8,0">
           <ui:TextBox.InputBindings>
             <KeyBinding Key="Return"
@@ -487,12 +496,14 @@
                   SelectedItem="{Binding NewTodoPriority}"
                   Width="120"
                   Margin="0,0,8,0"
+                  AutomationProperties.AutomationId="Todo_NewPriority"
                   ToolTip="{loc:Str Todo_PriorityTooltip}"/>
 
         <DatePicker Grid.Column="2"
                     SelectedDate="{Binding NewTodoDueDate}"
                     Width="130"
                     Margin="0,0,8,0"
+                    AutomationProperties.AutomationId="Todo_NewDueDate"
                     ToolTip="{loc:Str Todo_DueDateTooltip}"/>
 
         <ui:Button Grid.Column="3"
@@ -503,6 +514,7 @@
                    Padding="0"
                    Margin="0,0,8,0"
                    AutomationProperties.Name="{loc:Str TodoPanel_Record}"
+                   AutomationProperties.AutomationId="Todo_Record"
                    ToolTip="{loc:Str TodoPanel_Record}">
           <ui:SymbolIcon Symbol="Record24" FontSize="16"/>
         </ui:Button>
@@ -510,6 +522,7 @@
         <ui:Button Grid.Column="4"
                    Command="{Binding AddTodoCommand}"
                    Appearance="Primary"
+                   AutomationProperties.AutomationId="Todo_AddTodo"
                    ToolTip="{loc:Str Todo_AddTooltip}">
           <StackPanel Orientation="Horizontal">
             <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,6,0"/>

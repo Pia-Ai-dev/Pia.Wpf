@@ -54,6 +54,7 @@
                    Appearance="Transparent"
                    Padding="4"
                    AutomationProperties.Name="{loc:Str TodoPanel_ClosePanel}"
+                   AutomationProperties.AutomationId="TodoPanel_Close"
                    ToolTip="{loc:Str TodoPanel_ClosePanel}"
                    Command="{Binding ToggleTodoPanelCommand}">
           <ui:SymbolIcon Symbol="Dismiss16" FontSize="12" />
@@ -116,6 +117,7 @@
                               IsChecked="False"
                               VerticalAlignment="Center"
                               Margin="0,0,8,0"
+                              AutomationProperties.AutomationId="{Binding Id, StringFormat='TodoPanel_Complete_{0}'}"
                               Checked="OnTodoCheckBoxChecked"
                               Tag="{Binding}" />
 
@@ -189,6 +191,7 @@
                     PlaceholderText="{loc:Str TodoPanel_AddPlaceholder}"
                     PlaceholderEnabled="True"
                     ClearButtonEnabled="False"
+                    AutomationProperties.AutomationId="TodoPanel_NewTitle"
                     FontSize="12"
                     Margin="0,0,4,0">
           <ui:TextBox.InputBindings>
@@ -205,6 +208,7 @@
                    Padding="0"
                    Margin="0,0,4,0"
                    AutomationProperties.Name="{loc:Str TodoPanel_Record}"
+                   AutomationProperties.AutomationId="TodoPanel_Record"
                    ToolTip="{loc:Str TodoPanel_Record}">
           <ui:SymbolIcon Symbol="Record24" FontSize="14" />
         </ui:Button>
@@ -216,6 +220,7 @@
                    Height="32"
                    Padding="0"
                    AutomationProperties.Name="{loc:Str TodoPanel_Add}"
+                   AutomationProperties.AutomationId="TodoPanel_Add"
                    ToolTip="{loc:Str TodoPanel_Add}">
           <ui:SymbolIcon Symbol="Add16" FontSize="14" />
         </ui:Button>
@@ -228,6 +233,7 @@
                  HorizontalAlignment="Center"
                  Margin="0,0,0,8"
                  Padding="8,4"
+                 AutomationProperties.AutomationId="TodoPanel_OpenFullView"
                  FontSize="12">
         <StackPanel Orientation="Horizontal">
           <TextBlock Text="{loc:Str TodoPanel_OpenFullView}"
