@@ -59,6 +59,9 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Reasoning trace toggle (`PiaReasoningView`) | Per-reply, keyed by `AssistantMessage.Id`: `Reasoning_Toggle_<id>`. Own prefix, not `Answer_` — a different affordance from the reply toolbar it sits beside. No `Expander` involved despite appearances; the collapse is hand-rolled. |
 | Chat quick switcher (`PiaChatQuickSwitcher`) | `QuickSwitcher_Query` (the search box). Its match list is a `ListBox`, not a walker-recognized type — no id needed or possible on individual matches. |
 | Run progress panel (`RunProgressPanel`) | Root-level: `Run_Pause`, `_Continue`, `_DenyTool`, `_RejectPlan`, `_Publish`, `_CardToggle`, `_NudgeText`, `_ShowEarlierSteps`, `_ShowLaterSteps`, `_TimelineToggle`, `_ChildrenToggle`. Per-step, keyed on `StepRowViewModel.StepId`: `Run_StepEdit_<id>`, `_StepInsertBelow_<id>`, `_StepMoveUp_<id>`, `_StepMoveDown_<id>`, `_StepSkip_<id>`, `_StepEditTitle_<id>`, `_StepEditIntent_<id>`, `_StepEditCancel_<id>`, `_StepEditSave_<id>`. Per-child-run, keyed on `ChildRunRowViewModel.RunId`: `Run_ChildToggle_<id>`. |
+| File chip (`PiaFileChip`) | Keyed on the chip's own `FileName` (not `AbsolutePath` — that would put a full local filesystem path into a permanent, enumerable UIA property): `FileChip_Open_<fileName>`, `_OpenVsCode_<fileName>`, `_Reveal_<fileName>`. Two attachments sharing a filename collide — same caveat class as a non-unique tool name. |
+| Source chip (`PiaSourceChip`) | `SourceChip_Open_<number>`, keyed on the chip's own `Number` (the per-message citation number, not globally unique). |
+| Chip overflow "+N" button (`PiaChipOverflowPanel`) | `ChipOverflow_More_<groupName>`. `PiaAssistantMessage` renders two instances per message (Sources, FileRefs) that can both be visible at once, so the control now exposes a `GroupName` DP the call site sets (`"Sources"` / `"Files"`) rather than leaving it a literal id that would collide. |
 
 Import and Export open a native file picker, which is not reliably scriptable: `ww_dialog handle_file`
 returns `{"success": true}` without confirming the dialog, and re-invoking the button just stacks up
@@ -195,9 +198,16 @@ Committed recordings, the settings fixture they start from and the replay harnes
   direct controls (pure composition, same shape as `VaultView` below); its
   Copy/Speak/Regenerate/Export/rate buttons are now ided per-reply via `PiaAnswerToolbar`
   (`Answer_*_<messageId>`, table above), and its reasoning-trace toggle via `PiaReasoningView`
-  (`Reasoning_Toggle_<messageId>`, table above), but Suggestion/SwitchToAgent (`PiaSuggestionChips`
-  / `PiaAgentModeChip`) and ManageToolPermissions (`ActionCardControl`) are separate nested controls
-  that still have none.
+  (`Reasoning_Toggle_<messageId>`, table above). `PiaFileChip`/`PiaSourceChip`/
+  `PiaChipOverflowPanel` are also closed (table above). Still open: ManageToolPermissions
+  (`ActionCardControl`, `G2`) and Suggestion/SwitchToAgent (`PiaSuggestionChips` /
+  `PiaAgentModeChip`) — the latter two were audited and deliberately left without ids: each has one
+  `Button` inside an `ItemsControl` template, but the bound item is content only (a raw
+  `Suggestions` string, or an `AgentModeSuggestion`'s `Goal`/`Reason`, both documented as
+  model-generated) with no non-content field to key a per-item id on, and a script targeting one
+  already has to match on that same text since it is never a fixed localized string. Same
+  reasoning class as `AutocompletePopup`/`J2`, just for a different mechanical reason (content, not
+  a missing walker-recognized type).
 - **`PiaHistorySearchBar`'s two `DatePicker`s and `PiaAnswerToolbar`'s regenerate-style context
   menu carry ids the test cannot lock in.** `Activator.CreateInstance` never runs a layout pass,
   so a `DatePicker`'s `OnApplyTemplate` never fires and its internal `DatePickerTextBox` (part of

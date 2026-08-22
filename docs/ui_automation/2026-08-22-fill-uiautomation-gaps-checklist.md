@@ -59,13 +59,18 @@ whichever surface happened to be open. This closes the `TodoPanelControl` entry 
 `AssistantView` nested-view gap list (it is still a nested-view *stop* when walking `AssistantView`
 itself — only its own `[InlineData]` row was missing).
 
-**Slice 6** (this session, in progress): `E2`/`E4`/`E7`/`E9` of the composer-adjacent group,
-audited in parallel first per the "audit before estimating" rule — `RunProgressPanel` turned out
-to hold 21 controls (not a guess), `PiaChatQuickSwitcher` exactly 1, `AutocompletePopup` 0 (audit
-led straight to dropping it, no code change), `PiaReasoningView` exactly 1 (and turned out to have
-no `Expander` despite the checklist's description). `E8` (the chip family) is still open — its
-audit surfaced a real identity design question (see its entry) that needed a separate decision
-before writing code.
+**Slice 6** (this session, committed, gate green): the rest of the composer-adjacent group —
+`E2`/`E4`/`E7`/`E9`, audited in parallel first per the "audit before estimating" rule
+(`RunProgressPanel` turned out to hold 21 controls, not a guess; `PiaChatQuickSwitcher` exactly 1;
+`AutocompletePopup` 0, so it got dropped like `J2` with no code change; `PiaReasoningView` exactly
+1, and turned out to have no `Expander` despite the checklist's own description) — plus `E8`, whose
+audit surfaced a real identity question resolved via 3 different mechanisms (own-DP
+`ElementName=Root` binding for the two chip types that had a natural non-content field, a new
+`GroupName` DP for the overflow panel's two-simultaneous-instances case, and a documented
+skip-with-reasoning for the two chip types with no non-content identity at all — see `E8`'s entry).
+Also fixed a correctness gap from slice 5: `TodoView`'s 3 `MenuItem` ids relied on unverified
+`ContextMenu` DataContext inheritance; switched to `{Binding Tag.Id, RelativeSource={RelativeSource
+Self}}`, which is correct regardless of whether that inheritance holds.
 
 **Excluded, not just deferred** — `NavigationSidebarView`: its 12 `NavItem_*` buttons already all
 carry ids (verified by hand), but they hang off `ui:NavigationView.MenuItems`, which
@@ -213,8 +218,40 @@ mechanism too, and it already has an id.
   surface is a `ListBox`/`ListBoxItem` match list, neither a walker-recognized type; zero
   walker-visible controls, so a test row would sit at a vacuous floor of 0. No ids added, no row.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
-- [ ] **E8 · `PiaSuggestionChips`, `PiaFileChip`, `PiaSourceChip`, `PiaChipOverflowPanel`,
+- **E8 · `PiaSuggestionChips`, `PiaFileChip`, `PiaSourceChip`, `PiaChipOverflowPanel`,
   `PiaAgentModeChip`.** Small chip controls rendered inside assistant messages / the composer.
+  Split three done, two audited-and-skipped — the audit surfaced a real identity question, not
+  just mechanics.
+  - [x] `PiaFileChip`. 3 buttons (open default / open in VS Code / reveal), none inside an
+    `ItemsControl` — each `PiaFileChip` instance is itself one file, so the ambiguity is across
+    *sibling instances* (a message with several file chips), not template rows. Keyed on the
+    control's own `FileName` DP via `ElementName=Root` (not `AbsolutePath`, even though that DP
+    exists and the chip's own `ToolTip` already shows it — a tooltip is transient, an
+    `AutomationId` is a permanent enumerable property, so it doesn't bake a full local filesystem
+    path into a UIA-visible surface): `FileChip_Open_<fileName>`, `_OpenVsCode_<fileName>`,
+    `_Reveal_<fileName>`. Caveat: two attachments with the same filename in different directories
+    collide — accepted, same class as the tool-name-not-unique caveat elsewhere.
+  - [x] `PiaSourceChip`. 1 button, keyed on the control's own `Number` DP (an int, the per-message
+    citation number) via `ElementName=Root`: `SourceChip_Open_<number>`.
+  - [x] `PiaChipOverflowPanel`. 1 button (`MoreButton`). `PiaAssistantMessage.xaml` renders TWO
+    instances of this control simultaneously in one message (Sources overflow at line ~92, Files
+    overflow at line ~106, independently visible) — a literal id would be a genuine two-hit
+    ambiguity, not just a documented caveat, so it needed a real fix: added a `GroupName` DP the
+    call site sets (`"Sources"` / `"Files"`), bound via `ElementName=Root`:
+    `ChipOverflow_More_<groupName>`.
+  - [x] `PiaSuggestionChips`, `PiaAgentModeChip` — **audited, no id added, no test row (same shape
+    as `E7`/`J2`).** Each has exactly one control (a `Button`) inside a literal `ItemsControl`
+    template, but the bound item is either a raw `string` (`Suggestions`) or a
+    `(Goal, Reason)` record with both fields explicitly documented as model-generated content
+    (`AgentModeSuggestion`) — there is no non-content field to key a per-item id on. A synthetic
+    index (`ItemsControl.AlternationIndex`) was considered and rejected: the test walker's
+    `LoadContent()` builds the `DataTemplate` in isolation with no real `ItemsControl` generator
+    behind it, so a `RelativeSource AncestorType=ContentPresenter` binding would register as a
+    valid per-item `Binding` (test green) while resolving to nothing at that moment — passing a
+    test that doesn't check what it claims to. The localization argument that motivates ids
+    elsewhere doesn't apply here either: this text is dynamic model output, never a fixed
+    localized string, so a script already has to match on `Content`/text, making a content-derived
+    id redundant with what's already there.
   *Deps:* E1 (same message surface) · *Effort:* **S** total · *Value:* **Med**
 - [x] **E9 · `PiaReasoningView`.** No `Expander` despite the description — the collapse is hand-rolled
   via a bool + `Visibility` triggers. Exactly 1 control, the collapsed-state toggle button, reused
@@ -323,8 +360,8 @@ G1 → A1 → A2 → C1 → C2 → D1 → D2 → B2 → B3 → J1 → J2   # DON
 E1                                                      # DONE (slice 3) — highest-traffic single item
 A3 → C3 → C4 → D3 → F1 → F2                             # DONE (slice 4) — the four per-item row types
 B1 → B4                                                 # DONE (slice 5) — Todo view + its embedded panel
-E2 → E4 → E7 → E9 → E8                                  # remaining composer-adjacent controls — next up
-G2 → G3 → G4                                            # Cards & Flow
+E2 → E4 → E7 → E9 → E8                                  # DONE (slice 6) — remaining composer-adjacent controls
+G2 → G3 → G4                                            # Cards & Flow — next up
 H1 → H2 → H3 → H4 → I5                                  # dialogs + Assignments (shares H4's dialog)
 I3 → I4                                                 # the long-standing Settings gaps
 E3 → E5 → E6 → I2 → I1                                  # remaining overlays + the wizard, lowest value/traffic

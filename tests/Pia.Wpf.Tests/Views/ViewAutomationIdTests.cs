@@ -74,6 +74,9 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Controls.Assistant.PiaChatQuickSwitcher), 1, 0, "")]
     [InlineData(typeof(Pia.Controls.Chat.PiaReasoningView), 1, 1, "")]
     [InlineData(typeof(Pia.Controls.Assistant.RunProgressPanel), 21, 10, "PiaPersonaAvatar")]
+    [InlineData(typeof(Pia.Controls.Chat.PiaFileChip), 3, 3, "")]
+    [InlineData(typeof(Pia.Controls.Chat.PiaSourceChip), 1, 1, "")]
+    [InlineData(typeof(Pia.Controls.Chat.PiaChipOverflowPanel), 1, 1, "")]
     public void EveryInteractiveControl_CarriesAnAutomationId(
         Type viewType, int minimumInspected, int minimumPerItemIds, string expectedNestedViews)
     {

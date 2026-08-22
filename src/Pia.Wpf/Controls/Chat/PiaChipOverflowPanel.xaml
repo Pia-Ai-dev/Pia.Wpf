@@ -44,6 +44,7 @@
       <Button x:Name="MoreButton"
               Style="{StaticResource OverflowChipButtonStyle}"
               Click="MoreButton_Click"
+              AutomationProperties.AutomationId="{Binding GroupName, ElementName=Root, StringFormat='ChipOverflow_More_{0}'}"
               ToolTip="{loc:Str Assistant_MoreChips_Tooltip}">
         <Border MinHeight="34"
                 CornerRadius="{StaticResource BubbleRadius}"

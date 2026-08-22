@@ -236,16 +236,16 @@
                           <ui:Button.ContextMenu>
                             <ContextMenu>
                               <MenuItem Header="{loc:Str Kanban_SetDefault}"
-                                        AutomationProperties.AutomationId="{Binding Id, StringFormat='Todo_ColumnMenu_SetDefault_{0}'}"
+                                        AutomationProperties.AutomationId="{Binding Tag.Id, RelativeSource={RelativeSource Self}, StringFormat='Todo_ColumnMenu_SetDefault_{0}'}"
                                         Click="OnSetDefaultColumnClick"
                                         Tag="{Binding}"/>
                               <MenuItem Header="{loc:Str Kanban_RenameColumn}"
-                                        AutomationProperties.AutomationId="{Binding Id, StringFormat='Todo_ColumnMenu_Rename_{0}'}"
+                                        AutomationProperties.AutomationId="{Binding Tag.Id, RelativeSource={RelativeSource Self}, StringFormat='Todo_ColumnMenu_Rename_{0}'}"
                                         Click="OnRenameColumnClick"
                                         Tag="{Binding}"/>
                               <Separator/>
                               <MenuItem Header="{loc:Str Kanban_DeleteColumn}"
-                                        AutomationProperties.AutomationId="{Binding Id, StringFormat='Todo_ColumnMenu_Delete_{0}'}"
+                                        AutomationProperties.AutomationId="{Binding Tag.Id, RelativeSource={RelativeSource Self}, StringFormat='Todo_ColumnMenu_Delete_{0}'}"
                                         Click="OnDeleteColumnClick"
                                         Tag="{Binding}"/>
                             </ContextMenu>

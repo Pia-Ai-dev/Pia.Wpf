@@ -90,6 +90,7 @@
 
     <!-- Sources — first three inline, the rest behind the "+N" dropdown -->
     <chat:PiaChipOverflowPanel ItemsSource="{Binding Sources}" Margin="0,10,0,0"
+                               GroupName="Sources"
                                Visibility="{Binding HasSources, Converter={StaticResource BooleanToVisibilityConverter}}">
       <chat:PiaChipOverflowPanel.ItemTemplate>
         <DataTemplate>
@@ -104,6 +105,7 @@
 
     <!-- Local file chips (read / created / updated / exported / @File-referenced) -->
     <chat:PiaChipOverflowPanel ItemsSource="{Binding FileRefs}" Margin="0,10,0,0"
+                               GroupName="Files"
                                Visibility="{Binding HasFileRefs, Converter={StaticResource BooleanToVisibilityConverter}}">
       <chat:PiaChipOverflowPanel.ItemTemplate>
         <DataTemplate>

@@ -25,6 +25,7 @@
   </UserControl.Resources>
   <Button Style="{StaticResource ChipButtonStyle}"
           Click="OnClick"
+          AutomationProperties.AutomationId="{Binding Number, ElementName=Root, StringFormat='SourceChip_Open_{0}'}"
           ToolTip="{Binding Url, ElementName=Root}">
     <Border MinHeight="34"
             CornerRadius="{StaticResource BubbleRadius}"
