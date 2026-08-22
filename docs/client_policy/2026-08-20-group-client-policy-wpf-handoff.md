@@ -411,7 +411,7 @@ delivers its own policy.
 **Offline start with a stale cache.** Use it as-is. There is deliberately **no TTL** — "the server said so three
 days ago" beats no policy, the same reasoning as the managed-persona store.
 
-**A policy change mid-session.** *Reversed by `docs/2026-08-20-policy-apply-latency-design.md`, now implemented.*
+**A policy change mid-session.** *Reversed by `docs/client_policy/2026-08-20-policy-apply-latency-design.md`, now implemented.*
 The re-merge runs on the pull, one coordinator moves the values and only then raises a distinct `LocksChanged`,
 and `PolicyLock` plus four per-VM handlers refresh the lock surface — so a change lands within one sync cycle
 rather than at the next launch. What this paragraph got right is that the value/lock split matters: it is why
@@ -518,7 +518,7 @@ real search order is `<exeDir>\policy.json` → `<exeDir>\..\policy.json` → `%
   client is authorized to call.
 - ~~Live (no-restart) application, and change notification for the `Is…Enforced` getters (§5).~~
   **No longer out of scope** — designed and implemented per
-  `docs/2026-08-20-policy-apply-latency-design.md`, Phase 0 and Phase 1. Its Phases 2 and 3 still owe the
+  `docs/client_policy/2026-08-20-policy-apply-latency-design.md`, Phase 0 and Phase 1. Its Phases 2 and 3 still owe the
   per-key `SettingsChanged` subscribers and the `AssistantFilesFolder` / `AllowedSyncProviders` specials.
 - Widening enforce-lock coverage beyond the controls already bound to an `Is…Enforced` property. Most
   addressable settings still enforce invisibly — the value snaps back with no explanation. Real, and a separate

@@ -1,6 +1,6 @@
 # Policy key liveness inventory
 
-Generated 2026-08-20 as the evidence base for `docs/2026-08-20-policy-apply-latency-design.md`.
+Generated 2026-08-20 as the evidence base for `docs/client_policy/2026-08-20-policy-apply-latency-design.md`.
 Every one of the 100 settable `AppSettings` properties, classified by whether a mid-session policy
 change reaches its consumer. Verdicts were produced by a per-key grep of every read site and then
 adversarially re-checked by a second pass instructed to default to `restart-required`; 22 verdicts were
@@ -87,6 +87,7 @@ enforcement meaning.
 | `MeetingMaxSpeakers` | yes | policy-binding | Single service read at MeetingAttendeeService.cs:778, off the per-join settings fetched at :256. DirectTranscriptionService deliberately hardcodes 0 instead (comment at DirectTranscriptionService.cs:164-170), so the in-room path is not a stale second consumer. The VM clamps to 0..12 on load (Meet… |
 | `MeetingMinSpeechSeconds` | yes | policy-binding | Read per join at MeetingAttendeeService.cs:321 off the :256 settings fetch, but only on the branch where MeetingSmartSpeakerDetection is false — with smart detection on, a hardcoded 1.5f wins, so a policy change to this key is inert until that other key is also off. |
 | `MeetingSmartSpeakerDetection` | yes | policy-binding | Both service reads (MeetingAttendeeService.cs:321 picking the min-speech value, :769 picking the adaptive diarizer) run off the per-join settings from MeetingAttendeeService.cs:256. DirectTranscriptionService deliberately ignores it (comment at DirectTranscriptionService.cs:154-161), so there is … |
+| `MeetingSuppressSpeakerLabels` | yes | none | Read once per session in TranscriptOverlayViewModel.StartReaderAsync (:171), which both transcript overlays call on start, so a change lands on the next session without a restart. The in-session toggle path (OnSuppressSpeakerLabelsChanged, :305) relabels existing bubbles, but nothing re-reads the setting mid-session. |
 | `MeetingTranscriptFolder` | yes | none | MeetingTranscriptPaths.ResolveFolder is a pure static over a passed-in AppSettings (MeetingTranscriptPaths.cs:17-20), and its only caller awaits a fresh GetSettingsAsync inside SaveTranscriptAsync (TranscriptOverlayViewModel.cs:435-436). No path is captured at startup. |
 | `ModePersonaDefaults` | yes | none | PersonaService.ResolveActiveAsync awaits GetSettingsAsync (PersonaService.cs:403) then AppSettings.GetPersonaForMode (AppSettings.cs:506) on every call, and all eight callers resolve the active persona per turn / per headless step rather than caching it. |
 | `ModeProviderDefaults` | yes | none | Every resolution funnels through ProviderService.GetDefaultProviderForModeAsync, which awaits GetSettingsAsync (ProviderService.cs:105) then AppSettings.GetProviderForMode (AppSettings.cs:489) — a fresh read per turn / per optimize / per headless step across 13 call sites. |

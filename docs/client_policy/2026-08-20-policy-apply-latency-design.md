@@ -3,8 +3,8 @@
 **Status:** Analysis complete. All design decisions settled by the owner 2026-08-20; nothing open. NOT implemented — review pending.
 **Date:** 2026-08-20
 **Repo:** `C:\projects\Pia.Wpf`, branch `feature/agent-run-spine`. Server checked at `C:\projects\Pia`, branch `feature/group-client-policy`.
-**Predecessor:** `docs/2026-08-20-policy-apply-latency-analysis-brief.md` (grounding) and
-`docs/2026-08-20-group-client-policy-wpf-handoff.md` (the shipped contract, whose §5/§8 this reverses).
+**Predecessor:** `docs/client_policy/2026-08-20-policy-apply-latency-analysis-brief.md` (grounding) and
+`docs/client_policy/2026-08-20-group-client-policy-wpf-handoff.md` (the shipped contract, whose §5/§8 this reverses).
 
 ---
 
@@ -94,7 +94,7 @@ Method: enumerate all 100 settable `AppSettings` properties (the predicate `Poli
 grep every read of each, and judge whether a mid-session value change reaches the consumer. Every "live"
 verdict was then adversarially re-checked by a second pass instructed to default to `restart-required`;
 **22 verdicts were corrected**, all but three in the conservative direction. The full per-key table is
-`docs/2026-08-20-policy-key-liveness-inventory.md`.
+`docs/client_policy/2026-08-20-policy-key-liveness-inventory.md`.
 
 Of the 100, **31 are in `ClientPolicyContract.DeniedKeys`** and can never arrive from the server
 (`PolicyService` loads the server layer with `allowDeviceSettableKeys: false`, and the server refuses to
@@ -729,7 +729,7 @@ must not grow a flush, because there is nothing to flush.
    change to the same key; hardening the receive side (recording policy-set values into `AppliedDefaults`
    when a synced row arrives) fixes the real stranding but touches `SyncMapper`'s apply path for a
    pre-existing edge case. Neither is worth it now — document and move on.
-8. **Docs to amend, not silently diverge from:** `docs/2026-08-20-group-client-policy-wpf-handoff.md` §5
+8. **Docs to amend, not silently diverge from:** `docs/client_policy/2026-08-20-group-client-policy-wpf-handoff.md` §5
    ("Do not add change notification to the Is…Enforced getters to make it live") and §8 (which lists live
    application as out of scope) are both reversed by this design. The log line "effective at the next
    start" and `PolicyService`'s "cached" line also need to distinguish stored-and-applied from

@@ -5,7 +5,7 @@
 **Repo:** `C:\projects\Pia.Wpf`, branch `feature/agent-run-spine`.
 **Predecessor:** commit `0e0054a9` "Deliver enterprise policy per group from the server", which shipped the
 contract this brief wants to change the timing of. Its handoff spec is
-`docs/2026-08-20-group-client-policy-wpf-handoff.md`.
+`docs/client_policy/2026-08-20-group-client-policy-wpf-handoff.md`.
 
 ---
 
