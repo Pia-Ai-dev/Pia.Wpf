@@ -667,6 +667,268 @@ and Release rebuilds at `0 Warning(s)`.
 label, and Monday's meeting is the acceptance test for the end state measured above. They belong on
 `feature/diarization-threshold` afterwards.
 
+# 2026-08-22 — Task 8: the match threshold, measured against the cut it is derived from
+
+Written on `feature/diarization-threshold`. Origin: `2026-08-22-threshold-tuning-brief.md`.
+
+Everything below is **bench-relative**: 11 settings over both recordings, warm embedding cache,
+deterministic. No number here has been confirmed on an app replay, and by the bench's own ±2.3-point
+rule none of the accuracy margins is large enough to be established without one. See *What is not
+established* at the end. The shipping default is therefore **unchanged** by this work.
+
+## Two structural results, which reframe the brief
+
+### 1. There is no threshold ↔ cut feedback loop
+
+The brief describes matching and clustering as feeding "each other undamped". They do not.
+`RunPassUnderLock` hands the clusterer three inputs — the eligible journal embeddings, the previous
+pass's cluster count and the roster — and none of them depends on `_matchSimilarity`. The coupling is
+one-directional: cut → threshold, with no back edge.
+
+Measured rather than read: the per-pass **cut trace is identical to the digit across all 11 settings on
+both recordings**, including settings that hold the threshold at 0.30 and at 0.60. The bench asserts
+this and prints the verdict, so a future change that introduces a back edge will say so.
+
+What follows is the real scope of the knob. A pass reassigns every eligible segment, so an eligible
+segment's *final* label is the last pass's partition, and no threshold moves that partition. What the
+threshold does own:
+
+- the **provisional** label shown live, until the next pass corrects it (<= 5 segments or 30 s);
+- segments between the 1.5 s diarization gate and the 2 s clustering floor, which never enter a
+  dendrogram and therefore keep their provisional label for good - 43 of 474 on LSP, 47 of 206 on the
+  workshop; and
+- indirectly, which stable cluster id a rebuilt cluster inherits, because the pass matches new clusters
+  to old ones by *segment overlap* and the provisional assignments are that overlap. This is why the
+  live-versus-final counts move by more than the sub-floor band alone can explain: 13 segments against
+  the ~19 sub-floor segments that carry any label at all on LSP.
+
+Policies (c) damped and (d) separation were designed to stabilise a loop that does not exist.
+
+### 2. The Alexander/Andreas residue is not a matching error
+
+The brief names the residue as the thing this fixture cares about, and predicts that a too-high
+threshold "mints and merges wrongly in exactly that way". It does not. C's seconds inside B's label are
+**unmoved to the decimal by every setting tried**, from 0.20 to 0.60:
+
+| setting (bench) | C inside B's label | C in his own label |
+|---|---|---|
+| derived (shipping) | 127.4 s | 4.3 s |
+| fixed 0.20 … 0.60, damped, separation | **127.4 s** | 4.3 s |
+
+That is the expected consequence of result 1: the residue is a partition produced by the dendrogram, so
+it is out of reach of the match threshold by construction. Closing it needs the cut, the embedding model
+or enrollment — not this knob.
+
+## The sweep
+
+`correct` is the comparator, not the percentage: the segment set is identical across settings, while the
+percentage's denominator shrinks as unlabelled segments leave it. Raising the threshold "improves" the
+percentage by refusing to label, which is why 0.45 reads higher than 0.30 while getting fewer segments
+right.
+
+**LSP** (roster 5, 5 true talkers, 474 segments above the gate):
+
+| setting | final: correct | by seg | unlabelled | final labels | live: correct | live labels |
+|---|---|---|---|---|---|---|
+| **derived (a)** | 380 | 89.8 % | 24 | 7 | 384 | **13** |
+| fixed 0.20 | 387 | 90.0 % | 17 | 6 | 396 | 9 |
+| fixed 0.25 | **387** | 90.0 % | 17 | 6 | 396 | 9 |
+| fixed 0.275 | 387 | 90.0 % | 17 | 7 | 396 | 9 |
+| fixed 0.30 | 386 | 90.0 % | 18 | **6** | **397** | **9** |
+| fixed 0.325 | 386 | 90.0 % | 18 | 6 | 397 | 10 |
+| fixed 0.345 | 384 | 89.9 % | 20 | 6 | 395 | 10 |
+| fixed 0.375 | 383 | 89.9 % | 21 | 7 | 388 | 11 |
+| fixed 0.40 | 381 | 89.9 % | 23 | 7 | 386 | 12 |
+| fixed 0.45 | 381 | 90.3 % | 25 | 8 | 384 | 12 |
+| fixed 0.50 | 379 | 90.2 % | 27 | 8 | 379 | 17 |
+| fixed 0.55 | 376 | 90.2 % | 30 | 8 | 374 | 25 |
+| fixed 0.60 | 374 | 90.1 % | 32 | 8 | 369 | 28 |
+| damped α 0.2 (c) | 382 | 90.1 % | 23 | 7 | 386 | 13 |
+| separation (d) | 377 | 90.2 % | 29 | 8 | 372 | 27 |
+
+**Workshop** (roster 10, 4 true talkers, 206 segments above the gate):
+
+| setting | final: correct | by seg | unlabelled | final labels | live: correct | live labels |
+|---|---|---|---|---|---|---|
+| **derived (a)** | 163 | 94.2 % | 8 | 4 | 162 | 9 |
+| fixed 0.20 | 165 | 94.3 % | 5 | 4 | 166 | 6 |
+| fixed 0.25 | **165** | 94.3 % | 5 | 4 | **166** | **5** |
+| fixed 0.275 | 164 | 94.3 % | 6 | 4 | 165 | 5 |
+| fixed 0.30 | 164 | 94.3 % | 6 | 4 | 164 | 6 |
+| fixed 0.345 | 164 | 94.3 % | 6 | 4 | 164 | 6 |
+| fixed 0.40 | 163 | 94.2 % | 7 | 4 | 162 | 8 |
+| fixed 0.45 | 160 | 94.7 % | 11 | 4 | 158 | 10 |
+| fixed 0.50 | 160 | 94.7 % | 11 | 4 | 158 | 13 |
+| fixed 0.55 | 153 | 94.4 % | 19 | 4 | 149 | 14 |
+| fixed 0.60 | 150 | 94.3 % | 23 | **5** | 143 | 20 |
+| damped α 0.2 (c) | 162 | 94.2 % | 8 | 4 | 161 | 9 |
+| separation (d) | 152 | 95.0 % | 21 | 4 | 148 | 17 |
+
+The **veto holds**: the workshop's final label count stays at 4 for every setting except fixed 0.60,
+which is the one direction this work is not proposing.
+
+`live` scores the instant provisional label instead of the corrected one, via the new
+`-Provisional` switch on `Measure-SpeakerAttribution.ps1`. Without it the sweep is nearly invisible —
+which is result 1 stated as a measurement rather than as an argument.
+
+## The winner, and the size of the win
+
+**Fixed, in the 0.20–0.345 plateau.** Both recordings agree, in both directions:
+
+- (a) derived is beaten on LSP by every fixed setting at or below 0.40, and matched on the workshop.
+- (c) damped is (a) with a slower transient: +2 segments on LSP, −1 on the workshop. It removes the
+  swing without moving the accuracy, because the swing was never the cost.
+- (d) separation lands the threshold at 0.48–0.70 — the statistic says *higher*, and higher is
+  measurably worse: −3 segments on LSP and −11 on the workshop, with 27 and 17 labels shown live. It
+  is the clearest loser of the four and it was the most principled-looking.
+
+Inside the plateau the spread is 1–3 segments and the LSP label structure is byte-identical, so the
+value cannot be chosen by measurement on these two recordings. **0.30 is the pick because it is
+furthest from both edges of the plateau**, not because it measured best.
+
+Against (a), at 0.30:
+
+| | LSP | workshop |
+|---|---|---|
+| final-state correct | 380 → 386 (+6) | 163 → 164 (+1) |
+| final-state by segment | 89.8 % → 90.0 % | 94.2 % → 94.3 % |
+| final labels (true talkers) | 7 → **6** (5) | 4 → 4 (4) |
+| live correct | 384 → 397 (+13) | 162 → 164 (+2) |
+| live distinct labels | 13 → **9** | 9 → 6 |
+| segments corrected by a pass | 71 → 66 | 7 → 7 |
+
+The accuracy movement is small. The **live label count** is the result worth having: a third fewer
+distinct speaker labels appear during the meeting, which is the symptom the 2026-08-21 live test
+reported ("11 labels, up to Speaker 17"), and it is not an artefact of a shrinking denominator.
+
+## Why lower wins, when the oracle's best pairwise threshold is 0.345/0.400
+
+Two different quantities. `DiarizationOracle.Similarity` fits a threshold for *segment-to-segment*
+decisions; `_matchSimilarity` is compared against a *running centroid*, whose mean over n vectors raises
+same-speaker similarity. A centroid threshold should therefore sit **above** the pairwise optimum, and
+the measurement says it belongs below it. So the brief's "the optimum sits below the clamp's reachable
+range" was comparing two scales; the sweep is what actually settles it, and it happens to point the same
+direction for a different reason.
+
+The mechanism is the asymmetric cost of the two errors. A wrong provisional label is corrected by the
+next pass within five segments. A **spuriously minted** label is durable: it is a new "Speaker N" the
+user watches appear, it survives until a pass orphans it, and it pushes the live count toward the roster
+ceiling where `_labelByCluster.Count >= roster + slack` starts forcing matches. Minting is the expensive
+error, so the optimum is biased toward matching.
+
+## The shipping policy is not the square wave the brief describes
+
+On the bench's pass sequence, (a) on LSP sits at the 0.60 rail for passes 1–2, is on the 0.40 floor by
+pass 4, and spends **87 of 101 passes there**, with six brief excursions to ~0.50:
+
+```
+0.600 0.600 0.407 0.400 0.498 0.503 0.400 0.421 0.416 0.400 0.400 0.400 …
+```
+
+min 0.400, max 0.600, mean 0.411, sd 0.035. The workshop is the same shape: min 0.400, max 0.544, mean
+0.412, sd 0.030, 34 of 41 passes on the floor. (The brief's "pinned at 0.60 for passes 1–10" is the
+*app* trace; the bench visits 101 passes where the app visits 110, and the early phase is shorter here.)
+
+So the shipping policy is, in practice, "0.40 after a two-pass warmup" — which is why fixed 0.40 scores
+within one segment of it on LSP. `MatchSimilarityMin = 0.40` is not a guard rail, it is the operating
+point, and it is above the whole plateau. Variance is not the defect; the floor's *value* is.
+
+Damping (c) confirms this from the other side: it cuts the excursions (51 passes on the floor instead of
+87, sd 0.028) and buys two segments. A policy that holds still is not better if it holds still in the
+wrong place.
+
+## What is not established
+
+- **Every accuracy margin here is under the bench's own confirmation threshold.** The bench's absolute
+  attribution differs from the app's by about 2.3 points in either direction; the win at 0.30 is 0.2
+  points by segment (final) and 1.1 points (live). Neither is established without an app replay of LSP
+  (`Invoke-MeetingReplay.ps1`, ~65 min).
+- The **label counts** are the exception worth arguing about: the known bench↔app divergence is one
+  label, and this is four (13 → 9 live on LSP). That margin does clear its noise floor, but on one
+  measure, on one harness.
+- Because of the above the **shipping default is unchanged**: `FixedMatchSimilarity` is null, the
+  derivation and its clamp still run, and the winner is reachable only from the bench
+  (`PIA_BENCH_MATCH=0.30`). Flipping it waits on a replay - which the next section ran, on the workshop.
+- Both recordings are mostly-one-talker (A holds 1605 s of 2729 s on LSP; H holds 386 s of the 607 s scored on the
+  workshop). A balanced four-way meeting could pick a different point in the plateau, and nothing here
+  measures that.
+
+## The app replay refuses the confirmation — workshop, 2026-08-22
+
+Run through the shipping harness (`Invoke-MeetingReplay.ps1`, workshop recording, roster 10, 19 min
+wall clock) against a build whose default was temporarily flipped to 0.30 — the app constructs the
+service with default options, so there is no other way to measure the setting end to end. Both runs
+scored with the same scorer; `-Provisional` supplies the live column.
+
+| | shipping | fixed 0.30 | the bench predicted |
+|---|---|---|---|
+| final-state correct | 158 (91.9 %) | 159 (91.9 %) | +1 — reproduced |
+| final-state labels (4 true talkers) | 5 | 5 | no change — reproduced |
+| live correct | 159 | 161 | +2 — reproduced |
+| **live distinct labels** | **9** | **9** | **9 → 6 — did not reproduce** |
+| labels ever registered | 10 | 9 | — |
+| unlabelled, final | 37 | 35 | direction only |
+
+**The accuracy deltas reproduce exactly; the label-churn win does not.** +1 correct segment on the final
+label and +2 on the live one are the bench's workshop figures to the segment — and they are 1–2 segments
+out of 173, which is noise. The claim that mattered, nine live labels down to six, does not survive the
+harness change at all.
+
+The reason is the divergence this document already records, not a new one. The count of *distinct
+provisional labels* depends on how minting interleaves with passes, and the app fires passes on wall
+clock between identify calls while the bench fires them on stream time. A final label count is robust to
+that — it is a partition, and the recorded divergence is ±1 label. A live count is not. The assertion
+earlier in this section, that the live label delta "does clear its noise floor" because the known
+bench↔app divergence is one label, took a tolerance measured on the final count and applied it to a
+metric that does not share it. The replay is what caught that, which is the whole reason the rule exists.
+
+**Consequence.** The flip is reverted: `FixedMatchSimilarity` is null again and the shipping build is
+untouched. Task 8's winner is **identified but unconfirmed**, and that is the state to carry forward:
+
+- every margin that reproduces is 1–2 segments;
+- the one margin large enough to act on does not reproduce on this recording;
+- LSP is untested end to end, and it is where the bench's delta was largest (13 live labels → 9). It is
+  the trustworthy half of the fixture, at ~65 minutes. If the label-churn win is real anywhere it is
+  there — and if it fails there too, a fixed threshold is not worth shipping and Task 8 closes as a
+  measured refusal, the same shape the brief pre-authorised for Task 9.
+
+One measurement bug found and fixed on the way: `-Provisional` was written to refuse `-LogPath`, on the
+assumption that an app log carries no pre-correction label. It does — the scorer's log path has always
+set `Label` at identify time and overwritten only `Final` when a correction lands. That guard would have
+made this comparison impossible.
+
+## What changed in the code
+
+- `AdaptiveSpeakerOptions` (internal, `src/Pia.Wpf/Services/LiveTranscription/`): the knobs the sweep
+  needed — `FixedMatchSimilarity`, `InitialMatchSimilarity`, `MatchSimilarityMin/Max`,
+  `MinClusterSegmentSeconds`, `WarmupSegments`, `PassSegmentStride`. Every default is the shipping
+  constant, so an omitted options object is the shipping build; `derived` reproduces the pre-change
+  bench numbers exactly (89.8 % LSP, 94.2 % workshop).
+- The pass log line carries `match=` so an app replay can be scored the same way.
+- `Measure-SpeakerAttribution.ps1 -Provisional` scores the pre-correction label. Bench input only — an
+  app log does not carry it.
+- The bench takes `PIA_BENCH_MATCH` (comma-separated thresholds, one run each, defaulting to one
+  shipping run), writes `<name>.<setting>.segments.jsonl` per setting, and asserts the cut traces.
+- **Deleted with the experiment**, their results recorded above so nobody re-runs them blind: the
+  `MatchThresholdPolicy` enum, the EMA damping (c) and the intra/inter separation statistic (d).
+
+## Task 8 acceptance
+
+| ask | state |
+|---|---|
+| knobs injectable | done — `AdaptiveSpeakerOptions`, defaults = shipping |
+| four policies, both recordings, warm cache | done — 11 settings covering (a) (b)×9 (c) (d) |
+| winner beats (a) on LSP, does not lose on the workshop | met by fixed 0.20–0.345; 0.30 picked |
+| `_matchSimilarity` variance across the meeting | reported per setting: min/max/mean/sd + rail counts |
+| Alexander/Andreas confusion matrix | reported — **unmoved by every setting** |
+| delete the losers | done — (c) and (d) and the enum are gone |
+| margins confirmed against the app | workshop replay run: the +1/+2 segment deltas reproduced, the label-churn win did **not**. LSP untested |
+
+Task 9 is untouched. Result 1 above bears on it directly: `ChooseCut` is the only thing that can move a
+final-state partition, so it is now the *only* remaining lever in this subsystem short of the embedding
+model or enrollment — which raises the value of measuring it, without changing the expectation that
+"largest gap, capped by the roster" survives the test.
+
 # 2026-08-22 (afternoon) — the first live meeting, scored against an answer key
 
 Everything above was measured by replaying a recording. This section is a **live** meeting: Pia joined

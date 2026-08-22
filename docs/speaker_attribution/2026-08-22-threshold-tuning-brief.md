@@ -1,15 +1,37 @@
 # Brief: decouple the match threshold from the cut (Tasks 8 and 9)
 
-**Status.** Ready to execute, with the amendment at the end of Task 8 folded in. This brief is now
-**lever 4** of [2026-08-22-attribution-levers-brief.md](2026-08-22-attribution-levers-brief.md), which
-supersedes its scope and reorders it behind three cheaper levers — start there. Gated on a live smoke
-test for *merge*, not for work — note that one live meeting was measured on 2026-08-22 (see the last
-section of the measurements doc); whether that discharges Monday 2026-08-24 is the owner's call.
+**Status.** Task 8 executed and measured 2026-08-22 on the bench; the winner is unconfirmed on the app
+and the shipping default is unchanged. Task 9 not started. This brief is now **lever 4** of
+[2026-08-22-attribution-levers-brief.md](2026-08-22-attribution-levers-brief.md), which supersedes its
+scope and reorders it behind three cheaper levers — start there. Gated on a live smoke test for
+*merge*, not for work — note that one live meeting was measured on 2026-08-22 (see the last section of
+the measurements doc); whether that discharges Monday 2026-08-24 is the owner's call.
 **Owner.** Marco Altmann.
 **Written.** 2026-08-22.
 **Origin.** Tasks 8 and 9 of `docs/superpowers/plans/2026-08-22-diarization-bench-and-threshold.md`,
 released by the Task 7 measurement recorded in `2026-08-21-speaker-attribution-measurements.md`
 (commit `a169a7d4`). Both were conditional on that number; it came back in their favour.
+
+## Task 8 outcome, read this before the sections below
+
+Executed 2026-08-22 on `feature/diarization-threshold`. Full numbers in
+`2026-08-21-speaker-attribution-measurements.md`, section *Task 8*. Two premises below did not survive
+the measurement, and the sections that rest on them should be read with that in mind:
+
+- **There is no threshold/cut feedback loop.** The clusterer's inputs never include the match
+  threshold; the cut trace is identical to the digit across all 11 settings on both recordings. The
+  coupling is one-directional. Policies (c) and (d) were damping a loop that does not exist, and both
+  lost — (d) worst of the four.
+- **The Alexander/Andreas residue is not a matching error.** 127.4 s inside B's label, unmoved to the
+  decimal by every setting from 0.20 to 0.60. It is the dendrogram's partition, out of the threshold's
+  reach by construction.
+
+A fixed threshold in the 0.20-0.345 plateau does win on the bench - +6 correct segments on LSP, +1 on
+the workshop, and live label churn down from 13 labels to 9. **The workshop app replay then refused the
+confirmation**: the +1/+2 segment deltas reproduced exactly, and the label-churn win did not move at all
+(9 live labels, both builds). So 0.30 is identified and unconfirmed, **the shipping default is
+unchanged**, and it is reachable only from the bench via `PIA_BENCH_MATCH`. LSP is untested end to end
+and is where the bench's delta was largest; if it fails there too, Task 8 closes as a measured refusal.
 
 ## Why this work is now justified
 

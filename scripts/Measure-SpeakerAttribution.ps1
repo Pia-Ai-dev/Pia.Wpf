@@ -47,7 +47,9 @@ param(
     # Recording time = stream time + this. Zero by construction for a replay, which starts the file
     # at its beginning; a live run joins a meeting already being recorded, so it is fitted there.
     [double]$StreamOriginSeconds = [double]::NaN,
-    [string]$NameMapPath
+    [string]$NameMapPath,
+    # Score the instant provisional label instead of the corrected one - what the meeting actually showed.
+    [switch]$Provisional
 )
 
 $ErrorActionPreference = 'Stop'
@@ -211,6 +213,14 @@ else {
         if (-not $c.Applied) { continue }
         if ($bySegId.ContainsKey($c.SegId)) { $bySegId[$c.SegId].Final = $c.Label }
     }
+}
+
+# Both input paths carry the instant label alongside the corrected one. Rewinding to it is the only way
+# to see the match threshold at all: a pass reassigns every eligible segment, so the final label is the
+# pass's partition, which the threshold does not reach.
+if ($Provisional) {
+    foreach ($s in $segments) { $s.Final = $s.Label }
+    $labelSets.Add([string[]]@($segments | ForEach-Object { $_.Final } | Where-Object { $_ } | Sort-Object -Unique))
 }
 
 # ---- Align replay wall-clock to recording time --------------------------------------------------
@@ -453,7 +463,7 @@ Write-Host "  matched an utterance already seen: $(($corrections | Where-Object 
 # and what follows from that is the build's business: dropped before the parking fix, parked after.
 Write-Host "  aimed at a segment still in flight: $(($corrections | Where-Object { -not $_.Applied }).Count) (dropped pre-fix, parked post-fix)"
 Write-Host ''
-Write-Host "ATTRIBUTION  (segment midpoint vs the recording's active-speaker indicator)"
+Write-Host "ATTRIBUTION  (segment midpoint vs the recording's active-speaker indicator)$(if ($Provisional) { ' - PROVISIONAL, before pass corrections' })"
 if ($scored -gt 0) {
     Write-Host ("  scored segments    : {0}  ({1:N1} s)" -f $scored, $scoredSeconds)
     Write-Host ("  correct            : {0}  = {1:P1} by segment, {2:P1} by duration" -f `

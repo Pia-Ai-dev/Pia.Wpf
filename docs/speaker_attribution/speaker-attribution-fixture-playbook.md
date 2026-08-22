@@ -149,11 +149,12 @@ $env:PIA_BENCH_ROSTER    = '<humans>'
 $env:PIA_BENCH_REFERENCE = (Resolve-Path 'scripts/speaker-reference/<name>.reference.json').Path
 $env:PIA_BENCH_OUT       = (Join-Path (Get-Location) 'artifacts/wav/bench')
 $env:PIA_BENCH_ENROLL    = '12'   # optional; default 30, too big for a recording under ~10 min
+$env:PIA_BENCH_MATCH     = '0.30,0.345'   # optional: fixed match thresholds, one run each
 dotnet test -- --explicit only --filter-method "*Bench_MeasuresARecording*"
 ```
 
-Set them in **one** call — each PowerShell invocation is a fresh shell, and a missing `PIA_BENCH_WAV`
-makes the test skip rather than fail, which reads like success.
+Set every one you need in **one** call — each PowerShell invocation is a fresh shell, and a missing
+`PIA_BENCH_WAV` makes the test skip rather than fail, which reads like success.
 
 Two parts of the report earn most of the attention:
 
@@ -165,7 +166,9 @@ Two parts of the report earn most of the attention:
 - `ORACLE enrollment`, which is the bound that decides whether a failure belongs to the matching policy
   or to the embedding model. Read the per-speaker lines first (see trap 4).
 
-Outputs land in `PIA_BENCH_OUT`: `*.report.txt`, `*.segments.jsonl`, `*.passes.log`, `*.embeddings.bin`.
+Outputs land in `PIA_BENCH_OUT`: one `<name>.<setting>.segments.jsonl` and `.passes.log` per
+setting, plus a shared `<name>.report.txt` and `<name>.embeddings.bin`. With `PIA_BENCH_MATCH` unset the
+single setting is `derived` — the shipping policy, which recomputes the threshold from each pass's cut.
 The first run computes every embedding; later runs reuse the cache and cost milliseconds.
 
 ## 4. Score it
@@ -179,12 +182,15 @@ Same scorer for both inputs, so the app and the bench stay comparable:
     -NameMapPath scripts/speaker-reference/<name>.names.local.json
 
 # the bench's segments
-./scripts/Measure-SpeakerAttribution.ps1 -SegmentsPath artifacts/wav/bench/<name>.segments.jsonl `
+./scripts/Measure-SpeakerAttribution.ps1 -SegmentsPath artifacts/wav/bench/<name>.derived.segments.jsonl `
     -ReferencePath scripts/speaker-reference/<name>.reference.json
 ```
 
 Use the reference belonging to the run. Scoring one recording against another's key produces a
 confident, meaningless number.
+
+Add `-Provisional` to either input to score the instant label instead of the corrected one - the part of
+a run the match threshold actually owns (trap 7). A bench segments file and an app log both carry it.
 
 The header must read:
 
@@ -250,6 +256,13 @@ Each of these has produced a plausible wrong number at least once.
 8. **A headline percentage on a run whose errors are all one person.** `testmeeting` reads 84.1 %, and
    the useful statement is "37 for 37 on three speakers, 0 for 7 on the fourth". Always read the
    confusion matrix before quoting the percentage.
+9. **Scoring only the final label.** Every eligible segment's final label comes from the last pass's
+   partition, and the pass never sees the match threshold — so a threshold change is almost invisible
+   in the final-state number and plainly visible in `-Provisional`, which scores the instant label the
+   meeting actually showed. Score both, or a real change reads as no change.
+10. **Reading the attribution percentage across settings.** Unlabelled segments leave the denominator,
+    so refusing to label raises the percentage. Compare the *correct count* — the segment set is
+    identical across settings — and read the percentage second.
 
 ## What is still unmeasured
 

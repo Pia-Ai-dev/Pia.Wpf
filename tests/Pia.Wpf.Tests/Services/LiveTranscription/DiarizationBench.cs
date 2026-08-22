@@ -49,13 +49,22 @@ internal sealed class DiarizationBench
     }
 
     /// <summary>Replays the segments through the real diarizer on a stream-time clock, applying every
-    /// correction a pass emits. Returns the log lines, which carry the pass sequence.</summary>
+    /// correction a pass emits. Returns the log lines, which carry the pass sequence. Clears the labels
+    /// first, so one segment list can be replayed under several option sets.</summary>
     public static IReadOnlyList<string> Identify(
-        List<BenchSegment> segments, int rosterSize, CachedEmbeddingExtractor extractor)
+        List<BenchSegment> segments, int rosterSize, CachedEmbeddingExtractor extractor,
+        AdaptiveSpeakerOptions? options = null)
     {
+        foreach (var segment in segments) { segment.Label = null; segment.FinalLabel = null; }
+
         var logger = new CapturingLogger<AdaptiveSpeakerIdentificationService>();
         var streamNow = ClockEpoch;
-        using var service = new AdaptiveSpeakerIdentificationService(extractor, logger, () => streamNow);
+        // The service disposes the extractor it is handed, and a sweep shares one warm cache across
+        // every policy, so it gets a borrowed view instead.
+        using var service = new AdaptiveSpeakerIdentificationService(
+            new BorrowedExtractor(extractor), logger, () => streamNow,
+            AdaptiveSpeakerIdentificationService.DefaultMaxJournaledSegments,
+            clusterer: null, options: options);
         if (rosterSize > 0) service.SetExpectedSpeakers(rosterSize);
 
         var bySegmentId = new Dictionary<long, BenchSegment>();
@@ -81,6 +90,13 @@ internal sealed class DiarizationBench
         }
 
         return [.. logger.Entries.Select(e => e.Message)];
+    }
+
+    private sealed class BorrowedExtractor(IEmbeddingExtractor inner) : IEmbeddingExtractor
+    {
+        public int Dim => inner.Dim;
+        public float[] Compute(float[] samples, int sampleRate) => inner.Compute(samples, sampleRate);
+        public void Dispose() { }
     }
 
     public static void WriteSegments(string path, IEnumerable<BenchSegment> segments)
