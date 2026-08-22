@@ -1,0 +1,101 @@
+using System.Globalization;
+using System.IO;
+using Microsoft.Extensions.Logging.Abstractions;
+using NAudio.Wave;
+using Pia.Services.LiveTranscription;
+
+namespace Pia.Tests.Services.LiveTranscription;
+
+/// <summary>
+/// Runs the production segmentation + diarization over a recorded WAV with no transcription, no UI and
+/// no real-time pacing, so a 50-minute meeting is measurable in minutes instead of an hour. The types
+/// under test are the shipping ones; what the bench replaces is only the clock and the audio device.
+///
+/// <para>Known differences from a live run, which belong in any report built on this: there is no
+/// speech-to-text, so nothing is dropped to transcription backpressure and no segment is discarded for
+/// producing empty text; and the diarizer's 30 s pass trigger fires on stream time here, where the app
+/// measures wall clock between identify calls.</para>
+/// </summary>
+internal sealed class DiarizationBench
+{
+    // The engine gates diarization at 1.5 s before the service ever sees a segment.
+    private const int MinDiarizationSamples = 16000 * 3 / 2;
+    private static readonly DateTimeOffset ClockEpoch = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+    /// <summary>Decodes the recording through the same reader and hop resampler the replay path uses,
+    /// then segments it with the production VAD.</summary>
+    public static List<BenchSegment> Segment(string wavPath)
+    {
+        var segments = new List<BenchSegment>();
+        using var vad = new SileroVadDetector(modelPath: string.Empty, NullLogger.Instance);
+        vad.OnSegment += s => segments.Add(new BenchSegment
+        {
+            StartSample = s.StartSample,
+            SampleCount = s.Samples.Length,
+            Samples = s.Samples,
+        });
+
+        using var reader = new MediaFoundationReader(wavPath);
+        var resampler = new AudioHopResampler(reader.WaveFormat);
+        var buffer = new byte[8192];
+        while (true)
+        {
+            int read = reader.Read(buffer, 0, buffer.Length);
+            if (read <= 0) break;
+            foreach (var hop in resampler.ProcessAvailable(buffer, read)) vad.Process(hop);
+        }
+        vad.Drain();
+        return segments;
+    }
+
+    /// <summary>Replays the segments through the real diarizer on a stream-time clock, applying every
+    /// correction a pass emits. Returns the log lines, which carry the pass sequence.</summary>
+    public static IReadOnlyList<string> Identify(
+        List<BenchSegment> segments, int rosterSize, CachedEmbeddingExtractor extractor)
+    {
+        var logger = new CapturingLogger<AdaptiveSpeakerIdentificationService>();
+        var streamNow = ClockEpoch;
+        using var service = new AdaptiveSpeakerIdentificationService(extractor, logger, () => streamNow);
+        if (rosterSize > 0) service.SetExpectedSpeakers(rosterSize);
+
+        var bySegmentId = new Dictionary<long, BenchSegment>();
+        service.SpeakersReassigned += (_, batch) =>
+        {
+            foreach (var r in batch)
+                if (bySegmentId.TryGetValue(r.SegmentId, out var target)) target.FinalLabel = r.NewLabel;
+        };
+
+        foreach (var segment in segments)
+        {
+            if (segment.SampleCount < MinDiarizationSamples) continue;
+
+            // The pass's 30 s latency trigger is time-based, so the clock has to advance with the
+            // stream or a fast run visits a different pass sequence than a real-time one.
+            streamNow = ClockEpoch.AddSeconds(segment.StartSeconds + segment.DurationSeconds);
+            extractor.Current = (segment.StartSample, segment.SampleCount);
+
+            var result = service.IdentifyOrRegisterSegment(segment.Samples, 16000);
+            bySegmentId[result.SegmentId] = segment;
+            segment.Label = result.Label;
+            segment.FinalLabel = result.Label;
+        }
+
+        return [.. logger.Entries.Select(e => e.Message)];
+    }
+
+    public static void WriteSegments(string path, IEnumerable<BenchSegment> segments)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        using var writer = new StreamWriter(path);
+        foreach (var s in segments)
+        {
+            if (s.SampleCount < MinDiarizationSamples) continue;
+            writer.WriteLine(string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"startSeconds\":{0:F3},\"durationSeconds\":{1:F3},\"label\":{2},\"finalLabel\":{3}}}",
+                s.StartSeconds, s.DurationSeconds, Quote(s.Label), Quote(s.FinalLabel)));
+        }
+    }
+
+    private static string Quote(string? value) => value is null ? "null" : $"\"{value}\"";
+}

@@ -216,3 +216,7 @@ appsettings.local.json
 
 # Hand-read tile-to-name maps for the speaker-attribution fixture: real meeting participants.
 scripts/speaker-reference/*.names.local.json
+
+# The diarization bench's cached voice embeddings: biometric data about named colleagues. They belong
+# under artifacts/ (ignored above); this line is here so the rule is stated where it is looked for.
+*.embeddings.bin
