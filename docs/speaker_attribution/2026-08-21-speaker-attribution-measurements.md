@@ -690,13 +690,17 @@ both recordings**, including settings that hold the threshold at 0.30 and at 0.6
 this and prints the verdict, so a future change that introduces a back edge will say so.
 
 What follows is the real scope of the knob. A pass reassigns every eligible segment, so an eligible
-segment's *final* label is the last pass's partition — which no threshold moves. The threshold owns
-only:
+segment's *final* label is the last pass's partition, and no threshold moves that partition. What the
+threshold does own:
 
-- the **provisional** label shown live, until the next pass corrects it (≤ 5 segments or 30 s), and
+- the **provisional** label shown live, until the next pass corrects it (<= 5 segments or 30 s);
 - segments between the 1.5 s diarization gate and the 2 s clustering floor, which never enter a
-  dendrogram and therefore keep their provisional label for good — 43 of 474 on LSP, 47 of 206 on the
-  workshop.
+  dendrogram and therefore keep their provisional label for good - 43 of 474 on LSP, 47 of 206 on the
+  workshop; and
+- indirectly, which stable cluster id a rebuilt cluster inherits, because the pass matches new clusters
+  to old ones by *segment overlap* and the provisional assignments are that overlap. This is why the
+  live-versus-final counts move by more than the sub-floor band alone can explain: 13 segments against
+  the ~19 sub-floor segments that carry any label at all on LSP.
 
 Policies (c) damped and (d) separation were designed to stabilise a loop that does not exist.
 
