@@ -1343,6 +1343,32 @@ public sealed class HeadlessTurnExecutorTests
     }
 
     [Fact]
+    public async Task APinnedRunPersona_ReplacesTheRunDefault_ButNotAnAssignedStepsSpecialist()
+    {
+        // A routine's pin reaches the PLAN through the orchestrator's argument; the step turns compose their
+        // system prompt from the run default instead, so the pin has to arrive through Initialize as well.
+        using var h = new DurabilityHarness();
+        var analyst = RosterPersona("Analyst");
+        var critic = RosterPersona("Critic");
+        WithRoster(h, analyst, critic);
+        var pinned = RosterPersona("Pinned");   // a job's pin is not roster-gated
+        var captured = CaptureTurns(h);
+        var run = await h.NewRunAsync("the goal");
+        var executor = h.NewExecutor();
+        executor.Initialize(workspaceRoot: null, grantedWrites: [], personaOverride: pinned);
+
+        await h.Orchestrator(new FakePlanner(MixedSteps(analyst, critic)))
+            .RunAsync(run, executor, pinned, h.Provider, RunProfile.Interactive,
+                TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, captured.Count);
+        Assert.Equal("system for Analyst", captured[0].Messages[0].Text);
+        Assert.Equal("system for Critic", captured[1].Messages[0].Text);
+        Assert.Equal("system for Pinned", captured[2].Messages[0].Text);
+        await h.Personas.DidNotReceive().ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>());
+    }
+
+    [Fact]
     public async Task TheDegradeTurnUsesTheRunPersona()
     {
         // The single-turn fallback belongs to the RUN and to no step, so there is no assignment to read and the

@@ -1,6 +1,9 @@
 # Plan — Per-Routine Persona and Reasoning Effort on `ScheduledJob`
 
-**Status:** planned, not started. Self-contained: everything needed to execute it is below.
+**Status:** E1–E6 and E8 landed; **E7 (the Windows verification) is outstanding**, so nothing here has
+been built or tested on Windows yet. Tracked in
+[`2026-08-22-hermes-followup-checklist.md`](2026-08-22-hermes-followup-checklist.md) as group **E**.
+Self-contained: everything needed to execute it is below.
 **Owner:** unassigned. **Written:** 2026-08-22.
 **Origin:** recommendation #11 of
 [`2026-08-22-hermes-update-review.md`](2026-08-22-hermes-update-review.md), promoted out of the
@@ -541,13 +544,17 @@ the assistant. Strictly additive later.
    does exactly this and compiles, and nothing in `ScheduledJob` / `HeadlessRunRequest` /
    `BackgroundTurnRequest` needs to name a member — but a later "harmless" default initializer would not
    compile.
-7. **The pin is honoured at DISPATCH, not on RESUME.** `ResumeAsync` calls `ResolveActiveAsync` and
-   `ResolveProviderAsync(null, persona)` directly (`HeadlessRunLauncher.cs:560-563`), so a scheduled
-   AgentTask that parks at its budget and is later continued runs on the current mode persona. This is
-   **exactly what already happens to the job's `ProviderId`**, and that assumption is documented inline —
-   so the pins are consistent rather than newly broken. Fixing it properly means persisting the resolved
-   persona on the run row; that is a separate step, and this line is here so a user does not report it as
-   a bug in this feature.
+7. **Both pins are honoured at DISPATCH, not on RESUME.** Dispatch reaches the step turns and not just
+   the plan, but only because `LaunchCoreAsync` seeds the executor through `Initialize(personaOverride:)`.
+   Without that, `HeadlessTurnExecutor` re-resolves the mode persona itself and composes every step prompt
+   from it — the plan would name the pinned persona while the work ran as the default assistant, which is
+   how this shipped until review caught it. RESUME is the remaining gap: `ResumeAsync` calls
+   `ResolveActiveAsync` and `ResolveProviderAsync(null, persona)` directly
+   (`HeadlessRunLauncher.cs:560-563`), so a scheduled AgentTask that parks at its budget and is later
+   continued runs on the current mode persona at the mode default effort. Both pins drop together, and the
+   job's `ProviderId` already behaves this way, so the three are consistent rather than newly broken. The
+   proper fix is persisting the resolved persona and effort on the run row — tracked as E9, deliberately
+   not done here, and stated so nobody reports it as a bug in this feature.
 8. **Extending `Routines_NotOwnedHere` changes the detail pane's banner too**, not only the editor's.
    Coherent in both places (both are about a routine that runs elsewhere) and it keeps one string for one
    fact — but if the detail-pane wording is considered load-bearing, the alternative is a second key used

@@ -1161,7 +1161,7 @@
   <data name="Routines_Blueprint_HabitCheckin_Title" xml:space="preserve"><value>Habit check-in</value></data>
   <data name="Routines_Blueprint_HabitCheckin_Description" xml:space="preserve"><value>A nightly look at your recurring commitments, and one question to sit with.</value></data>
   <data name="Routines_Blueprint_WeeklyReview_Title" xml:space="preserve"><value>Weekly review</value></data>
-  <data name="Routines_Blueprint_WeeklyReview_Description" xml:space="preserve"><value>A Friday round-up of what finished, what is still open, and what the week's notes are worth keeping.</value></data>
+  <data name="Routines_Blueprint_WeeklyReview_Description" xml:space="preserve"><value>A Friday round-up of what finished, what is still open, and what from the week's notes is worth keeping.</value></data>
   <data name="Routines_Blueprint_CompetitorWatch_Title" xml:space="preserve"><value>Competitor watch</value></data>
   <data name="Routines_Blueprint_CompetitorWatch_Description" xml:space="preserve"><value>One line a week per company on what actually moved, with sources.</value></data>
   <data name="Routines_Blueprint_BillsRenewals_Title" xml:space="preserve"><value>Bills and renewals</value></data>

@@ -474,7 +474,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
                 // canPark: a ROOT run may stop and ask a human for a promptable capability it was
                 // not granted; a CHILD run may not, and hard-denies exactly as before. See CanParkForApproval.
                 executor.Initialize(workspaceRoot: runRoot, grants, provider, policy,
-                    canPark: CanParkForApproval(parentRunId), deniedWrites: denied);
+                    canPark: CanParkForApproval(parentRunId), deniedWrites: denied, personaOverride: persona);
                 started = true;
 
                 // Open the composer bracket. Deliberately HERE and not before `_slots.WaitAsync` above:
@@ -558,8 +558,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             _slots.Resize(settings.GetMaxParallelBackgroundRuns());
             var persona = await _personaService.ResolveActiveAsync(
                 WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal).ConfigureAwait(false);
-            // Persona/provider are NOT persisted on the run — resolve the current default (same as the launch
-            // path). Minor assumption: a resumed run may run on a different default provider than its origin.
+            // Persona/provider are NOT persisted on the run and a scheduled job's pins are not re-read here, so
+            // a resumed run takes the CURRENT per-mode persona and default provider rather than its origin's.
             var provider = await ResolveProviderAsync(null, persona).ConfigureAwait(false)
                 ?? throw new InvalidOperationException("No provider configured to resume an agent run.");
             // Restore the write grants the LAUNCH resolved from the run's own envelope — a resume must
@@ -891,7 +891,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             // left behind. A separate literal from the launch call on purpose — the two have drifted
             // before, so each has its own regression fact.
             executor.Initialize(workspaceRoot: plan.RunRoot, plan.Grants, plan.Provider, plan.Policy,
-                canPark: CanParkForApproval(run.ParentRunId), deniedWrites: plan.Denied);
+                canPark: CanParkForApproval(run.ParentRunId), deniedWrites: plan.Denied,
+                personaOverride: plan.Persona);
             started = true;
             // Same bracket, same reasoning as the launch path — after the slot wait, before the
             // executor can write. TryBeginResumeAsync already raised RunChanged(Running) at the CAS,
@@ -1081,18 +1082,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     }
 
     /// <summary>
-    /// The run persona for one dispatch: a delegated step's ASSIGNED roster persona first, then the job's own
-    /// user-authored pin, then the global per-mode resolution every ordinary launch takes.
-    /// <para>
-    /// Only the DELEGATED id is roster-gated, and it is gated twice, mirroring <c>StepPersonaResolver</c> so the
-    /// two seams agree. It must still be on the CURRENT roster for the current operating mode — a plan outlives
-    /// the setting that produced it (a replan, a resume, a roster the user has since edited) — and it must still
-    /// resolve, so one deleted between plan and dispatch cannot reach a prompt as a blank system message. The
-    /// job's pin gets neither gate: the roster is empty by default, so gating it there would ignore every choice
-    /// the editor offers.
-    /// </para>
-    /// NEVER throws for a pin's sake: every arm ends at the per-mode resolution. Ids and counts only in the
-    /// logs — a persona NAME is user-named content.
+    /// A delegated step's assigned persona, then the job's pin, then the per-mode resolution. Only the DELEGATED
+    /// id is roster-gated (an empty roster is the default), no arm throws, and no log line here names a persona.
     /// </summary>
     private async Task<Persona> ResolveRunPersonaAsync(
         Guid? personaIdOverride, Guid? pinnedPersonaId, AppSettings settings)

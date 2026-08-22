@@ -179,9 +179,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     [ObservableProperty]
     private RoutineEffortChoice? _editEffort;
 
-    /// <summary>False only while editing a routine another device owns. Deliberately not bound to the
-    /// selection alone: <see cref="StartCreate"/> leaves a foreign row selected, and a brand-new routine this
-    /// device is about to own must stay editable.</summary>
+    /// <summary>False only while editing a routine another device owns. Not selection-bound: <see cref="StartCreate"/>
+    /// leaves a foreign row selected, and the new routine it opens must stay editable.</summary>
     public bool EditorPinsEnabled =>
         EditingJobId is null || SelectedJob?.OwnedByThisDevice != false;
 
@@ -431,9 +430,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditSpecificDate = null;
         EditGrantedTools = string.Empty;
         EditQuietOnSuccess = false;
-        EditProvider = ProviderChoices.FirstOrDefault();
-        EditPersona = ResolvePersonaChoice(null);
-        EditEffort = EffortChoices[0];
+        ApplyPinChoices(null, null, null);
         StatusMessage = null;
         IsEditorOpen = true;
     }
@@ -457,10 +454,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditSpecificDate = null;
         EditGrantedTools = string.Join(", ", blueprint.GrantedTools);
         EditQuietOnSuccess = blueprint.QuietOnSuccess;
-        EditProvider = ProviderChoices.FirstOrDefault();
-        EditPersona = ResolvePersonaChoice(null);
-        EditEffort = EffortChoices.FirstOrDefault(e => e.Value == blueprint.DefaultEffort)
-                     ?? EffortChoices[0];
+        ApplyPinChoices(null, null, blueprint.DefaultEffort);
         StatusMessage = null;
         IsEditorOpen = true;
 
@@ -488,13 +482,16 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditSpecificDate = row.SpecificDate;
         EditGrantedTools = row.GrantedTools;
         EditQuietOnSuccess = row.QuietOnSuccess;
-        EditProvider = ProviderChoices.FirstOrDefault(p => p.Id == row.ProviderId)
-                       ?? ProviderChoices.FirstOrDefault();
-        EditPersona = ResolvePersonaChoice(row.PersonaId);
-        EditEffort = EffortChoices.FirstOrDefault(e => e.Value == row.ReasoningEffort)
-                     ?? EffortChoices[0];
+        ApplyPinChoices(row.ProviderId, row.PersonaId, row.ReasoningEffort);
         StatusMessage = null;
         IsEditorOpen = true;
+    }
+
+    private void ApplyPinChoices(Guid? providerId, Guid? personaId, ReasoningEffort? effort)
+    {
+        EditProvider = ProviderChoices.FirstOrDefault(p => p.Id == providerId) ?? ProviderChoices.FirstOrDefault();
+        EditPersona = ResolvePersonaChoice(personaId);
+        EditEffort = EffortChoices.FirstOrDefault(e => e.Value == effort) ?? EffortChoices[0];
     }
 
     /// <summary>A pin whose persona is gone gets a row of its own: falling back to the default row would show
@@ -742,8 +739,7 @@ public sealed record RoutineProviderChoice(Guid? Id, string Name)
 }
 
 /// <summary>One persona the editor may pin a job to; <see cref="Id"/> null is "use the active persona".
-/// <see cref="IsUnavailable"/> marks a saved pin nothing resolves, which stays selectable so a later save
-/// preserves it.</summary>
+/// <see cref="IsUnavailable"/> marks a saved pin nothing resolves.</summary>
 public sealed record RoutinePersonaChoice(Guid? Id, string Name, bool IsUnavailable = false)
 {
     public override string ToString() => Name;

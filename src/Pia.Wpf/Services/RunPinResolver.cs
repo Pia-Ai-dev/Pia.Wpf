@@ -10,12 +10,8 @@ namespace Pia.Services;
 /// </summary>
 internal static class RunPinResolver
 {
-    /// <summary>
-    /// Resolves a USER-authored persona pin. Deliberately not roster-gated, unlike a planner-assigned id: the
-    /// roster is the allow-list for what a planner may assign, is empty by default and caps at six, so gating
-    /// this on it would ignore every choice the picker offers. A pin that no longer resolves falls back to the
-    /// mode persona rather than failing the run, and logs the id and a reason token — never a persona name.
-    /// </summary>
+    /// <summary>A user-authored pin is not roster-gated the way a planner-assigned id is, and an unresolvable
+    /// one logs its id and a reason token — never a persona name.</summary>
     public static async Task<Persona> ResolvePersonaAsync(
         IPersonaService personas, Guid? pinnedId, UserOperatingMode mode, ILogger logger)
     {
@@ -45,11 +41,8 @@ internal static class RunPinResolver
         return await personas.ResolveActiveAsync(WindowMode.Assistant, mode).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// The job's pin outranks the persona's — it is the more specific, more recent, user-authored statement.
-    /// Clones rather than mutating: <see cref="AiProvider"/> instances come out of a shared store, so stamping
-    /// the instance we were handed leaks one run's effort into every other consumer of that provider.
-    /// </summary>
+    /// <summary>Clones rather than stamping the instance: <see cref="AiProvider"/> objects come out of a shared
+    /// store, so mutating one leaks a single run's effort into every other consumer.</summary>
     public static AiProvider ApplyEffort(AiProvider provider, ReasoningEffort? jobPin, ReasoningEffort? personaEffort)
     {
         if ((jobPin ?? personaEffort) is not { } effort)

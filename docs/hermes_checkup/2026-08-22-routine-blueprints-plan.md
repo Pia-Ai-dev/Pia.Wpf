@@ -202,7 +202,8 @@ blueprint needs stateful fetch-and-compare that Pia has no home for.
 | `bills-renewals` | Research | Recurring-payment heads-up | — |
 | `habit-checkin` | Research | Recurring nudge + reflection | — |
 
-**Kind is `Research` for all eight, including the six that only read.** The `AgentTask` dispatch leg maps
+**Kind is `Research` for all eight, including the seven that only read** — every row but
+`meeting-followup`, whose sole grant is `create_todo`. The `AgentTask` dispatch leg maps
 a job's empty `GrantedTools` list to `null`, and `HeadlessRunLauncher` turns that `null` into
 `HeadlessRunRequest.DefaultGrantedWrites = ["write_file"]` — so an `AgentTask` card advertising no grants
 would in fact run able to write files, the exact opposite of what §8 promises. The `Research` leg passes

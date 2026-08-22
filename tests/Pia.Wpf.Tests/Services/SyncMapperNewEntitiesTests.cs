@@ -168,8 +168,10 @@ public class SyncMapperNewEntitiesTests
         var sync = mapper.ToSyncScheduledJob(original, userId);
         var back = mapper.FromSyncScheduledJob(sync, userId);
 
-        // Non-vacuity: the round trip demonstrably carried the synced fields.
-        Assert.Equal(original.Kind, back.Kind);
+        // Non-vacuity on two fields whose sample values are NOT the CLR default, so a mapper that stopped
+        // writing them fails here instead of passing on a coerced 0.
+        Assert.Equal(DayOfWeek.Tuesday, back.DayOfWeek);
+        Assert.Equal(original.ProviderId, back.ProviderId);
         Assert.Null(back.PersonaId);
         Assert.Null(back.ReasoningEffort);
     }

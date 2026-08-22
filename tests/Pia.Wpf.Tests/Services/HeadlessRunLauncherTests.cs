@@ -1424,6 +1424,25 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Equal(preferred.Id, chat!.ProviderId);
     }
 
+    /// <summary>The pin decides the STEP TURNS too, not only the plan: the executor composes every turn's
+    /// system prompt from the run persona it is seeded with.</summary>
+    [Fact]
+    public async Task AJobsPinnedPersona_AlsoRunsTheTurns_NotOnlyThePlan()
+    {
+        var researcher = new Persona { Id = Guid.NewGuid(), Name = "Researcher", SystemPrompt = "research" };
+        var (launcher, _) = BuildLauncher(pinnedPersona: researcher);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("digest", AgentRunTrigger.Schedule, PersonaId: researcher.Id),
+            TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        // The stamp on the persisted reply is the persona that turn was composed from.
+        var chat = await _chats.GetAsync(handle.ChatId, TestContext.Current.CancellationToken);
+        var reply = Assert.Single(chat!.Messages, m => m.Role == "assistant");
+        Assert.Equal(researcher.Id, reply.Persona!.Id);
+    }
+
     /// <summary>A deleted persona must not retire a daily routine: the run falls back to the mode persona and
     /// still COMPLETES.</summary>
     [Fact]

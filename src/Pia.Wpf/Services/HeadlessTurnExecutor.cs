@@ -71,9 +71,10 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     private string? _existingTitle;
     private string? _existingWorkingDirectory;
 
-    // Seeded by the launcher via Initialize before the orchestrator runs (§17.3).
+    // Seeded by the launcher via Initialize before the orchestrator runs.
     private string? _workspaceRoot;
     private AiProvider? _providerOverride;
+    private Persona? _personaOverride;
 
     /// <summary>This run's autonomy policy (Batch 04); null ⇒ no per-run policy, i.e. today's behaviour.</summary>
     private RunAutonomyPolicy? _policy;
@@ -130,9 +131,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     }
 
     /// <summary>
-    /// Seed the granted write tools, an optional provider override (the launcher's resolved provider, kept
-    /// in lock-step with the orchestrator's planner so the two never diverge), and the run's isolated
-    /// workspace root. Called from the launcher's fresh DI scope BEFORE <c>orchestrator.RunAsync</c>.
+    /// Seed the granted write tools, an optional provider and persona override (the launcher's resolved
+    /// pair, kept in lock-step with the orchestrator's planner so the two never diverge), and the run's
+    /// isolated workspace root. Called from the launcher's fresh DI scope BEFORE <c>orchestrator.RunAsync</c>.
     /// <para>
     /// <paramref name="workspaceRoot"/> is the run's isolated base root and is <b>non-null for an isolated
     /// run</b> — the normal case since Batch 06 G2, where the launcher passes
@@ -159,16 +160,20 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// which is the pre-#16 behaviour — a caller that forgets it gets the safe answer.</param>
     /// <param name="deniedWrites">Tools a person declined for this run on a tool-approval park; the unattended
     /// gate refuses them with "adapt" instead of re-parking. Null/empty = no denials.</param>
+    /// <param name="personaOverride">The launcher's resolved run persona; null ⇒ resolve the per-mode one here.
+    /// Replaces the RUN DEFAULT only — a step naming its own persona still gets that one.</param>
     public void Initialize(
         string? workspaceRoot,
         IReadOnlyCollection<string> grantedWrites,
         AiProvider? providerOverride = null,
         RunAutonomyPolicy? policy = null,
         bool canPark = false,
-        IReadOnlyCollection<string>? deniedWrites = null)
+        IReadOnlyCollection<string>? deniedWrites = null,
+        Persona? personaOverride = null)
     {
         _workspaceRoot = workspaceRoot;
         _providerOverride = providerOverride;
+        _personaOverride = personaOverride;
         _policy = policy;
         _canPark = canPark;
         _grantedWrites.Clear();
@@ -202,8 +207,10 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
         _tokenizationEnabled = settings.Privacy.TokenizationEnabled;
 
-        _persona = await _personaService.ResolveActiveAsync(
-            WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal).ConfigureAwait(false);
+        // Prefer the launcher's resolution, so the step turns run on the persona the planner and the panel name.
+        _persona = _personaOverride
+            ?? await _personaService.ResolveActiveAsync(
+                WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal).ConfigureAwait(false);
 
         // Prefer the launcher-resolved override so the executor and the orchestrator's planner run on
         // the SAME provider (honors a scheduled job's ProviderId); fall back to persona-preferred/default.

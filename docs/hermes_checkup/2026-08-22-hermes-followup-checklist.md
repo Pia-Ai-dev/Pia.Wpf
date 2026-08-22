@@ -1,6 +1,6 @@
 # Implementation Checklist — Hermes Follow-Up Plans
 
-Tracking file for the four plans spawned by
+Tracking file for the five plans spawned by
 [`2026-08-22-hermes-update-review.md`](2026-08-22-hermes-update-review.md). One row per
 implementation step. Tick as they land.
 
@@ -8,8 +8,9 @@ implementation step. Tick as they land.
 |---|---|
 | **A** | [Artifact evidence](2026-08-22-artifact-evidence-plan.md) |
 | **B** | [Compaction recall](2026-08-22-compaction-recall-test-plan.md) |
-| **C** | [Routine blueprints](2026-08-22-routine-blueprints-plan.md) |
+| **C** | [Routine blueprints](2026-08-22-routine-blueprints-plan.md) · ordering decision: [C4 before C5](2026-08-22-c4-before-c5-decision.md) |
 | **D** | [Guided tour](2026-08-22-guided-tour-tool-plan.md) |
+| **E** | [Per-routine persona + reasoning effort](2026-08-22-routine-persona-effort-plan.md) |
 
 **Effort** — `XS` under a day, no new types · `S` 1–2 days · `M` 3–5 days, new types or a new surface
 · `L` a week or more, a new subsystem.
@@ -17,8 +18,8 @@ implementation step. Tick as they land.
 **Value** — `High` user-visible improvement or a real risk closed · `Med` worthwhile, not headline ·
 `Enabler` little standalone value, unblocks a High.
 
-**The four groups are independent** — no cross-group step blocks another. Dependencies below are
-within-group unless marked otherwise.
+**The groups are independent bar one step** — `E8` needs C4's blueprints. Every other dependency
+below is within-group unless marked otherwise.
 
 ---
 
@@ -122,8 +123,16 @@ Three steps can close work below them. Do not tick their dependants without revi
   the playbook. **The vertical slice — this is where the blank-box fix becomes visible.**
   *Deps:* C1, C2 · *Effort:* **M** · *Value:* **High**
 
-- [ ] **C4 · Remaining seven blueprints + their strings.** Each declares its narrowest `GrantedTools` set.
+- [x] **C4 · Remaining seven blueprints + their strings.** Each declares its narrowest `GrantedTools` set.
   *Deps:* C3 · *Effort:* **M** · *Value:* **High**
+  - All eight ship `Kind: Research`, not the `AgentTask` the plan's §7 table named: the `AgentTask` leg
+    maps an empty grant list to null and the launcher turns null into its `write_file` default, so a card
+    advertising no writes would have run able to write. Seven grant nothing at all; `meeting-followup`
+    grants `create_todo` alone, and a test recomputes the effective set the way the dispatcher does.
+  - **The batch went wider than this row.** It also corrected the plan's §7 table — Kind on all eight
+    rows, and the time/day/text slots the read surface already covers, which is what shrinks C5 to two
+    text slots — and retired topic-digest's three "change the topic in the goal box" description tails,
+    because a description now says what you get rather than what to fill in.
 
 - [ ] **C5 · `RoutineSlot` + `RoutineBlueprintFill.ToCreateArgs`** with the four validation rules
   (reject unknown slot names is the load-bearing one).
@@ -171,6 +180,68 @@ Three steps can close work below them. Do not tick their dependants without revi
 
 ---
 
+## E — Per-routine persona + reasoning effort
+
+Promoted out of "Not yet planned" (review #11), where it was rated **S**. **As built it is an `M`** —
+two schema columns with both migration halves, seven `ScheduledJobService` sites, a shared resolver, both
+dispatch legs, an editor with two new controls and thirteen new strings in each of three locales, and
+three new test files. The `S` estimate priced the model change and missed the fan-out; the step ratings
+below are the real ones.
+
+- [x] **E1 · `PersonaId` + `ReasoningEffort` on `ScheduledJob`, both migration halves, the clear
+  sentinels.** `Guid.Empty` clears the persona, a `clearReasoningEffort` flag clears the effort, and both
+  columns are appended to `MapJob`'s positional SELECT.
+  *Deps:* none · *Effort:* **S** · *Value:* **Enabler**
+
+- [x] **E1b · Neither pin crosses the sync wire, pinned by tests.** `SyncScheduledJob` and `SyncMapper`
+  are unchanged on purpose; a field the server does not know about would come back null and erase the
+  owner's pin after one push-pull cycle.
+  *Deps:* E1 · *Effort:* **XS** · *Value:* **High**
+
+- [x] **E2 · `RunPinResolver` — one persona ladder, one effort ladder.** Static, so neither leg gains a
+  constructor dependency; it replaces the three hand-rolled clone-and-stamp blocks.
+  *Deps:* E1 · *Effort:* **S** · *Value:* **Enabler**
+
+- [x] **E3 · The AgentTask leg, and the provider-clear bug in the same seam.** `HeadlessRunRequest`
+  carries both pins, and `Guid.Empty` now clears the provider too — which fixes the editor's "Default
+  provider" row having been a silent no-op.
+  *Deps:* E2 · *Effort:* **S** · *Value:* **High**
+
+- [x] **E4 · The Research leg gets both pins.** `BackgroundTurnRequest` carries them, so the pinned
+  persona's system prompt is what `PrepareTurn` composes — the substance of the pin on this leg.
+  *Deps:* E2 · *Effort:* **S** · *Value:* **High**
+
+- [x] **E5 · The editor: a persona picker, an effort picker, and the "no longer available" row.**
+  AutomationIds `Routines_Field_Persona` and `Routines_Field_Effort`. **The vertical slice.** The picker
+  is deliberately not gated on the agent roster, which is empty by default.
+  *Deps:* E1 · *Effort:* **M** · *Value:* **High**
+
+- [x] **E6 · Tests — written, never executed.** Three new files (`ScheduledJobPersonaPinTests`,
+  `RunPinResolverTests`, `ScheduledJobsPinMigrationTests`) and six extended, including the three
+  `FakeJobService` signature fixes and both `RoutinesViewModel` ctor sites that would otherwise fail the
+  test project's compile. A tick here means the suite exists, not that it is green — E7 is the run.
+  *Deps:* E3, E4, E5 · *Effort:* **M** · *Value:* **High**
+
+- [ ] **E7 · Verification handoff — the only thing that can turn this group green.** `dotnet build
+  -t:Rebuild` in both configurations, `dotnet test` with no filter, an eyeball pass in the real app, and
+  **one open against a pre-change profile** — migration half (b) is the `ALTER TABLE` path, and every test
+  and every fresh profile takes the `CREATE TABLE` path instead.
+  *Deps:* E6 · *Effort:* **XS** · *Value:* **High**
+
+- [x] **E8 · Blueprint effort defaults; no persona default.** `RoutineBlueprint.DefaultEffort` is set on
+  all eight cards and `StartFromBlueprint` carries it into the editor. A persona default is deliberately
+  absent: a built-in id can be hidden by `BlockedBuiltInPersonas`, and a catalog cannot know the user's
+  own personas.
+  *Deps:* E1, C4 · *Effort:* **XS** · *Value:* **Med**
+
+- [ ] **E9 · Persist the resolved run persona and effort on the `AgentRuns` row.** Closes the resume gap
+  the review surfaced: both pins are resolved per dispatch and never stored, so a scheduled run that parks
+  at its budget resumes on the current mode persona at the mode default effort. One seam, and it closes
+  both pins without giving the launcher a dependency on the job store.
+  *Deps:* E3 · *Effort:* **S** · *Value:* **Med**
+
+---
+
 ## Suggested order
 
 Cheapest decisive work first, then the vertical slices.
@@ -180,6 +251,7 @@ A1 → B5 → A5 → A2 → A3          # gate, then the cheap wins and the stro
 C1 → C2 → C3                    # blueprint vertical slice — first user-visible change
 B1 → B2 → B3 → B4               # gate: is compaction actually losing anything?
 C4 · A6 → A7 · B6 · B7 → B8     # widen, once the gates have answered
+E1 → E2 → E3 · E4 → E5 → E6     # per-routine pins; E8 rides with C4, E7 is the Windows run
 D1 → D2 → D3 → D5               # tour, after the cheaper items land
 ```
 
@@ -204,9 +276,19 @@ still can't say what went wrong.
 | Repetition guard before the truncated-response continuation nudge | 8 | S | Med |
 | Empty-response guard with a cost-aware retry budget | 9 | S–M | Med |
 | Mark iteration-truncated child results for the parent | 10 | S | Med |
-| Per-routine persona + reasoning effort on `ScheduledJob` | 11 | S | Med |
 | Citation ledger inversion in `WebCitationExtractor` | 14 | M | Med |
-| Meeting → action-items prompt, evidence-first | 15 | S | Med |
+| Meeting → action items: the *decisions* half, citations, and an on-demand path | 15 | XS | Low |
 | Outbound webhooks on the existing timeline observer drain | 16 | M | Low |
 | Timeout inventory, then one resolver if the count justifies it | 17 | S | Low |
 | Adversarial UX test as a recorded WinWright flow + prompt | 18 | S | Low |
+
+**#15 is half closed, not closed.** C4's `meeting-followup` blueprint ships the evidence-first framing the
+review asked for: before it extracts a single action item the template states the meeting's title and
+date, who the front matter lists as attendees, whether the transcript reads as complete or breaks off
+mid-sentence, and whether the speaker labels are real names, generic placeholders or absent — and it names
+every passage it is not confident about. It also queries existing todos first, so a re-run is not a
+duplicate factory, and it attributes an owner only where the transcript supports one. Three things the
+review named are still open: it extracts **action items only**, not the *decisions* the source prompt also
+produces; the todos it creates carry the meeting title and date in their notes but **no citation** back to
+the transcript passage; and it exists only as a daily routine over meetings dated *today*, so nothing
+points it at one named past meeting. The row above is the remainder, re-rated down accordingly.

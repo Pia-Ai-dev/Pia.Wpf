@@ -37,12 +37,8 @@ public interface IScheduledJobService
 
     /// <summary>
     /// Applies the supplied field edits (null = leave unchanged) and recomputes <c>NextFireAt</c>.
-    /// <para>
-    /// Two exceptions to "null = leave unchanged", because a nullable parameter cannot express "clear it".
-    /// <paramref name="providerId"/> and <paramref name="personaId"/> take <see cref="Guid.Empty"/> as CLEAR.
-    /// <paramref name="reasoningEffort"/> cannot: <c>ReasoningEffort.None</c> means "no reasoning", a real thing
-    /// to pin, so clearing it needs <paramref name="clearReasoningEffort"/>.
-    /// </para>
+    /// <paramref name="providerId"/> and <paramref name="personaId"/> take <see cref="Guid.Empty"/> as CLEAR;
+    /// <paramref name="reasoningEffort"/> uses <paramref name="clearReasoningEffort"/> instead, since <c>ReasoningEffort.None</c> is itself a real value to pin.
     /// <para>
     /// <b><paramref name="specificDate"/> is what makes the re-arm below reachable (Batch 09).</b> Until it
     /// existed, a settled one-off whose date had passed could not be moved by ANY surface: the re-arm rule

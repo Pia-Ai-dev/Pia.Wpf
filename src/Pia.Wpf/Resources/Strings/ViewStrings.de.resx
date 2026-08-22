@@ -1144,7 +1144,7 @@
   <data name="Routines_Blueprints_Hint" xml:space="preserve"><value>Wähle eine aus, um den Editor bereits ausgefüllt zu öffnen – vor dem Speichern lässt sich alles ändern.</value></data>
   <data name="Routines_Blueprint_TopicDigest_Title" xml:space="preserve"><value>Täglicher Themen-Überblick</value></data>
   <data name="Routines_Blueprint_TopicDigest_Description" xml:space="preserve"><value>Jeden Morgen ein kurzer Web-Überblick zu einem Thema, mit Quellen.</value></data>
-  <data name="Routines_Blueprint_MorningBrief_Title" xml:space="preserve"><value>Morgen-Überblick</value></data>
+  <data name="Routines_Blueprint_MorningBrief_Title" xml:space="preserve"><value>Morgenbriefing</value></data>
   <data name="Routines_Blueprint_MorningBrief_Description" xml:space="preserve"><value>Was heute fällig ist und was heute ansteht, nach Uhrzeit sortiert – gleich am Morgen.</value></data>
   <data name="Routines_Blueprint_EveningWinddown_Title" xml:space="preserve"><value>Abendlicher Ausklang</value></data>
   <data name="Routines_Blueprint_EveningWinddown_Description" xml:space="preserve"><value>Was heute liegen geblieben ist und was morgen ansteht, als kurze Liste am Abend.</value></data>
@@ -1156,8 +1156,8 @@
   <data name="Routines_Blueprint_CompetitorWatch_Description" xml:space="preserve"><value>Wöchentlich eine Zeile pro Unternehmen zu dem, was sich wirklich bewegt hat – mit Quellen.</value></data>
   <data name="Routines_Blueprint_BillsRenewals_Title" xml:space="preserve"><value>Rechnungen und Verlängerungen</value></data>
   <data name="Routines_Blueprint_BillsRenewals_Description" xml:space="preserve"><value>Ein kurzer Hinweis darauf, was in den nächsten zwei Wochen fällig wird oder sich verlängert.</value></data>
-  <data name="Routines_Blueprint_MeetingFollowup_Title" xml:space="preserve"><value>Meeting-Nachbereitung</value></data>
-  <data name="Routines_Blueprint_MeetingFollowup_Description" xml:space="preserve"><value>Die Meetings des Tages als Aufgaben – Lücken im Transkript werden vorab benannt.</value></data>
+  <data name="Routines_Blueprint_MeetingFollowup_Title" xml:space="preserve"><value>Besprechungs-Nachbereitung</value></data>
+  <data name="Routines_Blueprint_MeetingFollowup_Description" xml:space="preserve"><value>Die Besprechungen des Tages als Aufgaben – Lücken im Transkript werden vorab benannt.</value></data>
   <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Standardanbieter</value></data>
   <data name="Settings_ScheduledJobs_UnknownStatusInert" xml:space="preserve"><value>Dieser Auftrag hat einen Status, den diese Version nicht kennt, und wird nur lesend angezeigt. Aktualisiere Pia, um ihn zu verwalten.</value></data>
   <data name="Settings_ScheduledJobs_Running" xml:space="preserve"><value>Auftrag läuft …</value></data>

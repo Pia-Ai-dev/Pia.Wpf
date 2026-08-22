@@ -164,7 +164,6 @@ public class RoutineBlueprintCatalogTests
         {
             if (bp.Key == RoutineBlueprintCatalog.MeetingFollowup)
             {
-                // Named explicitly so it replaces the launcher's default rather than adding to it.
                 Assert.Equal("create_todo", Assert.Single(bp.GrantedTools));
                 continue;
             }
@@ -204,7 +203,6 @@ public class RoutineBlueprintCatalogTests
         Assert.True(query >= 0, "the template must read the todo list");
         Assert.True(create > query,
             "the template must read the todo list before it creates one, or a re-run duplicates every follow-up");
-        Assert.Contains("create_todo", bp.GrantedTools);
     }
 
     [Fact]

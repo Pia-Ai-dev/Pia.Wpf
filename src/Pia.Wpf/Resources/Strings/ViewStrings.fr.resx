@@ -1144,20 +1144,20 @@
   <data name="Routines_Blueprints_Hint" xml:space="preserve"><value>Choisissez-en un pour ouvrir l'éditeur déjà rempli — vous pouvez tout modifier avant d'enregistrer.</value></data>
   <data name="Routines_Blueprint_TopicDigest_Title" xml:space="preserve"><value>Résumé quotidien d'un sujet</value></data>
   <data name="Routines_Blueprint_TopicDigest_Description" xml:space="preserve"><value>Chaque matin, une courte revue du web sur un sujet, avec ses sources.</value></data>
-  <data name="Routines_Blueprint_MorningBrief_Title" xml:space="preserve"><value>Point du matin</value></data>
-  <data name="Routines_Blueprint_MorningBrief_Description" xml:space="preserve"><value>Ce qui est dû et ce qui se déclenche aujourd'hui, par ordre horaire, dès le matin.</value></data>
+  <data name="Routines_Blueprint_MorningBrief_Title" xml:space="preserve"><value>Briefing matinal</value></data>
+  <data name="Routines_Blueprint_MorningBrief_Description" xml:space="preserve"><value>Ce qui arrive à échéance et ce qui se déclenche aujourd'hui, par ordre horaire, dès le matin.</value></data>
   <data name="Routines_Blueprint_EveningWinddown_Title" xml:space="preserve"><value>Bilan du soir</value></data>
-  <data name="Routines_Blueprint_EveningWinddown_Description" xml:space="preserve"><value>Ce qui a été laissé de côté aujourd'hui et ce qui arrive demain, en une courte liste le soir.</value></data>
+  <data name="Routines_Blueprint_EveningWinddown_Description" xml:space="preserve"><value>Ce qui est passé en retard aujourd'hui et ce qui arrive demain, en une courte liste le soir.</value></data>
   <data name="Routines_Blueprint_HabitCheckin_Title" xml:space="preserve"><value>Point sur les habitudes</value></data>
-  <data name="Routines_Blueprint_HabitCheckin_Description" xml:space="preserve"><value>Chaque soir, un regard sur vos engagements récurrents, et une question pour y réfléchir.</value></data>
+  <data name="Routines_Blueprint_HabitCheckin_Description" xml:space="preserve"><value>Chaque soir, un regard sur vos engagements récurrents, et une question à méditer.</value></data>
   <data name="Routines_Blueprint_WeeklyReview_Title" xml:space="preserve"><value>Revue hebdomadaire</value></data>
-  <data name="Routines_Blueprint_WeeklyReview_Description" xml:space="preserve"><value>Le vendredi, un bilan de ce qui est terminé, de ce qui reste ouvert et de ce que retiennent les notes de la semaine.</value></data>
+  <data name="Routines_Blueprint_WeeklyReview_Description" xml:space="preserve"><value>Le vendredi, un bilan de ce qui est terminé, de ce qui reste ouvert et de ce qui mérite d'être retenu des notes de la semaine.</value></data>
   <data name="Routines_Blueprint_CompetitorWatch_Title" xml:space="preserve"><value>Veille concurrentielle</value></data>
   <data name="Routines_Blueprint_CompetitorWatch_Description" xml:space="preserve"><value>Une ligne par semaine et par entreprise sur ce qui a réellement bougé, avec ses sources.</value></data>
   <data name="Routines_Blueprint_BillsRenewals_Title" xml:space="preserve"><value>Factures et renouvellements</value></data>
-  <data name="Routines_Blueprint_BillsRenewals_Description" xml:space="preserve"><value>Un bref rappel de ce qui arrive à échéance ou se renouvelle dans les deux prochaines semaines.</value></data>
+  <data name="Routines_Blueprint_BillsRenewals_Description" xml:space="preserve"><value>Un bref aperçu de ce qui arrive à échéance ou se renouvelle dans les deux prochaines semaines.</value></data>
   <data name="Routines_Blueprint_MeetingFollowup_Title" xml:space="preserve"><value>Suivi des réunions</value></data>
-  <data name="Routines_Blueprint_MeetingFollowup_Description" xml:space="preserve"><value>Les réunions du jour transformées en tâches, les lacunes de la transcription annoncées d'emblée.</value></data>
+  <data name="Routines_Blueprint_MeetingFollowup_Description" xml:space="preserve"><value>Les réunions du jour transformées en tâches, les lacunes du transcript annoncées d'emblée.</value></data>
   <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Fournisseur par défaut</value></data>
   <data name="Settings_ScheduledJobs_UnknownStatusInert" xml:space="preserve"><value>Cette tâche a un statut que cette version ne reconnaît pas ; elle est affichée en lecture seule. Mettez Pia à jour pour la gérer.</value></data>
   <data name="Settings_ScheduledJobs_Running" xml:space="preserve"><value>Exécution de la tâche…</value></data>

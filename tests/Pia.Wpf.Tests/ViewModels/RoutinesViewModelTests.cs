@@ -759,9 +759,8 @@ public class RoutinesViewModelTests
                 Assert.Single(sut.Vm.EffortChoices, c => c.Value == effort).Label);
     }
 
-    /// <summary>Two adjacent rows carrying different instructions: the leading one inherits the persona's
-    /// effort, <c>None</c> means no reasoning at all. A locale that blurs them makes users pin no-reasoning on
-    /// unattended runs by accident, so this reads the shipped strings rather than the echoing localizer.</summary>
+    /// <summary>The inherit row must not read as <c>None</c> in any locale — a blur risks pinning no-reasoning
+    /// on unattended runs by accident, so this checks the shipped strings, not the echoing localizer double.</summary>
     [Theory]
     [InlineData("")]
     [InlineData("de")]
@@ -806,9 +805,8 @@ public class RoutinesViewModelTests
             personaId: persona.Id, reasoningEffort: ReasoningEffort.High, clearReasoningEffort: false);
     }
 
-    /// <summary>Guid.Empty, not null: null means "leave unchanged", so sending it for the default row was a save
-    /// that reported success and kept the pin the user had just removed. True of the PROVIDER row too, which is
-    /// where that was a live bug.</summary>
+    /// <summary>Guid.Empty, not null: null means "leave unchanged", so the default row used to save as a no-op.
+    /// True of the PROVIDER row too, which is where that was a live bug.</summary>
     [Fact]
     public async Task ChoosingTheDefaultRows_SendsTheClearSentinel_ForPersonaAndProvider()
     {
@@ -838,9 +836,8 @@ public class RoutinesViewModelTests
             reasoningEffort: null, clearReasoningEffort: true);
     }
 
-    /// <summary>The case that decides whether the feature is honest. A pin whose persona is gone must stay
-    /// visible and must survive an unrelated edit — falling back to the default row would show "default", and
-    /// the next Save would destroy the pin as an edit the user never made.</summary>
+    /// <summary>A pin whose persona is gone must stay visible and survive an unrelated edit — falling back to
+    /// the default row would let the next Save destroy it as a change the user never made.</summary>
     [Fact]
     public async Task AnUnresolvablePersonaPin_ShowsAsUnavailable_AndSurvivesTheNextSave()
     {

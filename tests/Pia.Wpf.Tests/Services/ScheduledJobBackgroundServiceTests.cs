@@ -470,6 +470,40 @@ public class ScheduledJobBackgroundServiceTests
     }
 
     [Fact]
+    public async Task ExecuteOnceAsync_AgentTaskJob_GrantingNothing_LaunchesWithNullSoTheLauncherNarrowsIt()
+    {
+        // The agent leg is the OPPOSITE of the research leg here, and only null reaches the launcher's
+        // DefaultGrantedWrites substitution — an empty list would hand the run no write tool at all.
+        var jobs = new FakeJobService();
+        var due = NewDueJob();
+        due.Kind = ScheduledJobKind.AgentTask;
+        due.GrantedTools = [];
+        jobs.SeedDue(due);
+
+        var runId = Guid.NewGuid();
+        var chatId = Guid.NewGuid();
+        HeadlessRunRequest? captured = null;
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        launcher.LaunchAsync(Arg.Do<HeadlessRunRequest>(r => captured = r), Arg.Any<CancellationToken>())
+            .Returns(new HeadlessRunHandle(runId, chatId, Task.CompletedTask));
+
+        var runService = Substitute.For<IAgentRunService>();
+        runService.GetAsync(runId, Arg.Any<CancellationToken>())
+            .Returns(new AgentRun { Id = runId, ChatId = chatId, RunShape = RunShape.Planned, State = AgentRunState.Completed });
+
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
+            new FakeNotificationSurface(), launcher, NewSettings(), runService,
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await TickAndSettleAsync(bg, CancellationToken.None);
+
+        Assert.NotNull(captured);
+        Assert.Null(captured!.GrantedWrites);
+        Assert.Equal(due.Id, captured.TriggerRef);
+    }
+
+    [Fact]
     public async Task ExecuteOnceAsync_AgentTaskJob_ParkedAtBudget_MovesTheScheduleOnceAtDispatch_AndDoesNotRelaunch()
     {
         // A parked run is NOT a job failure, but the schedule must still have moved on — and exactly once: the
@@ -615,6 +649,54 @@ public class ScheduledJobBackgroundServiceTests
 
         Assert.Equal(1, runner.RunCount);
         await launcher.DidNotReceive().LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_ResearchJob_GrantingNothing_ReachesTheRunnerWithAnEmptyWriteGrant()
+    {
+        // The research leg must NOT pick up the agent leg's empty-means-the-default rule: a job that granted no
+        // write tool gets none, so a card advertising an empty set cannot silently gain write_file.
+        var jobs = new FakeJobService();
+        var due = NewDueJob();
+        due.GrantedTools = [];
+        jobs.SeedDue(due);
+
+        var runner = new FakeRunner { Result = new BackgroundTurnResult(Guid.NewGuid(), true, null) };
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
+            new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
+            Substitute.For<IHeadlessRunLauncher>(), NewSettings(), Substitute.For<IAgentRunService>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await TickAndSettleAsync(bg, CancellationToken.None);
+
+        Assert.Equal(1, runner.RunCount);
+        Assert.NotNull(runner.LastRequest);
+        Assert.Equal(due.Query, runner.LastRequest!.Prompt);
+        Assert.Empty(runner.LastRequest.GrantedWriteTools);
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_ResearchJob_PassesItsNamedWriteGrantToTheRunner()
+    {
+        // Pairs with the empty-grant test above: BackgroundTurnRequest.GrantedWriteTools already defaults to
+        // empty, so "empty stayed empty" is only evidence once this path is shown to carry a non-empty set.
+        var jobs = new FakeJobService();
+        var due = NewDueJob();
+        due.GrantedTools = ["create_todo", "create_memory"];
+        jobs.SeedDue(due);
+
+        var runner = new FakeRunner { Result = new BackgroundTurnResult(Guid.NewGuid(), true, null) };
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
+            new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
+            Substitute.For<IHeadlessRunLauncher>(), NewSettings(), Substitute.For<IAgentRunService>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await TickAndSettleAsync(bg, CancellationToken.None);
+
+        Assert.NotNull(runner.LastRequest);
+        Assert.Equal(new[] { "create_todo", "create_memory" }, runner.LastRequest!.GrantedWriteTools);
     }
 
     [Fact]

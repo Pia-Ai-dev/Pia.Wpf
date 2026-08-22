@@ -123,11 +123,13 @@ internal static class RoutineBlueprintCatalog
             QueryTemplate:
                 "Call query_todos with filter completed for what finished this week, then query_todos with "
                 + "filter all and list_columns for what is still open, then browse_index and read_topic for the "
-                + "notes the week added. Report four short sections: what was completed, what is still open and "
-                + "past its Due date, how the open items sit across the kanban columns, and the two or three "
-                + "notes worth carrying into next week. Report where an open item is sitting and say nothing "
+                + "notes worth carrying forward. Report four short sections: what was completed, what is still "
+                + "open and past its Due date, how the open items sit across the kanban columns, and the two or "
+                + "three notes to carry into next week. Report where an open item is sitting and say nothing "
                 + "about how long it has been there — the reads record no movement date, so calling a card "
-                + "stalled, stuck or neglected would be a guess. No scores, no ratings, no praise, and no plan "
+                + "stalled, stuck or neglected would be a guess. Choose a note on what it says and say nothing "
+                + "about when it was written — browse_index and read_topic carry no date, so placing a note in "
+                + "this week rather than last would be a guess. No scores, no ratings, no praise, and no plan "
                 + "for next week beyond what the notes already say. Change nothing. If a section has nothing in "
                 + "it, say so in one line; if a read comes back empty or unavailable, name that read in one "
                 + "line rather than filling the section in.",
