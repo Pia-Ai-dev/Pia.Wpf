@@ -165,9 +165,8 @@ Same scorer for both inputs, so the app and the bench stay comparable:
 Use the reference belonging to the run. Scoring one recording against another's key produces a
 confident, meaningless number.
 
-Add `-Provisional` to a bench run to score the instant label instead of the corrected one — the only
-part of a run the match threshold owns (trap 7). An app log does not carry it, so the switch refuses
-`-LogPath`.
+Add `-Provisional` to either input to score the instant label instead of the corrected one - the part of
+a run the match threshold actually owns (trap 7). A bench segments file and an app log both carry it.
 
 The header must read:
 

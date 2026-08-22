@@ -40,7 +40,7 @@ param(
     # compares two different questions. Pin it to compare a code change.
     [double]$Offset = [double]::NaN,
     [string]$NameMapPath,
-    # Score the instant provisional label instead of the corrected one. Bench input only.
+    # Score the instant provisional label instead of the corrected one - what the meeting actually showed.
     [switch]$Provisional
 )
 
@@ -48,7 +48,6 @@ $ErrorActionPreference = 'Stop'
 
 if ($LogPath -and $SegmentsPath) { throw 'Pass -LogPath or -SegmentsPath, not both' }
 if (-not $LogPath -and -not $SegmentsPath) { throw 'Pass -LogPath (an app replay) or -SegmentsPath (a bench run)' }
-if ($Provisional -and -not $SegmentsPath) { throw '-Provisional needs -SegmentsPath; an app log does not carry the pre-correction label' }
 
 $reference = Get-Content -LiteralPath $ReferencePath -Raw | ConvertFrom-Json
 $names = if ($NameMapPath) { (Get-Content -LiteralPath $NameMapPath -Raw | ConvertFrom-Json).names } else { $null }
@@ -80,8 +79,6 @@ if ($SegmentsPath) {
         })
         $index++
     }
-    # The instant label, before any pass corrected it: the only part of a run the match threshold owns.
-    if ($Provisional) { foreach ($s in $segments) { $s.Final = $s.Label } }
     $labelSets.Add([string[]]@($segments | ForEach-Object { $_.Final } | Where-Object { $_ } | Sort-Object -Unique))
 }
 else {
@@ -207,6 +204,14 @@ else {
         if (-not $c.Applied) { continue }
         if ($bySegId.ContainsKey($c.SegId)) { $bySegId[$c.SegId].Final = $c.Label }
     }
+}
+
+# Both input paths carry the instant label alongside the corrected one. Rewinding to it is the only way
+# to see the match threshold at all: a pass reassigns every eligible segment, so the final label is the
+# pass's partition, which the threshold does not reach.
+if ($Provisional) {
+    foreach ($s in $segments) { $s.Final = $s.Label }
+    $labelSets.Add([string[]]@($segments | ForEach-Object { $_.Final } | Where-Object { $_ } | Sort-Object -Unique))
 }
 
 # ---- Align replay wall-clock to recording time --------------------------------------------------

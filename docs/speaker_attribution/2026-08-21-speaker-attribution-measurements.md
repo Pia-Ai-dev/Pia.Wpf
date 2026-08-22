@@ -848,10 +848,54 @@ wrong place.
   measure, on one harness.
 - Because of the above the **shipping default is unchanged**: `FixedMatchSimilarity` is null, the
   derivation and its clamp still run, and the winner is reachable only from the bench
-  (`PIA_BENCH_MATCH=0.30`). Flipping the default is a decision waiting on the replay.
+  (`PIA_BENCH_MATCH=0.30`). Flipping it waits on a replay - which the next section ran, on the workshop.
 - Both recordings are mostly-one-talker (A holds 1605 s of 2729 s on LSP; H holds 386 s of the 607 s scored on the
   workshop). A balanced four-way meeting could pick a different point in the plateau, and nothing here
   measures that.
+
+## The app replay refuses the confirmation — workshop, 2026-08-22
+
+Run through the shipping harness (`Invoke-MeetingReplay.ps1`, workshop recording, roster 10, 19 min
+wall clock) against a build whose default was temporarily flipped to 0.30 — the app constructs the
+service with default options, so there is no other way to measure the setting end to end. Both runs
+scored with the same scorer; `-Provisional` supplies the live column.
+
+| | shipping | fixed 0.30 | the bench predicted |
+|---|---|---|---|
+| final-state correct | 158 (91.9 %) | 159 (91.9 %) | +1 — reproduced |
+| final-state labels (4 true talkers) | 5 | 5 | no change — reproduced |
+| live correct | 159 | 161 | +2 — reproduced |
+| **live distinct labels** | **9** | **9** | **9 → 6 — did not reproduce** |
+| labels ever registered | 10 | 9 | — |
+| unlabelled, final | 37 | 35 | direction only |
+
+**The accuracy deltas reproduce exactly; the label-churn win does not.** +1 correct segment on the final
+label and +2 on the live one are the bench's workshop figures to the segment — and they are 1–2 segments
+out of 173, which is noise. The claim that mattered, nine live labels down to six, does not survive the
+harness change at all.
+
+The reason is the divergence this document already records, not a new one. The count of *distinct
+provisional labels* depends on how minting interleaves with passes, and the app fires passes on wall
+clock between identify calls while the bench fires them on stream time. A final label count is robust to
+that — it is a partition, and the recorded divergence is ±1 label. A live count is not. The assertion
+earlier in this section, that the live label delta "does clear its noise floor" because the known
+bench↔app divergence is one label, took a tolerance measured on the final count and applied it to a
+metric that does not share it. The replay is what caught that, which is the whole reason the rule exists.
+
+**Consequence.** The flip is reverted: `FixedMatchSimilarity` is null again and the shipping build is
+untouched. Task 8's winner is **identified but unconfirmed**, and that is the state to carry forward:
+
+- every margin that reproduces is 1–2 segments;
+- the one margin large enough to act on does not reproduce on this recording;
+- LSP is untested end to end, and it is where the bench's delta was largest (13 live labels → 9). It is
+  the trustworthy half of the fixture, at ~65 minutes. If the label-churn win is real anywhere it is
+  there — and if it fails there too, a fixed threshold is not worth shipping and Task 8 closes as a
+  measured refusal, the same shape the brief pre-authorised for Task 9.
+
+One measurement bug found and fixed on the way: `-Provisional` was written to refuse `-LogPath`, on the
+assumption that an app log carries no pre-correction label. It does — the scorer's log path has always
+set `Label` at identify time and overwritten only `Final` when a correction lands. That guard would have
+made this comparison impossible.
 
 ## What changed in the code
 
@@ -878,7 +922,7 @@ wrong place.
 | `_matchSimilarity` variance across the meeting | reported per setting: min/max/mean/sd + rail counts |
 | Alexander/Andreas confusion matrix | reported — **unmoved by every setting** |
 | delete the losers | done — (c) and (d) and the enum are gone |
-| margins confirmed against the app | **none** — all under 2.5 points, replay not run |
+| margins confirmed against the app | workshop replay run: the +1/+2 segment deltas reproduced, the label-churn win did **not**. LSP untested |
 
 Task 9 is untouched. Result 1 above bears on it directly: `ChooseCut` is the only thing that can move a
 final-state partition, so it is now the *only* remaining lever in this subsystem short of the embedding

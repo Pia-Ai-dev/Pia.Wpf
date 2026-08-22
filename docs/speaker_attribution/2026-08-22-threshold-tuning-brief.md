@@ -1,6 +1,7 @@
 # Brief: decouple the match threshold from the cut (Tasks 8 and 9)
 
-**Status.** Task 8 executed 2026-08-22; Task 9 not started. Gated on Monday 2026-08-24's live smoke test for
+**Status.** Task 8 executed and measured 2026-08-22; the winner is unconfirmed on the app and the
+shipping default is unchanged. Task 9 not started. Gated on Monday 2026-08-24's live smoke test for
 *merge*, not for work.
 **Owner.** Marco Altmann.
 **Written.** 2026-08-22.
@@ -22,10 +23,12 @@ the measurement, and the sections that rest on them should be read with that in 
   decimal by every setting from 0.20 to 0.60. It is the dendrogram's partition, out of the threshold's
   reach by construction.
 
-A fixed threshold in the 0.20–0.345 plateau does win — +6 correct segments on LSP, +1 on the workshop,
-and live label churn down from 13 labels to 9 — but every accuracy margin is under the bench's own
-±2.5-point confirmation rule. **The shipping default is unchanged**; 0.30 is reachable from the bench
-via `PIA_BENCH_MATCH` and flipping it waits on an app replay of LSP.
+A fixed threshold in the 0.20-0.345 plateau does win on the bench - +6 correct segments on LSP, +1 on
+the workshop, and live label churn down from 13 labels to 9. **The workshop app replay then refused the
+confirmation**: the +1/+2 segment deltas reproduced exactly, and the label-churn win did not move at all
+(9 live labels, both builds). So 0.30 is identified and unconfirmed, **the shipping default is
+unchanged**, and it is reachable only from the bench via `PIA_BENCH_MATCH`. LSP is untested end to end
+and is where the bench's delta was largest; if it fails there too, Task 8 closes as a measured refusal.
 
 ## Why this work is now justified
 

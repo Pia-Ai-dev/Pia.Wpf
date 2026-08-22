@@ -7,9 +7,8 @@ namespace Pia.Services.LiveTranscription;
 /// </summary>
 internal sealed record AdaptiveSpeakerOptions
 {
-    /// <summary>Holds the instant match here instead of deriving it from each pass's cut; the derivation
-    /// sat on its own clamp floor, above every threshold that scored better.</summary>
-    public float? FixedMatchSimilarity { get; init; } = 0.30f;
+    /// <summary>Holds the instant-match threshold here instead of deriving it from each pass's cut.</summary>
+    public float? FixedMatchSimilarity { get; init; }
     public float InitialMatchSimilarity { get; init; } = AdaptiveSpeakerIdentificationService.InitialMatchSimilarity;
     public float MatchSimilarityMin { get; init; } = AdaptiveSpeakerIdentificationService.MatchSimilarityMin;
     public float MatchSimilarityMax { get; init; } = AdaptiveSpeakerIdentificationService.MatchSimilarityMax;
