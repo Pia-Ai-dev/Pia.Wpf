@@ -85,6 +85,7 @@
   <data name="MeetingAttendee_DisplayName_Label" xml:space="preserve"><value>Assistant name in the meeting</value></data>
   <data name="MeetingAttendee_DisplayName_Placeholder" xml:space="preserve"><value>Name shown to meeting participants</value></data>
   <data name="MeetingAttendee_Requirements_Title" xml:space="preserve"><value>Requirements</value></data>
+  <data name="MeetingAttendee_SpeakerDisclaimer" xml:space="preserve"><value>Speaker labels are an estimate from voice similarity, not a verified identity. Pia can merge two similar voices into one label or split one person across several, and it revises earlier labels as the meeting goes on. Check the attribution before relying on it — click a speaker label to correct it.</value></data>
   <data name="MeetingAttendee_Requirements_Teams" xml:space="preserve"><value>•  A Microsoft Teams meeting link.</value></data>
   <data name="MeetingAttendee_Requirements_Lobby" xml:space="preserve"><value>•  A meeting host must admit the assistant from the lobby before it can transcribe.</value></data>
   <data name="MeetingAttendee_Requirements_FirstRun" xml:space="preserve"><value>•  On first use the automation browser is downloaded once (needs internet that time); later meetings reuse it.</value></data>

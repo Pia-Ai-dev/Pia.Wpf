@@ -110,6 +110,14 @@ public partial class MeetingSettingsViewModel : UiThreadViewModel, IDisposable
     /// <summary>The manual tuning sliders are only shown while smart auto-detect is OFF.</summary>
     public bool ShowManualTuning => !MeetingSmartSpeakerDetection;
 
+    [ObservableProperty]
+    private bool _meetingSuppressSpeakerLabels;
+
+    partial void OnMeetingSuppressSpeakerLabelsChanged(bool value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
     partial void OnMeetingSmartSpeakerDetectionChanged(bool value)
     {
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
@@ -199,6 +207,7 @@ public partial class MeetingSettingsViewModel : UiThreadViewModel, IDisposable
         MeetingBrowserSelection = settings.MeetingBrowserSelection;
         MeetingAttendeeShowBrowserWindow = settings.MeetingAttendeeShowBrowserWindow;
         MeetingSmartSpeakerDetection = settings.MeetingSmartSpeakerDetection;
+        MeetingSuppressSpeakerLabels = settings.MeetingSuppressSpeakerLabels;
 
         _isLoading = false;
     }
@@ -213,6 +222,7 @@ public partial class MeetingSettingsViewModel : UiThreadViewModel, IDisposable
         settings.MeetingBrowserSelection = MeetingBrowserSelection;
         settings.MeetingAttendeeShowBrowserWindow = MeetingAttendeeShowBrowserWindow;
         settings.MeetingSmartSpeakerDetection = MeetingSmartSpeakerDetection;
+        settings.MeetingSuppressSpeakerLabels = MeetingSuppressSpeakerLabels;
         await _settingsService.SaveSettingsAsync(settings);
     }
 }

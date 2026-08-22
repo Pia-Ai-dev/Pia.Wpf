@@ -386,7 +386,7 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
             _sessionStart,
             sessionEnd,
             Bubbles.ToList(),
-            _service.GetVoiceStats(),
+            SuppressSpeakerLabels ? [] : _service.GetVoiceStats(),
             CounterpartName);
     }
 

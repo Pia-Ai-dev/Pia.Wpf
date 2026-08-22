@@ -102,10 +102,11 @@ public static class DirectTranscriptMarkdown
         foreach (var stat in voiceStats)
         {
             // Stats are keyed by the diarizer's label, the bubbles by the renumbered one. Without this
-            // lookup one document says "Speaker 1" in speakers: and "Speaker 17" in voiceStats:.
-            var displayLabel = bubbles.FirstOrDefault(b =>
-                string.Equals(b.SpeakerLabel, stat.SpeakerLabel, StringComparison.Ordinal))?.DisplayLabel
-                ?? stat.SpeakerLabel;
+            // lookup one document says "Speaker 1" in speakers: and "Speaker 17" in voiceStats:. A
+            // matched bubble wins even with a null label, or suppression would leak the raw one back.
+            var match = bubbles.FirstOrDefault(b =>
+                string.Equals(b.SpeakerLabel, stat.SpeakerLabel, StringComparison.Ordinal));
+            var displayLabel = match is not null ? match.DisplayLabel : stat.SpeakerLabel;
             var label = SpeakerToDisplayNameConverter.Resolve(stat.Speaker, displayLabel, counterpartName);
             sb.Append("  - speaker: ").Append(YamlText.Scalar(label)).Append('\n');
             sb.Append("    utterances: ").Append(stat.UtteranceCount.ToString(CultureInfo.InvariantCulture)).Append('\n');

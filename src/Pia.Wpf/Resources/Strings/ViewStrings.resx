@@ -435,6 +435,8 @@
   <data name="Settings_Diarization_Enable_Description" xml:space="preserve"><value>When Pia attends a meeting, group the transcript into separate bubbles per speaker. Requires a one-time download of a small speaker-recognition model. Changes apply to the next meeting you join.</value></data>
   <data name="Settings_Diarization_SmartAuto" xml:space="preserve"><value>Smart speaker detection (automatic)</value></data>
   <data name="Settings_Diarization_SmartAuto_Description" xml:space="preserve"><value>Pia re-evaluates all voices as the meeting progresses and automatically corrects earlier speaker assignments. Manual tuning is hidden while this is on.</value></data>
+  <data name="Settings_Diarization_SuppressLabels" xml:space="preserve"><value>Hide speaker labels in the transcript</value></data>
+  <data name="Settings_Diarization_SuppressLabels_Description" xml:space="preserve"><value>Shows and exports the transcript without any speaker labels. Bubbles stay grouped and coloured by voice; only the labels, which are the part that claims an identity, are removed. Use this when attribution is visibly wrong — an unlabelled transcript serves a summary better than a confidently mislabelled one.</value></data>
   <data name="Settings_Diarization_Threshold_Label" xml:space="preserve"><value>Speaker matching sensitivity</value></data>
   <data name="Settings_Diarization_Threshold_Description" xml:space="preserve"><value>Tunes how similar two voices must sound to be treated as the same speaker. Higher values split speakers more readily (fewer voices merged); lower values group more voices together.</value></data>
   <data name="Settings_Diarization_ThresholdDisplay" xml:space="preserve"><value>Match threshold: {0}</value></data>

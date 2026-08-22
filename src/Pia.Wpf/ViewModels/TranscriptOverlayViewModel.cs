@@ -79,6 +79,11 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     [ObservableProperty]
     private bool _isRunning;
 
+    /// <summary>Hides every diarized speaker label in the bubbles and in both exports. Bubbles stay
+    /// grouped and coloured by voice — only the label, which is the part that claims an identity, goes.</summary>
+    [ObservableProperty]
+    private bool _suppressSpeakerLabels;
+
     [ObservableProperty]
     private string _statusText = string.Empty;
 
@@ -162,6 +167,8 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     protected async Task StartReaderAsync()
     {
         await StopReaderAsync().ConfigureAwait(false);
+        var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
+        DispatchToUi(() => SuppressSpeakerLabels = settings.MeetingSuppressSpeakerLabels);
         _readerCts = new CancellationTokenSource();
         _readerTask = Task.Run(() => ConsumeUtterancesAsync(_readerCts.Token), CancellationToken.None);
     }
@@ -284,14 +291,21 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     /// </summary>
     private string? ResolveDisplayLabel(string? speakerLabel)
     {
-        if (string.IsNullOrWhiteSpace(speakerLabel) || !AutoSpeakerLabel.IsMatch(speakerLabel))
-            return speakerLabel;
+        if (string.IsNullOrWhiteSpace(speakerLabel)) return speakerLabel;
+        if (SuppressSpeakerLabels) return null;
+        if (!AutoSpeakerLabel.IsMatch(speakerLabel)) return speakerLabel;
         if (!_displayNumberByLabel.TryGetValue(speakerLabel, out var number))
         {
             number = _displayNumberByLabel.Count + 1;
             _displayNumberByLabel[speakerLabel] = number;
         }
         return $"Speaker {number}";
+    }
+
+    partial void OnSuppressSpeakerLabelsChanged(bool value)
+    {
+        foreach (var bubble in Bubbles)
+            bubble.DisplayLabel = ResolveDisplayLabel(bubble.SpeakerLabel);
     }
 
     /// <summary>

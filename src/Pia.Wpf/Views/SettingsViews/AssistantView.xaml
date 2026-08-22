@@ -438,6 +438,14 @@
               <TextBlock Text="{loc:Str Settings_Diarization_SmartAuto_Description}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"
                          Margin="22,4,0,0"/>
+              <CheckBox Content="{loc:Str Settings_Diarization_SuppressLabels}"
+                        IsChecked="{Binding MeetingSuppressSpeakerLabels}"
+                        AutomationProperties.AutomationId="Settings_Assistant_MeetingSuppressSpeakerLabels"
+                        IsEnabled="{Binding EnableMeetingDiarization}"
+                        Margin="0,12,0,0"/>
+              <TextBlock Text="{loc:Str Settings_Diarization_SuppressLabels_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         Margin="22,4,0,0"/>
             </StackPanel>
 
             <!-- Speaker-matching threshold -->

@@ -159,6 +159,10 @@ public class AppSettings
     // below (threshold / max speakers / min speech) are ignored and hidden in the settings UI.
     // Local-only (no SyncSettings mirror).
     public bool MeetingSmartSpeakerDetection { get; set; } = true;
+
+    // The escape hatch for a meeting where attribution is visibly wrong: a confidently mislabelled
+    // transcript is worse than an unlabelled one. Local-only (no SyncSettings mirror).
+    public bool MeetingSuppressSpeakerLabels { get; set; } = false;
     public float SpeakerEmbeddingThreshold { get; set; } = 0.50f;
     // Caps how many distinct speakers diarization may create in one meeting; 0 = no limit. Local-only.
     public int MeetingMaxSpeakers { get; set; } = 0;

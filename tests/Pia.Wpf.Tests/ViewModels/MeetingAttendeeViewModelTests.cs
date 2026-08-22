@@ -1061,6 +1061,63 @@ public class MeetingAttendeeViewModelTests
         Assert.DoesNotContain("Speaker 12", markdown);
     }
 
+    // ---- unlabelled transcript -------------------------------------------------------------------
+
+    [Fact]
+    public void SuppressSpeakerLabels_LeavesEveryBubbleUnlabelled()
+    {
+        var (vm, _) = CreateSut();
+        Utter(vm, "Speaker 4", "a", 0);
+        Utter(vm, "Speaker 1", "b", 30);
+
+        vm.SuppressSpeakerLabels = true;
+
+        Assert.All(vm.Bubbles, b => Assert.Null(b.DisplayLabel));
+        // Identity survives, so rename, the palette and the consent map still work.
+        Assert.Equal(["Speaker 4", "Speaker 1"], vm.Bubbles.Select(b => b.SpeakerLabel));
+    }
+
+    [Fact]
+    public void SuppressSpeakerLabels_HidesARenamedSpeakerToo()
+    {
+        var (vm, _) = CreateSut();
+        Utter(vm, "Speaker 7", "a", 0);
+        vm.RelabelSpeakerForTest("Speaker 7", "Andreas");
+
+        vm.SuppressSpeakerLabels = true;
+
+        // A rename names a cluster the diarizer built, so it is no more verified than "Speaker 1".
+        Assert.Null(Assert.Single(vm.Bubbles).DisplayLabel);
+    }
+
+    [Fact]
+    public void SuppressSpeakerLabels_RestoresTheSameNumbering_WhenSwitchedBackOff()
+    {
+        var (vm, _) = CreateSut();
+        Utter(vm, "Speaker 4", "a", 0);
+        Utter(vm, "Speaker 1", "b", 30);
+        var before = vm.Bubbles.Select(b => b.DisplayLabel).ToArray();
+
+        vm.SuppressSpeakerLabels = true;
+        vm.SuppressSpeakerLabels = false;
+
+        Assert.Equal(before, vm.Bubbles.Select(b => b.DisplayLabel));
+    }
+
+    [Fact]
+    public void BuildMarkdown_CarriesNoSpeakerLabel_WhenSuppressed()
+    {
+        var (vm, _) = CreateSut();
+        Utter(vm, "Speaker 12", "hello", 0);
+
+        vm.SuppressSpeakerLabels = true;
+        var markdown = vm.BuildMarkdown();
+
+        Assert.DoesNotContain("Speaker 1", markdown);
+        Assert.DoesNotContain("Speaker 12", markdown);
+        Assert.Contains("hello", markdown);
+    }
+
     private static void Utter(
         MeetingAttendeeViewModel vm, string? label, string text, int atSeconds, long? segmentId = null)
         => vm.AddUtterance(new TranscriptUtterance(

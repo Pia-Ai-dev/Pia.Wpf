@@ -85,6 +85,7 @@
   <data name="MeetingAttendee_DisplayName_Label" xml:space="preserve"><value>Name des Assistenten im Meeting</value></data>
   <data name="MeetingAttendee_DisplayName_Placeholder" xml:space="preserve"><value>Den Teilnehmern angezeigter Name</value></data>
   <data name="MeetingAttendee_Requirements_Title" xml:space="preserve"><value>Voraussetzungen</value></data>
+  <data name="MeetingAttendee_SpeakerDisclaimer" xml:space="preserve"><value>Sprecherbezeichnungen sind eine Schätzung anhand der Stimmähnlichkeit, keine geprüfte Identität. Pia kann zwei ähnliche Stimmen zu einer Bezeichnung zusammenfassen oder eine Person auf mehrere verteilen, und korrigiert frühere Bezeichnungen im weiteren Verlauf. Prüfen Sie die Zuordnung, bevor Sie sich darauf verlassen — klicken Sie auf eine Sprecherbezeichnung, um sie zu korrigieren.</value></data>
   <data name="MeetingAttendee_Requirements_Teams" xml:space="preserve"><value>•  Ein Link zu einem Microsoft-Teams-Meeting.</value></data>
   <data name="MeetingAttendee_Requirements_Lobby" xml:space="preserve"><value>•  Ein Meeting-Host muss den Assistenten aus der Lobby zulassen, bevor transkribiert werden kann.</value></data>
   <data name="MeetingAttendee_Requirements_FirstRun" xml:space="preserve"><value>•  Beim ersten Mal wird der Automatisierungs-Browser einmalig heruntergeladen (dafür ist Internet nötig); spätere Meetings nutzen ihn erneut.</value></data>

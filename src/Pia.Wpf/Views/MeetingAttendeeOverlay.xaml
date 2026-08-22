@@ -198,7 +198,35 @@
          A centered placeholder echoes the live status while no utterances have arrived yet. -->
     <Grid Grid.Row="1"
           Visibility="{Binding IsJoinSetupVisible, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-      <StackPanel HorizontalAlignment="Center"
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+      </Grid.RowDefinitions>
+
+      <!-- What speaker attribution actually is, stated where the labels are read. Pinned above the
+           list rather than inside it, so it cannot scroll out of sight. -->
+      <Border Grid.Row="0"
+              Background="{DynamicResource SurfaceBrush}"
+              BorderBrush="{DynamicResource BorderBrush_}"
+              BorderThickness="0,0,0,1"
+              Padding="24,10,24,10">
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="Info24"
+                         FontSize="16"
+                         Margin="0,1,8,0"
+                         VerticalAlignment="Top"
+                         Foreground="{DynamicResource TextMutedBrush}" />
+          <TextBlock Text="{loc:Str MeetingAttendee_SpeakerDisclaimer}"
+                     AutomationProperties.AutomationId="MeetingAttendee_SpeakerDisclaimer"
+                     FontSize="12"
+                     MaxWidth="820"
+                     TextWrapping="Wrap"
+                     Foreground="{DynamicResource TextMutedBrush}" />
+        </StackPanel>
+      </Border>
+
+      <StackPanel Grid.Row="1"
+                  HorizontalAlignment="Center"
                   VerticalAlignment="Top"
                   Margin="0,60,0,0"
                   Visibility="{Binding Bubbles.Count, Converter={StaticResource ZeroToVisibilityConverter}}">
@@ -214,6 +242,7 @@
       </StackPanel>
 
       <ScrollViewer x:Name="BubbleScroll"
+                    Grid.Row="1"
                     VerticalScrollBarVisibility="Auto"
                     HorizontalScrollBarVisibility="Disabled"
                     Padding="24,8,24,8">

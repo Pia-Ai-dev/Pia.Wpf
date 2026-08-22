@@ -112,6 +112,23 @@ public class DirectTranscriptMarkdownTests
     }
 
     [Fact]
+    public void Render_VoiceStats_DoNotResurrectALabelTheBubbleSuppressed()
+    {
+        // A suppressed bubble carries a null display label. Falling back to the stats key here would
+        // put "Speaker 17" back into the front matter, which is the part that gets ingested.
+        var bubbles = new[]
+        {
+            new TranscriptBubble(TranscriptSpeaker.Them, SessionStart, "hi", "Speaker 17", null),
+        };
+        var stats = new[] { new SpeakerVoiceStats(TranscriptSpeaker.Them, "Speaker 17", 1, 4.0, 4.0, 1.0) };
+
+        var md = DirectTranscriptMarkdown.Render("Title", SessionStart, SessionEnd, bubbles, stats, "Acme call");
+
+        Assert.DoesNotContain("Speaker 17", md, StringComparison.Ordinal);
+        Assert.Contains("- speaker: Acme call\n", md, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Render_VoiceStatsBlock_HasOneEntryPerStat_WithInvariantCultureDecimals()
     {
         var bubbles = Array.Empty<TranscriptBubble>();
