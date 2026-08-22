@@ -514,7 +514,9 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
                 // (HeadlessRunRequest.DefaultGrantedWrites = {write_file} — no delete, A1); an explicit
                 // grant list replaces it and may name delete_file if the user asked for that.
                 GrantedWrites: job.GrantedTools.Count > 0 ? job.GrantedTools : null,
-                Budget: budget), ct);
+                Budget: budget,
+                PersonaId: job.PersonaId,
+                ReasoningEffort: job.ReasoningEffort), ct);
         }
         catch (OperationCanceledException)
         {
@@ -726,6 +728,8 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
                     Trigger = AgentRunTrigger.Schedule,
                     TriggerRef = job.Id,
                     OwnerDeviceId = job.OwnerDeviceId,
+                    PersonaId = job.PersonaId,
+                    ReasoningEffort = job.ReasoningEffort,
                 }, ct);
             }
             catch (OperationCanceledException)

@@ -12,6 +12,7 @@ using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Xunit;
+using ReasoningEffort = Pia.Models.ReasoningEffort;
 
 namespace Pia.Tests.Services;
 
@@ -39,6 +40,12 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         /// never called, since a resume skips planning.</summary>
         public RunContext? PlanContext { get; private set; }
 
+        /// <summary>The run persona and provider the orchestrator resolved. The stub chat records only the
+        /// provider's ID, which can show WHICH persona won but not which EFFORT.</summary>
+        public Persona? PlanPersona { get; private set; }
+
+        public AiProvider? PlanProvider { get; private set; }
+
         /// <summary>Like the ctor hook, but handed the run's own token — the only in-process evidence that a
         /// dispatch was cancelled, since the teardown after it is fire-and-forget.</summary>
         public Func<CancellationToken, Task>? OnPlanWithToken { get; set; }
@@ -52,6 +59,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         public async Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
         {
             PlanContext = ctx;
+            PlanPersona = persona;
+            PlanProvider = provider;
             lock (_lock) { Concurrent++; MaxConcurrent = Math.Max(MaxConcurrent, Concurrent); }
             try
             {
@@ -121,6 +130,9 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     /// <param name="workspaces">Omitted ⇒ no provisioner, so the launcher does its own <c>CreateDirectory</c> under the <c>try/catch → FailAsync</c> guard.</param>
     /// <param name="runsBaseOverride">Lets a test point the runs base at an unwritable path (a file).</param>
     /// <param name="rosterProvider">The child's stub chat records the resolved provider id, which is how the persona ladder's answer is observable from outside.</param>
+    /// <param name="pinnedPersona">What <c>GetPersonasAsync</c> answers — the list a JOB's pin resolves against,
+    /// which unlike a delegated id is not roster-gated. Stubbed either way: an unstubbed one returns a null task
+    /// and NREs the pin path.</param>
     /// <param name="steering">Registered with the per-run scope too, so the run's own orchestrator reads the same instance the launcher writes.</param>
     /// <param name="stream">Replaces <see cref="Drive"/> so a fact can hold a run inside a step rather than only inside the planner.</param>
     /// <param name="settingsService">A substitute cannot raise <c>SettingsChanged</c>; pass a <see cref="MutableSettingsService"/> to drive a real save. Supersedes <paramref name="appSettings"/>.</param>
@@ -129,6 +141,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         AppSettings? appSettings = null, FakeVerifier? verifier = null,
         FakeRunWorkspaceService? workspaces = null, string? runsBaseOverride = null,
         Persona? rosterPersona = null, AiProvider? rosterProvider = null,
+        Persona? pinnedPersona = null,
         IRunSteeringStore? steering = null,
         Func<CancellationToken, IAsyncEnumerable<ChatStreamItem>>? stream = null,
         IExecutingRunStore? executing = null,
@@ -170,6 +183,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
         if (rosterPersona is not null)
             personas.GetPersonaAsync(rosterPersona.Id).Returns(rosterPersona);
+        personas.GetPersonasAsync().Returns(Task.FromResult<IReadOnlyList<Persona>>(
+            pinnedPersona is null ? [] : [pinnedPersona]));
         var providers = Substitute.For<IProviderService>();
         providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(nullDefaultProvider ? (AiProvider?)null : provider);
         if (rosterProvider is not null)
@@ -1377,6 +1392,76 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
         var declinedChat = await _chats.GetAsync(declined.ChatId, TestContext.Current.CancellationToken);
         Assert.NotEqual(preferred.Id, declinedChat!.ProviderId);
+    }
+
+    /// <summary>A ROUTINE's persona pin is the user's own choice, so unlike a delegated step's it is honoured
+    /// with an EMPTY roster — the roster is the allow-list for what a PLANNER may assign, and it is empty by
+    /// default.</summary>
+    [Fact]
+    public async Task AJobsPinnedPersona_IsHonouredWithAnEmptyRoster()
+    {
+        var preferred = new AiProvider
+        {
+            Id = Guid.NewGuid(), Name = "specialist", Endpoint = "https://s", ProviderType = AiProviderType.OpenAI,
+        };
+        var researcher = new Persona
+        {
+            Id = Guid.NewGuid(), Name = "Researcher", SystemPrompt = "research", PreferredProviderId = preferred.Id,
+        };
+
+        // No SetAgentPersonaRoster call: the roster this run sees is empty.
+        var (launcher, planner) = BuildLauncher(
+            rosterProvider: preferred, pinnedPersona: researcher);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("digest", AgentRunTrigger.Schedule, PersonaId: researcher.Id),
+            TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        Assert.Same(researcher, planner.PlanPersona);
+        // The pin also brings its preferred provider, which the stub chat records.
+        var chat = await _chats.GetAsync(handle.ChatId, TestContext.Current.CancellationToken);
+        Assert.Equal(preferred.Id, chat!.ProviderId);
+    }
+
+    /// <summary>A deleted persona must not retire a daily routine: the run falls back to the mode persona and
+    /// still COMPLETES.</summary>
+    [Fact]
+    public async Task AJobsDanglingPersonaPin_FallsBackAndTheRunStillCompletes()
+    {
+        var (launcher, planner) = BuildLauncher();
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("digest", AgentRunTrigger.Schedule, PersonaId: Guid.NewGuid()),
+            TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        Assert.NotNull(planner.PlanPersona);
+        var run = await _runs.GetAsync(handle.RunId, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, run!.State);
+    }
+
+    [Fact]
+    public async Task AJobsEffortPin_BeatsThePersonas_AndThePersonasAppliesWhenThereIsNoPin()
+    {
+        var persona = new Persona { Name = "Pia", SystemPrompt = "sys", ReasoningEffort = ReasoningEffort.High };
+
+        var (pinned, pinnedPlanner) = BuildLauncher(pinnedPersona: persona);
+        var pinnedHandle = await pinned.LaunchAsync(
+            new HeadlessRunRequest("digest", AgentRunTrigger.Schedule,
+                PersonaId: persona.Id, ReasoningEffort: ReasoningEffort.Minimal),
+            TestContext.Current.CancellationToken);
+        await pinnedHandle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        Assert.Equal(ReasoningEffort.Minimal, pinnedPlanner.PlanProvider!.ReasoningEffort);
+
+        var (unpinned, unpinnedPlanner) = BuildLauncher(pinnedPersona: persona);
+        var unpinnedHandle = await unpinned.LaunchAsync(
+            new HeadlessRunRequest("digest", AgentRunTrigger.Schedule, PersonaId: persona.Id),
+            TestContext.Current.CancellationToken);
+        await unpinnedHandle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        Assert.Equal(ReasoningEffort.High, unpinnedPlanner.PlanProvider!.ReasoningEffort);
     }
 
     /// <summary>A permit is released only after <c>RunAsync</c> returns, so a child sharing the parent pool

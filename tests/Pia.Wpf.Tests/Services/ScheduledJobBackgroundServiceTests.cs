@@ -160,6 +160,9 @@ public class ScheduledJobBackgroundServiceTests
         var jobs = new FakeJobService();
         var due = NewDueJob();
         due.OwnerDeviceId = Guid.NewGuid();
+        // Research is the DEFAULT kind, so this leg is what every pre-AgentTask routine still is.
+        due.PersonaId = Guid.NewGuid();
+        due.ReasoningEffort = ReasoningEffort.Minimal;
         jobs.SeedDue(due);
 
         var runner = new FakeRunner { Result = new BackgroundTurnResult(Guid.NewGuid(), true, null) };
@@ -178,6 +181,8 @@ public class ScheduledJobBackgroundServiceTests
         Assert.Equal(AgentRunTrigger.Schedule, runner.LastRequest!.Trigger);
         Assert.Equal(due.Id, runner.LastRequest.TriggerRef);
         Assert.Equal(due.OwnerDeviceId, runner.LastRequest.OwnerDeviceId);
+        Assert.Equal(due.PersonaId, runner.LastRequest.PersonaId);
+        Assert.Equal(due.ReasoningEffort, runner.LastRequest.ReasoningEffort);
     }
 
     [Fact]
@@ -412,6 +417,8 @@ public class ScheduledJobBackgroundServiceTests
         var due = NewDueJob();
         due.Kind = ScheduledJobKind.AgentTask;
         due.ProviderId = Guid.NewGuid();
+        due.PersonaId = Guid.NewGuid();
+        due.ReasoningEffort = ReasoningEffort.XHigh;
         due.GrantedTools = new List<string> { "write_file" };
         jobs.SeedDue(due);
 
@@ -448,6 +455,8 @@ public class ScheduledJobBackgroundServiceTests
         Assert.Equal(due.Id, captured.TriggerRef);
         Assert.Equal(due.OwnerDeviceId, captured.OwnerDeviceId);
         Assert.Equal(due.ProviderId, captured.ProviderId);
+        Assert.Equal(due.PersonaId, captured.PersonaId);
+        Assert.Equal(due.ReasoningEffort, captured.ReasoningEffort);
         Assert.Equal(due.GrantedTools, captured.GrantedWrites);
         Assert.NotNull(captured.Budget);
         Assert.Equal(50, captured.Budget!.WallClock.TotalMinutes);
@@ -1349,7 +1358,8 @@ public class ScheduledJobBackgroundServiceTests
             TimeOnly timeOfDay, DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null,
             DateTime? specificDate = null, Guid? providerId = null,
             IReadOnlyCollection<string>? grantedTools = null,
-            ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false) => throw new NotImplementedException();
+            ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false,
+            Guid? personaId = null, ReasoningEffort? reasoningEffort = null) => throw new NotImplementedException();
 
         public Task<IReadOnlyList<ScheduledJob>> GetAllAsync() => throw new NotImplementedException();
         public Task<IReadOnlyList<ScheduledJob>> GetActiveAsync() => throw new NotImplementedException();
@@ -1362,7 +1372,9 @@ public class ScheduledJobBackgroundServiceTests
             RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null, DayOfWeek? dayOfWeek = null,
             int? dayOfMonth = null, int? month = null, Guid? providerId = null,
             IReadOnlyCollection<string>? grantedTools = null,
-            DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null) => throw new NotImplementedException();
+            DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null,
+            Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
+            bool clearReasoningEffort = false) => throw new NotImplementedException();
 
         /// <summary>Drives the run-now owner refusal. True by default, which is the ordinary case (a job this
         /// device owns, or a legacy row with a null owner).</summary>

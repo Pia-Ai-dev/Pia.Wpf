@@ -1116,7 +1116,7 @@
   <data name="Routines_Empty" xml:space="preserve"><value>Noch keine Routinen.</value></data>
   <data name="Routines_EmptyHint" xml:space="preserve"><value>Erstelle eine, damit Pia etwas nach Zeitplan für dich erledigt – ein Morgenbriefing, eine wöchentliche Prüfung.</value></data>
   <data name="Routines_Placeholder" xml:space="preserve"><value>Wähle eine Routine, um ihren Zeitplan und ihre letzten Läufe zu sehen.</value></data>
-  <data name="Routines_NotOwnedHere" xml:space="preserve"><value>Ein anderes Gerät besitzt den Zeitplan dieser Routine, sie läuft nur dort.</value></data>
+  <data name="Routines_NotOwnedHere" xml:space="preserve"><value>Ein anderes Gerät besitzt den Zeitplan dieser Routine, sie läuft nur dort. Persona und Denkaufwand werden pro Gerät festgelegt und lassen sich hier nicht ändern.</value></data>
   <data name="Routines_Detail_NextRun" xml:space="preserve"><value>Nächster Lauf</value></data>
   <data name="Routines_Detail_RecentRuns" xml:space="preserve"><value>Letzte Läufe</value></data>
   <data name="Routines_Detail_NeverRun" xml:space="preserve"><value>Diese Routine ist noch nicht gelaufen.</value></data>
@@ -1127,10 +1127,37 @@
   <data name="Routines_Field_Month" xml:space="preserve"><value>Monat</value></data>
   <data name="Routines_Field_DayOfMonth" xml:space="preserve"><value>Tag im Monat</value></data>
   <data name="Routines_Field_DayOfMonth_Hint" xml:space="preserve"><value>Monate, die für diesen Tag zu kurz sind, feuern an ihrem letzten Tag.</value></data>
+  <data name="Routines_Field_Persona" xml:space="preserve"><value>Persona</value></data>
+  <data name="Routines_Field_Persona_Default" xml:space="preserve"><value>Aktive Persona verwenden</value></data>
+  <data name="Routines_Field_Persona_Missing" xml:space="preserve"><value>Nicht mehr verfügbar</value></data>
+  <data name="Routines_Field_Persona_Hint" xml:space="preserve"><value>Wird nur auf diesem Gerät gespeichert, deine anderen Geräte bleiben unberührt.</value></data>
+  <data name="Routines_Field_Effort" xml:space="preserve"><value>Denkaufwand</value></data>
+  <data name="Routines_Field_Effort_Default" xml:space="preserve"><value>Einstellung der Persona verwenden</value></data>
+  <data name="Routines_Field_Effort_Hint" xml:space="preserve"><value>Überschreibt für die Läufe dieser Routine den Denkaufwand der Persona.</value></data>
+  <data name="Routines_Effort_None" xml:space="preserve"><value>Ohne Denkaufwand</value></data>
+  <data name="Routines_Effort_Minimal" xml:space="preserve"><value>Minimal</value></data>
+  <data name="Routines_Effort_Low" xml:space="preserve"><value>Niedrig</value></data>
+  <data name="Routines_Effort_Medium" xml:space="preserve"><value>Mittel</value></data>
+  <data name="Routines_Effort_High" xml:space="preserve"><value>Hoch</value></data>
+  <data name="Routines_Effort_XHigh" xml:space="preserve"><value>Sehr hoch</value></data>
   <data name="Routines_Blueprints_Header" xml:space="preserve"><value>Mit einer Vorlage beginnen</value></data>
   <data name="Routines_Blueprints_Hint" xml:space="preserve"><value>Wähle eine aus, um den Editor bereits ausgefüllt zu öffnen – vor dem Speichern lässt sich alles ändern.</value></data>
   <data name="Routines_Blueprint_TopicDigest_Title" xml:space="preserve"><value>Täglicher Themen-Überblick</value></data>
-  <data name="Routines_Blueprint_TopicDigest_Description" xml:space="preserve"><value>Jeden Morgen ein kurzer Web-Überblick zu einem Thema, mit Quellen. Ändere das Thema im Feld „Ziel“, bevor du speicherst.</value></data>
+  <data name="Routines_Blueprint_TopicDigest_Description" xml:space="preserve"><value>Jeden Morgen ein kurzer Web-Überblick zu einem Thema, mit Quellen.</value></data>
+  <data name="Routines_Blueprint_MorningBrief_Title" xml:space="preserve"><value>Morgen-Überblick</value></data>
+  <data name="Routines_Blueprint_MorningBrief_Description" xml:space="preserve"><value>Was heute fällig ist und was heute ansteht, nach Uhrzeit sortiert – gleich am Morgen.</value></data>
+  <data name="Routines_Blueprint_EveningWinddown_Title" xml:space="preserve"><value>Abendlicher Ausklang</value></data>
+  <data name="Routines_Blueprint_EveningWinddown_Description" xml:space="preserve"><value>Was heute liegen geblieben ist und was morgen ansteht, als kurze Liste am Abend.</value></data>
+  <data name="Routines_Blueprint_HabitCheckin_Title" xml:space="preserve"><value>Gewohnheiten-Check</value></data>
+  <data name="Routines_Blueprint_HabitCheckin_Description" xml:space="preserve"><value>Abends ein Blick auf deine wiederkehrenden Vorhaben, dazu eine Frage zum Nachdenken.</value></data>
+  <data name="Routines_Blueprint_WeeklyReview_Title" xml:space="preserve"><value>Wochenrückblick</value></data>
+  <data name="Routines_Blueprint_WeeklyReview_Description" xml:space="preserve"><value>Freitags ein Rückblick: was fertig wurde, was noch offen ist und was aus den Notizen der Woche bleibt.</value></data>
+  <data name="Routines_Blueprint_CompetitorWatch_Title" xml:space="preserve"><value>Wettbewerbsbeobachtung</value></data>
+  <data name="Routines_Blueprint_CompetitorWatch_Description" xml:space="preserve"><value>Wöchentlich eine Zeile pro Unternehmen zu dem, was sich wirklich bewegt hat – mit Quellen.</value></data>
+  <data name="Routines_Blueprint_BillsRenewals_Title" xml:space="preserve"><value>Rechnungen und Verlängerungen</value></data>
+  <data name="Routines_Blueprint_BillsRenewals_Description" xml:space="preserve"><value>Ein kurzer Hinweis darauf, was in den nächsten zwei Wochen fällig wird oder sich verlängert.</value></data>
+  <data name="Routines_Blueprint_MeetingFollowup_Title" xml:space="preserve"><value>Meeting-Nachbereitung</value></data>
+  <data name="Routines_Blueprint_MeetingFollowup_Description" xml:space="preserve"><value>Die Meetings des Tages als Aufgaben – Lücken im Transkript werden vorab benannt.</value></data>
   <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Standardanbieter</value></data>
   <data name="Settings_ScheduledJobs_UnknownStatusInert" xml:space="preserve"><value>Dieser Auftrag hat einen Status, den diese Version nicht kennt, und wird nur lesend angezeigt. Aktualisiere Pia, um ihn zu verwalten.</value></data>
   <data name="Settings_ScheduledJobs_Running" xml:space="preserve"><value>Auftrag läuft …</value></data>

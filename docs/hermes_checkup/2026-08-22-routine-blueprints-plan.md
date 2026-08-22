@@ -191,16 +191,47 @@ search with citations, and meeting transcripts. It has **no email and no calenda
 hermes's inbox monitor and its calendar-dependent briefings do not apply as written; the price-watch
 blueprint needs stateful fetch-and-compare that Pia has no home for.
 
-| Key | Kind | Drives | Slots (Tier 1) |
+| Key | Kind | Drives | Text slots (Tier 1) |
 |---|---|---|---|
-| `morning-brief` | AgentTask | Todos due today + active reminders | time |
-| `evening-winddown` | AgentTask | Tomorrow's todos + reminders | time |
-| `weekly-review` | AgentTask | Completed vs open todos, stalled Kanban cards, the week's vault notes | time, day |
-| `topic-digest` | **Research** | *Already fully supported — just undiscoverable* | time, **topic** (text) |
-| `competitor-watch` | Research | Named companies, material news only | time, **companies** (text) |
-| `meeting-followup` | AgentTask | New vault transcripts → action items | time |
-| `bills-renewals` | AgentTask | Recurring-payment heads-up | time, **what** (text) |
-| `habit-checkin` | AgentTask | Recurring nudge + reflection | time, **habit** (text) |
+| `morning-brief` | Research | Todos due today + active reminders | — |
+| `evening-winddown` | Research | Tomorrow's todos + reminders | — |
+| `weekly-review` | Research | Completed vs open todos, where open work sits across the Kanban columns, the week's vault notes | — |
+| `topic-digest` | Research | *Already fully supported — just undiscoverable* | **topic** |
+| `competitor-watch` | Research | Named companies, material news only | **companies** |
+| `meeting-followup` | Research | New vault transcripts → action items | — |
+| `bills-renewals` | Research | Recurring-payment heads-up | — |
+| `habit-checkin` | Research | Recurring nudge + reflection | — |
+
+**Kind is `Research` for all eight, including the six that only read.** The `AgentTask` dispatch leg maps
+a job's empty `GrantedTools` list to `null`, and `HeadlessRunLauncher` turns that `null` into
+`HeadlessRunRequest.DefaultGrantedWrites = ["write_file"]` — so an `AgentTask` card advertising no grants
+would in fact run able to write files, the exact opposite of what §8 promises. The `Research` leg passes
+`GrantedTools` through verbatim, and empty means empty. `Research` is not web-search-specific: it is one
+tool-enabled background turn on the same plugin pipeline, with enough tool rounds for the two to six reads
+these blueprints make. The visible cost is that the Kind chip on those cards reads "Research" rather than
+"Agent run". Full reasoning and the escalation if the owner keeps `AgentTask`:
+[`2026-08-22-c4-before-c5-decision.md`](2026-08-22-c4-before-c5-decision.md) §8. Pinned by
+`TheGrantsABlueprintAdvertisesAreTheGrantsItsRunGets`, which computes the effective write set the way the
+dispatcher does and fails the moment a Kind flips to `AgentTask` with an empty grant list.
+
+**No time or day slot anywhere.** `DefaultTime` and `DefaultDayOfWeek` are typed record fields the editor
+already binds at `Routines_Field_Time` and `Routines_Field_DayOfWeek`, so Tier 1 adds nothing for them.
+
+**The text slots on `weekly-review`, `bills-renewals` and `habit-checkin` are dropped — the read surface
+covers them.** `query_todos` prints Title, Priority, Status, Column, Due (flagged `OVERDUE`), Notes,
+CompletedAt and LinkedReminderId; `query_reminders` prints Description, Recurrence, Time, Status, Next
+fire, Day of week, Day of month and Month; and `PersonaPromptShape.BuildIdentityBlock` puts the current
+date and time into every turn's system prompt. So "what renews in the next fourteen days" and "which
+recurring commitments were due today" are answerable as prose over the user's own data — strictly better
+than a typed literal that goes stale the moment they add a subscription. That leaves Tier 1 scoped to two
+text slots, `topic-digest`/topic and `competitor-watch`/companies, and its inverted brace test validating
+two templates rather than seven.
+
+**`weekly-review` cannot report a stalled Kanban card.** `TodoToolHandler.HandleQueryTodos` prints no
+`CreatedAt` and no `UpdatedAt`, and `list_columns` returns only a column's name, its markers and its todo
+count. Nothing in the tool output records when a card last moved, so the template reports *where* open
+work is sitting and is explicitly instructed not to call anything stalled, stuck or neglected. Closing
+this would mean widening the tool output, which is its own row.
 
 `topic-digest` is the one to build first: it needs no new capability at all, and it demonstrates that
 the catalog surfaces things Pia could *always* do.

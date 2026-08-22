@@ -4,6 +4,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Xunit;
+using ReasoningEffort = Pia.Models.ReasoningEffort;
 
 namespace Pia.Tests.Services;
 
@@ -245,6 +246,11 @@ public class ScheduledJobToolHandlerTests
         await handler.ExecutePendingActionAsync(pending!);
 
         Assert.Null(jobs.LastUpdatedGrants);
+        // The tool's arg surface deliberately exposes neither run pin, so an update through it sends neither —
+        // and cannot clear one either.
+        Assert.Null(jobs.LastUpdatedPersonaId);
+        Assert.Null(jobs.LastUpdatedEffort);
+        Assert.False(jobs.LastUpdatedClearedEffort);
     }
 
     [Fact]
@@ -339,7 +345,8 @@ public class ScheduledJobToolHandlerTests
             TimeOnly timeOfDay, DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null,
             DateTime? specificDate = null, Guid? providerId = null,
             IReadOnlyCollection<string>? grantedTools = null,
-            ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false)
+            ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false,
+            Guid? personaId = null, ReasoningEffort? reasoningEffort = null)
         {
             var job = new ScheduledJob
             {
@@ -354,6 +361,8 @@ public class ScheduledJobToolHandlerTests
                 SpecificDate = specificDate,
                 GrantedTools = grantedTools?.ToList() ?? [],
                 ProviderId = providerId,
+                PersonaId = personaId,
+                ReasoningEffort = reasoningEffort,
                 NextFireAt = DateTime.Now.AddHours(1)
             };
             Created.Add(job);
@@ -378,12 +387,23 @@ public class ScheduledJobToolHandlerTests
             RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null, DayOfWeek? dayOfWeek = null,
             int? dayOfMonth = null, int? month = null, Guid? providerId = null,
             IReadOnlyCollection<string>? grantedTools = null,
-            DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null)
+            DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null,
+            Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
+            bool clearReasoningEffort = false)
         {
             Updated.Add(id);
             LastUpdatedGrants = grantedTools;
+            LastUpdatedPersonaId = personaId;
+            LastUpdatedEffort = reasoningEffort;
+            LastUpdatedClearedEffort = clearReasoningEffort;
             return Task.CompletedTask;
         }
+
+        public Guid? LastUpdatedPersonaId { get; private set; }
+
+        public ReasoningEffort? LastUpdatedEffort { get; private set; }
+
+        public bool LastUpdatedClearedEffort { get; private set; }
 
         public Task<bool> IsOwnedByThisDeviceAsync(Guid id) => Task.FromResult(true);
 

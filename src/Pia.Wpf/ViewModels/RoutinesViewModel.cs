@@ -22,6 +22,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     private readonly IScheduledJobService _jobs;
     private readonly IScheduledJobRunner _runner;
     private readonly IProviderService _providers;
+    private readonly IPersonaService _personas;
     private readonly IAgentRunService _runs;
     private readonly IDialogService _dialogs;
     private readonly IWindowManagerService _windowManager;
@@ -32,6 +33,13 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
 
     /// <summary>Provider choices for the editor. The leading entry is the "use the default" null row.</summary>
     public ObservableCollection<RoutineProviderChoice> ProviderChoices { get; } = [];
+
+    /// <summary>Persona choices for the editor, led by the "use the active persona" null row. A saved pin that
+    /// no longer resolves is appended as its own visible entry rather than dropped.</summary>
+    public ObservableCollection<RoutinePersonaChoice> PersonaChoices { get; } = [];
+
+    /// <summary>Reasoning-effort choices, led by the null "inherit the persona's" row.</summary>
+    public IReadOnlyList<RoutineEffortChoice> EffortChoices { get; }
 
     /// <summary>(value, LOCALIZED label) pairs: a ComboBox bound straight to <c>Enum.GetValues</c> renders the
     /// C# identifier in every locale, which the localization parity tests cannot see.</summary>
@@ -90,6 +98,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(ShowsDetail));
         OnPropertyChanged(nameof(ShowsPlaceholder));
+        OnPropertyChanged(nameof(EditorPinsEnabled));
 
         // A selection change is a different job, so an editor still open on the previous one has to go — saving
         // it afterwards would write this job's fields onto that one's id.
@@ -116,6 +125,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     /// takes, so it must be cleared when the editor closes.</summary>
     [ObservableProperty]
     private Guid? _editingJobId;
+
+    partial void OnEditingJobIdChanged(Guid? value) => OnPropertyChanged(nameof(EditorPinsEnabled));
 
     [ObservableProperty]
     private string _editName = string.Empty;
@@ -161,6 +172,19 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     [ObservableProperty]
     private bool _editQuietOnSuccess;
 
+    /// <summary>Which persona this routine's runs use. Device-local, so it never travels with the job.</summary>
+    [ObservableProperty]
+    private RoutinePersonaChoice? _editPersona;
+
+    [ObservableProperty]
+    private RoutineEffortChoice? _editEffort;
+
+    /// <summary>False only while editing a routine another device owns. Deliberately not bound to the
+    /// selection alone: <see cref="StartCreate"/> leaves a foreign row selected, and a brand-new routine this
+    /// device is about to own must stay editable.</summary>
+    public bool EditorPinsEnabled =>
+        EditingJobId is null || SelectedJob?.OwnedByThisDevice != false;
+
     public bool EditorWantsSpecificDate => EditRecurrence == RecurrenceType.Once;
     public bool EditorWantsDayOfWeek => EditRecurrence == RecurrenceType.Weekly;
     public bool EditorWantsDayOfMonth => EditRecurrence is RecurrenceType.Monthly or RecurrenceType.Yearly;
@@ -178,6 +202,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         IScheduledJobService jobs,
         IScheduledJobRunner runner,
         IProviderService providers,
+        IPersonaService personas,
         IAgentRunService runs,
         IDialogService dialogs,
         IWindowManagerService windowManager,
@@ -187,6 +212,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         _jobs = jobs;
         _runner = runner;
         _providers = providers;
+        _personas = personas;
         _runs = runs;
         _dialogs = dialogs;
         _windowManager = windowManager;
@@ -198,6 +224,13 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         Recurrences = [.. Enum.GetValues<RecurrenceType>()
             .Select(r => new RoutineRecurrenceChoice(
                 r, _localization[$"Settings_ScheduledJobs_Recurrence_{r}"]))];
+        // The leading row inherits the persona's effort, a different instruction from None ("no reasoning"),
+        // so its label must not reuse that word in any locale.
+        EffortChoices = [
+            new RoutineEffortChoice(null, _localization["Routines_Field_Effort_Default"]),
+            .. Enum.GetValues<ReasoningEffort>()
+                .Select(e => new RoutineEffortChoice(e, _localization[$"Routines_Effort_{e}"]))];
+        _editEffort = EffortChoices[0];
 
         var names = CultureInfo.CurrentCulture.DateTimeFormat;
         DayOfWeekChoices = [.. Enum.GetValues<DayOfWeek>()
@@ -232,6 +265,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         {
             var jobs = await _jobs.GetAllAsync();
             var providers = await _providers.GetProvidersAsync();
+            var personas = await _personas.GetPersonasAsync();
 
             var rows = new List<RoutineRow>(jobs.Count);
             foreach (var job in jobs)
@@ -239,7 +273,11 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
                 var providerName = job.ProviderId is { } id
                     ? providers.FirstOrDefault(p => p.Id == id)?.Name
                     : null;
-                rows.Add(BuildRow(job, providerName, await _jobs.IsOwnedByThisDeviceAsync(job),
+                // Null for a pin nothing resolves, which is what the row renders as "no longer available".
+                var personaName = job.PersonaId is { } personaId
+                    ? personas.FirstOrDefault(p => p.Id == personaId)?.Name
+                    : null;
+                rows.Add(BuildRow(job, providerName, personaName, await _jobs.IsOwnedByThisDeviceAsync(job),
                     await LoadRecentFiringsAsync(job.Id)));
             }
 
@@ -262,6 +300,12 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
                     null, _localization["Settings_ScheduledJobs_Provider_Default"]));
                 foreach (var provider in providers)
                     ProviderChoices.Add(new RoutineProviderChoice(provider.Id, provider.Name));
+
+                PersonaChoices.Clear();
+                PersonaChoices.Add(new RoutinePersonaChoice(
+                    null, _localization["Routines_Field_Persona_Default"]));
+                foreach (var persona in personas)
+                    PersonaChoices.Add(new RoutinePersonaChoice(persona.Id, persona.Name));
             });
         }
         catch (Exception ex)
@@ -314,7 +358,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         ChatId = firing.ChatId,
     };
 
-    private RoutineRow BuildRow(ScheduledJob job, string? providerName, bool ownedHere,
+    private RoutineRow BuildRow(ScheduledJob job, string? providerName, string? personaName, bool ownedHere,
         IReadOnlyList<ScheduledFiringOutcome> recentFirings)
     {
         // Not defensive padding: ScheduledJobStatus crosses the sync wire as an int that SyncMapper casts back
@@ -351,6 +395,14 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             ConsecutiveFailures = job.ConsecutiveFailures,
             ProviderId = job.ProviderId,
             ProviderName = providerName,
+            PersonaId = job.PersonaId,
+            PersonaLabel = job.PersonaId is null
+                ? string.Empty
+                : personaName ?? _localization["Routines_Field_Persona_Missing"],
+            ReasoningEffort = job.ReasoningEffort,
+            EffortLabel = job.ReasoningEffort is { } effort
+                ? _localization[$"Routines_Effort_{effort}"]
+                : string.Empty,
             GrantedTools = string.Join(", ", job.GrantedTools),
             QuietOnSuccess = job.QuietOnSuccess,
             RecentRunsSummary = BuildRecentRunsSummary(recentFirings),
@@ -380,6 +432,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditGrantedTools = string.Empty;
         EditQuietOnSuccess = false;
         EditProvider = ProviderChoices.FirstOrDefault();
+        EditPersona = ResolvePersonaChoice(null);
+        EditEffort = EffortChoices[0];
         StatusMessage = null;
         IsEditorOpen = true;
     }
@@ -404,6 +458,9 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditGrantedTools = string.Join(", ", blueprint.GrantedTools);
         EditQuietOnSuccess = blueprint.QuietOnSuccess;
         EditProvider = ProviderChoices.FirstOrDefault();
+        EditPersona = ResolvePersonaChoice(null);
+        EditEffort = EffortChoices.FirstOrDefault(e => e.Value == blueprint.DefaultEffort)
+                     ?? EffortChoices[0];
         StatusMessage = null;
         IsEditorOpen = true;
 
@@ -433,8 +490,28 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditQuietOnSuccess = row.QuietOnSuccess;
         EditProvider = ProviderChoices.FirstOrDefault(p => p.Id == row.ProviderId)
                        ?? ProviderChoices.FirstOrDefault();
+        EditPersona = ResolvePersonaChoice(row.PersonaId);
+        EditEffort = EffortChoices.FirstOrDefault(e => e.Value == row.ReasoningEffort)
+                     ?? EffortChoices[0];
         StatusMessage = null;
         IsEditorOpen = true;
+    }
+
+    /// <summary>A pin whose persona is gone gets a row of its own: falling back to the default row would show
+    /// "active persona", and the next save would then destroy a pin the user never touched.</summary>
+    private RoutinePersonaChoice? ResolvePersonaChoice(Guid? personaId)
+    {
+        // The synthetic row belongs to one job, so it must not survive into the next editor session.
+        for (var i = PersonaChoices.Count - 1; i >= 0; i--)
+            if (PersonaChoices[i].IsUnavailable) PersonaChoices.RemoveAt(i);
+
+        if (personaId is not { } id) return PersonaChoices.FirstOrDefault();
+        if (PersonaChoices.FirstOrDefault(p => p.Id == id) is { } match) return match;
+
+        var missing = new RoutinePersonaChoice(id, _localization["Routines_Field_Persona_Missing"], true);
+        PersonaChoices.Add(missing);
+        _logger.LogInformation("The routines editor opened on persona pin {PersonaId}, which no longer resolves", id);
+        return missing;
     }
 
     [RelayCommand]
@@ -473,6 +550,12 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         var dayOfMonth = EditorWantsDayOfMonth ? EditDayOfMonth : (int?)null;
         var month = EditorWantsMonth ? EditMonth : (int?)null;
 
+        // "Use the default" means NO pin. On update that has to be Guid.Empty — null means "leave unchanged",
+        // so sending it made the default row a silent no-op. Create takes the null: it stores providerId as-is.
+        var providerId = EditProvider?.Id;
+        var personaId = EditPersona?.Id;
+        var effort = EditEffort?.Value;
+
         IsBusy = true;
         try
         {
@@ -486,27 +569,31 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
                     dayOfWeek: dayOfWeek,
                     dayOfMonth: dayOfMonth,
                     month: month,
-                    providerId: EditProvider?.Id,
+                    providerId: providerId ?? Guid.Empty,
                     grantedTools: grants,
                     specificDate: specificDate,
                     kind: EditKind,
-                    quietOnSuccess: EditQuietOnSuccess);
+                    quietOnSuccess: EditQuietOnSuccess,
+                    personaId: personaId ?? Guid.Empty,
+                    reasoningEffort: effort,
+                    clearReasoningEffort: effort is null);
 
                 _logger.LogInformation("Updated scheduled job {Id} from the routines view", id);
-                _logger.SensitiveDebug("Updated scheduled job {Id} name: {Name} goal: {Goal}",
-                    id, EditName, EditQuery);
+                _logger.SensitiveDebug("Updated scheduled job {Id} name: {Name} goal: {Goal} persona: {Persona}",
+                    id, EditName, EditQuery, EditPersona?.Name);
             }
             else
             {
                 var created = await _jobs.CreateAsync(EditName.Trim(), EditQuery.Trim(), EditRecurrence,
                     timeOfDay, dayOfWeek: dayOfWeek, dayOfMonth: dayOfMonth, month: month,
-                    specificDate: specificDate, providerId: EditProvider?.Id,
-                    grantedTools: grants, kind: EditKind, quietOnSuccess: EditQuietOnSuccess);
+                    specificDate: specificDate, providerId: providerId,
+                    grantedTools: grants, kind: EditKind, quietOnSuccess: EditQuietOnSuccess,
+                    personaId: personaId, reasoningEffort: effort);
 
                 _logger.LogInformation("Created scheduled job {Id} from the routines view ({Kind})",
                     created.Id, EditKind);
-                _logger.SensitiveDebug("Created scheduled job {Id} name: {Name} goal: {Goal}",
-                    created.Id, EditName, EditQuery);
+                _logger.SensitiveDebug("Created scheduled job {Id} name: {Name} goal: {Goal} persona: {Persona}",
+                    created.Id, EditName, EditQuery, EditPersona?.Name);
                 EditingJobId = created.Id;
             }
 
@@ -654,6 +741,21 @@ public sealed record RoutineProviderChoice(Guid? Id, string Name)
     public override string ToString() => Name;
 }
 
+/// <summary>One persona the editor may pin a job to; <see cref="Id"/> null is "use the active persona".
+/// <see cref="IsUnavailable"/> marks a saved pin nothing resolves, which stays selectable so a later save
+/// preserves it.</summary>
+public sealed record RoutinePersonaChoice(Guid? Id, string Name, bool IsUnavailable = false)
+{
+    public override string ToString() => Name;
+}
+
+/// <summary>A reasoning effort and the label a user should see for it; <see cref="Value"/> null is "inherit the
+/// persona's".</summary>
+public sealed record RoutineEffortChoice(ReasoningEffort? Value, string Label)
+{
+    public override string ToString() => Label;
+}
+
 /// <summary>A job type and the label a user should see for it.</summary>
 public sealed record RoutineKindChoice(ScheduledJobKind Value, string Label)
 {
@@ -742,6 +844,19 @@ public sealed class RoutineRow
 
     public Guid? ProviderId { get; init; }
     public string? ProviderName { get; init; }
+
+    public Guid? PersonaId { get; init; }
+
+    /// <summary>The pinned persona's name, or the "no longer available" text when the pin does not resolve;
+    /// empty when nothing is pinned. USER CONTENT.</summary>
+    public required string PersonaLabel { get; init; }
+
+    public bool HasPersonaPin => PersonaId is not null;
+
+    public ReasoningEffort? ReasoningEffort { get; init; }
+    public required string EffortLabel { get; init; }
+    public bool HasEffortPin => ReasoningEffort is not null;
+
     public required string GrantedTools { get; init; }
     public bool HasGrantedTools => !string.IsNullOrEmpty(GrantedTools);
 

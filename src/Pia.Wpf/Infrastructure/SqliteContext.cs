@@ -346,7 +346,11 @@ public class SqliteContext : IDisposable
                 GrantedTools TEXT NOT NULL DEFAULT '[]',
                 -- T2-18 quiet mode. Device-local like the three execution-state columns above it: absent from
                 -- SyncScheduledJob and from UpsertFromSyncAsync's SET list, so a pull cannot reset it.
-                QuietOnSuccess INTEGER NOT NULL DEFAULT 0
+                QuietOnSuccess INTEGER NOT NULL DEFAULT 0,
+                -- Per-routine run pins. Nullable, no default: NULL means "no pin, inherit". Device-local like
+                -- QuietOnSuccess above.
+                PersonaId TEXT NULL,
+                ReasoningEffort TEXT NULL
             );
 
             CREATE INDEX IF NOT EXISTS IX_ScheduledJobs_NextFireAt ON ScheduledJobs(NextFireAt, Status);
@@ -690,6 +694,8 @@ public class SqliteContext : IDisposable
         var hasOwnerDeviceId = false;
         var hasGrantedTools = false;
         var hasQuietOnSuccess = false;
+        var hasJobPersonaId = false;
+        var hasJobReasoningEffort = false;
         using (var p = _connection!.CreateCommand())
         {
             p.CommandText = "PRAGMA table_info(ScheduledJobs)";
@@ -701,6 +707,8 @@ public class SqliteContext : IDisposable
                 else if (col == "OwnerDeviceId") hasOwnerDeviceId = true;
                 else if (col == "GrantedTools") hasGrantedTools = true;
                 else if (col == "QuietOnSuccess") hasQuietOnSuccess = true;
+                else if (col == "PersonaId") hasJobPersonaId = true;
+                else if (col == "ReasoningEffort") hasJobReasoningEffort = true;
             }
         }
         if (!hasJobUpdatedAt)
@@ -730,6 +738,18 @@ public class SqliteContext : IDisposable
             // something a person turns on, never something a migration decides for them.
             using var addCol = _connection.CreateCommand();
             addCol.CommandText = "ALTER TABLE ScheduledJobs ADD COLUMN QuietOnSuccess INTEGER NOT NULL DEFAULT 0";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasJobPersonaId)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE ScheduledJobs ADD COLUMN PersonaId TEXT NULL";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasJobReasoningEffort)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE ScheduledJobs ADD COLUMN ReasoningEffort TEXT NULL";
             addCol.ExecuteNonQuery();
         }
 

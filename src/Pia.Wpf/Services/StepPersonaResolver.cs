@@ -188,15 +188,9 @@ public sealed class StepPersonaResolver
             return runDefault.Provider;
         }
 
-        if (persona.ReasoningEffort.HasValue)
-        {
-            // CLONE, never mutate: AiProvider instances come out of a shared store, so setting the effort on
-            // the instance we were handed would leak one persona's effort into every other consumer of that
-            // provider in the process. Same two lines the run-level resolution already uses.
-            provider = provider.Clone();
-            provider.ReasoningEffort = persona.ReasoningEffort.Value;
-        }
-        return provider;
+        // No job pin here on purpose: a plan that assigns a step to a specialist keeps that specialist's
+        // effort, the same call the summary above makes for the provider override.
+        return RunPinResolver.ApplyEffort(provider, jobPin: null, persona.ReasoningEffort);
     }
 
     /// <summary>

@@ -66,7 +66,8 @@ public class ScheduledJobService : IScheduledJobService
     public async Task<ScheduledJob> CreateAsync(string name, string query, RecurrenceType recurrence, TimeOnly timeOfDay,
         DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null, DateTime? specificDate = null,
         Guid? providerId = null, IReadOnlyCollection<string>? grantedTools = null,
-        ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false)
+        ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false,
+        Guid? personaId = null, ReasoningEffort? reasoningEffort = null)
     {
         var now = DateTime.Now;
         var job = new ScheduledJob
@@ -83,6 +84,10 @@ public class ScheduledJobService : IScheduledJobService
             GrantedTools = grantedTools?.ToList() ?? [],
             ProviderId = providerId,
             QuietOnSuccess = quietOnSuccess, // T2-18
+            // The editor's "default" rows send Guid.Empty rather than null (that is what CLEARS a pin on
+            // update), so a create must not store it as a pin nothing can resolve.
+            PersonaId = personaId == Guid.Empty ? null : personaId,
+            ReasoningEffort = reasoningEffort,
             CreatedAt = now,
             UpdatedAt = now,
             OwnerDeviceId = await ResolveLocalDeviceIdAsync()
@@ -147,7 +152,8 @@ public class ScheduledJobService : IScheduledJobService
         RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null,
         DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null,
         Guid? providerId = null, IReadOnlyCollection<string>? grantedTools = null,
-        DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null)
+        DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null,
+        Guid? personaId = null, ReasoningEffort? reasoningEffort = null, bool clearReasoningEffort = false)
     {
         var existing = await GetAsync(id) ?? throw new InvalidOperationException($"ScheduledJob {id} not found");
 
@@ -162,7 +168,13 @@ public class ScheduledJobService : IScheduledJobService
         if (specificDate is not null) existing.SpecificDate = specificDate;
         if (kind is not null) existing.Kind = kind.Value;
         if (grantedTools is not null) existing.GrantedTools = grantedTools.ToList();
-        if (providerId is not null) existing.ProviderId = providerId;
+        // Guid.Empty CLEARS a pin; null still leaves it alone. Without the Empty arm the editor's "default"
+        // row was a silent no-op and the routine kept running on the provider the user had just removed.
+        if (providerId is not null) existing.ProviderId = providerId == Guid.Empty ? null : providerId;
+        if (personaId is not null) existing.PersonaId = personaId == Guid.Empty ? null : personaId;
+        // ReasoningEffort.None is a real pinnable value ("no reasoning"), so it cannot double as the sentinel.
+        if (clearReasoningEffort) existing.ReasoningEffort = null;
+        else if (reasoningEffort is not null) existing.ReasoningEffort = reasoningEffort;
 
         existing.NextFireAt = ComputeNextFireAt(existing, DateTime.Now);
         existing.UpdatedAt = DateTime.Now;
@@ -200,7 +212,8 @@ public class ScheduledJobService : IScheduledJobService
             SET Name=@Name, Query=@Query, Kind=@Kind, Recurrence=@Recurrence, TimeOfDay=@TimeOfDay,
                 DayOfWeek=@DayOfWeek, DayOfMonth=@DayOfMonth, Month=@Month, SpecificDate=@SpecificDate,
                 GrantedTools=@GrantedTools, ProviderId=@ProviderId, NextFireAt=@NextFireAt,
-                Status=@Status, UpdatedAt=@UpdatedAt, QuietOnSuccess=@QuietOnSuccess
+                Status=@Status, UpdatedAt=@UpdatedAt, QuietOnSuccess=@QuietOnSuccess,
+                PersonaId=@PersonaId, ReasoningEffort=@ReasoningEffort
             WHERE Id=@Id
             """;
         command.Parameters.AddWithValue("@Id", existing.Id.ToString());
@@ -220,6 +233,8 @@ public class ScheduledJobService : IScheduledJobService
         command.Parameters.AddWithValue("@Status", existing.Status.ToString());
         command.Parameters.AddWithValue("@UpdatedAt", existing.UpdatedAt.ToString("O"));
         command.Parameters.AddWithValue("@QuietOnSuccess", existing.QuietOnSuccess ? 1 : 0);
+        command.Parameters.AddWithValue("@PersonaId", existing.PersonaId.HasValue ? (object)existing.PersonaId.Value.ToString() : DBNull.Value);
+        command.Parameters.AddWithValue("@ReasoningEffort", existing.ReasoningEffort.HasValue ? (object)existing.ReasoningEffort.Value.ToString() : DBNull.Value);
 
         await command.ExecuteNonQueryAsync();
         _logger.LogInformation("Updated scheduled job {Id} ({Status})", id, existing.Status);
@@ -666,6 +681,8 @@ public class ScheduledJobService : IScheduledJobService
 
         // Update only the synced config fields; leave execution state (NextFireAt, LastFiredAt,
         // LastResultEntryId, ConsecutiveFailures) untouched — that is each device's own.
+        // PersonaId and ReasoningEffort are absent from the SET list on purpose: the server drops fields it does
+        // not know, so writing them here would null a local pin on the first push→pull cycle.
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
@@ -703,10 +720,12 @@ public class ScheduledJobService : IScheduledJobService
             INSERT INTO ScheduledJobs
             (Id, Name, Query, Kind, GrantedTools, ProviderId, Recurrence, TimeOfDay,
              DayOfWeek, DayOfMonth, Month, SpecificDate, NextFireAt, Status, CreatedAt, UpdatedAt,
-             LastFiredAt, LastResultEntryId, ConsecutiveFailures, OwnerDeviceId, QuietOnSuccess)
+             LastFiredAt, LastResultEntryId, ConsecutiveFailures, OwnerDeviceId, QuietOnSuccess,
+             PersonaId, ReasoningEffort)
             VALUES (@Id, @Name, @Query, @Kind, @GrantedTools, @ProviderId, @Recurrence, @TimeOfDay,
                     @DayOfWeek, @DayOfMonth, @Month, @SpecificDate, @NextFireAt, @Status, @CreatedAt, @UpdatedAt,
-                    @LastFiredAt, @LastResultEntryId, @ConsecutiveFailures, @OwnerDeviceId, @QuietOnSuccess)
+                    @LastFiredAt, @LastResultEntryId, @ConsecutiveFailures, @OwnerDeviceId, @QuietOnSuccess,
+                    @PersonaId, @ReasoningEffort)
             """;
         AddJobParameters(command, job);
         await command.ExecuteNonQueryAsync();
@@ -731,7 +750,8 @@ public class ScheduledJobService : IScheduledJobService
         command.CommandText = $"""
             SELECT Id, Name, Query, Kind, GrantedTools, ProviderId, Recurrence, TimeOfDay,
                    DayOfWeek, DayOfMonth, Month, SpecificDate, NextFireAt, Status, CreatedAt, UpdatedAt,
-                   LastFiredAt, LastResultEntryId, ConsecutiveFailures, OwnerDeviceId, QuietOnSuccess
+                   LastFiredAt, LastResultEntryId, ConsecutiveFailures, OwnerDeviceId, QuietOnSuccess,
+                   PersonaId, ReasoningEffort
             FROM ScheduledJobs
             {whereOrOrder}
             """;
@@ -770,6 +790,10 @@ public class ScheduledJobService : IScheduledJobService
         // T2-18. Bound here rather than in UpsertFromSyncAsync on purpose: a job IMPORTED from a peer starts
         // un-quieted on this device (its default), and a later pull cannot reset a choice made here.
         command.Parameters.AddWithValue("@QuietOnSuccess", job.QuietOnSuccess ? 1 : 0);
+        // Bound here and not in UpsertFromSyncAsync for the same reason as QuietOnSuccess: a job imported from a
+        // peer starts unpinned on this device.
+        command.Parameters.AddWithValue("@PersonaId", job.PersonaId.HasValue ? (object)job.PersonaId.Value.ToString() : DBNull.Value);
+        command.Parameters.AddWithValue("@ReasoningEffort", job.ReasoningEffort.HasValue ? (object)job.ReasoningEffort.Value.ToString() : DBNull.Value);
     }
 
     private static ScheduledJob MapJob(SqliteDataReader r) => new()
@@ -795,7 +819,14 @@ public class ScheduledJobService : IScheduledJobService
         ConsecutiveFailures = r.GetInt32(18),
         OwnerDeviceId = r.IsDBNull(19) ? null : Guid.Parse(r.GetString(19)),
         QuietOnSuccess = !r.IsDBNull(20) && r.GetInt32(20) != 0, // T2-18
+        PersonaId = r.IsDBNull(21) ? null : Guid.Parse(r.GetString(21)),
+        ReasoningEffort = r.IsDBNull(22) ? null : ParseReasoningEffort(r.GetString(22)),
     };
+
+    /// <summary>Unknown means unset: TryParse also accepts a bare ordinal, which would reach a provider as an
+    /// undefined member and change what the run costs.</summary>
+    private static ReasoningEffort? ParseReasoningEffort(string raw) =>
+        Enum.TryParse<ReasoningEffort>(raw, out var effort) && Enum.IsDefined(effort) ? effort : null;
 
     private static string SerializeGrantedTools(IReadOnlyCollection<string> grantedTools) =>
         JsonSerializer.Serialize(grantedTools);

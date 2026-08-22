@@ -302,12 +302,12 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         // would still be at its compiled default. Free to do on every launch (a no-op at an unchanged width),
         // and it reads the settings this method already loaded rather than loading them twice.
         _slots.Resize(settings.GetMaxParallelBackgroundRuns());
-        var persona = await ResolveRunPersonaAsync(personaIdOverride, settings).ConfigureAwait(false);
+        var persona = await ResolveRunPersonaAsync(personaIdOverride, req.PersonaId, settings).ConfigureAwait(false);
         // The provider ladder reads the persona: req.ProviderId (null for a child), then the persona's
         // PreferredProviderId, then the mode default, and it clones to apply ReasoningEffort. So handing it the
         // ASSIGNED persona is what gives a delegated step its specialist's provider and effort too — D5's
         // "each persona running on its own provider" — with no second ladder to keep in step.
-        var provider = await ResolveProviderAsync(req.ProviderId, persona).ConfigureAwait(false)
+        var provider = await ResolveProviderAsync(req.ProviderId, persona, req.ReasoningEffort).ConfigureAwait(false)
             ?? throw new InvalidOperationException("No provider configured for a headless agent run.");
 
         // The AgentRuns FK requires its AssistantChats parent row first, and FK enforcement is ON.
@@ -981,7 +981,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         try
         {
             var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
-            var persona = await ResolveRunPersonaAsync(personaIdOverride: null, settings).ConfigureAwait(false);
+            var persona = await ResolveRunPersonaAsync(
+                personaIdOverride: null, pinnedPersonaId: null, settings).ConfigureAwait(false);
 
             using var scope = _scopeFactory.CreateScope();
             var orchestrator = scope.ServiceProvider.GetRequiredService<AgentRunOrchestrator>();
@@ -1080,17 +1081,21 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     }
 
     /// <summary>
-    /// The run persona for one dispatch: the delegated step's ASSIGNED roster persona when there is one, else
-    /// the global per-mode resolution every ordinary launch takes.
-    /// Two narrowings, both mirroring <c>StepPersonaResolver</c> so the two seams agree. The id must still be on
-    /// the CURRENT roster for the current operating mode — a plan outlives the setting that produced it (a
-    /// replan, a resume, a roster the user has since edited), and an id the user has withdrawn is not this
-    /// run's business even if it resolves. And it must still resolve to a persona: one deleted between plan and
-    /// dispatch must not reach a prompt as a blank system message.
-    /// NEVER throws for the override's sake: every arm ends at the per-mode resolution, which is
-    /// exactly the pre-fix behaviour. Ids and counts only in the logs — a persona NAME is user-named content.
+    /// The run persona for one dispatch: a delegated step's ASSIGNED roster persona first, then the job's own
+    /// user-authored pin, then the global per-mode resolution every ordinary launch takes.
+    /// <para>
+    /// Only the DELEGATED id is roster-gated, and it is gated twice, mirroring <c>StepPersonaResolver</c> so the
+    /// two seams agree. It must still be on the CURRENT roster for the current operating mode — a plan outlives
+    /// the setting that produced it (a replan, a resume, a roster the user has since edited) — and it must still
+    /// resolve, so one deleted between plan and dispatch cannot reach a prompt as a blank system message. The
+    /// job's pin gets neither gate: the roster is empty by default, so gating it there would ignore every choice
+    /// the editor offers.
+    /// </para>
+    /// NEVER throws for a pin's sake: every arm ends at the per-mode resolution. Ids and counts only in the
+    /// logs — a persona NAME is user-named content.
     /// </summary>
-    private async Task<Persona> ResolveRunPersonaAsync(Guid? personaIdOverride, AppSettings settings)
+    private async Task<Persona> ResolveRunPersonaAsync(
+        Guid? personaIdOverride, Guid? pinnedPersonaId, AppSettings settings)
     {
         var mode = settings.UserOperatingMode ?? UserOperatingMode.Personal;
         if (personaIdOverride is { } id && id != Guid.Empty)
@@ -1123,10 +1128,12 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             }
         }
 
-        return await _personaService.ResolveActiveAsync(WindowMode.Assistant, mode).ConfigureAwait(false);
+        return await RunPinResolver.ResolvePersonaAsync(_personaService, pinnedPersonaId, mode, _logger)
+            .ConfigureAwait(false);
     }
 
-    private async Task<AiProvider?> ResolveProviderAsync(Guid? explicitProviderId, Persona persona)
+    private async Task<AiProvider?> ResolveProviderAsync(
+        Guid? explicitProviderId, Persona persona, ReasoningEffort? jobEffort = null)
     {
         AiProvider? provider = null;
         if (explicitProviderId.HasValue)
@@ -1137,12 +1144,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         if (provider is null)
             return null;
 
-        if (persona.ReasoningEffort.HasValue)
-        {
-            provider = provider.Clone();
-            provider.ReasoningEffort = persona.ReasoningEffort.Value;
-        }
-        return provider;
+        return RunPinResolver.ApplyEffort(provider, jobEffort, persona.ReasoningEffort);
     }
 
     private void OnChatsChanged(object? sender, AssistantChatChangedEventArgs e)

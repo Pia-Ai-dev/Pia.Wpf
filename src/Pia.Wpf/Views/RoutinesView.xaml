@@ -342,6 +342,22 @@
                          Style="{StaticResource PiaDetailValueStyle}"
                          Visibility="{Binding SelectedJob.HasGrantedTools, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
+              <TextBlock Text="{loc:Str Routines_Field_Persona}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"
+                         Visibility="{Binding SelectedJob.HasPersonaPin, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+              <TextBlock Text="{Binding SelectedJob.PersonaLabel}"
+                         Style="{StaticResource PiaDetailValueStyle}"
+                         Visibility="{Binding SelectedJob.HasPersonaPin, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
+              <TextBlock Text="{loc:Str Routines_Field_Effort}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"
+                         Visibility="{Binding SelectedJob.HasEffortPin, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+              <TextBlock Text="{Binding SelectedJob.EffortLabel}"
+                         Style="{StaticResource PiaDetailValueStyle}"
+                         Visibility="{Binding SelectedJob.HasEffortPin, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
               <TextBlock Text="{loc:Str Routines_Detail_RecentRuns}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"
                          Margin="0,18,0,6"/>
@@ -516,6 +532,48 @@
                         HorizontalAlignment="Left" Width="240"
                         AutomationProperties.AutomationId="Routines_Field_Provider"
                         Margin="0,2,0,8"/>
+
+              <!-- SelectedItem, not SelectedValue: both lists lead with a NULL-valued row, and WPF reads a null
+                   SelectedValue as no selection at all, so that row could never be shown as chosen. -->
+              <TextBlock Text="{loc:Str Routines_Field_Persona}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <ComboBox ItemsSource="{Binding PersonaChoices}"
+                        SelectedItem="{Binding EditPersona, Mode=TwoWay}"
+                        DisplayMemberPath="Name"
+                        IsEnabled="{Binding EditorPinsEnabled}"
+                        HorizontalAlignment="Left" Width="240"
+                        AutomationProperties.AutomationId="Routines_Field_Persona"
+                        Margin="0,2,0,4"/>
+              <TextBlock Text="{loc:Str Routines_Field_Persona_Hint}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"
+                         Margin="0,0,0,8"/>
+
+              <TextBlock Text="{loc:Str Routines_Field_Effort}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <ComboBox ItemsSource="{Binding EffortChoices}"
+                        SelectedItem="{Binding EditEffort, Mode=TwoWay}"
+                        DisplayMemberPath="Label"
+                        IsEnabled="{Binding EditorPinsEnabled}"
+                        HorizontalAlignment="Left" Width="240"
+                        AutomationProperties.AutomationId="Routines_Field_Effort"
+                        Margin="0,2,0,4"/>
+              <TextBlock Text="{loc:Str Routines_Field_Effort_Hint}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"
+                         Margin="0,0,0,4"/>
+
+              <!-- Disabled pickers with no explanation read as a bug, so the same banner says whose device owns them. -->
+              <Border Margin="0,4,0,8"
+                      Padding="12,8"
+                      CornerRadius="6"
+                      Background="{DynamicResource WarnSoftBrush}"
+                      Visibility="{Binding EditorPinsEnabled, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                <TextBlock Text="{loc:Str Routines_NotOwnedHere}"
+                           FontSize="12"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextSubtleBrush}"/>
+              </Border>
 
               <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_GrantedTools}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>

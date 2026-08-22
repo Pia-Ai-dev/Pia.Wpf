@@ -112,18 +112,14 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             var settings = await _settingsService.GetSettingsAsync();
             var tokenizationEnabled = settings.Privacy.TokenizationEnabled;
 
-            var persona = await _personaService.ResolveActiveAsync(
-                WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal);
+            var persona = await RunPinResolver.ResolvePersonaAsync(
+                _personaService, request.PersonaId,
+                settings.UserOperatingMode ?? UserOperatingMode.Personal, _logger);
 
-            // The job's provider takes precedence over the persona's preferred provider
-            // (the caller already resolved which provider this job runs on); the persona
-            // still contributes the reasoning-effort override, mirroring the interactive path.
-            var provider = request.Provider;
-            if (persona.ReasoningEffort.HasValue)
-            {
-                provider = provider.Clone();
-                provider.ReasoningEffort = persona.ReasoningEffort.Value;
-            }
+            // The caller already resolved which provider this turn runs on, so a pinned persona's preferred
+            // provider does not re-enter here; only the effort ladder does, and the request's own pin wins it.
+            var provider = RunPinResolver.ApplyEffort(
+                request.Provider, request.ReasoningEffort, persona.ReasoningEffort);
 
             // Headless path — no user to click the chip, so never eligible.
             var turnSetup = _promptComposer.PrepareTurn(persona, provider, [], tokenizationEnabled,
