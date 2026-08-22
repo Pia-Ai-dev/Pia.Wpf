@@ -19,7 +19,7 @@
 
 .EXAMPLE
   ./scripts/Invoke-MeetingReplay.ps1 -AudioPath 'artifacts/meeting_recording/x.mp4' -RosterSize 10 `
-      -RunName workshop-head
+      -RunName workshop-head -DumpPath artifacts/wav/workshop.wav
 #>
 [CmdletBinding()]
 param(
@@ -28,6 +28,9 @@ param(
     [Parameter(Mandatory)][int]$RosterSize,
     [Parameter(Mandatory)][string]$RunName,
     [string]$AppDir,
+    # Tees the replayed stream to a 16 kHz mono WAV — the diarization bench's input. Passed here rather
+    # than left in the environment so a stale variable cannot silently dump a later run.
+    [string]$DumpPath,
     [string]$WorkRoot = (Join-Path ([System.IO.Path]::GetTempPath()) 'pia-meeting-replay'),
     # Grace period after the recording plays out, for the transcription queue to drain.
     [int]$DrainSeconds = 180,
@@ -67,11 +70,20 @@ $env:PIA_DATA_DIR = $roaming
 $env:PIA_LOCAL_DATA_DIR = $local
 $env:PIA_DEBUG_MEETING_ATTENDEE_AUDIO_FILE = $audio
 $env:PIA_DEBUG_MEETING_ATTENDEE_ROSTER = $roster
+if ($DumpPath) {
+    $dumpDir = Split-Path -Parent $DumpPath
+    if ($dumpDir -and -not (Test-Path -LiteralPath $dumpDir)) { New-Item -ItemType Directory -Path $dumpDir -Force | Out-Null }
+    $env:PIA_DEBUG_MEETING_ATTENDEE_AUDIO_DUMP = $DumpPath
+}
+else {
+    Remove-Item Env:\PIA_DEBUG_MEETING_ATTENDEE_AUDIO_DUMP -ErrorAction SilentlyContinue
+}
 
 Write-Host "Replay '$RunName'"
 Write-Host "  audio   : $audio"
 Write-Host "  roster  : $RosterSize participants"
 Write-Host "  profile : $runDir"
+if ($DumpPath) { Write-Host "  dump    : $DumpPath" }
 
 $proc = Start-Process -FilePath $exe -WorkingDirectory $AppDir -PassThru
 Write-Host "  pid     : $($proc.Id)"
@@ -104,6 +116,20 @@ function Get-MainWindow([int]$processId, [int]$timeoutSeconds) {
         Start-Sleep -Milliseconds 500
     }
     throw 'Timed out waiting for the main window'
+}
+
+function Get-RenderedSpeakerLabels([System.Windows.Automation.AutomationElement]$root) {
+    # Bubble labels render as Text elements; the ItemsControl does not virtualize, so all of them are
+    # realized and reachable. Renamed speakers are collected too, they just do not match the pattern.
+    $condition = [System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+        [System.Windows.Automation.ControlType]::Text)
+    $labels = [System.Collections.Generic.List[string]]::new()
+    foreach ($e in $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)) {
+        $name = $e.Current.Name
+        if ($name -match '^Speaker \d+$') { $labels.Add($name) }
+    }
+    return $labels
 }
 
 function Invoke-Element([System.Windows.Automation.AutomationElement]$element) {
@@ -155,6 +181,23 @@ try {
     Invoke-Element (Wait-Element $window 'MeetingAttendee_Stop' 30)
     Start-Sleep -Seconds 10
     Write-Host '  stopped'
+
+    # The metric reads service-side labels out of the log; this is the only thing that sees the
+    # renumbered ones the user actually reads.
+    $rendered = Get-RenderedSpeakerLabels $window
+    $labelPath = Join-Path $runDir 'rendered-labels.txt'
+    $rendered | Set-Content -LiteralPath $labelPath -Encoding utf8NoBOM
+    $numbers = @($rendered | Select-Object -Unique | ForEach-Object { [int]($_ -replace '\D', '') } | Sort-Object)
+    Write-Host "  rendered: $($rendered.Count) labelled bubbles, $($numbers.Count) distinct -> $labelPath"
+    if ($numbers.Count -eq 0) {
+        Write-Warning 'LABEL CHECK: no rendered speaker labels found (diarization off, or the tree walk missed them)'
+    }
+    elseif (Compare-Object $numbers @(1..$numbers.Count)) {
+        Write-Warning "LABEL CHECK FAILED: expected Speaker 1..$($numbers.Count), got $($numbers -join ', ')"
+    }
+    else {
+        Write-Host "  LABEL CHECK: pass (Speaker 1..$($numbers.Count), roster $RosterSize)"
+    }
 } finally {
     if (-not $proc.HasExited) {
         $proc.CloseMainWindow() | Out-Null

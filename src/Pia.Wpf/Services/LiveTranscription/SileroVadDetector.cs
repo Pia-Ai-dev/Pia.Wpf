@@ -22,8 +22,11 @@ namespace Pia.Services.LiveTranscription;
 /// surface without touching the engine.
 ///
 /// Stateful w.r.t. the speech segment (open/close hysteresis, preroll). Emits speech
-/// segments as <see cref="float"/> arrays via <see cref="OnSegment"/>.
+/// segments via <see cref="OnSegment"/>.
 /// </summary>
+/// <summary>A closed speech segment plus where it starts in the capture stream, in samples.</summary>
+public readonly record struct VadSegment(float[] Samples, long StartSample);
+
 public sealed class SileroVadDetector : IDisposable
 {
     private const int WindowSize = 512;          // 32 ms at 16 kHz
@@ -56,6 +59,7 @@ public sealed class SileroVadDetector : IDisposable
     // Currently-accumulating speech segment.
     private List<float>? _segment;
     private int _silentRunWindows;
+    private long _segmentStartSample;
 
     // Diagnostics — sampled every LogEveryNWindows windows.
     private long _windowsProcessed;
@@ -63,7 +67,7 @@ public sealed class SileroVadDetector : IDisposable
     private float _maxWindowRmsInBatch;
     private float _maxWindowPeakInBatch;
 
-    public event Action<float[]>? OnSegment;
+    public event Action<VadSegment>? OnSegment;
 
     /// <summary>Fires once when a speech segment opens (transitions from silence to speech).</summary>
     public event Action? OnSpeechStarted;
@@ -161,6 +165,9 @@ public sealed class SileroVadDetector : IDisposable
             if (isSpeech)
             {
                 _segment = new List<float>(MaxSegmentSamples / 2);
+                // Windows are contiguous and the preroll holds exactly the ones just before this
+                // one, so the segment's stream position is exact rather than estimated.
+                _segmentStartSample = (_windowsProcessed - 1 - _preroll.Count) * (long)WindowSize;
                 foreach (var pre in _preroll)
                     _segment.AddRange(pre);
                 _segment.AddRange(window);
@@ -242,7 +249,7 @@ public sealed class SileroVadDetector : IDisposable
         if (samples.Count >= MinSegmentSamples)
         {
             var arr = samples.ToArray();
-            try { OnSegment?.Invoke(arr); }
+            try { OnSegment?.Invoke(new VadSegment(arr, _segmentStartSample)); }
             catch (Exception ex) { _logger.LogError(ex, "VAD OnSegment subscriber threw"); }
         }
     }

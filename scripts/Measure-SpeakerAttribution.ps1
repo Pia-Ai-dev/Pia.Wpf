@@ -26,7 +26,10 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][string]$LogPath,
+    # An app replay's log. Mutually exclusive with -SegmentsPath.
+    [string]$LogPath,
+    # A bench run's segments.jsonl. Already carries exact stream positions, so nothing is fitted.
+    [string]$SegmentsPath,
     [Parameter(Mandatory)][string]$ReferencePath,
     # Which replay in the log to score. -1 is the last.
     [int]$RunIndex = -1,
@@ -41,124 +44,164 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+if ($LogPath -and $SegmentsPath) { throw 'Pass -LogPath or -SegmentsPath, not both' }
+if (-not $LogPath -and -not $SegmentsPath) { throw 'Pass -LogPath (an app replay) or -SegmentsPath (a bench run)' }
+
 $reference = Get-Content -LiteralPath $ReferencePath -Raw | ConvertFrom-Json
 $names = if ($NameMapPath) { (Get-Content -LiteralPath $NameMapPath -Raw | ConvertFrom-Json).names } else { $null }
 
-# ---- Parse the log ------------------------------------------------------------------------------
+# ---- Build the segment list ---------------------------------------------------------------------
 
-$lines = [System.IO.File]::ReadAllLines($LogPath)
-$starts = @()
-for ($i = 0; $i -lt $lines.Length; $i++) {
-    if ($lines[$i] -match 'Debug file audio source playing ') { $starts += $i }
+if ($SegmentsPath) {
+    # A bench run knows every segment's stream position, so there is nothing to stitch and nothing to
+    # align. It has no transcription either, so no segment is excluded for producing empty text.
+    $t0 = $null; $tEnd = $null
+    $queued = @(); $engineStarts = @(); $passes = @(); $corrections = @()
+    $appliedTotal = 0; $unjournaledTotal = 0
+    $segments = [System.Collections.Generic.List[object]]::new()
+    $labelSets = [System.Collections.Generic.List[string[]]]::new()
+    $index = 0
+    foreach ($line in [System.IO.File]::ReadAllLines($SegmentsPath)) {
+        if (-not $line.Trim()) { continue }
+        $row = $line | ConvertFrom-Json
+        $segments.Add(@{
+            Index    = $index
+            SegId    = $index
+            Label    = $row.label
+            Final    = $row.finalLabel
+            Samples  = [int][Math]::Round([double]$row.durationSeconds * 16000)
+            Duration = [double]$row.durationSeconds
+            Start    = [double]$row.startSeconds
+            Closed   = [double]$row.startSeconds + [double]$row.durationSeconds
+            Outcome  = 'text'
+        })
+        $index++
+    }
+    $labelSets.Add([string[]]@($segments | ForEach-Object { $_.Final } | Where-Object { $_ } | Sort-Object -Unique))
 }
-if ($starts.Count -eq 0) { throw "No replay found in $LogPath (no 'Debug file audio source playing')" }
-$from = if ($RunIndex -lt 0) { $starts[$starts.Count + $RunIndex] } else { $starts[$RunIndex] }
-$to = $lines.Length - 1
-foreach ($s in $starts) { if ($s -gt $from) { $to = $s - 1; break } }
+else {
+    # ---- Parse the log ------------------------------------------------------------------------------
 
-function Get-Stamp([string]$line) {
-    $tab = $line.IndexOf("`t")
-    if ($tab -lt 1) { return $null }
-    [datetimeoffset]::Parse($line.Substring(0, $tab), [cultureinfo]::InvariantCulture)
-}
+    $lines = [System.IO.File]::ReadAllLines($LogPath)
+    $starts = @()
+    for ($i = 0; $i -lt $lines.Length; $i++) {
+        if ($lines[$i] -match 'Debug file audio source playing ') { $starts += $i }
+    }
+    if ($starts.Count -eq 0) { throw "No replay found in $LogPath (no 'Debug file audio source playing')" }
+    $from = if ($RunIndex -lt 0) { $starts[$starts.Count + $RunIndex] } else { $starts[$RunIndex] }
+    $to = $lines.Length - 1
+    foreach ($s in $starts) { if ($s -gt $from) { $to = $s - 1; break } }
 
-$t0 = Get-Stamp $lines[$from]
-$tEnd = $null
-$queued = [System.Collections.Generic.List[object]]::new()   # emitted VAD segments, in order
-$engineStarts = [System.Collections.Generic.List[object]]::new()
-$identified = [System.Collections.Generic.List[object]]::new()
-$outcomes = [System.Collections.Generic.List[string]]::new() # 'text' | 'empty', in engine order
-$passes = [System.Collections.Generic.List[object]]::new()
-$pendingBatches = [System.Collections.Generic.Queue[object]]::new()
-$labelSets = [System.Collections.Generic.List[string[]]]::new()
-$appliedTotal = 0
-$unjournaledTotal = 0
-$corrections = [System.Collections.Generic.List[object]]::new() # (segId, label, applied)
+    function Get-Stamp([string]$line) {
+        $tab = $line.IndexOf("`t")
+        if ($tab -lt 1) { return $null }
+        [datetimeoffset]::Parse($line.Substring(0, $tab), [cultureinfo]::InvariantCulture)
+    }
 
-for ($i = $from; $i -le $to; $i++) {
-    $line = $lines[$i]
-    if ($line -match 'Debug file audio source finished playing') { $tEnd = Get-Stamp $line; continue }
-    if ($line -match 'Segment queued for \w+: (\d+) samples') {
-        $queued.Add(@{ Stamp = Get-Stamp $line; Samples = [int]$Matches[1] }); continue
-    }
-    if ($line -match 'Engine start: \w+ (\d+) samples') {
-        $engineStarts.Add(@{ Stamp = Get-Stamp $line; Samples = [int]$Matches[1] }); continue
-    }
-    if ($line -match 'Segment identified: seg=(\d+) label=(.*) samples=(\d+)$') {
-        # The structured logger renders a null label as the literal "(null)" — an unplaceable segment,
-        # not a speaker called that.
-        $seen = if ($Matches[2] -eq '(null)') { $null } else { $Matches[2] }
-        $identified.Add(@{ SegId = [long]$Matches[1]; Label = $seen; Samples = [int]$Matches[3] }); continue
-    }
-    if ($line -match 'Engine done: \w+ \d+ms') { $outcomes.Add('text'); continue }
-    if ($line -match 'Engine produced empty result') { $outcomes.Add('empty'); continue }
-    if ($line -match 'Adaptive pass: (\d+)/(\d+) segments .* (\d+) clusters cut=([\d.]+) expected=(\d+) changed=(\d+)') {
-        $passes.Add(@{
-            Eligible = [int]$Matches[1]; Total = [int]$Matches[2]; Clusters = [int]$Matches[3]
-            Cut = [double]$Matches[4]; Expected = [int]$Matches[5]; Changed = [int]$Matches[6]
-        }); continue
-    }
-    if ($line -match 'Adaptive pass labels: \[(.*)\]$') {
-        $labelSets.Add(@(($Matches[1] -split ', ') | Where-Object { $_ })); continue
-    }
-    if ($line -match 'Adaptive pass reassigned: \[(.*)\]$') {
-        $batch = @()
-        foreach ($pair in ($Matches[1] -split ', ')) {
-            $eq = $pair.IndexOf('=')
-            if ($eq -lt 1) { continue }
-            # A bare "123=" is the pass clearing a label it can no longer stand behind, not an empty one.
-            $label = $pair.Substring($eq + 1)
-            $batch += @{ SegId = [long]$pair.Substring(0, $eq); Label = if ($label) { $label } else { $null } }
+    $t0 = Get-Stamp $lines[$from]
+    $tEnd = $null
+    $queued = [System.Collections.Generic.List[object]]::new()   # emitted VAD segments, in order
+    $engineStarts = [System.Collections.Generic.List[object]]::new()
+    $identified = [System.Collections.Generic.List[object]]::new()
+    $outcomes = [System.Collections.Generic.List[string]]::new() # 'text' | 'empty', in engine order
+    $passes = [System.Collections.Generic.List[object]]::new()
+    $pendingBatches = [System.Collections.Generic.Queue[object]]::new()
+    $labelSets = [System.Collections.Generic.List[string[]]]::new()
+    $appliedTotal = 0
+    $unjournaledTotal = 0
+    $corrections = [System.Collections.Generic.List[object]]::new() # (segId, label, applied)
+
+    for ($i = $from; $i -le $to; $i++) {
+        $line = $lines[$i]
+        if ($line -match 'Debug file audio source finished playing') { $tEnd = Get-Stamp $line; continue }
+        if ($line -match 'Segment queued for \w+: (\d+) samples') {
+            $queued.Add(@{ Stamp = Get-Stamp $line; Samples = [int]$Matches[1] }); continue
         }
-        $pendingBatches.Enqueue($batch); continue
-    }
-    if ($line -match 'Reassignments: applied=(\d+) unjournaled=\[(.*)\]$') {
-        $appliedTotal += [int]$Matches[1]
-        $lost = @(($Matches[2] -split ',') | Where-Object { $_ } | ForEach-Object { [long]$_ })
-        $unjournaledTotal += $lost.Count
-        if ($pendingBatches.Count -gt 0) {
-            foreach ($c in $pendingBatches.Dequeue()) {
-                $corrections.Add(@{ SegId = $c.SegId; Label = $c.Label; Applied = ($lost -notcontains $c.SegId) })
+        if ($line -match 'Engine start: \w+ (\d+) samples') {
+            $engineStarts.Add(@{ Stamp = Get-Stamp $line; Samples = [int]$Matches[1] }); continue
+        }
+        if ($line -match 'Segment identified: seg=(\d+) label=(.*) samples=(\d+)(?: start=([-\d.]+))?$') {
+            # The structured logger renders a null label as the literal "(null)" — an unplaceable segment,
+            # not a speaker called that.
+            $seen = if ($Matches[2] -eq '(null)') { $null } else { $Matches[2] }
+            # start= is absent in logs written before the VAD reported stream positions; those still fit.
+            $at = if ($null -ne $Matches[4]) { [double]$Matches[4] } else { $null }
+            $identified.Add(@{
+                SegId = [long]$Matches[1]; Label = $seen; Samples = [int]$Matches[3]; Start = $at
+            }); continue
+        }
+        if ($line -match 'Engine done: \w+ \d+ms') { $outcomes.Add('text'); continue }
+        if ($line -match 'Engine produced empty result') { $outcomes.Add('empty'); continue }
+        if ($line -match 'Adaptive pass: (\d+)/(\d+) segments .* (\d+) clusters cut=([\d.]+) expected=(\d+) changed=(\d+)') {
+            $passes.Add(@{
+                Eligible = [int]$Matches[1]; Total = [int]$Matches[2]; Clusters = [int]$Matches[3]
+                Cut = [double]$Matches[4]; Expected = [int]$Matches[5]; Changed = [int]$Matches[6]
+            }); continue
+        }
+        if ($line -match 'Adaptive pass labels: \[(.*)\]$') {
+            $labelSets.Add(@(($Matches[1] -split ', ') | Where-Object { $_ })); continue
+        }
+        if ($line -match 'Adaptive pass reassigned: \[(.*)\]$') {
+            $batch = @()
+            foreach ($pair in ($Matches[1] -split ', ')) {
+                $eq = $pair.IndexOf('=')
+                if ($eq -lt 1) { continue }
+                # A bare "123=" is the pass clearing a label it can no longer stand behind, not an empty one.
+                $label = $pair.Substring($eq + 1)
+                $batch += @{ SegId = [long]$pair.Substring(0, $eq); Label = if ($label) { $label } else { $null } }
             }
+            $pendingBatches.Enqueue($batch); continue
         }
-        continue
+        if ($line -match 'Reassignments: applied=(\d+) unjournaled=\[(.*)\]$') {
+            $appliedTotal += [int]$Matches[1]
+            $lost = @(($Matches[2] -split ',') | Where-Object { $_ } | ForEach-Object { [long]$_ })
+            $unjournaledTotal += $lost.Count
+            if ($pendingBatches.Count -gt 0) {
+                foreach ($c in $pendingBatches.Dequeue()) {
+                    $corrections.Add(@{ SegId = $c.SegId; Label = $c.Label; Applied = ($lost -notcontains $c.SegId) })
+                }
+            }
+            continue
+        }
     }
-}
 
-if (-not $t0) { throw 'Could not read the replay start timestamp' }
-if ($queued.Count -ne $engineStarts.Count) {
-    Write-Warning "queued=$($queued.Count) engineStarts=$($engineStarts.Count) — the run was cut short mid-queue"
-}
-
-# ---- Stitch each emitted segment to its identity and outcome ------------------------------------
-# The engine's segment loop is serial, so VAD-close order == engine order == identify order.
-
-$segments = [System.Collections.Generic.List[object]]::new()
-$idIdx = 0
-for ($i = 0; $i -lt $engineStarts.Count; $i++) {
-    $samples = $engineStarts[$i].Samples
-    $label = $null; $segId = $null
-    if ($idIdx -lt $identified.Count -and $identified[$idIdx].Samples -eq $samples) {
-        $label = $identified[$idIdx].Label; $segId = $identified[$idIdx].SegId; $idIdx++
+    if (-not $t0) { throw 'Could not read the replay start timestamp' }
+    if ($queued.Count -ne $engineStarts.Count) {
+        Write-Warning "queued=$($queued.Count) engineStarts=$($engineStarts.Count) — the run was cut short mid-queue"
     }
-    $stamp = if ($i -lt $queued.Count) { $queued[$i].Stamp } else { $engineStarts[$i].Stamp }
-    $segments.Add(@{
-        Index    = $i
-        SegId    = $segId
-        Label    = $label
-        Final    = $label
-        Samples  = $samples
-        Duration = $samples / 16000.0
-        Closed   = ($stamp - $t0).TotalSeconds
-        Outcome  = if ($i -lt $outcomes.Count) { $outcomes[$i] } else { 'pending' }
-    })
-}
 
-$bySegId = @{}
-foreach ($s in $segments) { if ($null -ne $s.SegId) { $bySegId[$s.SegId] = $s } }
-foreach ($c in $corrections) {
-    if (-not $c.Applied) { continue }
-    if ($bySegId.ContainsKey($c.SegId)) { $bySegId[$c.SegId].Final = $c.Label }
+    # ---- Stitch each emitted segment to its identity and outcome ------------------------------------
+    # The engine's segment loop is serial, so VAD-close order == engine order == identify order.
+
+    $segments = [System.Collections.Generic.List[object]]::new()
+    $idIdx = 0
+    for ($i = 0; $i -lt $engineStarts.Count; $i++) {
+        $samples = $engineStarts[$i].Samples
+        $label = $null; $segId = $null; $start = $null
+        if ($idIdx -lt $identified.Count -and $identified[$idIdx].Samples -eq $samples) {
+            $label = $identified[$idIdx].Label; $segId = $identified[$idIdx].SegId
+            $start = $identified[$idIdx].Start; $idIdx++
+        }
+        $stamp = if ($i -lt $queued.Count) { $queued[$i].Stamp } else { $engineStarts[$i].Stamp }
+        $segments.Add(@{
+            Index    = $i
+            SegId    = $segId
+            Label    = $label
+            Final    = $label
+            Samples  = $samples
+            Duration = $samples / 16000.0
+            Start    = $start
+            Closed   = ($stamp - $t0).TotalSeconds
+            Outcome  = if ($i -lt $outcomes.Count) { $outcomes[$i] } else { 'pending' }
+        })
+    }
+
+    $bySegId = @{}
+    foreach ($s in $segments) { if ($null -ne $s.SegId) { $bySegId[$s.SegId] = $s } }
+    foreach ($c in $corrections) {
+        if (-not $c.Applied) { continue }
+        if ($bySegId.ContainsKey($c.SegId)) { $bySegId[$c.SegId].Final = $c.Label }
+    }
 }
 
 # ---- Align replay wall-clock to recording time --------------------------------------------------
@@ -181,6 +224,26 @@ function Get-RefMask([object]$reference, [double]$step) {
 $step = $OffsetStepSeconds
 $refMask = Get-RefMask $reference $step
 
+# Exact positions retire the fit entirely. The mapping existed only because the log said when a
+# segment was PROCESSED, never where in the stream it was; a run that reports its own offsets needs
+# no rate, no offset and no residual. -Offset still forces the old path, for comparing against a log
+# written before the VAD reported them.
+$pinned = -not [double]::IsNaN($Offset)
+$useExact = ($segments.Count -gt 0) -and (-not $pinned) -and
+    -not @($segments | Where-Object { $null -eq $_.Start }).Count
+
+function Get-ExactMaskScore([object[]]$segments, [bool[]]$refMask, [double]$step) {
+    $score = 0
+    foreach ($s in $segments) {
+        $a = [int][Math]::Floor($s.Start / $step)
+        $b = [int][Math]::Ceiling(($s.Start + $s.Duration) / $step)
+        for ($k = [Math]::Max($a, 0); $k -lt [Math]::Min($b, $refMask.Length); $k++) {
+            if ($refMask[$k]) { $score++ } else { $score-- }
+        }
+    }
+    $score
+}
+
 # The two anchors give the average rate, but Task.Delay jitter is not uniform, so two runs of the
 # same recording end up on rates ~1.5 % apart — which over 50 minutes is tens of seconds of drift, far
 # more than any offset can absorb. Fit rate and offset together against the reference's own speech
@@ -202,26 +265,33 @@ function Get-MaskScore([object[]]$segments, [bool[]]$refMask, [double]$rate, [do
 }
 
 $anchorRate = $rate
-$best = @{ Offset = 0.0; Rate = $anchorRate; Score = [int]::MinValue }
-# Coarse joint pass, then refine the offset at full resolution around the winner.
-foreach ($m in -10..10) {
-    $candidateRate = $anchorRate * (1.0 + $m * 0.001)
-    for ($o = -24; $o -le 24; $o++) {
-        $candidateOffset = $o * 0.25
-        $s = Get-MaskScore $segments $refMask $candidateRate $candidateOffset $step
-        if ($s -gt $best.Score) { $best = @{ Offset = $candidateOffset; Rate = $candidateRate; Score = $s } }
+$fitted = 0.0
+if ($useExact) {
+    $rate = 1.0
+    $offset = 0.0
+    $score = Get-ExactMaskScore $segments $refMask $step
+}
+else {
+    $best = @{ Offset = 0.0; Rate = $anchorRate; Score = [int]::MinValue }
+    # Coarse joint pass, then refine the offset at full resolution around the winner.
+    foreach ($m in -10..10) {
+        $candidateRate = $anchorRate * (1.0 + $m * 0.001)
+        for ($o = -24; $o -le 24; $o++) {
+            $candidateOffset = $o * 0.25
+            $s = Get-MaskScore $segments $refMask $candidateRate $candidateOffset $step
+            if ($s -gt $best.Score) { $best = @{ Offset = $candidateOffset; Rate = $candidateRate; Score = $s } }
+        }
     }
+    for ($o = -10; $o -le 10; $o++) {
+        $candidateOffset = $best.Offset + $o * $step
+        $s = Get-MaskScore $segments $refMask $best.Rate $candidateOffset $step
+        if ($s -gt $best.Score) { $best.Offset = $candidateOffset; $best.Score = $s }
+    }
+    $rate = $best.Rate
+    $fitted = $best.Offset
+    $offset = if ($pinned) { $Offset } else { $fitted }
+    $score = if ($pinned) { Get-MaskScore $segments $refMask $rate $offset $step } else { $best.Score }
 }
-for ($o = -10; $o -le 10; $o++) {
-    $candidateOffset = $best.Offset + $o * $step
-    $s = Get-MaskScore $segments $refMask $best.Rate $candidateOffset $step
-    if ($s -gt $best.Score) { $best.Offset = $candidateOffset; $best.Score = $s }
-}
-$rate = $best.Rate
-$fitted = $best.Offset
-$pinned = -not [double]::IsNaN($Offset)
-$offset = if ($pinned) { $Offset } else { $fitted }
-$score = if ($pinned) { Get-MaskScore $segments $refMask $rate $offset $step } else { $best.Score }
 $speechSamples = 0
 foreach ($s in $segments) { $speechSamples += [int][Math]::Ceiling($s.Duration / $step) }
 $agreement = if ($speechSamples -gt 0) { ($score + $speechSamples) / (2.0 * $speechSamples) } else { 0 }
@@ -257,7 +327,7 @@ foreach ($s in $segments) {
     if (-not $s.Final) { $unlabelled++; continue }
     [void]$finalLabels.Add($s.Final)
 
-    $mid = $s.Closed * $rate + $offset - $s.Duration / 2
+    $mid = if ($useExact) { $s.Start + $s.Duration / 2 } else { $s.Closed * $rate + $offset - $s.Duration / 2 }
     if (Test-Invalid $reference $mid) { $unusable++; $unusableSeconds += $s.Duration; continue }
     $who = Get-SpeakersAt $reference $mid
     if ($who.Count -eq 0) { $noRef++; $noRefSeconds += $s.Duration; continue }
@@ -292,12 +362,22 @@ $lastSet = if ($labelSets.Count -gt 0) { $labelSets[$labelSets.Count - 1] } else
 $expected = @($passes | ForEach-Object { $_.Expected } | Sort-Object -Unique)
 
 Write-Host ''
-Write-Host "Replay  : $($reference.layout)  ($LogPath, run $(if ($RunIndex -lt 0) { 'last' } else { $RunIndex }))"
-Write-Host ("Pacing  : {0:N1} s of audio in {1} s wall clock → anchor rate {2:N4}x, fitted {3:N4}x{4}" -f `
-    $refDuration, $(if ($elapsed) { [Math]::Round($elapsed, 1) } else { 'n/a' }), $anchorRate, $rate,
-    $(if ($tEnd) { '' } else { '  (no EOF marker — anchor rate assumed 1.0)' }))
-Write-Host ("Align   : offset {0:N2} s{1}, speech-mask agreement {2:P1}" -f `
-    $offset, $(if ($pinned) { " (PINNED; best fit was $([Math]::Round($fitted, 2)) s)" } else { '' }), $agreement)
+$source = if ($SegmentsPath) { "$SegmentsPath (bench)" } else { "$LogPath, run $(if ($RunIndex -lt 0) { 'last' } else { $RunIndex })" }
+Write-Host "Replay  : $($reference.layout)  ($source)"
+if ($elapsed) {
+    Write-Host ("Pacing  : {0:N1} s of audio in {1:N1} s wall clock → anchor rate {2:N4}x, fitted {3:N4}x" -f `
+        $refDuration, $elapsed, $anchorRate, $rate)
+}
+else {
+    Write-Host ("Pacing  : {0:N1} s of audio, no wall clock in this input" -f $refDuration)
+}
+if ($useExact) {
+    Write-Host ("Align   : exact — every segment reported its own stream position; speech-mask agreement {0:P1}" -f $agreement)
+}
+else {
+    Write-Host ("Align   : offset {0:N2} s{1}, speech-mask agreement {2:P1}" -f `
+        $offset, $(if ($pinned) { " (PINNED; best fit was $([Math]::Round($fitted, 2)) s)" } else { '' }), $agreement)
+}
 Write-Host ''
 Write-Host "Segments: $($segments.Count) emitted, $(($segments | Where-Object { $_.Outcome -eq 'text' }).Count) transcribed, $(($segments | Where-Object { $null -eq $_.SegId }).Count) below the diarization floor"
 Write-Host "Passes  : $($passes.Count), expected=$($expected -join '/'), clusters $(($passes | ForEach-Object { $_.Clusters }) -join ',')"

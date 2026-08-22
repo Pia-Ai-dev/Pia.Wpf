@@ -30,7 +30,8 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
     // Configurable via the constructor (default 1.5 s = 24000 samples).
     private readonly int _minDiarizationSamples;
 
-    private readonly Channel<float[]> _segmentQueue;
+    private readonly Channel<VadSegment> _segmentQueue;
+    private long _droppedSegments;
     private Task? _readerLoop;
     private Task? _segmentLoop;
     private CancellationTokenSource? _readerCts;
@@ -61,12 +62,14 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
         _vad.OnSpeechStarted += OnVadSpeechStarted;
         _vad.OnSpeechEnded += OnVadSpeechEnded;
 
-        _segmentQueue = Channel.CreateBounded<float[]>(new BoundedChannelOptions(8)
-        {
-            FullMode = BoundedChannelFullMode.DropOldest,
-            SingleReader = true,
-            SingleWriter = true,
-        });
+        _segmentQueue = Channel.CreateBounded<VadSegment>(
+            new BoundedChannelOptions(8)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+                SingleReader = true,
+                SingleWriter = true,
+            },
+            itemDropped: OnSegmentEvicted);
     }
 
     public Task StartAsync(CancellationToken cancellationToken = default)
@@ -109,9 +112,9 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
     {
         try
         {
-            await foreach (var samples in _segmentQueue.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+            await foreach (var segment in _segmentQueue.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
-                await TranscribeSegmentAsync(samples, cancellationToken).ConfigureAwait(false);
+                await TranscribeSegmentAsync(segment, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) { /* expected on shutdown */ }
@@ -121,12 +124,22 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
         }
     }
 
-    private void EnqueueSegmentForTranscription(float[] samples)
+    private void EnqueueSegmentForTranscription(VadSegment segment)
     {
-        if (_segmentQueue.Writer.TryWrite(samples))
-            _logger.LogDebug("Segment queued for {Speaker}: {Samples} samples", _speaker, samples.Length);
-        else
-            _logger.LogWarning("Dropped a segment from {Speaker} pipeline — transcription is falling behind", _speaker);
+        // TryWrite cannot fail under DropOldest — it evicts instead, which OnSegmentEvicted sees.
+        _segmentQueue.Writer.TryWrite(segment);
+        _logger.LogDebug("Segment queued for {Speaker}: {Samples} samples", _speaker, segment.Samples.Length);
+    }
+
+    /// <summary>Speaker identification runs downstream of this queue, so an evicted segment costs the
+    /// diarizer an embedding it can never recover — not just the words.</summary>
+    private void OnSegmentEvicted(VadSegment segment)
+    {
+        var dropped = Interlocked.Increment(ref _droppedSegments);
+        _logger.LogWarning(
+            "Dropped a segment from {Speaker} pipeline — transcription is falling behind "
+            + "(dropped={Dropped}, start={Start:F3}, samples={Samples})",
+            _speaker, dropped, segment.StartSample / 16000.0, segment.Samples.Length);
     }
 
     /// <summary>
@@ -146,8 +159,10 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
 
     public TranscriptSpeaker Speaker => _speaker;
 
-    private async Task TranscribeSegmentAsync(float[] samples, CancellationToken cancellationToken)
+    private async Task TranscribeSegmentAsync(VadSegment segment, CancellationToken cancellationToken)
     {
+        var samples = segment.Samples;
+        var startSeconds = segment.StartSample / 16000.0;
         var sw = System.Diagnostics.Stopwatch.StartNew();
         _logger.LogDebug("Engine start: {Speaker} {Samples} samples", _speaker, samples.Length);
         try
@@ -161,9 +176,11 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
                     var seg = _speakerId.IdentifyOrRegisterSegment(samples, 16000);
                     speakerLabel = seg.Label;
                     segmentId = seg.SegmentId;
+                    // start= lets the fixture score against stream position instead of reconstructing
+                    // it from wall-clock stamps.
                     _logger.SensitiveDebug(
-                        "Segment identified: seg={SegmentId} label={Label} samples={Samples}",
-                        seg.SegmentId, seg.Label, samples.Length);
+                        "Segment identified: seg={SegmentId} label={Label} samples={Samples} start={Start:F3}",
+                        seg.SegmentId, seg.Label, samples.Length, startSeconds);
                 }
                 catch (Exception ex) { _logger.LogWarning(ex, "Speaker identification failed for {Speaker}", _speaker); }
             }
@@ -203,6 +220,12 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
         //    its token — the writer being completed is what stops the loop.
         try { if (_segmentLoop is not null) await _segmentLoop.ConfigureAwait(false); }
         catch { /* swallow on shutdown */ }
+
+        var dropped = Interlocked.Read(ref _droppedSegments);
+        if (dropped > 0)
+            _logger.LogWarning(
+                "Pipeline for {Speaker} dropped {Dropped} segments to transcription backpressure",
+                _speaker, dropped);
 
         _vad.OnSegment -= EnqueueSegmentForTranscription;
         _vad.OnSpeechStarted -= OnVadSpeechStarted;
