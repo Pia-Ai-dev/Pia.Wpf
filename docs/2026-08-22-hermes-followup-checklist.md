@@ -185,6 +185,11 @@ D1 → D2 → D3 → D5               # tour, after the cheaper items land
 
 From the review's recommendation table, no plan doc written. Listed so they are not lost.
 
+**If you pick anything up from here next, take #2 and #3 together.** They are the only two `High`s
+in this table and they are one feature area — failure legibility. #2 names which layer broke; #3 is the
+action the same card offers when naming it isn't enough. Shipped separately, #3 lands on a card that
+still can't say what went wrong.
+
 | Item | Review # | Effort | Value |
 |---|---|---|---|
 | Error layer + recovery actions on the failure card | 2 | M | High |
