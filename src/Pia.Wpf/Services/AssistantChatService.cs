@@ -379,18 +379,41 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         }
     }
 
-    private async Task<IReadOnlyList<SyncAssistantChat>> SearchUnderGateAsync(
+    public async Task<int> CountAsync(
+        string? searchText = null,
+        DateTime? fromDate = null,
+        DateTime? toDate = null,
+        Guid? providerId = null,
+        CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return 0;
+
+            var connection = Connection();
+            using var command = connection.CreateCommand();
+            var whereClause = BuildSearchWhere(command, searchText, fromDate, toDate, providerId);
+            command.CommandText = $"SELECT COUNT(*) FROM AssistantChats {whereClause}";
+            return Convert.ToInt32(await command.ExecuteScalarAsync(ct));
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Binds the shared history filter onto <paramref name="command"/> and returns its WHERE clause, so a
+    /// page query and its total count cannot drift apart.
+    /// </summary>
+    private static string BuildSearchWhere(
+        SqliteCommand command,
         string? searchText,
         DateTime? fromDate,
         DateTime? toDate,
-        Guid? providerId,
-        int offset,
-        int limit,
-        CancellationToken ct)
+        Guid? providerId)
     {
-        var connection = Connection();
-        using var command = connection.CreateCommand();
-
         var conditions = new List<string>();
 
         // Hide message-less chats from the history list. A failed/empty headless turn leaves a
@@ -429,7 +452,22 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             }
         }
 
-        var whereClause = conditions.Count > 0 ? $"WHERE {string.Join(" AND ", conditions)}" : "";
+        return conditions.Count > 0 ? $"WHERE {string.Join(" AND ", conditions)}" : "";
+    }
+
+    private async Task<IReadOnlyList<SyncAssistantChat>> SearchUnderGateAsync(
+        string? searchText,
+        DateTime? fromDate,
+        DateTime? toDate,
+        Guid? providerId,
+        int offset,
+        int limit,
+        CancellationToken ct)
+    {
+        var connection = Connection();
+        using var command = connection.CreateCommand();
+
+        var whereClause = BuildSearchWhere(command, searchText, fromDate, toDate, providerId);
 
         command.CommandText = $"""
             SELECT Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, ExtraJson

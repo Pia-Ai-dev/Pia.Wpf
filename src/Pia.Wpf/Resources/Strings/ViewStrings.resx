@@ -1230,4 +1230,12 @@
   <data name="Flow_PolicyUpdated_Body_Restart" xml:space="preserve"><value>Some of the new settings take effect when you restart Pia. Some options may be locked from here on.</value></data>
   <data name="Restart_ManualRelaunchRequired_Title" xml:space="preserve"><value>Restart Pia</value></data>
   <data name="Restart_ManualRelaunchRequired" xml:space="preserve"><value>Pia could not start itself again. Please open Pia to finish applying your organization's settings.</value></data>
+  <data name="AssistantHistory_Import" xml:space="preserve"><value>Import</value></data>
+  <data name="AssistantHistory_ImportTooltip" xml:space="preserve"><value>Import chats from a Pia archive or an Open WebUI export</value></data>
+  <data name="AssistantHistory_ExportAll" xml:space="preserve"><value>Export all</value></data>
+  <data name="AssistantHistory_ExportAllTooltip" xml:space="preserve"><value>Write every stored chat to a re-importable Pia archive</value></data>
+  <data name="AssistantHistory_ExportArchive" xml:space="preserve"><value>Export as Pia archive</value></data>
+  <data name="AssistantHistory_ImportFormat_Pia" xml:space="preserve"><value>Pia archive</value></data>
+  <data name="AssistantHistory_ImportFormat_OpenWebUi" xml:space="preserve"><value>Open WebUI export</value></data>
+  <data name="AssistantHistory_LoadMore" xml:space="preserve"><value>Load more</value></data>
 </root>

@@ -29,6 +29,8 @@
         <ColumnDefinition Width="*"/>
         <ColumnDefinition Width="Auto"/>
         <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
 
       <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
@@ -55,6 +57,30 @@
       </ui:Button>
 
       <ui:Button Grid.Column="2"
+                 Appearance="Secondary"
+                 Margin="8,0,0,0"
+                 Command="{Binding ImportChatsCommand}"
+                 ToolTip="{loc:Str AssistantHistory_ImportTooltip}"
+                 AutomationProperties.AutomationId="AssistantHistory_Import">
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="ArrowImport24" FontSize="16" Margin="0,0,6,0"/>
+          <TextBlock Text="{loc:Str AssistantHistory_Import}"/>
+        </StackPanel>
+      </ui:Button>
+
+      <ui:Button Grid.Column="3"
+                 Appearance="Secondary"
+                 Margin="8,0,0,0"
+                 Command="{Binding ExportAllChatsCommand}"
+                 ToolTip="{loc:Str AssistantHistory_ExportAllTooltip}"
+                 AutomationProperties.AutomationId="AssistantHistory_ExportAll">
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="ArrowExportLtr24" FontSize="16" Margin="0,0,6,0"/>
+          <TextBlock Text="{loc:Str AssistantHistory_ExportAll}"/>
+        </StackPanel>
+      </ui:Button>
+
+      <ui:Button Grid.Column="4"
                  Appearance="Secondary"
                  Margin="8,0,0,0"
                  Command="{Binding DeleteAllChatsCommand}"
@@ -176,18 +202,29 @@
                                 Hint="{loc:Str AssistantHistory_EmptyStateHint}"
                                 Visibility="{Binding Chats.Count, Converter={StaticResource ZeroToVisibilityConverter}}"/>
 
-          <ItemsControl ItemsSource="{Binding ChatGroups}">
-            <ItemsControl.ItemsPanel>
-              <ItemsPanelTemplate>
-                <StackPanel Orientation="Vertical"/>
-              </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate>
-              <DataTemplate>
-                <ah:PiaAssistantChatGroupCard Margin="0,0,0,10"/>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
+          <StackPanel Orientation="Vertical">
+            <ItemsControl ItemsSource="{Binding ChatGroups}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Vertical"/>
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <ah:PiaAssistantChatGroupCard Margin="0,0,0,10"/>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <ui:Button HorizontalAlignment="Center"
+                       Margin="0,2,0,16"
+                       Appearance="Secondary"
+                       Command="{Binding LoadMoreChatsCommand}"
+                       Visibility="{Binding HasMoreChats, Converter={StaticResource BooleanToVisibilityConverter}}"
+                       AutomationProperties.AutomationId="AssistantHistory_LoadMore">
+              <TextBlock Text="{loc:Str AssistantHistory_LoadMore}"/>
+            </ui:Button>
+          </StackPanel>
         </Grid>
       </ScrollViewer>
 
@@ -234,6 +271,8 @@
                  FontSize="12"
                  Foreground="{DynamicResource TextMutedBrush}">
         <Run Text="{Binding VisibleCount, Mode=OneWay}"/>
+        <Run Text=" / "/>
+        <Run Text="{Binding TotalCount, Mode=OneWay}"/>
         <Run Text=" chats"/>
       </TextBlock>
     </Border>

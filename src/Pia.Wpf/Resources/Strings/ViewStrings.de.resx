@@ -1220,4 +1220,12 @@
   <data name="Flow_PolicyUpdated_Body_Restart" xml:space="preserve"><value>Einige der neuen Einstellungen werden mit dem Neustart von Pia aktiv. Einige Optionen können ab jetzt gesperrt sein.</value></data>
   <data name="Restart_ManualRelaunchRequired_Title" xml:space="preserve"><value>Pia neu starten</value></data>
   <data name="Restart_ManualRelaunchRequired" xml:space="preserve"><value>Pia konnte sich nicht selbst neu starten. Bitte öffnen Sie Pia, um die Einstellungen Ihrer Organisation vollständig anzuwenden.</value></data>
+  <data name="AssistantHistory_Import" xml:space="preserve"><value>Importieren</value></data>
+  <data name="AssistantHistory_ImportTooltip" xml:space="preserve"><value>Chats aus einem Pia-Archiv oder einem Open-WebUI-Export importieren</value></data>
+  <data name="AssistantHistory_ExportAll" xml:space="preserve"><value>Alle exportieren</value></data>
+  <data name="AssistantHistory_ExportAllTooltip" xml:space="preserve"><value>Alle gespeicherten Chats in ein wieder importierbares Pia-Archiv schreiben</value></data>
+  <data name="AssistantHistory_ExportArchive" xml:space="preserve"><value>Als Pia-Archiv exportieren</value></data>
+  <data name="AssistantHistory_ImportFormat_Pia" xml:space="preserve"><value>Pia-Archiv</value></data>
+  <data name="AssistantHistory_ImportFormat_OpenWebUi" xml:space="preserve"><value>Open-WebUI-Export</value></data>
+  <data name="AssistantHistory_LoadMore" xml:space="preserve"><value>Mehr laden</value></data>
 </root>

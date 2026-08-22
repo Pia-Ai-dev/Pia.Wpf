@@ -76,6 +76,14 @@ public interface IAssistantChatService
         int limit = 50,
         CancellationToken ct = default);
 
+    /// <summary>How many chats the same filter would match, so a paged view can say what it is not showing.</summary>
+    Task<int> CountAsync(
+        string? searchText = null,
+        DateTime? fromDate = null,
+        DateTime? toDate = null,
+        Guid? providerId = null,
+        CancellationToken ct = default);
+
     Task DeleteAsync(Guid id, CancellationToken ct = default);
 
     /// <summary>

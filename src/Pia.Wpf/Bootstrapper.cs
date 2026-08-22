@@ -39,6 +39,11 @@ public static class Bootstrapper
     public const string DebugMeetingAttendeeAudioDumpEnvVar = "PIA_DEBUG_MEETING_ATTENDEE_AUDIO_DUMP";
     public const string DebugDirectTranscriptionAudioDumpEnvVar = "PIA_DEBUG_DIRECT_TRANSCRIPTION_AUDIO_DUMP";
 
+    // Dev-only hooks: when set, chat import/export skip their file pickers and use this path, so a
+    // UI script can drive the real buttons without automating a native dialog. DEBUG builds only.
+    public const string DebugChatImportFileEnvVar = "PIA_DEBUG_CHAT_IMPORT_FILE";
+    public const string DebugChatExportFileEnvVar = "PIA_DEBUG_CHAT_EXPORT_FILE";
+
     public static string ProductionServerUrl =>
         Environment.GetEnvironmentVariable(ServerUrlEnvVar) is { Length: > 0 } envUrl
             ? envUrl
@@ -534,6 +539,7 @@ public static class Bootstrapper
         services.AddSingleton<IPersonaService, PersonaService>();
         services.AddSingleton<IHistoryService, HistoryService>();
         services.AddSingleton<IAssistantChatService, AssistantChatService>();
+        services.AddSingleton<IChatArchiveService, ChatArchiveService>();
         services.AddSingleton<IAgentRunService, AgentRunService>();
         // The per-run audit timeline (Batch 03). Singleton for the same reason AgentRunService is: it owns a
         // dedicated SQLite connection and a per-run Seq allocator, and a second instance would allocate

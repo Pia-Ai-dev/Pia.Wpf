@@ -46,7 +46,8 @@ public class AssistantHistoryViewModelFilterTests
 
         return new AssistantHistoryViewModel(
             NullLogger<AssistantHistoryViewModel>.Instance,
-            _chatService, _providers, _dialog, _loc, _nav, _snackbar, _sessions, _markdownExport);
+            _chatService, _providers, _dialog, _loc, _nav, _snackbar, _sessions, _markdownExport,
+            Substitute.For<IChatArchiveService>());
     }
 
     private SyncAssistantChat Chat(string title, ChatState state)
