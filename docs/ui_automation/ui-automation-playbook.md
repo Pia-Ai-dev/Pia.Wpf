@@ -62,6 +62,9 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | File chip (`PiaFileChip`) | Keyed on the chip's own `FileName` (not `AbsolutePath` — that would put a full local filesystem path into a permanent, enumerable UIA property): `FileChip_Open_<fileName>`, `_OpenVsCode_<fileName>`, `_Reveal_<fileName>`. Two attachments sharing a filename collide — same caveat class as a non-unique tool name. |
 | Source chip (`PiaSourceChip`) | `SourceChip_Open_<number>`, keyed on the chip's own `Number` (the per-message citation number, not globally unique). |
 | Chip overflow "+N" button (`PiaChipOverflowPanel`) | `ChipOverflow_More_<groupName>`. `PiaAssistantMessage` renders two instances per message (Sources, FileRefs) that can both be visible at once, so the control now exposes a `GroupName` DP the call site sets (`"Sources"` / `"Files"`) rather than leaving it a literal id that would collide. |
+| Action card chrome (`ActionCardControl`) | Keyed on `ActionCardInfo.Id` (a `Guid` added for this — the model had no per-card identity before): `ActionCard_ToggleDetails_<id>`, `ActionCard_Manage_<id>` (same id on both mutually-exclusive "Manage" layouts). `CardDecisionBar`'s own 4 buttons (`ToolApproval_*`, table above) are unchanged — they stay semantic-per-decision-type, not per-card. |
+| File diff card (`FileDiffCard`) | `ActionCard_DiffToggle_<filePath>`, keyed on `ActionCardInfo.FilePath` rather than the `Id` above — already shown in the card header, so it stays human-readable, and a same-path collision is a rare accepted corner case. |
+| Flow notification rail (`FlowView`) | Per-item, keyed on `FlowItemViewModel.Item.Id`: `Flow_ActionLink_<id>`, `Flow_Dismiss_<id>` (same formula covers both the real rail and the transient single-item arrival-peek clone, which reuses the identical template). Singleton header (literal, `DataContext` is the one `FlowViewModel`): `Flow_ClearAll`, `Flow_PinToggle`, `Flow_Collapse` — these also exist on a permanently-hidden peek-spacer clone of the header, accepted since a script would not enumerate a hidden element. |
 
 Import and Export open a native file picker, which is not reliably scriptable: `ww_dialog handle_file`
 returns `{"success": true}` without confirming the dialog, and re-invoking the button just stacks up
@@ -199,9 +202,9 @@ Committed recordings, the settings fixture they start from and the replay harnes
   Copy/Speak/Regenerate/Export/rate buttons are now ided per-reply via `PiaAnswerToolbar`
   (`Answer_*_<messageId>`, table above), and its reasoning-trace toggle via `PiaReasoningView`
   (`Reasoning_Toggle_<messageId>`, table above). `PiaFileChip`/`PiaSourceChip`/
-  `PiaChipOverflowPanel` are also closed (table above). Still open: ManageToolPermissions
-  (`ActionCardControl`, `G2`) and Suggestion/SwitchToAgent (`PiaSuggestionChips` /
-  `PiaAgentModeChip`) — the latter two were audited and deliberately left without ids: each has one
+  `PiaChipOverflowPanel`/`ActionCardControl`/`FileDiffCard` are also closed (table above). Still
+  open: Suggestion/SwitchToAgent (`PiaSuggestionChips` /
+  `PiaAgentModeChip`) — audited and deliberately left without ids: each has one
   `Button` inside an `ItemsControl` template, but the bound item is content only (a raw
   `Suggestions` string, or an `AgentModeSuggestion`'s `Goal`/`Reason`, both documented as
   model-generated) with no non-content field to key a per-item id on, and a script targeting one
@@ -249,6 +252,22 @@ Committed recordings, the settings fixture they start from and the replay harnes
   than the header alone would explain, or its nested-view list contains something one level
   deeper than expected, this is why — confirmed across the Vault/Reminders/History/AssistantChat
   group-card-and-row pairs.
+- **An *implicit* per-type `DataTemplate` — one declared in `ItemsControl.Resources` rather than
+  assigned to `ItemsControl.ItemTemplateProperty` — is invisible to the walker, a different blind
+  spot than the sweep hazard above.** `Collect()` only expands a template it finds via
+  `element.ReadLocalValue(property)` for the three `DeclaredTemplates` properties; an implicit
+  template is never set as a local value of any of them, so that read returns `UnsetValue` and the
+  walk never opens it. `FileDiffCard`'s `CollapsedDiffRun` row template is the confirmed case: its
+  one button (the "N unchanged lines" fold toggle) has no id today and the mechanism cannot demand
+  one — not a sweep, not a genuine stop, just unreachable. Suspect this whenever a `DataTemplate`
+  is declared with `DataType="{x:Type ...}"` and no `x:Key`/local property assignment.
+- **A `StaticResource`-keyed `DataTemplate`/`ContentTemplate` assigned at more than one XAML site
+  is walked once per site, not once per template.** Two call sites setting the identical resource
+  object are two separate local-value reads, so `LoadContent()` runs twice and the inspected-control
+  count doubles for whatever that template contains — confirmed on `FlowView`, whose
+  `FlowItemCardTemplate`/`FlowHeaderTemplate` each back a real list/header AND a hidden
+  arrival-peek clone that reuses the same resource. Measure via the test rather than counting
+  `<DataTemplate>` declarations in the XAML.
 - **`NavigationSidebarView`'s 12 `NavItem_*` buttons already all have ids** (verified by hand),
   but `ViewAutomationIdTests` cannot lock that in: they're set via
   `<ui:NavigationViewItem.Content>` inside `ui:NavigationView.MenuItems`, and `LogicalTreeHelper`

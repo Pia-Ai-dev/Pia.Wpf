@@ -72,6 +72,17 @@ Also fixed a correctness gap from slice 5: `TodoView`'s 3 `MenuItem` ids relied 
 `ContextMenu` DataContext inheritance; switched to `{Binding Tag.Id, RelativeSource={RelativeSource
 Self}}`, which is correct regardless of whether that inheritance holds.
 
+**Slice 7** (this session, committed, gate green): Cards & Flow — `G2`/`G3`/`G4`, audited in
+parallel first. `ActionCardControl` (`G2`) needed a real model change (a new `Guid Id` on
+`ActionCardInfo`) since it had no per-card identity at all and, unlike `G1`'s decision buttons, its
+controls stay interactive on every already-resolved card, not just the one currently pending.
+`FileDiffCard` (`G3`) surfaced a new walker-blind spot distinct from the known sweep hazard:
+implicit per-type `DataTemplate`s declared in `ItemsControl.Resources` are invisible to the
+mechanism, since it only reads `ItemsControl.ItemTemplateProperty`/`ContentTemplateProperty`/
+`HeaderTemplateProperty` locally. `FlowView` (`G4`) confirmed the "measure, don't guess" rule
+again — 5 distinct controls measured at 10 instances, because two of its templates are legitimately
+applied at two separate sites (a real list plus a hidden arrival-peek clone).
+
 **Excluded, not just deferred** — `NavigationSidebarView`: its 12 `NavItem_*` buttons already all
 carry ids (verified by hand), but they hang off `ui:NavigationView.MenuItems`, which
 `LogicalTreeHelper` reports zero children for — a test row here would pass at a vacuous floor of
@@ -294,13 +305,42 @@ nested rows do not)
   `DecisionButton.AutomationId` (`ActionCardInfo.cs`'s `ToolApproval_*` constants). No XAML
   change; added the `[InlineData]` row to lock it in.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
-- [ ] **G2 · `ActionCardControl`.** The card host rendering `CardDecisionBar` plus any other
-  action-card chrome (370 lines) — audit for controls outside the decision bar.
+- [x] **G2 · `ActionCardControl`.** 3 controls beyond `CardDecisionBar`: the details
+  expand/collapse chevron and 2 "Manage" `ui:HyperlinkButton`s (a `ButtonBase` subclass) — one
+  per mutually-exclusive layout (plain vs. diff card), same affordance, so both get the same id
+  formula. `ActionCardInfo` had no per-card identity at all (only `PluginId`, shared across every
+  card from that plugin, and a non-unique `ToolName`) — unlike `G1`'s `Decisions`, whose 4 buttons
+  are semantically fixed per decision type and only ever interactive on the one card currently
+  `Pending`, these two controls stay interactive on every already-resolved card, and several
+  resolved cards commonly sit in scrollback at once. Rather than accept the collision or key on
+  the content-derived `Title` (not guaranteed unique), added a real `Guid Id` to `ActionCardInfo`
+  (UI-only, defaulted, the single construction site in `ActionCardBuilder` needed no change):
+  `ActionCard_ToggleDetails_<id>`, `ActionCard_Manage_<id>`.
   *Deps:* G1 · *Effort:* **S** · *Value:* **Med**
-- [ ] **G3 · `FileDiffCard`.** Inline diff card (246 lines) shown for file-writing tool calls.
+- [x] **G3 · `FileDiffCard`.** 247 lines (close to the ~246 estimate). Exactly 1 walker-reachable
+  control, the header chevron — keyed on `ActionCardInfo.FilePath` (not the new `Id` from `G2`;
+  `FilePath` is already shown in the card header, so it stays human-readable in a script and two
+  simultaneous diffs to the same path is a rare, accepted corner case, same class as a non-unique
+  tool name): `ActionCard_DiffToggle_<filePath>`. New mechanism finding for the playbook: the
+  card's `DiffLine`/`CollapsedDiffRun` `DataTemplate`s are declared inside
+  `ItemsControl.Resources` as *implicit* per-type templates, never assigned to
+  `ItemsControl.ItemTemplateProperty` — so `ReadLocalValue` on that property returns
+  `UnsetValue` and the walker never opens either template. The collapsed-run's own "N unchanged
+  lines" button is therefore invisible to the mechanism entirely, distinct from the already-known
+  DataTemplate-root-is-a-UserControl sweep hazard.
   *Deps:* none · *Effort:* **S** · *Value:* **Med**
-- [ ] **G4 · `FlowView`.** The Flow notification/action surface (489 lines) — biggest unaudited
-  file after `RunProgressPanel`; scope it before estimating further.
+- [x] **G4 · `FlowView`.** 489 lines, 5 distinct controls but 2 resource-keyed `DataTemplate`s
+  (`FlowItemCardTemplate`, `FlowHeaderTemplate`) are each applied at TWO separate sites (the real
+  rail list plus an arrival-peek/spacer clone reusing the identical template object) — measured
+  at 10 walker-visible control *instances*, not 5, confirming the "measure, don't guess" rule
+  again. Per-item (`FlowItemCardTemplate`, keyed on `FlowItemViewModel.Item.Id`): `Flow_ActionLink_
+  <id>`, `Flow_Dismiss_<id>` — safe as per-item at both sites since the peek clone only ever holds
+  one transient item. Singleton (`FlowHeaderTemplate`, `DataContext` = the one `FlowViewModel`,
+  literal): `Flow_ClearAll`, `Flow_PinToggle`, `Flow_Collapse` — these DO exist twice in the live
+  tree (the peek-spacer clone is permanently `Visibility="Hidden"`), but a hidden element is
+  outside what a script would enumerate/interact with, so this was accepted rather than
+  disambiguated. Nested views: `CardDecisionBar` (`G1`) and `PiaChatStateBadge`, both genuine
+  stops one level below the card template's root, not swept.
   *Deps:* none · *Effort:* **M** · *Value:* **High**
 
 ## H — Content dialogs with zero ids beyond the shared `PrimaryButton`/`CloseButton`
@@ -361,8 +401,8 @@ E1                                                      # DONE (slice 3) — hig
 A3 → C3 → C4 → D3 → F1 → F2                             # DONE (slice 4) — the four per-item row types
 B1 → B4                                                 # DONE (slice 5) — Todo view + its embedded panel
 E2 → E4 → E7 → E9 → E8                                  # DONE (slice 6) — remaining composer-adjacent controls
-G2 → G3 → G4                                            # Cards & Flow — next up
-H1 → H2 → H3 → H4 → I5                                  # dialogs + Assignments (shares H4's dialog)
+G2 → G3 → G4                                            # DONE (slice 7) — Cards & Flow
+H1 → H2 → H3 → H4 → I5                                  # dialogs + Assignments — next up (shares H4's dialog)
 I3 → I4                                                 # the long-standing Settings gaps
 E3 → E5 → E6 → I2 → I1                                  # remaining overlays + the wizard, lowest value/traffic
 ```
