@@ -52,6 +52,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Views.RoutinesView), 15, 1, "PiaEmptyState,PiaHelpHint")]
     [InlineData(typeof(Pia.Views.SettingsViews.PersonasView), 3, 3, "PersonaGlyph")]
     [InlineData(typeof(Pia.Views.MeetingAttendeeOverlay), 8, 1, "ListeningIndicator")]
+    [InlineData(typeof(Pia.Controls.Cards.CardDecisionBar), 1, 1, "")]
     public void EveryInteractiveControl_CarriesAnAutomationId(
         Type viewType, int minimumInspected, int minimumPerItemIds, string expectedNestedViews)
     {

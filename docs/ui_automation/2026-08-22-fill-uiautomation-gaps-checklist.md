@@ -141,9 +141,10 @@ nested rows do not)
 
 ## G — Cards & Flow
 
-- [ ] **G1 · `CardDecisionBar`.** Already routes per-button ids through `DecisionButton.AutomationId`
-  (see `ActionCardInfo.cs`'s `ToolApproval_*` constants) — likely already fully correct. Add the
-  `[InlineData]` row to lock it in; only touch XAML if the audit finds a gap.
+- [x] **G1 · `CardDecisionBar`.** Confirmed already correct — its `ItemTemplate` binds
+  `AutomationProperties.AutomationId="{Binding AutomationId}"` straight from
+  `DecisionButton.AutomationId` (`ActionCardInfo.cs`'s `ToolApproval_*` constants). No XAML
+  change; added the `[InlineData]` row to lock it in.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
 - [ ] **G2 · `ActionCardControl`.** The card host rendering `CardDecisionBar` plus any other
   action-card chrome (370 lines) — audit for controls outside the decision bar.
