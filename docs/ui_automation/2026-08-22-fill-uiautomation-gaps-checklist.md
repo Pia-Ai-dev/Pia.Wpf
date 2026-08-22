@@ -88,6 +88,16 @@ for — fixed via a `Tag`-keyed `RelativeSource` binding, same shape as `PiaChip
 `GroupName`; and the playbook's `ActionCardInfo.Id` row got a lifetime caveat, since it is a
 per-render UI guid, not a persisted domain id like the other per-item keys on this list.
 
+**Slice 8** (this session, committed, gate green): `H1`-`H4` plus `I5`. A single grep on the four
+dialogs' `.xaml.cs` class declarations, checked before spinning up any audit, settled the whole
+group at once: all four derive from Wpf.Ui's `ContentDialog` with parameterized constructors, not
+`UserControl`, so none of them can ever get a `[InlineData]` row — this reclassifies `H1`-`H4` from
+"content dialogs, effort XS-S" into the same "ids only, no test lock" shape as the `I` group,
+before writing a single line of XAML. `AssignmentConsentContentDialog` (`H4`) needed a real
+identity lookup for its per-record checkboxes (`AssignmentScopeItemViewModel.Item.EntityId`, a
+`Guid` two levels down through the wrapped record). `AssignmentsView` (`I5`), unlike its sibling
+dialogs, IS a plain `UserControl` and got a real `[InlineData]` row.
+
 **Excluded, not just deferred** — `NavigationSidebarView`: its 12 `NavItem_*` buttons already all
 carry ids (verified by hand), but they hang off `ui:NavigationView.MenuItems`, which
 `LogicalTreeHelper` reports zero children for — a test row here would pass at a vacuous floor of
@@ -352,15 +362,23 @@ nested rows do not)
 
 ## H — Content dialogs with zero ids beyond the shared `PrimaryButton`/`CloseButton`
 
-- [ ] **H1 · `TodoEditContentDialog`.**
+All four derive from Wpf.Ui's `ContentDialog`, not `UserControl`, with constructors that take a
+`ContentDialogHost` (and more) — so `Activator.CreateInstance(viewType)` fails and none of these
+can ever get a `[InlineData]` row. Same shape as the `I` group below: ids only, no test lock, no
+measured floor.
+
+- [x] **H1 · `TodoEditContentDialog`.** `TodoEdit_Title`, `_Notes`, `_Priority`, `_DueDate` (the
+  `DatePicker`, no test lock possible anyway).
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
-- [ ] **H2 · `RecoveryCodeContentDialog`.**
+- [x] **H2 · `RecoveryCodeContentDialog`.** `RecoveryCode_Copy`, `_Confirm`.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
-- [ ] **H3 · `MeetingSaveContentDialog`.** Feeds "Save to vault" from the meeting overlay —
-  pairs naturally with the meeting-attendee work already done this branch.
+- [x] **H3 · `MeetingSaveContentDialog`.** Feeds "Save to vault" from the meeting overlay —
+  pairs naturally with the meeting-attendee work already done this branch. `MeetingSave_Title`,
+  `_Attendees`, `_Tags`, `_Project`, `_Notes`.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
-- [ ] **H4 · `AssignmentConsentContentDialog`.** 175 lines — the consent flow gating background
-  assignments.
+- [x] **H4 · `AssignmentConsentContentDialog`.** 175 lines — the consent flow gating background
+  assignments. `AssignmentConsent_Skill`, `_Prompt`, `_Affirm`; per-record (keyed on
+  `AssignmentScopeItemViewModel.Item.EntityId`): `AssignmentConsent_Record_<id>`.
   *Deps:* none · *Effort:* **S** · *Value:* **Med**
 
 ## I — Wizard, top-level Optimize, and remaining Settings gaps (no test-lock mechanism; ids only)
@@ -378,8 +396,10 @@ nested rows do not)
   *Deps:* none · *Effort:* **S** · *Value:* **Med**
 - [ ] **I4 · `SettingsViews/E2EEOnboardingView.xaml`.** Long-standing known gap.
   *Deps:* none · *Effort:* **S** · *Value:* **Med**
-- [ ] **I5 · `AssignmentsView.xaml`.** Has 1 id (`Assignments_Help`); audit the run list / consent
-  entry points.
+- [x] **I5 · `AssignmentsView.xaml`.** Header: `Assignments_Refresh`, `_New` (already had
+  `Assignments_Help`). Per-row (keyed on `AssignmentRowViewModel.Id`): `Assignments_OpenChat_<id>`,
+  `_Cancel_<id>`. Unlike H1-H4 this one IS a `UserControl` with a parameterless constructor, so it
+  got its own `[InlineData]` row (floor 4, 2 per-item, nested `PiaEmptyState,PiaHelpHint`).
   *Deps:* H4 (shares the consent dialog) · *Effort:* **S** · *Value:* **Med**
 
 ## J — Small remaining pieces
@@ -409,7 +429,7 @@ A3 → C3 → C4 → D3 → F1 → F2                             # DONE (slice 
 B1 → B4                                                 # DONE (slice 5) — Todo view + its embedded panel
 E2 → E4 → E7 → E9 → E8                                  # DONE (slice 6) — remaining composer-adjacent controls
 G2 → G3 → G4                                            # DONE (slice 7) — Cards & Flow
-H1 → H2 → H3 → H4 → I5                                  # dialogs + Assignments — next up (shares H4's dialog)
-I3 → I4                                                 # the long-standing Settings gaps
+H1 → H2 → H3 → H4 → I5                                  # DONE (slice 8) — dialogs + Assignments
+I3 → I4                                                 # the long-standing Settings gaps — next up
 E3 → E5 → E6 → I2 → I1                                  # remaining overlays + the wizard, lowest value/traffic
 ```

@@ -65,6 +65,11 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Action card chrome (`ActionCardControl`) | Keyed on `ActionCardInfo.Id` (a `Guid` added for this — the model had no per-card identity before): `ActionCard_ToggleDetails_<id>`, `ActionCard_Manage_<id>` (same id on both mutually-exclusive "Manage" layouts). `CardDecisionBar`'s own 4 buttons (`ToolApproval_*`, table above) are unchanged — they stay semantic-per-decision-type, not per-card. **Lifetime caveat:** `Id` defaults to `Guid.NewGuid()` at `ActionCardBuilder.Build` time — it is NOT a persisted domain id like `TodoItem.Id`/`AssistantMessage.Id`. Action cards are never serialized to chat history and `ActionCardBuilder.Build` runs exactly once per real tool call, so the id is stable for the in-memory lifetime of that card (including a DataContext re-host, since the same `AssistantMessage`/`ActionCardInfo` object is reused, not rebuilt) — but discover it at runtime, never hardcode one in a script. |
 | File diff card (`FileDiffCard`) | `ActionCard_DiffToggle_<filePath>`, keyed on `ActionCardInfo.FilePath` rather than the `Id` above — already shown in the card header, so it stays human-readable, and a same-path collision is a rare accepted corner case. |
 | Flow notification rail (`FlowView`) | Per-item, keyed on `FlowItemViewModel.Item.Id`: `Flow_ActionLink_<id>`, `Flow_Dismiss_<id>` (same formula covers both the real rail and the transient single-item arrival-peek clone, which reuses the identical template). Header (`FlowHeaderTemplate`, `DataContext` is the one `FlowViewModel`): `Flow_ClearAll_<host>`, `Flow_PinToggle_<host>`, `Flow_Collapse_<host>`, keyed on a `Tag` ("Real"/"Peek") set on each of the two `ContentControl` hosts and read back via `RelativeSource AncestorType=ContentControl` — needed because the peek clone's `Visibility="Hidden"` does NOT remove it from the UIA tree or block `InvokePattern` (only the hit-test path), so a literal id here would have been a genuine, invokable ambiguity, not a cosmetic one. |
+| Todo edit dialog (`TodoEditContentDialog`) | `TodoEdit_Title`, `_Notes`, `_Priority`, `_DueDate`. No test lock — see Known gaps. |
+| Recovery code dialog (`RecoveryCodeContentDialog`) | `RecoveryCode_Copy`, `_Confirm`. No test lock. |
+| Meeting save dialog (`MeetingSaveContentDialog`) | `MeetingSave_Title`, `_Attendees`, `_Tags`, `_Project`, `_Notes`. No test lock. |
+| Assignment consent dialog (`AssignmentConsentContentDialog`) | `AssignmentConsent_Skill`, `_Prompt`, `_Affirm`; per-record (keyed on `AssignmentScopeItemViewModel.Item.EntityId`): `AssignmentConsent_Record_<id>`. No test lock. |
+| Assignments list (`AssignmentsView`) | `Assignments_Refresh`, `_New` (plus the existing `Assignments_Help`); per-row, keyed on `AssignmentRowViewModel.Id`: `Assignments_OpenChat_<id>`, `_Cancel_<id>`. |
 
 Import and Export open a native file picker, which is not reliably scriptable: `ww_dialog handle_file`
 returns `{"success": true}` without confirming the dialog, and re-invoking the button just stacks up
@@ -240,6 +245,10 @@ Committed recordings, the settings fixture they start from and the replay harnes
   `SettingsViews/OptimizeView`), the first-run wizard (`FirstRunWizardWindow` and all of
   `WizardSteps/`), and most content dialogs beyond the shared `PrimaryButton` / `CloseButton` /
   `Dialog_RequiredHint` ids. See the checklist doc below for the file-by-file work list.
+  **Every content dialog derives from Wpf.Ui's `ContentDialog`, not `UserControl`, with a
+  constructor that takes a `ContentDialogHost`** — so `Activator.CreateInstance` fails and none of
+  them can ever get a `[InlineData]` row. Check a dialog's base type and constructor before
+  planning one as a test-locked item; it never is.
 - **The walker's nested-view check misses a `UserControl` that is the literal root of a
   `DataTemplate`.** `Collect()` re-anchors its `root` parameter to whatever `LoadContent()`
   returns, so when an `ItemTemplate`'s root is itself a `UserControl` (e.g. `PiaReminderRow` as

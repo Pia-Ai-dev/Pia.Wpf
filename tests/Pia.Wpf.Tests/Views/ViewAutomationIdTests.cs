@@ -77,6 +77,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Controls.Chat.PiaFileChip), 3, 3, "")]
     [InlineData(typeof(Pia.Controls.Chat.PiaSourceChip), 1, 1, "")]
     [InlineData(typeof(Pia.Controls.Chat.PiaChipOverflowPanel), 1, 1, "")]
+    [InlineData(typeof(Pia.Views.AssignmentsView), 4, 2, "PiaEmptyState,PiaHelpHint")]
     [InlineData(typeof(Pia.Controls.ActionCardControl), 3, 3, "CardDecisionBar,FileDiffCard")]
     [InlineData(typeof(Pia.Controls.Cards.FileDiffCard), 1, 1, "")]
     [InlineData(typeof(Pia.Controls.Flow.FlowView), 10, 10, "CardDecisionBar,PiaChatStateBadge")]
