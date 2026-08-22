@@ -73,10 +73,10 @@ Three steps can close work below them. Do not tick their dependants without revi
 
 ## B — Compaction recall
 
-- [ ] **B1 · Synthetic transcript generator with planted facts.** Committed; no real user data.
+- [x] **B1 · Synthetic transcript generator with planted facts.** Committed; no real user data.
   *Deps:* none · *Effort:* **S** · *Value:* **Enabler**
 
-- [ ] **B2 · Corpus extraction script** (`AssistantChatMessages` → JSON fixture, gitignored).
+- [x] **B2 · Corpus extraction script** (`AssistantChatMessages` → JSON fixture, gitignored).
   *Deps:* none · *Effort:* **S** · *Value:* **Enabler**
 
 - [ ] **B3 · Question-bank generator, per-transcript cache, and the verbatim-leak filter.**
@@ -87,7 +87,7 @@ Three steps can close work below them. Do not tick their dependants without revi
   First real number. If A scores < 90%, the instrument is broken — fix that before reading anything.
   *Deps:* B2, B3 · *Effort:* **M** · *Value:* **High** (decision gate)
 
-- [ ] **B5 · Pin the "user messages are never compacted" invariant with a test** against
+- [x] **B5 · Pin the "user messages are never compacted" invariant with a test** against
   `Microsoft.Agents.AI.Compaction`. Pia pins the head goal and newest instruction; middle user
   messages are not pinned. *(From review rec #5, not the test plan.)*
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**

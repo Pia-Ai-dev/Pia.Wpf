@@ -220,3 +220,9 @@ scripts/speaker-reference/*.names.local.json
 # The diarization bench's cached voice embeddings: biometric data about named colleagues. They belong
 # under artifacts/ (ignored above); this line is here so the rule is stated where it is looked for.
 *.embeddings.bin
+
+# Transcripts extracted verbatim from a real history.db, and the question banks derived from them.
+# Export-CompactionCorpus.ps1 refuses to write inside the repo at all; this is the second line of
+# defence for a file somebody copied in by hand.
+*.corpus.json
+*.bank.json
