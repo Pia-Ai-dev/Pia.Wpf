@@ -61,8 +61,15 @@ foreach ($name in 'settings.json', 'providers.json', 'templates.json') {
 }
 $settingsPath = Join-Path $roaming 'settings.json'
 if (Test-Path -LiteralPath $settingsPath) {
-    (Get-Content -LiteralPath $settingsPath -Raw) -replace '"syncEnabled"\s*:\s*true', '"syncEnabled": false' |
-        Set-Content -LiteralPath $settingsPath -Encoding utf8NoBOM
+    $settingsJson = (Get-Content -LiteralPath $settingsPath -Raw) -replace '"syncEnabled"\s*:\s*true', '"syncEnabled": false'
+    # Only AssistantView carries the meeting-attendee toggle, and the seeded profile opens wherever the
+    # real one last did — Optimize whenever the key is absent, which is a silent "toggle not found".
+    $settingsJson = if ($settingsJson -match '"defaultWindowMode"\s*:\s*\d+') {
+        $settingsJson -replace '"defaultWindowMode"\s*:\s*\d+', '"defaultWindowMode": 1'
+    } else {
+        $settingsJson -replace '^\s*\{', "{`n  `"defaultWindowMode`": 1,"
+    }
+    Set-Content -LiteralPath $settingsPath -Value $settingsJson -Encoding utf8NoBOM
 }
 
 $roster = (1..$RosterSize | ForEach-Object { "P$_" }) -join ';'

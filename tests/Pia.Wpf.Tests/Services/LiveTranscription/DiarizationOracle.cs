@@ -22,6 +22,10 @@ internal sealed record SimilarityStats(
         (IntraMean - InterMean) / Math.Sqrt((IntraStdDev * IntraStdDev + InterStdDev * InterStdDev) / 2.0);
 }
 
+/// <summary>Mean cosine over one speaker's own segment pairs when <paramref name="A"/> equals
+/// <paramref name="B"/>, and over the pairs between two speakers otherwise.</summary>
+internal sealed record PairSimilarity(string A, string B, double Mean, double StdDev, long Pairs);
+
 /// <summary>One true speaker's share of an oracle run. Zero <see cref="Scored"/> means the enrollment
 /// budget swallowed every segment they had, so the pooled figure says nothing at all about them.</summary>
 internal sealed record SpeakerTally(
@@ -102,6 +106,34 @@ internal static class DiarizationOracle
         var (threshold, errorRate) = BestSplit(intra, inter);
         return new SimilarityStats(
             intraMean, intraSd, interMean, interSd, threshold, errorRate, intra.Count, inter.Count);
+    }
+
+    /// <summary>Every speaker's self-similarity and every pair's cross-similarity, so one inseparable
+    /// pair cannot hide inside a healthy pooled d'.</summary>
+    public static List<PairSimilarity> PerPair(IReadOnlyList<LabelledSegment> segments)
+    {
+        var vectors = segments.Select(s => Normalize(s.Embedding)).ToArray();
+        var buckets = new Dictionary<(string, string), List<double>>();
+
+        for (int i = 0; i < segments.Count; i++)
+        {
+            for (int j = i + 1; j < segments.Count; j++)
+            {
+                var a = segments[i].Speaker;
+                var b = segments[j].Speaker;
+                var key = string.CompareOrdinal(a, b) <= 0 ? (a, b) : (b, a);
+                if (!buckets.TryGetValue(key, out var list)) buckets[key] = list = [];
+                list.Add(Dot(vectors[i], vectors[j]));
+            }
+        }
+
+        var rows = new List<PairSimilarity>();
+        foreach (var (key, values) in buckets)
+        {
+            var (mean, sd) = MeanAndStdDev(values);
+            rows.Add(new PairSimilarity(key.Item1, key.Item2, mean, sd, values.Count));
+        }
+        return rows;
     }
 
     /// <summary>Enrolls each speaker from their earliest <paramref name="enrollSeconds"/> of speech and

@@ -12,7 +12,7 @@ one that costs real time:
 |---|---|---|
 | the audio the pipeline heard | `artifacts/wav/<name>-replay.wav` | free, a flag on the run |
 | the answer key | `scripts/speaker-reference/<name>.reference.json` | one command, needs a layout |
-| the layout the answer key is read through | `scripts/speaker-reference/<name>.layout.json` | **hand-measured, ~1 hour** |
+| the layout the answer key is read through | `scripts/speaker-reference/<name>.layout.json` | ~15 min, see below |
 
 ## Prerequisites
 
@@ -104,7 +104,20 @@ name-label rect in pixels, and write:
 }
 ```
 
-This is the hour. Everything after it is a command.
+**Do not measure the rects by eye — derive them from the pill itself.** The pill is a strongly
+coloured rectangle, so one pass over the video that flags pill-coloured pixels
+(`b - (r+g)/2 >= 25 && b >= 80`), heat-maps them across frames and takes connected components of at
+least ~200 px lit in two or more frames returns the label rects directly. Keep the components that are
+label-shaped (a ~22–26 px tall bar) and inset them 2 px. Three things this buys over eyeballing a grid:
+
+- it finds name labels **burned over video** — a camera tile's label sits in the tile's letterbox
+  padding, not where a grid-relative guess puts it;
+- it separates the pill from a pale avatar circle behind it, which passes the same test marginally
+  (a blue lead of ~25 against the pill's ~56–67);
+- a tile that never lights (the attendee's own) produces no component, which tells you it is a tile to
+  place from the rail's pitch rather than one you have mismeasured.
+
+Everything after the layout is a command.
 
 ```powershell
 ./scripts/Get-SpeakerReference.ps1 `
@@ -135,11 +148,22 @@ $env:PIA_BENCH_WAV       = (Resolve-Path 'artifacts/wav/<name>-replay.wav').Path
 $env:PIA_BENCH_ROSTER    = '<humans>'
 $env:PIA_BENCH_REFERENCE = (Resolve-Path 'scripts/speaker-reference/<name>.reference.json').Path
 $env:PIA_BENCH_OUT       = (Join-Path (Get-Location) 'artifacts/wav/bench')
+$env:PIA_BENCH_ENROLL    = '12'   # optional; default 30, too big for a recording under ~10 min
 dotnet test -- --explicit only --filter-method "*Bench_MeasuresARecording*"
 ```
 
-Set all four in **one** call — each PowerShell invocation is a fresh shell, and a missing
-`PIA_BENCH_WAV` makes the test skip rather than fail, which reads like success.
+Set them in **one** call — each PowerShell invocation is a fresh shell, and a missing `PIA_BENCH_WAV`
+makes the test skip rather than fail, which reads like success.
+
+Two parts of the report earn most of the attention:
+
+- `separation`, a per-pair matrix of mean cosine with each speaker's self-similarity on the diagonal,
+  and a `closest pair` line giving the margin between a pair's cross-similarity and the tighter of
+  their two self-similarities. **A pooled `d'` cannot see one bad pair**; this can. On LSP and
+  `testmeeting` the pair it names is exactly the pair the run confuses; on the workshop it names E/H,
+  where E loses its label and H keeps it — so read the matrix, not only the summary line.
+- `ORACLE enrollment`, which is the bound that decides whether a failure belongs to the matching policy
+  or to the embedding model. Read the per-speaker lines first (see trap 4).
 
 Outputs land in `PIA_BENCH_OUT`: `*.report.txt`, `*.segments.jsonl`, `*.passes.log`, `*.embeddings.bin`.
 The first run computes every embedding; later runs reuse the cache and cost milliseconds.
@@ -171,6 +195,26 @@ Align   : exact — every identified segment reported its own stream position
 If it prints a fitted offset instead, the log predates `start=` on the identify line and the number
 carries an alignment caveat. Treat a fitted figure as indicative only.
 
+### Scoring a live meeting
+
+A live log scores through the same script — it selects runs on `Meeting attendee admitted to the call`
+as well as on the replay marker, so `-RunIndex -1` picks the last run of either kind out of a day's log.
+One thing differs and it is not optional: the recording was already running when Pia was admitted, so
+stream 0 sits *inside* the reference. The script fits that origin from the speech masks at rate 1.0 and
+prints it:
+
+```
+Origin  : stream 0 s = recording 27.15 s (fitted); reference covers stream -27.1..253.3 s
+          runner-up peak 30.75 s scored 2650 against 3415 — a near tie here would void the fit
+```
+
+Check three things before believing the run. The runner-up margin (a near tie means the fit found
+structure, not the join). The origin against an independent witness — the admission timestamp minus the
+recording's start, and the end of the reference's first `invalidRanges` entry, which *is* the grid
+reflowing as Pia joins. And the coverage window, because a recording can be stopped before the meeting
+ends; segments past it land in `outside the video` and are excluded. Pin the origin with
+`-StreamOriginSeconds` to compare two runs of one meeting.
+
 ## Traps that silently invalidate a measurement
 
 Each of these has produced a plausible wrong number at least once.
@@ -183,9 +227,16 @@ Each of these has produced a plausible wrong number at least once.
 3. **A degenerate oracle.** Sanity-check `d'` before believing any bound. `d' NaN` with a 50 %
    pair-decision error is chance, not a result — it once reported 86.3 % from zeroed vectors and
    pointed the whole plan at the wrong work.
-4. **Pooled oracle accuracy.** Enrollment spends each speaker's first 30 s, so anyone with less than
-   that scores zero segments and vanishes from the pooled figure. Read the per-speaker lines; a
-   `untested: enrollment took every segment` row means the headline is not a bound on that person.
+4. **Pooled oracle accuracy, and the budget that produced it.** Enrollment spends each speaker's first
+   `PIA_BENCH_ENROLL` seconds (default 30), so anyone with less than that scores zero segments and
+   vanishes from the pooled figure. Read the per-speaker lines; an `untested: enrollment took every
+   segment` row means the headline is not a bound on that person.
+   **Then sweep the budget, because on a short recording the pooled figure tracks the budget rather
+   than the pipeline.** `testmeeting` (4:40) reads 89.5 % over 38 segments at 8 s and 100 % over 14 at
+   30 s — a 10.5-point swing that is purely the scored set shrinking. LSP moves 0.5 points over the
+   same range because 30 s barely dents 434 segments. So: quote the smallest budget that still leaves a
+   real sample, say which budget it was, and **never compare two recordings at different budgets** —
+   that manufactures headroom.
 5. **Comparing the bench's absolute attribution to the app's.** The app's pass trigger measures wall
    clock between identify calls, which STT throughput gates; the bench measures stream time. That costs
    a few passes over a long recording and about 2 points of attribution, in either direction. The bench
@@ -193,10 +244,20 @@ Each of these has produced a plausible wrong number at least once.
    margin on a real app replay.
 6. **Your own CPU.** A build or test run alongside a replay creates dropped segments that look like a
    pipeline finding.
+7. **A pooled `d'` that looks healthy.** One inseparable pair does not move it. `testmeeting` reads
+   `d' 1.88`, between the two work recordings, while the pair that fails sits at a margin of 0.103
+   against 0.166 and 0.215. Read the `separation` matrix, not the scalar.
+8. **A headline percentage on a run whose errors are all one person.** `testmeeting` reads 84.1 %, and
+   the useful statement is "37 for 37 on three speakers, 0 for 7 on the fourth". Always read the
+   confusion matrix before quoting the percentage.
 
 ## What is still unmeasured
 
-- Dropped segments at 1.0x. Both fixture replays run at ~0.83x and drop nothing.
-- The roster size `TeamsMeetingSession` actually reports; every number so far used an env-var roster.
-- The gap between cloud-mixed recordings and real device loopback. Capture one live dump and bench it
-  against these to find out.
+- Dropped segments at 1.0x. Both long fixture replays run at ~0.83x and drop nothing.
+- **Device loopback.** The cloud mix is now known to stand in faithfully for the *in-browser* tap —
+  same meeting, same key, confusion cells identical to the tenth of a second. Loopback, with its second
+  D/A-A/D pass and Teams' own AGC, is a different signal and still untested. Set
+  `PIA_DEBUG_MEETING_ATTENDEE_AUDIO_DUMP` before a live meeting to capture one; a live run without it
+  cannot be benched or cross-correlated afterwards.
+- What the UI attributes an unlabelled utterance to. A fifth to a quarter of segments fall below
+  `MinClusterSegmentSeconds` and still produce transcript text.

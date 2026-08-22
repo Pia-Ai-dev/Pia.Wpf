@@ -1,6 +1,10 @@
 # Brief: decouple the match threshold from the cut (Tasks 8 and 9)
 
-**Status.** Ready to execute. Gated on Monday 2026-08-24's live smoke test for *merge*, not for work.
+**Status.** Ready to execute, with the amendment at the end of Task 8 folded in. This brief is now
+**lever 4** of [2026-08-22-attribution-levers-brief.md](2026-08-22-attribution-levers-brief.md), which
+supersedes its scope and reorders it behind three cheaper levers — start there. Gated on a live smoke
+test for *merge*, not for work — note that one live meeting was measured on 2026-08-22 (see the last
+section of the measurements doc); whether that discharges Monday 2026-08-24 is the owner's call.
 **Owner.** Marco Altmann.
 **Written.** 2026-08-22.
 **Origin.** Tasks 8 and 9 of `docs/superpowers/plans/2026-08-22-diarization-bench-and-threshold.md`,
@@ -74,10 +78,68 @@ Four policies:
 Implement as a selectable policy so the bench can A/B rather than argue, **then delete the losers.** A
 mode enum that outlives the experiment is a configuration surface nobody asked for.
 
-**Acceptance.** Attribution on both recordings for all four policies, from the warm cache. The winner
-beats (a) on LSP and does not lose on the workshop. Also report the **variance of `_matchSimilarity`
-across the meeting** — stability is the point, and a policy that scores the same while holding still is
-the better one.
+**Acceptance.** Attribution on **all three** recordings for all four policies, from the warm cache. The
+winner beats (a) on LSP, does not lose on the workshop, **and does not lose on `testmeeting`**. Also
+report the **variance of `_matchSimilarity` across the meeting** — stability is the point, and a policy
+that scores the same while holding still is the better one.
+
+### Amendment 2026-08-22: `testmeeting` is the counterweight, and it changes the answer
+
+A third recording landed after this brief was written — a live four-person meeting, three of them
+women, measured in the last section of `2026-08-21-speaker-attribution-measurements.md`. It inverts the
+sign of the pressure on the threshold, and the two-recording acceptance test above would have shipped a
+regression.
+
+| | workshop | LSP | testmeeting |
+|---|---|---|---|
+| live attribution, by segment | 91.9 % | 92.1 % | **84.1 %** |
+| best fixed threshold | 0.400 | 0.345 | 0.375 |
+| oracle enrollment, 8 s budget | 100.0 %¹ | 94.9 % | 89.5 % |
+| headroom to the oracle | 8.1 pts¹ | 2.8 pts | **5.4 pts** |
+| closest pair, margin | 0.166 | 0.215 | **0.103** |
+
+¹ Not a bound — one workshop speaker is `untested` at every enrollment budget. Comparisons here are at
+8 s, the smallest budget, because it leaves the largest scored set; `testmeeting` swings 10.5 points
+across the 8–30 s range where LSP moves 0.5, so a mixed-budget comparison invents headroom that is not
+there. The `PIA_BENCH_ENROLL` sweep is in the measurements doc.
+
+The failure there is a single speaker absorbed whole: she is filed under another woman's label for
+25.3 s and her own label is never minted, so **every one of her scored segments is wrong and every
+other speaker's is right** (37/37 excluding her).
+
+**Read it as a constraint on this brief, not as a mandate for it.** Her provisional and final labels
+agree on five of her seven scored segments, and the two that differ move her between two *wrong*
+labels — so the match threshold is not what is placing her. The two reassignments that matter both hit
+her first segment: a pass moved it out into a fresh cluster, **took a genuinely-correct segment of the
+absorbing speaker with it**, and a later pass dissolved that cluster back. The clusterer tried to split
+this pair, split it wrongly, and gave up. That is `ChooseCut`'s partition, which is where LSP's residue
+already lived.
+
+Consequences for Task 8:
+
+- **Both candidate values in option (b) are below the 0.50 that already absorbed her**, so neither can
+  help, and tuning on LSP and the workshop alone moves the threshold further down. `testmeeting`'s role
+  in the A/B is as the **regression guard** — the recording a merge-happy winner must not make worse.
+- **A single global fixed threshold looks weaker than this brief assumed.** Option (d), derived from the
+  observed separation distribution, is the only one of the four that can hold 0.345-like behaviour on
+  LSP and a higher bar on a close pair. Sweep (b) anyway; it is cheap, and it is now a control.
+- **A young centroid is worth one experiment on its own.** The provisional absorption happened against
+  a centroid one segment old. Damping the bar while a cluster is thin is smaller than any of the four
+  policies and testable separately — but it moves the provisional label, so measure it with
+  `-Provisional` and do not expect it to move the score much.
+
+Two findings from that recording are **not** Task 8's and should not be folded into it:
+
+- **Minting on overlapped speech.** One of the two phantom labels there was born on a segment the
+  reference says is three people at once; the other was minted past the end of the video and cannot be
+  attributed. A mixture lands far from every centroid, which the mint branch reads as a new voice. One
+  confirmed case, not yet a pattern — but it is the likeliest explanation for five names on four people,
+  and no threshold fixes it.
+- **Consent-phase enrollment.** The oracle's budget is not hypothetical on this recording: the meeting
+  opened with each participant saying their own name for roughly 12 s. Worth about **5 points** at a
+  like-for-like budget, and — the part that matters more than the points — it is the only lever measured
+  so far that gives the absorbed speaker a label at all (80 % against the live run's 0 %) instead of
+  trading her against someone else. Still a feature with UI and a privacy story, still not this brief.
 
 ## Task 9 — roster as a target for k, and expect to refuse
 
@@ -100,8 +162,9 @@ cold one to the digit. Full procedure in `speaker-attribution-fixture-playbook.m
 disk:
 
 ```
-artifacts/wav/lsp-replay.wav        roster 5    scripts/speaker-reference/lsp.reference.json
-artifacts/wav/workshop-replay.wav   roster 10   scripts/speaker-reference/workshop.reference.json
+artifacts/wav/lsp-replay.wav         roster 5    scripts/speaker-reference/lsp.reference.json
+artifacts/wav/workshop-replay.wav    roster 10   scripts/speaker-reference/workshop.reference.json
+artifacts/wav/testmeeting-replay.wav roster 4    scripts/speaker-reference/testmeeting.reference.json
 ```
 
 **The trap.** The bench's *absolute* attribution is about 2 points off the app's, in either direction

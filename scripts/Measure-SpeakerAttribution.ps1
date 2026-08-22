@@ -15,6 +15,11 @@
   The residual is printed — an alignment that did not converge invalidates the attribution number,
   so it must not be silent.
 
+  A live meeting log scores too, and needs one thing a replay does not: the recording was already
+  running when Pia was admitted, so stream 0 is somewhere inside it. That origin is fitted from the
+  speech masks at rate 1.0, and segments past the end of the video are excluded rather than counted
+  as speech the reference denies — a recording can be stopped before the meeting ends.
+
   Attribution, not DER. The burned-in indicator attacks late and lingers, so interval boundaries
   are the indicator's error, not Pia's. Each segment is scored at its midpoint. Segments whose
   midpoint lands in overlapped speech, in no speech at all, or in a range where the tile grid had
@@ -39,6 +44,9 @@ param(
     # so their best-fit offsets differ by seconds — and comparing accuracy across a moved offset
     # compares two different questions. Pin it to compare a code change.
     [double]$Offset = [double]::NaN,
+    # Recording time = stream time + this. Zero by construction for a replay, which starts the file
+    # at its beginning; a live run joins a meeting already being recorded, so it is fitted there.
+    [double]$StreamOriginSeconds = [double]::NaN,
     [string]$NameMapPath
 )
 
@@ -55,7 +63,7 @@ $names = if ($NameMapPath) { (Get-Content -LiteralPath $NameMapPath -Raw | Conve
 if ($SegmentsPath) {
     # A bench run knows every segment's stream position, so there is nothing to stitch and nothing to
     # align. It has no transcription either, so no segment is excluded for producing empty text.
-    $t0 = $null; $tEnd = $null
+    $t0 = $null; $tEnd = $null; $liveRun = $false
     $queued = @(); $engineStarts = @(); $passes = @(); $corrections = @()
     $appliedTotal = 0; $unjournaledTotal = 0
     $segments = [System.Collections.Generic.List[object]]::new()
@@ -85,10 +93,11 @@ else {
     $lines = [System.IO.File]::ReadAllLines($LogPath)
     $starts = @()
     for ($i = 0; $i -lt $lines.Length; $i++) {
-        if ($lines[$i] -match 'Debug file audio source playing ') { $starts += $i }
+        if ($lines[$i] -match 'Debug file audio source playing |Meeting attendee admitted to the call') { $starts += $i }
     }
-    if ($starts.Count -eq 0) { throw "No replay found in $LogPath (no 'Debug file audio source playing')" }
+    if ($starts.Count -eq 0) { throw "No run found in $LogPath (no replay start, no meeting admission)" }
     $from = if ($RunIndex -lt 0) { $starts[$starts.Count + $RunIndex] } else { $starts[$RunIndex] }
+    $liveRun = $lines[$from] -notmatch 'Debug file audio source playing '
     $to = $lines.Length - 1
     foreach ($s in $starts) { if ($s -gt $from) { $to = $s - 1; break } }
 
@@ -235,12 +244,12 @@ $placed = @($segments | Where-Object { $null -ne $_.Start })
 $useExact = ($placed.Count -gt 0) -and (-not $pinned) -and
     ($placed.Count -eq @($segments | Where-Object { $null -ne $_.SegId }).Count)
 
-function Get-ExactMaskScore([object[]]$segments, [bool[]]$refMask, [double]$step) {
+function Get-ExactMaskScore([object[]]$segments, [bool[]]$refMask, [double]$step, [double]$origin) {
     $score = 0
     foreach ($s in $segments) {
         if ($null -eq $s.Start) { continue }
-        $a = [int][Math]::Floor($s.Start / $step)
-        $b = [int][Math]::Ceiling(($s.Start + $s.Duration) / $step)
+        $a = [int][Math]::Floor(($s.Start + $origin) / $step)
+        $b = [int][Math]::Ceiling(($s.Start + $origin + $s.Duration) / $step)
         for ($k = [Math]::Max($a, 0); $k -lt [Math]::Min($b, $refMask.Length); $k++) {
             if ($refMask[$k]) { $score++ } else { $score-- }
         }
@@ -270,10 +279,39 @@ function Get-MaskScore([object[]]$segments, [bool[]]$refMask, [double]$rate, [do
 
 $anchorRate = $rate
 $fitted = 0.0
+$origin = 0.0
+$originRunnerUp = $null
 if ($useExact) {
     $rate = 1.0
     $offset = 0.0
-    $score = Get-ExactMaskScore $segments $refMask $step
+    if (-not [double]::IsNaN($StreamOriginSeconds)) {
+        $origin = $StreamOriginSeconds
+    }
+    elseif ($liveRun) {
+        # Exact positions still need to be told where in the recording the stream began. One unknown
+        # and no rate, so a plain mask cross-correlation settles it; the runner-up peak more than 3 s
+        # away is printed because a dense back-and-forth can produce a near-tie that reads as a fit.
+        $coarse = 0.25
+        $lo = [int][Math]::Floor(-30 / $coarse)
+        $hi = [int][Math]::Ceiling(($refDuration + 30) / $coarse)
+        $grid = [System.Collections.Generic.List[object]]::new()
+        foreach ($o in $lo..$hi) {
+            $cand = $o * $coarse
+            $grid.Add(@{ Origin = $cand; Score = (Get-ExactMaskScore $segments $refMask $step $cand) })
+        }
+        $peak = ($grid | Sort-Object -Property { $_.Score } -Descending)[0]
+        $origin = $peak.Origin
+        $best = $peak.Score
+        foreach ($o in -10..10) {
+            $cand = $peak.Origin + $o * $step
+            $s = Get-ExactMaskScore $segments $refMask $step $cand
+            if ($s -gt $best) { $best = $s; $origin = $cand }
+        }
+        $away = @($grid | Where-Object { [Math]::Abs($_.Origin - $peak.Origin) -gt 3.0 } |
+            Sort-Object -Property { $_.Score } -Descending)
+        if ($away.Count -gt 0) { $originRunnerUp = $away[0] }
+    }
+    $score = Get-ExactMaskScore $segments $refMask $step $origin
 }
 else {
     $best = @{ Offset = 0.0; Rate = $anchorRate; Score = [int]::MinValue }
@@ -322,6 +360,7 @@ $confusion = @{}
 $scored = 0; $scoredSeconds = 0.0
 $ambiguous = 0; $ambiguousSeconds = 0.0
 $noRef = 0; $noRefSeconds = 0.0
+$outside = 0; $outsideSeconds = 0.0
 $unusable = 0; $unusableSeconds = 0.0
 $unlabelled = 0
 $everLabels = [System.Collections.Generic.HashSet[string]]::new()
@@ -334,7 +373,10 @@ foreach ($s in $segments) {
     if (-not $s.Final) { $unlabelled++; continue }
     [void]$finalLabels.Add($s.Final)
 
-    $mid = if ($useExact) { $s.Start + $s.Duration / 2 } else { $s.Closed * $rate + $offset - $s.Duration / 2 }
+    $mid = if ($useExact) { $s.Start + $origin + $s.Duration / 2 } else { $s.Closed * $rate + $offset - $s.Duration / 2 }
+    # The recording can stop before the meeting does. Speech the reference never saw is not evidence
+    # of anything, in either direction.
+    if ($mid -lt 0 -or $mid -ge $refDuration) { $outside++; $outsideSeconds += $s.Duration; continue }
     if (Test-Invalid $reference $mid) { $unusable++; $unusableSeconds += $s.Duration; continue }
     $who = Get-SpeakersAt $reference $mid
     if ($who.Count -eq 0) { $noRef++; $noRefSeconds += $s.Duration; continue }
@@ -380,6 +422,15 @@ else {
 }
 if ($useExact) {
     Write-Host ("Align   : exact — every identified segment reported its own stream position; speech-mask agreement {0:P1}" -f $agreement)
+    if ($origin -ne 0.0) {
+        $how = if ([double]::IsNaN($StreamOriginSeconds)) { 'fitted' } else { 'given' }
+        Write-Host ("Origin  : stream 0 s = recording {0:N2} s ({1}); reference covers stream {2:N1}..{3:N1} s" -f `
+            $origin, $how, -$origin, ($refDuration - $origin))
+        if ($originRunnerUp) {
+            Write-Host ("          runner-up peak {0:N2} s scored {1} against {2} — a near tie here would void the fit" -f `
+                $originRunnerUp.Origin, $originRunnerUp.Score, $score)
+        }
+    }
 }
 else {
     Write-Host ("Align   : offset {0:N2} s{1}, speech-mask agreement {2:P1}" -f `
@@ -412,6 +463,7 @@ if ($scored -gt 0) {
 }
 Write-Host ("  overlapped speech  : {0}  ({1:N1} s) — excluded, ambiguous reference" -f $ambiguous, $ambiguousSeconds)
 Write-Host ("  no speaker lit     : {0}  ({1:N1} s) — excluded, indicator off" -f $noRef, $noRefSeconds)
+Write-Host ("  outside the video  : {0}  ({1:N1} s) — excluded, the recording had stopped" -f $outside, $outsideSeconds)
 Write-Host ("  unusable layout    : {0}  ({1:N1} s) — excluded, tile grid had moved" -f $unusable, $unusableSeconds)
 if ($unlabelled -gt 0) { Write-Host "  no label at all    : $unlabelled" }
 

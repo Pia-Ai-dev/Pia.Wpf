@@ -1,0 +1,13 @@
+{
+  "name": "testmeeting",
+  "note": "Teams gallery, 1920x1080, no screen share: two camera tiles (left and centre) with the name label overlaid on the tile's letterbox padding, then a right rail of three avatar tiles top-to-bottom. Tile ids read left-to-right then down the rail. Rects were derived from the observed pill extent, inset 2 px, rather than hand-measured. E is the meeting attendee itself and never lights.",
+  "frameWidth": 1920,
+  "frameHeight": 1080,
+  "tiles": [
+    { "id": "A", "x": 10, "y": 1052, "w": 44, "h": 22 },
+    { "id": "B", "x": 846, "y": 1052, "w": 124, "h": 22 },
+    { "id": "C", "x": 1692, "y": 398, "w": 52, "h": 22 },
+    { "id": "D", "x": 1692, "y": 622, "w": 60, "h": 22 },
+    { "id": "E", "x": 1692, "y": 846, "w": 186, "h": 22 }
+  ]
+}

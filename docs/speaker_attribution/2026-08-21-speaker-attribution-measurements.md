@@ -666,3 +666,314 @@ and Release rebuilds at `0 Warning(s)`.
 **Not done, and deliberately so:** nothing in Phase 4. Tasks 8 and 9 change which voice gets which
 label, and Monday's meeting is the acceptance test for the end state measured above. They belong on
 `feature/diarization-threshold` afterwards.
+
+# 2026-08-22 (afternoon) — the first live meeting, scored against an answer key
+
+Everything above was measured by replaying a recording. This section is a **live** meeting: Pia joined
+a real Teams call, four humans talked for 4:40, and the cloud recording of that same call supplies the
+answer key. It is the first time the shipping pipeline has been scored on audio it heard live.
+
+The recording is `testmeeting`. Speakers are tile letters here and stay that way — unlike the two work
+recordings above, this was a private call, so no names appear outside the gitignored sidecar.
+
+Three things make it worth keeping as a third fixture:
+
+- **Three of the four talkers are women, and one pair is genuinely close.** Neither existing fixture
+  has a same-gender pair that the pipeline fails on outright.
+- **19.4 % of speaking time is overlapped**, against 7.6 % on the workshop and 6.5 % on LSP. A relaxed
+  conversation with cross-talk, not a meeting with a speaker queue.
+- It is the same call captured two ways — live through the browser tap, and by replaying Teams' cloud
+  mix — with one answer key covering both.
+
+It is also short. 4:40 is one twelfth of LSP, so read the confusion matrix, not the percentage.
+
+## The reference, and a cheaper way to get one
+
+| | value |
+|---|---|
+| duration | 280.4 s, 1122 frames at 4 fps |
+| tiles | 5 — four humans plus the attendee itself, which never lights |
+| talk | A 49.8 s · B 72.8 s · C 52.0 s · D 78.0 s |
+| no highlight | 50.0 s |
+| overlap | 40.0 s |
+| unusable layout | 23.8 s, one range: 2.25–26.0 s |
+| intervals | 174 |
+
+The playbook priced the layout at "the hour" of hand-measuring. It does not have to be. The pill is a
+strongly-coloured rectangle, so one pass over the video that heat-maps pill-coloured pixels and takes
+connected components hands back the label rects directly — for four of the five tiles here, including
+both name overlays burned over video, which is the case a grid-relative guess gets wrong. The fifth is
+the attendee's own tile, which never lights and was placed from the rail's pitch.
+
+Two numbers say the rects are right rather than merely plausible. The pill reads a blue lead of 67/255
+where the pale avatar circle behind it reads 25, so the classifier is not working near its threshold.
+And **23.8 s of the 280.4 lands in `invalidRanges`, as a single range, 2.25–26.0 s.** That range is not
+noise: it ends when Pia is admitted and Teams reflows the grid from four tiles to five, which the log
+timestamps at 15:30:38.1. The validity test found the join without being told about it.
+
+## Alignment: a live run needs an origin, and this one has three witnesses
+
+A replay starts the file at its beginning, so stream time *is* recording time. A live run joins a
+meeting already being recorded, so stream 0 sits somewhere inside the reference — and scoring exact
+positions against the wrong origin is a confident wrong answer. `Measure-SpeakerAttribution.ps1` now
+fits that origin from the speech masks at rate 1.0 when the log is a live run, and prints it. The
+origin stays 0 for a replay by construction, so no number above this line moved.
+
+**Fitted origin 27.15 s**, runner-up peak 30.75 s scoring 2650 against 3415 — a 29 % margin, not the
+near-tie a dense back-and-forth can produce. Two independent witnesses agree:
+
+| how | value |
+|---|---|
+| speech-mask fit | 27.15 s |
+| capture-armed timestamp minus the recording's start | 27.23 s |
+| the grid reflow that admission itself causes | 26.0 s |
+
+The origin also fixes the coverage window, which matters here: the reference covers stream −27.1 to
+253.3 s, and **the meeting outlived the recording by about 20 s — five segments, 16.1 s.** Those are
+now excluded in their own bucket rather than counted as speech the reference denies. A recording can be
+stopped before the meeting is.
+
+## The result: three speakers perfect, the fourth invisible
+
+```
+scored segments : 44  (156.5 s)
+correct         : 37  = 84.1 % by segment, 81.1 % by duration
+overlapped      : 9  (33.0 s)   excluded, ambiguous reference
+outside video   : 5  (16.1 s)   excluded, the recording had stopped
+no label at all : 21
+```
+
+84.1 % against the workshop's 91.9 % and LSP's 92.1 %. But the headline is the wrong way to read this
+run, because the errors are not spread at all:
+
+```
+label          A       B       C       D
+Speaker 1      .      56.0     4.3     .     -> B
+Speaker 2     30.7     .      25.3     .     -> A
+Speaker 3      .       .       .      40.3   -> D
+```
+
+**C never gets a label of her own.** She is filed under A's label for 25.3 s and under B's for 4.3 s.
+The arithmetic closes exactly: 44 scored segments, 7 errors, and **all 7 are C's — every one of her
+cleanly-attributable segments is wrong, and every other speaker's is right.** Excluding C, the run is
+37 for 37.
+
+So this is not a pipeline that is 84 % accurate. It is a pipeline that resolved three of four talkers
+without a single mistake and did not notice the fourth existed.
+
+## Where it went wrong: the first thing C ever said
+
+The per-segment timeline puts the failure on one decision. C's first utterance is segment 5, at
+recording 63.1 s, and it was filed under A's label. **Every later segment of hers went the same way** —
+six to A, one to B, none to her own. Twelve repasses never split them.
+
+At that moment the run had minted three labels against a ceiling of five
+(`_expectedSpeakers + ExpectedSpeakerSlack` = 4 + 1), so a fourth was free for the taking. **C was not
+blocked by the roster ceiling.** She cleared the match bar against A's centroid — one segment old at
+that point, with the bar at `InitialMatchSimilarity` 0.50, the strictest value the policy ever holds.
+
+**But that is the provisional decision, and it is not what the score reads.** A pass reassigns every
+eligible segment, so a final label is the last pass's partition. Comparing the two for C's seven
+scored segments:
+
+| seg | recording | provisional | final | |
+|---|---|---|---|---|
+| 5 | 63.1 s | Speaker 2 | Speaker 2 | via Speaker 5 and back |
+| 21 | 131.8 s | Speaker 5 | Speaker 2 | reassigned |
+| 27 | 158.2 s | Speaker 2 | Speaker 2 | |
+| 37 | 196.7 s | Speaker 2 | Speaker 2 | |
+| 38 | 200.3 s | Speaker 2 | Speaker 2 | |
+| 46 | 228.4 s | Speaker 2 | Speaker 1 | reassigned |
+| 49 | 243.8 s | Speaker 2 | Speaker 2 | |
+
+Only eight reassignments happened in the whole run, and the interesting two are on segment 5: a pass
+moved it out of A's label into a fresh `Speaker 5`, **taking segment 9 — which is genuinely A's — with
+it**, and a later pass dissolved that cluster back into A's label. So the clusterer did try to split
+this pair, split it *wrongly*, and gave up.
+
+That places the defect in the dendrogram's partition, not in the online match bar: the threshold owns
+the provisional label, and here provisional and final agree on five of seven anyway. Consistent with
+the earlier finding on LSP's residue — only `ChooseCut`, the embedding model, or enrollment can move a
+label that the partition itself is placing wrongly.
+
+## The phantom labels are born on cross-talk
+
+Seven labels were minted for four talkers. Three of the four real births are clean single-speaker
+segments — B at 32.5 s, A at 38.6 s, D at 58.0 s. `Speaker 4` is different: it was minted on segment
+10, which the reference says is **three people talking at once**. `Speaker 7` was minted on the last
+segment of the run, past the end of the video, where there is no reference at all — so this is one
+confirmed case and one unattributable, not yet a pattern.
+
+A mixture of three voices lands far from every centroid, which is exactly the condition the mint branch
+reads as "a voice we have not heard". So on this recording label inflation is driven by overlap, not by
+the threshold — a different defect from the one Task 8 addresses, with a different fix (refuse to
+*mint* on a segment that looks like a mixture; matching one is harmless). It also explains why the
+count is worse here: 19.4 % of speaking time is overlapped against 7.6 % and 6.5 %.
+
+Neither phantom carries a meaningful number of scored seconds, so they cost accuracy nothing. They cost
+the transcript five speaker names for four people, which is what a user actually sees.
+
+## Cloud mix against live browser tap: the same failure, to the tenth of a second
+
+The playbook lists the gap between a cloud-mixed recording and what Pia actually hears as unmeasured.
+The same meeting is now available both ways, against one answer key and from the same build.
+
+| | live (in-browser tap) | replay (cloud mix) |
+|---|---|---|
+| segments emitted / transcribed | 80 / 79 | 84 / 84 |
+| below the diarization floor | 17 | 20 |
+| clusters per pass | 3,4,5,5,4,5,4,4,4,4,4,5 | 4,5,5,5,5,5,5,5,5,5,5,5 |
+| labels ever minted | 7 | 5 |
+| labels in the transcript | 5 | 5 |
+| scored | 44 (156.5 s) | 44 (160.7 s) |
+| correct | **84.1 % / 81.1 %** | **81.8 % / 80.3 %** |
+| A in A's label | 30.7 s | 30.7 s |
+| C in A's label | 25.3 s | 25.3 s |
+| C in B's label | 4.3 s | 4.3 s |
+
+**The three cells that carry the finding are identical.** B and D differ by a few seconds and the
+headline by 2.3 points, which is the pass-timing sensitivity already documented for this fixture.
+
+Read this narrowly. It says a cloud-mixed recording is a faithful stand-in for the **in-browser tap**,
+which is what Pia used here — itself a tap on Teams' own mixed page audio. It says nothing about device
+loopback, with its second D/A-A/D pass and Teams' AGC. That case is still unmeasured.
+
+## The bench: the embedding model can separate this pair, and the policy cannot
+
+The pooled statistics look ordinary — `d' 1.88` against 1.82 and 2.04, best fixed threshold 0.375
+against 0.400 and 0.345. A pooled d' can hide one bad pair, so the oracle now prints a per-pair
+matrix:
+
+```
+              A       B       C       D
+  A       0.452   0.203   0.350   0.237
+  B       0.203   0.644   0.264   0.192
+  C       0.350   0.264   0.587   0.204
+  D       0.237   0.192   0.204   0.417
+```
+
+A/C sit at **0.350** while every other pair sits between 0.192 and 0.264. Against the tighter of the
+two self-similarities (A's 0.452) that leaves a margin of **0.103** — less than half of either work
+recording:
+
+| recording | closest pair | cross | self | margin | is it the pair that fails? |
+|---|---|---|---|---|---|
+| workshop | E/H | 0.336 | 0.502 | 0.166 | E loses its label, H keeps it |
+| LSP | B/C | 0.292 | 0.507 | 0.215 | yes — C inside B is this fixture's known residue |
+| testmeeting | A/C | 0.350 | 0.452 | **0.103** | yes — C inside A |
+
+**But 0.103 is a margin, not a collision.** The oracle settles it — carefully, because on a recording
+this short the oracle's own enrollment budget moves the answer more than the pipeline does. The budget
+is now `PIA_BENCH_ENROLL` (default 30, so every number above reproduces), and sweeping it:
+
+| `PIA_BENCH_ENROLL` | pooled | scored | C | A |
+|---|---|---|---|---|
+| 8 s | **89.5 %** | 38 seg | 80.0 % (4/5) | 85.7 % (6/7) |
+| 10 s | 97.1 % | 35 seg | 100 % (4/4) | 83.3 % (5/6) |
+| 12 s | 97.1 % | 35 seg | 100 % (4/4) | 83.3 % (5/6) |
+| 15 s | 96.8 % | 31 seg | 100 % (3/3) | 80.0 % (4/5) |
+| 20 s | 100 % | 23 seg | 100 % (1/1) | 100 % (3/3) |
+| 30 s | 100 % | 14 seg | *untested* | 100 % (1/1) |
+
+That is playbook trap 4 one level up: **the pooled figure rises as the scored set shrinks, and the 30 s
+default reports a meaningless 100 % having consumed C entirely.** Quote the **8 s row — 89.5 % over 38
+segments** — because it is the one with a real sample behind it, and say which budget produced it.
+
+The comparison to the other two recordings has to be made at the same budget, and it turns out only
+this recording is sensitive:
+
+| recording | oracle @ 8 s | scored | @ 12 s | @ 30 s | live | headroom @ 8 s |
+|---|---|---|---|---|---|---|
+| workshop | 100.0 % | 170 | 99.4 % | 98.7 % | 91.9 % | 8.1 pts¹ |
+| LSP | 94.9 % | 434 | 94.7 % | 95.2 % | 92.1 % | 2.8 pts |
+| testmeeting | 89.5 % | 38 | 97.1 % | 100 % | 84.1 % | **5.4 pts** |
+
+¹ E is `untested` at every budget — only 11.4 s of speech — so the workshop figure is not a bound on it.
+
+LSP moves 0.5 points across the whole range because 30 s barely dents 434 segments; `testmeeting` moves
+10.5. **So the headroom here is about 5.4 points, not the 13 the 12 s row suggests**, and it sits between
+the two work recordings rather than dwarfing them.
+
+What survives that correction is the part that matters: **at 8 s enrollment C scores 80 %, where the live
+run scores 0 %.** Correct centroids do not make her perfect — the 0.103 margin shows up as a real
+residual, and the absorbing speaker A drops to 85.7 % — but they give her a label at all, which no
+setting of the matching policy did. The ceiling is not the embedding model.
+
+The `ORACLE clusterer (k = 4)` figure is 79.2 %, below the live run's 84.1 % — the third recording in a
+row where pinning k does worse than the shipping pipeline.
+
+### The pair *is* separable, by the production clusterer, on the production embedding
+
+The enrollment oracle replaces the clustering entirely, so on its own it leaves open whether the
+clusterer could ever find this split. That is answerable directly: hand the **production**
+`SpeakerClusterer` nothing but the closest pair's segments and pin k=2.
+
+| recording | closest pair | isolated, k=2 | segments | the same pair in the live run |
+|---|---|---|---|---|
+| LSP | B/C | **96.3 %** / 98.0 % | 134 | 127.4 s of C inside B's label |
+| workshop | E/H | **90.3 %** / 92.0 % | 144 | E has no label of its own |
+| testmeeting | A/C | **82.4 %** / 87.6 % | 17 | C has no label of her own, 0 % correct |
+
+**On all three recordings the pair the pipeline cannot separate is separable — by the same clusterer,
+on the same embeddings, with no model change and no enrollment.** The two well-sampled cases are
+unambiguous at 134 and 144 segments; `testmeeting`'s 17 segments make its 82.4 % indicative rather than
+precise, but the distance from 0 % is not in doubt.
+
+So the information is present and the linkage can extract it. What the shipping pipeline never does is
+**pose the question** — the pair is one sub-problem inside a global partition that is optimising
+something else, and the cut that would separate them is not the cut that best splits the whole set.
+That is the most specific statement the fixture has produced about where the remaining accuracy lives,
+and it points at a fix shape rather than at a model swap: a **split-candidate pass** that takes an
+existing cluster, tries a 2-way split, and keeps it when the halves are more self-consistent than the
+whole. Untested — but it is exactly the operation the table above performs by hand.
+
+## What this changes
+
+- **Task 8 cannot fix this recording, and that is a third measured refusal, not a new mandate.** The
+  match threshold owns the provisional label; C's provisional and final labels agree on five of seven
+  segments, and the two that differ move her between two wrong labels. Both of the brief's candidate
+  values (0.345 from LSP, 0.400 from the workshop) are below the 0.50 that already absorbed her. This
+  recording still belongs in the Task 8 A/B — as the case that must not *regress*, since tuning on two
+  recordings that both want more merging would ship exactly that — but the fix for C lives in
+  `ChooseCut`, the embedding, or enrollment.
+- **Consent-phase enrollment is now measured rather than argued, and it is worth about 5 points.** The
+  oracle's budget is not a hypothetical on this recording — the meeting opened with each participant
+  saying their own name for roughly 12 s. It is the only lever measured so far that gives C a label at
+  all, rather than trading her against someone else, and that is a bigger deal than the 5 points.
+- **A new defect, separate from Task 8:** minting a label on an overlapped segment. `Speaker 4` was born
+  that way here — on a segment the reference says is three people at once. `Speaker 7` was minted past
+  the end of the video, so it is unattributable either way: one confirmed case, not a pattern yet. Cheap
+  to test, and it is the likeliest explanation for five names on four people.
+- **A split-candidate pass is now the best-evidenced fix, and it is new.** Isolating the closest pair and
+  pinning k=2 recovers it on all three recordings — 96.3 %, 90.3 %, 82.4 % — with no model change and no
+  enrollment. The shipping pipeline never poses that sub-problem. Trying a 2-way split of an existing
+  cluster and keeping it when the halves are more self-consistent than the whole is a smaller change
+  than consent enrollment, needs no UI and no privacy story, and is testable entirely on the bench.
+  **Do this before Task 11, and probably before the rest of Task 8.**
+- **Task 11 stays a follow-up, but this is the first recording that argues for it.** A margin of 0.103
+  is thin, and it shows: even with correct centroids the absorbed speaker only reaches 80 % and the
+  absorbing one drops to 85.7 %. A better embedding would widen that margin. It is still not what costs
+  the 5 points — the oracle recovers those on the model we already ship — but "the embedding is fine"
+  is a weaker statement here than on either work recording.
+
+## Two items the playbook listed as unmeasured are now measured
+
+- **The roster size `TeamsMeetingSession` actually reports.** Every number before this used an env-var
+  roster. The live run reports `expected=4` against a People panel reading "In this meeting (5)" — the
+  real path works and correctly excludes Pia itself.
+- **Dropped hops in the browser capture.** `BrowserAudioCaptureService` writes into a `DropOldest`
+  channel upstream of the VAD's sample counter, so one drop would shift every later position against
+  page time, permanently and silently. Over the whole meeting: `droppedFrames=0`. That is also what
+  makes a rate-1.0 origin fit legitimate rather than assumed.
+
+## Caveats on this section
+
+- 4:40 and 44 scored segments. The confusion matrix is unambiguous; the percentages carry a wide
+  interval.
+- **21 of the 79 transcribed segments carry no speaker label at all** (26.6 %, against 14 % on LSP and
+  15.8 % on the workshop) — short utterances below `MinClusterSegmentSeconds`, which a casual
+  conversation produces far more of. They still produce transcript text. What the UI attributes them to
+  was not examined here.
+- The transcript ran on **whisper-tiny**, not the medium model the earlier sections used. Diarization
+  is upstream of the text, so this touches no number here; it does mean the transcript itself is
+  near-useless, and one segment produced an empty result.

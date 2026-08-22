@@ -109,9 +109,13 @@ public class DiarizationBenchTests
         say($"embedding  : intra {similarity.IntraMean:F3} ± {similarity.IntraStdDev:F3}, "
             + $"inter {similarity.InterMean:F3} ± {similarity.InterStdDev:F3}, d' {similarity.DPrime:F2}");
         say($"best fixed threshold {similarity.BestThreshold:F3}, pair-decision error {similarity.PairErrorRate:P1}");
+        AppendPairSeparation(say, truthful, reference.Speakers);
 
-        var enrolled = DiarizationOracle.NearestCentroid(truthful, enrollSeconds: 30);
-        say($"ORACLE enrollment (30 s/speaker): {enrolled.BySegment:P1} by segment, "
+        var enrollSeconds = double.TryParse(
+            Environment.GetEnvironmentVariable("PIA_BENCH_ENROLL"), CultureInfo.InvariantCulture, out var e)
+            ? e : 30;
+        var enrolled = DiarizationOracle.NearestCentroid(truthful, enrollSeconds);
+        say($"ORACLE enrollment ({enrollSeconds:F0} s/speaker): {enrolled.BySegment:P1} by segment, "
             + $"{enrolled.ByDuration:P1} by duration, over {enrolled.Total} segments");
         foreach (var tally in enrolled.PerSpeaker ?? [])
             say($"  {tally.Speaker,-4} enrolled {tally.EnrolledSeconds,6:F1} s | scored {tally.Scored,4} seg "
@@ -125,5 +129,44 @@ public class DiarizationBenchTests
             + $"{pinned.ByDuration:P1} by duration");
         say("Read the enrollment number against the live run: if it is not clearly higher, the ceiling "
             + "is the embedding model, not the matching policy.");
+    }
+
+    private static void AppendPairSeparation(
+        Action<string> say, List<LabelledSegment> truthful, string[] speakers)
+    {
+        var rows = DiarizationOracle.PerPair(truthful);
+        var present = speakers.Where(s => rows.Any(r => r.A == s || r.B == s)).ToArray();
+        if (present.Length < 2) return;
+
+        double? At(string a, string b) => rows
+            .FirstOrDefault(r => (r.A == a && r.B == b) || (r.A == b && r.B == a))?.Mean;
+
+        say("separation : mean cosine, diagonal is a speaker against themselves");
+        say("       " + string.Concat(present.Select(s => $"{s,8}")));
+        foreach (var a in present)
+            say($"  {a,-5}" + string.Concat(present.Select(b =>
+                At(a, b) is { } m ? $"{m,8:F3}" : $"{".",8}")));
+
+        // The gap between a pair's cross-similarity and the tighter speaker's self-similarity is the
+        // room a threshold has to fit into; at zero no threshold separates them at all. Ranked on
+        // that rather than on raw cross-similarity, which two of the three fixtures tie on.
+        var worst = present
+            .SelectMany(a => present, (a, b) => (a, b))
+            .Where(p => string.CompareOrdinal(p.a, p.b) < 0)
+            .Select(p => (p.a, p.b, Cross: At(p.a, p.b), Self: Math.Min(At(p.a, p.a) ?? 0, At(p.b, p.b) ?? 0)))
+            .Where(p => p.Cross.HasValue)
+            .OrderBy(p => p.Self - p.Cross!.Value)
+            .FirstOrDefault();
+        if (!worst.Cross.HasValue) return;
+        say($"closest pair {worst.a}/{worst.b} at {worst.Cross.Value:F3} against self-similarity "
+            + $"{worst.Self:F3} — margin {worst.Self - worst.Cross.Value:F3}");
+
+        // Hand the production clusterer only that pair's segments and pin k=2. This separates "the
+        // signal is not there" from "the global problem swamps it": a high score here means the
+        // embedding and the linkage can both tell these two apart, and only the policy cannot.
+        var isolated = truthful.Where(s => s.Speaker == worst.a || s.Speaker == worst.b).ToList();
+        var pinned = DiarizationOracle.PinnedClusterer(isolated, 2);
+        say($"  isolated to just {worst.a}+{worst.b}, k=2: {pinned.BySegment:P1} by segment, "
+            + $"{pinned.ByDuration:P1} by duration, over {pinned.Total} segments");
     }
 }
