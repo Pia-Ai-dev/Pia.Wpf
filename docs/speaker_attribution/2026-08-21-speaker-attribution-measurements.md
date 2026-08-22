@@ -1294,7 +1294,8 @@ completion and this is stream time, so on a 0.83x replay it merges *more* eagerl
 reporting a 10 s window beside the shipping 25 s moves the ratio by at most 1.4 points on any
 recording. The conclusion does not depend on the approximation.
 
-Nothing was changed here. This is the measurement that says lever 6's floor question is about a defect,
+This supersedes the afternoon section's caveat that "what the UI attributes them to was not examined
+here" — it is examined now. Nothing was changed here. This is the measurement that says lever 6's floor question is about a defect,
 not a percentage point — and it is the one item in this campaign worth fixing even if every other lever
 refused.
 
@@ -1498,7 +1499,7 @@ it.
 | workshop | 58.6 % over 29 | **100 %** over 7 |
 | testmeeting | 20.0 % over 20 | **100 %** over 6 |
 
-26 for 26 across all three recordings. The catch is coverage, and it is a hard one: only segments the
+26 for 26 — but that is 6, 7 and 13 segments, not the 20, 29 and 61 the inheritance covers, and the coverage gap is the hard part: only segments the
 diarizer actually saw have an embedding to match, so this reaches the 1.5–2 s band and nothing below
 it. Everything under the 1.5 s gate has no vector at all, which is why the nearest-centroid column
 scores 6–13 segments where the inheritance column scores 20–61.
@@ -1579,7 +1580,7 @@ Deliberately last, and lever 1 took most of the ground they were meant to take.
 
 | # | Lever | Outcome |
 |---|---|---|
-| 1 | Split-candidate pass | **Kept.** +11.4 pts on testmeeting confirmed by app replay, label count unchanged, all four talkers named. Two earlier shapes measured and discarded. |
+| 1 | Split-candidate pass | **Measured, default off.** +11.4 pts on testmeeting confirmed by app replay, label count unchanged, all four talkers named. Two earlier shapes measured and discarded. Blocked from shipping on one bench-only label count. |
 | 2 | Young-centroid damping | **Refused.** At best +1.1 pts of provisional accuracy on LSP, bought with 3-6 extra labels flashing past during the meeting. Nothing at all on testmeeting. |
 | 3 | Overlap-aware minting | **Refused.** Precondition measured: real on LSP (5 of 13 mints), untestable on testmeeting (4 of 5 mints land where the reference is blind). No production signal distinguishes a mixture from a new voice, and lever 1 removed the label-count motive. |
 | 4 | Match-threshold policies | **Unconfirmed, not adopted.** Fixed 0.30 now beats the derived policy on correct count on all three and cuts LSP's live label churn 13 -> 9 — but that is a label-count claim, and the last one failed its app replay. |
