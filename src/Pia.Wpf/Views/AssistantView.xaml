@@ -76,7 +76,8 @@
                    CornerRadius="14"
                    Cursor="Hand"
                    Command="{Binding UseSuggestionCommand}"
-                   CommandParameter="{Binding SuggestionReminder}">
+                   CommandParameter="{Binding SuggestionReminder}"
+                   AutomationProperties.AutomationId="Assistant_Suggestion_Reminder">
           <TextBlock Text="{Binding SuggestionReminder}"
                      FontSize="12" />
         </ui:Button>
@@ -86,7 +87,8 @@
                    CornerRadius="14"
                    Cursor="Hand"
                    Command="{Binding UseSuggestionCommand}"
-                   CommandParameter="{Binding SuggestionTodo}">
+                   CommandParameter="{Binding SuggestionTodo}"
+                   AutomationProperties.AutomationId="Assistant_Suggestion_Todo">
           <TextBlock Text="{Binding SuggestionTodo}"
                      FontSize="12" />
         </ui:Button>
@@ -96,7 +98,8 @@
                    CornerRadius="14"
                    Cursor="Hand"
                    Command="{Binding UseSuggestionCommand}"
-                   CommandParameter="{Binding SuggestionMemory}">
+                   CommandParameter="{Binding SuggestionMemory}"
+                   AutomationProperties.AutomationId="Assistant_Suggestion_Memory">
           <TextBlock Text="{Binding SuggestionMemory}"
                      FontSize="12" />
         </ui:Button>
@@ -105,6 +108,7 @@
 
     <!-- Message list -->
     <ScrollViewer x:Name="MessageScrollViewer"
+                  AutomationProperties.AutomationId="MessageScrollViewer"
                   Grid.Row="1"
                   VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled"
@@ -170,6 +174,7 @@
                              Command="{Binding DataContext.CopyMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                              CommandParameter="{Binding}"
                              AutomationProperties.Name="{loc:Str Assistant_Copy_Tooltip}"
+                             AutomationProperties.AutomationId="{Binding Id, StringFormat='Assistant_CopyMessage_{0}'}"
                              ToolTip="{loc:Str Assistant_Copy_Tooltip}">
                     <ui:Button.Style>
                       <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
@@ -247,11 +252,14 @@
                              VerticalAlignment="Center" />
               <TextBlock Text="{loc:Str Agent_WeakProvider_Body}" VerticalAlignment="Center" />
               <Button Content="{loc:Str Agent_Warn_Continue}"
-                      Command="{Binding DismissWeakWarningCommand}" Margin="8,0,0,0" />
+                      Command="{Binding DismissWeakWarningCommand}" Margin="8,0,0,0"
+                      AutomationProperties.AutomationId="Assistant_WeakProvider_Continue" />
               <Button Content="{loc:Str Agent_Warn_ChooseProvider}"
-                      Command="{Binding OpenProviderSettingsCommand}" Margin="4,0,0,0" />
+                      Command="{Binding OpenProviderSettingsCommand}" Margin="4,0,0,0"
+                      AutomationProperties.AutomationId="Assistant_WeakProvider_ChooseProvider" />
               <Button Content="{loc:Str Agent_Warn_StayInChat}"
-                      Command="{Binding StayInChatCommand}" Margin="4,0,0,0" />
+                      Command="{Binding StayInChatCommand}" Margin="4,0,0,0"
+                      AutomationProperties.AutomationId="Assistant_WeakProvider_StayInChat" />
             </StackPanel>
           </Border>
           <Border Margin="0,0,0,6" Padding="6"
@@ -279,6 +287,7 @@
                          Padding="4"
                          VerticalAlignment="Center"
                          AutomationProperties.Name="{loc:Str Assistant_RemoveAttachment_Tooltip}"
+                         AutomationProperties.AutomationId="Assistant_RemoveAttachment"
                          ToolTip="{loc:Str Assistant_RemoveAttachment_Tooltip}">
                 <ui:SymbolIcon Symbol="Dismiss16" FontSize="12" />
               </ui:Button>
@@ -293,6 +302,7 @@
                      Visibility="{Binding GoalTooShortHintVisible, Converter={StaticResource BooleanToVisibilityConverter}}" />
           <Grid>
             <ui:TextBox x:Name="InputTextBox"
+                        AutomationProperties.AutomationId="InputTextBox"
                         FontFamily="{StaticResource EmojiCapableFontFamily}"
                         Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
                         PlaceholderText="{loc:Str Assistant_InputPlaceholder}"
@@ -326,6 +336,7 @@
                          Padding="6,4"
                          Margin="0,0,2,0"
                          AutomationProperties.Name="{loc:Str Assistant_ClearConversation_Tooltip}"
+                         AutomationProperties.AutomationId="Assistant_ClearConversation"
                          ToolTip="{loc:Str Assistant_ClearConversation_Tooltip}">
                 <ui:SymbolIcon Symbol="Eraser24" FontSize="16" />
               </ui:Button>
@@ -336,6 +347,7 @@
                          Padding="6,4"
                          Margin="0,0,2,0"
                          AutomationProperties.Name="{loc:Str Assistant_Cancel_Tooltip}"
+                         AutomationProperties.AutomationId="Assistant_CancelStreaming"
                          ToolTip="{loc:Str Assistant_Cancel_Tooltip}">
                 <ui:Button.Style>
                   <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
@@ -358,6 +370,7 @@
                          Padding="6,4"
                          Margin="2,0"
                          AutomationProperties.Name="{loc:Str Assistant_Record_Tooltip}"
+                         AutomationProperties.AutomationId="Assistant_ToggleRecording"
                          ToolTip="{loc:Str Assistant_Record_Tooltip}">
                 <ui:SymbolIcon Symbol="Record24" FontSize="16" />
               </ui:Button>
@@ -367,6 +380,7 @@
                          Padding="6,4"
                          Margin="2,0"
                          AutomationProperties.Name="{loc:Str Assistant_Attach_Tooltip}"
+                         AutomationProperties.AutomationId="Assistant_AttachFile"
                          ToolTip="{loc:Str Assistant_Attach_Tooltip}"
                          Click="AttachFileButton_Click">
                 <ui:SymbolIcon Symbol="Attach24" FontSize="16" />
@@ -378,6 +392,7 @@
                          Margin="2,0"
                          Visibility="{Binding IsMeetingAttendeeAvailable, Converter={StaticResource BooleanToVisibilityConverter}}"
                          AutomationProperties.Name="{loc:Str MeetingAttendee_ToggleButton_Tooltip}"
+                         AutomationProperties.AutomationId="Assistant_ToggleMeetingAttendee"
                          ToolTip="{loc:Str MeetingAttendee_ToggleButton_Tooltip}">
                 <ui:Button.Style>
                   <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
@@ -398,6 +413,7 @@
                          Margin="2,0"
                          Visibility="{Binding IsDirectTranscriptionAvailable, Converter={StaticResource BooleanToVisibilityConverter}}"
                          AutomationProperties.Name="{loc:Str DirectTrans_ToggleButton_Tooltip}"
+                         AutomationProperties.AutomationId="Assistant_ToggleDirectTranscription"
                          ToolTip="{loc:Str DirectTrans_ToggleButton_Tooltip}">
                 <ui:Button.Style>
                   <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
@@ -419,6 +435,7 @@
                          Margin="2,0"
                          Visibility="{Binding IsAssignmentSurfaceAvailable, Converter={StaticResource BooleanToVisibilityConverter}}"
                          AutomationProperties.Name="{loc:Str Assistant_RunAssignment_Tooltip}"
+                         AutomationProperties.AutomationId="Assistant_RunAssignment"
                          ToolTip="{loc:Str Assistant_RunAssignment_Tooltip}">
                 <ui:SymbolIcon Symbol="Rocket24" FontSize="16" />
               </ui:Button>
@@ -433,6 +450,7 @@
                         MinWidth="140"
                         MaxWidth="240"
                         VerticalAlignment="Center"
+                        AutomationProperties.AutomationId="Assistant_PersonaPicker"
                         ToolTip="{loc:Str Settings_Tab_Personas}">
                 <ComboBox.ItemTemplate>
                   <DataTemplate>
@@ -504,11 +522,13 @@
                   <RadioButton Style="{StaticResource PiaSegmentedButton}"
                                GroupName="ChatAgentLever"
                                Content="{loc:Str Lever_Chat}"
+                               AutomationProperties.AutomationId="Assistant_Mode_Chat"
                                IsChecked="{Binding AgentModeEnabled, Converter={StaticResource InverseBooleanConverter}}" />
                   <Grid>
                     <RadioButton Style="{StaticResource PiaSegmentedButton}"
                                  GroupName="ChatAgentLever"
                                  Content="{loc:Str Lever_Agent}"
+                                 AutomationProperties.AutomationId="Assistant_Mode_Agent"
                                  IsChecked="{Binding AgentModeEnabled}" />
                     <!-- Weak-provider adorner: subtle warn dot on the Agent segment. -->
                     <Ellipse Width="6" Height="6" Margin="0,3,3,0"
@@ -534,6 +554,7 @@
                          Appearance="Success"
                          Padding="10,4" Margin="0,0,4,0"
                          AutomationProperties.Name="{loc:Str Assistant_RunInBackground_Tooltip}"
+                         AutomationProperties.AutomationId="Assistant_RunInBackground"
                          ToolTip="{loc:Str Assistant_RunInBackground_Tooltip}"
                          Visibility="{Binding AgentModeEnabled, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <ui:SymbolIcon Symbol="WindowNew20" FontSize="16" />
@@ -546,6 +567,7 @@
                            Appearance="Primary"
                            Padding="10,4"
                            AutomationProperties.Name="{loc:Str Assistant_Send_Tooltip}"
+                           AutomationProperties.AutomationId="Assistant_Send"
                            ToolTip="{loc:Str Assistant_Send_Tooltip}">
                   <ui:SymbolIcon Symbol="Send24" FontSize="16" />
                 </ui:Button>

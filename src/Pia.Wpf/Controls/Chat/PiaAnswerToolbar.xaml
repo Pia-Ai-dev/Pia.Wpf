@@ -57,6 +57,7 @@
               Command="{Binding CopyCommand, ElementName=Root}"
               CommandParameter="{Binding CommandParameter, ElementName=Root}"
               AutomationProperties.Name="{loc:Str Assistant_Copy_Tooltip}"
+              AutomationProperties.AutomationId="{Binding CommandParameter.Id, ElementName=Root, StringFormat='Answer_Copy_{0}'}"
               Visibility="{Binding CopyCommand, ElementName=Root, Converter={StaticResource NullToVisibilityConverter}}">
         <Button.Style>
           <Style TargetType="Button">
@@ -100,6 +101,7 @@
               Command="{Binding SpeakCommand, ElementName=Root}"
               CommandParameter="{Binding CommandParameter, ElementName=Root}"
               AutomationProperties.Name="{loc:Str Assistant_ReadAloud_Tooltip}"
+              AutomationProperties.AutomationId="{Binding CommandParameter.Id, ElementName=Root, StringFormat='Answer_Speak_{0}'}"
               Visibility="{Binding SpeakCommand, ElementName=Root, Converter={StaticResource NullToVisibilityConverter}}">
         <Button.Style>
           <Style TargetType="Button">
@@ -206,6 +208,7 @@
               Command="{Binding RegenerateCommand, ElementName=Root}"
               CommandParameter="{Binding CommandParameter, ElementName=Root}"
               AutomationProperties.Name="{loc:Str Assistant_Regenerate_Tooltip}"
+              AutomationProperties.AutomationId="{Binding CommandParameter.Id, ElementName=Root, StringFormat='Answer_Regenerate_{0}'}"
               Visibility="{Binding RegenerateCommand, ElementName=Root, Converter={StaticResource NullToVisibilityConverter}}">
         <Button.Style>
           <Style TargetType="Button">
@@ -247,17 +250,21 @@
               Click="OnRegenerateMenuClick"
               ToolTip="{loc:Str Assistant_RegenerateOptions_Tooltip}"
               AutomationProperties.Name="{loc:Str Assistant_RegenerateOptions_Tooltip}"
+              AutomationProperties.AutomationId="{Binding CommandParameter.Id, ElementName=Root, StringFormat='Answer_RegenerateOptions_{0}'}"
               Visibility="{Binding RegenerateStyledCommand, ElementName=Root, Converter={StaticResource NullToVisibilityConverter}}">
         <Button.ContextMenu>
           <ContextMenu>
             <MenuItem Header="{loc:Str Assistant_Regenerate_Shorten}"
                       Tag="{x:Static vm:RegenerateStyle.Shorten}"
+                      AutomationProperties.AutomationId="Answer_RegenerateStyle_Shorten"
                       Click="OnRegenerateStyleClick" />
             <MenuItem Header="{loc:Str Assistant_Regenerate_Detailed}"
                       Tag="{x:Static vm:RegenerateStyle.Detailed}"
+                      AutomationProperties.AutomationId="Answer_RegenerateStyle_Detailed"
                       Click="OnRegenerateStyleClick" />
             <MenuItem Header="{loc:Str Assistant_Regenerate_Exportable}"
                       Tag="{x:Static vm:RegenerateStyle.Exportable}"
+                      AutomationProperties.AutomationId="Answer_RegenerateStyle_Exportable"
                       Click="OnRegenerateStyleClick" />
           </ContextMenu>
         </Button.ContextMenu>
@@ -270,6 +277,7 @@
               Command="{Binding ExportCommand, ElementName=Root}"
               CommandParameter="{Binding CommandParameter, ElementName=Root}"
               AutomationProperties.Name="{loc:Str Assistant_Export_Tooltip}"
+              AutomationProperties.AutomationId="{Binding CommandParameter.Id, ElementName=Root, StringFormat='Answer_Export_{0}'}"
               Visibility="{Binding ExportCommand, ElementName=Root, Converter={StaticResource NullToVisibilityConverter}}">
         <StackPanel Orientation="Horizontal">
           <ui:SymbolIcon Symbol="DocumentArrowRight20" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center" />
@@ -287,6 +295,7 @@
                  Command="{Binding RateCommand, ElementName=Root}"
                  CommandParameter="Up"
                  AutomationProperties.Name="{loc:Str Assistant_RateUp_Tooltip}"
+                 AutomationProperties.AutomationId="{Binding CommandParameter.Id, ElementName=Root, StringFormat='Answer_RateUp_{0}'}"
                  Visibility="{Binding RateCommand, ElementName=Root, Converter={StaticResource NullToVisibilityConverter}}">
         <ui:SymbolIcon Symbol="ThumbLike20" FontSize="13" />
       </ui:Button>
@@ -296,6 +305,7 @@
                  Command="{Binding RateCommand, ElementName=Root}"
                  CommandParameter="Down"
                  AutomationProperties.Name="{loc:Str Assistant_RateDown_Tooltip}"
+                 AutomationProperties.AutomationId="{Binding CommandParameter.Id, ElementName=Root, StringFormat='Answer_RateDown_{0}'}"
                  Visibility="{Binding RateCommand, ElementName=Root, Converter={StaticResource NullToVisibilityConverter}}">
         <ui:SymbolIcon Symbol="ThumbDislike20" FontSize="13" />
       </ui:Button>

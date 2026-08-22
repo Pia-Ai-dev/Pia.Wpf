@@ -81,11 +81,13 @@
                    Icon="{ui:SymbolIcon ArrowClockwise24}"
                    ToolTip="{loc:Str Assignments_Refresh}"
                    Appearance="Secondary"
+                   AutomationProperties.AutomationId="Assignments_Refresh"
                    Margin="0,0,8,0"/>
         <ui:Button Command="{Binding NewAssignmentCommand}"
                    Content="{loc:Str Assignments_New}"
                    Icon="{ui:SymbolIcon Add24}"
                    Appearance="Primary"
+                   AutomationProperties.AutomationId="Assignments_New"
                    Visibility="{Binding CanStartAssignment, Converter={StaticResource BooleanToVisibilityConverter}}"/>
       </StackPanel>
     </Grid>
@@ -172,12 +174,14 @@
                                Content="{loc:Str Assignments_OpenChat}"
                                Icon="{ui:SymbolIcon Chat24}"
                                Appearance="Secondary"
+                               AutomationProperties.AutomationId="{Binding Id, StringFormat='Assignments_OpenChat_{0}'}"
                                Margin="0,0,8,0"
                                Visibility="{Binding CanOpenChat, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                     <ui:Button Command="{Binding CancelCommand}"
                                Content="{loc:Str Assignments_Cancel}"
                                Icon="{ui:SymbolIcon Dismiss24}"
                                Appearance="Secondary"
+                               AutomationProperties.AutomationId="{Binding Id, StringFormat='Assignments_Cancel_{0}'}"
                                Visibility="{Binding CanCancel, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                   </StackPanel>
                 </Grid>

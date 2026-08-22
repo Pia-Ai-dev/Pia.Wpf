@@ -24,6 +24,7 @@
     <ui:TextBox Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"
                 PlaceholderText="{loc:Str Todo_TitlePlaceholder}"
                 PlaceholderEnabled="True"
+                AutomationProperties.AutomationId="TodoEdit_Title"
                 Margin="0,0,0,12" />
 
     <TextBlock Text="{loc:Str Todo_NotesLabel}"
@@ -38,6 +39,7 @@
                 MinHeight="80"
                 MaxHeight="160"
                 VerticalScrollBarVisibility="Auto"
+                AutomationProperties.AutomationId="TodoEdit_Notes"
                 Margin="0,0,0,12" />
 
     <Grid Margin="0,0,0,4">
@@ -52,7 +54,8 @@
                    Foreground="{DynamicResource TextMutedBrush}"
                    Margin="0,0,0,4" />
         <ComboBox ItemsSource="{Binding Priorities}"
-                  SelectedItem="{Binding Priority}" />
+                  SelectedItem="{Binding Priority}"
+                  AutomationProperties.AutomationId="TodoEdit_Priority" />
       </StackPanel>
 
       <StackPanel Grid.Column="1" Margin="6,0,0,0">
@@ -60,7 +63,8 @@
                    FontSize="12"
                    Foreground="{DynamicResource TextMutedBrush}"
                    Margin="0,0,0,4" />
-        <DatePicker SelectedDate="{Binding DueDate}" />
+        <DatePicker SelectedDate="{Binding DueDate}"
+                    AutomationProperties.AutomationId="TodoEdit_DueDate" />
       </StackPanel>
     </Grid>
   </StackPanel>

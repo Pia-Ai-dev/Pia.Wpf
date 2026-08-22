@@ -49,6 +49,7 @@
     <ui:Button Content="{loc:Str Enum_CopyToClipboard}"
                Icon="{ui:SymbolIcon Copy24}"
                Command="{Binding CopyRecoveryCodeCommand}"
+               AutomationProperties.AutomationId="RecoveryCode_Copy"
                HorizontalAlignment="Center"
                Margin="0,0,0,16" />
 
@@ -61,6 +62,7 @@
 
     <CheckBox Content="{loc:Str Dialog_Recovery_Confirm}"
               IsChecked="{Binding HasConfirmedRecoveryCode, Mode=TwoWay}"
+              AutomationProperties.AutomationId="RecoveryCode_Confirm"
               HorizontalAlignment="Center" />
   </StackPanel>
 </ui:ContentDialog>

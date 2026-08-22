@@ -25,6 +25,7 @@
     <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
       <ui:Button Appearance="Secondary"
                  Command="{Binding AddColumnCommand}"
+                 AutomationProperties.AutomationId="Todo_AddColumn"
                  ToolTip="{loc:Str Kanban_AddColumn}"
                  Margin="0,0,6,0">
         <StackPanel Orientation="Horizontal">
@@ -35,6 +36,7 @@
       <ui:Button Appearance="Secondary"
                  Command="{Binding RefreshCommand}"
                  AutomationProperties.Name="{loc:Str Todo_Refresh}"
+                 AutomationProperties.AutomationId="Todo_Refresh"
                  ToolTip="{loc:Str Todo_Refresh}">
         <ui:SymbolIcon Symbol="ArrowSync24" FontSize="16"/>
       </ui:Button>

@@ -97,6 +97,7 @@
                        Padding="4"
                        Command="{Binding ToggleExpandCommand}"
                        AutomationProperties.Name="{loc:Str ActionCard_ToggleDetails}"
+                       AutomationProperties.AutomationId="{Binding Id, StringFormat='ActionCard_ToggleDetails_{0}'}"
                        VerticalAlignment="Center">
               <ui:SymbolIcon FontSize="12">
                 <ui:SymbolIcon.Style>
@@ -272,6 +273,7 @@
                               FontSize="12"
                               Padding="6,0,0,0"
                               VerticalAlignment="Center"
+                              AutomationProperties.AutomationId="{Binding Id, StringFormat='ActionCard_Manage_{0}'}"
                               Visibility="{Binding IsAutoApproved, Converter={StaticResource BooleanToVisibilityConverter}}"
                               Command="{Binding ManageToolPermissionsCommand, RelativeSource={RelativeSource AncestorType={x:Type chat:PiaAssistantMessage}}}" />
         </StackPanel>
@@ -359,6 +361,7 @@
                                 FontSize="12"
                                 Padding="6,0,0,0"
                                 VerticalAlignment="Center"
+                                AutomationProperties.AutomationId="{Binding Id, StringFormat='ActionCard_Manage_{0}'}"
                                 Visibility="{Binding IsAutoApproved, Converter={StaticResource BooleanToVisibilityConverter}}"
                                 Command="{Binding ManageToolPermissionsCommand, RelativeSource={RelativeSource AncestorType={x:Type chat:PiaAssistantMessage}}}" />
           </StackPanel>

@@ -12,7 +12,7 @@ namespace Pia.Tests.Views;
 /// invisible until a walkthrough breaks. Presence only — several ids predate the naming convention.
 /// </summary>
 [Collection("WpfApplicationStatic")]
-public class SettingsViewAutomationIdTests
+public class ViewAutomationIdTests
 {
     /// <summary>Bounds template recursion; the deepest real nesting here is ToolCatalog's group-then-row pair.</summary>
     private const int MaxTemplateDepth = 8;
@@ -38,7 +38,7 @@ public class SettingsViewAutomationIdTests
 
     // The walk stops at every nested UserControl, which owns its own ids, and each case pins WHICH ones — so a
     // part of a covered view later extracted into its own UserControl cannot drop out of coverage silently.
-    // PluginsView and E2EEOnboardingView are not covered by anything yet.
+    // The playbook's "Known gaps" section is the single source of truth for what still has no row here.
     [Theory]
     [InlineData(typeof(Pia.Views.SettingsViews.GeneralView), 24, 4, "")]
     [InlineData(typeof(Pia.Views.SettingsViews.AssistantView), 36, 5, "PersonaGlyph,PersonasView,PiaHelpHint")]
@@ -46,6 +46,41 @@ public class SettingsViewAutomationIdTests
     // AccountView declares no DataTemplate, so it is the one view with no per-item floor to hold.
     [InlineData(typeof(Pia.Views.SettingsViews.AccountView), 12, 0, "E2EEOnboardingView")]
     [InlineData(typeof(Pia.Views.SettingsViews.OptimizeView), 6, 4, "")]
+    [InlineData(typeof(Pia.Views.AssistantView), 18, 1,
+        "AutocompletePopup,DirectTranscriptionOverlay,MeetingAttendeeOverlay,PersonaGlyph,PiaAssistantMessage," +
+        "PiaChatQuickSwitcher,PiaChatTitleChip,PiaPersonaAvatar,RunProgressPanel,TodoPanelControl,VoiceModeOverlay")]
+    [InlineData(typeof(Pia.Views.RoutinesView), 15, 1, "PiaEmptyState,PiaHelpHint")]
+    [InlineData(typeof(Pia.Views.SettingsViews.PersonasView), 3, 3, "PersonaGlyph")]
+    [InlineData(typeof(Pia.Views.MeetingAttendeeOverlay), 8, 1, "ListeningIndicator")]
+    [InlineData(typeof(Pia.Controls.Cards.CardDecisionBar), 1, 1, "")]
+    [InlineData(typeof(Pia.Controls.Vault.PiaVaultHeader), 5, 0, "PiaHelpHint")]
+    [InlineData(typeof(Pia.Controls.Vault.PiaVaultSearchBar), 1, 0, "")]
+    [InlineData(typeof(Pia.Controls.Reminders.PiaRemindersHeader), 4, 0, "PiaHelpHint")]
+    [InlineData(typeof(Pia.Controls.Reminders.PiaRemindersFilterBar), 5, 0, "")]
+    [InlineData(typeof(Pia.Controls.History.PiaHistoryHeader), 2, 0, "PiaHelpHint")]
+    [InlineData(typeof(Pia.Controls.History.PiaHistorySearchBar), 3, 0, "")]
+    [InlineData(typeof(Pia.Controls.Todo.PiaTodoHeader), 2, 0, "PiaHelpHint")]
+    [InlineData(typeof(Pia.Controls.Todo.PiaTodoSearchBar), 1, 0, "")]
+    [InlineData(typeof(Pia.Controls.Markdown.CodeBlockControl), 2, 0, "")]
+    [InlineData(typeof(Pia.Controls.Chat.PiaAnswerToolbar), 7, 7, "")]
+    [InlineData(typeof(Pia.Controls.Vault.PiaVaultCategoryCard), 1, 1, "PiaTypeChip")]
+    [InlineData(typeof(Pia.Controls.Reminders.PiaReminderRow), 4, 4, "PiaReminderStatusChip")]
+    [InlineData(typeof(Pia.Controls.Reminders.PiaReminderGroupCard), 5, 5, "PiaReminderStatusChip")]
+    [InlineData(typeof(Pia.Controls.History.PiaHistoryGroupCard), 1, 1, "")]
+    [InlineData(typeof(Pia.Controls.AssistantHistory.PiaAssistantChatRowContent), 1, 1, "PiaChatStateBadge")]
+    [InlineData(typeof(Pia.Controls.AssistantHistory.PiaAssistantChatGroupCard), 1, 1, "PiaAssistantChatRowContent")]
+    [InlineData(typeof(Pia.Views.TodoView), 9, 5, "PiaTodoHeader,PiaTodoSearchBar")]
+    [InlineData(typeof(Pia.Views.TodoPanelControl), 6, 1, "")]
+    [InlineData(typeof(Pia.Controls.Assistant.PiaChatQuickSwitcher), 1, 0, "")]
+    [InlineData(typeof(Pia.Controls.Chat.PiaReasoningView), 1, 1, "")]
+    [InlineData(typeof(Pia.Controls.Assistant.RunProgressPanel), 21, 10, "PiaPersonaAvatar")]
+    [InlineData(typeof(Pia.Controls.Chat.PiaFileChip), 3, 3, "")]
+    [InlineData(typeof(Pia.Controls.Chat.PiaSourceChip), 1, 1, "")]
+    [InlineData(typeof(Pia.Controls.Chat.PiaChipOverflowPanel), 1, 1, "")]
+    [InlineData(typeof(Pia.Views.AssignmentsView), 4, 2, "PiaEmptyState,PiaHelpHint")]
+    [InlineData(typeof(Pia.Controls.ActionCardControl), 3, 3, "CardDecisionBar,FileDiffCard")]
+    [InlineData(typeof(Pia.Controls.Cards.FileDiffCard), 1, 1, "")]
+    [InlineData(typeof(Pia.Controls.Flow.FlowView), 10, 10, "CardDecisionBar,PiaChatStateBadge")]
     public void EveryInteractiveControl_CarriesAnAutomationId(
         Type viewType, int minimumInspected, int minimumPerItemIds, string expectedNestedViews)
     {
@@ -59,8 +94,8 @@ public class SettingsViewAutomationIdTests
         Assert.True(missing.Length == 0,
             $"these interactive controls in {viewType.Name} carry no AutomationId, so a recorded UI script can " +
             "only reach them through their localized Content/Name and breaks in any other UI language. Add " +
-            "AutomationProperties.AutomationId=\"Settings_<Category>_<Field>\", or the per-item binding form " +
-            $"\"{{Binding <Identity>, StringFormat='Settings_<Category>_<Field>_{{0}}'}}\" inside a DataTemplate: " +
+            "AutomationProperties.AutomationId=\"<ViewPrefix>_<Field>\", or the per-item binding form " +
+            $"\"{{Binding <Identity>, StringFormat='<ViewPrefix>_<Field>_{{0}}'}}\" inside a DataTemplate: " +
             $"{string.Join("; ", missing)}");
 
         // A floor, not a count, set well under the measured total so ordinary edits to the view never touch this file.

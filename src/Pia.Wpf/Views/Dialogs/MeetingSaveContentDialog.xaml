@@ -24,6 +24,7 @@
     <ui:TextBox Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"
                 PlaceholderText="{loc:Str MeetingSave_Title_Placeholder}"
                 PlaceholderEnabled="True"
+                AutomationProperties.AutomationId="MeetingSave_Title"
                 Margin="0,0,0,12" />
 
     <TextBlock Text="{loc:Str MeetingSave_Attendees_Label}"
@@ -33,6 +34,7 @@
     <ui:TextBox Text="{Binding Attendees, UpdateSourceTrigger=PropertyChanged}"
                 PlaceholderText="{loc:Str MeetingSave_Attendees_Placeholder}"
                 PlaceholderEnabled="True"
+                AutomationProperties.AutomationId="MeetingSave_Attendees"
                 Margin="0,0,0,12" />
 
     <Grid Margin="0,0,0,12">
@@ -48,7 +50,8 @@
                    Margin="0,0,0,4" />
         <ui:TextBox Text="{Binding Tags, UpdateSourceTrigger=PropertyChanged}"
                     PlaceholderText="{loc:Str MeetingSave_Tags_Placeholder}"
-                    PlaceholderEnabled="True" />
+                    PlaceholderEnabled="True"
+                    AutomationProperties.AutomationId="MeetingSave_Tags" />
       </StackPanel>
 
       <StackPanel Grid.Column="1" Margin="6,0,0,0">
@@ -58,7 +61,8 @@
                    Margin="0,0,0,4" />
         <ui:TextBox Text="{Binding Project, UpdateSourceTrigger=PropertyChanged}"
                     PlaceholderText="{loc:Str MeetingSave_Project_Placeholder}"
-                    PlaceholderEnabled="True" />
+                    PlaceholderEnabled="True"
+                    AutomationProperties.AutomationId="MeetingSave_Project" />
       </StackPanel>
     </Grid>
 
@@ -74,6 +78,7 @@
                 MinHeight="80"
                 MaxHeight="160"
                 VerticalScrollBarVisibility="Auto"
+                AutomationProperties.AutomationId="MeetingSave_Notes"
                 Margin="0,0,0,12" />
 
     <TextBlock Text="{loc:Str MeetingSave_TargetPath_Label}"

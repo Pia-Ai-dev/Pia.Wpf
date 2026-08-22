@@ -2,8 +2,10 @@
 
 Guidance for agents running UI walkthroughs or UI regression tests against a running Pia
 instance. Read this before starting a run; it replaces guesswork with what is verified to work.
-Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the fixes) and
-`2026-08-16-ui-automation-validation.md` (the live re-run that confirmed them).
+Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the fixes),
+`2026-08-16-ui-automation-validation.md` (the live re-run that confirmed them), and
+[2026-08-22-fill-uiautomation-gaps-checklist.md](2026-08-22-fill-uiautomation-gaps-checklist.md)
+(the file-by-file work list for closing the "Known gaps" below).
 
 ## Ground rules
 
@@ -21,7 +23,8 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 |---|---|
 | Sidebar items | `NavItem_Assistant`, `NavItem_AssistantHistory`, `NavItem_Memory`, `NavItem_Reminders`, `NavItem_Routines`, `NavItem_Todo`, `NavItem_Settings`, `NavItem_NewWindow`, `NavItem_ThemeToggle` |
 | Sidebar items, conditional | `NavItem_Optimize` / `NavItem_History` (Optimize-mode windows only), `NavItem_Assignments` (only when the server offers the surface) |
-| Chat input / scroller | `InputTextBox`, `MessageScrollViewer` |
+| Chat input / scroller | `InputTextBox`, `MessageScrollViewer`, `MarkdownViewer` (assistant bubble text, via `PiaAssistantMessage` → `MarkdownMessageControl`) |
+| Chat composer toolbar | `Assistant_Suggestion_Reminder` / `_Todo` / `_Memory` (empty-state chips), `Assistant_ClearConversation`, `Assistant_CancelStreaming`, `Assistant_ToggleRecording`, `Assistant_AttachFile`, `Assistant_RemoveAttachment`, `Assistant_ToggleMeetingAttendee`, `Assistant_ToggleDirectTranscription`, `Assistant_RunAssignment`, `Assistant_PersonaPicker`, `Assistant_Mode_Chat` / `_Agent`, `Assistant_RunInBackground`, `Assistant_Send`, `Assistant_WeakProvider_Continue` / `_ChooseProvider` / `_StayInChat`, per-message `Assistant_CopyMessage_<guid>` (user bubble, keyed by message `Id`) |
 | Tool-approval decisions | `ToolApproval_Decline`, `ToolApproval_AllowOnce`, `ToolApproval_AllowSession`, `ToolApproval_AlwaysAllow` |
 | Personas / Templates grids | `Personas_AddButton`, `Templates_AddButton`, per-item `Persona_Edit_<guid>` / `Persona_Delete_<guid>` / `Persona_Duplicate_<guid>` / `Template_Edit_<guid>` / `Template_Delete_<guid>` / `Template_ViewPrompt_<guid>` / `Template_SetDefault_<guid>` |
 | Settings categories | `Settings_CategoryList`, `SettingsCategory_General` / `_Providers` / `_Optimize` / `_Assistant` / `_Account` / `_Plugins` |
@@ -36,11 +39,37 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Persona dialog | `PersonaEdit_Name`, `PersonaEdit_SystemPrompt`, `PersonaEdit_Archetype`, `PersonaEdit_ModelType`, `PersonaEdit_ToolScope`, `PersonaEdit_PreferredProvider`, `PersonaEdit_ReasoningEffort` |
 | Template dialog | `TemplateEdit_Name`, `TemplateEdit_StyleDescription`, `TemplateEdit_GeneratedPrompt` |
 | Provider dialog | `ProviderEdit_Name`, `ProviderEdit_ProviderType`, `ProviderEdit_Endpoint` |
-| Meeting attendee overlay | `MeetingAttendee_Url`, `_DisplayName`, `_Consent`, `_Join`, `_Stop`, `_Save`, `_SpeakerDisclaimer`. Open the overlay with the composer button named "Join a meeting and transcribe". Bubble labels carry no id — read them as `Text` elements, which is what `Invoke-MeetingReplay.ps1` does to check the numbering. |
+| Meeting attendee overlay | `MeetingAttendee_Url`, `_DisplayName`, `_Consent`, `_Join`, `_Stop`, `_Save`, `_SpeakerDisclaimer`, `_Close`, `_OpenSettings`, `_SaveToVault`, `_Summarize`, per-bubble `_RenameSpeaker_<speakerLabel>` (shared across every bubble from the same speaker — renaming applies to the label, not one utterance). Open the overlay with the composer button named "Join a meeting and transcribe". Bubble labels carry no id — read them as `Text` elements, which is what `Invoke-MeetingReplay.ps1` does to check the numbering. |
 | Edit dialogs (shared) | `PrimaryButton` (Save), `CloseButton` (Cancel), `Dialog_RequiredHint` |
 | Chat history import/export | `AssistantHistory_Import`, `AssistantHistory_ExportAll`, `AssistantHistory_LoadMore` (header/list), `AssistantHistory_ExportArchive` (inspector, needs a selected chat) |
+| Assistant chat history row / group card | Per-chat delete button, on `PiaAssistantChatRowContent` (keyed on `AssistantChatRowViewModel.Id`, i.e. `Chat.Id`): `AssistantChat_Delete_<id>`. Group header expand/collapse, per-bucket: `AssistantHistory_GroupToggle_<bucket>`, keyed on `AssistantChatGroupViewModel.Bucket` (its nullable `GroupKey` string was skipped in favor of this non-null enum, same identity the group is actually built from). |
 | Page-header help hints | `Routines_Help`, `Assignments_Help`, `History_Help`, `AssistantHistory_Help`, `Memory_Help`, `Todo_Help`, `Reminders_Help` |
 | Settings help hints | `Settings_ToolPermissions_Page_Help` (tab intro), `Settings_ToolPermissions_Session_Help` (session tier), `Settings_ToolPermissions_Help` (always-allowed list), `Settings_MeetingBrowser_Help`, `Settings_Agent_Roster_Help`, `Settings_Scheduled_Help` |
+| Vault (Memory) header / search | `Memory_Back`, `_Home`, `_Refresh`, `_OpenFolder`, `_ShowHelp` (distinct from the `Memory_Help` hover hint above), `Memory_SearchQuery` |
+| Vault category card (`PiaVaultCategoryCard`) | Expand/collapse toggle, per-category: `Memory_CategoryToggle_<type>`, keyed on `MemoryGroupViewModel.Type` (the category/topic slug). `PiaVaultRow` (the per-item row inside) has no walker-recognized controls of its own — nothing else to id there. |
+| Reminders header / filters | `Reminders_Refresh`, `_DismissAll`, `_DisableAll`, `_DeleteAll`; filter bar (static `RadioButton`s, not per-item): `Reminders_Filter_All` / `_Active` / `_Snoozed` / `_Disabled` / `_Completed` |
+| Reminder row / group card | Per-reminder (keyed on `Reminder.Id`): `Reminders_ToggleEnable_<id>`, `_Snooze_<id>`, `_Dismiss_<id>`, `_Delete_<id>`. Group header expand/collapse, per-bucket: `Reminders_GroupToggle_<bucketKind>`, keyed on `ReminderGroupViewModel.BucketKind`. |
+| History (Optimize sessions) header / search | `History_Refresh`, `_DeleteAll`, `_SearchQuery`, `_TemplateFilter`, `_ClearFilters`; `_StartDate` / `_EndDate` on the two `DatePicker`s carry ids too but have no test lock (see Known gaps) |
+| History group card (`PiaHistoryGroupCard`) | Expand/collapse toggle, per-bucket: `History_GroupToggle_<bucket>`, keyed on `SessionGroupViewModel.Bucket`. `PiaHistorySessionRow` (the per-item row inside) has no walker-recognized controls of its own — nothing else to id there. |
+| Todo header / search | `Todo_AddColumn`, `_Refresh`, `_SearchQuery` |
+| Todo kanban board (`TodoView`) | Add-todo bar: `Todo_NewTitle`, `_NewPriority`, `_NewDueDate` (no test lock, same `DatePicker` caveat as History), `_Record`, `_AddTodo`. Per-column (keyed on `KanbanColumnViewModel.Id`): `Todo_ColumnMenu_<id>` (the "..." button) plus its 3 context-menu items `Todo_ColumnMenu_SetDefault_<id>` / `_Rename_<id>` / `_Delete_<id>` (no test lock, same `MenuItem` caveat as `PiaAnswerToolbar`), and `Todo_ExpandColumn_<id>` (the closed-column chevron). Per-todo (keyed on `TodoItem.Id`): `Todo_Complete_<id>`, `Todo_Edit_<id>`, `Todo_Delete_<id>`. |
+| Todo panel (`TodoPanelControl`, embedded in `AssistantView`) | `TodoPanel_Close`, `_NewTitle`, `_Record`, `_Add`, `_OpenFullView`; per-todo (keyed on `TodoItem.Id`): `TodoPanel_Complete_<id>`. Prefixed `TodoPanel_`, not `Todo_`, so a script targeting one surface's fields never prefix-matches the other's. |
+| Assistant reply toolbar (`PiaAnswerToolbar`) | Per-reply, keyed by `AssistantMessage.Id`: `Answer_Copy_<id>`, `_Speak_<id>`, `_Regenerate_<id>`, `_RegenerateOptions_<id>`, `_Export_<id>`, `_RateUp_<id>`, `_RateDown_<id>`. Deliberately not prefixed `Assistant_` — that already means the user-bubble copy button (`Assistant_CopyMessage_<guid>`). The regenerate-style context menu's 3 items are literal and deliberately a *different* prefix, `Answer_RegenerateStyle_Shorten` / `_Detailed` / `_Exportable` — reusing `Answer_RegenerateOptions_` here would make `automationId*=Answer_RegenerateOptions_` match the chevron button plus all three menu items once opened, the same collision the `Assistant_`/`Answer_` split above exists to avoid. No test lock on the menu items. |
+| Markdown code block (`CodeBlockControl`) | `CodeBlock_Copy`, `CodeBlock_Content` — literal; a message with two+ code fences repeats these ids (see Known gaps) |
+| Reasoning trace toggle (`PiaReasoningView`) | Per-reply, keyed by `AssistantMessage.Id`: `Reasoning_Toggle_<id>`. Own prefix, not `Answer_` — a different affordance from the reply toolbar it sits beside. No `Expander` involved despite appearances; the collapse is hand-rolled. |
+| Chat quick switcher (`PiaChatQuickSwitcher`) | `QuickSwitcher_Query` (the search box). Its match list is a `ListBox`, not a walker-recognized type — no id needed or possible on individual matches. |
+| Run progress panel (`RunProgressPanel`) | Root-level: `Run_Pause`, `_Continue`, `_DenyTool`, `_RejectPlan`, `_Publish`, `_CardToggle`, `_NudgeText`, `_ShowEarlierSteps`, `_ShowLaterSteps`, `_TimelineToggle`, `_ChildrenToggle`. Per-step, keyed on `StepRowViewModel.StepId`: `Run_StepEdit_<id>`, `_StepInsertBelow_<id>`, `_StepMoveUp_<id>`, `_StepMoveDown_<id>`, `_StepSkip_<id>`, `_StepEditTitle_<id>`, `_StepEditIntent_<id>`, `_StepEditCancel_<id>`, `_StepEditSave_<id>`. Per-child-run, keyed on `ChildRunRowViewModel.RunId`: `Run_ChildToggle_<id>`. |
+| File chip (`PiaFileChip`) | Keyed on the chip's own `FileName` (not `AbsolutePath` — that would put a full local filesystem path into a permanent, enumerable UIA property): `FileChip_Open_<fileName>`, `_OpenVsCode_<fileName>`, `_Reveal_<fileName>`. Two attachments sharing a filename collide — same caveat class as a non-unique tool name. |
+| Source chip (`PiaSourceChip`) | `SourceChip_Open_<number>`, keyed on the chip's own `Number` (the per-message citation number, not globally unique). |
+| Chip overflow "+N" button (`PiaChipOverflowPanel`) | `ChipOverflow_More_<groupName>`. `PiaAssistantMessage` renders two instances per message (Sources, FileRefs) that can both be visible at once, so the control now exposes a `GroupName` DP the call site sets (`"Sources"` / `"Files"`) rather than leaving it a literal id that would collide. |
+| Action card chrome (`ActionCardControl`) | Keyed on `ActionCardInfo.Id` (a `Guid` added for this — the model had no per-card identity before): `ActionCard_ToggleDetails_<id>`, `ActionCard_Manage_<id>` (same id on both mutually-exclusive "Manage" layouts). `CardDecisionBar`'s own 4 buttons (`ToolApproval_*`, table above) are unchanged — they stay semantic-per-decision-type, not per-card. **Lifetime caveat:** `Id` defaults to `Guid.NewGuid()` at `ActionCardBuilder.Build` time — it is NOT a persisted domain id like `TodoItem.Id`/`AssistantMessage.Id`. Action cards are never serialized to chat history and `ActionCardBuilder.Build` runs exactly once per real tool call, so the id is stable for the in-memory lifetime of that card (including a DataContext re-host, since the same `AssistantMessage`/`ActionCardInfo` object is reused, not rebuilt) — but discover it at runtime, never hardcode one in a script. |
+| File diff card (`FileDiffCard`) | `ActionCard_DiffToggle_<filePath>`, keyed on `ActionCardInfo.FilePath` rather than the `Id` above — already shown in the card header, so it stays human-readable, and a same-path collision is a rare accepted corner case. |
+| Flow notification rail (`FlowView`) | Per-item, keyed on `FlowItemViewModel.Item.Id`: `Flow_ActionLink_<id>`, `Flow_Dismiss_<id>` (same formula covers both the real rail and the transient single-item arrival-peek clone, which reuses the identical template). Header (`FlowHeaderTemplate`, `DataContext` is the one `FlowViewModel`): `Flow_ClearAll_<host>`, `Flow_PinToggle_<host>`, `Flow_Collapse_<host>`, keyed on a `Tag` ("Real"/"Peek") set on each of the two `ContentControl` hosts and read back via `RelativeSource AncestorType=ContentControl` — needed because the peek clone's `Visibility="Hidden"` does NOT remove it from the UIA tree or block `InvokePattern` (only the hit-test path), so a literal id here would have been a genuine, invokable ambiguity, not a cosmetic one. |
+| Todo edit dialog (`TodoEditContentDialog`) | `TodoEdit_Title`, `_Notes`, `_Priority`, `_DueDate`. No test lock — see Known gaps. |
+| Recovery code dialog (`RecoveryCodeContentDialog`) | `RecoveryCode_Copy`, `_Confirm`. No test lock. |
+| Meeting save dialog (`MeetingSaveContentDialog`) | `MeetingSave_Title`, `_Attendees`, `_Tags`, `_Project`, `_Notes`. No test lock. |
+| Assignment consent dialog (`AssignmentConsentContentDialog`) | `AssignmentConsent_Skill`, `_Prompt`, `_Affirm`; per-record (keyed on `AssignmentScopeItemViewModel.Item.EntityId`): `AssignmentConsent_Record_<id>`. No test lock. |
+| Assignments list (`AssignmentsView`) | `Assignments_Refresh`, `_New` (plus the existing `Assignments_Help`); per-row, keyed on `AssignmentRowViewModel.Id`: `Assignments_OpenChat_<id>`, `_Cancel_<id>`. |
 
 Import and Export open a native file picker, which is not reliably scriptable: `ww_dialog handle_file`
 returns `{"success": true}` without confirming the dialog, and re-invoking the button just stacks up
@@ -158,10 +187,102 @@ Committed recordings, the settings fixture they start from and the replay harnes
   neither its `AutomationId` nor its message reaches UIA. Don't put anything an assertion needs
   inside one.
 - **`PluginsView.xaml` and the E2EE onboarding screen hosted inside Account still have no ids.**
-  The General, Assistant, Providers, Account and Optimize views are id-addressable throughout,
-  inner tab headers included, and `tests/Pia.Wpf.Tests/Views/SettingsViewAutomationIdTests.cs`
+  The General, Assistant, Providers, Account and Optimize *settings* views are id-addressable
+  throughout, inner tab headers included, and `tests/Pia.Wpf.Tests/Views/ViewAutomationIdTests.cs`
   fails `dotnet test` if that stops being true. It is a test, not a build error — a missing id
   compiles fine.
+- **`AssistantView`, `MeetingAttendeeOverlay`, `RoutinesView`, `SettingsViews/PersonasView`'s own
+  controls are covered and locked in `ViewAutomationIdTests`** (composer toolbar, suggestion
+  chips, weak-provider banner, persona picker, chat/agent lever, send/run-in-background, the
+  meeting overlay's close/settings/save-to-vault/summarize/rename-speaker, the run-history
+  open-chat link — table above), but the walk that backs that test stops at every nested
+  `UserControl`, so these still have **no ids of their own**: `PiaChatTitleChip`,
+  `VoiceModeOverlay`, `DirectTranscriptionOverlay`. `TodoPanelControl`, `RunProgressPanel`,
+  `PiaChatQuickSwitcher` closed this gap (table above), even though each is still a nested-view
+  stop when walking `AssistantView` itself. `AutocompletePopup` never had a gap to close here in
+  the first place: its only interactive surface is a `ListBox`/`ListBoxItem` match list, neither a
+  walker-recognized type — same exclusion as `NavigationSidebarView`, zero ids possible or needed.
+  `PiaAssistantMessage` itself declares no
+  direct controls (pure composition, same shape as `VaultView` below); its
+  Copy/Speak/Regenerate/Export/rate buttons are now ided per-reply via `PiaAnswerToolbar`
+  (`Answer_*_<messageId>`, table above), and its reasoning-trace toggle via `PiaReasoningView`
+  (`Reasoning_Toggle_<messageId>`, table above). `PiaFileChip`/`PiaSourceChip`/
+  `PiaChipOverflowPanel`/`ActionCardControl`/`FileDiffCard` are also closed (table above). Still
+  open: Suggestion/SwitchToAgent (`PiaSuggestionChips` /
+  `PiaAgentModeChip`) — audited and deliberately left without ids: each has one
+  `Button` inside an `ItemsControl` template, but the bound item is content only (a raw
+  `Suggestions` string, or an `AgentModeSuggestion`'s `Goal`/`Reason`, both documented as
+  model-generated) with no non-content field to key a per-item id on, and a script targeting one
+  already has to match on that same text since it is never a fixed localized string. Same
+  reasoning class as `AutocompletePopup`/`J2`, just for a different mechanical reason (content, not
+  a missing walker-recognized type).
+- **`PiaHistorySearchBar`'s two `DatePicker`s and `PiaAnswerToolbar`'s regenerate-style context
+  menu carry ids the test cannot lock in.** `Activator.CreateInstance` never runs a layout pass,
+  so a `DatePicker`'s `OnApplyTemplate` never fires and its internal `DatePickerTextBox` (part of
+  the `ControlTemplate`, not the logical tree) never appears to the walker — confirmed empirically
+  (they contribute 0 to the measured control count). A `ContextMenu`'s `MenuItem`s aren't one of
+  the walker's seven recognized types either. Both got ids anyway for scripts; neither regresses
+  silently, so don't be surprised `dotnet test` stays green if one is later removed.
+- **`CodeBlockControl`'s ids are literal, not per-block.** It's built procedurally per fence in
+  `PiaMarkdownRenderer.RenderCodeCard` with no index or other identity plumbed through, so a reply
+  with two or more code blocks repeats `CodeBlock_Copy` / `CodeBlock_Content`. Same class of
+  caveat as the tool-name rows below; disambiguate with ordinal indexing if a script needs a
+  specific block.
+- **`VaultView`, `HistoryView` and `RemindersView` are pure composition** — the top-level view
+  itself declares zero interactive controls; every button/search-box/row lives in a nested
+  `Pia<Area><Thing>` control. The header, search-bar, and now the per-item row/group-header
+  controls all have ids (table above): `PiaVaultCategoryCard`'s category toggle,
+  `PiaReminderRow`'s four hover actions plus `PiaReminderGroupCard`'s bucket toggle,
+  `PiaHistoryGroupCard`'s bucket toggle, and (same shape, under `AssistantHistoryView`)
+  `PiaAssistantChatRowContent`'s delete button plus `PiaAssistantChatGroupCard`'s bucket toggle.
+  Still open in this family: the inspector panes (`PiaVaultInspector`, `PiaHistoryInspector*`)
+  and the status bars. A test row or an id on the top-level view accomplishes nothing; the fix
+  has to happen one nested control at a time. `TodoView` is the exception — unlike Vault/
+  History/Reminders it declares interactive controls of its own (kanban add-bar, per-column and
+  per-todo actions, table above), not pure composition; it turned out to be 9 controls, not the
+  ~43 an earlier estimate guessed. Same nested-control shape is true
+  of the top-level `OptimizeView` (the Optimize hotkey window, distinct from
+  `SettingsViews/OptimizeView`), the first-run wizard (`FirstRunWizardWindow` and all of
+  `WizardSteps/`), and most content dialogs beyond the shared `PrimaryButton` / `CloseButton` /
+  `Dialog_RequiredHint` ids. See the checklist doc below for the file-by-file work list.
+  **Every content dialog derives from Wpf.Ui's `ContentDialog`, not `UserControl`, with a
+  constructor that takes a `ContentDialogHost`** — so `Activator.CreateInstance` fails and none of
+  them can ever get a `[InlineData]` row. Check a dialog's base type and constructor before
+  planning one as a test-locked item; it never is.
+- **The walker's nested-view check misses a `UserControl` that is the literal root of a
+  `DataTemplate`.** `Collect()` re-anchors its `root` parameter to whatever `LoadContent()`
+  returns, so when an `ItemTemplate`'s root is itself a `UserControl` (e.g. `PiaReminderRow` as
+  `PiaReminderGroupCard`'s row template), `!ReferenceEquals(element, root) && element is
+  UserControl` is trivially false for that instance and the walk keeps descending — its controls
+  get swept into the *group card's* `[InlineData]` row instead of stopping as a nested view. A
+  `UserControl` one level deeper than the template root (e.g. `PiaReminderStatusChip` inside
+  `PiaReminderRow`, or `PiaAssistantChatRowContent` inside `PiaAssistantChatRow`) is unaffected
+  and still stops the walk normally. If a group-card row's inspected/per-item counts look higher
+  than the header alone would explain, or its nested-view list contains something one level
+  deeper than expected, this is why — confirmed across the Vault/Reminders/History/AssistantChat
+  group-card-and-row pairs.
+- **An *implicit* per-type `DataTemplate` — one declared in `ItemsControl.Resources` rather than
+  assigned to `ItemsControl.ItemTemplateProperty` — is invisible to the walker, a different blind
+  spot than the sweep hazard above.** `Collect()` only expands a template it finds via
+  `element.ReadLocalValue(property)` for the three `DeclaredTemplates` properties; an implicit
+  template is never set as a local value of any of them, so that read returns `UnsetValue` and the
+  walk never opens it. `FileDiffCard`'s `CollapsedDiffRun` row template is the confirmed case: its
+  one button (the "N unchanged lines" fold toggle) has no id today and the mechanism cannot demand
+  one — not a sweep, not a genuine stop, just unreachable. Suspect this whenever a `DataTemplate`
+  is declared with `DataType="{x:Type ...}"` and no `x:Key`/local property assignment.
+- **A `StaticResource`-keyed `DataTemplate`/`ContentTemplate` assigned at more than one XAML site
+  is walked once per site, not once per template.** Two call sites setting the identical resource
+  object are two separate local-value reads, so `LoadContent()` runs twice and the inspected-control
+  count doubles for whatever that template contains — confirmed on `FlowView`, whose
+  `FlowItemCardTemplate`/`FlowHeaderTemplate` each back a real list/header AND a hidden
+  arrival-peek clone that reuses the same resource. Measure via the test rather than counting
+  `<DataTemplate>` declarations in the XAML.
+- **`NavigationSidebarView`'s 12 `NavItem_*` buttons already all have ids** (verified by hand),
+  but `ViewAutomationIdTests` cannot lock that in: they're set via
+  `<ui:NavigationViewItem.Content>` inside `ui:NavigationView.MenuItems`, and `LogicalTreeHelper`
+  reports zero children for that collection, so the walker's non-vacuity floor would trivially
+  pass at 0 either way. Don't add a row for it — there's nothing for the walk to catch a
+  regression with.
 
 ## Cross-checks
 

@@ -36,6 +36,7 @@
                     Margin="2"
                     PlaceholderText="{loc:Str AssistantChat_QuickSwitcher_Placeholder}"
                     PlaceholderEnabled="True"
+                    AutomationProperties.AutomationId="QuickSwitcher_Query"
                     Text="{Binding QuickSwitcherQuery, UpdateSourceTrigger=PropertyChanged}"
                     PreviewKeyDown="OnQueryKeyDown" />
 
