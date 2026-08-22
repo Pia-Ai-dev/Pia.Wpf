@@ -36,7 +36,8 @@
                  FontSize="13"
                  Padding="0,10"
                  Margin="0,0,12,0"
-                 VerticalContentAlignment="Center"/>
+                 VerticalContentAlignment="Center"
+                 AutomationProperties.AutomationId="History_SearchQuery"/>
       </Grid>
     </Border>
 
@@ -44,13 +45,15 @@
                 SelectedDate="{Binding StartDate, ElementName=Root, Mode=TwoWay}"
                 Width="150"
                 Margin="10,0,0,0"
-                VerticalAlignment="Center"/>
+                VerticalAlignment="Center"
+                AutomationProperties.AutomationId="History_StartDate"/>
 
     <DatePicker Grid.Column="2"
                 SelectedDate="{Binding EndDate, ElementName=Root, Mode=TwoWay}"
                 Width="150"
                 Margin="6,0,0,0"
-                VerticalAlignment="Center"/>
+                VerticalAlignment="Center"
+                AutomationProperties.AutomationId="History_EndDate"/>
 
     <ComboBox Grid.Column="3"
               ItemsSource="{Binding Templates, ElementName=Root}"
@@ -58,7 +61,8 @@
               SelectedValue="{Binding TemplateId, ElementName=Root, Mode=TwoWay}"
               Width="170"
               Margin="10,0,0,0"
-              VerticalAlignment="Center">
+              VerticalAlignment="Center"
+              AutomationProperties.AutomationId="History_TemplateFilter">
       <ComboBox.ItemTemplate>
         <DataTemplate>
           <TextBlock Text="{Binding Name}"/>
@@ -75,6 +79,7 @@
                Margin="10,0,0,0"
                VerticalAlignment="Center"
                AutomationProperties.Name="{loc:Str History_ClearFilters}"
+               AutomationProperties.AutomationId="History_ClearFilters"
                ToolTip="{loc:Str History_ClearFilters}">
       <ui:SymbolIcon Symbol="FilterDismiss24" FontSize="16"/>
     </ui:Button>

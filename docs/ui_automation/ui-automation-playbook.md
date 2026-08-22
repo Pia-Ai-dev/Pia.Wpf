@@ -44,6 +44,12 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Chat history import/export | `AssistantHistory_Import`, `AssistantHistory_ExportAll`, `AssistantHistory_LoadMore` (header/list), `AssistantHistory_ExportArchive` (inspector, needs a selected chat) |
 | Page-header help hints | `Routines_Help`, `Assignments_Help`, `History_Help`, `AssistantHistory_Help`, `Memory_Help`, `Todo_Help`, `Reminders_Help` |
 | Settings help hints | `Settings_ToolPermissions_Page_Help` (tab intro), `Settings_ToolPermissions_Session_Help` (session tier), `Settings_ToolPermissions_Help` (always-allowed list), `Settings_MeetingBrowser_Help`, `Settings_Agent_Roster_Help`, `Settings_Scheduled_Help` |
+| Vault (Memory) header / search | `Memory_Back`, `_Home`, `_Refresh`, `_OpenFolder`, `_ShowHelp` (distinct from the `Memory_Help` hover hint above), `Memory_SearchQuery` |
+| Reminders header / filters | `Reminders_Refresh`, `_DismissAll`, `_DisableAll`, `_DeleteAll`; filter bar (static `RadioButton`s, not per-item): `Reminders_Filter_All` / `_Active` / `_Snoozed` / `_Disabled` / `_Completed` |
+| History (Optimize sessions) header / search | `History_Refresh`, `_DeleteAll`, `_SearchQuery`, `_TemplateFilter`, `_ClearFilters`; `_StartDate` / `_EndDate` on the two `DatePicker`s carry ids too but have no test lock (see Known gaps) |
+| Todo header / search | `Todo_AddColumn`, `_Refresh`, `_SearchQuery` |
+| Assistant reply toolbar (`PiaAnswerToolbar`) | Per-reply, keyed by `AssistantMessage.Id`: `Answer_Copy_<id>`, `_Speak_<id>`, `_Regenerate_<id>`, `_RegenerateOptions_<id>`, `_Export_<id>`, `_RateUp_<id>`, `_RateDown_<id>`. Deliberately not prefixed `Assistant_` — that already means the user-bubble copy button (`Assistant_CopyMessage_<guid>`). The regenerate-style context menu's 3 items are literal (`Answer_RegenerateOptions_Shorten` / `_Detailed` / `_Exportable`) since only one can be open at a time; no test lock. |
+| Markdown code block (`CodeBlockControl`) | `CodeBlock_Copy`, `CodeBlock_Content` — literal; a message with two+ code fences repeats these ids (see Known gaps) |
 
 Import and Export open a native file picker, which is not reliably scriptable: `ww_dialog handle_file`
 returns `{"success": true}` without confirming the dialog, and re-invoking the button just stacks up
@@ -170,10 +176,26 @@ Committed recordings, the settings fixture they start from and the replay harnes
   chips, weak-provider banner, persona picker, chat/agent lever, send/run-in-background, the
   meeting overlay's close/settings/save-to-vault/summarize/rename-speaker, the run-history
   open-chat link — table above), but the walk that backs that test stops at every nested
-  `UserControl`, so these still have **no ids of their own**: `PiaAssistantMessage` (the assistant
-  bubble's Copy/Speak/Regenerate/Export/Suggestion/SwitchToAgent/ManageToolPermissions buttons),
-  `RunProgressPanel`, `PiaChatTitleChip`, `PiaChatQuickSwitcher`, `TodoPanelControl`,
-  `VoiceModeOverlay`, `DirectTranscriptionOverlay` and `AutocompletePopup`.
+  `UserControl`, so these still have **no ids of their own**: `RunProgressPanel`,
+  `PiaChatTitleChip`, `PiaChatQuickSwitcher`, `TodoPanelControl`, `VoiceModeOverlay`,
+  `DirectTranscriptionOverlay` and `AutocompletePopup`. `PiaAssistantMessage` itself declares no
+  direct controls (pure composition, same shape as `VaultView`/`TodoView` below); its
+  Copy/Speak/Regenerate/Export/rate buttons are now ided per-reply via `PiaAnswerToolbar`
+  (`Answer_*_<messageId>`, table above), but Suggestion/SwitchToAgent (`PiaSuggestionChips` /
+  `PiaAgentModeChip`) and ManageToolPermissions (`ActionCardControl`) are separate nested controls
+  that still have none.
+- **`PiaHistorySearchBar`'s two `DatePicker`s and `PiaAnswerToolbar`'s regenerate-style context
+  menu carry ids the test cannot lock in.** `Activator.CreateInstance` never runs a layout pass,
+  so a `DatePicker`'s `OnApplyTemplate` never fires and its internal `DatePickerTextBox` (part of
+  the `ControlTemplate`, not the logical tree) never appears to the walker — confirmed empirically
+  (they contribute 0 to the measured control count). A `ContextMenu`'s `MenuItem`s aren't one of
+  the walker's seven recognized types either. Both got ids anyway for scripts; neither regresses
+  silently, so don't be surprised `dotnet test` stays green if one is later removed.
+- **`CodeBlockControl`'s ids are literal, not per-block.** It's built procedurally per fence in
+  `PiaMarkdownRenderer.RenderCodeCard` with no index or other identity plumbed through, so a reply
+  with two or more code blocks repeats `CodeBlock_Copy` / `CodeBlock_Content`. Same class of
+  caveat as the tool-name rows below; disambiguate with ordinal indexing if a script needs a
+  specific block.
 - **`VaultView`, `TodoView`, `HistoryView` and `RemindersView` are pure composition** — the
   top-level view itself declares zero interactive controls; every button/search-box/row lives in
   a nested `Pia<Area><Thing>` control (`PiaVaultHeader`, `PiaVaultSearchBar`,

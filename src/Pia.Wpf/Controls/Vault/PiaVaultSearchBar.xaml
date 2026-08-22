@@ -47,7 +47,8 @@
                FontSize="13"
                Padding="0,10"
                Margin="0,0,12,0"
-               VerticalContentAlignment="Center"/>
+               VerticalContentAlignment="Center"
+               AutomationProperties.AutomationId="Memory_SearchQuery"/>
     </Grid>
   </Border>
 </UserControl>

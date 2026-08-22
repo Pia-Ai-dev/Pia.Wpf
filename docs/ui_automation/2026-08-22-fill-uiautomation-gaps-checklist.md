@@ -31,6 +31,11 @@ chat/agent lever, send/run-in-background, per-message copy button), `MarkdownMes
 `SettingsViews/AssistantView`, `SettingsViews/ProvidersView`, `SettingsViews/AccountView`,
 `SettingsViews/OptimizeView`, and the Persona/Provider/Template edit dialogs.
 
+**Slice 3** (this session, committed, gate green): the cheap audits `A1`/`A2`/`C1`/`C2`/`D1`/`D2`/
+`B2`/`B3`/`J1` (all literal ids, locked with `[InlineData]`), `J2` (audit only — dropped, see
+below), and `E1` (`PiaAnswerToolbar`, per-item ids keyed on `AssistantMessage.Id` — see the id
+table). `G1` was already done in slice 2.
+
 **Excluded, not just deferred** — `NavigationSidebarView`: its 12 `NavItem_*` buttons already all
 carry ids (verified by hand), but they hang off `ui:NavigationView.MenuItems`, which
 `LogicalTreeHelper` reports zero children for — a test row here would pass at a vacuous floor of
@@ -42,9 +47,10 @@ mechanism too, and it already has an id.
 
 ## A — Vault (`VaultView` is pure composition; every control lives in a nested `Pia*` control)
 
-- [ ] **A1 · `PiaVaultHeader`.** Already has `Memory_Help`; audit for a "new topic"/add affordance.
+- [x] **A1 · `PiaVaultHeader`.** Already has `Memory_Help`; audited and ided its 5 buttons
+  (Back/Home/Refresh/OpenFolder/ShowHelp) — no separate "new topic" affordance exists here.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
-- [ ] **A2 · `PiaVaultSearchBar`.** Query box + any clear button.
+- [x] **A2 · `PiaVaultSearchBar`.** Query box ided (`Memory_SearchQuery`); no clear button exists.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
 - [ ] **A3 · `PiaVaultCategoryCard`.** Per-item card in the left list — expand/collapse, likely a
   per-item id keyed on the category/topic slug.
@@ -61,9 +67,9 @@ mechanism too, and it already has an id.
 - [ ] **B1 · `TodoView` itself.** Unlike Vault/History/Reminders this view has ~43 direct
   interactive controls (filters, add box, list) — the biggest single-file item on this list.
   *Deps:* none · *Effort:* **M** · *Value:* **High**
-- [ ] **B2 · `PiaTodoHeader`.** Already has `Todo_Help`; audit the rest.
+- [x] **B2 · `PiaTodoHeader`.** Already has `Todo_Help`; ided `AddColumn`/`Refresh`.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
-- [ ] **B3 · `PiaTodoSearchBar`.** Query box + clear.
+- [x] **B3 · `PiaTodoSearchBar`.** Query box ided (`Todo_SearchQuery`); no clear button exists.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
 - [ ] **B4 · `TodoPanelControl`.** The right-side panel embedded in `AssistantView` — already
   listed as a nested-view gap there; fixing it here closes both.
@@ -71,9 +77,10 @@ mechanism too, and it already has an id.
 
 ## C — Reminders
 
-- [ ] **C1 · `PiaRemindersHeader`.** Already has `Reminders_Help`; audit the rest.
+- [x] **C1 · `PiaRemindersHeader`.** Already has `Reminders_Help`; ided the 4 bulk-action buttons.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
-- [ ] **C2 · `PiaRemindersFilterBar`.** Filter chips/toggles.
+- [x] **C2 · `PiaRemindersFilterBar`.** Ided the 5 static filter `RadioButton`s (not an
+  `ItemsControl`, so literal ids are correct here — no per-item mechanism needed).
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
 - [ ] **C3 · `PiaReminderRow`.** Per-item row — complete/snooze/delete, needs a per-item id keyed
   on the reminder's `Id`.
@@ -83,9 +90,12 @@ mechanism too, and it already has an id.
 
 ## D — History (`HistoryView`, the Optimize-mode session list)
 
-- [ ] **D1 · `PiaHistoryHeader`.** Already has `History_Help`; audit the rest.
+- [x] **D1 · `PiaHistoryHeader`.** Already has `History_Help`; ided `Refresh`/`DeleteAll`.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
-- [ ] **D2 · `PiaHistorySearchBar`.** Query box + clear.
+- [x] **D2 · `PiaHistorySearchBar`.** Ided the query box, the Templates `ComboBox` and the clear
+  button (all walker-visible); also ided the two `DatePicker`s for script use even though
+  `Activator.CreateInstance` never triggers their `OnApplyTemplate`, so the walker can't see or
+  demand ids on them (confirmed: they contributed 0 to the measured control count).
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
 - [ ] **D3 · `PiaHistoryGroupCard`** and **`PiaHistorySessionRow`.** Per-session row — the
   equivalent of C3 for history entries.
@@ -98,11 +108,21 @@ mechanism too, and it already has an id.
 
 ## E — Chat composer internals (nested under `AssistantView`, listed as gaps there)
 
-- [ ] **E1 · `PiaAssistantMessage` → `PiaAnswerToolbar`.** The real location of the assistant
-  bubble's Copy/Speak/Regenerate/Export/Suggestion/SwitchToAgent/ManageToolPermissions buttons
-  (`PiaAssistantMessage.xaml` itself has no direct controls — it delegates here). Highest-traffic
-  item in this whole checklist: every assistant reply renders this.
-  *Deps:* none · *Effort:* **M** (313 lines, ~7 distinct actions) · *Value:* **High**
+- [x] **E1 · `PiaAssistantMessage` → `PiaAnswerToolbar`.** The real location of the assistant
+  bubble's Copy/Speak/Regenerate/RegenerateOptions/Export/RateUp/RateDown buttons
+  (`PiaAssistantMessage.xaml` itself has no direct controls — it delegates here). One
+  `PiaAnswerToolbar` instance is reused per assistant reply, so a literal id would collide across
+  messages the same way `Assistant_CopyMessage_<guid>` was designed to avoid — used the per-item
+  binding form keyed on `CommandParameter.Id` (`AssistantMessage.Id`) instead: `Answer_Copy_<id>`
+  / `_Speak_` / `_Regenerate_` / `_RegenerateOptions_` / `_Export_` / `_RateUp_` / `_RateDown_`.
+  Deliberately **not** prefixed `Assistant_` — that would collide with the existing
+  `Assistant_CopyMessage_<guid>` (user bubble) under a prefix-match enumeration. Also ided the 3
+  regenerate-style `MenuItem`s (`Answer_RegenerateOptions_Shorten`/`_Detailed`/`_Exportable`,
+  literal — only one context menu is ever open at a time; not walker-visible, no test lock).
+  Suggestion/SwitchToAgent live in `PiaSuggestionChips`/`PiaAgentModeChip` (E8) and
+  ManageToolPermissions in `ActionCardControl` (G2) — both still open, not closed by this item.
+  Highest-traffic item in this whole checklist: every assistant reply renders this.
+  *Deps:* none · *Effort:* **M** (313 lines, 7 distinct actions) · *Value:* **High**
 - [ ] **E2 · `RunProgressPanel`.** The pinned run-progress panel (agent run state, plan-approval).
   850 lines — audit before estimating further; likely several distinct action buttons.
   *Deps:* none · *Effort:* **M** · *Value:* **High**
@@ -189,11 +209,16 @@ nested rows do not)
 
 ## J — Small remaining pieces
 
-- [ ] **J1 · `CodeBlockControl`.** The copy-code button on rendered markdown code fences.
+- [x] **J1 · `CodeBlockControl`.** Ided the copy button (`CodeBlock_Copy`) and the read-only
+  `RichTextBox` viewer (`CodeBlock_Content`, `TextBoxBase`-derived so the walker demands an id on
+  it too). Literal ids: the control is built procedurally per fence with no per-block identity
+  plumbed through, so two code blocks in one reply repeat the same id — same class of caveat the
+  playbook already documents for tool-name rows; combine with ordinal indexing if it matters.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
-- [ ] **J2 · `PersonaGlyph`, `PiaPersonaAvatar`.** Confirm whether either has an actual interactive
-  element (they render an avatar/glyph) — if not, drop them from the playbook's nested-view gap
-  list instead of chasing ids that were never needed.
+- [x] **J2 · `PersonaGlyph`, `PiaPersonaAvatar`.** Confirmed neither has a walker-visible control
+  (`Path`/`EmojiPresenter`/`Border` only — `EmojiPresenter : Image`). Dropped from the playbook's
+  nested-view gap list; no `[InlineData]` row added (would sit at a vacuous floor of 0, same
+  reasoning as `NavigationSidebarView`'s exclusion).
   *Deps:* none · *Effort:* **XS** · *Value:* **Enabler**
 
 ---
@@ -203,9 +228,9 @@ nested rows do not)
 Cheapest decisive work first, then the highest-traffic vertical slices.
 
 ```
-G1 → A1 → A2 → C1 → C2 → D1 → D2 → B2 → B3 → J1 → J2   # cheap audits, several already near-done
-E1                                                      # highest-traffic single item — every reply renders it
-A3 → C3 → D3 → F1                                       # the four per-item row types
+G1 → A1 → A2 → C1 → C2 → D1 → D2 → B2 → B3 → J1 → J2   # DONE (slice 2 + slice 3)
+E1                                                      # DONE (slice 3) — highest-traffic single item
+A3 → C3 → D3 → F1                                       # the four per-item row types — next up
 B1 → B4                                                 # Todo view + its embedded panel
 E2 → E4 → E7 → E9 → E8                                  # remaining composer-adjacent controls
 G2 → G3 → G4                                            # Cards & Flow

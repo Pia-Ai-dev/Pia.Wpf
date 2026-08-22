@@ -14,22 +14,27 @@
       <RadioButton Content="{loc:Str Reminders_Filter_All}"
                    GroupName="ReminderFilter"
                    IsChecked="{Binding ActiveFilter, ElementName=Root, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=All}"
+                   AutomationProperties.AutomationId="Reminders_Filter_All"
                    Style="{StaticResource PiaSegmentedButton}"/>
       <RadioButton Content="{loc:Str Reminders_Filter_Active}"
                    GroupName="ReminderFilter"
                    IsChecked="{Binding ActiveFilter, ElementName=Root, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Active}"
+                   AutomationProperties.AutomationId="Reminders_Filter_Active"
                    Style="{StaticResource PiaSegmentedButton}"/>
       <RadioButton Content="{loc:Str Reminders_Filter_Snoozed}"
                    GroupName="ReminderFilter"
                    IsChecked="{Binding ActiveFilter, ElementName=Root, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Snoozed}"
+                   AutomationProperties.AutomationId="Reminders_Filter_Snoozed"
                    Style="{StaticResource PiaSegmentedButton}"/>
       <RadioButton Content="{loc:Str Reminders_Filter_Disabled}"
                    GroupName="ReminderFilter"
                    IsChecked="{Binding ActiveFilter, ElementName=Root, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Disabled}"
+                   AutomationProperties.AutomationId="Reminders_Filter_Disabled"
                    Style="{StaticResource PiaSegmentedButton}"/>
       <RadioButton Content="{loc:Str Reminders_Filter_Completed}"
                    GroupName="ReminderFilter"
                    IsChecked="{Binding ActiveFilter, ElementName=Root, Converter={StaticResource StringEqualsBoolConverter}, ConverterParameter=Completed}"
+                   AutomationProperties.AutomationId="Reminders_Filter_Completed"
                    Style="{StaticResource PiaSegmentedButton}"/>
     </StackPanel>
   </Border>

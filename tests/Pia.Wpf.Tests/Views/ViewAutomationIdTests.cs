@@ -53,6 +53,16 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Views.SettingsViews.PersonasView), 3, 3, "PersonaGlyph")]
     [InlineData(typeof(Pia.Views.MeetingAttendeeOverlay), 8, 1, "ListeningIndicator")]
     [InlineData(typeof(Pia.Controls.Cards.CardDecisionBar), 1, 1, "")]
+    [InlineData(typeof(Pia.Controls.Vault.PiaVaultHeader), 5, 0, "PiaHelpHint")]
+    [InlineData(typeof(Pia.Controls.Vault.PiaVaultSearchBar), 1, 0, "")]
+    [InlineData(typeof(Pia.Controls.Reminders.PiaRemindersHeader), 4, 0, "PiaHelpHint")]
+    [InlineData(typeof(Pia.Controls.Reminders.PiaRemindersFilterBar), 5, 0, "")]
+    [InlineData(typeof(Pia.Controls.History.PiaHistoryHeader), 2, 0, "PiaHelpHint")]
+    [InlineData(typeof(Pia.Controls.History.PiaHistorySearchBar), 3, 0, "")]
+    [InlineData(typeof(Pia.Controls.Todo.PiaTodoHeader), 2, 0, "PiaHelpHint")]
+    [InlineData(typeof(Pia.Controls.Todo.PiaTodoSearchBar), 1, 0, "")]
+    [InlineData(typeof(Pia.Controls.Markdown.CodeBlockControl), 2, 0, "")]
+    [InlineData(typeof(Pia.Controls.Chat.PiaAnswerToolbar), 7, 7, "")]
     public void EveryInteractiveControl_CarriesAnAutomationId(
         Type viewType, int minimumInspected, int minimumPerItemIds, string expectedNestedViews)
     {

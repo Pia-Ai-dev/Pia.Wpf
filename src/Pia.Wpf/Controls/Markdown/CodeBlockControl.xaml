@@ -39,6 +39,7 @@
                      Padding="6,2"
                      Click="CopyButton_Click"
                      AutomationProperties.Name="{loc:Str Assistant_Copy_Tooltip}"
+                     AutomationProperties.AutomationId="CodeBlock_Copy"
                      ToolTip="{loc:Str Assistant_Copy_Tooltip}">
             <ui:SymbolIcon x:Name="CopyIcon" Symbol="Copy16" FontSize="12" />
           </ui:Button>
@@ -52,6 +53,7 @@
                    BorderThickness="0"
                    Background="Transparent"
                    Padding="12,8"
+                   AutomationProperties.AutomationId="CodeBlock_Content"
                    FontFamily="{StaticResource CodeFontFamily}"
                    FontSize="{StaticResource CodeFontSize}"
                    Foreground="{DynamicResource CodeBlockPlainBrush}"

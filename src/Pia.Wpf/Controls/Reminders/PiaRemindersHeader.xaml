@@ -25,6 +25,7 @@
     <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
       <ui:Button Appearance="Secondary"
                  Command="{Binding RefreshCommand}"
+                 AutomationProperties.AutomationId="Reminders_Refresh"
                  ToolTip="{loc:Str Reminders_Refresh}"
                  Margin="0,0,6,0">
         <StackPanel Orientation="Horizontal">
@@ -34,6 +35,7 @@
       </ui:Button>
       <ui:Button Appearance="Secondary"
                  Command="{Binding DismissAllCommand}"
+                 AutomationProperties.AutomationId="Reminders_DismissAll"
                  ToolTip="{loc:Str Reminders_DismissAllTooltip}"
                  Margin="0,0,6,0">
         <StackPanel Orientation="Horizontal">
@@ -43,6 +45,7 @@
       </ui:Button>
       <ui:Button Appearance="Secondary"
                  Command="{Binding DisableAllCommand}"
+                 AutomationProperties.AutomationId="Reminders_DisableAll"
                  ToolTip="{loc:Str Reminders_DisableAllTooltip}"
                  Margin="0,0,6,0">
         <StackPanel Orientation="Horizontal">
@@ -52,6 +55,7 @@
       </ui:Button>
       <ui:Button Appearance="Secondary"
                  Command="{Binding DeleteAllCommand}"
+                 AutomationProperties.AutomationId="Reminders_DeleteAll"
                  ToolTip="{loc:Str Reminders_DeleteAllTooltip}">
         <StackPanel Orientation="Horizontal">
           <ui:SymbolIcon Symbol="Delete24" FontSize="16" Margin="0,0,6,0"
