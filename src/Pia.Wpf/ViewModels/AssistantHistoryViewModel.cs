@@ -77,6 +77,21 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
     [ObservableProperty]
     private bool _isLoading;
 
+    /// <summary>Drives the import progress row; a large export takes minutes.</summary>
+    [ObservableProperty]
+    private bool _isImporting;
+
+    [ObservableProperty]
+    private string _importStatus = string.Empty;
+
+    /// <summary>Percent stored, meaningful only while <see cref="ImportProgressIsIndeterminate"/> is false.</summary>
+    [ObservableProperty]
+    private double _importProgress;
+
+    /// <summary>True until the file is parsed — the chat count is unknown before that.</summary>
+    [ObservableProperty]
+    private bool _importProgressIsIndeterminate = true;
+
     [ObservableProperty]
     private AssistantChatRowViewModel? _selectedChat;
 
@@ -635,7 +650,10 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         try
         {
             IsLoading = true;
-            result = await _chatArchiveService.ImportAsync(filePath);
+            BeginImportProgress();
+            // Constructed here, on the UI thread, so the service's background reports come back marshalled.
+            var progress = new Progress<ChatImportProgress>(ReportImportProgress);
+            result = await _chatArchiveService.ImportAsync(filePath, progress);
         }
         catch (Exception ex)
         {
@@ -644,6 +662,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         }
         finally
         {
+            IsImporting = false;
             IsLoading = false;
         }
 
@@ -670,6 +689,29 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         await _dialogService.ShowMessageDialogAsync(
             _localizationService["AssistantHistory_Import"],
             BuildImportSummary(result));
+    }
+
+    internal void BeginImportProgress()
+    {
+        IsImporting = true;
+        ImportProgress = 0;
+        ImportProgressIsIndeterminate = true;
+        ImportStatus = _localizationService["Msg_AssistantHistory_ImportReading"];
+    }
+
+    internal void ReportImportProgress(ChatImportProgress progress)
+    {
+        ImportProgressIsIndeterminate = progress.Phase != ChatImportPhase.Storing || progress.Total == 0;
+        ImportProgress = ImportProgressIsIndeterminate
+            ? 0
+            : 100.0 * progress.Processed / progress.Total;
+        ImportStatus = progress.Phase switch
+        {
+            ChatImportPhase.Reading => _localizationService["Msg_AssistantHistory_ImportReading"],
+            ChatImportPhase.Converting => _localizationService["Msg_AssistantHistory_ImportConverting"],
+            _ => _localizationService.Format(
+                "Msg_AssistantHistory_ImportStoring", progress.Processed, progress.Total),
+        };
     }
 
     /// <summary>
@@ -790,8 +832,10 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
 
     private void OnChatsChanged(object? sender, AssistantChatChangedEventArgs e)
     {
-        // Debounced, not reloaded per event: a bulk writer such as an import saves each chat
-        // separately, and one search per save contends for the same write gate its next save needs.
+        // An import saves each chat separately and reveals the whole result itself once done, so its
+        // hundreds of events need no reload at all. Otherwise debounce: one search per save would
+        // contend for the same write gate the next save needs.
+        if (IsImporting) return;
         Post(DebounceReload);
     }
 

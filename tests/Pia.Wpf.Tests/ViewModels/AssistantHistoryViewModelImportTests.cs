@@ -19,6 +19,7 @@ public class AssistantHistoryViewModelImportTests
 {
     private readonly IAssistantChatService _chatService = Substitute.For<IAssistantChatService>();
     private readonly IProviderService _providers = Substitute.For<IProviderService>();
+    private readonly ILocalizationService _localization = Substitute.For<ILocalizationService>();
 
     /// <summary>
     /// Runs posted callbacks inline, so a burst of <c>ChatsChanged</c> events is serialized the way the
@@ -36,13 +37,17 @@ public class AssistantHistoryViewModelImportTests
 
         _chatService.SearchAsync().ReturnsForAnyArgs(Task.FromResult<IReadOnlyList<SyncAssistantChat>>([]));
         _providers.GetProvidersAsync().Returns(Task.FromResult<IReadOnlyList<AiProvider>>([]));
+        // Echo the key so a status assertion names the resource it expects.
+        _localization[Arg.Any<string>()].Returns(call => (string)call[0]!);
+        _localization.Format(Arg.Any<string>(), Arg.Any<object[]>())
+            .Returns(call => $"{call[0]}({string.Join(",", (object[])call[1]!)})");
 
         return new AssistantHistoryViewModel(
             NullLogger<AssistantHistoryViewModel>.Instance,
             _chatService,
             _providers,
             Substitute.For<IDialogService>(),
-            Substitute.For<ILocalizationService>(),
+            _localization,
             Substitute.For<INavigationService>(),
             Substitute.For<global::Wpf.Ui.ISnackbarService>(),
             Substitute.For<IChatSessionManager>(),
@@ -156,6 +161,52 @@ public class AssistantHistoryViewModelImportTests
         sut.SearchQuery = "chat";
         await sut.RefreshCommand.ExecuteAsync(null);
         Assert.Equal(50, sut.Chats.Count);
+        sut.Dispose();
+    }
+
+    /// <summary>
+    /// Only the storing phase knows how many chats there are, so it is the only one that can drive a
+    /// determinate bar — the other two would otherwise sit at 0% and read as a hang.
+    /// </summary>
+    [Fact]
+    public void ImportProgress_IsIndeterminate_UntilTheChatCountIsKnown()
+    {
+        var sut = CreateSut();
+
+        sut.BeginImportProgress();
+        Assert.True(sut.IsImporting);
+        Assert.True(sut.ImportProgressIsIndeterminate);
+        Assert.Equal("Msg_AssistantHistory_ImportReading", sut.ImportStatus);
+
+        sut.ReportImportProgress(new ChatImportProgress(ChatImportPhase.Converting, 0, 0));
+        Assert.True(sut.ImportProgressIsIndeterminate);
+        Assert.Equal("Msg_AssistantHistory_ImportConverting", sut.ImportStatus);
+
+        sut.ReportImportProgress(new ChatImportProgress(ChatImportPhase.Storing, 143, 573));
+        Assert.False(sut.ImportProgressIsIndeterminate);
+        Assert.Equal(143d * 100 / 573, sut.ImportProgress);
+        Assert.Equal("Msg_AssistantHistory_ImportStoring(143,573)", sut.ImportStatus);
+
+        sut.Dispose();
+    }
+
+    /// <summary>
+    /// An import's own events must not reload at all: it reveals the whole result itself when it is
+    /// done, and every search it triggers in the meantime fights the write gate the next save needs.
+    /// </summary>
+    [Fact]
+    public async Task ChatsChangedDuringAnImport_TriggersNoReload()
+    {
+        var sut = CreateSut();
+        sut.BeginImportProgress();
+        _chatService.ClearReceivedCalls();
+
+        RaiseChatsChanged(50);
+        await Task.Delay(700, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain(
+            _chatService.ReceivedCalls(),
+            c => c.GetMethodInfo().Name == nameof(IAssistantChatService.SearchAsync));
         sut.Dispose();
     }
 

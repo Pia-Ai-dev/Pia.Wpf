@@ -394,5 +394,8 @@ Les modifications seront appliquées.</value></data>
   <data name="Msg_AssistantHistory_ImportDroppedAttachments" xml:space="preserve"><value>{0} pièces jointes n'ont pas été reprises — l'historique ne stocke que du texte.</value></data>
   <data name="Msg_AssistantHistory_ImportFailedCount" xml:space="preserve"><value>{0} conversations n'ont pu être écrites ; voir le journal pour les détails.</value></data>
   <data name="Msg_AssistantHistory_ImportUnrecognized" xml:space="preserve"><value>Ce fichier n'est ni une archive de conversations Pia ni un export Open WebUI.</value></data>
+  <data name="Msg_AssistantHistory_ImportReading" xml:space="preserve"><value>Lecture du fichier d'export…</value></data>
+  <data name="Msg_AssistantHistory_ImportConverting" xml:space="preserve"><value>Conversion des conversations…</value></data>
+  <data name="Msg_AssistantHistory_ImportStoring" xml:space="preserve"><value>Import de la conversation {0} sur {1}…</value></data>
   <data name="Msg_AssistantHistory_ImportFailed" xml:space="preserve"><value>Échec de l'importation des conversations : {0}</value></data>
 </root>

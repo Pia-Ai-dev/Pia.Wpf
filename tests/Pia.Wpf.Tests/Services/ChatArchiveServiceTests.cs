@@ -83,7 +83,7 @@ public sealed class ChatArchiveServiceTests : IDisposable
         await _chats.DeleteAsync(original.Id, Ct);
         Assert.Null(await _chats.GetAsync(original.Id, Ct));
 
-        var result = await _sut.ImportAsync(file, Ct);
+        var result = await _sut.ImportAsync(file, ct: Ct);
 
         Assert.Equal(ChatArchiveFormat.Pia, result.Format);
         Assert.Equal(1, result.Imported);
@@ -125,7 +125,7 @@ public sealed class ChatArchiveServiceTests : IDisposable
         var file = PathFor("twice.json");
         await _sut.ExportAsync([chat.Id], file, Ct);
 
-        var second = await _sut.ImportAsync(file, Ct);
+        var second = await _sut.ImportAsync(file, ct: Ct);
 
         Assert.Equal(0, second.Imported);
         Assert.Equal(1, second.SkippedUpToDate);
@@ -144,7 +144,7 @@ public sealed class ChatArchiveServiceTests : IDisposable
         chat.UpdatedAt = chat.UpdatedAt.AddHours(1);
         await _chats.SaveAsync(chat, Ct);
 
-        var result = await _sut.ImportAsync(file, Ct);
+        var result = await _sut.ImportAsync(file, ct: Ct);
 
         Assert.Equal(0, result.Imported);
         Assert.Equal(1, result.SkippedUpToDate);
@@ -183,7 +183,7 @@ public sealed class ChatArchiveServiceTests : IDisposable
         await _sut.ExportAsync([old.Id], file, Ct);
         await _chats.DeleteAsync(old.Id, Ct);
 
-        var result = await _sut.ImportAsync(file, Ct);
+        var result = await _sut.ImportAsync(file, ct: Ct);
 
         Assert.Equal(old.UpdatedAt, result.OldestUpdatedAt);
     }
@@ -194,7 +194,7 @@ public sealed class ChatArchiveServiceTests : IDisposable
         var file = PathFor("foreign.json");
         await File.WriteAllTextAsync(file, """{"hello":"world"}""", Ct);
 
-        var result = await _sut.ImportAsync(file, Ct);
+        var result = await _sut.ImportAsync(file, ct: Ct);
 
         Assert.Equal(ChatArchiveFormat.Unknown, result.Format);
         Assert.Equal(0, result.Imported);
@@ -218,7 +218,7 @@ public sealed class ChatArchiveServiceTests : IDisposable
         var file = PathFor("dupes.json");
         await File.WriteAllTextAsync(file, JsonSerializer.Serialize(archive, CamelCase), Ct);
 
-        var result = await _sut.ImportAsync(file, Ct);
+        var result = await _sut.ImportAsync(file, ct: Ct);
 
         Assert.Equal(2, result.Imported);
         Assert.Equal(0, result.Failed);
@@ -240,7 +240,7 @@ public sealed class ChatArchiveServiceTests : IDisposable
         var file = PathFor("encrypted.json");
         await File.WriteAllTextAsync(file, JsonSerializer.Serialize(archive, CamelCase), Ct);
 
-        var result = await _sut.ImportAsync(file, Ct);
+        var result = await _sut.ImportAsync(file, ct: Ct);
 
         Assert.Equal(1, result.Imported);
         var stored = await _chats.GetAsync(chat.Id, Ct);
@@ -248,6 +248,113 @@ public sealed class ChatArchiveServiceTests : IDisposable
         Assert.Null(stored?.WrappedDek);
         Assert.Equal("question", stored?.Messages[0].Content);
     }
+
+    /// <summary>
+    /// Stands in for WPF's context. Unlike the base class it makes itself <c>Current</c> while running a
+    /// posted continuation, which is what lets the test below see a captured context at all.
+    /// </summary>
+    private sealed class DetectableSynchronizationContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback d, object? state)
+        {
+            var previous = Current;
+            SetSynchronizationContext(this);
+            try
+            {
+                d(state);
+            }
+            finally
+            {
+                SetSynchronizationContext(previous);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The import ran on the UI thread and froze the app for minutes on a 37 MB export. Parsing,
+    /// conversion and every store write must happen with no ambient context to marshal back to.
+    /// </summary>
+    [Fact]
+    public async Task Import_DoesNotRunOnTheCallersSynchronizationContext()
+    {
+        var file = PathFor("offthread.json");
+        await File.WriteAllTextAsync(file, OpenWebUiExport(3), Ct);
+
+        var contexts = new List<SynchronizationContext?>();
+        _chats.ChatsChanged += (_, _) => contexts.Add(SynchronizationContext.Current);
+
+        var previous = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(new DetectableSynchronizationContext());
+        try
+        {
+            var result = await _sut.ImportAsync(file, ct: Ct);
+            Assert.Equal(3, result.Imported);
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(previous);
+        }
+
+        Assert.NotEmpty(contexts);
+        Assert.All(contexts, c => Assert.Null(c));
+    }
+
+    [Fact]
+    public async Task Import_ReportsProgress_FromReadingToTheLastChat()
+    {
+        var file = PathFor("progress.json");
+        await File.WriteAllTextAsync(file, OpenWebUiExport(4), Ct);
+
+        var ticks = new List<ChatImportProgress>();
+        await _sut.ImportAsync(file, new SynchronousProgress(ticks.Add), Ct);
+
+        Assert.Equal(ChatImportPhase.Reading, ticks[0].Phase);
+        Assert.Contains(ticks, t => t.Phase == ChatImportPhase.Converting);
+
+        var storing = ticks.Where(t => t.Phase == ChatImportPhase.Storing).ToList();
+        Assert.All(storing, t => Assert.Equal(4, t.Total));
+        Assert.Equal(0, storing[0].Processed);
+        Assert.Equal(4, storing[^1].Processed);
+    }
+
+    /// <summary>
+    /// <see cref="Progress{T}"/> would post to the test's context and report after the assertion;
+    /// the production caller wants exactly that marshalling, a test wants the ticks inline.
+    /// </summary>
+    private sealed class SynchronousProgress(Action<ChatImportProgress> onReport) : IProgress<ChatImportProgress>
+    {
+        public void Report(ChatImportProgress value) => onReport(value);
+    }
+
+    private static string OpenWebUiExport(int chatCount)
+    {
+        var records = Enumerable.Range(0, chatCount).Select(i => $$"""
+            {
+              "id": "{{Guid.NewGuid()}}",
+              "title": "chat {{i}}",
+              "created_at": 1779274800,
+              "updated_at": {{1779274900 + i}},
+              "chat": {
+                "history": {
+                  "currentId": "{{AnswerId(i)}}",
+                  "messages": {
+                    "{{PromptId(i)}}": { "id": "{{PromptId(i)}}", "parentId": null,
+                                         "role": "user", "content": "prompt {{i}}", "timestamp": 1779274801 },
+                    "{{AnswerId(i)}}": { "id": "{{AnswerId(i)}}", "parentId": "{{PromptId(i)}}",
+                                         "role": "assistant", "content": "answer {{i}}", "timestamp": 1779274802 }
+                  }
+                },
+                "messages": [ { "role": "user", "content": "prompt {{i}}" } ]
+              }
+            }
+            """);
+
+        return $"[{string.Join(",", records)}]";
+    }
+
+    private static Guid PromptId(int index) => new($"aaaaaaaa-0000-0000-0000-{index:D12}");
+
+    private static Guid AnswerId(int index) => new($"bbbbbbbb-0000-0000-0000-{index:D12}");
 
     private static JsonSerializerOptions CamelCase => new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
