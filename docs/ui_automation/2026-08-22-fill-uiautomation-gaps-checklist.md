@@ -31,10 +31,21 @@ chat/agent lever, send/run-in-background, per-message copy button), `MarkdownMes
 `SettingsViews/AssistantView`, `SettingsViews/ProvidersView`, `SettingsViews/AccountView`,
 `SettingsViews/OptimizeView`, and the Persona/Provider/Template edit dialogs.
 
-**Slice 3** (this session, committed, gate green): the cheap audits `A1`/`A2`/`C1`/`C2`/`D1`/`D2`/
-`B2`/`B3`/`J1` (all literal ids, locked with `[InlineData]`), `J2` (audit only — dropped, see
+**Slice 3** (previous session, committed, gate green): the cheap audits `A1`/`A2`/`C1`/`C2`/`D1`/
+`D2`/`B2`/`B3`/`J1` (all literal ids, locked with `[InlineData]`), `J2` (audit only — dropped, see
 below), and `E1` (`PiaAnswerToolbar`, per-item ids keyed on `AssistantMessage.Id` — see the id
 table). `G1` was already done in slice 2.
+
+**Slice 4** (this session, committed, gate green): the four per-item row types — `A3`
+(`PiaVaultCategoryCard`), `C3`+`C4` (`PiaReminderRow` + `PiaReminderGroupCard`), `D3`
+(`PiaHistoryGroupCard`; `PiaHistorySessionRow` had nothing to id), `F1`+`F2`
+(`PiaAssistantChatRowContent` + `PiaAssistantChatGroupCard`). Found and documented (in the
+playbook's Known gaps) a walker mechanism hazard along the way: a `DataTemplate` whose root is
+itself a `UserControl` isn't flagged as a nested-view stop, so its controls get swept into the
+ancestor group-card's inspected set — true for `PiaReminderGroupCard`/`PiaReminderRow` and
+`PiaVaultCategoryCard`/`PiaVaultRow`, but not for `PiaAssistantChatGroupCard`/`PiaAssistantChatRow`
+since the interesting control (`PiaAssistantChatRowContent`) sits one level deeper than the
+template root.
 
 **Excluded, not just deferred** — `NavigationSidebarView`: its 12 `NavItem_*` buttons already all
 carry ids (verified by hand), but they hang off `ui:NavigationView.MenuItems`, which
@@ -52,8 +63,12 @@ mechanism too, and it already has an id.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
 - [x] **A2 · `PiaVaultSearchBar`.** Query box ided (`Memory_SearchQuery`); no clear button exists.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
-- [ ] **A3 · `PiaVaultCategoryCard`.** Per-item card in the left list — expand/collapse, likely a
-  per-item id keyed on the category/topic slug.
+- [x] **A3 · `PiaVaultCategoryCard`.** Ided the expand/collapse toggle, per-category:
+  `Memory_CategoryToggle_<type>` keyed on `MemoryGroupViewModel.Type`. `PiaVaultRow` (the
+  ItemTemplate's root, `<mem:PiaVaultRow/>`) has zero walker-recognized controls, so this reduces
+  to just the one button; confirmed there's no `PiaVaultRow` case to add. `PiaTypeChip` inside it
+  shows up as a nested-view stop, correctly, since it's one level deeper than the template root
+  (see the playbook's new "root-of-DataTemplate" hazard note).
   *Deps:* none · *Effort:* **S** · *Value:* **High** (the list you'd script against most)
 - [ ] **A4 · `PiaVaultInspector`.** The detail pane for a selected memory item.
   *Deps:* none · *Effort:* **S** · *Value:* **Med**
@@ -82,10 +97,18 @@ mechanism too, and it already has an id.
 - [x] **C2 · `PiaRemindersFilterBar`.** Ided the 5 static filter `RadioButton`s (not an
   `ItemsControl`, so literal ids are correct here — no per-item mechanism needed).
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
-- [ ] **C3 · `PiaReminderRow`.** Per-item row — complete/snooze/delete, needs a per-item id keyed
-  on the reminder's `Id`.
+- [x] **C3 · `PiaReminderRow`.** Ided the 4 hover-action buttons (ToggleEnable/Snooze/Dismiss/
+  Delete), per-reminder keyed on `Reminder.Id`: `Reminders_ToggleEnable_<id>` / `_Snooze_<id>` /
+  `_Dismiss_<id>` / `_Delete_<id>`. Given its own standalone `[InlineData]` row (floor 4, all 4
+  per-item, nested `PiaReminderStatusChip`).
   *Deps:* none · *Effort:* **S** · *Value:* **High**
-- [ ] **C4 · `PiaReminderGroupCard`.** Group header (Today/Upcoming/etc.) wrapping the rows.
+- [x] **C4 · `PiaReminderGroupCard`.** Ided the header expand/collapse toggle, per-bucket:
+  `Reminders_GroupToggle_<bucketKind>` keyed on `ReminderGroupViewModel.BucketKind`. Given its
+  own `[InlineData]` row too, not skipped: `PiaReminderGroupCard`'s `ItemTemplate` root is the
+  literal `<rem:PiaReminderRow/>`, which the walker's nested-view check doesn't flag (see the
+  playbook's new hazard note) — so testing it standalone sweeps in all 4 of C3's row buttons
+  (floor 5 total, 5 per-item, nested `PiaReminderStatusChip` — confirmed empirically, not
+  guessed: an earlier assumption that this would stay at an empty nested list was wrong).
   *Deps:* C3 · *Effort:* **XS** · *Value:* **Med**
 
 ## D — History (`HistoryView`, the Optimize-mode session list)
@@ -97,8 +120,17 @@ mechanism too, and it already has an id.
   `Activator.CreateInstance` never triggers their `OnApplyTemplate`, so the walker can't see or
   demand ids on them (confirmed: they contributed 0 to the measured control count).
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
-- [ ] **D3 · `PiaHistoryGroupCard`** and **`PiaHistorySessionRow`.** Per-session row — the
-  equivalent of C3 for history entries.
+- [x] **D3 · `PiaHistoryGroupCard`** and **`PiaHistorySessionRow`.** `PiaHistorySessionRow` has
+  zero walker-recognized controls (three `TextBlock`s only, no buttons at all — row selection is
+  a bare `ListBoxItem` click), so this reduced to just `PiaHistoryGroupCard`'s header
+  expand/collapse toggle, per-bucket: `History_GroupToggle_<bucket>` keyed on
+  `SessionGroupViewModel.Bucket` (floor 1, 1 per-item, no nested views — the swept-controls
+  hazard from C4/A3 doesn't apply here since the swept-in row itself has nothing to sweep). A
+  ListBoxItem-level id for picking one session row by identity was considered and deliberately
+  not added — no test lock possible (same class of gap as the History `DatePicker`s), and the
+  shared `PiaMemoryRowItemStyle` is reused across Vault/Reminders/History/AssistantChat, so it'd
+  need checking every other item type actually exposes a usable identity too; treat as a
+  separate design question if a script ever needs it.
   *Deps:* none · *Effort:* **S** · *Value:* **Med**
 - [ ] **D4 · `PiaHistoryInspector`, `PiaHistoryInspectorHeader`, `PiaHistoryInspectorEmptyState`.**
   Detail pane for a selected session.
@@ -150,10 +182,22 @@ mechanism too, and it already has an id.
 ## F — Assistant History (`AssistantHistoryView` already has 4 ids for import/export/help; the
 nested rows do not)
 
-- [ ] **F1 · `PiaAssistantChatRow`, `PiaAssistantChatRowContent`.** Per-chat row in the history
-  list — needs a per-item id keyed on chat `Id`.
+- [x] **F1 · `PiaAssistantChatRow`, `PiaAssistantChatRowContent`.** `PiaAssistantChatRow` itself
+  has no direct controls — it just hosts `PiaAssistantChatRowContent`, a second nested
+  `UserControl`, which is a genuine (one-level-deeper) nested-view stop, not the swept-in hazard
+  case. So the fix landed on `PiaAssistantChatRowContent`'s one delete button, ided per-chat
+  keyed on `AssistantChatRowViewModel.Id` (`Chat.Id`): `AssistantChat_Delete_<id>`. Given its own
+  standalone `[InlineData]` row (floor 1, 1 per-item, nested `PiaChatStateBadge`).
   *Deps:* none · *Effort:* **S** · *Value:* **High**
-- [ ] **F2 · `PiaAssistantChatGroupCard`.** Group header wrapping the rows.
+- [x] **F2 · `PiaAssistantChatGroupCard`.** Bundled with F1 since it's the same header-toggle
+  shape as A3/C4/D3. Ided the header expand/collapse toggle, per-bucket:
+  `AssistantHistory_GroupToggle_<bucket>`. Bound to `AssistantChatGroupViewModel.Bucket` (a
+  non-null `HistoryDateBucket`) rather than its `GroupKey` (a `string?` that happens to always be
+  set by the one construction site today, but isn't guaranteed non-null by the type) — same
+  identity, no nullability risk. Own `[InlineData]` row: floor 1, 1 per-item, nested
+  `PiaAssistantChatRowContent` (confirmed — testing the group card standalone correctly stops at
+  the row-content control, since it's one level deeper than the swept-in `PiaAssistantChatRow`
+  template root, not the hazard case).
   *Deps:* F1 · *Effort:* **XS** · *Value:* **Med**
 - [ ] **F3 · `PiaAssistantChatInspector`.** Already has 1 id; audit the rest (export archive
   button is already covered per the playbook table — confirm nothing else is missing).
@@ -233,8 +277,8 @@ Cheapest decisive work first, then the highest-traffic vertical slices.
 ```
 G1 → A1 → A2 → C1 → C2 → D1 → D2 → B2 → B3 → J1 → J2   # DONE (slice 2 + slice 3)
 E1                                                      # DONE (slice 3) — highest-traffic single item
-A3 → C3 → D3 → F1                                       # the four per-item row types — next up
-B1 → B4                                                 # Todo view + its embedded panel
+A3 → C3 → C4 → D3 → F1 → F2                             # DONE (slice 4) — the four per-item row types
+B1 → B4                                                 # Todo view + its embedded panel — next up
 E2 → E4 → E7 → E9 → E8                                  # remaining composer-adjacent controls
 G2 → G3 → G4                                            # Cards & Flow
 H1 → H2 → H3 → H4 → I5                                  # dialogs + Assignments (shares H4's dialog)

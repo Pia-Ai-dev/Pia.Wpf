@@ -16,6 +16,7 @@
 
       <Button Style="{StaticResource UnstyledButton}"
               Click="ToggleHeader_Click"
+              AutomationProperties.AutomationId="{Binding BucketKind, StringFormat='Reminders_GroupToggle_{0}'}"
               HorizontalContentAlignment="Stretch">
         <Grid Margin="14,11">
           <Grid.ColumnDefinitions>

@@ -63,6 +63,12 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Controls.Todo.PiaTodoSearchBar), 1, 0, "")]
     [InlineData(typeof(Pia.Controls.Markdown.CodeBlockControl), 2, 0, "")]
     [InlineData(typeof(Pia.Controls.Chat.PiaAnswerToolbar), 7, 7, "")]
+    [InlineData(typeof(Pia.Controls.Vault.PiaVaultCategoryCard), 1, 1, "PiaTypeChip")]
+    [InlineData(typeof(Pia.Controls.Reminders.PiaReminderRow), 4, 4, "PiaReminderStatusChip")]
+    [InlineData(typeof(Pia.Controls.Reminders.PiaReminderGroupCard), 5, 5, "PiaReminderStatusChip")]
+    [InlineData(typeof(Pia.Controls.History.PiaHistoryGroupCard), 1, 1, "")]
+    [InlineData(typeof(Pia.Controls.AssistantHistory.PiaAssistantChatRowContent), 1, 1, "PiaChatStateBadge")]
+    [InlineData(typeof(Pia.Controls.AssistantHistory.PiaAssistantChatGroupCard), 1, 1, "PiaAssistantChatRowContent")]
     public void EveryInteractiveControl_CarriesAnAutomationId(
         Type viewType, int minimumInspected, int minimumPerItemIds, string expectedNestedViews)
     {

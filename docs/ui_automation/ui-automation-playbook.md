@@ -42,11 +42,15 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Meeting attendee overlay | `MeetingAttendee_Url`, `_DisplayName`, `_Consent`, `_Join`, `_Stop`, `_Save`, `_SpeakerDisclaimer`, `_Close`, `_OpenSettings`, `_SaveToVault`, `_Summarize`, per-bubble `_RenameSpeaker_<speakerLabel>` (shared across every bubble from the same speaker — renaming applies to the label, not one utterance). Open the overlay with the composer button named "Join a meeting and transcribe". Bubble labels carry no id — read them as `Text` elements, which is what `Invoke-MeetingReplay.ps1` does to check the numbering. |
 | Edit dialogs (shared) | `PrimaryButton` (Save), `CloseButton` (Cancel), `Dialog_RequiredHint` |
 | Chat history import/export | `AssistantHistory_Import`, `AssistantHistory_ExportAll`, `AssistantHistory_LoadMore` (header/list), `AssistantHistory_ExportArchive` (inspector, needs a selected chat) |
+| Assistant chat history row / group card | Per-chat delete button, on `PiaAssistantChatRowContent` (keyed on `AssistantChatRowViewModel.Id`, i.e. `Chat.Id`): `AssistantChat_Delete_<id>`. Group header expand/collapse, per-bucket: `AssistantHistory_GroupToggle_<bucket>`, keyed on `AssistantChatGroupViewModel.Bucket` (its nullable `GroupKey` string was skipped in favor of this non-null enum, same identity the group is actually built from). |
 | Page-header help hints | `Routines_Help`, `Assignments_Help`, `History_Help`, `AssistantHistory_Help`, `Memory_Help`, `Todo_Help`, `Reminders_Help` |
 | Settings help hints | `Settings_ToolPermissions_Page_Help` (tab intro), `Settings_ToolPermissions_Session_Help` (session tier), `Settings_ToolPermissions_Help` (always-allowed list), `Settings_MeetingBrowser_Help`, `Settings_Agent_Roster_Help`, `Settings_Scheduled_Help` |
 | Vault (Memory) header / search | `Memory_Back`, `_Home`, `_Refresh`, `_OpenFolder`, `_ShowHelp` (distinct from the `Memory_Help` hover hint above), `Memory_SearchQuery` |
+| Vault category card (`PiaVaultCategoryCard`) | Expand/collapse toggle, per-category: `Memory_CategoryToggle_<type>`, keyed on `MemoryGroupViewModel.Type` (the category/topic slug). `PiaVaultRow` (the per-item row inside) has no walker-recognized controls of its own — nothing else to id there. |
 | Reminders header / filters | `Reminders_Refresh`, `_DismissAll`, `_DisableAll`, `_DeleteAll`; filter bar (static `RadioButton`s, not per-item): `Reminders_Filter_All` / `_Active` / `_Snoozed` / `_Disabled` / `_Completed` |
+| Reminder row / group card | Per-reminder (keyed on `Reminder.Id`): `Reminders_ToggleEnable_<id>`, `_Snooze_<id>`, `_Dismiss_<id>`, `_Delete_<id>`. Group header expand/collapse, per-bucket: `Reminders_GroupToggle_<bucketKind>`, keyed on `ReminderGroupViewModel.BucketKind`. |
 | History (Optimize sessions) header / search | `History_Refresh`, `_DeleteAll`, `_SearchQuery`, `_TemplateFilter`, `_ClearFilters`; `_StartDate` / `_EndDate` on the two `DatePicker`s carry ids too but have no test lock (see Known gaps) |
+| History group card (`PiaHistoryGroupCard`) | Expand/collapse toggle, per-bucket: `History_GroupToggle_<bucket>`, keyed on `SessionGroupViewModel.Bucket`. `PiaHistorySessionRow` (the per-item row inside) has no walker-recognized controls of its own — nothing else to id there. |
 | Todo header / search | `Todo_AddColumn`, `_Refresh`, `_SearchQuery` |
 | Assistant reply toolbar (`PiaAnswerToolbar`) | Per-reply, keyed by `AssistantMessage.Id`: `Answer_Copy_<id>`, `_Speak_<id>`, `_Regenerate_<id>`, `_RegenerateOptions_<id>`, `_Export_<id>`, `_RateUp_<id>`, `_RateDown_<id>`. Deliberately not prefixed `Assistant_` — that already means the user-bubble copy button (`Assistant_CopyMessage_<guid>`). The regenerate-style context menu's 3 items are literal and deliberately a *different* prefix, `Answer_RegenerateStyle_Shorten` / `_Detailed` / `_Exportable` — reusing `Answer_RegenerateOptions_` here would make `automationId*=Answer_RegenerateOptions_` match the chevron button plus all three menu items once opened, the same collision the `Assistant_`/`Answer_` split above exists to avoid. No test lock on the menu items. |
 | Markdown code block (`CodeBlockControl`) | `CodeBlock_Copy`, `CodeBlock_Content` — literal; a message with two+ code fences repeats these ids (see Known gaps) |
@@ -198,16 +202,32 @@ Committed recordings, the settings fixture they start from and the replay harnes
   specific block.
 - **`VaultView`, `HistoryView` and `RemindersView` are pure composition** — the top-level view
   itself declares zero interactive controls; every button/search-box/row lives in a nested
-  `Pia<Area><Thing>` control. The header and search-bar controls now have ids (table above), but
-  the per-item rows still don't: `PiaVaultCategoryCard`, `PiaReminderRow`, `PiaHistoryGroupCard`,
-  and (same shape, under `AssistantHistoryView`) `PiaAssistantChatRow`. A test row or an id on the
-  top-level view accomplishes nothing; the fix has to happen one nested control at a time.
-  `TodoView` is the exception — it declares ~43 direct interactive controls of its own (filters,
+  `Pia<Area><Thing>` control. The header, search-bar, and now the per-item row/group-header
+  controls all have ids (table above): `PiaVaultCategoryCard`'s category toggle,
+  `PiaReminderRow`'s four hover actions plus `PiaReminderGroupCard`'s bucket toggle,
+  `PiaHistoryGroupCard`'s bucket toggle, and (same shape, under `AssistantHistoryView`)
+  `PiaAssistantChatRowContent`'s delete button plus `PiaAssistantChatGroupCard`'s bucket toggle.
+  Still open in this family: the inspector panes (`PiaVaultInspector`, `PiaHistoryInspector*`)
+  and the status bars. A test row or an id on the top-level view accomplishes nothing; the fix
+  has to happen one nested control at a time. `TodoView` is the exception — it declares ~43
+  direct interactive controls of its own (filters,
   add box, list), not pure composition; see the checklist's B1. Same nested-control shape is true
   of the top-level `OptimizeView` (the Optimize hotkey window, distinct from
   `SettingsViews/OptimizeView`), the first-run wizard (`FirstRunWizardWindow` and all of
   `WizardSteps/`), and most content dialogs beyond the shared `PrimaryButton` / `CloseButton` /
   `Dialog_RequiredHint` ids. See the checklist doc below for the file-by-file work list.
+- **The walker's nested-view check misses a `UserControl` that is the literal root of a
+  `DataTemplate`.** `Collect()` re-anchors its `root` parameter to whatever `LoadContent()`
+  returns, so when an `ItemTemplate`'s root is itself a `UserControl` (e.g. `PiaReminderRow` as
+  `PiaReminderGroupCard`'s row template), `!ReferenceEquals(element, root) && element is
+  UserControl` is trivially false for that instance and the walk keeps descending — its controls
+  get swept into the *group card's* `[InlineData]` row instead of stopping as a nested view. A
+  `UserControl` one level deeper than the template root (e.g. `PiaReminderStatusChip` inside
+  `PiaReminderRow`, or `PiaAssistantChatRowContent` inside `PiaAssistantChatRow`) is unaffected
+  and still stops the walk normally. If a group-card row's inspected/per-item counts look higher
+  than the header alone would explain, or its nested-view list contains something one level
+  deeper than expected, this is why — confirmed across the Vault/Reminders/History/AssistantChat
+  group-card-and-row pairs.
 - **`NavigationSidebarView`'s 12 `NavItem_*` buttons already all have ids** (verified by hand),
   but `ViewAutomationIdTests` cannot lock that in: they're set via
   `<ui:NavigationViewItem.Content>` inside `ui:NavigationView.MenuItems`, and `LogicalTreeHelper`

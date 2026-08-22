@@ -17,6 +17,7 @@
 
       <Button Style="{StaticResource UnstyledButton}"
               Click="ToggleHeader_Click"
+              AutomationProperties.AutomationId="{Binding Type, StringFormat='Memory_CategoryToggle_{0}'}"
               HorizontalContentAlignment="Stretch">
         <Grid Margin="14,11">
           <Grid.ColumnDefinitions>
