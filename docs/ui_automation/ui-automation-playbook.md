@@ -21,7 +21,8 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 |---|---|
 | Sidebar items | `NavItem_Assistant`, `NavItem_AssistantHistory`, `NavItem_Memory`, `NavItem_Reminders`, `NavItem_Routines`, `NavItem_Todo`, `NavItem_Settings`, `NavItem_NewWindow`, `NavItem_ThemeToggle` |
 | Sidebar items, conditional | `NavItem_Optimize` / `NavItem_History` (Optimize-mode windows only), `NavItem_Assignments` (only when the server offers the surface) |
-| Chat input / scroller | `InputTextBox`, `MessageScrollViewer` |
+| Chat input / scroller | `InputTextBox`, `MessageScrollViewer`, `MarkdownViewer` (assistant bubble text, via `PiaAssistantMessage` → `MarkdownMessageControl`) |
+| Chat composer toolbar | `Assistant_Suggestion_Reminder` / `_Todo` / `_Memory` (empty-state chips), `Assistant_ClearConversation`, `Assistant_CancelStreaming`, `Assistant_ToggleRecording`, `Assistant_AttachFile`, `Assistant_RemoveAttachment`, `Assistant_ToggleMeetingAttendee`, `Assistant_ToggleDirectTranscription`, `Assistant_RunAssignment`, `Assistant_PersonaPicker`, `Assistant_Mode_Chat` / `_Agent`, `Assistant_RunInBackground`, `Assistant_Send`, `Assistant_WeakProvider_Continue` / `_ChooseProvider` / `_StayInChat`, per-message `Assistant_CopyMessage_<guid>` (user bubble, keyed by message `Id`) |
 | Tool-approval decisions | `ToolApproval_Decline`, `ToolApproval_AllowOnce`, `ToolApproval_AllowSession`, `ToolApproval_AlwaysAllow` |
 | Personas / Templates grids | `Personas_AddButton`, `Templates_AddButton`, per-item `Persona_Edit_<guid>` / `Persona_Delete_<guid>` / `Persona_Duplicate_<guid>` / `Template_Edit_<guid>` / `Template_Delete_<guid>` / `Template_ViewPrompt_<guid>` / `Template_SetDefault_<guid>` |
 | Settings categories | `Settings_CategoryList`, `SettingsCategory_General` / `_Providers` / `_Optimize` / `_Assistant` / `_Account` / `_Plugins` |
@@ -158,10 +159,23 @@ Committed recordings, the settings fixture they start from and the replay harnes
   neither its `AutomationId` nor its message reaches UIA. Don't put anything an assertion needs
   inside one.
 - **`PluginsView.xaml` and the E2EE onboarding screen hosted inside Account still have no ids.**
-  The General, Assistant, Providers, Account and Optimize views are id-addressable throughout,
-  inner tab headers included, and `tests/Pia.Wpf.Tests/Views/SettingsViewAutomationIdTests.cs`
+  The General, Assistant, Providers, Account and Optimize *settings* views are id-addressable
+  throughout, inner tab headers included, and `tests/Pia.Wpf.Tests/Views/ViewAutomationIdTests.cs`
   fails `dotnet test` if that stops being true. It is a test, not a build error — a missing id
   compiles fine.
+- **`AssistantView`'s own controls are now covered** (composer toolbar, suggestion chips,
+  weak-provider banner, persona picker, chat/agent lever, send/run-in-background — table above),
+  but the walk that backs `ViewAutomationIdTests` stops at every nested `UserControl`, so these
+  still have **no ids of their own**: `PiaAssistantMessage` (the assistant bubble's
+  Copy/Speak/Regenerate/Export/Suggestion/SwitchToAgent/ManageToolPermissions buttons),
+  `RunProgressPanel`, `PiaChatTitleChip`, `PiaChatQuickSwitcher`, `TodoPanelControl`,
+  `VoiceModeOverlay`, `DirectTranscriptionOverlay` and `AutocompletePopup`.
+  (`MeetingAttendeeOverlay`'s own fields already have ids — see the table above.)
+  Same story for the other zero-coverage top-level views: `VaultView`, `TodoView`, `HistoryView`,
+  `RemindersView`, the top-level `OptimizeView` (the Optimize hotkey window, distinct from
+  `SettingsViews/OptimizeView`), the first-run wizard (`FirstRunWizardWindow` and all of
+  `WizardSteps/`), and most content dialogs beyond the shared `PrimaryButton` / `CloseButton` /
+  `Dialog_RequiredHint` ids.
 
 ## Cross-checks
 

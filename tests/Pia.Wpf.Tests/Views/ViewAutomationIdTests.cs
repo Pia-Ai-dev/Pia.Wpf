@@ -12,7 +12,7 @@ namespace Pia.Tests.Views;
 /// invisible until a walkthrough breaks. Presence only — several ids predate the naming convention.
 /// </summary>
 [Collection("WpfApplicationStatic")]
-public class SettingsViewAutomationIdTests
+public class ViewAutomationIdTests
 {
     /// <summary>Bounds template recursion; the deepest real nesting here is ToolCatalog's group-then-row pair.</summary>
     private const int MaxTemplateDepth = 8;
@@ -46,6 +46,9 @@ public class SettingsViewAutomationIdTests
     // AccountView declares no DataTemplate, so it is the one view with no per-item floor to hold.
     [InlineData(typeof(Pia.Views.SettingsViews.AccountView), 12, 0, "E2EEOnboardingView")]
     [InlineData(typeof(Pia.Views.SettingsViews.OptimizeView), 6, 4, "")]
+    [InlineData(typeof(Pia.Views.AssistantView), 18, 1,
+        "AutocompletePopup,DirectTranscriptionOverlay,MeetingAttendeeOverlay,PersonaGlyph,PiaAssistantMessage," +
+        "PiaChatQuickSwitcher,PiaChatTitleChip,PiaPersonaAvatar,RunProgressPanel,TodoPanelControl,VoiceModeOverlay")]
     public void EveryInteractiveControl_CarriesAnAutomationId(
         Type viewType, int minimumInspected, int minimumPerItemIds, string expectedNestedViews)
     {
@@ -59,8 +62,8 @@ public class SettingsViewAutomationIdTests
         Assert.True(missing.Length == 0,
             $"these interactive controls in {viewType.Name} carry no AutomationId, so a recorded UI script can " +
             "only reach them through their localized Content/Name and breaks in any other UI language. Add " +
-            "AutomationProperties.AutomationId=\"Settings_<Category>_<Field>\", or the per-item binding form " +
-            $"\"{{Binding <Identity>, StringFormat='Settings_<Category>_<Field>_{{0}}'}}\" inside a DataTemplate: " +
+            "AutomationProperties.AutomationId=\"<ViewPrefix>_<Field>\", or the per-item binding form " +
+            $"\"{{Binding <Identity>, StringFormat='<ViewPrefix>_<Field>_{{0}}'}}\" inside a DataTemplate: " +
             $"{string.Join("; ", missing)}");
 
         // A floor, not a count, set well under the measured total so ordinary edits to the view never touch this file.
