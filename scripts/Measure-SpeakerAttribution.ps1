@@ -39,13 +39,16 @@ param(
     # so their best-fit offsets differ by seconds — and comparing accuracy across a moved offset
     # compares two different questions. Pin it to compare a code change.
     [double]$Offset = [double]::NaN,
-    [string]$NameMapPath
+    [string]$NameMapPath,
+    # Score the instant provisional label instead of the corrected one. Bench input only.
+    [switch]$Provisional
 )
 
 $ErrorActionPreference = 'Stop'
 
 if ($LogPath -and $SegmentsPath) { throw 'Pass -LogPath or -SegmentsPath, not both' }
 if (-not $LogPath -and -not $SegmentsPath) { throw 'Pass -LogPath (an app replay) or -SegmentsPath (a bench run)' }
+if ($Provisional -and -not $SegmentsPath) { throw '-Provisional needs -SegmentsPath; an app log does not carry the pre-correction label' }
 
 $reference = Get-Content -LiteralPath $ReferencePath -Raw | ConvertFrom-Json
 $names = if ($NameMapPath) { (Get-Content -LiteralPath $NameMapPath -Raw | ConvertFrom-Json).names } else { $null }
@@ -77,6 +80,8 @@ if ($SegmentsPath) {
         })
         $index++
     }
+    # The instant label, before any pass corrected it: the only part of a run the match threshold owns.
+    if ($Provisional) { foreach ($s in $segments) { $s.Final = $s.Label } }
     $labelSets.Add([string[]]@($segments | ForEach-Object { $_.Final } | Where-Object { $_ } | Sort-Object -Unique))
 }
 else {
@@ -402,7 +407,7 @@ Write-Host "  matched an utterance already seen: $(($corrections | Where-Object 
 # and what follows from that is the build's business: dropped before the parking fix, parked after.
 Write-Host "  aimed at a segment still in flight: $(($corrections | Where-Object { -not $_.Applied }).Count) (dropped pre-fix, parked post-fix)"
 Write-Host ''
-Write-Host "ATTRIBUTION  (segment midpoint vs the recording's active-speaker indicator)"
+Write-Host "ATTRIBUTION  (segment midpoint vs the recording's active-speaker indicator)$(if ($Provisional) { ' - PROVISIONAL, before pass corrections' })"
 if ($scored -gt 0) {
     Write-Host ("  scored segments    : {0}  ({1:N1} s)" -f $scored, $scoredSeconds)
     Write-Host ("  correct            : {0}  = {1:P1} by segment, {2:P1} by duration" -f `

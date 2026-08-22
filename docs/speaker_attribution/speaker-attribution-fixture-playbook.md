@@ -135,13 +135,16 @@ $env:PIA_BENCH_WAV       = (Resolve-Path 'artifacts/wav/<name>-replay.wav').Path
 $env:PIA_BENCH_ROSTER    = '<humans>'
 $env:PIA_BENCH_REFERENCE = (Resolve-Path 'scripts/speaker-reference/<name>.reference.json').Path
 $env:PIA_BENCH_OUT       = (Join-Path (Get-Location) 'artifacts/wav/bench')
+$env:PIA_BENCH_MATCH     = '0.30,0.345'   # optional: fixed match thresholds, one run each
 dotnet test -- --explicit only --filter-method "*Bench_MeasuresARecording*"
 ```
 
-Set all four in **one** call — each PowerShell invocation is a fresh shell, and a missing
+Set every one you need in **one** call — each PowerShell invocation is a fresh shell, and a missing
 `PIA_BENCH_WAV` makes the test skip rather than fail, which reads like success.
 
-Outputs land in `PIA_BENCH_OUT`: `*.report.txt`, `*.segments.jsonl`, `*.passes.log`, `*.embeddings.bin`.
+Outputs land in `PIA_BENCH_OUT`: one `<name>.<setting>.segments.jsonl` and `.passes.log` per
+setting, plus a shared `<name>.report.txt` and `<name>.embeddings.bin`. With `PIA_BENCH_MATCH` unset the
+single setting is `derived` — the shipping policy, which recomputes the threshold from each pass's cut.
 The first run computes every embedding; later runs reuse the cache and cost milliseconds.
 
 ## 4. Score it
@@ -155,12 +158,16 @@ Same scorer for both inputs, so the app and the bench stay comparable:
     -NameMapPath scripts/speaker-reference/<name>.names.local.json
 
 # the bench's segments
-./scripts/Measure-SpeakerAttribution.ps1 -SegmentsPath artifacts/wav/bench/<name>.segments.jsonl `
+./scripts/Measure-SpeakerAttribution.ps1 -SegmentsPath artifacts/wav/bench/<name>.derived.segments.jsonl `
     -ReferencePath scripts/speaker-reference/<name>.reference.json
 ```
 
 Use the reference belonging to the run. Scoring one recording against another's key produces a
 confident, meaningless number.
+
+Add `-Provisional` to a bench run to score the instant label instead of the corrected one — the only
+part of a run the match threshold owns (trap 7). An app log does not carry it, so the switch refuses
+`-LogPath`.
 
 The header must read:
 
@@ -193,6 +200,13 @@ Each of these has produced a plausible wrong number at least once.
    margin on a real app replay.
 6. **Your own CPU.** A build or test run alongside a replay creates dropped segments that look like a
    pipeline finding.
+7. **Scoring only the final label.** Every eligible segment's final label comes from the last pass's
+   partition, and the pass never sees the match threshold — so a threshold change is almost invisible
+   in the final-state number and plainly visible in `-Provisional`, which scores the instant label the
+   meeting actually showed. Score both, or a real change reads as no change.
+8. **Reading the attribution percentage across settings.** Unlabelled segments leave the denominator,
+   so refusing to label raises the percentage. Compare the *correct count* — the segment set is
+   identical across settings — and read the percentage second.
 
 ## What is still unmeasured
 

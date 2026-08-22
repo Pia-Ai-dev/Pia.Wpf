@@ -1,11 +1,31 @@
 # Brief: decouple the match threshold from the cut (Tasks 8 and 9)
 
-**Status.** Ready to execute. Gated on Monday 2026-08-24's live smoke test for *merge*, not for work.
+**Status.** Task 8 executed 2026-08-22; Task 9 not started. Gated on Monday 2026-08-24's live smoke test for
+*merge*, not for work.
 **Owner.** Marco Altmann.
 **Written.** 2026-08-22.
 **Origin.** Tasks 8 and 9 of `docs/superpowers/plans/2026-08-22-diarization-bench-and-threshold.md`,
 released by the Task 7 measurement recorded in `2026-08-21-speaker-attribution-measurements.md`
 (commit `a169a7d4`). Both were conditional on that number; it came back in their favour.
+
+## Task 8 outcome, read this before the sections below
+
+Executed 2026-08-22 on `feature/diarization-threshold`. Full numbers in
+`2026-08-21-speaker-attribution-measurements.md`, section *Task 8*. Two premises below did not survive
+the measurement, and the sections that rest on them should be read with that in mind:
+
+- **There is no threshold/cut feedback loop.** The clusterer's inputs never include the match
+  threshold; the cut trace is identical to the digit across all 11 settings on both recordings. The
+  coupling is one-directional. Policies (c) and (d) were damping a loop that does not exist, and both
+  lost — (d) worst of the four.
+- **The Alexander/Andreas residue is not a matching error.** 127.4 s inside B's label, unmoved to the
+  decimal by every setting from 0.20 to 0.60. It is the dendrogram's partition, out of the threshold's
+  reach by construction.
+
+A fixed threshold in the 0.20–0.345 plateau does win — +6 correct segments on LSP, +1 on the workshop,
+and live label churn down from 13 labels to 9 — but every accuracy margin is under the bench's own
+±2.5-point confirmation rule. **The shipping default is unchanged**; 0.30 is reachable from the bench
+via `PIA_BENCH_MATCH` and flipping it waits on an app replay of LSP.
 
 ## Why this work is now justified
 

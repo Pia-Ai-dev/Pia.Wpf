@@ -38,6 +38,7 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
     private readonly Func<DateTimeOffset> _now;
     private readonly int _maxJournaledSegments;
     private readonly SpeakerClusterer _clusterer;
+    private readonly AdaptiveSpeakerOptions _options;
 
     private readonly object _lock = new();
     private readonly List<(long SegmentId, float[] Embedding, float DurationSeconds)> _segments = new(); // oldest first
@@ -48,7 +49,7 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
     private long _nextSegmentId;
     private int _nextClusterId;
     private int _speakerCounter;
-    private float _matchSimilarity = InitialMatchSimilarity;
+    private float _matchSimilarity;
     private int _segmentsSinceLastPass;
     private int _lastPassClusterCount;
     private int _expectedSpeakers;
@@ -67,17 +68,19 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
     /// <summary>Test ctor: caps sized down so cap behavior is exercisable.</summary>
     internal AdaptiveSpeakerIdentificationService(
         IEmbeddingExtractor extractor, ILogger logger, Func<DateTimeOffset>? now,
-        int maxJournaledSegments, SpeakerClusterer? clusterer = null)
+        int maxJournaledSegments, SpeakerClusterer? clusterer = null, AdaptiveSpeakerOptions? options = null)
     {
         _extractor = extractor;
         _logger = logger;
         _now = now ?? (() => DateTimeOffset.UtcNow);
         _maxJournaledSegments = maxJournaledSegments;
+        _options = options ?? AdaptiveSpeakerOptions.Default;
+        _matchSimilarity = _options.InitialMatchSimilarity;
         _clusterer = clusterer ?? new SpeakerClusterer();
         _lastPassAt = _now();
         _logger.LogInformation(
             "Adaptive speaker identification active. dim={Dim} warmup={Warmup} stride={Stride} maxJournal={MaxJournal}",
-            extractor.Dim, WarmupSegments, PassSegmentStride, _maxJournaledSegments);
+            extractor.Dim, _options.WarmupSegments, _options.PassSegmentStride, _maxJournaledSegments);
     }
 
     // These two promise a label, so an unplaceable segment collapses to blank rather than null.
@@ -140,7 +143,7 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
             var (bestCluster, bestSim) = BestClusterUnderLock(embedding);
             var matched = bestCluster >= 0 && bestSim >= _matchSimilarity;
             int? cluster = null;
-            if (durationSeconds >= MinClusterSegmentSeconds)
+            if (durationSeconds >= _options.MinClusterSegmentSeconds)
             {
                 if (matched)
                 {
@@ -179,9 +182,9 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
 
             // Warm-up counts ELIGIBLE embeddings: a pass over a handful of short interjections would
             // rebuild the label/centroid maps from near-empty output and wipe every known speaker.
-            var due = _segmentsSinceLastPass >= PassSegmentStride
+            var due = _segmentsSinceLastPass >= _options.PassSegmentStride
                       || (_segmentsSinceLastPass >= 1 && _now() - _lastPassAt >= PassMaxLatency);
-            if (due && EligibleCountUnderLock() >= WarmupSegments)
+            if (due && EligibleCountUnderLock() >= _options.WarmupSegments)
             {
                 try
                 {
@@ -215,7 +218,7 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
     {
         var eligible = 0;
         foreach (var segment in _segments)
-            if (segment.DurationSeconds >= MinClusterSegmentSeconds) eligible++;
+            if (segment.DurationSeconds >= _options.MinClusterSegmentSeconds) eligible++;
         return eligible;
     }
 
@@ -232,7 +235,7 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
         // the dendrogram, so every site below indexes the journal through this map.
         var journalIndex = new List<int>(_segments.Count);
         for (int i = 0; i < _segments.Count; i++)
-            if (_segments[i].DurationSeconds >= MinClusterSegmentSeconds) journalIndex.Add(i);
+            if (_segments[i].DurationSeconds >= _options.MinClusterSegmentSeconds) journalIndex.Add(i);
 
         var embeddings = new float[journalIndex.Count][];
         for (int i = 0; i < journalIndex.Count; i++) embeddings[i] = _segments[journalIndex[i]].Embedding;
@@ -242,7 +245,8 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
         // registrations made since, which would ratchet the count upward pass after pass.
         var cr = _clusterer.Cluster(embeddings, _lastPassClusterCount, _expectedSpeakers);
         sw.Stop();
-        _matchSimilarity = Math.Clamp(1f - cr.CutDistance, MatchSimilarityMin, MatchSimilarityMax);
+        _matchSimilarity = _options.FixedMatchSimilarity
+            ?? Math.Clamp(1f - cr.CutDistance, _options.MatchSimilarityMin, _options.MatchSimilarityMax);
         _lastPassClusterCount = cr.ClusterCount;
 
         // Members per new cluster index (in journal order → element 0 is the earliest segment).
@@ -362,9 +366,9 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
         }
 
         _logger.LogDebug(
-            "Adaptive pass: {Eligible}/{Segments} segments → {Clusters} clusters cut={Cut:F2} expected={Expected} changed={Changed} ({Ms}ms)",
+            "Adaptive pass: {Eligible}/{Segments} segments → {Clusters} clusters cut={Cut:F2} expected={Expected} changed={Changed} match={Match:F3} ({Ms}ms)",
             journalIndex.Count, _segments.Count, cr.ClusterCount, cr.CutDistance, _expectedSpeakers,
-            reassignments.Count, sw.ElapsedMilliseconds);
+            reassignments.Count, _matchSimilarity, sw.ElapsedMilliseconds);
         // Labels can carry user-typed names after a rename → DEBUG-only.
         _logger.SensitiveInformation("Adaptive pass labels: [{Labels}]",
             string.Join(", ", _labelByCluster.Values));
@@ -432,7 +436,7 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
         _renamedClusters.Clear();
         _nextClusterId = 0;
         _speakerCounter = 0;
-        _matchSimilarity = InitialMatchSimilarity;
+        _matchSimilarity = _options.InitialMatchSimilarity;
         _segmentsSinceLastPass = 0;
         _lastPassClusterCount = 0;
         _expectedSpeakers = 0;
