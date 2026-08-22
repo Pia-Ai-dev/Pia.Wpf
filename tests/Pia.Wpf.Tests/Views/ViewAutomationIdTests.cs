@@ -38,7 +38,7 @@ public class ViewAutomationIdTests
 
     // The walk stops at every nested UserControl, which owns its own ids, and each case pins WHICH ones — so a
     // part of a covered view later extracted into its own UserControl cannot drop out of coverage silently.
-    // PluginsView and E2EEOnboardingView are not covered by anything yet.
+    // The playbook's "Known gaps" section is the single source of truth for what still has no row here.
     [Theory]
     [InlineData(typeof(Pia.Views.SettingsViews.GeneralView), 24, 4, "")]
     [InlineData(typeof(Pia.Views.SettingsViews.AssistantView), 36, 5, "PersonaGlyph,PersonasView,PiaHelpHint")]
@@ -49,6 +49,9 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Views.AssistantView), 18, 1,
         "AutocompletePopup,DirectTranscriptionOverlay,MeetingAttendeeOverlay,PersonaGlyph,PiaAssistantMessage," +
         "PiaChatQuickSwitcher,PiaChatTitleChip,PiaPersonaAvatar,RunProgressPanel,TodoPanelControl,VoiceModeOverlay")]
+    [InlineData(typeof(Pia.Views.RoutinesView), 15, 1, "PiaEmptyState,PiaHelpHint")]
+    [InlineData(typeof(Pia.Views.SettingsViews.PersonasView), 3, 3, "PersonaGlyph")]
+    [InlineData(typeof(Pia.Views.MeetingAttendeeOverlay), 8, 1, "ListeningIndicator")]
     public void EveryInteractiveControl_CarriesAnAutomationId(
         Type viewType, int minimumInspected, int minimumPerItemIds, string expectedNestedViews)
     {

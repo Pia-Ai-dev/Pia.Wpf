@@ -2,8 +2,10 @@
 
 Guidance for agents running UI walkthroughs or UI regression tests against a running Pia
 instance. Read this before starting a run; it replaces guesswork with what is verified to work.
-Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the fixes) and
-`2026-08-16-ui-automation-validation.md` (the live re-run that confirmed them).
+Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the fixes),
+`2026-08-16-ui-automation-validation.md` (the live re-run that confirmed them), and
+[2026-08-22-fill-uiautomation-gaps-checklist.md](2026-08-22-fill-uiautomation-gaps-checklist.md)
+(the file-by-file work list for closing the "Known gaps" below).
 
 ## Ground rules
 
@@ -37,7 +39,7 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Persona dialog | `PersonaEdit_Name`, `PersonaEdit_SystemPrompt`, `PersonaEdit_Archetype`, `PersonaEdit_ModelType`, `PersonaEdit_ToolScope`, `PersonaEdit_PreferredProvider`, `PersonaEdit_ReasoningEffort` |
 | Template dialog | `TemplateEdit_Name`, `TemplateEdit_StyleDescription`, `TemplateEdit_GeneratedPrompt` |
 | Provider dialog | `ProviderEdit_Name`, `ProviderEdit_ProviderType`, `ProviderEdit_Endpoint` |
-| Meeting attendee overlay | `MeetingAttendee_Url`, `_DisplayName`, `_Consent`, `_Join`, `_Stop`, `_Save`, `_SpeakerDisclaimer`. Open the overlay with the composer button named "Join a meeting and transcribe". Bubble labels carry no id — read them as `Text` elements, which is what `Invoke-MeetingReplay.ps1` does to check the numbering. |
+| Meeting attendee overlay | `MeetingAttendee_Url`, `_DisplayName`, `_Consent`, `_Join`, `_Stop`, `_Save`, `_SpeakerDisclaimer`, `_Close`, `_OpenSettings`, `_SaveToVault`, `_Summarize`, per-bubble `_RenameSpeaker_<speakerLabel>` (shared across every bubble from the same speaker — renaming applies to the label, not one utterance). Open the overlay with the composer button named "Join a meeting and transcribe". Bubble labels carry no id — read them as `Text` elements, which is what `Invoke-MeetingReplay.ps1` does to check the numbering. |
 | Edit dialogs (shared) | `PrimaryButton` (Save), `CloseButton` (Cancel), `Dialog_RequiredHint` |
 | Chat history import/export | `AssistantHistory_Import`, `AssistantHistory_ExportAll`, `AssistantHistory_LoadMore` (header/list), `AssistantHistory_ExportArchive` (inspector, needs a selected chat) |
 | Page-header help hints | `Routines_Help`, `Assignments_Help`, `History_Help`, `AssistantHistory_Help`, `Memory_Help`, `Todo_Help`, `Reminders_Help` |
@@ -163,19 +165,30 @@ Committed recordings, the settings fixture they start from and the replay harnes
   throughout, inner tab headers included, and `tests/Pia.Wpf.Tests/Views/ViewAutomationIdTests.cs`
   fails `dotnet test` if that stops being true. It is a test, not a build error — a missing id
   compiles fine.
-- **`AssistantView`'s own controls are now covered** (composer toolbar, suggestion chips,
-  weak-provider banner, persona picker, chat/agent lever, send/run-in-background — table above),
-  but the walk that backs `ViewAutomationIdTests` stops at every nested `UserControl`, so these
-  still have **no ids of their own**: `PiaAssistantMessage` (the assistant bubble's
-  Copy/Speak/Regenerate/Export/Suggestion/SwitchToAgent/ManageToolPermissions buttons),
+- **`AssistantView`, `MeetingAttendeeOverlay`, `RoutinesView`, `SettingsViews/PersonasView`'s own
+  controls are covered and locked in `ViewAutomationIdTests`** (composer toolbar, suggestion
+  chips, weak-provider banner, persona picker, chat/agent lever, send/run-in-background, the
+  meeting overlay's close/settings/save-to-vault/summarize/rename-speaker, the run-history
+  open-chat link — table above), but the walk that backs that test stops at every nested
+  `UserControl`, so these still have **no ids of their own**: `PiaAssistantMessage` (the assistant
+  bubble's Copy/Speak/Regenerate/Export/Suggestion/SwitchToAgent/ManageToolPermissions buttons),
   `RunProgressPanel`, `PiaChatTitleChip`, `PiaChatQuickSwitcher`, `TodoPanelControl`,
   `VoiceModeOverlay`, `DirectTranscriptionOverlay` and `AutocompletePopup`.
-  (`MeetingAttendeeOverlay`'s own fields already have ids — see the table above.)
-  Same story for the other zero-coverage top-level views: `VaultView`, `TodoView`, `HistoryView`,
-  `RemindersView`, the top-level `OptimizeView` (the Optimize hotkey window, distinct from
+- **`VaultView`, `TodoView`, `HistoryView` and `RemindersView` are pure composition** — the
+  top-level view itself declares zero interactive controls; every button/search-box/row lives in
+  a nested `Pia<Area><Thing>` control (`PiaVaultHeader`, `PiaVaultSearchBar`,
+  `PiaVaultCategoryCard`, `PiaTodoHeader`, `PiaReminderRow`, `PiaHistoryGroupCard`, …). A test row
+  or an id on the top-level view accomplishes nothing; the fix has to happen one nested control at
+  a time. Same is true of the top-level `OptimizeView` (the Optimize hotkey window, distinct from
   `SettingsViews/OptimizeView`), the first-run wizard (`FirstRunWizardWindow` and all of
   `WizardSteps/`), and most content dialogs beyond the shared `PrimaryButton` / `CloseButton` /
-  `Dialog_RequiredHint` ids.
+  `Dialog_RequiredHint` ids. See the checklist doc below for the file-by-file work list.
+- **`NavigationSidebarView`'s 12 `NavItem_*` buttons already all have ids** (verified by hand),
+  but `ViewAutomationIdTests` cannot lock that in: they're set via
+  `<ui:NavigationViewItem.Content>` inside `ui:NavigationView.MenuItems`, and `LogicalTreeHelper`
+  reports zero children for that collection, so the walker's non-vacuity floor would trivially
+  pass at 0 either way. Don't add a row for it — there's nothing for the walk to catch a
+  regression with.
 
 ## Cross-checks
 
