@@ -222,7 +222,9 @@ public class SpeakerClustererTests
     [Fact]
     public void Cluster_SplitCandidate_SeparatesThePairTheGlobalCutMerged()
     {
-        var split = new SpeakerSplitOptions(Margin: 0.02f, MinSegments: 8, MinHalf: 3);
+        // No fragment in this fixture, so the split is handed a slot outright; what is under test here
+        // is the split itself, not how it pays.
+        var split = new SpeakerSplitOptions(Margin: 0.02f, MinSegments: 8, MinHalf: 3, ExtraSlots: 1);
         var r = new SpeakerClusterer(split).Cluster(ClosePairPlusOutlier());
 
         Assert.Equal(3, r.ClusterCount);
@@ -234,7 +236,8 @@ public class SpeakerClustererTests
     [Fact]
     public void Cluster_SplitCandidate_MarginTooHigh_Refuses()
     {
-        var split = new SpeakerSplitOptions(Margin: 0.9f, MinSegments: 8, MinHalf: 3);
+        // The slot is available, so a refusal here is the margin refusing and nothing else.
+        var split = new SpeakerSplitOptions(Margin: 0.9f, MinSegments: 8, MinHalf: 3, ExtraSlots: 1);
         var r = new SpeakerClusterer(split).Cluster(ClosePairPlusOutlier());
 
         Assert.Equal(2, r.ClusterCount);
@@ -246,7 +249,7 @@ public class SpeakerClustererTests
         var e = ClosePairPlusOutlier();
         var split = new SpeakerSplitOptions(Margin: 0.02f, MinSegments: 8, MinHalf: 3);
 
-        // A 1-person roster caps at 2, which the un-split partition already fills.
+        // Nothing to evict and no slot granted, so the split cannot happen however good it looks.
         Assert.Equal(2, new SpeakerClusterer(split).Cluster(e, 0, expectedSpeakers: 1).ClusterCount);
         Assert.Equal(3, new SpeakerClusterer(split with { ExtraSlots = 1 })
             .Cluster(e, 0, expectedSpeakers: 1).ClusterCount);
@@ -262,14 +265,14 @@ public class SpeakerClustererTests
     ];
 
     [Fact]
-    public void Cluster_AbsorbBelow_FoldsAFragmentIntoItsNearestNeighbour()
+    public void Cluster_AbsorbBelow_AloneDoesNothing()
     {
+        // Eviction is a way of paying for a split, not a tidy-up pass. Absorbing whenever a cluster
+        // looks thin collapsed the opening minute of a real meeting, where every cluster is thin.
         var e = ClosePairPlusOutlierPlusFragment();
-        Assert.Equal(3, new SpeakerClusterer().Cluster(e).ClusterCount);
 
-        var absorbed = new SpeakerClusterer(new SpeakerSplitOptions(AbsorbBelow: 2)).Cluster(e);
-        Assert.Equal(2, absorbed.ClusterCount);
-        Assert.Equal(absorbed.AssignmentPerSegment[10], absorbed.AssignmentPerSegment[13]);
+        Assert.Equal(3, new SpeakerClusterer().Cluster(e).ClusterCount);
+        Assert.Equal(3, new SpeakerClusterer(new SpeakerSplitOptions(AbsorbBelow: 2)).Cluster(e).ClusterCount);
     }
 
     [Fact]
@@ -277,22 +280,22 @@ public class SpeakerClustererTests
     {
         var e = ClosePairPlusOutlierPlusFragment();
         var split = new SpeakerSplitOptions(
-            Margin: 0.02f, MinSegments: 8, MinHalf: 3, ExtraSlots: 1, AbsorbBelow: 2,
-            AbsorbAfterSplit: true);
+            Margin: 0.02f, MinSegments: 8, MinHalf: 3, AbsorbBelow: 2);
 
         // A 2-person roster caps at 3, which the un-split partition already fills. The split takes a
-        // fourth slot and the fragment then gives one back, so the count lands where it started.
+        // fourth slot and the one-segment fragment gives it back, so the count lands where it started.
         var r = new SpeakerClusterer(split).Cluster(e, 0, expectedSpeakers: 2);
 
         Assert.Equal(3, r.ClusterCount);
         Assert.NotEqual(r.AssignmentPerSegment[0], r.AssignmentPerSegment[9]);
+        Assert.Equal(r.AssignmentPerSegment[10], r.AssignmentPerSegment[13]);
     }
 
     [Fact]
     public void Cluster_SplitCandidate_HonoursMinHalf()
     {
         // The pair's second half has 5 members, so a MinHalf above that refuses the split.
-        var split = new SpeakerSplitOptions(Margin: 0.02f, MinSegments: 8, MinHalf: 6);
+        var split = new SpeakerSplitOptions(Margin: 0.02f, MinSegments: 8, MinHalf: 6, ExtraSlots: 1);
         Assert.Equal(2, new SpeakerClusterer(split).Cluster(ClosePairPlusOutlier()).ClusterCount);
     }
 
