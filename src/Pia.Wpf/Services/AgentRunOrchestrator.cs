@@ -927,15 +927,21 @@ public sealed class AgentRunOrchestrator
             var done = persisted?.Plan
                 .Where(s => s.Status == AgentStepStatus.Done)
                 .OrderBy(s => s.Ordinal)
+                // Null Outcome unless an artifact was persisted — a bare success declaration resumes unconfirmed.
                 .Select(s => new CompletedStepSummary(
                     s.Ordinal, s.Title, s.Intent ?? string.Empty, Succeeded: true, VisibleText: string.Empty,
-                    s.ExpectedArtifact, FromEarlierSegment: true))
+                    s.ExpectedArtifact, FromEarlierSegment: true,
+                    Outcome: StepExtraJson.ArtifactRefOf(s) is { } artifact
+                        ? new StepOutcomeClaim(true, string.Empty, artifact)
+                        : null))
                 .ToList();
             if (done is null || done.Count == 0)
                 return;
 
             ctx.SeedCompletedSteps(done);
-            _logger.LogInformation("Resume seeded {Count} pre-pause step(s) into the context of run {RunId}", done.Count, runId);
+            _logger.LogInformation(
+                "Resume seeded {Count} pre-pause step(s) ({WithArtifact} with a reported artifact) into the context of run {RunId}",
+                done.Count, done.Count(d => d.Outcome is not null), runId);
         }
         catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (resume context seed) failed for {RunId}", runId); }
     }
@@ -1628,7 +1634,7 @@ public sealed class AgentRunOrchestrator
         {
             await _runService.RecordStepResultAsync(stepId,
                 r.Succeeded ? AgentStepStatus.Done : AgentStepStatus.Failed,
-                r.FirstMessageId, r.LastMessageId, r.Usage, ct).ConfigureAwait(false);
+                r.FirstMessageId, r.LastMessageId, r.Usage, ct, r.Outcome?.ArtifactRef).ConfigureAwait(false);
         }
         catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (record step) failed for {StepId}", stepId); }
     }

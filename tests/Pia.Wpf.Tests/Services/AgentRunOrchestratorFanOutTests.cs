@@ -704,6 +704,25 @@ public sealed class AgentRunOrchestratorFanOutTests
     public void TheParallelGroupMarkerDegradesToSequential(string? extraJson, int? expected)
         => Assert.Equal(expected, AgentRunOrchestrator.ParallelGroupOf(new AgentStep { ExtraJson = extraJson }));
 
+    // A settled sibling reports no outcome at all, so the write that lands it must leave the marker alone —
+    // fan-out rows are the only ones that reliably carry one.
+    [Fact]
+    public async Task FanOut_SettledSibling_WritesNoArtifactRef_AndLeavesTheParallelGroupMarkerIntact()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var launcher = new FakeChildLauncher(h.Runs, h.Chats);
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("a", 1), ("b", 1)), false));
+
+        await h.BuildOrchestrator(planner, childLauncher: launcher).RunAsync(
+            run, new RecordingExecutor(), Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.All(final!.Plan, s => Assert.Equal(Extras(1), s.ExtraJson));
+        Assert.All(final.Plan, s => Assert.Null(StepExtraJson.ArtifactRefOf(s)));
+    }
+
     // Promotion tears the workspace down afterwards, so an unguarded child would delete the directory its
     // still-running siblings are writing into.
     [Fact]

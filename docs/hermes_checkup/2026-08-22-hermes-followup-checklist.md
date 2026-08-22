@@ -28,7 +28,7 @@ Three steps can close work below them. Do not tick their dependants without revi
 
 | Gate | Closes | Question it answers |
 |---|---|---|
-| **A1** | A2–A7 | Is `ExpectedArtifact` already file-shaped often enough that the probe is fine? |
+| **A1** | A2–A4, A6, A7 | Is `ExpectedArtifact` already file-shaped often enough that the probe is fine? |
 | **B4** | B6–B10 | Does current compaction lose anything worth acting on? |
 | **D-Q1** | D3–D8 | Is the goal onboarding (a canned tour, no LLM) or arbitrary "where do I…" questions? |
 
@@ -38,6 +38,11 @@ Three steps can close work below them. Do not tick their dependants without revi
 
 - [ ] **A1 · Read the `probed / declared` ratio off real-run logs.**
   The line already exists in `AgentVerifier.TryBuildArtifactFactsAsync`. No code.
+  **First read, 2026-08-22** — 23 declarations over 7 verifier runs on one client: 57% `found`, 43%
+  `not a file reference`, **0 `NOT FOUND`**. That refutes "already high", so A2–A4/A6/A7 stay open — but
+  it is one machine over three days on code-shaped tasks, too small to tune on. Widen it per
+  [2026-08-22-a1-log-collection-runbook.md](2026-08-22-a1-log-collection-runbook.md), then re-read. The
+  row to watch is `NOT FOUND`: if it stays at zero, the planner channel cannot produce a negative at all.
   *Deps:* none · *Effort:* **XS** · *Value:* **High** (decision gate)
 
 - [ ] **A2 · Route `ArtifactRef` through the existing artifact probe.**
@@ -51,8 +56,9 @@ Three steps can close work below them. Do not tick their dependants without revi
   checkable means, say to omit the field otherwise.
   *Deps:* A2 (decide after A2's numbers — it may be unnecessary) · *Effort:* **XS** · *Value:* **Med**
 
-- [ ] **A5 · Persist `ArtifactRef` into `AgentSteps.ExtraJson` and seed it in `SafeSeedResumeContext`.**
+- [x] **A5 · Persist `ArtifactRef` into `AgentSteps.ExtraJson` and seed it in `SafeSeedResumeContext`.**
   Fixes the resume asymmetry; also lets the timeline show what each step produced.
+  Landed ahead of the A1 gate on purpose: persisting the field is worth doing whichever way A1 reads.
   *Deps:* none · *Effort:* **S** · *Value:* **Med**
 
 - [ ] **A6 · Extract `IArtifactProbe` with a file implementation** — behaviour-preserving refactor of

@@ -463,6 +463,27 @@ public sealed class AgentVerifierTests : IDisposable
         Assert.Contains("[unconfirmed] = it never declared an outcome", LastUserPrompt);
     }
 
+    // A resumed run's critic must read the same evidence an uninterrupted one does.
+    [Fact]
+    public async Task VerifyAsync_RendersTheSameProducedLineForASeededStepAsForARecordedOne()
+    {
+        ReturnsVerdict(V(true, "ok"));
+
+        var ctx = new RunContext("build a thing", RunProfile.Interactive);
+        ctx.SeedCompletedSteps(new[]
+        {
+            new CompletedStepSummary(0, "Early", "ran before the pause", Succeeded: true, VisibleText: string.Empty,
+                FromEarlierSegment: true, Outcome: new StepOutcomeClaim(true, string.Empty, "out/alpha.md")),
+        });
+
+        await BuildVerifier().VerifyAsync(ctx, Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        Assert.Contains("[ok, declared] Early", LastUserPrompt);
+        Assert.Contains("produced: out/alpha.md", LastUserPrompt);
+        Assert.Contains(CompletedStepSummary.EarlierSegmentNote, LastUserPrompt);
+        Assert.Equal(1, CountOccurrences(LastUserPrompt, "produced:"));
+    }
+
     private static int CountOccurrences(string haystack, string needle)
     {
         var count = 0;
