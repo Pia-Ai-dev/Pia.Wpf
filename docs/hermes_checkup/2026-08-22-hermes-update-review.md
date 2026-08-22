@@ -1,6 +1,6 @@
 # What Hermes Shipped Since July — and What Pia Should Take
 
-_Follow-up to [`docs/superpowers/specs/agent-roadmap/hermes-comparison.md`](superpowers/specs/agent-roadmap/hermes-comparison.md) (2026-07-19)._
+_Follow-up to [`docs/superpowers/specs/agent-roadmap/hermes-comparison.md`](../superpowers/specs/agent-roadmap/hermes-comparison.md) (2026-07-19)._
 
 - **Date:** 2026-08-22
 - **Cut line:** hermes `b6c7df6c` (2026-07-28, the last commit before the previous review's doc was finalised) → `fce30d81` (2026-08-22). **5,884 commits.**
