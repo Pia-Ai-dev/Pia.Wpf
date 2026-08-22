@@ -591,6 +591,100 @@ public class RoutinesViewModelTests
         Assert.Equal(created.Id, vm.SelectedJob?.Id);
     }
 
+    /// <summary>The card text is resolved once where the localizer is, so the internal catalog never has to reach
+    /// a binding — and the id is what a UI script addresses the card by.</summary>
+    [Fact]
+    public void TheBlueprintCards_CarryResolvedTextAndAnAddressableId()
+    {
+        var sut = CreateSut();
+
+        Assert.Equal(RoutineBlueprintCatalog.All.Count, sut.Vm.Blueprints.Count);
+        Assert.True(sut.Vm.HasBlueprints);
+
+        var card = Assert.Single(sut.Vm.Blueprints, c => c.Key == RoutineBlueprintCatalog.TopicDigest);
+        var blueprint = RoutineBlueprintCatalog.Find(RoutineBlueprintCatalog.TopicDigest)!;
+        Assert.Equal(blueprint.TitleKey, card.Title);
+        Assert.Equal(blueprint.DescriptionKey, card.Description);
+        Assert.Equal($"Settings_ScheduledJobs_Kind_{blueprint.Kind}", card.KindLabel);
+        Assert.Equal($"Settings_ScheduledJobs_Recurrence_{blueprint.Recurrence}", card.RecurrenceLabel);
+        Assert.Equal("08:00", card.TimeLabel);
+        Assert.Equal("Routines_Blueprint_topic-digest", card.AutomationId);
+    }
+
+    /// <summary>The whole point of the feature: the editor opens carrying the blueprint instead of a blank box.</summary>
+    [Fact]
+    public async Task PickingABlueprint_PrefillsTheEditorAndOpensIt()
+    {
+        var sut = CreateSut();
+        await sut.Vm.RefreshAsync();
+        var blueprint = RoutineBlueprintCatalog.Find(RoutineBlueprintCatalog.TopicDigest)!;
+
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+
+        Assert.True(sut.Vm.IsEditorOpen);
+        Assert.Null(sut.Vm.EditingJobId);
+        Assert.Equal(blueprint.TitleKey, sut.Vm.EditName);
+        Assert.Equal(blueprint.QueryTemplate, sut.Vm.EditQuery);
+        Assert.Equal(blueprint.Kind, sut.Vm.EditKind);
+        Assert.Equal(blueprint.Recurrence, sut.Vm.EditRecurrence);
+        Assert.Equal("08:00", sut.Vm.EditTimeOfDay);
+        Assert.Equal(string.Join(", ", blueprint.GrantedTools), sut.Vm.EditGrantedTools);
+        Assert.Equal(blueprint.QuietOnSuccess, sut.Vm.EditQuietOnSuccess);
+        Assert.Null(sut.Vm.EditSpecificDate);
+        Assert.Equal(sut.Vm.ProviderChoices.FirstOrDefault(), sut.Vm.EditProvider);
+    }
+
+    /// <summary>A card is an offer, not a decision — nothing is written until the user reads it and saves.</summary>
+    [Fact]
+    public async Task PickingABlueprint_CreatesNothing()
+    {
+        var sut = CreateSut();
+        await sut.Vm.RefreshAsync();
+
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+
+        await sut.Jobs.DidNotReceive().CreateAsync(Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(),
+            Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<string>>(),
+            Arg.Any<ScheduledJobKind>(), Arg.Any<bool>());
+    }
+
+    /// <summary>The prefill has to survive the editor's own parse, or the card would open a form that refuses to
+    /// save — and the save must still be the one existing create path.</summary>
+    [Fact]
+    public async Task ABlueprintSavesThroughTheExistingCreatePath()
+    {
+        var sut = CreateSut();
+        sut.Jobs.CreateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(),
+                Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(),
+                Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<ScheduledJobKind>(), Arg.Any<bool>())
+            .Returns(NewJob());
+        await sut.Vm.RefreshAsync();
+        var blueprint = RoutineBlueprintCatalog.Find(RoutineBlueprintCatalog.TopicDigest)!;
+
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        Assert.Null(sut.Vm.StatusMessage);
+        await sut.Jobs.Received(1).CreateAsync(blueprint.TitleKey, blueprint.QueryTemplate,
+            blueprint.Recurrence, new TimeOnly(8, 0), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(),
+            Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(),
+            Arg.Is<IReadOnlyCollection<string>>(g => g.Count == 0), blueprint.Kind, false);
+    }
+
+    /// <summary>Keys are persisted-adjacent, so a stale one has to be inert rather than open a half-filled form.</summary>
+    [Fact]
+    public void AnUnknownBlueprintKey_LeavesTheEditorClosed()
+    {
+        var sut = CreateSut();
+
+        sut.Vm.StartFromBlueprintCommand.Execute("no-such-blueprint");
+        sut.Vm.StartFromBlueprintCommand.Execute(null);
+
+        Assert.False(sut.Vm.IsEditorOpen);
+        Assert.Equal(string.Empty, sut.Vm.EditQuery);
+    }
+
     [Fact]
     public async Task AFailedLoad_SaysSo_RatherThanRenderingAnEmptyList()
     {

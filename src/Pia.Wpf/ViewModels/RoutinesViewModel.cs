@@ -47,6 +47,11 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
 
     public IReadOnlyList<RoutineMonthChoice> MonthChoices { get; }
 
+    /// <summary>The starting points offered instead of a blank editor, with their text already resolved.</summary>
+    public IReadOnlyList<RoutineBlueprintCard> Blueprints { get; }
+
+    public bool HasBlueprints => Blueprints.Count > 0;
+
     [ObservableProperty]
     private bool _hasJobs;
 
@@ -54,6 +59,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     /// a double-click cannot fire a job twice.</summary>
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StartCreateCommand))]
+    [NotifyCanExecuteChangedFor(nameof(StartFromBlueprintCommand))]
     [NotifyCanExecuteChangedFor(nameof(StartEditCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     [NotifyCanExecuteChangedFor(nameof(ToggleEnabledCommand))]
@@ -198,6 +204,14 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             .Select(d => new RoutineDayOfWeekChoice(d, names.GetDayName(d)))];
         MonthChoices = [.. Enumerable.Range(1, 12)
             .Select(m => new RoutineMonthChoice(m, names.GetMonthName(m)))];
+
+        Blueprints = [.. RoutineBlueprintCatalog.All.Select(b => new RoutineBlueprintCard(
+            b.Key,
+            _localization[b.TitleKey],
+            _localization[b.DescriptionKey],
+            _localization[$"Settings_ScheduledJobs_Kind_{b.Kind}"],
+            _localization[$"Settings_ScheduledJobs_Recurrence_{b.Recurrence}"],
+            b.DefaultTime.ToString("HH\\:mm")))];
     }
 
     public void OnNavigatedTo(object? parameter) { }
@@ -368,6 +382,34 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditProvider = ProviderChoices.FirstOrDefault();
         StatusMessage = null;
         IsEditorOpen = true;
+    }
+
+    /// <summary>Fills the same editor <see cref="StartCreate"/> opens; nothing is persisted until the user saves.</summary>
+    [RelayCommand(CanExecute = nameof(CanWork))]
+    private void StartFromBlueprint(string? key)
+    {
+        if (RoutineBlueprintCatalog.Find(key) is not { } blueprint) return;
+
+        var now = DateTime.Now;
+        EditingJobId = null;
+        EditName = _localization[blueprint.TitleKey];
+        EditQuery = blueprint.QueryTemplate;
+        EditKind = blueprint.Kind;
+        EditRecurrence = blueprint.Recurrence;
+        EditTimeOfDay = blueprint.DefaultTime.ToString("HH\\:mm");
+        EditDayOfWeek = blueprint.DefaultDayOfWeek ?? now.DayOfWeek;
+        EditDayOfMonth = now.Day;
+        EditMonth = now.Month;
+        EditSpecificDate = null;
+        EditGrantedTools = string.Join(", ", blueprint.GrantedTools);
+        EditQuietOnSuccess = blueprint.QuietOnSuccess;
+        EditProvider = ProviderChoices.FirstOrDefault();
+        StatusMessage = null;
+        IsEditorOpen = true;
+
+        _logger.LogInformation("Opened the routines editor from blueprint {Key}", blueprint.Key);
+        _logger.SensitiveDebug("Blueprint {Key} prefilled name: {Name} goal: {Goal}",
+            blueprint.Key, EditName, EditQuery);
     }
 
     [RelayCommand(CanExecute = nameof(CanActOnSelection))]
@@ -634,6 +676,18 @@ public sealed record RoutineDayOfWeekChoice(DayOfWeek Value, string Label)
 public sealed record RoutineMonthChoice(int Value, string Label)
 {
     public override string ToString() => Label;
+}
+
+/// <summary>One blueprint as its card renders it. Public because WPF's binding cannot read an internal type.</summary>
+public sealed record RoutineBlueprintCard(
+    string Key,
+    string Title,
+    string Description,
+    string KindLabel,
+    string RecurrenceLabel,
+    string TimeLabel)
+{
+    public string AutomationId => $"Routines_Blueprint_{Key}";
 }
 
 /// <summary>One settled firing, as the detail pane lists it.</summary>

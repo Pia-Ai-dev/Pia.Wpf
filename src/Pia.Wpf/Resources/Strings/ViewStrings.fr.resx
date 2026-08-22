@@ -1127,6 +1127,10 @@
   <data name="Routines_Field_Month" xml:space="preserve"><value>Mois</value></data>
   <data name="Routines_Field_DayOfMonth" xml:space="preserve"><value>Jour du mois</value></data>
   <data name="Routines_Field_DayOfMonth_Hint" xml:space="preserve"><value>Les mois trop courts pour ce jour se déclenchent leur dernier jour.</value></data>
+  <data name="Routines_Blueprints_Header" xml:space="preserve"><value>Partir d'un modèle</value></data>
+  <data name="Routines_Blueprints_Hint" xml:space="preserve"><value>Choisissez-en un pour ouvrir l'éditeur déjà rempli — vous pouvez tout modifier avant d'enregistrer.</value></data>
+  <data name="Routines_Blueprint_TopicDigest_Title" xml:space="preserve"><value>Résumé quotidien d'un sujet</value></data>
+  <data name="Routines_Blueprint_TopicDigest_Description" xml:space="preserve"><value>Chaque matin, une courte revue du web sur un sujet, avec ses sources. Changez le sujet dans le champ « Objectif » avant d'enregistrer.</value></data>
   <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Fournisseur par défaut</value></data>
   <data name="Settings_ScheduledJobs_UnknownStatusInert" xml:space="preserve"><value>Cette tâche a un statut que cette version ne reconnaît pas ; elle est affichée en lecture seule. Mettez Pia à jour pour la gérer.</value></data>
   <data name="Settings_ScheduledJobs_Running" xml:space="preserve"><value>Exécution de la tâche…</value></data>

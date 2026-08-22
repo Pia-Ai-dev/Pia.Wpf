@@ -1127,6 +1127,10 @@
   <data name="Routines_Field_Month" xml:space="preserve"><value>Monat</value></data>
   <data name="Routines_Field_DayOfMonth" xml:space="preserve"><value>Tag im Monat</value></data>
   <data name="Routines_Field_DayOfMonth_Hint" xml:space="preserve"><value>Monate, die für diesen Tag zu kurz sind, feuern an ihrem letzten Tag.</value></data>
+  <data name="Routines_Blueprints_Header" xml:space="preserve"><value>Mit einer Vorlage beginnen</value></data>
+  <data name="Routines_Blueprints_Hint" xml:space="preserve"><value>Wähle eine aus, um den Editor bereits ausgefüllt zu öffnen – vor dem Speichern lässt sich alles ändern.</value></data>
+  <data name="Routines_Blueprint_TopicDigest_Title" xml:space="preserve"><value>Täglicher Themen-Überblick</value></data>
+  <data name="Routines_Blueprint_TopicDigest_Description" xml:space="preserve"><value>Jeden Morgen ein kurzer Web-Überblick zu einem Thema, mit Quellen. Ändere das Thema im Feld „Ziel“, bevor du speicherst.</value></data>
   <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Standardanbieter</value></data>
   <data name="Settings_ScheduledJobs_UnknownStatusInert" xml:space="preserve"><value>Dieser Auftrag hat einen Status, den diese Version nicht kennt, und wird nur lesend angezeigt. Aktualisiere Pia, um ihn zu verwalten.</value></data>
   <data name="Settings_ScheduledJobs_Running" xml:space="preserve"><value>Auftrag läuft …</value></data>

@@ -1137,6 +1137,10 @@
   <data name="Routines_Field_Month" xml:space="preserve"><value>Month</value></data>
   <data name="Routines_Field_DayOfMonth" xml:space="preserve"><value>Day of month</value></data>
   <data name="Routines_Field_DayOfMonth_Hint" xml:space="preserve"><value>Months too short for that day fire on their last day.</value></data>
+  <data name="Routines_Blueprints_Header" xml:space="preserve"><value>Start from a blueprint</value></data>
+  <data name="Routines_Blueprints_Hint" xml:space="preserve"><value>Pick one to open the editor already filled in — you can change anything before saving.</value></data>
+  <data name="Routines_Blueprint_TopicDigest_Title" xml:space="preserve"><value>Daily topic digest</value></data>
+  <data name="Routines_Blueprint_TopicDigest_Description" xml:space="preserve"><value>A short web round-up on one topic each morning, with sources. Change the topic in the goal box before saving.</value></data>
   <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Default provider</value></data>
   <data name="Settings_ScheduledJobs_UnknownStatusInert" xml:space="preserve"><value>This job has a status this version does not recognise, so it is shown read-only. Update Pia to manage it.</value></data>
   <data name="Settings_ScheduledJobs_Running" xml:space="preserve"><value>Running the job…</value></data>

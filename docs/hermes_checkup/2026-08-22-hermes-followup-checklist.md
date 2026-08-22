@@ -112,13 +112,13 @@ Three steps can close work below them. Do not tick their dependants without revi
 
 ## C — Routine blueprints
 
-- [ ] **C1 · `RoutineBlueprint` record + `RoutineBlueprintCatalog` with `topic-digest` only.**
+- [x] **C1 · `RoutineBlueprint` record + `RoutineBlueprintCatalog` with `topic-digest` only.**
   *Deps:* none · *Effort:* **S** · *Value:* **Enabler**
 
-- [ ] **C2 · `.resx` entries (en/de/fr) for that one blueprint** — proves the localization shape before ×8.
+- [x] **C2 · `.resx` entries (en/de/fr) for that one blueprint** — proves the localization shape before ×8.
   *Deps:* C1 · *Effort:* **XS** · *Value:* **Enabler**
 
-- [ ] **C3 · Card list in `RoutinesView`; click opens the existing editor prefilled.** AutomationIds per
+- [x] **C3 · Card list in `RoutinesView`; click opens the existing editor prefilled.** AutomationIds per
   the playbook. **The vertical slice — this is where the blank-box fix becomes visible.**
   *Deps:* C1, C2 · *Effort:* **M** · *Value:* **High**
 
