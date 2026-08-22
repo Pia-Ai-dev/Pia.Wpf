@@ -76,6 +76,7 @@
                    Margin="0,0,2,0"
                    Command="{Binding DataContext.ToggleEnableCommand, RelativeSource={RelativeSource AncestorType=views:RemindersView}}"
                    CommandParameter="{Binding}"
+                   AutomationProperties.AutomationId="{Binding Id, StringFormat='Reminders_ToggleEnable_{0}'}"
                    AutomationProperties.Name="{loc:Str Reminders_ToggleEnable}"
                    ToolTip="{loc:Str Reminders_ToggleEnable}">
           <ui:SymbolIcon Symbol="ToggleRight24" FontSize="14"/>
@@ -85,6 +86,7 @@
                    Margin="0,0,2,0"
                    Command="{Binding DataContext.SnoozeCommand, RelativeSource={RelativeSource AncestorType=views:RemindersView}}"
                    CommandParameter="{Binding}"
+                   AutomationProperties.AutomationId="{Binding Id, StringFormat='Reminders_Snooze_{0}'}"
                    AutomationProperties.Name="{loc:Str Reminders_Snooze}"
                    ToolTip="{loc:Str Reminders_Snooze}">
           <ui:SymbolIcon Symbol="ClockAlarm24" FontSize="14"/>
@@ -94,6 +96,7 @@
                    Margin="0,0,2,0"
                    Command="{Binding DataContext.DismissCommand, RelativeSource={RelativeSource AncestorType=views:RemindersView}}"
                    CommandParameter="{Binding}"
+                   AutomationProperties.AutomationId="{Binding Id, StringFormat='Reminders_Dismiss_{0}'}"
                    AutomationProperties.Name="{loc:Str Reminders_Dismiss}"
                    ToolTip="{loc:Str Reminders_Dismiss}">
           <ui:SymbolIcon Symbol="Checkmark24" FontSize="14"/>
@@ -102,6 +105,7 @@
                    Padding="4"
                    Command="{Binding DataContext.DeleteCommand, RelativeSource={RelativeSource AncestorType=views:RemindersView}}"
                    CommandParameter="{Binding}"
+                   AutomationProperties.AutomationId="{Binding Id, StringFormat='Reminders_Delete_{0}'}"
                    AutomationProperties.Name="{loc:Str Reminders_Delete}"
                    ToolTip="{loc:Str Reminders_Delete}">
           <ui:SymbolIcon Symbol="Delete24" FontSize="14"

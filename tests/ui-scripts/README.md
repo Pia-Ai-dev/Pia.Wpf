@@ -136,12 +136,13 @@ Rules that cost real time to learn:
 - **Prefer `automationId=` selectors.** Name-based selectors are localized strings — they break when
   the UI language changes, and `winwright heal` cannot repair them (it only scores elements that have
   an AutomationId). Every interactive control in the General, Assistant, Providers, Account and
-  Optimize settings views has one, inner tab headers included; where you still find one that does
-  not (Plugins, the E2EE onboarding screen), add it to the XAML rather than recording a fragile
-  selector. `tests/Pia.Wpf.Tests/Views/SettingsViewAutomationIdTests.cs` holds that line and is
-  part of the `dotnet test` gate — a new settings control turns that test red until it carries an
-  id, and the failure message names the control and the id form to use. It does not fail the
-  build; a missing id compiles fine.
+  Optimize settings views has one, inner tab headers included, and so does AssistantView's own
+  composer/toolbar; where you still find one that does not (Plugins, the E2EE onboarding screen,
+  most nested chat controls, the other top-level views), add it to the XAML rather than recording
+  a fragile selector. `tests/Pia.Wpf.Tests/Views/ViewAutomationIdTests.cs` holds that line for the
+  views it covers and is part of the `dotnet test` gate — a new control in one of those views turns
+  the test red until it carries an id, and the failure message names the control and the id form
+  to use. It does not fail the build; a missing id compiles fine.
 - Keep one scenario per script file. The runner stops at the first failure (`maxFailures: 0`) and a
   junit report then omits the remaining test cases entirely.
 

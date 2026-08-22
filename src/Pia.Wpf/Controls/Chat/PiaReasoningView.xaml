@@ -60,6 +60,7 @@
                  HorizontalAlignment="Left"
                  Cursor="Hand"
                  ToolTip="{loc:Str Assistant_ShowReasoning}"
+                 AutomationProperties.AutomationId="{Binding Id, StringFormat='Reasoning_Toggle_{0}'}"
                  Visibility="{Binding HasThinkingContent, Converter={StaticResource BooleanToVisibilityConverter}}">
         <StackPanel Orientation="Horizontal">
           <!-- Chevron: points right when collapsed, rotates down when expanded -->

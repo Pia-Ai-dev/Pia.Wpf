@@ -25,6 +25,7 @@
     <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
       <ui:Button Appearance="Secondary"
                  Command="{Binding RefreshCommand}"
+                 AutomationProperties.AutomationId="History_Refresh"
                  ToolTip="{loc:Str History_Refresh}"
                  Margin="0,0,6,0">
         <StackPanel Orientation="Horizontal">
@@ -39,6 +40,7 @@
       </ui:Button>
       <ui:Button Appearance="Secondary"
                  Command="{Binding DeleteAllCommand}"
+                 AutomationProperties.AutomationId="History_DeleteAll"
                  ToolTip="{loc:Str History_DeleteAllTooltip}">
         <StackPanel Orientation="Horizontal">
           <ui:SymbolIcon Symbol="Delete24" FontSize="16" Margin="0,0,6,0"

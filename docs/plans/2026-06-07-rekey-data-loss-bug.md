@@ -3,7 +3,7 @@
 **Date:** 2026-06-07
 **Status:** **Resolved by removal.** The broken `ReKeyAsync` stub was deleted; no data-preserving UMK rotation exists in the client today.
 **Component:** `Pia.Wpf` — `DeviceManagementService` / `IDeviceManagementService` (`src/Pia.Wpf/Services/E2EE/`)
-**Related:** [`docs/plans/2026-06-07-post-quantum-e2ee-migration.md`](plans/2026-06-07-post-quantum-e2ee-migration.md) — the PQ migration's one-time UMK rotation must implement the correct routine specified below.
+**Related:** a post-quantum E2EE migration plan (not yet written) whose one-time UMK rotation must implement the correct routine specified below.
 
 ---
 

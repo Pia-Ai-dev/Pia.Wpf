@@ -62,6 +62,7 @@
                  Appearance="Secondary"
                  VerticalAlignment="Center"
                  AutomationProperties.Name="{loc:Str MeetingAttendee_Close}"
+                 AutomationProperties.AutomationId="MeetingAttendee_Close"
                  ToolTip="{loc:Str MeetingAttendee_Close}">
         <ui:SymbolIcon Symbol="Dismiss24" FontSize="14" />
       </ui:Button>
@@ -183,6 +184,7 @@
                      Appearance="Primary"
                      Content="{loc:Str MeetingAttendee_Join}" />
           <ui:HyperlinkButton Command="{Binding OpenMeetingSettingsCommand}"
+                              AutomationProperties.AutomationId="MeetingAttendee_OpenSettings"
                               Margin="12,0,0,0"
                               VerticalAlignment="Center">
             <StackPanel Orientation="Horizontal">
@@ -330,7 +332,8 @@
                                Cursor="Hand"
                                ToolTip="{loc:Str MeetingAttendee_RenameSpeaker_MenuItem}"
                                Command="{Binding DataContext.RenameSpeakerLabelCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                               CommandParameter="{Binding SpeakerLabel}">
+                               CommandParameter="{Binding SpeakerLabel}"
+                               AutomationProperties.AutomationId="{Binding SpeakerLabel, StringFormat='MeetingAttendee_RenameSpeaker_{0}'}">
                       <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock FontSize="11"
                                    VerticalAlignment="Center"
@@ -445,12 +448,14 @@
                    Content="{loc:Str MeetingAttendee_Save}"
                    Visibility="{Binding IsRunning, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
         <ui:Button Command="{Binding SaveToVaultCommand}"
+                   AutomationProperties.AutomationId="MeetingAttendee_SaveToVault"
                    Margin="8,0,0,0"
                    Padding="20,10"
                    Appearance="Secondary"
                    Content="{loc:Str MeetingAttendee_SaveToVault}"
                    Visibility="{Binding IsRunning, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
         <ui:Button Command="{Binding SummarizeWithAssistantCommand}"
+                   AutomationProperties.AutomationId="MeetingAttendee_Summarize"
                    Margin="8,0,0,0"
                    Padding="20,10"
                    Appearance="Secondary"

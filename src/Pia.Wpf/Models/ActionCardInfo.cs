@@ -70,6 +70,9 @@ public record DiffLine(DiffLineKind Kind, string Text, int? OldLineNumber = null
 
 public partial class ActionCardInfo : ObservableObject
 {
+    /// <summary>Per-card identity for automation ids — several cards render at once with no other unique field. UI-only.</summary>
+    public Guid Id { get; init; } = Guid.NewGuid();
+
     public required string Title { get; init; }
     public required string Summary { get; init; }
     public required ActionCardCategory Category { get; init; }

@@ -389,7 +389,8 @@
                                             VerticalAlignment="Center"
                                             Visibility="{Binding HasChat, Converter={StaticResource BooleanToVisibilityConverter}}"
                                             Command="{Binding DataContext.OpenRunChatCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                            CommandParameter="{Binding}"/>
+                                            CommandParameter="{Binding}"
+                                            AutomationProperties.AutomationId="{Binding ChatId, StringFormat='Routines_OpenRunChat_{0}'}"/>
                       </StackPanel>
                     </Border>
                   </DataTemplate>

@@ -42,6 +42,7 @@
                      Padding="4"
                      Command="{Binding ToggleDiffExpandCommand}"
                      AutomationProperties.Name="{loc:Str ActionCard_Diff_Toggle}"
+                     AutomationProperties.AutomationId="{Binding FilePath, StringFormat='ActionCard_DiffToggle_{0}'}"
                      VerticalAlignment="Center">
             <ui:SymbolIcon FontSize="12">
               <ui:SymbolIcon.Style>

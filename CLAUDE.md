@@ -147,6 +147,16 @@ When applicable:
 
 Driving the app with WinWright/UIA (walkthroughs, UI regression tests): read `docs/ui_automation/ui-automation-playbook.md` first. It lists the stable AutomationIds and the techniques that work; do not fall back to pixel-offset clicking.
 
+Every new interactive control added to a `UserControl` (`ButtonBase`, `ComboBox`,
+`TextBoxBase`/`RichTextBox`, `PasswordBox`, `Slider`, `Expander`, `TabItem`) needs an
+`AutomationProperties.AutomationId="<ViewPrefix>_<Field>"`, or the per-item binding form
+`{Binding <Identity>, StringFormat='<ViewPrefix>_<Field>_{0}'}` for anything inside an
+`ItemsControl`/`ContentTemplate` — a literal id there makes every row report the same id. Keep
+the prefix disjoint from any other control a script might reach via the same `automationId*=`
+prefix match (e.g. two different toolbars both rendering a "Copy" button need different
+prefixes). `tests/Pia.Wpf.Tests/Views/ViewAutomationIdTests.cs` locks coverage in per view; add
+the `[InlineData]` row in the same change.
+
 Recorded UI flows live in `tests/ui-scripts/` and replay through `Invoke-UiScripts.ps1` (WinWright's
 CLI `run` verb, not an MCP tool). They are **not** part of the `dotnet test` gate — they launch the
 real app and drive the real desktop. The harness runs the app against a throwaway data directory, so

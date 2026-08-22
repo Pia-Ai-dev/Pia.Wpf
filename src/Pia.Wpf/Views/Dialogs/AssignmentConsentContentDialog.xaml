@@ -26,6 +26,7 @@
       <ComboBox ItemsSource="{Binding Skills}"
                 SelectedItem="{Binding SelectedSkill}"
                 DisplayMemberPath="DisplayName"
+                AutomationProperties.AutomationId="AssignmentConsent_Skill"
                 HorizontalAlignment="Stretch" />
     </StackPanel>
 
@@ -50,6 +51,7 @@
                 MinHeight="72"
                 MaxHeight="120"
                 VerticalScrollBarVisibility="Auto"
+                AutomationProperties.AutomationId="AssignmentConsent_Prompt"
                 Margin="0,0,0,14" />
 
     <TextBlock Text="{loc:Str AssignmentConsent_Records_PromptOnly}"
@@ -131,6 +133,7 @@
                   <CheckBox Grid.Column="0"
                             IsChecked="{Binding IsSelected}"
                             IsEnabled="{Binding CanSelect}"
+                            AutomationProperties.AutomationId="{Binding Item.EntityId, StringFormat='AssignmentConsent_Record_{0}'}"
                             VerticalAlignment="Top"
                             Margin="0,0,4,0" />
 
@@ -167,7 +170,8 @@
                  Margin="0,6,0,0" />
     </StackPanel>
 
-    <CheckBox IsChecked="{Binding IsAffirmed}">
+    <CheckBox IsChecked="{Binding IsAffirmed}"
+              AutomationProperties.AutomationId="AssignmentConsent_Affirm">
       <TextBlock Text="{loc:Str AssignmentConsent_Affirm}"
                  TextWrapping="Wrap" />
     </CheckBox>

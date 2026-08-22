@@ -91,7 +91,8 @@
                 ToolTip="{loc:Str History_Delete}"
                 Command="{Binding DeleteCommand,
                           RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}}}"
-                CommandParameter="{Binding}">
+                CommandParameter="{Binding}"
+                AutomationProperties.AutomationId="{Binding Id, StringFormat='AssistantChat_Delete_{0}'}">
           <ui:SymbolIcon Symbol="Delete24" FontSize="14"
                          Foreground="{DynamicResource PiaDangerBrush}"/>
         </Button>

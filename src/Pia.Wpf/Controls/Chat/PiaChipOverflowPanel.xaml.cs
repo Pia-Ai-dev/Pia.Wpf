@@ -48,6 +48,12 @@ public partial class PiaChipOverflowPanel : UserControl
         DependencyProperty.Register(nameof(OverflowLabel), typeof(string), typeof(PiaChipOverflowPanel),
             new PropertyMetadata(null));
 
+    /// <summary>Disambiguates the "More" button's AutomationId when two panels render in one message
+    /// (e.g. Sources vs FileRefs) — set at the call site, never bound.</summary>
+    public static readonly DependencyProperty GroupNameProperty =
+        DependencyProperty.Register(nameof(GroupName), typeof(string), typeof(PiaChipOverflowPanel),
+            new PropertyMetadata(null));
+
     private ScrollViewer? _scrollHost;
     private long _closedAtTicks;
 
@@ -97,6 +103,12 @@ public partial class PiaChipOverflowPanel : UserControl
     {
         get => (string?)GetValue(OverflowLabelProperty);
         private set => SetValue(OverflowLabelProperty, value);
+    }
+
+    public string? GroupName
+    {
+        get => (string?)GetValue(GroupNameProperty);
+        set => SetValue(GroupNameProperty, value);
     }
 
     public PiaChipOverflowPanel() => InitializeComponent();
