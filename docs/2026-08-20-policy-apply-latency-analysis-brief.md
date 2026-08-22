@@ -94,7 +94,7 @@ old process to exit. `TrayIconService.cs:335` is the only other exit path and it
 Two things to check before reusing it:
 
 - No single-instance mutex exists in `src/Pia.Wpf` today (grep found none). But
-  `docs/2026-08-16-unmerged-branch-inventory.md:181` records `App.xaml.cs` single-instance wiring on an
+  `docs/branch_inventory/2026-08-16-unmerged-branch-inventory.md:181` records `App.xaml.cs` single-instance wiring on an
   **unmerged branch**. If that lands, `Process.Start` before `Environment.Exit(0)` races the mutex and the
   relaunch dies silently.
 - `Environment.Exit(0)` skips finalizers and any graceful-shutdown work. Acceptable for a reset that has

@@ -2,7 +2,7 @@
 
 Guidance for agents running UI walkthroughs or UI regression tests against a running Pia
 instance. Read this before starting a run; it replaces guesswork with what is verified to work.
-Companion to `docs/2026-08-16-ui-automation-gaps.md` (the findings that motivated the fixes) and
+Companion to `docs/ui_automation/2026-08-16-ui-automation-gaps.md` (the findings that motivated the fixes) and
 `docs/2026-08-16-ui-automation-validation.md` (the live re-run that confirmed them).
 
 ## Ground rules

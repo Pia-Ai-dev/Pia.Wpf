@@ -1,6 +1,6 @@
 # UI how-to questions → docs coverage
 
-Answers `docs/2026-08-16-ui-howto-questions.md` against the docs in `Pia/src/Pia.Docs`
+Answers `docs/user_questions/2026-08-16-ui-howto-questions.md` against the docs in `Pia/src/Pia.Docs`
 (branch `feature/connector-abstraction-phase1`). English only; `de/` and `fr/` mirrors are owed.
 
 No FAQ entries were added, and no question-shaped headings either. Every answer sits in the guide

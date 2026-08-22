@@ -1,6 +1,6 @@
 # Validating the UI-automation fixes (live WinWright re-run)
 
-Re-ran the flows from `docs/2026-08-16-ui-automation-gaps.md` against a Debug build of
+Re-ran the flows from `docs/ui_automation/2026-08-16-ui-automation-gaps.md` against a Debug build of
 `feature/ui-automation-a11y` at `c73458a0`, driving Pia v1.3.0.0 through WinWright MCP 3.1.0 on
 2026-08-16. Every verdict below is first-hand unless the text says otherwise; source-derived
 claims are marked as such.
