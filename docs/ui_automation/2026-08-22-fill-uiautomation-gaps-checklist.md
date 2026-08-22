@@ -81,7 +81,12 @@ implicit per-type `DataTemplate`s declared in `ItemsControl.Resources` are invis
 mechanism, since it only reads `ItemsControl.ItemTemplateProperty`/`ContentTemplateProperty`/
 `HeaderTemplateProperty` locally. `FlowView` (`G4`) confirmed the "measure, don't guess" rule
 again — 5 distinct controls measured at 10 instances, because two of its templates are legitimately
-applied at two separate sites (a real list plus a hidden arrival-peek clone).
+applied at two separate sites (a real list plus a hidden arrival-peek clone). A same-session review
+caught two more issues before they shipped: the header's literal ids would have repeated onto that
+hidden clone, which `Visibility="Hidden"` does not remove from the UIA tree or block `InvokePattern`
+for — fixed via a `Tag`-keyed `RelativeSource` binding, same shape as `PiaChipOverflowPanel`'s
+`GroupName`; and the playbook's `ActionCardInfo.Id` row got a lifetime caveat, since it is a
+per-render UI guid, not a persisted domain id like the other per-item keys on this list.
 
 **Excluded, not just deferred** — `NavigationSidebarView`: its 12 `NavItem_*` buttons already all
 carry ids (verified by hand), but they hang off `ui:NavigationView.MenuItems`, which
@@ -335,12 +340,14 @@ nested rows do not)
   at 10 walker-visible control *instances*, not 5, confirming the "measure, don't guess" rule
   again. Per-item (`FlowItemCardTemplate`, keyed on `FlowItemViewModel.Item.Id`): `Flow_ActionLink_
   <id>`, `Flow_Dismiss_<id>` — safe as per-item at both sites since the peek clone only ever holds
-  one transient item. Singleton (`FlowHeaderTemplate`, `DataContext` = the one `FlowViewModel`,
-  literal): `Flow_ClearAll`, `Flow_PinToggle`, `Flow_Collapse` — these DO exist twice in the live
-  tree (the peek-spacer clone is permanently `Visibility="Hidden"`), but a hidden element is
-  outside what a script would enumerate/interact with, so this was accepted rather than
-  disambiguated. Nested views: `CardDecisionBar` (`G1`) and `PiaChatStateBadge`, both genuine
-  stops one level below the card template's root, not swept.
+  one transient item. Header (`FlowHeaderTemplate`, `DataContext` = the one `FlowViewModel`): the
+  hidden peek-spacer clone of the header is NOT automation-inert — `Visibility="Hidden"` blocks
+  hit-testing but not `InvokePattern`, so a literal id would collide with a genuinely invokable
+  duplicate, not just a cosmetic one. Fixed by giving each of the two `ContentControl` hosts a
+  `Tag` ("Real"/"Peek") and keying the header's 3 buttons on it via `RelativeSource
+  AncestorType=ContentControl`: `Flow_ClearAll_<host>`, `Flow_PinToggle_<host>`,
+  `Flow_Collapse_<host>`. Nested views: `CardDecisionBar` (`G1`) and `PiaChatStateBadge`, both
+  genuine stops one level below the card template's root, not swept.
   *Deps:* none · *Effort:* **M** · *Value:* **High**
 
 ## H — Content dialogs with zero ids beyond the shared `PrimaryButton`/`CloseButton`

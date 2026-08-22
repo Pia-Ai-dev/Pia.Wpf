@@ -79,7 +79,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Controls.Chat.PiaChipOverflowPanel), 1, 1, "")]
     [InlineData(typeof(Pia.Controls.ActionCardControl), 3, 3, "CardDecisionBar,FileDiffCard")]
     [InlineData(typeof(Pia.Controls.Cards.FileDiffCard), 1, 1, "")]
-    [InlineData(typeof(Pia.Controls.Flow.FlowView), 10, 4, "CardDecisionBar,PiaChatStateBadge")]
+    [InlineData(typeof(Pia.Controls.Flow.FlowView), 10, 10, "CardDecisionBar,PiaChatStateBadge")]
     public void EveryInteractiveControl_CarriesAnAutomationId(
         Type viewType, int minimumInspected, int minimumPerItemIds, string expectedNestedViews)
     {

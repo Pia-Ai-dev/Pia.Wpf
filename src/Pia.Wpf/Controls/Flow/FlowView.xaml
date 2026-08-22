@@ -267,7 +267,7 @@
                    BorderThickness="0"
                    Command="{Binding ClearAllCommand}"
                    AutomationProperties.Name="{loc:Str Flow_ClearAll}"
-                   AutomationProperties.AutomationId="Flow_ClearAll"
+                   AutomationProperties.AutomationId="{Binding Tag, RelativeSource={RelativeSource AncestorType=ContentControl}, StringFormat='Flow_ClearAll_{0}'}"
                    ToolTip="{loc:Str Flow_ClearAll}"
                    Visibility="{Binding IsEmpty, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
           <ui:SymbolIcon FontSize="16" Symbol="Broom24" />
@@ -279,7 +279,7 @@
                       Background="Transparent"
                       BorderThickness="0"
                       IsChecked="{Binding IsPinned, Mode=TwoWay}"
-                      AutomationProperties.AutomationId="Flow_PinToggle"
+                      AutomationProperties.AutomationId="{Binding Tag, RelativeSource={RelativeSource AncestorType=ContentControl}, StringFormat='Flow_PinToggle_{0}'}"
                       ToolTip="{loc:Str Flow_Pin}">
           <ui:SymbolIcon FontSize="16" Symbol="Pin24" />
         </ToggleButton>
@@ -291,7 +291,7 @@
                    BorderThickness="0"
                    Command="{Binding CollapseCommand}"
                    AutomationProperties.Name="{loc:Str Flow_Unpin}"
-                   AutomationProperties.AutomationId="Flow_Collapse"
+                   AutomationProperties.AutomationId="{Binding Tag, RelativeSource={RelativeSource AncestorType=ContentControl}, StringFormat='Flow_Collapse_{0}'}"
                    ToolTip="{loc:Str Flow_Unpin}"
                    Visibility="{Binding IsOverlayMode, Converter={StaticResource BooleanToVisibilityConverter}}">
           <ui:SymbolIcon FontSize="16" Symbol="ChevronRight24" />
@@ -356,10 +356,12 @@
           <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Header (shared FlowHeaderTemplate; the arrival peek reuses it as a hidden spacer) -->
+        <!-- Header (shared FlowHeaderTemplate; the arrival peek reuses it as a hidden spacer).
+             Tag disambiguates the two hosts' AutomationIds: Hidden still leaves InvokePattern reachable. -->
         <ContentControl Grid.Row="0"
                         HorizontalContentAlignment="Stretch"
                         Content="{Binding}"
+                        Tag="Real"
                         ContentTemplate="{StaticResource FlowHeaderTemplate}" />
 
         <!-- Items + empty state -->
@@ -483,6 +485,7 @@
         <ContentControl Grid.Row="0"
                         HorizontalContentAlignment="Stretch"
                         Content="{Binding}"
+                        Tag="Peek"
                         ContentTemplate="{StaticResource FlowHeaderTemplate}"
                         Visibility="Hidden" />
         <ItemsControl x:Name="PeekItems"
