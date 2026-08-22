@@ -83,6 +83,38 @@ internal static class DiarizationOracle
         return null;
     }
 
+    /// <summary>How many people the reference has speaking at <paramref name="seconds"/>: 0 for
+    /// silence or an unreadable range, so a caller can tell a mixture from a gap.</summary>
+    public static int VoicesAt(SpeakerReference reference, double seconds)
+    {
+        foreach (var range in reference.InvalidRanges)
+            if (seconds >= range.Start && seconds < range.End) return 0;
+
+        foreach (var interval in reference.Intervals)
+            if (seconds >= interval.Start && seconds < interval.End) return interval.Speakers.Length;
+
+        return 0;
+    }
+
+    /// <summary>The most people the reference has speaking at once anywhere inside a segment, or 0
+    /// where it cannot say. A mixture is what the mint branch reads as a voice it has not heard, and a
+    /// midpoint sample can sit in the one clean instant of an otherwise overlapped segment. Any touch
+    /// of an unreadable range makes the whole answer 0: a hidden tile could have been the second
+    /// voice, so "one voice" there would be a claim the reference cannot support.</summary>
+    public static int PeakVoicesOver(SpeakerReference reference, double start, double end)
+    {
+        foreach (var range in reference.InvalidRanges)
+            if (range.End > start && range.Start < end) return 0;
+
+        var peak = 0;
+        foreach (var interval in reference.Intervals)
+        {
+            if (interval.End <= start || interval.Start >= end) continue;
+            if (interval.Speakers.Length > peak) peak = interval.Speakers.Length;
+        }
+        return peak;
+    }
+
     public static SimilarityStats Similarity(IReadOnlyList<LabelledSegment> segments)
     {
         var intra = new List<double>();

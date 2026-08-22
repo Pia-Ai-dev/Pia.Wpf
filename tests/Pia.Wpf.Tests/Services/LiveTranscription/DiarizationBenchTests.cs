@@ -227,6 +227,7 @@ public class DiarizationBenchTests
         say($"embedding  : intra {similarity.IntraMean:F3} ± {similarity.IntraStdDev:F3}, "
             + $"inter {similarity.InterMean:F3} ± {similarity.InterStdDev:F3}, d' {similarity.DPrime:F2}");
         say($"best fixed threshold {similarity.BestThreshold:F3}, pair-decision error {similarity.PairErrorRate:P1}");
+        AppendMintSites(say, segments, reference);
         AppendInheritance(say, segments, reference);
         AppendPairSeparation(say, truthful, reference.Speakers);
 
@@ -246,6 +247,34 @@ public class DiarizationBenchTests
         var pinned = DiarizationOracle.PinnedClusterer(truthful, reference.Speakers.Length);
         say($"ORACLE clusterer (k = {reference.Speakers.Length} true talkers): {pinned.BySegment:P1} by segment, "
             + $"{pinned.ByDuration:P1} by duration");
+    }
+
+    /// <summary>
+    /// Where each label was born. A mixture of voices lands far from every centroid, which is exactly
+    /// what the mint branch reads as a voice it has not heard — so this counts how many mints sit on a
+    /// segment the reference says is more than one person, before anything is built on the idea.
+    /// </summary>
+    private static void AppendMintSites(
+        Action<string> say, List<BenchSegment> segments, SpeakerReference reference)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        int overlapped = 0, clean = 0, unattributable = 0;
+        var detail = new List<string>();
+        foreach (var s in segments)
+        {
+            if (s.Label is null || !seen.Add(s.Label)) continue;
+            var peak = DiarizationOracle.PeakVoicesOver(
+                reference, s.StartSeconds, s.StartSeconds + s.DurationSeconds);
+            if (peak == 0) unattributable++;
+            else if (peak > 1) overlapped++;
+            else clean++;
+            detail.Add($"{s.Label}@{s.StartSeconds:F1}s={(peak == 0 ? "no reference" : $"{peak} voice(s)")}");
+        }
+
+        say(string.Empty);
+        say($"MINT SITES : {seen.Count} labels minted — {clean} on a single-speaker segment, "
+            + $"{overlapped} on reference-overlapped speech, {unattributable} where the reference says nothing");
+        say($"  {string.Join(", ", detail)}");
     }
 
     /// <summary>

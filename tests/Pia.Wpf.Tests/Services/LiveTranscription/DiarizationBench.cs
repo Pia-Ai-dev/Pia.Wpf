@@ -69,10 +69,17 @@ internal sealed class DiarizationBench
         if (rosterSize > 0) service.SetExpectedSpeakers(rosterSize);
 
         var bySegmentId = new Dictionary<long, BenchSegment>();
+        // A pass runs inside the identify call that triggered it and can reassign that very segment,
+        // which the loop below has not registered yet. Parking it here is what keeps a correction from
+        // being silently overwritten by the provisional label.
+        var pending = new Dictionary<long, string?>();
         service.SpeakersReassigned += (_, batch) =>
         {
             foreach (var r in batch)
+            {
                 if (bySegmentId.TryGetValue(r.SegmentId, out var target)) target.FinalLabel = r.NewLabel;
+                else pending[r.SegmentId] = r.NewLabel;
+            }
         };
 
         foreach (var segment in segments)
@@ -87,7 +94,9 @@ internal sealed class DiarizationBench
             var result = service.IdentifyOrRegisterSegment(segment.Samples, 16000);
             bySegmentId[result.SegmentId] = segment;
             segment.Label = result.Label;
-            segment.FinalLabel = result.Label;
+            segment.FinalLabel = pending.Remove(result.SegmentId, out var corrected)
+                ? corrected
+                : result.Label;
         }
 
         return [.. logger.Entries.Select(e => e.Message)];
