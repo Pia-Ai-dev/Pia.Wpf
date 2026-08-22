@@ -14,6 +14,7 @@ _Follow-up to [`docs/superpowers/specs/agent-roadmap/hermes-comparison.md`](supe
 | §3.1 · Routine blueprint catalog | [`2026-08-22-routine-blueprints-plan.md`](2026-08-22-routine-blueprints-plan.md) |
 | §3.3 · Compaction recall measurement | [`2026-08-22-compaction-recall-test-plan.md`](2026-08-22-compaction-recall-test-plan.md) |
 | §3.4 · Guided-tour tool | [`2026-08-22-guided-tour-tool-plan.md`](2026-08-22-guided-tour-tool-plan.md) |
+| §3.6(a) · Artifact evidence / planner discipline | [`2026-08-22-artifact-evidence-plan.md`](2026-08-22-artifact-evidence-plan.md) |
 
 ---
 
