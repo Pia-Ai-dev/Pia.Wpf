@@ -2,8 +2,10 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Extensions.Logging;
+using Pia.Logging;
 using Pia.Models;
 using System.Reflection;
+using System.Text.Json;
 
 namespace Pia.ViewModels;
 
@@ -21,8 +23,12 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
     private readonly Services.Interfaces.ISyncClientService _syncClientService;
     private readonly Services.Operators.IAssignmentApiClient _assignmentApiClient;
     private readonly Services.Interfaces.IPolicyService _policyService;
+    private readonly Services.Interfaces.ITourTargetCollector _tourTargetCollector;
+    private readonly Services.Interfaces.IClipboardService _clipboardService;
     private Timer? _updateTimer;
     private bool _assignmentSurfaceAvailable;
+
+    private static readonly JsonSerializerOptions TourDumpJson = new() { WriteIndented = true };
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(WindowTitle))]
@@ -96,7 +102,9 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         Pia.Services.Interfaces.IAuthService authService,
         Pia.Services.Interfaces.ISyncClientService syncClientService,
         Pia.Services.Operators.IAssignmentApiClient assignmentApiClient,
-        Pia.Services.Interfaces.IPolicyService policyService)
+        Pia.Services.Interfaces.IPolicyService policyService,
+        Pia.Services.Interfaces.ITourTargetCollector tourTargetCollector,
+        Pia.Services.Interfaces.IClipboardService clipboardService)
         : base(requireUiThread: true)
     {
         _logger = logger;
@@ -110,6 +118,8 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         _syncClientService = syncClientService;
         _assignmentApiClient = assignmentApiClient;
         _policyService = policyService;
+        _tourTargetCollector = tourTargetCollector;
+        _clipboardService = clipboardService;
         IsE2EEOnboardingRequired = _syncClientService.IsE2EEOnboardingRequired;
 
         AppVersion = updateService.CurrentVersion
@@ -421,6 +431,34 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
     private void DismissUpdateBar()
     {
         IsUpdateBarDismissed = true;
+    }
+
+    [RelayCommand]
+    private async Task DumpTourTargetsAsync()
+    {
+        var scan = await _tourTargetCollector.CollectActiveWindowAsync();
+
+        _logger.LogInformation(
+            "Tour targets: {Count} in {RootView} (truncated: {Truncated})",
+            scan.Targets.Count, scan.RootView, scan.Truncated);
+
+        foreach (var target in scan.Targets)
+        {
+            _logger.SensitiveDebug(
+                "Tour target {Id} {ControlType} {Name} [{X},{Y} {Width}x{Height}] in {View}",
+                target.AutomationId, target.ControlType, target.Name,
+                target.Bounds.X, target.Bounds.Y, target.Bounds.Width, target.Bounds.Height,
+                target.OwningView);
+        }
+
+        try
+        {
+            _clipboardService.SetText(JsonSerializer.Serialize(scan, TourDumpJson));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not put the tour-target dump on the clipboard");
+        }
     }
 
     [RelayCommand]

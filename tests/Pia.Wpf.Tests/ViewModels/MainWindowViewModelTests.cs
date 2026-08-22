@@ -1,4 +1,6 @@
 using System.Net.Http;
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -13,16 +15,22 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>The background-assignment entry is an AND: assistant mode and a server that offers the surface.</summary>
+/// <summary>Covers the window shell's own decisions: the background-assignment entry, the nav routes, the
+/// policy-locked theme toggle, and the developer tour-target dump.</summary>
 public class MainWindowViewModelTests
 {
+    private const string SentinelId = "Settings_General_RemoveKeyword_hunter2";
+    private const string SentinelName = "Buy milk for Anna";
+
     private readonly INavigationService _navigation = Substitute.For<INavigationService>();
     private readonly ISettingsService _settings = Substitute.For<ISettingsService>();
     private readonly IAssignmentApiClient _assignments = Substitute.For<IAssignmentApiClient>();
     private readonly IAuthService _auth = Substitute.For<IAuthService>();
     private readonly IPolicyService _policy = Substitute.For<IPolicyService>();
+    private readonly ITourTargetCollector _tourTargets = Substitute.For<ITourTargetCollector>();
+    private readonly IClipboardService _clipboard = Substitute.For<IClipboardService>();
 
-    private MainWindowViewModel CreateSut(WindowMode mode)
+    private MainWindowViewModel CreateSut(WindowMode mode, ILogger<MainWindowViewModel>? logger = null)
     {
         if (SynchronizationContext.Current is null)
             SynchronizationContext.SetSynchronizationContext(new SynchronizationContext());
@@ -30,7 +38,7 @@ public class MainWindowViewModelTests
         _settings.GetSettingsAsync().Returns(new AppSettings());
 
         return new MainWindowViewModel(
-            NullLogger<MainWindowViewModel>.Instance,
+            logger ?? NullLogger<MainWindowViewModel>.Instance,
             _navigation,
             _settings,
             Substitute.For<IThemeService>(),
@@ -40,11 +48,18 @@ public class MainWindowViewModelTests
             _auth,
             Substitute.For<ISyncClientService>(),
             _assignments,
-            _policy)
+            _policy,
+            _tourTargets,
+            _clipboard)
         {
             Mode = mode,
         };
     }
+
+    private void ScanOffersTheSentinel() =>
+        _tourTargets.CollectActiveWindowAsync().Returns(new TourTargetScan("MainWindow", false, [
+            new TourTarget(SentinelId, SentinelName, "Button", new TourTargetBounds(12, 34, 56, 78), "SettingsView"),
+        ]));
 
     private void SurfaceOffers(params string[] skillNames) =>
         _assignments.GetSurfaceAsync(Arg.Any<CancellationToken>()).Returns(
@@ -211,5 +226,66 @@ public class MainWindowViewModelTests
         {
             SynchronizationContext.SetSynchronizationContext(previous);
         }
+    }
+
+    /// <summary>An AutomationId can interpolate a typed keyword and a Name can be a todo title, so the
+    /// only line that survives a Release build carries neither.</summary>
+    [Fact]
+    public async Task TheTourDump_KeepsIdsAndNamesBelowInformation()
+    {
+        var logger = new CapturingLogger<MainWindowViewModel>();
+        ScanOffersTheSentinel();
+        using var vm = CreateSut(WindowMode.Assistant, logger);
+
+        await vm.DumpTourTargetsCommand.ExecuteAsync(null);
+
+        var loud = logger.Entries.Where(e => e.Level >= LogLevel.Information).ToList();
+        Assert.DoesNotContain(loud, e => e.Message.Contains("hunter2") || e.Message.Contains("Anna"));
+
+        var info = Assert.Single(loud);
+        Assert.Equal(LogLevel.Information, info.Level);
+        Assert.Contains("Tour targets: 1", info.Message);
+        Assert.Contains("MainWindow", info.Message);
+
+#if DEBUG
+        Assert.Contains(logger.Entries, e => e.Level == LogLevel.Debug && e.Message.Contains("hunter2"));
+        Assert.Contains(logger.Entries, e => e.Level == LogLevel.Debug && e.Message.Contains("Anna"));
+#else
+        Assert.DoesNotContain(logger.Entries, e => e.Message.Contains("hunter2"));
+#endif
+    }
+
+    [Fact]
+    public async Task TheTourDump_PutsTheScanOnTheClipboardAsJson()
+    {
+        string? captured = null;
+        _clipboard.SetText(Arg.Do<string>(text => captured = text));
+        ScanOffersTheSentinel();
+        using var vm = CreateSut(WindowMode.Assistant);
+
+        await vm.DumpTourTargetsCommand.ExecuteAsync(null);
+
+        Assert.NotNull(captured);
+        using var parsed = JsonDocument.Parse(captured!);
+        var target = parsed.RootElement.GetProperty("Targets")[0];
+        Assert.Equal(SentinelId, target.GetProperty("AutomationId").GetString());
+        Assert.Equal(56d, target.GetProperty("Bounds").GetProperty("Width").GetDouble());
+    }
+
+    [Fact]
+    public async Task AClipboardFailure_DoesNotFailTheDump()
+    {
+        var logger = new CapturingLogger<MainWindowViewModel>();
+        _clipboard.When(c => c.SetText(Arg.Any<string>()))
+            .Do(_ => throw new InvalidOperationException("the clipboard is held by another process"));
+        ScanOffersTheSentinel();
+        using var vm = CreateSut(WindowMode.Assistant, logger);
+
+        await vm.DumpTourTargetsCommand.ExecuteAsync(null);
+
+        Assert.Contains(logger.Entries, e => e.Level == LogLevel.Information && e.Message.Contains("Tour targets: 1"));
+        var warning = Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
+        Assert.DoesNotContain("hunter2", warning.Message);
+        Assert.DoesNotContain("Anna", warning.Message);
     }
 }

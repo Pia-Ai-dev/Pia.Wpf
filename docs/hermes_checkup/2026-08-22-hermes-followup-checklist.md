@@ -140,7 +140,7 @@ Three steps can close work below them. Do not tick their dependants without revi
 
 ## D — Guided tour
 
-- [ ] **D1 · Visual-tree target collector + a debug command that dumps `targets`.**
+- [x] **D1 · Visual-tree target collector + a debug command that dumps `targets`.**
   Verifiable with no LLM in the loop.
   *Deps:* none · *Effort:* **S** · *Value:* **Enabler**
 
