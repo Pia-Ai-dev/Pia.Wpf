@@ -248,6 +248,7 @@
             <ui:Button Content="{Binding PauseLabel}" Command="{Binding PauseCommand}"
                        Appearance="Secondary" Padding="13,6" Margin="0,0,6,0"
                        FontSize="{StaticResource RunMetaSize}" FontWeight="SemiBold"
+                       AutomationProperties.AutomationId="Run_Pause"
                        Visibility="{Binding ShowPauseButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
             <!-- Budget-pause / user-pause Continue: the one sanctioned mutation on this read-only panel.
                  CanContinue hides it off both states; CanExecute also disables it (IsResuming) so a double-click
@@ -256,18 +257,21 @@
             <ui:Button Content="{Binding ContinueLabel}" Command="{Binding ContinueCommand}"
                        Appearance="Primary" Padding="15,7" Margin="0,0,6,0"
                        FontSize="{StaticResource RunMetaSize}" FontWeight="SemiBold"
+                       AutomationProperties.AutomationId="Run_Continue"
                        Visibility="{Binding ShowContinueButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
             <!-- The deny beside Continue, only on a tool-approval park: the one pause whose question has a
                  "no". Declining resumes the run with the tool recorded as denied; the re-run step adapts. -->
             <ui:Button Content="{loc:Str Run_Action_Deny}" Command="{Binding DeclineToolCommand}"
                        Appearance="Secondary" Padding="13,6" Margin="0,0,6,0"
                        FontSize="{StaticResource RunMetaSize}" FontWeight="SemiBold"
+                       AutomationProperties.AutomationId="Run_DenyTool"
                        Visibility="{Binding ShowDenyButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
             <!-- Reject beside Approve on a plan-approval park; settles the run to Cancelled with no re-dispatch,
                  so redirecting means an ordinary chat message afterward rather than an in-place edit. -->
             <ui:Button Content="{loc:Str Run_Action_RejectPlan}" Command="{Binding RejectPlanCommand}"
                        Appearance="Secondary" Padding="13,6" Margin="0,0,6,0"
                        FontSize="{StaticResource RunMetaSize}" FontWeight="SemiBold"
+                       AutomationProperties.AutomationId="Run_RejectPlan"
                        Visibility="{Binding ShowRejectPlanButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
             <!-- Batch 06 / plan D3: a failed or cancelled run's work is still in its workspace, so the panel
                  offers to publish it rather than promoting behind the user's back. A clean run never shows this —
@@ -275,12 +279,14 @@
             <ui:Button Content="{loc:Str Run_Action_Publish}" Command="{Binding PublishCommand}"
                        Appearance="Secondary" Padding="13,6"
                        FontSize="{StaticResource RunMetaSize}" FontWeight="SemiBold"
+                       AutomationProperties.AutomationId="Run_Publish"
                        Visibility="{Binding ShowPublishButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
           </StackPanel>
 
           <!-- The card's disclosure, last in the band so the actions keep their slot beside the text. -->
           <ToggleButton Grid.Column="4" Style="{StaticResource RunCardCollapseStyle}"
-                        IsChecked="{Binding IsCardExpanded}" Margin="6,0,0,0" />
+                        IsChecked="{Binding IsCardExpanded}" Margin="6,0,0,0"
+                        AutomationProperties.AutomationId="Run_CardToggle" />
         </Grid>
       </Border>
 
@@ -333,6 +339,7 @@
                        Foreground="{DynamicResource PiaAccentBrush}" />
             <ui:TextBox Text="{Binding NudgeText, UpdateSourceTrigger=PropertyChanged}"
                         PlaceholderText="{loc:Str Run_Nudge_Placeholder}" PlaceholderEnabled="True"
+                        AutomationProperties.AutomationId="Run_NudgeText"
                         MinHeight="30" FontSize="12" TextWrapping="Wrap" AcceptsReturn="True" />
             <TextBlock Text="{loc:Str Run_Nudge_Scope_Note}" Margin="0,5,0,0"
                        FontSize="10.5" TextWrapping="Wrap"
@@ -345,6 +352,7 @@
           <!-- Fold row. A long plan windows to the running step ±1 so the card cannot push the transcript off
                screen; clicking either fold unfolds the whole list in place. -->
           <Button Style="{StaticResource RunFoldRowStyle}" Command="{Binding ExpandStepWindowCommand}"
+                  AutomationProperties.AutomationId="Run_ShowEarlierSteps"
                   Visibility="{Binding EarlierFoldCount, Converter={StaticResource IntToVisibilityConverter}}">
             <StackPanel Orientation="Horizontal">
               <ui:SymbolIcon Symbol="MoreVertical24" FontSize="12" Width="16" Margin="0,0,9,0"
@@ -467,6 +475,7 @@
                           <Button Style="{StaticResource RunVerbButtonStyle}" Margin="0,0,2,0"
                                   ToolTip="{loc:Str Run_Plan_Action_Edit}"
                                   IsEnabled="{Binding IsMutable}"
+                                  AutomationProperties.AutomationId="{Binding StepId, StringFormat='Run_StepEdit_{0}'}"
                                   Command="{Binding DataContext.EditStepCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                   CommandParameter="{Binding}">
                             <ui:SymbolIcon Symbol="Edit24" FontSize="11" />
@@ -474,6 +483,7 @@
                           <Button Style="{StaticResource RunVerbButtonStyle}" Margin="0,0,2,0"
                                   ToolTip="{loc:Str Run_Plan_Action_Insert}"
                                   IsEnabled="{Binding IsMutable}"
+                                  AutomationProperties.AutomationId="{Binding StepId, StringFormat='Run_StepInsertBelow_{0}'}"
                                   Command="{Binding DataContext.InsertStepBelowCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                   CommandParameter="{Binding}">
                             <ui:SymbolIcon Symbol="Add24" FontSize="11" />
@@ -481,6 +491,7 @@
                           <Button Style="{StaticResource RunVerbButtonStyle}" Margin="0,0,2,0"
                                   ToolTip="{loc:Str Run_Plan_Action_MoveUp}"
                                   IsEnabled="{Binding IsMutable}"
+                                  AutomationProperties.AutomationId="{Binding StepId, StringFormat='Run_StepMoveUp_{0}'}"
                                   Command="{Binding DataContext.MoveStepUpCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                   CommandParameter="{Binding}">
                             <ui:SymbolIcon Symbol="ChevronUp24" FontSize="10" />
@@ -488,6 +499,7 @@
                           <Button Style="{StaticResource RunVerbButtonStyle}" Margin="0,0,2,0"
                                   ToolTip="{loc:Str Run_Plan_Action_MoveDown}"
                                   IsEnabled="{Binding IsMutable}"
+                                  AutomationProperties.AutomationId="{Binding StepId, StringFormat='Run_StepMoveDown_{0}'}"
                                   Command="{Binding DataContext.MoveStepDownCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                   CommandParameter="{Binding}">
                             <ui:SymbolIcon Symbol="ChevronDown24" FontSize="10" />
@@ -495,6 +507,7 @@
                           <Button Style="{StaticResource RunVerbButtonStyle}"
                                   ToolTip="{loc:Str Run_Plan_Action_Skip}"
                                   IsEnabled="{Binding IsMutable}"
+                                  AutomationProperties.AutomationId="{Binding StepId, StringFormat='Run_StepSkip_{0}'}"
                                   Command="{Binding DataContext.SkipStepCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                   CommandParameter="{Binding}">
                             <ui:SymbolIcon Symbol="Prohibited24" FontSize="11" />
@@ -534,19 +547,23 @@
                         <ui:TextBox Grid.Row="1" Grid.ColumnSpan="2" Margin="0,0,0,5"
                                     Text="{Binding EditTitle, UpdateSourceTrigger=PropertyChanged}"
                                     PlaceholderText="{loc:Str Run_Plan_Edit_Title}" PlaceholderEnabled="True"
+                                    AutomationProperties.AutomationId="{Binding StepId, StringFormat='Run_StepEditTitle_{0}'}"
                                     FontSize="12" />
                         <ui:TextBox Grid.Row="2" Grid.ColumnSpan="2" Margin="0,0,0,7" MinHeight="44"
                                     Text="{Binding EditIntent, UpdateSourceTrigger=PropertyChanged}"
                                     PlaceholderText="{loc:Str Run_Plan_Edit_Intent}" PlaceholderEnabled="True"
+                                    AutomationProperties.AutomationId="{Binding StepId, StringFormat='Run_StepEditIntent_{0}'}"
                                     FontSize="{StaticResource RunMetaSize}" TextWrapping="Wrap" AcceptsReturn="True" />
                         <ui:Button Grid.Row="3" Grid.Column="0" HorizontalAlignment="Right" Margin="0,0,6,0"
                                    Content="{loc:Str Common_Cancel}" Appearance="Transparent"
                                    Padding="10,5" FontSize="{StaticResource RunMetaSize}"
+                                   AutomationProperties.AutomationId="{Binding StepId, StringFormat='Run_StepEditCancel_{0}'}"
                                    Command="{Binding DataContext.CancelStepEditCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                    CommandParameter="{Binding}" />
                         <ui:Button Grid.Row="3" Grid.Column="1"
                                    Content="{loc:Str Common_Save}" Appearance="Primary"
                                    Padding="12,5" FontSize="{StaticResource RunMetaSize}" FontWeight="SemiBold"
+                                   AutomationProperties.AutomationId="{Binding StepId, StringFormat='Run_StepEditSave_{0}'}"
                                    Command="{Binding DataContext.SaveStepEditCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                    CommandParameter="{Binding}" />
                       </Grid>
@@ -558,6 +575,7 @@
           </ItemsControl>
 
           <Button Style="{StaticResource RunFoldRowStyle}" Command="{Binding ExpandStepWindowCommand}"
+                  AutomationProperties.AutomationId="Run_ShowLaterSteps"
                   Visibility="{Binding LaterFoldCount, Converter={StaticResource IntToVisibilityConverter}}">
             <StackPanel Orientation="Horizontal">
               <ui:SymbolIcon Symbol="MoreVertical24" FontSize="12" Width="16" Margin="0,0,9,0"
@@ -620,6 +638,7 @@
                  opens a section, which no test in the suite reaches. That is also why the empty state binds the
                  VM's own HasNoTimeline bool instead of introducing an inverse converter. -->
             <ToggleButton Style="{StaticResource RunSectionHeaderStyle}"
+                          AutomationProperties.AutomationId="Run_TimelineToggle"
                           IsChecked="{Binding IsTimelineExpanded}">
               <Grid>
                 <Grid.ColumnDefinitions>
@@ -742,6 +761,7 @@
                     Visibility="{Binding HasChildren, Converter={StaticResource BooleanToVisibilityConverter}}">
               <StackPanel>
                 <ToggleButton Style="{StaticResource RunSectionHeaderStyle}"
+                              AutomationProperties.AutomationId="Run_ChildrenToggle"
                               IsChecked="{Binding IsChildrenExpanded}">
                   <StackPanel Orientation="Horizontal">
                     <TextBlock Text="{loc:Str Run_Children_Header}" VerticalAlignment="Center"
@@ -759,6 +779,7 @@
                     <DataTemplate>
                       <StackPanel>
                         <ToggleButton Style="{StaticResource RunSectionHeaderStyle}" Padding="0,6"
+                                      AutomationProperties.AutomationId="{Binding RunId, StringFormat='Run_ChildToggle_{0}'}"
                                       IsChecked="{Binding IsExpanded}">
                           <Grid>
                             <Grid.ColumnDefinitions>

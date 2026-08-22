@@ -59,6 +59,14 @@ whichever surface happened to be open. This closes the `TodoPanelControl` entry 
 `AssistantView` nested-view gap list (it is still a nested-view *stop* when walking `AssistantView`
 itself — only its own `[InlineData]` row was missing).
 
+**Slice 6** (this session, in progress): `E2`/`E4`/`E7`/`E9` of the composer-adjacent group,
+audited in parallel first per the "audit before estimating" rule — `RunProgressPanel` turned out
+to hold 21 controls (not a guess), `PiaChatQuickSwitcher` exactly 1, `AutocompletePopup` 0 (audit
+led straight to dropping it, no code change), `PiaReasoningView` exactly 1 (and turned out to have
+no `Expander` despite the checklist's description). `E8` (the chip family) is still open — its
+audit surfaced a real identity design question (see its entry) that needed a separate decision
+before writing code.
+
 **Excluded, not just deferred** — `NavigationSidebarView`: its 12 `NavItem_*` buttons already all
 carry ids (verified by hand), but they hang off `ui:NavigationView.MenuItems`, which
 `LogicalTreeHelper` reports zero children for — a test row here would pass at a vacuous floor of
@@ -177,25 +185,42 @@ mechanism too, and it already has an id.
   ManageToolPermissions in `ActionCardControl` (G2) — both still open, not closed by this item.
   Highest-traffic item in this whole checklist: every assistant reply renders this.
   *Deps:* none · *Effort:* **M** (313 lines, 7 distinct actions) · *Value:* **High**
-- [ ] **E2 · `RunProgressPanel`.** The pinned run-progress panel (agent run state, plan-approval).
-  850 lines — audit before estimating further; likely several distinct action buttons.
+- [x] **E2 · `RunProgressPanel`.** 850 lines, 21 walker-visible controls — measured, not guessed.
+  11 root-level literal ids (`Run_Pause`/`_Continue`/`_DenyTool`/`_RejectPlan`/`_Publish`,
+  `Run_CardToggle`, `Run_NudgeText`, `Run_ShowEarlierSteps`/`_ShowLaterSteps`,
+  `Run_TimelineToggle`/`_ChildrenToggle`), 9 per-step (keyed on `StepRowViewModel.StepId`):
+  `Run_StepEdit_<id>`/`_StepInsertBelow_<id>`/`_StepMoveUp_<id>`/`_StepMoveDown_<id>`/
+  `_StepSkip_<id>`/`_StepEditTitle_<id>`/`_StepEditIntent_<id>`/`_StepEditCancel_<id>`/
+  `_StepEditSave_<id>`, and 1 per-child-run (keyed on `ChildRunRowViewModel.RunId`):
+  `Run_ChildToggle_<id>`. `PiaPersonaAvatar` is a genuine nested-view stop one level below the
+  Steps template root, not the sweep hazard. A second `ItemsControl` (`LastStepView`) reuses the
+  Steps template via a `Binding`, not a literal `DataTemplate`, so the walker never expands it —
+  the ids on the Steps template cover it for free at runtime with no separate handling needed.
   *Deps:* none · *Effort:* **M** · *Value:* **High**
 - [ ] **E3 · `PiaChatTitleChip`.** 512 lines, chat-title editing chip in the composer header.
   *Deps:* none · *Effort:* **M** · *Value:* **Med**
-- [ ] **E4 · `PiaChatQuickSwitcher`.** Chat switcher popup; only 1 interactive-type hit — likely
-  cheap once opened.
+- [x] **E4 · `PiaChatQuickSwitcher`.** Measured at exactly 1 control (`QueryBox`, the search input);
+  its `ListBox`/`ListBoxItem` match list is not a walker-recognized type, same exclusion reasoning
+  as `NavigationSidebarView`. Ided `QuickSwitcher_Query` — its own prefix, not `AssistantChat_`,
+  since nothing else needs disambiguating from it.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
 - [ ] **E5 · `VoiceModeOverlay`.** Voice-mode full overlay, 0 ids today.
   *Deps:* none · *Effort:* **S** · *Value:* **Med**
 - [ ] **E6 · `DirectTranscriptionOverlay`.** 546 lines, 0 ids today — the largest overlay on this
   list.
   *Deps:* none · *Effort:* **M** · *Value:* **Med**
-- [ ] **E7 · `AutocompletePopup`.** The `@`-command popup in the composer.
+- [x] **E7 · `AutocompletePopup`.** Audited, dropped — same shape as `J2`. Its only interactive
+  surface is a `ListBox`/`ListBoxItem` match list, neither a walker-recognized type; zero
+  walker-visible controls, so a test row would sit at a vacuous floor of 0. No ids added, no row.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
 - [ ] **E8 · `PiaSuggestionChips`, `PiaFileChip`, `PiaSourceChip`, `PiaChipOverflowPanel`,
   `PiaAgentModeChip`.** Small chip controls rendered inside assistant messages / the composer.
   *Deps:* E1 (same message surface) · *Effort:* **S** total · *Value:* **Med**
-- [ ] **E9 · `PiaReasoningView`.** The collapsible chain-of-thought view (contains an `Expander`).
+- [x] **E9 · `PiaReasoningView`.** No `Expander` despite the description — the collapse is hand-rolled
+  via a bool + `Visibility` triggers. Exactly 1 control, the collapsed-state toggle button, reused
+  per assistant reply (same DataContext as `PiaAnswerToolbar`/E1) — keyed on `AssistantMessage.Id`:
+  `Reasoning_Toggle_<id>`. Own prefix, not `Answer_`, since it is a materially different affordance
+  from the reply toolbar it sits beside.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
 
 ## F — Assistant History (`AssistantHistoryView` already has 4 ids for import/export/help; the

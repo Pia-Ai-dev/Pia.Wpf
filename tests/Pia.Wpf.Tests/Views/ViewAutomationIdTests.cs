@@ -71,6 +71,9 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Controls.AssistantHistory.PiaAssistantChatGroupCard), 1, 1, "PiaAssistantChatRowContent")]
     [InlineData(typeof(Pia.Views.TodoView), 9, 5, "PiaTodoHeader,PiaTodoSearchBar")]
     [InlineData(typeof(Pia.Views.TodoPanelControl), 6, 1, "")]
+    [InlineData(typeof(Pia.Controls.Assistant.PiaChatQuickSwitcher), 1, 0, "")]
+    [InlineData(typeof(Pia.Controls.Chat.PiaReasoningView), 1, 1, "")]
+    [InlineData(typeof(Pia.Controls.Assistant.RunProgressPanel), 21, 10, "PiaPersonaAvatar")]
     public void EveryInteractiveControl_CarriesAnAutomationId(
         Type viewType, int minimumInspected, int minimumPerItemIds, string expectedNestedViews)
     {
