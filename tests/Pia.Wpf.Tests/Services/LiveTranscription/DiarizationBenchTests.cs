@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Pia.Services.LiveTranscription;
 using Pia.Tests.TestInfrastructure;
+using Pia.ViewModels;
 using Xunit;
 
 namespace Pia.Tests.Services.LiveTranscription;
@@ -82,6 +83,11 @@ public class DiarizationBenchTests
             File.WriteAllLines(Path.Combine(outDir, $"{name}.{tag}.passes.log"), passLines);
             written.Add(segmentsPath);
 
+            var rendered = DiarizationBench.RenderedLabels(segments);
+            var renderedPath = Path.Combine(outDir, $"{name}.{tag}.rendered.segments.jsonl");
+            DiarizationBench.WriteSegments(renderedPath, segments, s => rendered[s]);
+            written.Add(renderedPath);
+
             var passes = passLines.Select(l => PassLine.Match(l)).Where(m => m.Success).ToList();
             var thresholds = passes.Select(m => Number(m.Groups[3].Value)).ToList();
             // A parse miss would report a threshold trace of zeros, which reads like a stuck policy.
@@ -102,6 +108,9 @@ public class DiarizationBenchTests
                 + $"{gated.Count(s => s.FinalLabel is null)} unlabelled");
             Say($"  corrected: {gated.Count(s => s.Label != s.FinalLabel)} segments whose final label "
                 + "differs from the one shown live");
+            var inherited = segments.Count(s => s.FinalLabel is null && rendered[s] is not null);
+            Say($"  rendered : {inherited} unlabelled segments inherit the previous bubble's speaker, "
+                + $"{segments.Count(s => rendered[s] is null)} render unattributed");
         }
 
         Assert.Equal(written.Count, written.Distinct(StringComparer.OrdinalIgnoreCase).Count());
@@ -193,6 +202,7 @@ public class DiarizationBenchTests
         say($"embedding  : intra {similarity.IntraMean:F3} ± {similarity.IntraStdDev:F3}, "
             + $"inter {similarity.InterMean:F3} ± {similarity.InterStdDev:F3}, d' {similarity.DPrime:F2}");
         say($"best fixed threshold {similarity.BestThreshold:F3}, pair-decision error {similarity.PairErrorRate:P1}");
+        AppendInheritance(say, segments, reference);
         AppendPairSeparation(say, truthful, reference.Speakers);
 
         var enrollSeconds = double.TryParse(
@@ -211,6 +221,71 @@ public class DiarizationBenchTests
         var pinned = DiarizationOracle.PinnedClusterer(truthful, reference.Speakers.Length);
         say($"ORACLE clusterer (k = {reference.Speakers.Length} true talkers): {pinned.BySegment:P1} by segment, "
             + $"{pinned.ByDuration:P1} by duration");
+    }
+
+    /// <summary>
+    /// Scores the bubble inheritance the attribution metric structurally cannot see: an unlabelled
+    /// segment leaves the metric's denominator but still renders under the previous speaker's name.
+    /// Needs the true label the inherited one stands in for, so it maps each cluster label to the
+    /// speaker it covers most, exactly as the scorer's confusion matrix does.
+    /// </summary>
+    private static void AppendInheritance(
+        Action<string> say, List<BenchSegment> segments, SpeakerReference reference)
+    {
+        say(string.Empty);
+        say($"AS RENDERED: the bubble window is wall clock in the app and stream time here, so the "
+            + "shorter window bounds the modelling gap on a replay");
+        // 10 s is well under the ~21 s of stream the app's 25 s covers at the fixture's 0.83x replay
+        // rate; agreement across the two is what makes this independent of the approximation.
+        foreach (var window in new[] { (double)TranscriptOverlayViewModel.BubbleWindowSeconds, 10d })
+            AppendInheritanceAt(say, segments, reference, window);
+    }
+
+    private static void AppendInheritanceAt(
+        Action<string> say, List<BenchSegment> segments, SpeakerReference reference, double window)
+    {
+        var rendered = DiarizationBench.RenderedLabels(segments, window);
+        var inherited = segments.Where(s => s.FinalLabel is null && rendered[s] is not null).ToList();
+        say($"  window {window:F0} s: {inherited.Count} of {segments.Count} segments carry no label of "
+            + "their own and inherit the previous bubble's speaker");
+        if (inherited.Count == 0) return;
+
+        // Greedy label → speaker, most seconds first, one speaker per label.
+        var seconds = new Dictionary<(string Label, string Speaker), double>();
+        foreach (var s in segments)
+        {
+            if (s.FinalLabel is null) continue;
+            if (DiarizationOracle.TruthAt(reference, s.MidSeconds) is not { } who) continue;
+            var key = (s.FinalLabel, who);
+            seconds[key] = seconds.GetValueOrDefault(key) + s.DurationSeconds;
+        }
+        var speakerByLabel = new Dictionary<string, string>(StringComparer.Ordinal);
+        var taken = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var ((label, who), _) in seconds.OrderByDescending(kv => kv.Value))
+        {
+            if (speakerByLabel.ContainsKey(label) || taken.Contains(who)) continue;
+            speakerByLabel[label] = who;
+            taken.Add(who);
+        }
+
+        int right = 0, wrong = 0, unscoreable = 0;
+        double rightSeconds = 0, wrongSeconds = 0;
+        foreach (var s in inherited)
+        {
+            var who = DiarizationOracle.TruthAt(reference, s.MidSeconds);
+            if (who is null || !speakerByLabel.TryGetValue(rendered[s]!, out var claimed))
+            {
+                unscoreable++;
+                continue;
+            }
+            if (claimed == who) { right++; rightSeconds += s.DurationSeconds; }
+            else { wrong++; wrongSeconds += s.DurationSeconds; }
+        }
+        var scored = right + wrong;
+        say($"    scoreable {scored}: {(scored == 0 ? 0 : (double)right / scored):P1} inherit the right "
+            + $"speaker ({right} right / {wrong} wrong, {rightSeconds:F1} s / {wrongSeconds:F1} s), "
+            + $"{unscoreable} unscoreable. A wrong one is an attribution error the label metric never "
+            + "counts — it leaves the denominator and still appears in the transcript.");
     }
 
     private static void AppendPairSeparation(

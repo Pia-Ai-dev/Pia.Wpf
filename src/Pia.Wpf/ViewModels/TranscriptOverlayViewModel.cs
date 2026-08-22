@@ -33,7 +33,7 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
 {
     private const int MaxBubbles = 200;
     private const int TrimBatch = 20;
-    private const int BubbleWindowSeconds = 25;
+    internal const int BubbleWindowSeconds = 25;
     private const int SpeakerColorPaletteSize = 5;
     private const int MaxVaultReferenceAttempts = 50;
 

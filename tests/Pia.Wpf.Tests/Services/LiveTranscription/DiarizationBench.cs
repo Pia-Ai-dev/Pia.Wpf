@@ -20,6 +20,7 @@ internal sealed class DiarizationBench
 {
     // The engine gates diarization at 1.5 s before the service ever sees a segment.
     private const int MinDiarizationSamples = 16000 * 3 / 2;
+    private const int BubbleWindowSeconds = Pia.ViewModels.TranscriptOverlayViewModel.BubbleWindowSeconds;
     private static readonly DateTimeOffset ClockEpoch = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     /// <summary>Decodes the recording through the same reader and hop resampler the replay path uses,
@@ -99,18 +100,52 @@ internal sealed class DiarizationBench
         public void Dispose() { }
     }
 
-    public static void WriteSegments(string path, IEnumerable<BenchSegment> segments)
+    public static void WriteSegments(
+        string path, IEnumerable<BenchSegment> segments, Func<BenchSegment, string?>? label = null)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         using var writer = new StreamWriter(path);
         foreach (var s in segments)
         {
-            if (s.SampleCount < MinDiarizationSamples) continue;
+            // A caller supplying its own label is asking about what the UI renders, which includes the
+            // segments the diarizer never saw.
+            if (label is null && s.SampleCount < MinDiarizationSamples) continue;
             writer.WriteLine(string.Format(
                 CultureInfo.InvariantCulture,
                 "{{\"startSeconds\":{0:F3},\"durationSeconds\":{1:F3},\"label\":{2},\"finalLabel\":{3}}}",
-                s.StartSeconds, s.DurationSeconds, Quote(s.Label), Quote(s.FinalLabel)));
+                s.StartSeconds, s.DurationSeconds, Quote(s.Label), Quote(label is null ? s.FinalLabel : label(s))));
         }
+    }
+
+    /// <summary>
+    /// The label the transcript actually shows for each segment. TranscriptOverlayViewModel merges an
+    /// unlabelled utterance into the in-window bubble before it, so a segment the diarizer refused to
+    /// place still renders under whoever spoke last — an attribution no label-based metric can see.
+    /// Modelled in stream time, where the ViewModel uses utterance arrival, so this merges at least as
+    /// eagerly as the app does.
+    /// </summary>
+    public static Dictionary<BenchSegment, string?> RenderedLabels(
+        IEnumerable<BenchSegment> segments, double windowSeconds = BubbleWindowSeconds)
+    {
+        var rendered = new Dictionary<BenchSegment, string?>();
+        double bubbleStart = 0;
+        string? bubbleLabel = null;
+        var open = false;
+        foreach (var s in segments)
+        {
+            var inWindow = open && s.StartSeconds - bubbleStart < windowSeconds;
+            if (inWindow && (string.Equals(s.FinalLabel, bubbleLabel, StringComparison.Ordinal)
+                             || (string.IsNullOrWhiteSpace(s.FinalLabel) && !string.IsNullOrWhiteSpace(bubbleLabel))))
+            {
+                rendered[s] = bubbleLabel;
+                continue;
+            }
+            bubbleStart = s.StartSeconds;
+            bubbleLabel = s.FinalLabel;
+            open = true;
+            rendered[s] = bubbleLabel;
+        }
+        return rendered;
     }
 
     private static string Quote(string? value) => value is null ? "null" : $"\"{value}\"";
