@@ -1078,6 +1078,19 @@ public class MeetingAttendeeViewModelTests
     }
 
     [Fact]
+    public void SuppressSpeakerLabels_LeavesANewBubbleUnlabelled_WhenAlreadyOnBeforeItArrives()
+    {
+        // The production order: the setting is read when the reader starts, so every bubble in a real
+        // session is created with suppression already on, not toggled on afterwards.
+        var (vm, _) = CreateSut();
+        vm.SuppressSpeakerLabels = true;
+
+        Utter(vm, "Speaker 4", "a", 0);
+
+        Assert.Null(Assert.Single(vm.Bubbles).DisplayLabel);
+    }
+
+    [Fact]
     public void SuppressSpeakerLabels_HidesARenamedSpeakerToo()
     {
         var (vm, _) = CreateSut();

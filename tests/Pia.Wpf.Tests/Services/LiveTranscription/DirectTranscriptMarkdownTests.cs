@@ -18,7 +18,7 @@ public class DirectTranscriptMarkdownTests
     private static TranscriptBubble MakeBubble(
         TranscriptSpeaker speaker, string text, string? speakerLabel, DateTimeOffset start, DateTimeOffset end)
     {
-        var bubble = new TranscriptBubble(speaker, start, text, speakerLabel)
+        var bubble = new TranscriptBubble(speaker, start, text, speakerLabel, displayLabel: speakerLabel)
         {
             EndTimestamp = end,
         };

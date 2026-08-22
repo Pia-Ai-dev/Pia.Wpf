@@ -54,7 +54,7 @@ public sealed partial class TranscriptBubble : ObservableObject
         _endTimestamp = startTimestamp;
         _text = text ?? string.Empty;
         _speakerLabel = speakerLabel;
-        _displayLabel = displayLabel ?? speakerLabel;
+        _displayLabel = displayLabel;
     }
 
     public void Append(string text, DateTimeOffset endTimestamp)
