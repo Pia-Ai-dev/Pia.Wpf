@@ -41,9 +41,10 @@ public class DiarizationBenchTests
             ?? LiveTranscriptionModels.SpeakerEmbeddingModelPath;
         var referencePath = Environment.GetEnvironmentVariable("PIA_BENCH_REFERENCE");
         var splitSpec = Environment.GetEnvironmentVariable("PIA_BENCH_SPLIT");
-        var settings = string.IsNullOrWhiteSpace(splitSpec)
-            ? ParseThresholds(Environment.GetEnvironmentVariable("PIA_BENCH_MATCH"))
-            : ParseSplits(splitSpec);
+        var youngSpec = Environment.GetEnvironmentVariable("PIA_BENCH_YOUNG");
+        var settings = !string.IsNullOrWhiteSpace(youngSpec) ? ParseYoung(youngSpec)
+            : !string.IsNullOrWhiteSpace(splitSpec) ? ParseSplits(splitSpec)
+            : ParseThresholds(Environment.GetEnvironmentVariable("PIA_BENCH_MATCH"));
 
         Directory.CreateDirectory(outDir);
         var name = Path.GetFileNameWithoutExtension(wav);
@@ -255,6 +256,28 @@ public class DiarizationBenchTests
     /// what the mint branch reads as a voice it has not heard — so this counts how many mints sit on a
     /// segment the reference says is more than one person, before anything is built on the idea.
     /// </summary>
+    /// <summary>
+    /// Young-centroid damping, one bench run each: <c>segments:penalty</c>, or <c>0</c> for the
+    /// control. Measured on the shipping split, so the two levers are read together rather than
+    /// against different partitions.
+    /// </summary>
+    private static List<(string Tag, AdaptiveSpeakerOptions Options)> ParseYoung(string spec)
+    {
+        var parsed = new List<(string, AdaptiveSpeakerOptions)>();
+        foreach (var entry in spec.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = entry.Split(':', StringSplitOptions.TrimEntries);
+            var segments = int.Parse(parts[0], CultureInfo.InvariantCulture);
+            var penalty = parts.Length > 1
+                ? float.Parse(parts[1], CultureInfo.InvariantCulture)
+                : 0f;
+            parsed.Add((
+                $"young-{entry.Replace(':', '-')}",
+                new AdaptiveSpeakerOptions { YoungCentroidSegments = segments, YoungCentroidPenalty = penalty }));
+        }
+        return parsed;
+    }
+
     private static void AppendMintSites(
         Action<string> say, List<BenchSegment> segments, SpeakerReference reference)
     {
@@ -294,18 +317,58 @@ public class DiarizationBenchTests
         // rate; agreement across the two is what makes this independent of the approximation.
         foreach (var window in new[] { (double)TranscriptOverlayViewModel.BubbleWindowSeconds, 10d })
             AppendInheritanceAt(say, segments, reference, window);
+        AppendNearestCentroidAlternative(say, segments, reference);
     }
 
-    private static void AppendInheritanceAt(
-        Action<string> say, List<BenchSegment> segments, SpeakerReference reference, double window)
+    /// <summary>
+    /// The other way to attribute a segment the clustering floor rejected: put it with the voice it
+    /// sounds most like, rather than with whoever happened to speak before it. Scored against the same
+    /// unlabelled set the bubble rule inherits, so the two are directly comparable.
+    /// </summary>
+    private static void AppendNearestCentroidAlternative(
+        Action<string> say, List<BenchSegment> segments, SpeakerReference reference)
     {
-        var rendered = DiarizationBench.RenderedLabels(segments, window);
-        var inherited = segments.Where(s => s.FinalLabel is null && rendered[s] is not null).ToList();
-        say($"  window {window:F0} s: {inherited.Count} of {segments.Count} segments carry no label of "
-            + "their own and inherit the previous bubble's speaker");
-        if (inherited.Count == 0) return;
+        var sums = new Dictionary<string, float[]>(StringComparer.Ordinal);
+        foreach (var s in segments)
+        {
+            if (s.FinalLabel is null || s.Embedding is null) continue;
+            if (!sums.TryGetValue(s.FinalLabel, out var sum))
+                sums[s.FinalLabel] = sum = new float[s.Embedding.Length];
+            for (int d = 0; d < sum.Length; d++) sum[d] += s.Embedding[d];
+        }
+        if (sums.Count == 0) return;
 
-        // Greedy label → speaker, most seconds first, one speaker per label.
+        var speakerByLabel = MapLabelsToSpeakers(segments, reference);
+        int right = 0, wrong = 0, unscoreable = 0;
+        foreach (var s in segments)
+        {
+            if (s.FinalLabel is not null || s.Embedding is null) continue;
+            var who = DiarizationOracle.TruthAt(reference, s.MidSeconds);
+            if (who is null) { unscoreable++; continue; }
+
+            string? best = null;
+            var bestSim = float.NegativeInfinity;
+            foreach (var (label, sum) in sums)
+            {
+                float dot = 0, norm = 0;
+                for (int d = 0; d < sum.Length; d++) { dot += sum[d] * s.Embedding[d]; norm += sum[d] * sum[d]; }
+                var sim = norm <= 1e-12f ? 0f : dot / MathF.Sqrt(norm);
+                if (sim > bestSim) { bestSim = sim; best = label; }
+            }
+            if (best is null || !speakerByLabel.TryGetValue(best, out var claimed)) { unscoreable++; continue; }
+            if (claimed == who) right++; else wrong++;
+        }
+
+        var scored = right + wrong;
+        say($"  nearest centroid instead of the previous bubble: "
+            + $"{(scored == 0 ? 0 : (double)right / scored):P1} over {scored} scoreable "
+            + $"({right} right / {wrong} wrong, {unscoreable} unscoreable)");
+    }
+
+    /// <summary>Greedy label → speaker by seconds, one speaker per label — the scorer's own mapping.</summary>
+    private static Dictionary<string, string> MapLabelsToSpeakers(
+        List<BenchSegment> segments, SpeakerReference reference)
+    {
         var seconds = new Dictionary<(string Label, string Speaker), double>();
         foreach (var s in segments)
         {
@@ -322,7 +385,19 @@ public class DiarizationBenchTests
             speakerByLabel[label] = who;
             taken.Add(who);
         }
+        return speakerByLabel;
+    }
 
+    private static void AppendInheritanceAt(
+        Action<string> say, List<BenchSegment> segments, SpeakerReference reference, double window)
+    {
+        var rendered = DiarizationBench.RenderedLabels(segments, window);
+        var inherited = segments.Where(s => s.FinalLabel is null && rendered[s] is not null).ToList();
+        say($"  window {window:F0} s: {inherited.Count} of {segments.Count} segments carry no label of "
+            + "their own and inherit the previous bubble's speaker");
+        if (inherited.Count == 0) return;
+
+        var speakerByLabel = MapLabelsToSpeakers(segments, reference);
         int right = 0, wrong = 0, unscoreable = 0;
         double rightSeconds = 0, wrongSeconds = 0;
         foreach (var s in inherited)

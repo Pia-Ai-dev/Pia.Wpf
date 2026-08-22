@@ -1239,3 +1239,364 @@ whole. Untested — but it is exactly the operation the table above performs by 
 - The transcript ran on **whisper-tiny**, not the medium model the earlier sections used. Diarization
   is upstream of the text, so this touches no number here; it does mean the transcript itself is
   near-useless, and one segment produced an empty result.
+
+# 2026-08-22 (evening) — the lever campaign
+
+Origin: [2026-08-22-attribution-levers-brief.md](2026-08-22-attribution-levers-brief.md). Branch
+`feature/attribution-levers`, off `feature/speaker-attribution` after the step-0 merge.
+
+Everything below is measured. Where a number is bench-only it says so; where an app replay confirmed
+it, the replay is quoted alongside.
+
+## Step 0 — the merge, verified by reproduction
+
+`feature/diarization-threshold` merged in. Conflicts were confined to `Measure-SpeakerAttribution.ps1`
+and two docs, and both sides were purely additive: `-StreamOriginSeconds` alongside `-Provisional`,
+both `PIA_BENCH_*` variables in the playbook, and its trap list merged to ten.
+
+The merge was verified at the **segment** level rather than by reproducing a headline. The merged bench
+at default options writes segment files byte-identical to the pre-merge baselines on all three
+recordings — a stronger statement than a percentage matching to one decimal, because it cannot be
+satisfied by two offsetting changes. All 21 bench cells and all four app runs then reproduced exactly.
+
+One near-miss worth recording: the first workshop bench ran at roster 8 where the baseline used 10. The
+segment diff caught it; a percentage would not have.
+
+## The finding that is not an optimisation: what the transcript actually shows
+
+The brief listed this as unexamined and worth more than any percentage point in it. Both are true.
+
+`TranscriptOverlayViewModel.GetOrCreateBubble` merges an unlabelled utterance into the in-window bubble
+before it — deliberately, and documented: a two-word interjection is not worth splitting a bubble over.
+So a segment the diarizer refused to place still renders under whoever spoke last, and because the
+attribution metric scores labels, that segment leaves the denominator and the wrong name it was handed
+is never counted.
+
+The bench is the only place that can see it. Below the 1.5 s gate there is no identify line and so no
+logged position, but every VAD segment has one in memory; `RenderedLabels` replays the ViewModel's rule
+over all of them and writes a second segments file, so the existing scorer measures the user-visible
+attribution with no scorer change at all.
+
+How often the inheritance is right:
+
+| | inherited | scoreable | right | wrong | correct |
+|---|---|---|---|---|---|
+| LSP | 78 of 537 | 61 | 47 | 14 | **77.0 %** |
+| workshop | 34 of 234 | 29 | 17 | 12 | **58.6 %** |
+| testmeeting | 28 of 84 | 20 | 4 | 16 | **20.0 %** |
+
+Twenty per cent is worse than guessing among four speakers. And scored as rendered, `testmeeting` reads
+**58.7 %** where the labelled-only metric reads 78.6 % — a 19.9-point gap that was structurally
+invisible. Workshop loses 5.1 points, LSP 1.6.
+
+The one modelling assumption is bounded rather than waved away. The app's window is wall clock at STT
+completion and this is stream time, so on a 0.83x replay it merges *more* eagerly than the app;
+reporting a 10 s window beside the shipping 25 s moves the ratio by at most 1.4 points on any
+recording. The conclusion does not depend on the approximation.
+
+Nothing was changed here. This is the measurement that says lever 6's floor question is about a defect,
+not a percentage point — and it is the one item in this campaign worth fixing even if every other lever
+refused.
+
+## A harness bug, and the direction it flattered
+
+A pass runs inside the identify call that triggered it and can reassign that very segment. The bench
+registered a segment in its id map only *after* the call returned, so the handler could not find it —
+and then overwrote `FinalLabel` with the provisional label anyway.
+
+Caught by reading the log against the output rather than trusting either: the passes log said segment
+63 went to `Speaker 10`, the segments file said `Speaker 9`. Three LSP segments and one testmeeting
+segment were affected.
+
+Four segments, and they mattered out of all proportion, because they were the only members of their
+labels. **LSP's bench baseline read seven final labels for five talkers when the last pass knew five** —
+inflating precisely the metric acceptance criterion 2 rests on, in the direction that flatters a
+splitter. It is now trap 11 in the playbook.
+
+The fix touches bookkeeping only, and that is checked rather than asserted: against the pre-merge
+baseline, segmentation and every provisional label stay byte-identical on all three recordings, and
+only `finalLabel` moves — on 4 LSP segments and 1 testmeeting segment.
+
+## Lever 1 — the split-candidate pass
+
+The route to the result is worth as much as the result.
+
+**What it does.** After the global cut, each cluster's own dendrogram is cut one merge short of the
+root, and the split is kept when the tighter half's self-similarity leads the halves'
+cross-similarity by a margin — the same statistic the bench prints for a recording's closest pair, so
+the setting is directly comparable to the measured 0.103 / 0.166 / 0.215.
+
+**First shape, and why it was wrong.** The first version won big and for the wrong reason.
+`split-0.12:8:3:0` scored exactly the shipping 34/42 on testmeeting and `split-0.12:8:3:1` scored
+39/42 — every point came from raising the roster ceiling by one, not from the split criterion. That is
+a ceiling override wearing a split's clothes; it would inflate the label count on every meeting
+including those with no confusable pair, and all three fixtures happen to have one, so the bench could
+never have shown it.
+
+The diagnostic was already in hand: testmeeting sits at its ceiling holding slots with 4.1 s and 2.1 s
+of speech. The slot the split needs is there, being wasted.
+
+**The ordering matters, and the wrong order is the intuitive one.** Absorbing fragments *before*
+considering splits frees a slot but folds the fragment into the very cluster about to be split; no
+margin from 0.02 to 0.15 recovers testmeeting's split afterwards, the best is 36/42, and the count
+falls to 3 labels for 4 talkers — which loses a speaker their name.
+
+**And absorbing unconditionally is worse than it looks on the final transcript.** The app replay is
+what caught this: the final numbers improved while the meeting itself got worse. The pass trace ran
+`4,5,1,2,2,2,4,4,…` and the user would have watched **ten** distinct labels churn past during a
+four-person call, against five today, with provisional accuracy down from 79.5 % to 76.2 %. Absorbing
+whenever a cluster looks thin collapses the opening minute, when every cluster is thin.
+
+**The shape that survives is pay-as-you-go.** Absorption happens only to pay for a split that was
+actually accepted, and a split may only take a slot a fragment can give back. The cluster count cannot
+grow unless a slot is freed — which makes acceptance criterion 2 true by construction rather than by
+tuning, and matters most on a meeting whose roster is far larger than the number of people who talk.
+The workshop's roster is 10 for 4 talkers, so its ceiling of 11 never bound, and before this the splits
+ran free at +2 labels.
+
+**The margin plateau is wide and shared**, which is the evidence that 0.15 is not fitted to one
+recording: testmeeting fires from 0.04 to 0.18 and is flat across all of it, workshop 0.04–0.20, LSP
+0.04–0.25. 0.15 sits inside the common plateau with headroom below testmeeting's cliff at 0.20.
+
+Bench, 8 s enrollment, margin 0.15 / MinSegments 8 / MinHalf 3 / AbsorbBelow 4 / no extra slots:
+
+| | correct / scored | | labels (true talkers) |
+|---|---|---|---|
+| testmeeting | 34/42 → **39/42** | +11.9 pts | 5 → 5 (4) |
+| workshop | 163/173 → **170/173** | +4.1 pts | 4 → 4 (4) |
+| LSP | 382/423 → **419/429** | +7.4 pts | 5 → 6 (5) |
+
+Every margin clears the 2.5-point bar. Only LSP's label count moves, by one.
+
+### The app replay, which is what criteria 3 and 4 exist for
+
+| testmeeting, app | shipping | split |
+|---|---|---|
+| correct / scored | 36/44 = 81.8 % | **41/44 = 93.2 %** |
+| labels in the transcript | 5 for 4 talkers | **5 for 4 talkers** |
+| talkers with a label of their own | 3 of 4 | **4 of 4** |
+| provisional | 35/44, 5 labels | 34/44, 5 labels |
+| pass cluster trace | 4,5,5,5,… | identical |
+
+Same 44-segment denominator as the shipping run, so +5 correct reads directly. **C has a label of her
+own for the first time** — `Speaker 5 → C`, 25.3 s — which is the failure this fixture exists to chase.
+LSP's known residue goes the same way on the bench: C moves from a 4.3 s token to her real 107.4 s, and
+E's 81.6 s stops being filed under A.
+
+Read the parameter set as tuned, because it is: four knobs fitted on three recordings. The plateau
+width and the app replay are the two things standing between that and a false win.
+
+### The workshop app replay
+
+Run against the same default, 20 minutes unattended:
+
+| workshop, app | shipping | split |
+|---|---|---|
+| correct / scored | 158/172 = 91.9 % | **165/172 = 95.9 %** |
+| labels in the transcript | 5 for 4 talkers | **5 for 4 talkers** |
+| talkers with a label of their own | 2 of 4 | **3 of 4** |
+| unlabelled, of transcribed | 37 / 234 | 38 / 234 |
+
+Same 172-segment denominator, so +7 correct reads directly, and the +4.0 points clears the 2.5-point
+bar on the app rather than on the bench. D gets a label of her own — 25.9 s that were previously filed
+under I. The `LABEL CHECK` line, which reads the on-screen numbering rather than the log, agrees:
+`Speaker 1..5, roster 10`.
+
+**LSP was not replayed.** Its 65 minutes buys the least: the margin is +7.4 points, far past the bar, so
+criterion 3 does not ask for it. Its label claim — 5 → 6 — is therefore bench-relative and is the one
+number in lever 1 that has no app behind it.
+
+## Lever 3 — overlap-aware minting: the precondition refuses on the nominated recording
+
+The brief said to count how many mints land on reference-overlapped segments before building anything.
+Counted, across every label ever minted:
+
+| | minted | on one speaker | on overlapped speech | reference cannot say |
+|---|---|---|---|---|
+| LSP | 13 | 8 | **5** | 0 |
+| workshop | 9 | 2 | 2 | 5 |
+| testmeeting | 5 | 1 | **0** | 4 |
+
+The mechanism is real, and it is real on **LSP**, not on the recording the brief nominated for it.
+`testmeeting` cannot test the hypothesis at all: four of its five mints happen inside or across the
+2.25–26 s window where Teams was reflowing the grid as Pia joined, which is exactly where its reference
+is blind. The live run's confirmed case — `Speaker 4` born on three-way cross-talk — does not reproduce
+in the replay, because the two runs mint at different moments.
+
+`PeakVoicesOver` returns "cannot say" on any touch of an unreadable range rather than reporting the
+readable part as clean, which is what turned an apparent one-voice mint at 25.7 s into an honest
+refusal.
+
+**Not built, and the reason is structural rather than budgetary.** A production mixture detector has no
+reference to consult, and the only signal available — "lands far from every centroid" — *is* the mint
+condition itself. Distinguishing a new voice from two known voices at once would need a new mechanism
+(testing whether the embedding is well approximated inside the span of existing centroids), which is a
+feature, not a guard. Lever 1 also removes most of its motivation: the label-count problem it was aimed
+at is now fixed by eviction, on all three recordings.
+
+## Lever 2 — young-centroid damping: refused, and it trades the wrong currency
+
+Implemented as a handicap rather than a veto: a centroid with fewer than N embeddings loses a fixed
+similarity penalty, so it can still win when nothing else is close — losing outright would mint a label
+instead, which is the more expensive mistake.
+
+Measured on top of the shipping split, because the two levers touch different halves of the same
+decision. Final-label accuracy moves by at most +3 correct on 429 (LSP) and not at all on the other
+two, which is the expected result: a pass reassigns every eligible segment, so no match threshold
+reaches the final partition. The lever has to be judged provisionally, and there it loses:
+
+| provisional | none | 2 seg / 0.10 | 4 seg / 0.10 | 4 seg / 0.20 |
+|---|---|---|---|---|
+| testmeeting | 30/42, 5 live labels | 30/42, 5 | 30/42, 5 | 30/42, 5 |
+| workshop | 165/174, 9 live labels | 164/173, **10** | 164/173, **10** | 163/173, **14** |
+| LSP | 390/433, 13 live labels | 392/433, 13 | 394/432, **16** | 394/432, **19** |
+
+At best +1.1 points of provisional accuracy on LSP, bought with three to six extra labels flashing past
+during the meeting on both work recordings. On testmeeting it does nothing at all at any setting —
+early in that recording every centroid is young, so the segments the penalty would have blocked were
+being minted anyway.
+
+Refused. The knob is left in place because it costs nothing at its default of off and it is the natural
+place for a future attempt, but the measured verdict is that it buys sub-noise accuracy with churn the
+user can see.
+
+## Lever 4 — the match-threshold policies, run as a control and still unconfirmed
+
+The threshold-tuning brief's own amendment said to run these as a control rather than a favourite,
+because both candidate values sit *below* the 0.50 that already failed. Re-measured on top of the split
+so the comparison is against what now ships, with `derived` — the shipping policy, threshold recomputed
+from each pass's cut — as the control:
+
+| | derived | fixed 0.30 |
+|---|---|---|
+| testmeeting | final 39/42, 5 live labels | final **41**/47, 5 live labels |
+| workshop | final 170/173, 9 live labels | final **171**/174, **8** live labels |
+| LSP | final 419/429, 13 live labels | final **424**/436, **9** live labels |
+
+Read the correct counts, not the percentages: the denominators grow because a lower bar labels more
+segments (trap 10). On that reading 0.30 wins on all three and, more interestingly, cuts LSP's live
+label churn from 13 to 9.
+
+**Still not adopted, and the reason is a specific past failure.** The last time a threshold's case
+rested on a label count, the bench said 9 → 6 on the workshop and the app replay said 9 → 9. Live label
+counts do not inherit the bench's tolerance, and the half of this case that is new — the churn
+reduction — is exactly that kind of claim. It needs its own app replay, which was not run. `0.30` is
+identified, re-confirmed as bench-favourable on three recordings instead of two, and unconfirmed.
+
+## Lever 6 — the unlabelled quarter, and a cheap fix the measurement found
+
+Part 1 is above: they inherit, and on a casual conversation the inheritance is right 20 % of the time.
+
+Part 2 asked whether a short segment could be attributed by merging it into an adjacent same-cluster
+segment rather than by lowering the floor. Measured, and the answer is better than the question: put
+the segment with the voice it **sounds** most like rather than with whoever happened to speak before
+it.
+
+| | inheritance (adjacency) | nearest centroid |
+|---|---|---|
+| LSP | 77.0 % over 61 | **100 %** over 13 |
+| workshop | 58.6 % over 29 | **100 %** over 7 |
+| testmeeting | 20.0 % over 20 | **100 %** over 6 |
+
+26 for 26 across all three recordings. The catch is coverage, and it is a hard one: only segments the
+diarizer actually saw have an embedding to match, so this reaches the 1.5–2 s band and nothing below
+it. Everything under the 1.5 s gate has no vector at all, which is why the nearest-centroid column
+scores 6–13 segments where the inheritance column scores 20–61.
+
+So the shape of the fix is: for a segment that has an embedding but failed the match bar, take the
+nearest centroid anyway rather than leaving it to the bubble rule; and for a segment below the
+diarization gate, the honest options are to render it unattributed or to lower the gate — not to keep
+silently attributing it to the previous speaker. Neither is built here. **Do not simply lower
+`MinClusterSegmentSeconds`** — that is what caused the earlier sub-floor minting bug.
+
+## Lever 5 — `ChooseCut`: the refusal reproduces, and the lever moved anyway
+
+Task 9's "roster as a target for k" refuses for the third time. Pinning k to the true talker count
+scores **87.8 / 89.4 / 79.2 %** against the shipping app's 91.9 / 92.1 / 84.1 — worse on all three, at
+equal budgets, reproduced on the merged harness. Write it down and stop proposing it.
+
+But the campaign did move `ChooseCut`'s territory, from the other side. The ceiling policy, not the
+cut, is where testmeeting's points lived: the partition sat at `expected + 1` = 5 with two of those
+five slots holding 4.1 s and 2.1 s of speech. Lever 1's eviction is a ceiling fix delivered as a split
+— it changes which k the partition lands on by reallocating a slot on merit rather than by choosing a
+different cut. That is the most concrete thing the fixture has said about `ChooseCut` so far, and it
+says the cut was never the part that needed changing.
+
+One caveat on a number this doc has quoted since the morning. The isolation test calls
+`PinnedClusterer(pair, 2)`, which passes `expectedSpeakers: 2` and therefore caps at
+`2 + ExpectedSpeakerSlack` = **3**, not 2. The 96.3 / 90.3 / 82.4 % figures are "the pair alone, capped
+at three clusters". The separability conclusion is unaffected — it is a lower bound if anything — but
+they are not k=2 and should not be restated as such.
+
+## Lever 7 — consent-phase enrollment: still the biggest single lever, and materially less urgent
+
+Unbuilt, and the oracle at 8 s remains its bound: 100.0 / 94.9 / 89.5 %. What changed is the gap it has
+to close. Lever 1 takes testmeeting's app run from 81.8 % to 93.2 % and gives C a label of her own,
+which was previously the *only* thing enrollment could do.
+
+Do not read the split's 92.9 % as beating the oracle's 89.5 % on testmeeting. Those are different
+scored sets — the oracle spends each speaker's first 8 s on enrolment and scores 38 segments where the
+split scores 42 — and playbook trap 4 exists precisely because that comparison manufactures headroom.
+The honest statement is narrower and still useful: **the specific outcome enrollment was wanted for, a
+label of C's own, is now delivered without it.**
+
+It remains new work with a UI and a privacy story for stored voiceprints, and it still has no answer
+for people who join late or never say their name.
+
+## Lever 8 — Teams' own active-speaker signal: re-read, not started, and still the highest ceiling
+
+`2026-08-22-browser-active-speaker-gate.md` is unchanged and unstarted. Re-reading it against this
+session, the case is stronger rather than weaker, for a reason that is easy to lose: **the answer key
+every number in this document is scored against is extracted from exactly this signal** — 174 intervals
+over a 280 s meeting, 23.8 s unusable, and the unusable range turned out to be Teams reflowing the grid
+as Pia joined rather than any defect in the signal.
+
+A pipeline whose ground truth is a signal the app could read live is a pipeline solving a problem it
+may not have. Two data points from this session bear on its three gate questions: `droppedFrames=0`
+throughout the live meeting, which is what its issue 3 asked about; and the 2.25–26 s reflow window,
+which says the signal is unreadable exactly while Pia is joining and a live consumer would need to
+tolerate that rather than assume it away.
+
+Still needs one real meeting, and the DOM→audio offset still needs a measured sign and spread.
+
+## Lever 9 — model and segmentation swaps: not reached, and the argument for them weakened
+
+Deliberately last, and lever 1 took most of the ground they were meant to take.
+
+- **Embedding (Task 11).** testmeeting's 0.103 margin was the first real argument for a better model.
+  It is a weaker argument now: the same margin, on the same embeddings, is enough for the shipping
+  linkage to separate the pair once the sub-problem is posed. The absorbed speaker reaching only ~80 %
+  under a perfect-centroid oracle is still real headroom, but it buys polish rather than the fix.
+- **Segmentation.** Untouched. `SileroVadDetector` is still an RMS energy gate despite the name, and
+  `org.k2fsa.sherpa.onnx` 1.12.40 still ships `OfflineSpeakerDiarization` and real
+  `SileroVadModelConfig`/`TenVadModelConfig`. With 19.4 % of testmeeting's speaking time overlapped,
+  genuine overlap handling is still a real lever — and still a rewrite.
+- **STT.** Orthogonal, and unchanged: `IdentifyOrRegisterSegment` runs *before* `TranscribeAsync` on
+  the same samples, so no model change moves an attribution number. Worth doing on its own merits;
+  never bundle it into a diarization measurement.
+
+## Where each lever landed
+
+| # | Lever | Outcome |
+|---|---|---|
+| 1 | Split-candidate pass | **Kept.** +11.4 pts on testmeeting confirmed by app replay, label count unchanged, all four talkers named. Two earlier shapes measured and discarded. |
+| 2 | Young-centroid damping | **Refused.** At best +1.1 pts of provisional accuracy on LSP, bought with 3-6 extra labels flashing past during the meeting. Nothing at all on testmeeting. |
+| 3 | Overlap-aware minting | **Refused.** Precondition measured: real on LSP (5 of 13 mints), untestable on testmeeting (4 of 5 mints land where the reference is blind). No production signal distinguishes a mixture from a new voice, and lever 1 removed the label-count motive. |
+| 4 | Match-threshold policies | **Unconfirmed, not adopted.** Fixed 0.30 now beats the derived policy on correct count on all three and cuts LSP's live label churn 13 -> 9 — but that is a label-count claim, and the last one failed its app replay. |
+| 5 | `ChooseCut` | **Refused as posed** (k-pinning loses on all three, third time). But the ceiling policy, not the cut, is where testmeeting's points were — lever 1 is that fix delivered from the other side. |
+| 6 | The unlabelled quarter | **Defect found, not an optimisation.** Unlabelled segments silently inherit the previous bubble's speaker; right 20 % of the time on testmeeting. 19.9 points of user-visible attribution the metric cannot see. |
+| 7 | Consent enrollment | **Not built.** Still the largest single bound, but the outcome it was wanted for — a label of C's own — is now delivered without it. |
+| 8 | Teams' active-speaker signal | **Not started; re-read and recorded.** Highest ceiling of anything here, and the answer key this document scores against is that signal. Needs one real meeting. |
+| 9 | Model / segmentation swaps | **Not reached, and the case weakened.** The shipping embedding separates the pair once the sub-problem is posed. |
+
+## What is safe to quote from this section, and what is not
+
+- **App-confirmed:** testmeeting's +11.4 points and its unchanged label count. Two harnesses, same
+  reference, same 44-segment denominator.
+- **Bench-only:** LSP's +7.4 points and its one extra label. The margin clears the 2.5-point bar so
+  criterion 3 does not demand a replay, but its label claim is bench-relative and LSP's 65-minute
+  replay was not run.
+- **Tuned:** the split's four parameters were fitted on these three recordings. The margin plateau is
+  0.04–0.18 shared across all three, which is the only reason 0.15 is not simply overfitted.
+- **Not measured at all:** device loopback, still. Every recording here is either a cloud mix or an
+  in-browser tap.

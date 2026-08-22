@@ -17,6 +17,9 @@ internal sealed record AdaptiveSpeakerOptions
     public int PassSegmentStride { get; init; } = AdaptiveSpeakerIdentificationService.PassSegmentStride;
     public SpeakerSplitOptions Split { get; init; } = new(
         Margin: 0.15f, MinSegments: 8, MinHalf: 3, AbsorbBelow: 4);
+    /// <summary>Below this many embeddings a centroid is handicapped by <see cref="YoungCentroidPenalty"/>.</summary>
+    public int YoungCentroidSegments { get; init; }
+    public float YoungCentroidPenalty { get; init; }
 
     public static AdaptiveSpeakerOptions Default { get; } = new();
 }

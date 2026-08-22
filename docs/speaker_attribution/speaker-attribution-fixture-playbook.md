@@ -263,6 +263,16 @@ Each of these has produced a plausible wrong number at least once.
 10. **Reading the attribution percentage across settings.** Unlabelled segments leave the denominator,
     so refusing to label raises the percentage. Compare the *correct count* — the segment set is
     identical across settings — and read the percentage second.
+11. **A harness that tracks corrections by event can lose the one that matters.** A pass runs *inside*
+    the identify call that triggered it and can reassign that very segment, before the caller has
+    registered it. The bench did exactly this and then overwrote the correction with the provisional
+    label: four segments across two recordings, and because each was the only member of its label it
+    read as **two extra final labels on LSP** — inflating the very metric a splitter is judged on. Check
+    a harness against the `Adaptive pass reassigned:` lines, not against its own output.
+12. **Judging a diarization change on the final transcript alone.** A change can improve the finished
+    transcript while making the meeting worse to sit through: one candidate here scored better at the
+    end and put *ten* distinct labels on screen during a four-person call, against five. Score
+    `-Provisional` and read the pass cluster trace before believing any win.
 
 ## What is still unmeasured
 

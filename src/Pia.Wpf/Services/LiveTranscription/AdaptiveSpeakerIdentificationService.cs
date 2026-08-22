@@ -388,6 +388,10 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
         foreach (var (cluster, centroid) in _centroidByCluster)
         {
             var sim = centroid.Similarity(embedding);
+            // A centroid a segment or two old is one voice caught once, not that voice's average, so
+            // it wins comparisons it has not earned. Handicap it rather than hide it: losing outright
+            // would mint a label instead, which is the more expensive mistake.
+            if (centroid.Count < _options.YoungCentroidSegments) sim -= _options.YoungCentroidPenalty;
             if (sim > best) { best = sim; bestCluster = cluster; }
         }
         return (bestCluster, best);
@@ -476,11 +480,19 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
     {
         private readonly float[] _sum;
 
-        public RunningCentroid(float[] first) => _sum = (float[])first.Clone();
+        public RunningCentroid(float[] first)
+        {
+            _sum = (float[])first.Clone();
+            Count = 1;
+        }
+
+        /// <summary>Embeddings behind this centroid. A one-segment centroid is one voice's one moment.</summary>
+        public int Count { get; private set; }
 
         public void Add(float[] embedding)
         {
             for (int i = 0; i < _sum.Length; i++) _sum[i] += embedding[i];
+            Count++;
         }
 
         public float Similarity(float[] embedding)
