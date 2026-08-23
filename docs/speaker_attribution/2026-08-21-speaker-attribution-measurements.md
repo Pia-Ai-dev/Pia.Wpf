@@ -1324,8 +1324,20 @@ The route to the result is worth as much as the result.
 
 **What it does.** After the global cut, each cluster's own dendrogram is cut one merge short of the
 root, and the split is kept when the tighter half's self-similarity leads the halves'
-cross-similarity by a margin — the same statistic the bench prints for a recording's closest pair, so
-the setting is directly comparable to the measured 0.103 / 0.166 / 0.215.
+cross-similarity by a margin.
+
+**That margin is NOT the closest-pair margin the bench prints, and an earlier draft of this section said
+it was.** The sub-dendrogram picks the 2-way split that separates best, so its halves are more
+self-consistent than the true speaker sets are; the two statistics are correlated in ordering but the
+split's runs systematically higher. Measured by walking the firing threshold in 0.005 steps:
+
+| | true closest-pair margin | margin of the split that actually fires |
+|---|---|---|
+| testmeeting | 0.103 | **0.180–0.185** |
+| workshop | 0.166 | 0.200–0.205 (and further splits up to ~0.235) |
+| LSP | 0.215 | 0.250–0.255 |
+
+Size the setting against the right column, never the left.
 
 **First shape, and why it was wrong.** The first version won big and for the wrong reason.
 `split-0.12:8:3:0` scored exactly the shipping 34/42 on testmeeting and `split-0.12:8:3:1` scored
@@ -1357,7 +1369,13 @@ ran free at +2 labels.
 
 **The margin plateau is wide and shared**, which is the evidence that 0.15 is not fitted to one
 recording: testmeeting fires from 0.04 to 0.18 and is flat across all of it, workshop 0.04–0.20, LSP
-0.04–0.25. 0.15 sits inside the common plateau with headroom below testmeeting's cliff at 0.20.
+0.04–0.25. 0.15 sits inside the common plateau.
+
+Do not read that as a wide safety band, which an earlier draft implied. A plateau's upper edge *is* the
+firing margin of the split on that recording, so all the slack is below the setting and none above it:
+on testmeeting the bar is 0.15 against an observed 0.18, and a pair that separates ~17 % less well than
+this one did produces no split at all — silently, because a split that does not fire looks exactly like
+a recording that did not need one.
 
 Bench, 8 s enrollment, margin 0.15 / MinSegments 8 / MinHalf 3 / AbsorbBelow 4 / no extra slots:
 
@@ -1406,6 +1424,39 @@ under I. The `LABEL CHECK` line, which reads the on-screen numbering rather than
 **LSP was not replayed.** Its 65 minutes buys the least: the margin is +7.4 points, far past the bar, so
 criterion 3 does not ask for it. Its label claim — 5 → 6 — is therefore bench-relative and is the one
 number in lever 1 that has no app behind it.
+
+### Will the next meeting with the same people split them? Not established, and here is what it turns on
+
+This is the question the campaign does *not* answer, and the honest answer is no. Four separate
+reasons, in the order they are likely to bite.
+
+**1. Nothing at all carries over between meetings.** `AdaptiveSpeakerIdentificationService` journals
+embeddings per meeting and actively zeroes them on `Reset`/`Dispose`, and there is no voiceprint store
+anywhere in `Services/MeetingAttendee/` or `Services/LiveTranscription/`. The next meeting re-derives
+every cluster from silence. **"The same persons" is not information the system can use today** — it is
+exactly what lever 7 would add and the reason that lever still exists.
+
+**2. The split only fires if a fragment exists to pay for its slot.** Pay-as-you-go sets
+`budget = absorbable`, so a meeting whose partition contains no cluster under `AbsorbBelow` cannot
+split at all, however separable the pair is. All three fixture recordings happened to contain one. That
+precondition is a side effect of satisfying acceptance criterion 2, not something designed for, and it
+has the perverse shape that a *tidier* meeting is less likely to get the fix.
+
+**3. The margin band above the setting is thin, not wide.** 0.15 against an observed 0.18 on
+testmeeting is ~17 % of slack in the split statistic. Mic, room, headset and Teams' AGC all move
+embeddings, and none of that is measured — every recording in this fixture is either a cloud mix or an
+in-browser tap, and device loopback remains entirely untested.
+
+**4. A split that does not fire is indistinguishable from a meeting that did not need one.** There is
+no signal, in the log or the UI, that says "a pair was merged and the split was declined". That is the
+property that would make a silent regression hard to notice in the field.
+
+What would make it positive rather than probable, in order of cost: consent-phase enrollment (lever 7),
+which is the only thing that makes repeat attendance mean anything; or Teams' own active-speaker signal
+(lever 8), which stops it being a clustering problem. Short of those, the cheap step is to **capture the
+next meeting with these people** — set `PIA_DEBUG_MEETING_ATTENDEE_AUDIO_DUMP` to an absolute path
+before joining — and bench the split against it. That is one recording's worth of evidence for the cost
+of remembering one environment variable, and without it a live run can never be re-measured.
 
 ## Lever 3 — overlap-aware minting: the precondition refuses on the nominated recording
 
