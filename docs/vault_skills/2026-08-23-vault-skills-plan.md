@@ -103,15 +103,14 @@ public async Task SkillPage_AppearsInBothGroupWalks()
     Assert.Contains(browse.Categories, c => c.Category == "skill");
 
     var snapshot = await vault.MemoryService.ListMemoriesAsync();
-    var displayed = VaultViewModel.EnumerateDisplayGroupsForTest(snapshot.Items);
+    var displayed = VaultViewModel.EnumerateDisplayGroups(snapshot.Items);
     Assert.Contains(displayed, g => g.Key == "skill");
 }
 ```
 
-`EnumerateDisplayGroups` is currently `private static`. Make it `internal static` and add
-`[assembly: InternalsVisibleTo]` only if the test project does not already have it — check
-`src/Pia.Wpf/Pia.Wpf.csproj` first; several tests already reach internals, so it very likely does. Do not
-add a public test-only wrapper.
+`EnumerateDisplayGroups` is currently `private static`. Widen it to `internal static` and call it by its
+real name — no test-only wrapper. Check `src/Pia.Wpf/Pia.Wpf.csproj` for `InternalsVisibleTo` first;
+several tests already reach internals, so it very likely exists.
 
 - [ ] **Step 2: Run it and confirm it fails**
 
@@ -307,12 +306,24 @@ public interface ISkillCatalog
 {
     Task<IReadOnlyList<SkillPage>> GetAsync();
 
-    /// <summary>The `## Skills` block, or empty when there are none. Byte-stable for a given skill set.</summary>
-    Task<string> RenderIndexAsync();
+    /// <summary>
+    /// The `## Skills` block, or empty when there are none. Byte-stable for a given skill set.
+    /// Synchronous because <c>PrepareTurn</c> is: making it async ripples into every call site
+    /// including the step path. Returns the last rendered value; empty until the first warm-up.
+    /// </summary>
+    string RenderedIndex { get; }
+
+    /// <summary>Re-reads the vault and refreshes <see cref="RenderedIndex"/>.</summary>
+    Task WarmAsync();
 
     void Invalidate();
 }
 ```
+
+`RenderedIndex` is the accessor Task 6 composes with; `GetAsync` serves `load_skill` and the Vault view.
+`WarmAsync` is called at startup and after `Invalidate` fires from the watcher. An empty index on the very
+first turn of a cold start is the accepted cost of keeping `PrepareTurn` synchronous — a skill that misses
+one turn is recoverable; an async ripple through every composition site is not.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -512,7 +523,14 @@ chunk 4.
 
 **Files:**
 - Modify: wherever the agent planner and step turns compose their system prompt (grep `AgentPlanner` for
-  its prompt construction; `:782` and `:827` are the planner and replan prompts named in checklist A4)
+  its prompt construction; `:782` and `:827` are the planner and replan prompts)
+
+**Coordinate with checklist item A4 before editing those two prompts.** Gate A1 was read on 2026-08-23
+(`../hermes_checkup/2026-08-23-a1-pilot-reading.md`) and did **not** close; A4 was promoted from an
+afterthought to "the highest value-per-effort row in group A" and is expected to run first, rewriting the
+planner prompt's wording about what *checkable* means. Skills arrive at the same discipline from the other
+side — a skill's *Done when* clauses are exactly the checkable predictions A4 wants — so land A4's wording
+first and add the skills reach on top of it, rather than both editing the same prompt independently.
 - Test: `tests/Pia.Wpf.Tests/Services/SkillReachTests.cs` (create)
 
 - [ ] **Step 1: Write the failing tests** — the composed prompt for an agent planner turn, an agent step
