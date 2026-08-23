@@ -194,6 +194,130 @@ public sealed class OpenWebUiChatConverterTests
         Assert.Equal("assistant", chat.Messages[1].Role);
     }
 
+    /// <summary>
+    /// Wraps a <c>history</c> object around a <c>chat.messages</c> array of the caller's choosing —
+    /// the two disagree in a real export, and the tree is the side that is right.
+    /// </summary>
+    private static string ChatWithTree(string currentId, string treeNodes, string cachedMessages) => $$"""
+        [
+          {
+            "id": "{{ChatId}}",
+            "title": "Branching chat",
+            "created_at": 1779274800,
+            "updated_at": 1779274900,
+            "chat": {
+              "id": "{{ChatId}}",
+              "history": { "currentId": {{JsonSerializer.Serialize(currentId)}}, "messages": { {{treeNodes}} } },
+              "messages": [ {{cachedMessages}} ]
+            }
+          }
+        ]
+        """;
+
+    private const string M1 = "11111111-1111-1111-1111-111111111111";
+    private const string M2 = "22222222-2222-2222-2222-222222222222";
+    private const string M3 = "33333333-3333-3333-3333-333333333333";
+    private const string M4 = "44444444-4444-4444-4444-444444444444";
+
+    private static string LinearTree() => $$"""
+        "{{M1}}": { "id": "{{M1}}", "parentId": null, "role": "user", "content": "one", "timestamp": 1779274801 },
+        "{{M2}}": { "id": "{{M2}}", "parentId": "{{M1}}", "role": "assistant", "content": "two", "timestamp": 1779274802 },
+        "{{M3}}": { "id": "{{M3}}", "parentId": "{{M2}}", "role": "user", "content": "three", "timestamp": 1779274803 },
+        "{{M4}}": { "id": "{{M4}}", "parentId": "{{M3}}", "role": "assistant", "content": "four", "timestamp": 1779274804 }
+        """;
+
+    /// <summary>
+    /// The regression behind "an imported chat shows only my first prompt": newer Open WebUI builds
+    /// leave <c>chat.messages</c> as a single stub while the real conversation sits in the tree.
+    /// </summary>
+    [Fact]
+    public void Prefers_TheMessageTree_OverAStaleFlatCache()
+    {
+        var json = ChatWithTree(M4, LinearTree(), """{ "role": "user", "content": "one" }""");
+
+        var conversion = OpenWebUiChatConverter.Convert(Parse(json));
+
+        var chat = Assert.Single(conversion.Chats);
+        Assert.Equal(["one", "two", "three", "four"], chat.Messages.Select(m => m.Content));
+        Assert.Equal(["user", "assistant", "user", "assistant"], chat.Messages.Select(m => m.Role));
+        Assert.Equal(Guid.Parse(M1), chat.Messages[0].Id);
+        Assert.Equal(3, conversion.RecoveredFromTree);
+    }
+
+    /// <summary>
+    /// An assistant turn can be present-but-empty in the flat cache while the tree holds the whole
+    /// answer, which read as "no answer" on a chat that otherwise imported both turns.
+    /// </summary>
+    [Fact]
+    public void Recovers_AnAnswer_TheFlatCacheLeftEmpty()
+    {
+        var cached = $$"""
+            { "id": "{{M1}}", "parentId": null, "role": "user", "content": "one", "timestamp": 1779274801 },
+            { "id": "{{M2}}", "parentId": "{{M1}}", "role": "assistant", "content": "", "timestamp": 1779274802 }
+            """;
+        var json = ChatWithTree(M2, LinearTree(), cached);
+
+        var chat = Assert.Single(OpenWebUiChatConverter.Convert(Parse(json)).Chats);
+
+        Assert.Equal(2, chat.Messages.Count);
+        Assert.Equal("two", chat.Messages[1].Content);
+    }
+
+    /// <summary>Regenerating an answer leaves both in the tree; only the one <c>currentId</c> points at was shown.</summary>
+    [Fact]
+    public void Follows_CurrentId_ThroughARegeneratedBranch()
+    {
+        var branching = $$"""
+            "{{M1}}": { "id": "{{M1}}", "parentId": null, "role": "user", "content": "one",
+                        "childrenIds": ["{{M2}}", "{{M3}}"], "timestamp": 1779274801 },
+            "{{M2}}": { "id": "{{M2}}", "parentId": "{{M1}}", "role": "assistant", "content": "discarded", "timestamp": 1779274802 },
+            "{{M3}}": { "id": "{{M3}}", "parentId": "{{M1}}", "role": "assistant", "content": "regenerated", "timestamp": 1779274803 }
+            """;
+        var json = ChatWithTree(M3, branching, """{ "role": "user", "content": "one" }""");
+
+        var chat = Assert.Single(OpenWebUiChatConverter.Convert(Parse(json)).Chats);
+
+        Assert.Equal(["one", "regenerated"], chat.Messages.Select(m => m.Content));
+    }
+
+    /// <summary>Older exports carry an empty tree, so the flat array has to stay the fallback.</summary>
+    [Fact]
+    public void Falls_Back_ToTheFlatArray_WhenTheTreeIsEmpty()
+    {
+        var conversion = OpenWebUiChatConverter.Convert(Parse(SingleChat()));
+
+        Assert.Equal(2, Assert.Single(conversion.Chats).Messages.Count);
+        Assert.Equal(0, conversion.RecoveredFromTree);
+    }
+
+    [Theory]
+    [InlineData("\"currentId\": null")]
+    [InlineData("\"currentId\": \"00000000-0000-0000-0000-000000000009\"")]
+    public void Falls_Back_ToTheFlatArray_WhenCurrentIdLeadsNowhere(string currentId)
+    {
+        var json = ChatWithTree(M4, LinearTree(), """{ "role": "user", "content": "cached" }""")
+            .Replace($"\"currentId\": \"{M4}\"", currentId);
+
+        var chat = Assert.Single(OpenWebUiChatConverter.Convert(Parse(json)).Chats);
+
+        Assert.Equal("cached", Assert.Single(chat.Messages).Content);
+    }
+
+    /// <summary>A hand-edited export can point a parentId back down its own path; the walk must still end.</summary>
+    [Fact]
+    public void Terminates_OnACycleInTheTree()
+    {
+        var cyclic = $$"""
+            "{{M1}}": { "id": "{{M1}}", "parentId": "{{M2}}", "role": "user", "content": "one", "timestamp": 1779274801 },
+            "{{M2}}": { "id": "{{M2}}", "parentId": "{{M1}}", "role": "assistant", "content": "two", "timestamp": 1779274802 }
+            """;
+        var json = ChatWithTree(M2, cyclic, "");
+
+        var chat = Assert.Single(OpenWebUiChatConverter.Convert(Parse(json)).Chats);
+
+        Assert.Equal(["one", "two"], chat.Messages.Select(m => m.Content));
+    }
+
     private static int CountOccurrences(string haystack, string needle)
     {
         var count = 0;

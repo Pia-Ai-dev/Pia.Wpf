@@ -31,8 +31,8 @@ public sealed class ChatArchiveService : IChatArchiveService
 
     public async Task<int> ExportAllAsync(string filePath, CancellationToken ct = default)
     {
-        var ids = await _chatService.GetAllIdsAsync(ct);
-        return await ExportAsync(ids, filePath, ct);
+        var ids = await _chatService.GetAllIdsAsync(ct).ConfigureAwait(false);
+        return await ExportAsync(ids, filePath, ct).ConfigureAwait(false);
     }
 
     public async Task<int> ExportAsync(IReadOnlyList<Guid> chatIds, string filePath, CancellationToken ct = default)
@@ -43,7 +43,7 @@ public sealed class ChatArchiveService : IChatArchiveService
         {
             ct.ThrowIfCancellationRequested();
 
-            var chat = await _chatService.GetAsync(id, ct);
+            var chat = await _chatService.GetAsync(id, ct).ConfigureAwait(false);
             // Message-less rows are headless-run stubs that history already hides; exporting them
             // would only produce entries the importer has to skip again.
             if (chat is null || chat.Messages.Count == 0)
@@ -54,51 +54,98 @@ public sealed class ChatArchiveService : IChatArchiveService
         }
 
         await using var stream = File.Create(filePath);
-        await JsonSerializer.SerializeAsync(stream, archive, ArchiveJson, ct);
+        await JsonSerializer.SerializeAsync(stream, archive, ArchiveJson, ct).ConfigureAwait(false);
 
         _logger.LogInformation("Exported {Count} assistant chats to a chat archive", archive.Chats.Count);
         return archive.Chats.Count;
     }
 
-    public async Task<ChatImportResult> ImportAsync(string filePath, CancellationToken ct = default)
+    public async Task<ChatImportResult> ImportAsync(
+        string filePath,
+        IProgress<ChatImportProgress>? progress = null,
+        CancellationToken ct = default)
     {
-        using var document = await ReadDocumentAsync(filePath, ct);
+        progress?.Report(new ChatImportProgress(ChatImportPhase.Reading, 0, 0));
+
+        // Task.Run, not just ConfigureAwait: parsing a multi-megabyte export and mapping every chat is
+        // seconds of uninterrupted CPU with no await to hand the UI thread back on.
+        var parsed = await Task.Run(() => ReadAndConvertAsync(filePath, progress, ct), ct).ConfigureAwait(false);
+
+        if (parsed.Format == ChatArchiveFormat.Unknown)
+        {
+            _logger.LogWarning("Import file matched neither a Pia archive nor an Open WebUI export");
+            return new ChatImportResult { Format = ChatArchiveFormat.Unknown };
+        }
+
+        var result = await StoreAsync(parsed.Chats, progress, ct).ConfigureAwait(false);
+
+        if (parsed.Format == ChatArchiveFormat.Pia)
+        {
+            _logger.LogInformation(
+                "Imported a Pia chat archive (version {FormatVersion}): {Imported} written, {UpToDate} up to date, {Empty} empty, {Failed} failed",
+                parsed.FormatVersion, result.Imported, result.SkippedUpToDate, result.SkippedEmpty, result.Failed);
+            return result with { Format = ChatArchiveFormat.Pia };
+        }
+
+        _logger.LogInformation(
+            "Imported an Open WebUI export: {Imported} written, {UpToDate} up to date, {Empty} empty, {Failed} failed, "
+                + "{Attachments} attachments dropped, {Recovered} messages recovered from the message tree",
+            result.Imported, result.SkippedUpToDate, result.SkippedEmpty + parsed.SkippedEmpty,
+            result.Failed, parsed.DroppedAttachments, parsed.RecoveredFromTree);
+        return result with
+        {
+            Format = ChatArchiveFormat.OpenWebUi,
+            SkippedEmpty = result.SkippedEmpty + parsed.SkippedEmpty,
+            DroppedAttachments = parsed.DroppedAttachments,
+        };
+    }
+
+    /// <summary>Everything an import learns before it touches the store.</summary>
+    private sealed record ParsedImport(
+        ChatArchiveFormat Format,
+        List<SyncAssistantChat> Chats,
+        int FormatVersion = 0,
+        int SkippedEmpty = 0,
+        int DroppedAttachments = 0,
+        int RecoveredFromTree = 0);
+
+    private static async Task<ParsedImport> ReadAndConvertAsync(
+        string filePath,
+        IProgress<ChatImportProgress>? progress,
+        CancellationToken ct)
+    {
+        using var document = await ReadDocumentAsync(filePath, ct).ConfigureAwait(false);
         var root = document.RootElement;
+
+        progress?.Report(new ChatImportProgress(ChatImportPhase.Converting, 0, 0));
 
         if (IsPiaArchive(root))
         {
             var archive = root.Deserialize<PiaChatArchive>(ArchiveJson);
-            var result = await StoreAsync(archive?.Chats ?? [], ct);
-            _logger.LogInformation(
-                "Imported a Pia chat archive (version {FormatVersion}): {Imported} written, {UpToDate} up to date, {Empty} empty, {Failed} failed",
-                archive?.FormatVersion ?? 0, result.Imported, result.SkippedUpToDate, result.SkippedEmpty, result.Failed);
-            return result with { Format = ChatArchiveFormat.Pia };
+            return new ParsedImport(
+                ChatArchiveFormat.Pia,
+                archive?.Chats ?? [],
+                FormatVersion: archive?.FormatVersion ?? 0);
         }
 
         if (OpenWebUiChatConverter.LooksLikeOpenWebUiExport(root))
         {
             var converted = OpenWebUiChatConverter.Convert(root);
-            var result = await StoreAsync(converted.Chats, ct);
-            _logger.LogInformation(
-                "Imported an Open WebUI export: {Imported} written, {UpToDate} up to date, {Empty} empty, {Failed} failed, {Attachments} attachments dropped",
-                result.Imported, result.SkippedUpToDate, result.SkippedEmpty + converted.SkippedEmpty,
-                result.Failed, converted.DroppedAttachments);
-            return result with
-            {
-                Format = ChatArchiveFormat.OpenWebUi,
-                SkippedEmpty = result.SkippedEmpty + converted.SkippedEmpty,
-                DroppedAttachments = converted.DroppedAttachments,
-            };
+            return new ParsedImport(
+                ChatArchiveFormat.OpenWebUi,
+                converted.Chats,
+                SkippedEmpty: converted.SkippedEmpty,
+                DroppedAttachments: converted.DroppedAttachments,
+                RecoveredFromTree: converted.RecoveredFromTree);
         }
 
-        _logger.LogWarning("Import file matched neither a Pia archive nor an Open WebUI export");
-        return new ChatImportResult { Format = ChatArchiveFormat.Unknown };
+        return new ParsedImport(ChatArchiveFormat.Unknown, []);
     }
 
     private static async Task<JsonDocument> ReadDocumentAsync(string filePath, CancellationToken ct)
     {
         await using var stream = File.OpenRead(filePath);
-        return await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+        return await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
     }
 
     private static bool IsPiaArchive(JsonElement root) =>
@@ -107,7 +154,10 @@ public sealed class ChatArchiveService : IChatArchiveService
         && format.ValueKind == JsonValueKind.String
         && string.Equals(format.GetString(), PiaChatArchive.FormatMarker, StringComparison.OrdinalIgnoreCase);
 
-    private async Task<ChatImportResult> StoreAsync(IReadOnlyList<SyncAssistantChat> chats, CancellationToken ct)
+    private async Task<ChatImportResult> StoreAsync(
+        IReadOnlyList<SyncAssistantChat> chats,
+        IProgress<ChatImportProgress>? progress,
+        CancellationToken ct)
     {
         var imported = 0;
         var upToDate = 0;
@@ -119,28 +169,34 @@ public sealed class ChatArchiveService : IChatArchiveService
         // collides with. Re-keying inside the batch keeps one malformed chat from costing the rest.
         var seenMessageIds = new HashSet<Guid>();
 
+        // One report per chat would post hundreds of callbacks at the UI thread mid-import; a percent
+        // is all a progress bar can show anyway.
+        var reportEvery = Math.Max(1, chats.Count / 100);
+        var processed = 0;
+        progress?.Report(new ChatImportProgress(ChatImportPhase.Storing, 0, chats.Count));
+
         foreach (var chat in chats)
         {
             ct.ThrowIfCancellationRequested();
 
-            if (chat.Messages.Count == 0)
-            {
-                empty++;
-                continue;
-            }
-
-            Normalize(chat, seenMessageIds);
-
             try
             {
-                var existing = await _chatService.GetAsync(chat.Id, ct);
+                if (chat.Messages.Count == 0)
+                {
+                    empty++;
+                    continue;
+                }
+
+                Normalize(chat, seenMessageIds);
+
+                var existing = await _chatService.GetAsync(chat.Id, ct).ConfigureAwait(false);
                 if (existing is not null && existing.UpdatedAt >= chat.UpdatedAt)
                 {
                     upToDate++;
                     continue;
                 }
 
-                await _chatService.SaveAsync(chat, ct);
+                await _chatService.SaveAsync(chat, ct).ConfigureAwait(false);
                 imported++;
                 if (oldest is null || chat.UpdatedAt < oldest)
                     oldest = chat.UpdatedAt;
@@ -149,6 +205,12 @@ public sealed class ChatArchiveService : IChatArchiveService
             {
                 failed++;
                 _logger.LogWarning(ex, "Failed to import chat {ChatId}", chat.Id);
+            }
+            finally
+            {
+                processed++;
+                if (processed % reportEvery == 0 || processed == chats.Count)
+                    progress?.Report(new ChatImportProgress(ChatImportPhase.Storing, processed, chats.Count));
             }
         }
 

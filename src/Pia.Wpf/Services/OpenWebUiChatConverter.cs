@@ -8,12 +8,9 @@ using Pia.Shared.Models;
 namespace Pia.Services;
 
 /// <summary>
-/// Maps an Open WebUI "Export All Chats" file onto Pia's chat DTO.
-/// <para>
-/// Open WebUI stores a message tree under <c>chat.history.messages</c> and the currently active
-/// linear path under <c>chat.messages</c>. Only the linear path is imported, so regenerated
-/// branches are dropped — Pia's transcript has no branch model to put them in.
-/// </para>
+/// Maps an Open WebUI "Export All Chats" file onto Pia's chat DTO. Only the active path through the
+/// message tree is imported, so regenerated branches are dropped — Pia's transcript has no branch
+/// model to put them in.
 /// </summary>
 public static partial class OpenWebUiChatConverter
 {
@@ -40,31 +37,41 @@ public static partial class OpenWebUiChatConverter
     public static OpenWebUiConversion Convert(JsonElement root)
     {
         var chats = new List<SyncAssistantChat>();
-        var skippedEmpty = 0;
-        var droppedAttachments = 0;
+        var tally = new ConversionTally();
 
         if (root.ValueKind != JsonValueKind.Array)
-            return new OpenWebUiConversion(chats, skippedEmpty, droppedAttachments);
+            return tally.ToConversion(chats);
 
         foreach (var record in root.EnumerateArray())
         {
             if (record.ValueKind != JsonValueKind.Object)
             {
-                skippedEmpty++;
+                tally.SkippedEmpty++;
                 continue;
             }
 
-            var chat = ConvertChat(record, ref droppedAttachments);
+            var chat = ConvertChat(record, tally);
             if (chat is null)
-                skippedEmpty++;
+                tally.SkippedEmpty++;
             else
                 chats.Add(chat);
         }
 
-        return new OpenWebUiConversion(chats, skippedEmpty, droppedAttachments);
+        return tally.ToConversion(chats);
     }
 
-    private static SyncAssistantChat? ConvertChat(JsonElement record, ref int droppedAttachments)
+    /// <summary>Running counts a whole-file conversion accumulates across chats and messages.</summary>
+    private sealed class ConversionTally
+    {
+        public int SkippedEmpty;
+        public int DroppedAttachments;
+        public int RecoveredFromTree;
+
+        public OpenWebUiConversion ToConversion(List<SyncAssistantChat> chats) =>
+            new(chats, SkippedEmpty, DroppedAttachments, RecoveredFromTree);
+    }
+
+    private static SyncAssistantChat? ConvertChat(JsonElement record, ConversionTally tally)
     {
         var inner = record.TryGetProperty("chat", out var nested) && nested.ValueKind == JsonValueKind.Object
             ? nested
@@ -78,15 +85,15 @@ public static partial class OpenWebUiChatConverter
         if (createdAt > updatedAt)
             createdAt = updatedAt;
 
-        var messages = new List<SyncAssistantChatMessage>();
-        if (inner.TryGetProperty("messages", out var array) && array.ValueKind == JsonValueKind.Array)
+        var path = ReadActivePath(inner);
+        tally.RecoveredFromTree += Math.Max(0, path.Count - CachedMessageCount(inner));
+
+        var messages = new List<SyncAssistantChatMessage>(path.Count);
+        foreach (var element in path)
         {
-            foreach (var element in array.EnumerateArray())
-            {
-                var message = ConvertMessage(element, updatedAt, ref droppedAttachments);
-                if (message is not null)
-                    messages.Add(message);
-            }
+            var message = ConvertMessage(element, updatedAt, tally);
+            if (message is not null)
+                messages.Add(message);
         }
 
         if (messages.Count == 0)
@@ -109,16 +116,66 @@ public static partial class OpenWebUiChatConverter
         };
     }
 
+    /// <summary>
+    /// The conversation as Open WebUI last rendered it: <c>history.currentId</c> walked back up
+    /// <c>parentId</c>. The flat <c>chat.messages</c> array is only a cache of that walk, and newer
+    /// builds no longer keep it in sync — it can hold a lone <c>{role, content}</c> stub, an assistant
+    /// turn with an empty body, or a stale regenerated branch — so it is the fallback, not the source.
+    /// </summary>
+    private static List<JsonElement> ReadActivePath(JsonElement inner)
+    {
+        var path = WalkMessageTree(inner);
+        if (path.Count > 0)
+            return path;
+
+        return inner.TryGetProperty("messages", out var cached) && cached.ValueKind == JsonValueKind.Array
+            ? [.. cached.EnumerateArray()]
+            : [];
+    }
+
+    private static List<JsonElement> WalkMessageTree(JsonElement inner)
+    {
+        var path = new List<JsonElement>();
+        if (!inner.TryGetProperty("history", out var history)
+            || history.ValueKind != JsonValueKind.Object
+            || !history.TryGetProperty("messages", out var nodes)
+            || nodes.ValueKind != JsonValueKind.Object)
+        {
+            return path;
+        }
+
+        // A hand-edited export could point a parentId back into the path; without the visited set that
+        // walk never terminates.
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        var id = ReadString(history, "currentId");
+        while (id is { Length: > 0 }
+            && visited.Add(id)
+            && nodes.TryGetProperty(id, out var node)
+            && node.ValueKind == JsonValueKind.Object)
+        {
+            path.Add(node);
+            id = ReadString(node, "parentId");
+        }
+
+        path.Reverse();
+        return path;
+    }
+
+    private static int CachedMessageCount(JsonElement inner) =>
+        inner.TryGetProperty("messages", out var cached) && cached.ValueKind == JsonValueKind.Array
+            ? cached.GetArrayLength()
+            : 0;
+
     private static SyncAssistantChatMessage? ConvertMessage(
         JsonElement element,
         DateTime fallbackTimestamp,
-        ref int droppedAttachments)
+        ConversionTally tally)
     {
         if (element.ValueKind != JsonValueKind.Object)
             return null;
 
         if (element.TryGetProperty("files", out var files) && files.ValueKind == JsonValueKind.Array)
-            droppedAttachments += files.GetArrayLength();
+            tally.DroppedAttachments += files.GetArrayLength();
 
         var content = ReadString(element, "content") ?? string.Empty;
         if (BuildSourceFootnote(element) is { } footnote)

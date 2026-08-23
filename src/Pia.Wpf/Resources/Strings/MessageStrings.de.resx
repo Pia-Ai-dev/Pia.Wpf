@@ -395,5 +395,8 @@
   <data name="Msg_AssistantHistory_ImportDroppedAttachments" xml:space="preserve"><value>{0} Anhänge wurden nicht übernommen – der Chatverlauf speichert nur Text.</value></data>
   <data name="Msg_AssistantHistory_ImportFailedCount" xml:space="preserve"><value>{0} Chats konnten nicht geschrieben werden; Details siehe Protokoll.</value></data>
   <data name="Msg_AssistantHistory_ImportUnrecognized" xml:space="preserve"><value>Diese Datei ist weder ein Pia-Chatarchiv noch ein Open-WebUI-Export.</value></data>
+  <data name="Msg_AssistantHistory_ImportReading" xml:space="preserve"><value>Exportdatei wird gelesen…</value></data>
+  <data name="Msg_AssistantHistory_ImportConverting" xml:space="preserve"><value>Chats werden konvertiert…</value></data>
+  <data name="Msg_AssistantHistory_ImportStoring" xml:space="preserve"><value>Chat {0} von {1} wird importiert…</value></data>
   <data name="Msg_AssistantHistory_ImportFailed" xml:space="preserve"><value>Chats konnten nicht importiert werden: {0}</value></data>
 </root>
