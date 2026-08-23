@@ -31,7 +31,7 @@ Three steps can close work below them. Do not tick their dependants without revi
 | Gate | Closes | Question it answers |
 |---|---|---|
 | ~~**A1**~~ | A2–A4, A6, A7 | Is `ExpectedArtifact` already file-shaped often enough that the probe is fine? **Answered 2026-08-23: no — 56%, gate does not close.** Everything it gated stays open. |
-| **B4** | B6–B10 | Does current compaction lose anything worth acting on? |
+| ~~**B4**~~ | B6–B10 | Does current compaction lose anything worth acting on? **Answered 2026-08-23: yes, totally.** Arm B scored **0.0%** against arm A's **98.3%** at an 8000/2000 window, on 4 of 4 transcripts - indistinguishable from having no transcript at all. The gate does **not** close; B6-B10 stay open. Reading: [2026-08-23-compaction-arm-ab-reading.md](2026-08-23-compaction-arm-ab-reading.md). |
 | **D-Q1** | D3–D8 | Is the goal onboarding (a canned tour, no LLM) or arbitrary "where do I…" questions? |
 
 ---
@@ -235,8 +235,29 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
     winget store, so the DB reading for §2 of the reading doc was done from a copy through `node:sqlite`.
   *Deps:* B1 · *Effort:* **M** · *Value:* **Enabler**
 
-- [ ] **B4 · Arms A (uncompacted) + B (current), judge, scorecard writer.**
+- [x] **B4 · Arms A (uncompacted) + B (current), judge, scorecard writer.**
   First real number. If A scores < 90%, the instrument is broken — fix that before reading anything.
+  **Done 2026-08-23. The first real number, and it is a floor rather than a shortfall:** arm A **98.3%**,
+  arm B **0.0%**, on all four shapes at an 8000/2000 window, 240 calls in 5m27s with
+  `mistral-medium-latest` answering and judging at temperature 0. Full reading, pre-registered before the
+  first call: [2026-08-23-compaction-arm-ab-reading.md](2026-08-23-compaction-arm-ab-reading.md).
+  - The instrument cleared its own floors three ways: arm A above both the 90% and the synthetic 95% bar; a
+    **no-context control arm at 0.0%**, which the plan did not ask for and which rules out the subtler cousin
+    of restatement luck (the planted answers are formulaic, so a model able to extrapolate `PIA-E` + index
+    would have scored on arm B without recalling anything); and every bank landing at the full 15, meaning
+    arm B's retained context held no planted fact at all.
+  - **B ≥ 85% of A is refused on 4 of 4.** Arm B equals the no-context control exactly, which is the plan's
+    §2 fact 1 with a number on it: nothing is summarised, so an evicted message is gone. Dropping 78% of the
+    tokens took 100% of the removed facts.
+  - Corpus is the **synthetic** generator, not the real profile, and that is itself a finding: 99 real
+    messages exist in total, and `AssistantChatMessages` can carry neither a tool round nor an attachment, so
+    two of §5's four shapes are unreachable through its SQL rather than merely absent. Synthetic arm B is a
+    **lower bound**: the claim it supports is *a fact stated once and evicted is gone*, 60 of 60 questions.
+  - Second budget still owed. No configured provider sets `MaxContextWindowTokens`, so there is no real
+    window to measure and the harness skips rather than inventing one.
+  - Learned the hard way, recorded so the next sweep does not: concurrency 3 earns a 429 from Mistral (the
+    sweep now paces at 1.1 s with capped exponential backoff at concurrency 2), and one provider fault on
+    the fourth transcript used to discard all three earlier transcripts' calls.
   *Deps:* B2, B3 · *Effort:* **M** · *Value:* **High** (decision gate)
 
 - [x] **B5 · Pin the "user messages are never compacted" invariant with a test** against

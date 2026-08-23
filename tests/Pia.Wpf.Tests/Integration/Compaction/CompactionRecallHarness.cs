@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Net.Http;
 using System.Text;
@@ -71,10 +72,14 @@ internal static class CompactionRecallHarness
     /// <summary>Answered without the fact in context, so an "I cannot find it" is scored as a miss, not a fudge.</summary>
     private const string Unknown = "UNKNOWN";
 
-    private const int MaxAttempts = 3;
+    private const int MaxAttempts = 6;
 
-    /// <summary>Three at a time: enough to cut a 240-call sweep down, low enough not to earn a 429.</summary>
-    private const int Concurrency = 3;
+    /// <summary>Two at a time, paced below: three earned a 429 from Mistral 95 seconds into a 240-call sweep.</summary>
+    private const int Concurrency = 2;
+
+    /// <summary>A floor on the gap between calls, because a provider rate limit is a property of the account
+    /// and not of this sweep - the retry below is the second line of defence, not the first.</summary>
+    private static readonly TimeSpan MinimumCallInterval = TimeSpan.FromMilliseconds(1100);
 
     // ---- corpus ---------------------------------------------------------------------------------
 
@@ -302,7 +307,7 @@ internal static class CompactionRecallHarness
         CancellationToken ct)
     {
         // One question per call, on a fresh conversation: batching lets one answer leak into the next.
-        var messages = new List<ChatMessage>(context)
+        var messages = new List<ChatMessage>(Sendable(context))
         {
             new(ChatRole.User,
                 $"{question.Question}{Environment.NewLine}{Environment.NewLine}"
@@ -311,6 +316,31 @@ internal static class CompactionRecallHarness
         };
 
         return CompleteAsync(provider, messages, ct);
+    }
+
+    /// <summary>
+    /// Text parts only. The generator's image is random bytes rather than a decodable PNG, so a provider
+    /// cannot be asked to look at it - and it does not need to be: the bank asks about removed TEXT, and the
+    /// image's whole effect on WHAT was removed (its token charge, its pin) was already applied by the
+    /// compactor before this point.
+    /// </summary>
+    private static List<ChatMessage> Sendable(IEnumerable<ChatMessage> context)
+    {
+        var stripped = new List<ChatMessage>();
+        foreach (var message in context)
+        {
+            var keep = message.Contents.Where(c => c is not DataContent).ToList();
+            if (keep.Count == message.Contents.Count)
+            {
+                stripped.Add(message);
+                continue;
+            }
+
+            if (keep.Count > 0)
+                stripped.Add(new ChatMessage(message.Role, keep));
+        }
+
+        return stripped;
     }
 
     /// <summary>correct = 1, partial = 0.5, anything else = 0. One judge, one prompt, across every arm.</summary>
@@ -396,6 +426,7 @@ internal static class CompactionRecallHarness
             try
             {
                 var client = await ClientAsync(provider, ct);
+                await PaceAsync(ct);
 
                 // Temperature 0 here rather than through AiClientService: the shipped CreateChatOptions sets no
                 // temperature, and a measurement wants the least run-to-run noise the provider will give.
@@ -404,9 +435,35 @@ internal static class CompactionRecallHarness
             }
             catch (Exception) when (attempt < MaxAttempts)
             {
-                await Task.Delay(TimeSpan.FromSeconds(2 * attempt), ct);
+                // Exponential, capped: a 429 mid-sweep must cost wall-clock rather than the whole run, and a
+                // partial sweep is worse than a slow one - the arms have to face the identical bank.
+                await Task.Delay(TimeSpan.FromSeconds(Math.Min(60, Math.Pow(2, attempt))), ct);
             }
         }
+    }
+
+    private static readonly SemaphoreSlim PaceGate = new(1);
+
+    private static DateTimeOffset _nextSlot = DateTimeOffset.MinValue;
+
+    /// <summary>Serialises the moment each request leaves, so concurrency hides latency without doubling rate.</summary>
+    private static async Task PaceAsync(CancellationToken ct)
+    {
+        TimeSpan wait;
+        await PaceGate.WaitAsync(ct);
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            wait = _nextSlot > now ? _nextSlot - now : TimeSpan.Zero;
+            _nextSlot = (now > _nextSlot ? now : _nextSlot) + MinimumCallInterval;
+        }
+        finally
+        {
+            PaceGate.Release();
+        }
+
+        if (wait > TimeSpan.Zero)
+            await Task.Delay(wait, ct);
     }
 
     private static readonly Dictionary<Guid, IChatClient> Clients = [];
@@ -468,7 +525,8 @@ internal static class CompactionRecallHarness
             .AppendLine($"- budget: {budget.Label} (window {budget.Budget.WindowTokens}, max output {budget.Budget.MaxOutputTokens}, from {budget.Source})")
             .AppendLine($"- answering model: {answering.ModelName} ({answering.ProviderType})")
             .AppendLine($"- judging model: {judging.ModelName} ({judging.ProviderType})")
-            .AppendLine($"- thresholds: tool eviction {AgentContextCompactor.ToolEvictionThreshold}, truncation {AgentContextCompactor.TruncationThreshold}")
+            .AppendLine(string.Create(CultureInfo.InvariantCulture,
+                $"- thresholds: tool eviction {AgentContextCompactor.ToolEvictionThreshold}, truncation {AgentContextCompactor.TruncationThreshold}"))
             .AppendLine()
             .AppendLine("| transcript | bank | A:uncompacted | B:current | B/A |")
             .AppendLine("|---|---|---|---|---|");
@@ -501,11 +559,15 @@ internal static class CompactionRecallHarness
         return path;
     }
 
-    internal static string Percent(double score) => $"{score * 100:0.0}%";
+    /// <summary>Invariant on purpose: a scorecard read on a German machine printed "100,0%" and "0,45".</summary>
+    internal static string Percent(double score) => string.Create(CultureInfo.InvariantCulture, $"{score * 100:0.0}%");
 
-    private static string Ratio(double current, double ceiling) => ceiling <= 0 ? "n/a" : $"{current / ceiling * 100:0.0}%";
+    private static string Ratio(double current, double ceiling) =>
+        ceiling <= 0 ? "n/a" : string.Create(CultureInfo.InvariantCulture, $"{current / ceiling * 100:0.0}%");
 
-    private static string Thousands(int tokens) => tokens >= 1000 ? $"{tokens / 1000.0:0.0}K" : tokens.ToString();
+    private static string Thousands(int tokens) => tokens >= 1000
+        ? string.Create(CultureInfo.InvariantCulture, $"{tokens / 1000.0:0.0}K")
+        : tokens.ToString(CultureInfo.InvariantCulture);
 
     // ---- helpers --------------------------------------------------------------------------------
 

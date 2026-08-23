@@ -116,6 +116,40 @@ public class CompactionRecallTests : IDisposable
         Assert.True(arm.Score > 0, $"the uncompacted arm could not answer a question about text it still holds ({CompactionRecallHarness.Percent(arm.Score)})");
     }
 
+    /// <summary>
+    /// The control arm the plan does not have, and the number that decides whether arm B can be read at all:
+    /// the same bank asked with NO context. The planted answers are formulaic (an error code is
+    /// <c>PIA-E</c> plus an index), so a model that can extrapolate the pattern would score on arm B without
+    /// recalling anything — a subtler cousin of the restatement luck the leak filter catches. A high score
+    /// here does not fail compaction; it fails the instrument.
+    /// </summary>
+    [LiveApiFact]
+    public async Task NoContextControl_ShowsWhetherTheBankIsGuessableWithoutTheTranscript()
+    {
+        var provider = CompactionRecallHarness.ResolveProvider();
+        if (provider is null)
+        {
+            Assert.Skip($"{CompactionRecallHarness.ProviderVariable} names no configured provider");
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var transcript = CompactionRecallHarness.SyntheticCorpus().First();
+        var bank = await CompactionRecallHarness.BankAsync(transcript, Small, generator: null, ct, _dir);
+
+        var control = await CompactionRecallHarness.RunArmAsync(
+            "0:no-context", [], bank, provider, provider, ct);
+
+        TestContext.Current.TestOutputHelper?.WriteLine(
+            $"no-context control on {transcript.Id}: {CompactionRecallHarness.Percent(control.Score)} over {control.Answered} questions");
+
+        Assert.True(
+            control.Score <= 0.20,
+            $"the bank is guessable without the transcript ({CompactionRecallHarness.Percent(control.Score)}), "
+            + "so an arm B score is measuring pattern extrapolation rather than recall - randomise the planted "
+            + "answers in SyntheticTranscript before reading any arm.");
+    }
+
     [LiveApiFact]
     public async Task ArmsAandB_OnTheSyntheticCorpus_AtTheSmallWindow()
     {
@@ -155,6 +189,7 @@ public class CompactionRecallTests : IDisposable
         var judging = CompactionRecallHarness.ResolveProvider(CompactionRecallHarness.JudgeProviderVariable) ?? answering;
         var ct = TestContext.Current.CancellationToken;
         var rows = new List<RecallRow>();
+        var lost = new List<string>();
 
         foreach (var transcript in CompactionRecallHarness.SyntheticCorpus())
         {
@@ -164,18 +199,30 @@ public class CompactionRecallTests : IDisposable
 
             var (retained, _) = await CompactionRecallHarness.CompactAsync(transcript, budget, ct);
 
-            var uncompacted = await CompactionRecallHarness.RunArmAsync(
-                "A:uncompacted", transcript.Messages, bank, answering, judging, ct);
-            var current = await CompactionRecallHarness.RunArmAsync(
-                "B:current", retained, bank, answering, judging, ct);
+            // Per transcript, because one provider fault at the last of four would otherwise throw away every
+            // call the first three already paid for - and a partial scorecard that SAYS it is partial beats no
+            // scorecard at all.
+            try
+            {
+                var uncompacted = await CompactionRecallHarness.RunArmAsync(
+                    "A:uncompacted", transcript.Messages, bank, answering, judging, ct);
+                var current = await CompactionRecallHarness.RunArmAsync(
+                    "B:current", retained, bank, answering, judging, ct);
 
-            rows.Add(new RecallRow(transcript.Id, bank.Count, uncompacted, current));
+                rows.Add(new RecallRow(transcript.Id, bank.Count, uncompacted, current));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                lost.Add($"{transcript.Id}: {ex.GetType().Name} {ex.Message}");
+            }
         }
 
         Assert.NotEmpty(rows);
 
         var scorecard = CompactionRecallHarness.WriteScorecard("synthetic", budget, answering, judging, rows);
         TestContext.Current.TestOutputHelper?.WriteLine($"scorecard: {scorecard}");
+        foreach (var failure in lost)
+            TestContext.Current.TestOutputHelper?.WriteLine($"LOST TRANSCRIPT {failure}");
         foreach (var row in rows)
         {
             TestContext.Current.TestOutputHelper?.WriteLine(

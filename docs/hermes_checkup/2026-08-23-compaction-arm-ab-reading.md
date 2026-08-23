@@ -128,6 +128,73 @@ unpaired survivor is a provider 400 on a real user's step rather than a harness 
 "repairing" it inside the harness would have hidden a shipped bug *and* depressed arm B by dropping retained
 content. It holds, so both arms send the compactor's output verbatim.
 
+
 ## 9. Results
 
-*Empty by design until the sweep has run. Everything above this line was committed first.*
+Run 2026-08-23, small window, `mistral-medium-latest` answering and judging at temperature 0. 240 calls,
+5 m 27 s. Generated scorecard: `<PIA_COMPACTION_EVAL_OUT>/scorecard-synthetic-8000x2000.md`.
+
+| transcript | bank | A: uncompacted | B: current | B/A |
+|---|---|---|---|---|
+| synthetic-chat-tool-light | 15 | **100.0%** @ 18.6K / 83 msg | **0.0%** @ 4.2K / 21 msg | 0% |
+| synthetic-chat-tool-heavy | 15 | **100.0%** @ 35.8K / 163 msg | **0.0%** @ 4.0K / 17 msg | 0% |
+| synthetic-agent-run | 15 | 96.7% @ 17.4K / 83 msg | **0.0%** @ 3.9K / 21 msg | 0% |
+| synthetic-agent-run-with-image | 15 | 96.7% @ 17.4K / 84 msg | **0.0%** @ 1.8K / 12 msg | 0% |
+| **AVG** | 60 | **98.3%** | **0.0%** | **0%** |
+
+### The instrument cleared its own checks, three ways
+
+- **Arm A 98.3%**, above both floors in §1 (90% hard, 95% synthetic). The bank and the judge work; 59 of 60
+  questions were answered correctly from a transcript that still held the fact.
+- **A no-context control arm scored 0.0%** over the same 15 questions on transcript 1 — 30 extra calls, and a
+  control the plan did not ask for. The planted answers are formulaic (an error code is `PIA-E` plus the stage
+  index), so a model able to extrapolate the pattern would have scored on arm B without recalling anything.
+  It scored nothing with no transcript at all, so neither A's 98.3% nor B's 0.0% is a scoring artefact.
+- **Every bank came out at the full 15.** All 15 planted facts were removed at this budget on all four
+  shapes, and none leaked, so arm B's retained context held *no planted fact of any kind* — there was not
+  even a sibling in context to extrapolate a pattern from.
+
+### The verdict, against §1 and nothing else
+
+B/A is **0%** against a "≥ 85% and current compaction is fine" rule, on 4 of 4 transcripts. So the
+close-the-item branch does not apply, and this is not a near miss: **arm B is indistinguishable from having
+no transcript at all.** 0.0% is exactly the no-context control's score.
+
+That is the plan's §2 fact 1 with a number on it. Nothing is summarized, so an evicted message is gone and
+no route back exists — dropping 78% of the tokens (18.6K → 4.2K on the tool-light shape) took **100%** of the
+removed facts with it. The measurement did not discover the mechanism; it sized the hole, and the hole is the
+whole gap between 0.0% and 98.3%.
+
+**B6 (arm C, anchor index), B8 (arm D, recovery pointer, and B7 before it) and B9 (arm E) therefore stay
+open**, each with the entire 98.3-point gap to play for. Per the batch that produced this reading, the gate
+is **recorded and not acted on**: no arm beyond A and B was run and no threshold was touched.
+
+### What this number does not say
+
+- **One budget only.** At `8000/2000` the compactor drops ~78% of the tokens. A user on a 128k window whose
+  transcript is 30k loses nothing, because compaction never fires; and today *no* configured provider in this
+  profile sets a window at all (§3), so the shipped default for this user is "no compaction, ever". This is
+  the worst case that fires, not the typical case. The second budget is still owed.
+- **Synthetic transcripts, facts stated exactly once.** A real conversation restates itself, so a real arm B
+  would score above 0. The claim this run supports is narrow and strong: *when a fact is stated once and
+  lands in the evicted region, it is gone* — 60 of 60 questions, four shapes, no exception.
+- **The image shape is read text-only.** Image parts are stripped at send time because the generator's image
+  is random bytes and no provider can decode it. What the image did to *which messages were removed* is
+  untouched — the compactor applied its pin and its token charge before the send — and it shows: that shape
+  retained the least of the four (1.8K / 12 messages), because the pinned image turn eats the budget.
+- **One model family judges its own answers.** §12's judge-inconsistency risk is reduced by one prompt and
+  temperature 0, not removed. The 0.0% floor is not judge-sensitive (the answers were refusals or wrong
+  values, not near misses), but a future arm scoring in the middle will be.
+
+### Operational notes, so the next run does not relearn them
+
+- **Concurrency 3 earned a 429** from Mistral 95 s into the first attempt, losing the run. The sweep now
+  paces at ≥ 1.1 s between calls with exponential backoff (6 attempts, capped at 60 s) at concurrency 2:
+  240 calls in 5 m 27 s.
+- **A per-transcript try/catch was added after that**, because one provider fault on the fourth transcript
+  discarded every call the first three had already paid for. A partial scorecard that says it is partial
+  beats no scorecard.
+- The scorecard's number formatting became culture-invariant only *after* this run, so the generated file
+  reads `100,0%` on a German machine. The table above is the same data with dots.
+- Total spend for this reading: 240 (sweep) + 2 (smoke) + 60 (control, run twice to read its own number) and
+  roughly 60 more lost to the rate-limited and abandoned first attempts.
