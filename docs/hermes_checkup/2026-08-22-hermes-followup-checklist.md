@@ -447,8 +447,17 @@ Not from the review. Found on 2026-08-23 while seeding a throwaway profile for t
   during that run. Re-running the whole gate with `PIA_DATA_DIR`/`PIA_LOCAL_DATA_DIR` pointed at a scratch
   directory then produced a complete profile there — `history.db` plus **832 KB of WAL**, both json files
   and all three subdirectories — so this is not one stray `ALTER`.
-  **Why it has gone unnoticed:** every write so far has been additive and self-healing (a nullable column
-  the app would add at next launch anyway), and `DataDirectoryRoutingTests`/`PiaPathsTests` police the
+  **Narrowed 2026-08-23, after checking rather than asserting.** Two writes at the real path are
+  confirmed: `history.db` (the schema migration, and a WAL restamped by every gate run) and
+  `%LOCALAPPDATA%\Pia\runs`, which held 17 files and was written again at 19:07 during the last gate run.
+  Two are **not**: `settings.json` and `providers.json` were untouched across four gate runs — mtimes still
+  predate the session and all five providers, both mode defaults and `assistantFilesFolder` read back
+  intact. So the scratch-directory copies of those two are an artefact of pointing *both* env vars at one
+  empty directory, not evidence of a real-path write, and the row is a schema-and-workspace leak rather
+  than a settings leak. `workdir` is empty. Confirmed negative worth keeping: the redirected corpus wrote
+  **zero** files into the real `Documents\Pia Assistant`, so `AssistantFilesFolder` redirection does hold.
+  **Why it has gone unnoticed:** every confirmed write is additive and self-healing (a nullable column the
+  app would add at next launch anyway), and `DataDirectoryRoutingTests`/`PiaPathsTests` police the
   *production* code's use of `SpecialFolder`, not the test project's own resolution of an unset override.
   **A blanket redirect is not the fix.** Nine tests fail under one, because their premise is that no
   override is set: `PiaPathsTests.RoutedMember_ObservesAnOverrideAppliedAfterItsTypeIsLoaded` (all five
@@ -461,6 +470,21 @@ Not from the review. Found on 2026-08-23 while seeding a throwaway profile for t
   that can explain `history.db`; then decide between per-test overrides and letting those nine assert the
   real path *without touching it*.
   *Deps:* none · *Effort:* **S** · *Value:* **High** (the gate must not mutate the machine it runs on)
+
+- [ ] **F2 · A chat-history row can be DELETED by AutomationId but not opened by one.** Found on
+  2026-08-23 when E9's read-half check could not resume a parked run: opening the run's chat means
+  activating its history row, and the row would not activate by `ww_click`, double-click,
+  `SelectionItemPattern` or Enter. The row's *only* id-addressable action is
+  `AssistantChat_Delete_{ChatId}` — so the one thing a script can reliably do to a named past chat is
+  destroy it, which is the wrong asymmetry to ship. `PiaAssistantChatRowContent` is already covered in
+  `ViewAutomationIdTests` (1 literal, 1 bound), so this is a missing id rather than a missing test row:
+  the fix is an `AssistantChat_Open_{ChatId}` (or an id on the row's own activation surface) plus the
+  `[InlineData]` count bump in the same change. Two other rows share the shape and are worth doing at the
+  same time — the history rows report their UIA name as `Pia.ViewModels.Models.AssistantChatRowViewModel`
+  and the Routines rows as `Pia.ViewModels.RoutineRow`, i.e. a `ToString()`, which is what forced index-
+  based selection during E7's pass. Unblocks E9's read-half confirmation in the app, and any future script
+  that must open one named past chat.
+  *Deps:* none · *Effort:* **XS** · *Value:* **Med**
 
 ---
 
