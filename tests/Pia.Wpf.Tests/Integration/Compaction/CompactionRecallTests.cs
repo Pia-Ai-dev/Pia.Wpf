@@ -117,6 +117,39 @@ public class CompactionRecallTests : IDisposable
     }
 
     /// <summary>
+    /// A zero can mean two very different things: the model said it could not find the fact, or the provider
+    /// returned an empty body that scored like a refusal. Arm A cannot distinguish them - it has the fact -
+    /// so three arm-B questions are asked here for the answer TEXT, which is what lets the reading say arm B
+    /// refused rather than failed.
+    /// </summary>
+    [LiveApiFact]
+    public async Task ArmB_Zero_IsARefusal_NotAnEmptyResponse()
+    {
+        var provider = CompactionRecallHarness.ResolveProvider();
+        if (provider is null)
+        {
+            Assert.Skip($"{CompactionRecallHarness.ProviderVariable} names no configured provider");
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        var transcript = CompactionRecallHarness.SyntheticCorpus().First();
+        var bank = await CompactionRecallHarness.BankAsync(transcript, Small, generator: null, ct, _dir);
+        var (retained, _) = await CompactionRecallHarness.CompactAsync(transcript, Small, ct);
+
+        var lines = new List<string>();
+        var arm = await CompactionRecallHarness.RunArmAsync(
+            "B:current", retained, [.. bank.Take(3)], provider, provider, ct, lines.Add);
+
+        foreach (var line in lines)
+            TestContext.Current.TestOutputHelper?.WriteLine(line);
+
+        Assert.Equal(3, lines.Count);
+        Assert.DoesNotContain("answer=<empty>", lines);
+        Assert.Equal(0, arm.UnreadableVerdicts);
+    }
+
+    /// <summary>
     /// The control arm the plan does not have, and the number that decides whether arm B can be read at all:
     /// the same bank asked with NO context. The planted answers are formulaic (an error code is
     /// <c>PIA-E</c> plus an index), so a model that can extrapolate the pattern would score on arm B without

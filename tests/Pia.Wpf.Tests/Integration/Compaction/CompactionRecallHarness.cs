@@ -38,7 +38,8 @@ internal sealed record ArmResult(
     int ApproximateTokens,
     double Score,
     int Answered,
-    long ElapsedMs);
+    long ElapsedMs,
+    int UnreadableVerdicts);
 
 internal sealed record RecallRow(string TranscriptId, int BankSize, ArmResult Uncompacted, ArmResult Current);
 
@@ -265,16 +266,23 @@ internal static class CompactionRecallHarness
     // ---- arms -----------------------------------------------------------------------------------
 
     /// <summary>One arm over one bank: a fresh single-question call per entry, then a separate judging call.</summary>
+    /// <param name="trace">
+    /// Optional per-question line: verdict plus the head of the answer. Off by default because on a FIXTURE
+    /// corpus an answer is transcript-derived - use it on the synthetic corpus, where a zero score is
+    /// otherwise indistinguishable from an empty response the provider returned successfully.
+    /// </param>
     internal static async Task<ArmResult> RunArmAsync(
         string arm,
         IReadOnlyList<ChatMessage> context,
         IReadOnlyList<RecallQuestion> bank,
         AiProvider answering,
         AiProvider judging,
-        CancellationToken ct)
+        CancellationToken ct,
+        Action<string>? trace = null)
     {
         var started = Stopwatch.StartNew();
         var scores = new double[bank.Count];
+        var unreadable = 0;
         using var gate = new SemaphoreSlim(Concurrency);
 
         await Task.WhenAll(bank.Select(async (question, index) =>
@@ -283,7 +291,12 @@ internal static class CompactionRecallHarness
             try
             {
                 var answer = await AnswerAsync(answering, context, question, ct);
-                scores[index] = await JudgeAsync(judging, question, answer, ct);
+                var (score, readable) = await JudgeAsync(judging, question, answer, ct);
+                scores[index] = score;
+                if (!readable)
+                    Interlocked.Increment(ref unreadable);
+
+                trace?.Invoke($"{question.Id} score={score} readable={readable} answer={Head(answer)}");
             }
             finally
             {
@@ -297,8 +310,16 @@ internal static class CompactionRecallHarness
             ApproximateTokens(context),
             bank.Count == 0 ? 0 : scores.Sum() / bank.Count,
             bank.Count,
-            started.ElapsedMilliseconds);
+            started.ElapsedMilliseconds,
+            unreadable);
     }
+
+    private static string Head(string answer) => answer.Length switch
+    {
+        0 => "<empty>",
+        <= 80 => answer.ReplaceLineEndings(" "),
+        _ => answer[..80].ReplaceLineEndings(" ") + "…",
+    };
 
     private static Task<string> AnswerAsync(
         AiProvider provider,
@@ -343,8 +364,8 @@ internal static class CompactionRecallHarness
         return stripped;
     }
 
-    /// <summary>correct = 1, partial = 0.5, anything else = 0. One judge, one prompt, across every arm.</summary>
-    private static async Task<double> JudgeAsync(
+    /// <summary>correct = 1, partial = 0.5, wrong = 0. One judge, one prompt, across every arm.</summary>
+    private static async Task<(double Score, bool Readable)> JudgeAsync(
         AiProvider provider,
         RecallQuestion question,
         string answer,
@@ -359,13 +380,19 @@ internal static class CompactionRecallHarness
 
         var verdict = await CompleteAsync(provider, [new ChatMessage(ChatRole.User, prompt)], ct);
 
-        // Exact-token comparison, because "incorrect" contains "correct".
-        var word = new string([.. verdict.Trim().ToLowerInvariant().TakeWhile(char.IsLetter)]);
+        // Whole-word, because "incorrect" contains "correct" - and skipping the leading non-letters first,
+        // because "**partial**" and "- correct" used to parse to nothing and score 0. That is invisible at
+        // 0% and at 100% and biases exactly the mid-range arms a recovery mechanism is meant to produce, so an
+        // unreadable verdict is now COUNTED rather than quietly treated as wrong.
+        var word = new string([
+            .. verdict.ToLowerInvariant().SkipWhile(c => !char.IsLetter(c)).TakeWhile(char.IsLetter)]);
+
         return word switch
         {
-            "correct" => 1,
-            "partial" => 0.5,
-            _ => 0,
+            "correct" => (1, true),
+            "partial" => (0.5, true),
+            "wrong" => (0, true),
+            _ => (0, false),
         };
     }
 
@@ -528,8 +555,8 @@ internal static class CompactionRecallHarness
             .AppendLine(string.Create(CultureInfo.InvariantCulture,
                 $"- thresholds: tool eviction {AgentContextCompactor.ToolEvictionThreshold}, truncation {AgentContextCompactor.TruncationThreshold}"))
             .AppendLine()
-            .AppendLine("| transcript | bank | A:uncompacted | B:current | B/A |")
-            .AppendLine("|---|---|---|---|---|");
+            .AppendLine("| transcript | bank | A:uncompacted | B:current | B/A | unreadable verdicts |")
+            .AppendLine("|---|---|---|---|---|---|");
 
         foreach (var row in rows)
         {
@@ -537,7 +564,8 @@ internal static class CompactionRecallHarness
                 $"| {row.TranscriptId} | {row.BankSize} "
                 + $"| {Percent(row.Uncompacted.Score)} @ {Thousands(row.Uncompacted.ApproximateTokens)} / {row.Uncompacted.Messages} msg "
                 + $"| {Percent(row.Current.Score)} @ {Thousands(row.Current.ApproximateTokens)} / {row.Current.Messages} msg "
-                + $"| {Ratio(row.Current.Score, row.Uncompacted.Score)} |");
+                + $"| {Ratio(row.Current.Score, row.Uncompacted.Score)} "
+                + $"| {row.Uncompacted.UnreadableVerdicts + row.Current.UnreadableVerdicts} |");
         }
 
         if (rows.Count > 0)
@@ -546,7 +574,8 @@ internal static class CompactionRecallHarness
                 $"| **AVG** | {rows.Sum(r => r.BankSize)} "
                 + $"| {Percent(rows.Average(r => r.Uncompacted.Score))} "
                 + $"| {Percent(rows.Average(r => r.Current.Score))} "
-                + $"| {Ratio(rows.Average(r => r.Current.Score), rows.Average(r => r.Uncompacted.Score))} |");
+                + $"| {Ratio(rows.Average(r => r.Current.Score), rows.Average(r => r.Uncompacted.Score))} "
+                + $"| {rows.Sum(r => r.Uncompacted.UnreadableVerdicts + r.Current.UnreadableVerdicts)} |");
         }
 
         var directory = Environment.GetEnvironmentVariable(OutputVariable);

@@ -144,8 +144,8 @@ Run 2026-08-23, small window, `mistral-medium-latest` answering and judging at t
 
 ### The instrument cleared its own checks, three ways
 
-- **Arm A 98.3%**, above both floors in §1 (90% hard, 95% synthetic). The bank and the judge work; 59 of 60
-  questions were answered correctly from a transcript that still held the fact.
+- **Arm A 98.3%**, above both floors in §1 (90% hard, 95% synthetic). The bank and the judge work: 59.0 of 60
+  points, which is 58 correct plus 2 judged partial, from transcripts that still held the fact.
 - **A no-context control arm scored 0.0%** over the same 15 questions on transcript 1 — 30 extra calls, and a
   control the plan did not ask for. The planted answers are formulaic (an error code is `PIA-E` plus the stage
   index), so a model able to extrapolate the pattern would have scored on arm B without recalling anything.
@@ -183,8 +183,17 @@ is **recorded and not acted on**: no arm beyond A and B was run and no threshold
   untouched — the compactor applied its pin and its token charge before the send — and it shows: that shape
   retained the least of the four (1.8K / 12 messages), because the pinned image turn eats the budget.
 - **One model family judges its own answers.** §12's judge-inconsistency risk is reduced by one prompt and
-  temperature 0, not removed. The 0.0% floor is not judge-sensitive (the answers were refusals or wrong
-  values, not near misses), but a future arm scoring in the middle will be.
+  temperature 0, not removed. The 0.0% floor is not judge-sensitive, and that is checked rather than assumed:
+  a follow-up probe (`ArmB_Zero_IsARefusal_NotAnEmptyResponse`, 6 calls) read the answer TEXT for three arm-B
+  questions and got the literal `UNKNOWN` refusal each time, with a readable verdict. A zero that was really
+  an empty-but-successful response would have scored identically and pointed the next three steps at a
+  phantom. A future arm scoring in the middle *will* be judge-sensitive.
+- **The verdict parser was wrong in a way this run could not show.** It took letters from the start of the
+  reply, so `**partial**` or `- correct` parsed to nothing and scored 0 - invisible at 0% and at ~100%, and
+  biased against exactly the mid-range results arms C and D are expected to produce. Fixed after the run
+  (skip leading non-letters, whole-word match, and an **unreadable-verdict count** now surfaced per cell), so
+  for THIS run unreadability is unmeasured outside the probe above - one more reason 0.0% and 98.3% are the
+  only two numbers it is safe to read.
 
 ### Operational notes, so the next run does not relearn them
 
