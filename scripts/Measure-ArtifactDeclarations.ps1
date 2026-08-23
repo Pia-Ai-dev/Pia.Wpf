@@ -215,7 +215,7 @@ if ($OutputPath) {
     $repoRoot = [System.IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
     if ($resolvedOutput -eq $repoRoot -or
         $resolvedOutput.StartsWith($repoRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "Refusing to write $resolvedOutput: it is inside the repository at $repoRoot. There is no override — a measured number reaches a doc by being retyped. Pass -OutputPath somewhere outside the repo."
+        throw "Refusing to write ${resolvedOutput}: it is inside the repository at $repoRoot. There is no override — a measured number reaches a doc by being retyped. Pass -OutputPath somewhere outside the repo."
     }
     if ((Test-Path -LiteralPath $resolvedOutput) -and -not $Force) {
         throw "$resolvedOutput already exists. Pass -Force to overwrite it."
