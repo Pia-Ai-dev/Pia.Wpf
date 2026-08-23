@@ -344,11 +344,47 @@ below are the real ones.
   own personas.
   *Deps:* E1, C4 · *Effort:* **XS** · *Value:* **Med**
 
-- [ ] **E9 · Persist the resolved run persona and effort on the `AgentRuns` row.** Closes the resume gap
+- [x] **E9 · Persist the resolved run persona and effort on the `AgentRuns` row.** Closes the resume gap
   the review surfaced: both pins are resolved per dispatch and never stored, so a scheduled run that parks
   at its budget resumes on the current mode persona at the mode default effort. One seam, and it closes
   both pins without giving the launcher a dependency on the job store.
+  **Landed 2026-08-23.** Two nullable TEXT columns with both migration halves, appended to the END of
+  `RunColumns` because `MapRun` reads by ordinal; the launcher writes what the dispatch *resolved* (not what
+  the request asked) and the resume reads it back off the row. Both claims — a budget park and a user pause —
+  funnel through one `ResumeAsync`, so there is one read-back site, not two. `Guid.Empty` is not normalized
+  to NULL on write the way `ScheduledJobService` does it; harmless, because `RunPinResolver` guards on it.
+  The **interactive** Planned origin (`ChatSessionManager`) got the persona too — it resumes through the same
+  launcher, so a user who moved the persona picker while reading a plan would otherwise have the remaining
+  steps run as someone else. Its effort is deliberately left null: that path derives effort purely from the
+  persona, so null re-derives the same value.
+  Pinned by `AgentRunPinPersistenceTests` (round trip, both readers, the unknown-effort degrade, and the
+  `ALTER TABLE` half via `DROP COLUMN`) and by
+  `HeadlessRunLauncherTests.Resume_RunsThePersonaAndEffortTheLaunchResolved_NotTheCurrentModeDefault`, which
+  **moves the per-mode default while the run is parked** — verified non-vacuous by reverting each half of the
+  read-back separately and watching that half's assertion fail.
   *Deps:* E3 · *Effort:* **S** · *Value:* **Med**
+
+- [ ] **E10 · Carry the launch's provider across a resume, not just the persona.** Found while landing E9,
+  and **pre-existing**: `ResumeAsync` passes `explicitProviderId: null`, so a scheduled job that pinned an
+  explicit `ProviderId` (`ScheduledJobBackgroundService` does populate it) runs its remaining steps on
+  whatever the persona/mode ladder answers instead. E9 did not introduce this and makes it *better* in the
+  common case — the resume now walks the ladder from the run's own persona, which is the persona the launch
+  used — but the explicitly-pinned case is untouched. No new column needed: the launch already writes the
+  resolved provider onto the run's stub chat (`AssistantChats.ProviderId`). Deliberately out of E9's scope
+  rather than smuggled in, and it wants the cheap accessor first — `IAssistantChatService.GetAsync` returns
+  the chat *with its messages*, which is not something to pay for on every Continue.
+  *Deps:* E9 · *Effort:* **XS** · *Value:* **Med**
+
+- [ ] **E11 · Decide what a null persisted effort should mean on resume.** The freeze E9 installs is
+  asymmetric, and one direction contradicts the other. A non-null effort is frozen (the launch's value wins
+  even if the persona is later edited); a null one is not, because null re-enters at the jobPin rung and
+  falls through to the persona's **current** effort — so a job with no effort pin, on a persona whose effort
+  is edited during the park, resumes at an effort the launch never used. Observed directly while proving the
+  E9 test non-vacuous: with the effort read-back reverted the assertion read `Low`, the pinned persona's own
+  value. Distinguishing "resolved to nothing" from "predates the columns" needs a sentinel or a separate
+  recorded-pins marker; `ReasoningEffort.None` cannot be it, since the codebase treats None as a real
+  pinnable value. Cheap to fix, but it is a semantics call, not a bug fix.
+  *Deps:* E9 · *Effort:* **XS** · *Value:* **Med**
 
 ---
 

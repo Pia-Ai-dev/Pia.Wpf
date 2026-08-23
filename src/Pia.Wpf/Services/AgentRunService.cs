@@ -127,6 +127,8 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
             Goal = request.Goal,
             // Opaque launch envelope — stored verbatim, never parsed here, never logged (D1).
             PolicyJson = request.PolicyJson,
+            PersonaId = request.PersonaId,
+            ReasoningEffort = request.ReasoningEffort,
             // The run starts working now → open the ledger's first work segment (G1). ActiveMs is set
             // explicitly (not left default) so this ledger is never mistaken for a legacy one.
             LedgerJson = JsonSerializer.Serialize(new Ledger { ActiveMs = 0, SegmentStartedAt = now }, JsonOptions),
@@ -144,11 +146,11 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
                 INSERT INTO AgentRuns
                     (Id, SchemaVersion, ChatId, RunShape, State, TriggerKind, TriggerRef, ParentRunId,
                      OwnerDeviceId, Goal, FirstMessageId, LastMessageId, PolicyJson, LedgerJson,
-                     CreatedAt, UpdatedAt, StartedAt, CompletedAt, ExtraJson)
+                     CreatedAt, UpdatedAt, StartedAt, CompletedAt, ExtraJson, PersonaId, ReasoningEffort)
                 VALUES
                     (@Id, @SchemaVersion, @ChatId, @RunShape, @State, @TriggerKind, @TriggerRef, @ParentRunId,
                      @OwnerDeviceId, @Goal, @FirstMessageId, @LastMessageId, @PolicyJson, @LedgerJson,
-                     @CreatedAt, @UpdatedAt, @StartedAt, @CompletedAt, @ExtraJson)
+                     @CreatedAt, @UpdatedAt, @StartedAt, @CompletedAt, @ExtraJson, @PersonaId, @ReasoningEffort)
                 """;
             cmd.Parameters.AddWithValue("@Id", run.Id.ToString());
             cmd.Parameters.AddWithValue("@SchemaVersion", run.SchemaVersion);
@@ -169,6 +171,8 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
             cmd.Parameters.AddWithValue("@StartedAt", run.StartedAt!.Value.ToString("O"));
             cmd.Parameters.AddWithValue("@CompletedAt", DBNull.Value);
             cmd.Parameters.AddWithValue("@ExtraJson", DBNull.Value);
+            cmd.Parameters.AddWithValue("@PersonaId", ToParam(run.PersonaId));
+            cmd.Parameters.AddWithValue("@ReasoningEffort", ToParam(run.ReasoningEffort));
             cmd.ExecuteNonQuery();
         }
 
@@ -1297,12 +1301,12 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
 
     // ---- helpers (all invoked under _gate) ----
 
-    // ClarificationsJson is appended at the end rather than slotted in where the table declares it — MapRun
-    // reads by ordinal, so inserting a column mid-list would silently re-index every field after it.
+    // Columns are appended at the end rather than slotted in where the table declares them — MapRun reads by
+    // ordinal, so inserting one mid-list would silently re-index every field after it.
     private const string RunColumns =
         "Id, SchemaVersion, ChatId, RunShape, State, TriggerKind, TriggerRef, ParentRunId, OwnerDeviceId, " +
         "Goal, FirstMessageId, LastMessageId, PolicyJson, LedgerJson, CreatedAt, UpdatedAt, StartedAt, CompletedAt, ExtraJson, " +
-        "ClarificationsJson";
+        "ClarificationsJson, PersonaId, ReasoningEffort";
 
     private const string StepColumns =
         "Id, RunId, Ordinal, Title, Intent, Status, ExpectedArtifact, AssignedPersonaId, DependsOnJson, " +
@@ -1329,8 +1333,10 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         StartedAt = r.IsDBNull(16) ? null : DateTime.Parse(r.GetString(16)).ToUniversalTime(),
         CompletedAt = r.IsDBNull(17) ? null : DateTime.Parse(r.GetString(17)).ToUniversalTime(),
         ExtraJson = r.IsDBNull(18) ? null : r.GetString(18),
-        // See RunColumns for why this is last. Opaque here: RunClarifications owns the shape.
+        // Opaque here: RunClarifications owns the shape.
         ClarificationsJson = r.IsDBNull(19) ? null : r.GetString(19),
+        PersonaId = ParseNullableGuid(r, 20),
+        ReasoningEffort = r.IsDBNull(21) ? null : ParseReasoningEffort(r.GetString(21)),
     };
 
     private static AgentStep MapStep(SqliteDataReader r) => new()
@@ -1582,6 +1588,13 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
     private static object ToParam(string? value) => value is null ? DBNull.Value : value;
 
     private static object ToParam(Guid? value) => value is { } g ? g.ToString() : DBNull.Value;
+
+    /// <summary>The enum NAME, like ScheduledJobs stores its pin, so a hand-read row is legible.</summary>
+    private static object ToParam(Pia.Models.ReasoningEffort? value) => value is { } e ? e.ToString() : DBNull.Value;
+
+    /// <summary>An unknown name or an out-of-range ordinal means unset; TryParse alone would accept the ordinal.</summary>
+    private static Pia.Models.ReasoningEffort? ParseReasoningEffort(string raw) =>
+        Enum.TryParse<Pia.Models.ReasoningEffort>(raw, out var effort) && Enum.IsDefined(effort) ? effort : null;
 
     public void Dispose()
     {

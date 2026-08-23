@@ -899,8 +899,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                 policyJson = HeadlessRunLauncher.InteractiveEmptyEnvelopeJson;
             }
 
+            // This run's resume runs unattended through the launcher (see above), so the persona has to travel
+            // with the row or the remaining steps come back as whatever the picker now says.
             var run = await _agentRunService.CreateAsync(new AgentRunCreateRequest(
-                session.Id!.Value, RunShape.Planned, AgentRunTrigger.User, Goal: userText, PolicyJson: policyJson));
+                session.Id!.Value, RunShape.Planned, AgentRunTrigger.User, Goal: userText, PolicyJson: policyJson,
+                PersonaId: persona.Id));
 
             // W2: this session EXECUTES this run itself (LiveTurnExecutor below), so it is not a foreign
             // writer. Recorded before SetActiveRun so no RunChanged can race in and flag the session; the

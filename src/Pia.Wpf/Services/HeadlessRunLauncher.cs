@@ -355,7 +355,11 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
 
         var run = await _agentRunService.CreateAsync(new AgentRunCreateRequest(
             chatId, RunShape.Planned, req.Trigger, req.TriggerRef, req.OwnerDeviceId, Goal: req.Goal,
-            PolicyJson: policyJson, ParentRunId: parentRunId), ct)
+            PolicyJson: policyJson, ParentRunId: parentRunId,
+            // What this dispatch RESOLVED, not what the request asked: a resume has no job store to walk the
+            // ladder again from.
+            PersonaId: persona.Id,
+            ReasoningEffort: RunPinResolver.EffectiveEffort(req.ReasoningEffort, persona.ReasoningEffort)), ct)
             .ConfigureAwait(false);
 
         // The run's ISOLATED workspace under runs\<runId>, carved out of SensitivePathGuard by
@@ -556,11 +560,14 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             // T1-1 cold start, symmetric with the launch path: a resume can be the FIRST thing this launcher
             // does in a session (a run parked before a restart), so the width has to be picked up here too.
             _slots.Resize(settings.GetMaxParallelBackgroundRuns());
-            var persona = await _personaService.ResolveActiveAsync(
-                WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal).ConfigureAwait(false);
-            // Persona/provider are NOT persisted on the run and a scheduled job's pins are not re-read here, so
-            // a resumed run takes the CURRENT per-mode persona and default provider rather than its origin's.
-            var provider = await ResolveProviderAsync(null, persona).ConfigureAwait(false)
+            // Off the RUN ROW, not the job store: the launcher must not depend on it, and a job's pins can
+            // change or vanish between park and Continue.
+            var persona = await RunPinResolver.ResolvePersonaAsync(
+                _personaService, run.PersonaId,
+                settings.UserOperatingMode ?? UserOperatingMode.Personal, _logger).ConfigureAwait(false);
+            // Only the two pins are carried: the provider itself is still re-resolved, so a job that pinned an
+            // explicit ProviderId does not get it back here.
+            var provider = await ResolveProviderAsync(null, persona, run.ReasoningEffort).ConfigureAwait(false)
                 ?? throw new InvalidOperationException("No provider configured to resume an agent run.");
             // Restore the write grants the LAUNCH resolved from the run's own envelope — a resume must
             // never widen them, so a narrowly-granted scheduled job that parked at its budget does NOT come

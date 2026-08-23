@@ -133,6 +133,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     /// <param name="pinnedPersona">What <c>GetPersonasAsync</c> answers — the list a JOB's pin resolves against,
     /// which unlike a delegated id is not roster-gated. Stubbed either way: an unstubbed one returns a null task
     /// and NREs the pin path.</param>
+    /// <param name="modePersona">What <c>ResolveActiveAsync</c> answers. A second launcher built with a different
+    /// one is how a fact moves the per-mode default while a run is parked.</param>
     /// <param name="steering">Registered with the per-run scope too, so the run's own orchestrator reads the same instance the launcher writes.</param>
     /// <param name="stream">Replaces <see cref="Drive"/> so a fact can hold a run inside a step rather than only inside the planner.</param>
     /// <param name="settingsService">A substitute cannot raise <c>SettingsChanged</c>; pass a <see cref="MutableSettingsService"/> to drive a real save. Supersedes <paramref name="appSettings"/>.</param>
@@ -142,6 +144,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         FakeRunWorkspaceService? workspaces = null, string? runsBaseOverride = null,
         Persona? rosterPersona = null, AiProvider? rosterProvider = null,
         Persona? pinnedPersona = null,
+        Persona? modePersona = null,
         IRunSteeringStore? steering = null,
         Func<CancellationToken, IAsyncEnumerable<ChatStreamItem>>? stream = null,
         IExecutingRunStore? executing = null,
@@ -151,7 +154,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         // Register is the last statement before the orchestrator is entered.
         var executingRuns = executing ?? _executing;
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
-        var persona = new Persona { Name = "Pia", SystemPrompt = "sys" };
+        var persona = modePersona ?? new Persona { Name = "Pia", SystemPrompt = "sys" };
         var planner = new FakePlanner(onPlan);
 
         var ai = Substitute.For<IAiClientService>();
@@ -875,6 +878,63 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
         foreach (var id in new[] { parked.Id, parked2.Id, parked3.Id })
             try { Directory.Delete(Path.Combine(_runsBase, id.ToString()), true); } catch { }
+    }
+
+    // The pins the LAUNCH resolved have to survive the park, because the resume has no job store to re-read
+    // them from. The per-mode default is moved while the run is parked, which is what makes this fact able to
+    // tell a read-back from a re-resolution that happens to agree.
+    [Fact]
+    public async Task Resume_RunsThePersonaAndEffortTheLaunchResolved_NotTheCurrentModeDefault()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        // Low, so the XHigh asserted below can only have come from the request's own pin outranking it.
+        var pinned = new Persona { Name = "Pinned", SystemPrompt = "sys", ReasoningEffort = ReasoningEffort.Low };
+
+        var (launcher, planner) = BuildLauncher(pinnedPersona: pinned);
+        // Steps > 0, or the plan degrades to the single-turn fallback, which writes no step row and never parks.
+        planner.Steps = 1;
+        Guid runId;
+        try
+        {
+            var handle = await launcher.LaunchAsync(new HeadlessRunRequest(
+                "pinned goal", AgentRunTrigger.Schedule,
+                PersonaId: pinned.Id, ReasoningEffort: ReasoningEffort.XHigh,
+                // Wall-clock is already spent on the first drain iteration, so the step stays Pending.
+                Budget: new RunProfile(MaxSteps: 24, MaxReplans: 2, WallClock: TimeSpan.Zero)), ct);
+            await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), ct);
+            runId = handle.RunId;
+
+            var parked = await _runs.GetAsync(runId, ct);
+            Assert.Equal(AgentRunState.WaitingForInput, parked!.State);
+            Assert.Equal(pinned.Id, parked.PersonaId);
+            Assert.Equal(ReasoningEffort.XHigh, parked.ReasoningEffort);
+        }
+        finally
+        {
+            await launcher.StopAsync(CancellationToken.None);
+        }
+
+        var movedOn = new Persona { Name = "MovedOn", SystemPrompt = "sys", ReasoningEffort = ReasoningEffort.Minimal };
+        var verifier = new FakeVerifier();
+        var (resumer, resumePlanner) = BuildLauncher(
+            pinnedPersona: pinned, modePersona: movedOn, verifier: verifier);
+        try
+        {
+            Assert.True(await resumer.ResumeAsync(runId, ct: ct));
+            await AwaitRunSettledAsync(resumer, runId);
+
+            // A resume skips planning, so the verify pass is the only run-level hook that sees these two —
+            // and a null PlanPersona is the proof the planner really was not the source.
+            Assert.Null(resumePlanner.PlanPersona);
+            Assert.Equal(pinned.Id, Assert.Single(verifier.SeenPersonas).Id);
+            Assert.Equal(ReasoningEffort.XHigh, Assert.Single(verifier.SeenProviders).ReasoningEffort);
+        }
+        finally
+        {
+            await resumer.StopAsync(CancellationToken.None);
+        }
+
+        try { Directory.Delete(Path.Combine(_runsBase, runId.ToString()), true); } catch { }
     }
 
     [Theory]

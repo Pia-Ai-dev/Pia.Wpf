@@ -21,6 +21,12 @@ internal sealed class FakeVerifier : IAgentVerifier
     /// observable once a step's finally has restored the ambient; recorded even when null.</summary>
     public List<string?> SeenWorkspaceRoots { get; } = new();
 
+    /// <summary>The run-level persona and effort-stamped provider per verify call. On a RESUME this is the only
+    /// place they are observable, since planning is skipped.</summary>
+    public List<Persona> SeenPersonas { get; } = new();
+
+    public List<AiProvider> SeenProviders { get; } = new();
+
     /// <summary>When set, the verify turn cancels this source (as ChatSession.Cancel() would) and then
     /// honors the linked run token — so the orchestrator's SafeVerify observes a genuine run cancel.</summary>
     public CancellationTokenSource? CancelSessionOnVerify { get; set; }
@@ -35,6 +41,8 @@ internal sealed class FakeVerifier : IAgentVerifier
         Order?.Add("verify");
         SeenCompletedSteps.Add(ctx.CompletedSteps.ToList());
         SeenWorkspaceRoots.Add(ctx.WorkspaceRoot);
+        SeenPersonas.Add(persona);
+        SeenProviders.Add(provider);
         if (CancelSessionOnVerify is { } src)
         {
             src.Cancel();               // user cancel fires during the in-flight verify turn

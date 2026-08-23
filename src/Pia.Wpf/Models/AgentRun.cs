@@ -44,6 +44,12 @@ public sealed class AgentRun
     /// </summary>
     public string? PolicyJson { get; set; }
 
+    /// <summary>The persona this dispatch resolved, so a resume runs the same one.</summary>
+    public Guid? PersonaId { get; set; }
+
+    /// <summary>The effort this dispatch resolved. Null leaves the provider's own setting.</summary>
+    public ReasoningEffort? ReasoningEffort { get; set; }
+
     /// <summary>
     /// Tokens/wall-clock, per step + total:
     /// <c>{ inputTokens, outputTokens, wallClockMs, activeMs, segmentStartedAt?, perStep:[...] }</c>.

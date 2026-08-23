@@ -475,6 +475,9 @@ public class SqliteContext : IDisposable
                 StartedAt           TEXT    NULL,
                 CompletedAt         TEXT    NULL,
                 ExtraJson           TEXT    NULL,
+                -- The persona and effort this dispatch RESOLVED, not pins to be resolved again on resume.
+                PersonaId           TEXT    NULL,
+                ReasoningEffort     TEXT    NULL,
                 FOREIGN KEY (ChatId) REFERENCES AssistantChats(Id) ON DELETE CASCADE
             );
 
@@ -1011,21 +1014,38 @@ public class SqliteContext : IDisposable
             addCol.ExecuteNonQuery();
         }
 
-        // Fresh databases already have ClarificationsJson from the CREATE TABLE above, so this short-circuits.
+        // Fresh databases already have all three from the CREATE TABLE above, so each branch short-circuits.
         var hasClarificationsJson = false;
+        var hasRunPersonaId = false;
+        var hasRunReasoningEffort = false;
         using (var p = _connection!.CreateCommand())
         {
             p.CommandText = "PRAGMA table_info(AgentRuns)";
             using var r = p.ExecuteReader();
             while (r.Read())
             {
-                if (r.GetString(1) == "ClarificationsJson") { hasClarificationsJson = true; break; }
+                var col = r.GetString(1);
+                if (col == "ClarificationsJson") hasClarificationsJson = true;
+                else if (col == "PersonaId") hasRunPersonaId = true;
+                else if (col == "ReasoningEffort") hasRunReasoningEffort = true;
             }
         }
         if (!hasClarificationsJson)
         {
             using var addCol = _connection.CreateCommand();
             addCol.CommandText = "ALTER TABLE AgentRuns ADD COLUMN ClarificationsJson TEXT NULL";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasRunPersonaId)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AgentRuns ADD COLUMN PersonaId TEXT NULL";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasRunReasoningEffort)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AgentRuns ADD COLUMN ReasoningEffort TEXT NULL";
             addCol.ExecuteNonQuery();
         }
     }

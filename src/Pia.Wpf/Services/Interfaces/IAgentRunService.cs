@@ -24,6 +24,8 @@ namespace Pia.Services.Interfaces;
 /// missing.
 /// </para>
 /// </param>
+/// <param name="PersonaId">The persona the dispatch RESOLVED, not a pin to resolve again; null keeps the per-mode default.</param>
+/// <param name="ReasoningEffort">The effort that same dispatch resolved; null leaves the provider's own setting.</param>
 public sealed record AgentRunCreateRequest(
     Guid ChatId,
     RunShape Shape,
@@ -32,7 +34,9 @@ public sealed record AgentRunCreateRequest(
     Guid? OwnerDeviceId = null,
     string? Goal = null,
     string? PolicyJson = null,
-    Guid? ParentRunId = null);
+    Guid? ParentRunId = null,
+    Guid? PersonaId = null,
+    Pia.Models.ReasoningEffort? ReasoningEffort = null);
 
 /// <summary>
 /// One submitted PENDING step of a plan mutation (Batch 08 D3), as the user left it in the run panel.

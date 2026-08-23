@@ -10,8 +10,7 @@ namespace Pia.Services;
 /// </summary>
 internal static class RunPinResolver
 {
-    /// <summary>A user-authored pin is not roster-gated the way a planner-assigned id is, and an unresolvable
-    /// one logs its id and a reason token — never a persona name.</summary>
+    /// <summary>An unresolvable pin logs its id and a reason token — never a persona name.</summary>
     public static async Task<Persona> ResolvePersonaAsync(
         IPersonaService personas, Guid? pinnedId, UserOperatingMode mode, ILogger logger)
     {
@@ -41,11 +40,16 @@ internal static class RunPinResolver
         return await personas.ResolveActiveAsync(WindowMode.Assistant, mode).ConfigureAwait(false);
     }
 
+    /// <summary>The effort ladder alone, for a caller that PERSISTS what a dispatch resolved. Null leaves the
+    /// provider's own setting.</summary>
+    public static ReasoningEffort? EffectiveEffort(ReasoningEffort? jobPin, ReasoningEffort? personaEffort) =>
+        jobPin ?? personaEffort;
+
     /// <summary>Clones rather than stamping the instance: <see cref="AiProvider"/> objects come out of a shared
     /// store, so mutating one leaks a single run's effort into every other consumer.</summary>
     public static AiProvider ApplyEffort(AiProvider provider, ReasoningEffort? jobPin, ReasoningEffort? personaEffort)
     {
-        if ((jobPin ?? personaEffort) is not { } effort)
+        if (EffectiveEffort(jobPin, personaEffort) is not { } effort)
             return provider;
 
         var stamped = provider.Clone();
