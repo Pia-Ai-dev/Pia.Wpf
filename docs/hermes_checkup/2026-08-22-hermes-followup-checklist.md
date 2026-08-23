@@ -11,6 +11,7 @@ implementation step. Tick as they land.
 | **C** | [Routine blueprints](2026-08-22-routine-blueprints-plan.md) · ordering decision: [C4 before C5](2026-08-22-c4-before-c5-decision.md) |
 | **D** | [Guided tour](2026-08-22-guided-tour-tool-plan.md) |
 | **E** | [Per-routine persona + reasoning effort](2026-08-22-routine-persona-effort-plan.md) |
+| **F** | Test hygiene — no plan doc; found while executing group A |
 
 **Effort** — `XS` under a day, no new types · `S` 1–2 days · `M` 3–5 days, new types or a new surface
 · `L` a week or more, a new subsystem.
@@ -402,6 +403,36 @@ D1 → D2 → D3 → D5               # tour, after the cheaper items land
 ```
 
 `A1` and `B5` together are under two days and can both close a branch of work.
+
+---
+
+## F — Test hygiene
+
+Not from the review. Found on 2026-08-23 while seeding a throwaway profile for the wide A read.
+
+- [ ] **F1 · `dotnet test` writes to the user's REAL profile.** The documented gate, run with no
+  environment overrides, creates and mutates `%LOCALAPPDATA%\Pia\history.db`,
+  `%APPDATA%\Pia\settings.json`, `%APPDATA%\Pia\providers.json`, `Logs\`, `runs\` and `workdir\`.
+  **Evidence, not inference.** `AgentRuns.PersonaId` and `ReasoningEffort` exist only in code committed at
+  `cb5d9ba7` (hours old, never launched), yet the real `history.db-wal` carried both after a gate run —
+  and opening the `.db` *without* its `-wal` shows neither, so `MigrateSchema` ran against the real file
+  during that run. Re-running the whole gate with `PIA_DATA_DIR`/`PIA_LOCAL_DATA_DIR` pointed at a scratch
+  directory then produced a complete profile there — `history.db` plus **832 KB of WAL**, both json files
+  and all three subdirectories — so this is not one stray `ALTER`.
+  **Why it has gone unnoticed:** every write so far has been additive and self-healing (a nullable column
+  the app would add at next launch anyway), and `DataDirectoryRoutingTests`/`PiaPathsTests` police the
+  *production* code's use of `SpecialFolder`, not the test project's own resolution of an unset override.
+  **A blanket redirect is not the fix.** Nine tests fail under one, because their premise is that no
+  override is set: `PiaPathsTests.RoutedMember_ObservesAnOverrideAppliedAfterItsTypeIsLoaded` (all five
+  rows) and `DataRoots_WithOverride_UseTheOverrideVerbatim`,
+  `AssistantWorkspaceTests.LegacyWorkdir_is_workdir_under_local_app_data_Pia`,
+  `VaultPathProviderTests.Default_root_is_Pia_Vault_under_local_app_data`, and
+  `FilesToolHandlerWriteTests.Write_IntoWorkdir_IsAllowed_ThroughRealResolver` — that last one writes
+  through the *real* resolver by name, which is where `workdir\` comes from.
+  First job is to name the test that opens the default-path `SqliteContext`, since that is the only one
+  that can explain `history.db`; then decide between per-test overrides and letting those nine assert the
+  real path *without touching it*.
+  *Deps:* none · *Effort:* **S** · *Value:* **High** (the gate must not mutate the machine it runs on)
 
 ---
 
