@@ -380,9 +380,11 @@ public interface IAgentRunService
 
     Task SetStepStatusAsync(Guid stepId, AgentStepStatus status, CancellationToken ct = default);
 
-    /// <summary>Terminal step write + per-step ledger + transcript slice (§16 R16, R3).</summary>
+    /// <summary>Terminal step write + per-step ledger + transcript slice (§16 R16, R3), plus the artifact the
+    /// step reported, merged into its <c>ExtraJson</c> so it survives a park and resume.</summary>
     Task RecordStepResultAsync(Guid stepId, AgentStepStatus status,
-        Guid? firstMessageId, Guid? lastMessageId, UsageDetails? usage, CancellationToken ct = default);
+        Guid? firstMessageId, Guid? lastMessageId, UsageDetails? usage, CancellationToken ct = default,
+        string? artifactRef = null);
 
     /// <summary>
     /// Rewrite the PENDING tail of a paused run's plan — the edit / insert / reorder / skip of Batch 08 D3 —

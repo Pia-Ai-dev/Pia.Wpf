@@ -24,7 +24,7 @@ public sealed class StepOutcomeStore
     /// trim, then keep the HEAD. The summary reaches a replan prompt and the run's persisted failure reason;
     /// the artifact reference is a path-like token and needs far less room.</summary>
     private const int MaxSummaryChars = 600;
-    private const int MaxArtifactChars = 300;
+    internal const int MaxArtifactChars = 300;
 
     /// <summary>
     /// The step's declared outcome, or null when it never declared one (so the caller falls back to the old
@@ -104,7 +104,7 @@ public sealed class StepOutcomeStore
 
     /// <summary>Flatten CR/LF/TAB to space, trim, cap keeping the head. Blank yields null, never an
     /// empty-but-present string (which would render an empty "produced:" line downstream).</summary>
-    private static string? Clamp(string? text, int cap)
+    internal static string? Clamp(string? text, int cap)
     {
         if (string.IsNullOrWhiteSpace(text))
             return null;

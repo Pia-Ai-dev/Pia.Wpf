@@ -160,6 +160,9 @@ public class ScheduledJobBackgroundServiceTests
         var jobs = new FakeJobService();
         var due = NewDueJob();
         due.OwnerDeviceId = Guid.NewGuid();
+        // Research is the DEFAULT kind, so this leg is what every pre-AgentTask routine still is.
+        due.PersonaId = Guid.NewGuid();
+        due.ReasoningEffort = ReasoningEffort.Minimal;
         jobs.SeedDue(due);
 
         var runner = new FakeRunner { Result = new BackgroundTurnResult(Guid.NewGuid(), true, null) };
@@ -178,6 +181,8 @@ public class ScheduledJobBackgroundServiceTests
         Assert.Equal(AgentRunTrigger.Schedule, runner.LastRequest!.Trigger);
         Assert.Equal(due.Id, runner.LastRequest.TriggerRef);
         Assert.Equal(due.OwnerDeviceId, runner.LastRequest.OwnerDeviceId);
+        Assert.Equal(due.PersonaId, runner.LastRequest.PersonaId);
+        Assert.Equal(due.ReasoningEffort, runner.LastRequest.ReasoningEffort);
     }
 
     [Fact]
@@ -412,6 +417,8 @@ public class ScheduledJobBackgroundServiceTests
         var due = NewDueJob();
         due.Kind = ScheduledJobKind.AgentTask;
         due.ProviderId = Guid.NewGuid();
+        due.PersonaId = Guid.NewGuid();
+        due.ReasoningEffort = ReasoningEffort.XHigh;
         due.GrantedTools = new List<string> { "write_file" };
         jobs.SeedDue(due);
 
@@ -448,6 +455,8 @@ public class ScheduledJobBackgroundServiceTests
         Assert.Equal(due.Id, captured.TriggerRef);
         Assert.Equal(due.OwnerDeviceId, captured.OwnerDeviceId);
         Assert.Equal(due.ProviderId, captured.ProviderId);
+        Assert.Equal(due.PersonaId, captured.PersonaId);
+        Assert.Equal(due.ReasoningEffort, captured.ReasoningEffort);
         Assert.Equal(due.GrantedTools, captured.GrantedWrites);
         Assert.NotNull(captured.Budget);
         Assert.Equal(50, captured.Budget!.WallClock.TotalMinutes);
@@ -458,6 +467,40 @@ public class ScheduledJobBackgroundServiceTests
         Assert.Equal(1, notifications.SuccessCount);
         // …and the schedule had already moved on at dispatch, before any of that was known.
         Assert.Equal([due.Id], jobs.Dispatched);
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_AgentTaskJob_GrantingNothing_LaunchesWithNullSoTheLauncherNarrowsIt()
+    {
+        // The agent leg is the OPPOSITE of the research leg here, and only null reaches the launcher's
+        // DefaultGrantedWrites substitution — an empty list would hand the run no write tool at all.
+        var jobs = new FakeJobService();
+        var due = NewDueJob();
+        due.Kind = ScheduledJobKind.AgentTask;
+        due.GrantedTools = [];
+        jobs.SeedDue(due);
+
+        var runId = Guid.NewGuid();
+        var chatId = Guid.NewGuid();
+        HeadlessRunRequest? captured = null;
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        launcher.LaunchAsync(Arg.Do<HeadlessRunRequest>(r => captured = r), Arg.Any<CancellationToken>())
+            .Returns(new HeadlessRunHandle(runId, chatId, Task.CompletedTask));
+
+        var runService = Substitute.For<IAgentRunService>();
+        runService.GetAsync(runId, Arg.Any<CancellationToken>())
+            .Returns(new AgentRun { Id = runId, ChatId = chatId, RunShape = RunShape.Planned, State = AgentRunState.Completed });
+
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
+            new FakeNotificationSurface(), launcher, NewSettings(), runService,
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await TickAndSettleAsync(bg, CancellationToken.None);
+
+        Assert.NotNull(captured);
+        Assert.Null(captured!.GrantedWrites);
+        Assert.Equal(due.Id, captured.TriggerRef);
     }
 
     [Fact]
@@ -606,6 +649,54 @@ public class ScheduledJobBackgroundServiceTests
 
         Assert.Equal(1, runner.RunCount);
         await launcher.DidNotReceive().LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_ResearchJob_GrantingNothing_ReachesTheRunnerWithAnEmptyWriteGrant()
+    {
+        // The research leg must NOT pick up the agent leg's empty-means-the-default rule: a job that granted no
+        // write tool gets none, so a card advertising an empty set cannot silently gain write_file.
+        var jobs = new FakeJobService();
+        var due = NewDueJob();
+        due.GrantedTools = [];
+        jobs.SeedDue(due);
+
+        var runner = new FakeRunner { Result = new BackgroundTurnResult(Guid.NewGuid(), true, null) };
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
+            new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
+            Substitute.For<IHeadlessRunLauncher>(), NewSettings(), Substitute.For<IAgentRunService>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await TickAndSettleAsync(bg, CancellationToken.None);
+
+        Assert.Equal(1, runner.RunCount);
+        Assert.NotNull(runner.LastRequest);
+        Assert.Equal(due.Query, runner.LastRequest!.Prompt);
+        Assert.Empty(runner.LastRequest.GrantedWriteTools);
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_ResearchJob_PassesItsNamedWriteGrantToTheRunner()
+    {
+        // Pairs with the empty-grant test above: BackgroundTurnRequest.GrantedWriteTools already defaults to
+        // empty, so "empty stayed empty" is only evidence once this path is shown to carry a non-empty set.
+        var jobs = new FakeJobService();
+        var due = NewDueJob();
+        due.GrantedTools = ["create_todo", "create_memory"];
+        jobs.SeedDue(due);
+
+        var runner = new FakeRunner { Result = new BackgroundTurnResult(Guid.NewGuid(), true, null) };
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
+            new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
+            Substitute.For<IHeadlessRunLauncher>(), NewSettings(), Substitute.For<IAgentRunService>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await TickAndSettleAsync(bg, CancellationToken.None);
+
+        Assert.NotNull(runner.LastRequest);
+        Assert.Equal(new[] { "create_todo", "create_memory" }, runner.LastRequest!.GrantedWriteTools);
     }
 
     [Fact]
@@ -1349,7 +1440,8 @@ public class ScheduledJobBackgroundServiceTests
             TimeOnly timeOfDay, DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null,
             DateTime? specificDate = null, Guid? providerId = null,
             IReadOnlyCollection<string>? grantedTools = null,
-            ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false) => throw new NotImplementedException();
+            ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false,
+            Guid? personaId = null, ReasoningEffort? reasoningEffort = null) => throw new NotImplementedException();
 
         public Task<IReadOnlyList<ScheduledJob>> GetAllAsync() => throw new NotImplementedException();
         public Task<IReadOnlyList<ScheduledJob>> GetActiveAsync() => throw new NotImplementedException();
@@ -1362,7 +1454,9 @@ public class ScheduledJobBackgroundServiceTests
             RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null, DayOfWeek? dayOfWeek = null,
             int? dayOfMonth = null, int? month = null, Guid? providerId = null,
             IReadOnlyCollection<string>? grantedTools = null,
-            DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null) => throw new NotImplementedException();
+            DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null,
+            Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
+            bool clearReasoningEffort = false) => throw new NotImplementedException();
 
         /// <summary>Drives the run-now owner refusal. True by default, which is the ordinary case (a job this
         /// device owns, or a legacy row with a null owner).</summary>

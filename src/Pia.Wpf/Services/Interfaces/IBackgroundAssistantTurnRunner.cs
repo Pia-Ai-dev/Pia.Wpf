@@ -31,6 +31,15 @@ public sealed record BackgroundTurnRequest
 
     /// <summary>Owner device for this run (mirrors <c>ScheduledJob.OwnerDeviceId</c>).</summary>
     public Guid? OwnerDeviceId { get; init; }
+
+    /// <summary>
+    /// A user-authored persona pin (a scheduled job's), whose system prompt composes this turn;
+    /// null = the active persona for the operating mode.
+    /// </summary>
+    public Guid? PersonaId { get; init; }
+
+    /// <summary>Effort pin for this turn; outranks the resolved persona's own.</summary>
+    public ReasoningEffort? ReasoningEffort { get; init; }
 }
 
 /// <summary>Outcome of a background turn. <see cref="ChatId"/> is allocated even on failure.</summary>

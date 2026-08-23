@@ -23,6 +23,11 @@ namespace Pia.Services.Interfaces;
 /// <c>IRunWorkspaceService.ProvisionAsync</c> narrows it for live turns; null = the whole assistant
 /// files folder (scheduled jobs, callers with no chat).
 /// </param>
+/// <param name="PersonaId">
+/// A user-authored persona pin (a scheduled job's). NOT roster-gated, unlike <c>LaunchChildAsync</c>'s
+/// <c>personaId</c>, which a planner chose; null = the per-mode resolution.
+/// </param>
+/// <param name="ReasoningEffort">Effort pin for this run; outranks the resolved persona's own.</param>
 public sealed record HeadlessRunRequest(
     string Goal,
     AgentRunTrigger Trigger,
@@ -31,7 +36,9 @@ public sealed record HeadlessRunRequest(
     Guid? ProviderId = null,
     IReadOnlyCollection<string>? GrantedWrites = null,
     RunProfile? Budget = null,
-    string? WorkingSubpath = null)
+    string? WorkingSubpath = null,
+    Guid? PersonaId = null,
+    ReasoningEffort? ReasoningEffort = null)
 {
     /// <summary>
     /// The write grants an unattended run receives when the request names none (A1). Deliberately

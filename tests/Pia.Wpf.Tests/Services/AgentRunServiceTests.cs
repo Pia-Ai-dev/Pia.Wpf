@@ -406,6 +406,99 @@ public sealed class AgentRunServiceTests : IDisposable
         Assert.Equal(AgentStepStatus.Done, doneStep.Status);
     }
 
+    // ---- the artifact a step reported, merged into ExtraJson so it survives a park and resume ----
+
+    [Fact]
+    public async Task RecordStepResultAsync_PersistsTheArtifactRefIntoExtraJson()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
+        var step = new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "A", Status = AgentStepStatus.Pending };
+        await _service.ReplaceStepsAsync(run.Id, new[] { step }, ct);
+
+        await _service.RecordStepResultAsync(step.Id, AgentStepStatus.Done, Guid.NewGuid(), Guid.NewGuid(), null, ct, "out/q3.md");
+
+        var persisted = Assert.Single((await _service.GetAsync(run.Id, ct))!.Plan);
+        var extras = Assert.IsType<JsonObject>(JsonNode.Parse(persisted.ExtraJson!));
+        Assert.Equal("out/q3.md", extras["artifactRef"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task RecordStepResultAsync_MergesIntoTheParallelGroupMarker_WithoutClobberingIt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
+        var step = new AgentStep
+        {
+            Id = Guid.NewGuid(), Ordinal = 0, Title = "A", Status = AgentStepStatus.Pending,
+            ExtraJson = """{"parallelGroup":2}""",
+        };
+        await _service.ReplaceStepsAsync(run.Id, new[] { step }, ct);
+
+        await _service.RecordStepResultAsync(step.Id, AgentStepStatus.Done, Guid.NewGuid(), Guid.NewGuid(), null, ct, "out/q3.md");
+
+        var persisted = Assert.Single((await _service.GetAsync(run.Id, ct))!.Plan);
+        // Read through the real consumers, so "never clobbers the marker" is load-bearing rather than textual.
+        Assert.Equal(2, AgentRunOrchestrator.ParallelGroupOf(persisted));
+        Assert.Equal("out/q3.md", StepExtraJson.ArtifactRefOf(persisted));
+    }
+
+    [Fact]
+    public async Task RecordStepResultAsync_WithoutAnArtifactRef_LeavesExtraJsonByteIdentical()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
+        var step = new AgentStep
+        {
+            Id = Guid.NewGuid(), Ordinal = 0, Title = "A", Status = AgentStepStatus.Pending,
+            ExtraJson = """{"parallelGroup":2}""",
+        };
+        await _service.ReplaceStepsAsync(run.Id, new[] { step }, ct);
+
+        await _service.RecordStepResultAsync(step.Id, AgentStepStatus.Done, Guid.NewGuid(), Guid.NewGuid(), null, ct);
+
+        var persisted = Assert.Single((await _service.GetAsync(run.Id, ct))!.Plan);
+        Assert.Equal("""{"parallelGroup":2}""", persisted.ExtraJson); // no reserialization, no artifactRef:null
+    }
+
+    [Fact]
+    public async Task RecordStepResultAsync_MalformedExtraJson_StillPersistsTheArtifactRef()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
+        var step = new AgentStep
+        {
+            Id = Guid.NewGuid(), Ordinal = 0, Title = "A", Status = AgentStepStatus.Pending, ExtraJson = "not json",
+        };
+        await _service.ReplaceStepsAsync(run.Id, new[] { step }, ct);
+
+        await _service.RecordStepResultAsync(step.Id, AgentStepStatus.Done, Guid.NewGuid(), Guid.NewGuid(), null, ct, "out/q3.md");
+
+        var persisted = Assert.Single((await _service.GetAsync(run.Id, ct))!.Plan);
+        Assert.Equal("""{"artifactRef":"out/q3.md"}""", persisted.ExtraJson);
+        Assert.Equal(AgentStepStatus.Done, persisted.Status);
+    }
+
+    [Fact]
+    public async Task RecordStepResultAsync_StillAccruesTheLedgerAndStatus_WhenAnArtifactRefIsPresent()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await _service.CreateAsync(new AgentRunCreateRequest(await MakeChatAsync(), RunShape.Planned, AgentRunTrigger.User), ct);
+        var step = new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "A", Status = AgentStepStatus.Pending };
+        await _service.ReplaceStepsAsync(run.Id, new[] { step }, ct);
+
+        await _service.RecordStepResultAsync(step.Id, AgentStepStatus.Done, Guid.NewGuid(), Guid.NewGuid(),
+            new UsageDetails { InputTokenCount = 7, OutputTokenCount = 3 }, ct, "out/q3.md");
+
+        var fetched = (await _service.GetAsync(run.Id, ct))!;
+        Assert.Equal((7L, 3L), TokenTotals(run.Id));
+        using var doc = JsonDocument.Parse(fetched.LedgerJson!);
+        var perStep = doc.RootElement.GetProperty("perStep");
+        Assert.Equal(1, perStep.GetArrayLength());
+        Assert.Equal(7, perStep[0].GetProperty("inputTokens").GetInt64());
+        Assert.Equal(AgentStepStatus.Done, Assert.Single(fetched.Plan).Status);
+    }
+
     // ---- the ledger clock measures ACTIVE time, never the parked gap ----
 
     [Fact]

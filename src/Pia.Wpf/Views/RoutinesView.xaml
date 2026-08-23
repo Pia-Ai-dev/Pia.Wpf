@@ -63,6 +63,40 @@
       </Style.Triggers>
     </Style>
 
+    <Style x:Key="RoutineBlueprintCardStyle" TargetType="Button">
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Margin" Value="0,0,0,10"/>
+      <Setter Property="Padding" Value="14,12"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="Background" Value="{DynamicResource SurfaceSunkBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush_}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Card"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    Padding="{TemplateBinding Padding}"
+                    CornerRadius="{StaticResource LargeRadius}"
+                    SnapsToDevicePixels="True">
+              <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Card" Property="Background" Value="{DynamicResource PiaAccentSoftBrush}"/>
+                <Setter TargetName="Card" Property="BorderBrush" Value="{DynamicResource PiaAccentBrush}"/>
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Card" Property="BorderBrush" Value="{DynamicResource PiaAccentBrush}"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
   </UserControl.Resources>
 
   <Grid Background="Transparent">
@@ -180,22 +214,78 @@
               Style="{StaticResource PiaCardStyle}"
               Padding="16">
         <Grid>
-          <StackPanel HorizontalAlignment="Center"
-                      VerticalAlignment="Center"
-                      MaxWidth="320"
-                      Visibility="{Binding ShowsPlaceholder, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <ui:SymbolIcon Symbol="CalendarClock24"
-                           FontSize="36"
-                           HorizontalAlignment="Center"
-                           Margin="0,0,0,12"
-                           Foreground="{DynamicResource PiaAccentBrush}"/>
-            <TextBlock Text="{loc:Str Routines_Placeholder}"
-                       FontSize="13"
-                       HorizontalAlignment="Center"
-                       TextWrapping="Wrap"
-                       TextAlignment="Center"
-                       Foreground="{DynamicResource TextMutedBrush}"/>
-          </StackPanel>
+          <ScrollViewer VerticalScrollBarVisibility="Auto"
+                        Visibility="{Binding ShowsPlaceholder, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <StackPanel HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        MaxWidth="420"
+                        Margin="0,0,10,0">
+              <ui:SymbolIcon Symbol="CalendarClock24"
+                             FontSize="36"
+                             HorizontalAlignment="Center"
+                             Margin="0,0,0,12"
+                             Foreground="{DynamicResource PiaAccentBrush}"/>
+              <TextBlock Text="{loc:Str Routines_Placeholder}"
+                         FontSize="13"
+                         HorizontalAlignment="Center"
+                         TextWrapping="Wrap"
+                         TextAlignment="Center"
+                         Foreground="{DynamicResource TextMutedBrush}"/>
+
+              <StackPanel Margin="0,28,0,0"
+                          Visibility="{Binding HasBlueprints, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <TextBlock Text="{loc:Str Routines_Blueprints_Header}"
+                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                <TextBlock Text="{loc:Str Routines_Blueprints_Hint}"
+                           Style="{StaticResource PiaSettingsDescriptionStyle}"
+                           Margin="0,0,0,12"/>
+                <ItemsControl ItemsSource="{Binding Blueprints}"
+                              AutomationProperties.AutomationId="Routines_BlueprintList">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Button Style="{StaticResource RoutineBlueprintCardStyle}"
+                              AutomationProperties.AutomationId="{Binding AutomationId}"
+                              AutomationProperties.Name="{Binding Title}"
+                              Command="{Binding DataContext.StartFromBlueprintCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                              CommandParameter="{Binding Key}">
+                        <StackPanel>
+                          <StackPanel Orientation="Horizontal">
+                            <Border Style="{StaticResource PiaIconChipStyle}" Margin="0,0,8,0">
+                              <ui:SymbolIcon Symbol="Sparkle24"
+                                             FontSize="13"
+                                             HorizontalAlignment="Center"
+                                             VerticalAlignment="Center"
+                                             Foreground="{DynamicResource PiaAccentBrush}"/>
+                            </Border>
+                            <TextBlock Text="{Binding Title}"
+                                       FontSize="13"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"
+                                       TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TextDefaultBrush}"/>
+                          </StackPanel>
+
+                          <TextBlock Text="{Binding Description}"
+                                     Margin="0,8,0,0"
+                                     FontSize="12"
+                                     TextWrapping="Wrap"
+                                     Foreground="{DynamicResource TextSubtleBrush}"/>
+
+                          <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <TextBlock Text="{Binding KindLabel}" Style="{StaticResource PiaMetaTextStyle}"/>
+                            <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"/>
+                            <TextBlock Text="{Binding RecurrenceLabel}" Style="{StaticResource PiaMetaTextStyle}"/>
+                            <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"/>
+                            <TextBlock Text="{Binding TimeLabel}" Style="{StaticResource PiaMetaTextStyle}"/>
+                          </StackPanel>
+                        </StackPanel>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
 
           <ScrollViewer VerticalScrollBarVisibility="Auto"
                         Visibility="{Binding ShowsDetail, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -251,6 +341,22 @@
               <TextBlock Text="{Binding SelectedJob.GrantedTools}"
                          Style="{StaticResource PiaDetailValueStyle}"
                          Visibility="{Binding SelectedJob.HasGrantedTools, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
+              <TextBlock Text="{loc:Str Routines_Field_Persona}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"
+                         Visibility="{Binding SelectedJob.HasPersonaPin, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+              <TextBlock Text="{Binding SelectedJob.PersonaLabel}"
+                         Style="{StaticResource PiaDetailValueStyle}"
+                         Visibility="{Binding SelectedJob.HasPersonaPin, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
+              <TextBlock Text="{loc:Str Routines_Field_Effort}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"
+                         Visibility="{Binding SelectedJob.HasEffortPin, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+              <TextBlock Text="{Binding SelectedJob.EffortLabel}"
+                         Style="{StaticResource PiaDetailValueStyle}"
+                         Visibility="{Binding SelectedJob.HasEffortPin, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
               <TextBlock Text="{loc:Str Routines_Detail_RecentRuns}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"
@@ -322,11 +428,13 @@
           </ScrollViewer>
 
           <ScrollViewer VerticalScrollBarVisibility="Auto"
+                        IsVisibleChanged="EditorPane_IsVisibleChanged"
                         Visibility="{Binding IsEditorOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
             <StackPanel Margin="0,0,10,0">
               <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Name}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-              <ui:TextBox Text="{Binding EditName, UpdateSourceTrigger=PropertyChanged}"
+              <ui:TextBox x:Name="EditorNameBox"
+                          Text="{Binding EditName, UpdateSourceTrigger=PropertyChanged}"
                           AutomationProperties.AutomationId="Routines_Field_Name"
                           Margin="0,2,0,8"/>
 
@@ -425,6 +533,48 @@
                         HorizontalAlignment="Left" Width="240"
                         AutomationProperties.AutomationId="Routines_Field_Provider"
                         Margin="0,2,0,8"/>
+
+              <!-- SelectedItem, not SelectedValue: both lists lead with a NULL-valued row, and WPF reads a null
+                   SelectedValue as no selection at all, so that row could never be shown as chosen. -->
+              <TextBlock Text="{loc:Str Routines_Field_Persona}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <ComboBox ItemsSource="{Binding PersonaChoices}"
+                        SelectedItem="{Binding EditPersona, Mode=TwoWay}"
+                        DisplayMemberPath="Name"
+                        IsEnabled="{Binding EditorPinsEnabled}"
+                        HorizontalAlignment="Left" Width="240"
+                        AutomationProperties.AutomationId="Routines_Field_Persona"
+                        Margin="0,2,0,4"/>
+              <TextBlock Text="{loc:Str Routines_Field_Persona_Hint}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"
+                         Margin="0,0,0,8"/>
+
+              <TextBlock Text="{loc:Str Routines_Field_Effort}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <ComboBox ItemsSource="{Binding EffortChoices}"
+                        SelectedItem="{Binding EditEffort, Mode=TwoWay}"
+                        DisplayMemberPath="Label"
+                        IsEnabled="{Binding EditorPinsEnabled}"
+                        HorizontalAlignment="Left" Width="240"
+                        AutomationProperties.AutomationId="Routines_Field_Effort"
+                        Margin="0,2,0,4"/>
+              <TextBlock Text="{loc:Str Routines_Field_Effort_Hint}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"
+                         Margin="0,0,0,4"/>
+
+              <!-- Disabled pickers with no explanation read as a bug, so the same banner says whose device owns them. -->
+              <Border Margin="0,4,0,8"
+                      Padding="12,8"
+                      CornerRadius="6"
+                      Background="{DynamicResource WarnSoftBrush}"
+                      Visibility="{Binding EditorPinsEnabled, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                <TextBlock Text="{loc:Str Routines_NotOwnedHere}"
+                           FontSize="12"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextSubtleBrush}"/>
+              </Border>
 
               <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_GrantedTools}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>

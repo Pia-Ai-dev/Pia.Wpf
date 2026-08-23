@@ -5,6 +5,9 @@ using Pia.Services.Interfaces;
 using Wpf.Ui;
 using Wpf.Ui.Controls;
 using System.Windows;
+#if DEBUG
+using System.Windows.Input;
+#endif
 using INavigationService = Pia.Navigation.INavigationService;
 
 namespace Pia;
@@ -29,6 +32,11 @@ public partial class MainWindow : FluentWindow
 
         DataContext = viewModel;
         InitializeComponent();
+
+#if DEBUG
+        InputBindings.Add(new KeyBinding(
+            viewModel.DumpTourTargetsCommand, Key.F12, ModifierKeys.Control | ModifierKeys.Shift));
+#endif
 
         // Set scoped service provider for ViewModelLocator
         ViewModelLocator.SetScopedServiceProvider(this, serviceProvider);

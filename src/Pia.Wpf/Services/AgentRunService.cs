@@ -1225,7 +1225,8 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
     }
 
     public Task RecordStepResultAsync(Guid stepId, AgentStepStatus status,
-        Guid? firstMessageId, Guid? lastMessageId, UsageDetails? usage, CancellationToken ct = default)
+        Guid? firstMessageId, Guid? lastMessageId, UsageDetails? usage, CancellationToken ct = default,
+        string? artifactRef = null)
     {
         Guid runId;
         AgentRunState runState;
@@ -1233,17 +1234,37 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         {
             if (_disposed) return Task.CompletedTask;
 
+            // Isolated: losing the artifact must not cost the step status or ledger write it shares.
+            string? mergedExtras = null;
+            if (!string.IsNullOrWhiteSpace(artifactRef))
+            {
+                try
+                {
+                    using var read = Connection().CreateCommand();
+                    read.CommandText = "SELECT ExtraJson FROM AgentSteps WHERE Id=@Id";
+                    read.Parameters.AddWithValue("@Id", stepId.ToString());
+                    mergedExtras = StepExtraJson.WithArtifactRef(read.ExecuteScalar() as string, artifactRef);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Persisting the step artifact reference failed for {StepId}", stepId);
+                }
+            }
+
             using (var cmd = Connection().CreateCommand())
             {
+                // COALESCE: a step with no reported artifact leaves ExtraJson byte-identical.
                 cmd.CommandText = """
                     UPDATE AgentSteps
-                    SET Status=@Status, FirstMessageId=@First, LastMessageId=@Last, UpdatedAt=@Now
+                    SET Status=@Status, FirstMessageId=@First, LastMessageId=@Last, UpdatedAt=@Now,
+                        ExtraJson=COALESCE(@Extra, ExtraJson)
                     WHERE Id=@Id
                     """;
                 cmd.Parameters.AddWithValue("@Status", (int)status);
                 cmd.Parameters.AddWithValue("@First", ToParam(firstMessageId));
                 cmd.Parameters.AddWithValue("@Last", ToParam(lastMessageId));
                 cmd.Parameters.AddWithValue("@Now", DateTime.UtcNow.ToString("O"));
+                cmd.Parameters.AddWithValue("@Extra", ToParam(mergedExtras));
                 cmd.Parameters.AddWithValue("@Id", stepId.ToString());
                 cmd.ExecuteNonQuery();
             }

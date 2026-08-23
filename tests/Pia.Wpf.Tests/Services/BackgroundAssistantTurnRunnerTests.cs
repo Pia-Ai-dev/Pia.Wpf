@@ -6,6 +6,7 @@ using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Xunit;
+using ReasoningEffort = Pia.Models.ReasoningEffort;
 
 namespace Pia.Tests.Services;
 
@@ -43,13 +44,29 @@ public class BackgroundAssistantTurnRunnerTests
         public SyncAssistantChat? Saved;
         public readonly List<SyncAssistantChat> AllSaved = new();
 
+        /// <summary>What <c>GetPersonasAsync</c> answers. An UNSTUBBED one returns a null task and NREs on the
+        /// pin path, so this is stubbed for every test whether or not it pins.</summary>
+        public readonly List<Persona> AvailablePersonas = new();
+
+        public readonly Persona ModePersona = new() { Name = "Pia", SystemPrompt = "sys" };
+
+        /// <summary>The persona the turn was actually composed from — the substance of a pin on this leg.</summary>
+        public Persona? ComposedPersona { get; private set; }
+
+        /// <summary>The provider handed to the model, i.e. the one the effort ladder stamped.</summary>
+        public AiProvider? UsedProvider { get; private set; }
+
         public BackgroundAssistantTurnRunner Build(IReadOnlyList<FunctionCallContent> toolCalls, string answer = "ANSWER")
         {
             Settings.GetSettingsAsync().Returns(new AppSettings()); // TokenizationEnabled defaults off
-            Personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
-                .Returns(new Persona { Name = "Pia", SystemPrompt = "sys" });
+            Personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(ModePersona);
+            Personas.GetPersonasAsync().Returns(Task.FromResult<IReadOnlyList<Persona>>(AvailablePersonas));
             Composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>())
-                .Returns(new AssistantTurnSetup("system", new List<AITool>(), SupportsTools: true, WebSearchActive: false));
+                .Returns(ci =>
+                {
+                    ComposedPersona = ci.ArgAt<Persona>(0);
+                    return new AssistantTurnSetup("system", new List<AITool>(), SupportsTools: true, WebSearchActive: false);
+                });
             Titles.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
                 .Returns((string?)null);
             Chats.SaveAsync(Arg.Do<SyncAssistantChat>(c => { Saved = c; AllSaved.Add(c); }), Arg.Any<CancellationToken>())
@@ -67,7 +84,11 @@ public class BackgroundAssistantTurnRunnerTests
             Ai.GetChatCompletionWithToolsAsync(
                     Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
                     Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
-                .Returns(ci => Drive(ci.ArgAt<ToolCallHandler?>(3), toolCalls, answer));
+                .Returns(ci =>
+                {
+                    UsedProvider = ci.ArgAt<AiProvider>(1);
+                    return Drive(ci.ArgAt<ToolCallHandler?>(3), toolCalls, answer);
+                });
 
             ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();
 
@@ -121,6 +142,71 @@ public class BackgroundAssistantTurnRunnerTests
             onExecute();
             return Task.FromResult<object?>("write-done");
         });
+
+    /// <summary>The pinned persona's system prompt is the substance of the pin on this leg, so the pin must be
+    /// what <c>PrepareTurn</c> receives — and the per-mode resolution must not be the one consulted.</summary>
+    [Fact]
+    public async Task APinnedPersona_ComposesTheTurn()
+    {
+        var h = new Harness();
+        var pinned = new Persona { Name = "Specialist", SystemPrompt = "sys" };
+        h.AvailablePersonas.Add(pinned);
+
+        var runner = h.Build([]);
+        var result = await runner.RunAsync(new BackgroundTurnRequest
+        {
+            Prompt = "go",
+            Provider = Provider(),
+            PersonaId = pinned.Id,
+        }, CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        Assert.Same(pinned, h.ComposedPersona);
+        await h.Personas.DidNotReceive().ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>());
+    }
+
+    [Fact]
+    public async Task NoPersonaPin_StillComposesFromTheModePersona()
+    {
+        var h = new Harness();
+
+        var runner = h.Build([]);
+        var result = await runner.RunAsync(
+            new BackgroundTurnRequest { Prompt = "go", Provider = Provider() }, CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        Assert.Same(h.ModePersona, h.ComposedPersona);
+    }
+
+    [Fact]
+    public async Task TheRequestsEffortPin_BeatsThePersonas()
+    {
+        var h = new Harness();
+        h.ModePersona.ReasoningEffort = ReasoningEffort.High;
+
+        var runner = h.Build([]);
+        await runner.RunAsync(new BackgroundTurnRequest
+        {
+            Prompt = "go",
+            Provider = Provider(),
+            ReasoningEffort = ReasoningEffort.Minimal,
+        }, CancellationToken.None);
+
+        Assert.Equal(ReasoningEffort.Minimal, h.UsedProvider!.ReasoningEffort);
+    }
+
+    [Fact]
+    public async Task ThePersonasEffort_StillAppliesWhenTheRequestPinsNothing()
+    {
+        var h = new Harness();
+        h.ModePersona.ReasoningEffort = ReasoningEffort.High;
+
+        var runner = h.Build([]);
+        await runner.RunAsync(
+            new BackgroundTurnRequest { Prompt = "go", Provider = Provider() }, CancellationToken.None);
+
+        Assert.Equal(ReasoningEffort.High, h.UsedProvider!.ReasoningEffort);
+    }
 
     [Fact]
     public async Task ReadTool_IsAllowed_AndResultReturned()

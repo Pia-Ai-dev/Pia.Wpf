@@ -9,6 +9,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Xunit;
+using ReasoningEffort = Pia.Models.ReasoningEffort;
 
 namespace Pia.Tests.Services;
 
@@ -722,7 +723,8 @@ public sealed class D5PausePremiseTests : IDisposable
             TimeOnly timeOfDay, DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null,
             DateTime? specificDate = null, Guid? providerId = null,
             IReadOnlyCollection<string>? grantedTools = null,
-            ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false) => throw new NotImplementedException();
+            ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false,
+            Guid? personaId = null, ReasoningEffort? reasoningEffort = null) => throw new NotImplementedException();
 
         public Task<IReadOnlyList<ScheduledJob>> GetAllAsync() => throw new NotImplementedException();
         public Task<IReadOnlyList<ScheduledJob>> GetActiveAsync() => throw new NotImplementedException();
@@ -732,7 +734,9 @@ public sealed class D5PausePremiseTests : IDisposable
             RecurrenceType? recurrence = null, TimeOnly? timeOfDay = null, DayOfWeek? dayOfWeek = null,
             int? dayOfMonth = null, int? month = null, Guid? providerId = null,
             IReadOnlyCollection<string>? grantedTools = null,
-            DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null) => throw new NotImplementedException();
+            DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null,
+            Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
+            bool clearReasoningEffort = false) => throw new NotImplementedException();
 
         public Task<bool> IsOwnedByThisDeviceAsync(Guid id) => Task.FromResult(true);
         public Task<bool> IsOwnedByThisDeviceAsync(ScheduledJob job) => Task.FromResult(true);

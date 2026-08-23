@@ -163,8 +163,8 @@ public sealed class AgentRunClarificationResumeTests
         public Task<AgentStep?> NextPendingStepAsync(Guid runId, CancellationToken ct = default) => _inner.NextPendingStepAsync(runId, ct);
         public Task SetStepStatusAsync(Guid stepId, AgentStepStatus status, CancellationToken ct = default) => _inner.SetStepStatusAsync(stepId, status, ct);
         public Task RecordStepResultAsync(Guid stepId, AgentStepStatus status, Guid? firstMessageId, Guid? lastMessageId,
-            UsageDetails? usage, CancellationToken ct = default)
-            => _inner.RecordStepResultAsync(stepId, status, firstMessageId, lastMessageId, usage, ct);
+            UsageDetails? usage, CancellationToken ct = default, string? artifactRef = null)
+            => _inner.RecordStepResultAsync(stepId, status, firstMessageId, lastMessageId, usage, ct, artifactRef);
 
         public event EventHandler<AgentRunChangedEventArgs> RunChanged
         {

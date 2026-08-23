@@ -313,6 +313,6 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
         public Task<PlanMutationResult> ApplyPlanMutationAsync(Guid runId, IReadOnlyList<PlanStepEdit> pendingSteps, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task<AgentStep?> NextPendingStepAsync(Guid runId, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task SetStepStatusAsync(Guid stepId, AgentStepStatus status, CancellationToken ct = default) => throw new InvalidOperationException("boom");
-        public Task RecordStepResultAsync(Guid stepId, AgentStepStatus status, Guid? firstMessageId, Guid? lastMessageId, UsageDetails? usage, CancellationToken ct = default) => throw new InvalidOperationException("boom");
+        public Task RecordStepResultAsync(Guid stepId, AgentStepStatus status, Guid? firstMessageId, Guid? lastMessageId, UsageDetails? usage, CancellationToken ct = default, string? artifactRef = null) => throw new InvalidOperationException("boom");
     }
 }

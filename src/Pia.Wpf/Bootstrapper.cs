@@ -434,6 +434,7 @@ public static class Bootstrapper
         services.AddSingleton<IClipboardService, ClipboardService>();
         services.AddSingleton<ICollectionViewService, CollectionViewService>();
         services.AddSingleton<IFileDialogService, FileDialogService>();
+        services.AddSingleton<ITourTargetCollector, TourTargetCollector>();
 
         // Color-emoji renderer (OS Direct2D/DirectWrite/WIC). Same instance the static accessor and
         // XAML controls use, so the bitmap cache is shared.

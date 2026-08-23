@@ -85,6 +85,18 @@ public class ScheduledJob
     public bool QuietOnSuccess { get; set; }
 
     /// <summary>
+    /// Persona this job's run uses; falls back to the active persona when it no longer resolves.
+    /// Device-local: putting it on the wire needs the server's own columns first.
+    /// </summary>
+    public Guid? PersonaId { get; set; }
+
+    /// <summary>
+    /// Reasoning effort this job's run is stamped with; outranks the persona's own. Device-local, like
+    /// <see cref="PersonaId"/>.
+    /// </summary>
+    public ReasoningEffort? ReasoningEffort { get; set; }
+
+    /// <summary>
     /// Device that owns the firing schedule. Only the owner device runs the job; other devices
     /// see it in the UI and (after sync) see the resulting history but never trigger a run.
     /// Null on legacy rows created before sync was wired — those stay device-local on whichever

@@ -1,6 +1,9 @@
+using System.Collections;
+using System.Globalization;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
+using Pia.Resources.Strings;
 using Pia.Services.Interfaces;
 using Pia.ViewModels;
 using Xunit;
@@ -26,6 +29,8 @@ public class RoutinesViewModelTests
         RoutinesViewModel Vm,
         IScheduledJobService Jobs,
         IScheduledJobRunner Runner,
+        IProviderService Providers,
+        IPersonaService Personas,
         IAgentRunService Runs,
         IDialogService Dialogs,
         IWindowManagerService Windows);
@@ -41,6 +46,10 @@ public class RoutinesViewModelTests
 
         var providers = Substitute.For<IProviderService>();
         providers.GetProvidersAsync().Returns(Array.Empty<AiProvider>());
+
+        // Must be stubbed: an unstubbed Task-returning member hands back null, and RefreshAsync awaits it.
+        var personas = Substitute.For<IPersonaService>();
+        personas.GetPersonasAsync().Returns(Array.Empty<Persona>());
 
         var runner = Substitute.For<IScheduledJobRunner>();
 
@@ -58,11 +67,17 @@ public class RoutinesViewModelTests
 
         var windows = Substitute.For<IWindowManagerService>();
 
-        var vm = new RoutinesViewModel(service, runner, providers, runs, dialogs, windows, Localizer(),
+        var vm = new RoutinesViewModel(service, runner, providers, personas, runs, dialogs, windows, Localizer(),
             NullLogger<RoutinesViewModel>.Instance);
 
-        return new Sut(vm, service, runner, runs, dialogs, windows);
+        return new Sut(vm, service, runner, providers, personas, runs, dialogs, windows);
     }
+
+    private static Persona NewPersona(string name) => new()
+    {
+        Name = name,
+        SystemPrompt = "be brief",
+    };
 
     private static ScheduledJob NewJob(ScheduledJobStatus status = ScheduledJobStatus.Active) => new()
     {
@@ -262,7 +277,7 @@ public class RoutinesViewModelTests
         await sut.Jobs.DidNotReceive().CreateAsync(Arg.Any<string>(), Arg.Any<string>(),
             Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(),
             Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<string>>(),
-            Arg.Any<ScheduledJobKind>());
+            Arg.Any<ScheduledJobKind>(), Arg.Any<bool>(), Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>());
         Assert.True(sut.Vm.IsEditorOpen, "a refused save must leave the editor open with the user's input intact.");
     }
 
@@ -284,7 +299,8 @@ public class RoutinesViewModelTests
             Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(),
             specificDate: null,
             providerId: Arg.Any<Guid?>(), grantedTools: Arg.Any<IReadOnlyCollection<string>>(),
-            kind: Arg.Any<ScheduledJobKind>(), quietOnSuccess: Arg.Any<bool>());
+            kind: Arg.Any<ScheduledJobKind>(), quietOnSuccess: Arg.Any<bool>(),
+            personaId: Arg.Any<Guid?>(), reasoningEffort: Arg.Any<ReasoningEffort?>());
     }
 
     /// <summary>
@@ -308,7 +324,8 @@ public class RoutinesViewModelTests
             dayOfWeek: DayOfWeek.Thursday, dayOfMonth: null, month: null,
             specificDate: null, providerId: Arg.Any<Guid?>(),
             grantedTools: Arg.Any<IReadOnlyCollection<string>>(),
-            kind: Arg.Any<ScheduledJobKind>(), quietOnSuccess: Arg.Any<bool>());
+            kind: Arg.Any<ScheduledJobKind>(), quietOnSuccess: Arg.Any<bool>(),
+            personaId: Arg.Any<Guid?>(), reasoningEffort: Arg.Any<ReasoningEffort?>());
     }
 
     /// <summary>Each recurrence carries only the fields it reads: a Yearly job needs both month and day, a
@@ -334,7 +351,8 @@ public class RoutinesViewModelTests
             dayOfWeek: expectedDayOfWeek, dayOfMonth: expectedDayOfMonth, month: expectedMonth,
             specificDate: null, providerId: Arg.Any<Guid?>(),
             grantedTools: Arg.Any<IReadOnlyCollection<string>>(),
-            kind: Arg.Any<ScheduledJobKind>(), quietOnSuccess: Arg.Any<bool>());
+            kind: Arg.Any<ScheduledJobKind>(), quietOnSuccess: Arg.Any<bool>(),
+            personaId: Arg.Any<Guid?>(), reasoningEffort: Arg.Any<ReasoningEffort?>());
     }
 
     /// <summary>A job created before the pickers existed has no stored day, and NextFireAt is the only record of
@@ -375,7 +393,8 @@ public class RoutinesViewModelTests
         await sut.Jobs.Received(1).CreateAsync("Monitor", "check the feed", Arg.Any<RecurrenceType>(),
             Arg.Any<TimeOnly>(), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(),
             Arg.Any<DateTime?>(), Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<string>>(),
-            Arg.Any<ScheduledJobKind>(), quietOnSuccess: true);
+            Arg.Any<ScheduledJobKind>(), quietOnSuccess: true,
+            personaId: Arg.Any<Guid?>(), reasoningEffort: Arg.Any<ReasoningEffort?>());
     }
 
     [Fact]
@@ -400,9 +419,10 @@ public class RoutinesViewModelTests
             Arg.Any<RecurrenceType?>(), Arg.Any<TimeOnly?>(), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(),
             Arg.Any<int?>(), Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<string>>(),
             specificDate: target, kind: Arg.Any<ScheduledJobKind?>(),
-            // The editor sends this on every save, so the matcher has to name it — NSubstitute matches on the
-            // whole argument list.
-            quietOnSuccess: Arg.Any<bool?>());
+            // The editor sends these on every save, so the matcher has to name them — NSubstitute matches on
+            // the whole argument list.
+            quietOnSuccess: Arg.Any<bool?>(), personaId: Arg.Any<Guid?>(),
+            reasoningEffort: Arg.Any<ReasoningEffort?>(), clearReasoningEffort: Arg.Any<bool>());
     }
 
     /// <summary>
@@ -418,7 +438,8 @@ public class RoutinesViewModelTests
         sut.Jobs.When(x => x.UpdateAsync(job.Id, Arg.Any<string>(), Arg.Any<string>(),
                 Arg.Any<RecurrenceType?>(), Arg.Any<TimeOnly?>(), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(),
                 Arg.Any<int?>(), Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<DateTime?>(),
-                Arg.Any<ScheduledJobKind?>(), Arg.Any<bool?>()))
+                Arg.Any<ScheduledJobKind?>(), Arg.Any<bool?>(), Arg.Any<Guid?>(),
+                Arg.Any<ReasoningEffort?>(), Arg.Any<bool>()))
             .Do(_ => throw new InvalidOperationException("db"));
         await sut.Vm.RefreshAsync();
         sut.Vm.SelectedJob = sut.Vm.Jobs[0];
@@ -552,11 +573,14 @@ public class RoutinesViewModelTests
         jobs.IsOwnedByThisDeviceAsync(Arg.Any<ScheduledJob>()).Returns(true);
         jobs.CreateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(),
                 Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(),
-                Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<ScheduledJobKind>(), Arg.Any<bool>())
+                Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<ScheduledJobKind>(), Arg.Any<bool>(),
+                Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>())
             .Returns(_ => { stored.Add(created); return created; });
 
         var providers = Substitute.For<IProviderService>();
         providers.GetProvidersAsync().Returns(Array.Empty<AiProvider>());
+        var personas = Substitute.For<IPersonaService>();
+        personas.GetPersonasAsync().Returns(Array.Empty<Persona>());
         var runs = Substitute.For<IAgentRunService>();
         runs.GetFiringsForTriggerAsync(Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(Array.Empty<ScheduledFiringOutcome>());
@@ -569,7 +593,7 @@ public class RoutinesViewModelTests
         RoutinesViewModel vm;
         try
         {
-            vm = new RoutinesViewModel(jobs, Substitute.For<IScheduledJobRunner>(), providers, runs,
+            vm = new RoutinesViewModel(jobs, Substitute.For<IScheduledJobRunner>(), providers, personas, runs,
                 Substitute.For<IDialogService>(), Substitute.For<IWindowManagerService>(), Localizer(),
                 NullLogger<RoutinesViewModel>.Instance);
         }
@@ -591,6 +615,102 @@ public class RoutinesViewModelTests
         Assert.Equal(created.Id, vm.SelectedJob?.Id);
     }
 
+    /// <summary>The card text is resolved once where the localizer is, so the internal catalog never has to reach
+    /// a binding — and the id is what a UI script addresses the card by.</summary>
+    [Fact]
+    public void TheBlueprintCards_CarryResolvedTextAndAnAddressableId()
+    {
+        var sut = CreateSut();
+
+        Assert.Equal(RoutineBlueprintCatalog.All.Count, sut.Vm.Blueprints.Count);
+        Assert.True(sut.Vm.HasBlueprints);
+
+        var card = Assert.Single(sut.Vm.Blueprints, c => c.Key == RoutineBlueprintCatalog.TopicDigest);
+        var blueprint = RoutineBlueprintCatalog.Find(RoutineBlueprintCatalog.TopicDigest)!;
+        Assert.Equal(blueprint.TitleKey, card.Title);
+        Assert.Equal(blueprint.DescriptionKey, card.Description);
+        Assert.Equal($"Settings_ScheduledJobs_Kind_{blueprint.Kind}", card.KindLabel);
+        Assert.Equal($"Settings_ScheduledJobs_Recurrence_{blueprint.Recurrence}", card.RecurrenceLabel);
+        Assert.Equal("08:00", card.TimeLabel);
+        Assert.Equal("Routines_Blueprint_topic-digest", card.AutomationId);
+    }
+
+    /// <summary>The whole point of the feature: the editor opens carrying the blueprint instead of a blank box.</summary>
+    [Fact]
+    public async Task PickingABlueprint_PrefillsTheEditorAndOpensIt()
+    {
+        var sut = CreateSut();
+        await sut.Vm.RefreshAsync();
+        var blueprint = RoutineBlueprintCatalog.Find(RoutineBlueprintCatalog.TopicDigest)!;
+
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+
+        Assert.True(sut.Vm.IsEditorOpen);
+        Assert.Null(sut.Vm.EditingJobId);
+        Assert.Equal(blueprint.TitleKey, sut.Vm.EditName);
+        Assert.Equal(blueprint.QueryTemplate, sut.Vm.EditQuery);
+        Assert.Equal(blueprint.Kind, sut.Vm.EditKind);
+        Assert.Equal(blueprint.Recurrence, sut.Vm.EditRecurrence);
+        Assert.Equal("08:00", sut.Vm.EditTimeOfDay);
+        Assert.Equal(string.Join(", ", blueprint.GrantedTools), sut.Vm.EditGrantedTools);
+        Assert.Equal(blueprint.QuietOnSuccess, sut.Vm.EditQuietOnSuccess);
+        Assert.Null(sut.Vm.EditSpecificDate);
+        Assert.Equal(sut.Vm.ProviderChoices.FirstOrDefault(), sut.Vm.EditProvider);
+    }
+
+    /// <summary>A card is an offer, not a decision — nothing is written until the user reads it and saves.</summary>
+    [Fact]
+    public async Task PickingABlueprint_CreatesNothing()
+    {
+        var sut = CreateSut();
+        await sut.Vm.RefreshAsync();
+
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+
+        await sut.Jobs.DidNotReceive().CreateAsync(Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(),
+            Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<string>>(),
+            Arg.Any<ScheduledJobKind>(), Arg.Any<bool>(), Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>());
+    }
+
+    /// <summary>The prefill has to survive the editor's own parse, or the card would open a form that refuses to
+    /// save — and the save must still be the one existing create path.</summary>
+    [Fact]
+    public async Task ABlueprintSavesThroughTheExistingCreatePath()
+    {
+        var sut = CreateSut();
+        sut.Jobs.CreateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(),
+                Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(),
+                Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<ScheduledJobKind>(), Arg.Any<bool>(),
+                Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>())
+            .Returns(NewJob());
+        await sut.Vm.RefreshAsync();
+        var blueprint = RoutineBlueprintCatalog.Find(RoutineBlueprintCatalog.TopicDigest)!;
+
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        Assert.Null(sut.Vm.StatusMessage);
+        await sut.Jobs.Received(1).CreateAsync(blueprint.TitleKey, blueprint.QueryTemplate,
+            blueprint.Recurrence, new TimeOnly(8, 0), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(),
+            Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(),
+            Arg.Is<IReadOnlyCollection<string>>(g => g.Count == 0), blueprint.Kind, false,
+            personaId: Arg.Any<Guid?>(), reasoningEffort: Arg.Any<ReasoningEffort?>());
+    }
+
+    /// <summary>Keys are persisted-adjacent, so a stale one has to be inert rather than open a half-filled form.</summary>
+    [Fact]
+    public void AnUnknownBlueprintKey_LeavesTheEditorClosed()
+    {
+        var sut = CreateSut();
+
+        sut.Vm.StartFromBlueprintCommand.Execute("no-such-blueprint");
+        sut.Vm.StartFromBlueprintCommand.Execute(null);
+
+        Assert.False(sut.Vm.IsEditorOpen);
+        Assert.Equal(string.Empty, sut.Vm.EditQuery);
+    }
+
     [Fact]
     public async Task AFailedLoad_SaysSo_RatherThanRenderingAnEmptyList()
     {
@@ -603,5 +723,282 @@ public class RoutinesViewModelTests
         Assert.Empty(sut.Vm.Jobs);
         Assert.False(sut.Vm.HasJobs);
         Assert.Equal("Settings_ScheduledJobs_LoadFailed", sut.Vm.StatusMessage);
+    }
+
+    /// <summary>The picker leads with the "inherit" row, the way the provider one does, so a routine with no
+    /// pin has something selected to show.</summary>
+    [Fact]
+    public async Task ThePersonaPicker_LeadsWithTheDefaultRow_ThenTheServicesPersonas()
+    {
+        var persona = NewPersona("Analyst");
+        var sut = CreateSut();
+        sut.Personas.GetPersonasAsync().Returns(new[] { persona });
+
+        await sut.Vm.RefreshAsync();
+
+        Assert.Equal(2, sut.Vm.PersonaChoices.Count);
+        Assert.Null(sut.Vm.PersonaChoices[0].Id);
+        Assert.Equal("Routines_Field_Persona_Default", sut.Vm.PersonaChoices[0].Name);
+        Assert.False(sut.Vm.PersonaChoices[0].IsUnavailable);
+        Assert.Equal(persona.Id, sut.Vm.PersonaChoices[1].Id);
+        Assert.Equal("Analyst", sut.Vm.PersonaChoices[1].Name);
+    }
+
+    /// <summary>A label per member plus the inherit row, every label from the localizer: a ComboBox bound
+    /// straight to the enum values renders the C# identifier in every locale.</summary>
+    [Fact]
+    public void TheEffortPicker_OffersAnInheritRowAndEveryMember_EachLocalized()
+    {
+        var sut = CreateSut();
+
+        Assert.Equal(Enum.GetValues<ReasoningEffort>().Length + 1, sut.Vm.EffortChoices.Count);
+        Assert.Null(sut.Vm.EffortChoices[0].Value);
+        Assert.Equal("Routines_Field_Effort_Default", sut.Vm.EffortChoices[0].Label);
+        foreach (var effort in Enum.GetValues<ReasoningEffort>())
+            Assert.Equal($"Routines_Effort_{effort}",
+                Assert.Single(sut.Vm.EffortChoices, c => c.Value == effort).Label);
+    }
+
+    /// <summary>The inherit row must not read as <c>None</c> in any locale — a blur risks pinning no-reasoning
+    /// on unattended runs by accident, so this checks the shipped strings, not the echoing localizer double.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("de")]
+    [InlineData("fr")]
+    public void TheInheritRowNeverReusesTheNoReasoningWording(string culture)
+    {
+        var target = culture.Length == 0 ? CultureInfo.InvariantCulture : new CultureInfo(culture);
+        var inherit = ViewStrings.ResourceManager.GetString("Routines_Field_Effort_Default", target);
+        var none = ViewStrings.ResourceManager.GetString("Routines_Effort_None", target);
+
+        Assert.False(string.IsNullOrWhiteSpace(inherit));
+        Assert.False(string.IsNullOrWhiteSpace(none));
+        Assert.False(inherit!.Contains(none!, StringComparison.OrdinalIgnoreCase),
+            $"the inherit row must not read as the None row in '{culture}': \"{inherit}\" vs \"{none}\".");
+    }
+
+    /// <summary>Both pins have to be filled from the row AND forwarded on save; a field wired into three of the
+    /// four editor entry points is the bug the quiet flag already had to have fixed once.</summary>
+    [Fact]
+    public async Task StartEdit_FillsBothPins_AndSaveForwardsThem()
+    {
+        var persona = NewPersona("Analyst");
+        var job = NewJob();
+        job.PersonaId = persona.Id;
+        job.ReasoningEffort = ReasoningEffort.High;
+        var sut = CreateSut(job);
+        sut.Personas.GetPersonasAsync().Returns(new[] { persona });
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+
+        sut.Vm.StartEditCommand.Execute(null);
+
+        Assert.Equal(persona.Id, sut.Vm.EditPersona?.Id);
+        Assert.Equal(ReasoningEffort.High, sut.Vm.EditEffort?.Value);
+
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        await sut.Jobs.Received(1).UpdateAsync(job.Id, Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Any<RecurrenceType?>(), Arg.Any<TimeOnly?>(), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(),
+            Arg.Any<int?>(), Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<DateTime?>(),
+            Arg.Any<ScheduledJobKind?>(), Arg.Any<bool?>(),
+            personaId: persona.Id, reasoningEffort: ReasoningEffort.High, clearReasoningEffort: false);
+    }
+
+    /// <summary>Guid.Empty, not null: null means "leave unchanged", so the default row used to save as a no-op.
+    /// True of the PROVIDER row too, which is where that was a live bug.</summary>
+    [Fact]
+    public async Task ChoosingTheDefaultRows_SendsTheClearSentinel_ForPersonaAndProvider()
+    {
+        var persona = NewPersona("Analyst");
+        var provider = new AiProvider { Name = "Cloud", Endpoint = "https://example.test" };
+        var job = NewJob();
+        job.PersonaId = persona.Id;
+        job.ProviderId = provider.Id;
+        job.ReasoningEffort = ReasoningEffort.Minimal;
+        var sut = CreateSut(job);
+        sut.Personas.GetPersonasAsync().Returns(new[] { persona });
+        sut.Providers.GetProvidersAsync().Returns(new[] { provider });
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+        sut.Vm.StartEditCommand.Execute(null);
+
+        sut.Vm.EditPersona = sut.Vm.PersonaChoices[0];
+        sut.Vm.EditProvider = sut.Vm.ProviderChoices[0];
+        sut.Vm.EditEffort = sut.Vm.EffortChoices[0];
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        await sut.Jobs.Received(1).UpdateAsync(job.Id, Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Any<RecurrenceType?>(), Arg.Any<TimeOnly?>(), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(),
+            Arg.Any<int?>(), providerId: Guid.Empty, grantedTools: Arg.Any<IReadOnlyCollection<string>>(),
+            specificDate: Arg.Any<DateTime?>(), kind: Arg.Any<ScheduledJobKind?>(),
+            quietOnSuccess: Arg.Any<bool?>(), personaId: Guid.Empty,
+            reasoningEffort: null, clearReasoningEffort: true);
+    }
+
+    /// <summary>A pin whose persona is gone must stay visible and survive an unrelated edit — falling back to
+    /// the default row would let the next Save destroy it as a change the user never made.</summary>
+    [Fact]
+    public async Task AnUnresolvablePersonaPin_ShowsAsUnavailable_AndSurvivesTheNextSave()
+    {
+        var pinned = Guid.NewGuid();
+        var job = NewJob();
+        job.PersonaId = pinned;
+        var sut = CreateSut(job);
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+
+        Assert.True(sut.Vm.Jobs[0].HasPersonaPin);
+        Assert.Equal("Routines_Field_Persona_Missing", sut.Vm.Jobs[0].PersonaLabel);
+
+        sut.Vm.StartEditCommand.Execute(null);
+
+        var chosen = sut.Vm.EditPersona;
+        Assert.NotNull(chosen);
+        Assert.Equal(pinned, chosen!.Id);
+        Assert.True(chosen.IsUnavailable);
+        Assert.Equal("Routines_Field_Persona_Missing", chosen.Name);
+
+        sut.Vm.EditName = "Renamed";
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        await sut.Jobs.Received(1).UpdateAsync(job.Id, name: Arg.Is("Renamed"), query: Arg.Any<string>(),
+            recurrence: Arg.Any<RecurrenceType?>(), timeOfDay: Arg.Any<TimeOnly?>(),
+            dayOfWeek: Arg.Any<DayOfWeek?>(), dayOfMonth: Arg.Any<int?>(), month: Arg.Any<int?>(),
+            providerId: Arg.Any<Guid?>(), grantedTools: Arg.Any<IReadOnlyCollection<string>>(),
+            specificDate: Arg.Any<DateTime?>(), kind: Arg.Any<ScheduledJobKind?>(),
+            quietOnSuccess: Arg.Any<bool?>(), personaId: pinned,
+            reasoningEffort: Arg.Any<ReasoningEffort?>(), clearReasoningEffort: Arg.Any<bool>());
+    }
+
+    /// <summary>The synthetic row belongs to one job. Left behind, the next routine's editor offers a stranger's
+    /// dead pin as a choice.</summary>
+    [Fact]
+    public async Task TheUnavailableRow_DoesNotSurviveIntoTheNextEditorSession()
+    {
+        var job = NewJob();
+        job.PersonaId = Guid.NewGuid();
+        var sut = CreateSut(job);
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+        sut.Vm.StartEditCommand.Execute(null);
+        Assert.Equal(2, sut.Vm.PersonaChoices.Count);
+
+        sut.Vm.StartCreateCommand.Execute(null);
+
+        Assert.Single(sut.Vm.PersonaChoices);
+        Assert.Same(sut.Vm.PersonaChoices[0], sut.Vm.EditPersona);
+    }
+
+    /// <summary>The trap in the naive binding: <c>StartCreate</c> leaves the foreign row selected, so a picker
+    /// bound to the selection alone would lock a brand-new routine this device is about to own.</summary>
+    [Fact]
+    public async Task StartCreate_KeepsThePinsEnabled_WhileAForeignOwnedRowIsStillSelected()
+    {
+        var sut = CreateSut(NewJob());
+        sut.Jobs.IsOwnedByThisDeviceAsync(Arg.Any<ScheduledJob>()).Returns(false);
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+
+        sut.Vm.StartEditCommand.Execute(null);
+        Assert.False(sut.Vm.EditorPinsEnabled);
+
+        sut.Vm.StartCreateCommand.Execute(null);
+
+        Assert.False(sut.Vm.Jobs[0].OwnedByThisDevice);
+        Assert.Same(sut.Vm.Jobs[0], sut.Vm.SelectedJob);
+        Assert.True(sut.Vm.EditorPinsEnabled);
+    }
+
+    /// <summary>The editor is ONE panel for create and edit, so both pins have to reach the create call too.</summary>
+    [Fact]
+    public async Task CreatingARoutineWithBothPins_ForwardsThemToTheCreateCall()
+    {
+        var persona = NewPersona("Analyst");
+        var sut = CreateSut();
+        sut.Personas.GetPersonasAsync().Returns(new[] { persona });
+        sut.Jobs.CreateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(),
+                Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(),
+                Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<ScheduledJobKind>(), Arg.Any<bool>(),
+                Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>())
+            .Returns(NewJob());
+        await sut.Vm.RefreshAsync();
+
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Vm.EditName = "Monitor";
+        sut.Vm.EditQuery = "check the feed";
+        sut.Vm.EditPersona = sut.Vm.PersonaChoices[1];
+        sut.Vm.EditEffort = Assert.Single(sut.Vm.EffortChoices, c => c.Value == ReasoningEffort.Minimal);
+
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        await sut.Jobs.Received(1).CreateAsync("Monitor", "check the feed", Arg.Any<RecurrenceType>(),
+            Arg.Any<TimeOnly>(), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(),
+            Arg.Any<DateTime?>(), Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<string>>(),
+            Arg.Any<ScheduledJobKind>(), Arg.Any<bool>(),
+            personaId: persona.Id, reasoningEffort: ReasoningEffort.Minimal);
+    }
+
+    /// <summary>The run substitutes a fallback persona with only a log line, so the detail pane is the one place
+    /// a person can find out what a routine is actually pinned to.</summary>
+    [Fact]
+    public async Task TheDetailPane_NamesThePinnedPersonaAndEffort()
+    {
+        var persona = NewPersona("Analyst");
+        var pinned = NewJob();
+        pinned.PersonaId = persona.Id;
+        pinned.ReasoningEffort = ReasoningEffort.XHigh;
+        var unpinned = NewJob();
+        var sut = CreateSut(pinned, unpinned);
+        sut.Personas.GetPersonasAsync().Returns(new[] { persona });
+
+        await sut.Vm.RefreshAsync();
+
+        var pinnedRow = Assert.Single(sut.Vm.Jobs, j => j.Id == pinned.Id);
+        Assert.True(pinnedRow.HasPersonaPin);
+        Assert.Equal("Analyst", pinnedRow.PersonaLabel);
+        Assert.True(pinnedRow.HasEffortPin);
+        Assert.Equal("Routines_Effort_XHigh", pinnedRow.EffortLabel);
+
+        var plainRow = Assert.Single(sut.Vm.Jobs, j => j.Id == unpinned.Id);
+        Assert.False(plainRow.HasPersonaPin);
+        Assert.Equal(string.Empty, plainRow.PersonaLabel);
+        Assert.False(plainRow.HasEffortPin);
+        Assert.Equal(string.Empty, plainRow.EffortLabel);
+    }
+
+    /// <summary>LocalizationTests' literal-key regexes cannot see a key built by interpolation, and a missing one
+    /// renders as "[Key]" at runtime with nothing else catching it.</summary>
+    [Fact]
+    public void EveryInterpolatedEditorPinKeyResolvesInAllThreeLocales()
+    {
+        var keys = new List<string>
+        {
+            "Routines_Field_Persona_Default",
+            "Routines_Field_Persona_Missing",
+            "Routines_Field_Effort_Default",
+        };
+        keys.AddRange(Enum.GetValues<ReasoningEffort>().Select(e => $"Routines_Effort_{e}"));
+
+        var missing = new List<string>();
+        foreach (var culture in new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") })
+        {
+            var available = ResourceKeysFor(culture);
+            foreach (var key in keys.Where(k => !available.Contains(k)))
+                missing.Add($"{culture.Name}: {key}");
+        }
+
+        Assert.True(missing.Count == 0,
+            $"every routine pin key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
+    }
+
+    private static HashSet<string> ResourceKeysFor(CultureInfo culture)
+    {
+        var keys = new HashSet<string>();
+        var set = ViewStrings.ResourceManager.GetResourceSet(culture, true, false);
+        if (set is null) return keys;
+
+        foreach (DictionaryEntry entry in set) keys.Add((string)entry.Key);
+        return keys;
     }
 }

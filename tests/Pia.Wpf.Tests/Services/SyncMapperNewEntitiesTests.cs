@@ -7,6 +7,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
+using Pia.Shared.Models;
 using Xunit;
 
 /// <summary>
@@ -149,6 +150,44 @@ public class SyncMapperNewEntitiesTests
         var back = mapper.FromSyncScheduledJob(sync);
         Assert.Equal(ScheduledJobStatus.Completed, back.Status);
         Assert.Equal(RecurrenceType.Once, back.Recurrence);
+    }
+
+    /// <summary>Neither run pin is on the wire, in either mode: the mapper keeps two independent hand-written
+    /// field lists, so testing one leaves the other free to drift.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ScheduledJob_RunPins_NeverCrossTheWire(bool encrypted)
+    {
+        var mapper = encrypted ? E2EEMapper().Mapper : PlainMapper();
+        var userId = encrypted ? UserId : null;
+        var original = SampleJob();
+        original.PersonaId = Guid.NewGuid();
+        original.ReasoningEffort = ReasoningEffort.High;
+
+        var sync = mapper.ToSyncScheduledJob(original, userId);
+        var back = mapper.FromSyncScheduledJob(sync, userId);
+
+        // Non-vacuity on two fields whose sample values are NOT the CLR default, so a mapper that stopped
+        // writing them fails here instead of passing on a coerced 0.
+        Assert.Equal(DayOfWeek.Tuesday, back.DayOfWeek);
+        Assert.Equal(original.ProviderId, back.ProviderId);
+        Assert.Null(back.PersonaId);
+        Assert.Null(back.ReasoningEffort);
+    }
+
+    /// <summary>The DTO itself has no slot for either pin, so promoting one has to delete a test that says why
+    /// it was left off.</summary>
+    [Fact]
+    public void SyncScheduledJob_HasNoPinProperties()
+    {
+        var names = typeof(SyncScheduledJob)
+            .GetProperties()
+            .Select(p => p.Name)
+            .ToList();
+
+        Assert.DoesNotContain("PersonaId", names);
+        Assert.DoesNotContain("ReasoningEffort", names);
     }
 
     [Fact]

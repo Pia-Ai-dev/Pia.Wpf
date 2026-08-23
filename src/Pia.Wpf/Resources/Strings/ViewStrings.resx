@@ -1126,7 +1126,7 @@
   <data name="Routines_Empty" xml:space="preserve"><value>No routines yet.</value></data>
   <data name="Routines_EmptyHint" xml:space="preserve"><value>Create one to have Pia do something for you on a schedule — a morning briefing, a weekly check.</value></data>
   <data name="Routines_Placeholder" xml:space="preserve"><value>Select a routine to see its schedule and its recent runs.</value></data>
-  <data name="Routines_NotOwnedHere" xml:space="preserve"><value>Another device owns this routine's schedule, so it only runs there.</value></data>
+  <data name="Routines_NotOwnedHere" xml:space="preserve"><value>Another device owns this routine's schedule, so it only runs there. Its persona and reasoning effort are set per device and cannot be changed from here.</value></data>
   <data name="Routines_Detail_NextRun" xml:space="preserve"><value>Next run</value></data>
   <data name="Routines_Detail_RecentRuns" xml:space="preserve"><value>Recent runs</value></data>
   <data name="Routines_Detail_NeverRun" xml:space="preserve"><value>This routine hasn't run yet.</value></data>
@@ -1137,6 +1137,37 @@
   <data name="Routines_Field_Month" xml:space="preserve"><value>Month</value></data>
   <data name="Routines_Field_DayOfMonth" xml:space="preserve"><value>Day of month</value></data>
   <data name="Routines_Field_DayOfMonth_Hint" xml:space="preserve"><value>Months too short for that day fire on their last day.</value></data>
+  <data name="Routines_Field_Persona" xml:space="preserve"><value>Persona</value></data>
+  <data name="Routines_Field_Persona_Default" xml:space="preserve"><value>Use the active persona</value></data>
+  <data name="Routines_Field_Persona_Missing" xml:space="preserve"><value>No longer available</value></data>
+  <data name="Routines_Field_Persona_Hint" xml:space="preserve"><value>Kept on this device only, so your other devices are unaffected.</value></data>
+  <data name="Routines_Field_Effort" xml:space="preserve"><value>Reasoning effort</value></data>
+  <data name="Routines_Field_Effort_Default" xml:space="preserve"><value>Use the persona's setting</value></data>
+  <data name="Routines_Field_Effort_Hint" xml:space="preserve"><value>Overrides the persona's own reasoning effort for this routine's runs.</value></data>
+  <data name="Routines_Effort_None" xml:space="preserve"><value>No reasoning</value></data>
+  <data name="Routines_Effort_Minimal" xml:space="preserve"><value>Minimal</value></data>
+  <data name="Routines_Effort_Low" xml:space="preserve"><value>Low</value></data>
+  <data name="Routines_Effort_Medium" xml:space="preserve"><value>Medium</value></data>
+  <data name="Routines_Effort_High" xml:space="preserve"><value>High</value></data>
+  <data name="Routines_Effort_XHigh" xml:space="preserve"><value>Extra high</value></data>
+  <data name="Routines_Blueprints_Header" xml:space="preserve"><value>Start from a blueprint</value></data>
+  <data name="Routines_Blueprints_Hint" xml:space="preserve"><value>Pick one to open the editor already filled in — you can change anything before saving.</value></data>
+  <data name="Routines_Blueprint_TopicDigest_Title" xml:space="preserve"><value>Daily topic digest</value></data>
+  <data name="Routines_Blueprint_TopicDigest_Description" xml:space="preserve"><value>A short web round-up on one topic each morning, with sources.</value></data>
+  <data name="Routines_Blueprint_MorningBrief_Title" xml:space="preserve"><value>Morning brief</value></data>
+  <data name="Routines_Blueprint_MorningBrief_Description" xml:space="preserve"><value>What is due and what fires today, in time order, first thing in the morning.</value></data>
+  <data name="Routines_Blueprint_EveningWinddown_Title" xml:space="preserve"><value>Evening wind-down</value></data>
+  <data name="Routines_Blueprint_EveningWinddown_Description" xml:space="preserve"><value>What slipped today and what is coming tomorrow, as a short evening list.</value></data>
+  <data name="Routines_Blueprint_HabitCheckin_Title" xml:space="preserve"><value>Habit check-in</value></data>
+  <data name="Routines_Blueprint_HabitCheckin_Description" xml:space="preserve"><value>A nightly look at your recurring commitments, and one question to sit with.</value></data>
+  <data name="Routines_Blueprint_WeeklyReview_Title" xml:space="preserve"><value>Weekly review</value></data>
+  <data name="Routines_Blueprint_WeeklyReview_Description" xml:space="preserve"><value>A Friday round-up of what finished, what is still open, and what from the week's notes is worth keeping.</value></data>
+  <data name="Routines_Blueprint_CompetitorWatch_Title" xml:space="preserve"><value>Competitor watch</value></data>
+  <data name="Routines_Blueprint_CompetitorWatch_Description" xml:space="preserve"><value>One line a week per company on what actually moved, with sources.</value></data>
+  <data name="Routines_Blueprint_BillsRenewals_Title" xml:space="preserve"><value>Bills and renewals</value></data>
+  <data name="Routines_Blueprint_BillsRenewals_Description" xml:space="preserve"><value>A short heads-up on what renews or falls due in the next two weeks.</value></data>
+  <data name="Routines_Blueprint_MeetingFollowup_Title" xml:space="preserve"><value>Meeting follow-ups</value></data>
+  <data name="Routines_Blueprint_MeetingFollowup_Description" xml:space="preserve"><value>Today's meetings turned into todos, with the transcript's gaps stated up front.</value></data>
   <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Default provider</value></data>
   <data name="Settings_ScheduledJobs_UnknownStatusInert" xml:space="preserve"><value>This job has a status this version does not recognise, so it is shown read-only. Update Pia to manage it.</value></data>
   <data name="Settings_ScheduledJobs_Running" xml:space="preserve"><value>Running the job…</value></data>

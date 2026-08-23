@@ -11,7 +11,10 @@ public interface IScheduledJobService
         // T2-18 quiet mode. It belongs on CREATE and not only on UPDATE because the jobs editor is ONE panel
         // with one checkbox for both: without this, ticking "Quiet" while creating a job produced a job that
         // notifies, with no error and no hint that the choice was dropped.
-        bool quietOnSuccess = false);
+        bool quietOnSuccess = false,
+        // Guid.Empty is normalised to "no pin" here rather than stored, because the editor's default row sends
+        // Empty and a create has no earlier value to clear.
+        Guid? personaId = null, ReasoningEffort? reasoningEffort = null);
 
     Task<IReadOnlyList<ScheduledJob>> GetAllAsync();
     Task<IReadOnlyList<ScheduledJob>> GetActiveAsync();
@@ -34,6 +37,8 @@ public interface IScheduledJobService
 
     /// <summary>
     /// Applies the supplied field edits (null = leave unchanged) and recomputes <c>NextFireAt</c>.
+    /// <paramref name="providerId"/> and <paramref name="personaId"/> take <see cref="Guid.Empty"/> as CLEAR;
+    /// <paramref name="reasoningEffort"/> uses <paramref name="clearReasoningEffort"/> instead, since <c>ReasoningEffort.None</c> is itself a real value to pin.
     /// <para>
     /// <b><paramref name="specificDate"/> is what makes the re-arm below reachable (Batch 09).</b> Until it
     /// existed, a settled one-off whose date had passed could not be moved by ANY surface: the re-arm rule
@@ -60,7 +65,8 @@ public interface IScheduledJobService
         DateTime? specificDate = null, ScheduledJobKind? kind = null,
         // T2-18 quiet mode. Trailing, defaulted and NULLABLE like every other member here: null means "leave it
         // as it is", so a caller that does not know about the flag cannot clear it.
-        bool? quietOnSuccess = null);
+        bool? quietOnSuccess = null,
+        Guid? personaId = null, ReasoningEffort? reasoningEffort = null, bool clearReasoningEffort = false);
 
     Task DeleteAsync(Guid id);
 

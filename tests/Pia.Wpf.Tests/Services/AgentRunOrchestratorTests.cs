@@ -21,6 +21,12 @@ public sealed class AgentRunOrchestratorTests
     private static StepTurnResult Ok(string text = "done") => new(true, false, null, text, null, Guid.NewGuid(), Guid.NewGuid());
     private static StepTurnResult OkUsage(long input, long output) =>
         new(true, false, null, "done", new UsageDetails { InputTokenCount = input, OutputTokenCount = output }, Guid.NewGuid(), Guid.NewGuid());
+    private static StepTurnResult OkWithArtifact(string text, string artifact) =>
+        new(true, false, null, text, null, Guid.NewGuid(), Guid.NewGuid(),
+            Outcome: new StepOutcomeClaim(true, "declared", artifact));
+    private static StepTurnResult OkDeclaringNoArtifact(string text = "done") =>
+        new(true, false, null, text, null, Guid.NewGuid(), Guid.NewGuid(),
+            Outcome: new StepOutcomeClaim(true, "declared", null));
     private static StepTurnResult Fail(string err) => new(false, false, err, string.Empty, null, Guid.NewGuid(), Guid.NewGuid());
     private static StepTurnResult Cancel() => new(false, true, "cancelled", string.Empty, null, Guid.NewGuid(), Guid.NewGuid());
 
@@ -185,8 +191,8 @@ public sealed class AgentRunOrchestratorTests
         public Task<AgentStep?> NextPendingStepAsync(Guid runId, CancellationToken ct = default) => _inner.NextPendingStepAsync(runId, ct);
         public Task SetStepStatusAsync(Guid stepId, AgentStepStatus status, CancellationToken ct = default) => _inner.SetStepStatusAsync(stepId, status, ct);
         public Task RecordStepResultAsync(Guid stepId, AgentStepStatus status, Guid? firstMessageId, Guid? lastMessageId,
-            UsageDetails? usage, CancellationToken ct = default)
-            => _inner.RecordStepResultAsync(stepId, status, firstMessageId, lastMessageId, usage, ct);
+            UsageDetails? usage, CancellationToken ct = default, string? artifactRef = null)
+            => _inner.RecordStepResultAsync(stepId, status, firstMessageId, lastMessageId, usage, ct, artifactRef);
 
         public event EventHandler<AgentRunChangedEventArgs> RunChanged
         {
@@ -998,6 +1004,123 @@ public sealed class AgentRunOrchestratorTests
 
         var seen = Assert.Single(verifier.SeenCompletedSteps);
         Assert.All(seen, s => Assert.False(s.FromEarlierSegment));
+    }
+
+    // ---- the artifact a step reported survives the park, so a resumed critic sees the same evidence ----
+
+    [Fact]
+    public async Task Run_Resume_VerifierSeesTheArtifactRefEachStepReported()
+    {
+        using var h = new Harness();
+        var ct = TestContext.Current.CancellationToken;
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2"), ("C", "s3")), false));
+
+        var profile = new RunProfile(MaxSteps: 2, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
+        var exec = new RecordingExecutor(step => step.Intent switch
+        {
+            "s1" => OkWithArtifact("done", "one.md"),
+            "s2" => OkWithArtifact("done", "two.md"),
+            _ => Ok(),
+        });
+        await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), profile, ct);
+        Assert.Equal(AgentRunState.WaitingForInput, (await h.Runs.GetAsync(run.Id, ct))!.State);
+
+        Assert.True(await h.Runs.TryBeginResumeAsync(run.Id, ct));
+        var verifier = new FakeVerifier();
+        var exec2 = new RecordingExecutor(_ => Ok("post-resume text"));
+        await h.BuildOrchestrator(planner, verifier).RunAsync(run, exec2, Persona(), Provider(), profile, ct, resume: true);
+
+        var seen = Assert.Single(verifier.SeenCompletedSteps);
+        Assert.Equal(new[] { "one.md", "two.md", null }, seen.Select(s => s.Outcome?.ArtifactRef).ToArray());
+        Assert.Equal(new[] { true, true, false }, seen.Select(s => s.FromEarlierSegment).ToArray());
+        Assert.Equal("ok, declared", AgentVerifier.OutcomeTag(seen[0]));
+    }
+
+    [Fact]
+    public async Task Run_Resume_StepThatReportedNoArtifact_SeedsANullOutcome()
+    {
+        // The persisted datum is the artifact, not the declaration flag — so a step that declared success
+        // without one comes back unconfirmed rather than inventing a claim nobody stored.
+        using var h = new Harness();
+        var ct = TestContext.Current.CancellationToken;
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2"), ("C", "s3")), false));
+
+        var profile = new RunProfile(MaxSteps: 2, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
+        var exec = new RecordingExecutor(step => step.Intent == "s1" ? OkDeclaringNoArtifact() : Ok());
+        await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), profile, ct);
+
+        Assert.True(await h.Runs.TryBeginResumeAsync(run.Id, ct));
+        var verifier = new FakeVerifier();
+        await h.BuildOrchestrator(planner, verifier).RunAsync(
+            run, new RecordingExecutor(_ => Ok()), Persona(), Provider(), profile, ct, resume: true);
+
+        var seen = Assert.Single(verifier.SeenCompletedSteps);
+        Assert.Null(seen[0].Outcome);
+        Assert.Null(seen[1].Outcome);
+        Assert.Equal("ok, unconfirmed", AgentVerifier.OutcomeTag(seen[0]));
+    }
+
+    [Fact]
+    public async Task Run_Resume_MalformedStepExtraJson_SeedsNoOutcome_AndStillCompletes()
+    {
+        using var h = new Harness();
+        var ct = TestContext.Current.CancellationToken;
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2"), ("C", "s3")), false));
+
+        var profile = new RunProfile(MaxSteps: 2, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
+        var exec = new RecordingExecutor(_ => OkWithArtifact("done", "one.md"));
+        await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), profile, ct);
+
+        var parked = (await h.Runs.GetAsync(run.Id, ct))!;
+        CorruptStepExtras(h, parked.Plan.Single(s => s.Title == "A").Id);
+
+        Assert.True(await h.Runs.TryBeginResumeAsync(run.Id, ct));
+        var verifier = new FakeVerifier();
+        await h.BuildOrchestrator(planner, verifier).RunAsync(
+            run, new RecordingExecutor(_ => Ok()), Persona(), Provider(), profile, ct, resume: true);
+
+        Assert.Equal(AgentRunState.Completed, (await h.Runs.GetAsync(run.Id, ct))!.State);
+        var seen = Assert.Single(verifier.SeenCompletedSteps);
+        Assert.Null(seen[0].Outcome);
+        Assert.Equal("one.md", seen[1].Outcome!.ArtifactRef); // the unreadable row costs only itself
+    }
+
+    [Fact]
+    public async Task Run_ReplanAfterAStepReportedAnArtifact_PreservesIt()
+    {
+        // A replan rewrites the plan with DELETE + re-INSERT, so the kept Done row has to carry its ExtraJson.
+        using var h = new Harness();
+        var ct = TestContext.Current.CancellationToken;
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2fail")), false));
+        planner.Replans.Enqueue(new PlanResult(MakeSteps(("D", "s4")), false));
+
+        var exec = new RecordingExecutor(step => step.Intent switch
+        {
+            "s1" => OkWithArtifact("done", "one.md"),
+            "s2fail" => Fail("boom"),
+            _ => Ok(),
+        });
+        await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, ct);
+
+        var final = await h.Runs.GetAsync(run.Id, ct);
+        var kept = final!.Plan.Single(s => s.Title == "A");
+        Assert.Equal("one.md", StepExtraJson.ArtifactRefOf(kept));
+    }
+
+    private static void CorruptStepExtras(Harness h, Guid stepId)
+    {
+        using var cmd = h.Ctx.GetConnection().CreateCommand();
+        cmd.CommandText = "UPDATE AgentSteps SET ExtraJson='not json' WHERE Id=@Id";
+        cmd.Parameters.AddWithValue("@Id", stepId.ToString());
+        cmd.ExecuteNonQuery();
     }
 
     [Fact]
