@@ -402,8 +402,11 @@ public class FilesToolHandlerWriteTests : IDisposable
         var localAppData = Environment.GetEnvironmentVariable("LOCALAPPDATA")!;
         Assert.False(string.IsNullOrEmpty(localAppData));
 
-        // Ensure the workdir exists so the resolver and the guard's exception canonicalize identically.
-        Directory.CreateDirectory(Pia.Infrastructure.AssistantWorkspace.LegacyWorkdir);
+        // Ensure the workdir exists so the resolver and the guard's exception canonicalize identically -
+        // and put it back if it did not, because on a fresh machine this is a real-profile directory.
+        var workdir = Pia.Infrastructure.AssistantWorkspace.LegacyWorkdir;
+        var workdirWasMissing = !Directory.Exists(workdir);
+        Directory.CreateDirectory(workdir);
 
         var handler = BroadSandboxHandler(localAppData);
         var workdirTarget = Path.Combine("Pia", "workdir", "carveout-" + Guid.NewGuid().ToString("N") + ".ps1");
@@ -420,5 +423,17 @@ public class FilesToolHandlerWriteTests : IDisposable
         var (blockedResult, blockedPending) = await handler.HandleToolCallAsync(blocked, TestContext.Current.CancellationToken);
         Assert.Null(blockedPending);
         Assert.Contains("Refusing to write", Prop<string?>(blockedResult!, "error")!);
+
+        // Non-recursive on purpose: a workdir that already held anything is never this test's to remove.
+        if (workdirWasMissing)
+        {
+            try
+            {
+                Directory.Delete(workdir);
+            }
+            catch (IOException)
+            {
+            }
+        }
     }
 }

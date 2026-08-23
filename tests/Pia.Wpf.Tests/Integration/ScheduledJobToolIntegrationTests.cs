@@ -18,15 +18,16 @@ namespace Pia.Tests.Integration;
 /// it due -> stubbed background assistant turn runs -> job marked complete with the chat id ->
 /// query_scheduled_research finds it.
 /// </summary>
-/// <remarks>
-/// This test exercises the real <see cref="SqliteContext"/> against the user's
-/// <c>%LOCALAPPDATA%\Pia\history.db</c> (a known plan-accepted tradeoff shared by the other
-/// integration tests). Cleanup deletes only TEST_E2E_-prefixed scheduled jobs.
-/// </remarks>
 [Trait("Category", "Integration")]
 public class ScheduledJobToolIntegrationTests : IDisposable
 {
-    private readonly SqliteContext _ctx = new();
+    private readonly string _dir = Path.Combine(Path.GetTempPath(), "PiaIntTests_" + Guid.NewGuid().ToString("N"));
+
+    private readonly SqliteContext _ctx;
+
+    // A throwaway database. This used to default to the real profile, where it ran the schema migration and
+    // left its own rows in the user's history.
+    public ScheduledJobToolIntegrationTests() => _ctx = new SqliteContext(Path.Combine(_dir, "history.db"));
 
     private sealed class IntegrationSettingsService : ISettingsService
     {
@@ -44,10 +45,8 @@ public class ScheduledJobToolIntegrationTests : IDisposable
     {
         // Arrange the dependency graph manually for an integration test.
         var calc = new RecurrenceCalculator();
-        var tmpDir = Path.Combine(Path.GetTempPath(), "PiaIntTests_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tmpDir);
         var settings = new IntegrationSettingsService();
-        var deleteTracker = new SyncDeleteTrackerService(tmpDir, NullLogger<SyncDeleteTrackerService>.Instance);
+        var deleteTracker = new SyncDeleteTrackerService(_dir, NullLogger<SyncDeleteTrackerService>.Instance);
         var jobs = new ScheduledJobService(_ctx, calc, settings, deleteTracker, NullLogger<ScheduledJobService>.Instance);
 
         var chatId = Guid.NewGuid();
@@ -132,16 +131,13 @@ public class ScheduledJobToolIntegrationTests : IDisposable
 
     public void Dispose()
     {
+        _ctx.Dispose();
         try
         {
-            var conn = _ctx.GetConnection();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = "DELETE FROM ScheduledJobs WHERE Name LIKE 'TEST_E2E_%'";
-            cmd.ExecuteNonQuery();
+            Directory.Delete(_dir, recursive: true);
         }
-        finally
+        catch (IOException)
         {
-            _ctx.Dispose();
         }
     }
 

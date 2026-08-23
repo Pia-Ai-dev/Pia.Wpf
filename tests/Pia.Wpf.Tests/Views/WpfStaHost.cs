@@ -41,9 +41,37 @@ internal static class WpfStaHost
                 // never be nulled again.
                 if (Application.Current is null)
                 {
-                    // InitializeComponent() only loads App.xaml's converters and merged dictionaries; Run()
-                    // is never called, so OnStartup's SetLanguage() cannot mutate the process-wide culture.
-                    var app = new Pia.App();
+                    // Application's ctor POSTS its startup callback, and this host PUMPS - so App.OnStartup
+                    // runs without anyone calling Run(), and the real one boots the DI graph, the history
+                    // database and the vault indexer against the developer's live profile. Catching that
+                    // operation as it is posted and aborting it is the only seam: overriding OnStartup in a
+                    // subclass is not one, because LoadComponent resolves App.xaml against the component's
+                    // OWN assembly and so refuses any type outside Pia.Wpf.
+                    var posted = new List<DispatcherOperation>();
+                    void Capture(object? sender, DispatcherHookEventArgs args) => posted.Add(args.Operation);
+
+                    created.Hooks.OperationPosted += Capture;
+                    Pia.App app;
+                    try
+                    {
+                        app = new Pia.App();
+                    }
+                    finally
+                    {
+                        created.Hooks.OperationPosted -= Capture;
+                    }
+
+                    // Before the first pump every abort succeeds, so a false here means WPF stopped posting
+                    // startup this way and the boot is live again.
+                    if (posted.Count == 0 || posted.Any(o => !o.Abort()))
+                    {
+                        throw new InvalidOperationException(
+                            $"The WPF STA host could not abort Application's queued startup callback " +
+                            $"({posted.Count} operation(s) posted). Unaborted, App.OnStartup boots Pia against " +
+                            "the developer's real profile from inside the test run.");
+                    }
+
+                    // Only loads App.xaml's converters and merged dictionaries.
                     app.InitializeComponent();
 
                     // OnStartup never runs, so without this one unhandled exception kills the test process.

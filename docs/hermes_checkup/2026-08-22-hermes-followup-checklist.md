@@ -438,7 +438,7 @@ D1 → D2 → D3 → D5               # tour, after the cheaper items land
 
 Not from the review. Found on 2026-08-23 while seeding a throwaway profile for the wide A read.
 
-- [ ] **F1 · `dotnet test` writes to the user's REAL profile.** The documented gate, run with no
+- [x] **F1 · `dotnet test` writes to the user's REAL profile.** The documented gate, run with no
   environment overrides, creates and mutates `%LOCALAPPDATA%\Pia\history.db`,
   `%APPDATA%\Pia\settings.json`, `%APPDATA%\Pia\providers.json`, `Logs\`, `runs\` and `workdir\`.
   **Evidence, not inference.** `AgentRuns.PersonaId` and `ReasoningEffort` exist only in code committed at
@@ -466,10 +466,56 @@ Not from the review. Found on 2026-08-23 while seeding a throwaway profile for t
   `VaultPathProviderTests.Default_root_is_Pia_Vault_under_local_app_data`, and
   `FilesToolHandlerWriteTests.Write_IntoWorkdir_IsAllowed_ThroughRealResolver` — that last one writes
   through the *real* resolver by name, which is where `workdir\` comes from.
-  First job is to name the test that opens the default-path `SqliteContext`, since that is the only one
-  that can explain `history.db`; then decide between per-test overrides and letting those nine assert the
-  real path *without touching it*.
+  **Fixed 2026-08-23, and the offenders were NAMED by instrumentation rather than by reading.** A temporary
+  stack-trace dump in `SqliteContext` (both constructors and the first `GetConnection`), gated on an env var
+  and reverted before the commit, caught every real-profile open in one gate run. There were two, not one:
+  - `ScheduledJobToolIntegrationTests` constructed the **default-path** `SqliteContext` — its `<remarks>`
+    called the real `history.db` "a known plan-accepted tradeoff" — so `EnsureSchema`/`MigrateSchema` ran
+    against the user's database, into which the test then inserted and deleted its own `TEST_E2E_` job. It now
+    opens a throwaway database under the temp directory and deletes it on dispose.
+  - `WpfStaHost` **boots the whole application.** `Application`'s constructor POSTS its startup callback and
+    the host pumps a dispatcher, so `App.OnStartup` ran without anyone calling `Run()` and took
+    `Bootstrapper.InitializeAsync()` with it: the DI graph, the real history database, and
+    `VaultIndexer.ReconcileAsync()` over the real vault. The host's own comment — *"Run() is never called, so
+    OnStartup's SetLanguage() cannot mutate the process-wide culture"* — was false. The seam is
+    `Dispatcher.Hooks.OperationPosted`: capture what the constructor posts and `Abort()` it before the first
+    pump. Overriding `OnStartup` in a subclass is **not** a seam, measured rather than assumed:
+    `LoadComponent` resolves `App.xaml` against the component's own assembly, so a test-assembly subclass
+    fails with *"does not have a resource identified by the URI '/Pia.Wpf;component/app.xaml'"* and takes all
+    143 view tests down with it. `WpfStaHostBootTests` is the tripwire: after the host has run,
+    `Bootstrapper.ServiceProvider` must still throw.
+  - `FilesToolHandlerWriteTests.Write_IntoWorkdir_IsAllowed_ThroughRealResolver` created
+    `%LOCALAPPDATA%\Pia\workdir` and left it behind on a machine that had none. It now removes it
+    (non-recursive) only when it was the call that created it.
+
+  **The result is measured, not argued.** With the probe still in and the three fixes applied: **zero**
+  real-profile opens, and the only failure in 4664 was the probe itself tripping
+  `DataDirectoryRoutingTests.OnlyPiaPaths_ReadsTheProfileFolders`. After reverting it:
+  **4665 / failed: 0 / 4611 succeeded / 54 skipped**, with `history.db`, `-wal` and `-shm` **byte-identical**
+  (SHA256) across the run — where every earlier gate run grew the WAL by ~64 KB. `settings.json`,
+  `providers.json`, `templates.json` and `workdir` are untouched. What is left is two directory mtimes, which
+  is F3.
+
+  **The nine tests were not touched, and none of them had to be.** The blanket redirect was never applied:
+  the leak was two named tests rather than ambient `PiaPaths` unsafety, so the five
+  `RoutedMember_ObservesAnOverrideAppliedAfterItsTypeIsLoaded` rows and the four literal-path facts still
+  assert the real profile, and still only read strings from it.
   *Deps:* none · *Effort:* **S** · *Value:* **High** (the gate must not mutate the machine it runs on)
+
+- [ ] **F3 · Two directory mtimes are the gate's remaining footprint on the real profile.** Both were named
+  while closing F1 and both are by *premise*, not by accident. `%LOCALAPPDATA%\Pia\runs` is restamped by 47
+  tests in five classes (`RunWorkspacePromotionTests`, `RunWorkspaceRedirectsTests`,
+  `FilesToolHandlerRunsDirGuardTests`, `FilesToolHandlerWorkspaceEscapeTests`,
+  `LiveTurnExecutorPlannedRunTests`) because `RunWorkspaceRedirects.Record`'s containment gate refuses any
+  root outside the real `RunsRoot`. `%LOCALAPPDATA%\Pia` itself is restamped by
+  `FilesToolHandlerListTests.ListRelativeFiles_NegationCannotResurfaceSensitivePathGuardBlockedPath`, which
+  needs a directory inside a root the **live** guard blocks and cannot use an override, because
+  `SensitivePathGuard`'s blocked-root array is built once per process. Each creates a GUID-named child and
+  deletes it, so nothing that outlives the run is created or modified: the residue is a parent directory's
+  mtime, plus an orphan if a test dies mid-body. Measured separately — the five run-workspace classes move
+  `runs` and not `Pia`. The fix, if it is worth one, is to make the guard's root array and the containment
+  gate re-derivable so both suites can run redirected.
+  *Deps:* none · *Effort:* **S** · *Value:* **Low**
 
 - [ ] **F2 · A chat-history row can be DELETED by AutomationId but not opened by one.** Found on
   2026-08-23 when E9's read-half check could not resume a parked run: opening the run's chat means
