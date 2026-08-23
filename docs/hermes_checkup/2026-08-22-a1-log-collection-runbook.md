@@ -318,7 +318,7 @@ A run that fails or is cancelled never emits the line, so cap the wait (5 minute
 tasks) and move on rather than blocking the session — a skipped prompt costs one sample, a wedged
 session costs all of them.
 
-#### Three traps this loop used to walk into
+#### Seven traps this loop used to walk into
 
 The 2026-08-23 pilot hit all three. They are collection defects, not analysis ones: get them wrong and
 no amount of care downstream recovers the sample.
@@ -341,6 +341,33 @@ no amount of care downstream recovers the sample.
    parked for clarification. Neither is a failed collection — but do not assume a *category* is
    invisible: on the 2026-08-23 replay, category F planned and wrote a file on both arms while category
    B vanished on both. Check which prompts actually dropped out before quoting a denominator.
+   A third mechanism turned up on 2026-08-23: a run that **planned, ran and was verified twice** and still
+   emitted no probe line, because it declared nothing at all. The answer-only category behaving exactly as
+   designed is *structurally invisible* to every ratio here, not merely absent from one.
+4. **The log TRUNCATES tool-call arguments, so do not harvest declaration text from it.** On the
+   2026-08-23 corpus, 40 of 99 `emit_plan args:` lines ended in `…` — enough to lose every declaration of
+   two runs whose probe lines showed declarations. Read `AgentSteps.ExpectedArtifact` out of the database
+   instead: untruncated, and it is what the verifier itself reads. The `Artifact probe:` counters stay
+   authoritative for *counts*; only the *strings* need the database.
+5. **The last probe line can UNDERCOUNT, not only overcount.** Trap 1 is still right — `declared`
+   accumulates, and one run read `declared=1 notFound=1` on an early pass before its file existed and
+   `declared=4 found=4` on its last. But a run that **fails after its last verify pass** never reports what
+   it declared afterwards: one run persisted five declarations and its only probe line saw three.
+   Reconcile the probe line against the step rows before quoting a total, and expect two legitimate
+   denominators — what the probe saw, and what the planner actually declared.
+6. **Count guard VALUES, not guard names.** Every probe line literally contains `overReportCap=0`, so a
+   substring grep for the counter name reports one hit per run and looks like a censored sample. Match
+   `=[1-9]`.
+7. **An empty composer after a dispatch is the SUCCESS signal, not a failure.** `ww_set_value` on
+   `InputTextBox` does work; but reading the composer back after `ww_invoke` shows it empty and *Run in
+   background* disabled, because the dispatch cleared it. Reading that as "the set did not take" cost the
+   2026-08-23 corpus a duplicate run on one prompt. Verify a dispatch by the run row appearing, never by
+   the composer's contents afterwards.
+
+Two smaller ones, and both silently ruin a "runs since I started" filter: `AgentRuns.CreatedAt` is stored
+in **UTC**, so a baseline written in local time excludes everything; and a run can create `ScheduledJobs`
+rows of its own, which then fire and add runs nobody dispatched. Filter on `TriggerKind`, and check for
+new jobs before blaming the loop.
 
 Harvest before you walk away: the file sink rolls at 10 MB and keeps 7 files
 (`Bootstrapper.cs:360-361`), so a long stretch can retire the file holding your earliest probe lines.

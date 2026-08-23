@@ -94,6 +94,15 @@ Three steps can close work below them. Do not tick their dependants without revi
   A1 also produced: `artifactReported=` was **True on 2 of 17** step outcomes. P6 re-measured it at
   2 of 7 and 2 of 8, so the *share* is better than that first read suggested while the *count* is 2
   every time. P7's call on those numbers is **defer**.
+  **Re-read on 13 runs / 41 step outcomes, 2026-08-23: 9 True — 22.0%. Still deferred, and now on a
+  measured number rather than 2 events.** The band was fixed before the app opened: ≥40% build, ≤12% drop,
+  and 12–40% defers *while naming what would move it*. Two named triggers, in §8 of
+  [2026-08-23-a2-wide-read.md](2026-08-23-a2-wide-read.md): **build** if a comparable corpus clears 40%,
+  **or** if one run is found where the report channel names an artifact the probe never saw — that second
+  one is the only thing A2 can do that the probe cannot, and this corpus produced its opposite. **Drop**,
+  and reopen A7 separately, if the share falls back toward 12% on a mix *not* dominated by file-producing
+  prompts; 9 of the 13 runs declared a file, which is a property of the runbook's categories and not of a
+  real day.
   *Deps:* A1 (satisfied) · *Effort:* **S** · *Value:* **High**
 
 - [ ] **A3 · Tests for the self-reported-but-missing case; keep the failure-isolation tests green.**
@@ -167,6 +176,10 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
   gets no grounding fence at all**, so on the very turn that produced the rooted path the schema
   description is the only place the working folder is named. **A third comparability cut** — §5's 6/6 and
   100% were measured on the pre-P8 wording, so the wide read is not a delta against them.
+  **Re-measured 2026-08-23 and it held.** Not one declaration in 13 runs carries a rooted path. The same
+  Ledger README prompt that produced `/Ledger/README.md`, a refused `write_file` and `notFound=1` before
+  P8 declared plain `README.md` twice, wrote it, and probed `found=2`. `n = 1` per arm, and the cheapest
+  reading of the original rootedness — the goal named the project — is still not excluded.
   *Deps:* P1 · *Effort:* **XS** · *Value:* **Med**
 
 - [ ] **P9 · Investigate the step that reported `succeeded=True` on a refused tool call.** The one loose
@@ -179,6 +192,10 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
   widened had nothing to say — are in §11 of
   [2026-08-23-a4-replay-reading.md](2026-08-23-a4-replay-reading.md). Answer first whether anything in the
   step outcome should change, or whether the missing piece is only that a refusal is surfaced nowhere.
+  **A second instance, 2026-08-23:** `2dcc6fd2` persisted five declarations and **failed**, yet its only
+  verify pass saw three — so a run that fails after its last verify never reports what it declared
+  afterwards. Same shape as the original: work the tally cannot see. §10 of
+  [2026-08-23-a2-wide-read.md](2026-08-23-a2-wide-read.md), trap 2.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
 
 ---
@@ -333,10 +350,21 @@ below are the real ones.
   test project's compile. A tick here means the suite exists, not that it is green — E7 is the run.
   *Deps:* E3, E4, E5 · *Effort:* **M** · *Value:* **High**
 
-- [ ] **E7 · Verification handoff — the only thing that can turn this group green.** `dotnet build
+- [x] **E7 · Verification handoff — the only thing that can turn this group green.** `dotnet build
   -t:Rebuild` in both configurations, `dotnet test` with no filter, an eyeball pass in the real app, and
   **one open against a pre-change profile** — migration half (b) is the `ALTER TABLE` path, and every test
   and every fresh profile takes the `CREATE TABLE` path instead.
+  **Done 2026-08-23**, all four halves. Both configurations rebuild to 0 Warning(s); `dotnet test` with no
+  filter is `failed: 0`. The pickers offer *"Use the active persona"* + all 12 personas (not roster-gated,
+  as E5 intended) and *"Use the persona's setting"* + all six efforts with readable labels; a routine saved
+  with **Experienced Coder / Extra high** persisted both pins and kept them across a Disable toggle. The
+  **"No longer available"** row was machine-checked with `ww_assert_value` against a job whose `PersonaId`
+  names no persona — and the effort pin beside it still read *"Extra high"*, so the two degrade
+  independently. Migration half (b) ran against a copy of the real `history.db` with **both pin columns
+  dropped**, so `CREATE TABLE IF NOT EXISTS` was a no-op and only the ALTER pass could restore them; it
+  did, the app started clean, and both pins then round-tripped through the editor into columns that exist
+  only because the migration added them. Detail in §12 of
+  [2026-08-23-a2-wide-read.md](2026-08-23-a2-wide-read.md).
   *Deps:* E6 · *Effort:* **XS** · *Value:* **High**
 
 - [x] **E8 · Blueprint effort defaults; no persona default.** `RoutineBlueprint.DefaultEffort` is set on
