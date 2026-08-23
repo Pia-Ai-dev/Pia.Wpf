@@ -29,7 +29,7 @@ Three steps can close work below them. Do not tick their dependants without revi
 
 | Gate | Closes | Question it answers |
 |---|---|---|
-| **A1** | A2–A4, A6, A7 | Is `ExpectedArtifact` already file-shaped often enough that the probe is fine? |
+| ~~**A1**~~ | A2–A4, A6, A7 | Is `ExpectedArtifact` already file-shaped often enough that the probe is fine? **Answered 2026-08-23: no — 56%, gate does not close.** Everything it gated stays open. |
 | **B4** | B6–B10 | Does current compaction lose anything worth acting on? |
 | **D-Q1** | D3–D8 | Is the goal onboarding (a canned tour, no LLM) or arbitrary "where do I…" questions? |
 
@@ -37,7 +37,7 @@ Three steps can close work below them. Do not tick their dependants without revi
 
 ## A — Artifact evidence
 
-- [ ] **A1 · Read the artifact-outcome split — `found` / `NOT FOUND` / not-a-file — off real-run logs.**
+- [x] **A1 · Read the artifact-outcome split — `found` / `NOT FOUND` / not-a-file — off real-run logs.**
   Not `probed / declared`: the release-visible line in `AgentVerifier.TryBuildArtifactFactsAsync` carries
   counts only, and `Probed` counts candidate *paths* (0–3 per declaration), so it carries no outcome. The
   split itself lives in the Debug-only facts block one line below — and G1 of
@@ -53,26 +53,50 @@ Three steps can close work below them. Do not tick their dependants without revi
   **Do not average across the tally.** The counts-only tally changed what an `Artifact probe:` line carries,
   so this hand-counted first read is not comparable to anything measured after it — of the new fields only
   `notFileShaped / declared` is even loosely comparable to the 43%.
+  **Gate read, 2026-08-23 — the gate does not close.** Four live runs on a throwaway profile, one per
+  runbook prompt category: 15 declarations over three probed runs, which collapse to **9 distinct
+  intended artifacts, 5 of them file-shaped — 56%**, against the ≥85% the gate needed. (The raw
+  counters say 33%; a replan re-declares the same artifact against a new step row, so both the vague
+  original and its concretized twin survive into the final facts block. Collapse the pairs.) The `n` is
+  four runs, one machine, one provider, one afternoon — an existence proof, not a rate. **A2–A4, A6 and
+  A7 all stay open.** The full reading, its three collection traps and its limits are in
+  [2026-08-23-a1-pilot-reading.md](2026-08-23-a1-pilot-reading.md).
+  `NOT FOUND` did **not** stay at zero — it read 4 — but every one came from a declaration naming
+  *alternatives*, so the negative was unreadable rather than real. That is what re-sequenced A4 below.
   *Deps:* none · *Effort:* **XS** · *Value:* **High** (decision gate)
 
-- [ ] **A2 · Route `ArtifactRef` through the existing artifact probe.**
-  `produced: X` becomes `produced: X → found (2.1 KB)` / `→ NOT FOUND`.
-  *Deps:* A1 · *Effort:* **S** · *Value:* **High**
-
-- [ ] **A3 · Tests for the self-reported-but-missing case; keep the failure-isolation tests green.**
-  *Deps:* A2 · *Effort:* **S** · *Value:* **High**
-
-- [ ] **A4 · Tighten how the plan describes `expectedArtifact` — three surfaces, not two.**
+- [x] **A4 · Tighten how the plan describes `expectedArtifact` — three surfaces, not two.**
   The prose at `AgentPlanner.cs:782` reaches a **plan** turn only, and `:827` does **not** carry that
-  sentence: it is the verbatim twin of `:784`, and `BuildReplanMessages` (`:817-830`) never mentions the
-  field at all. The other two surfaces are the tool-schema descriptions `AIFunctionFactory` ships every
+  sentence: it is the verbatim twin of `:784`, and apart from it `BuildReplanMessages` (`:817-830`) says
+  nothing about the field. The other two surfaces are the tool-schema descriptions `AIFunctionFactory` ships every
   turn — `emit_plan`'s steps parameter (`:139` plan, `:148` replan) and `PlanStepArg.ExpectedArtifact`
   (`:159`) — so on a replan the schema is the *only* description of the field. Say what checkable means
   (something the app can look up, not "a summary of the Q3 numbers"), and say to omit the field otherwise.
   Weigh `:784`/`:827` in the same edit: their "ONE step listing every file in expectedArtifact" pulls the
   other way, and it is what produces the composite declarations that defeat a bare `found` / `NOT FOUND`
   harvest.
-  *Deps:* A2 (decide after A2's numbers — it may be unnecessary) · *Effort:* **XS** · *Value:* **Med**
+  **Re-sequenced ahead of A2 and landed 2026-08-23 as P1.** The pilot showed the two sentences do not
+  in fact pull against each other: `:784`/`:827` govern **step granularity**, the defect is **candidate
+  names inside one declaration**, and one clause settles both — *every name listed must exist when the
+  step finishes*. It went in at `:159` and `:782`; `:784`/`:827` are untouched. Its `Deps: A2` was
+  wrong: A2's numbers cannot say anything about the planner's wording, and the pilot's unreadable
+  negative made this the highest value-per-effort row in the group. **Two of the three schema surfaces
+  named above were left alone deliberately** — `:139` and `:148` summarise what an array element holds,
+  and `:159` nests inside both; the reasoning is §1 of
+  [2026-08-23-a4-replay-reading.md](2026-08-23-a4-replay-reading.md), which also carries the landed
+  wording and the before/after it produced.
+  *Deps:* none (was A2) · *Effort:* **XS** · *Value:* **High** (was Med)
+
+- [ ] **A2 · Route `ArtifactRef` through the existing artifact probe.**
+  `produced: X` becomes `produced: X → found (2.1 KB)` / `→ NOT FOUND`.
+  `Deps: A1` is **satisfied** — the gate read and did not close. But its priority dropped on a number
+  A1 also produced: `artifactReported=` was **True on 2 of 17** step outcomes. P6 re-measured it at
+  2 of 7 and 2 of 8, so the *share* is better than that first read suggested while the *count* is 2
+  every time. P7's call on those numbers is **defer**.
+  *Deps:* A1 (satisfied) · *Effort:* **S** · *Value:* **High**
+
+- [ ] **A3 · Tests for the self-reported-but-missing case; keep the failure-isolation tests green.**
+  *Deps:* A2 · *Effort:* **S** · *Value:* **High**
 
 - [x] **A5 · Persist `ArtifactRef` into `AgentSteps.ExtraJson` and seed it in `SafeSeedResumeContext`.**
   Fixes the resume asymmetry; also lets the timeline show what each step produced.
@@ -86,6 +110,56 @@ Three steps can close work below them. Do not tick their dependants without revi
 - [ ] **A7 · Todo / reminder / vault probes + typed `kind:ref` prefix in the tool description.**
   Widens the evidence surface past the filesystem.
   *Deps:* A6 · *Effort:* **M** · *Value:* **High**
+
+### A · the disjunction batch
+
+Rows added 2026-08-23 from [2026-08-23-a4-disjunction-batch-brief.md](2026-08-23-a4-disjunction-batch-brief.md).
+The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-replay-reading.md).
+
+- [x] **P1 · Forbid the disjunction in `expectedArtifact`, keep the conjunction.** Lands A4. The schema
+  description at `AgentPlanner.cs:159` — the one surface that reaches plan *and* replan — and the
+  plan-turn prose at `:782`. `:784`/`:827` untouched, no fourth surface on replan.
+  *Deps:* none · *Effort:* **XS** · *Value:* **High**
+
+- [x] **P2 · Replay the four prompts and read the delta.** Two arms on one provider rather than a
+  replay against the pilot, because the pilot's provider now 401s. Declarations offering alternatives
+  **3 of 8 → 0 of 6**; `notFileShaped` **6 of 8 → 0 of 6**; `probed` **2 → 6**; collapsed
+  file-shapedness **20% → 100%**; and the first `NOT FOUND` in this corpus that is true on disk.
+  *Deps:* P1 · *Effort:* **S** · *Value:* **High**
+
+- [x] **P3 · Per-declaration not-found counter — decided, not built.** The condition for building it did
+  not fire: no disjunction survives P1, and with every listed name required to exist a candidate miss
+  *is* a declaration miss. Building it would install the wrong rule for a genuine conjunction. Reason in
+  §2 of the reading.
+  *Deps:* P2 · *Effort:* **XS** · *Value:* **Med**
+
+- [x] **P4 · Record the gate reading.** A1 ticked at 56% with its `n`, A4 re-sequenced ahead of A2, the
+  runbook's "near-zero `NOT FOUND` proves the channel produces no negative" row struck.
+  *Deps:* none · *Effort:* **XS** · *Value:* **High**
+
+- [x] **P5 · Fold the three collection traps into the runbook.** Accumulating `declared` with replan
+  twins, concurrent runs defeating a count-based poll, and the structurally invisible answer-only
+  category — plus §3's profile-isolation error.
+  *Deps:* none · *Effort:* **XS** · *Value:* **Med**
+
+- [x] **P6 · Re-measure report-channel supply.** `artifactReported=True` on **2 of 7** post-P1 step
+  outcomes (29%), against 2 of 8 pre-P1 and the pilot's 2 of 17. The share moved, the count is 2 in all
+  three.
+  *Deps:* P2 · *Effort:* **XS** · *Value:* **High**
+
+- [x] **P7 · The A2 recommendation.** **Defer** — the drop trigger (supply staying near 12%) did not
+  fire, and the build case rests on 2 events. Re-read supply over ≥12 runs on a post-P1 build; build A2
+  above ~40%, drop it below ~12%.
+  *Deps:* P6 · *Effort:* **XS** · *Value:* **High**
+
+- [ ] **P8 · Say that `expectedArtifact` is relative to the working folder.** Neither surface says which
+  root a name is relative to, and on the post-P1 replay that cost a run its artifact: a replan declared
+  a **rooted** path, the executor called `write_file` with that same path, and the sandbox refused it —
+  *"Path is outside the assistant files folder"* — so nothing was written. Worth doing whatever caused
+  the rootedness (the goal named the project, so a project subfolder is an ordinary response; `n = 1`
+  per arm either way). Deliberately **not** folded into P1: changing the wording that produced a reading
+  without re-measuring makes the reading unfalsifiable. Re-measure with it.
+  *Deps:* P1 · *Effort:* **XS** · *Value:* **Med**
 
 ---
 
@@ -264,7 +338,7 @@ below are the real ones.
 Cheapest decisive work first, then the vertical slices.
 
 ```
-A1 → B5 → A5 → A2 → A3          # gate, then the cheap wins and the strongest evidence signal
+A1 → A4 → P8 → B5 → A5 → A2     # gate, then the cheap wins; A2/A3 wait on a wider supply re-read
 C1 → C2 → C3                    # blueprint vertical slice — first user-visible change
 B1 → B2 → B3 → B4               # gate: is compaction actually losing anything?
 C4 · A6 → A7 · B6 · B7 → B8     # widen, once the gates have answered
