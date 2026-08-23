@@ -208,8 +208,31 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
 - [x] **B2 · Corpus extraction script** (`AssistantChatMessages` → JSON fixture, gitignored).
   *Deps:* none · *Effort:* **S** · *Value:* **Enabler**
 
-- [ ] **B3 · Question-bank generator, per-transcript cache, and the verbatim-leak filter.**
+- [x] **B3 · Question-bank generator, per-transcript cache, and the verbatim-leak filter.**
   The leak filter is what stops restatement luck from inflating every arm.
+  **Done 2026-08-23** - `Integration/Compaction/CompactionRecallHarness.cs` and `CompactionRecallTests.cs`,
+  beside B1, no new project.
+  - The cache key is **(transcript fingerprint, window, max output)**, per the plan's §15 answer 2: the
+    removed set belongs to the *pair*, so a transcript-only key would answer the second budget's questions
+    from the first budget's removed set - a wrong number that looks right.
+  - Three **ordinary gate tests** hold the parts that decide whether any number means anything. The bank asks
+    only about removed content (each gold answer occurring exactly once in the removed trace and zero times
+    in the retained one); the leak filter drops a fact the tail restates, leaving exactly one fewer question;
+    and two budgets write two cache files, with a 64k window producing an **empty** bank - the clearest proof
+    the key is not transcript-only.
+  - The filter reads `SyntheticTranscript.Trace`, not `message.Text`: it flattens tool-call arguments and
+    tool-result payloads too, so an answer hiding in a tool result cannot pass a text-only check.
+  - Provider comes from configuration (`PIA_COMPACTION_PROVIDER`, resolved against `providers.json` with the
+    real `DpapiHelper`), skips when absent, and never falls back to a local model. Temperature 0 goes through
+    the production handler because the shipped `CreateChatOptions` sets none. The fixture path still spends
+    one generation call per real transcript; it is implemented and unused by the synthetic corpus, which
+    ships its own gold answers.
+  - The three live entry points report **Not Run** in the gate, verified by arithmetic rather than by reading
+    the attribute: `succeeded` went 4610 -> 4618 (+8, exactly the new gate tests) and `skipped` 54 -> 57
+    (+3, the live ones), at `failed: 0`.
+  - `Export-CompactionCorpus.ps1` (B2) **never parsed** - `"$resolved:"` in its containment throw is read as
+    a drive-qualified variable. Fixed. It still cannot run here: `sqlite3` is on neither PATH nor in the
+    winget store, so the DB reading for §2 of the reading doc was done from a copy through `node:sqlite`.
   *Deps:* B1 · *Effort:* **M** · *Value:* **Enabler**
 
 - [ ] **B4 · Arms A (uncompacted) + B (current), judge, scorecard writer.**
