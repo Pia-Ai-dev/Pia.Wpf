@@ -1,7 +1,8 @@
 # A4 replay — killing the disjunction, and what the re-measurement said
 
 **Status:** measured. Decisions §1–§3 were pre-registered before the replay; §4 onward reports it.
-P1 landed, P3 was not built, A2 is deferred. Read §8 before quoting a number.
+P1 landed, P3 was not built, A2 is deferred. Read §8 before quoting a number — and §10 before comparing
+one to a post-P8 number, since P8 landed after §5 was written.
 **Owner:** unassigned. **Written:** 2026-08-23.
 **Origin:** [`2026-08-23-a4-disjunction-batch-brief.md`](2026-08-23-a4-disjunction-batch-brief.md),
 rows P1–P7, which in turn came from [`2026-08-23-a1-pilot-reading.md`](2026-08-23-a1-pilot-reading.md)
@@ -336,3 +337,80 @@ Assertions were machine-checked with `ww_assert_value` where the text is exposed
 todo count, the provider footer); the rendered markdown is a `RichTextBox` read through `TextPattern`,
 so the two transcript quotes above are read from `ww_get_value` and the screenshots rather than from a
 name assertion.
+
+## 10. P8 — naming the root, and why it is a third cut
+
+Landed 2026-08-23, after §5's numbers were read and written down. §5 stands as measured; nothing below
+was folded back into it.
+
+**The wording.** `PlanStepArg.ExpectedArtifact` (`:159`) gains one clause, and the plan-turn prose (`:782`)
+gains its twin:
+
+> The file(s) this step will produce, **named relative to the working folder — never a rooted path like
+> "/Project/README.md"**. Every name listed must exist when the step finishes, …
+
+> …naming exactly the files it will write, **relative to the working folder and never as a rooted path** —
+> every one of them must exist when the step finishes, …
+
+"Working folder" is not new vocabulary: it is what the grounding fence at `AgentPlanner.cs:93` already
+calls that directory to the planner's face. The example path is deliberate, for the same reason §1 gave
+for banning `e.g.` by example — **forbid what you measure.** The defect was a *string* shape, and the
+example is the string shape.
+
+**Two surfaces, not one — matching P1 rather than a subset of it.** §1 left `:139` and `:148` alone
+because they summarise what an array element *holds*, and `:159` nests inside them. That argument does
+not reach `:782`: the prose is not a summary of a container, it is a second full statement of the same
+field's contract, and it is the half that says *"naming exactly the files it will write"* — the clause §5
+named as the one that invites a path in the first place. Tightening the schema and leaving that clause
+unqualified would have split the rule across two surfaces that disagree in specificity. Keeping P8's
+surface set identical to P1's also keeps a future reader from having to explain why the second clause
+about one field reaches fewer turns than the first.
+
+**Why `:159` is the load-bearing one anyway.** The failure in §5 happened on a **replan**, and
+`BuildReplanMessages` (`:817-830`) appends no grounding fence — verified, not assumed: the fence is written
+only by the plan-turn builder (`:522`/`:544`). So on the turn that produced `/Ledger/README.md` the
+schema description is the **only** place in the whole request where the working folder is mentioned at
+all. That is a stronger reason for the clause than the n = 1 regression that prompted it.
+
+**This is a third comparability cut, and the wide read sits on the far side of it.** The runbook already
+names two. §5's post-P1 arm — `declared` 6, `fileShaped` 6, collapsed file-shapedness 100% — was measured
+on the *pre-P8* wording. Do not quote a post-P8 number against it as a delta; the honest comparison for
+P8 is between a post-P8 corpus and nothing, because no pre-P8 corpus was collected at the size the A2
+re-read needs. Say which side of this cut a number came from, as §8 item 2 says for the provider.
+
+**Still unfixed, deliberately.** P8 changes what the planner *declares*. It does not change what the
+executor *does* with a rooted path it decides on for itself: `write_file` still refuses one, the model
+still answered in prose rather than retrying relative, and the step still closed as succeeded. Those are
+two separate defects and the second one is §11.
+
+## 11. The loose thread — a refused tool call that reported success
+
+§5 records it in one sentence: **the step whose only tool call was rejected still reported
+`succeeded=True`.** It has no row anywhere, so this section decides whether it earns one. It does, and it
+is **not** A3.
+
+The distinction matters because A3 is blocked and this is not. A3 is about the **artifact** channel —
+"the step said it produced X and X is not there" — and it sits behind A2, which §7 just deferred. This is
+about the **success-determination** channel: what makes a step report `succeeded` at all. Nothing gates
+it, and it is reachable today.
+
+It is scoped as **investigate, not fix**, because the right answer is not yet known. Three readings, and
+the evidence in this batch cannot separate them:
+
+1. `succeeded` is self-reported by the step turn, and the model genuinely believed it had answered the
+   question (it did produce prose). Then the field is working as designed and the defect is that a
+   **refused tool call is surfaced nowhere** — not in the step outcome, not in the timeline, not in the
+   panel.
+2. `succeeded` is meant to mean "this step did its work", in which case a step whose only tool call was
+   refused and whose only output was an apology is a false positive, and the executor should say so.
+3. The refusal is the sandbox behaving correctly and the *step* is the wrong granularity to notice —
+   the run-level verify pass is, and it did notice, via `NOT FOUND`.
+
+Reading 3 is the reason this is worth a row rather than a bug report: the probe caught what the step
+outcome missed, on the one run in this corpus where a write genuinely failed, and the report channel A2
+would have widened had nothing to say. That is the same evidence §7 leans on, pointing the same way —
+the cheap instrument is already better than the expensive one — so the first question the row has to
+answer is whether anything needs to change in the step outcome at all, or whether the missing piece is
+simply making the refusal visible.
+
+Added to the checklist as **P9**.

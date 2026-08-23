@@ -152,14 +152,33 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
   above ~40%, drop it below ~12%.
   *Deps:* P6 · *Effort:* **XS** · *Value:* **High**
 
-- [ ] **P8 · Say that `expectedArtifact` is relative to the working folder.** Neither surface says which
+- [x] **P8 · Say that `expectedArtifact` is relative to the working folder.** Neither surface said which
   root a name is relative to, and on the post-P1 replay that cost a run its artifact: a replan declared
   a **rooted** path, the executor called `write_file` with that same path, and the sandbox refused it —
   *"Path is outside the assistant files folder"* — so nothing was written. Worth doing whatever caused
   the rootedness (the goal named the project, so a project subfolder is an ordinary response; `n = 1`
   per arm either way). Deliberately **not** folded into P1: changing the wording that produced a reading
   without re-measuring makes the reading unfalsifiable. Re-measure with it.
+  **Landed 2026-08-23** on the same two surfaces P1 used — `:159` and `:782` — and *not* on `:139`/`:148`.
+  Two reasons, both in §10 of [2026-08-23-a4-replay-reading.md](2026-08-23-a4-replay-reading.md): §1's
+  argument for leaving `:139`/`:148` alone does not reach `:782`, which is a second full statement of the
+  field's contract rather than a summary of a container; and `:159` is load-bearing because a **replan turn
+  gets no grounding fence at all**, so on the very turn that produced the rooted path the schema
+  description is the only place the working folder is named. **A third comparability cut** — §5's 6/6 and
+  100% were measured on the pre-P8 wording, so the wide read is not a delta against them.
   *Deps:* P1 · *Effort:* **XS** · *Value:* **Med**
+
+- [ ] **P9 · Investigate the step that reported `succeeded=True` on a refused tool call.** The one loose
+  thread the replay left in prose. **Not A3, and not blocked by A2:** A3 tests the *artifact* channel
+  (declared-but-absent) and waits behind A2, while this is the *success-determination* channel — what
+  makes a step report success at all — and nothing gates it. Scoped **investigate, not fix**: the model
+  did answer in prose after the sandbox refused its only `write_file` call, so whether `succeeded` is
+  wrong depends on what a step outcome is meant to assert. Three readings and the reason this is worth a
+  row — the run-level probe caught what the step outcome missed, while the report channel A2 would have
+  widened had nothing to say — are in §11 of
+  [2026-08-23-a4-replay-reading.md](2026-08-23-a4-replay-reading.md). Answer first whether anything in the
+  step outcome should change, or whether the missing piece is only that a refusal is surfaced nowhere.
+  *Deps:* none · *Effort:* **XS** · *Value:* **Med**
 
 ---
 

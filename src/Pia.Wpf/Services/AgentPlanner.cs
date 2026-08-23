@@ -156,7 +156,7 @@ public sealed class AgentPlanner : IAgentPlanner
     public sealed record PlanStepArg(
         [property: Description("Short imperative title")] string Title,
         [property: Description("What this step should accomplish")] string Intent,
-        [property: Description("The file(s) this step will produce — every name listed must exist when the step finishes, so name several only when it writes all of them. Never offer alternatives (\"A or B\", \"e.g. A\"). Omit when the step produces nothing checkable.")] string? ExpectedArtifact = null,
+        [property: Description("The file(s) this step will produce, named relative to the working folder — never a rooted path like \"/Project/README.md\". Every name listed must exist when the step finishes, so name several only when it writes all of them. Never offer alternatives (\"A or B\", \"e.g. A\"). Omit when the step produces nothing checkable.")] string? ExpectedArtifact = null,
         // Matched by NAME against the roster the system message listed (07 D2). A name, not a Guid: models do
         // not reproduce GUIDs reliably and one mistyped nibble is an unresolvable id for a step the model DID
         // mean to assign. Not an index either: an off-by-one silently assigns the WRONG persona, whereas a
@@ -779,7 +779,7 @@ public sealed class AgentPlanner : IAgentPlanner
         sb.AppendLine(persona.SystemPrompt);
         sb.AppendLine();
         sb.AppendLine("You are decomposing the user's goal into an ordered, minimal plan of concrete steps.");
-        sb.AppendLine("Call the emit_plan tool exactly once with the ordered steps. Each step needs a short title and an intent (what it accomplishes); include an expectedArtifact only when the step will write files, naming exactly the files it will write — every one of them must exist when the step finishes, so never offer alternatives to choose between.");
+        sb.AppendLine("Call the emit_plan tool exactly once with the ordered steps. Each step needs a short title and an intent (what it accomplishes); include an expectedArtifact only when the step will write files, naming exactly the files it will write, relative to the working folder and never as a rooted path — every one of them must exist when the step finishes, so never offer alternatives to choose between.");
         sb.AppendLine("Keep the plan tight — only the steps genuinely needed to accomplish the goal.");
         sb.AppendLine("Group by logical change, not by file: if one reason requires editing several files, that is ONE step listing every file in expectedArtifact — never split it into \"update file A\", \"update file B\", \"update file C\".");
         sb.AppendLine("If the goal is too unclear to plan at all, do NOT invent steps: call emit_plan with cannotGround set to true and question set to the one thing you need the user to clarify.");
