@@ -198,6 +198,53 @@ public sealed class HeadlessStepOutcomeSignalTests
         Assert.Contains(h.ToolReplies, r => r is string s && s.Contains("Recorded", StringComparison.Ordinal));
     }
 
+    // ---- the release-visible outcome line ----
+
+    [Theory]
+    [InlineData(null, "artifactReported=False")]
+    [InlineData("   ", "artifactReported=False")]
+    [InlineData("data/clean.csv", "artifactReported=True")]
+    public async Task TheOutcomeLine_ReportsWhetherAnArtifactWasDeclared(string? artifact, string expected)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var h = new Harness();
+
+        h.Drive(async handler =>
+        {
+            await handler!(Emit(succeeded: true, summary: "renamed the columns", artifact: artifact),
+                new ToolDispatchContext(1));
+            return "done";
+        });
+
+        await h.DispatchAsync(ct);
+
+        var line = h.OutcomeLine();
+        Assert.Contains("confirmed=True", line, StringComparison.Ordinal);
+        Assert.Contains(expected, line, StringComparison.Ordinal);
+    }
+
+    /// <summary>The ref and the summary are user content, so they stay on the SensitiveDebug line below this one.</summary>
+    [Fact]
+    public async Task TheOutcomeLine_NeverCarriesTheArtifactValue()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var h = new Harness();
+
+        h.Drive(async handler =>
+        {
+            await handler!(Emit(succeeded: true, summary: "renamed the columns", artifact: "data/clean.csv"),
+                new ToolDispatchContext(1));
+            return "done";
+        });
+
+        await h.DispatchAsync(ct);
+
+        var line = h.OutcomeLine();
+        Assert.Contains("artifactReported=True", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("data/clean.csv", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("renamed the columns", line, StringComparison.Ordinal);
+    }
+
     // ---- helpers ----
 
     private static FunctionCallContent Emit(bool succeeded, string summary, string? artifact = null)
@@ -317,6 +364,8 @@ public sealed class HeadlessStepOutcomeSignalTests
         /// <summary>What the interception handed back to the model, per tool call.</summary>
         public List<object?> ToolReplies { get; } = [];
 
+        public CapturingLogger<HeadlessTurnExecutor> Log { get; } = new();
+
         /// <summary>An empty returned string means no TextDelta at all.</summary>
         public void Drive(Func<ToolCallHandler?, Task<string>> drive) => _drive = drive;
 
@@ -377,7 +426,7 @@ public sealed class HeadlessStepOutcomeSignalTests
 
             var executor = new HeadlessTurnExecutor(
                 _engine, Chats, Settings, Personas, Providers, _composer, Titles, TokenMapFactory,
-                NullLogger<HeadlessTurnExecutor>.Instance, Timeline, _stepPersonas);
+                Log, Timeline, _stepPersonas);
             executor.Initialize(workspaceRoot: null, grantedWrites: []);
 
             var orchestrator = new AgentRunOrchestrator(
@@ -386,6 +435,9 @@ public sealed class HeadlessStepOutcomeSignalTests
 
             return (await Runs.GetAsync(run.Id, ct))!;
         }
+
+        public string OutcomeLine() =>
+            Assert.Single(Log.Entries, e => e.Message.Contains("step outcome:", StringComparison.Ordinal)).Message;
 
         public async Task<string> LastAssistantTextAsync(AgentRun run, CancellationToken ct)
         {

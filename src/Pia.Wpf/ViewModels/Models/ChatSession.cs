@@ -860,9 +860,10 @@ public sealed class ChatSession : IDisposable
         // key ChatSessionStepTurnTests uses to Assert.Single the context-compaction diff line, and a second
         // Information line starting the same way would silently make that assertion ambiguous.
         _logger.LogInformation(
-            "Step outcome for run {RunId} step {StepOrdinal}: offered={Offered} confirmed={Confirmed} succeeded={Succeeded} declarations={Declarations}",
+            "Step outcome for run {RunId} step {StepOrdinal}: offered={Offered} confirmed={Confirmed} succeeded={Succeeded} declarations={Declarations}"
+            + " artifactReported={ArtifactReported}",
             spec.RunId, spec.Ordinal, outcomeStore is not null, claim is not null, succeeded && error is null,
-            outcomeStore?.AcceptedCalls ?? 0);
+            outcomeStore?.AcceptedCalls ?? 0, !string.IsNullOrWhiteSpace(claim?.ArtifactRef));
         if (claim is not null)
             _logger.SensitiveDebug("Step outcome summary: {Summary} artifact: {Artifact}", claim.Summary, claim.ArtifactRef);
 

@@ -617,8 +617,10 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // So silence keeps the old heuristic — but it is recorded as UNCONFIRMED (Outcome stays null) and the
         // critic is told so, instead of the run pretending the model vouched for the step.
         _logger.LogInformation(
-            "Headless run {RunId} step outcome: offered={Offered} confirmed={Confirmed} succeeded={Succeeded} declarations={Declarations}",
-            _runId, outcomeStore is not null, claim is not null, succeeded, outcomeStore?.AcceptedCalls ?? 0);
+            "Headless run {RunId} step outcome: offered={Offered} confirmed={Confirmed} succeeded={Succeeded} declarations={Declarations}"
+            + " artifactReported={ArtifactReported}",
+            _runId, outcomeStore is not null, claim is not null, succeeded, outcomeStore?.AcceptedCalls ?? 0,
+            !string.IsNullOrWhiteSpace(claim?.ArtifactRef));
         if (claim is not null)
         {
             // Model prose about the user's work — SensitiveDebug only (CLAUDE.md).

@@ -1,5 +1,4 @@
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services;
@@ -23,6 +22,8 @@ public sealed class ChatSessionStepOutcomeSignalTests
     /// <summary>What the session handed back to the model, per tool call.</summary>
     private readonly List<object?> _toolReplies = [];
 
+    private readonly CapturingLogger<ChatSession> _log = new();
+
     public ChatSessionStepOutcomeSignalTests()
     {
         _loc[Arg.Any<string>()].Returns(ci => (string)ci[0]); // echo the key so a string is assertable
@@ -31,7 +32,7 @@ public sealed class ChatSessionStepOutcomeSignalTests
     }
 
     private ChatSession CreateSession() => new(
-        _tokenMap, _ai, _plugins, _cards, _permissions, _loc, NullLogger.Instance, _ => true);
+        _tokenMap, _ai, _plugins, _cards, _permissions, _loc, _log, _ => true);
 
     /// <summary>The tool list <c>LiveTurnExecutor.BuildSpec</c> would have produced for such a step.</summary>
     private static StepTurnSpec Spec(bool offerStepResultTool)
@@ -94,6 +95,9 @@ public sealed class ChatSessionStepOutcomeSignalTests
             yield return new TextDelta(text);
         await Task.Yield();
     }
+
+    private string OutcomeLine() =>
+        Assert.Single(_log.Entries, e => e.Message.Contains("Step outcome for run", StringComparison.Ordinal)).Message;
 
     // ---- the discriminating pair ----
 
@@ -274,6 +278,53 @@ public sealed class ChatSessionStepOutcomeSignalTests
         await _plugins.Received().RouteToolCallAsync(
             Arg.Is<FunctionCallContent>(c => c.Name == AgentStepTools.EmitStepResultToolName),
             Arg.Any<CancellationToken>());
+    }
+
+    // ---- the release-visible outcome line ----
+
+    [Theory]
+    [InlineData(null, "artifactReported=False")]
+    [InlineData("   ", "artifactReported=False")]
+    [InlineData("data/clean.csv", "artifactReported=True")]
+    public async Task TheOutcomeLine_ReportsWhetherAnArtifactWasDeclared(string? artifact, string expected)
+    {
+        ArrangeExchange(async handler =>
+        {
+            await handler!(Emit(succeeded: true, summary: "renamed the columns", artifact: artifact),
+                new ToolDispatchContext(1));
+            return "done";
+        });
+
+        var session = CreateSession();
+        await session.RunStepTurnAsync(
+            Spec(offerStepResultTool: true), new RunContext("goal", RunProfile.Interactive),
+            TestContext.Current.CancellationToken);
+
+        var line = OutcomeLine();
+        Assert.Contains("confirmed=True", line, StringComparison.Ordinal);
+        Assert.Contains(expected, line, StringComparison.Ordinal);
+    }
+
+    /// <summary>The ref and the summary are user content, so they stay on the SensitiveDebug line below this one.</summary>
+    [Fact]
+    public async Task TheOutcomeLine_NeverCarriesTheArtifactValue()
+    {
+        ArrangeExchange(async handler =>
+        {
+            await handler!(Emit(succeeded: true, summary: "renamed the columns", artifact: "data/clean.csv"),
+                new ToolDispatchContext(1));
+            return "done";
+        });
+
+        var session = CreateSession();
+        await session.RunStepTurnAsync(
+            Spec(offerStepResultTool: true), new RunContext("goal", RunProfile.Interactive),
+            TestContext.Current.CancellationToken);
+
+        var line = OutcomeLine();
+        Assert.Contains("artifactReported=True", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("data/clean.csv", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("renamed the columns", line, StringComparison.Ordinal);
     }
 
     /// <summary>The acknowledgement tells the model not to contradict its own declared failure in the reply.</summary>

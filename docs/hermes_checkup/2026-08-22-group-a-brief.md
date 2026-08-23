@@ -99,7 +99,7 @@ bucket, with the verdict that would waste it named.
 "worth doing whichever way A1 reads" argument, and it shipped. What remains is two `XS` items. Do not
 let a planning phase pad it — §3's bucket-2 list is where this week's value actually is.
 
-- [ ] **N1 · Log the probe's one silent root-resolution failure.**
+- [x] **N1 · Log the probe's one silent root-resolution failure.**
   `ResolveProbeRoot` (`AgentVerifier.cs:336-355`) has four outcomes and logs three of them: a blank
   folder logs `Artifact probe skipped … no usable files folder` (`:280`), a non-existent one logs
   `… files folder does not exist` (`:299`), a timeout or fault logs `Artifact probe failed` (`:319`).
@@ -115,7 +115,7 @@ let a planning phase pad it — §3's bucket-2 list is where this week's value a
   *What A1 verdict wastes this:* **none.** If the gate closes, the probe stays shipped and so does the
   false-`NOT FOUND` path. *Effort:* **XS** · *Value:* **Med**
 
-- [ ] **N2 · Correct the artifact-evidence plan.** Five of its claims are now stale or wrong; §6 has the
+- [x] **N2 · Correct the artifact-evidence plan.** Five of its claims are now stale or wrong; §6 has the
   table. The two that will burn an implementer are the `ArtifactRef is not persisted` line (A5 closed
   it, and the plan repeats it in §1, §2 and move 4's notes) and A4's second edit site, **which does not
   exist** (§6).
@@ -135,7 +135,7 @@ moving them. If the gate closes, A6 is churn. It goes in bucket 3.
 Work that makes the measurement cheaper, faster or repeatable, and so closes the gate sooner instead
 of depending on it. **This is the batch.**
 
-- [ ] **G1 · Put the outcome tally on the release-visible probe line.** *The single highest-leverage
+- [x] **G1 · Put the outcome tally on the release-visible probe line.** *The single highest-leverage
   item on the A track.*
   `AgentVerifier.cs:303` emits `Artifact probe: {Declared} declaration(s), {Probed} path(s) probed.`
   at `LogInformation` — release-visible. The per-declaration facts sit one line below at
@@ -159,8 +159,12 @@ of depending on it. **This is the batch.**
   After this, the harvest is `grep 'Artifact probe:' | sum` on **any** build. It removes the runbook's
   §2.1 "this is the big one" requirement entirely.
   *Effort:* **XS** · *Value:* **High**
+  *Landed with two corrections:* `overPathCap` is **disjoint** from `probed` (both budget arms skip the
+  increment), so the per-candidate counts sum to `probed` and the capped ones sit beside it; and the tally
+  deliberately does **not** subdivide the not-a-file bucket for A7 — that needs a prefix classifier that
+  does not exist yet.
 
-- [ ] **G2 · Recover the file-shapedness half of A1 from the database — no new runs, no Debug build,
+- [x] **G2 · Recover the file-shapedness half of A1 from the database — no new runs, no Debug build,
   no desktop.**
   `ExpectedArtifact` is a persisted column (`SqliteContext.cs:497`) in the same `history.db` the
   compaction corpus script already reads, **nothing ever deletes an `AgentRuns` row** (there is no
@@ -186,8 +190,12 @@ of depending on it. **This is the batch.**
   accept that and pin the duplication with a test, or have the script emit declarations to stdout and
   classify them in G3's test. Say which, and why.
   *Effort:* **S** · *Value:* **High**
+  *Decided:* reimplement in PowerShell and pin it — `scripts/artifact-declaration-cases.json` is replayed
+  by the script before every measurement (it throws instead of printing a ratio on a mismatch) and by
+  `DeclarationClassifierParityTests` against the real verifier. *Not smoke-tested:* `pwsh` is **not**
+  installed on the dev Mac, so the script has never executed; §4's item 5 is wrong on that point.
 
-- [ ] **G3 · A corpus-replay test that pins the classifier's arms.**
+- [x] **G3 · A corpus-replay test that pins the classifier's arms.**
   The harness already exists. `AgentVerifierTests.CtxDeclaring(params string?[])` (`:44-55`) builds a
   `RunContext` whose completed steps declare arbitrary strings; `ReturnsVerdict` captures the System
   message through an NSubstitute `IAiClientService`; `LastPrompt` (`:60`) reads it; and tests at
@@ -203,7 +211,7 @@ of depending on it. **This is the batch.**
   `tests/Pia.Wpf.Tests/Integration/ArtifactProbe/`, matching `Integration/Compaction/`.
   *Deps:* none · *Effort:* **S** · *Value:* **Med**
 
-- [ ] **G4 · Fix the collection runbook. It is the document standing between the gate and an answer,
+- [x] **G4 · Fix the collection runbook. It is the document standing between the gate and an answer,
   and four of its sections are now wrong.**
   - **§4.1's stated blocker is gone.** It says `AssistantView.xaml` carries *zero* AutomationIds and
     that the Agent lever and Run-in-background are reachable by localized name only. D7 landed
@@ -233,8 +241,11 @@ of depending on it. **This is the batch.**
     lines whose declaration sets **overlap**. "7 verifier runs and 23 declarations" counts probe lines,
     not runs, and the declarations are not independent samples. Say so next to the number.
   *Effort:* **XS** · *Value:* **High**
+  *Decided:* §6's pipeline is **deleted**, not corrected — G1's counter line is the number of record on any
+  build, and §6 keeps a short prose paragraph saying why a line-level parser could never work. §2.1 is
+  demoted (either configuration carries the tally), not removed.
 
-- [ ] **G5 · Document the scheduled-`AgentTask` route as the unattended sample generator.**
+- [x] **G5 · Document the scheduled-`AgentTask` route as the unattended sample generator.**
   The cheapest way to produce probe lines without a person clicking is a routine, not WinWright.
   `ScheduledJobBackgroundService.cs:475` dispatches an `AgentTask` job through
   `HeadlessRunLauncher` (`:488`) into the same `orchestrator.RunAsync`, so it plans, drains and
@@ -253,7 +264,7 @@ of depending on it. **This is the batch.**
     removes is the 24-prompt babysitting loop §4.2 is built around, which is the expensive part.
   *Effort:* **XS** (a runbook section; no code) · *Value:* **High**
 
-- [ ] **G6 · One release-safe field for the *other* channel, so A2 does not inherit A1's blindness.**
+- [x] **G6 · One release-safe field for the *other* channel, so A2 does not inherit A1's blindness.**
   Nothing release-visible today says whether a step reported an artifact at all.
   `HeadlessTurnExecutor.cs:619-621` logs `offered / confirmed / succeeded / declarations`; the ref
   itself is `SensitiveDebug` at `:625` and at `ChatSession.cs:867`, correctly. Add an
