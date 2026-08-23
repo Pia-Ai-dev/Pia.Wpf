@@ -127,7 +127,7 @@ $repoRoot = [System.IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 
 if ($resolved -eq $repoRoot -or
     $resolved.StartsWith($repoRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "Refusing to write $resolved: it is inside the repository at $repoRoot. An extracted transcript holds real conversation content and is never committed. Set PIA_COMPACTION_CORPUS_DIR, or pass -OutputPath somewhere outside the repo."
+    throw "Refusing to write ${resolved}: it is inside the repository at $repoRoot. An extracted transcript holds real conversation content and is never committed. Set PIA_COMPACTION_CORPUS_DIR, or pass -OutputPath somewhere outside the repo."
 }
 
 if ((Test-Path -LiteralPath $resolved) -and -not $Force) {
