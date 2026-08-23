@@ -261,7 +261,7 @@ public sealed class AgentVerifier : IAgentVerifier
     /// </summary>
     private async Task<string?> TryBuildArtifactFactsAsync(RunContext ctx, CancellationToken ct)
     {
-        Task<(string? Facts, int Probed)>? probe = null;
+        Task<(string? Facts, ArtifactProbeTally Tally, bool SubpathFallback)>? probe = null;
         try
         {
             var declared = ctx.CompletedSteps.Where(c => !string.IsNullOrWhiteSpace(c.ExpectedArtifact)).ToList();
@@ -288,19 +288,28 @@ public sealed class AgentVerifier : IAgentVerifier
             // purpose — Directory.Exists/Canonicalize on a dead UNC path is exactly the call that blocks
             // (for the SMB connect timeout, tens of seconds), so resolving it before the box would leave
             // the advertised budget covering only the cheap part.
-            probe = Task.Run<(string? Facts, int Probed)>(() =>
+            probe = Task.Run<(string? Facts, ArtifactProbeTally Tally, bool SubpathFallback)>(() =>
             {
-                var root = ResolveProbeRoot(configured, workingSubpath);
-                return root is null ? (null, 0) : ProbeDeclarations(root, declared);
+                var root = ResolveProbeRoot(configured, workingSubpath, out var fallback);
+                if (root is null)
+                    return (null, default, fallback);
+                var result = ProbeDeclarations(root, declared);
+                return (result.Facts, result.Tally, fallback);
             }, CancellationToken.None);
-            var (facts, probed) = await probe.WaitAsync(ProbeBudget, ct).ConfigureAwait(false);
+            var (facts, tally, subpathFallback) = await probe.WaitAsync(ProbeBudget, ct).ConfigureAwait(false);
             if (facts is null)
             {
                 _logger.LogInformation("Artifact probe skipped for {Count} declaration(s): files folder does not exist.", declared.Count);
                 return null;
             }
 
-            _logger.LogInformation("Artifact probe: {Declared} declaration(s), {Probed} path(s) probed.", declared.Count, probed);
+            if (subpathFallback)
+                _logger.SensitiveDebug("Working subpath did not resolve to an existing folder under the sandbox: {Subpath}", workingSubpath);
+
+            _logger.LogInformation(
+                "Artifact probe: declared={Declared} fileShaped={FileShaped} notFileShaped={NotFileShaped} overReportCap={OverReportCap} probed={Probed} found={Found} notFound={NotFound} folder={Folder} unresolvable={Unresolvable} uninspectable={Uninspectable} overPathCap={OverPathCap}",
+                tally.Declared, tally.FileShaped, tally.NotFileShaped, tally.OverReportCap, tally.Probed,
+                tally.Found, tally.NotFound, tally.Folder, tally.Unresolvable, tally.Uninspectable, tally.OverPathCap);
             _logger.SensitiveDebug("Artifact probe facts:\n{Facts}", facts);
             return facts;
         }
@@ -333,8 +342,9 @@ public sealed class AgentVerifier : IAgentVerifier
     /// Null when no usable folder exists. Canonicalizing here means a junction in the root path itself is
     /// not a hole in the containment check below. Blocking — call it inside the probe's time box.
     /// </summary>
-    private static string? ResolveProbeRoot(string configured, string? workingSubpath)
+    private static string? ResolveProbeRoot(string configured, string? workingSubpath, out bool subpathFallback)
     {
+        subpathFallback = false;
         var full = Path.GetFullPath(configured);
         if (!Directory.Exists(full))
             return null;
@@ -352,20 +362,37 @@ public sealed class AgentVerifier : IAgentVerifier
             return narrowed;
         }
 
+        subpathFallback = !string.IsNullOrWhiteSpace(workingSubpath);
         return root;
     }
+
+    private enum ProbeOutcome { Found, NotFound, Folder, Unresolvable, Uninspectable }
+
+    /// <summary>Counts only — unlike the fact lines, this is safe in a release log.</summary>
+    private readonly record struct ArtifactProbeTally(
+        int Declared, int FileShaped, int NotFileShaped, int OverReportCap,
+        int Probed, int Found, int NotFound, int Folder, int Unresolvable,
+        int Uninspectable, int OverPathCap);
 
     /// <summary>
     /// Probes the declared artifacts against <paramref name="root"/>, emitting one fact line per
     /// declaration. Static + no logger on purpose: artifact names are user content, so this code cannot
     /// log them even by accident. Runs on a pool thread; bounded by the caps above.
     /// </summary>
-    private static (string Facts, int Probed) ProbeDeclarations(string root, List<CompletedStepSummary> declared)
+    private static (string Facts, ArtifactProbeTally Tally) ProbeDeclarations(string root, List<CompletedStepSummary> declared)
     {
         var sb = new StringBuilder();
         var probed = 0;
         var reported = 0;
         var skipped = 0;
+        var fileShaped = 0;
+        var notFileShaped = 0;
+        var found = 0;
+        var notFound = 0;
+        var folder = 0;
+        var unresolvable = 0;
+        var uninspectable = 0;
+        var overPathCap = 0;
 
         foreach (var c in declared)
         {
@@ -374,6 +401,7 @@ public sealed class AgentVerifier : IAgentVerifier
 
             var declaration = Truncate(Flatten(c.ExpectedArtifact!.Trim()));
             var candidates = FileCandidates(declaration);
+            if (candidates.Count == 0) notFileShaped++; else fileShaped++;
 
             string outcome;
             if (candidates.Count == 0)
@@ -382,6 +410,7 @@ public sealed class AgentVerifier : IAgentVerifier
             }
             else if (probed >= MaxProbedPaths)
             {
+                overPathCap += candidates.Count;
                 outcome = "not probed (probe budget reached)";
             }
             else
@@ -391,16 +420,25 @@ public sealed class AgentVerifier : IAgentVerifier
                 {
                     if (probed >= MaxProbedPaths)
                     {
+                        overPathCap++;
                         parts.Add($"{candidate}: not probed (probe budget reached)");
                         continue;
                     }
                     probed++;
-                    var result = Probe(root, candidate);
+                    var (text, kind) = Probe(root, candidate);
+                    switch (kind)
+                    {
+                        case ProbeOutcome.Found: found++; break;
+                        case ProbeOutcome.NotFound: notFound++; break;
+                        case ProbeOutcome.Folder: folder++; break;
+                        case ProbeOutcome.Unresolvable: unresolvable++; break;
+                        case ProbeOutcome.Uninspectable: uninspectable++; break;
+                    }
                     // Don't echo the token when it IS the whole declaration — "report.md → found" reads
                     // better than "report.md → report.md: found".
                     parts.Add(candidates.Count == 1 && string.Equals(candidate, declaration, StringComparison.Ordinal)
-                        ? result
-                        : $"{candidate}: {result}");
+                        ? text
+                        : $"{candidate}: {text}");
                 }
                 outcome = string.Join("; ", parts);
             }
@@ -415,7 +453,11 @@ public sealed class AgentVerifier : IAgentVerifier
         if (skipped > 0)
             sb.AppendLine($"- ({skipped} further declared artifact(s) not probed — probe budget reached)");
 
-        return (sb.ToString(), probed);
+        return (sb.ToString(), new ArtifactProbeTally(
+            Declared: declared.Count, FileShaped: fileShaped, NotFileShaped: notFileShaped,
+            OverReportCap: skipped, Probed: probed, Found: found, NotFound: notFound,
+            Folder: folder, Unresolvable: unresolvable, Uninspectable: uninspectable,
+            OverPathCap: overPathCap));
     }
 
     /// <summary>
@@ -424,23 +466,23 @@ public sealed class AgentVerifier : IAgentVerifier
     /// rejects junction/symlink escapes), so the probe can never stat a path outside the folder and never
     /// follows a path escape. Metadata only — no file contents are read.
     /// </summary>
-    private static string Probe(string root, string candidate)
+    private static (string Text, ProbeOutcome Kind) Probe(string root, string candidate)
     {
         if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, candidate, out var resolved))
-            return "not a resolvable path inside the assistant files folder (not probed)";
+            return ("not a resolvable path inside the assistant files folder (not probed)", ProbeOutcome.Unresolvable);
 
         try
         {
             var file = new FileInfo(resolved);
             if (file.Exists)
-                return $"found ({FormatSize(file.Length)}, modified {file.LastWriteTimeUtc.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}Z)";
+                return ($"found ({FormatSize(file.Length)}, modified {file.LastWriteTimeUtc.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}Z)", ProbeOutcome.Found);
             if (Directory.Exists(resolved))
-                return "found, but it is a folder, not a file";
-            return "NOT FOUND";
+                return ("found, but it is a folder, not a file", ProbeOutcome.Folder);
+            return ("NOT FOUND", ProbeOutcome.NotFound);
         }
         catch (Exception)
         {
-            return "not probed (could not be inspected)";
+            return ("not probed (could not be inspected)", ProbeOutcome.Uninspectable);
         }
     }
 

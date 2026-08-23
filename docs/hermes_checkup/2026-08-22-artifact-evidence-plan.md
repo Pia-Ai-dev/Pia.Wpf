@@ -1,6 +1,8 @@
 # Plan — Make the Verifier's Evidence Worth Having
 
-**Status:** planned, not started. Self-contained: everything needed to execute it is below.
+**Status:** partly landed. §5 shipped as **A5**; moves 2–4 wait on the **A1** gate. Self-contained:
+everything needed to execute it is below. Line references were re-checked against source on 2026-08-23,
+per §6 of [`2026-08-22-group-a-brief.md`](2026-08-22-group-a-brief.md).
 **Owner:** unassigned. **Written:** 2026-08-22.
 **Origin:** §3.6(a) and recommendation #13 of
 [`2026-08-22-hermes-update-review.md`](2026-08-22-hermes-update-review.md).
@@ -15,8 +17,8 @@ Pia already has**, and takes the stronger one on trust.
 
 | Channel | Who declares it | When | Persisted | Probed | How it reaches the critic |
 |---|---|---|---|---|---|
-| `AgentStep.ExpectedArtifact` | the **planner** | *before* the step runs | Yes — `AgentSteps.ExpectedArtifact TEXT NULL` (`SqliteContext.cs:493`) | **Yes** — filesystem only | Probed facts: `found (2.1 KB)` / `NOT FOUND` / `not a file reference` |
-| `StepOutcomeClaim.ArtifactRef` | the **executor** | *after* the step runs | **No** — in-process for one step exchange | **No** | Unverified prose: `produced: <ref>` (`AgentVerifier.cs:204-205`) |
+| `AgentStep.ExpectedArtifact` | the **planner** | *before* the step runs | Yes — `AgentSteps.ExpectedArtifact TEXT NULL` (`SqliteContext.cs:497`) | **Yes** — filesystem only | Probed facts. Not three buckets: **eight** outcome sites carrying seven distinct strings (`AgentVerifier.cs:409`, `:414`, `:424`, `:472`, `:478`, `:480`, `:481`, `:485`) plus a tally line (`:454`) |
+| `StepOutcomeClaim.ArtifactRef` | the **executor** | *after* the step runs | **Yes, since A5** — `AgentSteps.ExtraJson.artifactRef` (`StepExtraJson.cs:15`, written at `AgentRunService.cs:1246` from `AgentRunOrchestrator.cs:1637`) | **No** | Unverified prose: `produced: <ref>` (`AgentVerifier.cs:204-205`) |
 
 **The prediction is checked. The report is not.**
 
@@ -31,14 +33,21 @@ looks to see whether it exists.
 
 ### The planner channel is prose by design
 
-`AgentPlanner.cs:782` (and the replan twin at `:827`) tells the model:
+`AgentPlanner.cs:782` tells the model:
 
 > *"include an expectedArtifact **when there is a concrete deliverable**"*
 
 "A summary of the Q3 numbers" *is* a concrete deliverable in plain English. Nothing in the prompt says
 "concrete" means *something the app can look up*.
 
-The verifier already knows this. `AgentVerifier.cs:448`:
+That sentence is the **only** prose instruction about the field anywhere, and it reaches a **plan** turn
+only. There is no replan twin: `BuildReplanMessages` (`:817-830`) never mentions the field, so on a replan
+the tool schema is the field's entire description — `emit_plan`'s steps parameter (`:139` plan, `:148`
+replan) and `PlanStepArg.ExpectedArtifact` (`:159`), both shipped by `AIFunctionFactory` every turn.
+`:827` *is* a verbatim twin of `:784`, but of the "Group by logical change… ONE step listing every file in
+expectedArtifact" sentence — which pulls the other way.
+
+The verifier already knows this. `AgentVerifier.cs:490-494`:
 
 > *"Tolerant classification: `ExpectedArtifact` is planner free text ("a summary of the Q3 numbers")
 > **as often as** it is a filename, so only tokens that plausibly denote a FILE are probed… Anything
@@ -55,7 +64,8 @@ about the *declaration*, not about the world. It is honest and it is noise.
 
 ### The report channel is checkable by nature — and unchecked
 
-`AgentStepTools.BuildEmitStepResultTool()` already asks for it:
+`AgentStepTools.BuildEmitStepResultTool()` (`StepOutcomeSignal.cs:157`, the description at `:164`)
+already asks for it:
 
 ```csharp
 [Description("Optional. The concrete artifact this step produced — a file path, or a short "
@@ -68,21 +78,28 @@ context (`RunContext.RecordStep` → `CompletedStepSummary.Outcome`), and render
 prompt as `produced: <ref>`. `IAgentTurnExecutor.cs:105` classes it, correctly, as **model-authored
 free text** — which is exactly what it stays, because nothing ever probes it.
 
-### The resume asymmetry
+### The resume asymmetry — closed by A5
 
-`AgentRunOrchestrator.SafeSeedResumeContext` rebuilds pre-pause steps from the persisted plan:
+`AgentRunOrchestrator.SafeSeedResumeContext` rebuilds pre-pause steps *with* the persisted ref
+(`AgentRunOrchestrator.cs:930-936`):
 
 ```csharp
 .Select(s => new CompletedStepSummary(
     s.Ordinal, s.Title, s.Intent ?? string.Empty, Succeeded: true, VisibleText: string.Empty,
-    s.ExpectedArtifact, FromEarlierSegment: true))     // ← no Outcome
+    s.ExpectedArtifact, FromEarlierSegment: true,
+    Outcome: StepExtraJson.ArtifactRefOf(s) is { } artifact
+        ? new StepOutcomeClaim(true, string.Empty, artifact)
+        : null))
 ```
 
-`ExpectedArtifact` survives a park/resume because it is a column. `ArtifactRef` does not, because it
-is in-process only. So **the stronger evidence channel is precisely the one that does not survive the
-durable park-and-resume** the July review called Pia's strongest divergence from hermes. Nothing
-breaks — the verifier degrades quietly to a thinner picture — but the feature Pia is proudest of
-weakens the verifier it later built.
+Both channels now survive the durable park-and-resume, so the divergence from hermes the July review
+called out here is gone. Two residuals, so nobody reads more into the seed than it carries. The seeded
+summary is `string.Empty` — the ref is recovered, the step's own words are not. And a step that succeeded
+**without** reporting an artifact resumes with a null `Outcome`, which the critic sees as
+`ok, unconfirmed` (`AgentVerifier.cs:226-228`); that is deliberate, because a resume must not be able to
+invent a declaration. Both arms are pinned by
+`Run_Resume_VerifierSeesTheArtifactRefEachStepReported` and
+`Run_Resume_StepThatReportedNoArtifact_SeedsANullOutcome` in `AgentRunOrchestratorTests`.
 
 ---
 
@@ -106,22 +123,34 @@ line while prose produces a non-fact dressed as one.
 
 Ordered cheapest first. Each is independently shippable; **stop after any of them.**
 
-### Move 1 — Count it. Zero code.
+### Move 1 — Count it. Cheap, not free.
 
-The instrumentation already exists (`AgentVerifier.TryBuildArtifactFactsAsync`):
+`AgentVerifier.TryBuildArtifactFactsAsync` has always logged a release-visible probe line, but the line
+this plan was written against carried **no outcome at all**:
 
 ```csharp
 _logger.LogInformation("Artifact probe: {Declared} declaration(s), {Probed} path(s) probed.",
     declared.Count, probed);
 ```
 
-Read `probed / declared` off real runs.
+`probed` counts candidate **paths**, not declarations — it increments inside the per-candidate loop
+(`AgentVerifier.cs:427`), capped at 3 per declaration and 12 per verify — so `probed / declared` ranges
+over [0,3] for reasons unrelated to found-ness, and the only inference it supports is `probed == 0` versus
+`> 0`. It is not the number this plan needs.
 
-- **High** → the planner is already producing file-shaped artifacts. This whole thread closes. Write
-  that down.
-- **Low** → that ratio is the number that justifies moves 2–4.
+So the read is: harvest the **outcome tally** that G1 of §3 of
+[`2026-08-22-group-a-brief.md`](2026-08-22-group-a-brief.md) puts on that same release-visible line —
+`fileShaped` / `notFileShaped` per declaration, `found` / `notFound` / `folder` / `unresolvable` /
+`uninspectable` per candidate path, counts only, readable from a Release build — and collect Debug logs
+per [`2026-08-22-a1-log-collection-runbook.md`](2026-08-22-a1-log-collection-runbook.md) only for what the
+tally cannot carry, which is the per-declaration text.
 
-Same discipline as the compaction test plan: measure before changing. This one is free.
+- **`found` share high** → the planner is already producing file-shaped artifacts. This whole thread
+  closes. Write that down.
+- **`found` share low** → that is the number that justifies moves 2–4.
+
+Same discipline as the compaction test plan: measure before changing. It is cheap rather than free: it
+needs a build in the field and that build's logs.
 
 ### Move 2 — Probe `ArtifactRef` too. Small.
 
@@ -140,11 +169,18 @@ this plan can hand the critic, and the plumbing for it is already end-to-end.
 Keep H1's guardrails unchanged: bounded, time-boxed, failure-isolated, and it can never itself fail a
 verdict — the LLM still renders the verdict.
 
-### Move 3 — Fix the planner prompt. Two lines.
+### Move 3 — Fix the planner prompt. Three surfaces, not two lines.
 
-`AgentPlanner.cs:782` and `:827`. State what checkable means, and say to omit the field otherwise —
-hermes's #6, applied literally. An `expectedArtifact` that names nothing the app can look up should be
-**absent**, not softened into prose.
+`AgentPlanner.cs:782` is the prose, and it reaches a **plan** turn only. The other two surfaces are the
+tool-schema descriptions `AIFunctionFactory` ships every turn: `emit_plan`'s steps parameter (`:139` plan,
+`:148` replan) and `PlanStepArg.ExpectedArtifact` (`:159`). On a replan those schema strings are the field's
+*entire* description. State what checkable means, and say to omit the field otherwise — hermes's #6,
+applied literally. An `expectedArtifact` that names nothing the app can look up should be **absent**, not
+softened into prose.
+
+Weigh `:784` and its verbatim replan twin `:827` in the same edit. They ask for "ONE step listing every
+file in expectedArtifact", and the probe reports such a declaration as one composite fact line joined by
+`"; "` — which is precisely what defeats a bare `found` / `NOT FOUND` harvest.
 
 Sequenced after move 2 deliberately: once the report channel is probed, the prediction matters less,
 and it is worth knowing whether move 2 alone is sufficient before tightening a prompt.
@@ -169,26 +205,31 @@ Notes on shape:
 - **Unprefixed stays file-probed**, exactly as today. Backwards compatible, no flag day.
 - **Unknown prefix → "not probed"**, never "missing". The tolerance rule from H1 stands: the probe
   reports what it established and nothing else.
-- **`ArtifactRef` is not persisted**, so the report channel needs no migration. Persisting it is worth
-  doing anyway (§5) but it is not a prerequisite.
+- **`ArtifactRef` is persisted as a JSON member, not a column** — `AgentSteps.ExtraJson.artifactRef`
+  (§5) — so a typed prefix rides along with no migration.
 - **The verifier's dependencies grow.** It takes `(IAiClientService, ISettingsService, ILogger)` today.
   Per-kind probing means more services, or — better — a small `IArtifactProbe` with one implementation
   per kind, so `AgentVerifier` keeps one dependency and the kinds stay independently testable.
 
 ---
 
-## 5. Worth doing alongside: persist `ArtifactRef`
+## 5. Landed: `ArtifactRef` is persisted (A5)
 
-Not required by any move above, but it is the cheap fix for §2's resume asymmetry, and it unlocks two
-other things: the run timeline can show what each step actually produced, and a resumed run's critic
-sees the same evidence an uninterrupted one does.
+Shipped. It fixed §2's resume asymmetry, needed **no schema change** — `AgentSteps` already had an
+`ExtraJson` column in use elsewhere — and it makes the report channel offline-recoverable from
+`history.db` the same way the planner channel already was, which is what lets a ratio be re-read without
+new runs.
 
-`AgentSteps` already has an `ExtraJson` column in use elsewhere, so this needs no schema change.
+**The timeline benefit is unbuilt, not shipped.** Nothing reads the member except the resume seed.
+`StepRowViewModel` carries `ExpectedArtifact` and describes it as *"round-tripped, not displayed"*
+(`:22-23`), has no `ArtifactRef` member at all, and no XAML binds either field. Anyone quoting "the
+timeline can show what each step produced" is quoting an intention.
 
 **Sensitivity:** `ArtifactRef` is model-authored text and may echo user content (a filename is often a
-document title). Persisting it is fine; **logging it is not** — it already goes through
-`SensitiveDebug` at `ChatSession.cs:867` and `HeadlessTurnExecutor.cs:619`, and any new site must do
-the same.
+document title). Persisting it is fine; **logging it is not** — the ref goes through `SensitiveDebug` at
+`ChatSession.cs:868` and `HeadlessTurnExecutor.cs:627-628`, and any new site must do the same. The
+neighbouring `LogInformation` at `HeadlessTurnExecutor.cs:619-623` is the counts-and-booleans line and
+carries no ref.
 
 ---
 
@@ -202,8 +243,9 @@ the same.
   the critic still decides. A missing artifact is a fact for the prompt, not a veto.
 - **Do not fuzzy-match.** If `todo:Call the vendor` doesn't resolve exactly, report "not found",
   not "found something similar". A probe that guesses is a summarizer with extra steps.
-- **Do not widen the probe before move 1.** If `probed / declared` is already high, move 4 is
-  solving a problem Pia doesn't have.
+- **Do not widen the probe before move 1.** The gate is the `found` share, not `probed / declared` —
+  that pair carries no outcome (move 1). If the `found` share is already high, move 4 is solving a
+  problem Pia doesn't have.
 
 ---
 
@@ -211,11 +253,11 @@ the same.
 
 | Step | Move | Notes |
 |---|---|---|
-| 1 | 1 | Read `probed / declared` off real-run logs. **Decision gate for everything below** |
+| 1 | 1 | Read the artifact-**outcome** split (`found` / `NOT FOUND` / not-a-file) off real-run logs — not `probed / declared`, which carries no outcome. **Decision gate for everything below** |
 | 2 | 2 | Route `ArtifactRef` through the existing probe; `produced:` lines carry found/not-found |
 | 3 | 2 | Tests: self-reported-but-missing is the case that matters; keep the failure-isolation tests green |
 | 4 | 3 | Planner + replan prompt wording |
-| 5 | — | Persist `ArtifactRef` into `AgentSteps.ExtraJson`; seed it in `SafeSeedResumeContext` |
+| 5 | — | **Landed (A5)** — `ArtifactRef` persisted into `AgentSteps.ExtraJson` and seeded in `SafeSeedResumeContext` |
 | 6 | 4 | `IArtifactProbe` + file implementation (behaviour-preserving refactor of today's probe) |
 | 7 | 4 | Todo / reminder / vault probes; typed prefix in the `artifact_ref` tool description |
 

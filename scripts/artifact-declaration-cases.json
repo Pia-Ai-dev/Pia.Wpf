@@ -1,0 +1,29 @@
+{
+  "note": "Synthetic declarations only. A real declaration is user content and must never be added here.",
+  "cases": [
+    { "declaration": "report.md", "fileShaped": true },
+    { "declaration": "a summary saved to report.md", "fileShaped": true },
+    { "declaration": "a summary of the Q3 numbers", "fileShaped": false },
+    { "declaration": "out/q3-summary.md", "fileShaped": true },
+    { "declaration": "docs\\notes.txt", "fileShaped": true },
+    { "declaration": "C:\\out\\report.md", "fileShaped": true },
+    { "declaration": "foo\\.md", "fileShaped": false },
+    { "declaration": "a file called .md", "fileShaped": false },
+    { "declaration": "the total is 12.5", "fileShaped": false },
+    { "declaration": "bump to v1.0", "fileShaped": false },
+    { "declaration": "Program.cs, Calculator.cs and Tests.cs", "fileShaped": true },
+    { "declaration": "see report.md.", "fileShaped": true },
+    { "declaration": "(report.md)", "fileShaped": true },
+    { "declaration": "an updated README", "fileShaped": false },
+    { "declaration": "data.xlsx", "fileShaped": true },
+    { "declaration": "archive.tarball", "fileShaped": false },
+    { "declaration": "notes.m", "fileShaped": false },
+    { "declaration": "deck.pptx", "fileShaped": true },
+    { "declaration": "a note\tsaved to memo.md", "fileShaped": true },
+    { "declaration": "line one\nsecond.md", "fileShaped": true },
+    { "declaration": "padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding late.md", "fileShaped": true },
+    { "declaration": "padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding late.md", "fileShaped": false },
+    { "declaration": "padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding abcdef.mdx", "fileShaped": false },
+    { "declaration": "todo:Call the vendor", "fileShaped": false }
+  ]
+}

@@ -37,13 +37,22 @@ Three steps can close work below them. Do not tick their dependants without revi
 
 ## A — Artifact evidence
 
-- [ ] **A1 · Read the `probed / declared` ratio off real-run logs.**
-  The line already exists in `AgentVerifier.TryBuildArtifactFactsAsync`. No code.
-  **First read, 2026-08-22** — 23 declarations over 7 verifier runs on one client: 57% `found`, 43%
+- [ ] **A1 · Read the artifact-outcome split — `found` / `NOT FOUND` / not-a-file — off real-run logs.**
+  Not `probed / declared`: the release-visible line in `AgentVerifier.TryBuildArtifactFactsAsync` carries
+  counts only, and `Probed` counts candidate *paths* (0–3 per declaration), so it carries no outcome. The
+  split itself lives in the Debug-only facts block one line below — and G1 of
+  [2026-08-22-group-a-brief.md](2026-08-22-group-a-brief.md) puts a counts-only tally of it onto the
+  release-visible line, which is what makes it readable without a Debug build.
+  **First read, 2026-08-22** — 23 declarations over 7 **probe lines** on one client: 57% `found`, 43%
   `not a file reference`, **0 `NOT FOUND`**. That refutes "already high", so A2–A4/A6/A7 stay open — but
-  it is one machine over three days on code-shaped tasks, too small to tune on. Widen it per
+  it is one machine over three days on code-shaped tasks, too small to tune on, and the 23 are **not
+  independent samples**: probe lines within one run overlap, because a verify-fail replan re-verifies over
+  an accumulating `CompletedSteps`. Widen it per
   [2026-08-22-a1-log-collection-runbook.md](2026-08-22-a1-log-collection-runbook.md), then re-read. The
   row to watch is `NOT FOUND`: if it stays at zero, the planner channel cannot produce a negative at all.
+  **Do not average across the tally.** The counts-only tally changed what an `Artifact probe:` line carries,
+  so this hand-counted first read is not comparable to anything measured after it — of the new fields only
+  `notFileShaped / declared` is even loosely comparable to the 43%.
   *Deps:* none · *Effort:* **XS** · *Value:* **High** (decision gate)
 
 - [ ] **A2 · Route `ArtifactRef` through the existing artifact probe.**
@@ -53,8 +62,16 @@ Three steps can close work below them. Do not tick their dependants without revi
 - [ ] **A3 · Tests for the self-reported-but-missing case; keep the failure-isolation tests green.**
   *Deps:* A2 · *Effort:* **S** · *Value:* **High**
 
-- [ ] **A4 · Tighten the planner and replan prompt wording** (`AgentPlanner.cs:782`, `:827`) — say what
-  checkable means, say to omit the field otherwise.
+- [ ] **A4 · Tighten how the plan describes `expectedArtifact` — three surfaces, not two.**
+  The prose at `AgentPlanner.cs:782` reaches a **plan** turn only, and `:827` does **not** carry that
+  sentence: it is the verbatim twin of `:784`, and `BuildReplanMessages` (`:817-830`) never mentions the
+  field at all. The other two surfaces are the tool-schema descriptions `AIFunctionFactory` ships every
+  turn — `emit_plan`'s steps parameter (`:139` plan, `:148` replan) and `PlanStepArg.ExpectedArtifact`
+  (`:159`) — so on a replan the schema is the *only* description of the field. Say what checkable means
+  (something the app can look up, not "a summary of the Q3 numbers"), and say to omit the field otherwise.
+  Weigh `:784`/`:827` in the same edit: their "ONE step listing every file in expectedArtifact" pulls the
+  other way, and it is what produces the composite declarations that defeat a bare `found` / `NOT FOUND`
+  harvest.
   *Deps:* A2 (decide after A2's numbers — it may be unnecessary) · *Effort:* **XS** · *Value:* **Med**
 
 - [x] **A5 · Persist `ArtifactRef` into `AgentSteps.ExtraJson` and seed it in `SafeSeedResumeContext`.**

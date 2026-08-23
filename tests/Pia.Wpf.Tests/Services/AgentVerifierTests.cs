@@ -1,6 +1,7 @@
+using System.Globalization;
 using System.IO;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services;
@@ -16,6 +17,7 @@ public sealed class AgentVerifierTests : IDisposable
     private readonly AppSettings _settings = new();
     private readonly List<string> _systemPrompts = new();
     private readonly List<string> _userPrompts = new();
+    private readonly CapturingLogger<AgentVerifier> _log = new();
     private readonly string _dir;
 
     public AgentVerifierTests()
@@ -54,7 +56,7 @@ public sealed class AgentVerifierTests : IDisposable
         return c;
     }
 
-    private AgentVerifier BuildVerifier() => new(_ai, _settingsService, NullLogger<AgentVerifier>.Instance);
+    private AgentVerifier BuildVerifier() => new(_ai, _settingsService, _log);
 
     /// <summary>The system prompt of the LAST verify attempt (the probe block lives there).</summary>
     private string LastPrompt => _systemPrompts[^1];
@@ -247,6 +249,77 @@ public sealed class AgentVerifierTests : IDisposable
     }
 
     [Fact]
+    public async Task VerifyAsync_ProbeLine_TalliesFoundMissingAndNonFileDeclarations()
+    {
+        WriteFile("report.md", 1536);
+        WriteFile(Path.Combine("notes", "summary.md"), 10);
+        _settings.AssistantFilesFolder = _dir;
+        ReturnsVerdict(V(true, "ok"));
+
+        var ctx = CtxDeclaring(
+            "report.md",
+            "missing.md",
+            "a summary of the Q3 numbers",
+            "write the digest to notes/summary.md");
+
+        await BuildVerifier().VerifyAsync(ctx, Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            "Artifact probe: declared=4 fileShaped=3 notFileShaped=1 overReportCap=0 probed=3 found=2 "
+            + "notFound=1 folder=0 unresolvable=0 uninspectable=0 overPathCap=0",
+            ProbeLine);
+        // This line survives Release, so no declaration may reach it.
+        Assert.DoesNotContain("report.md", ProbeLine);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_ProbeLine_SeparatesTheReportCapFromTheProbeBudget()
+    {
+        _settings.AssistantFilesFolder = _dir;
+        ReturnsVerdict(V(true, "ok"));
+        var declarations = Enumerable.Range(0, 25).Select(i => $"file{i}.md").ToArray();
+
+        await BuildVerifier().VerifyAsync(CtxDeclaring(declarations), Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        var counts = ProbeCounts(ProbeLine);
+        Assert.Equal(25, counts["declared"]);
+        Assert.Equal(20, counts["fileShaped"]);
+        Assert.Equal(0, counts["notFileShaped"]);
+        Assert.Equal(5, counts["overReportCap"]);
+        Assert.Equal(12, counts["probed"]);
+        Assert.Equal(0, counts["found"]);
+        Assert.Equal(12, counts["notFound"]);
+        Assert.Equal(0, counts["folder"]);
+        Assert.Equal(0, counts["unresolvable"]);
+        Assert.Equal(0, counts["uninspectable"]);
+        Assert.Equal(8, counts["overPathCap"]);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_ProbeLine_CountsCandidatesNotDeclarations()
+    {
+        _settings.AssistantFilesFolder = _dir;
+        ReturnsVerdict(V(true, "ok"));
+        var declarations = Enumerable.Range(0, 11).Select(i => $"file{i}.md").Append("a.md b.md c.md").ToArray();
+
+        await BuildVerifier().VerifyAsync(CtxDeclaring(declarations), Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        var counts = ProbeCounts(ProbeLine);
+        Assert.Equal(12, counts["declared"]);
+        Assert.Equal(12, counts["fileShaped"]);
+        Assert.Equal(0, counts["overReportCap"]);
+        Assert.Equal(12, counts["probed"]);
+        Assert.Equal(12, counts["notFound"]);
+        Assert.Equal(2, counts["overPathCap"]);
+        Assert.Equal(
+            counts["fileShaped"] + counts["notFileShaped"] + counts["overReportCap"],
+            counts["declared"]);
+        Assert.Equal(
+            counts["found"] + counts["notFound"] + counts["folder"] + counts["unresolvable"] + counts["uninspectable"],
+            counts["probed"]);
+    }
+
+    [Fact]
     public async Task VerifyAsync_ProbesOncePerVerify_NotOncePerAttempt()
     {
         WriteFile("report.md", 8);
@@ -406,6 +479,31 @@ public sealed class AgentVerifierTests : IDisposable
     }
 
     [Fact]
+    public async Task VerifyAsync_UnusableWorkingSubpath_KeepsTheSubpathOffEveryReleaseVisibleLine()
+    {
+        WriteFile("report.md", 8);
+        _settings.AssistantFilesFolder = _dir;
+        ReturnsVerdict(V(true, "ok"));
+
+        var ctx = CtxDeclaring("report.md");
+        ctx.WorkingSubpath = "does/not/exist-marker";
+
+        await BuildVerifier().VerifyAsync(ctx, Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        var releaseVisible = _log.Entries.Where(e => e.Level >= LogLevel.Information).ToList();
+        Assert.Contains(releaseVisible, e => e.Message.Contains("Artifact probe:", StringComparison.Ordinal));
+        Assert.DoesNotContain(releaseVisible, e => e.Message.Contains("does/not/exist-marker", StringComparison.Ordinal));
+
+#if DEBUG
+        Assert.Contains(_log.Entries, e => e.Level == LogLevel.Debug
+            && e.Message.Contains("did not resolve", StringComparison.Ordinal)
+            && e.Message.Contains("does/not/exist-marker", StringComparison.Ordinal));
+#else
+        Assert.DoesNotContain(_log.Entries, e => e.Message.Contains("does/not/exist-marker", StringComparison.Ordinal));
+#endif
+    }
+
+    [Fact]
     public async Task VerifyAsync_ResumedRun_SeededStepIsPresentedAsExecuted_AndItsArtifactIsProbed()
     {
         // A pre-pause step has no recoverable result text, so the prompt must say the text is unavailable rather
@@ -482,6 +580,34 @@ public sealed class AgentVerifierTests : IDisposable
         Assert.Contains("produced: out/alpha.md", LastUserPrompt);
         Assert.Contains(CompletedStepSummary.EarlierSegmentNote, LastUserPrompt);
         Assert.Equal(1, CountOccurrences(LastUserPrompt, "produced:"));
+    }
+
+    // A sink cannot tell SensitiveDebug from LogInformation, so only the source text proves the channel.
+    [Fact]
+    public void TheProbeRootFallbackIsLoggedThroughTheSensitiveChannelOnly()
+    {
+        var path = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "Pia.Wpf", "Services", "AgentVerifier.cs"));
+        Assert.True(File.Exists(path), path);
+        var source = File.ReadAllText(path);
+
+        Assert.Contains("SensitiveDebug(\"Working subpath did not resolve", source, StringComparison.Ordinal);
+        Assert.All(
+            source.Split('\n').Where(l => l.Contains("_logger.Log", StringComparison.Ordinal)),
+            l => Assert.DoesNotContain("Subpath", l, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>The one release-visible tally line; the colon-space excludes probe skipped/failed/facts.</summary>
+    private string ProbeLine =>
+        Assert.Single(_log.Entries, e => e.Message.Contains("Artifact probe: ", StringComparison.Ordinal)).Message;
+
+    private static Dictionary<string, int> ProbeCounts(string line)
+    {
+        const string prefix = "Artifact probe: ";
+        var fields = line[(line.IndexOf(prefix, StringComparison.Ordinal) + prefix.Length)..];
+        return fields.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Select(f => f.Split('='))
+            .ToDictionary(p => p[0], p => int.Parse(p[1], CultureInfo.InvariantCulture));
     }
 
     private static int CountOccurrences(string haystack, string needle)
