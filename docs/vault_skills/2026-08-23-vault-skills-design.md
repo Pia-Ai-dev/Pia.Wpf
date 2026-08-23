@@ -275,9 +275,37 @@ Secondary:
 
 | # | Question | Recommendation |
 |---|---|---|
-| **D1** | `ScheduledJobKind.SkillHarvest = 2`, or a placeholder token in a blueprint `QueryTemplate` expanded pre-dispatch? | The new kind. The enum is documented append-only and crosses the wire as an int, so it is safe by the existing rule — but an older peer's dispatcher must treat the unknown kind as inert, and that must be verified, not assumed. The placeholder alternative avoids the enum at the cost of a template that silently inlines chat content. |
+| **D1** | `ScheduledJobKind.SkillHarvest = 2`, or a placeholder token in a blueprint `QueryTemplate` expanded pre-dispatch? | **Resolved 2026-08-23: the new kind.** See §11.1 — verified at source, not assumed. |
 | **D2** | Are starter skill bodies localized? | No. Follow `AGENTS.md`, not `RoutineBlueprint`. Revisit if a non-English owner reports the starters reading wrong. |
 | **D3** | Does a loaded skill need its own UI affordance? | Start with the ordinary tool-call card. A dedicated affordance is cheap to add once there is evidence the owner cannot tell whether a skill fired. |
+
+### 11.1 D1, verified
+
+The concern was that a new `ScheduledJobKind` reaches a peer running an older build, which cannot know it.
+Traced through the four places the value passes:
+
+| Step | Site | Behaviour with an unknown kind |
+|---|---|---|
+| Sync in | `SyncMapper.cs:1044`, `:1065` | `(ScheduledJobKind)(sync.Kind ?? 0)` — unchecked cast, no `Enum.IsDefined`. Stored verbatim. |
+| Persist | `ScheduledJobService.cs:773` | `job.Kind.ToString()` on an undefined value writes the numeric string `"2"`. |
+| Read back | `ScheduledJobService.cs:804` | `Enum.Parse<ScheduledJobKind>("2")` **succeeds** — .NET parses numeric strings for enums. No throw; the row round-trips. |
+| Dispatch | `ScheduledJobBackgroundService.cs:475` | A **ternary**, not a switch: anything that is not `AgentTask` runs `ExecuteResearchAsync`. An unknown kind is therefore **not inert**. |
+
+The last row refutes the assumption this gate was written to check. The risk collapses one layer down: the
+due-jobs query is owner-pinned —
+
+```sql
+WHERE NextFireAt <= @Now AND Status = 'Active'
+  AND (OwnerDeviceId IS NULL OR OwnerDeviceId = @LocalDevice)   -- ScheduledJobService.cs:122
+```
+
+— and a job is stamped with its creating device at `:93`. A peer stores the row and **never fires it**, so
+the dispatcher there never sees the unknown kind. The residual defect is cosmetic: an older build's
+Routines list renders the job as "Research" (`ScheduledJobToolHandler.cs:187`).
+
+Two obligations follow for the new build: replace the ternary at `:475` with a switch carrying an explicit
+`SkillHarvest` arm, and pin the owner-device behaviour with a test so a later change to the due-jobs query
+cannot silently re-open this.
 
 ## 12. Effort
 
