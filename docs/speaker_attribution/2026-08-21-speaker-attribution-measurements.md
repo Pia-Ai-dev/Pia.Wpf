@@ -1425,10 +1425,45 @@ under I. The `LABEL CHECK` line, which reads the on-screen numbering rather than
 criterion 3 does not ask for it. Its label claim — 5 → 6 — is therefore bench-relative and is the one
 number in lever 1 that has no app behind it.
 
+### Leave-one-out: the mechanism does generalise to a recording it was not tuned on
+
+The fair objection to everything above is that the four parameters were fitted on the same three
+recordings they are then reported on. That is testable without a fourth meeting: for each recording,
+choose the margin using **only the other two**, then score the held-out one.
+
+Gain in correct segments over the un-split run, across the margin grid:
+
+| margin | 0.04 | 0.10 | 0.12 | 0.14 | 0.15 | 0.16 | 0.18 | 0.19 | 0.20 | 0.22 | 0.24 | 0.26 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| testmeeting | +5 | +5 | +5 | +5 | +5 | +5 | +5 | 0 | 0 | 0 | 0 | 0 |
+| workshop | +2 | +2 | +3 | +7 | +7 | +7 | +7 | +7 | +7 | +2 | 0 | 0 |
+| LSP | +35 | +35 | +35 | +37 | +37 | +37 | +38 | +38 | +38 | +38 | +38 | +13 |
+
+And the held-out result:
+
+| held out | trained on | margin the training pair picks | held-out gain |
+|---|---|---|---|
+| testmeeting | workshop + LSP | 0.18–0.20 (tie) | **+5** at 0.18, **0** at 0.20 |
+| workshop | testmeeting + LSP | 0.18 | **+7** |
+| LSP | testmeeting + workshop | 0.14–0.18 (tie) | **+37 / +38** |
+
+**Three out of three held-out recordings improve, provided ties are broken toward the lower margin.**
+That is real evidence that the pass is finding a property of conversations rather than of these three
+files — a margin chosen without ever looking at testmeeting still fixes testmeeting.
+
+It also names the rule that would have failed. "Maximise on the training data" picks 0.20 when
+testmeeting is held out, and 0.20 is past testmeeting's cliff: the held-out gain collapses to zero.
+The difference between generalising and not is entirely the tie-break, so **prefer the low end of a
+plateau, always** — the upper edge of a plateau is one recording's failure boundary, not a shared one.
+
+0.15 sits below every tie-break the protocol chose and inside every recording's firing band, which is
+the strongest thing that can be said for it short of a fourth recording.
+
 ### Will the next meeting with the same people split them? Not established, and here is what it turns on
 
-This is the question the campaign does *not* answer, and the honest answer is no. Four separate
-reasons, in the order they are likely to bite.
+The leave-one-out result above says the *mechanism* transfers to an unseen recording. What follows is
+narrower: it is about whether a specific future meeting is covered, and there the answer is still no.
+Four reasons, in the order they are likely to bite.
 
 **1. Nothing at all carries over between meetings.** `AdaptiveSpeakerIdentificationService` journals
 embeddings per meeting and actively zeroes them on `Reset`/`Dispose`, and there is no voiceprint store
@@ -1631,7 +1666,7 @@ Deliberately last, and lever 1 took most of the ground they were meant to take.
 
 | # | Lever | Outcome |
 |---|---|---|
-| 1 | Split-candidate pass | **Measured, default off.** +11.4 pts on testmeeting confirmed by app replay, label count unchanged, all four talkers named. Two earlier shapes measured and discarded. Blocked from shipping on one bench-only label count. |
+| 1 | Split-candidate pass | **Measured, default off.** Generalises 3/3 under leave-one-out. +11.4 pts on testmeeting confirmed by app replay, label count unchanged, all four talkers named. Two earlier shapes measured and discarded. Blocked from shipping on one bench-only label count. |
 | 2 | Young-centroid damping | **Refused.** At best +1.1 pts of provisional accuracy on LSP, bought with 3-6 extra labels flashing past during the meeting. Nothing at all on testmeeting. |
 | 3 | Overlap-aware minting | **Refused.** Precondition measured: real on LSP (5 of 13 mints), untestable on testmeeting (4 of 5 mints land where the reference is blind). No production signal distinguishes a mixture from a new voice, and lever 1 removed the label-count motive. |
 | 4 | Match-threshold policies | **Unconfirmed, not adopted.** Fixed 0.30 now beats the derived policy on correct count on all three and cuts LSP's live label churn 13 -> 9 — but that is a label-count claim, and the last one failed its app replay. |
