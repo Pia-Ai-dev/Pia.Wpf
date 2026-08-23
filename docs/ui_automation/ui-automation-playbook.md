@@ -34,7 +34,7 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Settings → Providers | `Settings_Providers_UseSameProviderForAllModes`, `_OptimizeProvider`, `_AssistantProvider`, `_AddProvider`, `_GoToCloudSync`, per-row `Provider_Test_<guid>` / `Provider_Edit_<guid>` / `Provider_Delete_<guid>` |
 | Settings → Account | `Settings_Account_ServerUrl`, `_TrustSelfSignedCertificates`, `_LoginEmail`, `_LoginPassword`, `_LoginWithPassword`, `_OpenRegistrationPage`, `_OpenForgotPassword`, `_LoginWithGoogle`, `_LoginWithMicrosoft`, `_LoginWithEntraId`, `_SyncNow`, `_SyncLogout`, `_IsE2EEEnabled`, `_CheckForPendingDevices` |
 | Settings → Optimize | `Settings_Optimize_GoToProvidersTab`, `_OutputAction`, `_AutoTypeDelayMs`; the template list uses the `Templates_*` / `Template_*` ids above |
-| Routines list / actions | `Routines_JobList`, `Routines_NewJob`, `Routines_Edit`, `Routines_Toggle`, `Routines_RunNow`, `Routines_Delete`, `Routines_StatusMessage`, `Routines_Detail_NextRun`, `Routines_RunHistory` |
+| Routines list / actions | `Routines_JobList`, `Routines_Row_<id>` (the row container, whose UIA name is the routine's name), `Routines_NewJob`, `Routines_Edit`, `Routines_Toggle`, `Routines_RunNow`, `Routines_Delete`, `Routines_StatusMessage`, `Routines_Detail_NextRun`, `Routines_RunHistory` |
 | Routines editor | `Routines_Field_Name`, `_Goal`, `_Kind`, `_Recurrence`, `_DayOfWeek`, `_Month`, `_DayOfMonth`, `_Time`, `_Date`, `_Provider`, `_Persona`, `_Effort`, `_GrantedTools`, `_Quiet`, plus `Routines_Save` / `Routines_Cancel` |
 | Persona dialog | `PersonaEdit_Name`, `PersonaEdit_SystemPrompt`, `PersonaEdit_Archetype`, `PersonaEdit_ModelType`, `PersonaEdit_ToolScope`, `PersonaEdit_PreferredProvider`, `PersonaEdit_ReasoningEffort` |
 | Template dialog | `TemplateEdit_Name`, `TemplateEdit_StyleDescription`, `TemplateEdit_GeneratedPrompt` |
@@ -42,7 +42,7 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Meeting attendee overlay | `MeetingAttendee_Url`, `_DisplayName`, `_Consent`, `_Join`, `_Stop`, `_Save`, `_SpeakerDisclaimer`, `_Close`, `_OpenSettings`, `_SaveToVault`, `_Summarize`, per-bubble `_RenameSpeaker_<speakerLabel>` (shared across every bubble from the same speaker — renaming applies to the label, not one utterance). Open the overlay with the composer button named "Join a meeting and transcribe". Bubble labels carry no id — read them as `Text` elements, which is what `Invoke-MeetingReplay.ps1` does to check the numbering. |
 | Edit dialogs (shared) | `PrimaryButton` (Save), `CloseButton` (Cancel), `Dialog_RequiredHint` |
 | Chat history import/export | `AssistantHistory_Import`, `AssistantHistory_ExportAll`, `AssistantHistory_LoadMore` (header/list), `AssistantHistory_ExportArchive` (inspector, needs a selected chat), `AssistantHistory_ImportStatus` / `AssistantHistory_ImportProgress` (status bar, present only while an import runs) |
-| Assistant chat history row / group card | Per-chat delete button, on `PiaAssistantChatRowContent` (keyed on `AssistantChatRowViewModel.Id`, i.e. `Chat.Id`): `AssistantChat_Delete_<id>`. Group header expand/collapse, per-bucket: `AssistantHistory_GroupToggle_<bucket>`, keyed on `AssistantChatGroupViewModel.Bucket` (its nullable `GroupKey` string was skipped in favor of this non-null enum, same identity the group is actually built from). |
+| Assistant chat history row / group card | Per-chat **open** and delete buttons, both on `PiaAssistantChatRowContent` and both revealed by hovering the row (keyed on `AssistantChatRowViewModel.Id`, i.e. `Chat.Id`): `AssistantChat_Open_<id>`, `AssistantChat_Delete_<id>`. The row CONTAINER carries `AssistantChat_Row_<id>` and reports the chat title as its UIA name. `AssistantChat_Open_<id>` resumes the named chat in one invoke - selecting the row does not open it, that needs the inspector's Resume button. Group header expand/collapse, per-bucket: `AssistantHistory_GroupToggle_<bucket>`, keyed on `AssistantChatGroupViewModel.Bucket` (its nullable `GroupKey` string was skipped in favor of this non-null enum, same identity the group is actually built from). |
 | Page-header help hints | `Routines_Help`, `Assignments_Help`, `History_Help`, `AssistantHistory_Help`, `Memory_Help`, `Todo_Help`, `Reminders_Help` |
 | Settings help hints | `Settings_ToolPermissions_Page_Help` (tab intro), `Settings_ToolPermissions_Session_Help` (session tier), `Settings_ToolPermissions_Help` (always-allowed list), `Settings_MeetingBrowser_Help`, `Settings_Agent_Roster_Help`, `Settings_Scheduled_Help` |
 | Vault (Memory) header / search | `Memory_Back`, `_Home`, `_Refresh`, `_OpenFolder`, `_ShowHelp` (distinct from the `Memory_Help` hover hint above), `Memory_SearchQuery` |
@@ -183,6 +183,11 @@ Committed recordings, the settings fixture they start from and the replay harnes
 
 ## Known gaps (don't burn time rediscovering these)
 
+- **A `ListBoxItem` container CAN carry a per-item id and name** - through the list's `ItemContainerStyle`, as
+  the chat-history and Routines lists now do. "Not a walker-recognized type" below means the
+  `ViewAutomationIdTests` sweep cannot see it (it only walks controls declared inside a `DataTemplate`), not
+  that an id is impossible. Without one a row reports its view-model's `ToString()` and can only be reached by
+  index; `tests/Pia.Wpf.Tests/Views/RowContainerAutomationTests.cs` holds the two that were fixed.
 - **`ui:InfoBar` exposes no automation peer at all** in this Wpf.Ui version — it renders, but
   neither its `AutomationId` nor its message reaches UIA. Don't put anything an assertion needs
   inside one.

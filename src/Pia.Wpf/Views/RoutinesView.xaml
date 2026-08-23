@@ -166,10 +166,17 @@
                  BorderThickness="0"
                  Background="Transparent"
                  Padding="0,0,4,0"
-                 ItemContainerStyle="{StaticResource PiaMemoryRowItemStyle}"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  AutomationProperties.AutomationId="Routines_JobList"
                  Visibility="{Binding HasJobs, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <ListBox.ItemContainerStyle>
+            <!-- Named and identified on the CONTAINER, which is the node UIA offers for a row: without these
+                 every row reports the view-model's ToString() and can only be reached by index. -->
+            <Style TargetType="ListBoxItem" BasedOn="{StaticResource PiaMemoryRowItemStyle}">
+              <Setter Property="AutomationProperties.AutomationId" Value="{Binding Id, StringFormat='Routines_Row_{0}'}"/>
+              <Setter Property="AutomationProperties.Name" Value="{Binding Name}"/>
+            </Style>
+          </ListBox.ItemContainerStyle>
           <ListBox.ItemTemplate>
             <DataTemplate>
               <Border Style="{StaticResource RoutineRowStyle}">

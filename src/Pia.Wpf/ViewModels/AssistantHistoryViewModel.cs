@@ -108,6 +108,10 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
     public IAsyncRelayCommand ClearFilterCommand { get; }
     public IAsyncRelayCommand RefreshCommand { get; }
     public IAsyncRelayCommand ResumeChatCommand { get; }
+
+    /// <summary>Opens the row it is given rather than the selected one, so a caller (or a script) can name
+    /// which past chat to resume.</summary>
+    public IAsyncRelayCommand<AssistantChatRowViewModel> OpenChatCommand { get; }
     public IAsyncRelayCommand ExportChatCommand { get; }
     public IAsyncRelayCommand<AssistantMessage> ExportMessageHtmlCommand { get; }
     public IAsyncRelayCommand ExportChatArchiveCommand { get; }
@@ -148,6 +152,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         ClearFilterCommand = new AsyncRelayCommand(ExecuteClearFilterAsync);
         RefreshCommand = new AsyncRelayCommand(ExecuteRefreshAsync);
         ResumeChatCommand = new AsyncRelayCommand(ExecuteResumeChatAsync, CanExecuteWithSelection);
+        OpenChatCommand = new AsyncRelayCommand<AssistantChatRowViewModel>(ExecuteOpenChatAsync);
         ExportChatCommand = new AsyncRelayCommand(ExecuteExportChatAsync, CanExecuteExport);
         ExportMessageHtmlCommand = new AsyncRelayCommand<AssistantMessage>(ExecuteExportMessageHtml);
         ExportChatArchiveCommand = new AsyncRelayCommand(ExecuteExportChatArchiveAsync, CanExecuteExport);
@@ -802,11 +807,13 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         return sb.ToString().Trim();
     }
 
-    private async Task ExecuteResumeChatAsync()
-    {
-        if (SelectedChat is null) return;
+    private Task ExecuteResumeChatAsync() => ExecuteOpenChatAsync(SelectedChat);
 
-        var id = SelectedChat.Chat.Id;
+    private async Task ExecuteOpenChatAsync(AssistantChatRowViewModel? row)
+    {
+        if (row is null) return;
+
+        var id = row.Chat.Id;
         try
         {
             await _chatService.TouchLastAccessedAsync(id);

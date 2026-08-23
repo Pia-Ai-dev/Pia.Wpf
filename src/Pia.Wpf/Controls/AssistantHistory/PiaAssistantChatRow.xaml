@@ -23,10 +23,11 @@
     </Border.Style>
 
     <!-- Full row body (time | title | state badge | date) lives in the shared content control;
-         the badge's live State binds via the row VM's inherited DataContext. The hover trash bin
-         (quick delete) lives in that shared control too — here we just supply the command, which
-         deletes the hovered row (not the selected one). -->
+         the badge's live State binds via the row VM's inherited DataContext. The hover actions live
+         in that shared control too — here we just supply the commands, which act on the hovered row
+         rather than the selected one. -->
     <ah:PiaAssistantChatRowContent
+        OpenCommand="{Binding DataContext.OpenChatCommand, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"
         DeleteCommand="{Binding DataContext.QuickDeleteChatCommand, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"/>
   </Border>
 </UserControl>

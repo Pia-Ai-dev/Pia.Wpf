@@ -5,6 +5,20 @@
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:ah="clr-namespace:Pia.Controls.AssistantHistory"
              xmlns:behaviors="clr-namespace:Pia.Behaviors">
+  <UserControl.Resources>
+    <!-- Revealed on row hover; hit-testing follows the opacity so an invisible icon cannot be clicked. -->
+    <Style x:Key="PiaChatRowActionHost" TargetType="Border">
+      <Setter Property="Opacity" Value="0"/>
+      <Setter Property="IsHitTestVisible" Value="False"/>
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding IsMouseOver, ElementName=ContentRoot}" Value="True">
+          <Setter Property="Opacity" Value="1"/>
+          <Setter Property="IsHitTestVisible" Value="True"/>
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+  </UserControl.Resources>
+
   <!-- Presentation-only row body: time | title | state badge | date. The badge
        sits between the title and the date (the date is the far-right anchor) and
        collapses when Idle. Carries no padding, background or selection chrome so
@@ -12,8 +26,9 @@
        convention to anything exposing UpdatedAt (DateTime), Title (string) and
        State (ChatState).
 
-       When a host sets DeleteCommand, hovering the row reveals a red trash bin that
-       replaces the date (same cell) for a one-click delete. -->
+       Hovering the row replaces the date (same cell) with whichever actions the host
+       supplied: OpenCommand and DeleteCommand are independent, and a host that sets
+       neither keeps its date. -->
   <Grid x:Name="ContentRoot" Background="Transparent">
     <Grid.ColumnDefinitions>
       <ColumnDefinition Width="48"/>
@@ -40,7 +55,7 @@
 
     <ah:PiaChatStateBadge Grid.Column="2" Margin="8,0,0,0"/>
 
-    <!-- Date + hover trash share column 3; on hover the date fades out and the trash fades in. -->
+    <!-- Date + hover actions share column 3; on hover the date fades out and the actions fade in. -->
     <Grid Grid.Column="3" Margin="10,0,0,0">
       <TextBlock x:Name="DateText"
                  Text="{Binding UpdatedAt, StringFormat='{}{0:MM-dd}'}"
@@ -54,6 +69,14 @@
           <Style TargetType="TextBlock">
             <Setter Property="Opacity" Value="1"/>
             <Style.Triggers>
+              <!-- One trigger per action: a MultiDataTrigger is an AND, and either action hides the date. -->
+              <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                  <Condition Binding="{Binding IsMouseOver, ElementName=ContentRoot}" Value="True"/>
+                  <Condition Binding="{Binding Visibility, ElementName=OpenHost}" Value="Visible"/>
+                </MultiDataTrigger.Conditions>
+                <Setter Property="Opacity" Value="0"/>
+              </MultiDataTrigger>
               <MultiDataTrigger>
                 <MultiDataTrigger.Conditions>
                   <Condition Binding="{Binding IsMouseOver, ElementName=ContentRoot}" Value="True"/>
@@ -66,37 +89,43 @@
         </TextBlock.Style>
       </TextBlock>
 
-      <Border x:Name="DeleteHost"
-              HorizontalAlignment="Right"
-              VerticalAlignment="Center"
-              Visibility="{Binding DeleteCommand,
-                           RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}},
-                           Converter={StaticResource NullToVisibilityConverter}}">
-        <Border.Style>
-          <Style TargetType="Border">
-            <Setter Property="Opacity" Value="0"/>
-            <Setter Property="IsHitTestVisible" Value="False"/>
-            <Style.Triggers>
-              <DataTrigger Binding="{Binding IsMouseOver, ElementName=ContentRoot}" Value="True">
-                <Setter Property="Opacity" Value="1"/>
-                <Setter Property="IsHitTestVisible" Value="True"/>
-              </DataTrigger>
-            </Style.Triggers>
-          </Style>
-        </Border.Style>
-        <!-- Opacity 0 still measures, so this button sets the row's minimum height —
-             keep it near the title's line height. -->
-        <Button Style="{StaticResource UnstyledButton}"
-                Padding="3"
-                ToolTip="{loc:Str History_Delete}"
-                Command="{Binding DeleteCommand,
-                          RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}}}"
-                CommandParameter="{Binding}"
-                AutomationProperties.AutomationId="{Binding Id, StringFormat='AssistantChat_Delete_{0}'}">
-          <ui:SymbolIcon Symbol="Delete24" FontSize="14"
-                         Foreground="{DynamicResource PiaDangerBrush}"/>
-        </Button>
-      </Border>
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+        <Border x:Name="OpenHost"
+                Style="{StaticResource PiaChatRowActionHost}"
+                Visibility="{Binding OpenCommand,
+                             RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}},
+                             Converter={StaticResource NullToVisibilityConverter}}">
+          <Button Style="{StaticResource UnstyledButton}"
+                  Padding="3"
+                  ToolTip="{loc:Str AssistantHistory_Resume}"
+                  Command="{Binding OpenCommand,
+                            RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}}}"
+                  CommandParameter="{Binding}"
+                  AutomationProperties.AutomationId="{Binding Id, StringFormat='AssistantChat_Open_{0}'}">
+            <ui:SymbolIcon Symbol="Play24" FontSize="14"
+                           Foreground="{DynamicResource PiaAccentBrush}"/>
+          </Button>
+        </Border>
+
+        <Border x:Name="DeleteHost"
+                Style="{StaticResource PiaChatRowActionHost}"
+                Visibility="{Binding DeleteCommand,
+                             RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}},
+                             Converter={StaticResource NullToVisibilityConverter}}">
+          <!-- Opacity 0 still measures, so this button sets the row's minimum height —
+               keep it near the title's line height. -->
+          <Button Style="{StaticResource UnstyledButton}"
+                  Padding="3"
+                  ToolTip="{loc:Str History_Delete}"
+                  Command="{Binding DeleteCommand,
+                            RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}}}"
+                  CommandParameter="{Binding}"
+                  AutomationProperties.AutomationId="{Binding Id, StringFormat='AssistantChat_Delete_{0}'}">
+            <ui:SymbolIcon Symbol="Delete24" FontSize="14"
+                           Foreground="{DynamicResource PiaDangerBrush}"/>
+          </Button>
+        </Border>
+      </StackPanel>
     </Grid>
   </Grid>
 </UserControl>

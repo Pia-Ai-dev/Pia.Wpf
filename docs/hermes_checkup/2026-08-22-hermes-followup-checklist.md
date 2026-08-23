@@ -517,7 +517,7 @@ Not from the review. Found on 2026-08-23 while seeding a throwaway profile for t
   gate re-derivable so both suites can run redirected.
   *Deps:* none · *Effort:* **S** · *Value:* **Low**
 
-- [ ] **F2 · A chat-history row can be DELETED by AutomationId but not opened by one.** Found on
+- [x] **F2 · A chat-history row can be DELETED by AutomationId but not opened by one.** Found on
   2026-08-23 when E9's read-half check could not resume a parked run: opening the run's chat means
   activating its history row, and the row would not activate by `ww_click`, double-click,
   `SelectionItemPattern` or Enter. The row's *only* id-addressable action is
@@ -530,6 +530,27 @@ Not from the review. Found on 2026-08-23 while seeding a throwaway profile for t
   and the Routines rows as `Pia.ViewModels.RoutineRow`, i.e. a `ToString()`, which is what forced index-
   based selection during E7's pass. Unblocks E9's read-half confirmation in the app, and any future script
   that must open one named past chat.
+  **Done 2026-08-23, and it lands UNVERIFIED IN THE APP** - this batch had no desktop session, so none of the
+  below was exercised through UIA. It is build- and gate-verified only.
+  - `AssistantChat_Open_{ChatId}` is a real per-row button on `PiaAssistantChatRowContent`, on the same hover
+    strip as the trash and wired to a new row-parameterised `OpenChatCommand`; `ExecuteResumeChatAsync` now
+    delegates to it, so the inspector's Resume button and the row share one body. Chosen over an id on the
+    container alone because the sweep in `ViewAutomationIdTests` only inspects
+    `ButtonBase`/`ComboBox`/`TextBoxBase`/`PasswordBox`/`Slider`/`Expander`/`TabItem` declared inside a
+    `DataTemplate` - a container id cannot bump any count - and because one invoke that OPENS the named chat is
+    what E9 needs: selecting a row only loads the inspector, and opening still takes its Resume button.
+  - Floor bumped to **(2, 2)**, measured rather than guessed: raising it to 99 made the sweep report exactly 2
+    interactive controls in `PiaAssistantChatRowContent`, and (2, 2) passing proves both ids are the per-item
+    binding form rather than literals.
+  - Both `ToString()` names are fixed on the item CONTAINER, which is the node UIA actually offers for a row:
+    chat rows now carry `AssistantChat_Row_{ChatId}` plus the chat title as their name, Routines rows
+    `Routines_Row_{Id}` plus the routine name, both through the list's `ItemContainerStyle`. The id sweep
+    cannot see a container, so `RowContainerAutomationTests` locks both - and fails on a literal, which would
+    hand every row the same id.
+  - Playbook updated, including its "Known gaps" claim that a `ListBoxItem` can carry no id. It can, through
+    `ItemContainerStyle`; what it cannot do is appear in the sweep.
+
+  Gate **4667 / failed: 0 / 4613 succeeded / 54 skipped**; both configurations rebuild to 0 Warning(s).
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
 
 ---
