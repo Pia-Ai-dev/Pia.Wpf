@@ -1,6 +1,8 @@
 # Test Plan — Does Pia's Context Compaction Lose Anything That Matters?
 
 **Status:** planned, not started. Self-contained: everything needed to execute it is below.
+**The three open questions in §14 were answered by the owner on 2026-08-23 — see §15. Read it before
+B3: answer (2) fixes what "the removed set" means, which is B3's whole API.**
 **Owner:** unassigned. **Written:** 2026-08-22.
 **Origin:** §3.3 of [`2026-08-22-hermes-update-review.md`](2026-08-22-hermes-update-review.md).
 
@@ -342,3 +344,75 @@ if 4 says current compaction is fine.
    more discriminating; the real window is what users actually hit. Possibly both.
 3. **Is arm E worth it** given the head+tail pins already cover the two positions that matter most on
    the agent path? Cheap to include; the answer is probably "run it once and find out."
+
+---
+
+## 15. Owner answers — 2026-08-23
+
+All three of §14 were put to the owner before any provider call was spent, because §8's privacy rule makes
+question 1 a decision rather than a default.
+
+### (1) Provider — Mistral Medium 3.5 for answering **and** judging, with the harness kept portable
+
+The owner's constraint came first and is a **design** requirement, not a run-time one: *"we can't assume
+every user has local models."* So the harness takes its provider from configuration and **must not
+hard-code, require or fall back to a local model** — a contributor with only cloud providers has to be able
+to run the sweep, and an owner who prefers a local judge has to be able to point it at one without editing
+code. Provider id in; the scorecard records which one ran, which §8 item 3 already requires.
+
+Because portability is handled by the harness rather than by the provider choice, the run-time choice is the
+owner's second clause — *"otherwise 3 for performance reason"*: **one provider, Mistral Medium 3.5, for both
+the answering and the judging call.** A local `gpt-oss:20b` judge was the named alternative and was
+declined. The reasoning is worth keeping, because it says where the instrument is weakest:
+
+- The judge is the most fragile part of it. §12 names judge inconsistency between arms as a risk, and §11's
+  stop rule — **arm A under 90% means the bank or the judge is broken** — is exactly what a weak judge
+  trips. Spending quality on the judge protects the only check this plan has.
+- The saving a free local judge buys is smaller than it looks at this step. **B4 is 240 calls**
+  (4 transcripts × 2 arms × 15 questions × 2 calls), not §8's 600 — that figure is the full five-arm sweep,
+  which is B10.
+- It is the provider the A-track corpus ran on, so a later cross-reference is not confounded by a model
+  change. That confound is what forced the A4 replay into a two-arm design; no reason to re-import it here.
+
+**Privacy consequence, stated rather than buried.** This sends real transcript content to Mistral. §8 says
+that is a decision and not a default; it has now been taken deliberately, with the alternative named and
+declined. Three things follow, and none of them is optional:
+
+- **Fixtures and banks are still never committed.** Unchanged from §8. This decision is about what a
+  provider sees at run time, not about what enters the repository.
+- The scorecard stays **numbers only**. A question string is transcript-derived, so it does not go in.
+- The harness must be runnable **without the real corpus at all.** The committed synthetic generator
+  (`SyntheticTranscript.cs`, B1) is the arm a contributor runs, and it needs no privacy decision from
+  anyone.
+
+### (2) Budget — build for both, measure the small synthetic window first
+
+**Parameterise the harness on the budget.** Run a deliberately small, compaction-forcing window first, then
+re-run against a real configured provider's `MaxContextWindowTokens`.
+
+This is the answer that shapes B3's API, so read it before writing code. "The removed set" is not a property
+of a transcript — it is a property of *(transcript, budget)*. §6 step 1 generates the bank by diffing
+compactor input against output, and §6 step 3 says to cache the bank keyed on the transcript hash. **That
+key is insufficient. It must be keyed on the transcript hash *and* the budget**, or the second measurement
+silently reuses a bank built for a different removed set, and every arm is then asked about content this
+budget never removed. That is a wrong number that looks like a right one.
+
+Small first, because it is cheap, because it discriminates hardest, and because it makes compaction fire on
+shorter transcripts — so a broken instrument trips §11's arm-A floor before the expensive run. The real
+window is what users actually hit and is what any "current compaction is fine" verdict has to rest on, so
+it is not optional either; it is second.
+
+Every number reported must name which budget produced it. §2 item 3 already demands that for a different
+reason — compaction is opt-in and never fires without `MaxContextWindowTokens` — and it now carries double
+weight.
+
+### (3) Arm E — not in this batch
+
+**B4 is arms A and B only.** Arm E stays where §13 put it, at step 7, and where the checklist put it, as
+**B9** behind the **B4** gate, alongside arms C and D. This batch's job is §13's "steps 1–4 are the minimum
+viable version and answer the headline question on their own"; a third arm widens the first real number
+without improving the answer.
+
+Not dropped, and the reason matters: arm E is the only arm that tests whether Pia's **half-held** "user
+messages are never compacted" invariant (§2 item 2) costs anything — and B5 has already pinned that the
+invariant really is half-held. That question survives the B4 gate whatever B4 says.
