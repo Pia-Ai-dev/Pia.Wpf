@@ -50,9 +50,14 @@ But 7 probe lines on one machine over three days, all on code-shaped tasks (`Pro
 
 **This runbook exists to get that sample to ~25–30 completed runs on an unbiased task mix.**
 
-The row to watch is the third one. `NOT FOUND` was 0/23. If it stays at or near zero across a bigger,
-honest sample, *that* is the finding: the planner channel is structurally incapable of producing a
-negative signal, which is the whole argument for A2 (probe the executor's `ArtifactRef` instead).
+The row to watch is the third one. `NOT FOUND` was 0/23 when this was written, and the inference drawn
+from that — *a channel that never says no is structurally incapable of saying it, so only A2 can supply
+a negative* — **has since been refuted twice over.** The 2026-08-23 pilot produced a non-zero
+`NOT FOUND` that was merely unreadable (§6), and the replay after the planner wording was tightened
+produced one that was **true**: a declared file that genuinely was not on disk. The channel can say no.
+Read a zero here as "this sample had no misses", not as a property of the instrument, and do not carry
+the old inference into an A2 decision — [`2026-08-23-a4-replay-reading.md`](2026-08-23-a4-replay-reading.md)
+§7 supersedes it.
 
 **Do the offline half first — it needs no desktop, no build and no new runs.**
 `scripts/Measure-ArtifactDeclarations.ps1` replays the persisted `AgentSteps.ExpectedArtifact` strings
@@ -194,10 +199,31 @@ Isolates the chat history, the todos and the assistant files this exercise creat
 provider credentials that make an agent run possible. DPAPI-encrypted tokens in `settings.json` decrypt
 fine because it is the same user on the same machine.
 
+**Copying `settings.json` is not enough**, twice over.
+
+`PIA_DATA_DIR` does **not** isolate the vault or the assistant files folder: the vault is
+`<AssistantFilesFolder>\Vault` (`Bootstrapper.cs:310` → `AssistantWorkspace.cs:37`) and that folder is a
+**settings value**, so an unedited copy points every file an agent run writes back at the real one.
+Three more keys have to be overridden, or the runs park and the profile is not throwaway.
+
+And the **providers live in `providers.json`, not in `settings.json`** — `settings.json` holds only the
+provider *id* the mode defaults to. Copy it alone and that id resolves to nothing: the app writes a
+fresh `providers.json` carrying the built-in Pia Cloud entry and quietly runs on that instead. If Pia
+Cloud is not signed in, every run then dies in the plan turn on a 401 and emits no probe line at all.
+That is a wasted session, and it is what produced the pilot's "one provider (Pia Cloud)" — a fallback,
+not a choice. Verified after the fact: the pilot's throwaway `providers.json` holds exactly one entry,
+the auto-created Pia Cloud, while the real profile it was seeded from holds five.
+
 ```powershell
 $p = "C:\temp\pia-a1"
-New-Item -ItemType Directory -Force "$p\roaming", "$p\local" | Out-Null
-Copy-Item "$env:APPDATA\Pia\settings.json" "$p\roaming\settings.json"
+foreach ($d in @("$p\roaming", "$p\local", "$p\files")) { New-Item -ItemType Directory -Force $d | Out-Null }
+Copy-Item "$env:APPDATA\Pia\providers.json" "$p\roaming\providers.json"   # NOT optional — see above
+$j = Get-Content "$env:APPDATA\Pia\settings.json" -Raw | ConvertFrom-Json
+$j.AssistantFilesFolder             = "$p\files"   # PIA_DATA_DIR does NOT cover this
+$j.DefaultWindowMode                = 1            # 1 = Assistant; 0 opens Optimize, which has no Assistant nav item
+$j.AssistantAgentModeDefault        = $true        # skips the Chat/Agent lever in §4.2 step 3
+$j.AgentRunAutoApproveBuiltInWrites = $true        # else every write parks and the run never drains (§2.4)
+$j | ConvertTo-Json -Depth 100 | Set-Content "$p\roaming\settings.json" -Encoding utf8NoBOM
 ```
 
 Then launch through WinWright, handing it that profile through `ww_launch`'s **`env`** parameter — the
@@ -277,12 +303,13 @@ Then per prompt, for each of the 24 in §5:
 4. Set `automationId=InputTextBox` via ValuePattern to the prompt text.
 5. `ww_invoke` on `automationId=Assistant_RunInBackground`.
 6. Wait for the run to settle before the next one. Poll the log rather than the UI — it is cheaper and
-   unambiguous:
+   unambiguous, but poll for **this run's id**, not for a line count:
 
 ```powershell
 $log = "C:\temp\pia-a1\local\Logs\pia-$(Get-Date -f yyyy-MM-dd).log"
-$want = 1   # increment per dispatched run
-while ((Select-String -Path $log -Pattern 'Artifact probe:' -SimpleMatch).Count -lt $want) {
+$id  = '<the run id this prompt started>'   # from the run panel, or the newest [run <guid>] in the log
+# -ErrorAction: the first poll of the session runs before the log file exists.
+while (-not (Select-String -Path $log -Pattern "\[run $id\].*Artifact probe:" -ErrorAction SilentlyContinue)) {
     Start-Sleep -Seconds 15
 }
 ```
@@ -290,6 +317,30 @@ while ((Select-String -Path $log -Pattern 'Artifact probe:' -SimpleMatch).Count 
 A run that fails or is cancelled never emits the line, so cap the wait (5 minutes is generous for these
 tasks) and move on rather than blocking the session — a skipped prompt costs one sample, a wedged
 session costs all of them.
+
+#### Three traps this loop used to walk into
+
+The 2026-08-23 pilot hit all three. They are collection defects, not analysis ones: get them wrong and
+no amount of care downstream recovers the sample.
+
+1. **`declared` accumulates across verify passes, and carries replan twins.** The verifier reads
+   `ctx.CompletedSteps`, which grows after each replan, so one run can emit `declared=3`, then `6`, then
+   `7`. Summing the lines triple-counts. Read the **last line per run id** — and then collapse by hand:
+   a replan re-declares the same artifact against a new step row with sharper wording, so the vague
+   original and its concretized twin both survive into the final facts block, the original in
+   `notFileShaped` and the twin in `fileShaped`. Any harvest that counts step rows inflates the
+   denominator.
+2. **Runs execute concurrently, so line order does not track prompt order.** Counting to the *N*th
+   `Artifact probe:` line mis-attributes: two pilot runs overlapped by 36 seconds. Attribute on the
+   `[run <id>]` prefix, which is why the poll above waits on an id.
+3. **A run can leave the population entirely, and which prompts do is provider-dependent.** Any run
+   that never reaches a plan emits **no probe line at all**, so every ratio the gate reads is
+   conditioned on the run having produced one. Two mechanisms have been observed, on two providers:
+   an answer-only prompt (§5 category F) completing through the SingleTurn fallback with
+   `offered=False`, and a research prompt (category B) whose plan turn **declined as ungroundable** and
+   parked for clarification. Neither is a failed collection — but do not assume a *category* is
+   invisible: on the 2026-08-23 replay, category F planned and wrote a file on both arms while category
+   B vanished on both. Check which prompts actually dropped out before quoting a denominator.
 
 Harvest before you walk away: the file sink rolls at 10 MB and keeps 7 files
 (`Bootstrapper.cs:360-361`), so a long stretch can retire the file holding your earliest probe lines.
@@ -615,8 +666,22 @@ Name the denominator before quoting a share. **File-shapedness** is per declarat
 |---|---|
 | **file-shapedness** is **high** (say ≥85%) on an unbiased mix | The gate closes. Write it down in the checklist and drop A2–A7. |
 | **file-shapedness** is around half, as the first read suggests | A2–A4 stand. Proceed. |
-| `NOT FOUND` stays at or near **zero** | The strongest result available here: the planner channel produces no negative signal at all, so probing the executor's `ArtifactRef` (A2) is where the only real evidence can come from. |
 | `NOT FOUND` turns out to be common | A2 matters *less* than assumed — the existing probe is already catching missing artifacts. Say so before building anything. |
+
+**A non-zero `NOT FOUND` is not automatically a real one.** An earlier revision of the table above
+carried a row reading "`NOT FOUND` at or near zero → the planner channel produces no negative signal at
+all". The 2026-08-23 pilot refuted it: the channel produced 4, and every one came from a declaration
+that named *alternatives* — `(e.g., A or B)` — where the step wrote one of the pair and the probe
+correctly reported the other absent. All four files existed and all four steps succeeded. `found` and
+`notFound` count **candidate paths**, so a two-name disjunction contributes one of each however well the
+step performed. Before reading a negative as a miss, check the Debug facts block for alternatives; the
+planner wording that produced them was tightened on 2026-08-23, so a fresh corpus should not show them.
+
+**The second cut, 2026-08-23.** The planner wording that produces `ExpectedArtifact` was tightened to
+forbid alternatives and to ask for file names — so `fileShaped / (fileShaped + notFileShaped)` is now
+partly a property of the *prompt*, not only of the planner's habits. A post-change reading is not
+comparable to a pre-change one, and the ≥85% threshold in the table above was calibrated on the old
+field. Say which side of this cut a number came from too.
 
 **The cut.** A reading taken before the tally shipped is not comparable to one taken after. The old line
 carried `declared` and `probed` only, and §1's 57/43 was hand-counted out of the Debug facts block; of the
