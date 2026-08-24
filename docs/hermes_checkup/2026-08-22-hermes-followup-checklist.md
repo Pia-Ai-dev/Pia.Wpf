@@ -32,7 +32,7 @@ Three steps can close work below them. Do not tick their dependants without revi
 |---|---|---|
 | ~~**A1**~~ | A2–A4, A6, A7 | Is `ExpectedArtifact` already file-shaped often enough that the probe is fine? **Answered 2026-08-23: no — 56%, gate does not close.** Everything it gated stays open. |
 | ~~**B4**~~ | B6–B10 | Does current compaction lose anything worth acting on? **Answered 2026-08-23: yes, totally.** Arm B scored **0.0%** against arm A's **98.3%** at an 8000/2000 window, on 4 of 4 transcripts - indistinguishable from having no transcript at all. The gate does **not** close; B6-B10 stay open. Reading: [2026-08-23-compaction-arm-ab-reading.md](2026-08-23-compaction-arm-ab-reading.md). **B6-B10 all closed 2026-08-24 and none of them promoted an arm** — see [2026-08-24-compaction-arms-cde-reading.md](2026-08-24-compaction-arms-cde-reading.md), whose §0.1 also narrows this row: compaction only ever runs on agent-run STEP turns, so half the corpus this gate was answered on models a path the product never compacts. |
-| **D-Q1** | D3–D8 | Is the goal onboarding (a canned tour, no LLM) or arbitrary "where do I…" questions? |
+| **D-Q1** | D3–D6, D8 | Is the goal onboarding (a canned tour, no LLM) or arbitrary "where do I…" questions? **Still unanswered, and its dependants are PARKED as of 2026-08-24** — [../guided_tour/2026-08-24-d-track-parked.md](../guided_tour/2026-08-24-d-track-parked.md). No longer blocks `D7`, which was severed from the track and stays open. |
 
 ---
 
@@ -587,32 +587,36 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
 
 - [x] **D1 · Visual-tree target collector + a debug command that dumps `targets`.**
   Verifiable with no LLM in the loop.
+  **Survives the 2026-08-24 parking of the rest of the track, deliberately.** `TourTargetWalker` +
+  `TourTargetCollector`, registered at `Bootstrapper.cs:437`, dumped by
+  `MainWindowViewModel.DumpTourTargetsAsync` on **Ctrl+Shift+F12**, with 363 lines of tests. Kept because it
+  is the instrument `D7` needs and costs one singleton to carry — not because the tour is imminent.
   *Deps:* none · *Effort:* **S** · *Value:* **Enabler**
 
-- [ ] **D2 · Spotlight adorner + popover, driven by a hardcoded AutomationId.**
-  First visible result. Pia has no `Adorner` usage today — this is new ground.
-  *Deps:* none · *Effort:* **M** · *Value:* **Enabler**
-
-- [ ] **D3 · `ITourToolHandler` with `targets` / `show` / `stop`, `isAvailable` gating, Esc handler.**
-  Interactive sessions only — a headless run must never hijack the screen.
-  *Deps:* D1, D2, **D-Q1** · *Effort:* **M** · *Value:* **High**
-
-- [ ] **D4 · `start` / `next` / `prev` with the paging chrome.**
-  *Deps:* D3 · *Effort:* **S** · *Value:* **Med**
-
-- [ ] **D5 · Cross-view navigation** — resolve → navigate → await load → re-resolve → fail cleanly.
-  **Where the real value is:** "where is X" is the question people actually ask.
-  *Deps:* D3 · *Effort:* **M** · *Value:* **High**
-
-- [ ] **D6 · Virtualized-list scroll-into-view; overlay / adorner-layer handling.**
-  *Deps:* D5 · *Effort:* **M** · *Value:* **Med**
+> **⏸ D2–D6 and D8 are PARKED by the owner, 2026-08-24.** Entry point for resuming, including what has
+> already shipped, what will have rotted, and the ~3–4 weeks plus a desktop session it costs:
+> [../guided_tour/2026-08-24-d-track-parked.md](../guided_tour/2026-08-24-d-track-parked.md). The design is unchanged and still executable —
+> [2026-08-22-guided-tour-tool-plan.md](2026-08-22-guided-tour-tool-plan.md).
+>
+> Parking is a scheduling call, not a verdict: nothing measured says the tour is a bad idea. The plan's own
+> risk table predicted it — *"the cheaper items in the review (blueprints, error surface, diagnostics) should
+> land first"* — and blueprints landed while the error surface and diagnostics did not.
+>
+> **`D1` stays in the product** (`TourTargetWalker`, `TourTargetCollector`, Ctrl+Shift+F12, 363 lines of
+> tests). It is the instrument `D7` needs — the walker collects elements that HAVE an `AutomationId`, so
+> what it omits is the gap list — and it costs one singleton to carry.
+>
+> **`D-Q1` is still the thing to answer first**, and it decides whether this is a tool or a control:
+> onboarding ⇒ a canned tour with no LLM and no `D3`; arbitrary "where do I…" questions ⇒ the generic tool as
+> planned. `D2` is not gated on it, but building `D2` first buys a demo rather than a feature.
 
 - [ ] **D7 · AutomationId gap-fill** for surfaces a tour needs but cannot address; feeds
   `docs/ui_automation/ui-automation-playbook.md`. Also improves UI-test coverage.
-  *Deps:* D1 · *Effort:* **S** · *Value:* **Med**
-
-- [ ] **D8 · Recorded UI script in `tests/ui-scripts/`** running a two-step tour end to end.
-  *Deps:* D4, D5 · *Effort:* **S** · *Value:* **Med**
+  **Deliberately NOT parked with the rest of the track (2026-08-24).** It is the one D row that never depended
+  on `D-Q1`, `D1` (its dependency) is done, and it pays into the playbook and `ViewAutomationIdTests`
+  whether or not a tour is ever built. Regenerate the gap list from Ctrl+Shift+F12 rather than inheriting any
+  count recorded earlier — AutomationId coverage moves with every new control.
+  *Deps:* D1 (satisfied) · *Effort:* **S** · *Value:* **Med**
 
 ---
 
@@ -768,7 +772,7 @@ C1 → C2 → C3                    # blueprint vertical slice — first user-vi
 B1 → B2 → B3 → B4               # gate: is compaction actually losing anything?
 C4 · A6 → A7 · B6 · B7 → B8     # widen, once the gates have answered
 E1 → E2 → E3 · E4 → E5 → E6     # per-routine pins; E8 rides with C4, E7 is the Windows run
-D1 → D2 → D3 → D5               # tour, after the cheaper items land
+D1 → D2 → D3 → D5               # tour — D1 landed, the rest PARKED 2026-08-24 (see the D section)
 ```
 
 `A1` and `B5` together are under two days and can both close a branch of work.
@@ -791,11 +795,18 @@ half the corpus models a message list the product never hands the compactor. §7
 [2026-08-24-compaction-arms-cde-reading.md](2026-08-24-compaction-arms-cde-reading.md) is the ordered fix list;
 **seven of its nine items cost no provider call.** Do that before spending on a second sweep.
 
-Everything else still open is behind a gate: `C6` behind plan §11 Q4, `A2 → A3 → A6 → A7` behind the supply
+Everything else still open is behind a gate: `C6` behind plan §11 Q4, and `A2 → A3 → A6 → A7` behind the supply
 re-read (§8 of [2026-08-23-a2-wide-read.md](2026-08-23-a2-wide-read.md) fixed the band in advance — build above
-40%, drop below 12%; the last read was 22% on 13 runs), and `D3`–`D8` behind `D-Q1`. **`D2` and `D7` are the
-two D rows that are not gated**, and `D7` (`S`/`Med`) is the cheaper of the two — `D2` is an `M` whose value is
-entirely contingent on how `D-Q1` lands.
+40%, drop below 12%; the last read was 22% on 13 runs).
+
+**The D-track was parked by the owner 2026-08-24** —
+[../guided_tour/2026-08-24-d-track-parked.md](../guided_tour/2026-08-24-d-track-parked.md). `D7` was severed
+from it and stays open, ungated, at `S`/`Med`.
+
+**So six rows are open, and only `D7` is buildable without an owner decision or a desktop-and-spend session.**
+That makes the honest next candidates the two `High`s in the *not yet planned* table below — the error layer on
+the failure card and consented Send Diagnostics, which are one feature area — rather than anything still
+lettered.
 
 **`BlueprintKey` stays data-only** (owner, 2026-08-24): no UI reads it, the question it answers needs months
 of real use, and it is answerable by SQL against `history.db` in the meantime.
