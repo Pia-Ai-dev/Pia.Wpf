@@ -203,6 +203,43 @@ public class ScheduledJobBlueprintToolTests
         Assert.Empty(jobs.Created);
     }
 
+    /// <summary>A model saying "no value" with a JSON null must not write the word <c>null</c> into a prompt
+    /// that then fires every morning.</summary>
+    [Fact]
+    public async Task CreateFromBlueprint_TreatsAJsonNullSlotValueAsUnsupplied()
+    {
+        var jobs = new RecordingJobService();
+
+        var (_, pending) = await CallAsync(jobs, "create_routine_from_blueprint", new Dictionary<string, object?>
+        {
+            ["blueprintKey"] = RoutineBlueprintCatalog.TopicDigest,
+            ["slots"] = """{"topic":null}"""
+        });
+
+        await CreateHandler(jobs).ExecutePendingActionAsync(pending!);
+
+        var query = Assert.Single(jobs.Created).Query;
+        Assert.Contains("artificial intelligence", query);
+        Assert.DoesNotContain("topic of null", query);
+    }
+
+    /// <summary>The unknown-name refusal is about the NAME, so a null value must not smuggle a typo past it.</summary>
+    [Fact]
+    public async Task CreateFromBlueprint_RefusesAnUnknownSlotNameEvenWhenItsValueIsNull()
+    {
+        var jobs = new RecordingJobService();
+
+        var (result, pending) = await CallAsync(jobs, "create_routine_from_blueprint", new Dictionary<string, object?>
+        {
+            ["blueprintKey"] = RoutineBlueprintCatalog.TopicDigest,
+            ["slots"] = """{"subject":null}"""
+        });
+
+        Assert.Null(pending);
+        Assert.Contains("subject", Assert.IsType<string>(result));
+        Assert.Empty(jobs.Created);
+    }
+
     [Theory]
     [InlineData("not json at all")]
     [InlineData("[\"topic\"]")]

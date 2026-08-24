@@ -447,16 +447,22 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     {
         if (RoutineBlueprintCatalog.Find(key) is not { } blueprint) return;
 
+        // A card that cannot render is refused rather than opened on the raw template: falling back would put
+        // a literal {slot} in the goal box and let the user schedule it. The tool path refuses the same case.
         var fill = RoutineBlueprintFill.ToCreateArgs(blueprint);
-        if (!fill.IsSuccess)
+        if (fill.Query is not { } rendered)
+        {
             _logger.LogWarning("Blueprint {Key} did not render: {Kind} on slot {Slot}",
                 blueprint.Key, fill.Error!.Kind, fill.Error.SlotName);
+            StatusMessage = _localization["Settings_ScheduledJobs_LoadFailed"];
+            return;
+        }
 
         var now = DateTime.Now;
         EditingJobId = null;
         _editBlueprintKey = blueprint.Key;
         EditName = _localization[blueprint.TitleKey];
-        EditQuery = fill.Query ?? blueprint.QueryTemplate;
+        EditQuery = rendered;
         EditKind = blueprint.Kind;
         EditRecurrence = blueprint.Recurrence;
         EditTimeOfDay = blueprint.DefaultTime.ToString("HH\\:mm");

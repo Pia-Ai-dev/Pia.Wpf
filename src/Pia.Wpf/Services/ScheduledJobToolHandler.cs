@@ -179,15 +179,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
             _logger.SensitiveDebug("create_scheduled_research refused grants: {Tools}", string.Join(", ", rejectedTools));
         }
 
-        // The grant set that will ACTUALLY be in force at fire time. An AgentTask job with no explicit
-        // grant silently receives the launcher's default, so render that default instead of omitting the
-        // line — the user must be able to see on the approval card what the job may write. A Research job
-        // with no grants genuinely is read-only, so it keeps no line at all.
-        var effectiveGrants = grantedTools.Count > 0
-            ? grantedTools
-            : kind == ScheduledJobKind.AgentTask
-                ? HeadlessRunRequest.DefaultGrantedWrites.ToList()
-                : [];
+        var effectiveGrants = EffectiveGrants(grantedTools, kind);
 
         var providerId = await ResolveProviderIdAsync(providerName);
 
@@ -281,13 +273,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
             ? dow
             : blueprint.DefaultDayOfWeek;
 
-        // Same rule as the freehand create path: an AgentTask with no grants silently receives the launcher's
-        // write_file default, so the card renders that default rather than claiming the job writes nothing.
-        var effectiveGrants = blueprint.GrantedTools.Count > 0
-            ? blueprint.GrantedTools
-            : blueprint.Kind == ScheduledJobKind.AgentTask
-                ? HeadlessRunRequest.DefaultGrantedWrites.ToList()
-                : [];
+        var effectiveGrants = EffectiveGrants(blueprint.GrantedTools, blueprint.Kind);
 
         var detailSb = new StringBuilder();
         detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_Name"]}: {name}");
@@ -318,6 +304,19 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         return (null, pending);
     }
 
+    /// <summary>
+    /// The grant set that will ACTUALLY be in force at fire time. An AgentTask job with no explicit grant
+    /// silently receives the launcher's default, so the approval card renders that default instead of
+    /// omitting the line — the user must be able to see what the job may write. A Research job with no
+    /// grants genuinely is read-only, so it keeps no line at all.
+    /// </summary>
+    private static IReadOnlyList<string> EffectiveGrants(IReadOnlyList<string> granted, ScheduledJobKind kind) =>
+        granted.Count > 0
+            ? granted
+            : kind == ScheduledJobKind.AgentTask
+                ? HeadlessRunRequest.DefaultGrantedWrites.ToList()
+                : [];
+
     /// <summary>A JSON object of slot name to value. Not a comma-separated list: a slot value is free text that
     /// routinely contains commas, which is exactly what "which companies" produces.</summary>
     private static (Dictionary<string, string>? Values, string? Error) ParseSlotValues(string? raw)
@@ -332,9 +331,15 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
 
             var values = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var property in doc.RootElement.EnumerateObject())
-                values[property.Name] = property.Value.ValueKind == JsonValueKind.String
-                    ? property.Value.GetString() ?? string.Empty
-                    : property.Value.GetRawText();
+                // A JSON null is how a model says "no value", and GetRawText would turn it into the literal
+                // "null" — which is not blank, so it would beat the blueprint's default and reach the prompt.
+                // The KEY is still recorded, so a null against a misspelled slot name is still refused.
+                values[property.Name] = property.Value.ValueKind switch
+                {
+                    JsonValueKind.Null or JsonValueKind.Undefined => string.Empty,
+                    JsonValueKind.String => property.Value.GetString() ?? string.Empty,
+                    _ => property.Value.GetRawText(),
+                };
 
             return (values, null);
         }

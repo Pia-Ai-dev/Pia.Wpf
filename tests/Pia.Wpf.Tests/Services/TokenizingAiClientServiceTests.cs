@@ -19,6 +19,9 @@ public class TokenizingAiClientServiceTests
     [InlineData("forget")]
     [InlineData("create_reminder")]
     [InlineData("delete_todo")]
+    // Its slot values become a prompt that outlives the token map, so the card and the stored job would
+    // otherwise disagree about what the routine actually says.
+    [InlineData("create_routine_from_blueprint")]
     public void IsWriteOperation_WriteVerbs_ReturnTrue(string toolName)
     {
         Assert.True(TokenizingAiClientService.IsWriteOperation(toolName));

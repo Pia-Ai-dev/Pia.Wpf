@@ -1,7 +1,7 @@
 # Report — C5 + C7: the slot engine and the catalog on the assistant's side
 
 **Status:** landed. `dotnet build -t:Rebuild` 0 Warning(s) in both configurations, `dotnet test` no filter
-`failed: 0` (4714 total, 4655 succeeded, 1 skipped, 58 not run).
+`failed: 0` (4717 total, 1 skipped, 58 not run).
 **Owner:** unassigned.
 **Written:** 2026-08-24.
 **Origin:** [`2026-08-23-c5-c7-batch-brief.md`](2026-08-23-c5-c7-batch-brief.md) §0, executed against
@@ -140,7 +140,11 @@ the seam `Time` and `Enum` land on, and adding them is code-only — `RoutineSlo
   so the user is never shown a card offering to create the wrong routine.
 - The card shows the **rendered** query (`CreateFromBlueprint_ShowsTheRenderedQueryOnTheCard`), plus which
   blueprint it came from and the effort it will run at — two new `Tool_ScheduledResearch_Detail_*` keys in
-  three locales. `ActionCardBuilder` gained the create verb for the new name.
+  three locales. `ActionCardBuilder` gained the create verb for the new name. This is a control rather than a
+  nicety: a slot value is model-authored free text that lands verbatim in a prompt some later run executes
+  unattended, so the rendered query is the only place a person can see what was actually written. Its blast
+  radius is bounded by the blueprint's grants, which the model cannot touch — but bounded is not zero, and
+  the card is what makes it reviewable.
 
 ### Two things the brief did not name
 
@@ -152,6 +156,50 @@ the seam `Time` and `Enum` land on, and adding them is code-only — `RoutineSlo
 - **The `@`-command mapping.** `AssistantPromptComposer` loads *only* the tools a tagged domain lists, so a
   user who tags `@research` would have seen the freehand create and not the catalog. Both names added to the
   `Research` row.
+
+---
+
+## 3b. What the review pass found, and what it changed
+
+Five dimensions, findings verified against the code before anything was acted on. Three survived, one of
+them serious.
+
+**PII tokenization did not reach the new tool — the user would have approved one prompt and a different one
+would have been stored.** `TokenizingAiClientService.WriteOperations` gates argument *de*tokenization, and
+`create_scheduled_research` is on it while `create_routine_from_blueprint` was not. With tokenization on, a
+user asking to watch *Acme and Contoso* gives the model `[ORG_1], [ORG_2]`; the card's `Details` are
+detokenized by `ActionCardBuilder` and read correctly, but the query captured in the `Execute` closure is
+built from the raw arguments — so the approval card and the persisted job disagree, and the token map dies
+with the session, leaving a weekly job that fires unresolvable text forever. The `name` override had the same
+shape. Fixed by adding the tool to the list, with an `[InlineData]` row on the existing allow-list theory.
+`list_routine_blueprints` is correctly absent: it takes no arguments.
+
+**A JSON `null` slot value became the literal string `null`.** `ParseSlotValues` fell through to
+`GetRawText()` for every non-string kind, and `"null"` is not whitespace, so it beat the blueprint's default
+and produced *"Search the web for what is new on the topic of null in the past day."* Models routinely send
+`null` for an omitted optional field, so this was reachable on the first real call. `JsonValueKind.Null` and
+`Undefined` now map to the empty string rather than being dropped — dropping the **key** would have let a
+null value smuggle a misspelled slot name past rule 1, and there is now a test for each half.
+
+**The card path fell back to the unrendered template on a fill failure.** `StartFromBlueprint` did
+`fill.Query ?? blueprint.QueryTemplate`, so a `MissingRequiredSlot` or `UnknownPlaceholder` would have put a
+literal `{companies}` in the goal box and let the user schedule it — while the tool path refuses the same
+case. It now refuses too: the editor stays closed and the status line says so. **Untested on purpose:** the
+branch is unreachable with the shipped catalog, because `EveryBlueprintRendersCleanlyFromItsOwnDefaults`
+makes an unrenderable blueprint a gate failure, and reaching it from a test would mean making the static
+catalog injectable — a larger change than the branch is worth.
+
+Also confirmed clean by the same pass and worth recording so it is not re-derived: the `BlueprintKey`
+migration and its deliberate absence from the sync `UPDATE` SET list; the ordinal read in `MapJob`; the
+localization parity of all six new keys; and that `ToolClassifier`, `ActionCardBuilder` and
+`ToolPermissionService` all pick the new tool up.
+
+**One gate failure was a false alarm, and it cost time worth recording.** `PersonaPromptCompositionTests
+.DefaultOutputFormat_MatchesPiaBuiltInsOutputFormat` compares two raw string literals byte for byte across
+`Pia.Wpf` and `Pia.Shared`, so it is line-ending sensitive — the trap CLAUDE.md's neighbours already warn
+about. It failed once after an **incremental** build and passed on a clean `-t:Rebuild` with no source
+change. Two diagnostics lied on the way: `cat -A` and `sed` in this Git Bash both strip `\r` on output, so
+they will report a CRLF file as LF. Use `od -c`, or `grep -c $'\r'` against `wc -l`.
 
 ---
 
@@ -173,9 +221,9 @@ the seam `Time` and `Enum` land on, and adding them is code-only — `RoutineSlo
 ## 5. Gates
 
 ```
-dotnet build -t:Rebuild -v:n            0 Warning(s), 0 Error(s)
+dotnet build -t:Rebuild                 0 Warning(s), 0 Error(s)
 dotnet build -t:Rebuild -c Release      0 Warning(s), 0 Error(s)
-dotnet test   (no filter)               total 4714 · failed 0 · succeeded 4655 · skipped 1 · not run 58
+dotnet test   (no filter)               total 4717 · failed 0 · skipped 1 · not run 58
 ```
 
 The one `Skipped` is the pre-existing speaker-embedding row; the 58 `Not Run` are the `[LiveApiFact]`

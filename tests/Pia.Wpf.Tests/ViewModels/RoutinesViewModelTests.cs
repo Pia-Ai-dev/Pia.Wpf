@@ -732,7 +732,7 @@ public class RoutinesViewModelTests
 
     /// <summary>The key must not survive a card click that the user then abandons for a blank start.</summary>
     [Fact]
-    public async Task AblankStartAfterACardClick_RecordsNoBlueprintKey()
+    public async Task ABlankStartAfterACardClick_RecordsNoBlueprintKey()
     {
         var sut = CreateSut();
         sut.Jobs.CreateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(),

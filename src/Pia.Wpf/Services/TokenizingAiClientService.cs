@@ -15,7 +15,10 @@ public class TokenizingAiClientService : IAiClientService
         "remember", "forget",
         "create_reminder", "update_reminder", "delete_reminder",
         "create_todo", "update_todo", "complete_todo", "delete_todo",
-        "create_scheduled_research", "update_scheduled_research", "delete_scheduled_research"
+        "create_scheduled_research", "update_scheduled_research", "delete_scheduled_research",
+        // Its slot values and name become a PERSISTED prompt. Left off this list the card would show
+        // detokenized text while the job stored the tokens, and the map dies with the session.
+        "create_routine_from_blueprint"
     ];
 
     private readonly IAiClientService _inner;
