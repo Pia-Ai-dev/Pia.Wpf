@@ -1,6 +1,8 @@
 # Export Diagnostics — manual UI test plan (WinWright)
 
-**Status:** ready to execute. Not yet run. **Owner:** Marco Altmann. **Written:** 2026-08-24.
+**Status:** EXECUTED 2026-08-24 — see the reading,
+[2026-08-24-export-diagnostics-ui-test-reading.md](2026-08-24-export-diagnostics-ui-test-reading.md), which also lists
+the five places this plan turned out to be wrong. **Owner:** Marco Altmann. **Written:** 2026-08-24.
 **Origin:** the "human smoke test pending" line on `G1` in
 [`../hermes_checkup/2026-08-22-hermes-followup-checklist.md`](../hermes_checkup/2026-08-22-hermes-followup-checklist.md),
 and §9 of [`2026-08-24-export-diagnostics.md`](2026-08-24-export-diagnostics.md). The feature shipped in

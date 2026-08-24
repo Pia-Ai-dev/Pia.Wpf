@@ -118,6 +118,15 @@ public static class LogRedactor
     private static readonly Regex MachineSuffixPattern =
         new(@"<machine>(\.[A-Za-z0-9\-]+)+", RegexOptions.Compiled);
 
+    // Every token any rule emits. A key-driven rule must not run inside one: a provider actually named
+    // "local" turned <profile-local> into <profile-<provider-3>>, which also killed R12's tokenised-path
+    // pass. Deliberately a closed list rather than <[^<>]*>, so ordinary prose like List<string> stays
+    // redactable.
+    private static readonly Regex EmittedToken = new(
+        @"<(?:response-body|process|window-class|window-title|profile-(?:roaming|local|user)|machine|user"
+        + @"|email|token|path|unc|provider-\d+|url:[^<>\r\n]*)>|host-\d{3}",
+        RegexOptions.Compiled);
+
     /// <summary>
     /// Streams <paramref name="source"/> into <paramref name="destination"/>, applying every rule. Neither
     /// stream is disposed — the caller owns the zip entry.
@@ -264,12 +273,14 @@ public static class LogRedactor
                 return RestoreFailurePattern.Replace(text, "$1<window-title>$2<process>$3");
             }),
             (ProfileRoots, text => ReplaceAll(rootPatterns, text)),
+            // The suffix pass is deliberately NOT guarded: it anchors on the <machine> token the key
+            // replacement just emitted, so skipping tokens would leave the DNS suffix standing.
             (MachineName, text => MachineSuffixPattern.Replace(
-                ReplaceKey(keys.MachineName, "<machine>", text), "<machine>")),
-            (UserName, text => ReplaceKey(keys.UserName, "<user>", text)),
+                OutsideEmittedTokens(text, t => ReplaceKey(keys.MachineName, "<machine>", t)), "<machine>")),
+            (UserName, text => OutsideEmittedTokens(text, t => ReplaceKey(keys.UserName, "<user>", t))),
             (Url, text => UrlPattern.Replace(text, CollapseUrl)),
-            (HostLiterals, text => ReplaceAll(hostPatterns, text)),
-            (ProviderNames, text => ReplaceAll(providerPatterns, text)),
+            (HostLiterals, text => OutsideEmittedTokens(text, t => ReplaceAll(hostPatterns, t))),
+            (ProviderNames, text => OutsideEmittedTokens(text, t => ReplaceAll(providerPatterns, t))),
             (Email, text => EmailPattern.Replace(text, "<email>")),
             (Credentials, text =>
             {
@@ -311,6 +322,25 @@ public static class LogRedactor
     // A port is diagnostically load-bearing and is not user data, so the boundary stops before it.
     private static Regex HostLiteral(string host) =>
         new(@"(?<![\w.\-])" + Regex.Escape(host) + @"(?![\w.\-])", RegexOptions.IgnoreCase);
+
+    // Boundaries are preserved across the split because every token starts and ends with a character no
+    // key pattern treats as word-interior.
+    private static string OutsideEmittedTokens(string text, Func<string, string> replace)
+    {
+        var tokens = EmittedToken.Matches(text);
+        if (tokens.Count == 0)
+            return replace(text);
+
+        var builder = new StringBuilder(text.Length);
+        var cursor = 0;
+        foreach (Match token in tokens)
+        {
+            builder.Append(replace(text[cursor..token.Index])).Append(token.Value);
+            cursor = token.Index + token.Length;
+        }
+
+        return builder.Append(replace(text[cursor..])).ToString();
+    }
 
     private static string ReplaceAll(List<(Regex Pattern, string Token)> patterns, string text)
     {

@@ -94,6 +94,14 @@ Hit counts are **measured over the real 39-file corpus** (247,884 lines) with th
 - **R12 last.** It is the catch-all sweep, and it runs on what the keyed rules left behind — including the
   `<profile-*>` chains they produced, so `<profile-user>\Documents\Some Client\x.md` becomes
   `<profile-user>\<path>\x.md`.
+- **A rule keyed on user text must not run inside a token an earlier rule emitted.** The order reasoning
+  above is about keys containing each other; this is the same hazard one level up, and the UI run found it
+  in the app: a provider actually named `local` turned `<profile-local>` into `<profile-<provider-3>>`,
+  because `-` and `>` are not alphanumeric and so clear R09’s word boundary. R12 then stopped firing on
+  every local-root path, since it anchors on `<profile-(roaming|local|user)>`. R05, R06, R08 and R09 now run
+  **outside** the emitted tokens; R05’s DNS-suffix pass and R12’s tokenised-path pass deliberately do not,
+  because both read the previous rule’s output. What is still true: a common-word provider or host name
+  costs you that word in ordinary prose (`Local=` → `<provider-3>=`), which no guard can fix.
 
 ### Measured residual
 
@@ -154,9 +162,13 @@ user-chosen text on `CLAUDE.md`'s list. Machine name is excluded outright: it is
 
 The three generated entries are **not** run through the redactor, so the only thing keeping a path out of them
 is their shape. `NoGeneratedEntryCarriesAPathTheRulesWouldHaveRemoved` enforces that: none of the three may
-contain a directory separator at all. The corollary, and it is a rule for anyone extending this: **a value
-that cannot be produced safely is absent, not explained.** `DiagnosticsExclusionReason` is a closed enum
-precisely so an exception message can never become a manifest field.
+contain a **backslash** — `Path.DirectorySeparatorChar`, which is what that assertion actually reads. Forward
+slashes are not forbidden and do occur in prose (`logs/`, `DBUG/TRCE`), so a `\\|/` check over a real archive
+reports two false alarms; the UI run confirmed **zero** backslashes. The corollary, and it is a rule for
+anyone extending this: **a value that cannot be produced safely is absent, not explained.**
+`DiagnosticsExclusionReason` is a closed enum precisely so an exception message can never become a manifest
+field — and it is serialized **by name**, because the UI run shipped an archive whose manifest read
+`"ExclusionReason": 0` and no reader could tell that from a default.
 
 ## 5. Caps
 
@@ -165,6 +177,11 @@ than constants so the cap test constructs a 900-byte cap over four tiny files in
 
 Both numbers mirror the sink's own budget: 7 is `MaxRollingFiles` and its *"Keep 7 days"* intent, 10 MB is
 `FileSizeLimitBytes`. On the measured profile the byte cap binds first and 5–7 files land, ~1 MB compressed.
+
+Only the newest 7 files are ever reachable, so **the byte cap binds only when those seven are big** — on a
+seed of 20 ordinary files it never fires. Once the walk has stopped, **exactly one file carries
+`OverTotalByteCap`** (the one that breached) and everything older is labelled `OverFileCountCap`, whichever
+cap actually ended the run.
 
 Selection is a **contiguous newest-first run**: walk newest to oldest and stop at the first file that would
 breach, rather than skipping it and hunting for a smaller older one. *"You have 08-19 through 08-24"* is
@@ -278,6 +295,9 @@ name with no parseable date (including the sink's own `pia.log` base name) is li
   stop the logging", so it is written down instead of done.
 
 ## 9. Gate
+
+Run through the app on 2026-08-24 — six exports over two arms, four questions answered, four defects found
+and fixed: [2026-08-24-export-diagnostics-ui-test-reading.md](2026-08-24-export-diagnostics-ui-test-reading.md).
 
 Debug and Release both **rebuild to `0 Warning(s)` / `0 Error(s)`** (`-t:Rebuild`, and
 `TreatWarningsAsErrors` is on). `dotnet test` with no filter, run once on its own for the official number:

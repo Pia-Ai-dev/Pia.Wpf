@@ -416,4 +416,10 @@
   <data name="Msg_Settings_DiagnosticsFailed" xml:space="preserve">
     <value>Der Diagnose-Export konnte nicht geschrieben werden.</value>
   </data>
+  <data name="Msg_Settings_DiagnosticsFailed_NameTaken" xml:space="preserve">
+    <value>Ein Archiv aus dieser Sekunde existiert bereits. Bitte gleich noch einmal versuchen.</value>
+  </data>
+  <data name="Msg_Settings_DiagnosticsFailed_NoDestination" xml:space="preserve">
+    <value>Der Diagnose-Ordner konnte nicht erstellt werden.</value>
+  </data>
 </root>

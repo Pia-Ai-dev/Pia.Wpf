@@ -511,10 +511,7 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
 
             if (!result.Succeeded || result.OutputZipPath is null)
             {
-                _snackbarService.Show(
-                    _localizationService["Msg_Error"],
-                    _localizationService["Msg_Settings_DiagnosticsFailed"],
-                    Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(5));
+                ShowExportFailure(result.Failure);
                 return;
             }
 
@@ -529,11 +526,36 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Diagnostics export failed");
-            _snackbarService.Show(
-                _localizationService["Msg_Error"],
-                _localizationService["Msg_Settings_DiagnosticsFailed"],
-                Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(5));
+            ShowExportFailure(null);
         }
+    }
+
+    // The failure enum exists so the caller can branch; showing one string for all six causes made "the
+    // name is taken, try again in a second" indistinguishable from "the disk refused the write".
+    private void ShowExportFailure(DiagnosticsExportFailure? failure)
+    {
+        if (failure is DiagnosticsExportFailure.SourceDirectoryMissing
+            or DiagnosticsExportFailure.NoLogFiles)
+        {
+            _snackbarService.Show(
+                _localizationService["Msg_Settings_DiagnosticsNoLogs"],
+                _localizationService["Msg_Settings_DiagnosticsNoLogs_Body"],
+                Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+            return;
+        }
+
+        // OutputInsideSourceDirectory is an invariant PiaPaths holds and no user can reach; WriteFailed has
+        // nothing actionable to add.
+        var body = failure switch
+        {
+            DiagnosticsExportFailure.OutputAlreadyExists => "Msg_Settings_DiagnosticsFailed_NameTaken",
+            DiagnosticsExportFailure.OutputDirectoryMissing => "Msg_Settings_DiagnosticsFailed_NoDestination",
+            _ => "Msg_Settings_DiagnosticsFailed",
+        };
+
+        _snackbarService.Show(
+            _localizationService["Msg_Error"], _localizationService[body],
+            Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(5));
     }
 
     // Reset app data

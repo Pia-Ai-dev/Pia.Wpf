@@ -40,7 +40,7 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Template dialog | `TemplateEdit_Name`, `TemplateEdit_StyleDescription`, `TemplateEdit_GeneratedPrompt` |
 | Provider dialog | `ProviderEdit_Name`, `ProviderEdit_ProviderType`, `ProviderEdit_Endpoint` |
 | Meeting attendee overlay | `MeetingAttendee_Url`, `_DisplayName`, `_Consent`, `_Join`, `_Stop`, `_Save`, `_SpeakerDisclaimer`, `_Close`, `_OpenSettings`, `_SaveToVault`, `_Summarize`, per-bubble `_RenameSpeaker_<speakerLabel>` (shared across every bubble from the same speaker — renaming applies to the label, not one utterance). Open the overlay with the composer button named "Join a meeting and transcribe". Bubble labels carry no id — read them as `Text` elements, which is what `Invoke-MeetingReplay.ps1` does to check the numbering. |
-| Edit dialogs (shared) | `PrimaryButton` (Save), `CloseButton` (Cancel), `Dialog_RequiredHint` |
+| Edit dialogs (shared) | `PrimaryButton` (Save), `CloseButton` (Cancel), `Dialog_RequiredHint`. **Wpf.Ui’s own `SimpleContentDialog`, the one `ShowConfirmationDialogAsync` raises, carries the same two ids** — verified on the export-diagnostics confirmation, where they are named `Yes`/`No`. |
 | Chat history import/export | `AssistantHistory_Import`, `AssistantHistory_ExportAll`, `AssistantHistory_LoadMore` (header/list), `AssistantHistory_ExportArchive` (inspector, needs a selected chat), `AssistantHistory_ImportStatus` / `AssistantHistory_ImportProgress` (status bar, present only while an import runs) |
 | Assistant chat history row / group card | Per-chat **open** and delete buttons, both on `PiaAssistantChatRowContent` and both revealed by hovering the row (keyed on `AssistantChatRowViewModel.Id`, i.e. `Chat.Id`): `AssistantChat_Open_<id>`, `AssistantChat_Delete_<id>`. The row CONTAINER carries `AssistantChat_Row_<id>` and reports the chat title as its UIA name. `AssistantChat_Open_<id>` resumes the named chat in one invoke - selecting the row does not open it, that needs the inspector's Resume button. Group header expand/collapse, per-bucket: `AssistantHistory_GroupToggle_<bucket>`, keyed on `AssistantChatGroupViewModel.Bucket` (its nullable `GroupKey` string was skipped in favor of this non-null enum, same identity the group is actually built from). |
 | Page-header help hints | `Routines_Help`, `Assignments_Help`, `History_Help`, `AssistantHistory_Help`, `Memory_Help`, `Todo_Help`, `Reminders_Help` |
@@ -153,6 +153,10 @@ correctly.
   LegacyIAccessible and returns an empty string.
 - `ww_inspect label_map` is the best first move inside a dialog: every field with its label and
   current value in one call.
+- **A `ContentDialog` surfaces as a nested `Window` peer named by its title**, so
+  `ww_dump_tree(selector="type=Window")` reads the whole thing — title, body and both buttons — in
+  one call, and `ww_count("type=Window")` is a reliable is-it-up check: it resolves **0** when no
+  dialog is open, because the selector is scoped to the main window and does not match it.
 - If a save/submit ever appears to do nothing, call `ww_dialog(action=handle)` **before**
   concluding anything — native `MessageBox` dialogs are invisible to window-scoped screenshots
   and `ww_list_windows`. Better: `ww_dialog(action=expect)` *before* the click to pre-register
@@ -191,6 +195,18 @@ Committed recordings, the settings fixture they start from and the replay harnes
 - **`ui:InfoBar` exposes no automation peer at all** in this Wpf.Ui version — it renders, but
   neither its `AutomationId` nor its message reaches UIA. Don't put anything an assertion needs
   inside one.
+- **There is no snackbar to read — `RootSnackbarPresenter` is never driven.** `ISnackbarService` is
+  bound to `FlowSnackbarService`, so every `Show(…)` becomes a Flow item instead. What that means for
+  a script: a **Danger/Warning** notice is `FlowLifetime.Persistent` and is fully readable at leisure
+  (`#TitleText` / `#BodyText` inside the rail’s `DataItem`, plus `Flow_Dismiss_<id>`), while a
+  **Success/Info** notice is `FlowLifetime.Transient` — a peek that expires before one MCP round trip
+  can read it. Four attempts on a confirmed-successful action caught nothing. Assert the side effect,
+  never the success notice.
+- **The Flow rail’s collapsed handle cannot be invoked.** It is a `Border` with a `MouseBinding`, so
+  it has no `AutomationId` and no InvokePattern — `ww_click` with `useInvokePattern=false` on the bell
+  glyph inside it is the way in, and the window must be foreground. While collapsed the rail does
+  expose an unread **count badge** as a plain `Text`, which makes a cheap “something was published”
+  probe without opening anything.
 - **`PluginsView.xaml` and the E2EE onboarding screen hosted inside Account still have no ids.**
   The General, Assistant, Providers, Account and Optimize *settings* views are id-addressable
   throughout, inner tab headers included, and `tests/Pia.Wpf.Tests/Views/ViewAutomationIdTests.cs`

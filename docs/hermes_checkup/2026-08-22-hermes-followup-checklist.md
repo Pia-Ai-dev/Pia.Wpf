@@ -875,10 +875,31 @@ owner on 2026-08-24. Plan and reading:
   test at all; the pre-check is gone and `CreateNew` is now the single mechanism.
   Gate **4907 / failed: 0 / 4848 succeeded / 59 skipped** (from 4841 at `da95cc8b`, +66 tests); Debug and
   Release both `-t:Rebuild` to **0 Warning(s)**.
-  **Human smoke test pending — nothing was exercised in the app.** The plan for it is written and executable
-  cold: [../failure_legibility/2026-08-24-export-diagnostics-ui-test-plan.md](../failure_legibility/2026-08-24-export-diagnostics-ui-test-plan.md).
-  It names the four questions only the running app can answer, and its load-bearing half is the artefact
-  inspection rather than the walkthrough.
+  **Human smoke test RUN, 2026-08-24 — all four questions pass, and it found four defects, all now fixed.**
+  Reading: [../failure_legibility/2026-08-24-export-diagnostics-ui-test-reading.md](../failure_legibility/2026-08-24-export-diagnostics-ui-test-reading.md);
+  the plan it executed is [../failure_legibility/2026-08-24-export-diagnostics-ui-test-plan.md](../failure_legibility/2026-08-24-export-diagnostics-ui-test-plan.md).
+  Six exports through the real UI over two arms — a throwaway profile seeded with 20 real log files, then the
+  real profile (that artefact deleted immediately; `%LOCALAPPDATA%\Pia\Diagnostics` is gone). Button, dialog,
+  Cancel-writes-nothing, the export against a **sink-held** log whose `File.OpenRead` was proved to throw
+  first, and reveal-with-the-zip-selected all pass; the **residual scan came back 0 every time**, over the log
+  entries *and* the three generated ones, for the account name, machine name, `C:\Users`, `AppData`, an email
+  shape and all five configured provider names. All three exclusion reasons and the `CreateNew` collision
+  guard were reached at runtime — the latter by planting 91 decoy archives rather than racing the clock: no
+  archive written, all 91 decoys byte-identical afterwards.
+  **The four defects, all legibility rather than privacy, all fixed in the same commit as the reading:**
+  (a) `manifest.json` emitted `"ExclusionReason": 0` — an ordinal, unreadable from inside the archive and
+  indistinguishable from the `null` on the included rows; now a `JsonStringEnumConverter`, verified in the
+  running app. (b) The `OutputAlreadyExists` arm was the only failure arm that did not log, so a refused
+  export left **nothing** in the log a support engineer would then ask for. (c) The six
+  `DiagnosticsExportFailure` causes all collapsed into one message; the two a user can act on now say so
+  (two new keys × 3 resx). (d) **Only the live run could have found this one:** a provider named `local`
+  rewrote the inside of the token R04 had just emitted — `<profile-local>` came out as
+  `<profile-<provider-3>>`, count **0** in a real archive, which also silently stopped R12’s tokenised-path
+  pass. Key-driven rules now run outside the tokens earlier rules emit; the machine-suffix and
+  tokenised-path passes stay unguarded because they read those tokens on purpose.
+  Two playbook answers landed in the same commit: the Wpf.Ui `SimpleContentDialog` **does** carry
+  `PrimaryButton`/`CloseButton`, and there is no snackbar to read at all — `ISnackbarService` is Flow, whose
+  success notice is transient and unassertable while its failure notice is persistent and fully readable.
   *Deps:* none · *Effort:* **S** · *Value:* **High** (the app can hand over its own logs safely for the first time)
 
 ---

@@ -267,6 +267,23 @@ public sealed class DiagnosticsExportServiceTests : IDisposable
         Assert.Equal(new DateOnly(2026, 8, 23), plan.NewestIncluded);
     }
 
+    /// <summary>An ordinal is not a reason: a real export shipped "ExclusionReason": 0 next to a null one.</summary>
+    [Fact]
+    public async Task TheManifestNamesTheExclusionReason_RatherThanItsOrdinal()
+    {
+        Log("2026-08-20", "a");
+        Log("2026-08-21", "b");
+        Log("2026-08-22", "c");
+        File.WriteAllText(Path.Combine(_source, "pia.log"), "x");
+
+        await ExportAsync(new DiagnosticsExportCaps(MaxLogFiles: 1));
+
+        var manifest = ReadEntry(ZipPath, "manifest.json");
+        Assert.Contains("\"OverFileCountCap\"", manifest, StringComparison.Ordinal);
+        Assert.Contains("\"UnrecognisedName\"", manifest, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"ExclusionReason\": 0", manifest, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void TheFileCountCapKeepsTheNewest()
     {

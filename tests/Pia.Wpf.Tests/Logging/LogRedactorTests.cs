@@ -372,6 +372,56 @@ public class LogRedactorTests
             Encoding.UTF8.GetString(destination.ToArray()));
     }
 
+    /// <summary>Found in the app, not here: the developer's profile really does have a provider named "local".</summary>
+    [Fact]
+    public void AProviderNamedAfterAProfileRoot_DoesNotRewriteTheTokenThatRootProduced()
+    {
+        var keys = Keys with { ProviderNames = ["local"] };
+
+        var output = Run(
+            Record("INFO", @"Data directories: Local=C:\Users\lovelace\AppData\Local\Pia"), keys);
+
+        // The bare prose "Local=" still goes - a provider named after a common word costs you that word.
+        // What must not happen is the token itself being rewritten from the inside.
+        Assert.Contains("<profile-local>", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("<profile-<provider-0>>", output, StringComparison.Ordinal);
+    }
+
+    /// <summary>Keeps R12 alive: it anchors on <c>&lt;profile-(roaming|local|user)&gt;</c>.</summary>
+    [Fact]
+    public void ThePathSweepStillFires_OnALocalRootAProviderNameCouldHaveCorrupted()
+    {
+        var keys = Keys with { ProviderNames = ["local"] };
+
+        Assert.Contains(
+            @"<profile-local>\<path>\notes.md",
+            Run(Record("INFO", @"read C:\Users\lovelace\AppData\Local\Pia\Vault\notes.md"), keys),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AHostNamedLikeATokenPrefix_DoesNotRewriteAnAlreadyCodedHost()
+    {
+        var keys = Keys with { Hosts = ["api.example.test"], ProviderNames = ["host"] };
+
+        var output = Run(Record("INFO", "calling https://api.example.test/v1/chat"), keys);
+
+        Assert.DoesNotContain("<provider-0>", output, StringComparison.Ordinal);
+        Assert.Contains("<url:https://host-", output, StringComparison.Ordinal);
+    }
+
+    /// <summary>The suffix pass reads the token the key replacement emitted, so it must stay unguarded.</summary>
+    [Fact]
+    public void TheMachineDnsSuffixIsStillRemoved_ThoughTheKeyReplacementSkipsEmittedTokens()
+    {
+        var keys = Keys with { ProviderNames = ["local"] };
+
+        Assert.Contains(
+            "peer <machine> answered",
+            Run(Record("INFO", "peer WORKBENCH.corp.example answered"), keys),
+            StringComparison.Ordinal);
+    }
+
     [Fact]
     public void TheDestinationStreamIsNotClosed_SoAZipEntryStaysWritable()
     {

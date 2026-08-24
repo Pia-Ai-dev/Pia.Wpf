@@ -3,6 +3,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Pia.Logging;
 using Pia.Services.Interfaces;
@@ -26,7 +27,10 @@ public sealed class DiagnosticsExportService : IDiagnosticsExportService
     private const string FileNamePrefix = "pia-";
     private const int StampLength = 10;
 
-    private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
+    // Strings, not ordinals: an ExclusionReason of 0 next to a null one is not a reason anyone can read,
+    // and the manifest exists so an exclusion is legible from inside the archive.
+    private static readonly JsonSerializerOptions Json =
+        new() { WriteIndented = true, Converters = { new JsonStringEnumConverter() } };
 
     private readonly ILogger<DiagnosticsExportService> _logger;
     private readonly IDiagnosticsEnvironmentCollector _collector;
@@ -152,6 +156,8 @@ public sealed class DiagnosticsExportService : IDiagnosticsExportService
         {
             // Something is already there, so there is nothing of ours to clean up — and deleting it would
             // destroy a file this export did not write.
+            _logger.LogWarning(
+                "Diagnostics export refused: an archive from the same second already exists");
             return Failed(DiagnosticsExportFailure.OutputAlreadyExists, plan);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
