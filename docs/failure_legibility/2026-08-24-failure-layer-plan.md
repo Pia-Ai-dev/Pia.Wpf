@@ -200,6 +200,10 @@ Three of the four §6 traps held. Two more turned up that reading could not have
   reader reports as "no layer", not as an error. `PiaFailure` now owns `ToJson`/`FromJson` and both sides go
   through it.
 
+One design call made while building, recorded rather than left implicit: an unrecognised exception still
+persists a descriptor (Unclassified) rather than leaving the column null. It renders identically, and it buys
+the difference between "this build classified it and had no arm" and "written before the column existed".
+
 And one prediction was wrong in the safe direction: the optional parameter did **not** leave the test doubles
 compiling silently. An interface member must match exactly, defaults included, so all seven broke loudly.
 

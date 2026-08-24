@@ -23,13 +23,23 @@ public class FailureMapperTests
         Assert.Null(FailureMapper.ForReason(""));
     }
 
+    /// <summary>
+    /// MemberData, not InlineData: an attribute argument is a compile-time constant, so an InlineData row
+    /// would capture the constant's TEXT and keep passing against the old literal if someone reworded it.
+    /// Read at runtime, these rows follow the constants the way the mapper does.
+    /// </summary>
+    public static TheoryData<string, FailureLayer> NamedConstants => new()
+    {
+        { AgentStepTools.EmptyResponseFailure, FailureLayer.Provider },
+        { AgentStepTools.UndetailedFailure, FailureLayer.Tool },
+        { HeadlessRunLauncher.WorkspaceSetupFailure, FailureLayer.Workspace },
+        { HeadlessRunLauncher.ShutdownInterruptedFailure, FailureLayer.Cancelled },
+        { AgentRunOrchestrator.SupersededFailureReason, FailureLayer.Cancelled },
+        { ScheduledJobService.NoProviderFailureReason, FailureLayer.Provider },
+    };
+
     [Theory]
-    [InlineData(AgentStepTools.EmptyResponseFailure, FailureLayer.Provider)]
-    [InlineData(AgentStepTools.UndetailedFailure, FailureLayer.Tool)]
-    [InlineData(HeadlessRunLauncher.WorkspaceSetupFailure, FailureLayer.Workspace)]
-    [InlineData(HeadlessRunLauncher.ShutdownInterruptedFailure, FailureLayer.Cancelled)]
-    [InlineData(AgentRunOrchestrator.SupersededFailureReason, FailureLayer.Cancelled)]
-    [InlineData(ScheduledJobService.NoProviderFailureReason, FailureLayer.Provider)]
+    [MemberData(nameof(NamedConstants))]
     public void EveryNamedConstant_IsRecognised(string reason, FailureLayer expected)
     {
         var failure = FailureMapper.ForReason(reason);

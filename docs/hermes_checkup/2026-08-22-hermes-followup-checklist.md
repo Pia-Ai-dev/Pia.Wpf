@@ -956,6 +956,10 @@ action the non-retryable layers offer.
   `PreModelLaunchException`, thrown at the one launcher site that precedes the stub-chat save; the stub-chat
   and workspace-setup failures the old comment also called pre-model are deliberately **not** included,
   because both have written something by then and `SafeToReRun` means nothing written.
+  **Covered by tests only, NOT exercised live.** It is the one behaviour change in that commit on a path the
+  `G4` app run did not drive: a one-off scheduled job now survives a pre-model launch failure instead of
+  retiring on the first strike. Both directions are pinned by test — the vouched-for descriptor re-arms, an
+  `HttpRequestException` still settles `Failed` — but nobody has watched it happen.
   *Deps:* G2 · *Effort:* **XS** · *Value:* **Med**
 
 - [x] **G4 · Layer name + recovery action on the failure card.** Renders the layer beside slice 1’s reason

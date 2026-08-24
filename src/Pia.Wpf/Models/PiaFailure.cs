@@ -37,13 +37,18 @@ public sealed record PiaFailure(FailureLayer Layer, string Code, bool SafeToReRu
 
     public string ToJson() => JsonSerializer.Serialize(this, Json);
 
-    /// <summary>Null for absent, unparseable, or written by a future version with a layer this one lacks.</summary>
+    /// <summary>Null for absent or unparseable. A layer this build does not know reads as Unclassified —
+    /// a numeric one deserializes to an undefined enum value rather than throwing, so it is normalised here
+    /// instead of leaking to every caller that switches on it.</summary>
     public static PiaFailure? FromJson(string? json)
     {
         if (string.IsNullOrEmpty(json)) return null;
         try
         {
-            return JsonSerializer.Deserialize<PiaFailure>(json, Json);
+            var failure = JsonSerializer.Deserialize<PiaFailure>(json, Json);
+            return failure is null || Enum.IsDefined(failure.Layer)
+                ? failure
+                : failure with { Layer = FailureLayer.Unclassified };
         }
         catch (JsonException)
         {
