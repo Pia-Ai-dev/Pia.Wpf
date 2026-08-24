@@ -358,6 +358,25 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         }
     }
 
+    public async Task<Guid?> GetProviderIdAsync(Guid id, CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return null;
+
+            using var command = Connection().CreateCommand();
+            command.CommandText = "SELECT ProviderId FROM AssistantChats WHERE Id = @Id";
+            command.Parameters.AddWithValue("@Id", id.ToString());
+            var raw = await command.ExecuteScalarAsync(ct);
+            return raw is string s && Guid.TryParse(s, out var providerId) ? providerId : null;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task<IReadOnlyList<SyncAssistantChat>> SearchAsync(
         string? searchText = null,
         DateTime? fromDate = null,

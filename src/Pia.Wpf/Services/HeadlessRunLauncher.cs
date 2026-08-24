@@ -565,9 +565,13 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             var persona = await RunPinResolver.ResolvePersonaAsync(
                 _personaService, run.PersonaId,
                 settings.UserOperatingMode ?? UserOperatingMode.Personal, _logger).ConfigureAwait(false);
-            // Only the two pins are carried: the provider itself is still re-resolved, so a job that pinned an
-            // explicit ProviderId does not get it back here.
-            var provider = await ResolveProviderAsync(null, persona, run.ReasoningEffort).ConfigureAwait(false)
+            // The launch already resolved a provider and wrote it onto the run's stub chat, so that row is what
+            // carries an explicitly pinned ProviderId across the park — the job store is not consulted here, and
+            // the ladder alone would answer whatever the persona/mode default now says. A deleted provider still
+            // falls through the ladder inside ResolveProviderAsync rather than failing the resume.
+            var launchProviderId = await GetRunProviderIdAsync(run).ConfigureAwait(false);
+            var provider = await ResolveProviderAsync(launchProviderId, persona, run.ReasoningEffort)
+                .ConfigureAwait(false)
                 ?? throw new InvalidOperationException("No provider configured to resume an agent run.");
             // Restore the write grants the LAUNCH resolved from the run's own envelope — a resume must
             // never widen them, so a narrowly-granted scheduled job that parked at its budget does NOT come
@@ -1128,6 +1132,23 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
 
         return await RunPinResolver.ResolvePersonaAsync(_personaService, pinnedPersonaId, mode, _logger)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>The provider the launch resolved, off the run's own chat row. A store fault answers null, which
+    /// leaves the resume on the ladder — today's behaviour.</summary>
+    private async Task<Guid?> GetRunProviderIdAsync(AgentRun run)
+    {
+        try
+        {
+            return await _chatService.GetProviderIdAsync(run.ChatId).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                "Could not read the launch provider of run {RunId} ({Error}); resolving it from the ladder",
+                run.Id, ex.GetType().Name);
+            return null;
+        }
     }
 
     private async Task<AiProvider?> ResolveProviderAsync(

@@ -67,6 +67,10 @@ public interface IAssistantChatService
 
     Task<SyncAssistantChat?> GetAsync(Guid id, CancellationToken ct = default);
 
+    /// <summary>The chat's provider alone. <see cref="GetAsync"/> reads the whole transcript, which a caller
+    /// that only needs this field must not pay for.</summary>
+    Task<Guid?> GetProviderIdAsync(Guid id, CancellationToken ct = default);
+
     Task<IReadOnlyList<SyncAssistantChat>> SearchAsync(
         string? searchText = null,
         DateTime? fromDate = null,

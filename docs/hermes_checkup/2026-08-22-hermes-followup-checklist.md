@@ -584,7 +584,7 @@ below are the real ones.
   read-back separately and watching that half's assertion fail.
   *Deps:* E3 · *Effort:* **S** · *Value:* **Med**
 
-- [ ] **E10 · Carry the launch's provider across a resume, not just the persona.** Found while landing E9,
+- [x] **E10 · Carry the launch's provider across a resume, not just the persona.** Found while landing E9,
   and **pre-existing**: `ResumeAsync` passes `explicitProviderId: null`, so a scheduled job that pinned an
   explicit `ProviderId` (`ScheduledJobBackgroundService` does populate it) runs its remaining steps on
   whatever the persona/mode ladder answers instead. E9 did not introduce this and makes it *better* in the
@@ -593,6 +593,16 @@ below are the real ones.
   resolved provider onto the run's stub chat (`AssistantChats.ProviderId`). Deliberately out of E9's scope
   rather than smuggled in, and it wants the cheap accessor first — `IAssistantChatService.GetAsync` returns
   the chat *with its messages*, which is not something to pay for on every Continue.
+  **Shipped 2026-08-24.** `IAssistantChatService.GetProviderIdAsync` is that accessor (one scalar SELECT, no
+  message read), and `ResumeAsync` hands its answer to `ResolveProviderAsync` as the explicit rung. Two
+  fallbacks kept the change from being able to make a park *worse* than before: a store fault is logged and
+  answers null, and a provider deleted during the park already fell through `ResolveProviderAsync`'s ladder,
+  so neither can turn a resumable run into an unresumable one. Pinned by
+  `Resume_RunsTheProviderTheLaunchResolved_NotTheCurrentModeDefault` — which also asserts the chat row still
+  carries the pin **after** the park, because the run's own interim chat writes go through that same row and a
+  save that dropped `ProviderId` would have made the whole row a silent no-op — plus
+  `Resume_WhenTheLaunchProviderIsGone_FallsBackToTheLadder` and a service-level round-trip. Verified
+  non-vacuous by restoring `explicitProviderId: null` and watching the first assertion fail.
   *Deps:* E9 · *Effort:* **XS** · *Value:* **Med**
 
 - [ ] **E11 · Decide what a null persisted effort should mean on resume.** The freeze E9 installs is

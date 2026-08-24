@@ -456,6 +456,27 @@ public class AssistantChatServiceTests : IDisposable
         Assert.Equal("via/search", found.WorkingDirectory);
     }
 
+    [Fact]
+    public async Task GetProviderIdAsync_RoundTripsTheRowsProvider_AndAnswersNullForAnAbsentOne()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var providerId = Guid.NewGuid();
+
+        var withProvider = MakeChat(title: "pinned", body: "b");
+        withProvider.ProviderId = providerId;
+        await _service.SaveAsync(withProvider, ct);
+        _createdIds.Add(withProvider.Id);
+
+        var withoutProvider = MakeChat(title: "unpinned", body: "b");
+        await _service.SaveAsync(withoutProvider, ct);
+        _createdIds.Add(withoutProvider.Id);
+
+        Assert.Equal(providerId, await _service.GetProviderIdAsync(withProvider.Id, ct));
+        Assert.Null(await _service.GetProviderIdAsync(withoutProvider.Id, ct));
+        // A deleted/evicted chat is the resume path's real case, and it must read as "no pin" rather than throw.
+        Assert.Null(await _service.GetProviderIdAsync(Guid.NewGuid(), ct));
+    }
+
     private static SyncAssistantChat MakeChat(string title, string body)
     {
         var now = DateTime.UtcNow;

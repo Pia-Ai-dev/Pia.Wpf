@@ -129,7 +129,10 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     /// <param name="verifier">A resume skips planning, so the verify pass is the only place a resumed run's <c>ctx.WorkspaceRoot</c> is observable.</param>
     /// <param name="workspaces">Omitted ⇒ no provisioner, so the launcher does its own <c>CreateDirectory</c> under the <c>try/catch → FailAsync</c> guard.</param>
     /// <param name="runsBaseOverride">Lets a test point the runs base at an unwritable path (a file).</param>
-    /// <param name="rosterProvider">The child's stub chat records the resolved provider id, which is how the persona ladder's answer is observable from outside.</param>
+    /// <param name="rosterProvider">The one provider <c>GetProviderAsync</c> can answer — an unstubbed lookup
+    /// returns null and the ladder falls through. A child's stub chat records the resolved provider id, which is
+    /// how the persona ladder's answer is observable from outside; a launch request's own <c>ProviderId</c> pin
+    /// resolves through the same stub.</param>
     /// <param name="pinnedPersona">What <c>GetPersonasAsync</c> answers — the list a JOB's pin resolves against,
     /// which unlike a delegated id is not roster-gated. Stubbed either way: an unstubbed one returns a null task
     /// and NREs the pin path.</param>
@@ -935,6 +938,96 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         }
 
         try { Directory.Delete(Path.Combine(_runsBase, runId.ToString()), true); } catch { }
+    }
+
+    // A job that pinned an EXPLICIT provider has to get it back on Continue. The resume launcher's own mode
+    // default is a different provider (BuildLauncher mints one per call), so reading the pin back is the only way
+    // the pinned id can appear here.
+    [Fact]
+    public async Task Resume_RunsTheProviderTheLaunchResolved_NotTheCurrentModeDefault()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var pinnedProvider = new AiProvider
+        {
+            Id = Guid.NewGuid(), Name = "Pinned", Endpoint = "https://pinned", ProviderType = AiProviderType.OpenAI,
+        };
+
+        var (launcher, planner) = BuildLauncher(rosterProvider: pinnedProvider);
+        planner.Steps = 1;
+        Guid runId;
+        Guid chatId;
+        try
+        {
+            var handle = await launcher.LaunchAsync(new HeadlessRunRequest(
+                "pinned provider goal", AgentRunTrigger.Schedule, ProviderId: pinnedProvider.Id,
+                Budget: new RunProfile(MaxSteps: 24, MaxReplans: 2, WallClock: TimeSpan.Zero)), ct);
+            await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), ct);
+            runId = handle.RunId;
+            chatId = handle.ChatId;
+
+            Assert.Equal(AgentRunState.WaitingForInput, (await _runs.GetAsync(runId, ct))!.State);
+            // The seam the resume reads. Asserted AFTER the park, because the run's own chat writes go through
+            // the same row — a save that dropped ProviderId would make the whole row no-op silently.
+            Assert.Equal(pinnedProvider.Id, await _chats.GetProviderIdAsync(chatId, ct));
+        }
+        finally
+        {
+            await launcher.StopAsync(CancellationToken.None);
+        }
+
+        var verifier = new FakeVerifier();
+        var (resumer, _) = BuildLauncher(rosterProvider: pinnedProvider, verifier: verifier);
+        try
+        {
+            Assert.True(await resumer.ResumeAsync(runId, ct: ct));
+            await AwaitRunSettledAsync(resumer, runId);
+
+            Assert.Equal(pinnedProvider.Id, Assert.Single(verifier.SeenProviders).Id);
+        }
+        finally
+        {
+            await resumer.StopAsync(CancellationToken.None);
+        }
+
+        try { Directory.Delete(Path.Combine(_runsBase, runId.ToString()), true); } catch { }
+    }
+
+    // The pinned provider was deleted during the park. The ladder still has to answer, or a park would become
+    // unresumable — strictly worse than the pre-E10 behaviour it replaces.
+    [Fact]
+    public async Task Resume_WhenTheLaunchProviderIsGone_FallsBackToTheLadder()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await ParkRunWithPendingStepAsync(policyJson: null);
+        // The chat row names a provider no store can answer, which is what a deleted provider looks like here.
+        await _chats.SaveAsync(new SyncAssistantChat
+        {
+            Id = run.ChatId,
+            SchemaVersion = 1,
+            Title = "t",
+            CreatedAt = run.CreatedAt,
+            UpdatedAt = DateTime.UtcNow,
+            LastAccessedAt = DateTime.UtcNow,
+            WindowMode = WindowMode.Assistant.ToString(),
+            ProviderId = Guid.NewGuid(),
+            Messages = [],
+        }, ct);
+
+        var verifier = new FakeVerifier();
+        var (resumer, _) = BuildLauncher(verifier: verifier);
+        try
+        {
+            Assert.True(await resumer.ResumeAsync(run.Id, ct: ct));
+            await AwaitRunSettledAsync(resumer, run.Id);
+
+            Assert.Single(verifier.SeenProviders);
+        }
+        finally
+        {
+            await resumer.StopAsync(CancellationToken.None);
+        }
+
+        try { Directory.Delete(Path.Combine(_runsBase, run.Id.ToString()), true); } catch { }
     }
 
     [Theory]
