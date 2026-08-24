@@ -51,6 +51,16 @@ public sealed class AgentRun
     public ReasoningEffort? ReasoningEffort { get; set; }
 
     /// <summary>
+    /// Did the dispatch that created this row RECORD what it resolved into <see cref="ReasoningEffort"/>?
+    /// Without it a null there is ambiguous — "resolved to nothing" and "predates the column" would both
+    /// have to fall through to the persona's current effort, so a persona edited during a park could change
+    /// what a resumed run costs. False for a legacy row and for a live-session run, which records its
+    /// persona but never its effort. <see cref="ReasoningEffort.None"/> cannot serve as the sentinel: it is
+    /// a real pinnable value.
+    /// </summary>
+    public bool EffortPinRecorded { get; set; }
+
+    /// <summary>
     /// Tokens/wall-clock, per step + total:
     /// <c>{ inputTokens, outputTokens, wallClockMs, activeMs, segmentStartedAt?, perStep:[...] }</c>.
     /// <c>wallClockMs</c> is accumulated ACTIVE time (parked gaps excluded); <c>activeMs</c> +

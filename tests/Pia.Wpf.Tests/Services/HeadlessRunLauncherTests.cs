@@ -1030,6 +1030,101 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         try { Directory.Delete(Path.Combine(_runsBase, run.Id.ToString()), true); } catch { }
     }
 
+    // The other half of E9's freeze, and the direction it originally left open. The launch resolved NO effort;
+    // the persona then gains one while the run is parked. Recording that the launch resolved nothing is what
+    // stops the resume from picking it up — otherwise a park could change what the remaining steps cost.
+    [Fact]
+    public async Task Resume_WhenTheLaunchResolvedNoEffort_KeepsTheProvidersOwn_NotThePersonasEditedValue()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var personaId = Guid.NewGuid();
+        // Medium rather than null, so the assertion names a value the provider itself carries: it separates
+        // "the freeze held" from "nothing was applied because there was nothing to apply".
+        var pinnedProvider = new AiProvider
+        {
+            Id = Guid.NewGuid(), Name = "Own", Endpoint = "https://own", ProviderType = AiProviderType.OpenAI,
+            ReasoningEffort = ReasoningEffort.Medium,
+        };
+        var effortlessPersona = new Persona
+        {
+            Id = personaId, Name = "Effortless", SystemPrompt = "sys", ReasoningEffort = null,
+        };
+
+        var (launcher, planner) = BuildLauncher(
+            pinnedPersona: effortlessPersona, rosterProvider: pinnedProvider);
+        planner.Steps = 1;
+        Guid runId;
+        try
+        {
+            var handle = await launcher.LaunchAsync(new HeadlessRunRequest(
+                "no effort goal", AgentRunTrigger.Schedule,
+                ProviderId: pinnedProvider.Id, PersonaId: personaId,
+                Budget: new RunProfile(MaxSteps: 24, MaxReplans: 2, WallClock: TimeSpan.Zero)), ct);
+            await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), ct);
+            runId = handle.RunId;
+
+            var parked = await _runs.GetAsync(runId, ct);
+            Assert.Equal(AgentRunState.WaitingForInput, parked!.State);
+            Assert.Null(parked.ReasoningEffort);
+            // Without this the null above is indistinguishable from a row written before the columns existed.
+            Assert.True(parked.EffortPinRecorded);
+        }
+        finally
+        {
+            await launcher.StopAsync(CancellationToken.None);
+        }
+
+        // Same persona, edited during the park.
+        var edited = new Persona
+        {
+            Id = personaId, Name = "Effortless", SystemPrompt = "sys", ReasoningEffort = ReasoningEffort.XHigh,
+        };
+        var verifier = new FakeVerifier();
+        var (resumer, _) = BuildLauncher(
+            pinnedPersona: edited, rosterProvider: pinnedProvider, verifier: verifier);
+        try
+        {
+            Assert.True(await resumer.ResumeAsync(runId, ct: ct));
+            await AwaitRunSettledAsync(resumer, runId);
+
+            Assert.Equal(ReasoningEffort.Medium, Assert.Single(verifier.SeenProviders).ReasoningEffort);
+        }
+        finally
+        {
+            await resumer.StopAsync(CancellationToken.None);
+        }
+
+        try { Directory.Delete(Path.Combine(_runsBase, runId.ToString()), true); } catch { }
+    }
+
+    // A row written before the marker existed cannot say whether its null effort was resolved, so it has to keep
+    // falling through — freezing it would silently drop the effort those runs have always resumed on.
+    [Fact]
+    public async Task Resume_OfARowThatRecordedNoPins_StillFallsThroughToThePersonasEffort()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await ParkRunWithPendingStepAsync(policyJson: null);
+        Assert.False(run.EffortPinRecorded);
+
+        var verifier = new FakeVerifier();
+        var (resumer, _) = BuildLauncher(
+            modePersona: new Persona { Name = "Mode", SystemPrompt = "sys", ReasoningEffort = ReasoningEffort.High },
+            verifier: verifier);
+        try
+        {
+            Assert.True(await resumer.ResumeAsync(run.Id, ct: ct));
+            await AwaitRunSettledAsync(resumer, run.Id);
+
+            Assert.Equal(ReasoningEffort.High, Assert.Single(verifier.SeenProviders).ReasoningEffort);
+        }
+        finally
+        {
+            await resumer.StopAsync(CancellationToken.None);
+        }
+
+        try { Directory.Delete(Path.Combine(_runsBase, run.Id.ToString()), true); } catch { }
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

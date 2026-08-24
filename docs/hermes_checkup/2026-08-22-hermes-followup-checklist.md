@@ -605,7 +605,7 @@ below are the real ones.
   non-vacuous by restoring `explicitProviderId: null` and watching the first assertion fail.
   *Deps:* E9 · *Effort:* **XS** · *Value:* **Med**
 
-- [ ] **E11 · Decide what a null persisted effort should mean on resume.** The freeze E9 installs is
+- [x] **E11 · Decide what a null persisted effort should mean on resume.** The freeze E9 installs is
   asymmetric, and one direction contradicts the other. A non-null effort is frozen (the launch's value wins
   even if the persona is later edited); a null one is not, because null re-enters at the jobPin rung and
   falls through to the persona's **current** effort — so a job with no effort pin, on a persona whose effort
@@ -619,6 +619,20 @@ below are the real ones.
   identically — a persona edited during a park can no longer change what a resumed run costs. That needs the
   separate recorded-pins marker named above, since `None` is unavailable as a sentinel. The row is now a
   build, not a decision.
+  **Shipped 2026-08-24.** The marker is a column, `AgentRuns.EffortPinRecorded` — **not** derived from
+  `PersonaId is not null`, which was the cheap option and is wrong: `ChatSessionManager` creates a live-session
+  run with a persona but **no** resolved effort, so deriving would have told that row's resume "the launch
+  resolved nothing" and frozen away an effort it has always fallen through to. The freeze itself is one
+  conditional — `ResolveProviderAsync` gains `freezeEffort`, which withholds the persona rung so
+  `RunPinResolver.ApplyEffort` sees the recorded value alone. `ALTER TABLE … INTEGER NOT NULL DEFAULT 0` gives
+  legacy rows the answer the semantics want for free. Pinned in `AgentRunPinPersistenceTests` (round trip of a
+  recorded null through both readers, the `DROP COLUMN` migration half, and the unrecorded-null case) and by
+  two launcher facts — `Resume_WhenTheLaunchResolvedNoEffort_KeepsTheProvidersOwn_NotThePersonasEditedValue`
+  (asserting a value the *provider* carries, so "the freeze held" is distinguishable from "nothing was applied")
+  and `Resume_OfARowThatRecordedNoPins_StillFallsThroughToThePersonasEffort`. Both halves verified non-vacuous
+  by pinning `freezeEffort` to each constant in turn and watching the other's assertion fail.
+  **Deliberately left:** the live path still records no effort at all, so a live-created run's resume keeps
+  reading the persona's current one. Recording it there is a change to live behaviour, not to resume semantics.
   *Deps:* E9 · *Effort:* **XS** · *Value:* **Med**
 
 ---

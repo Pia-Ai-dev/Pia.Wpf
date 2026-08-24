@@ -359,7 +359,10 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             // What this dispatch RESOLVED, not what the request asked: a resume has no job store to walk the
             // ladder again from.
             PersonaId: persona.Id,
-            ReasoningEffort: RunPinResolver.EffectiveEffort(req.ReasoningEffort, persona.ReasoningEffort)), ct)
+            ReasoningEffort: RunPinResolver.EffectiveEffort(req.ReasoningEffort, persona.ReasoningEffort),
+            // This dispatch walked the whole effort ladder, so its answer — INCLUDING a null one — is the
+            // authority a resume freezes on.
+            EffortPinRecorded: true), ct)
             .ConfigureAwait(false);
 
         // The run's ISOLATED workspace under runs\<runId>, carved out of SensitivePathGuard by
@@ -570,7 +573,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             // the ladder alone would answer whatever the persona/mode default now says. A deleted provider still
             // falls through the ladder inside ResolveProviderAsync rather than failing the resume.
             var launchProviderId = await GetRunProviderIdAsync(run).ConfigureAwait(false);
-            var provider = await ResolveProviderAsync(launchProviderId, persona, run.ReasoningEffort)
+            var provider = await ResolveProviderAsync(
+                    launchProviderId, persona, run.ReasoningEffort, freezeEffort: run.EffortPinRecorded)
                 .ConfigureAwait(false)
                 ?? throw new InvalidOperationException("No provider configured to resume an agent run.");
             // Restore the write grants the LAUNCH resolved from the run's own envelope — a resume must
@@ -1151,8 +1155,11 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         }
     }
 
+    /// <param name="freezeEffort">A RESUME whose row recorded what its launch resolved: the persona rung is
+    /// withheld, so a null <paramref name="jobEffort"/> means "the launch resolved no effort" and a persona
+    /// edited during the park cannot change what the remaining steps cost.</param>
     private async Task<AiProvider?> ResolveProviderAsync(
-        Guid? explicitProviderId, Persona persona, ReasoningEffort? jobEffort = null)
+        Guid? explicitProviderId, Persona persona, ReasoningEffort? jobEffort = null, bool freezeEffort = false)
     {
         AiProvider? provider = null;
         if (explicitProviderId.HasValue)
@@ -1163,7 +1170,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         if (provider is null)
             return null;
 
-        return RunPinResolver.ApplyEffort(provider, jobEffort, persona.ReasoningEffort);
+        return RunPinResolver.ApplyEffort(
+            provider, jobEffort, freezeEffort ? null : persona.ReasoningEffort);
     }
 
     private void OnChatsChanged(object? sender, AssistantChatChangedEventArgs e)

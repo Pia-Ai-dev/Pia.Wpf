@@ -129,6 +129,7 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
             PolicyJson = request.PolicyJson,
             PersonaId = request.PersonaId,
             ReasoningEffort = request.ReasoningEffort,
+            EffortPinRecorded = request.EffortPinRecorded,
             // The run starts working now → open the ledger's first work segment (G1). ActiveMs is set
             // explicitly (not left default) so this ledger is never mistaken for a legacy one.
             LedgerJson = JsonSerializer.Serialize(new Ledger { ActiveMs = 0, SegmentStartedAt = now }, JsonOptions),
@@ -146,11 +147,13 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
                 INSERT INTO AgentRuns
                     (Id, SchemaVersion, ChatId, RunShape, State, TriggerKind, TriggerRef, ParentRunId,
                      OwnerDeviceId, Goal, FirstMessageId, LastMessageId, PolicyJson, LedgerJson,
-                     CreatedAt, UpdatedAt, StartedAt, CompletedAt, ExtraJson, PersonaId, ReasoningEffort)
+                     CreatedAt, UpdatedAt, StartedAt, CompletedAt, ExtraJson, PersonaId, ReasoningEffort,
+                     EffortPinRecorded)
                 VALUES
                     (@Id, @SchemaVersion, @ChatId, @RunShape, @State, @TriggerKind, @TriggerRef, @ParentRunId,
                      @OwnerDeviceId, @Goal, @FirstMessageId, @LastMessageId, @PolicyJson, @LedgerJson,
-                     @CreatedAt, @UpdatedAt, @StartedAt, @CompletedAt, @ExtraJson, @PersonaId, @ReasoningEffort)
+                     @CreatedAt, @UpdatedAt, @StartedAt, @CompletedAt, @ExtraJson, @PersonaId, @ReasoningEffort,
+                     @EffortPinRecorded)
                 """;
             cmd.Parameters.AddWithValue("@Id", run.Id.ToString());
             cmd.Parameters.AddWithValue("@SchemaVersion", run.SchemaVersion);
@@ -173,6 +176,7 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
             cmd.Parameters.AddWithValue("@ExtraJson", DBNull.Value);
             cmd.Parameters.AddWithValue("@PersonaId", ToParam(run.PersonaId));
             cmd.Parameters.AddWithValue("@ReasoningEffort", ToParam(run.ReasoningEffort));
+            cmd.Parameters.AddWithValue("@EffortPinRecorded", run.EffortPinRecorded ? 1 : 0);
             cmd.ExecuteNonQuery();
         }
 
@@ -1306,7 +1310,7 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
     private const string RunColumns =
         "Id, SchemaVersion, ChatId, RunShape, State, TriggerKind, TriggerRef, ParentRunId, OwnerDeviceId, " +
         "Goal, FirstMessageId, LastMessageId, PolicyJson, LedgerJson, CreatedAt, UpdatedAt, StartedAt, CompletedAt, ExtraJson, " +
-        "ClarificationsJson, PersonaId, ReasoningEffort";
+        "ClarificationsJson, PersonaId, ReasoningEffort, EffortPinRecorded";
 
     private const string StepColumns =
         "Id, RunId, Ordinal, Title, Intent, Status, ExpectedArtifact, AssignedPersonaId, DependsOnJson, " +
@@ -1337,6 +1341,7 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         ClarificationsJson = r.IsDBNull(19) ? null : r.GetString(19),
         PersonaId = ParseNullableGuid(r, 20),
         ReasoningEffort = r.IsDBNull(21) ? null : ParseReasoningEffort(r.GetString(21)),
+        EffortPinRecorded = r.GetInt32(22) == 1,
     };
 
     private static AgentStep MapStep(SqliteDataReader r) => new()

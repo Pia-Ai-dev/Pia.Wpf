@@ -36,7 +36,11 @@ public sealed record AgentRunCreateRequest(
     string? PolicyJson = null,
     Guid? ParentRunId = null,
     Guid? PersonaId = null,
-    Pia.Models.ReasoningEffort? ReasoningEffort = null);
+    Pia.Models.ReasoningEffort? ReasoningEffort = null,
+    /// <summary>True ⇒ <paramref name="ReasoningEffort"/> is what this dispatch RESOLVED, so a null there means
+    /// "resolved to nothing" and a resume freezes it instead of re-reading the persona's current value. A caller
+    /// that does not resolve an effort at all must leave this false.</summary>
+    bool EffortPinRecorded = false);
 
 /// <summary>
 /// One submitted PENDING step of a plan mutation (Batch 08 D3), as the user left it in the run panel.

@@ -480,6 +480,9 @@ public class SqliteContext : IDisposable
                 -- The persona and effort this dispatch RESOLVED, not pins to be resolved again on resume.
                 PersonaId           TEXT    NULL,
                 ReasoningEffort     TEXT    NULL,
+                -- Whether ReasoningEffort above is authoritative, so a null there reads as "resolved to
+                -- nothing" rather than "written before the column existed".
+                EffortPinRecorded   INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (ChatId) REFERENCES AssistantChats(Id) ON DELETE CASCADE
             );
 
@@ -1024,10 +1027,11 @@ public class SqliteContext : IDisposable
             addCol.ExecuteNonQuery();
         }
 
-        // Fresh databases already have all three from the CREATE TABLE above, so each branch short-circuits.
+        // Fresh databases already have all four from the CREATE TABLE above, so each branch short-circuits.
         var hasClarificationsJson = false;
         var hasRunPersonaId = false;
         var hasRunReasoningEffort = false;
+        var hasEffortPinRecorded = false;
         using (var p = _connection!.CreateCommand())
         {
             p.CommandText = "PRAGMA table_info(AgentRuns)";
@@ -1038,6 +1042,7 @@ public class SqliteContext : IDisposable
                 if (col == "ClarificationsJson") hasClarificationsJson = true;
                 else if (col == "PersonaId") hasRunPersonaId = true;
                 else if (col == "ReasoningEffort") hasRunReasoningEffort = true;
+                else if (col == "EffortPinRecorded") hasEffortPinRecorded = true;
             }
         }
         if (!hasClarificationsJson)
@@ -1056,6 +1061,14 @@ public class SqliteContext : IDisposable
         {
             using var addCol = _connection.CreateCommand();
             addCol.CommandText = "ALTER TABLE AgentRuns ADD COLUMN ReasoningEffort TEXT NULL";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasEffortPinRecorded)
+        {
+            // The constant default is what makes NOT NULL legal on an ADD COLUMN, and it is also the answer
+            // the semantics want: every pre-existing row genuinely did not record its effort.
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AgentRuns ADD COLUMN EffortPinRecorded INTEGER NOT NULL DEFAULT 0";
             addCol.ExecuteNonQuery();
         }
     }

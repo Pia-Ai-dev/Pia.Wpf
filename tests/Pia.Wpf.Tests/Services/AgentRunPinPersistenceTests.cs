@@ -11,9 +11,9 @@ using Xunit;
 namespace Pia.Tests.Services;
 
 /// <summary>
-/// The two pin columns on <c>AgentRuns</c>: the round trip, the ordinal MapRun reads them at, and the
-/// <c>ALTER TABLE</c> half of their migration. Every other test and every fresh profile takes the
-/// <c>CREATE TABLE</c> path, so nothing else would notice a missing ALTER.
+/// The pin columns on <c>AgentRuns</c> — the two values and the marker saying they were recorded: the round
+/// trip, the ordinal MapRun reads them at, and the <c>ALTER TABLE</c> half of their migration. Every other test
+/// and every fresh profile takes the <c>CREATE TABLE</c> path, so nothing else would notice a missing ALTER.
 /// </summary>
 public sealed class AgentRunPinPersistenceTests : IDisposable
 {
@@ -91,6 +91,25 @@ public sealed class AgentRunPinPersistenceTests : IDisposable
 
         Assert.Null(fetched!.PersonaId);
         Assert.Null(fetched.ReasoningEffort);
+        // The caller resolved no effort, so its null must NOT read as "resolved to nothing".
+        Assert.False(fetched.EffortPinRecorded);
+    }
+
+    [Fact]
+    public async Task ARecordedNullEffort_SurvivesTheRoundTrip_AsRecordedRatherThanUnset()
+    {
+        var chatId = await MakeChatAsync();
+
+        var created = await _runs.CreateAsync(new AgentRunCreateRequest(
+            chatId, RunShape.Planned, AgentRunTrigger.Schedule,
+            PersonaId: Guid.NewGuid(), ReasoningEffort: null, EffortPinRecorded: true), Ct);
+
+        Assert.True(created.EffortPinRecorded);
+        // Both readers: appending the column without extending MapRun would show up in each.
+        Assert.True((await _runs.GetAsync(created.Id, Ct))!.EffortPinRecorded);
+        var byChat = Assert.Single(await _runs.GetByChatAsync(chatId, Ct));
+        Assert.True(byChat.EffortPinRecorded);
+        Assert.Null(byChat.ReasoningEffort);
     }
 
     [Theory]
@@ -119,7 +138,7 @@ public sealed class AgentRunPinPersistenceTests : IDisposable
     }
 
     [Fact]
-    public async Task AnExistingDatabase_GainsBothPinColumns_AndKeepsItsRuns()
+    public async Task AnExistingDatabase_GainsEveryPinColumn_AndKeepsItsRuns()
     {
         // Its own file, since the database has to outlive the first "launch" for the second to migrate it.
         var dir = Path.Combine(Path.GetTempPath(), "PiaRunPinMigrate_" + Guid.NewGuid().ToString("N"));
@@ -149,7 +168,7 @@ public sealed class AgentRunPinPersistenceTests : IDisposable
                     chatId, RunShape.Planned, AgentRunTrigger.Schedule, Goal: "pre-migration"), Ct)).Id;
 
                 // DROP rather than a pasted old CREATE TABLE: defined against whatever this build creates.
-                foreach (var column in new[] { "PersonaId", "ReasoningEffort" })
+                foreach (var column in new[] { "PersonaId", "ReasoningEffort", "EffortPinRecorded" })
                 {
                     using var drop = ctx.GetConnection().CreateCommand();
                     drop.CommandText = $"ALTER TABLE AgentRuns DROP COLUMN {column}";
@@ -170,6 +189,7 @@ public sealed class AgentRunPinPersistenceTests : IDisposable
             // these — and both, not just the first.
             Assert.Contains("PersonaId", columns);
             Assert.Contains("ReasoningEffort", columns);
+            Assert.Contains("EffortPinRecorded", columns);
 
             using var migratedRuns = new AgentRunService(reopened, NullLogger<AgentRunService>.Instance);
             var migrated = await migratedRuns.GetAsync(runId, Ct);
@@ -178,6 +198,9 @@ public sealed class AgentRunPinPersistenceTests : IDisposable
             // A row that predates the columns resumes on the per-mode persona, exactly as it did before them.
             Assert.Null(migrated.PersonaId);
             Assert.Null(migrated.ReasoningEffort);
+            // The ADD COLUMN's constant default, which is the whole reason a legacy row keeps falling through
+            // instead of freezing on an effort it never resolved.
+            Assert.False(migrated.EffortPinRecorded);
 
             // Idempotent: a THIRD launch must not re-issue the ALTER. SQLite errors on a duplicate column name
             // and MigrateSchema has no try/catch, so an unguarded ALTER takes startup down on every later open.
