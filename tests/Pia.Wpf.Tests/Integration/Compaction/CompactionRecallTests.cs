@@ -1,4 +1,5 @@
 using System.IO;
+using Microsoft.Extensions.AI;
 using Pia.Models;
 using Pia.Tests.TestInfrastructure;
 using Xunit;
@@ -230,6 +231,11 @@ public class CompactionRecallTests : IDisposable
         await SweepAsync(budget);
     }
 
+    /// <summary>
+    /// Every arm, one sweep. All of them together on purpose: the answering and judging model is part of the
+    /// measurement, so an arm run on a different provider than its baseline cannot be compared to it — which is
+    /// exactly why B4's Mistral numbers do not carry over to a DeepSeek run.
+    /// </summary>
     private async Task SweepAsync(RecallBudget budget)
     {
         var answering = CompactionRecallHarness.ResolveProvider();
@@ -250,19 +256,48 @@ public class CompactionRecallTests : IDisposable
             if (bank.Count == 0)
                 continue;
 
-            var (retained, _) = await CompactionRecallHarness.CompactAsync(transcript, budget, ct);
+            var (retained, removed) = await CompactionRecallHarness.CompactAsync(transcript, budget, ct);
+
+            var anchorIndex = CompactionArms.AnchorIndex(transcript.Messages, retained, removed);
+            var anchorBlock = CompactionArms.AnchorBlock(transcript.Messages, removed);
+            var pointer = CompactionArms.RecoveryPointer(retained, removed.Count);
+            var pinnedUsers = CompactionArms.PinAllUserMessages(transcript.Messages, retained);
 
             // Per transcript, because one provider fault at the last of four would otherwise throw away every
             // call the first three already paid for - and a partial scorecard that SAYS it is partial beats no
             // scorecard at all.
             try
             {
-                var uncompacted = await CompactionRecallHarness.RunArmAsync(
-                    "A:uncompacted", transcript.Messages, bank, answering, judging, ct);
-                var current = await CompactionRecallHarness.RunArmAsync(
-                    "B:current", retained, bank, answering, judging, ct);
+                var arms = new List<ArmResult>
+                {
+                    await CompactionRecallHarness.RunArmAsync(
+                        "A:uncompacted", transcript.Messages, bank, answering, judging, ct),
+                    await CompactionRecallHarness.RunArmAsync(
+                        "B:current", retained, bank, answering, judging, ct,
+                        goldPresent: CompactionArms.GoldAnswersPresent(retained, bank)),
+                    await CompactionRecallHarness.RunArmAsync(
+                        "C:anchor-index", anchorIndex, bank, answering, judging, ct,
+                        goldPresent: CompactionArms.GoldAnswersPresent(anchorIndex, bank)),
+                    // The control that decides whether arm C's number is recall or reading: the same bank
+                    // against the anchor block and NOTHING else. Not an arm — an instrument check, the way the
+                    // no-context control is for arm B.
+                    await CompactionRecallHarness.RunArmAsync(
+                        "C0:anchors-only", [new ChatMessage(ChatRole.System, anchorBlock)], bank,
+                        answering, judging, ct,
+                        goldPresent: CompactionArms.GoldAnswersPresent(anchorBlock, bank)),
+                    await CompactionRecallHarness.RunArmAsync(
+                        "D:recovery-pointer", pointer, bank, answering, judging, ct,
+                        recover: reply => CompactionArms.SearchTerm(reply) is { } term
+                            ? CompactionArms.RenderHits(
+                                term, CompactionArms.Search(transcript.Messages, removed, term))
+                            : null,
+                        goldPresent: CompactionArms.GoldAnswersPresent(pointer, bank)),
+                    await CompactionRecallHarness.RunArmAsync(
+                        "E:pin-all-user", pinnedUsers, bank, answering, judging, ct,
+                        goldPresent: CompactionArms.GoldAnswersPresent(pinnedUsers, bank)),
+                };
 
-                rows.Add(new RecallRow(transcript.Id, bank.Count, uncompacted, current));
+                rows.Add(new RecallRow(transcript.Id, bank.Count, arms));
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -279,18 +314,19 @@ public class CompactionRecallTests : IDisposable
         foreach (var row in rows)
         {
             TestContext.Current.TestOutputHelper?.WriteLine(
-                $"{row.TranscriptId}: bank {row.BankSize}, "
-                + $"A {CompactionRecallHarness.Percent(row.Uncompacted.Score)} @ {row.Uncompacted.ApproximateTokens} tok, "
-                + $"B {CompactionRecallHarness.Percent(row.Current.Score)} @ {row.Current.ApproximateTokens} tok");
+                $"{row.TranscriptId}: bank {row.BankSize} | "
+                + string.Join(" | ", row.Arms.Select(a =>
+                    $"{a.Arm} {CompactionRecallHarness.Percent(a.Score)} @ {a.ApproximateTokens} tok"
+                    + $" gold={a.GoldPresent}" + (a.Recovered > 0 ? $" searched={a.Recovered}" : string.Empty))));
         }
 
         // The plan's §11 stop rule, as an assertion rather than a note: below this the instrument is broken and
-        // no B number may be read.
-        var ceiling = rows.Average(r => r.Uncompacted.Score);
+        // no other arm's number may be read.
+        var ceiling = rows.Average(r => r.Ceiling.Score);
         Assert.True(
             ceiling >= 0.90,
             $"arm A averaged {CompactionRecallHarness.Percent(ceiling)} on content it still holds, so the bank or "
-            + $"the judge is broken - fix the instrument before reading arm B. Scorecard: {scorecard}");
+            + $"the judge is broken - fix the instrument before reading any other arm. Scorecard: {scorecard}");
     }
 
     public void Dispose()

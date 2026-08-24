@@ -32,6 +32,11 @@ internal sealed record RecallTranscript(
     IReadOnlyList<ChatMessage> Messages,
     IReadOnlyList<PlantedFact> Facts);
 
+/// <param name="GoldPresent">How many of the bank's answers this arm's own context already held verbatim. Zero
+/// for the arms that only remove; an arm that APPENDS reintroduces them, and its score is unreadable without
+/// this number beside it.</param>
+/// <param name="Recovered">Questions where the model asked to search rather than answering blind — arm D's
+/// mechanism firing, and zero everywhere else.</param>
 internal sealed record ArmResult(
     string Arm,
     int Messages,
@@ -39,9 +44,21 @@ internal sealed record ArmResult(
     double Score,
     int Answered,
     long ElapsedMs,
-    int UnreadableVerdicts);
+    int UnreadableVerdicts,
+    int GoldPresent = 0,
+    int Recovered = 0);
 
-internal sealed record RecallRow(string TranscriptId, int BankSize, ArmResult Uncompacted, ArmResult Current);
+/// <summary>
+/// One transcript's arms, in the order they were run. A list rather than two named members: the sweep grew from
+/// two arms to five, and naming them in the row type is what makes adding a sixth a rewrite.
+/// </summary>
+internal sealed record RecallRow(string TranscriptId, int BankSize, IReadOnlyList<ArmResult> Arms)
+{
+    /// <summary>The ceiling arm, by convention the first. §11's stop rule reads it.</summary>
+    internal ArmResult Ceiling => Arms[0];
+
+    internal ArmResult? ByName(string arm) => Arms.FirstOrDefault(a => a.Arm == arm);
+}
 
 /// <summary>
 /// Measures what compaction costs recall: build the post-compaction request through the SHIPPED
@@ -271,6 +288,13 @@ internal static class CompactionRecallHarness
     /// corpus an answer is transcript-derived - use it on the synthetic corpus, where a zero score is
     /// otherwise indistinguishable from an empty response the provider returned successfully.
     /// </param>
+    /// <param name="recover">
+    /// Arm D's second round. Given the model's first reply, it returns the text to append and re-ask with, or
+    /// null when the model answered rather than asking to search. A recovery arm costs up to TWO answering
+    /// calls per question, which is the honest price of the mechanism rather than an overhead to hide.
+    /// </param>
+    /// <param name="goldPresent">Recorded on the result, not computed here: the harness must not need to know
+    /// what an arm's context happens to contain.</param>
     internal static async Task<ArmResult> RunArmAsync(
         string arm,
         IReadOnlyList<ChatMessage> context,
@@ -278,11 +302,14 @@ internal static class CompactionRecallHarness
         AiProvider answering,
         AiProvider judging,
         CancellationToken ct,
-        Action<string>? trace = null)
+        Action<string>? trace = null,
+        Func<string, string?>? recover = null,
+        int goldPresent = 0)
     {
         var started = Stopwatch.StartNew();
         var scores = new double[bank.Count];
         var unreadable = 0;
+        var recovered = 0;
         using var gate = new SemaphoreSlim(Concurrency);
 
         await Task.WhenAll(bank.Select(async (question, index) =>
@@ -291,6 +318,19 @@ internal static class CompactionRecallHarness
             try
             {
                 var answer = await AnswerAsync(answering, context, question, ct);
+
+                if (recover?.Invoke(answer) is { } recoveredContext)
+                {
+                    Interlocked.Increment(ref recovered);
+                    // The recovered messages go in as one more context message and the SAME question is asked
+                    // again, so the second round differs from the first only by what the search returned.
+                    var widened = new List<ChatMessage>(context)
+                    {
+                        new(ChatRole.System, recoveredContext),
+                    };
+                    answer = await AnswerAsync(answering, widened, question, ct);
+                }
+
                 var (score, readable) = await JudgeAsync(judging, question, answer, ct);
                 scores[index] = score;
                 if (!readable)
@@ -311,7 +351,9 @@ internal static class CompactionRecallHarness
             bank.Count == 0 ? 0 : scores.Sum() / bank.Count,
             bank.Count,
             started.ElapsedMilliseconds,
-            unreadable);
+            unreadable,
+            goldPresent,
+            recovered);
     }
 
     private static string Head(string answer) => answer.Length switch
@@ -554,28 +596,62 @@ internal static class CompactionRecallHarness
             .AppendLine($"- judging model: {judging.ModelName} ({judging.ProviderType})")
             .AppendLine(string.Create(CultureInfo.InvariantCulture,
                 $"- thresholds: tool eviction {AgentContextCompactor.ToolEvictionThreshold}, truncation {AgentContextCompactor.TruncationThreshold}"))
-            .AppendLine()
-            .AppendLine("| transcript | bank | A:uncompacted | B:current | B/A | unreadable verdicts |")
-            .AppendLine("|---|---|---|---|---|---|");
+            .AppendLine();
+
+        // Column set derived from the rows rather than hardcoded, so a partial sweep (one transcript lost to a
+        // provider fault) still writes a table whose headers match its cells.
+        var arms = rows.SelectMany(r => r.Arms.Select(a => a.Arm)).Distinct().ToList();
+
+        report
+            .AppendLine($"| transcript | bank | {string.Join(" | ", arms)} |")
+            .AppendLine($"|---|---|{string.Concat(arms.Select(_ => "---|"))}");
 
         foreach (var row in rows)
         {
             report.AppendLine(
-                $"| {row.TranscriptId} | {row.BankSize} "
-                + $"| {Percent(row.Uncompacted.Score)} @ {Thousands(row.Uncompacted.ApproximateTokens)} / {row.Uncompacted.Messages} msg "
-                + $"| {Percent(row.Current.Score)} @ {Thousands(row.Current.ApproximateTokens)} / {row.Current.Messages} msg "
-                + $"| {Ratio(row.Current.Score, row.Uncompacted.Score)} "
-                + $"| {row.Uncompacted.UnreadableVerdicts + row.Current.UnreadableVerdicts} |");
+                $"| {row.TranscriptId} | {row.BankSize} | "
+                + string.Join(" | ", arms.Select(a => Cell(row.ByName(a)))) + " |");
         }
 
         if (rows.Count > 0)
         {
             report.AppendLine(
-                $"| **AVG** | {rows.Sum(r => r.BankSize)} "
-                + $"| {Percent(rows.Average(r => r.Uncompacted.Score))} "
-                + $"| {Percent(rows.Average(r => r.Current.Score))} "
-                + $"| {Ratio(rows.Average(r => r.Current.Score), rows.Average(r => r.Uncompacted.Score))} "
-                + $"| {rows.Sum(r => r.Uncompacted.UnreadableVerdicts + r.Current.UnreadableVerdicts)} |");
+                $"| **AVG** | {rows.Sum(r => r.BankSize)} | "
+                + string.Join(" | ", arms.Select(a =>
+                {
+                    var scored = rows.Select(r => r.ByName(a)).OfType<ArmResult>().ToList();
+                    return scored.Count == 0 ? "—" : Percent(scored.Average(x => x.Score));
+                }))
+                + " |");
+        }
+
+        // The comparison §11 actually decides on, kept out of the table above because a ratio against a
+        // ceiling and an absolute delta against the baseline answer two different questions.
+        var baseline = rows.Select(r => r.ByName("B:current")).OfType<ArmResult>().ToList();
+        if (rows.Count > 0 && baseline.Count == rows.Count)
+        {
+            report
+                .AppendLine()
+                .AppendLine("Against §11's promotion bar — beat B by ≥10 points averaged, and win on ≥3 of 4:")
+                .AppendLine()
+                .AppendLine("| arm | avg points vs B | transcripts won | gold answers already held | recovery rounds |")
+                .AppendLine("|---|---|---|---|---|");
+
+            foreach (var arm in arms.Where(a => a is not "A:uncompacted" and not "B:current"))
+            {
+                var scored = rows
+                    .Select(r => (Arm: r.ByName(arm), Base: r.ByName("B:current")!, r.BankSize))
+                    .Where(x => x.Arm is not null)
+                    .ToList();
+                if (scored.Count == 0)
+                    continue;
+
+                var delta = scored.Average(x => x.Arm!.Score - x.Base.Score) * 100;
+                report.AppendLine(string.Create(CultureInfo.InvariantCulture,
+                    $"| {arm} | {delta:+0.0;-0.0} | {scored.Count(x => x.Arm!.Score > x.Base.Score)} of {scored.Count} "
+                    + $"| {scored.Sum(x => x.Arm!.GoldPresent)} of {scored.Sum(x => x.BankSize)} "
+                    + $"| {scored.Sum(x => x.Arm!.Recovered)} |"));
+            }
         }
 
         var directory = Environment.GetEnvironmentVariable(OutputVariable);
@@ -588,11 +664,14 @@ internal static class CompactionRecallHarness
         return path;
     }
 
+    /// <summary>A missing arm reads as an em dash, never as 0.0% — a transcript lost to a provider fault and an
+    /// arm that genuinely scored nothing are opposite findings.</summary>
+    private static string Cell(ArmResult? arm) => arm is null
+        ? "—"
+        : $"{Percent(arm.Score)} @ {Thousands(arm.ApproximateTokens)} / {arm.Messages} msg";
+
     /// <summary>Invariant on purpose: a scorecard read on a German machine printed "100,0%" and "0,45".</summary>
     internal static string Percent(double score) => string.Create(CultureInfo.InvariantCulture, $"{score * 100:0.0}%");
-
-    private static string Ratio(double current, double ceiling) =>
-        ceiling <= 0 ? "n/a" : string.Create(CultureInfo.InvariantCulture, $"{current / ceiling * 100:0.0}%");
 
     private static string Thousands(int tokens) => tokens >= 1000
         ? string.Create(CultureInfo.InvariantCulture, $"{tokens / 1000.0:0.0}K")
