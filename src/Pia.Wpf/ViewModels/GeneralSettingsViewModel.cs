@@ -530,8 +530,7 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         }
     }
 
-    // The failure enum exists so the caller can branch; showing one string for all six causes made "the
-    // name is taken, try again in a second" indistinguishable from "the disk refused the write".
+    // One string for all six causes made "the name is taken" indistinguishable from "the disk refused".
     private void ShowExportFailure(DiagnosticsExportFailure? failure)
     {
         if (failure is DiagnosticsExportFailure.SourceDirectoryMissing
@@ -544,8 +543,7 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
             return;
         }
 
-        // OutputInsideSourceDirectory is an invariant PiaPaths holds and no user can reach; WriteFailed has
-        // nothing actionable to add.
+        // The two omitted causes are unreachable or have nothing actionable to add.
         var body = failure switch
         {
             DiagnosticsExportFailure.OutputAlreadyExists => "Msg_Settings_DiagnosticsFailed_NameTaken",

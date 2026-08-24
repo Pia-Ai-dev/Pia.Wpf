@@ -118,10 +118,7 @@ public static class LogRedactor
     private static readonly Regex MachineSuffixPattern =
         new(@"<machine>(\.[A-Za-z0-9\-]+)+", RegexOptions.Compiled);
 
-    // Every token any rule emits. A key-driven rule must not run inside one: a provider actually named
-    // "local" turned <profile-local> into <profile-<provider-3>>, which also killed R12's tokenised-path
-    // pass. Deliberately a closed list rather than <[^<>]*>, so ordinary prose like List<string> stays
-    // redactable.
+    // A closed list rather than <[^<>]*>, so ordinary prose like List<string> stays redactable.
     private static readonly Regex EmittedToken = new(
         @"<(?:response-body|process|window-class|window-title|profile-(?:roaming|local|user)|machine|user"
         + @"|email|token|path|unc|provider-\d+|url:[^<>\r\n]*)>|host-\d{3}",
@@ -273,8 +270,7 @@ public static class LogRedactor
                 return RestoreFailurePattern.Replace(text, "$1<window-title>$2<process>$3");
             }),
             (ProfileRoots, text => ReplaceAll(rootPatterns, text)),
-            // The suffix pass is deliberately NOT guarded: it anchors on the <machine> token the key
-            // replacement just emitted, so skipping tokens would leave the DNS suffix standing.
+            // The suffix pass stays unguarded: it anchors on the <machine> token just emitted.
             (MachineName, text => MachineSuffixPattern.Replace(
                 OutsideEmittedTokens(text, t => ReplaceKey(keys.MachineName, "<machine>", t)), "<machine>")),
             (UserName, text => OutsideEmittedTokens(text, t => ReplaceKey(keys.UserName, "<user>", t))),
@@ -323,8 +319,7 @@ public static class LogRedactor
     private static Regex HostLiteral(string host) =>
         new(@"(?<![\w.\-])" + Regex.Escape(host) + @"(?![\w.\-])", RegexOptions.IgnoreCase);
 
-    // Boundaries are preserved across the split because every token starts and ends with a character no
-    // key pattern treats as word-interior.
+    // A rule keyed on user text must not run inside a token an earlier rule emitted.
     private static string OutsideEmittedTokens(string text, Func<string, string> replace)
     {
         var tokens = EmittedToken.Matches(text);

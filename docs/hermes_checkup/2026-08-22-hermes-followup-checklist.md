@@ -878,7 +878,7 @@ owner on 2026-08-24. Plan and reading:
   **Human smoke test RUN, 2026-08-24 — all four questions pass, and it found four defects, all now fixed.**
   Reading: [../failure_legibility/2026-08-24-export-diagnostics-ui-test-reading.md](../failure_legibility/2026-08-24-export-diagnostics-ui-test-reading.md);
   the plan it executed is [../failure_legibility/2026-08-24-export-diagnostics-ui-test-plan.md](../failure_legibility/2026-08-24-export-diagnostics-ui-test-plan.md).
-  Six exports through the real UI over two arms — a throwaway profile seeded with 20 real log files, then the
+  Eight exports through the real UI over two arms — a throwaway profile seeded with 20 real log files, then the
   real profile (that artefact deleted immediately; `%LOCALAPPDATA%\Pia\Diagnostics` is gone). Button, dialog,
   Cancel-writes-nothing, the export against a **sink-held** log whose `File.OpenRead` was proved to throw
   first, and reveal-with-the-zip-selected all pass; the **residual scan came back 0 every time**, over the log

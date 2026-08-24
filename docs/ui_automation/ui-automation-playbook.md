@@ -202,11 +202,14 @@ Committed recordings, the settings fixture they start from and the replay harnes
   **Success/Info** notice is `FlowLifetime.Transient` — a peek that expires before one MCP round trip
   can read it. Four attempts on a confirmed-successful action caught nothing. Assert the side effect,
   never the success notice.
-- **The Flow rail’s collapsed handle cannot be invoked.** It is a `Border` with a `MouseBinding`, so
-  it has no `AutomationId` and no InvokePattern — `ww_click` with `useInvokePattern=false` on the bell
-  glyph inside it is the way in, and the window must be foreground. While collapsed the rail does
-  expose an unread **count badge** as a plain `Text`, which makes a cheap “something was published”
-  probe without opening anything.
+- **The Flow rail’s collapsed handle cannot be invoked.** It is a `Border` with a `MouseBinding`, so it
+  has no `AutomationId` and no InvokePattern. Open it with a real mouse click on the bell glyph inside
+  it, after `ww_window action=activate`:
+  `ww_click(selector="automationId=RootFlowView >> type=Text", useInvokePattern=false)` — the bell is
+  that subtree’s first `Text`. While collapsed the rail also exposes an unread **count badge** as a
+  plain `Text` (`"1"`, `"2"`, …), which is a cheap “something was published” probe that needs no click
+  at all — and once open, the header’s `Flow_ClearAll_Real` / `Flow_PinToggle_Real` /
+  `Flow_Collapse_Real` confirm you got there.
 - **`PluginsView.xaml` and the E2EE onboarding screen hosted inside Account still have no ids.**
   The General, Assistant, Providers, Account and Optimize *settings* views are id-addressable
   throughout, inner tab headers included, and `tests/Pia.Wpf.Tests/Views/ViewAutomationIdTests.cs`

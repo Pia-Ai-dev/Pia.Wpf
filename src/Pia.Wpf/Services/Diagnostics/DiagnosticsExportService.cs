@@ -27,8 +27,7 @@ public sealed class DiagnosticsExportService : IDiagnosticsExportService
     private const string FileNamePrefix = "pia-";
     private const int StampLength = 10;
 
-    // Strings, not ordinals: an ExclusionReason of 0 next to a null one is not a reason anyone can read,
-    // and the manifest exists so an exclusion is legible from inside the archive.
+    // Strings, not ordinals: an ExclusionReason of 0 next to a null one is not a reason anyone can read.
     private static readonly JsonSerializerOptions Json =
         new() { WriteIndented = true, Converters = { new JsonStringEnumConverter() } };
 

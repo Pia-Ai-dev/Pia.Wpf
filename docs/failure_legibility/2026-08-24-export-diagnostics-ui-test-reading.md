@@ -13,9 +13,9 @@ Executable cold: every number below is quoted from the run, and §8 says how to 
 
 ## 1. Verdict
 
-**All four test questions pass.** Six exports were driven through the real UI — five that wrote an
-archive and one that was correctly refused — and the residual scan came back **zero** every time,
-against real logs at real scale.
+**All four test questions pass.** The export was driven through the real UI **eight** times — seven
+that wrote an archive and one that was correctly refused — and the residual scan came back **zero**
+every time, against real logs at real scale.
 
 | # | Question | Verdict |
 |---|---|---|
@@ -35,7 +35,8 @@ see §6. The one that only the app could have found is §6.4.
 
 ## 2. What was run
 
-Six exports, all through `ww_invoke` on the real button and the real dialog.
+Eight invocations, all through `ww_invoke` on the real button and the real dialog. Runs 8 and 9 came
+after the fixes in §6 and are the runtime proof for three of the four.
 
 | # | Arm | Seed | Result |
 |---|---|---|---|
@@ -43,8 +44,10 @@ Six exports, all through `ww_invoke` on the real button and the real dialog.
 | 2 | A | +12.4 MB on one mid-run file, plus `pia.log` and a rolled `pia-2026-08-24-001.log` | 3 files — **byte cap bound** |
 | 3 | A | 91 decoy zips planted over the next 91 seconds | **refused, nothing written, no decoy touched** |
 | 4 | A | decoys removed | succeeded again — the button recovers |
-| 5 | A | same | succeeded (a snackbar-timing probe) |
-| 6 | **B** | the **real** `%LOCALAPPDATA%\Pia\Logs`, 39 files | 7 files, 444,176 bytes |
+| 5–6 | A | same | succeeded twice (two snackbar-timing probes) |
+| 7 | **B** | the **real** `%LOCALAPPDATA%\Pia\Logs`, 39 files | 7 files, 444,176 bytes |
+| 8 | A, **post-fix** | the run-2 seed again | manifest now reads `"OverFileCountCap"` / `"OverTotalByteCap"` / `"UnrecognisedName"` |
+| 9 | A, **post-fix** | 121 decoys | refused, and now says **why** — in the notice and in the log |
 
 Arm B's artifact and its extracted copy were **deleted immediately afterwards**;
 `%LOCALAPPDATA%\Pia\Diagnostics` does not exist. The real roaming profile, the real log directory
@@ -80,7 +83,7 @@ compute from the directory as it then stood. While the dialog is open the Export
 — not "an empty directory", but no directory. Nothing was written.
 
 **Step 11, Yes.** Dialog closed, the zip appeared, Explorer opened. Note that **reveal opens a new
-Explorer window per export** rather than reusing one; six exports left six windows.
+Explorer window per export** rather than reusing one; every successful export left one behind.
 
 ## 4. The two answers the plan wanted for the playbook
 
@@ -268,7 +271,8 @@ log. Run 3 refused an export and the log window `19:29`–`19:31` contains **zer
 — not one word about it. The user sees a generic failure notice and the log a support engineer would
 then ask for says nothing happened.
 
-**Fixed:** the arm logs a warning naming the cause and no path.
+**Fixed, and confirmed in the app (run 9):** `WARN … Diagnostics export refused: an archive from the
+same second already exists`, where before there was nothing.
 
 ### 6.3 The six failure causes collapse into one message
 
@@ -280,7 +284,10 @@ disk refused the write" are indistinguishable to the person the message is for.
 **Fixed:** the two causes a user can actually hit and act on — `OutputAlreadyExists` and
 `OutputDirectoryMissing` — get their own message; `SourceDirectoryMissing`/`NoLogFiles` route to the
 existing "Nothing to export" pair; `OutputInsideSourceDirectory` and `WriteFailed` keep the generic
-one. `OutputInsideSourceDirectory` is an invariant `PiaPaths` guarantees and no user can reach it.
+one. `OutputInsideSourceDirectory` is an invariant `PiaPaths` guarantees and no user can reach it. Run 9
+read the new text straight off the Flow item: *"An archive from this second already exists. Try again
+in a moment."* — which also proves a resx-only key resolves, since `LocalizationSource` goes through
+`ResourceManager.GetString` and would otherwise have rendered `[Msg_Settings_DiagnosticsFailed_NameTaken]`.
 
 ### 6.4 A provider name rewrote the inside of another rule's token
 
