@@ -225,34 +225,6 @@ public class FilesToolHandlerListTests : IDisposable
     }
 
     [Fact]
-    public void ListRelativeFiles_NegationCannotResurfaceSensitivePathGuardBlockedPath()
-    {
-        // SensitivePathGuard is applied independently of the ignore matcher, so a broad "!**" negation must NOT
-        // surface a guard-blocked path — and %LOCALAPPDATA%\Pia is a blocked root outside the workdir carve-out.
-        var blockedRoot = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Pia", "pia-guard-test-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(blockedRoot);
-        try
-        {
-            File.WriteAllText(Path.Combine(blockedRoot, "secret.txt"), "x");
-            File.WriteAllText(Path.Combine(blockedRoot, ".piaignore"), "!**\n"); // try to re-include everything
-
-            var settings = Substitute.For<ISettingsService>();
-            settings.GetSettingsAsync().Returns(new AppSettings { AssistantFilesFolder = blockedRoot });
-            var handler = new FilesToolHandler(settings, new FileStalenessStore(), NullLogger<FilesToolHandler>.Instance);
-
-            var result = handler.ListRelativeFiles(filter: null, max: 50);
-
-            Assert.DoesNotContain("secret.txt", result); // guard wins over the negation
-        }
-        finally
-        {
-            try { Directory.Delete(blockedRoot, recursive: true); } catch { /* best effort */ }
-        }
-    }
-
-    [Fact]
     public void ListRelativeFiles_NoFolderConfigured_ReturnsEmpty()
     {
         var settings = Substitute.For<ISettingsService>();

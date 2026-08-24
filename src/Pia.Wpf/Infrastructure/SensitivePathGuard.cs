@@ -22,8 +22,33 @@ namespace Pia.Infrastructure;
 /// </summary>
 public static class SensitivePathGuard
 {
-    private static readonly string[] BlockedRoots = BuildBlockedRoots();
-    private static readonly string[] AllowedExceptions = BuildAllowedExceptions();
+    private static readonly object RootsGate = new();
+    private static string[]? _blockedRoots;
+    private static string[]? _allowedExceptions;
+    private static string _rootsKey = string.Empty;
+
+    /// <summary>
+    /// Both arrays, rebuilt whenever the routed data directories move. They used to be <c>static readonly</c>,
+    /// which froze them at type load — the trap <c>PiaPaths</c> exists to avoid, and the reason a test wanting
+    /// a redirected profile had to use the REAL runs root. Keyed on the two routed roots because nothing else
+    /// feeding these arrays can change in-process: <c>LOCALAPPDATA</c> and the credential directories do not
+    /// move. Production therefore still builds once.
+    /// </summary>
+    private static (string[] Blocked, string[] Allowed) Roots()
+    {
+        var key = PiaPaths.LocalDataDirectory + " " + PiaPaths.RoamingDataDirectory;
+        lock (RootsGate)
+        {
+            if (_blockedRoots is null || _allowedExceptions is null || _rootsKey != key)
+            {
+                _blockedRoots = BuildBlockedRoots();
+                _allowedExceptions = BuildAllowedExceptions();
+                _rootsKey = key;
+            }
+
+            return (_blockedRoots, _allowedExceptions);
+        }
+    }
 
     /// <summary>
     /// True when <paramref name="resolvedPath"/> (already §0.3-resolved + canonicalized) is inside a
@@ -38,9 +63,11 @@ public static class SensitivePathGuard
         try { full = Path.GetFullPath(resolvedPath); }
         catch { return false; }
 
+        var (blockedRoots, allowedExceptions) = Roots();
+
         // Carve-outs win over the denylist: an allowed island (the workdir) sits inside a blocked
         // root, so it must be checked first or the StartsWith below would re-block it.
-        foreach (var allowed in AllowedExceptions)
+        foreach (var allowed in allowedExceptions)
         {
             if (string.IsNullOrEmpty(allowed)) continue;
             var allowedWithSep = SafeFolderPath.WithTrailingSeparator(allowed);
@@ -49,7 +76,7 @@ public static class SensitivePathGuard
                 return false;
         }
 
-        foreach (var root in BlockedRoots)
+        foreach (var root in blockedRoots)
         {
             if (string.IsNullOrEmpty(root)) continue;
             var rootWithSep = SafeFolderPath.WithTrailingSeparator(root);
@@ -63,8 +90,8 @@ public static class SensitivePathGuard
         return false;
     }
 
-    /// <summary>Internal so a test can assert what an override produces: the array itself is built once per
-    /// process, long before a test could swing the data roots.</summary>
+    /// <summary>Internal so a test can assert what an override produces directly, without going through the
+    /// cache in <see cref="Roots"/>.</summary>
     internal static string[] BuildBlockedRoots()
     {
         var roots = new List<string?>();

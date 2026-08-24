@@ -11,10 +11,18 @@ what can still be answered afterwards. Plan:
 | `UserMessagePinningTests.cs` | Characterizes what Pia pins: head goal + newest user message, by reference identity. Middle user messages are **not** pinned, so hermes's "user messages are never compacted" invariant is only half held here. |
 | `SyntheticTranscript.cs` | Committed generator — four transcript shapes, seeded, no clock, no real user data, with 15 uniquely-worded facts planted at known unpinned positions. |
 | `SyntheticTranscriptTests.cs` | The generator's own self-tests: determinism, answer uniqueness, over-budget, tool pairing, filler alphabet, the single fused image turn. |
+| `CompactionRecallHarness.cs` | The instrument: corpus, budgets, the question bank + leak filter, one arm runner, the judge, provider resolution, pacing/backoff, and the scorecard writer. |
+| `CompactionArms.cs` | Arms C (mechanical anchor index), D (recovery pointer + a working search) and E (pin every user message), plus the gold-answers-held count every appending arm's score must be read against. **None of them touch `AgentContextCompactor`** — they post-process its output. |
+| `CompactionArmsTests.cs` | The arms' mechanics in the default gate, and the pre-registration: what each arm holds before a provider call. |
+| `CompactionRecallTests.cs` | The bank facts (gate) and the live entry points: smoke, refusal check, no-context control, and the sweep at each budget. |
 | `../../../../scripts/Export-CompactionCorpus.ps1` | Turns one real chat into a JSON fixture, outside the repo. |
 
-**Not here yet:** the question-bank generator, the arms (uncompacted / current / anchor index /
-recovery pointer / pin-all-user-messages), the judge, and the scorecard writer.
+## Read the pre-registration before reading a score
+
+`CompactionArmsTests.EveryArmsHoldingsAreReported_BeforeAnythingIsSpent` prints, per transcript, how many of
+the bank's gold answers each arm's own context already contains **verbatim**. The leak filter only guarantees
+zero for arm B's retained text; any arm that *appends* reintroduces the answers it is being asked to recall.
+An arm handed 13 of 15 is being asked whether it can read a list. Run that test first — it is free.
 
 ## Conventions
 
@@ -29,6 +37,20 @@ xunit v3's `Explicit = true` and so reports as `Not Run` in a default run.
 dotnet test                                                              # the gate; the bar is failed: 0
 dotnet test -- --explicit only --filter-namespace "Pia.Tests.Integration.Compaction"
 ```
+
+The built exe takes xunit's native single-dash options instead, which is the only way to run ONE live entry
+point — start with the two-call smoke test, never with the sweep:
+
+```bash
+PIA_COMPACTION_PROVIDER=<provider name or id> \
+  tests/Pia.Wpf.Tests/bin/Debug/net10.0-windows10.0.17763.0/Pia.Wpf.Tests.exe \
+  -explicit only -diagnostics \
+  -method "Pia.Tests.Integration.Compaction.CompactionRecallTests.OneQuestionEndToEnd_BeforeTheSweepSpendsAnything"
+```
+
+**The answering + judging model is part of the measurement.** An arm run on one provider cannot be compared to
+a baseline measured on another, so every arm has to run in the same sweep — that is why the sweep runs all six
+columns rather than letting you add one cheaply.
 
 The suite runs on **Windows or CI only**. Authoring and compiling on macOS is fine
 (`-p:EnableWindowsTargeting=true`); the `net10.0-windows` tests cannot execute there.

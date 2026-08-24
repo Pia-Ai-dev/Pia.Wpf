@@ -782,7 +782,7 @@ Not from the review. Found on 2026-08-23 while seeding a throwaway profile for t
   assert the real profile, and still only read strings from it.
   *Deps:* none · *Effort:* **S** · *Value:* **High** (the gate must not mutate the machine it runs on)
 
-- [ ] **F3 · Two directory mtimes are the gate's remaining footprint on the real profile.** Both were named
+- [x] **F3 · Two directory mtimes are the gate's remaining footprint on the real profile.** Both were named
   while closing F1 and both are by *premise*, not by accident. `%LOCALAPPDATA%\Pia\runs` is restamped by 47
   tests in five classes (`RunWorkspacePromotionTests`, `RunWorkspaceRedirectsTests`,
   `FilesToolHandlerRunsDirGuardTests`, `FilesToolHandlerWorkspaceEscapeTests`,
@@ -795,6 +795,33 @@ Not from the review. Found on 2026-08-23 while seeding a throwaway profile for t
   mtime, plus an orphan if a test dies mid-body. Measured separately — the five run-workspace classes move
   `runs` and not `Pia`. The fix, if it is worth one, is to make the guard's root array and the containment
   gate re-derivable so both suites can run redirected.
+  **Done 2026-08-24, and the containment gate needed nothing — only the guard did.**
+  `RunWorkspaceRedirects.Record` already re-derives its gate on every call, and `AssistantWorkspace.RunsRoot`
+  is already a property. The whole blocker was `SensitivePathGuard`'s two `static readonly` arrays, frozen at
+  type load — the exact trap `PiaPaths` exists to avoid, and one nothing had noticed because production sets
+  its environment before anything loads. They now rebuild behind a lock keyed on the two routed roots, so
+  production still builds once.
+  - **Redirect, not rewrite.** A new `RedirectedProfileFixture` applies `PiaPaths.OverrideForTests` for a
+    class's lifetime; the five run-workspace classes take it as an `IClassFixture` and move into the existing
+    **`PiaPathsStatic`** collection, which is already `DisableParallelization = true`. That collection is what
+    makes the redirect safe rather than a race — `OverrideForTests` sets process-wide environment variables,
+    and nine other tests' premise is that no override is set. F1 refused a *blanket* redirect for exactly that
+    reason; a targeted one inside the serialized collection has the same effect without the collision.
+  - **The second offender needed its own class.** `ListRelativeFiles_NegationCannotResurfaceSensitivePathGuard
+    BlockedPath` read `SpecialFolder.LocalApplicationData` directly and was the only thing still stamping
+    `%LOCALAPPDATA%\Pia` itself. Moved to `FilesToolHandlerBlockedRootListTests` on the redirected profile, and
+    it gained a **non-vacuity assertion first** — `IsBlocked` must say the path is blocked — because the test
+    also passes against a root the handler simply cannot read.
+  - **Two new facts hold the fix**, both in `SensitivePathGuardOverriddenProfileTests`: `IsBlocked` follows an
+    override applied *after* the guard has already answered (and reverts when it is dropped), and the runs
+    carve-out moves with the profile while a sibling of it stays blocked. The class's ctor reads the guard from
+    the real profile first, which is what makes them non-vacuous.
+  - **Measured, not argued.** Snapshot → gate run → compare: **0 of 9 changed.** `%LOCALAPPDATA%\Pia`,
+    `\runs`, `\workdir` and `\Logs` mtimes all unmoved; `history.db`, `-wal`, `-shm`, `settings.json` and
+    `providers.json` all byte-identical by SHA256. The first attempt at this comparison was **wrong** —
+    `ConvertFrom-Json` parsed the ISO timestamps into `DateTime`s and comparing one to a string is always
+    unequal, which reported `workdir` as changed since June. Compare ticks or hashes as strings.
+  - Cost: **none measurable.** 4825 / failed: 0 at 29.2s, against 28.7s before the collection change.
   *Deps:* none · *Effort:* **S** · *Value:* **Low**
 
 - [x] **F2 · A chat-history row can be DELETED by AutomationId but not opened by one.** Found on

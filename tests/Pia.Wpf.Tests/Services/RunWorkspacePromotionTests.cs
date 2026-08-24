@@ -6,6 +6,7 @@ using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -14,8 +15,8 @@ namespace Pia.Tests.Services;
 /// The workspace is built by hand so the mtime-vs-<c>provisionedAtUtc</c> facts are not a race against the
 /// clock, and the collection is shared because the real-shape fact mutates the global redirect registry.
 /// </summary>
-[Collection("RunWorkspaceRedirectsStatic")]
-public sealed class RunWorkspacePromotionTests : IDisposable
+[Collection("PiaPathsStatic")]
+public sealed class RunWorkspacePromotionTests : IClassFixture<RedirectedProfileFixture>, IDisposable
 {
     private readonly string _dir;
 
@@ -29,8 +30,9 @@ public sealed class RunWorkspacePromotionTests : IDisposable
     private static readonly DateTime BeforeProvision = Stamp.AddHours(-1);
     private static readonly DateTime AfterProvision = Stamp.AddMinutes(1);
 
-    public RunWorkspacePromotionTests()
+    public RunWorkspacePromotionTests(RedirectedProfileFixture profile)
     {
+        _ = profile;
         _dir = Path.Combine(Path.GetTempPath(), "PiaRunProm_" + Guid.NewGuid().ToString("N"));
         _dest = Path.Combine(_dir, "files");
         _runsBase = Path.Combine(_dir, "runs");

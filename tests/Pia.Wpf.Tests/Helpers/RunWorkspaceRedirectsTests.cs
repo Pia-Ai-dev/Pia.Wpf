@@ -1,20 +1,25 @@
 using System.IO;
 using Pia.Helpers;
 using Pia.Infrastructure;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Helpers;
 
 /// <summary>
-/// Rooted at the real runs root because <see cref="RunWorkspaceRedirects.Record"/>'s containment gate refuses
-/// anything else, and collection-shared because the cap fact deliberately overflows a process-global registry.
+/// Rooted at the runs root because <see cref="RunWorkspaceRedirects.Record"/>'s containment gate refuses
+/// anything else — a REDIRECTED one, so the developer's own profile is not touched — and collection-shared
+/// because the cap fact deliberately overflows a process-global registry.
 /// </summary>
-[Collection("RunWorkspaceRedirectsStatic")]
-public sealed class RunWorkspaceRedirectsTests : IDisposable
+[Collection("PiaPathsStatic")]
+public sealed class RunWorkspaceRedirectsTests : IClassFixture<RedirectedProfileFixture>, IDisposable
 {
     private readonly List<string> _dirs = [];
 
-    /// <summary>A run-shaped workspace directory: inside the real runs root, so Record accepts it.</summary>
+    public RunWorkspaceRedirectsTests(RedirectedProfileFixture profile) => _ = profile;
+
+    /// <summary>A run-shaped workspace directory: inside the runs root of the redirected profile, so Record's
+    /// containment gate accepts it without the developer's real one being touched.</summary>
     private string NewWorkspace()
     {
         var dir = Path.Combine(AssistantWorkspace.RunsRoot, Guid.NewGuid().ToString());

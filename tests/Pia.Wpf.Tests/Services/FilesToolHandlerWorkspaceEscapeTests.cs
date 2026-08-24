@@ -6,26 +6,30 @@ using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
 
 /// <summary>
 /// The run root sits at its real shape under <see cref="AssistantWorkspace.RunsRoot"/>: a
-/// <c>GetTempPath()</c> fixture falls outside every <c>SensitivePathGuard</c> blocked root.
+/// <c>GetTempPath()</c> fixture falls outside every <c>SensitivePathGuard</c> blocked root. That shape is taken
+/// inside a REDIRECTED profile, not the developer's own — the guard rebuilds its roots when they move.
 /// </summary>
-public class FilesToolHandlerWorkspaceEscapeTests : IDisposable
+[Collection("PiaPathsStatic")]
+public class FilesToolHandlerWorkspaceEscapeTests : IClassFixture<RedirectedProfileFixture>, IDisposable
 {
     private readonly string _interactiveRoot;
     private readonly string _runRoot;
     private readonly string _outside;
     private readonly FilesToolHandler _handler;
 
-    public FilesToolHandlerWorkspaceEscapeTests()
+    public FilesToolHandlerWorkspaceEscapeTests(RedirectedProfileFixture profile)
     {
+        _ = profile;
         _interactiveRoot = NewDir("pia-escape-interactive-");
         // Bare Guid name: RunStartupSweepAsync skips any directory name that is not a parseable Guid, so a
-        // prefixed fixture that leaked would live in the developer's real runs folder forever.
+        // prefixed fixture that leaked would live in the runs folder forever.
         _runRoot = Path.Combine(AssistantWorkspace.RunsRoot, Guid.NewGuid().ToString());
         Directory.CreateDirectory(_runRoot);
         _outside = NewDir("pia-escape-outside-");

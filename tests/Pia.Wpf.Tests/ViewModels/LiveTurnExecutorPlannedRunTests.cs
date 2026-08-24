@@ -20,9 +20,10 @@ using Xunit;
 namespace Pia.Tests.ViewModels;
 
 // The isolation facts drive the process-global RunWorkspaceRedirects registry, hence the shared collection with
-// RunWorkspaceRedirectsTests, whose cap fact deliberately overflows it.
-[Collection("RunWorkspaceRedirectsStatic")]
-public sealed class LiveTurnExecutorPlannedRunTests
+// RunWorkspaceRedirectsTests, whose cap fact deliberately overflows it. PiaPathsStatic rather than a
+// collection of its own because the redirected profile swings process-wide environment variables.
+[Collection("PiaPathsStatic")]
+public sealed class LiveTurnExecutorPlannedRunTests : IClassFixture<RedirectedProfileFixture>
 {
     private readonly IAiClientService _ai = Substitute.For<IAiClientService>();
     private readonly IPluginService _plugins = Substitute.For<IPluginService>();
@@ -31,8 +32,9 @@ public sealed class LiveTurnExecutorPlannedRunTests
     private readonly ITokenMapService _tokenMap = Substitute.For<ITokenMapService>();
     private readonly IToolPermissionService _permissions = Substitute.For<IToolPermissionService>();
 
-    public LiveTurnExecutorPlannedRunTests()
+    public LiveTurnExecutorPlannedRunTests(RedirectedProfileFixture profile)
     {
+        _ = profile;
         _loc[Arg.Any<string>()].Returns(ci => (string)ci[0]);
         _loc.Format(Arg.Any<string>(), Arg.Any<object[]>()).Returns(ci => (string)ci[0]);
     }
@@ -545,7 +547,7 @@ public sealed class LiveTurnExecutorPlannedRunTests
     // Interactive isolation end to end, through the REAL provisioner.
     // ---------------------------------------------------------------------------------------------------
 
-    /// <summary>Rooted at the real <see cref="AssistantWorkspace.RunsRoot"/> because <c>RunWorkspaceRedirects.Record</c>'s containment gate refuses anything else.</summary>
+    /// <summary>Rooted at <see cref="AssistantWorkspace.RunsRoot"/> because <c>RunWorkspaceRedirects.Record</c>'s containment gate refuses anything else — inside a REDIRECTED profile, so that root is not the developer's own.</summary>
     private sealed class WorkspaceFixture : IDisposable
     {
         private readonly string _dir;

@@ -6,23 +6,64 @@ using Xunit;
 namespace Pia.Tests.Infrastructure;
 
 /// <summary>
-/// A redirected data directory holds the same secrets as the real one, so the denylist has to cover it. Asserted
-/// against the builder rather than <see cref="SensitivePathGuard.IsBlocked"/> because the blocked-root array is
-/// built once per process, before any test could swing the roots.
+/// A redirected data directory holds the same secrets as the real one, so the denylist has to cover it. Most
+/// facts here still go through the builder, which asserts the composition directly; the two that go through
+/// <see cref="SensitivePathGuard.IsBlocked"/> are the ones that prove the guard REBUILDS — it used to hold both
+/// arrays in <c>static readonly</c> fields frozen at type load.
 /// </summary>
 [Collection("PiaPathsStatic")]
 public sealed class SensitivePathGuardOverriddenProfileTests
 {
     /// <summary>
-    /// Builds the guard's two process-wide arrays from the REAL profile before any override is applied. The type
-    /// is <c>beforefieldinit</c>, so the runtime may run those initializers at any point up to the first field
-    /// read — today that lands inside <see cref="SensitivePathGuard.IsBlocked"/>, after the override below is
-    /// gone, but that is latitude rather than a guarantee. Forcing the order here costs nothing and stops a
-    /// future runtime choice from freezing a temp root into the array for every other guard test in the process.
+    /// Reads the guard once from the REAL profile before any override is applied, which is what makes the two
+    /// rebuild facts below non-vacuous: with the arrays cached against the real roots, a test that then swings
+    /// the roots is asking the exact question a frozen <c>static readonly</c> answers wrongly.
     /// </summary>
     public SensitivePathGuardOverriddenProfileTests()
     {
         SensitivePathGuard.IsBlocked(Path.GetTempPath(), out _);
+    }
+
+    /// <summary>
+    /// The initialization-order trap, as behaviour rather than as a string comparison. Both halves matter: the
+    /// redirected profile becomes blocked, and its runs carve-out becomes allowed. Frozen arrays get the first
+    /// wrong (a redirected profile is unprotected) AND the second (a redirected run's own workspace is blocked,
+    /// which is why a test wanting one had to use the real runs root and stamp its mtime).
+    /// </summary>
+    [Fact]
+    public void IsBlocked_FollowsAnOverrideAppliedAfterTheGuardHasAlreadyAnswered()
+    {
+        var local = Path.Combine(Path.GetTempPath(), $"pia-guard-local-{Guid.NewGuid():N}");
+        var insideProfile = Path.Combine(local, "history.db");
+        var insideRuns = Path.Combine(local, "runs", Guid.NewGuid().ToString("N"), "out.md");
+
+        // Before: neither path is anywhere the guard knows about, so both are simply outside the denylist.
+        Assert.False(SensitivePathGuard.IsBlocked(insideProfile, out _));
+
+        using (PiaPaths.OverrideForTests(null, local))
+        {
+            Assert.True(SensitivePathGuard.IsBlocked(insideProfile, out _));
+            Assert.False(SensitivePathGuard.IsBlocked(insideRuns, out _));
+        }
+
+        // And back: the cache key is the roots, so dropping the override restores the real arrays rather than
+        // leaving a temp directory blocked for the rest of the process.
+        Assert.False(SensitivePathGuard.IsBlocked(insideProfile, out _));
+    }
+
+    /// <summary>The carve-out has to move WITH the profile, not merely exist: a redirected run whose workspace
+    /// root is blocked dead-ends every file tool in it.</summary>
+    [Fact]
+    public void IsBlocked_UnderAnOverride_StillBlocksTheRealRunsSibling()
+    {
+        var local = Path.Combine(Path.GetTempPath(), $"pia-guard-local-{Guid.NewGuid():N}");
+
+        using (PiaPaths.OverrideForTests(null, local))
+        {
+            // The island is `runs` under the OVERRIDDEN root only. A sibling of it stays blocked, so the
+            // carve-out did not widen to the whole redirected profile.
+            Assert.True(SensitivePathGuard.IsBlocked(Path.Combine(local, "Logs", "pia.log"), out _));
+        }
     }
 
     /// <summary>The real profile stays blocked no matter what the facts below do to the roots.</summary>

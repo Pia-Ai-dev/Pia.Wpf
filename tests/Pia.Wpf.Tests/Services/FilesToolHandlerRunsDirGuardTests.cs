@@ -6,19 +6,24 @@ using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>Roots the fixture inside the real, guard-checked <c>%LOCALAPPDATA%\Pia</c> tree, so a successful write actually exercises the runs carve-out.</summary>
-public sealed class FilesToolHandlerRunsDirGuardTests : IDisposable
+/// <summary>Roots the fixture inside a guard-checked <c>Pia</c> data tree, so a successful write actually
+/// exercises the runs carve-out. That tree is a REDIRECTED profile rather than the developer's own — the guard
+/// rebuilds its roots now, so nothing here has to reach into the real one to be inside it.</summary>
+[Collection("PiaPathsStatic")]
+public sealed class FilesToolHandlerRunsDirGuardTests : IClassFixture<RedirectedProfileFixture>, IDisposable
 {
     private readonly string _runDir;
     private readonly FilesToolHandler _handler;
 
-    public FilesToolHandlerRunsDirGuardTests()
+    public FilesToolHandlerRunsDirGuardTests(RedirectedProfileFixture profile)
     {
-        // Guid-shaped so the startup sweep reclaims a leaked fixture instead of leaving it in the real runs folder.
+        _ = profile;
+        // Guid-shaped so the startup sweep reclaims a leaked fixture instead of leaving it in the runs folder.
         _runDir = Path.Combine(AssistantWorkspace.RunsRoot, Guid.NewGuid().ToString());
         Directory.CreateDirectory(_runDir);
 
