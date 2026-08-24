@@ -281,6 +281,26 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
 - [ ] **B10 · Full sweep, scorecard, findings** — including what was luck.
   *Deps:* B6, B8, B9 · *Effort:* **S** · *Value:* **High**
 
+- [ ] **B11 · Per-provider context-window defaults — 128k for an unknown model, a table for known ones.**
+  **Owner decision, 2026-08-24.** Found while reading B4's "no configured provider sets a window": that is
+  not a gap in the profile, it is the shipped state for everyone. `MaxContextWindowTokens` is a **hand-typed
+  field in the provider editor** (`ProviderEditModel.cs:148`/`:171`), never fetched from any API — no
+  provider reports one — and it defaults to null, so `AgentContextBudget.From` returns null and
+  `AgentContextCompactor.CompactAsync` returns the message list unmodified. **Compaction is off for every
+  user today.**
+  The decision is to default **128k for any unknown model** and author a table of known ones.
+  - **This ships before B6/B8/B9, and that is deliberate.** With no budget the full list goes to the
+    provider, so a chat past the real window fails *provider-side* — a hard error. The default converts that
+    into graceful degradation, which is better even at B4's 0% recall of evicted content. An 8000-token
+    default would have been the opposite call; 128k is generous enough that compaction fires only on
+    genuinely long chats, which is what makes shipping first safe.
+  - **It also promotes B6/B8/B9 from lab result to live defect.** They improve a dormant path today; once
+    this lands they improve one that fires.
+  - `MaxOutputTokens` needs no default — `From` accepts a null (→ 0) as long as it is below the window.
+  - The field is deliberately off `SyncProvider` and off `ProviderFingerprint.Compute`; a default must not
+    change either.
+  *Deps:* none · *Effort:* **S** · *Value:* **High**
+
 ---
 
 ## C — Routine blueprints
@@ -501,6 +521,11 @@ below are the real ones.
   value. Distinguishing "resolved to nothing" from "predates the columns" needs a sentinel or a separate
   recorded-pins marker; `ReasoningEffort.None` cannot be it, since the codebase treats None as a real
   pinnable value. Cheap to fix, but it is a semantics call, not a bug fix.
+  **Answered by the owner 2026-08-24: freeze both directions.** Record that the launch resolved its pins, so
+  a null means *resolved to nothing* rather than *predates the columns*, and both directions freeze
+  identically — a persona edited during a park can no longer change what a resumed run costs. That needs the
+  separate recorded-pins marker named above, since `None` is unavailable as a sentinel. The row is now a
+  build, not a decision.
   *Deps:* E9 · *Effort:* **XS** · *Value:* **Med**
 
 ---
@@ -519,6 +544,20 @@ D1 → D2 → D3 → D5               # tour, after the cheaper items land
 ```
 
 `A1` and `B5` together are under two days and can both close a branch of work.
+
+### Queued 2026-08-24, after the C5/C7 batch
+
+Owner-selected, in the order the dependencies allow. `B11` leads because it is what makes the B-track
+matter at all, and because until it lands an over-window chat fails provider-side.
+
+```
+B11 → E10 · P9 · E11        # the window default, then three XS rows with no open questions
+B7 → B8                     # message-level search, then the recovery pointer
+C6                          # needs plan §11 Q4 answered first, and a desktop pass
+```
+
+**`BlueprintKey` stays data-only** (owner, 2026-08-24): no UI reads it, the question it answers needs months
+of real use, and it is answerable by SQL against `history.db` in the meantime.
 
 ---
 
