@@ -602,9 +602,13 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
 > risk table predicted it — *"the cheaper items in the review (blueprints, error surface, diagnostics) should
 > land first"* — and blueprints landed while the error surface and diagnostics did not.
 >
-> **`D1` stays in the product** (`TourTargetWalker`, `TourTargetCollector`, Ctrl+Shift+F12, 363 lines of
-> tests). It is the instrument `D7` needs — the walker collects elements that HAVE an `AutomationId`, so
-> what it omits is the gap list — and it costs one singleton to carry.
+> **`D1` stays in the product** (`TourTargetWalker`, `TourTargetCollector`, **Ctrl+Shift+F12 in DEBUG
+> builds only**, 363 lines of walker tests). Kept because it is the repo's only *runtime* AutomationId
+> inventory and its blind spots are complementary to the static `ViewAutomationIdTests` sweep — it sees
+> container-style ids, template ids whose `OnApplyTemplate` never fires, and realized virtualized rows, all
+> named playbook gaps. **It cannot find MISSING ids** (the walker only offers elements that already have one),
+> so its contribution to `D7` is the *confirmation* half, not the gap list. Removing it would touch 8 files
+> including two non-tour-local edits, so carrying it is cheaper.
 >
 > **`D-Q1` is still the thing to answer first**, and it decides whether this is a tool or a control:
 > onboarding ⇒ a canned tour with no LLM and no `D3`; arbitrary "where do I…" questions ⇒ the generic tool as
@@ -612,10 +616,13 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
 
 - [ ] **D7 · AutomationId gap-fill** for surfaces a tour needs but cannot address; feeds
   `docs/ui_automation/ui-automation-playbook.md`. Also improves UI-test coverage.
-  **Deliberately NOT parked with the rest of the track (2026-08-24).** It is the one D row that never depended
-  on `D-Q1`, `D1` (its dependency) is done, and it pays into the playbook and `ViewAutomationIdTests`
-  whether or not a tour is ever built. Regenerate the gap list from Ctrl+Shift+F12 rather than inheriting any
-  count recorded earlier — AutomationId coverage moves with every new control.
+  **Kept open as a TAG-ALONG, not as scheduled work (2026-08-24).** It never depended on `D-Q1` and `D1` is
+  done, so it is technically startable — but **scheduling it as its own row is reopening a track the owner just
+  parked.** Its substance (add the id, bump the `[InlineData]` count in `ViewAutomationIdTests`, update the
+  playbook's "Known gaps") is what any UI change should be doing anyway, so fold it into the next UI work
+  rather than picking it up alone. Regenerate the gap list from `ViewAutomationIdTests`' `IdKind.Missing`
+  and the playbook — **not** from a Ctrl+Shift+F12 dump, which by construction only shows ids that already
+  exist.
   *Deps:* D1 (satisfied) · *Effort:* **S** · *Value:* **Med**
 
 ---
@@ -803,10 +810,13 @@ re-read (§8 of [2026-08-23-a2-wide-read.md](2026-08-23-a2-wide-read.md) fixed t
 [../guided_tour/2026-08-24-d-track-parked.md](../guided_tour/2026-08-24-d-track-parked.md). `D7` was severed
 from it and stays open, ungated, at `S`/`Med`.
 
-**So six rows are open, and only `D7` is buildable without an owner decision or a desktop-and-spend session.**
-That makes the honest next candidates the two `High`s in the *not yet planned* table below — the error layer on
-the failure card and consented Send Diagnostics, which are one feature area — rather than anything still
-lettered.
+**So six rows are open and NONE of them is the right next move.** `A2`–`A7` wait on a supply re-read that
+costs a desktop session; `C6` waits on plan §11 Q4; `D7` is a tag-along rather than scheduled work. The next
+work is therefore the two `High`s in the *not yet planned* table below — **the error layer on the failure card
+and consented diagnostics export, which are one feature area (failure legibility)** — and the first slice of it
+is already free: `AgentRunService.FailAsync` serialises `{ error }` into `AgentRuns.ExtraJson` on **every**
+failure, and the column's only reader (`RunProgressViewModel.ReadTruncation`) short-circuits on `truncated`
+and never looks at it. **Every failed run already knows why it failed and the UI says "Ended with an error".**
 
 **`BlueprintKey` stays data-only** (owner, 2026-08-24): no UI reads it, the question it answers needs months
 of real use, and it is answerable by SQL against `history.db` in the meantime.

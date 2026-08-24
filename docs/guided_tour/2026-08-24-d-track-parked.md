@@ -25,7 +25,19 @@ plan warned about.
 
 ## 2. What is already in the product
 
-`D1` is **shipped, tested and reachable by a human today.** It is not scaffolding behind a flag.
+`D1` is shipped and its walker is well tested. Three qualifications, all of which an earlier draft of this doc
+got wrong:
+
+- **It is reachable in DEBUG builds only.** The sole invoker is an `#if DEBUG` `KeyBinding` in code-behind
+  (`MainWindow.xaml.cs:36-39`). In Release the collector, the command and the DI registration all ship, but
+  nothing can invoke them.
+- **The key-press path is untested and, as far as the repo shows, has never been observed running.**
+  `TourTargetCollector` has **zero tests** — and it is the one piece that touches `Application.Current.Windows`
+  / `IsActive` (`:54`) and marshals through `IUiDispatcher.PostAsync` (`:44`). The 18 green tests cover the pure
+  walker and the ViewModel contract, not the seam between the keystroke and the walk.
+- **It cannot find *missing* AutomationIds.** `IsOffered` requires a non-empty id
+  (`TourTargetWalker.cs:88`), so an element without one is simply absent from the dump. The gap detector is
+  `ViewAutomationIdTests`' `IdKind.Missing/Empty` and the playbook's own "Known gaps" section — not this.
 
 | Piece | Path |
 |---|---|
@@ -37,17 +49,43 @@ plan warned about.
 | Its keybinding | `MainWindow.xaml.cs:38` — **Ctrl+Shift+F12** |
 | Tests | `tests/Pia.Wpf.Tests/Views/TourTargetWalkerTests.cs` (363 lines) |
 
-Pressing Ctrl+Shift+F12 logs the tourable elements of the active view and copies a JSON dump to the
+In a Debug build, Ctrl+Shift+F12 logs the tourable elements of the active view and copies a JSON dump to the
 clipboard.
 
 **Keep it.** Two reasons, and neither depends on the tour ever shipping:
 
-1. **It is the instrument `D7` needs.** `D7` (AutomationId gap-fill) is the one D row that was never gated on
-   `D-Q1`, and the walker is exactly how you find a surface that has no id — it collects elements *with* a
-   non-empty `AutomationId`, so what it omits is the gap list. That makes it useful to
-   `docs/ui_automation/ui-automation-playbook.md` and to `ViewAutomationIdTests` regardless.
-2. **It costs nothing to carry.** One singleton, one debug command, no behaviour depends on it, and the tests
-   are ordinary gate tests with no UI thread requirement beyond the existing view harness.
+1. **It is the repo's only *runtime* AutomationId inventory,** and its blind spots are complementary to the
+   static `ViewAutomationIdTests` sweep rather than overlapping it. It sees three things that sweep
+   structurally cannot: ids on `ListBoxItem` containers set via `ItemContainerStyle`, ids inside a
+   `ControlTemplate` whose `OnApplyTemplate` never fires under `Activator.CreateInstance`, and realized
+   virtualized rows — all three are named known gaps in the playbook today. It also reports duplicate ids
+   separately, which makes the CLAUDE.md trap (a literal id inside an `ItemsControl`, so every row reports the
+   same one) visible in a single paste. And because `Describe` falls back to `GetType().Name` when no
+   automation peer exists (`TourTargetWalker.cs:104`), a `ControlType` that is not a UIA control-type name is a
+   mechanical **dead-id** signal — exactly the `ui:InfoBar` failure class the playbook records.
+   **What it is not:** a way to find ids that are missing. Its contribution to `D7` is the *confirmation* half —
+   does the id I just added actually surface at runtime — which the InfoBar case proves is not a given.
+2. **It costs nothing to carry, and removing it costs more than keeping it.** One singleton, one debug command,
+   nothing depends on it. Removal touches 8 files including two edits that are not tour-local: the `Collector`
+   entry in the shared approved-suffix list (`NamingConventionTests.cs:31-34`) and two `MainWindowViewModel`
+   ctor params with their test call site.
+
+**One condition on "keep" being an asset rather than a liability, and it is not done yet:** add a line to
+`docs/ui_automation/ui-automation-playbook.md` naming the keybinding, what it dumps, and its three blind spots
+(popup-hosted ids, unrealized virtualized rows, missing ids). Today the only record of Ctrl+Shift+F12 outside
+the source is a commit message and a superseded batch brief — and the playbook is the doc a UI-automation
+session is told to read first. **This is how the thing rots to nobody knowing it exists.**
+
+### One landmine the next row in the track would arm
+
+The clipboard write at `MainWindowViewModel.cs:456` is **not** `#if DEBUG`-gated — only its sole invoker is. The
+log path *is* gated (`SensitiveDebug` is `[Conditional("DEBUG")]`), so the asymmetry is easy to miss. The moment
+`D3` registers a Release-reachable invoker, every `AutomationId` **and every `Name`** — todo titles, chat titles,
+i.e. user content by CLAUDE.md's own list — goes to the clipboard in a shipped build.
+
+Fixing it is a **two-file** change, not a one-liner: `MainWindowViewModelTests`' clipboard assertion has no
+`#if` guard, unlike its log-level sibling, so gating the write alone leaves a Release-config assertion
+contradicting the code. **Decide this before `D3` is registered, not after.**
 
 ## 3. The one question that has to be answered first
 
@@ -71,11 +109,25 @@ feature.**
 
 Ordered by how likely it is to bite. Re-verify before trusting any of it.
 
-- **The walker's assumptions about the visual tree and view names.** It walks from the active window and
-  attributes each element to an owning view. Adding a top-level view is six magic-string edits in this
-  codebase (see the `project_toplevel_view_wiring` note in the repo's practice memory), so a view added while
-  parked may be collected under the wrong name or not at all. **Press Ctrl+Shift+F12 on every top-level view
-  and check the `View` field before writing any resolution code.**
+- **`OwningView` is the most fragile assumption in the whole thing, and `D5` is built entirely on it.** The
+  rule is "outermost `UserControl` below the root" (`TourTargetWalker.cs:53-54`), which holds only because
+  Pia's views are `UserControl`s hosted directly by a `DataTemplate`. Wrap the content host in one shared
+  shell `UserControl`, or move a view to a `Page`/custom `ContentControl`, and **every** target in the window
+  starts reporting the wrapper's name. It is tested only against synthetic `OuterTestView`/`InnerTestView`,
+  never a real view — and note that chrome elements legitimately report `NavigationSidebarView` rather than the
+  content view, which reads like a bug if you are not expecting it. **Press Ctrl+Shift+F12 on every top-level
+  view and check the `OwningView` field before writing any resolution code.**
+- **The 200-target cap is much closer than it was.** `MaxTargets = 200` (`TourTargetWalker.cs:14`), and it
+  truncates in visual-tree order, so what is lost is the *tail* rather than the least important. The plan doc
+  counted 183 `AutomationId`s across 20 XAML files; a grep now finds ~348 occurrences, 48 in one settings view
+  alone, and per-item ids multiply per row. **A dump read as an inventory without checking `Truncated` will be
+  quietly wrong on a busy window.**
+- **The keybinding is the un-gated half of the DI pair.** Deleting the `Bootstrapper` registration fails the
+  gate (`BootstrapperGraphValidationTests` builds the real graph with `ValidateOnBuild`), but **nothing in the
+  gate touches `MainWindow.xaml.cs`** — those four lines can be dropped in any code-behind refactor and the
+  feature becomes silently unreachable while still compiling and still passing all 18 tests, because the
+  ViewModel tests invoke the command directly and never the binding. **This is the likeliest way D1 rots to
+  zero.**
 - **AutomationId coverage moves constantly.** Every new interactive control is supposed to get one plus an
   `[InlineData]` row in `ViewAutomationIdTests`, so the target inventory the walker returns is a moving
   target — in the good direction, but it means any *count* recorded now is stale. `D7`'s gap list has to be
@@ -111,10 +163,12 @@ the real cost, not the line count.
 `D2 → D3 → D5` is the vertical slice worth building: it demos the whole idea and lands the row the plan calls
 "where the real value is". `D4`, `D6` and `D8` are polish and proof on top of it.
 
-**`D7` is severable and should be treated as such.** It is `S`, it needs no desktop pass beyond a normal UI
-run, it does not depend on `D-Q1`, and it pays into `ui-automation-playbook.md` and UI-test coverage whether or
-not a tour is ever built. It stays on the checklist as an ordinary open row; the rest of the track is parked
-here.
+**`D7` stays open, but as a tag-along rather than scheduled work.** It is `S`, it does not depend on `D-Q1`,
+and it pays into `ui-automation-playbook.md` and UI-test coverage whether or not a tour is ever built — but
+picking it up *as its own row* is reopening a track that was just parked. Fold its substance (add the id, bump
+the `[InlineData]` count, update the playbook's "Known gaps") into the next UI change instead. Generate its gap
+list from `ViewAutomationIdTests`' `IdKind.Missing` and the playbook, **not** from a Ctrl+Shift+F12 dump — the
+walker only reports ids that already exist.
 
 ## 6. How to un-park this
 
