@@ -1314,4 +1314,10 @@
   <data name="Run_FailureAction_Diagnostics" xml:space="preserve">
     <value>Export diagnostics</value>
   </data>
+  <data name="Settings_ExportDiagnostics_Confirm_ExcludedByCap" xml:space="preserve">
+    <value>This is not your whole log history: an export stops at {1} log files or {2} MB, whichever comes first, so {0} file(s) are left out. Mention it in your support request if you need those too.</value>
+  </data>
+  <data name="Settings_ExportDiagnostics_Confirm_Excluded" xml:space="preserve">
+    <value>A further {0} file(s) in that folder are not recognised as Pia logs; the archive lists them in its manifest.</value>
+  </data>
 </root>

@@ -19,13 +19,10 @@ public sealed class DiagnosticsExportService : IDiagnosticsExportService
 {
     private const int SchemaVersion = 1;
     private const string LogEntryPrefix = "logs/";
-    // Wider than pia-????-??-??.log on purpose: the sink rolls at 10 MB and a rolled name carries a suffix,
-    // so a fixed-width pattern would drop a real log file AND leave it out of the manifest. The sink's own
-    // base name, pia.log, is matched too — it carries no date, so it is listed as excluded rather than
-    // vanishing if FormatLogFileName ever stops stamping one on.
+    // Wider than pia-????-??-??.log on purpose: the sink appends the roll index with NO separator, so
+    // pia-2026-08-24.log rolls to pia-2026-08-241.log, and its own base name pia.log carries no date at all.
+    // Both have to be seen, so a file left out is listed rather than simply absent.
     private const string FileNamePattern = "pia*.log";
-    private const string FileNamePrefix = "pia-";
-    private const int StampLength = 10;
 
     // Strings, not ordinals: an ExclusionReason of 0 next to a null one is not a reason anyone can read.
     private static readonly JsonSerializerOptions Json =
@@ -47,10 +44,11 @@ public sealed class DiagnosticsExportService : IDiagnosticsExportService
         if (string.IsNullOrWhiteSpace(sourceLogDirectory) || !Directory.Exists(sourceLogDirectory))
             return DiagnosticsExportPlan.Empty;
 
-        var candidates = new List<(DateOnly? Date, FileInfo File)>();
+        var candidates = new List<((DateOnly Date, int Roll)? Slice, FileInfo File)>();
         foreach (var path in Directory.EnumerateFiles(sourceLogDirectory, FileNamePattern))
         {
-            candidates.Add((DateOf(Path.GetFileNameWithoutExtension(path)), new FileInfo(path)));
+            candidates.Add((
+                LogFileRetention.SliceOf(Path.GetFileNameWithoutExtension(path)), new FileInfo(path)));
         }
 
         var files = new List<DiagnosticsLogFile>();
@@ -63,16 +61,26 @@ public sealed class DiagnosticsExportService : IDiagnosticsExportService
         // holes in it is not.
         var stopped = false;
         foreach (var candidate in candidates
-                     .Where(c => c.Date is not null)
-                     .OrderByDescending(c => c.Date!.Value)
-                     .ThenByDescending(c => c.File.Name, StringComparer.Ordinal))
+                     .Where(c => c.Slice is not null)
+                     .Select(c => (Slice: c.Slice!.Value, c.File))
+                     .OrderByDescending(c => c.Slice.Date)
+                     // Only a tiebreak inside one day, where the name says nothing about order: the roll
+                     // index wraps back onto the base file, so the highest index is not the newest slice.
+                     .ThenByDescending(c => c.File.LastWriteTimeUtc)
+                     .ThenByDescending(c => c.Slice.Roll)
+                     .ThenBy(c => c.File.Name, StringComparer.Ordinal))
         {
             var bytes = candidate.File.Length;
             if (stopped || files.Count(f => f.Included) >= caps.MaxLogFiles)
             {
                 capApplied = true;
                 files.Add(new DiagnosticsLogFile(
-                    candidate.File.Name, bytes, false, DiagnosticsExclusionReason.OverFileCountCap));
+                    candidate.File.Name, bytes, false,
+                    // Once the byte cap has stopped the run, blaming the file count would tell a support
+                    // engineer that raising it changes something.
+                    stopped
+                        ? DiagnosticsExclusionReason.OverTotalByteCap
+                        : DiagnosticsExclusionReason.OverFileCountCap));
                 continue;
             }
 
@@ -87,11 +95,11 @@ public sealed class DiagnosticsExportService : IDiagnosticsExportService
 
             includedBytes += bytes;
             files.Add(new DiagnosticsLogFile(candidate.File.Name, bytes, true, null));
-            oldest = candidate.Date;
-            newest ??= candidate.Date;
+            oldest = candidate.Slice.Date;
+            newest ??= candidate.Slice.Date;
         }
 
-        foreach (var unrecognised in candidates.Where(c => c.Date is null))
+        foreach (var unrecognised in candidates.Where(c => c.Slice is null))
         {
             files.Add(new DiagnosticsLogFile(
                 unrecognised.File.Name, unrecognised.File.Length, false,
@@ -101,23 +109,6 @@ public sealed class DiagnosticsExportService : IDiagnosticsExportService
         var included = files.Count(f => f.Included);
         return new DiagnosticsExportPlan(
             files, included, includedBytes, files.Count - included, oldest, newest, capApplied);
-    }
-
-    /// <summary>The date a file name claims, accepting a roll suffix after it. Null means the name is not ours.</summary>
-    private static DateOnly? DateOf(string nameWithoutExtension)
-    {
-        if (nameWithoutExtension.Length < FileNamePrefix.Length + StampLength)
-            return null;
-
-        var stamp = nameWithoutExtension.AsSpan(FileNamePrefix.Length);
-        if (stamp.Length > StampLength && stamp[StampLength] != '-')
-            return null;
-
-        return DateOnly.TryParseExact(
-            stamp[..StampLength], "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None,
-            out var date)
-            ? date
-            : null;
     }
 
     public async Task<DiagnosticsExportResult> ExportAsync(

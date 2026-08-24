@@ -4,8 +4,8 @@ using Pia.Logging;
 namespace Pia.Services.Diagnostics;
 
 /// <summary>
-/// A size control, not a privacy control. The sink keeps one file per day and prunes nothing, so the real
-/// profile grows without bound; without a cap the export would eventually be a 40 MB read.
+/// A size control, not a privacy control. The sink writes up to 7 rolls a day and retention keeps a month
+/// of them, so without a cap the export would be a multi-gigabyte read.
 /// </summary>
 public sealed record DiagnosticsExportCaps(int MaxLogFiles = 7, long MaxTotalSourceBytes = 10L * 1024 * 1024)
 {

@@ -20,8 +20,9 @@ Two facts found while measuring, both worth knowing independently of this featur
 
 - **`MaxRollingFiles = 7` prunes nothing.** `Bootstrapper.cs` sets it next to the comment *"Keep 7 days"*, but
   `FormatLogFileName` mints a **new base name per day**, so NReco's rolling window never applies. The
-  developer profile holds **39 files, 41,530,655 bytes**, 2026-06-28 through 2026-08-24. Retention is out of
-  scope here and is **not fixed** — but it is why the export needs a cap rather than "zip the folder".
+  developer profile holds **39 files, 41,530,655 bytes**, 2026-06-28 through 2026-08-24. Fixed here:
+  `LogFileRetention` sweeps every name outside a 30-day window at startup — and it is also why the export
+  needs a cap rather than "zip the folder".
 - **`SafeLog.SensitiveInformation` and `SensitiveWarning` forwarded to `LogInformation`/`LogWarning`.** Both
   are `[Conditional("DEBUG")]`, so their content is debug-build-only — but it landed at **INFO and WARN**,
   where a level-based gate cannot see it. `AdaptiveSpeakerIdentificationService.cs:372` even carries the
@@ -179,9 +180,9 @@ Both numbers mirror the sink's own budget: 7 is `MaxRollingFiles` and its *"Keep
 `FileSizeLimitBytes`. On the measured profile the byte cap binds first and 5–7 files land, ~1 MB compressed.
 
 Only the newest 7 files are ever reachable, so **the byte cap binds only when those seven are big** — on a
-seed of 20 ordinary files it never fires. Once the walk has stopped, **exactly one file carries
-`OverTotalByteCap`** (the one that breached) and everything older is labelled `OverFileCountCap`, whichever
-cap actually ended the run.
+seed of 20 ordinary files it never fires. Once the byte cap has stopped the walk, **every file after it also
+carries `OverTotalByteCap`** — naming the file count there would tell a support engineer that raising it
+changes something, when the run had slots to spare.
 
 Selection is a **contiguous newest-first run**: walk newest to oldest and stop at the first file that would
 breach, rather than skipping it and hunting for a smaller older one. *"You have 08-19 through 08-24"* is
@@ -191,10 +192,18 @@ something a support engineer can reason about; a set with a hole in it is not. E
 **The cap is a size control, not a privacy control.** Nothing about it reduces exposure, and it must not be
 cited as if it did.
 
-The enumeration pattern is `pia*.log`, deliberately wider than `pia-????-??-??.log`. The sink rolls at 10 MB
-and a rolled name carries a suffix, so a fixed-width pattern would have dropped a real log file **and** left
-it out of the manifest — nothing would have said it existed. A rolled file is now included with its day; a
-name with no parseable date (including the sink's own `pia.log` base name) is listed as excluded.
+The enumeration pattern is `pia*.log`, deliberately wider than `pia-????-??-??.log`. The sink appends the roll
+index with **no separator** — measured against NReco.Logging.File 1.3.1 with this app's `FormatLogFileName`,
+`pia-2026-08-24.log` rolls to `pia-2026-08-241.log` — so a fixed-width pattern would have dropped a real log
+file **and** left it out of the manifest, and nothing would have said it existed. A rolled file is now
+included with its day; a name with no parseable date (including the sink's own `pia.log` base name) is listed
+as excluded. Name parsing is shared with the retention sweep — both read a name through
+`LogFileRetention.SliceOf` and enumerate with the same `pia*.log` pattern.
+
+Within one day the newest-first order is by **write time**, not by name and not by roll index. The default
+`RollingFilesConvention` is `Ascending`, which **wraps** (`0-1-2-3-0-1-2-3`), so the un-indexed base file can
+hold the newest content and the highest index can be the oldest slice. Write time is the only key that is
+right under every convention; the roll index survives only as a tiebreak.
 
 ## 6. Decisions, with the recommendation on record
 
@@ -270,8 +279,9 @@ name with no parseable date (including the sink's own `pia.log` base name) is li
 
 ## 8. What this deliberately does not do
 
-- **No retention fix.** §1's 39-file, 40 MB pile-up is real and untouched. The cap keeps the export bounded;
-  it does not keep the log directory bounded.
+- **No floor under retention.** The startup sweep is a plain 30-day window, so a user who relaunches after a
+  month has only the new session left to export. Flooring it at the export's own file cap — never delete the
+  newest 7, whatever their age — would close that, and is not done here.
 - **No upload, no server, no "Send".** Export only. See §2 for why that is load-bearing rather than a
   first increment.
 - **No content preview** in the consent dialog. Decision 5.

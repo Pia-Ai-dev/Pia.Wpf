@@ -1304,4 +1304,10 @@
   <data name="Run_FailureAction_Diagnostics" xml:space="preserve">
     <value>Exporter le diagnostic</value>
   </data>
+  <data name="Settings_ExportDiagnostics_Confirm_ExcludedByCap" xml:space="preserve">
+    <value>Ce n'est pas tout votre historique de journaux : un export s'arrête à {1} fichiers journaux ou {2} Mo, selon la limite atteinte en premier — {0} fichier(s) sont laissés de côté. Précisez-le dans votre demande d'assistance s'il vous les faut aussi.</value>
+  </data>
+  <data name="Settings_ExportDiagnostics_Confirm_Excluded" xml:space="preserve">
+    <value>{0} autre(s) fichier(s) de ce dossier ne sont pas reconnus comme journaux Pia ; l'archive les répertorie dans son manifeste.</value>
+  </data>
 </root>

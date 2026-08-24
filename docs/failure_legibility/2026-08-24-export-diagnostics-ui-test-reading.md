@@ -151,6 +151,11 @@ Run 2 confirms the wider `pia*.log` enumeration end to end: a **rolled name**,
 `pia-2026-08-24-001.log`, was parsed as that day's file, included, and carried into the archive —
 which is `ed01cecc` exercised at runtime.
 
+**Correction, 2026-08-24.** `pia-2026-08-24-001.log` was **hand-seeded**, and it is a name the sink cannot
+produce: NReco appends the roll index with no separator, so the real form is `pia-2026-08-241.log`. Run 2
+therefore exercised the separator branch and not the one that ships, and the parser was in fact rejecting
+every file the sink can roll. Both forms are accepted now.
+
 ### 5b. The residual scan — the check that could have found something
 
 **Zero hits, both arms.** The pattern set was wider than the plan asked for: account name, machine
@@ -224,6 +229,9 @@ So **all three exclusion reasons were observed at runtime**, and one behaviour i
 because it is not obvious from the code: once the byte cap stops the walk, **exactly one file ever
 carries `OverTotalByteCap`** — every file after the stop is labelled `OverFileCountCap`, whichever
 cap actually ended the run.
+
+**Correction, 2026-08-24.** That labelling is now fixed: every file after a byte-cap stop carries
+`OverTotalByteCap`, so a manifest can no longer blame a file count that had slots to spare.
 
 **The collision guard was exercised deterministically rather than by racing the clock.** Two dialog
 round trips will never land in the same second, so instead 91 decoy zips were planted covering

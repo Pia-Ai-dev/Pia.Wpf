@@ -1304,4 +1304,10 @@
   <data name="Run_FailureAction_Diagnostics" xml:space="preserve">
     <value>Diagnose exportieren</value>
   </data>
+  <data name="Settings_ExportDiagnostics_Confirm_ExcludedByCap" xml:space="preserve">
+    <value>Das ist nicht Ihr vollständiger Logverlauf: Ein Export endet bei {1} Logdateien oder {2} MB, je nachdem was zuerst erreicht wird — {0} Datei(en) bleiben außen vor. Erwähnen Sie es in Ihrer Supportanfrage, wenn Sie diese auch brauchen.</value>
+  </data>
+  <data name="Settings_ExportDiagnostics_Confirm_Excluded" xml:space="preserve">
+    <value>Weitere {0} Datei(en) in diesem Ordner werden nicht als Pia-Logs erkannt; das Archiv führt sie in seinem Manifest auf.</value>
+  </data>
 </root>
