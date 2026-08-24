@@ -46,9 +46,28 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
         _deleteTracker = deleteTracker;
     }
 
-    public async Task<IReadOnlyList<AiProvider>> GetProvidersAsync()
+    /// <summary>
+    /// Every read of the provider list, with an assumed context window filled in for any provider that has
+    /// none. No provider API reports a window and the field is hand-typed, so without this compaction never
+    /// runs and an over-window chat fails at the provider instead.
+    /// <para>
+    /// Stamped into the loaded object rather than written back: the editor binds what it is given, so the
+    /// user SEES the assumed window and can change it, and a value nobody edits stays out of providers.json.
+    /// </para>
+    /// </summary>
+    private async Task<List<AiProvider>> LoadProvidersAsync()
     {
         var providers = await LoadAsync();
+
+        foreach (var provider in providers)
+            provider.MaxContextWindowTokens ??= ContextWindowDefaults.For(provider.ModelName);
+
+        return providers;
+    }
+
+    public async Task<IReadOnlyList<AiProvider>> GetProvidersAsync()
+    {
+        var providers = await LoadProvidersAsync();
         await MigrateEmptyProviderIdsAsync(providers);
         return providers.AsReadOnly();
     }
@@ -131,7 +150,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
 
     public async Task<AiProvider> AddProviderAsync(AiProvider provider, string? apiKey)
     {
-        var providers = await LoadAsync();
+        var providers = await LoadProvidersAsync();
 
         if (!string.IsNullOrEmpty(apiKey))
         {
@@ -157,7 +176,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
 
     public async Task UpdateProviderAsync(AiProvider provider, string? newApiKey = null)
     {
-        var providers = await LoadAsync();
+        var providers = await LoadProvidersAsync();
         var existing = providers.FirstOrDefault(p => p.Id == provider.Id);
         if (existing is null)
             throw new InvalidOperationException($"Provider with id {provider.Id} not found");
@@ -188,7 +207,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
         if (id == PiaCloudProviderId)
             throw new InvalidOperationException("The built-in Pia Cloud provider cannot be deleted.");
 
-        var providers = await LoadAsync();
+        var providers = await LoadProvidersAsync();
         var provider = providers.FirstOrDefault(p => p.Id == id);
         if (provider is null)
             return;
@@ -227,7 +246,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
 
     public async Task EnsureBuiltInProviderAsync()
     {
-        var providers = await LoadAsync();
+        var providers = await LoadProvidersAsync();
         var existing = providers.FirstOrDefault(p => p.Id == PiaCloudProviderId);
         if (existing is not null)
         {
@@ -441,7 +460,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
         if (oldId == newId)
             return;
 
-        var providers = await LoadAsync();
+        var providers = await LoadProvidersAsync();
         var index = providers.FindIndex(p => p.Id == oldId);
         if (index < 0)
         {
@@ -484,7 +503,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
 
     public async Task RepairModeDefaultsAsync()
     {
-        var providers = await LoadAsync();
+        var providers = await LoadProvidersAsync();
         var settings = await _settingsService.GetSettingsAsync();
 
         var providerIds = new HashSet<Guid>(providers.Select(p => p.Id));
@@ -535,7 +554,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
 
     public async Task ConsolidateLocalDuplicatesAsync()
     {
-        var providers = await LoadAsync();
+        var providers = await LoadProvidersAsync();
         if (providers.Count <= 1)
             return;
 

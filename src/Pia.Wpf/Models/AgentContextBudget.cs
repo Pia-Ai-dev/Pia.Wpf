@@ -13,9 +13,14 @@ namespace Pia.Models;
 public readonly record struct AgentContextBudget(int WindowTokens, int MaxOutputTokens)
 {
     /// <summary>
-    /// Reads the budget off a provider, or returns <see langword="null"/> when the provider has no
-    /// usable budget configured — which is the state of every provider that predates the two
-    /// fields, and therefore the reason compaction is opt-in.
+    /// Reads the budget off a provider, or returns <see langword="null"/> when it has none configured.
+    /// <para>
+    /// A pure reader on purpose. The policy that an unconfigured provider still gets a window lives in
+    /// <c>ProviderService</c>, which stamps <see cref="ContextWindowDefaults"/> as providers are loaded —
+    /// so the editor shows the value rather than compaction running against a number nobody can see.
+    /// Defaulting here instead gave every bare <see cref="AiProvider"/> in the process a budget, including
+    /// stubs that never came from persistence.
+    /// </para>
     /// <para>
     /// The validity conditions mirror the ones the compaction strategy's constructor enforces by
     /// throwing (positive window, non-negative output, output strictly below the window). Checking

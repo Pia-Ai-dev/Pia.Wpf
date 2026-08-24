@@ -65,17 +65,20 @@ public class AgentContextCompactorTests
     [Fact]
     public async Task NullBudget_ReturnsTheSameInstancesInOrder()
     {
-        // An unconfigured provider is every provider after upgrade, so this is the opt-in default.
+        // Passed literally rather than via an unconfigured provider: that route now yields the assumed
+        // default, so it would exercise the under-budget path instead of the no-budget one.
         var messages = AgentStepShapedMessages();
 
         var result = await AgentContextCompactor.CompactAsync(
-            messages, AgentContextBudget.From(Provider(null, null)), Logger, TestContext.Current.CancellationToken);
+            messages, budget: null, Logger, TestContext.Current.CancellationToken);
 
         Assert.Equal(messages.Count, result.Count);
         for (var i = 0; i < messages.Count; i++)
             Assert.Same(messages[i], result[i]);
     }
 
+    /// <summary>`From` stays a pure reader — the assumed-window policy lives in ProviderService, so a bare
+    /// AiProvider that never came from persistence still has no budget.</summary>
     [Fact]
     public async Task UnconfiguredProvider_YieldsNoBudgetAtAll()
     {

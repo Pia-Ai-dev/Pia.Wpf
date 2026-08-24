@@ -281,7 +281,7 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
 - [ ] **B10 · Full sweep, scorecard, findings** — including what was luck.
   *Deps:* B6, B8, B9 · *Effort:* **S** · *Value:* **High**
 
-- [ ] **B11 · Per-provider context-window defaults — 128k for an unknown model, a table for known ones.**
+- [x] **B11 · Per-provider context-window defaults — 128k for an unknown model, a table for known ones.**
   **Owner decision, 2026-08-24.** Found while reading B4's "no configured provider sets a window": that is
   not a gap in the profile, it is the shipped state for everyone. `MaxContextWindowTokens` is a **hand-typed
   field in the provider editor** (`ProviderEditModel.cs:148`/`:171`), never fetched from any API — no
@@ -299,6 +299,35 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
   - `MaxOutputTokens` needs no default — `From` accepts a null (→ 0) as long as it is below the window.
   - The field is deliberately off `SyncProvider` and off `ProviderFingerprint.Compute`; a default must not
     change either.
+
+  **Done 2026-08-24, and where the default lives is the whole finding.** `ContextWindowDefaults.For(modelName)`
+  plus a stamp in `ProviderService.LoadProvidersAsync`, which every one of the eight provider reads now goes
+  through. The window is filled into the loaded object and **not written back**: the editor binds what it is
+  given, so the user sees the assumed number and can change it, and a window nobody edited stays out of
+  `providers.json`.
+  - **The first attempt put the default in `AgentContextBudget.From` and it was wrong — 80 tests failed.**
+    `From` is a pure reader shared by three call sites, one of them the in-step tool loop, so defaulting there
+    gave every bare `AiProvider` in the process a budget, including stubs that never came from persistence.
+    Turn tests across `ChatSession`, `LiveTurnExecutor`, `AgentRunOrchestrator` and `MidPlanAsk` started
+    compacting and the suite went from 27s to 55s. Moving the policy to where providers are *constituted* fixed
+    all 80 without touching one of them, and the runtime came back — which is the confirmation it was a design
+    error rather than stale expectations. `From` stays null for an unconfigured provider, and its doc says why.
+  - **The table is source-gated.** Only the Claude family ships, from the `claude-api` skill's model table
+    (1M for Fable 5 / Opus 5 / 4.8 / 4.7 / 4.6 / Sonnet 5 / Sonnet 4.6, 200K for Haiku 4.5) — reachable here
+    through OpenRouter or OpenAICompatible, since Pia has no Anthropic provider type. Everything else takes the
+    128k fallback rather than a guess: a wrong row is worse than no row, because too high sends a request the
+    provider rejects and too low silently evicts context. `NoRowShadowsAnother` guards the substring matching.
+  - **Local models are the known soft spot and it is a no-op, not a regression.** An Ollama model with a 4k
+    window gets 128k, so compaction never fires and Ollama keeps sliding its own window — exactly today's
+    behaviour. Guessing low would have *added* eviction where there was none.
+  - **The real answer is live discovery, and it is one refactor away.** OpenRouter's `/models` returns
+    `context_length` and the Anthropic Models API returns `max_input_tokens`, but
+    `ProviderService.FetchModelsAsync` returns `List<string>` and throws the rest away. Widening that return
+    type would retire most of this table. Not this row.
+  - Gate **4740 / failed: 0**; both configurations rebuild to 0 Warning(s). Covered by
+    `ContextWindowDefaultsTests` (the table, the fallback, case-insensitivity, shadowing) and
+    `ProviderContextWindowStampTests`, which writes a real `providers.json` to a temp directory, reads it back
+    through the service and asserts the budget resolves.
   *Deps:* none · *Effort:* **S** · *Value:* **High**
 
 ---
