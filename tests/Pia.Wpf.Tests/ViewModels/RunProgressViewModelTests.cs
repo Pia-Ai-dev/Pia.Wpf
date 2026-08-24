@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Infrastructure;
 using Pia.Models;
+using Pia.Navigation;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
@@ -52,10 +53,11 @@ public sealed class RunProgressViewModelTests : IDisposable
         return await _runs.CreateAsync(new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User, Goal: "g"));
     }
 
-    private RunProgressViewModel CreateVm(Guid runId)
+    private RunProgressViewModel CreateVm(Guid runId, INavigationService? navigation = null)
     {
         SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
-        return new RunProgressViewModel(_runs, runId, _loc, _resume, NullLogger.Instance);
+        return new RunProgressViewModel(
+            _runs, runId, _loc, _resume, NullLogger.Instance, navigation: navigation);
     }
 
     [Fact]
@@ -502,6 +504,158 @@ public sealed class RunProgressViewModelTests : IDisposable
 
         Assert.Equal(RunProgressState.Failed, vm.State);
         Assert.Equal(modelReason, vm.FailureNote);
+        vm.Dispose();
+    }
+
+    // Slice 2 adds the descriptor ALONGSIDE the reason. This is the guard on that decision: a failure whose
+    // exception maps to nothing must still reach the card with its message intact, exactly as slice 1 left it.
+    [Fact]
+    public async Task AnUnmappedFailure_StillShowsItsReason_AndNamesNoLayer()
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+
+        const string message = "The ingest script exited 2.";
+        await _runs.FailAsync(
+            run.Id, message, ct: TestContext.Current.CancellationToken,
+            failure: FailureMapper.ForException(new InvalidOperationException(message)));
+        await vm.RefreshAsync();
+
+        Assert.Equal(message, vm.FailureNote);
+        Assert.Null(vm.FailureLayerName);
+        Assert.Null(vm.FailureActionLabel);
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task AFailureWithNoDescriptorAtAll_RendersAsItDidBeforeTheColumnExisted()
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+
+        await _runs.FailAsync(run.Id, "boom", ct: TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+
+        Assert.Equal("boom", vm.FailureNote);
+        Assert.Null(vm.FailureLayerName);
+        vm.Dispose();
+    }
+
+    [Theory]
+    [InlineData(FailureLayer.Provider, "Run_FailureLayer_Provider", "Run_FailureAction_Providers")]
+    [InlineData(FailureLayer.Endpoint, "Run_FailureLayer_Endpoint", "Run_FailureAction_Providers")]
+    [InlineData(FailureLayer.App, "Run_FailureLayer_App", "Run_FailureAction_Diagnostics")]
+    [InlineData(FailureLayer.Workspace, "Run_FailureLayer_Workspace", "Run_FailureAction_Diagnostics")]
+    public async Task AKnownLayer_IsNamed_AndOffersItsAction(
+        FailureLayer layer, string expectedLayerKey, string expectedActionKey)
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+
+        await _runs.FailAsync(
+            run.Id, "boom", ct: TestContext.Current.CancellationToken,
+            failure: new PiaFailure(layer, "Code", false));
+        await vm.RefreshAsync();
+
+        Assert.Equal(expectedLayerKey, vm.FailureLayerName);
+        Assert.Equal(expectedActionKey, vm.FailureActionLabel);
+        vm.Dispose();
+    }
+
+    /// <summary>A layer nobody can act on names itself and stops there, rather than offering a dead button.</summary>
+    [Fact]
+    public async Task AToolFailure_NamesItsLayerButOffersNoAction()
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+
+        await _runs.FailAsync(
+            run.Id, "boom", ct: TestContext.Current.CancellationToken,
+            failure: new PiaFailure(FailureLayer.Tool, "Undetailed", false));
+        await vm.RefreshAsync();
+
+        Assert.Equal("Run_FailureLayer_Tool", vm.FailureLayerName);
+        Assert.Null(vm.FailureActionLabel);
+        vm.Dispose();
+    }
+
+    /// <summary>
+    /// The two arms use DIFFERENT NavigateTo overloads, and this code is the first caller of the tuple one
+    /// outside the meeting overlay, so the values are pinned rather than assumed. The Endpoint arm was also
+    /// driven through the running app; this covers the arm a live failure could not easily produce.
+    /// </summary>
+    [Theory]
+    [InlineData(FailureLayer.Provider)]
+    [InlineData(FailureLayer.Endpoint)]
+    public async Task TheProviderAction_NavigatesToTheProvidersTab(FailureLayer layer)
+    {
+        var nav = Substitute.For<INavigationService>();
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id, nav);
+
+        await _runs.FailAsync(
+            run.Id, "boom", ct: TestContext.Current.CancellationToken,
+            failure: new PiaFailure(layer, "Transport", false));
+        await vm.RefreshAsync();
+        vm.RunFailureActionCommand.Execute(null);
+
+        nav.Received(1).NavigateTo<SettingsViewModel, int>((int)SettingsTab.Providers);
+        vm.Dispose();
+    }
+
+    [Theory]
+    [InlineData(FailureLayer.App)]
+    [InlineData(FailureLayer.Workspace)]
+    public async Task TheDiagnosticsAction_NavigatesToWhereTheExportButtonLives(FailureLayer layer)
+    {
+        var nav = Substitute.For<INavigationService>();
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id, nav);
+
+        await _runs.FailAsync(
+            run.Id, "boom", ct: TestContext.Current.CancellationToken,
+            failure: new PiaFailure(layer, "WorkspaceSetup", false));
+        await vm.RefreshAsync();
+        vm.RunFailureActionCommand.Execute(null);
+
+        nav.Received(1).NavigateTo<SettingsViewModel, (int, int)>(
+            ((int)SettingsTab.General, (int)GeneralSettingsInnerTab.Application));
+        vm.Dispose();
+    }
+
+    /// <summary>A layer with no action must not navigate anywhere when the command is reached anyway.</summary>
+    [Fact]
+    public async Task ALayerWithNoAction_NavigatesNowhere()
+    {
+        var nav = Substitute.For<INavigationService>();
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id, nav);
+
+        await _runs.FailAsync(
+            run.Id, "boom", ct: TestContext.Current.CancellationToken,
+            failure: new PiaFailure(FailureLayer.Tool, "Undetailed", false));
+        await vm.RefreshAsync();
+        vm.RunFailureActionCommand.Execute(null);
+
+        Assert.Empty(nav.ReceivedCalls());
+        vm.Dispose();
+    }
+
+    /// <summary>Same gate as the note beside it: a run that has not failed says nothing about layers.</summary>
+    [Fact]
+    public async Task ARunningRun_NamesNoLayer_EvenWithADescriptorOnTheRow()
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+
+        await _runs.FailAsync(
+            run.Id, "boom", ct: TestContext.Current.CancellationToken,
+            failure: new PiaFailure(FailureLayer.Provider, "Timeout", false));
+        await _runs.SetStateAsync(run.Id, AgentRunState.Running, TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+
+        Assert.Null(vm.FailureLayerName);
+        Assert.Null(vm.FailureActionLabel);
         vm.Dispose();
     }
 

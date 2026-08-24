@@ -483,6 +483,9 @@ public class SqliteContext : IDisposable
                 -- Whether ReasoningEffort above is authoritative, so a null there reads as "resolved to
                 -- nothing" rather than "written before the column existed".
                 EffortPinRecorded   INTEGER NOT NULL DEFAULT 0,
+                -- The failure descriptor. Its own column for ClarificationsJson's reason: a Retry would be a
+                -- Failed → Running claim, and every existing claim SETs ExtraJson=NULL.
+                FailureJson         TEXT    NULL,
                 FOREIGN KEY (ChatId) REFERENCES AssistantChats(Id) ON DELETE CASCADE
             );
 
@@ -1027,11 +1030,12 @@ public class SqliteContext : IDisposable
             addCol.ExecuteNonQuery();
         }
 
-        // Fresh databases already have all four from the CREATE TABLE above, so each branch short-circuits.
+        // Fresh databases already have all five from the CREATE TABLE above, so each branch short-circuits.
         var hasClarificationsJson = false;
         var hasRunPersonaId = false;
         var hasRunReasoningEffort = false;
         var hasEffortPinRecorded = false;
+        var hasFailureJson = false;
         using (var p = _connection!.CreateCommand())
         {
             p.CommandText = "PRAGMA table_info(AgentRuns)";
@@ -1043,7 +1047,14 @@ public class SqliteContext : IDisposable
                 else if (col == "PersonaId") hasRunPersonaId = true;
                 else if (col == "ReasoningEffort") hasRunReasoningEffort = true;
                 else if (col == "EffortPinRecorded") hasEffortPinRecorded = true;
+                else if (col == "FailureJson") hasFailureJson = true;
             }
+        }
+        if (!hasFailureJson)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AgentRuns ADD COLUMN FailureJson TEXT NULL";
+            addCol.ExecuteNonQuery();
         }
         if (!hasClarificationsJson)
         {

@@ -491,7 +491,7 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
             // two legs and the classifier must not drift apart. No schedule-moved-on write on this path:
             // MarkRunFailedAsync owns NextFireAt here, and it is the writer that knows about the re-arm.
             const string reason = ScheduledJobService.NoProviderFailureReason;
-            await LockedAsync(() => _jobs.MarkRunFailedAsync(job.Id, reason));
+            await LockedAsync(() => _jobs.MarkRunFailedAsync(job.Id, reason, FailureMapper.ForReason(reason)));
             _notifications.NotifyFailure(job, reason);
             _logger.LogWarning("Scheduled agent job {Id} failed: no provider available", job.Id);
             return;
@@ -526,7 +526,9 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
         {
             // A launch that threw created no run, so MarkRunFailedAsync owns the schedule here too (it
             // recomputes NextFireAt itself) and no dispatch write is wanted.
-            await LockedAsync(() => _jobs.MarkRunFailedAsync(job.Id, ex.Message));
+            // The launch threw before the run existed. A PreModelLaunchException says so on the record,
+            // which is what lets a one-off try again instead of being retired by a blip.
+            await LockedAsync(() => _jobs.MarkRunFailedAsync(job.Id, ex.Message, FailureMapper.ForException(ex)));
             _notifications.NotifyFailure(job, ex.Message);
             _logger.LogWarning(ex, "Scheduled agent job {Id} failed to launch", job.Id);
             return;
@@ -674,7 +676,7 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
             // Pre-model, exactly as in ExecuteAgentTaskAsync — the shared constant is what earns a
             // one-off one more attempt, so both legs must hand over the same value.
             const string reason = ScheduledJobService.NoProviderFailureReason;
-            await LockedAsync(() => _jobs.MarkRunFailedAsync(job.Id, reason));
+            await LockedAsync(() => _jobs.MarkRunFailedAsync(job.Id, reason, FailureMapper.ForReason(reason)));
             _notifications.NotifyFailure(job, reason);
             _logger.LogWarning("Scheduled job {Id} failed: no provider available", job.Id);
             return;
@@ -739,7 +741,8 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
             }
             catch (Exception ex)
             {
-                await LockedAsync(() => _jobs.MarkRunFailedAsync(job.Id, ex.Message));
+                await LockedAsync(() =>
+                    _jobs.MarkRunFailedAsync(job.Id, ex.Message, FailureMapper.ForException(ex)));
                 _notifications.NotifyFailure(job, ex.Message);
                 _logger.LogWarning(ex, "Scheduled job {Id} run threw", job.Id);
                 return;

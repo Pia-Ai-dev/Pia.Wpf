@@ -190,7 +190,12 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 _logger.LogWarning("Background turn {ChatId} produced empty content", chatId);
                 if (run is not null)
                 {
-                    try { await _runService.FailAsync(run.Id, AgentStepTools.EmptyResponseFailure, ct: ct); }
+                    try
+                    {
+                        await _runService.FailAsync(
+                            run.Id, AgentStepTools.EmptyResponseFailure, ct: ct,
+                            failure: FailureMapper.ForReason(AgentStepTools.EmptyResponseFailure));
+                    }
                     catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (fail/empty) failed for {RunId}", run.Id); }
                 }
                 return new BackgroundTurnResult(chatId, false, "Empty response");
@@ -273,7 +278,12 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             _logger.LogError(ex, "Background assistant turn {ChatId} failed", chatId);
             if (run is not null)
             {
-                try { await _runService.FailAsync(run.Id, ex.Message, ct: CancellationToken.None); }
+                try
+                {
+                    await _runService.FailAsync(
+                        run.Id, ex.Message, ct: CancellationToken.None,
+                        failure: FailureMapper.ForException(ex));
+                }
                 catch (Exception bk) { _logger.LogWarning(bk, "Run bookkeeping (fail) failed for {RunId}", run.Id); }
             }
             return new BackgroundTurnResult(chatId, false, ex.Message);

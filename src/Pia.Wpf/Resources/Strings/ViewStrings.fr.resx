@@ -1283,4 +1283,25 @@
   <data name="Settings_ExportDiagnostics_Confirm_Message" xml:space="preserve">
     <value>{0} fichier(s) journal seront expurgés et écrits dans {1}. Rien n'est envoyé — ouvrez l'archive et vérifiez-la avant de la partager.</value>
   </data>
+  <data name="Run_FailureLayer_App" xml:space="preserve">
+    <value>Application</value>
+  </data>
+  <data name="Run_FailureLayer_Workspace" xml:space="preserve">
+    <value>Espace de travail</value>
+  </data>
+  <data name="Run_FailureLayer_Provider" xml:space="preserve">
+    <value>Fournisseur</value>
+  </data>
+  <data name="Run_FailureLayer_Endpoint" xml:space="preserve">
+    <value>Point de terminaison</value>
+  </data>
+  <data name="Run_FailureLayer_Tool" xml:space="preserve">
+    <value>Outil</value>
+  </data>
+  <data name="Run_FailureAction_Providers" xml:space="preserve">
+    <value>Vérifier les fournisseurs</value>
+  </data>
+  <data name="Run_FailureAction_Diagnostics" xml:space="preserve">
+    <value>Exporter le diagnostic</value>
+  </data>
 </root>

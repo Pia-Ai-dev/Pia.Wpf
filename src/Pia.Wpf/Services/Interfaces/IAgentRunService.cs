@@ -167,7 +167,9 @@ public interface IAgentRunService
     /// <summary>Terminal → Completed. A truncated run records <c>{truncated:true,reason}</c> in ExtraJson (§16 R5).</summary>
     Task CompleteAsync(Guid runId, bool truncated = false, string? truncationReason = null, CancellationToken ct = default);
 
-    Task FailAsync(Guid runId, string? error, bool cancelled = false, CancellationToken ct = default);
+    Task FailAsync(
+        Guid runId, string? error, bool cancelled = false, CancellationToken ct = default,
+        PiaFailure? failure = null);
 
     /// <summary>
     /// Park a run at its budget: State → <see cref="AgentRunState.WaitingForInput"/>, writes

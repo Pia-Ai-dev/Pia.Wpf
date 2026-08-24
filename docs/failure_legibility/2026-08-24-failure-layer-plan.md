@@ -1,6 +1,7 @@
 # Failure layer + recovery actions — the plan for #2 slice 2
 
-**Status:** ready to execute. Not yet started. **Owner:** Marco Altmann. **Written:** 2026-08-24.
+**Status:** **G2, G3 and G4 landed 2026-08-24**; `G5` remains, behind gate `G-Q1`. **Owner:** Marco Altmann.
+**Written:** 2026-08-24.
 **Origin:** recommendation **#2** of
 [`../hermes_checkup/2026-08-22-hermes-update-review.md`](../hermes_checkup/2026-08-22-hermes-update-review.md)
 (§3.2, row 2 of the table). Slice 1 shipped as `3c90aa74`; slice 2 is the remainder, and it is the last
@@ -185,6 +186,22 @@ G-Q1 → G5        # only after the gate
 ```
 
 `G2 → G3` is under two days and closes a gap the repo has already written down. `G4` is where the value is.
+
+## 5a. What the build actually found
+
+Three of the four §6 traps held. Two more turned up that reading could not have produced:
+
+- **The mapper had to walk the inner exception chain.** A refused connection reaches the orchestrator as
+  `AggregateException` → `ClientResultException` → `HttpRequestException` → `SocketException`. Matching only
+  the outermost type classified **every real transport failure** as `Unclassified`, and the card named no
+  layer — found by pointing a provider at a dead port and watching the card, not by any test.
+- **A codec split across two files drifts silently.** `AgentRunService` serialises camelCase; the panel
+  deserialised with default (Pascal) options, so every descriptor read back as `Unclassified` — which the
+  reader reports as "no layer", not as an error. `PiaFailure` now owns `ToJson`/`FromJson` and both sides go
+  through it.
+
+And one prediction was wrong in the safe direction: the optional parameter did **not** leave the test doubles
+compiling silently. An interface member must match exactly, defaults included, so all seven broke loudly.
 
 ## 6. Traps, found by reading before writing
 

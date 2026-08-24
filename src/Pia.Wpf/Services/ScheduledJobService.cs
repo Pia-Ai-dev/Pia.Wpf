@@ -350,11 +350,13 @@ public class ScheduledJobService : IScheduledJobService
             _logger.LogInformation("Scheduled job {Id} run completed; one-off settled as Completed, will not fire again", id);
     }
 
-    public async Task MarkRunFailedAsync(Guid id, string reason)
+    public async Task MarkRunFailedAsync(Guid id, string reason, PiaFailure? failure = null)
     {
         var existing = await GetAsync(id) ?? throw new InvalidOperationException($"ScheduledJob {id} not found");
         var settleOnce = existing.Recurrence == RecurrenceType.Once;
-        var preModel = IsPreModelFailure(reason);
+        // Widening, never loosening: the string test still stands on its own, and a descriptor can only add
+        // a verdict its raiser vouched for. This is what closes IsPreModelFailure's recorded gap.
+        var preModel = failure is { SafeToReRun: true } || IsPreModelFailure(reason);
         DateTime? onceRetryAt = null;
 
         var connection = _context.GetConnection();

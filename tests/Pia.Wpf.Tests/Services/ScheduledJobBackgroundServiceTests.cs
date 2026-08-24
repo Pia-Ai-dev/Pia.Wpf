@@ -1366,6 +1366,7 @@ public class ScheduledJobBackgroundServiceTests
         private readonly List<ScheduledJob> _due = new();
         public List<(Guid JobId, Guid EntryId)> Completed { get; } = new();
         public List<(Guid JobId, string Reason)> Failed { get; } = new();
+        public List<PiaFailure?> FailedDescriptors { get; } = new();
         public List<Guid> Advanced { get; } = new();
 
         /// <summary>Jobs whose schedule was moved on at DISPATCH time — kept separate from
@@ -1393,9 +1394,10 @@ public class ScheduledJobBackgroundServiceTests
             return Task.CompletedTask;
         }
 
-        public Task MarkRunFailedAsync(Guid id, string reason)
+        public Task MarkRunFailedAsync(Guid id, string reason, PiaFailure? failure = null)
         {
             Failed.Add((id, reason));
+            FailedDescriptors.Add(failure);
             return Task.CompletedTask;
         }
 

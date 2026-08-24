@@ -221,6 +221,16 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
 ## B — Compaction recall
 
 - [x] **B1 · Synthetic transcript generator with planted facts.** Committed; no real user data.
+  **Done 2026-08-24.** `PiaFailure(FailureLayer, string Code, bool SafeToReRun)` in `Pia.Models`, carrying its
+  own JSON codec — a camelCase writer and a PascalCase reader disagreed once, and the mismatch read as "no
+  layer" rather than as an error, so both sides now go through the type. `FailureMapper` has two entry points
+  because there are two kinds of caller: `ForReason` for the six named constants, `ForException` for the four
+  `catch` sites. **The compiler caught all seven test doubles** rather than letting an optional parameter
+  leave them stale — an interface member must match exactly, defaults included.
+  **Found by running it, not by testing it:** a refused connection reaches the orchestrator as
+  `AggregateException` → `ClientResultException` → `HttpRequestException` → `SocketException`, so matching
+  only the outermost type classified **every real transport failure** as `Unclassified` and the card named no
+  layer at all. The mapper now walks the inner chain, outermost-recognised-wins, bounded at depth 8.
   *Deps:* none · *Effort:* **S** · *Value:* **Enabler**
 
 - [x] **B2 · Corpus extraction script** (`AssistantChatMessages` → JSON fixture, gitignored).
@@ -831,8 +841,8 @@ and never looks at it. **Every failed run already knows why it failed and the UI
 so the "none of the open rows is the right next move" paragraph above no longer holds — `G2` is.
 
 ```
-G2 → G3          # the enabler, then the cheap gap-closure it unlocks
-G2 → G4          # the user-visible half; can run alongside G3
+G2 → G3          # DONE 2026-08-24
+G2 → G4          # DONE 2026-08-24, verified in the running app
 G-Q1 → G5        # only after the gate
 ```
 
@@ -924,7 +934,7 @@ action the non-retryable layers offer.
   success notice is transient and unassertable while its failure notice is persistent and fully readable.
   *Deps:* none · *Effort:* **S** · *Value:* **High** (the app can hand over its own logs safely for the first time)
 
-- [ ] **G2 · `PiaFailure` descriptor + type-keyed mapper + `AgentRuns.FailureJson`.** A
+- [x] **G2 · `PiaFailure` descriptor + type-keyed mapper + `AgentRuns.FailureJson`.** A
   `PiaFailure(FailureLayer Layer, string Code, bool SafeToReRun)` in `Pia.Models`, static descriptors beside
   the six named failure constants (five on the agent-run path, one on the scheduled-job path), an
   exception-**type** mapper at the four `catch` sites that today pass
@@ -936,18 +946,30 @@ action the non-retryable layers offer.
   duplicate-write bug on any mid-run provider fault.
   *Deps:* none · *Effort:* **S** · *Value:* **Enabler**
 
-- [ ] **G3 · Widen `IsPreModelFailure` to read `SafeToReRun`.** Closes the KNOWN GAP its own doc comment
+- [x] **G3 · Widen `IsPreModelFailure` to read `SafeToReRun`.** Closes the KNOWN GAP its own doc comment
   records: a `HeadlessRunLauncher` failure that provably happened before the model was called currently
   arrives as a bare message and dies on the first strike. The narrowing stays — a mid-run fault is still
   terminal — but it is decided by a value the **caller vouched for** rather than by one string comparison,
   which is exactly what that comment asks for ("never a substring match on provider error text").
+  **Done 2026-08-24.** `var preModel = failure is { SafeToReRun: true } || IsPreModelFailure(reason);` —
+  widening, never loosening, so the string test still stands on its own. The vouching mechanism is a typed
+  `PreModelLaunchException`, thrown at the one launcher site that precedes the stub-chat save; the stub-chat
+  and workspace-setup failures the old comment also called pre-model are deliberately **not** included,
+  because both have written something by then and `SafeToReRun` means nothing written.
   *Deps:* G2 · *Effort:* **XS** · *Value:* **Med**
 
-- [ ] **G4 · Layer name + recovery action on the failure card.** Renders the layer beside slice 1’s reason
+- [x] **G4 · Layer name + recovery action on the failure card.** Renders the layer beside slice 1’s reason
   line and offers the matching action. **Both actions already exist:** *Export diagnostics* (`G1`) for
   `App`/`Unclassified`, and the Providers settings category for `Provider`/`Endpoint`. Check the gating first —
   `RunProgressViewModel` gates the reason on the Failed **family**, which folds `Cancelled` in, so a run
   cancelled because a child failed carries the child’s reason.
+  **Done 2026-08-24, and driven through the running app.** With the Assistant provider pointed at a dead port,
+  a real agent run failed and the card showed the reason (slice 1, unchanged), the layer **Endpoint**, and a
+  **Check providers** button that navigated to Settings → Providers — verified by reading
+  `Settings_CategoryList` back as `Providers`. That live run is what found the wrapping defect in `G2`.
+  The App/Workspace arm uses a **different** `NavigateTo` overload (the tuple one, whose only other caller is
+  the meeting overlay), so its target is pinned by test rather than assumed. New ids: `Run_FailureLayer`,
+  `Run_FailureAction`; no `[InlineData]` bump, as predicted.
   *Deps:* G2 · *Effort:* **S** · *Value:* **High**
 
 - [ ] **G5 · Retry on the failure card, honouring `SafeToReRun`.** **Gated on `G-Q1` — do not start before it

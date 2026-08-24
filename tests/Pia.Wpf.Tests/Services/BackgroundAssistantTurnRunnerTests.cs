@@ -647,8 +647,11 @@ public class BackgroundAssistantTurnRunnerTests
         Assert.Empty(h.Saved.Messages);
         // Exactly one save: the stub (the full 2-message chat is never reached on the empty path).
         Assert.Single(h.AllSaved);
-        // The empty path marks the run Failed so a resolvable (stub) chat still carries a Failed run.
-        await h.Runs.Received().FailAsync(Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+        // The empty path marks the run Failed so a resolvable (stub) chat still carries a Failed run, and
+        // it hands over the descriptor rather than only the reason text.
+        await h.Runs.Received().FailAsync(
+            Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>(),
+            Arg.Is<PiaFailure?>(f => f != null && f.Layer == FailureLayer.Provider && !f.SafeToReRun));
     }
 
     // ---- the unattended gate records its decisions ----

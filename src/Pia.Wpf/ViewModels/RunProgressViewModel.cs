@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Pia.Converters;
 using Pia.Helpers;
 using Pia.Models;
+using Pia.Navigation;
 using Pia.Services;
 using Pia.Services.Interfaces;
 
@@ -64,6 +65,8 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private readonly Guid _runId;
     private readonly SynchronizationContext _uiContext;
     private readonly ILocalizationService _localization;
+    private readonly INavigationService? _navigation;
+    private FailureLayer? _failureLayer;
     private readonly IAgentRunResumeService _resumeService;
     private readonly IAgentTimelineService? _timelineService;
     private readonly IRunWorkspaceService? _workspaces;
@@ -313,6 +316,14 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// </summary>
     [ObservableProperty]
     private string? _failureNote;
+
+    /// <summary>The localized failure layer, or null when nothing better than the reason itself is known.</summary>
+    [ObservableProperty]
+    private string? _failureLayerName;
+
+    /// <summary>Label for the one action that layer suggests; null means the card offers none.</summary>
+    [ObservableProperty]
+    private string? _failureActionLabel;
 
     /// <summary>
     /// The current-activity line (design D1): the running step's title while Running, or a "building a
@@ -642,8 +653,12 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         IThemeService? themeService = null,
         // Live tool-activity — LAST again, same discipline. Null ⇒ the trace reads on expand and at settle only,
         // i.e. the pre-live-panel behaviour; the pills then stay empty until the first expand.
-        ITimelineWatcher? timelineWatcher = null)
+        ITimelineWatcher? timelineWatcher = null,
+        // Recovery actions — LAST again, same discipline. Null ⇒ no navigation, so the action button never
+        // renders and the panel is byte-identical to one that only names the layer.
+        INavigationService? navigation = null)
     {
+        _navigation = navigation;
         _themeService = themeService;
         _timelineWatcher = timelineWatcher;
         if (_timelineWatcher is not null)
@@ -959,6 +974,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         FailureNote = State == RunProgressState.Failed
             ? DescribeFailureReason(ReadFailureReason(run))
             : null;
+        // Same gate as the note it sits beside, so the two can never disagree about whether to show.
+        _failureLayer = State == RunProgressState.Failed ? ReadFailureLayer(run) : null;
+        FailureLayerName = DescribeFailureLayer(_failureLayer);
+        FailureActionLabel = DescribeFailureAction(_failureLayer);
         SyncSteps(run.Plan);
         CurrentActivity = ComputeActivity(run);
 
@@ -1240,6 +1259,54 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         AgentRunOrchestrator.SupersededFailureReason => _localization["Run_Failed_Superseded"],
         _ => error,
     };
+
+    /// <summary>
+    /// Its own column, not <c>ExtraJson</c>: a Retry would be a <c>Failed → Running</c> claim, and every
+    /// existing claim nulls that column.
+    /// </summary>
+    private static FailureLayer? ReadFailureLayer(AgentRun run)
+    {
+        var failure = PiaFailure.FromJson(run.FailureJson);
+        return failure is null || failure.Layer == FailureLayer.Unclassified ? null : failure.Layer;
+    }
+
+    private string? DescribeFailureLayer(FailureLayer? layer) => layer switch
+    {
+        FailureLayer.App => _localization["Run_FailureLayer_App"],
+        FailureLayer.Workspace => _localization["Run_FailureLayer_Workspace"],
+        FailureLayer.Provider => _localization["Run_FailureLayer_Provider"],
+        FailureLayer.Endpoint => _localization["Run_FailureLayer_Endpoint"],
+        FailureLayer.Tool => _localization["Run_FailureLayer_Tool"],
+        _ => null,
+    };
+
+    /// <summary>Only the two layers a person can actually act on get an action; the rest stay quiet.</summary>
+    private string? DescribeFailureAction(FailureLayer? layer) => layer switch
+    {
+        FailureLayer.Provider or FailureLayer.Endpoint => _localization["Run_FailureAction_Providers"],
+        FailureLayer.App or FailureLayer.Workspace => _localization["Run_FailureAction_Diagnostics"],
+        _ => null,
+    };
+
+    /// <summary>
+    /// Navigates rather than acting: the diagnostics export owns its own consent dialog and snackbar, and
+    /// re-raising them from here would be a second copy of a flow that already exists.
+    /// </summary>
+    [RelayCommand]
+    private void RunFailureAction()
+    {
+        if (_navigation is null) return;
+        switch (_failureLayer)
+        {
+            case FailureLayer.Provider or FailureLayer.Endpoint:
+                _navigation.NavigateTo<SettingsViewModel, int>((int)SettingsTab.Providers);
+                break;
+            case FailureLayer.App or FailureLayer.Workspace:
+                _navigation.NavigateTo<SettingsViewModel, (int, int)>(
+                    ((int)SettingsTab.General, (int)GeneralSettingsInnerTab.Application));
+                break;
+        }
+    }
 
     /// <summary>
     /// Sits beside <see cref="ReadTruncation"/> over the same column, and the two envelopes never coexist on

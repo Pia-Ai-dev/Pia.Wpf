@@ -1293,4 +1293,25 @@
   <data name="Settings_ExportDiagnostics_Confirm_Message" xml:space="preserve">
     <value>{0} log file(s) will be redacted and written to {1}. Nothing is sent anywhere — open the zip and check it before you share it.</value>
   </data>
+  <data name="Run_FailureLayer_App" xml:space="preserve">
+    <value>App</value>
+  </data>
+  <data name="Run_FailureLayer_Workspace" xml:space="preserve">
+    <value>Workspace</value>
+  </data>
+  <data name="Run_FailureLayer_Provider" xml:space="preserve">
+    <value>Provider</value>
+  </data>
+  <data name="Run_FailureLayer_Endpoint" xml:space="preserve">
+    <value>Endpoint</value>
+  </data>
+  <data name="Run_FailureLayer_Tool" xml:space="preserve">
+    <value>Tool</value>
+  </data>
+  <data name="Run_FailureAction_Providers" xml:space="preserve">
+    <value>Check providers</value>
+  </data>
+  <data name="Run_FailureAction_Diagnostics" xml:space="preserve">
+    <value>Export diagnostics</value>
+  </data>
 </root>

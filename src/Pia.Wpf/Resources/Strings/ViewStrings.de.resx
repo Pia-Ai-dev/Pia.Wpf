@@ -1283,4 +1283,25 @@
   <data name="Settings_ExportDiagnostics_Confirm_Message" xml:space="preserve">
     <value>{0} Logdatei(en) werden bereinigt und nach {1} geschrieben. Es wird nichts versendet — öffnen Sie die ZIP-Datei und prüfen Sie sie, bevor Sie sie weitergeben.</value>
   </data>
+  <data name="Run_FailureLayer_App" xml:space="preserve">
+    <value>App</value>
+  </data>
+  <data name="Run_FailureLayer_Workspace" xml:space="preserve">
+    <value>Arbeitsbereich</value>
+  </data>
+  <data name="Run_FailureLayer_Provider" xml:space="preserve">
+    <value>Anbieter</value>
+  </data>
+  <data name="Run_FailureLayer_Endpoint" xml:space="preserve">
+    <value>Endpunkt</value>
+  </data>
+  <data name="Run_FailureLayer_Tool" xml:space="preserve">
+    <value>Werkzeug</value>
+  </data>
+  <data name="Run_FailureAction_Providers" xml:space="preserve">
+    <value>Anbieter prüfen</value>
+  </data>
+  <data name="Run_FailureAction_Diagnostics" xml:space="preserve">
+    <value>Diagnose exportieren</value>
+  </data>
 </root>

@@ -507,7 +507,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
         _runProgress = runId is { } id
             ? new RunProgressViewModel(_agentRunService, id, _localizationService, _resumeService, _logger,
-                _agentTimelineService, _runWorkspaces, _personaService, _steering, _themeService, _timelineWatcher)
+                _agentTimelineService, _runWorkspaces, _personaService, _steering, _themeService, _timelineWatcher,
+                _navigationService)
             : null;
         if (_runProgress is not null)
             _runProgress.RunSettled += OnRunProgressSettled;

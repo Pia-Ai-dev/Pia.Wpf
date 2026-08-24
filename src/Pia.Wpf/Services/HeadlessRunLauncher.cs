@@ -6,6 +6,7 @@ using Pia.Helpers;
 using Pia.Infrastructure;
 using Pia.Logging;
 using Pia.Models;
+using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 
@@ -317,7 +318,9 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         // ASSIGNED persona is what gives a delegated step its specialist's provider and effort too — D5's
         // "each persona running on its own provider" — with no second ladder to keep in step.
         var provider = await ResolveProviderAsync(req.ProviderId, persona, req.ReasoningEffort).ConfigureAwait(false)
-            ?? throw new InvalidOperationException("No provider configured for a headless agent run.");
+            // Typed, because a caller re-arming a one-off needs a verdict it can trust: nothing is written
+            // until the stub chat below, so this is the launcher vouching for "nothing spent, nothing written".
+            ?? throw new PreModelLaunchException("No provider configured for a headless agent run.");
 
         // The AgentRuns FK requires its AssistantChats parent row first, and FK enforcement is ON.
         // Persist a stub chat up front (awaited — allowed to propagate); the executor finalizes it once at
@@ -418,7 +421,12 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Headless run {RunId} workspace setup failed", run.Id);
-                try { await _agentRunService.FailAsync(run.Id, WorkspaceSetupFailure, cancelled: false, CancellationToken.None).ConfigureAwait(false); }
+                try
+                {
+                    await _agentRunService.FailAsync(
+                        run.Id, WorkspaceSetupFailure, cancelled: false, CancellationToken.None,
+                        FailureMapper.ForReason(WorkspaceSetupFailure)).ConfigureAwait(false);
+                }
                 catch (Exception fx) { _logger.LogWarning(fx, "Failed to settle headless run {RunId} after workspace-setup failure", run.Id); }
                 throw;
             }
@@ -509,7 +517,12 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
                 // run here so a queued-then-cancelled run is never left non-terminal.
                 if (!started)
                 {
-                    try { await _agentRunService.FailAsync(run.Id, ShutdownInterruptedFailure, cancelled: true, CancellationToken.None).ConfigureAwait(false); }
+                    try
+                    {
+                        await _agentRunService.FailAsync(
+                            run.Id, ShutdownInterruptedFailure, cancelled: true, CancellationToken.None,
+                            FailureMapper.ForReason(ShutdownInterruptedFailure)).ConfigureAwait(false);
+                    }
                     catch (Exception ex) { _logger.LogWarning(ex, "Failed to settle interrupted headless run {RunId}", run.Id); }
                 }
             }
@@ -520,7 +533,12 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
                 // but if a future refactor let RunAsync throw after we entered it, the run would dangle Running.
                 if (started)
                 {
-                    try { await _agentRunService.FailAsync(run.Id, ex.Message, cancelled: false, CancellationToken.None).ConfigureAwait(false); }
+                    try
+                    {
+                        await _agentRunService.FailAsync(
+                            run.Id, ex.Message, cancelled: false, CancellationToken.None,
+                            FailureMapper.ForException(ex)).ConfigureAwait(false);
+                    }
                     catch (Exception fx) { _logger.LogWarning(fx, "Failed to settle faulted headless run {RunId}", run.Id); }
                 }
             }
@@ -942,7 +960,12 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             _logger.LogError(ex, "Resume of run {RunId} faulted", run.Id);
             if (started)
             {
-                try { await _agentRunService.FailAsync(run.Id, ex.Message, cancelled: false, CancellationToken.None).ConfigureAwait(false); }
+                try
+                {
+                    await _agentRunService.FailAsync(
+                        run.Id, ex.Message, cancelled: false, CancellationToken.None,
+                        FailureMapper.ForException(ex)).ConfigureAwait(false);
+                }
                 catch (Exception fx) { _logger.LogWarning(fx, "Failed to settle faulted resume {RunId}", run.Id); }
             }
             else
