@@ -304,15 +304,28 @@ public sealed class DiagnosticsExportServiceTests : IDisposable
     /// pattern would have dropped it from the export AND from the manifest, so nothing would say it existed.
     /// </summary>
     [Fact]
-    public void ARolledFileIsIncludedAlongsideItsDay()
+    public async Task ARolledFileIsIncludedAlongsideItsDay_AndRedactedLikeAnyOther()
     {
         Log("2026-08-22", "first");
-        File.WriteAllText(Path.Combine(_source, "pia-2026-08-22-1.log"), Prefix + "rolled\r\n");
+        File.WriteAllText(
+            Path.Combine(_source, "pia-2026-08-22-1.log"),
+            Prefix + @"rolled from C:\Users\lovelace\AppData\Local\Pia" + "\r\n");
 
         var plan = Build().Plan(_source, DiagnosticsExportCaps.Default);
-
         Assert.Equal(2, plan.IncludedCount);
         Assert.All(plan.Files, f => Assert.Null(f.ExclusionReason));
+
+        // A roll is the only inclusion path the date pattern did not already cover, so it has to be carried
+        // all the way through the export rather than only through Plan().
+        var result = await ExportAsync();
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(
+            ["logs/pia-2026-08-22-1.log", "logs/pia-2026-08-22.log"],
+            Entries(ZipPath).Where(e => e.StartsWith("logs/", StringComparison.Ordinal)));
+        Assert.Equal(
+            Prefix + "rolled from <profile-local>\r\n",
+            ReadEntry(ZipPath, "logs/pia-2026-08-22-1.log"));
     }
 
     [Fact]

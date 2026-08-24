@@ -101,6 +101,13 @@ Redacting all 39 real files and scanning **every output line** for the account n
 `C:\Users`, or an email-shaped string: **0 hits.** 247,884 lines read → 245,755 written (130,790 debug bodies
 replaced, 2,129 continuation lines omitted), 41,530,655 bytes in → 33,342,033 bytes out before compression.
 
+**Be precise about what that zero proves, because it is partly circular.** The scan looked for the account
+name and the machine name — the same two values R05 and R06 key on — and those rules measured 0 hits because
+R04 had already consumed every occurrence. So on this corpus the zero is evidence about **R04, R07 and R12**,
+the rules that actually fired, and it is *not* corpus evidence about R05, R06, R10 or R11. Those four are
+covered by unit tests only. A profile with a corporate machine name in a UNC path, or one that had logged an
+address or a token, would exercise them and has not been measured.
+
 Eyeballing the changed lines found no false positives: framework stack frames, GUIDs, tool names and
 approval decisions are untouched, which is what §5 says they should be.
 
@@ -299,7 +306,7 @@ Fixed (§7) rather than documented around, and then caught.
 | UNC anchor drops its colon guard | `AUncHeadIsReplaced_ButAJsonEscapedDrivePathIsNotMistakenForOne` |
 | output-inside-source guard disabled | `AnOutputPathInsideTheSourceDirectory_IsRefused` |
 | `FileMode.CreateNew` → `Create` | `AnExistingArchive_IsNeverOverwritten` |
-| enumeration narrowed to `pia-????-??-??.log` | the rolled-file and manifest tests (3 failures) |
+| enumeration narrowed to `pia-????-??-??.log` | 3 failures, one of them the end-to-end rolled-file export |
 | cap skips-and-continues instead of stopping | `TheByteCapTakesAContiguousNewestRun_…` |
 | `SensitiveWarning` back to `LogWarning` | `SafeLogLevelTests` |
 | `DiagnosticsDirectory` moved inside `Logs` | `TheDiagnosticsDirectoryIsASiblingOfTheLogDirectory_NotAChildOfIt` |
