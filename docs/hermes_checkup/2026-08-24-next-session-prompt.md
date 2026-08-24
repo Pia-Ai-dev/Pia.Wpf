@@ -1,6 +1,6 @@
 # Prompt — the next workflow-driven session
 
-**Status:** ready to paste. **Written:** 2026-08-24. **Origin:** the C5/C7 batch and the B11 decision.
+**Status:** ready to paste. **Written:** 2026-08-24, revised the same day after B12. **Origin:** the C5/C7 batch and the B11/B12 context-window decisions.
 Everything below §0 is the prompt; paste it whole into a fresh session.
 
 ---
@@ -10,7 +10,7 @@ Everything below §0 is the prompt; paste it whole into a fresh session.
 > **Use a workflow for this.** Multi-agent orchestration is explicitly authorised for the whole session:
 > fan out where the work is independent, and adversarially verify findings before acting on them.
 >
-> Repo `C:\projects\Pia.Wpf`, branch `feature/agent-run-spine`, at or after `2f51d3c0`. **Another session
+> Repo `C:\projects\Pia.Wpf`, branch `feature/agent-run-spine`, at or after `639ee0f7`. **Another session
 > may commit to this branch.** Re-read the checklist and `git log` before trusting any line number or row
 > state below — this prompt is a snapshot, the checklist is the state.
 >
@@ -18,7 +18,7 @@ Everything below §0 is the prompt; paste it whole into a fresh session.
 > surface — every row carries what it actually shipped), then `CLAUDE.md`. Read a plan doc only when you
 > take a row that cites one.
 >
-> **The gate is `dotnet test` with no filter and the bar is `failed: 0`** (4740 total as of `2f51d3c0`;
+> **The gate is `dotnet test` with no filter and the bar is `failed: 0`** (4783 total as of `639ee0f7`;
 > 1 skipped and 58 `Not Run` are expected — the live-provider rows). A feature is not done until
 > `dotnet build -t:Rebuild` reports **0 Warning(s) in both Debug and Release**; `TreatWarningsAsErrors` is on,
 > so a warning is already a build failure. Tick each checklist row **in the commit that lands it**, carrying
@@ -47,10 +47,13 @@ Everything below §0 is the prompt; paste it whole into a fresh session.
 > **E10 and E11 both touch the resume seam — do not fan them out against the same working tree.** P9 writes
 > no production code and is safe to run in parallel with either.
 >
-> **Wave 2 — the B-track, which is now live rather than theoretical.** `B11` (landed 2026-08-24) means
-> compaction actually fires: before it, no provider had a context window, so `AgentContextBudget.From`
-> returned null and an over-window chat failed at the provider instead. `B4` measured that path at **0.0%
-> recall of evicted facts against arm A's 98.3%**, on 4 of 4 transcripts — so `B6` (arm C, anchor index),
+> **Wave 2 — the B-track, which is now live rather than theoretical.** `B11` and `B12` (both landed
+> 2026-08-24) mean compaction actually fires, and at a defensible threshold: before them no provider had a
+> context window at all, so `AgentContextBudget.From` returned null and an over-window chat failed at the
+> provider instead. Every provider now resolves one — from the vendor-documented family table, then the
+> OpenRouter-derived catalogue, then a 128k floor — and an OpenRouter provider re-reads its real value from
+> the API on save. `B4` measured the compaction path at **0.0% recall of evicted facts against arm A's
+> 98.3%**, on 4 of 4 transcripts — so `B6` (arm C, anchor index),
 > `B7 → B8` (message-level search, then the recovery pointer) and `B9` (arm E, pin all user messages) each
 > have the full gap to play for, and `B10` is the sweep that reads them. B6, B7 and B9 are independent of
 > each other; B8 needs B7; B10 needs all three arms. **The instrument already exists** — `B3`/`B4` built
@@ -97,15 +100,29 @@ Everything below §0 is the prompt; paste it whole into a fresh session.
 > - **The gate must not write to the developer's real Pia profile** (row F1). Redirect with `PIA_DATA_DIR` /
 >   `PIA_LOCAL_DATA_DIR`, or override `JsonPersistenceService.DirectoryPath`, which is `protected virtual`
 >   for exactly that.
+> - **One normalizer builds an index AND queries it.** Two nearly-identical ones silently diverge: the model
+>   catalogue folded `.` to `-` when indexing but not when looking up, so every id containing a dot missed —
+>   invisible until a test named a real model.
+> - **A lookup that is ambiguous must refuse, not approximate.** After that fix, a basename with conflicting
+>   windows fell through to a shorter-prefix match and handed `glm-5.2` the window of `glm-5`, a different
+>   model. Where several answers are defensible, return none and let the caller's default apply.
+> - **`JsonElement.TryGetInt32` THROWS on a JSON null** rather than returning false. Guard on
+>   `ValueKind == JsonValueKind.Number` before reading any number out of a payload you do not control.
 > - **Prove a test non-vacuous** by reverting the half it covers and watching that assertion fail. Several
 >   rows here were tightened only because that step caught an assertion observing the default.
 >
 > ### Two things worth deciding rather than inheriting
 >
-> - **`ContextWindowDefaults` is a hand-authored table and the real answer is live discovery.** OpenRouter's
->   `/models` returns `context_length` and the Anthropic Models API returns `max_input_tokens`, but
->   `ProviderService.FetchModelsAsync` returns `List<string>` and throws the rest away. Widening that return
->   type would retire most of the table. Not yet a row — make it one if you agree.
+> - **The model-window catalogue is a dated snapshot that nothing refreshes on its own.**
+>   `OpenRouterContextWindows.SnapshotDate` is `2026-08-24`, and it is *generated* from
+>   `docs/openrouter_models/2026-08-24-openrouter-context-lengths.md` — regenerate rather than hand-edit, and
+>   that doc carries the `curl` that produced it. Live re-reads happen only when an **OpenRouter** provider is
+>   saved; every other provider type is served by the snapshot alone. Decide whether that wants a refresh
+>   path, a newer snapshot, or nothing.
+> - **Ollama models resolve to nothing and take the 128k floor.** The catalogue is keyed by OpenRouter
+>   basenames, and Ollama uses short tags (`llama3`, `phi4`). Today that is a **no-op** rather than a
+>   regression — a 4k local model never reaches 128k, so compaction never fires and Ollama keeps sliding its
+>   own window, exactly as before. It becomes worth fixing only if local models get a window source.
 > - **`RoutineSlotKind` ships with one member and no reader.** Carried because the C5/C7 brief listed it as
 >   decided. Remove it until a second kind exists, or leave it as the seam `Time`/`Enum` land on.
 >
