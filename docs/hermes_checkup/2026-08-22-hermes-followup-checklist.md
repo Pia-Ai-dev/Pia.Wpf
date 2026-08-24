@@ -31,7 +31,7 @@ Three steps can close work below them. Do not tick their dependants without revi
 | Gate | Closes | Question it answers |
 |---|---|---|
 | ~~**A1**~~ | A2–A4, A6, A7 | Is `ExpectedArtifact` already file-shaped often enough that the probe is fine? **Answered 2026-08-23: no — 56%, gate does not close.** Everything it gated stays open. |
-| ~~**B4**~~ | B6–B10 | Does current compaction lose anything worth acting on? **Answered 2026-08-23: yes, totally.** Arm B scored **0.0%** against arm A's **98.3%** at an 8000/2000 window, on 4 of 4 transcripts - indistinguishable from having no transcript at all. The gate does **not** close; B6-B10 stay open. Reading: [2026-08-23-compaction-arm-ab-reading.md](2026-08-23-compaction-arm-ab-reading.md). |
+| ~~**B4**~~ | B6–B10 | Does current compaction lose anything worth acting on? **Answered 2026-08-23: yes, totally.** Arm B scored **0.0%** against arm A's **98.3%** at an 8000/2000 window, on 4 of 4 transcripts - indistinguishable from having no transcript at all. The gate does **not** close; B6-B10 stay open. Reading: [2026-08-23-compaction-arm-ab-reading.md](2026-08-23-compaction-arm-ab-reading.md). **B6-B10 all closed 2026-08-24 and none of them promoted an arm** — see [2026-08-24-compaction-arms-cde-reading.md](2026-08-24-compaction-arms-cde-reading.md), whose §0.1 also narrows this row: compaction only ever runs on agent-run STEP turns, so half the corpus this gate was answered on models a path the product never compacts. |
 | **D-Q1** | D3–D8 | Is the goal onboarding (a canned tour, no LLM) or arbitrary "where do I…" questions? |
 
 ---
@@ -281,7 +281,26 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
   messages are not pinned. *(From review rec #5, not the test plan.)*
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
 
-- [ ] **B6 · Arm C — mechanical anchor index.** Biggest single win in hermes's scorecard.
+- [x] **B6 · Arm C — mechanical anchor index.** Biggest single win in hermes's scorecard.
+  **Built and measured 2026-08-24; NOT promoted.** Reading: [2026-08-24-compaction-arms-cde-reading.md](2026-08-24-compaction-arms-cde-reading.md).
+  `CompactionArms.AnchorIndex` appends one block naming, per source message and with its original transcript
+  position, the identifiers found verbatim in what was dropped. Extractors are written against the plan's
+  candidate list and tested against sentences the corpus never wrote, so the regex is not tuned to the
+  generator. **Scored 48.3% against arm B's 0.0% — +48.3, wins 4 of 4, which fires §11's promotion rule.**
+  Do not build from that number. Three findings, in the order that matters:
+  - **The stimulus is a 100%-precision answer key.** On 3 of 4 shapes the block is exactly 13 lines, one anchor
+    each, and all 13 are gold answers — zero distractors. Both that precision AND the 152-token size follow
+    from ONE unrelated design choice: the generator's filler is lowercase-letters-spaces-periods, so nothing
+    but the planted facts survives the extractor. Cost and benefit are one corpus property stated twice.
+  - **Measured density off this corpus: 0.0 anchors/1K tokens in the filler against 5.2–22.6 in repo docs,
+    diffs, logs and C# source** — projecting to ~800–1,700 tokens for the same dropped region. A plain
+    `find src -type f` tool result runs 57.4/1K and yields a block **99.8% the size of the body it indexes**.
+    There is no cap, and adding one introduces a selection policy nothing measured.
+  - **The structural half is inert where it would ship.** Both round-0 seams build text-only messages
+    (`AssistantMessage.ToChatMessage()` emits only `TextContent`/`DataContent`; `HeadlessTurnExecutor`
+    rebuilds rows as plain text), so the `FunctionCallContent.Name`/`CallId` reads never execute there. They
+    run only in the in-step tool loop, whose messages are never persisted — the same path arm D cannot reach.
+  Also: the block is appended AFTER the compactor fit the window, so arm C never pays its own cost.
   *Deps:* B4 · *Effort:* **M** · *Value:* **High**
 
 - [x] **B7 · Message-level search granularity.** `AssistantChatsFts` is per *chat*, not per *message* —
@@ -292,7 +311,9 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
   Plan §7 keeps arms C/D/E as harness prototypes that touch no shipped code until §11's bar is cleared, and a
   second FTS table needs backfill plus save/delete/evict maintenance — bought before the measurement that
   authorises it. B4 also measured the real corpus at **99 messages total**, so a substring scan over one chat
-  is not a performance question yet. If B10 says arm D wins, the index is an earned follow-up.
+  is not a performance question yet. **B10 answered this and the index is still not owed** — arm D cleared the
+  rule's bar, but a `LIKE` over `AssistantChatMessages` cannot see the tool content eviction reaches first, so
+  the missing piece is a store that holds it, not an index over one that does not.
   - `Ordinal` is the whole point over `AssistantChatsFts`, which can only name the conversation: a hit has to
     be citable back to a position in the transcript.
   - A blank term returns nothing rather than every row — `'%%'` would turn recovery into a transcript dump.
@@ -303,13 +324,78 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
     term cannot be used to decide whether to read the row.
   *Deps:* none · *Effort:* **M** · *Value:* **Enabler** (hard prerequisite for B8)
 
-- [ ] **B8 · Arm D — recovery pointer.** Worth +20 to +43 pts standalone in hermes's run.
+- [x] **B8 · Arm D — recovery pointer.** Worth +20 to +43 pts standalone in hermes's run.
+  **Built and measured 2026-08-24; the one clean empirical result, and NOT a compactor change.** Reading:
+  [2026-08-24-compaction-arms-cde-reading.md](2026-08-24-compaction-arms-cde-reading.md).
+  **+24.2, wins 4 of 4, with `gold=0` on all four** — arm D's own context held none of the answers, arm B was
+  0.0% and the no-context control was 0.0%, so its points really are search-earned. That is where it stops.
+  - **§11 promotes an arm "to a real implementation proposal against `AgentContextCompactor.cs`", and arm D
+    cannot be one.** The compactor returns a `List<ChatMessage>`; the only half it could emit is the footer,
+    and the footer alone earns nothing.
+  - **The store the mechanism needs does not exist on either path.** `SearchMessagesAsync` has zero production
+    callers (B7 wrote it for this row); `AssistantChatMessages` holds user/assistant text plus a
+    `ToolCallCount` **count**, so a real search is blind to exactly the tier eviction reaches first
+    (threshold 0.45); and at the in-step loop `AiClientService.cs:236-241` says the list holding tool content
+    "is discarded when the loop ends". **The footer's promise that dropped messages are "still stored and
+    searchable" is false in the product for that content.**
+  - **The harness searched an oracle** — the in-memory `removed` set with tool arguments and results rendered
+    in. And the tell: `chat-tool-heavy` is arm D's BEST transcript (33.3%) and is the one shape whose facts
+    land in tool payloads (5 of 15). It looks strongest exactly where it would degrade most.
+  - **The hermes +20…+43 comparison is dropped**, not cited: different codebase, real ~500K transcripts, a
+    summarising rather than evicting compactor, and an actual retrieval path.
+  - **The search-rate lever is real but not diagnosable from this run.** 51.8% conversion on 28 searches,
+    searched on only 6–8 of 15 — but both levers are worth ~the same (all-15 at today's rate ≈ 51.8%; perfect
+    conversion on today's 28 ≈ 46.7%), and `Recovered` increments when a term PARSES, before any hit exists,
+    while `RenderHits` returns a non-null "no matches" string. No trace callback was passed, so no term, hit
+    count or second-round answer was captured. A rerun must log all three.
+  Cost is understated by construction: 88 answering calls against 60 for B and C, ~+51% input tokens, and a
+  second sequential round-trip the user waits on.
   *Deps:* B4, B7 · *Effort:* **M** · *Value:* **High**
 
-- [ ] **B9 · Arm E — pin all user messages.**
+- [x] **B9 · Arm E — pin all user messages.**
+  **Built and measured 2026-08-24; the rule was INAPPLICABLE, not refusing.** Reading: [2026-08-24-compaction-arms-cde-reading.md](2026-08-24-compaction-arms-cde-reading.md).
+  Scored +6.7 averaged and won 1 of 4, which reads as a §11 refusal and is not one. **On three of four shapes
+  every planted fact sits on an assistant message, so pinning user messages had nothing to pin: arm E's context
+  held zero gold by construction and its 0.0% there is FORCED, not measured.** (Reproduced from the generator's
+  index arithmetic and matching the reported gold 0/0/0/5 exactly.) Averaging three forced zeros is what pulls
+  **+26.7 down to +6.7** — and on the one transcript where the treatment could act, arm E **cleared the bar**.
+  Its 3.325-point shortfall against the 10-point line also sits inside the plan's own ±3–5 judge noise, so only
+  the "3 of 4" clause refused it, decided by three no-op cells. §11's anti-luck row applies instead: suspected
+  restatement luck until a fifth transcript reproduces it.
+  **Withholding user messages from compaction is untested, not refused.** Predicting the forced zeros before
+  any call spend was a statement about the corpus, not about pinning.
   *Deps:* B4 · *Effort:* **S** · *Value:* **Med**
 
-- [ ] **B10 · Full sweep, scorecard, findings** — including what was luck.
+- [x] **B10 · Full sweep, scorecard, findings** — including what was luck.
+  **Done 2026-08-24: [2026-08-24-compaction-arms-cde-reading.md](2026-08-24-compaction-arms-cde-reading.md).** One sweep, six columns (A, B, C, C0, D, E) × 4 transcripts on
+  `deepseek/deepseek-v4-flash` answering and judging at temperature 0 — all arms together, because the model
+  is part of the measurement and B4's Mistral baseline cannot serve a DeepSeek arm. 37 minutes, ~750 calls,
+  **no 429 and no lost transcript**: the pacing and per-transcript try/catch the arm-A/B reading added both held.
+  **The sweep's most useful output is not a ranking of arms — it is four defects in the instrument**, and the
+  first one is why nothing here may drive a build:
+  - **Compaction runs on agent-run STEP turns only.** All four `CompactAsync` seams
+    (`ChatSession.cs:953`, `HeadlessTurnExecutor.cs:469`, `AiClientService.cs:248` and `:660`) are gated
+    on a non-null budget; interactive chat passes null *by design* (`ChatSession.cs:766`) and
+    `BackgroundAssistantTurnRunner` passes nothing. **The two chat shapes — 30 of 60 questions — model a list
+    the product never hands the compactor.**
+  - **Effective N is one, not four.** `guidPrefix` is drawn before any shape branch and no caller overrides
+    `Seed = 20260822`, so all four transcripts plant byte-identical gold answers and ask an identical bank;
+    the two agent shapes are the same branch twice. §11's "wins on ≥3 of 4" clause cannot do its anti-luck job.
+  - **The 8000/2000 window was an env override**, 0.76% of the answering provider's 1,048,576 catalogue window
+    — at which every transcript here would pass through uncompacted, i.e. as arm A. Neither half of that may be
+    printed without the other: the fallback is 128,000, `deepseek-r1` is 64,000, and the in-step tool loop can
+    overflow any window from inside one step.
+  - **One model answered and judged**, so leniency raises exactly `C−B`/`D−B`/`E−B` while arm B sits pinned
+    at the floor. No per-arm correct/partial/wrong split was captured; it is owed.
+  **Two §11 rows the reading applies by name that the plan left silent:** the "B ≥ 85% of A" row does **not**
+  fire (B/A = 0.0% everywhere — the pre-registered "compaction is fine" outcome is refused); and **the control
+  arm C0 satisfies the promotion rule as written** (+20.0, 4 of 4), because §11 has no control carve-out. That
+  is a gap in the plan, recorded rather than quietly exempted.
+  **Verified adversarially before it was written.** Four independent skeptics on distinct lenses (arithmetic,
+  arm-C-as-artifact, arm-D-mechanism, external validity) refuted claims 3, 5, 6 and 8 of the intended reading —
+  including a real arithmetic error ("3.6% on three transcripts" is 3.6%/3.9%/8.7%) — and the load-bearing
+  structural claims were then re-checked in source rather than taken on report. §7 of the reading lists the
+  nine instrument fixes the next sweep needs, seven of which cost no provider call.
   *Deps:* B6, B8, B9 · *Effort:* **S** · *Value:* **High**
 
 - [x] **B11 · Per-provider context-window defaults — 128k for an unknown model, a table for known ones.**
@@ -698,16 +784,18 @@ B7 → B8                     # message-level search, then the recovery pointer
 C6                          # needs plan §11 Q4 answered first, and a desktop pass
 ```
 
-**What the B-track now needs is provider spend, not a decision.** `B6`, `B7 → B8` and `B9` are the three arms
-`B4`'s 0.0%-against-98.3% reading left to play for, and `B10` is the sweep that reads them. The instrument
-exists (`Integration/Compaction/CompactionRecallHarness.cs`); read
-[2026-08-23-compaction-arm-ab-reading.md](2026-08-23-compaction-arm-ab-reading.md) — especially its
-operational notes — **before spending a single provider call**: concurrency 3 earns a 429, and one provider
-fault used to discard three transcripts. B6, B7 and B9 are independent of each other; B8 needs B7; B10 needs
-all three. Everything else still open is behind a gate: `C6` behind plan §11 Q4, `A2 → A3 → A6 → A7` behind
-the supply re-read (§8 of [2026-08-23-a2-wide-read.md](2026-08-23-a2-wide-read.md) fixed the band in advance —
-build above 40%, drop below 12%; the last read was 22% on 13 runs), and `D3`–`D8` behind `D-Q1`. `D2` and `D7`
-are the two D rows that are **not** gated.
+**The whole B-track closed 2026-08-24 and promoted nothing.** `B6`/`B8`/`B9` were built, `B10` swept all six
+columns on DeepSeek V4 Flash, and the honest outcome is that **the instrument has to be fixed before any arm's
+number can drive a change** — starting with the fact that compaction only runs on agent-run *step* turns, so
+half the corpus models a message list the product never hands the compactor. §7 of
+[2026-08-24-compaction-arms-cde-reading.md](2026-08-24-compaction-arms-cde-reading.md) is the ordered fix list;
+**seven of its nine items cost no provider call.** Do that before spending on a second sweep.
+
+Everything else still open is behind a gate: `C6` behind plan §11 Q4, `A2 → A3 → A6 → A7` behind the supply
+re-read (§8 of [2026-08-23-a2-wide-read.md](2026-08-23-a2-wide-read.md) fixed the band in advance — build above
+40%, drop below 12%; the last read was 22% on 13 runs), and `D3`–`D8` behind `D-Q1`. **`D2` and `D7` are the
+two D rows that are not gated**, and `D7` (`S`/`Med`) is the cheaper of the two — `D2` is an `M` whose value is
+entirely contingent on how `D-Q1` lands.
 
 **`BlueprintKey` stays data-only** (owner, 2026-08-24): no UI reads it, the question it answers needs months
 of real use, and it is answerable by SQL against `history.db` in the meantime.
