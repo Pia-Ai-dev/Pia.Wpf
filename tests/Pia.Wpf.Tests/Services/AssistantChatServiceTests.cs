@@ -477,6 +477,122 @@ public class AssistantChatServiceTests : IDisposable
         Assert.Null(await _service.GetProviderIdAsync(Guid.NewGuid(), ct));
     }
 
+    [Fact]
+    public async Task SearchMessagesAsync_FindsTheMessageRow_NotJustTheChat()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var chat = MakeChat(title: "recovery", body: "first message, nothing special");
+        chat.Messages =
+        [
+            chat.Messages[0],
+            new SyncAssistantChatMessage
+            {
+                Id = Guid.NewGuid(), Role = "assistant", Timestamp = DateTime.UtcNow,
+                Content = "Stage 07 aborted with PIA-E4007 after the columnar writer refused the batch.",
+            },
+            new SyncAssistantChatMessage
+            {
+                Id = Guid.NewGuid(), Role = "user", Timestamp = DateTime.UtcNow, Content = "and then?",
+            },
+        ];
+        await _service.SaveAsync(chat, ct);
+        _createdIds.Add(chat.Id);
+
+        var hits = await _service.SearchMessagesAsync(chat.Id, "PIA-E4007", ct: ct);
+
+        // The whole point of the row over AssistantChatsFts: an ordinal, so the hit is citable back to the
+        // transcript rather than only naming the conversation.
+        var hit = Assert.Single(hits);
+        Assert.Equal(chat.Messages[1].Id, hit.MessageId);
+        Assert.Equal(1, hit.Ordinal);
+        Assert.Equal("assistant", hit.Role);
+        Assert.Contains("PIA-E4007", hit.Snippet);
+    }
+
+    [Fact]
+    public async Task SearchMessagesAsync_IsScopedToOneChat_AndOrderedByOrdinal()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var mine = MakeChat(title: "mine", body: "the marker MARK-42 appears here");
+        mine.Messages =
+        [
+            mine.Messages[0],
+            new SyncAssistantChatMessage
+            {
+                Id = Guid.NewGuid(), Role = "assistant", Timestamp = DateTime.UtcNow,
+                Content = "and MARK-42 again, later",
+            },
+        ];
+        var theirs = MakeChat(title: "theirs", body: "MARK-42 in a different conversation entirely");
+        await _service.SaveAsync(mine, ct);
+        await _service.SaveAsync(theirs, ct);
+        _createdIds.Add(mine.Id);
+        _createdIds.Add(theirs.Id);
+
+        var hits = await _service.SearchMessagesAsync(mine.Id, "MARK-42", ct: ct);
+
+        Assert.Equal(2, hits.Count);
+        Assert.Equal([0, 1], hits.Select(h => h.Ordinal));
+        // Reds if the query ever loses its ChatId predicate: the other chat says the same thing.
+        Assert.All(hits, h => Assert.Contains(h.MessageId, mine.Messages.Select(m => m.Id)));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task SearchMessagesAsync_WithABlankTerm_FindsNothing_NotEveryRow(string term)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var chat = MakeChat(title: "blank", body: "some body text");
+        await _service.SaveAsync(chat, ct);
+        _createdIds.Add(chat.Id);
+
+        // '%%' matches every row, which would turn a recovery lookup into a full transcript dump.
+        Assert.Empty(await _service.SearchMessagesAsync(chat.Id, term, ct: ct));
+    }
+
+    [Fact]
+    public async Task SearchMessagesAsync_TreatsLikeWildcardsInTheTermAsLiterals()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var chat = MakeChat(title: "wildcards", body: "the literal 50% mark was crossed");
+        chat.Messages =
+        [
+            chat.Messages[0],
+            new SyncAssistantChatMessage
+            {
+                Id = Guid.NewGuid(), Role = "assistant", Timestamp = DateTime.UtcNow,
+                Content = "no percentage sign anywhere on this line",
+            },
+        ];
+        await _service.SaveAsync(chat, ct);
+        _createdIds.Add(chat.Id);
+
+        // Unescaped, "50%" would match the second message too — '%' is LIKE's own wildcard.
+        var hit = Assert.Single(await _service.SearchMessagesAsync(chat.Id, "50%", ct: ct));
+        Assert.Equal(0, hit.Ordinal);
+        // An underscore is the single-character wildcard, so it needs the same treatment.
+        Assert.Empty(await _service.SearchMessagesAsync(chat.Id, "5_%", ct: ct));
+    }
+
+    [Fact]
+    public async Task SearchMessagesAsync_SnippetIsAWindowAroundTheMatch_NotTheHeadOfTheMessage()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var filler = string.Join(' ', Enumerable.Repeat("filler words here", 60));
+        var chat = MakeChat(title: "long", body: $"{filler} NEEDLE-99 {filler}");
+        await _service.SaveAsync(chat, ct);
+        _createdIds.Add(chat.Id);
+
+        var hit = Assert.Single(await _service.SearchMessagesAsync(chat.Id, "NEEDLE-99", ct: ct));
+
+        // A hit whose snippet does not contain the term cannot be used to decide whether to read the row.
+        Assert.Contains("NEEDLE-99", hit.Snippet);
+        Assert.StartsWith("…", hit.Snippet);
+        Assert.EndsWith("…", hit.Snippet);
+        Assert.True(hit.Snippet.Length < 400, $"snippet was {hit.Snippet.Length} chars");
+    }
+
     private static SyncAssistantChat MakeChat(string title, string body)
     {
         var now = DateTime.UtcNow;

@@ -284,8 +284,23 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
 - [ ] **B6 · Arm C — mechanical anchor index.** Biggest single win in hermes's scorecard.
   *Deps:* B4 · *Effort:* **M** · *Value:* **High**
 
-- [ ] **B7 · Message-level search granularity.** `AssistantChatsFts` is per *chat*, not per *message* —
+- [x] **B7 · Message-level search granularity.** `AssistantChatsFts` is per *chat*, not per *message* —
   either add a message-level index or scope recovery to a direct `AssistantChatMessages` query.
+  **Done 2026-08-24 — the scoped query, deliberately NOT the index.** `IAssistantChatService
+  .SearchMessagesAsync(chatId, term, limit)` returns `AssistantChatMessageHit(MessageId, Ordinal, Role,
+  Snippet)` from a `LIKE` over one chat's rows. **Read this as "the reader exists", not "the index exists".**
+  Plan §7 keeps arms C/D/E as harness prototypes that touch no shipped code until §11's bar is cleared, and a
+  second FTS table needs backfill plus save/delete/evict maintenance — bought before the measurement that
+  authorises it. B4 also measured the real corpus at **99 messages total**, so a substring scan over one chat
+  is not a performance question yet. If B10 says arm D wins, the index is an earned follow-up.
+  - `Ordinal` is the whole point over `AssistantChatsFts`, which can only name the conversation: a hit has to
+    be citable back to a position in the transcript.
+  - A blank term returns nothing rather than every row — `'%%'` would turn recovery into a transcript dump.
+  - The term is `LIKE`-escaped with an explicit `ESCAPE '\'`, because the things worth recovering are exactly
+    the ones containing `%` or `_`: an error string, a file path, a quantity. Proved non-vacuous by removing
+    the escaping and watching `SearchMessagesAsync_TreatsLikeWildcardsInTheTermAsLiterals` fail.
+  - The snippet is a window **around the match**, not the head of the message: a hit whose snippet omits the
+    term cannot be used to decide whether to read the row.
   *Deps:* none · *Effort:* **M** · *Value:* **Enabler** (hard prerequisite for B8)
 
 - [ ] **B8 · Arm D — recovery pointer.** Worth +20 to +43 pts standalone in hermes's run.

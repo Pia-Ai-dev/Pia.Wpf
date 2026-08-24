@@ -486,6 +486,9 @@ public sealed class HeadlessTurnExecutorTests
         // Deliberately NOT counted in GetCalls: the read-cost facts here are about the full-transcript read.
         public Task<Guid?> GetProviderIdAsync(Guid id, CancellationToken ct = default)
             => _inner.GetProviderIdAsync(id, ct);
+        public Task<IReadOnlyList<AssistantChatMessageHit>> SearchMessagesAsync(
+            Guid chatId, string term, int limit = 20, CancellationToken ct = default)
+            => _inner.SearchMessagesAsync(chatId, term, limit, ct);
         public Task<IReadOnlyList<SyncAssistantChat>> SearchAsync(string? searchText = null, DateTime? fromDate = null,
             DateTime? toDate = null, Guid? providerId = null, int offset = 0, int limit = 50, CancellationToken ct = default)
             => _inner.SearchAsync(searchText, fromDate, toDate, providerId, offset, limit, ct);

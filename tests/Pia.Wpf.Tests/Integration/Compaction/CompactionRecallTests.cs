@@ -190,9 +190,10 @@ public class CompactionRecallTests : IDisposable
     }
 
     /// <summary>
-    /// The second measurement the plan's §15 asks for. It skips rather than inventing a window: with
-    /// <c>MaxContextWindowTokens</c> unset on every configured provider, compaction never fires for that user
-    /// at all, and a made-up number would read exactly like a measured one.
+    /// The second measurement the plan's §15 asks for. Two reasons it can have nothing to measure, and both
+    /// are findings rather than failures: no window configured at all, or a window so wide the corpus fits
+    /// under it. The second only became reachable once every provider started resolving one — before that,
+    /// this always took the first branch.
     /// </summary>
     [LiveApiFact]
     public async Task ArmsAandB_OnTheSyntheticCorpus_AtTheConfiguredWindow()
@@ -204,6 +205,25 @@ public class CompactionRecallTests : IDisposable
             Assert.Skip(
                 $"no window to measure: {CompactionRecallHarness.WindowVariable} is unset and "
                 + $"{provider?.Name ?? "the provider"} has no MaxContextWindowTokens");
+            return;
+        }
+
+        // Checked BEFORE the sweep spends anything. A window the whole corpus fits under removes nothing, so
+        // every bank is empty and the sweep would otherwise reach its own Assert.NotEmpty(rows) and read as a
+        // broken instrument — when what it actually found is that compaction never fires at this window.
+        var ct = TestContext.Current.CancellationToken;
+        var removals = 0;
+        foreach (var transcript in CompactionRecallHarness.SyntheticCorpus())
+        {
+            var (_, removed) = await CompactionRecallHarness.CompactAsync(transcript, budget, ct);
+            removals += removed.Count;
+        }
+
+        if (removals == 0)
+        {
+            Assert.Skip(
+                $"{budget.Source} is {budget.Budget.WindowTokens} tokens and the whole synthetic corpus fits "
+                + "under it, so compaction removes nothing and there is no recall to measure");
             return;
         }
 
