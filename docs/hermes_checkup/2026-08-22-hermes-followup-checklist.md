@@ -12,7 +12,7 @@ implementation step. Tick as they land.
 | **D** | [Guided tour](2026-08-22-guided-tour-tool-plan.md) |
 | **E** | [Per-routine persona + reasoning effort](2026-08-22-routine-persona-effort-plan.md) |
 | **F** | Test hygiene — no plan doc; found while executing group A |
-| **G** | Failure legibility — [Export Diagnostics](../failure_legibility/2026-08-24-export-diagnostics.md); promoted out of *not yet planned* #3 |
+| **G** | Failure legibility — [Export Diagnostics](../failure_legibility/2026-08-24-export-diagnostics.md) (review #3) · [Failure layer + recovery actions](../failure_legibility/2026-08-24-failure-layer-plan.md) (review #2 slice 2); both promoted out of *not yet planned* |
 
 **Effort** — `XS` under a day, no new types · `S` 1–2 days · `M` 3–5 days, new types or a new surface
 · `L` a week or more, a new subsystem.
@@ -33,6 +33,7 @@ Three steps can close work below them. Do not tick their dependants without revi
 |---|---|---|
 | ~~**A1**~~ | A2–A4, A6, A7 | Is `ExpectedArtifact` already file-shaped often enough that the probe is fine? **Answered 2026-08-23: no — 56%, gate does not close.** Everything it gated stays open. |
 | ~~**B4**~~ | B6–B10 | Does current compaction lose anything worth acting on? **Answered 2026-08-23: yes, totally.** Arm B scored **0.0%** against arm A's **98.3%** at an 8000/2000 window, on 4 of 4 transcripts - indistinguishable from having no transcript at all. The gate does **not** close; B6-B10 stay open. Reading: [2026-08-23-compaction-arm-ab-reading.md](2026-08-23-compaction-arm-ab-reading.md). **B6-B10 all closed 2026-08-24 and none of them promoted an arm** — see [2026-08-24-compaction-arms-cde-reading.md](2026-08-24-compaction-arms-cde-reading.md), whose §0.1 also narrows this row: compaction only ever runs on agent-run STEP turns, so half the corpus this gate was answered on models a path the product never compacts. |
+| **G-Q1** | G5 | Does Retry re-dispatch the whole run from its goal, or resume from the failed step? **Unanswered.** It cannot be settled by preference: re-dispatch duplicates every write the run already made, resume-from-step needs the step ledger to be trustworthy after a fault, and `SafeToReRun` only makes re-dispatch safe for the *pre-model* cases — a set narrow enough that a Retry gated on it may be worth very little. Answer with the per-layer duplicate-write analysis. §4 of [../failure_legibility/2026-08-24-failure-layer-plan.md](../failure_legibility/2026-08-24-failure-layer-plan.md). |
 | **D-Q1** | D3–D6, D8 | Is the goal onboarding (a canned tour, no LLM) or arbitrary "where do I…" questions? **Still unanswered, and its dependants are PARKED as of 2026-08-24** — [../guided_tour/2026-08-24-d-track-parked.md](../guided_tour/2026-08-24-d-track-parked.md). No longer blocks `D7`, which was severed from the track and stays open. |
 
 ---
@@ -823,6 +824,23 @@ and never looks at it. **Every failed run already knows why it failed and the UI
 `G` below (Export Diagnostics). The next work in this area is **#2 slice 2**, which is the only part of the
 *not yet planned* table's two `High`s still open.
 
+### Queued 2026-08-24, after the `G1` UI run
+
+`#2` slice 2 now has rows and a plan doc
+([../failure_legibility/2026-08-24-failure-layer-plan.md](../failure_legibility/2026-08-24-failure-layer-plan.md)),
+so the "none of the open rows is the right next move" paragraph above no longer holds — `G2` is.
+
+```
+G2 → G3          # the enabler, then the cheap gap-closure it unlocks
+G2 → G4          # the user-visible half; can run alongside G3
+G-Q1 → G5        # only after the gate
+```
+
+`G2 → G3` is under two days and closes a gap `IsPreModelFailure`’s own doc comment already records. `G4`
+is where the user-visible value is, and both of its recovery actions are already built — `G1` is one of
+them. `G5` is deliberately last and deliberately gated: `SafeToReRun` only makes a re-dispatch safe for the
+*pre-model* cases, which may leave a Retry worth very little.
+
 **`BlueprintKey` stays data-only** (owner, 2026-08-24): no UI reads it, the question it answers needs months
 of real use, and it is answerable by SQL against `history.db` in the meantime.
 
@@ -830,9 +848,13 @@ of real use, and it is answerable by SQL against `history.db` in the meantime.
 
 ## G — Failure legibility
 
-Promoted out of the *not yet planned* table below (review #3), scoped as **Export** rather than *Send* by the
-owner on 2026-08-24. Plan and reading:
+Promoted out of the *not yet planned* table below. `G1` is review **#3**, scoped as **Export** rather than
+*Send* by the owner on 2026-08-24 — plan and reading:
 [`../failure_legibility/2026-08-24-export-diagnostics.md`](../failure_legibility/2026-08-24-export-diagnostics.md).
+`G2`–`G5` are review **#2 slice 2**, planned 2026-08-24 in
+[`../failure_legibility/2026-08-24-failure-layer-plan.md`](../failure_legibility/2026-08-24-failure-layer-plan.md);
+slice 1 already shipped as `3c90aa74`. `G1` is a **dependency of `G5`**, not a sibling: it is the recovery
+action the non-retryable layers offer.
 
 - [x] **G1 · Export Diagnostics — a consented, redacted zip written locally, plus reveal-in-Explorer.**
   The app had **no route to its own logs at all**, while `CLAUDE.md`'s support story already told users to
@@ -901,6 +923,39 @@ owner on 2026-08-24. Plan and reading:
   `PrimaryButton`/`CloseButton`, and there is no snackbar to read at all — `ISnackbarService` is Flow, whose
   success notice is transient and unassertable while its failure notice is persistent and fully readable.
   *Deps:* none · *Effort:* **S** · *Value:* **High** (the app can hand over its own logs safely for the first time)
+
+- [ ] **G2 · `PiaFailure` descriptor + type-keyed mapper + `AgentRuns.FailureJson`.** A
+  `PiaFailure(FailureLayer Layer, string Code, bool SafeToReRun)` in `Pia.Models`, static descriptors beside
+  the six named failure constants (five on the agent-run path, one on the scheduled-job path), an
+  exception-**type** mapper at the four `catch` sites that today pass
+  `ex.Message`, and an additive column so the value survives a claim that nulls `ExtraJson`. No UI.
+  **Additive, never a replacement:** slice 1’s vocabulary is deliberately OPEN and the descriptor travels
+  *alongside* the free-text reason — the first test to write is the one pinning that an unmapped `ex.Message`
+  still reaches the card unchanged. **`SafeToReRun` is `IsPreModelFailure`’s meaning** (provably nothing spent,
+  nothing written), **not** hermes’s "the call might work if repeated" — conflating them ships a
+  duplicate-write bug on any mid-run provider fault.
+  *Deps:* none · *Effort:* **S** · *Value:* **Enabler**
+
+- [ ] **G3 · Widen `IsPreModelFailure` to read `SafeToReRun`.** Closes the KNOWN GAP its own doc comment
+  records: a `HeadlessRunLauncher` failure that provably happened before the model was called currently
+  arrives as a bare message and dies on the first strike. The narrowing stays — a mid-run fault is still
+  terminal — but it is decided by a value the **caller vouched for** rather than by one string comparison,
+  which is exactly what that comment asks for ("never a substring match on provider error text").
+  *Deps:* G2 · *Effort:* **XS** · *Value:* **Med**
+
+- [ ] **G4 · Layer name + recovery action on the failure card.** Renders the layer beside slice 1’s reason
+  line and offers the matching action. **Both actions already exist:** *Export diagnostics* (`G1`) for
+  `App`/`Unclassified`, and the Providers settings category for `Provider`/`Endpoint`. Check the gating first —
+  `RunProgressViewModel` gates the reason on the Failed **family**, which folds `Cancelled` in, so a run
+  cancelled because a child failed carries the child’s reason.
+  *Deps:* G2 · *Effort:* **S** · *Value:* **High**
+
+- [ ] **G5 · Retry on the failure card, honouring `SafeToReRun`.** **Gated on `G-Q1` — do not start before it
+  is answered.** Whatever the answer, the retry claim **must not `SET ExtraJson = NULL`**: both existing
+  resume claims do, and they are safe only because they fire from `WaitingForInput`/`Paused`. A Retry adds a
+  new `Failed → Running` transition that, written in the shape of its two siblings, would wipe the reason
+  slice 1 reads. `FailureJson` survives it; `{"error": …}` does not.
+  *Deps:* G2, G4, **G-Q1** · *Effort:* **M** · *Value:* **Med**
 
 ---
 
@@ -1081,17 +1136,22 @@ Carried out of the 2026-08-24 handoff prompt when that prompt was consumed.
 
 From the review's recommendation table, no plan doc written. Listed so they are not lost.
 
-**#3 has been PROMOTED OUT of this table** — it shipped 2026-08-24 as group `G` below, and the card it lands
-on can already say what went wrong: slice 1 of #2 (`3c90aa74`) renders the failure reason. What remains of the
-failure-legibility area is therefore **#2 slice 2 only** — a named failure layer (`PiaFailure(Layer, Code,
-Retryable)`), recovery actions and Retry. Its one trap is recorded in §8 of
+**BOTH failure-legibility items have been PROMOTED OUT of this table.** #3 shipped 2026-08-24 as `G1`, and
+the card it lands on can already say what went wrong: slice 1 of #2 (`3c90aa74`) renders the failure reason.
+**#2 slice 2 was planned the same day** — a named failure layer, recovery actions and Retry — and is now
+`G2`–`G5` above, behind
+[../failure_legibility/2026-08-24-failure-layer-plan.md](../failure_legibility/2026-08-24-failure-layer-plan.md).
+That plan renames the descriptor's third member from the review's `Retryable` to `SafeToReRun`, because the
+review's word means "the call might work if repeated" while the thing it says to generalise,
+`IsPreModelFailure`, means "provably nothing spent and nothing written" — the two are not the same question.
+The trap below is recorded in §8 of
 [../failure_legibility/2026-08-24-export-diagnostics.md](../failure_legibility/2026-08-24-export-diagnostics.md):
 a Retry adds a new `Failed → Running` transition, and written in the shape of its two existing siblings it
 would `SET ExtraJson = NULL` and wipe the reason slice 1 reads.
 
 | Item | Review # | Effort | Value |
 |---|---|---|---|
-| Error layer + recovery actions on the failure card — **slice 1 done `3c90aa74`**, slice 2 open | 2 | M | High |
+| ~~Error layer + recovery actions on the failure card~~ **slice 1 done `3c90aa74`; slice 2 PROMOTED OUT 2026-08-24** to `G2`–`G5` above | 2 | M | High |
 | ~~Send Diagnostics — consented, redacted log bundle~~ **DONE 2026-08-24 as `G1`**, scoped to *Export* | 3 | S | High |
 | Global pause (ESTOP) — tray toggle, never kills in-flight work | 7 | S | Med |
 | Repetition guard before the truncated-response continuation nudge | 8 | S | Med |
