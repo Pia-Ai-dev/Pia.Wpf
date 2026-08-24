@@ -869,8 +869,12 @@ owner on 2026-08-24. Plan and reading:
   **No `ViewAutomationIdTests` count bump was needed and none was made** — that number is a floor asserted
   with `>=`, "set well under the measured total so ordinary edits to the view never touch this file"; the
   load-bearing assertion is the missing-id one, which the new button satisfies.
-  Gate **4907 / failed: 0 / 1 skipped / 58 Not Run** (from 4841 at `da95cc8b`, +66 tests); Debug and Release
-  both `-t:Rebuild` to **0 Warning(s)**. Human smoke test pending — nothing was exercised through the app.
+  **Non-vacuity measured, not asserted:** 17 shipped mechanisms reverted one at a time, **17 of 17 caught** —
+  and the first pass found a real hole, which is the point of running it. `FileMode.CreateNew` was shadowed by
+  a redundant `File.Exists` pre-check, so the atomic collision guard and the same-second race it closes had no
+  test at all; the pre-check is gone and `CreateNew` is now the single mechanism.
+  Gate **4907 / failed: 0 / 4848 succeeded / 59 skipped** (from 4841 at `da95cc8b`, +66 tests); Debug and
+  Release both `-t:Rebuild` to **0 Warning(s)**. Human smoke test pending — nothing was exercised in the app.
   *Deps:* none · *Effort:* **S** · *Value:* **High** (the app can hand over its own logs safely for the first time)
 
 ---

@@ -133,9 +133,6 @@ public sealed class DiagnosticsExportService : IDiagnosticsExportService
         if (string.IsNullOrEmpty(outputDirectory) || !Directory.Exists(outputDirectory))
             return Failed(DiagnosticsExportFailure.OutputDirectoryMissing);
 
-        if (File.Exists(request.OutputZipPath))
-            return Failed(DiagnosticsExportFailure.OutputAlreadyExists);
-
         var plan = Plan(request.SourceLogDirectory, request.Caps);
         if (plan.IncludedCount == 0)
             return new DiagnosticsExportResult(
@@ -143,9 +140,29 @@ public sealed class DiagnosticsExportService : IDiagnosticsExportService
 
         var context = await _collector.CollectAsync(cancellationToken).ConfigureAwait(false);
 
+        // No File.Exists pre-check: CreateNew refusing an existing target is ATOMIC, so it also closes the
+        // window a check-then-write leaves open between two exports minted in the same second.
+        FileStream zipStream;
         try
         {
-            var summary = Write(request, plan, context, cancellationToken);
+            zipStream = new FileStream(
+                request.OutputZipPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        }
+        catch (IOException) when (File.Exists(request.OutputZipPath))
+        {
+            // Something is already there, so there is nothing of ours to clean up — and deleting it would
+            // destroy a file this export did not write.
+            return Failed(DiagnosticsExportFailure.OutputAlreadyExists, plan);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogError(ex, "Diagnostics export could not create the archive");
+            return Failed(DiagnosticsExportFailure.WriteFailed, plan);
+        }
+
+        try
+        {
+            var summary = Write(zipStream, request, plan, context, cancellationToken);
             _logger.LogInformation(
                 "Diagnostics export wrote {Included} log file(s), dropped {Dropped} debug record(s)",
                 plan.IncludedCount, summary.RecordsDropped);
@@ -165,17 +182,16 @@ public sealed class DiagnosticsExportService : IDiagnosticsExportService
         }
     }
 
-    private RedactionSummary Write(
-        DiagnosticsExportRequest request, DiagnosticsExportPlan plan, DiagnosticsExportContext context,
-        CancellationToken cancellationToken)
+    private static RedactionSummary Write(
+        FileStream zipStream, DiagnosticsExportRequest request, DiagnosticsExportPlan plan,
+        DiagnosticsExportContext context, CancellationToken cancellationToken)
     {
         var totals = new Dictionary<string, long>(
             LogRedactor.RuleIds.ToDictionary(id => id, _ => 0L), StringComparer.Ordinal);
         long linesRead = 0, linesWritten = 0, recordsDropped = 0;
         var openFailed = new List<string>();
 
-        using (var zipStream = new FileStream(
-                   request.OutputZipPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+        using (zipStream)
         using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Create))
         {
             foreach (var file in plan.Files.Where(f => f.Included))

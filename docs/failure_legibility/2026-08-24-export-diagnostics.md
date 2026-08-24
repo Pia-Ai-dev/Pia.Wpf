@@ -202,6 +202,12 @@ name with no parseable date (including the sink's own `pia.log` base name) is li
   source is opened `new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)`. A temp-file
   test passes either way, so `ALogFileHeldOpenForWriting_IsStillExported` proves the premise first: it asserts
   `File.OpenRead` throws, then asserts the export succeeds.
+- **`FileMode.CreateNew` is the *only* collision guard, on purpose.** The first cut also had a
+  `File.Exists` pre-check, and that pre-check made `CreateNew` unreachable — so the atomic guarantee, and the
+  same-second race it closes (`BuildFileName` is unique to the second, not finer), had **no test at all**.
+  The mutation sweep below is what found it. The pre-check is gone; `CreateNew`'s `IOException` maps to
+  `OutputAlreadyExists` under a `when (File.Exists(...))` filter, which also keeps the generic cleanup arm
+  from deleting a file this export did not write.
 - **The archive must not be written inside `Logs\`,** or the second export ships the first.
   `PiaPaths.DiagnosticsDirectory` is a **sibling**, `ExportAsync` refuses a target inside the source, and
   `PiaPathsTests` asserts the sibling relationship. The guard compares a trimmed full path plus a separator,
@@ -267,8 +273,39 @@ name with no parseable date (including the sink's own `pia.log` base name) is li
 ## 9. Gate
 
 Debug and Release both **rebuild to `0 Warning(s)` / `0 Error(s)`** (`-t:Rebuild`, and
-`TreatWarningsAsErrors` is on). `dotnet test` with no filter: **4907 total, failed: 0**, 1 skipped, 58 Not Run
-— from a 4841 baseline at `da95cc8b`, so **+66 tests**.
+`TreatWarningsAsErrors` is on). `dotnet test` with no filter, run once on its own for the official number:
+**total 4907, failed: 0, succeeded 4848, skipped 59** (1 real skip + 58 `Not Run`), 38.8s — from a 4841
+baseline at `da95cc8b`, so **+66 tests**. It did not hang; the documented intermittent wedge did not recur
+in this session.
+
+### Non-vacuity, measured rather than asserted
+
+Each shipped mechanism was reverted one at a time, rebuilt, and the covering test class re-run. A mutation
+that leaves the class green means the test never covered the mechanism.
+
+**17 of 17 caught** — and the first pass found a real hole, which is the point of running it:
+`FileMode.CreateNew → Create` was **NOT** caught, because a redundant `File.Exists` pre-check shadowed it.
+Fixed (§7) rather than documented around, and then caught.
+
+| Mutation | Caught by |
+|---|---|
+| `FileShare.ReadWrite` → `FileShare.Read` | `ALogFileHeldOpenForWriting_IsStillExported` |
+| R01's drop state starts open instead of closed | `AStreamThatStartsMidRecord_EmitsNothingBeforeItsFirstRecord` |
+| debug bodies no longer dropped | the drop and continuation tests |
+| record predicate loses its level check | `AFiveColumnTabularLineInsideAPayload_IsNotMistakenForARecord` |
+| profile keys sorted shortest-first | `TheLongestProfileKeyWins_…` |
+| machine-name DNS suffix left standing | `TheMachineName_IsReplacedWithItsDnsSuffix` |
+| credential delimiter loses trailing whitespace | `ACredential_IsReplaced` |
+| UNC anchor drops its colon guard | `AUncHeadIsReplaced_ButAJsonEscapedDrivePathIsNotMistakenForOne` |
+| output-inside-source guard disabled | `AnOutputPathInsideTheSourceDirectory_IsRefused` |
+| `FileMode.CreateNew` → `Create` | `AnExistingArchive_IsNeverOverwritten` |
+| enumeration narrowed to `pia-????-??-??.log` | the rolled-file and manifest tests (3 failures) |
+| cap skips-and-continues instead of stopping | `TheByteCapTakesAContiguousNewestRun_…` |
+| `SensitiveWarning` back to `LogWarning` | `SafeLogLevelTests` |
+| `DiagnosticsDirectory` moved inside `Logs` | `TheDiagnosticsDirectoryIsASiblingOfTheLogDirectory_NotAChildOfIt` |
+| `LogsDirectory` frozen as `static readonly` | `RoutedMember_ObservesAnOverrideAppliedAfterItsTypeIsLoaded` (2 failures) |
+| the new button loses its `AutomationId` | `ViewAutomationIdTests` |
+| the de confirm message loses a placeholder | `ADiagnosticsKeyCarriesTheSamePlaceholdersInEveryLocale` |
 
 Real-profile footprint, snapshot → work → compare over 11 mtimes and hashes: `history.db`, `history.db-wal`,
 `settings.json` and `providers.json` **byte-identical**; `%LOCALAPPDATA%\Pia`, `\runs`, `\workdir`, `\Logs`
