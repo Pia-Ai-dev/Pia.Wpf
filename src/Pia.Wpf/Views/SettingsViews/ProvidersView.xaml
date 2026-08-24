@@ -49,7 +49,8 @@
       <!-- Default providers -->
       <Border Style="{StaticResource PiaSettingsCardStyle}"
               Padding="14,12"
-              Margin="0,0,0,20">
+              Margin="0,0,0,20"
+              HorizontalAlignment="Left">
         <StackPanel>
           <TextBlock Text="{loc:Str Providers_DefaultProviders}"
                      FontSize="14"
@@ -63,14 +64,16 @@
                     Margin="0,0,0,12"
                     AutomationProperties.AutomationId="Settings_Providers_UseSameProviderForAllModes"/>
 
-          <Grid HorizontalAlignment="Left">
+          <!-- Fixed columns, not Auto: the Assistant field collapses with the checkbox and the card
+               must not resize under it. -->
+          <Grid>
             <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="245"/>
               <ColumnDefinition Width="16"/>
-              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="245"/>
             </Grid.ColumnDefinitions>
 
-            <StackPanel Grid.Column="0" Width="240">
+            <StackPanel Grid.Column="0">
               <TextBlock Text="{Binding OptimizeProviderLabel}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
               <ComboBox ItemsSource="{Binding Providers}"
@@ -81,7 +84,6 @@
             </StackPanel>
 
             <StackPanel Grid.Column="2"
-                        Width="240"
                         Visibility="{Binding UseSameProviderForAllModes, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
               <TextBlock Text="{loc:Str Providers_Assistant}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
@@ -152,12 +154,16 @@
                     <Run Text=" · " Foreground="{DynamicResource TextSubtleBrush}"/>
                     <Run Text="{Binding Provider.ProviderType}" Foreground="{DynamicResource TextSubtleBrush}"/>
                   </TextBlock>
+                  <!-- Collapsed when blank, or Pia Cloud (which has neither) leaves two empty lines
+                       that the uniform row height then pads out. -->
                   <TextBlock Text="{Binding Provider.Endpoint}"
+                             Visibility="{Binding Provider.Endpoint, Converter={StaticResource NullToVisibilityConverter}}"
                              FontSize="12"
                              Foreground="{DynamicResource TextMutedBrush}"
                              Margin="0,2,0,0"
                              TextWrapping="Wrap"/>
                   <TextBlock Text="{Binding Provider.ModelName}"
+                             Visibility="{Binding Provider.ModelName, Converter={StaticResource NullToVisibilityConverter}}"
                              FontSize="12"
                              Foreground="{DynamicResource TextSubtleBrush}"
                              Margin="0,2,0,0"/>
