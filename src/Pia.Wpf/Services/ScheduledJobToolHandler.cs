@@ -51,7 +51,13 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
                 "Update a scheduled research job by ID. Only provide fields that should change."),
 
             AIFunctionFactory.Create(DeleteScheduledSchema, "delete_scheduled_research",
-                "Delete a scheduled research job by ID. Permanent.")
+                "Delete a scheduled research job by ID. Permanent."),
+
+            AIFunctionFactory.Create(ListBlueprintsSchema, "list_routine_blueprints",
+                "List the ready-made routine blueprints. Call this FIRST when the user asks for a recurring routine of a familiar kind (a daily digest, a morning brief, a weekly review, a competitor watch, meeting follow-ups): a blueprint ships a tested prompt, a schedule and the narrowest write grants for that job, so create_routine_from_blueprint beats writing a query freehand with create_scheduled_research. Returns each blueprint's key, what it does, its schedule, its write grants and its fillable slots."),
+
+            AIFunctionFactory.Create(CreateFromBlueprintSchema, "create_routine_from_blueprint",
+                "Create a routine from a blueprint listed by list_routine_blueprints. The blueprint owns the prompt, the job type, the reasoning effort and the write grants — you cannot widen them here, and there is no query parameter. Fill every slot the blueprint declares whose value the user has actually given; ASK the user for a slot rather than guessing one, and use the EXACT slot names from the listing (an unrecognised name is refused, never silently defaulted). A slot you omit falls back to the blueprint's own default.")
         ];
     }
 
@@ -68,7 +74,9 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         var (result, pending) = toolCall.Name switch
         {
             "query_scheduled_research" => (await HandleQueryJobs(args), (ScheduledJobToolCall?)null),
+            "list_routine_blueprints" => (HandleListBlueprints(), (ScheduledJobToolCall?)null),
             "create_scheduled_research" => ((object?)null, await PrepareCreateJob(args)),
+            "create_routine_from_blueprint" => await PrepareCreateFromBlueprint(args),
             "update_scheduled_research" => ((object?)null, await PrepareUpdateJob(args)),
             "delete_scheduled_research" => ((object?)null, await PrepareDeleteJob(args)),
             _ => ((object?)$"Unknown tool: {toolCall.Name}", (ScheduledJobToolCall?)null)
@@ -76,7 +84,8 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
 
         // Error cases (invalid ID, not found) produce a pending action with no TargetJobId.
         // Return them as immediate results so no action card is shown to the user.
-        if (pending is not null && pending.TargetJobId is null && toolCall.Name is not "create_scheduled_research")
+        if (pending is not null && pending.TargetJobId is null
+            && toolCall.Name is not ("create_scheduled_research" or "create_routine_from_blueprint"))
         {
             _logger.LogWarning("ScheduledJobToolHandler {ToolName} returning error", toolCall.Name);
             _logger.SensitiveDebug("ScheduledJobToolHandler {ToolName} error description: {Description}", toolCall.Name, pending.Description);
@@ -208,6 +217,131 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
                 return _localizationService.Format("Tool_ScheduledResearch_Exec_Created", created.Id, created.NextFireAt.ToString("g"))
                        + DescribeRejectedGrants(rejectedTools);
             });
+    }
+
+    private string HandleListBlueprints()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"{RoutineBlueprintCatalog.All.Count} routine blueprint(s). "
+            + "Create one with create_routine_from_blueprint, which takes the key below.");
+
+        foreach (var b in RoutineBlueprintCatalog.All)
+        {
+            sb.AppendLine($"\n[key: {b.Key}] {_localizationService[b.TitleKey]}");
+            sb.AppendLine($"  Does: {_localizationService[b.DescriptionKey]}");
+            sb.AppendLine($"  Schedule: {b.Recurrence}{(b.DefaultDayOfWeek.HasValue ? $" on {b.DefaultDayOfWeek}" : "")} at {b.DefaultTime:HH:mm}");
+            sb.AppendLine($"  Write grants: {(b.GrantedTools.Count == 0 ? "none, read-only" : string.Join(", ", b.GrantedTools))}");
+            if (b.Slots.Count == 0)
+            {
+                sb.AppendLine("  Slots: none — nothing to ask the user for.");
+                continue;
+            }
+
+            foreach (var slot in b.Slots)
+                sb.AppendLine($"  Slot '{slot.Name}' ({_localizationService[slot.LabelKey]}): "
+                    + $"{_localizationService[slot.HelpKey]} "
+                    + $"If omitted: {(slot.Default is null ? "REQUIRED, the call is refused" : $"\"{slot.Default}\"")}");
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>The blueprint — not the model — decides the prompt, the kind, the grants and the effort, so a
+    /// hallucinated grant cannot reach a job the user approved from a card advertising none.</summary>
+    private async Task<(object? Result, ScheduledJobToolCall? Pending)> PrepareCreateFromBlueprint(IDictionary<string, object?> args)
+    {
+        var key = GetStringArg(args, "blueprintKey");
+        if (RoutineBlueprintCatalog.Find(key) is not { } blueprint)
+        {
+            _logger.LogWarning("create_routine_from_blueprint called with an unknown blueprint key");
+            _logger.SensitiveDebug("create_routine_from_blueprint unknown key: {Key}", key);
+            return ($"Error: '{key}' is not a routine blueprint. Call list_routine_blueprints for the keys.", null);
+        }
+
+        var (values, slotsError) = ParseSlotValues(GetOptionalStringArg(args, "slots"));
+        if (slotsError is not null)
+        {
+            _logger.LogWarning("create_routine_from_blueprint got unparseable slot values for {Key}", blueprint.Key);
+            return ($"Error: {slotsError}", null);
+        }
+
+        var fill = RoutineBlueprintFill.ToCreateArgs(blueprint, values);
+        if (fill.Error is { } fillError)
+        {
+            _logger.LogWarning("create_routine_from_blueprint refused {Key}: {Kind}", blueprint.Key, fillError.Kind);
+            return ($"Error: {fillError.Message}", null);
+        }
+
+        var query = fill.Query!;
+        var suppliedName = GetOptionalStringArg(args, "name")?.Trim();
+        var name = string.IsNullOrEmpty(suppliedName) ? _localizationService[blueprint.TitleKey] : suppliedName;
+        var timeOfDay = TimeOnly.TryParse(GetOptionalStringArg(args, "timeOfDay"), out var t) ? t : blueprint.DefaultTime;
+        var dayOfWeekStr = GetOptionalStringArg(args, "dayOfWeek");
+        var dayOfWeek = dayOfWeekStr is not null && Enum.TryParse<DayOfWeek>(dayOfWeekStr, true, out var dow)
+            ? dow
+            : blueprint.DefaultDayOfWeek;
+
+        // Same rule as the freehand create path: an AgentTask with no grants silently receives the launcher's
+        // write_file default, so the card renders that default rather than claiming the job writes nothing.
+        var effectiveGrants = blueprint.GrantedTools.Count > 0
+            ? blueprint.GrantedTools
+            : blueprint.Kind == ScheduledJobKind.AgentTask
+                ? HeadlessRunRequest.DefaultGrantedWrites.ToList()
+                : [];
+
+        var detailSb = new StringBuilder();
+        detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_Name"]}: {name}");
+        detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_Blueprint"]}: {_localizationService[blueprint.TitleKey]}");
+        detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_Kind"]}: {(blueprint.Kind == ScheduledJobKind.AgentTask ? "Agent task" : "Research")}");
+        detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_Query"]}: {query}");
+        detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_Recurrence"]}: {blueprint.Recurrence}");
+        detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_Time"]}: {timeOfDay:HH:mm}");
+        if (dayOfWeek.HasValue) detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_DayOfWeek"]}: {dayOfWeek}");
+        if (effectiveGrants.Count > 0) detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_GrantedTools"]}: {string.Join(", ", effectiveGrants)}");
+        if (blueprint.DefaultEffort is { } effort)
+            detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_Effort"]}: {_localizationService[$"Routines_Effort_{effort}"]}");
+
+        var pending = new ScheduledJobToolCall(
+            ToolName: "create_routine_from_blueprint",
+            Description: _localizationService.Format("Tool_ScheduledResearch_Desc_Create", name, blueprint.Recurrence.ToString().ToLower()),
+            Details: detailSb.ToString(),
+            TargetJobId: null,
+            Execute: async () =>
+            {
+                var created = await _jobs.CreateAsync(name, query, blueprint.Recurrence, timeOfDay,
+                    dayOfWeek: dayOfWeek, providerId: null, grantedTools: blueprint.GrantedTools,
+                    kind: blueprint.Kind, quietOnSuccess: blueprint.QuietOnSuccess,
+                    reasoningEffort: blueprint.DefaultEffort, blueprintKey: blueprint.Key);
+                return _localizationService.Format("Tool_ScheduledResearch_Exec_Created", created.Id, created.NextFireAt.ToString("g"));
+            });
+
+        return (null, pending);
+    }
+
+    /// <summary>A JSON object of slot name to value. Not a comma-separated list: a slot value is free text that
+    /// routinely contains commas, which is exactly what "which companies" produces.</summary>
+    private static (Dictionary<string, string>? Values, string? Error) ParseSlotValues(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return (null, null);
+
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return (null, "slots must be a JSON object of slot name to value, for example {\"topic\":\"quantum computing\"}.");
+
+            var values = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var property in doc.RootElement.EnumerateObject())
+                values[property.Name] = property.Value.ValueKind == JsonValueKind.String
+                    ? property.Value.GetString() ?? string.Empty
+                    : property.Value.GetRawText();
+
+            return (values, null);
+        }
+        catch (JsonException)
+        {
+            return (null, "slots is not valid JSON. Pass a JSON object of slot name to value, for example {\"topic\":\"quantum computing\"}.");
+        }
     }
 
     private async Task<ScheduledJobToolCall> PrepareUpdateJob(IDictionary<string, object?> args)
@@ -349,6 +483,17 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
     [Description("Delete a scheduled research job")]
     private static string DeleteScheduledSchema(
         [Description("The ID of the scheduled job to delete")] string id) => "";
+
+    [Description("List the ready-made routine blueprints and their slots")]
+    private static string ListBlueprintsSchema() => "";
+
+    [Description("Create a routine from a blueprint")]
+    private static string CreateFromBlueprintSchema(
+        [Description("The blueprint's key, exactly as list_routine_blueprints printed it")] string blueprintKey,
+        [Description("JSON object of slot name to value, e.g. {\"topic\":\"quantum computing\"}. Only names the blueprint declares; an unknown name is refused. Omit a slot to take the blueprint's default.")] string? slots = null,
+        [Description("Override the display name (optional). Defaults to the blueprint's own title.")] string? name = null,
+        [Description("Override the time of day in HH:mm (optional). Defaults to the blueprint's own time.")] string? timeOfDay = null,
+        [Description("Override the day of week for a weekly blueprint (optional), e.g. 'Monday'.")] string? dayOfWeek = null) => "";
 
     /// <summary>
     /// Model-facing note appended to the tool result when grants were stripped, so the assistant can tell

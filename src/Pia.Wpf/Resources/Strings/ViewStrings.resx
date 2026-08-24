@@ -1168,6 +1168,10 @@
   <data name="Routines_Blueprint_BillsRenewals_Description" xml:space="preserve"><value>A short heads-up on what renews or falls due in the next two weeks.</value></data>
   <data name="Routines_Blueprint_MeetingFollowup_Title" xml:space="preserve"><value>Meeting follow-ups</value></data>
   <data name="Routines_Blueprint_MeetingFollowup_Description" xml:space="preserve"><value>Today's meetings turned into todos, with the transcript's gaps stated up front.</value></data>
+  <data name="Routines_Blueprint_TopicDigest_Slot_Topic_Label" xml:space="preserve"><value>Topic</value></data>
+  <data name="Routines_Blueprint_TopicDigest_Slot_Topic_Help" xml:space="preserve"><value>The subject to search for each morning, for example "artificial intelligence" or "EU energy policy".</value></data>
+  <data name="Routines_Blueprint_CompetitorWatch_Slot_Companies_Label" xml:space="preserve"><value>Companies</value></data>
+  <data name="Routines_Blueprint_CompetitorWatch_Slot_Companies_Help" xml:space="preserve"><value>The companies to watch, separated by commas. Leave it blank to watch whichever companies the vault already tracks.</value></data>
   <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Default provider</value></data>
   <data name="Settings_ScheduledJobs_UnknownStatusInert" xml:space="preserve"><value>This job has a status this version does not recognise, so it is shown read-only. Update Pia to manage it.</value></data>
   <data name="Settings_ScheduledJobs_Running" xml:space="preserve"><value>Running the job…</value></data>

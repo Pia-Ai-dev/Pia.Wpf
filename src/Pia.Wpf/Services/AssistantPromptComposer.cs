@@ -189,7 +189,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         Pia.Models.AtCommandDomain.Research => (
             "scheduled research job",
             "query_scheduled_research",
-            (IReadOnlyList<string>)["query_scheduled_research", "create_scheduled_research", "update_scheduled_research", "delete_scheduled_research"]),
+            (IReadOnlyList<string>)["query_scheduled_research", "create_scheduled_research", "update_scheduled_research", "delete_scheduled_research", "list_routine_blueprints", "create_routine_from_blueprint"]),
         Pia.Models.AtCommandDomain.Files => (
             "file",
             "read_file",

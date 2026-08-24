@@ -142,16 +142,21 @@ For blueprints with a genuine free-text parameter (topic digest: *which topic?*;
 *which companies?*). Adds:
 
 ```csharp
-public enum RoutineSlotKind { Time, Enum, Text }
+public enum RoutineSlotKind { Text }
 
 public sealed record RoutineSlot(
-    string Name, RoutineSlotKind Kind, string LabelKey,
-    string? Default = null, IReadOnlyList<string>? Options = null,
-    bool Optional = false, string? HelpKey = null, bool Strict = true);
+    string Name, RoutineSlotKind Kind, string LabelKey, string HelpKey,
+    string? Default = null);
 ```
 
 plus a `RoutineBlueprintFill.ToCreateArgs(blueprint, values)` that validates and renders
 `QueryTemplate`. Validation rules are in §6 — **one of them is not optional.**
+
+**As shipped 2026-08-24, and narrower than the shape above.** `Time` and `Enum` are typed editor fields no
+blueprint wants as a slot, so only `Text` ships; `Options` and `Strict` go with the enum rule that reads them
+(§6 rule 3, not implemented). `Optional` is gone too: resolution is one ladder, `value → Default → error`, so
+`Default: ""` already says what an optional slot would have, and nothing substitutes empty. Reasoning in §2 of
+[`2026-08-24-c5-c7-batch-report.md`](2026-08-24-c5-c7-batch-report.md).
 
 ### Tier 2 — the assistant can use the catalog
 
@@ -178,9 +183,17 @@ Copy these from `fill_blueprint`. The first one is load-bearing.
 3. **Enum values are checked against `Options`** when `Strict` is true. `Strict = false` means the
    options are suggestions and any value passes (hermes uses this where the valid set depends on the
    user's configuration and is validated further downstream).
+   **Not shipped.** With `Text` the only kind there is nothing for it to check, and a rule that cannot fire
+   is worse than an absent one. It arrives with the first enum slot, together with `Options` and `Strict`.
 4. **A `QueryTemplate` referencing a slot that wasn't filled is an error, not an empty string.** In
    hermes a missing `.format()` key raises `BlueprintFillError`. The C# equivalent must not silently
    leave a literal `{topic}` in the prompt.
+   **As shipped this also covers the undeclared reference**: a `{name}` the blueprint does not declare is an
+   error of its own kind, and a slot that is declared but has neither a value nor a `Default` is rule 2's.
+
+**Three of the four ship, 2026-08-24.** Rules 1, 2 and 4 are implemented and each has a test that fires it;
+rule 3 is the one above. Rule 1 is deliberately about the slot NAME rather than its value, so a typo cannot
+pass by carrying an empty string.
 
 ---
 
@@ -284,9 +297,9 @@ that adds a blueprint: **every new blueprint declares the narrowest grant set th
 | 2 | 0 | `.resx` entries (en/de/fr) for that one blueprint — proves the localization shape before ×8 |
 | 3 | 0 | Card list in `RoutinesView`; click → existing editor, prefilled, focused. AutomationIds per `docs/ui_automation/ui-automation-playbook.md` |
 | 4 | 0 | Remaining seven blueprints + their strings |
-| 5 | 1 | `RoutineSlot` + `RoutineBlueprintFill.ToCreateArgs` with the four §6 rules |
-| 6 | 1 | A slot-prompt step before the editor opens, for blueprints with text slots |
-| 7 | 2 | Catalog + slot schema exposed via `ScheduledJobToolHandler` |
+| 5 | 1 | `RoutineSlot` + `RoutineBlueprintFill.ToCreateArgs` with three of the four §6 rules — **done 2026-08-24** |
+| 6 | 1 | A slot-prompt step before the editor opens, for blueprints with text slots — **deferred** |
+| 7 | 2 | Catalog + slot schema exposed via `ScheduledJobToolHandler` — **done 2026-08-24** |
 
 Steps 1–3 are the vertical slice: one blueprint, end to end, localized and automatable. Everything
 after is repetition or extension.

@@ -7,6 +7,7 @@ using Pia.Helpers;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Navigation;
+using Pia.Services;
 using Pia.Services.Interfaces;
 
 namespace Pia.ViewModels;
@@ -28,6 +29,10 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     private readonly IWindowManagerService _windowManager;
     private readonly ILocalizationService _localization;
     private readonly ILogger<RoutinesViewModel> _logger;
+
+    /// <summary>Which card opened the editor, so a save can record it. Not an editable field — a blank start
+    /// and an edit of an existing job both clear it.</summary>
+    private string? _editBlueprintKey;
 
     public ObservableCollection<RoutineRow> Jobs { get; } = [];
 
@@ -419,6 +424,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     {
         var now = DateTime.Now;
         EditingJobId = null;
+        _editBlueprintKey = null;
         EditName = string.Empty;
         EditQuery = string.Empty;
         EditKind = ScheduledJobKind.AgentTask;
@@ -441,10 +447,16 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     {
         if (RoutineBlueprintCatalog.Find(key) is not { } blueprint) return;
 
+        var fill = RoutineBlueprintFill.ToCreateArgs(blueprint);
+        if (!fill.IsSuccess)
+            _logger.LogWarning("Blueprint {Key} did not render: {Kind} on slot {Slot}",
+                blueprint.Key, fill.Error!.Kind, fill.Error.SlotName);
+
         var now = DateTime.Now;
         EditingJobId = null;
+        _editBlueprintKey = blueprint.Key;
         EditName = _localization[blueprint.TitleKey];
-        EditQuery = blueprint.QueryTemplate;
+        EditQuery = fill.Query ?? blueprint.QueryTemplate;
         EditKind = blueprint.Kind;
         EditRecurrence = blueprint.Recurrence;
         EditTimeOfDay = blueprint.DefaultTime.ToString("HH\\:mm");
@@ -469,6 +481,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         if (SelectedJob is not { } row) return;
 
         EditingJobId = row.Id;
+        _editBlueprintKey = null;
         EditName = row.Name;
         EditQuery = row.Query;
         EditKind = row.Kind;
@@ -585,7 +598,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
                     timeOfDay, dayOfWeek: dayOfWeek, dayOfMonth: dayOfMonth, month: month,
                     specificDate: specificDate, providerId: providerId,
                     grantedTools: grants, kind: EditKind, quietOnSuccess: EditQuietOnSuccess,
-                    personaId: personaId, reasoningEffort: effort);
+                    personaId: personaId, reasoningEffort: effort, blueprintKey: _editBlueprintKey);
 
                 _logger.LogInformation("Created scheduled job {Id} from the routines view ({Kind})",
                     created.Id, EditKind);

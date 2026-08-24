@@ -1158,6 +1158,10 @@
   <data name="Routines_Blueprint_BillsRenewals_Description" xml:space="preserve"><value>Ein kurzer Hinweis darauf, was in den nächsten zwei Wochen fällig wird oder sich verlängert.</value></data>
   <data name="Routines_Blueprint_MeetingFollowup_Title" xml:space="preserve"><value>Besprechungs-Nachbereitung</value></data>
   <data name="Routines_Blueprint_MeetingFollowup_Description" xml:space="preserve"><value>Die Besprechungen des Tages als Aufgaben – Lücken im Transkript werden vorab benannt.</value></data>
+  <data name="Routines_Blueprint_TopicDigest_Slot_Topic_Label" xml:space="preserve"><value>Thema</value></data>
+  <data name="Routines_Blueprint_TopicDigest_Slot_Topic_Help" xml:space="preserve"><value>Das Thema, nach dem jeden Morgen gesucht wird, zum Beispiel „künstliche Intelligenz“ oder „EU-Energiepolitik“.</value></data>
+  <data name="Routines_Blueprint_CompetitorWatch_Slot_Companies_Label" xml:space="preserve"><value>Unternehmen</value></data>
+  <data name="Routines_Blueprint_CompetitorWatch_Slot_Companies_Help" xml:space="preserve"><value>Die Unternehmen, die beobachtet werden sollen, durch Kommas getrennt. Lass das Feld leer, dann werden die Unternehmen beobachtet, die im Vault ohnehin schon erfasst sind.</value></data>
   <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Standardanbieter</value></data>
   <data name="Settings_ScheduledJobs_UnknownStatusInert" xml:space="preserve"><value>Dieser Auftrag hat einen Status, den diese Version nicht kennt, und wird nur lesend angezeigt. Aktualisiere Pia, um ihn zu verwalten.</value></data>
   <data name="Settings_ScheduledJobs_Running" xml:space="preserve"><value>Auftrag läuft …</value></data>

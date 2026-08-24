@@ -350,7 +350,9 @@ public class SqliteContext : IDisposable
                 -- Per-routine run pins. Nullable, no default: NULL means "no pin, inherit". Device-local like
                 -- QuietOnSuccess above.
                 PersonaId TEXT NULL,
-                ReasoningEffort TEXT NULL
+                ReasoningEffort TEXT NULL,
+                -- Which catalog card produced the job. Device-local for the same reason as the two pins above.
+                BlueprintKey TEXT NULL
             );
 
             CREATE INDEX IF NOT EXISTS IX_ScheduledJobs_NextFireAt ON ScheduledJobs(NextFireAt, Status);
@@ -699,6 +701,7 @@ public class SqliteContext : IDisposable
         var hasQuietOnSuccess = false;
         var hasJobPersonaId = false;
         var hasJobReasoningEffort = false;
+        var hasJobBlueprintKey = false;
         using (var p = _connection!.CreateCommand())
         {
             p.CommandText = "PRAGMA table_info(ScheduledJobs)";
@@ -712,6 +715,7 @@ public class SqliteContext : IDisposable
                 else if (col == "QuietOnSuccess") hasQuietOnSuccess = true;
                 else if (col == "PersonaId") hasJobPersonaId = true;
                 else if (col == "ReasoningEffort") hasJobReasoningEffort = true;
+                else if (col == "BlueprintKey") hasJobBlueprintKey = true;
             }
         }
         if (!hasJobUpdatedAt)
@@ -753,6 +757,12 @@ public class SqliteContext : IDisposable
         {
             using var addCol = _connection.CreateCommand();
             addCol.CommandText = "ALTER TABLE ScheduledJobs ADD COLUMN ReasoningEffort TEXT NULL";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasJobBlueprintKey)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE ScheduledJobs ADD COLUMN BlueprintKey TEXT NULL";
             addCol.ExecuteNonQuery();
         }
 

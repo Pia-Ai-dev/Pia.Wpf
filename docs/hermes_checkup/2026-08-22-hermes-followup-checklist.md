@@ -306,15 +306,59 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
     text slots — and retired topic-digest's three "change the topic in the goal box" description tails,
     because a description now says what you get rather than what to fill in.
 
-- [ ] **C5 · `RoutineSlot` + `RoutineBlueprintFill.ToCreateArgs`** with the four validation rules
-  (reject unknown slot names is the load-bearing one).
-  *Deps:* C1 · *Effort:* **M** · *Value:* **Med**
+- [x] **C5 · `RoutineSlot` + `RoutineBlueprintFill.ToCreateArgs`** with **three** of the four validation
+  rules (reject unknown slot names is the load-bearing one).
+  **Done 2026-08-24.** `RoutineSlot` + `RoutineSlotKind` beside `RoutineBlueprint`, the fill engine in
+  `Pia.Services`, and its result types in `Pia.Models` — `NamingConventionTests` bans a record from the
+  `Pia.Services` root namespace, and it is what caught that rather than a reviewer. Two slots ship:
+  `topic-digest`'s `{topic}` (default *artificial intelligence*, so the rendered prompt is what shipped
+  before) and `competitor-watch`'s `{companies}`. Full reading:
+  [2026-08-24-c5-c7-batch-report.md](2026-08-24-c5-c7-batch-report.md).
+  - **Rule 3 is not shipped**, per the brief's "ship `RoutineSlotKind.Text` only": with one kind it has
+    nothing to check, and a rule that cannot fire is worse than an absent one. Rules 1, 2 and 4 each have a
+    test that fires them. Rule 1 is deliberately about the **name**, not the value, so a typo cannot pass by
+    carrying an empty string.
+  - **`Optional` does not ship either, and trap 4.2 dissolves with it.** Nothing substitutes empty:
+    `companies` defaults to `(none given)` and the next sentence branches on exactly that, so both renders
+    are grammatical where an empty substitution would leave a dangling `: .`. Resolution is one ladder,
+    `value → Default → error`, which is what an optional slot would have said. `Options` and `Strict` go
+    with rule 3.
+  - **Trap 4.3 closed in the same change** — `StartFromBlueprint` renders through the fill engine, and the
+    two `RoutinesViewModelTests` assertions that read `EditQuery == blueprint.QueryTemplate` now read
+    rendered-with-defaults. The brace ban is inverted and also refuses an unbalanced brace.
+  - **Plan §11 Q1 answered yes**: `ScheduledJobs.BlueprintKey`, additive, both migration halves, appended
+    to the END of the positional SELECT because `MapJob` reads by ordinal, and **off the sync wire** per
+    E1b. Written but not yet read by anything.
+  - Effort corrected to **S** per the C4 decision §6.5, which re-rated it the moment the slot count fell
+    from five to two.
+  *Deps:* C1 · *Effort:* **S** (was M) · *Value:* **Med**
 
 - [ ] **C6 · Slot-prompt step before the editor opens**, for blueprints with text slots.
+  **Deliberately deferred 2026-08-24** by the C5/C7 batch, adopting its brief's §5 recommendation: C7 is
+  dependency-legal without it and gives C5 a consumer, while C6 is an `M` of `Med` value that replaces
+  "edit the prose in the goal box" with a labelled field for two of eight cards. It is also the only part of
+  that batch that would have needed a desktop pass. Plan §11 Q4 is therefore **still open** — its
+  recommendation (an inline slot block above `Routines_Field_Goal`, visible only for blueprints with slots,
+  which stops re-rendering the goal once the user has hand-edited it) is unexamined.
   *Deps:* C3, C5 · *Effort:* **M** · *Value:* **Med**
 
-- [ ] **C7 · Expose the catalog + slot schema via `ScheduledJobToolHandler`** so the assistant creates
+- [x] **C7 · Expose the catalog + slot schema via `ScheduledJobToolHandler`** so the assistant creates
   routines from a blueprint and asks for blank slots.
+  **Done 2026-08-24.** Two tools: `list_routine_blueprints` (a read, no card — a separate tool rather than
+  eight titles baked into a description that ships on every turn) and `create_routine_from_blueprint`.
+  - **Both of trap 4.4's asymmetries are closed.** The create tool takes no `query`, no `kind` and **no
+    `grantedTools`** — the absence of the parameter is the mechanism that stops the model widening the
+    grants, and a test pins it against the shipped JSON schema. The blueprint's `DefaultEffort` now reaches
+    `CreateAsync`, so the tool path no longer silently drops the pin the card path honours.
+  - Every refusal — unknown key, unknown slot name, unparseable `slots` — comes back as a **tool result,
+    not an approval card**, so the user is never shown a card offering to create the wrong routine. `slots`
+    is a JSON object rather than a CSV because a slot value routinely contains commas, which *which
+    companies* is exactly.
+  - The card shows the **rendered** query plus the blueprint it came from and the effort it will run at.
+  - **Two things the brief did not name.** `create_routine_from_blueprint` was added to
+    `AuthorityAuthoringTools` although it takes no grant list — approving it once lets Pia stand up a
+    routine that writes unattended, which is what the caution says — and to the `@`-command `Research` row,
+    since `AssistantPromptComposer` loads *only* the tools a tagged domain lists.
   *Deps:* C5 · *Effort:* **M** · *Value:* **Med**
 
 ---

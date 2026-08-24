@@ -375,6 +375,8 @@ Changes will be applied.</value></data>
   <data name="Tool_ScheduledResearch_Detail_Month" xml:space="preserve"><value>Month</value></data>
   <data name="Tool_ScheduledResearch_Detail_Date" xml:space="preserve"><value>Date</value></data>
   <data name="Tool_ScheduledResearch_Detail_GrantedTools" xml:space="preserve"><value>Granted write tools</value></data>
+  <data name="Tool_ScheduledResearch_Detail_Blueprint" xml:space="preserve"><value>From blueprint</value></data>
+  <data name="Tool_ScheduledResearch_Detail_Effort" xml:space="preserve"><value>Reasoning effort</value></data>
   <data name="Tool_ScheduledResearch_Detail_Provider" xml:space="preserve"><value>Provider</value></data>
   <data name="Tool_ScheduledResearch_Detail_CurrentStatus" xml:space="preserve"><value>Current: {0} at {1}
 Changes will be applied.</value></data>

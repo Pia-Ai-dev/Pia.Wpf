@@ -97,6 +97,12 @@ public class ScheduledJob
     public ReasoningEffort? ReasoningEffort { get; set; }
 
     /// <summary>
+    /// Which catalog card produced this job; null for a blank start and on every row predating the column.
+    /// Read-only provenance — editing a job never changes it. Device-local, like <see cref="PersonaId"/>.
+    /// </summary>
+    public string? BlueprintKey { get; set; }
+
+    /// <summary>
     /// Device that owns the firing schedule. Only the owner device runs the job; other devices
     /// see it in the UI and (after sync) see the resulting history but never trigger a run.
     /// Null on legacy rows created before sync was wired — those stay device-local on whichever

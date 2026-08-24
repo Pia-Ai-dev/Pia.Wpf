@@ -98,19 +98,62 @@ public class RoutineBlueprintCatalogTests
 
             Assert.Equal($"Routines_Blueprint_{stem}_Title", bp.TitleKey);
             Assert.Equal($"Routines_Blueprint_{stem}_Description", bp.DescriptionKey);
+
+            foreach (var slot in bp.Slots)
+            {
+                var slotStem = char.ToUpperInvariant(slot.Name[0]) + slot.Name[1..];
+                Assert.Equal($"Routines_Blueprint_{stem}_Slot_{slotStem}_Label", slot.LabelKey);
+                Assert.Equal($"Routines_Blueprint_{stem}_Slot_{slotStem}_Help", slot.HelpKey);
+            }
         }
     }
 
     [Fact]
-    public void NoQueryTemplateCarriesAnUnfilledPlaceholder()
+    public void EveryBraceInATemplateNamesADeclaredSlotOfThatBlueprint()
     {
-        // No fill step at this tier, so a brace would reach the model verbatim.
         foreach (var bp in RoutineBlueprintCatalog.All)
         {
-            Assert.DoesNotContain("{", bp.QueryTemplate);
-            Assert.DoesNotContain("}", bp.QueryTemplate);
+            Assert.True(RoutineBlueprintFill.BracesAreAllPlaceholders(bp.QueryTemplate),
+                $"{bp.Key} has a brace that is not part of a {{slot}} placeholder, so it would reach the model verbatim");
+
+            foreach (var name in Placeholders(bp.QueryTemplate))
+                Assert.True(bp.Slots.Any(s => s.Name == name),
+                    $"{bp.Key} references {{{name}}} but declares no such slot");
         }
     }
+
+    /// <summary>A slot the template never mentions can never be filled, so it would show up in the tool's slot
+    /// listing as a question with no effect on the prompt.</summary>
+    [Fact]
+    public void EveryDeclaredSlotIsReferencedByItsOwnTemplate()
+    {
+        foreach (var bp in RoutineBlueprintCatalog.All)
+        {
+            var referenced = Placeholders(bp.QueryTemplate);
+            foreach (var slot in bp.Slots)
+                Assert.Contains(slot.Name, referenced);
+
+            Assert.Equal(bp.Slots.Count, bp.Slots.Select(s => s.Name).Distinct(StringComparer.Ordinal).Count());
+        }
+    }
+
+    /// <summary>What the card path shows the user: the shipped catalog must render with its own defaults, or a
+    /// card would open the editor on a literal <c>{topic}</c>.</summary>
+    [Fact]
+    public void EveryBlueprintRendersCleanlyFromItsOwnDefaults()
+    {
+        foreach (var bp in RoutineBlueprintCatalog.All)
+        {
+            var fill = RoutineBlueprintFill.ToCreateArgs(bp);
+
+            Assert.True(fill.IsSuccess, $"{bp.Key} did not render: {fill.Error?.Kind} on '{fill.Error?.SlotName}'");
+            Assert.DoesNotContain("{", fill.Query!);
+            Assert.DoesNotContain("}", fill.Query!);
+        }
+    }
+
+    private static List<string> Placeholders(string template) =>
+        [.. System.Text.RegularExpressions.Regex.Matches(template, @"\{([^{}]*)\}").Select(m => m.Groups[1].Value)];
 
     [Fact]
     public void EveryPrefillIsLegalForTheEditor()
@@ -218,13 +261,16 @@ public class RoutineBlueprintCatalogTests
     public void EveryBlueprintKeyResolvesInAllThreeLocales()
     {
         var keys = RoutineBlueprintCatalog.All
-            .SelectMany(b => new[] { b.TitleKey, b.DescriptionKey })
+            .SelectMany(b => new[] { b.TitleKey, b.DescriptionKey }
+                .Concat(b.Slots.SelectMany(s => new[] { s.LabelKey, s.HelpKey })))
             .Distinct()
             .ToList();
 
-        // One title and one description per blueprint, so a copy-pasted key shrinks this loudly.
+        // One title and one description per blueprint plus a label and a help per slot, so a copy-pasted key
+        // shrinks this loudly.
         Assert.NotEmpty(keys);
-        Assert.Equal(RoutineBlueprintCatalog.All.Count * 2, keys.Count);
+        Assert.Equal((RoutineBlueprintCatalog.All.Count * 2)
+            + (RoutineBlueprintCatalog.All.Sum(b => b.Slots.Count) * 2), keys.Count);
 
         var missing = new List<string>();
         foreach (var culture in new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") })

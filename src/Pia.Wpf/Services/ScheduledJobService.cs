@@ -67,7 +67,8 @@ public class ScheduledJobService : IScheduledJobService
         DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null, DateTime? specificDate = null,
         Guid? providerId = null, IReadOnlyCollection<string>? grantedTools = null,
         ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false,
-        Guid? personaId = null, ReasoningEffort? reasoningEffort = null)
+        Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
+        string? blueprintKey = null)
     {
         var now = DateTime.Now;
         var job = new ScheduledJob
@@ -88,6 +89,7 @@ public class ScheduledJobService : IScheduledJobService
             // update), so a create must not store it as a pin nothing can resolve.
             PersonaId = personaId == Guid.Empty ? null : personaId,
             ReasoningEffort = reasoningEffort,
+            BlueprintKey = string.IsNullOrWhiteSpace(blueprintKey) ? null : blueprintKey,
             CreatedAt = now,
             UpdatedAt = now,
             OwnerDeviceId = await ResolveLocalDeviceIdAsync()
@@ -681,8 +683,8 @@ public class ScheduledJobService : IScheduledJobService
 
         // Update only the synced config fields; leave execution state (NextFireAt, LastFiredAt,
         // LastResultEntryId, ConsecutiveFailures) untouched — that is each device's own.
-        // PersonaId and ReasoningEffort are absent from the SET list on purpose: the server drops fields it does
-        // not know, so writing them here would null a local pin on the first push→pull cycle.
+        // PersonaId, ReasoningEffort and BlueprintKey are absent from the SET list on purpose: the server drops
+        // fields it does not know, so writing them here would null a local value on the first push→pull cycle.
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
@@ -721,11 +723,11 @@ public class ScheduledJobService : IScheduledJobService
             (Id, Name, Query, Kind, GrantedTools, ProviderId, Recurrence, TimeOfDay,
              DayOfWeek, DayOfMonth, Month, SpecificDate, NextFireAt, Status, CreatedAt, UpdatedAt,
              LastFiredAt, LastResultEntryId, ConsecutiveFailures, OwnerDeviceId, QuietOnSuccess,
-             PersonaId, ReasoningEffort)
+             PersonaId, ReasoningEffort, BlueprintKey)
             VALUES (@Id, @Name, @Query, @Kind, @GrantedTools, @ProviderId, @Recurrence, @TimeOfDay,
                     @DayOfWeek, @DayOfMonth, @Month, @SpecificDate, @NextFireAt, @Status, @CreatedAt, @UpdatedAt,
                     @LastFiredAt, @LastResultEntryId, @ConsecutiveFailures, @OwnerDeviceId, @QuietOnSuccess,
-                    @PersonaId, @ReasoningEffort)
+                    @PersonaId, @ReasoningEffort, @BlueprintKey)
             """;
         AddJobParameters(command, job);
         await command.ExecuteNonQueryAsync();
@@ -751,7 +753,7 @@ public class ScheduledJobService : IScheduledJobService
             SELECT Id, Name, Query, Kind, GrantedTools, ProviderId, Recurrence, TimeOfDay,
                    DayOfWeek, DayOfMonth, Month, SpecificDate, NextFireAt, Status, CreatedAt, UpdatedAt,
                    LastFiredAt, LastResultEntryId, ConsecutiveFailures, OwnerDeviceId, QuietOnSuccess,
-                   PersonaId, ReasoningEffort
+                   PersonaId, ReasoningEffort, BlueprintKey
             FROM ScheduledJobs
             {whereOrOrder}
             """;
@@ -794,6 +796,7 @@ public class ScheduledJobService : IScheduledJobService
         // peer starts unpinned on this device.
         command.Parameters.AddWithValue("@PersonaId", job.PersonaId.HasValue ? (object)job.PersonaId.Value.ToString() : DBNull.Value);
         command.Parameters.AddWithValue("@ReasoningEffort", job.ReasoningEffort.HasValue ? (object)job.ReasoningEffort.Value.ToString() : DBNull.Value);
+        command.Parameters.AddWithValue("@BlueprintKey", job.BlueprintKey is not null ? (object)job.BlueprintKey : DBNull.Value);
     }
 
     private static ScheduledJob MapJob(SqliteDataReader r) => new()
@@ -821,6 +824,7 @@ public class ScheduledJobService : IScheduledJobService
         QuietOnSuccess = !r.IsDBNull(20) && r.GetInt32(20) != 0, // T2-18
         PersonaId = r.IsDBNull(21) ? null : Guid.Parse(r.GetString(21)),
         ReasoningEffort = r.IsDBNull(22) ? null : ParseReasoningEffort(r.GetString(22)),
+        BlueprintKey = r.IsDBNull(23) ? null : r.GetString(23),
     };
 
     /// <summary>Unknown means unset: TryParse also accepts a bare ordinal, which would reach a provider as an

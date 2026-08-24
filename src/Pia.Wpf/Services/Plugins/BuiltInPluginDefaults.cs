@@ -75,7 +75,7 @@ public static class BuiltInPluginDefaults
             IsPreloaded = true,
             IsActive = true,
             Version = "1.0.0",
-            ConfigJson = """{"handlerId":"scheduled-research","defaultEnabled":true,"systemPromptAddition":"You can schedule recurring research jobs that run on a cron schedule. Use create_scheduled_research to set one up, query_scheduled_research to list them, update_scheduled_research and delete_scheduled_research to manage existing ones."}""",
+            ConfigJson = """{"handlerId":"scheduled-research","defaultEnabled":true,"systemPromptAddition":"You can schedule recurring research jobs that run on a cron schedule. Use create_scheduled_research to set one up, query_scheduled_research to list them, update_scheduled_research and delete_scheduled_research to manage existing ones. For a routine of a familiar kind, check list_routine_blueprints first and create it with create_routine_from_blueprint rather than writing the prompt freehand."}""",
             UpdatedAt = new DateTime(2026, 5, 2, 0, 0, 0, DateTimeKind.Utc)
         },
         [FilesPluginId] = new SyncPlugin

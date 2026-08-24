@@ -98,11 +98,14 @@ public class ToolPermissionService : IToolPermissionService
     /// <c>delete_file</c> included. <see cref="IsPresumedExternalDeleteLike"/> is its only create-time filter.
     /// </summary>
     /// <remarks>Only <c>ScheduledJobToolHandler</c> takes a grant list today; add a name here if that
-    /// changes.</remarks>
+    /// changes. <c>create_routine_from_blueprint</c> is here despite taking no grant argument: the blueprint
+    /// owns the grants, but the job it creates still exercises them unattended, which is what the caution is
+    /// about.</remarks>
     private static readonly HashSet<string> AuthorityAuthoringTools = new(StringComparer.OrdinalIgnoreCase)
     {
         "create_scheduled_research",
-        "update_scheduled_research"
+        "update_scheduled_research",
+        "create_routine_from_blueprint"
     };
 
     /// <summary>

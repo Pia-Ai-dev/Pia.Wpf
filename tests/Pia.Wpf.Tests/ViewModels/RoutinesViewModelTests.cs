@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
 using Pia.Resources.Strings;
+using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.ViewModels;
 using Xunit;
@@ -277,7 +278,8 @@ public class RoutinesViewModelTests
         await sut.Jobs.DidNotReceive().CreateAsync(Arg.Any<string>(), Arg.Any<string>(),
             Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(),
             Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<string>>(),
-            Arg.Any<ScheduledJobKind>(), Arg.Any<bool>(), Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>());
+            Arg.Any<ScheduledJobKind>(), Arg.Any<bool>(), Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>(),
+            Arg.Any<string?>());
         Assert.True(sut.Vm.IsEditorOpen, "a refused save must leave the editor open with the user's input intact.");
     }
 
@@ -574,7 +576,7 @@ public class RoutinesViewModelTests
         jobs.CreateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(),
                 Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(),
                 Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<ScheduledJobKind>(), Arg.Any<bool>(),
-                Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>())
+                Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>(), Arg.Any<string?>())
             .Returns(_ => { stored.Add(created); return created; });
 
         var providers = Substitute.For<IProviderService>();
@@ -648,7 +650,9 @@ public class RoutinesViewModelTests
         Assert.True(sut.Vm.IsEditorOpen);
         Assert.Null(sut.Vm.EditingJobId);
         Assert.Equal(blueprint.TitleKey, sut.Vm.EditName);
-        Assert.Equal(blueprint.QueryTemplate, sut.Vm.EditQuery);
+        // Rendered, not the template: the goal box is in front of the user, so a literal {topic} is a defect.
+        Assert.Equal(RoutineBlueprintFill.ToCreateArgs(blueprint).Query, sut.Vm.EditQuery);
+        Assert.DoesNotContain("{", sut.Vm.EditQuery);
         Assert.Equal(blueprint.Kind, sut.Vm.EditKind);
         Assert.Equal(blueprint.Recurrence, sut.Vm.EditRecurrence);
         Assert.Equal("08:00", sut.Vm.EditTimeOfDay);
@@ -670,7 +674,8 @@ public class RoutinesViewModelTests
         await sut.Jobs.DidNotReceive().CreateAsync(Arg.Any<string>(), Arg.Any<string>(),
             Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(),
             Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<string>>(),
-            Arg.Any<ScheduledJobKind>(), Arg.Any<bool>(), Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>());
+            Arg.Any<ScheduledJobKind>(), Arg.Any<bool>(), Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>(),
+            Arg.Any<string?>());
     }
 
     /// <summary>The prefill has to survive the editor's own parse, or the card would open a form that refuses to
@@ -682,7 +687,7 @@ public class RoutinesViewModelTests
         sut.Jobs.CreateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(),
                 Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(),
                 Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<ScheduledJobKind>(), Arg.Any<bool>(),
-                Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>())
+                Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>(), Arg.Any<string?>())
             .Returns(NewJob());
         await sut.Vm.RefreshAsync();
         var blueprint = RoutineBlueprintCatalog.Find(RoutineBlueprintCatalog.TopicDigest)!;
@@ -691,11 +696,62 @@ public class RoutinesViewModelTests
         await sut.Vm.SaveCommand.ExecuteAsync(null);
 
         Assert.Null(sut.Vm.StatusMessage);
-        await sut.Jobs.Received(1).CreateAsync(blueprint.TitleKey, blueprint.QueryTemplate,
+        await sut.Jobs.Received(1).CreateAsync(blueprint.TitleKey,
+            RoutineBlueprintFill.ToCreateArgs(blueprint).Query!,
             blueprint.Recurrence, new TimeOnly(8, 0), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(),
             Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(),
             Arg.Is<IReadOnlyCollection<string>>(g => g.Count == 0), blueprint.Kind, false,
-            personaId: Arg.Any<Guid?>(), reasoningEffort: Arg.Any<ReasoningEffort?>());
+            personaId: Arg.Any<Guid?>(), reasoningEffort: Arg.Any<ReasoningEffort?>(),
+            blueprintKey: blueprint.Key);
+    }
+
+    /// <summary>Provenance, so "which cards do people actually use" is answerable. A blank start and an edit of
+    /// an existing job must both record nothing.</summary>
+    [Fact]
+    public async Task ABlankStart_RecordsNoBlueprintKey()
+    {
+        var sut = CreateSut();
+        sut.Jobs.CreateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(),
+                Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(),
+                Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<ScheduledJobKind>(), Arg.Any<bool>(),
+                Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>(), Arg.Any<string?>())
+            .Returns(NewJob());
+        await sut.Vm.RefreshAsync();
+
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Vm.EditName = "Hand-written";
+        sut.Vm.EditQuery = "do the thing";
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        Assert.Null(sut.Vm.StatusMessage);
+        await sut.Jobs.Received(1).CreateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<RecurrenceType>(),
+            Arg.Any<TimeOnly>(), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<DateTime?>(),
+            Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<ScheduledJobKind>(),
+            Arg.Any<bool>(), Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>(), blueprintKey: null);
+    }
+
+    /// <summary>The key must not survive a card click that the user then abandons for a blank start.</summary>
+    [Fact]
+    public async Task AblankStartAfterACardClick_RecordsNoBlueprintKey()
+    {
+        var sut = CreateSut();
+        sut.Jobs.CreateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(),
+                Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(),
+                Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<ScheduledJobKind>(), Arg.Any<bool>(),
+                Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>(), Arg.Any<string?>())
+            .Returns(NewJob());
+        await sut.Vm.RefreshAsync();
+
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Vm.EditName = "Hand-written";
+        sut.Vm.EditQuery = "do the thing";
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        await sut.Jobs.Received(1).CreateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<RecurrenceType>(),
+            Arg.Any<TimeOnly>(), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<DateTime?>(),
+            Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<ScheduledJobKind>(),
+            Arg.Any<bool>(), Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>(), blueprintKey: null);
     }
 
     /// <summary>Keys are persisted-adjacent, so a stale one has to be inert rather than open a half-filled form.</summary>
@@ -920,7 +976,7 @@ public class RoutinesViewModelTests
         sut.Jobs.CreateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(),
                 Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(),
                 Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<ScheduledJobKind>(), Arg.Any<bool>(),
-                Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>())
+                Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>(), Arg.Any<string?>())
             .Returns(NewJob());
         await sut.Vm.RefreshAsync();
 

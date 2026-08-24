@@ -346,7 +346,8 @@ public class ScheduledJobToolHandlerTests
             DateTime? specificDate = null, Guid? providerId = null,
             IReadOnlyCollection<string>? grantedTools = null,
             ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false,
-            Guid? personaId = null, ReasoningEffort? reasoningEffort = null)
+            Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
+            string? blueprintKey = null)
         {
             var job = new ScheduledJob
             {
@@ -363,6 +364,7 @@ public class ScheduledJobToolHandlerTests
                 ProviderId = providerId,
                 PersonaId = personaId,
                 ReasoningEffort = reasoningEffort,
+                BlueprintKey = blueprintKey,
                 NextFireAt = DateTime.Now.AddHours(1)
             };
             Created.Add(job);

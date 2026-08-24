@@ -13,7 +13,27 @@ public sealed record RoutineBlueprint(
     string QueryTemplate,
     IReadOnlyList<string> GrantedTools,
     bool QuietOnSuccess = false,
-    ReasoningEffort? DefaultEffort = null);
+    ReasoningEffort? DefaultEffort = null,
+    IReadOnlyList<RoutineSlot>? Slots = null)
+{
+    public IReadOnlyList<RoutineSlot> Slots { get; init; } = Slots ?? [];
+}
+
+/// <summary>Only free text ships; time and day are typed editor fields and no blueprint wants a closed set.</summary>
+public enum RoutineSlotKind
+{
+    Text
+}
+
+/// <summary>One fillable value in a <see cref="RoutineBlueprint.QueryTemplate"/>, written there as <c>{Name}</c>.</summary>
+/// <param name="Default">Substituted when nothing is supplied. Null makes the slot required, so an unfilled
+/// reference is an error rather than a hole in the prompt.</param>
+public sealed record RoutineSlot(
+    string Name,
+    RoutineSlotKind Kind,
+    string LabelKey,
+    string HelpKey,
+    string? Default = null);
 
 internal static class RoutineBlueprintCatalog
 {
@@ -40,7 +60,7 @@ internal static class RoutineBlueprintCatalog
             DefaultTime: new TimeOnly(8, 0),
             DefaultDayOfWeek: null,
             QueryTemplate:
-                "Search the web for what is new on the topic of artificial intelligence in the past day. "
+                "Search the web for what is new on the topic of {topic} in the past day. "
                 + "Report only material developments — releases, announcements, results, reversals — and skip "
                 + "speculation, opinion and re-reporting of what was already covered. At most five items, one "
                 + "sentence each, every item with its source link and its date. If nothing material happened, "
@@ -48,7 +68,16 @@ internal static class RoutineBlueprintCatalog
             // Web search is a provider capability and every read tool runs ungranted, so a digest that
             // writes nothing needs nothing.
             GrantedTools: [],
-            DefaultEffort: ReasoningEffort.Low),
+            DefaultEffort: ReasoningEffort.Low,
+            Slots:
+            [
+                new RoutineSlot(
+                    Name: "topic",
+                    Kind: RoutineSlotKind.Text,
+                    LabelKey: "Routines_Blueprint_TopicDigest_Slot_Topic_Label",
+                    HelpKey: "Routines_Blueprint_TopicDigest_Slot_Topic_Help",
+                    Default: "artificial intelligence"),
+            ]),
 
         new RoutineBlueprint(
             Key: MorningBrief,
@@ -146,10 +175,11 @@ internal static class RoutineBlueprintCatalog
             DefaultTime: new TimeOnly(8, 0),
             DefaultDayOfWeek: DayOfWeek.Monday,
             QueryTemplate:
-                "Start with recall and browse_index to find which companies the vault already names as "
-                + "competitors or as companies being tracked, and watch those. Only if it names none, fall back "
-                + "to Microsoft, Google, OpenAI and Anthropic, and open the report with one line saying that "
-                + "this is a placeholder list to be replaced with the companies actually being tracked. Then "
+                "Watch these companies: {companies}. If no company is named there, start with recall and "
+                + "browse_index to find which companies the vault already names as competitors or as companies "
+                + "being tracked, and watch those. Only if the vault names none either, fall back to Microsoft, "
+                + "Google, OpenAI and Anthropic, and open the report with one line saying that this is a "
+                + "placeholder list to be replaced with the companies actually being tracked. Then "
                 + "search the web for material developments in the past week — launches, pricing changes, "
                 + "funding, leadership changes, outages, withdrawals. At most two items per company, one "
                 + "sentence each, every item with its source link and its date. Skip speculation, opinion and "
@@ -157,7 +187,18 @@ internal static class RoutineBlueprintCatalog
                 + "one-line entry saying so. Change nothing. If recall or browse_index is unavailable, say so "
                 + "in one line before falling back, rather than presenting the fallback as the tracked list.",
             GrantedTools: [],
-            DefaultEffort: ReasoningEffort.Medium),
+            DefaultEffort: ReasoningEffort.Medium,
+            Slots:
+            [
+                // The default is a phrase rather than an empty string: the sentence after it branches on
+                // "no company named there", and an empty substitution would leave a dangling colon.
+                new RoutineSlot(
+                    Name: "companies",
+                    Kind: RoutineSlotKind.Text,
+                    LabelKey: "Routines_Blueprint_CompetitorWatch_Slot_Companies_Label",
+                    HelpKey: "Routines_Blueprint_CompetitorWatch_Slot_Companies_Help",
+                    Default: "(none given)"),
+            ]),
 
         new RoutineBlueprint(
             Key: BillsRenewals,

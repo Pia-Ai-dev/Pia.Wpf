@@ -199,7 +199,8 @@ public sealed class ActionCardBuilder : IActionCardBuilder
 
         var actionKey = toolName switch
         {
-            "create_todo" or "create_reminder" or "create_source" => "ActionCard_Action_Create",
+            "create_todo" or "create_reminder" or "create_source"
+                or "create_routine_from_blueprint" => "ActionCard_Action_Create",
             "remember" or "update_source" or "update_todo" or "update_reminder"
                 or "update_scheduled_research" => "ActionCard_Action_Update",
             "forget" or "delete_todo" or "delete_reminder" or "delete_file"

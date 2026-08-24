@@ -14,7 +14,10 @@ public interface IScheduledJobService
         bool quietOnSuccess = false,
         // Guid.Empty is normalised to "no pin" here rather than stored, because the editor's default row sends
         // Empty and a create has no earlier value to clear.
-        Guid? personaId = null, ReasoningEffort? reasoningEffort = null);
+        Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
+        // Which catalog card produced this job, or null for a blank start. Device-local: a server that does not
+        // know the field would null it back out on the first pull.
+        string? blueprintKey = null);
 
     Task<IReadOnlyList<ScheduledJob>> GetAllAsync();
     Task<IReadOnlyList<ScheduledJob>> GetActiveAsync();

@@ -13,9 +13,9 @@ using Xunit;
 namespace Pia.Tests.Infrastructure;
 
 /// <summary>
-/// The additive half of the ScheduledJobs pin migration. Every test and every fresh profile takes the
-/// <c>CREATE TABLE</c> path, so nothing else in the suite would notice a missing <c>ALTER TABLE</c> — it would
-/// throw only on a real user's existing database.
+/// The additive half of the ScheduledJobs pin and blueprint-key migration. Every test and every fresh profile
+/// takes the <c>CREATE TABLE</c> path, so nothing else in the suite would notice a missing <c>ALTER TABLE</c> —
+/// it would throw only on a real user's existing database.
 /// </summary>
 public sealed class ScheduledJobsPinMigrationTests : IDisposable
 {
@@ -36,12 +36,13 @@ public sealed class ScheduledJobsPinMigrationTests : IDisposable
     }
 
     [Fact]
-    public async Task MigrateSchema_AddsBothPinColumns_PreservingTheExistingRow()
+    public async Task MigrateSchema_AddsThePinAndBlueprintKeyColumns_PreservingTheExistingRow()
     {
         var jobId = Guid.NewGuid();
         var now = DateTime.Now.ToString("O");
 
-        // The pre-pin ScheduledJobs shape: everything up to and including QuietOnSuccess, and no pin columns.
+        // The pre-pin ScheduledJobs shape: everything up to and including QuietOnSuccess, and neither the two
+        // pin columns nor BlueprintKey.
         using (var seed = new SqliteConnection($"Data Source={_dbPath}"))
         {
             seed.Open();
@@ -104,6 +105,7 @@ public sealed class ScheduledJobsPinMigrationTests : IDisposable
 
         Assert.Contains("PersonaId", columns);
         Assert.Contains("ReasoningEffort", columns);
+        Assert.Contains("BlueprintKey", columns);
 
         // The positional read is what a real user's next launch actually does, so exercise it rather than
         // trusting the PRAGMA alone.
@@ -119,5 +121,6 @@ public sealed class ScheduledJobsPinMigrationTests : IDisposable
         Assert.Equal("pre-migration", migrated!.Name);
         Assert.Null(migrated.PersonaId);
         Assert.Null(migrated.ReasoningEffort);
+        Assert.Null(migrated.BlueprintKey);
     }
 }

@@ -1158,6 +1158,10 @@
   <data name="Routines_Blueprint_BillsRenewals_Description" xml:space="preserve"><value>Un bref aperçu de ce qui arrive à échéance ou se renouvelle dans les deux prochaines semaines.</value></data>
   <data name="Routines_Blueprint_MeetingFollowup_Title" xml:space="preserve"><value>Suivi des réunions</value></data>
   <data name="Routines_Blueprint_MeetingFollowup_Description" xml:space="preserve"><value>Les réunions du jour transformées en tâches, les lacunes du transcript annoncées d'emblée.</value></data>
+  <data name="Routines_Blueprint_TopicDigest_Slot_Topic_Label" xml:space="preserve"><value>Sujet</value></data>
+  <data name="Routines_Blueprint_TopicDigest_Slot_Topic_Help" xml:space="preserve"><value>Le sujet à rechercher chaque matin, par exemple « intelligence artificielle » ou « politique énergétique de l'UE ».</value></data>
+  <data name="Routines_Blueprint_CompetitorWatch_Slot_Companies_Label" xml:space="preserve"><value>Entreprises</value></data>
+  <data name="Routines_Blueprint_CompetitorWatch_Slot_Companies_Help" xml:space="preserve"><value>Les entreprises à surveiller, séparées par des virgules. Laissez le champ vide pour surveiller celles que le coffre suit déjà.</value></data>
   <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Fournisseur par défaut</value></data>
   <data name="Settings_ScheduledJobs_UnknownStatusInert" xml:space="preserve"><value>Cette tâche a un statut que cette version ne reconnaît pas ; elle est affichée en lecture seule. Mettez Pia à jour pour la gérer.</value></data>
   <data name="Settings_ScheduledJobs_Running" xml:space="preserve"><value>Exécution de la tâche…</value></data>
