@@ -874,7 +874,11 @@ owner on 2026-08-24. Plan and reading:
   a redundant `File.Exists` pre-check, so the atomic collision guard and the same-second race it closes had no
   test at all; the pre-check is gone and `CreateNew` is now the single mechanism.
   Gate **4907 / failed: 0 / 4848 succeeded / 59 skipped** (from 4841 at `da95cc8b`, +66 tests); Debug and
-  Release both `-t:Rebuild` to **0 Warning(s)**. Human smoke test pending — nothing was exercised in the app.
+  Release both `-t:Rebuild` to **0 Warning(s)**.
+  **Human smoke test pending — nothing was exercised in the app.** The plan for it is written and executable
+  cold: [../failure_legibility/2026-08-24-export-diagnostics-ui-test-plan.md](../failure_legibility/2026-08-24-export-diagnostics-ui-test-plan.md).
+  It names the four questions only the running app can answer, and its load-bearing half is the artefact
+  inspection rather than the walkthrough.
   *Deps:* none · *Effort:* **S** · *Value:* **High** (the app can hand over its own logs safely for the first time)
 
 ---
