@@ -79,20 +79,98 @@ public class OpenRouterContextWindowTests
         Assert.Equal(0, window);
     }
 
-    /// <summary>The routing only applies to OpenRouter: the same id on another provider type must not pick up
-    /// a window that describes OpenRouter's route rather than that provider's.</summary>
+    /// <summary>The catalogue is not gated on provider type: a direct provider naming the same model gets the
+    /// same answer, which is the whole reason it is worth carrying 422 rows.</summary>
     [Fact]
-    public void TheSnapshotIsConsultedOnlyForOpenRouter()
+    public void TheCatalogueServesEveryProviderType()
     {
-        Assert.Equal(40_960, ContextWindowDefaults.For(AiProviderType.OpenRouter, "qwen/qwen3-14b"));
-        Assert.Equal(ContextWindowDefaults.Fallback, ContextWindowDefaults.For(AiProviderType.OpenAI, "qwen/qwen3-14b"));
+        Assert.Equal(40_960, ContextWindowDefaults.For("qwen/qwen3-14b"));
+        Assert.Equal(40_960, ContextWindowDefaults.For("qwen3-14b"));
+    }
+
+    /// <summary>A bare vendor id with no author prefix — what OpenAI, Mistral and vLLM setups actually
+    /// carry.</summary>
+    [Theory]
+    [InlineData("gpt-4o", 128_000)]
+    [InlineData("gpt-4o-mini", 128_000)]
+    [InlineData("o3-mini", 200_000)]
+    [InlineData("deepseek-chat", 128_000)]
+    [InlineData("gemini-2.5-pro", 1_048_576)]
+    public void ABareVendorIdResolves(string modelName, int expected)
+    {
+        Assert.Equal(expected, ContextWindowDefaults.For(modelName));
+    }
+
+    /// <summary>The separator conventions disagree — OpenRouter publishes <c>claude-haiku-4.5</c> where
+    /// Anthropic's own id is <c>claude-haiku-4-5</c> — and a dated snapshot must still land on its base.</summary>
+    [Theory]
+    [InlineData("claude-haiku-4-5", 200_000)]
+    [InlineData("claude-haiku-4.5", 200_000)]
+    [InlineData("gpt-4o-2024-08-06", 128_000)]
+    [InlineData("mistral-large-latest", 128_000)]
+    public void SeparatorAndSuffixConventionsAreFoldedTogether(string modelName, int expected)
+    {
+        Assert.Equal(expected, ContextWindowDefaults.For(modelName));
+    }
+
+    /// <summary>"When in doubt, the generous default." Seven basenames carry conflicting windows, and picking
+    /// one of them would be a coin toss that silently evicts context or oversizes a request.</summary>
+    [Theory]
+    [InlineData("inkling")]
+    [InlineData("glm-5.2")]
+    [InlineData("nemotron-3.5-lightning")]
+    public void AConflictingBasenameTakesTheFallbackRatherThanACandidate(string modelName)
+    {
+        Assert.False(OpenRouterContextWindows.TryGet(modelName, out _));
+        Assert.Equal(ContextWindowDefaults.Fallback, ContextWindowDefaults.For(modelName));
+    }
+
+    /// <summary>The prefix fallback only fires on a separator boundary, so a longer unrelated id cannot
+    /// inherit a shorter model's window.</summary>
+    [Theory]
+    [InlineData("gpt-5xylophone")]
+    [InlineData("llama3")]
+    [InlineData("phi4")]
+    public void AnUnrelatedIdTakesTheFallback(string modelName)
+    {
+        Assert.Equal(ContextWindowDefaults.Fallback, ContextWindowDefaults.For(modelName));
     }
 
     [Fact]
-    public void AnOpenRouterModelTheSnapshotDoesNotKnow_StillTakesTheFallback()
+    public void AModelNothingKnows_StillTakesTheFallback()
     {
-        Assert.Equal(ContextWindowDefaults.Fallback,
-            ContextWindowDefaults.For(AiProviderType.OpenRouter, "no-such/model-that-does-not-exist"));
+        Assert.Equal(ContextWindowDefaults.Fallback, ContextWindowDefaults.For("no-such/model-that-does-not-exist"));
+    }
+
+    /// <summary>Folding <c>.</c> to <c>-</c> must not merge two published ids onto one key with different
+    /// windows — the fold is only safe because it does not.</summary>
+    [Fact]
+    public void CanonicalisingSeparatorsLosesNoRow()
+    {
+        var ids = AllPublishedIds();
+        var byCanonical = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        foreach (var (id, window) in ids)
+        {
+            var key = id.TrimStart('~').Replace('.', '-');
+            if (byCanonical.TryGetValue(key, out var existing))
+                Assert.True(existing == window, $"'{key}' collapses two windows: {existing} and {window}");
+            byCanonical[key] = window;
+        }
+
+        Assert.Equal(ids.Count, byCanonical.Count);
+    }
+
+    /// <summary>Reads the ids back off the shipped table, so the check cannot drift from what it guards.</summary>
+    private static IReadOnlyList<(string Id, int Window)> AllPublishedIds()
+    {
+        var field = typeof(OpenRouterContextWindows)
+            .GetField("Windows", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        Assert.NotNull(field);
+
+        var windows = (Dictionary<string, int>)field!.GetValue(null)!;
+        Assert.Equal(422, windows.Count);
+        return [.. windows.Select(kv => (kv.Key, kv.Value))];
     }
 
     // ---- the live payload ---------------------------------------------------------------------------

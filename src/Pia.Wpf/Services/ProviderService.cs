@@ -61,7 +61,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
         var providers = await LoadAsync();
 
         foreach (var provider in providers)
-            provider.MaxContextWindowTokens ??= ContextWindowDefaults.For(provider.ProviderType, provider.ModelName);
+            provider.MaxContextWindowTokens ??= ContextWindowDefaults.For(provider.ModelName);
 
         return providers;
     }
@@ -82,7 +82,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
         if (provider.ProviderType != AiProviderType.OpenRouter || string.IsNullOrWhiteSpace(provider.ModelName))
             return;
 
-        provider.MaxContextWindowTokens ??= ContextWindowDefaults.For(provider.ProviderType, provider.ModelName);
+        provider.MaxContextWindowTokens ??= ContextWindowDefaults.For(provider.ModelName);
 
         try
         {

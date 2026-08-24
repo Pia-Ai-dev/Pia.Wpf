@@ -39,13 +39,13 @@ public static class ContextWindowDefaults
         ("claude-haiku-4-5", 200_000),
     ];
 
-    /// <param name="providerType">OpenRouter routes to its own snapshot first: the window its route serves
-    /// can be far below what the model advertises, and the family table below carries the advertised figure.</param>
-    public static int For(AiProviderType providerType, string? modelName)
+    /// <summary>
+    /// Three tiers, most authoritative first: the vendor-documented family table, then the OpenRouter
+    /// catalogue (which knows far more models but reports what ITS route serves), then the floor. Not gated
+    /// on provider type — a model id is a model id, and the catalogue is the only broad source there is.
+    /// </summary>
+    public static int For(string? modelName)
     {
-        if (providerType == AiProviderType.OpenRouter && OpenRouterContextWindows.TryGet(modelName, out var routed))
-            return routed;
-
         if (string.IsNullOrWhiteSpace(modelName))
             return Fallback;
 
@@ -53,6 +53,8 @@ public static class ContextWindowDefaults
             if (modelName.Contains(fragment, StringComparison.OrdinalIgnoreCase))
                 return window;
 
-        return Fallback;
+        // Anything the catalogue cannot resolve unambiguously falls through on purpose, so a conflicting
+        // basename takes the generous floor rather than one of its candidates.
+        return OpenRouterContextWindows.TryGet(modelName, out var known) ? known : Fallback;
     }
 }

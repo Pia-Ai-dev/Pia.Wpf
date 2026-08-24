@@ -355,6 +355,33 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
     returning false, and a null `context_length` is a shape the payload can carry.
   - The seed table is generated from the doc, not transcribed — 422 rows, 42 overrides applied, verified for
     key collisions before it was written.
+
+  **Reframed 2026-08-24 by the owner, and the table's justification changed with it.** Asked why a 422-row
+  table exists when the value is fetched live, and what other providers get from it. Honest answers: the fetch
+  runs **on save only**, so an OpenRouter provider nobody re-opens runs on the snapshot indefinitely; and
+  other providers got **nothing**, the lookup being gated on provider type. The owner's call was *don't keep
+  the table for the OpenRouter case alone* and *do try to resolve for everyone, fuzzily, with a generous
+  default when in doubt*. So:
+  - **The gate is gone.** `ContextWindowDefaults.For(modelName)` is one path for every provider type — the
+    vendor-documented family table, then the catalogue, then the 128k floor. No refresh-on-load machinery was
+    built: an existing provider simply carries the resolved value until its next save.
+  - **The catalogue is now a cross-vendor registry**, reached by bare ids too. Measured before building:
+    350 distinct basenames, and `gpt-4o` → 128000, `o3-mini` → 200000, `deepseek-chat` → 128000,
+    `gemini-2.5-pro` → 1048576 all resolve. Ollama's short tags (`llama3`, `phi4`) do not, and take the floor.
+  - **Separator folding closes the convention gap the owner flagged**: OpenRouter publishes
+    `claude-haiku-4.5` where Anthropic's own id is `claude-haiku-4-5`. Folding `.` to `-` makes them meet and
+    was measured to add no ambiguity. Longest-prefix-on-a-boundary then catches dated ids
+    (`gpt-4o-2024-08-06`) and `-latest` aliases.
+  - **Two bugs the new tests caught, both real.** `LookupKeys` normalised without the fold while the index
+    applied it, so every id containing a dot missed — `z-ai/glm-5.2:free` fell through. And a *conflicted*
+    basename then fell through to the prefix search and took `glm-5`'s window for `glm-5.2`, a different
+    model. A known-but-ambiguous name now stops rather than falling through, which is what "generous default"
+    has to mean.
+  - **Caveat to keep in view:** these are `top_provider` values — what OpenRouter's route serves, which can
+    sit below what a vendor serves directly (`anthropic/claude-sonnet-4` is 200000 here against 1000000
+    advertised). For a direct provider that biases low, compacting early rather than sending a request the
+    provider refuses.
+  - Gate **4783 / failed: 0**; both configurations rebuild to 0 Warning(s).
   *Deps:* B11 · *Effort:* **S** · *Value:* **High**
 
 ---

@@ -462,9 +462,56 @@ public static class OpenRouterContextWindows
             return false;
 
         foreach (var key in LookupKeys(modelName))
-            if (Windows.TryGetValue(key, out window))
+            if (Canonical.TryGetValue(key, out window))
                 return true;
 
+        return TryResolveByBasename(modelName, out window);
+    }
+
+    /// <summary>
+    /// The same catalogue read for a NON-OpenRouter provider, where the model has no <c>author/</c> prefix:
+    /// <c>gpt-4o</c>, <c>claude-haiku-4-5-20251001</c>, <c>mistral-large-latest</c>. Falls back to the longest
+    /// registered basename the id begins with, so a dated snapshot or a <c>-latest</c> alias still lands.
+    /// <para>
+    /// <b>These are the windows OpenRouter's route serves, which can sit below what the vendor serves
+    /// directly</b> — <c>anthropic/claude-sonnet-4</c> is 200000 here against 1000000 advertised. That biases
+    /// a direct provider low, which compacts early rather than sending a request the provider refuses. Seven
+    /// basenames carry conflicting windows and deliberately resolve to nothing, so the caller's default
+    /// applies instead of a coin toss.
+    /// </para>
+    /// </summary>
+    private static bool TryResolveByBasename(string modelName, out int window)
+    {
+        window = 0;
+        var id = Normalize(modelName);
+        var stripped = StripVariant(id);
+        var basename = stripped.Contains('/') ? stripped[(stripped.IndexOf('/') + 1)..] : stripped;
+
+        if (basename.Length == 0)
+            return false;
+
+        if (ByBasename.TryGetValue(basename, out window))
+            return true;
+
+        // A name we KNOW but cannot decide stops here. Falling through would hand "glm-5.2" the window of
+        // "glm-5" — a different model — where the caller's default is the honest answer.
+        if (ConflictedBasenames.Contains(basename))
+        {
+            window = 0;
+            return false;
+        }
+
+        // Longest first, and only on a separator boundary — otherwise "gpt-5x" would inherit "gpt-5".
+        foreach (var candidate in BasenamesByLength)
+            if (basename.Length > candidate.Length
+                && basename.StartsWith(candidate, StringComparison.Ordinal)
+                && basename[candidate.Length] is '-' or '/'
+                && ByBasename.TryGetValue(candidate, out window))
+            {
+                return true;
+            }
+
+        window = 0;
         return false;
     }
 
@@ -483,7 +530,81 @@ public static class OpenRouterContextWindows
             yield return id[..colon];
     }
 
-    /// <summary>Lowercased, trimmed, and without the leading <c>~</c> that marks a floating alias row.</summary>
+    /// <summary>
+    /// Lowercased, trimmed, without the leading <c>~</c> that marks a floating alias row, and with <c>.</c>
+    /// folded to <c>-</c> — the two conventions disagree on the separator, OpenRouter publishing
+    /// <c>claude-haiku-4.5</c> where Anthropic's own id is <c>claude-haiku-4-5</c>. Measured to add no
+    /// ambiguity: the seven conflicting basenames are the same set with or without the fold.
+    /// <para>
+    /// One function, used to build the index AND to look up, including by the live reader — they cannot
+    /// disagree about what an id is. They did once: the index folded the separator and the lookup did not,
+    /// so every id containing a dot missed.
+    /// </para>
+    /// </summary>
     public static string Normalize(string modelName) =>
-        modelName.Trim().ToLowerInvariant().TrimStart('~');
+        modelName.Trim().ToLowerInvariant().TrimStart('~').Replace('.', '-');
+
+    private static string StripVariant(string id)
+    {
+        var colon = id.LastIndexOf(':');
+        return colon > 0 ? id[..colon] : id;
+    }
+
+    /// <summary>The published ids, canonicalised, so a lookup meets either separator convention.</summary>
+    private static readonly Dictionary<string, int> Canonical = BuildCanonical();
+
+    /// <summary>Basename to window, with every basename that carries more than one window left OUT.</summary>
+    private static readonly Dictionary<string, int> ByBasename = BuildByBasename();
+
+    /// <summary>The basenames left out of <see cref="ByBasename"/>, kept so an ambiguous name can be refused
+    /// outright rather than falling through to a shorter, unrelated prefix.</summary>
+    private static readonly HashSet<string> ConflictedBasenames = BuildConflicted();
+
+    private static readonly string[] BasenamesByLength =
+        [.. ByBasename.Keys.OrderByDescending(k => k.Length)];
+
+    private static Dictionary<string, int> BuildCanonical()
+    {
+        var canonical = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var (id, window) in Windows)
+            canonical[Normalize(id)] = window;
+        return canonical;
+    }
+
+    private static Dictionary<string, int> BuildByBasename()
+    {
+        var windows = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var (basename, window) in EnumerateBasenames())
+            windows[basename] = window;
+
+        foreach (var basename in BuildConflicted())
+            windows.Remove(basename);
+
+        return windows;
+    }
+
+    private static HashSet<string> BuildConflicted()
+    {
+        var seen = new Dictionary<string, int>(StringComparer.Ordinal);
+        var conflicted = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var (basename, window) in EnumerateBasenames())
+        {
+            if (seen.TryGetValue(basename, out var existing) && existing != window)
+                conflicted.Add(basename);
+            else
+                seen[basename] = window;
+        }
+
+        return conflicted;
+    }
+
+    private static IEnumerable<(string Basename, int Window)> EnumerateBasenames()
+    {
+        foreach (var (id, window) in Windows)
+        {
+            var stripped = StripVariant(Normalize(id));
+            yield return (stripped.Contains('/') ? stripped[(stripped.IndexOf('/') + 1)..] : stripped, window);
+        }
+    }
 }
