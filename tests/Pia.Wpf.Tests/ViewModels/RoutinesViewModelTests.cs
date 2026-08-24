@@ -2,6 +2,7 @@ using System.Collections;
 using System.Globalization;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using Pia.Models;
 using Pia.Resources.Strings;
 using Pia.Services;
@@ -765,6 +766,240 @@ public class RoutinesViewModelTests
 
         Assert.False(sut.Vm.IsEditorOpen);
         Assert.Equal(string.Empty, sut.Vm.EditQuery);
+    }
+
+    [Fact]
+    public async Task NewRoutine_OpensTheCatalogRatherThanTheEditor()
+    {
+        var sut = CreateSut(NewJob());
+        await sut.Vm.RefreshAsync();
+
+        sut.Vm.BrowseBlueprintsCommand.Execute(null);
+
+        Assert.True(sut.Vm.ShowsCatalog);
+        Assert.False(sut.Vm.IsEditorOpen);
+        Assert.False(sut.Vm.ShowsPlaceholder);
+    }
+
+    [Fact]
+    public async Task StartFromBlank_StillOpensAnEmptyEditor()
+    {
+        var sut = CreateSut(NewJob());
+        await sut.Vm.RefreshAsync();
+        sut.Vm.BrowseBlueprintsCommand.Execute(null);
+
+        sut.Vm.StartCreateCommand.Execute(null);
+
+        Assert.True(sut.Vm.IsEditorOpen);
+        Assert.False(sut.Vm.ShowsCatalog);
+        Assert.Null(sut.Vm.EditingJobId);
+        Assert.Equal(string.Empty, sut.Vm.EditName);
+        Assert.Equal(string.Empty, sut.Vm.EditQuery);
+    }
+
+    /// <summary>The substituted localizer echoes the resx key, so the term here matches a key stem rather than
+    /// the English title.</summary>
+    [Fact]
+    public void ASearchTerm_NarrowsTheCatalogAndDropsTheGroupItEmpties()
+    {
+        var sut = CreateSut();
+
+        sut.Vm.SearchQuery = "market";
+
+        var group = Assert.Single(sut.Vm.BlueprintGroups);
+        Assert.Equal(RoutineBlueprintCategories.Ready, group.Key);
+        Assert.Equal(RoutineBlueprintCatalog.MarketSnapshot, Assert.Single(group.Cards).Key);
+        Assert.True(sut.Vm.HasBlueprintMatches);
+    }
+
+    [Fact]
+    public void ATermNothingMatches_LeavesNoGroupsToRender()
+    {
+        var sut = CreateSut();
+
+        sut.Vm.SearchQuery = "no-blueprint-says-this";
+
+        Assert.Empty(sut.Vm.BlueprintGroups);
+        Assert.False(sut.Vm.HasBlueprintMatches);
+    }
+
+    [Fact]
+    public void ASearchSpanningBothGroups_ForcesBothExpanded()
+    {
+        var sut = CreateSut();
+        Assert.False(sut.Vm.BlueprintGroups
+            .Single(g => g.Key == RoutineBlueprintCategories.YourData).IsExpanded);
+
+        sut.Vm.SearchQuery = "brief";
+
+        Assert.Equal(
+            new[] { RoutineBlueprintCategories.Ready, RoutineBlueprintCategories.YourData },
+            sut.Vm.BlueprintGroups.Select(g => g.Key).ToArray());
+        Assert.All(sut.Vm.BlueprintGroups, g => Assert.True(g.IsExpanded));
+        Assert.Equal(RoutineBlueprintCatalog.NewsBriefing, Assert.Single(sut.Vm.BlueprintGroups[0].Cards).Key);
+        Assert.Equal(RoutineBlueprintCatalog.MorningBrief, Assert.Single(sut.Vm.BlueprintGroups[1].Cards).Key);
+    }
+
+    /// <summary>The one keystroke that matters is the one INTO a search; after that the user's own collapse
+    /// has to survive.</summary>
+    [Fact]
+    public void AGroupCollapsedMidSearch_StaysCollapsedOnTheNextKeystroke()
+    {
+        var sut = CreateSut();
+        sut.Vm.SearchQuery = "brie";
+        var group = sut.Vm.BlueprintGroups.Single(g => g.Key == RoutineBlueprintCategories.YourData);
+        Assert.True(group.IsExpanded);
+        group.IsExpanded = false;
+
+        sut.Vm.SearchQuery = "brief";
+
+        Assert.False(sut.Vm.BlueprintGroups
+            .Single(g => g.Key == RoutineBlueprintCategories.YourData).IsExpanded);
+    }
+
+    /// <summary>A query left over from the last visit would open the menu on one card of twenty.</summary>
+    [Fact]
+    public async Task ReopeningTheCatalog_ClearsTheSearchItWasLeftWith()
+    {
+        var sut = CreateSut(NewJob());
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SearchQuery = "market";
+
+        sut.Vm.BrowseBlueprintsCommand.Execute(null);
+
+        Assert.Equal(string.Empty, sut.Vm.SearchQuery);
+        Assert.Equal(
+            new[] { RoutineBlueprintCategories.Ready, RoutineBlueprintCategories.YourData },
+            sut.Vm.BlueprintGroups.Select(g => g.Key).ToArray());
+        Assert.False(sut.Vm.BlueprintGroups
+            .Single(g => g.Key == RoutineBlueprintCategories.YourData).IsExpanded);
+    }
+
+    /// <summary>The pane a save lands on is decided before the reload, not by whether it succeeds.</summary>
+    [Fact]
+    public async Task ASaveFromACard_ClosesTheCatalogEvenWhenTheReloadFails()
+    {
+        var sut = CreateSut();
+        sut.Jobs.CreateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(),
+                Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(),
+                Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<ScheduledJobKind>(), Arg.Any<bool>(),
+                Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>(), Arg.Any<string?>())
+            .Returns(NewJob());
+        await sut.Vm.RefreshAsync();
+        Assert.True(sut.Vm.ShowsCatalog);
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+        sut.Jobs.GetAllAsync().ThrowsAsync(new InvalidOperationException("the table is gone"));
+
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        Assert.False(sut.Vm.IsCatalogOpen);
+        Assert.False(sut.Vm.ShowsCatalog);
+    }
+
+    [Fact]
+    public async Task WithNothingScheduled_TheCatalogOpensItself()
+    {
+        var sut = CreateSut();
+
+        await sut.Vm.RefreshAsync();
+
+        Assert.True(sut.Vm.ShowsCatalog);
+        Assert.False(sut.Vm.ShowsPlaceholder);
+    }
+
+    [Fact]
+    public async Task WithJobsAlreadyThere_TheCatalogStaysShut()
+    {
+        var sut = CreateSut(NewJob());
+
+        await sut.Vm.RefreshAsync();
+
+        Assert.False(sut.Vm.ShowsCatalog);
+        Assert.True(sut.Vm.ShowsPlaceholder);
+    }
+
+    /// <summary>The panes are siblings in one Grid with no ZIndex, so a second true state still hit-tests.</summary>
+    [Fact]
+    public async Task ExactlyOnePaneShows_AcrossTheWholeCycle()
+    {
+        var sut = CreateSut(NewJob());
+        await sut.Vm.RefreshAsync();
+        AssertOnlyPane(sut.Vm, "placeholder");
+
+        sut.Vm.BrowseBlueprintsCommand.Execute(null);
+        AssertOnlyPane(sut.Vm, "catalog");
+
+        sut.Vm.SelectedJob = Assert.Single(sut.Vm.Jobs);
+        AssertOnlyPane(sut.Vm, "detail");
+
+        // A delete or a deselect must not spring the menu back open over the empty pane.
+        sut.Vm.SelectedJob = null;
+        AssertOnlyPane(sut.Vm, "placeholder");
+
+        sut.Vm.BrowseBlueprintsCommand.Execute(null);
+        sut.Vm.StartCreateCommand.Execute(null);
+        AssertOnlyPane(sut.Vm, "editor");
+
+        sut.Vm.CancelEditCommand.Execute(null);
+        AssertOnlyPane(sut.Vm, "catalog");
+    }
+
+    /// <summary>The exclusion is in the expression, not in the selection handler.</summary>
+    [Fact]
+    public async Task TheCatalogFlag_CannotBeatASelectedJob()
+    {
+        var sut = CreateSut(NewJob());
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = Assert.Single(sut.Vm.Jobs);
+
+        sut.Vm.IsCatalogOpen = true;
+
+        Assert.True(sut.Vm.ShowsDetail);
+        Assert.False(sut.Vm.ShowsCatalog);
+        Assert.False(sut.Vm.ShowsPlaceholder);
+    }
+
+    /// <summary>The hint has to read the same rule the prompt composer applies.</summary>
+    [Theory]
+    [InlineData(AiProviderType.Ollama, false, true)]
+    [InlineData(AiProviderType.OpenAI, true, false)]
+    [InlineData(AiProviderType.PiaCloud, false, false)]
+    public async Task TheWebSearchHint_FollowsTheProviderAnAssistantRunWouldUse(
+        AiProviderType type, bool enableWebSearch, bool expectHint)
+    {
+        var sut = CreateSut(NewJob());
+        sut.Providers.GetDefaultProviderForModeAsync(WindowMode.Assistant).Returns(new AiProvider
+        {
+            Name = "default",
+            Endpoint = "http://localhost:11434",
+            ProviderType = type,
+            EnableWebSearch = enableWebSearch,
+        });
+
+        await sut.Vm.RefreshAsync();
+
+        Assert.Equal(expectHint, sut.Vm.DefaultProviderCannotSearchWeb);
+    }
+
+    [Fact]
+    public async Task WithNoProviderToResolve_TheWebSearchHintStaysDown()
+    {
+        var sut = CreateSut(NewJob());
+
+        await sut.Vm.RefreshAsync();
+
+        Assert.False(sut.Vm.DefaultProviderCannotSearchWeb);
+    }
+
+    private static void AssertOnlyPane(RoutinesViewModel vm, string expected)
+    {
+        var showing = new List<string>();
+        if (vm.IsEditorOpen) showing.Add("editor");
+        if (vm.ShowsCatalog) showing.Add("catalog");
+        if (vm.ShowsDetail) showing.Add("detail");
+        if (vm.ShowsPlaceholder) showing.Add("placeholder");
+
+        Assert.Equal(expected, Assert.Single(showing));
     }
 
     [Fact]

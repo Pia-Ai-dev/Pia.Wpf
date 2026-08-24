@@ -1,0 +1,54 @@
+<UserControl x:Class="Pia.Controls.Routines.PiaRoutinesSearchBar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization"
+             x:Name="Root">
+  <Border Style="{StaticResource PiaComposerCardStyle}"
+          Padding="0">
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="*"/>
+      </Grid.ColumnDefinitions>
+
+      <ui:SymbolIcon Grid.Column="0"
+                     Symbol="Search24"
+                     FontSize="16"
+                     Margin="14,0,8,0"
+                     VerticalAlignment="Center"
+                     Foreground="{DynamicResource TextSubtleBrush}"/>
+
+      <Grid Grid.Column="1" Margin="0,0,12,0">
+        <TextBlock Text="{loc:Str Routines_Search_Placeholder}"
+                   FontSize="13"
+                   VerticalAlignment="Center"
+                   Foreground="{DynamicResource TextSubtleBrush}"
+                   IsHitTestVisible="False"
+                   Margin="2,0,0,0">
+          <TextBlock.Style>
+            <Style TargetType="TextBlock">
+              <Setter Property="Visibility" Value="Collapsed"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding Query, ElementName=Root}" Value="">
+                  <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Query, ElementName=Root}" Value="{x:Null}">
+                  <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </TextBlock.Style>
+        </TextBlock>
+
+        <TextBox Text="{Binding Query, ElementName=Root, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 Background="Transparent"
+                 BorderThickness="0"
+                 FontSize="13"
+                 Padding="0,10"
+                 VerticalContentAlignment="Center"
+                 AutomationProperties.AutomationId="Routines_SearchQuery"/>
+      </Grid>
+    </Grid>
+  </Border>
+</UserControl>

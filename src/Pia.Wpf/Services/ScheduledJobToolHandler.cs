@@ -54,7 +54,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
                 "Delete a scheduled research job by ID. Permanent."),
 
             AIFunctionFactory.Create(ListBlueprintsSchema, "list_routine_blueprints",
-                "List the ready-made routine blueprints. Call this FIRST when the user asks for a recurring routine of a familiar kind (a daily digest, a morning brief, a weekly review, a competitor watch, meeting follow-ups): a blueprint ships a tested prompt, a schedule and the narrowest write grants for that job, so create_routine_from_blueprint beats writing a query freehand with create_scheduled_research. Returns each blueprint's key, what it does, its schedule, its write grants and its fillable slots."),
+                "List the ready-made routine blueprints. Call this FIRST when the user asks for a recurring routine of a familiar kind (a daily digest, a morning brief, a weekly review, a competitor watch, meeting follow-ups): a blueprint ships a tested prompt, a schedule and the narrowest write grants for that job, so create_routine_from_blueprint beats writing a query freehand with create_scheduled_research. Returns each blueprint's key, what it does, whether it works on a fresh profile or reads the user's own data, whether it needs a provider that can search the web, its schedule, its write grants and its fillable slots."),
 
             AIFunctionFactory.Create(CreateFromBlueprintSchema, "create_routine_from_blueprint",
                 "Create a routine from a blueprint listed by list_routine_blueprints. The blueprint owns the prompt, the job type, the reasoning effort and the write grants — you cannot widen them here, and there is no query parameter. Fill every slot the blueprint declares whose value the user has actually given; ASK the user for a slot rather than guessing one, and use the EXACT slot names from the listing (an unrecognised name is refused, never silently defaulted). A slot you omit falls back to the blueprint's own default.")
@@ -219,8 +219,19 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
 
         foreach (var b in RoutineBlueprintCatalog.All)
         {
+            var category = b.Category == RoutineBlueprintCategories.Ready
+                ? "works right away, it needs nothing that is already in the user's own Pia data"
+                : "reads the user's own todos, notes, reminders or meetings, so it has little to say "
+                    + "until they have used Pia for a while";
+            var webSearch = b.RequiresWebSearch
+                ? "REQUIRED. On a provider that cannot search the web this says so instead of reporting, "
+                    + "so do not offer it there"
+                : "not needed, it works on any provider";
+
             sb.AppendLine($"\n[key: {b.Key}] {_localizationService[b.TitleKey]}");
             sb.AppendLine($"  Does: {_localizationService[b.DescriptionKey]}");
+            sb.AppendLine($"  Category: {category}");
+            sb.AppendLine($"  Web search: {webSearch}");
             sb.AppendLine($"  Schedule: {b.Recurrence}{(b.DefaultDayOfWeek.HasValue ? $" on {b.DefaultDayOfWeek}" : "")} at {b.DefaultTime:HH:mm}");
             sb.AppendLine($"  Write grants: {(b.GrantedTools.Count == 0 ? "none, read-only" : string.Join(", ", b.GrantedTools))}");
             if (b.Slots.Count == 0)

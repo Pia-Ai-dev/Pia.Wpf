@@ -313,7 +313,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
             """;
     }
 
-    private static bool IsWebSearchActive(AiProvider provider)
+    internal static bool IsWebSearchActive(AiProvider provider)
         => provider.EnableWebSearch || provider.ProviderType == AiProviderType.PiaCloud;
 
     // suggest_agent_mode (R7): a no-op tool the model calls to offer switching the user from Chat to

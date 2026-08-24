@@ -199,6 +199,11 @@ pass by carrying an empty string.
 
 ## 7. The catalog to ship
 
+> **Superseded for the catalog's contents, 2026-08-24.** The table below is the original eight, as
+> shipped 2026-08-22. The catalog now holds twenty, and `Category` holds `ready` / `your-data` rather
+> than a cadence. See
+> [`../routines/2026-08-24-blueprint-catalog-expansion.md`](../routines/2026-08-24-blueprint-catalog-expansion.md).
+
 Only automations Pia can actually execute. Pia has Todos, Reminders, Kanban, Vault, Memory, web
 search with citations, and meeting transcripts. It has **no email and no calendar connector**, so
 hermes's inbox monitor and its calendar-dependent briefings do not apply as written; the price-watch
@@ -310,11 +315,11 @@ after is repetition or extension.
 
 1. **Does a created job record its blueprint key?** Cheap via `ExtraJson`, and it makes "how many
    people use the weekly review" answerable. But see the compatibility note in §9.
-2. **Cards or a list?** Eight blueprints is small enough for either. Cards read as a menu, which is
-   the point; a list is less work and less visual noise next to the existing job list.
-3. **Where does the catalog sit relative to "New routine"?** Catalog-first with a blank-start escape
-   hatch is the recommendation — it is what makes the feature do its job — but it demotes the current
-   primary action, so it is a UI call worth making deliberately.
+2. **Cards or a list?** **Answered 2026-08-24: cards**, two-up in a `WrapPanel`, grouped under two
+   collapsible headers. Eight blueprints was small enough for either; twenty is not.
+3. **Where does the catalog sit relative to "New routine"?** **Answered 2026-08-24: catalog-first.**
+   `Routines_NewJob` opens the catalog, the blank editor moved to a "Start from blank instead" link,
+   and an empty routine list opens the catalog by itself.
 4. **Should Tier 1 slot-prompting reuse the existing clarification UI** (`RunClarifications`,
    `UserInputRequestStore`) rather than a bespoke dialog? Probably yes at Tier 2; possibly overkill
    at Tier 1.

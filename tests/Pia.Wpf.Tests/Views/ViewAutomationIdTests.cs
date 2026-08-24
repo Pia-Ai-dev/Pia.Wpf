@@ -49,7 +49,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Views.AssistantView), 18, 1,
         "AutocompletePopup,DirectTranscriptionOverlay,MeetingAttendeeOverlay,PersonaGlyph,PiaAssistantMessage," +
         "PiaChatQuickSwitcher,PiaChatTitleChip,PiaPersonaAvatar,RunProgressPanel,TodoPanelControl,VoiceModeOverlay")]
-    [InlineData(typeof(Pia.Views.RoutinesView), 15, 1, "PiaEmptyState,PiaHelpHint")]
+    [InlineData(typeof(Pia.Views.RoutinesView), 15, 1, "PiaEmptyState,PiaHelpHint,PiaRoutinesSearchBar")]
     [InlineData(typeof(Pia.Views.SettingsViews.PersonasView), 3, 3, "PersonaGlyph")]
     [InlineData(typeof(Pia.Views.MeetingAttendeeOverlay), 8, 1, "ListeningIndicator")]
     [InlineData(typeof(Pia.Controls.Cards.CardDecisionBar), 1, 1, "")]
@@ -61,6 +61,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Controls.History.PiaHistorySearchBar), 3, 0, "")]
     [InlineData(typeof(Pia.Controls.Todo.PiaTodoHeader), 2, 0, "PiaHelpHint")]
     [InlineData(typeof(Pia.Controls.Todo.PiaTodoSearchBar), 1, 0, "")]
+    [InlineData(typeof(Pia.Controls.Routines.PiaRoutinesSearchBar), 1, 0, "")]
     [InlineData(typeof(Pia.Controls.Markdown.CodeBlockControl), 2, 0, "")]
     [InlineData(typeof(Pia.Controls.Chat.PiaAnswerToolbar), 7, 7, "")]
     [InlineData(typeof(Pia.Controls.Vault.PiaVaultCategoryCard), 1, 1, "PiaTypeChip")]

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -34,6 +35,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     /// and an edit of an existing job both clear it.</summary>
     private string? _editBlueprintKey;
 
+    private bool _searchWasActive;
+
     public ObservableCollection<RoutineRow> Jobs { get; } = [];
 
     /// <summary>Provider choices for the editor. The leading entry is the "use the default" null row.</summary>
@@ -65,6 +68,19 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
 
     public bool HasBlueprints => Blueprints.Count > 0;
 
+    public ObservableCollection<RoutineBlueprintGroup> BlueprintGroups { get; } = [];
+
+    public bool HasBlueprintMatches => BlueprintGroups.Count > 0;
+
+    /// <summary>Matched against title and description only; there are no search keywords in resx.</summary>
+    [ObservableProperty]
+    private string _searchQuery = string.Empty;
+
+    partial void OnSearchQueryChanged(string value) => RebuildBlueprintGroups();
+
+    [ObservableProperty]
+    private bool _defaultProviderCannotSearchWeb;
+
     [ObservableProperty]
     private bool _hasJobs;
 
@@ -72,6 +88,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     /// a double-click cannot fire a job twice.</summary>
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StartCreateCommand))]
+    [NotifyCanExecuteChangedFor(nameof(BrowseBlueprintsCommand))]
     [NotifyCanExecuteChangedFor(nameof(StartFromBlueprintCommand))]
     [NotifyCanExecuteChangedFor(nameof(StartEditCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
@@ -102,8 +119,12 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     {
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(ShowsDetail));
+        OnPropertyChanged(nameof(ShowsCatalog));
         OnPropertyChanged(nameof(ShowsPlaceholder));
         OnPropertyChanged(nameof(EditorPinsEnabled));
+
+        // Otherwise the menu springs open again the next time the selection clears — after a delete.
+        if (value is not null) IsCatalogOpen = false;
 
         // A selection change is a different job, so an editor still open on the previous one has to go — saving
         // it afterwards would write this job's fields onto that one's id.
@@ -118,13 +139,22 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     partial void OnIsEditorOpenChanged(bool value)
     {
         OnPropertyChanged(nameof(ShowsDetail));
+        OnPropertyChanged(nameof(ShowsCatalog));
         OnPropertyChanged(nameof(ShowsPlaceholder));
     }
 
-    /// <summary>The right pane is a three-state machine: the editor, a selected job, or the empty state.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowsCatalog))]
+    [NotifyPropertyChangedFor(nameof(ShowsPlaceholder))]
+    private bool _isCatalogOpen;
+
+    /// <summary>Four states, each a full expression: the panes are siblings in one Grid, so a second true state
+    /// still hit-tests over the visible one.</summary>
     public bool ShowsDetail => !IsEditorOpen && SelectedJob is not null;
 
-    public bool ShowsPlaceholder => !IsEditorOpen && SelectedJob is null;
+    public bool ShowsCatalog => IsCatalogOpen && !IsEditorOpen && SelectedJob is null;
+
+    public bool ShowsPlaceholder => !IsCatalogOpen && !IsEditorOpen && SelectedJob is null;
 
     /// <summary>Null while creating; the row's id while editing. Also what decides which service call the save
     /// takes, so it must be cleared when the editor closes.</summary>
@@ -248,7 +278,10 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             _localization[b.DescriptionKey],
             _localization[$"Settings_ScheduledJobs_Kind_{b.Kind}"],
             _localization[$"Settings_ScheduledJobs_Recurrence_{b.Recurrence}"],
-            b.DefaultTime.ToString("HH\\:mm")))];
+            b.DefaultTime.ToString("HH\\:mm"),
+            b.Category,
+            b.RequiresWebSearch))];
+        RebuildBlueprintGroups();
     }
 
     public void OnNavigatedTo(object? parameter) { }
@@ -270,6 +303,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             var jobs = await _jobs.GetAllAsync();
             var providers = await _providers.GetProvidersAsync();
             var personas = await _personas.GetPersonasAsync();
+            var assistantProvider = await ResolveAssistantProviderAsync();
 
             var rows = new List<RoutineRow>(jobs.Count);
             foreach (var job in jobs)
@@ -310,6 +344,16 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
                     null, _localization["Routines_Field_Persona_Default"]));
                 foreach (var persona in personas)
                     PersonaChoices.Add(new RoutinePersonaChoice(persona.Id, persona.Name));
+
+                // No provider at all is a different problem, and claiming this one about it would be noise.
+                DefaultProviderCannotSearchWeb = assistantProvider is not null
+                    && !AssistantPromptComposer.IsWebSearchActive(assistantProvider);
+
+                if (Jobs.Count == 0)
+                {
+                    SelectedJob = null;
+                    OpenCatalog();
+                }
             });
         }
         catch (Exception ex)
@@ -322,6 +366,21 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         finally
         {
             IsBusy = false;
+        }
+    }
+
+    /// <summary>Failure-isolated on purpose: the web-search hint is decoration, and the list must still render
+    /// without it.</summary>
+    private async Task<AiProvider?> ResolveAssistantProviderAsync()
+    {
+        try
+        {
+            return await _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not resolve the assistant's default provider");
+            return null;
         }
     }
 
@@ -439,6 +498,67 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         ApplyPinChoices(null, null, null);
         StatusMessage = null;
         IsEditorOpen = true;
+    }
+
+    /// <summary>What "New routine" opens: the catalog, not a blank editor.</summary>
+    [RelayCommand(CanExecute = nameof(CanWork))]
+    private void BrowseBlueprints()
+    {
+        CancelEdit();
+        SelectedJob = null;
+        OpenCatalog();
+    }
+
+    /// <summary>Always unfiltered: the setter is silent when the query was already empty, so the rebuild that
+    /// restores the default expansion has to be explicit.</summary>
+    private void OpenCatalog()
+    {
+        SearchQuery = string.Empty;
+        RebuildBlueprintGroups();
+        IsCatalogOpen = true;
+    }
+
+    [RelayCommand]
+    private void CloseCatalog() => IsCatalogOpen = false;
+
+    /// <summary>Rebuilt rather than filtered in place: the query decides which groups exist at all.</summary>
+    private void RebuildBlueprintGroups()
+    {
+        var terms = SearchQuery.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        var searching = terms.Length > 0;
+        var carryExpansion = searching && _searchWasActive;
+        var wasExpanded = BlueprintGroups.ToDictionary(g => g.Key, g => g.IsExpanded, StringComparer.Ordinal);
+        _searchWasActive = searching;
+
+        BlueprintGroups.Clear();
+        foreach (var category in RoutineBlueprintCategories.InDisplayOrder)
+        {
+            var matches = Blueprints.Where(c => c.Category == category && Matches(c, terms)).ToList();
+            if (matches.Count == 0) continue;
+
+            var stem = RoutineBlueprintCategories.StemOf(category);
+            var group = new RoutineBlueprintGroup(
+                category,
+                _localization[$"Routines_Category_{stem}_Title"],
+                _localization[$"Routines_Category_{stem}_Subtitle"])
+            {
+                // A collapsed group would hide a match, so entering a search forces both open — but only the
+                // step into one, or a group collapsed mid-search springs back on the next keystroke.
+                IsExpanded = carryExpansion && wasExpanded.TryGetValue(category, out var open)
+                    ? open
+                    : searching || category == RoutineBlueprintCategories.Ready
+            };
+            foreach (var card in matches) group.Cards.Add(card);
+            BlueprintGroups.Add(group);
+        }
+
+        OnPropertyChanged(nameof(HasBlueprintMatches));
+    }
+
+    private static bool Matches(RoutineBlueprintCard card, string[] terms)
+    {
+        var haystack = $"{card.Title} {card.Description}";
+        return terms.All(term => haystack.Contains(term, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>Fills the same editor <see cref="StartCreate"/> opens; nothing is persisted until the user saves.</summary>
@@ -614,6 +734,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             }
 
             IsEditorOpen = false;
+            // Otherwise the catalog renders over the save until the reload re-selects the row.
+            IsCatalogOpen = false;
             StatusMessage = null;
         }
         catch (Exception ex)
@@ -802,9 +924,45 @@ public sealed record RoutineBlueprintCard(
     string Description,
     string KindLabel,
     string RecurrenceLabel,
-    string TimeLabel)
+    string TimeLabel,
+    string Category,
+    bool RequiresWebSearch)
 {
     public string AutomationId => $"Routines_Blueprint_{Key}";
+}
+
+/// <summary>Notification is hand-rolled: an ObservableObject in this namespace has to end in "ViewModel".</summary>
+public sealed class RoutineBlueprintGroup : INotifyPropertyChanged
+{
+    private bool _isExpanded;
+
+    public RoutineBlueprintGroup(string key, string title, string subtitle)
+    {
+        Key = key;
+        Title = title;
+        Subtitle = subtitle;
+    }
+
+    public string Key { get; }
+    public string Title { get; }
+    public string Subtitle { get; }
+
+    public ObservableCollection<RoutineBlueprintCard> Cards { get; } = [];
+
+    public string AutomationId => $"Routines_Category_{Key}";
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set
+        {
+            if (_isExpanded == value) return;
+            _isExpanded = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsExpanded)));
+        }
+    }
 }
 
 /// <summary>One settled firing, as the detail pane lists it.</summary>

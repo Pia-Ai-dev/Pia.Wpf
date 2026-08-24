@@ -7,6 +7,7 @@
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:nav="clr-namespace:Pia.Navigation"
              xmlns:models="clr-namespace:Pia.Models"
+             xmlns:routines="clr-namespace:Pia.Controls.Routines"
              xmlns:shared="clr-namespace:Pia.Controls.Shared"
              mc:Ignorable="d"
              d:DesignHeight="700" d:DesignWidth="1200"
@@ -123,7 +124,7 @@
                  VerticalAlignment="Center"
                  ToolTip="{loc:Str Routines_New}"
                  AutomationProperties.AutomationId="Routines_NewJob"
-                 Command="{Binding StartCreateCommand}">
+                 Command="{Binding BrowseBlueprintsCommand}">
         <StackPanel Orientation="Horizontal">
           <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,6,0"/>
           <TextBlock Text="{loc:Str Routines_New}"/>
@@ -216,7 +217,7 @@
         </ListBox>
       </Grid>
 
-      <!-- Right pane, three states: the editor, the selected job, or the placeholder. -->
+      <!-- Right pane, four states: the editor, the selected job, the blueprint catalog, or the placeholder. -->
       <Border Grid.Column="2"
               Style="{StaticResource PiaCardStyle}"
               Padding="16">
@@ -239,58 +240,162 @@
                          TextAlignment="Center"
                          Foreground="{DynamicResource TextMutedBrush}"/>
 
-              <StackPanel Margin="0,28,0,0"
-                          Visibility="{Binding HasBlueprints, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <TextBlock Text="{loc:Str Routines_Blueprints_Header}"
-                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-                <TextBlock Text="{loc:Str Routines_Blueprints_Hint}"
+              <ui:Button Appearance="Secondary"
+                         HorizontalAlignment="Center"
+                         Margin="0,24,0,0"
+                         AutomationProperties.AutomationId="Routines_BrowseCatalog"
+                         Visibility="{Binding HasBlueprints, Converter={StaticResource BooleanToVisibilityConverter}}"
+                         Command="{Binding BrowseBlueprintsCommand}">
+                <StackPanel Orientation="Horizontal">
+                  <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,6,0"/>
+                  <TextBlock Text="{loc:Str Routines_Catalog_Browse}"/>
+                </StackPanel>
+              </ui:Button>
+            </StackPanel>
+          </ScrollViewer>
+
+          <!-- Disabled, not Hidden: a scrollable width measures as infinite and the card WrapPanel never wraps. -->
+          <ScrollViewer VerticalScrollBarVisibility="Auto"
+                        HorizontalScrollBarVisibility="Disabled"
+                        Visibility="{Binding ShowsCatalog, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <StackPanel Margin="0,0,10,0">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0">
+                  <TextBlock Text="{loc:Str Routines_Blueprints_Header}"
+                             Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                  <TextBlock Text="{loc:Str Routines_Blueprints_Hint}"
+                             Style="{StaticResource PiaSettingsDescriptionStyle}"
+                             TextWrapping="Wrap"/>
+                </StackPanel>
+                <ui:Button Grid.Column="1"
+                           Appearance="Transparent"
+                           VerticalAlignment="Top"
+                           Content="{loc:Str Routines_Catalog_StartBlank}"
+                           Margin="8,0,0,0"
+                           AutomationProperties.AutomationId="Routines_StartBlank"
+                           Command="{Binding StartCreateCommand}"/>
+                <ui:Button Grid.Column="2"
+                           Appearance="Transparent"
+                           VerticalAlignment="Top"
+                           Content="{loc:Str Routines_Catalog_Close}"
+                           Margin="8,0,0,0"
+                           AutomationProperties.AutomationId="Routines_CatalogClose"
+                           Command="{Binding CloseCatalogCommand}"/>
+              </Grid>
+
+              <routines:PiaRoutinesSearchBar Query="{Binding SearchQuery, Mode=TwoWay}"
+                                             Margin="0,12,0,0"/>
+
+              <Grid Margin="0,12,0,0"
+                    Visibility="{Binding DefaultProviderCannotSearchWeb, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <ui:SymbolIcon Grid.Column="0"
+                               Symbol="Info24"
+                               FontSize="14"
+                               VerticalAlignment="Top"
+                               Margin="0,1,6,0"
+                               Foreground="{DynamicResource TextMutedBrush}"/>
+                <TextBlock Grid.Column="1"
+                           Text="{loc:Str Routines_Catalog_NoWebSearchHint}"
                            Style="{StaticResource PiaSettingsDescriptionStyle}"
-                           Margin="0,0,0,12"/>
-                <ItemsControl ItemsSource="{Binding Blueprints}"
-                              AutomationProperties.AutomationId="Routines_BlueprintList">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <Button Style="{StaticResource RoutineBlueprintCardStyle}"
+                           TextWrapping="Wrap"/>
+              </Grid>
+
+              <TextBlock Text="{loc:Str Routines_Search_NoMatches}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         Margin="0,16,0,0"
+                         Visibility="{Binding HasBlueprintMatches, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+
+              <ItemsControl ItemsSource="{Binding BlueprintGroups}"
+                            Margin="0,16,0,0"
+                            AutomationProperties.AutomationId="Routines_BlueprintList">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Expander IsExpanded="{Binding IsExpanded, Mode=TwoWay}"
+                              Margin="0,0,0,12"
                               AutomationProperties.AutomationId="{Binding AutomationId}"
-                              AutomationProperties.Name="{Binding Title}"
-                              Command="{Binding DataContext.StartFromBlueprintCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                              CommandParameter="{Binding Key}">
+                              AutomationProperties.Name="{Binding Title}">
+                      <Expander.Header>
                         <StackPanel>
-                          <StackPanel Orientation="Horizontal">
-                            <Border Style="{StaticResource PiaIconChipStyle}" Margin="0,0,8,0">
-                              <ui:SymbolIcon Symbol="Sparkle24"
-                                             FontSize="13"
-                                             HorizontalAlignment="Center"
-                                             VerticalAlignment="Center"
-                                             Foreground="{DynamicResource PiaAccentBrush}"/>
-                            </Border>
-                            <TextBlock Text="{Binding Title}"
-                                       FontSize="13"
-                                       FontWeight="SemiBold"
-                                       VerticalAlignment="Center"
-                                       TextWrapping="Wrap"
-                                       Foreground="{DynamicResource TextDefaultBrush}"/>
-                          </StackPanel>
-
-                          <TextBlock Text="{Binding Description}"
-                                     Margin="0,8,0,0"
-                                     FontSize="12"
-                                     TextWrapping="Wrap"
-                                     Foreground="{DynamicResource TextSubtleBrush}"/>
-
-                          <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                            <TextBlock Text="{Binding KindLabel}" Style="{StaticResource PiaMetaTextStyle}"/>
-                            <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"/>
-                            <TextBlock Text="{Binding RecurrenceLabel}" Style="{StaticResource PiaMetaTextStyle}"/>
-                            <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"/>
-                            <TextBlock Text="{Binding TimeLabel}" Style="{StaticResource PiaMetaTextStyle}"/>
-                          </StackPanel>
+                          <TextBlock Text="{Binding Title}"
+                                     Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                          <TextBlock Text="{Binding Subtitle}"
+                                     Style="{StaticResource PiaSettingsDescriptionStyle}"
+                                     TextWrapping="Wrap"/>
                         </StackPanel>
-                      </Button>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </StackPanel>
+                      </Expander.Header>
+
+                      <!-- WrapPanel, not UniformGrid: a uniform cell would take the tallest card's height. -->
+                      <ItemsControl ItemsSource="{Binding Cards}" Margin="0,10,0,0">
+                        <ItemsControl.ItemsPanel>
+                          <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal"/>
+                          </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate>
+                            <Button Style="{StaticResource RoutineBlueprintCardStyle}"
+                                    Width="320"
+                                    Margin="0,0,12,12"
+                                    AutomationProperties.AutomationId="{Binding AutomationId}"
+                                    AutomationProperties.Name="{Binding Title}"
+                                    Command="{Binding DataContext.StartFromBlueprintCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="{Binding Key}">
+                              <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                  <Border Style="{StaticResource PiaIconChipStyle}" Margin="0,0,8,0">
+                                    <ui:SymbolIcon Symbol="Sparkle24"
+                                                   FontSize="13"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource PiaAccentBrush}"/>
+                                  </Border>
+                                  <TextBlock Text="{Binding Title}"
+                                             FontSize="13"
+                                             FontWeight="SemiBold"
+                                             VerticalAlignment="Center"
+                                             TextWrapping="Wrap"
+                                             Foreground="{DynamicResource TextDefaultBrush}"/>
+                                </StackPanel>
+
+                                <TextBlock Text="{Binding Description}"
+                                           Margin="0,8,0,0"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextSubtleBrush}"/>
+
+                                <!-- No kind here: every blueprint is Research, so the chip would repeat on all twenty. -->
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                  <TextBlock Text="{Binding RecurrenceLabel}" Style="{StaticResource PiaMetaTextStyle}"/>
+                                  <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"/>
+                                  <TextBlock Text="{Binding TimeLabel}" Style="{StaticResource PiaMetaTextStyle}"/>
+                                </StackPanel>
+
+                                <Border Style="{StaticResource PiaLabelChipStyle}"
+                                        Background="{DynamicResource SurfaceMutedBrush}"
+                                        HorizontalAlignment="Left"
+                                        Margin="0,8,0,0"
+                                        Visibility="{Binding RequiresWebSearch, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                  <TextBlock Text="{loc:Str Routines_Catalog_NeedsWebSearch}"
+                                             Style="{StaticResource PiaMetaTextStyle}"/>
+                                </Border>
+                              </StackPanel>
+                            </Button>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </Expander>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
             </StackPanel>
           </ScrollViewer>
 

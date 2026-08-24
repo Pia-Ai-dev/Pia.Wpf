@@ -1157,6 +1157,17 @@
   <data name="Routines_Effort_XHigh" xml:space="preserve"><value>Extra high</value></data>
   <data name="Routines_Blueprints_Header" xml:space="preserve"><value>Start from a blueprint</value></data>
   <data name="Routines_Blueprints_Hint" xml:space="preserve"><value>Pick one to open the editor already filled in — you can change anything before saving.</value></data>
+  <data name="Routines_Category_Ready_Title" xml:space="preserve"><value>Works right away</value></data>
+  <data name="Routines_Category_Ready_Subtitle" xml:space="preserve"><value>Nothing of your own to set up — the cards marked "Needs web search" just need a provider that can search.</value></data>
+  <data name="Routines_Category_YourData_Title" xml:space="preserve"><value>Uses your Pia data</value></data>
+  <data name="Routines_Category_YourData_Subtitle" xml:space="preserve"><value>These read your todos, reminders, notes and meetings, so they get useful once you have been using Pia for a while.</value></data>
+  <data name="Routines_Search_Placeholder" xml:space="preserve"><value>Search blueprints</value></data>
+  <data name="Routines_Search_NoMatches" xml:space="preserve"><value>No blueprint matches that.</value></data>
+  <data name="Routines_Catalog_StartBlank" xml:space="preserve"><value>Start from blank instead</value></data>
+  <data name="Routines_Catalog_Close" xml:space="preserve"><value>Close</value></data>
+  <data name="Routines_Catalog_Browse" xml:space="preserve"><value>Browse blueprints</value></data>
+  <data name="Routines_Catalog_NeedsWebSearch" xml:space="preserve"><value>Needs web search</value></data>
+  <data name="Routines_Catalog_NoWebSearchHint" xml:space="preserve"><value>Your default assistant provider cannot search the web. Unless you pin one that can, the routines marked "Needs web search" will say so instead of reporting.</value></data>
   <data name="Routines_Blueprint_TopicDigest_Title" xml:space="preserve"><value>Daily topic digest</value></data>
   <data name="Routines_Blueprint_TopicDigest_Description" xml:space="preserve"><value>A short web round-up on one topic each morning, with sources.</value></data>
   <data name="Routines_Blueprint_MorningBrief_Title" xml:space="preserve"><value>Morning brief</value></data>
@@ -1173,10 +1184,58 @@
   <data name="Routines_Blueprint_BillsRenewals_Description" xml:space="preserve"><value>A short heads-up on what renews or falls due in the next two weeks.</value></data>
   <data name="Routines_Blueprint_MeetingFollowup_Title" xml:space="preserve"><value>Meeting follow-ups</value></data>
   <data name="Routines_Blueprint_MeetingFollowup_Description" xml:space="preserve"><value>Today's meetings turned into todos, with the transcript's gaps stated up front.</value></data>
+  <data name="Routines_Blueprint_NewsBriefing_Title" xml:space="preserve"><value>Morning headlines</value></data>
+  <data name="Routines_Blueprint_NewsBriefing_Description" xml:space="preserve"><value>The day's main news headlines each morning, one line each, with their sources.</value></data>
+  <data name="Routines_Blueprint_WordOfTheDay_Title" xml:space="preserve"><value>Word of the day</value></data>
+  <data name="Routines_Blueprint_WordOfTheDay_Description" xml:space="preserve"><value>One new word in the language you are learning, with examples you would actually say.</value></data>
+  <data name="Routines_Blueprint_SecurityAdvisories_Title" xml:space="preserve"><value>Security advisories</value></data>
+  <data name="Routines_Blueprint_SecurityAdvisories_Description" xml:space="preserve"><value>New security advisories and patches for the software you run, checked every day.</value></data>
+  <data name="Routines_Blueprint_MarketSnapshot_Title" xml:space="preserve"><value>Markets at lunch</value></data>
+  <data name="Routines_Blueprint_MarketSnapshot_Description" xml:space="preserve"><value>Where the markets you follow stand at midday, and what moved them, with sources.</value></data>
+  <data name="Routines_Blueprint_StockWatchlist_Title" xml:space="preserve"><value>Your watchlist</value></data>
+  <data name="Routines_Blueprint_StockWatchlist_Description" xml:space="preserve"><value>An evening look at the stocks you follow: the day's market moves and what drove them.</value></data>
+  <data name="Routines_Blueprint_SportsRoundup_Title" xml:space="preserve"><value>Your teams this week</value></data>
+  <data name="Routines_Blueprint_SportsRoundup_Description" xml:space="preserve"><value>Every Monday, last week's results and the coming week's fixtures for the teams you follow, with sources.</value></data>
+  <data name="Routines_Blueprint_ClientWatch_Title" xml:space="preserve"><value>Clients and partners</value></data>
+  <data name="Routines_Blueprint_ClientWatch_Description" xml:space="preserve"><value>Weekly news on your clients and partners, and what to raise next time you talk.</value></data>
+  <data name="Routines_Blueprint_IndustryPulse_Title" xml:space="preserve"><value>This week in your industry</value></data>
+  <data name="Routines_Blueprint_IndustryPulse_Description" xml:space="preserve"><value>The week's moves in your industry: what happened and what to watch next.</value></data>
+  <data name="Routines_Blueprint_RegulationWatch_Title" xml:space="preserve"><value>Rules and compliance watch</value></data>
+  <data name="Routines_Blueprint_RegulationWatch_Description" xml:space="preserve"><value>New rules and compliance deadlines in your field, each named with its date.</value></data>
+  <data name="Routines_Blueprint_ReleaseWatch_Title" xml:space="preserve"><value>New releases</value></data>
+  <data name="Routines_Blueprint_ReleaseWatch_Description" xml:space="preserve"><value>New versions of the tools and frameworks you build on, and what changed.</value></data>
+  <data name="Routines_Blueprint_MealIdeas_Title" xml:space="preserve"><value>This week's meals</value></data>
+  <data name="Routines_Blueprint_MealIdeas_Description" xml:space="preserve"><value>Five dinner ideas for the week ahead, with one shopping list for all of them.</value></data>
+  <data name="Routines_Blueprint_LearnOneThing_Title" xml:space="preserve"><value>One thing explained</value></data>
+  <data name="Routines_Blueprint_LearnOneThing_Description" xml:space="preserve"><value>One idea from a subject you choose, explained clearly on a Sunday morning.</value></data>
   <data name="Routines_Blueprint_TopicDigest_Slot_Topic_Label" xml:space="preserve"><value>Topic</value></data>
   <data name="Routines_Blueprint_TopicDigest_Slot_Topic_Help" xml:space="preserve"><value>The subject to search for each morning, for example "artificial intelligence" or "EU energy policy".</value></data>
   <data name="Routines_Blueprint_CompetitorWatch_Slot_Companies_Label" xml:space="preserve"><value>Companies</value></data>
   <data name="Routines_Blueprint_CompetitorWatch_Slot_Companies_Help" xml:space="preserve"><value>The companies to watch, separated by commas. Leave it blank to watch whichever companies the vault already tracks.</value></data>
+  <data name="Routines_Blueprint_NewsBriefing_Slot_Focus_Label" xml:space="preserve"><value>Focus</value></data>
+  <data name="Routines_Blueprint_NewsBriefing_Slot_Focus_Help" xml:space="preserve"><value>The kind of news to cover, for example "world news and business" or "technology and science".</value></data>
+  <data name="Routines_Blueprint_WordOfTheDay_Slot_Language_Label" xml:space="preserve"><value>Language</value></data>
+  <data name="Routines_Blueprint_WordOfTheDay_Slot_Language_Help" xml:space="preserve"><value>The language you are learning, for example "Spanish", "Japanese" or "Brazilian Portuguese".</value></data>
+  <data name="Routines_Blueprint_SecurityAdvisories_Slot_Products_Label" xml:space="preserve"><value>Products</value></data>
+  <data name="Routines_Blueprint_SecurityAdvisories_Slot_Products_Help" xml:space="preserve"><value>The software and devices to watch, separated by commas — operating systems, browsers, servers.</value></data>
+  <data name="Routines_Blueprint_MarketSnapshot_Slot_Markets_Label" xml:space="preserve"><value>Markets</value></data>
+  <data name="Routines_Blueprint_MarketSnapshot_Slot_Markets_Help" xml:space="preserve"><value>The indices, currency pairs and commodities to quote, separated by commas — S&amp;P 500, EUR/USD, gold.</value></data>
+  <data name="Routines_Blueprint_StockWatchlist_Slot_Holdings_Label" xml:space="preserve"><value>Holdings</value></data>
+  <data name="Routines_Blueprint_StockWatchlist_Slot_Holdings_Help" xml:space="preserve"><value>The companies or tickers to follow, separated by commas. Nothing here is investment advice.</value></data>
+  <data name="Routines_Blueprint_SportsRoundup_Slot_Teams_Label" xml:space="preserve"><value>Teams</value></data>
+  <data name="Routines_Blueprint_SportsRoundup_Slot_Teams_Help" xml:space="preserve"><value>The clubs or national teams to follow, separated by commas. Replace the example list with your own.</value></data>
+  <data name="Routines_Blueprint_ClientWatch_Slot_Accounts_Label" xml:space="preserve"><value>Accounts</value></data>
+  <data name="Routines_Blueprint_ClientWatch_Slot_Accounts_Help" xml:space="preserve"><value>The clients and partners to watch, separated by commas. Replace the example list with your own.</value></data>
+  <data name="Routines_Blueprint_IndustryPulse_Slot_Industry_Label" xml:space="preserve"><value>Industry</value></data>
+  <data name="Routines_Blueprint_IndustryPulse_Slot_Industry_Help" xml:space="preserve"><value>The sector to follow, for example "information technology", "logistics" or "medical devices".</value></data>
+  <data name="Routines_Blueprint_RegulationWatch_Slot_Scope_Label" xml:space="preserve"><value>Scope</value></data>
+  <data name="Routines_Blueprint_RegulationWatch_Slot_Scope_Help" xml:space="preserve"><value>The subject areas and the jurisdiction to cover, for example "data protection in the EU".</value></data>
+  <data name="Routines_Blueprint_ReleaseWatch_Slot_Projects_Label" xml:space="preserve"><value>Projects</value></data>
+  <data name="Routines_Blueprint_ReleaseWatch_Slot_Projects_Help" xml:space="preserve"><value>The tools, frameworks and libraries to watch for new versions, separated by commas.</value></data>
+  <data name="Routines_Blueprint_MealIdeas_Slot_Preferences_Label" xml:space="preserve"><value>Preferences</value></data>
+  <data name="Routines_Blueprint_MealIdeas_Slot_Preferences_Help" xml:space="preserve"><value>How you eat and how much time you have — diet, allergies, how many people, how long.</value></data>
+  <data name="Routines_Blueprint_LearnOneThing_Slot_Subject_Label" xml:space="preserve"><value>Subject</value></data>
+  <data name="Routines_Blueprint_LearnOneThing_Slot_Subject_Help" xml:space="preserve"><value>The field to draw an idea from each week, for example "economics" or "astronomy".</value></data>
   <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Default provider</value></data>
   <data name="Settings_ScheduledJobs_UnknownStatusInert" xml:space="preserve"><value>This job has a status this version does not recognise, so it is shown read-only. Update Pia to manage it.</value></data>
   <data name="Settings_ScheduledJobs_Running" xml:space="preserve"><value>Running the job…</value></data>

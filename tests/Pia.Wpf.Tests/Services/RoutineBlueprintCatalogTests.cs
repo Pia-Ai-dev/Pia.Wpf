@@ -17,20 +17,44 @@ public class RoutineBlueprintCatalogTests
     // Pinned literally: a key is a compatibility surface, so a rename has to fail here.
     private static readonly string[] ShippedKeys =
     [
+        "news-briefing",
+        "word-of-the-day",
         "topic-digest",
+        "security-advisories",
+        "market-snapshot",
+        "stock-watchlist",
+        "sports-roundup",
+        "client-watch",
+        "competitor-watch",
+        "industry-pulse",
+        "regulation-watch",
+        "release-watch",
+        "meal-ideas",
+        "learn-one-thing",
         "morning-brief",
+        "meeting-followup",
         "evening-winddown",
         "habit-checkin",
-        "weekly-review",
-        "competitor-watch",
         "bills-renewals",
-        "meeting-followup",
+        "weekly-review",
     ];
 
     [Fact]
     public void EveryShippedKeyIsPinnedAndFindable()
     {
+        Assert.Equal("news-briefing", RoutineBlueprintCatalog.NewsBriefing);
+        Assert.Equal("word-of-the-day", RoutineBlueprintCatalog.WordOfTheDay);
         Assert.Equal("topic-digest", RoutineBlueprintCatalog.TopicDigest);
+        Assert.Equal("security-advisories", RoutineBlueprintCatalog.SecurityAdvisories);
+        Assert.Equal("market-snapshot", RoutineBlueprintCatalog.MarketSnapshot);
+        Assert.Equal("stock-watchlist", RoutineBlueprintCatalog.StockWatchlist);
+        Assert.Equal("sports-roundup", RoutineBlueprintCatalog.SportsRoundup);
+        Assert.Equal("client-watch", RoutineBlueprintCatalog.ClientWatch);
+        Assert.Equal("industry-pulse", RoutineBlueprintCatalog.IndustryPulse);
+        Assert.Equal("regulation-watch", RoutineBlueprintCatalog.RegulationWatch);
+        Assert.Equal("release-watch", RoutineBlueprintCatalog.ReleaseWatch);
+        Assert.Equal("meal-ideas", RoutineBlueprintCatalog.MealIdeas);
+        Assert.Equal("learn-one-thing", RoutineBlueprintCatalog.LearnOneThing);
         Assert.Equal("morning-brief", RoutineBlueprintCatalog.MorningBrief);
         Assert.Equal("evening-winddown", RoutineBlueprintCatalog.EveningWinddown);
         Assert.Equal("habit-checkin", RoutineBlueprintCatalog.HabitCheckin);
@@ -46,7 +70,7 @@ public class RoutineBlueprintCatalogTests
     [Fact]
     public void TheCatalogHoldsEveryShippedBlueprintAndNothingElse()
     {
-        Assert.Equal(8, RoutineBlueprintCatalog.All.Count);
+        Assert.Equal(20, RoutineBlueprintCatalog.All.Count);
 
         var keys = RoutineBlueprintCatalog.All.Select(b => b.Key).ToList();
         Assert.True(
@@ -84,6 +108,56 @@ public class RoutineBlueprintCatalogTests
             // A key, not a sentence — literal prose renders as "[Some literal prose]".
             Assert.DoesNotContain(" ", bp.TitleKey);
             Assert.DoesNotContain(" ", bp.DescriptionKey);
+        }
+    }
+
+    [Fact]
+    public void EveryCategoryIsOneTheCatalogRendersAGroupFor()
+    {
+        foreach (var bp in RoutineBlueprintCatalog.All)
+            Assert.True(RoutineBlueprintCategories.InDisplayOrder.Contains(bp.Category, StringComparer.Ordinal),
+                $"{bp.Key} sits in category '{bp.Category}', which is not in the display order, so its card "
+                + "would never be rendered");
+    }
+
+    [Fact]
+    public void TheWebSearchFlagAndTheGuardClauseAgree()
+    {
+        foreach (var bp in RoutineBlueprintCatalog.All)
+            Assert.Equal(
+                bp.RequiresWebSearch,
+                bp.QueryTemplate.Contains(RoutineBlueprintCatalog.WebSearchGuard, StringComparison.Ordinal));
+    }
+
+    /// <summary>A template that restates its own slot default keeps two copies of it, and only one of them
+    /// moves when the default is edited.</summary>
+    [Fact]
+    public void ATemplateThatQuotesItsOwnDefault_QuotesItVerbatim()
+    {
+        foreach (var bp in RoutineBlueprintCatalog.All)
+        {
+            if (!bp.QueryTemplate.Contains("still names", StringComparison.Ordinal)) continue;
+
+            Assert.True(
+                bp.Slots.Any(s => s.Default is { } d && bp.QueryTemplate.Contains(d, StringComparison.Ordinal)),
+                $"{bp.Key} branches on its list still naming the shipped example, so its template has to quote "
+                + "that default verbatim — otherwise editing the default leaves the sentence naming the old "
+                + "one and the placeholder warning never fires again");
+        }
+    }
+
+    /// <summary>The pair above only proves flag and text agree; this is the direction the bug travels.</summary>
+    [Fact]
+    public void ATemplateThatSearchesTheWeb_AdvertisesThatItNeedsWebSearch()
+    {
+        foreach (var bp in RoutineBlueprintCatalog.All)
+        {
+            if (!bp.QueryTemplate.Contains("search the web", StringComparison.OrdinalIgnoreCase)) continue;
+
+            Assert.True(bp.RequiresWebSearch,
+                $"{bp.Key} tells the model to search the web but sets RequiresWebSearch false, so its card "
+                + "carries no chip and its template carries no guard — on a provider that cannot search it "
+                + "would answer from memory");
         }
     }
 
@@ -282,6 +356,30 @@ public class RoutineBlueprintCatalogTests
 
         Assert.True(missing.Count == 0,
             $"every routine-blueprint key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
+    }
+
+    /// <summary>Built by interpolation from the category, so no literal-key scan can see them.</summary>
+    [Fact]
+    public void EveryCategoryHeaderKeyResolvesInAllThreeLocales()
+    {
+        var keys = RoutineBlueprintCategories.InDisplayOrder
+            .SelectMany(c => new[]
+            {
+                $"Routines_Category_{RoutineBlueprintCategories.StemOf(c)}_Title",
+                $"Routines_Category_{RoutineBlueprintCategories.StemOf(c)}_Subtitle",
+            })
+            .ToList();
+
+        var missing = new List<string>();
+        foreach (var culture in new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") })
+        {
+            var available = GetResourceKeysForCulture(ViewStrings.ResourceManager, culture);
+            foreach (var key in keys.Where(k => !available.Contains(k)))
+                missing.Add($"{culture.Name}: {key}");
+        }
+
+        Assert.True(missing.Count == 0,
+            $"every group header must resolve in all three locales, but these are missing: {string.Join(", ", missing)}");
     }
 
     /// <summary>No substitute here is ever called: the effort rows are built in the constructor, and the prefill
