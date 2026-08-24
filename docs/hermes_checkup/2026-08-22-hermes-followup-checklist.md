@@ -674,10 +674,21 @@ Owner-selected, in the order the dependencies allow. `B11` leads because it is w
 matter at all, and because until it lands an over-window chat fails provider-side.
 
 ```
-B11 → E10 · P9 · E11        # the window default, then three XS rows with no open questions
+B11 → E10 · P9 · E11        # DONE 2026-08-24 (B11+B12, then all three XS rows)
 B7 → B8                     # message-level search, then the recovery pointer
 C6                          # needs plan §11 Q4 answered first, and a desktop pass
 ```
+
+**What the B-track now needs is provider spend, not a decision.** `B6`, `B7 → B8` and `B9` are the three arms
+`B4`'s 0.0%-against-98.3% reading left to play for, and `B10` is the sweep that reads them. The instrument
+exists (`Integration/Compaction/CompactionRecallHarness.cs`); read
+[2026-08-23-compaction-arm-ab-reading.md](2026-08-23-compaction-arm-ab-reading.md) — especially its
+operational notes — **before spending a single provider call**: concurrency 3 earns a 429, and one provider
+fault used to discard three transcripts. B6, B7 and B9 are independent of each other; B8 needs B7; B10 needs
+all three. Everything else still open is behind a gate: `C6` behind plan §11 Q4, `A2 → A3 → A6 → A7` behind
+the supply re-read (§8 of [2026-08-23-a2-wide-read.md](2026-08-23-a2-wide-read.md) fixed the band in advance —
+build above 40%, drop below 12%; the last read was 22% on 13 runs), and `D3`–`D8` behind `D-Q1`. `D2` and `D7`
+are the two D rows that are **not** gated.
 
 **`BlueprintKey` stays data-only** (owner, 2026-08-24): no UI reads it, the question it answers needs months
 of real use, and it is answerable by SQL against `history.db` in the meantime.
@@ -802,6 +813,31 @@ Not from the review. Found on 2026-08-23 while seeding a throwaway profile for t
 
   Gate **4667 / failed: 0 / 4613 succeeded / 54 skipped**; both configurations rebuild to 0 Warning(s).
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
+
+---
+
+## Open points with no row yet
+
+Not defects and not planned work — three things a later session should **decide** rather than inherit. Each
+is a consequence of shipped code, recorded here so the decision is not made silently by nobody making it.
+Carried out of the 2026-08-24 handoff prompt when that prompt was consumed.
+
+- **The model-window catalogue is a dated snapshot that nothing refreshes on its own.**
+  `OpenRouterContextWindows.SnapshotDate` is `2026-08-24`, and the table is *generated* from
+  [`../openrouter_models/2026-08-24-openrouter-context-lengths.md`](../openrouter_models/2026-08-24-openrouter-context-lengths.md)
+  — regenerate rather than hand-edit; that doc carries the `curl` that produced it. Live re-reads happen
+  **only when an OpenRouter provider is saved**, so every other provider type, and any OpenRouter provider
+  nobody re-opens, runs on the snapshot indefinitely. Decide between a refresh path, a periodically
+  regenerated snapshot, and nothing.
+- **Ollama models resolve to nothing and take the 128k floor.** The catalogue is keyed by OpenRouter
+  basenames; Ollama uses short tags (`llama3`, `phi4`). Today this is a **no-op, not a regression** — a 4k
+  local model never reaches 128k, so compaction never fires and Ollama keeps sliding its own window exactly
+  as before. It becomes worth fixing only if local models gain a window source (Ollama's `/api/show` reports
+  one, which is the obvious candidate).
+- **`RoutineSlotKind` ships with one member and no reader.** Deliberate — the C5/C7 brief decided to ship
+  `Text` only, and §2.3 of [2026-08-24-c5-c7-batch-report.md](2026-08-24-c5-c7-batch-report.md) records it as
+  inert. The open call is whether to delete it until a second kind exists or keep it as the seam `Time`/`Enum`
+  land on. `RoutineSlot` is not persisted, so either direction is code-only.
 
 ---
 
