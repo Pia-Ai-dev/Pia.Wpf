@@ -170,6 +170,49 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     [ObservableProperty]
     private string _editQuery = string.Empty;
 
+    /// <summary>Slot fields for the card the editor came from; empty for a blank start and for an edit.</summary>
+    public ObservableCollection<RoutineSlotRow> EditSlots { get; } = [];
+
+    public bool HasEditSlots => EditSlots.Count > 0;
+
+    // A keystroke in the goal box and the renderer's own write are the same PropertyChanged event, so the
+    // renderer announces itself rather than the handler guessing.
+    private bool _renderingGoal;
+    private bool _goalHandEdited;
+
+    partial void OnEditQueryChanged(string value)
+    {
+        if (!_renderingGoal) _goalHandEdited = true;
+    }
+
+    private void RenderGoalFromSlots()
+    {
+        if (_goalHandEdited) return;
+        if (RoutineBlueprintCatalog.Find(_editBlueprintKey) is not { } blueprint) return;
+
+        var values = EditSlots.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
+        if (RoutineBlueprintFill.ToCreateArgs(blueprint, values).Query is not { } rendered) return;
+
+        _renderingGoal = true;
+        EditQuery = rendered;
+        _renderingGoal = false;
+    }
+
+    private void ResetEditSlots(RoutineBlueprint? blueprint)
+    {
+        EditSlots.Clear();
+        if (blueprint is not null)
+            foreach (var slot in blueprint.Slots)
+                EditSlots.Add(new RoutineSlotRow(
+                    slot.Name,
+                    _localization[slot.LabelKey],
+                    _localization[slot.HelpKey],
+                    slot.Default,
+                    RenderGoalFromSlots));
+
+        OnPropertyChanged(nameof(HasEditSlots));
+    }
+
     [ObservableProperty]
     private ScheduledJobKind _editKind = ScheduledJobKind.AgentTask;
 
@@ -496,6 +539,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditGrantedTools = string.Empty;
         EditQuietOnSuccess = false;
         ApplyPinChoices(null, null, null);
+        ResetEditSlots(null);
+        _goalHandEdited = false;
         StatusMessage = null;
         IsEditorOpen = true;
     }
@@ -593,6 +638,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditGrantedTools = string.Join(", ", blueprint.GrantedTools);
         EditQuietOnSuccess = blueprint.QuietOnSuccess;
         ApplyPinChoices(null, null, blueprint.DefaultEffort);
+        ResetEditSlots(blueprint);
+        _goalHandEdited = false;
         StatusMessage = null;
         IsEditorOpen = true;
 
@@ -622,6 +669,10 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditGrantedTools = row.GrantedTools;
         EditQuietOnSuccess = row.QuietOnSuccess;
         ApplyPinChoices(row.ProviderId, row.PersonaId, row.ReasoningEffort);
+        // No slot block on an edit: the stored query is the user's own text, and re-rendering it from slot
+        // defaults would overwrite exactly what the fields exist to protect.
+        ResetEditSlots(null);
+        _goalHandEdited = false;
         StatusMessage = null;
         IsEditorOpen = true;
     }
@@ -915,6 +966,42 @@ public sealed record RoutineDayOfWeekChoice(DayOfWeek Value, string Label)
 public sealed record RoutineMonthChoice(int Value, string Label)
 {
     public override string ToString() => Label;
+}
+
+/// <summary>One fillable slot of the card the editor came from, with its text already localized. Notification is
+/// hand-rolled: an ObservableObject in this namespace has to end in "ViewModel".</summary>
+public sealed class RoutineSlotRow : INotifyPropertyChanged
+{
+    private readonly Action _valueChanged;
+    private string _value;
+
+    public RoutineSlotRow(string name, string label, string help, string? initial, Action valueChanged)
+    {
+        Name = name;
+        Label = label;
+        Help = help;
+        _valueChanged = valueChanged;
+        _value = initial ?? string.Empty;
+    }
+
+    public string Name { get; }
+    public string Label { get; }
+    public string Help { get; }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    /// <summary>USER CONTENT once edited. Blank falls back to the slot's default in the fill engine.</summary>
+    public string Value
+    {
+        get => _value;
+        set
+        {
+            if (_value == value) return;
+            _value = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Value)));
+            _valueChanged();
+        }
+    }
 }
 
 /// <summary>One blueprint as its card renders it. Public because WPF's binding cannot read an internal type.</summary>

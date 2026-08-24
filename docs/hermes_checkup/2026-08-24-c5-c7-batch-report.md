@@ -38,10 +38,12 @@ the precedent. **Local-only**: absent from `SyncScheduledJob`, from `SyncMapper`
 the provenance on the first push-pull cycle. Every pre-existing job carries NULL, and so does every job
 created from a blank start.
 
-**(3) Plan §11 Q4 — not answered, because C6 is out of scope.** §5's recommendation stands unexamined for
-whoever takes C6: an inline slot block in the existing editor above `Routines_Field_Goal`, visible only for
-blueprints with slots, with the one rule that stops slot keystrokes clobbering a hand-edited goal (render on
-card click and on slot change; stop re-rendering once the user has edited the goal by hand).
+**(3) Plan §11 Q4 — answered 2026-08-24 when C6 landed, adopting §5's recommendation unchanged.** An inline
+slot block in the existing editor above `Routines_Field_Goal`, visible only for blueprints with slots, with
+the one rule that stops slot keystrokes clobbering a hand-edited goal (render on card click and on slot
+change; stop re-rendering once the user has edited the goal by hand). Neither the clarification pipeline nor
+a dialog is involved. C6 went ahead of its deferral because the twenty-blueprint expansion took the slot
+count from two of eight cards to fourteen of twenty.
 
 ---
 

@@ -1292,4 +1292,122 @@ public class RoutinesViewModelTests
         foreach (DictionaryEntry entry in set) keys.Add((string)entry.Key);
         return keys;
     }
+
+    [Fact]
+    public void ACardWithSlots_PrefillsOneFieldPerSlotFromItsDefault()
+    {
+        var sut = CreateSut();
+        var blueprint = RoutineBlueprintCatalog.Find(RoutineBlueprintCatalog.TopicDigest)!;
+
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+
+        Assert.True(sut.Vm.HasEditSlots);
+        var row = Assert.Single(sut.Vm.EditSlots);
+        Assert.Equal("topic", row.Name);
+        Assert.Equal(blueprint.Slots[0].Default, row.Value);
+        Assert.Contains(blueprint.Slots[0].Default!, sut.Vm.EditQuery);
+    }
+
+    [Fact]
+    public void ACardWithoutSlots_ShowsNoSlotBlock()
+    {
+        var sut = CreateSut();
+
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.MorningBrief);
+
+        Assert.False(sut.Vm.HasEditSlots);
+        Assert.Empty(sut.Vm.EditSlots);
+    }
+
+    [Fact]
+    public void TypingASlotValue_ReRendersTheGoal()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+
+        sut.Vm.EditSlots[0].Value = "quantum computing";
+
+        Assert.Contains("quantum computing", sut.Vm.EditQuery);
+        Assert.DoesNotContain("artificial intelligence", sut.Vm.EditQuery);
+    }
+
+    /// <summary>The whole point of the latch: a slot keystroke must not overwrite prose the user wrote.</summary>
+    [Fact]
+    public void AHandEditedGoal_SurvivesALaterSlotKeystroke()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+
+        sut.Vm.EditQuery = "my own wording";
+        sut.Vm.EditSlots[0].Value = "quantum computing";
+
+        Assert.Equal("my own wording", sut.Vm.EditQuery);
+    }
+
+    [Fact]
+    public void SwitchingToAnotherCard_ClearsTheHandEditLatchAndRendersAgain()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+        sut.Vm.EditQuery = "my own wording";
+
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.CompetitorWatch);
+
+        Assert.NotEqual("my own wording", sut.Vm.EditQuery);
+        sut.Vm.EditSlots[0].Value = "Contoso";
+        Assert.Contains("Contoso", sut.Vm.EditQuery);
+    }
+
+    /// <summary>Blank counts as unsupplied in the fill engine, so an emptied field is the default again rather
+    /// than a hole in the prompt.</summary>
+    [Fact]
+    public void ClearingASlotField_FallsBackToThatSlotsDefault()
+    {
+        var sut = CreateSut();
+        var fallback = RoutineBlueprintCatalog.Find(RoutineBlueprintCatalog.TopicDigest)!.Slots[0].Default!;
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+        sut.Vm.EditSlots[0].Value = "quantum computing";
+
+        sut.Vm.EditSlots[0].Value = string.Empty;
+
+        Assert.Contains(fallback, sut.Vm.EditQuery);
+        Assert.DoesNotContain("{", sut.Vm.EditQuery);
+    }
+
+    [Fact]
+    public async Task AnEditOfAnExistingJob_ShowsNoSlotBlock()
+    {
+        var sut = CreateSut(NewJob());
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+
+        sut.Vm.StartEditCommand.Execute(null);
+
+        Assert.False(sut.Vm.HasEditSlots);
+        Assert.Equal("summarise today", sut.Vm.EditQuery);
+    }
+
+    [Fact]
+    public async Task ASlotEdit_IsWhatGetsSaved()
+    {
+        var sut = CreateSut();
+        sut.Jobs.CreateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(),
+                Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(),
+                Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<ScheduledJobKind>(), Arg.Any<bool>(),
+                Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>(), Arg.Any<string?>())
+            .Returns(NewJob());
+        await sut.Vm.RefreshAsync();
+
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+        sut.Vm.EditSlots[0].Value = "quantum computing";
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        await sut.Jobs.Received(1).CreateAsync(Arg.Any<string>(),
+            Arg.Is<string>(q => q.Contains("quantum computing")),
+            Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(),
+            Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(),
+            Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<ScheduledJobKind>(), Arg.Any<bool>(),
+            personaId: Arg.Any<Guid?>(), reasoningEffort: Arg.Any<ReasoningEffort?>(),
+            blueprintKey: RoutineBlueprintCatalog.TopicDigest);
+    }
 }

@@ -303,7 +303,7 @@ that adds a blueprint: **every new blueprint declares the narrowest grant set th
 | 3 | 0 | Card list in `RoutinesView`; click → existing editor, prefilled, focused. AutomationIds per `docs/ui_automation/ui-automation-playbook.md` |
 | 4 | 0 | Remaining seven blueprints + their strings |
 | 5 | 1 | `RoutineSlot` + `RoutineBlueprintFill.ToCreateArgs` with three of the four §6 rules — **done 2026-08-24** |
-| 6 | 1 | A slot-prompt step before the editor opens, for blueprints with text slots — **deferred** |
+| 6 | 1 | A slot-prompt step for blueprints with text slots — **done 2026-08-24**, as an inline block *inside* the editor rather than a step before it (§11 Q4) |
 | 7 | 2 | Catalog + slot schema exposed via `ScheduledJobToolHandler` — **done 2026-08-24** |
 
 Steps 1–3 are the vertical slice: one blueprint, end to end, localized and automatable. Everything
@@ -321,5 +321,11 @@ after is repetition or extension.
    `Routines_NewJob` opens the catalog, the blank editor moved to a "Start from blank instead" link,
    and an empty routine list opens the catalog by itself.
 4. **Should Tier 1 slot-prompting reuse the existing clarification UI** (`RunClarifications`,
-   `UserInputRequestStore`) rather than a bespoke dialog? Probably yes at Tier 2; possibly overkill
-   at Tier 1.
+   `UserInputRequestStore`) rather than a bespoke dialog? **Answered 2026-08-24: neither.** The slots
+   render as an inline block in the editor itself, above `Routines_Field_Goal` and visible only for a
+   card that has slots — the editor is already an inline panel, so this adds no surface, no
+   clarification round-trip and no dialog. One rule makes it safe: the goal re-renders on card click
+   and on every slot change, and stops re-rendering the moment the user edits the goal by hand.
+   Switching cards re-arms it. The block is deliberately absent when editing an existing routine,
+   because the stored query is the user's own text and rendering over it is the one thing the fields
+   exist to prevent.

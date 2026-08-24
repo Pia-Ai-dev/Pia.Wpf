@@ -550,6 +550,24 @@
                           AutomationProperties.AutomationId="Routines_Field_Name"
                           Margin="0,2,0,8"/>
 
+              <ItemsControl ItemsSource="{Binding EditSlots}"
+                            Visibility="{Binding HasEditSlots, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <StackPanel Margin="0,0,0,8">
+                      <TextBlock Text="{Binding Label}"
+                                 Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                      <ui:TextBox Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
+                                  AutomationProperties.AutomationId="{Binding Name, StringFormat='Routines_Slot_{0}'}"
+                                  Margin="0,2,0,0"/>
+                      <TextBlock Text="{Binding Help}"
+                                 Style="{StaticResource PiaSettingsDescriptionStyle}"
+                                 Margin="0,4,0,0"/>
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
               <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Goal}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
               <ui:TextBox Text="{Binding EditQuery, UpdateSourceTrigger=PropertyChanged}"

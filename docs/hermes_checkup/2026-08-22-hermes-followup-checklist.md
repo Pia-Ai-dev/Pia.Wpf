@@ -555,14 +555,37 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
     from five to two.
   *Deps:* C1 · *Effort:* **S** (was M) · *Value:* **Med**
 
-- [ ] **C6 · Slot-prompt step before the editor opens**, for blueprints with text slots.
-  **Deliberately deferred 2026-08-24** by the C5/C7 batch, adopting its brief's §5 recommendation: C7 is
-  dependency-legal without it and gives C5 a consumer, while C6 is an `M` of `Med` value that replaces
-  "edit the prose in the goal box" with a labelled field for two of eight cards. It is also the only part of
-  that batch that would have needed a desktop pass. Plan §11 Q4 is therefore **still open** — its
-  recommendation (an inline slot block above `Routines_Field_Goal`, visible only for blueprints with slots,
-  which stops re-rendering the goal once the user has hand-edited it) is unexamined.
-  *Deps:* C3, C5 · *Effort:* **M** · *Value:* **Med**
+- [x] **C6 · Labelled slot fields for blueprints with text slots**, inline in the editor.
+  **Done 2026-08-24**, ahead of its 2026-08-24 deferral. **The slot count is what moved it.** The deferral
+  priced C6 as an `M` of `Med` that replaces "edit the prose in the goal box" with a labelled field *for two
+  of eight cards*; the twenty-blueprint expansion in the row below makes it **fourteen slots across twenty
+  blueprints**, and those defaults are personal facts — a watchlist, a language, a city's worth of clients.
+  Clicking *Your watchlist* and saving scheduled someone else's holdings every evening unless the user found
+  and hand-edited a phrase buried mid-paragraph.
+  - **Plan §11 Q4 answered: neither the clarification pipeline nor a dialog.** An `ItemsControl` between
+    `Routines_Field_Name` and the goal label, one labelled field plus help text per slot, prefilled with the
+    slot's `Default` so the value is visible rather than hidden behind a watermark. The editor is already an
+    inline panel, so this adds no new surface and no new `UserControl` — and therefore no
+    `expectedNestedViews` change.
+  - **The one rule.** The goal re-renders on card click and on every slot change, and stops the moment the
+    user edits the goal by hand. A keystroke and the renderer's own write are the same `PropertyChanged`
+    event, so the renderer announces itself with a `_renderingGoal` flag and `OnEditQueryChanged` only sets
+    the hand-edit latch when that flag is clear. Both reset wherever `_editBlueprintKey` resets, so switching
+    cards re-arms the render.
+  - **Scope call: the block is hidden on `StartEdit`.** A stored query is the user's own text, and rendering
+    over it from slot defaults is exactly what C6 exists to prevent.
+  - **`competitor-watch` keeps `(none given)`.** With a labelled field the sentinel is now self-explanatory
+    rather than buried, and the template's next sentence branches on that exact phrase into a vault lookup —
+    an empty default would both break the branch and leave "Watch these companies: .".
+  - Nothing new was needed for localization: all 28 slot `LabelKey`/`HelpKey` strings already shipped with C5
+    in all three locales and were read by nothing. `EveryBlueprintKeyResolvesInAllThreeLocales` already
+    covered them, so no test needed extending.
+  - Reuses `RoutineBlueprintFill.ToCreateArgs(blueprint, values)` unchanged — blank still counts as
+    unsupplied, so clearing a field falls back to that slot's default on its own.
+  - Eight ViewModel tests, plus a desktop pass that confirmed the four things no ViewModel test can see: the
+    block appears for a slotted card and is absent for `morning-brief`, a slot keystroke visibly moves the
+    goal box, a hand-edited goal survives a later slot keystroke, and save/reopen round-trips the text.
+  *Deps:* C3, C5 · *Effort:* **S** (was M) · *Value:* **High** (was Med — 14 of 20 cards, not 2 of 8)
 
 - [x] **C7 · Expose the catalog + slot schema via `ScheduledJobToolHandler`** so the assistant creates
   routines from a blueprint and asks for blank slots.
@@ -582,6 +605,30 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
     routine that writes unattended, which is what the caution says — and to the `@`-command `Research` row,
     since `AssistantPromptComposer` loads *only* the tools a tagged domain lists.
   *Deps:* C5 · *Effort:* **M** · *Value:* **Med**
+
+- [x] **C8 · Twenty blueprints, grouped and searchable, with the catalog as the primary action.**
+  **Done 2026-08-24**, owner-requested. Seven of the shipped eight read the user's own todos, reminders,
+  kanban and vault, so a fresh profile met a menu of things that only pay off after weeks of use — and the
+  menu was unreachable anyway once a routine existed, because it lived in the placeholder pane a selection
+  replaces.
+  - Twelve new world-fed blueprints, each with a default that produces a real answer on its first run. Nine
+    need web search; `word-of-the-day`, `meal-ideas` and `learn-one-thing` deliberately do not, so a
+    local-model provider still has working cards. `Category` stops being dead cadence scaffolding and
+    becomes the two rendered groups: fourteen "works right away", six "uses your Pia data".
+  - `Routines_NewJob` opens the catalog instead of a blank editor, with a start-from-blank escape hatch, a
+    search box over title and description, collapsible groups, and an auto-open when no routines exist.
+  - **The risk that shaped it:** web search is a provider capability, off by default outside Pia Cloud, and
+    `BuildSystemPrompt` says *nothing* when it is inactive — so a markets routine on such a provider would
+    print fabricated prices rather than fail. Every web-dependent template ends with a shared guard refusing
+    to answer from memory, and a test pins the guard to `RequiresWebSearch` **in both directions**; the
+    second direction, that any template mentioning a web search must carry the flag, is the one the bug
+    actually travels in.
+  - Deliberate deviation from the plan, tested: expansion is forced on the step *into* a search, not on
+    every keystroke, so a group collapsed mid-search stays collapsed.
+  - Desktop pass done. **Open:** the no-web-search hint reads only the default assistant provider, but
+    `ScheduledResearchProviderResolver` prefers a job's pinned `providerId`, so pinning a non-searching
+    provider on a web-requiring routine warns about nothing. Firing a web routine for real is `G1`.
+  *Deps:* C4 · *Effort:* **M** · *Value:* **High**
 
 ---
 
