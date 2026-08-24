@@ -53,22 +53,48 @@ public class ContextWindowDefaultsTests
         Assert.Equal(128_000, ContextWindowDefaults.Fallback);
     }
 
+    /// <summary>
+    /// Every override row must still be doing work. A row the catalogue already answers identically is a
+    /// duplicate that will drift, and a long table here reads as though the catalogue were not serving the
+    /// other providers at all — which is exactly the impression eight redundant Claude rows gave.
+    /// </summary>
+    [Fact]
+    public void EveryOverrideRowEarnsItsPlace()
+    {
+        var redundant = new List<string>();
+
+        foreach (var (fragment, window) in OverrideRows())
+        {
+            if (OpenRouterContextWindows.TryGet(fragment, out var fromCatalogue) && fromCatalogue == window)
+                redundant.Add($"{fragment} ({window})");
+        }
+
+        Assert.True(redundant.Count == 0,
+            "the catalogue already answers these identically, so the override rows are dead weight: "
+            + string.Join(", ", redundant));
+    }
+
     /// <summary>A row that is a substring of another would shadow it, and the shadowed model would silently
     /// take the wrong window.</summary>
     [Fact]
     public void NoRowShadowsAnother()
     {
-        string[] fragments =
-        [
-            "claude-fable-5", "claude-mythos-5", "claude-opus-5", "claude-opus-4-8", "claude-opus-4-7",
-            "claude-opus-4-6", "claude-sonnet-5", "claude-sonnet-4-6", "claude-haiku-4-5",
-        ];
+        var fragments = OverrideRows().Select(r => r.Fragment).ToList();
 
         foreach (var fragment in fragments)
         {
-            // Each fragment must resolve to its OWN window, which fails if an earlier row matches it first.
             var others = fragments.Where(f => f != fragment && fragment.Contains(f, StringComparison.OrdinalIgnoreCase));
             Assert.True(!others.Any(), $"'{fragment}' contains another row: {string.Join(", ", others)}");
         }
+    }
+
+    /// <summary>Read off the shipped table, so neither check can drift from what it guards.</summary>
+    private static IReadOnlyList<(string Fragment, int Window)> OverrideRows()
+    {
+        var field = typeof(ContextWindowDefaults)
+            .GetField("VendorDocumented", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        Assert.NotNull(field);
+
+        return [.. ((ValueTuple<string, int>[])field!.GetValue(null)!).Select(r => (r.Item1, r.Item2))];
     }
 }
