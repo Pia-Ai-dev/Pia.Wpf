@@ -614,11 +614,15 @@ below are the real ones.
   fallbacks kept the change from being able to make a park *worse* than before: a store fault is logged and
   answers null, and a provider deleted during the park already fell through `ResolveProviderAsync`'s ladder,
   so neither can turn a resumable run into an unresumable one. Pinned by
-  `Resume_RunsTheProviderTheLaunchResolved_NotTheCurrentModeDefault` — which also asserts the chat row still
-  carries the pin **after** the park, because the run's own interim chat writes go through that same row and a
-  save that dropped `ProviderId` would have made the whole row a silent no-op — plus
+  `Resume_RunsTheProviderTheLaunchResolved_NotTheCurrentModeDefault`, which pins **both** an explicit provider
+  and an effort — the shape a scheduled job actually launches with, and the one where the launch stamps the chat
+  off `ApplyEffort`'s clone rather than the stored provider, so an Id dropped in cloning would have made the
+  row a silent no-op with every other assertion green. Plus
   `Resume_WhenTheLaunchProviderIsGone_FallsBackToTheLadder` and a service-level round-trip. Verified
   non-vacuous by restoring `explicitProviderId: null` and watching the first assertion fail.
+  **Not covered:** whether an *interim* chat write preserves `ProviderId`. `BuildChatSnapshot` sets it
+  explicitly, but a park at `WallClock: TimeSpan.Zero` leaves the step Pending, so no interim persist fires in
+  these facts and the assertion sees only the launch's stub.
   *Deps:* E9 · *Effort:* **XS** · *Value:* **Med**
 
 - [x] **E11 · Decide what a null persisted effort should mean on resume.** The freeze E9 installs is

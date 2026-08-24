@@ -958,16 +958,19 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Guid chatId;
         try
         {
+            // An effort pin as well, which is the shape a scheduled job actually launches with — and the one
+            // that makes the launch stamp the chat off ApplyEffort's CLONE rather than the stored provider.
             var handle = await launcher.LaunchAsync(new HeadlessRunRequest(
                 "pinned provider goal", AgentRunTrigger.Schedule, ProviderId: pinnedProvider.Id,
+                ReasoningEffort: ReasoningEffort.XHigh,
                 Budget: new RunProfile(MaxSteps: 24, MaxReplans: 2, WallClock: TimeSpan.Zero)), ct);
             await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), ct);
             runId = handle.RunId;
             chatId = handle.ChatId;
 
             Assert.Equal(AgentRunState.WaitingForInput, (await _runs.GetAsync(runId, ct))!.State);
-            // The seam the resume reads. Asserted AFTER the park, because the run's own chat writes go through
-            // the same row — a save that dropped ProviderId would make the whole row no-op silently.
+            // The seam the resume reads. Reds if the clone the launch stamps it from ever loses its Id, which
+            // would make the whole row no-op silently while every other assertion here stayed green.
             Assert.Equal(pinnedProvider.Id, await _chats.GetProviderIdAsync(chatId, ct));
         }
         finally
@@ -982,7 +985,11 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             Assert.True(await resumer.ResumeAsync(runId, ct: ct));
             await AwaitRunSettledAsync(resumer, runId);
 
-            Assert.Equal(pinnedProvider.Id, Assert.Single(verifier.SeenProviders).Id);
+            var resumed = Assert.Single(verifier.SeenProviders);
+            Assert.Equal(pinnedProvider.Id, resumed.Id);
+            // Both pins on one object: the resume clones the pinned provider to stamp the effort, so an Id
+            // dropped by that clone would show here even though the launch-side assertion passed.
+            Assert.Equal(ReasoningEffort.XHigh, resumed.ReasoningEffort);
         }
         finally
         {
