@@ -126,6 +126,8 @@ public sealed class PiaPathsTests
     [InlineData(RunsRootMember)]
     [InlineData(MeetingFolderMember)]
     [InlineData(VaultRootMember)]
+    [InlineData(LogsDirectoryMember)]
+    [InlineData(DiagnosticsDirectoryMember)]
     public void RoutedMember_ObservesAnOverrideAppliedAfterItsTypeIsLoaded(string member)
     {
         var read = ReaderFor(member);
@@ -154,6 +156,8 @@ public sealed class PiaPathsTests
         Assert.Equal(beforeOverride, read());
     }
 
+    private const string LogsDirectoryMember = "PiaPaths.LogsDirectory";
+    private const string DiagnosticsDirectoryMember = "PiaPaths.DiagnosticsDirectory";
     private const string SettingsDirectoryMember = "JsonPersistenceService.SettingsDirectory";
     private const string LegacyWorkdirMember = "AssistantWorkspace.LegacyWorkdir";
     private const string RunsRootMember = "AssistantWorkspace.RunsRoot";
@@ -167,6 +171,8 @@ public sealed class PiaPathsTests
         RunsRootMember => () => AssistantWorkspace.RunsRoot,
         MeetingFolderMember => () => MeetingTranscriptPaths.DefaultMeetingFolder,
         VaultRootMember => () => new VaultPathProvider().VaultRoot,
+        LogsDirectoryMember => () => PiaPaths.LogsDirectory,
+        DiagnosticsDirectoryMember => () => PiaPaths.DiagnosticsDirectory,
         _ => throw new ArgumentOutOfRangeException(nameof(member), member, "no reader for this member"),
     };
 
@@ -181,5 +187,22 @@ public sealed class PiaPathsTests
         protected override Payload CreateDefault() => new();
 
         internal sealed class Payload;
+    }
+
+    /// <summary>An export written inside Logs would be picked up and shipped by the next one.</summary>
+    [Fact]
+    public void TheDiagnosticsDirectoryIsASiblingOfTheLogDirectory_NotAChildOfIt()
+    {
+        using (PiaPaths.OverrideForTests(TempRoot("roaming"), TempRoot("local")))
+        {
+            var logs = PiaPaths.LogsDirectory;
+            var diagnostics = PiaPaths.DiagnosticsDirectory;
+
+            Assert.NotEqual(logs, diagnostics);
+            Assert.False(
+                diagnostics.StartsWith(logs + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase),
+                $"{diagnostics} sits inside {logs}, so every export would ship the previous one");
+            Assert.Equal(Path.GetDirectoryName(logs), Path.GetDirectoryName(diagnostics));
+        }
     }
 }

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Models;
 using Pia.Paths;
+using Pia.Services.Diagnostics;
 using Pia.Services.Interfaces;
 using Pia.ViewModels.Models;
 using System.Collections.ObjectModel;
@@ -27,6 +28,7 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
     /// <summary>Bind IsEnabled to Policy[nameof(AppSettings.X)] to grey a control out while policy enforces it.</summary>
     public PolicyLock Policy { get; }
     private readonly ISyncClientService _syncClientService;
+    private readonly IDiagnosticsExportService _diagnosticsExportService;
     private bool _isLoading;
     private bool _disposed;
 
@@ -44,7 +46,8 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         IAutostartService autostartService,
         IPolicyService policyService,
         PrivacySettingsViewModel privacyVm,
-        ISyncClientService syncClientService)
+        ISyncClientService syncClientService,
+        IDiagnosticsExportService diagnosticsExportService)
     {
         _logger = logger;
         _settingsService = settingsService;
@@ -58,6 +61,7 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         _policyService = policyService;
         Policy = new PolicyLock(policyService);
         _syncClientService = syncClientService;
+        _diagnosticsExportService = diagnosticsExportService;
         PrivacyVm = privacyVm;
 
         _uiLanguage = _localizationService.CurrentLanguage;
@@ -467,6 +471,68 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         {
             _logger.LogError(ex, "Failed to set voice {VoiceKey}", voice.Key);
             _snackbarService.Show(_localizationService["Msg_Error"], _localizationService.Format("Msg_Settings_VoiceSetFailed", ex.Message), Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(3));
+        }
+    }
+
+    // Diagnostics export
+    [RelayCommand]
+    private async Task ExportDiagnosticsAsync()
+    {
+        // Planned before the dialog so "nothing to export" is told apart from "the export failed", and so
+        // the consent message can state the real count rather than a promise.
+        var plan = _diagnosticsExportService.Plan(PiaPaths.LogsDirectory, DiagnosticsExportCaps.Default);
+        if (plan.IncludedCount == 0)
+        {
+            _snackbarService.Show(
+                _localizationService["Msg_Settings_DiagnosticsNoLogs"],
+                _localizationService["Msg_Settings_DiagnosticsNoLogs_Body"],
+                Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+            return;
+        }
+
+        var destination = PiaPaths.DiagnosticsDirectory;
+        var confirmed = await _dialogService.ShowConfirmationDialogAsync(
+            _localizationService["Settings_ExportDiagnostics_Confirm_Title"],
+            _localizationService.Format(
+                "Settings_ExportDiagnostics_Confirm_Message", plan.IncludedCount, destination));
+
+        if (!confirmed)
+            return;
+
+        try
+        {
+            Directory.CreateDirectory(destination);
+            var result = await _diagnosticsExportService.ExportAsync(
+                new DiagnosticsExportRequest(
+                    PiaPaths.LogsDirectory,
+                    Path.Combine(destination, DiagnosticsExportRequest.BuildFileName(DateTimeOffset.Now)),
+                    DiagnosticsExportCaps.Default),
+                CancellationToken.None);
+
+            if (!result.Succeeded || result.OutputZipPath is null)
+            {
+                _snackbarService.Show(
+                    _localizationService["Msg_Error"],
+                    _localizationService["Msg_Settings_DiagnosticsFailed"],
+                    Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(5));
+                return;
+            }
+
+            // Reveal, never open: the archive must not be handed to a shell handler.
+            ShellLauncher.RevealInExplorer(result.OutputZipPath);
+            _snackbarService.Show(
+                _localizationService["Msg_Settings_DiagnosticsExported"],
+                _localizationService.Format(
+                    "Msg_Settings_DiagnosticsExported_Body", result.Plan.IncludedCount),
+                Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(5));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Diagnostics export failed");
+            _snackbarService.Show(
+                _localizationService["Msg_Error"],
+                _localizationService["Msg_Settings_DiagnosticsFailed"],
+                Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(5));
         }
     }
 

@@ -400,4 +400,19 @@ Les modifications seront appliquées.</value></data>
   <data name="Msg_AssistantHistory_ImportConverting" xml:space="preserve"><value>Conversion des conversations…</value></data>
   <data name="Msg_AssistantHistory_ImportStoring" xml:space="preserve"><value>Import de la conversation {0} sur {1}…</value></data>
   <data name="Msg_AssistantHistory_ImportFailed" xml:space="preserve"><value>Échec de l'importation des conversations : {0}</value></data>
+  <data name="Msg_Settings_DiagnosticsExported" xml:space="preserve">
+    <value>Diagnostic exporté</value>
+  </data>
+  <data name="Msg_Settings_DiagnosticsExported_Body" xml:space="preserve">
+    <value>{0} fichier(s) journal, expurgés. Le dossier est maintenant ouvert.</value>
+  </data>
+  <data name="Msg_Settings_DiagnosticsNoLogs" xml:space="preserve">
+    <value>Rien à exporter</value>
+  </data>
+  <data name="Msg_Settings_DiagnosticsNoLogs_Body" xml:space="preserve">
+    <value>Pia n'a pas encore écrit de fichier journal.</value>
+  </data>
+  <data name="Msg_Settings_DiagnosticsFailed" xml:space="preserve">
+    <value>L'export du diagnostic n'a pas pu être écrit.</value>
+  </data>
 </root>

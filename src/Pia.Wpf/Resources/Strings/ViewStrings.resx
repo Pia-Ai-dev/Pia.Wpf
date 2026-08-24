@@ -1278,4 +1278,19 @@
   <data name="AssistantHistory_ImportFormat_Pia" xml:space="preserve"><value>Pia archive</value></data>
   <data name="AssistantHistory_ImportFormat_OpenWebUi" xml:space="preserve"><value>Open WebUI export</value></data>
   <data name="AssistantHistory_LoadMore" xml:space="preserve"><value>Load more</value></data>
+  <data name="Settings_ExportDiagnostics" xml:space="preserve">
+    <value>Diagnostics</value>
+  </data>
+  <data name="Settings_ExportDiagnostics_Description" xml:space="preserve">
+    <value>Writes a redacted copy of Pia's own log files to a zip you can attach to a support request. Logs only — never chats, vault content, your history database or your provider credentials. File paths, your account and machine name, host names, e-mail addresses and tokens are replaced before anything is written, and every debug message body is dropped whole. The newest 7 log files up to 10 MB are included. Nothing is sent anywhere: the zip is written to your disk and you decide who sees it.</value>
+  </data>
+  <data name="Settings_ExportDiagnostics_Button" xml:space="preserve">
+    <value>Export diagnostics</value>
+  </data>
+  <data name="Settings_ExportDiagnostics_Confirm_Title" xml:space="preserve">
+    <value>Export diagnostics?</value>
+  </data>
+  <data name="Settings_ExportDiagnostics_Confirm_Message" xml:space="preserve">
+    <value>{0} log file(s) will be redacted and written to {1}. Nothing is sent anywhere — open the zip and check it before you share it.</value>
+  </data>
 </root>

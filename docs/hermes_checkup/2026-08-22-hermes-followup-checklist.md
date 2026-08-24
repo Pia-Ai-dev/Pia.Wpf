@@ -12,6 +12,7 @@ implementation step. Tick as they land.
 | **D** | [Guided tour](2026-08-22-guided-tour-tool-plan.md) |
 | **E** | [Per-routine persona + reasoning effort](2026-08-22-routine-persona-effort-plan.md) |
 | **F** | Test hygiene — no plan doc; found while executing group A |
+| **G** | Failure legibility — [Export Diagnostics](../failure_legibility/2026-08-24-export-diagnostics.md); promoted out of *not yet planned* #3 |
 
 **Effort** — `XS` under a day, no new types · `S` 1–2 days · `M` 3–5 days, new types or a new surface
 · `L` a week or more, a new subsystem.
@@ -818,8 +819,59 @@ is already free: `AgentRunService.FailAsync` serialises `{ error }` into `AgentR
 failure, and the column's only reader (`RunProgressViewModel.ReadTruncation`) short-circuits on `truncated`
 and never looks at it. **Every failed run already knows why it failed and the UI says "Ended with an error".**
 
+**Both of those landed 2026-08-24.** Slice 1 of #2 is `3c90aa74` (the reason on the card) and #3 is group
+`G` below (Export Diagnostics). The next work in this area is **#2 slice 2**, which is the only part of the
+*not yet planned* table's two `High`s still open.
+
 **`BlueprintKey` stays data-only** (owner, 2026-08-24): no UI reads it, the question it answers needs months
 of real use, and it is answerable by SQL against `history.db` in the meantime.
+
+---
+
+## G — Failure legibility
+
+Promoted out of the *not yet planned* table below (review #3), scoped as **Export** rather than *Send* by the
+owner on 2026-08-24. Plan and reading:
+[`../failure_legibility/2026-08-24-export-diagnostics.md`](../failure_legibility/2026-08-24-export-diagnostics.md).
+
+- [x] **G1 · Export Diagnostics — a consented, redacted zip written locally, plus reveal-in-Explorer.**
+  The app had **no route to its own logs at all**, while `CLAUDE.md`'s support story already told users to
+  hand-attach `%LOCALAPPDATA%\Pia\Logs\pia-*.log`.
+  **The design centre is redaction on the way OUT, not at the log site.** 523 call sites hand an exception to
+  `LogError`/`LogWarning`/`LogCritical` (measured), so `ex.Message` and its stack trace are in the release log
+  in hundreds of places — one of them the exact string slice 1 puts on the failure card
+  (`BackgroundAssistantTurnRunner.cs:273`). The log stays as written; the export applies a documented,
+  ordered, **two-tier** rule set (`LogRedactor`, 12 rules — 6 deterministic, 6 best-effort, the tier declared
+  in code and asserted). Whole-URL collapse, stable `host-NNN` codes, `<profile-*>` tokens, and every
+  `DBUG`/`TRCE` **message body dropped wholesale** with its continuation lines omitted.
+  **Measured over the real 39-file corpus** (247,884 lines, 41.5 MB): 130,790 debug bodies replaced,
+  2,129 continuation lines omitted, and a scan of every output line for the account name, machine name,
+  `C:\Users` or an email shape found **0 residual hits**.
+  Zip = `logs/` + `README.txt` + `manifest.json` + `environment.json`, asserted as an **exact entry set**
+  against seeded decoys (`providers.json`, `history.db`, `history.db-wal`, `settings.json`, `Logs.zip`,
+  `transcript.md`) rather than by a deny-list, which would go vacuous. Caps: newest 7 files under 10 MB,
+  a **contiguous** newest-first run, every excluded file still named in the manifest with a closed-enum reason.
+  Entry point: Settings → General → Application, one `ui:Button`, `ShowConfirmationDialogAsync`, then
+  `ShellLauncher.RevealInExplorer` — reveal, never open.
+  **Two things found while building, both outside the brief.** (a) `MaxRollingFiles = 7` **prunes nothing**
+  because `FormatLogFileName` mints a new base name per day — 39 files / 40 MB on the dev profile;
+  *retention is NOT fixed here*, which is why the cap exists. (b) `SafeLog.SensitiveInformation` and
+  `SensitiveWarning` forwarded to `LogInformation`/`LogWarning`, putting 13 call sites' speaker names, consent
+  names and workspace paths at INFO/WARN where a level gate cannot see them; both now emit at `LogDebug`,
+  which is what makes the drop rule's guarantee true. Checked before changing: nothing keys on the level —
+  the only consumer, `scripts/Measure-SpeakerAttribution.ps1:152`, matches message text and already parses a
+  `SensitiveDebug` sibling identically. `SafeLogLevelTests` locks it by reflection, so it holds in Release too.
+  **Deliberately left out:** log retention; any upload or *Send* path; a content preview in the consent dialog
+  (the manifest and cap are shown, a scrolling redacted-text viewer is a bigger feature); a policy gate; #2
+  slice 2; and the `WriteResult` green-snackbar seam. `OutputService.cs:110` interpolates a window title into
+  an exception logged at WARN — redacted on export rather than fixed at source, because fixing it would
+  contradict the design centre.
+  **No `ViewAutomationIdTests` count bump was needed and none was made** — that number is a floor asserted
+  with `>=`, "set well under the measured total so ordinary edits to the view never touch this file"; the
+  load-bearing assertion is the missing-id one, which the new button satisfies.
+  Gate **4907 / failed: 0 / 1 skipped / 58 Not Run** (from 4841 at `da95cc8b`, +66 tests); Debug and Release
+  both `-t:Rebuild` to **0 Warning(s)**. Human smoke test pending — nothing was exercised through the app.
+  *Deps:* none · *Effort:* **S** · *Value:* **High** (the app can hand over its own logs safely for the first time)
 
 ---
 
@@ -1000,15 +1052,18 @@ Carried out of the 2026-08-24 handoff prompt when that prompt was consumed.
 
 From the review's recommendation table, no plan doc written. Listed so they are not lost.
 
-**If you pick anything up from here next, take #2 and #3 together.** They are the only two `High`s
-in this table and they are one feature area — failure legibility. #2 names which layer broke; #3 is the
-action the same card offers when naming it isn't enough. Shipped separately, #3 lands on a card that
-still can't say what went wrong.
+**#3 has been PROMOTED OUT of this table** — it shipped 2026-08-24 as group `G` below, and the card it lands
+on can already say what went wrong: slice 1 of #2 (`3c90aa74`) renders the failure reason. What remains of the
+failure-legibility area is therefore **#2 slice 2 only** — a named failure layer (`PiaFailure(Layer, Code,
+Retryable)`), recovery actions and Retry. Its one trap is recorded in §8 of
+[../failure_legibility/2026-08-24-export-diagnostics.md](../failure_legibility/2026-08-24-export-diagnostics.md):
+a Retry adds a new `Failed → Running` transition, and written in the shape of its two existing siblings it
+would `SET ExtraJson = NULL` and wipe the reason slice 1 reads.
 
 | Item | Review # | Effort | Value |
 |---|---|---|---|
-| Error layer + recovery actions on the failure card | 2 | M | High |
-| Send Diagnostics — consented, redacted log bundle (logs only, never transcripts) | 3 | S–M | High |
+| Error layer + recovery actions on the failure card — **slice 1 done `3c90aa74`**, slice 2 open | 2 | M | High |
+| ~~Send Diagnostics — consented, redacted log bundle~~ **DONE 2026-08-24 as `G1`**, scoped to *Export* | 3 | S | High |
 | Global pause (ESTOP) — tray toggle, never kills in-flight work | 7 | S | Med |
 | Repetition guard before the truncated-response continuation nudge | 8 | S | Med |
 | Empty-response guard with a cost-aware retry budget | 9 | S–M | Med |

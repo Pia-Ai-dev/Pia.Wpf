@@ -1268,4 +1268,19 @@
   <data name="AssistantHistory_ImportFormat_Pia" xml:space="preserve"><value>archive Pia</value></data>
   <data name="AssistantHistory_ImportFormat_OpenWebUi" xml:space="preserve"><value>export Open WebUI</value></data>
   <data name="AssistantHistory_LoadMore" xml:space="preserve"><value>Charger plus</value></data>
+  <data name="Settings_ExportDiagnostics" xml:space="preserve">
+    <value>Diagnostic</value>
+  </data>
+  <data name="Settings_ExportDiagnostics_Description" xml:space="preserve">
+    <value>Écrit une copie expurgée des fichiers journaux de Pia dans une archive ZIP que vous pouvez joindre à une demande d'assistance. Uniquement les journaux — jamais les conversations, le contenu du coffre, votre base de données d'historique ni vos identifiants de fournisseur. Les chemins de fichiers, vos noms de compte et de machine, les noms d'hôtes, les adresses e-mail et les jetons sont remplacés avant toute écriture, et le corps de chaque message de débogage est supprimé entièrement. Les 7 fichiers journaux les plus récents, jusqu'à 10 Mo, sont inclus. Rien n'est envoyé : l'archive reste sur votre disque et vous décidez qui la voit.</value>
+  </data>
+  <data name="Settings_ExportDiagnostics_Button" xml:space="preserve">
+    <value>Exporter le diagnostic</value>
+  </data>
+  <data name="Settings_ExportDiagnostics_Confirm_Title" xml:space="preserve">
+    <value>Exporter le diagnostic ?</value>
+  </data>
+  <data name="Settings_ExportDiagnostics_Confirm_Message" xml:space="preserve">
+    <value>{0} fichier(s) journal seront expurgés et écrits dans {1}. Rien n'est envoyé — ouvrez l'archive et vérifiez-la avant de la partager.</value>
+  </data>
 </root>

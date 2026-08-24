@@ -160,7 +160,7 @@ public class PolicyLiveLockBindingTests : IDisposable
             Substitute.For<ITtsService>(), Substitute.For<global::Wpf.Ui.ISnackbarService>(),
             localization, Substitute.For<IAutostartService>(), policyService,
             new PrivacySettingsViewModel(logger, settingsService, policyService),
-            Substitute.For<ISyncClientService>());
+            Substitute.For<ISyncClientService>(), Substitute.For<IDiagnosticsExportService>());
 
         // WPF already marshals a cross-thread source notification onto the target's dispatcher, so the
         // value alone would look right unmarshalled; counting off-host-thread arrivals is what pins the Post.

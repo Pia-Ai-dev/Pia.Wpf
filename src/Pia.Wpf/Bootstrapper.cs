@@ -350,7 +350,7 @@ public static class Bootstrapper
             builder.AddDebug();
             builder.SetMinimumLevel(IsDevMode ? LogLevel.Debug : LogLevel.Information);
 
-            var logDirectory = Path.Combine(PiaPaths.LocalDataDirectory, "Logs");
+            var logDirectory = PiaPaths.LogsDirectory;
             Directory.CreateDirectory(logDirectory);
 
             var fileOptions = new FileLoggerOptions
@@ -855,6 +855,10 @@ public static class Bootstrapper
 
         // Autostart
         services.AddSingleton<IAutostartService, AutostartService>();
+
+        // Diagnostics export
+        services.AddSingleton<IDiagnosticsEnvironmentCollector, Services.Diagnostics.DiagnosticsEnvironmentCollector>();
+        services.AddSingleton<IDiagnosticsExportService, Services.Diagnostics.DiagnosticsExportService>();
 
         // Services - Scoped (per-window)
         // Chat-session manager: scoped per assistant window because it injects scoped

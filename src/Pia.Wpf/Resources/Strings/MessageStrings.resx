@@ -409,4 +409,19 @@ Changes will be applied.</value></data>
   <data name="Msg_AssistantHistory_ImportConverting" xml:space="preserve"><value>Converting chats…</value></data>
   <data name="Msg_AssistantHistory_ImportStoring" xml:space="preserve"><value>Importing chat {0} of {1}…</value></data>
   <data name="Msg_AssistantHistory_ImportFailed" xml:space="preserve"><value>Failed to import chats: {0}</value></data>
+  <data name="Msg_Settings_DiagnosticsExported" xml:space="preserve">
+    <value>Diagnostics exported</value>
+  </data>
+  <data name="Msg_Settings_DiagnosticsExported_Body" xml:space="preserve">
+    <value>{0} log file(s), redacted. The folder is now open.</value>
+  </data>
+  <data name="Msg_Settings_DiagnosticsNoLogs" xml:space="preserve">
+    <value>Nothing to export</value>
+  </data>
+  <data name="Msg_Settings_DiagnosticsNoLogs_Body" xml:space="preserve">
+    <value>Pia has not written any log files yet.</value>
+  </data>
+  <data name="Msg_Settings_DiagnosticsFailed" xml:space="preserve">
+    <value>The diagnostics export could not be written.</value>
+  </data>
 </root>

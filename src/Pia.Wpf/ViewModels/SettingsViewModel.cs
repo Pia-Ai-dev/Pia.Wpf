@@ -53,7 +53,8 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
         IAssistantChatService assistantChatService,
         IToolPermissionService toolPermissionService,
         IAssistantFolderRelocationService folderRelocationService,
-        IWorkingDirectoryService workingDirectoryService)
+        IWorkingDirectoryService workingDirectoryService,
+        IDiagnosticsExportService diagnosticsExportService)
     {
         _logger = logger;
 
@@ -68,7 +69,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
         AssistantVm = new AssistantSettingsViewModel(ProvidersVm, PersonasVm, toolPermissionsVm, meetingVm, logger, settingsService, assistantChatService, dialogService, localizationService, folderRelocationService, workingDirectoryService, policyService, personaService);
 
         var privacyVm = new PrivacySettingsViewModel(logger, settingsService, policyService);
-        GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService, policyService, privacyVm, syncClientService);
+        GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService, policyService, privacyVm, syncClientService, diagnosticsExportService);
 
         AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, memoryService, policyService, onboardingViewModel);
 

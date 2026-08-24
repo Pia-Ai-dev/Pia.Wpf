@@ -25,6 +25,15 @@ public static class PiaPaths
     public static string LocalDataDirectory => _localDataDirectory ??=
         Resolve(LocalDataDirectoryEnvVar, Environment.SpecialFolder.LocalApplicationData);
 
+    /// <summary>Where the file sink writes <c>pia-*.log</c>.</summary>
+    public static string LogsDirectory => Path.Combine(LocalDataDirectory, "Logs");
+
+    /// <summary>
+    /// Diagnostics exports. A SIBLING of <see cref="LogsDirectory"/> on purpose — an export written inside
+    /// Logs would be picked up and shipped by the next one.
+    /// </summary>
+    public static string DiagnosticsDirectory => Path.Combine(LocalDataDirectory, "Diagnostics");
+
     /// <summary>True when either data root came from the environment rather than the real user profile.</summary>
     public static bool IsOverridden =>
         HasOverride(RoamingDataDirectoryEnvVar) || HasOverride(LocalDataDirectoryEnvVar);

@@ -439,4 +439,43 @@ public class LocalizationTests
         Assert.True(missing.Count == 0,
             $"all dynamically constructed localization keys must exist in resources, but these are missing: {string.Join(", ", missing)}");
     }
+
+    /// <summary>
+    /// A de or fr value that drops a placeholder renders wrong with a green gate: the only existing
+    /// placeholder check is scoped to the ActionCard key set, so these keys need their own.
+    /// </summary>
+    [Theory]
+    [InlineData("Settings_ExportDiagnostics_Confirm_Message", 2)]
+    public void ADiagnosticsKeyCarriesTheSamePlaceholdersInEveryLocale(string key, int expected)
+    {
+        var placeholder = new Regex(@"\{(\d+)");
+        var cultures = new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") };
+
+        foreach (var culture in cultures)
+        {
+            var value = ViewStrings.ResourceManager.GetString(key, culture);
+            Assert.False(string.IsNullOrWhiteSpace(value), $"{key} is missing for {culture.Name}");
+            var indexes = placeholder.Matches(value!).Select(m => m.Groups[1].Value).Order().ToArray();
+            Assert.Equal(Enumerable.Range(0, expected).Select(i => i.ToString(CultureInfo.InvariantCulture)),
+                indexes);
+        }
+    }
+
+    /// <summary>The snackbar bodies take one argument each, so a stray {1} throws at render time.</summary>
+    [Theory]
+    [InlineData("Msg_Settings_DiagnosticsExported_Body", 1)]
+    public void ADiagnosticsMessageKeyCarriesTheSamePlaceholdersInEveryLocale(string key, int expected)
+    {
+        var placeholder = new Regex(@"\{(\d+)");
+        var cultures = new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") };
+
+        foreach (var culture in cultures)
+        {
+            var value = MessageStrings.ResourceManager.GetString(key, culture);
+            Assert.False(string.IsNullOrWhiteSpace(value), $"{key} is missing for {culture.Name}");
+            var indexes = placeholder.Matches(value!).Select(m => m.Groups[1].Value).Order().ToArray();
+            Assert.Equal(Enumerable.Range(0, expected).Select(i => i.ToString(CultureInfo.InvariantCulture)),
+                indexes);
+        }
+    }
 }

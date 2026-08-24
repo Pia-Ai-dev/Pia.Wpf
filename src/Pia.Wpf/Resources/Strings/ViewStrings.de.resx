@@ -1268,4 +1268,19 @@
   <data name="AssistantHistory_ImportFormat_Pia" xml:space="preserve"><value>Pia-Archiv</value></data>
   <data name="AssistantHistory_ImportFormat_OpenWebUi" xml:space="preserve"><value>Open-WebUI-Export</value></data>
   <data name="AssistantHistory_LoadMore" xml:space="preserve"><value>Mehr laden</value></data>
+  <data name="Settings_ExportDiagnostics" xml:space="preserve">
+    <value>Diagnose</value>
+  </data>
+  <data name="Settings_ExportDiagnostics_Description" xml:space="preserve">
+    <value>Schreibt eine bereinigte Kopie von Pias eigenen Logdateien in eine ZIP-Datei, die Sie einer Supportanfrage beilegen können. Nur Logs — niemals Chats, Vault-Inhalte, Ihre Verlaufsdatenbank oder Ihre Provider-Zugangsdaten. Dateipfade, Ihr Konto- und Rechnername, Hostnamen, E-Mail-Adressen und Tokens werden vor dem Schreiben ersetzt, und jeder Debug-Nachrichtentext wird vollständig entfernt. Enthalten sind die neuesten 7 Logdateien bis 10 MB. Es wird nichts versendet: Die ZIP-Datei liegt auf Ihrer Festplatte, und Sie entscheiden, wer sie sieht.</value>
+  </data>
+  <data name="Settings_ExportDiagnostics_Button" xml:space="preserve">
+    <value>Diagnose exportieren</value>
+  </data>
+  <data name="Settings_ExportDiagnostics_Confirm_Title" xml:space="preserve">
+    <value>Diagnose exportieren?</value>
+  </data>
+  <data name="Settings_ExportDiagnostics_Confirm_Message" xml:space="preserve">
+    <value>{0} Logdatei(en) werden bereinigt und nach {1} geschrieben. Es wird nichts versendet — öffnen Sie die ZIP-Datei und prüfen Sie sie, bevor Sie sie weitergeben.</value>
+  </data>
 </root>

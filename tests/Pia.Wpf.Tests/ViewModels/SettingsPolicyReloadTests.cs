@@ -138,7 +138,8 @@ public class SettingsPolicyReloadTests : IDisposable
         var general = new GeneralSettingsViewModel(
             logger, settings, Substitute.For<ITranscriptionService>(), dialogs,
             Substitute.For<ITrayIconService>(), Substitute.For<ITtsService>(), snackbar, localization,
-            Substitute.For<IAutostartService>(), policy, privacy, Substitute.For<ISyncClientService>());
+            Substitute.For<IAutostartService>(), policy, privacy, Substitute.For<ISyncClientService>(),
+            Substitute.For<IDiagnosticsExportService>());
 
         var account = new AccountSettingsViewModel(
             logger, settings, dialogs, snackbar, Substitute.For<IAuthService>(),
@@ -423,7 +424,8 @@ public class SettingsPolicyReloadTests : IDisposable
             Substitute.For<IAssistantChatService>(),
             Substitute.For<IToolPermissionService>(),
             Substitute.For<IAssistantFolderRelocationService>(),
-            Substitute.For<Pia.Services.IWorkingDirectoryService>());
+            Substitute.For<Pia.Services.IWorkingDirectoryService>(),
+            Substitute.For<IDiagnosticsExportService>());
 
         return new Page(root, settings, policy);
     }
