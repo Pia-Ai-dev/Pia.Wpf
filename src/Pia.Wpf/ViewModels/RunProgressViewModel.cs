@@ -298,6 +298,23 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private string? _truncationNote;
 
     /// <summary>
+    /// WHY a run failed, read from the <c>error</c> member of <c>ExtraJson</c>. That member has always been
+    /// written — <c>FailAsync</c> serialises it on every failure with a reason — and until now nothing read
+    /// it: the panel said "Ended with an error" while the answer sat one JSON member away. Null unless the
+    /// run is in the Failed family AND the member is present.
+    /// <para>
+    /// MAY CARRY USER OR MODEL CONTENT, unlike <see cref="TruncationNote"/>. The app-owned tokens are
+    /// localized by <see cref="DescribeFailureReason"/>; anything else is the model's own
+    /// <c>StepOutcomeClaim.Summary</c> or an <c>ex.Message</c> and is shown VERBATIM, because paraphrasing it
+    /// would throw away the only actionable part. That is why this belongs to the panel and nowhere else:
+    /// <c>AgentRunNotificationSurface</c> deliberately keeps the failure reason out of the Flow item, and it
+    /// must never be logged.
+    /// </para>
+    /// </summary>
+    [ObservableProperty]
+    private string? _failureNote;
+
+    /// <summary>
     /// The current-activity line (design D1): the running step's title while Running, or a "building a
     /// plan" note while Planning; null (line hidden) otherwise. The live per-tool micro-status
     /// (<c>StatusText</c>) stays on the adjacent streaming transcript by design — this panel is
@@ -935,6 +952,13 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             PlanMutationNote = null;
 
         TruncationNote = IsTruncated ? DescribeTruncation(truncation.Reason) : null;
+        // Gated on the Failed FAMILY, which MapState also maps Cancelled into. That is deliberate: a run
+        // cancelled because a child failed carries the child's reason, and a shutdown sweep carries
+        // "interrupted at shutdown" — both are worth saying. A user-initiated cancel passes a null error, so
+        // it selects itself out without a second predicate.
+        FailureNote = State == RunProgressState.Failed
+            ? DescribeFailureReason(ReadFailureReason(run))
+            : null;
         SyncSteps(run.Plan);
         CurrentActivity = ComputeActivity(run);
 
@@ -1198,6 +1222,46 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         "budget" or "step-cap" or "wall-clock" => _localization["Run_StoppedAtBudget"], // pre-pause legacy rows
         _ => _localization["Run_EndedEarly"],
     };
+
+    /// <summary>
+    /// The failure vocabulary is OPEN, which is the one structural difference from
+    /// <see cref="DescribeTruncation"/> above. Five app-owned tokens are localized; everything else is the
+    /// model's own summary or an exception message and falls through UNCHANGED — the default arm is the
+    /// informative case here, not the fallback. Every token is referenced by name rather than re-spelled, so a
+    /// writer renaming one gets a compile error instead of a run that silently shows the raw string.
+    /// </summary>
+    private string? DescribeFailureReason(string? error) => error switch
+    {
+        null or "" => null,
+        AgentStepTools.EmptyResponseFailure => _localization["Run_Failed_EmptyResponse"],
+        AgentStepTools.UndetailedFailure => _localization["Run_Failed_Undetailed"],
+        HeadlessRunLauncher.WorkspaceSetupFailure => _localization["Run_Failed_WorkspaceSetup"],
+        HeadlessRunLauncher.ShutdownInterruptedFailure => _localization["Run_Failed_Interrupted"],
+        AgentRunOrchestrator.SupersededFailureReason => _localization["Run_Failed_Superseded"],
+        _ => error,
+    };
+
+    /// <summary>
+    /// Sits beside <see cref="ReadTruncation"/> over the same column, and the two envelopes never coexist on
+    /// one row: <c>CompleteAsync</c> writes <c>{truncated,reason}</c> and <c>FailAsync</c> writes
+    /// <c>{error}</c>. Guarded on <see cref="JsonValueKind.String"/> rather than on presence — a member the
+    /// caller does not control can be any kind, and the typed getters throw rather than returning false.
+    /// </summary>
+    private static string? ReadFailureReason(AgentRun run)
+    {
+        if (string.IsNullOrEmpty(run.ExtraJson)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(run.ExtraJson);
+            return doc.RootElement.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.String
+                ? error.GetString()
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     // The pause vocabulary, like the truncation vocabulary above, is a fixed set of APP-OWNED tokens written by
     // the run loop and the startup reconcile — never user content. An unknown or absent reason keeps the budget

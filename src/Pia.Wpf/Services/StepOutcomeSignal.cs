@@ -150,6 +150,15 @@ public static class AgentStepTools
     public const string UndetailedFailure = "The step reported that it did not succeed.";
 
     /// <summary>
+    /// The failure reason for a turn that produced no text at all. Same contract as
+    /// <see cref="UndetailedFailure"/> — app-owned, unlocalized, shared by both executors, and it ends up in
+    /// the run's <c>ExtraJson</c>. Named rather than repeated so the run panel can recognise it: the panel
+    /// localizes the tokens it knows and shows anything else verbatim, which only works while there is one
+    /// spelling of each.
+    /// </summary>
+    public const string EmptyResponseFailure = "Empty response";
+
+    /// <summary>
     /// The step-outcome declaration tool. Built per step rather than cached in a static: an
     /// <see cref="AITool"/> is handed to the provider transport, and one shared instance across concurrently
     /// executing runs is a needless aliasing question for an object this cheap.

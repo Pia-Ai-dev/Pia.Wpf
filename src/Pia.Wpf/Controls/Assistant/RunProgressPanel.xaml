@@ -594,6 +594,15 @@
                         ItemTemplate="{Binding ItemTemplate, ElementName=StepsList}"
                         Visibility="{Binding HasLastStepRow, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
+          <!-- WHY the run failed, first in this block because on a failed card it outranks every other note.
+               The reason has always been persisted and never shown; the panel used to say only "Ended with an
+               error". Warn palette, not danger: the card OUTLINE already carries danger for a failed run (see
+               the border at the top of this file), so this line states the reason rather than re-signalling
+               severity — the same "signal it once" rule the truncation chip follows in the other direction.
+               May contain the model's own words or an exception message, so it wraps and is never logged. -->
+          <TextBlock Style="{StaticResource RunWarnLineStyle}" Text="{Binding FailureNote}"
+                     Visibility="{Binding FailureNote, Converter={StaticResource NullToVisibilityConverter}}" />
+
           <!-- Conditional note lines, all quiet on an ordinary run.
                (1) the standing offer, while a settled run's files are still in its workspace;
                (2) the result of a publish the user asked for;

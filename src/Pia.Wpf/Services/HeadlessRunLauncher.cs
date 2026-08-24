@@ -21,6 +21,15 @@ namespace Pia.Services;
 /// </summary>
 public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRunResumeService, IDisposable
 {
+    /// <summary>The failure reason for a run whose isolated workspace could not be provisioned. App-owned and
+    /// named, like the pause vocabulary below, so the run panel can localize it rather than show it
+    /// verbatim.</summary>
+    internal const string WorkspaceSetupFailure = "workspace setup failed";
+
+    /// <summary>The failure reason for a run the shutdown sweep cancelled mid-flight. Written with
+    /// <c>cancelled: true</c>, so the panel reaches it through the Failed-family visual.</summary>
+    internal const string ShutdownInterruptedFailure = "interrupted at shutdown";
+
     /// <summary>
     /// The pause <c>reason</c> written by the three re-park arms of <see cref="ResumeAsync"/> — a resume that
     /// CAS-claimed the row and then never reached the orchestrator (cancelled or faulted in the slot wait,
@@ -409,7 +418,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Headless run {RunId} workspace setup failed", run.Id);
-                try { await _agentRunService.FailAsync(run.Id, "workspace setup failed", cancelled: false, CancellationToken.None).ConfigureAwait(false); }
+                try { await _agentRunService.FailAsync(run.Id, WorkspaceSetupFailure, cancelled: false, CancellationToken.None).ConfigureAwait(false); }
                 catch (Exception fx) { _logger.LogWarning(fx, "Failed to settle headless run {RunId} after workspace-setup failure", run.Id); }
                 throw;
             }
@@ -500,7 +509,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
                 // run here so a queued-then-cancelled run is never left non-terminal.
                 if (!started)
                 {
-                    try { await _agentRunService.FailAsync(run.Id, "interrupted at shutdown", cancelled: true, CancellationToken.None).ConfigureAwait(false); }
+                    try { await _agentRunService.FailAsync(run.Id, ShutdownInterruptedFailure, cancelled: true, CancellationToken.None).ConfigureAwait(false); }
                     catch (Exception ex) { _logger.LogWarning(ex, "Failed to settle interrupted headless run {RunId}", run.Id); }
                 }
             }

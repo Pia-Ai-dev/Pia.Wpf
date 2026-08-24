@@ -972,6 +972,11 @@
   <data name="Run_StoppedAtBudget" xml:space="preserve"><value>Bei Budget gestoppt</value></data>
   <data name="Run_Unverified" xml:space="preserve"><value>Ergebnis nicht geprüft</value></data>
   <data name="Run_EndedEarly" xml:space="preserve"><value>Vorzeitig beendet</value></data>
+  <data name="Run_Failed_EmptyResponse" xml:space="preserve"><value>Das Modell hat keine Antwort geliefert.</value></data>
+  <data name="Run_Failed_WorkspaceSetup" xml:space="preserve"><value>Der Arbeitsbereich der Ausführung konnte nicht vorbereitet werden – es wurde nichts ausgeführt.</value></data>
+  <data name="Run_Failed_Interrupted" xml:space="preserve"><value>Pia wurde geschlossen, während diese Ausführung noch lief.</value></data>
+  <data name="Run_Failed_Superseded" xml:space="preserve"><value>Eine neuere Ausführung hat diese ersetzt.</value></data>
+  <data name="Run_Failed_Undetailed" xml:space="preserve"><value>Ein Schritt meldete, dass er nicht erfolgreich war, ohne einen Grund zu nennen.</value></data>
   <data name="Run_State_Planning" xml:space="preserve"><value>Planung</value></data>
   <data name="Run_State_Running" xml:space="preserve"><value>Läuft</value></data>
   <data name="Run_State_Completed" xml:space="preserve"><value>Abgeschlossen</value></data>

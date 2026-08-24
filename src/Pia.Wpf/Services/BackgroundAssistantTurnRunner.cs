@@ -190,7 +190,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 _logger.LogWarning("Background turn {ChatId} produced empty content", chatId);
                 if (run is not null)
                 {
-                    try { await _runService.FailAsync(run.Id, "Empty response", ct: ct); }
+                    try { await _runService.FailAsync(run.Id, AgentStepTools.EmptyResponseFailure, ct: ct); }
                     catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (fail/empty) failed for {RunId}", run.Id); }
                 }
                 return new BackgroundTurnResult(chatId, false, "Empty response");

@@ -938,6 +938,11 @@
   <data name="Run_StoppedAtBudget" xml:space="preserve"><value>Stopped at budget</value></data>
   <data name="Run_Unverified" xml:space="preserve"><value>Result not verified</value></data>
   <data name="Run_EndedEarly" xml:space="preserve"><value>Ended early</value></data>
+  <data name="Run_Failed_EmptyResponse" xml:space="preserve"><value>The model returned no answer.</value></data>
+  <data name="Run_Failed_WorkspaceSetup" xml:space="preserve"><value>The run's workspace could not be prepared, so nothing ran.</value></data>
+  <data name="Run_Failed_Interrupted" xml:space="preserve"><value>Pia closed while this run was still going.</value></data>
+  <data name="Run_Failed_Superseded" xml:space="preserve"><value>A newer run replaced this one.</value></data>
+  <data name="Run_Failed_Undetailed" xml:space="preserve"><value>A step reported that it did not succeed, without saying why.</value></data>
   <data name="Run_State_Planning" xml:space="preserve"><value>Planning</value></data>
   <data name="Run_State_Running" xml:space="preserve"><value>Running</value></data>
   <data name="Run_State_Completed" xml:space="preserve"><value>Completed</value></data>

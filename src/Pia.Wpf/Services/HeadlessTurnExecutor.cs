@@ -797,7 +797,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// <c>"Empty response"</c>, which is what the no-claim fallback arm literally means.
     /// </summary>
     private static string DescribeFailure(StepOutcomeClaim? claim) =>
-        claim is null ? "Empty response"
+        claim is null ? AgentStepTools.EmptyResponseFailure
         : string.IsNullOrWhiteSpace(claim.Summary) ? AgentStepTools.UndetailedFailure
         : claim.Summary;
 

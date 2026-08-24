@@ -71,6 +71,10 @@ public sealed class AgentRunOrchestrator
     /// field from the pause reasons above, read back by <c>RunProgressViewModel.DescribeTruncation</c>.</summary>
     internal const string UnverifiedTruncationReason = "unverified";
 
+    /// <summary>The failure reason a run gets when a re-dispatched fan-out replaced it. App-owned and named
+    /// rather than repeated so the run panel can localize it instead of showing it verbatim.</summary>
+    internal const string SupersededFailureReason = "superseded by a re-dispatched fan-out";
+
     /// <summary>Pause reason when a run's FIRST plan is big enough that a human approves or rejects it before any
     /// step runs; a later replan never re-triggers it.</summary>
     internal const string PlanApprovalReason = "plan-approval";
@@ -1504,7 +1508,7 @@ public sealed class AgentRunOrchestrator
                 // leaks forever with its own visible stub chat, which is precisely what this settle exists to
                 // prevent.
                 if (AgentRunStates.IsParked(old.State))
-                    await _runService.FailAsync(old.Id, "superseded by a re-dispatched fan-out", cancelled: true,
+                    await _runService.FailAsync(old.Id, SupersededFailureReason, cancelled: true,
                         CancellationToken.None).ConfigureAwait(false);
 
                 superseded++;

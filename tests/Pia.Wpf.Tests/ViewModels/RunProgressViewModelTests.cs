@@ -484,6 +484,149 @@ public sealed class RunProgressViewModelTests : IDisposable
         cmd.ExecuteNonQuery();
     }
 
+
+    // Slice 1 of failure legibility. FailAsync has always persisted {"error": …}; until now the only reader of
+    // that column short-circuited on "truncated" and never looked, so every failed run said "Ended with an
+    // error" while the answer sat one JSON member away.
+    [Fact]
+    public async Task FailureNote_ShowsAnUnrecognisedReason_Verbatim()
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+
+        // The model's own StepOutcomeClaim.Summary reaches the column as-is. Paraphrasing it would throw away
+        // the only actionable part, so the default arm passes it through — hence NOT a localization key here.
+        const string modelReason = "The ingest script exited 2: config/pipeline.yml has no 'stages' key.";
+        await _runs.FailAsync(run.Id, modelReason, ct: TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+
+        Assert.Equal(RunProgressState.Failed, vm.State);
+        Assert.Equal(modelReason, vm.FailureNote);
+        vm.Dispose();
+    }
+
+    // Each token is referenced from the VM by NAME, so this also pins that the five writers and the one reader
+    // still agree on the spelling — a renamed const fails to compile rather than showing the raw string.
+    [Theory]
+    [InlineData(AgentStepTools.EmptyResponseFailure, "Run_Failed_EmptyResponse")]
+    [InlineData(AgentStepTools.UndetailedFailure, "Run_Failed_Undetailed")]
+    [InlineData(HeadlessRunLauncher.WorkspaceSetupFailure, "Run_Failed_WorkspaceSetup")]
+    [InlineData(HeadlessRunLauncher.ShutdownInterruptedFailure, "Run_Failed_Interrupted")]
+    [InlineData(AgentRunOrchestrator.SupersededFailureReason, "Run_Failed_Superseded")]
+    public async Task FailureNote_LocalizesAnAppOwnedToken(string token, string expectedKey)
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+
+        await _runs.FailAsync(run.Id, token, ct: TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+
+        Assert.Equal(expectedKey, vm.FailureNote);
+        Assert.NotEqual(token, vm.FailureNote);
+        vm.Dispose();
+    }
+
+    // The user-cancel path passes a null error. Gating on the Failed FAMILY would otherwise have to special-case
+    // Cancelled; a null reason selects itself out instead.
+    [Fact]
+    public async Task FailureNote_IsNull_WhenTheRunCarriesNoReason()
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+
+        await _runs.FailAsync(run.Id, null, cancelled: true, TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+
+        Assert.Equal(RunProgressState.Failed, vm.State);
+        Assert.Null(vm.FailureNote);
+        vm.Dispose();
+    }
+
+    // A run cancelled BECAUSE something failed carries the reason, and saying so is the point: MapState folds
+    // Cancelled into the Failed family, and a shutdown sweep or a failed child is exactly the case worth naming.
+    [Fact]
+    public async Task FailureNote_ShowsTheReason_OnACancelledRunThatCarriesOne()
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+
+        await _runs.FailAsync(run.Id, HeadlessRunLauncher.ShutdownInterruptedFailure, cancelled: true,
+            TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+
+        Assert.Equal("Run_Failed_Interrupted", vm.FailureNote);
+        vm.Dispose();
+    }
+
+    // The two ExtraJson envelopes never coexist: CompleteAsync writes {truncated,reason}, FailAsync writes
+    // {error}. Both directions asserted, because one reader picking up the other's envelope is exactly the
+    // failure this shape invites.
+    [Fact]
+    public async Task FailureNote_AndTruncationNote_DoNotReadEachOthersEnvelope()
+    {
+        var truncated = await NewPlannedRunAsync();
+        var truncVm = CreateVm(truncated.Id);
+        await _runs.CompleteAsync(truncated.Id, truncated: true, truncationReason: "unverified",
+            ct: TestContext.Current.CancellationToken);
+        await truncVm.RefreshAsync();
+        Assert.Equal("Run_Unverified", truncVm.TruncationNote);
+        Assert.Null(truncVm.FailureNote);
+        truncVm.Dispose();
+
+        var failed = await NewPlannedRunAsync();
+        var failVm = CreateVm(failed.Id);
+        await _runs.FailAsync(failed.Id, "disk full", ct: TestContext.Current.CancellationToken);
+        await failVm.RefreshAsync();
+        Assert.Equal("disk full", failVm.FailureNote);
+        Assert.False(failVm.IsTruncated);
+        Assert.Null(failVm.TruncationNote);
+        failVm.Dispose();
+    }
+
+    [Fact]
+    public async Task FailureNote_IsNull_OnACleanCompletion()
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+
+        await _runs.CompleteAsync(run.Id, ct: TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+
+        Assert.Equal(RunProgressState.Completed, vm.State);
+        Assert.Null(vm.FailureNote);
+        vm.Dispose();
+    }
+
+    // The envelope is not something this reader controls, so every shape it cannot use has to degrade to "no
+    // note" rather than throw: a typed getter on the wrong JsonValueKind throws instead of returning false.
+    [Theory]
+    [InlineData("{not json")]
+    [InlineData("{}")]
+    [InlineData("{\"error\":null}")]
+    [InlineData("{\"error\":42}")]
+    [InlineData("{\"error\":{\"nested\":\"x\"}}")]
+    [InlineData("[]")]
+    public async Task FailureNote_DegradesQuietly_OnAnEnvelopeItCannotRead(string extraJson)
+    {
+        var run = await NewPlannedRunAsync();
+        await _runs.FailAsync(run.Id, "replaced below", ct: TestContext.Current.CancellationToken);
+
+        using (var write = _ctx.GetConnection().CreateCommand())
+        {
+            write.CommandText = "UPDATE AgentRuns SET ExtraJson=@E WHERE Id=@Id";
+            write.Parameters.AddWithValue("@E", extraJson);
+            write.Parameters.AddWithValue("@Id", run.Id.ToString());
+            write.ExecuteNonQuery();
+        }
+
+        var vm = CreateVm(run.Id);
+        await vm.RefreshAsync();
+
+        Assert.Equal(RunProgressState.Failed, vm.State);
+        Assert.Null(vm.FailureNote);
+        vm.Dispose();
+    }
+
     public void Dispose()
     {
         _runs.Dispose();
