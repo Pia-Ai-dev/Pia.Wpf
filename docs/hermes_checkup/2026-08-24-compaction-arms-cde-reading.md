@@ -202,8 +202,9 @@ That is a genuine result and it is where the finding stops.
 is the **footer**, and the footer alone earns nothing. The search half lives in the turn/tool layer and has no
 product surface at all:
 
-- `IAssistantChatService.SearchMessagesAsync` has **zero production callers** — it was written for this row
-  (B7) and nothing exposes it to a model.
+- `IAssistantChatService.SearchMessagesAsync` had **zero production callers** — it was written for this row
+  (B7) and nothing exposed it to a model. It was deleted on 2026-08-25 for exactly that reason, so a grep for
+  it now finds nothing.
 - `AssistantChatMessages` persists user/assistant **text** plus a `ToolCallCount` **count**;
   `AssistantMessage.ToChatMessage()` never emits `FunctionCall`/`FunctionResult` content. So a real recovery
   search is **blind to exactly the tier eviction reaches first** (`ToolEvictionThreshold = 0.45`).

@@ -433,6 +433,8 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         IsUpdateBarDismissed = true;
     }
 
+    // The dump puts every UIA Name (chat and todo titles) on the clipboard, so it must not exist in a shipped build.
+#if DEBUG
     [RelayCommand]
     private async Task DumpTourTargetsAsync()
     {
@@ -460,6 +462,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
             _logger.LogWarning(ex, "Could not put the tour-target dump on the clipboard");
         }
     }
+#endif
 
     [RelayCommand]
     private void OpenE2EEOnboarding()

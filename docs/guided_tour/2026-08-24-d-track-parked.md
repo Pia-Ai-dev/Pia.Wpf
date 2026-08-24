@@ -28,9 +28,10 @@ plan warned about.
 `D1` is shipped and its walker is well tested. Three qualifications, all of which an earlier draft of this doc
 got wrong:
 
-- **It is reachable in DEBUG builds only.** The sole invoker is an `#if DEBUG` `KeyBinding` in code-behind
-  (`MainWindow.xaml.cs:36-39`). In Release the collector, the command and the DI registration all ship, but
-  nothing can invoke them.
+- **It exists in DEBUG builds only.** `DumpTourTargetsAsync` and its clipboard write are inside `#if DEBUG` in
+  `MainWindowViewModel`, and the sole invoker is an `#if DEBUG` `KeyBinding` in code-behind
+  (`MainWindow.xaml.cs:36-39`). The walker, the collector and the DI registration do still ship in Release —
+  the command that dumps them does not.
 - **The key-press path is untested and, as far as the repo shows, has never been observed running.**
   `TourTargetCollector` has **zero tests** — and it is the one piece that touches `Application.Current.Windows`
   / `IsActive` (`:54`) and marshals through `IUiDispatcher.PostAsync` (`:44`). The 18 green tests cover the pure
@@ -44,8 +45,8 @@ got wrong:
 | Visual-tree walker | `src/Pia.Wpf/Helpers/TourTargetWalker.cs` (108 lines) |
 | The DTO | `src/Pia.Wpf/Models/TourTarget.cs` |
 | Service + interface | `src/Pia.Wpf/Services/TourTargetCollector.cs`, `Services/Interfaces/ITourTargetCollector.cs` |
-| DI registration | `src/Pia.Wpf/Bootstrapper.cs:437` |
-| The debug command | `MainWindowViewModel.DumpTourTargetsAsync` (`:437`) |
+| DI registration | `src/Pia.Wpf/Bootstrapper.cs:447` |
+| The debug command | `MainWindowViewModel.DumpTourTargetsAsync` — inside `#if DEBUG` |
 | Its keybinding | `MainWindow.xaml.cs:38` — **Ctrl+Shift+F12** |
 | Tests | `tests/Pia.Wpf.Tests/Views/TourTargetWalkerTests.cs` (363 lines) |
 
@@ -76,16 +77,18 @@ clipboard.
 the source is a commit message and a superseded batch brief — and the playbook is the doc a UI-automation
 session is told to read first. **This is how the thing rots to nobody knowing it exists.**
 
-### One landmine the next row in the track would arm
+### The landmine this track armed, since defused
 
-The clipboard write at `MainWindowViewModel.cs:456` is **not** `#if DEBUG`-gated — only its sole invoker is. The
-log path *is* gated (`SensitiveDebug` is `[Conditional("DEBUG")]`), so the asymmetry is easy to miss. The moment
-`D3` registers a Release-reachable invoker, every `AutomationId` **and every `Name`** — todo titles, chat titles,
-i.e. user content by CLAUDE.md's own list — goes to the clipboard in a shipped build.
+The clipboard write used to sit outside `#if DEBUG` while only its sole invoker was gated, so the moment `D3`
+registered a Release-reachable invoker, every `AutomationId` **and every `Name`** — todo titles, chat titles,
+i.e. user content by CLAUDE.md's own list — would have gone to the clipboard in a shipped build. That is closed:
+the command and its clipboard write are now inside one `#if DEBUG`, the `MainWindowViewModelTests` that exercise
+them are guarded to match, and `TourDumpDebugOnlyRuleTests.TheTourDumpIsCompiledOutOfRelease` reads the source
+and fails unless that guard directly encloses both the method and the write with no directive splitting them.
 
-Fixing it is a **two-file** change, not a one-liner: `MainWindowViewModelTests`' clipboard assertion has no
-`#if` guard, unlike its log-level sibling, so gating the write alone leaves a Release-config assertion
-contradicting the code. **Decide this before `D3` is registered, not after.**
+So `D3` cannot re-arm it by accident, and there is no decision left owing here. What `D3` does still owe is the
+same question one level up: the *walk* is Release-safe, but anything that ships a rendering of it — to a model,
+to a log, to the clipboard — is carrying user content and needs its own answer.
 
 ## 3. The one question that has to be answered first
 

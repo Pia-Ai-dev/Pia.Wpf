@@ -1,13 +1,14 @@
 # Failure layer + recovery actions — the plan for #2 slice 2
 
-**Status:** **G2, G3 and G4 landed 2026-08-24**; `G5` remains, behind gate `G-Q1`. **Owner:** Marco Altmann.
+**Status:** **G2, G3 and G4 landed 2026-08-24**; gate `G-Q1` **answered 2026-08-25** and `G5` is
+**withdrawn as specified** — see §4. **Owner:** Marco Altmann.
 **Written:** 2026-08-24.
 **Origin:** recommendation **#2** of
 [`../hermes_checkup/2026-08-22-hermes-update-review.md`](../hermes_checkup/2026-08-22-hermes-update-review.md)
 (§3.2, row 2 of the table). Slice 1 shipped as `3c90aa74`; slice 2 is the remainder, and it is the last
 `High` left in that review's *not yet planned* table. `G1`
 ([`2026-08-24-export-diagnostics.md`](2026-08-24-export-diagnostics.md)) shipped the other half of §3.2
-and is a **dependency of `G5` below**, not a sibling.
+and is a **dependency of `G4`'s diagnostics action**, not a sibling.
 
 Executable cold. Everything needed is here — you should not have to re-read the review.
 
@@ -150,39 +151,125 @@ this plan does **not** get its own tracking file.
 
 - **G4 · Layer name + recovery action on the failure card.** Renders the layer beside slice 1's reason line
   and offers the matching action. Both actions are **already built, and the navigation seam is verified**:
-  *Export diagnostics* (`G1`) for `App`/`Unclassified`, and for `Provider`/`Endpoint`
+  *Export diagnostics* (`G1`) for `App`/`Workspace`, and for `Provider`/`Endpoint`
   `_navigationService.NavigateTo<SettingsViewModel, int>((int)SettingsTab.Providers)` — the exact call
   `MainWindowViewModel.NavigateToSettings` already makes, with a tuple overload used by the meeting overlay
   for a deep-linked inner tab. Needs an `AutomationProperties.AutomationId` per new control; **no
   `[InlineData]` bump** — `RunProgressPanel` is already covered and its count is a floor asserted with `>=`.
   *Deps:* G2 · *Effort:* **S** · *Value:* **High**
 
-- **G5 · Retry on the failure card, honouring `SafeToReRun`.** Gated — see `G-Q1`. Do not start this before
-  the gate is answered.
+- **G5 · Retry on the failure card, honouring `SafeToReRun`. WITHDRAWN as specified 2026-08-25** — the gate
+  below shows that a Retry so gated can never enable. What a Retry would actually cost is in the prerequisite
+  list at the end of this section.
   *Deps:* G2, G4, **G-Q1** · *Effort:* **M** · *Value:* **Med**
 
-### Decision gate G-Q1 — what does Retry actually re-run?
+### Decision gate G-Q1 — ANSWERED 2026-08-25
 
 **Closes:** `G5`. **Question:** does Retry re-dispatch the whole run from its goal, or resume from the failed
 step?
 
-It cannot be answered by preference. Re-dispatch is simple and duplicates every write the run already made;
-resume-from-step needs the step ledger to be trustworthy after a fault. **`SafeToReRun` only makes
-re-dispatch safe for the pre-model cases** — which is a narrow enough set that a Retry gated on it may be
-worth very little, and that possibility is the honest reason this is a gate and not a task. Answer it with
-the per-layer duplicate-write analysis, not in the abstract.
+**Answer: resume from the failed step — and it is not buildable today.** Re-dispatch is dead on arrival: a
+Retry gated on `SafeToReRun` can never enable, because both descriptors carrying `true` are produced where no
+failure card exists. Resume-from-step is the only shape that does not duplicate writes, and it needs a step
+ledger that a failed run does not leave behind. `G5` as specified is therefore **withdrawn**, and the
+prerequisite list below replaces it.
 
-Whatever the answer: **the retry claim must not `SET ExtraJson = NULL`.** Both existing resume claims do,
-and they are safe only because they fire from `WaitingForInput`/`Paused`. A Retry adds a **new
-`Failed → Running`** transition, and written in the shape of its two siblings it would wipe the reason slice
-1 reads. `FailureJson` (§2.3) survives it; `{"error": …}` does not.
+#### Every descriptor and its verdict
+
+`FailureMapper` (`src/Pia.Wpf/Services/FailureMapper.cs`) constructs **15** descriptors — 14 classifying arms
+plus the `Unclassified` fallback. **Two carry `true`.**
+
+`ForReason`, matched by value on an app-owned constant:
+
+| Constant | Line | Layer / Code | `SafeToReRun` |
+|---|---|---|---|
+| `AgentStepTools.UndetailedFailure` | 25 | Tool / Undetailed | false |
+| `AgentStepTools.EmptyResponseFailure` | 26 | Provider / EmptyResponse | false |
+| `HeadlessRunLauncher.WorkspaceSetupFailure` | 27 | Workspace / WorkspaceSetup | false |
+| `HeadlessRunLauncher.ShutdownInterruptedFailure` | 28 | Cancelled / Interrupted | false |
+| `AgentRunOrchestrator.SupersededFailureReason` | 29 | Cancelled / Superseded | false |
+| `ScheduledJobService.NoProviderFailureReason` | 30 | Provider / NoProvider | **true** |
+
+`ForException`, matched on exception type through the unwrapped inner chain:
+
+| Type | Line | Layer / Code | `SafeToReRun` |
+|---|---|---|---|
+| `PreModelLaunchException` | 79 | Provider / NoProvider | **true** |
+| `LlmTimeoutException` | 80 | Provider / Timeout | false |
+| `LlmTruncatedException` | 81 | Provider / Truncated | false |
+| `BrowserLaunchException` | 82 | Tool / BrowserLaunch | false |
+| `HttpRequestException` | 83 | Endpoint / Transport | false |
+| `TaskCanceledException` / `OperationCanceledException` | 84 | Cancelled / Cancelled | false |
+| `UnauthorizedAccessException` | 85 | Workspace / AccessDenied | false |
+| `IOException` | 86 | Workspace / Io | false |
+| *nothing matched* | 53 | Unclassified / Unclassified | false |
+
+The pair is pinned by `FailureMapperTests.OnlyTheProviderResolveFailure_IsSafeToReRun`, which asserts all
+fifteen — both `true` arms and every one of the thirteen `false` ones, the `Unclassified` fallback included.
+The "only" in its name is therefore enforced: flipping any arm to `true` turns it red.
+
+#### Neither `true` can reach a card
+
+The card has one data path: `AgentRuns.FailureJson`, written only by `AgentRunService.FailAsync` (`:324`) and
+read only by `RunProgressViewModel.ReadFailureLayer` (`:1269`). It is the only such column in the schema.
+
+- **The string arm never goes near it.** Both raisers (`ScheduledJobBackgroundService.cs:494`, `:679`) hand
+  the descriptor to `MarkRunFailedAsync`, which uses it once — at `ScheduledJobService.cs:359`, which *is*
+  `G3` — and persists it nowhere. A scheduled job has no descriptor column and renders no failure card.
+- **The exception arm fires before the row exists.** `PreModelLaunchException` is thrown at exactly one
+  place, `HeadlessRunLauncher.cs:323`, ahead of the stub chat (`:328`) and of `CreateAsync` (`:368`). It
+  escapes to `ScheduledJobBackgroundService.cs:531` (into `MarkRunFailedAsync`, above) and to
+  `ChatSessionManager.cs:1415`, which propagates to its awaiting caller. Neither has an `AgentRuns` row.
+- **No `FailAsync` site sees it second-hand.** `HeadlessRunLauncher.cs:540` and `:967` are gated on
+  `started`, hence past `:323` in the same dispatch. `AgentRunOrchestrator.cs:585` sees planner and step
+  faults only — the one in-run launch (`LaunchChildAsync`, `:1209`) has its own catch that settles the step
+  with a fixed string. `BackgroundAssistantTurnRunner.cs:285` launches nothing.
+
+So a Retry gated on `SafeToReRun` is enabled **never** — with one qualifier. `ForReason` matches by string
+*value*, not "by reference to its declaration" as its own doc comment claims (`FailureMapper.cs:19`), and
+`SafeFail`'s fallback (`AgentRunOrchestrator.cs:1899`) feeds it arbitrary reason text from sites that *do*
+have a run row (`:298`, `:506`, `:698`, `:704`). A reason byte-identical to the token `"NoProvider"` would
+therefore classify `true` on a real card. No raiser produces that string: the constant is only ever passed
+by name, and `PreModelLaunchException`'s message is the sentence at `HeadlessRunLauncher.cs:323`.
+
+#### Why resume-from-step is not buildable yet
+
+A failed run's ledger cannot be drained. The in-flight step goes `Running` at `AgentRunOrchestrator.cs:405`;
+it is settled by `SafeRecordStep` on the success path (`:494`) and restored to `Pending` on the pause path
+(`:565-566`), and the fail path (`:585`) does **neither** — so the step is left `Running`.
+`NextPendingStepAsync` (`AgentRunService.cs:1197`) selects `Status=Pending` only, and the sole repair in the
+codebase — statement 1b of `FailInterruptedRunsAsync` (`AgentRunService.cs:705-728`) — is scoped to
+`State=WaitingForChildren` and never touches a Failed run. Its own comment states the cost of draining an
+unrepaired ledger:
+
+> a step left Running is INVISIBLE to it: without this statement a re-parked parent would skip its whole
+> delegated group, execute the steps AFTER it out of order against inputs that were never produced, and
+> settle Completed while the panel still rendered those steps as active — permanently and silently.
+
+#### What a Retry would require
+
+1. A `Failed → Running` claim that first resets that run's `Running` steps to `Pending` — statement 1b's
+   rule, handed to the fail path.
+2. That claim must **not** `SET ExtraJson = NULL`. `TryBeginResumeAsync` (`AgentRunService.cs:443`) and
+   `TryResumeFromPauseAsync` (`:544`) both do, and are safe only because they fire from
+   `WaitingForInput`/`Paused`. A Retry written in their shape would wipe the reason slice 1 reads.
+   `FailureJson` (§2.3) survives it; `{"error": …}` does not.
+3. A card reader that keeps more than the layer. `ReadFailureLayer` (`RunProgressViewModel.cs:1267-1270`)
+   discards `Code` and `SafeToReRun`, so nothing in the VM can gate on the verdict today. The button itself
+   would live in `RunProgressPanel.xaml`.
+
+Together these put the work **above** `G5`'s `M`.
+
+**Hand-off:** `G-Q1` and `G5` still read *Unanswered* / open in
+[`../hermes_checkup/2026-08-22-hermes-followup-checklist.md`](../hermes_checkup/2026-08-22-hermes-followup-checklist.md);
+a separate pass rewrites that file and carries this answer over. Until it does, this section is authoritative.
 
 ## 5. Suggested order
 
 ```
 G2 → G3          # the enabler, then the cheap gap-closure it unlocks
 G2 → G4          # the user-visible half; can run in parallel with G3
-G-Q1 → G5        # only after the gate
+G-Q1 → G5        # gate ANSWERED 2026-08-25; G5 withdrawn as specified (§4)
 ```
 
 `G2 → G3` is under two days and closes a gap the repo has already written down. `G4` is where the value is.

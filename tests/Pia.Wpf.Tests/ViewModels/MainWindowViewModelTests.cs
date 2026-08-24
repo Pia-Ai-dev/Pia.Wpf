@@ -228,8 +228,9 @@ public class MainWindowViewModelTests
         }
     }
 
-    /// <summary>An AutomationId can interpolate a typed keyword and a Name can be a todo title, so the
-    /// only line that survives a Release build carries neither.</summary>
+#if DEBUG
+    /// <summary>The dump only exists in a Debug build, and even there an AutomationId can interpolate a typed
+    /// keyword and a Name can be a todo title, so the Information line carries neither.</summary>
     [Fact]
     public async Task TheTourDump_KeepsIdsAndNamesBelowInformation()
     {
@@ -247,12 +248,8 @@ public class MainWindowViewModelTests
         Assert.Contains("Tour targets: 1", info.Message);
         Assert.Contains("MainWindow", info.Message);
 
-#if DEBUG
         Assert.Contains(logger.Entries, e => e.Level == LogLevel.Debug && e.Message.Contains("hunter2"));
         Assert.Contains(logger.Entries, e => e.Level == LogLevel.Debug && e.Message.Contains("Anna"));
-#else
-        Assert.DoesNotContain(logger.Entries, e => e.Message.Contains("hunter2"));
-#endif
     }
 
     [Fact]
@@ -288,4 +285,5 @@ public class MainWindowViewModelTests
         Assert.DoesNotContain("hunter2", warning.Message);
         Assert.DoesNotContain("Anna", warning.Message);
     }
+#endif
 }

@@ -55,10 +55,23 @@ public class FailureMapperTests
         Assert.True(FailureMapper.ForReason(ScheduledJobService.NoProviderFailureReason)!.SafeToReRun);
         Assert.True(FailureMapper.ForException(new PreModelLaunchException("no provider")).SafeToReRun);
 
+        Assert.False(FailureMapper.ForReason(AgentStepTools.UndetailedFailure)!.SafeToReRun);
+        Assert.False(FailureMapper.ForReason(AgentStepTools.EmptyResponseFailure)!.SafeToReRun);
         Assert.False(FailureMapper.ForReason(HeadlessRunLauncher.WorkspaceSetupFailure)!.SafeToReRun);
-        Assert.False(FailureMapper.ForException(new HttpRequestException("503")).SafeToReRun);
+        Assert.False(FailureMapper.ForReason(HeadlessRunLauncher.ShutdownInterruptedFailure)!.SafeToReRun);
+        Assert.False(FailureMapper.ForReason(AgentRunOrchestrator.SupersededFailureReason)!.SafeToReRun);
+
         Assert.False(FailureMapper.ForException(new LlmTimeoutException("p", 100)).SafeToReRun);
+        Assert.False(FailureMapper.ForException(new LlmTruncatedException("p", 100)).SafeToReRun);
+        Assert.False(FailureMapper.ForException(
+            new BrowserLaunchException("launch", new InvalidOperationException("boom"))).SafeToReRun);
+        Assert.False(FailureMapper.ForException(new HttpRequestException("503")).SafeToReRun);
+        Assert.False(FailureMapper.ForException(new TaskCanceledException()).SafeToReRun);
+        Assert.False(FailureMapper.ForException(new OperationCanceledException()).SafeToReRun);
+        Assert.False(FailureMapper.ForException(new UnauthorizedAccessException("denied")).SafeToReRun);
         Assert.False(FailureMapper.ForException(new IOException("disk")).SafeToReRun);
+
+        Assert.False(FailureMapper.ForException(new InvalidOperationException("nothing matches")).SafeToReRun);
     }
 
     [Fact]
