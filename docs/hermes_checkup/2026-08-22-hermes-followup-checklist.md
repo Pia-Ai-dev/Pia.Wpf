@@ -182,7 +182,7 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
   reading of the original rootedness — the goal named the project — is still not excluded.
   *Deps:* P1 · *Effort:* **XS** · *Value:* **Med**
 
-- [ ] **P9 · Investigate the step that reported `succeeded=True` on a refused tool call.** The one loose
+- [x] **P9 · Investigate the step that reported `succeeded=True` on a refused tool call.** The one loose
   thread the replay left in prose. **Not A3, and not blocked by A2:** A3 tests the *artifact* channel
   (declared-but-absent) and waits behind A2, while this is the *success-determination* channel — what
   makes a step report success at all — and nothing gates it. Scoped **investigate, not fix**: the model
@@ -196,6 +196,22 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
   verify pass saw three — so a run that fails after its last verify never reports what it declared
   afterwards. Same shape as the original: work the tally cannot see. §10 of
   [2026-08-23-a2-wide-read.md](2026-08-23-a2-wide-read.md), trap 2.
+  **Answered 2026-08-24, no production change** —
+  [2026-08-24-p9-refused-write-reading.md](2026-08-24-p9-refused-write-reading.md). The call was **never
+  refused**: `write_file` was granted, took the gate's `AutoRun` arm, executed, and returned
+  `WriteResult.Failed` from `FilesToolHandler` itself. So reading 1 holds and the step outcome needs nothing —
+  the tool result is not an input to either `succeeded` branch, and the executor never sees it. The gap is that
+  `AgentTimelineOutcome.Ok` means "`Execute()` returned", not "it worked", and the panel's `OutcomeSuffix`
+  fires only on `Error` (a *throwing* tool), so an executed-but-failed call renders exactly like a successful
+  one. No cheap fix: the timeline is metadata-only, so it cannot store the error, and there is no shared
+  failure envelope to read — `write_file` alone returns a structured `success` field against ~118 bare
+  `"Error: …"` string sites, neither convention enforced. §5 of the reading ranks what would be worth
+  building; a `Failed` outcome populated only from the unambiguous `WriteResult` shape is the top candidate.
+  The **second instance is a separate, measurement-only defect**: the drain loop's `if (cancelled || failed)
+  break;` sits immediately before the verify pass, so a failed run never re-probes by design. Read
+  `AgentSteps.ExpectedArtifact` rather than a probe line's `declared` (already the A2 wide read's traps 1–2);
+  `TryBuildArtifactFactsAsync` is a pure filesystem probe with no provider call, so running it alone on the
+  failure path would complete the tally free — but that is A6/A7's, not this row's.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
 
 ---
