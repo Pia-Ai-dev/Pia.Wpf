@@ -32,6 +32,11 @@ public class ProviderTypeToVisibilityConverter : IValueConverter
                 ? Visibility.Visible : Visibility.Collapsed,
             "MistralAgentId" => providerType is AiProviderType.Mistral
                 ? Visibility.Visible : Visibility.Collapsed,
+            // OpenRouter reports the window its route actually serves and ProviderService re-reads it on
+            // every save, so a typed value would be silently overwritten. Hidden rather than disabled: a
+            // greyed box only raises the question of why.
+            "ContextWindow" => providerType != AiProviderType.OpenRouter
+                ? Visibility.Visible : Visibility.Collapsed,
             _ => Visibility.Collapsed
         };
     }
@@ -40,4 +45,4 @@ public class ProviderTypeToVisibilityConverter : IValueConverter
     {
         throw new NotImplementedException();
     }
-}
+}

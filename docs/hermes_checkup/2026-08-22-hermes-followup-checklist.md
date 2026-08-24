@@ -320,15 +320,42 @@ The reading they produced is [2026-08-23-a4-replay-reading.md](2026-08-23-a4-rep
   - **Local models are the known soft spot and it is a no-op, not a regression.** An Ollama model with a 4k
     window gets 128k, so compaction never fires and Ollama keeps sliding its own window — exactly today's
     behaviour. Guessing low would have *added* eviction where there was none.
-  - **The real answer is live discovery, and it is one refactor away.** OpenRouter's `/models` returns
-    `context_length` and the Anthropic Models API returns `max_input_tokens`, but
-    `ProviderService.FetchModelsAsync` returns `List<string>` and throws the rest away. Widening that return
-    type would retire most of this table. Not this row.
+  - ~~**The real answer is live discovery, and it is one refactor away.**~~ **Done for OpenRouter,
+    2026-08-24** — see `B12` below. Still open for the Anthropic Models API (`max_input_tokens`), which Pia
+    has no provider type for.
   - Gate **4740 / failed: 0**; both configurations rebuild to 0 Warning(s). Covered by
     `ContextWindowDefaultsTests` (the table, the fallback, case-insensitivity, shadowing) and
     `ProviderContextWindowStampTests`, which writes a real `providers.json` to a temp directory, reads it back
     through the service and asserts the budget resolves.
   *Deps:* none · *Effort:* **S** · *Value:* **High**
+
+- [x] **B12 · OpenRouter reports its own window — read it live, and take the field off the form.**
+  **Owner decision, 2026-08-24.** B11's premise was that no provider API reports a context window.
+  **OpenRouter does**: `GET /api/v1/models` is public, needs no key, and every one of its 422 models carries
+  one. Snapshot and refresh recipe:
+  [`../openrouter_models/2026-08-24-openrouter-context-lengths.md`](../openrouter_models/2026-08-24-openrouter-context-lengths.md).
+  - **`top_provider.context_length`, never the advertised `context_length`.** They differ for **42 of 422**
+    and the advertised figure is the larger, so using it would size requests the route refuses —
+    `thedrummer/unslopnemo-12b` advertises 1024000 and serves **32768**, a 31x overshoot;
+    `meta-llama/llama-4-scout` 1310720 against 327680.
+  - **Read live on every save** (`ProviderService.ApplyOpenRouterContextWindowAsync`), because the value
+    moves: alias ids float to whatever the author ships, and OpenRouter re-routes models between hosts. A
+    failed lookup keeps the snapshot's value rather than failing the save.
+  - **The field is hidden for OpenRouter** in `ProviderEditContentDialog`, through the existing
+    `ProviderTypeToVisibilityConverter` rather than a new mechanism. Hidden, not disabled — a value the save
+    overwrites is worse than no box at all.
+  - **Normalisation was the trap, and the naive rule was measured wrong.** OpenRouter ids are namespaced,
+    alias rows carry a leading `~`, and a `:variant` suffix selects a route. Collapsing `:variant` onto the
+    base looked safe — 64 of 72 variants match their base — but **8 do not, mostly smaller**:
+    `poolside/laguna-s-2.1:free` serves 262144 against the base's 1048576, `z-ai/glm-5.2:free` 256000
+    against 1048576. Stripping would have overshot 4x for free-tier users. The rule is **exact id first,
+    base only as a fallback**, shared by the snapshot and the live read through
+    `OpenRouterContextWindows.LookupKeys` so they cannot drift. Three variants have no base row at all.
+  - **A test caught a real crash path**: `JsonElement.TryGetInt32` *throws* on a JSON null rather than
+    returning false, and a null `context_length` is a shape the payload can carry.
+  - The seed table is generated from the doc, not transcribed — 422 rows, 42 overrides applied, verified for
+    key collisions before it was written.
+  *Deps:* B11 · *Effort:* **S** · *Value:* **High**
 
 ---
 

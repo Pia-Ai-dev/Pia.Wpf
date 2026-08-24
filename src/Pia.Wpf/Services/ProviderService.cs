@@ -6,6 +6,7 @@ using Pia.Infrastructure;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.Providers;
 
 namespace Pia.Services;
 
@@ -48,8 +49,8 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
 
     /// <summary>
     /// Every read of the provider list, with an assumed context window filled in for any provider that has
-    /// none. No provider API reports a window and the field is hand-typed, so without this compaction never
-    /// runs and an over-window chat fails at the provider instead.
+    /// none. Only OpenRouter reports one, and the field is otherwise hand-typed, so without this compaction
+    /// never runs and an over-window chat fails at the provider instead.
     /// <para>
     /// Stamped into the loaded object rather than written back: the editor binds what it is given, so the
     /// user SEES the assumed window and can change it, and a value nobody edits stays out of providers.json.
@@ -60,9 +61,53 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
         var providers = await LoadAsync();
 
         foreach (var provider in providers)
-            provider.MaxContextWindowTokens ??= ContextWindowDefaults.For(provider.ModelName);
+            provider.MaxContextWindowTokens ??= ContextWindowDefaults.For(provider.ProviderType, provider.ModelName);
 
         return providers;
+    }
+
+    /// <summary>
+    /// Re-reads what OpenRouter's default route serves for this model and stamps it on the provider. Called
+    /// on every save, because the value moves: an alias id floats to whatever the author ships as current,
+    /// and OpenRouter re-routes models between hosts.
+    /// <para>
+    /// <c>top_provider.context_length</c>, never the advertised <c>context_length</c> — they differ for
+    /// dozens of models and the advertised one is the larger, so using it would size requests the route
+    /// refuses. A failed lookup leaves whatever the snapshot resolved rather than failing the save; the
+    /// endpoint is public, so this works before an API key is entered.
+    /// </para>
+    /// </summary>
+    private async Task ApplyOpenRouterContextWindowAsync(AiProvider provider)
+    {
+        if (provider.ProviderType != AiProviderType.OpenRouter || string.IsNullOrWhiteSpace(provider.ModelName))
+            return;
+
+        provider.MaxContextWindowTokens ??= ContextWindowDefaults.For(provider.ProviderType, provider.ModelName);
+
+        try
+        {
+            using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            var json = await httpClient.GetStringAsync("https://openrouter.ai/api/v1/models");
+
+            if (OpenRouterModelCatalog.TryReadContextLength(json, provider.ModelName) is not { } served)
+            {
+                _logger.LogInformation("OpenRouter reported no context length for the configured model; keeping {Window}",
+                    provider.MaxContextWindowTokens);
+                return;
+            }
+
+            if (provider.MaxContextWindowTokens != served)
+                _logger.LogInformation("OpenRouter context window moved {Old} -> {New}",
+                    provider.MaxContextWindowTokens, served);
+
+            provider.MaxContextWindowTokens = served;
+        }
+        catch (Exception ex)
+        {
+            // Never fail a save on this: the snapshot already put a usable number on the provider.
+            _logger.LogWarning(ex, "Could not read the OpenRouter model list; keeping context window {Window}",
+                provider.MaxContextWindowTokens);
+        }
     }
 
     public async Task<IReadOnlyList<AiProvider>> GetProvidersAsync()
@@ -152,6 +197,8 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
     {
         var providers = await LoadProvidersAsync();
 
+        await ApplyOpenRouterContextWindowAsync(provider);
+
         if (!string.IsNullOrEmpty(apiKey))
         {
             provider.EncryptedApiKey = _dpapiHelper.Encrypt(apiKey);
@@ -182,6 +229,8 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
             throw new InvalidOperationException($"Provider with id {provider.Id} not found");
 
         var index = providers.IndexOf(existing);
+
+        await ApplyOpenRouterContextWindowAsync(provider);
 
         // Preserve encrypted key if no new key provided — unless the incoming provider
         // already carries one (the E2EE pull path maps the synced key onto

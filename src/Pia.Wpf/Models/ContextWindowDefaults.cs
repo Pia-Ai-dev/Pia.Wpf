@@ -1,9 +1,15 @@
 namespace Pia.Models;
 
 /// <summary>
-/// The context window assumed for a provider that has none configured. No provider API Pia talks to reports
-/// a window, and <see cref="AiProvider.MaxContextWindowTokens"/> is hand-typed, so without this compaction
-/// never runs for anyone and an over-window chat fails provider-side instead.
+/// The context window assumed for a provider that has none configured — without it compaction never runs
+/// and an over-window chat fails provider-side instead.
+/// <para>
+/// <b>OpenRouter is the exception and reports one.</b> Its <c>/models</c> endpoint carries
+/// <c>top_provider.context_length</c>, so those providers are resolved from
+/// <see cref="OpenRouterContextWindows"/> here and refreshed live by <c>ProviderService</c> on save. Every
+/// other provider type Pia talks to reports nothing, which is why the rest of this file is a guess with a
+/// floor rather than a lookup.
+/// </para>
 /// </summary>
 public static class ContextWindowDefaults
 {
@@ -33,8 +39,13 @@ public static class ContextWindowDefaults
         ("claude-haiku-4-5", 200_000),
     ];
 
-    public static int For(string? modelName)
+    /// <param name="providerType">OpenRouter routes to its own snapshot first: the window its route serves
+    /// can be far below what the model advertises, and the family table below carries the advertised figure.</param>
+    public static int For(AiProviderType providerType, string? modelName)
     {
+        if (providerType == AiProviderType.OpenRouter && OpenRouterContextWindows.TryGet(modelName, out var routed))
+            return routed;
+
         if (string.IsNullOrWhiteSpace(modelName))
             return Fallback;
 

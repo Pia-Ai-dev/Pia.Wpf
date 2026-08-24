@@ -24,13 +24,13 @@ public class ContextWindowDefaultsTests
     [InlineData("claude-haiku-4-5-20251001", 200_000)]
     public void AKnownModelResolvesItsOwnWindow(string modelName, int expected)
     {
-        Assert.Equal(expected, ContextWindowDefaults.For(modelName));
+        Assert.Equal(expected, ContextWindowDefaults.For(AiProviderType.OpenAI, modelName));
     }
 
     [Fact]
     public void MatchingIsCaseInsensitive()
     {
-        Assert.Equal(1_000_000, ContextWindowDefaults.For("ANTHROPIC/Claude-Opus-5"));
+        Assert.Equal(1_000_000, ContextWindowDefaults.For(AiProviderType.OpenAI, "ANTHROPIC/Claude-Opus-5"));
     }
 
     [Theory]
@@ -42,7 +42,7 @@ public class ContextWindowDefaultsTests
     [InlineData(null)]
     public void AnythingUnsourcedTakesTheFallback(string? modelName)
     {
-        Assert.Equal(ContextWindowDefaults.Fallback, ContextWindowDefaults.For(modelName));
+        Assert.Equal(ContextWindowDefaults.Fallback, ContextWindowDefaults.For(AiProviderType.OpenAI, modelName));
     }
 
     /// <summary>The fallback is a floor for current models, not a guess about any one of them. Lowering it
