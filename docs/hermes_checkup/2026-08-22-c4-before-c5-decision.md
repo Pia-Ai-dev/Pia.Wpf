@@ -192,10 +192,13 @@ there is exactly zero localized prose to retract when C6 lands.**
   `bills-renewals` and `habit-checkin`, recording that the read surface covers them. C5 then lands scoped
   to two text slots (`topic-digest`/topic, `competitor-watch`/companies) and drops from `M` toward `S`,
   and its inverted test validates two templates, not seven.
-- **Answer plan §11 Q1 (does a created job record its blueprint key?) before C5, not before C4.** It is
+- ~~**Answer plan §11 Q1 (does a created job record its blueprint key?) before C5, not before C4.**~~ It is
   orthogonal — an additive `ScheduledJobs` column with the `PRAGMA table_info` / `ALTER TABLE` pair
   (`SqliteContext.cs` ~325 and ~687, `QuietOnSuccess` as the precedent) plus a deliberate sync call — and
   every job created without it simply carries NULL.
+  **Answered yes and closed 2026-08-24, with C5.** `ScheduledJobs.BlueprintKey`, both halves, and off the
+  sync wire per E1b. It is appended to the END of the positional SELECT because `MapJob` reads by ordinal.
+  §1(2) of [`2026-08-24-c5-c7-batch-report.md`](2026-08-24-c5-c7-batch-report.md).
 - **Author C4 as ONE agent**, despite the batch brief's "C4 fans out one agent per blueprint". Seven
   agents would all write the same `RoutineBlueprint.cs` and the same three `.resx` files, which breaks the
   batch's own disjoint-file-ownership rule.
