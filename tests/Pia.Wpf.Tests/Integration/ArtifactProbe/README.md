@@ -2,7 +2,7 @@
 
 Pins how the verifier renders a declared artifact — which strings read as a file reference, and which
 outcome arm each candidate path prints. Plan:
-[`docs/hermes_checkup/2026-08-22-artifact-evidence-plan.md`](../../../../docs/hermes_checkup/2026-08-22-artifact-evidence-plan.md).
+[`docs/hermes_checkup/artifact-evidence.md`](../../../../docs/hermes_checkup/artifact-evidence.md).
 
 ## What is here
 

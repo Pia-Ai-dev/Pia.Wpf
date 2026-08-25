@@ -1,8 +1,8 @@
 # Compaction recall
 
 Measures what Pia's context compaction actually costs the model — not how many tokens it removed, but
-what can still be answered afterwards. Plan:
-[`docs/hermes_checkup/2026-08-22-compaction-recall-test-plan.md`](../../../../docs/hermes_checkup/2026-08-22-compaction-recall-test-plan.md).
+what can still be answered afterwards. Closeout:
+[`docs/hermes_checkup/2026-08-24-compaction-recall-closeout.md`](../../../../docs/hermes_checkup/2026-08-24-compaction-recall-closeout.md).
 
 ## What is here
 

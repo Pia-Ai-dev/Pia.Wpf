@@ -526,7 +526,7 @@ chunk 4.
   its prompt construction; `:782` and `:827` are the planner and replan prompts)
 
 **Coordinate with checklist item A4 before editing those two prompts.** Gate A1 was read on 2026-08-23
-(`../hermes_checkup/2026-08-23-a1-pilot-reading.md`) and did **not** close; A4 was promoted from an
+(`../hermes_checkup/artifact-evidence.md`) and did **not** close; A4 was promoted from an
 afterthought to "the highest value-per-effort row in group A" and is expected to run first, rewriting the
 planner prompt's wording about what *checkable* means. Skills arrive at the same discipline from the other
 side — a skill's *Done when* clauses are exactly the checkable predictions A4 wants — so land A4's wording

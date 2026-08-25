@@ -332,3 +332,58 @@ Committed recordings, the settings fixture they start from and the replay harnes
   return the same dead frame. Confirm with a control app (Notepad renders fine) and, if needed,
   `HKCU\Software\Microsoft\Avalon.Graphics\DisableHWAcceleration = 1` before relaunch. Remove the
   value afterwards.
+
+## Traps that read as product bugs
+
+Two found the hard way, neither of them WinWright's fault. They are here because each costs a
+session before it is recognised for what it is.
+
+### A `Focus()` inside `IsVisibleChanged` silently does nothing
+
+- **What looks fine.** A pane flips visible and its `IsVisibleChanged` handler calls
+  `SomeTextBox.Focus()` on a control inside it. Clean build, no warning, no log line.
+- **What happens.** `UIElement.Focus()` returns a `bool` and returns `false` when the target is not
+  focusable *at that instant* — it neither throws nor logs, and callers ignore the return. At the
+  moment the pane's own event fires the descendant is not focusable yet — the shipped handler's own
+  comment says `IsVisible` has not reached the target that early, and the previously collapsed
+  subtree has not been laid out either. Focus stays wherever it was.
+- **To a script this reads as lost input.** Click what opens the pane, then `ww_type` / `ww_keyboard`
+  with no target, and the keystrokes land on whatever had focus before — indistinguishable from the
+  harness dropping them. Name the target instead: `Routines_Field_Name` for the routine editor,
+  `QuickSwitcher_Query` for Ctrl+H.
+- **What the two shipped call sites do instead** — defer one dispatcher turn at
+  `DispatcherPriority.Input`, then call **both** `Focus()` (logical) and `Keyboard.Focus(target)`
+  (keyboard focus): `RoutinesView.EditorPane_IsVisibleChanged` → `EditorNameBox`, and
+  `PiaChatQuickSwitcher.OnIsVisibleChanged` → `QueryBox`. So the focus arrives a turn *after* the
+  click: an assertion in the same beat reads the pre-focus state. Wait or re-snapshot first.
+
+### Seeding logs in console format makes every diagnostics-export entry 0 bytes
+
+- **Symptom.** The export zip's `README.txt`, `manifest.json` and `environment.json` are all correct,
+  and whatever the running app logged itself has content, but every log file you seeded by hand
+  comes out **0 bytes**. It looks exactly like the redactor eating the file. It is not a product bug.
+- **Mechanism** (`src/Pia.Wpf/Logging/LogRedactor.cs`). `Redact` walks the file line by line and
+  starts with `dropping = true` on purpose, so a file beginning mid-payload cannot leak that
+  fragment; a non-record line is written only while not dropping, so nothing at all is emitted before
+  the first record. `IsRecord` demands the sink's exact shape — `Split('\t', 5)` yielding five fields,
+  field 0 an ISO-8601 timestamp, field 1 one of `TRCE`/`DBUG`/`INFO`/`WARN`/`FAIL`/`CRIT`, fields 2
+  and 3 bracketed. Console format (`info: Some.Category[0]` plus an indented message line) satisfies
+  none of that, so a file made only of it legitimately emits nothing.
+  `LogRedactorTests.AStreamThatStartsMidRecord_EmitsNothingBeforeItsFirstRecord` is that behaviour,
+  green today.
+- **Seed the tab-delimited form**, one record per line — `{ISO timestamp}`, `{LEVEL}`,
+  `[{Category}]`, `[{EventId}]`, `{message}`, with a real tab between each. Build it rather than
+  typing it, so the separators cannot come out as spaces:
+
+  ```powershell
+  $fields = '2026-08-24T12:24:51.9219150+02:00', 'INFO', '[Bootstrapper]', '[0]', 'Started'
+  ($fields -join "`t") | Add-Content "$env:PIA_LOCAL_DATA_DIR/Logs/pia-2026-08-24.log"
+  ```
+
+  Seed at `INFO` or above: a correctly shaped `DBUG`/`TRCE` file is just as useless, because those
+  bodies are replaced by `<debug-payload-dropped>` by design.
+- **Where.** `pia*.log` in the logs directory the export was pointed at — under a throwaway profile
+  that is `%PIA_LOCAL_DATA_DIR%\Logs`, not your real `%LOCALAPPDATA%\Pia\Logs`. Whatever the running
+  app wrote itself exports fine — the sink holds that file open and the export deliberately opens it
+  `FileShare.ReadWrite` — so one healthy entry beside a directory of 0-byte seeds is what makes this
+  read as a partial failure rather than a fixture mistake.

@@ -12,9 +12,9 @@ _Follow-up to [`docs/superpowers/specs/agent-roadmap/hermes-comparison.md`](../s
 | Item | Plan |
 |---|---|
 | §3.1 · Routine blueprint catalog | [`2026-08-22-routine-blueprints-plan.md`](2026-08-22-routine-blueprints-plan.md) |
-| §3.3 · Compaction recall measurement | [`2026-08-22-compaction-recall-test-plan.md`](2026-08-22-compaction-recall-test-plan.md) |
-| §3.4 · Guided-tour tool | [`2026-08-22-guided-tour-tool-plan.md`](2026-08-22-guided-tour-tool-plan.md) |
-| §3.6(a) · Artifact evidence / planner discipline | [`2026-08-22-artifact-evidence-plan.md`](2026-08-22-artifact-evidence-plan.md) |
+| §3.3 · Compaction recall measurement | [`2026-08-24-compaction-recall-closeout.md`](2026-08-24-compaction-recall-closeout.md) |
+| §3.4 · Guided-tour tool | [`../guided_tour/2026-08-24-d-track-parked.md`](../guided_tour/2026-08-24-d-track-parked.md) |
+| §3.6(a) · Artifact evidence / planner discipline | [`artifact-evidence.md`](artifact-evidence.md) |
 | **Tracking** — one row per implementation step | [`2026-08-22-hermes-followup-checklist.md`](2026-08-22-hermes-followup-checklist.md) |
 
 ---
@@ -84,13 +84,13 @@ The July review already noted Pia's structured recurrence (no raw cron strings) 
 
 **Shape for Pia:** a `RoutineBlueprint` record (id, title, description, `ScheduledJobKind`, `RecurrenceTemplate`, `IReadOnlyList<BlueprintSlot>`, a seed-prompt template, default `GrantedTools`), a static `BlueprintCatalog`, and `FillBlueprint` returning a validated `ScheduledJob` — the *same* `ScheduledJobService.CreateAsync`, no second path. RoutinesView renders the catalog as picker cards; the existing "New routine" dialog becomes the "start from blank" escape hatch. The slot list also gives the assistant a way to create routines conversationally without inventing schema.
 
-### 3.2 Failure legibility: error layer + recovery actions + Send Diagnostics  **← build this**
+### 3.2 Failure legibility: error layer + recovery actions + Export Diagnostics  **← build this**
 
 Two connected pieces, both new since the cut.
 
 **`agent/error_surface.py`** maps an internal failure taxonomy onto a small stable descriptor — `{"layer": ..., "code": ..., "retryable": bool}` — so clients can say *"Provider error"* / *"Gateway error"* instead of, in its own words, "toasting an opaque string and leaving the user to guess whether the model, the gateway, or the app froze." Layers include `provider` (the model API rejected the call) and `endpoint` (a user-configured custom/local endpoint failed at transport). The desktop then renders a card that *names the failing layer and offers the matching recovery action*, and honours the classifier's retry verdict rather than always showing Retry.
 
-**`feat(desktop): Send Diagnostics`** — one-click redacted debug-bundle upload from that same error card, with consent copy, log-grade redaction, a dismissal guard, and a linkless-success path for when upload succeeds but no link is available.
+**`feat(desktop): Send Diagnostics`** — one-click redacted debug-bundle upload from that same error card, with consent copy, log-grade redaction, a dismissal guard, and a linkless-success path for when upload succeeds but no link is available. Pia narrowed the scope to Export by owner decision: a local redacted zip plus reveal-in-Explorer, no upload path.
 
 Pia today: `LlmTimeoutException`, `LlmTruncatedException`, `BrowserLaunchException`, and `ScheduledJobService.NoProviderFailureReason`. That last one is the right idea already — a named reason that classifies a failure as *cost-free and safe to retry* — but it exists for exactly one case and is a bare `const string`. Everything else surfaces as a message.
 
@@ -186,8 +186,8 @@ Recording these so a later reader doesn't re-derive them:
 | # | Priority | Recommendation | Size |
 |---|---|---|---|
 | 1 | **Should** | **Routine blueprint catalog.** `RoutineBlueprint` + typed slots + `FillBlueprint` → the existing `ScheduledJobService.CreateAsync`, no second job engine. Ship 6–8 blueprints that use surfaces Pia already has (morning briefing, weekly review, topic digest, bills/renewals, habit check-in, custom reminder). Keep "New routine" as the blank-start path. | M |
-| 2 | **Should** | **Error layer + recovery actions.** A `PiaFailure(Layer, Code, Retryable)` descriptor — generalise `NoProviderFailureReason` rather than adding a parallel scheme — mapped at the boundary and rendered on the failure card as a named layer plus the matching action. Honour the retryable verdict; don't always show Retry. | M |
-| 3 | **Should** | **Send Diagnostics.** Consent dialog listing exactly what is included → zip of `pia-*.log` + versions + provider *names* + failing run id. **Logs only, never transcripts** (July caveat ¹: tool output in transcripts has no redaction backstop). | S–M |
+| 2 | **Should** | **Error layer + recovery actions.** A `PiaFailure(Layer, Code, SafeToReRun)` descriptor — generalise `NoProviderFailureReason` rather than adding a parallel scheme — mapped at the boundary and rendered on the failure card as a named layer plus the matching action. Honour that verdict; don't always show Retry — but the flag is *provably nothing spent and nothing written* (`IsPreModelFailure`'s question), not "the call might succeed if repeated": re-dispatching the latter duplicates whatever the run already wrote. | M |
+| 3 | **Should** | **Export Diagnostics.** Scope narrowed to export-only by owner decision — no upload path. Consent dialog listing exactly what is included → zip of `pia-*.log` + versions + provider *names* + failing run id. **Logs only, never transcripts** (July caveat ¹: tool output in transcripts has no redaction backstop). | S–M |
 | 4 | **Should** | **Recall harness for the compactor**, then tune. Measure before moving `ToolEvictionThreshold`/`TruncationThreshold`. Add the recovery pointer first — `AssistantChatsFts` already exists and it was worth +20–43 pts standalone. | M |
 | 5 | **Should** | **Pin the "user messages are never compacted" invariant** with a test against `Microsoft.Agents.AI.Compaction`. If the library doesn't honour it, that is a finding worth having early. | S |
 | 6 | Should | **Mechanical anchor index** in the compactor: file paths under the run root, `ExpectedArtifact` strings, step ordinals, tool names, run/step ids — extracted, not summarised. Biggest single win in hermes's scorecard (23.3 → 60.0). | M |
