@@ -199,6 +199,8 @@
   <data name="Msg_Settings_ConnectionSuccessNoTools" xml:space="preserve"><value>Connecté, mais l'appel d'outils n'est pas pris en charge. La mémoire et les rappels ne seront pas disponibles en mode Assistant.</value></data>
   <data name="Msg_Settings_ConnectionSuccessNoToolsNoStreaming" xml:space="preserve"><value>Connecté, mais ni l'appel d'outils ni le streaming ne sont pris en charge.</value></data>
   <data name="Msg_Settings_CustomTemplatePromptInfo" xml:space="preserve"><value>Ceci est un modèle personnalisé. Le prompt est généré dynamiquement en fonction des champs configurés du modèle.</value></data>
+  <data name="Msg_Settings_DeleteProviderTitle" xml:space="preserve"><value>Supprimer le fournisseur</value></data>
+  <data name="Msg_Settings_DeleteProviderConfirm" xml:space="preserve"><value>Êtes-vous sûr de vouloir supprimer le fournisseur « {0} » ? Cette action est irréversible.</value></data>
   <data name="Msg_Settings_HotkeyAlreadyAssigned" xml:space="preserve"><value>Ce raccourci est déjà attribué au mode {0}.</value></data>
   <data name="Msg_Settings_HotkeyNotSet" xml:space="preserve"><value>Non défini</value></data>
   <data name="Msg_FastPath_NoContent" xml:space="preserve"><value>Rien à optimiser. Sélectionnez d'abord du texte, puis appuyez sur le raccourci de la voie rapide.</value></data>

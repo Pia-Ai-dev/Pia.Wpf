@@ -309,6 +309,13 @@ public partial class ProvidersSettingsViewModel : UiThreadViewModel, IDisposable
             return;
         }
 
+        var confirmed = await _dialogService.ShowConfirmationDialogAsync(
+            _localizationService["Msg_Settings_DeleteProviderTitle"],
+            _localizationService.Format("Msg_Settings_DeleteProviderConfirm", provider.Name));
+
+        if (!confirmed)
+            return;
+
         await _providerService.DeleteProviderAsync(provider.Id);
         await RefreshProvidersAsync();
     }

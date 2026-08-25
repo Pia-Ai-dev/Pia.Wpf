@@ -204,6 +204,8 @@
   <data name="Msg_Settings_ConnectionSuccessNoTools" xml:space="preserve"><value>Connected, but tool calling is not supported. Memory and reminders will not be available in Assistant mode.</value></data>
   <data name="Msg_Settings_ConnectionSuccessNoToolsNoStreaming" xml:space="preserve"><value>Connected, but neither tool calling nor streaming is supported.</value></data>
   <data name="Msg_Settings_CustomTemplatePromptInfo" xml:space="preserve"><value>This is a custom template. The prompt is generated dynamically based on the template's configured fields.</value></data>
+  <data name="Msg_Settings_DeleteProviderTitle" xml:space="preserve"><value>Delete Provider</value></data>
+  <data name="Msg_Settings_DeleteProviderConfirm" xml:space="preserve"><value>Are you sure you want to delete the provider "{0}"? This cannot be undone.</value></data>
   <data name="Msg_Settings_HotkeyAlreadyAssigned" xml:space="preserve"><value>This hotkey is already assigned to {0} mode.</value></data>
   <data name="Msg_Settings_HotkeyNotSet" xml:space="preserve"><value>Not set</value></data>
   <data name="Msg_FastPath_NoContent" xml:space="preserve"><value>Nothing to optimize. Select text first, then press the fast-path hotkey.</value></data>
