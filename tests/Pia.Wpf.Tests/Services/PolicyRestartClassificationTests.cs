@@ -86,7 +86,6 @@ public class PolicyRestartClassificationTests
     [
         nameof(AppSettings.AssistantChatsBackfilledAt),
         nameof(AppSettings.AssistantFolderLayoutVersion),
-        nameof(AppSettings.BlankedSyncRowRepairAt),
         nameof(AppSettings.EncryptedRefreshToken),
         nameof(AppSettings.HasCompletedFirstRunWizard),
         nameof(AppSettings.IngestSchemaVersion),
@@ -101,6 +100,7 @@ public class PolicyRestartClassificationTests
 
     private static readonly string[] NoRuntimeEffect =
     [
+        nameof(AppSettings.BlankedSyncRowRepairAt),
         nameof(AppSettings.ClientPolicyInitialized),
         nameof(AppSettings.DefaultProviderId),
         nameof(AppSettings.DraftText),
@@ -174,7 +174,7 @@ public class PolicyRestartClassificationTests
     {
         Assert.True(
             LiveAlready.Length == 41 && LiveWithWork.Length == 23
-                && RestartRequired.Length == 13 && NoRuntimeEffect.Length == 26,
+                && RestartRequired.Length == 12 && NoRuntimeEffect.Length == 27,
             "the four sets are written out in full, found "
                 + $"{LiveAlready.Length}/{LiveWithWork.Length}/{RestartRequired.Length}/{NoRuntimeEffect.Length}");
 

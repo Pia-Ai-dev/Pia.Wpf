@@ -648,6 +648,11 @@ public class SyncClientService : ISyncClientService, IDisposable
         if (!settings.SyncEnabled || settings.BlankedSyncRowRepairAt is not null)
             return false;
 
+        // Resyncing before onboarding would only hit the pull refusal below. Leave the marker unset
+        // so the launch that finally has the UMK still gets its attempt.
+        if (settings.IsE2EEEnabled && _e2ee?.IsReady() != true)
+            return false;
+
         var providers = await _providerService.GetProvidersAsync();
         var blanked = providers.Count(p =>
             p.ProviderType == AiProviderType.PiaCloud
@@ -659,14 +664,24 @@ public class SyncClientService : ISyncClientService, IDisposable
             "Found {Count} provider row(s) blanked by an E2EE pull that could not decrypt; forcing a full resync",
             blanked);
 
-        settings.BlankedSyncRowRepairAt = DateTime.UtcNow;
-        await _settingsService.SaveSettingsAsync(settings);
+        // Mark only once a cycle actually RAN. SyncNowAsync returns null for every reason a cycle can
+        // be skipped — no token, server unreachable, another sync holding the lock — and burning the
+        // one-shot on one of those would strand the rows blank forever. A cycle that ran and left them
+        // blank means the server copy is gone, so there is nothing to retry.
+        var result = await ForceFullResyncAsync();
+        if (result is null)
+        {
+            _logger.LogWarning("Repair resync did not run; leaving the repair armed for a later launch");
+            return false;
+        }
 
-        await ForceFullResyncAsync();
+        var latest = await _settingsService.GetSettingsAsync();
+        latest.BlankedSyncRowRepairAt = DateTime.UtcNow;
+        await _settingsService.SaveSettingsAsync(latest);
         return true;
     }
 
-    public async Task ForceFullResyncAsync()
+    public async Task<SyncResult?> ForceFullResyncAsync()
     {
         _logger.LogInformation("ForceFullResyncAsync: resetting LastSyncTimestamp to trigger full pull");
         await _syncLock.WaitAsync();
@@ -681,7 +696,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             _syncLock.Release();
         }
 
-        await SyncNowAsync();
+        return await SyncNowAsync();
     }
 
     public async Task StopBackgroundSyncAndWaitAsync()

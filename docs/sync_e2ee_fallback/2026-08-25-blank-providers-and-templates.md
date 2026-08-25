@@ -101,7 +101,9 @@ blanked rows and overwrites the server originals.
 - **Templates do not.** No such filter, and the E2EE branch of `SyncPushValidator` does not require
   a name, so blank ciphertext is accepted and written over the original (`SyncService.cs:1107`).
 - The same unfiltered push covers personas, sessions, memories, todos, kanban columns and scheduled
-  jobs — all of which take the identical fallback. Their state should be checked, not assumed.
+  jobs. Every one of those tables stores its content as ciphertext for an E2EE user (verified on the
+  local server: personas 3/3, memories 2/2, todos 10/10, kanban columns 3/3, sessions 13/13), so all
+  of them take the identical fallback and all of them are re-uploaded blank.
 
 `SyncEvent` records only counts and a details string, so there is no server-side payload history to
 recover from. Blanked templates need a database restore.

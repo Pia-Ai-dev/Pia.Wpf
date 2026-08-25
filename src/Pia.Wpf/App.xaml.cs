@@ -266,11 +266,8 @@ public partial class App : Application
         if (authService.IsLoggedIn)
         {
             var syncService = Bootstrapper.ServiceProvider.GetRequiredService<ISyncClientService>();
-            // Heal rows an older build blanked before the E2EE pull guard existed. Off the startup
-            // path: it can trigger a full resync, and background sync waits 10s before its first cycle.
-            syncService.RepairBlankedSyncRowsAsync().SafeFireAndForget(
+            RepairThenSyncAsync(syncService).SafeFireAndForget(
                 Bootstrapper.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("SyncRepair"));
-            syncService.StartBackgroundSync();
         }
 
         // Silently check for updates in the background
@@ -291,6 +288,27 @@ public partial class App : Application
             _ = VsCodeLauncher.IsAvailable;
             VsCodeLauncher.TryGetIcon();
         });
+    }
+
+    /// <summary>
+    /// Heals rows an older build blanked before the E2EE pull guard existed, then starts sync.
+    /// </summary>
+    /// <remarks>
+    /// Sequential on purpose: SyncNowAsync takes the sync lock non-blockingly, so a repair racing the
+    /// first background cycle would silently lose it and leave the rows blank. The repair returns
+    /// immediately on a healthy profile, so this does not delay sync in the normal case, and the timer
+    /// starts even if it throws.
+    /// </remarks>
+    private static async Task RepairThenSyncAsync(ISyncClientService syncService)
+    {
+        try
+        {
+            await syncService.RepairBlankedSyncRowsAsync();
+        }
+        finally
+        {
+            syncService.StartBackgroundSync();
+        }
     }
 
     private async Task StartPeriodicUpdateCheckAsync()

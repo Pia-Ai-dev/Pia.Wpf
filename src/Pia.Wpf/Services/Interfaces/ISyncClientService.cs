@@ -79,7 +79,7 @@ public interface ISyncClientService
     /// Resets the sync cursor and performs a full pull from the server.
     /// Use when a previous sync failed to receive data.
     /// </summary>
-    Task ForceFullResyncAsync();
+    Task<SyncResult?> ForceFullResyncAsync();
 
     /// <summary>
     /// Detects provider rows blanked by a pre-guard E2EE pull and resets the sync cursor so they
