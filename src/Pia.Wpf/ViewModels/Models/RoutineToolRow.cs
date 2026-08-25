@@ -5,7 +5,12 @@ namespace Pia.ViewModels.Models;
 
 /// <summary>The picker's tools under the plugin they belong to; the trailing group carries stored grants this
 /// build has no catalog row for.</summary>
-public sealed record RoutineToolGroup(string Header, bool IsUnavailableGroup, IReadOnlyList<RoutineToolRow> Tools);
+public sealed record RoutineToolGroup(string Header, bool IsUnavailableGroup, IReadOnlyList<RoutineToolRow> Tools)
+{
+    // The generated record ToString is what the row CONTAINER reports to UIA, so without this a screen reader
+    // reads out the property dump.
+    public override string ToString() => Header;
+}
 
 /// <summary>
 /// One tool a routine may be allowed to use. Unlike <see cref="ToolCatalogRow"/> this is a single tick against
@@ -103,6 +108,9 @@ public sealed class RoutineToolRow : ObservableObject
         SetProperty(ref _isSelected, selected, nameof(IsSelected));
         OnPropertyChanged(nameof(HasCaution));
     }
+
+    // What the row CONTAINER reports to UIA; the default would read out the type name.
+    public override string ToString() => ToolName;
 
     /// <summary>Routine-scoped caution copy. The Tool access page's wording ends "leave it unticked to be asked
     /// each time", which is false here: an unattended run refuses an unnamed delete-like or external tool
