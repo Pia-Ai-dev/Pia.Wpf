@@ -127,6 +127,23 @@ encrypts an anonymous object whose member is named `StyleDescription`. Decryptin
 `SyncTemplate` looks for `ExampleText`, misses, and yields null — so a template's style description
 is lost on **every** correct E2EE round-trip, independent of the fallback above.
 
+## Reproduced in the real UI
+
+A throwaway profile (`PIA_DATA_DIR`) seeded with a `providers.json` in the blanked state — one real
+Pia Cloud row plus two rows with an empty name and `providerType: 0` — reproduces all three reported
+symptoms, driven through UIA:
+
+| Check | Blanked profile | After repair |
+|---|---|---|
+| `Provider_Delete_*` buttons | **0** | 2, enabled |
+| `Provider_Edit_*` buttons | 3 | 3 |
+| `ProviderEdit_Name` on opening edit | `""` | the provider name |
+| `ProviderEdit_ProviderType` | `""` | the provider type |
+
+An empty name and type is why the edit dialog is indistinguishable from the add dialog, and the
+missing delete button is `CanDeleteProvider` refusing a PiaCloud row. Rewriting the same file with
+real types and names — the state a successful repair pull produces — restores both.
+
 ## Fix
 
 1. **Guard the mapper.** Ciphertext present + E2EE unusable must throw, never produce a default
