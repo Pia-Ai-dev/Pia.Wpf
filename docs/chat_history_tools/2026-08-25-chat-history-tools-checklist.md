@@ -36,7 +36,7 @@ answers. Full reasoning in the design doc §10.
 - [x] **8. Prompt + status strings** — the decision-tree step 5 and the step 3 counter-example in `AssistantPromptComposer`, the two `ActionCardBuilder` arms, and both keys in all three `MessageStrings*.resx` (design §11.5–11.7). *Deps:* 6 · *Effort:* XS · *Value:* Med
 - [x] **9. Settings toggle** — `AssistantChatHistoryToolsEnabled` through `AppSettings`, `AssistantSettingsViewModel`, `AssistantView.xaml` with its `AutomationId`, and three `ViewStrings*.resx` (design §11.8). No `ViewAutomationIdTests` edit — that number is a floor, not a count. *Deps:* 6 · *Effort:* S · *Value:* High
 - [x] **10. Zero-warning + gate** — `dotnet build -t:Rebuild` in Debug **and** Release at `0 Warning(s)`, `dotnet test` at `failed: 0`. *Deps:* 1–9 · *Effort:* XS · *Value:* High
-- [ ] **11. Human smoke test** — in a real profile: ask for something from a past chat, confirm the hit list is useful, the drill-in reads, the current chat is neither listed nor readable by id, and the toggle actually removes the tools. *Deps:* 10 · *Effort:* XS · *Value:* High
+- [ ] **11. Human smoke test** — in a real profile: ask for something from a past chat, confirm the hit list is useful, the drill-in reads, the current chat is neither listed nor readable by id, and the toggle actually removes the tools. The last of those is already covered by `tests/ui-scripts/scripts/settings-assistant-chat-history.json`, which also proves the toggle defaults on and that both tools reach the catalog; what is left needs a live model over real history. *Deps:* 10 · *Effort:* XS · *Value:* High
 
 ## Suggested order
 

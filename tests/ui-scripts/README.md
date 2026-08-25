@@ -133,6 +133,11 @@ Rules that cost real time to learn:
 - **`pop` any step whose effect you did not verify.** The buffer records calls that *returned
   success*, not calls that *did something*: a `ww_click` on a static `Text` element records happily
   and passes on replay while doing nothing.
+- **`ww_select` on a `TabControl` must use `optionText`, not `optionSelector`.** Both work live, and
+  the recorder writes both into the same `extra` field — but on replay the `optionSelector` form
+  resolves 0 elements and errors every time. This is the one place the playbook's "prefer an
+  AutomationId" advice does not survive a recording, and the fixture pins `uiLanguage: 0` so the
+  localized header is safe to match.
 - **Prefer `automationId=` selectors.** Name-based selectors are localized strings — they break when
   the UI language changes, and `winwright heal` cannot repair them (it only scores elements that have
   an AutomationId). Every interactive control in the General, Assistant, Providers, Account and

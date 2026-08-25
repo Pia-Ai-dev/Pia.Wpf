@@ -124,9 +124,13 @@ correctly.
    `ww_get_value` on the same list reports the selected category by name. (Don't click the item's
    `Text` child — that returns success and does nothing.)
 3. Select the inner tab. `ww_select(selector="type=TabControl", optionText="Personas")` works but
-   matches a localized header; prefer
-   `ww_select(selector="type=TabControl", optionSelector="automationId=Settings_General_Tab_Speech")`,
-   which is language-independent and verified. **The tab's content appears as children of the
+   matches a localized header;
+   `ww_select(selector="type=TabControl", optionSelector="automationId=Settings_General_Tab_Speech")`
+   is language-independent and works live — **but a recording of it cannot be replayed.** The
+   recorder folds `optionText` and `optionSelector` into one `extra` field, and on replay that
+   resolves 0 elements and errors, deterministically. So: `optionSelector` when you are driving
+   interactively, `optionText` in anything destined for `tests/ui-scripts/` (whose fixture pins
+   `uiLanguage: 0` for exactly this reason). **The tab's content appears as children of the
    selected TabItem**, not as siblings of the tab headers, so scope name-based searches as
    `type=TabItem[name='Personas'] >> ...`; an `automationId=` is unique within the view and
    resolves on its own once the tab is selected.

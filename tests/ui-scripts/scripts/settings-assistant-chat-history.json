@@ -1,0 +1,112 @@
+{
+  "version": "1",
+  "mode": "test",
+  "launchPath": "{{APP_EXE}}",
+  "runConfig": {
+    "captureScreenshots": false,
+    "screenshotFormat": "png",
+    "screenshotOnFailureOnly": false,
+    "continueOnFailure": false,
+    "stepTimeoutMs": 10000,
+    "maxFailures": 0
+  },
+  "testCases": [
+    {
+      "id": "TC-003",
+      "title": "Settings Assistant: chat-history tools toggle defaults on",
+      "steps": [
+        {
+          "tool": "ww_invoke",
+          "selector": "automationId=NavItem_Settings",
+          "testCaseId": "TC-003"
+        },
+        {
+          "tool": "ww_select",
+          "selector": "automationId=Settings_CategoryList",
+          "extra": "Assistant",
+          "testCaseId": "TC-003"
+        },
+        {
+          "tool": "ww_select",
+          "selector": "type=TabControl",
+          "extra": "General",
+          "assertion": {
+            "type": "assert",
+            "selector": "automationId=Settings_Assistant_ChatHistoryToolsEnabled",
+            "property": "value",
+            "op": "eq",
+            "expected": "On",
+            "message": "Chat-history tools should default to on (AssistantChatHistoryToolsEnabled = true)"
+          },
+          "testCaseId": "TC-003"
+        }
+      ]
+    },
+    {
+      "id": "TC-004",
+      "title": "Settings Assistant: the chat-history pack offers search_chats and read_chat",
+      "steps": [
+        {
+          "tool": "ww_select",
+          "selector": "type=TabControl",
+          "extra": "Tool access",
+          "testCaseId": "TC-004"
+        },
+        {
+          "tool": "ww_expand",
+          "selector": "automationId=Settings_Assistant_ToolCatalog",
+          "extra": "expand",
+          "assertion": {
+            "type": "assert",
+            "selector": "automationId=Settings_Assistant_AllowedAlways_search_chats",
+            "property": "visible",
+            "op": "eq",
+            "expected": "true",
+            "message": "search_chats should be listed in the tool catalog while the chat-history pack is on"
+          },
+          "testCaseId": "TC-004"
+        },
+        {
+          "tool": "ww_expand",
+          "selector": "automationId=Settings_Assistant_ToolCatalog",
+          "extra": "expand",
+          "assertion": {
+            "type": "assert",
+            "selector": "automationId=Settings_Assistant_AllowedAlways_read_chat",
+            "property": "visible",
+            "op": "eq",
+            "expected": "true",
+            "message": "read_chat should be listed in the tool catalog while the chat-history pack is on"
+          },
+          "testCaseId": "TC-004"
+        }
+      ]
+    },
+    {
+      "id": "TC-005",
+      "title": "Settings Assistant: turning the chat-history tools off sticks",
+      "steps": [
+        {
+          "tool": "ww_select",
+          "selector": "type=TabControl",
+          "extra": "General",
+          "testCaseId": "TC-005"
+        },
+        {
+          "tool": "ww_set_checked",
+          "selector": "automationId=Settings_Assistant_ChatHistoryToolsEnabled",
+          "extra": "uncheck",
+          "assertion": {
+            "type": "assert",
+            "selector": "automationId=Settings_Assistant_ChatHistoryToolsEnabled",
+            "property": "value",
+            "op": "eq",
+            "expected": "Off",
+            "message": "Chat-history tools checkbox should read Off after unchecking it"
+          },
+          "testCaseId": "TC-005"
+        }
+      ]
+    }
+  ]
+}
