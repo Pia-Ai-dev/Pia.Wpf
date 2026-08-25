@@ -6,6 +6,16 @@ public enum FileTouchKind { Read, Created, Updated }
 /// <summary>A single file the turn's tools touched, carrying the resolved absolute path.</summary>
 public readonly record struct FileTouch(string AbsolutePath, FileTouchKind Kind);
 
+/// <summary>What a read tool put in front of the model — reported through <see cref="TaskContext.OnSourceCited"/>.</summary>
+public enum SourceCitationKind { VaultPage, Chat }
+
+/// <summary>
+/// One vault page or past chat a turn's read tools grounded the answer in. <paramref name="Target"/> is the
+/// wikilink target (no <c>memory/</c> prefix) or the chat id — what a chip click has to resolve.
+/// </summary>
+public readonly record struct SourceCitation(
+    SourceCitationKind Kind, string Target, string Label, string Meta);
+
 /// <summary>
 /// Ambient context for the current logical async turn, carrying the facts tool handlers
 /// (the reader is <c>FilesToolHandler</c>) need without any parameter plumbing — the
@@ -35,12 +45,17 @@ public readonly record struct FileTouch(string AbsolutePath, FileTouchKind Kind)
 /// The turn's CHAT id. Distinct from <paramref name="TaskId"/>, which is the RUN id on every run
 /// surface, so a reader that must know which conversation it is in cannot use TaskId. Null = unknown.
 /// </param>
+/// <param name="OnSourceCited">
+/// Optional per-turn sink, the <paramref name="OnFileTouched"/> twin for the vault and chat-history read
+/// tools, so the pages and conversations an answer drew on surface as source chips. Null = collect nothing.
+/// </param>
 public readonly record struct TaskContext(
     Guid? TaskId,
     string? WorkingSubpath,
     Action<FileTouch>? OnFileTouched = null,
     string? WorkspaceRoot = null,
-    Guid? ChatId = null);
+    Guid? ChatId = null,
+    Action<SourceCitation>? OnSourceCited = null);
 
 /// <summary>
 /// Flows the current turn's <see cref="TaskContext"/> down a single logical async turn via

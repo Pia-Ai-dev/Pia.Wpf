@@ -227,6 +227,7 @@
                     SuggestionCommand="{Binding DataContext.UseFollowupCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     SwitchToAgentCommand="{Binding DataContext.SwitchToAgentCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     ManageToolPermissionsCommand="{Binding DataContext.NavigateToToolPermissionsCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                    OpenSourceCommand="{Binding DataContext.OpenSourceCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     AddToPiiRequested="OnAddToPiiRequested" />
               </Grid>
             </Grid>

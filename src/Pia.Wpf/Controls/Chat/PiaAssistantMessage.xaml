@@ -98,6 +98,9 @@
                               Source="{Binding Source}"
                               Meta="{Binding Meta}"
                               Url="{Binding Url}"
+                              Kind="{Binding Kind}"
+                              Reference="{Binding}"
+                              OpenCommand="{Binding OpenSourceCommand, RelativeSource={RelativeSource AncestorType={x:Type chat:PiaAssistantMessage}}}"
                               Margin="0,0,6,6" />
         </DataTemplate>
       </chat:PiaChipOverflowPanel.ItemTemplate>

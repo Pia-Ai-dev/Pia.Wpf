@@ -1,6 +1,8 @@
 <UserControl x:Class="Pia.Controls.Chat.PiaSourceChip"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:models="clr-namespace:Pia.Models"
              x:Name="Root">
   <UserControl.Resources>
     <Style x:Key="ChipButtonStyle" TargetType="Button">
@@ -25,7 +27,7 @@
   </UserControl.Resources>
   <Button Style="{StaticResource ChipButtonStyle}"
           Click="OnClick"
-          AutomationProperties.AutomationId="{Binding Number, ElementName=Root, StringFormat='SourceChip_Open_{0}'}"
+          AutomationProperties.AutomationId="{Binding Reference.ChipId, ElementName=Root, StringFormat='SourceChip_Open_{0}'}"
           ToolTip="{Binding Url, ElementName=Root}">
     <Border MinHeight="34"
             CornerRadius="{StaticResource BubbleRadius}"
@@ -35,15 +37,50 @@
             Padding="6,0,14,0"
             SnapsToDevicePixels="True">
       <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+        <!-- The number only means something for a web citation, where it matches the [N] in the text;
+             a vault page or past chat shows its kind glyph instead. -->
         <Border Width="22" Height="22" CornerRadius="11"
                 Background="{DynamicResource PiaAccentSoftBrush}"
                 VerticalAlignment="Center">
-          <TextBlock Text="{Binding Number, ElementName=Root}"
-                     HorizontalAlignment="Center"
-                     VerticalAlignment="Center"
-                     FontSize="11"
-                     FontWeight="Bold"
-                     Foreground="{DynamicResource PiaAccentBrush}" />
+          <Grid>
+            <TextBlock Text="{Binding Number, ElementName=Root}"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       FontSize="11"
+                       FontWeight="Bold"
+                       Foreground="{DynamicResource PiaAccentBrush}">
+              <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                  <Setter Property="Visibility" Value="Collapsed" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding Kind, ElementName=Root}" Value="{x:Static models:SourceRefKind.Web}">
+                      <Setter Property="Visibility" Value="Visible" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
+            </TextBlock>
+            <ui:SymbolIcon HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           FontSize="12"
+                           Foreground="{DynamicResource PiaAccentBrush}">
+              <ui:SymbolIcon.Style>
+                <Style TargetType="ui:SymbolIcon">
+                  <Setter Property="Visibility" Value="Collapsed" />
+                  <Setter Property="Symbol" Value="BrainCircuit24" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding Kind, ElementName=Root}" Value="{x:Static models:SourceRefKind.VaultPage}">
+                      <Setter Property="Visibility" Value="Visible" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding Kind, ElementName=Root}" Value="{x:Static models:SourceRefKind.Chat}">
+                      <Setter Property="Visibility" Value="Visible" />
+                      <Setter Property="Symbol" Value="Chat24" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </ui:SymbolIcon.Style>
+            </ui:SymbolIcon>
+          </Grid>
         </Border>
         <TextBlock Margin="8,0,4,0"
                    VerticalAlignment="Center"

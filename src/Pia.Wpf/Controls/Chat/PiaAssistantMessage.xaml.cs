@@ -25,6 +25,8 @@ public partial class PiaAssistantMessage : UserControl
         DependencyProperty.Register(nameof(SwitchToAgentCommand), typeof(ICommand), typeof(PiaAssistantMessage));
     public static readonly DependencyProperty ManageToolPermissionsCommandProperty =
         DependencyProperty.Register(nameof(ManageToolPermissionsCommand), typeof(ICommand), typeof(PiaAssistantMessage));
+    public static readonly DependencyProperty OpenSourceCommandProperty =
+        DependencyProperty.Register(nameof(OpenSourceCommand), typeof(ICommand), typeof(PiaAssistantMessage));
 
     public ICommand? CopyCommand
     {
@@ -78,6 +80,12 @@ public partial class PiaAssistantMessage : UserControl
     {
         get => (ICommand?)GetValue(ManageToolPermissionsCommandProperty);
         set => SetValue(ManageToolPermissionsCommandProperty, value);
+    }
+
+    public ICommand? OpenSourceCommand
+    {
+        get => (ICommand?)GetValue(OpenSourceCommandProperty);
+        set => SetValue(OpenSourceCommandProperty, value);
     }
 
     public event EventHandler<PiiKeywordRequest>? AddToPiiRequested;

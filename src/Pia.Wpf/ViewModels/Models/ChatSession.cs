@@ -335,7 +335,8 @@ public sealed class ChatSession : IDisposable
                 FileTouchKind.Created => FileRefKind.Created,
                 FileTouchKind.Updated => FileRefKind.Updated,
                 _ => FileRefKind.Read,
-            })), ChatId: Id);
+            })), ChatId: Id,
+            OnSourceCited: citation => assistantMessage.AddSource(ToSourceRef(citation)));
 
         var succeeded = false;
         try
@@ -731,7 +732,8 @@ public sealed class ChatSession : IDisposable
             // therefore carries a path inside runs\<runId>, which is why opening one resolves through
             // RunWorkspaceRedirects once the run's work is promoted out (plan D8).
             spec.WorkspaceRoot,
-            ChatId: Id);
+            ChatId: Id,
+            OnSourceCited: citation => assistantMessage.AddSource(ToSourceRef(citation)));
 
         // Armed IFF offered: the sink exists exactly when LiveTurnExecutor.BuildSpec put
         // emit_step_result in this step's tool list, derived from the list itself rather than from a second
@@ -1374,6 +1376,14 @@ public sealed class ChatSession : IDisposable
     private string DetokenizeForDisplay(string text, bool tokenizationEnabled) =>
         tokenizationEnabled ? TokenMap.Detokenize(text) : text;
 
+    private static SourceRef ToSourceRef(SourceCitation citation) => new(
+        Number: 0,
+        Source: citation.Label,
+        Meta: citation.Meta,
+        Url: null,
+        Kind: citation.Kind == SourceCitationKind.Chat ? SourceRefKind.Chat : SourceRefKind.VaultPage,
+        Target: citation.Target);
+
     private void ApplyWebCitations(AssistantMessage message)
     {
         if (string.IsNullOrEmpty(message.Content)) return;
@@ -1383,7 +1393,7 @@ public sealed class ChatSession : IDisposable
 
         message.Content = cleaned;
         foreach (var s in sources)
-            message.Sources.Add(s);
+            message.AddSource(s);
 
         _logger.LogInformation("Extracted {Count} web source(s) from assistant message", sources.Count);
     }

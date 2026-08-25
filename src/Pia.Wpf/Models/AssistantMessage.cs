@@ -209,6 +209,45 @@ public partial class AssistantMessage : ObservableObject
         FileRefs.Add(incoming);
     }
 
+    /// <summary>
+    /// Adds a source chip, deduplicating by target. Web sources append and keep the number the citation
+    /// extractor gave them — it has to match the <c>[N]</c> marker in the text — so the unnumbered vault
+    /// and chat chips, which are collected during the turn, sort ahead of them.
+    /// </summary>
+    public void AddSource(SourceRef incoming)
+    {
+        var key = KeyOf(incoming);
+        if (!string.IsNullOrEmpty(key) &&
+            Sources.Any(s => s.Kind == incoming.Kind &&
+                             string.Equals(KeyOf(s), key, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        // Arrival order, not list position: an insert must not reuse an Ordinal the chip ids depend on.
+        var chip = incoming with { Ordinal = Sources.Count == 0 ? 1 : Sources.Max(s => s.Ordinal) + 1 };
+
+        if (chip.Kind == SourceRefKind.Web)
+        {
+            Sources.Add(chip);
+            return;
+        }
+
+        var firstWeb = -1;
+        for (var i = 0; i < Sources.Count; i++)
+        {
+            if (Sources[i].Kind != SourceRefKind.Web) continue;
+            firstWeb = i;
+            break;
+        }
+
+        if (firstWeb < 0)
+            Sources.Add(chip);
+        else
+            Sources.Insert(firstWeb, chip);
+    }
+
+    private static string? KeyOf(SourceRef source) =>
+        source.Kind == SourceRefKind.Web ? source.Url : source.Target;
+
     private void OnActionCardsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         // ActionCards is get-only and only ever .Add'd (see ChatSession.HandleToolCall),

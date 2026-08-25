@@ -175,6 +175,16 @@ public class ChatHistoryToolHandler : IChatHistoryToolHandler
         _logger.LogInformation(
             "read_chat {ChatId} returned {Count} of {Total} message(s)", chatId, messages.Count, total);
 
+        // Only the read is chipped: SearchNote tells the model a search hit is an excerpt it must read
+        // before relying on, so a search that was never followed by a read grounded nothing.
+        TaskAmbient.Current?.OnSourceCited?.Invoke(new SourceCitation(
+            SourceCitationKind.Chat,
+            chat.Id.ToString(),
+            chat.Title ?? string.Empty,
+            // A person reads the chip, so local time in the app's culture — not FormatDate's invariant
+            // UTC, which exists to give the model a stable date.
+            chat.UpdatedAt.ToLocalTime().ToString("d", CultureInfo.CurrentCulture)));
+
         return new ChatTranscript(
             chat.Id.ToString(),
             chat.Title,

@@ -219,6 +219,12 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         GoBackCommand.NotifyCanExecuteChanged();
         IsEmbeddingModelAvailable = _embeddingService.IsModelAvailable;
         await LoadMemoriesAsync();
+
+        // Deep-link from a chat's vault source chip: same resolve (and same not-found toast) as a wikilink.
+        if (parameter is string target && !string.IsNullOrWhiteSpace(target))
+        {
+            await ExecuteNavigateToLink(target);
+        }
     }
 
     public void OnNavigatedFrom()

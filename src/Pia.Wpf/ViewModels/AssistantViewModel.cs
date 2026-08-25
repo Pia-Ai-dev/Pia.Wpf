@@ -1623,6 +1623,27 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             ((int)SettingsTab.Assistant, (int)AssistantSettingsInnerTab.ToolAccess));
 
     /// <summary>
+    /// Opens what a source chip points at. A web chip never reaches here — it opens its own URL in the
+    /// browser; this is the in-app half (vault page, past conversation).
+    /// </summary>
+    [RelayCommand]
+    private async Task OpenSourceAsync(SourceRef? source)
+    {
+        if (source is null || string.IsNullOrWhiteSpace(source.Target)) return;
+
+        switch (source.Kind)
+        {
+            case SourceRefKind.VaultPage:
+                _navigationService.NavigateTo<VaultViewModel, string>(source.Target);
+                break;
+
+            case SourceRefKind.Chat when Guid.TryParse(source.Target, out var chatId):
+                await ResumeChatAsync(chatId);
+                break;
+        }
+    }
+
+    /// <summary>
     /// Accepts a model-offered <see cref="AgentModeSuggestion"/> (R8): flips the lever to Agent and
     /// re-dispatches the goal as a Planned run. Modeled on <see cref="ExecuteSendMessage"/> (NOT
     /// RegenerateCore) — the prior Chat answer carrying the chip stays in the transcript, and the

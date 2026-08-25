@@ -1,11 +1,24 @@
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using Pia.Models;
 
 namespace Pia.Controls.Chat;
 
 public partial class PiaSourceChip : UserControl
 {
+    public static readonly DependencyProperty KindProperty =
+        DependencyProperty.Register(nameof(Kind), typeof(SourceRefKind), typeof(PiaSourceChip),
+            new PropertyMetadata(SourceRefKind.Web));
+
+    /// <summary>Invoked with <see cref="Reference"/> for the in-app kinds; a web chip opens its own URL.</summary>
+    public static readonly DependencyProperty OpenCommandProperty =
+        DependencyProperty.Register(nameof(OpenCommand), typeof(ICommand), typeof(PiaSourceChip));
+
+    public static readonly DependencyProperty ReferenceProperty =
+        DependencyProperty.Register(nameof(Reference), typeof(SourceRef), typeof(PiaSourceChip));
+
     public static readonly DependencyProperty NumberProperty =
         DependencyProperty.Register(nameof(Number), typeof(int), typeof(PiaSourceChip),
             new PropertyMetadata(0));
@@ -46,10 +59,36 @@ public partial class PiaSourceChip : UserControl
         set => SetValue(UrlProperty, value);
     }
 
+    public SourceRefKind Kind
+    {
+        get => (SourceRefKind)GetValue(KindProperty);
+        set => SetValue(KindProperty, value);
+    }
+
+    public ICommand? OpenCommand
+    {
+        get => (ICommand?)GetValue(OpenCommandProperty);
+        set => SetValue(OpenCommandProperty, value);
+    }
+
+    public SourceRef? Reference
+    {
+        get => (SourceRef?)GetValue(ReferenceProperty);
+        set => SetValue(ReferenceProperty, value);
+    }
+
     public PiaSourceChip() => InitializeComponent();
 
     private void OnClick(object sender, RoutedEventArgs e)
     {
+        if (Kind != SourceRefKind.Web)
+        {
+            // Unbound outside the live chat — the history inspector hosts the same message control.
+            if (Reference is { } reference && OpenCommand?.CanExecute(reference) == true)
+                OpenCommand.Execute(reference);
+            return;
+        }
+
         var url = Url;
         if (string.IsNullOrWhiteSpace(url)) return;
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return;

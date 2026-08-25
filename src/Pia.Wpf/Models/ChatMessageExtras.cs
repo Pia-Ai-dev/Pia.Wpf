@@ -1,8 +1,40 @@
+using System.Globalization;
 using System.IO;
 
 namespace Pia.Models;
 
-public sealed record SourceRef(int Number, string Source, string Meta, string? Url = null);
+/// <summary>What a source chip points at — decides its badge and what a click opens.</summary>
+public enum SourceRefKind
+{
+    /// <summary>A web page, tied to a numbered <c>[N]</c> marker in the answer text.</summary>
+    Web,
+
+    /// <summary>A vault page, addressed by its wikilink target (no <c>memory/</c> prefix).</summary>
+    VaultPage,
+
+    /// <summary>A past conversation, addressed by its chat id.</summary>
+    Chat,
+}
+
+/// <summary>
+/// One thing the answer drew on. <c>Number</c> is meaningful only for <see cref="SourceRefKind.Web"/>,
+/// where it matches the marker in the text; the other kinds carry 0 and render a kind glyph instead.
+/// </summary>
+public sealed record SourceRef(
+    int Number,
+    string Source,
+    string Meta,
+    string? Url = null,
+    SourceRefKind Kind = SourceRefKind.Web,
+    string? Target = null,
+    int Ordinal = 0)
+{
+    /// <summary>
+    /// AutomationId suffix. Not <c>Number</c> (0 on every unnumbered kind) and not <c>Target</c>, which would
+    /// put a user-named vault page into a permanent, enumerable UIA property — see PiaFileChip's same rule.
+    /// </summary>
+    public string ChipId => Ordinal.ToString(CultureInfo.InvariantCulture);
+}
 
 /// <summary>
 /// A local file an assistant turn touched — read, created/updated, exported, or referenced via

@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Media;
 using Markdig;
+using Markdig.Extensions.CustomContainers;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 using Pia.Emoji;
@@ -64,8 +65,25 @@ internal static class PiaMarkdownRenderer
         ThematicBreakBlock => RenderThematicBreak(),
         MdTable table => RenderTable(table),
         HtmlBlock html => RenderHtmlBlock(html),
+        CustomContainer container => RenderUnstyledContainer(container),
         _ => null,
     };
+
+    // UseAdvancedExtensions parses any ::: fence into a CustomContainer, which Pia gives no styling of its
+    // own — without this the whole fenced region would vanish from the answer (HTML export keeps it).
+    private static WpfBlock? RenderUnstyledContainer(CustomContainer container)
+    {
+        var section = new Section();
+        foreach (var child in container)
+        {
+            var rendered = RenderBlock(child);
+            if (rendered is not null)
+            {
+                section.Blocks.Add(rendered);
+            }
+        }
+        return section.Blocks.Count > 0 ? section : null;
+    }
 
     private static Paragraph RenderHeading(HeadingBlock heading)
     {

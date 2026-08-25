@@ -152,8 +152,60 @@ public class MemoryToolHandler : IMemoryToolHandler
         var hits = await _memoryService.RecallAsync(query);
         _logger.LogInformation("Recall returned {Count} hit(s)", hits.Count);
         _logger.SensitiveDebug("Recall query: {Query}", query);
+        CiteRecallHits(hits);
         // Wrap here (never in RecallAsync — VaultViewModel consumes the service's list directly).
         return new RecallResult(hits, RecallNote);
+    }
+
+    /// <summary>Hits are score-descending, and the tail of a ranked recall is not what grounded the answer.</summary>
+    private const int MaxRecallCitations = 5;
+
+    private static void CiteRecallHits(IReadOnlyList<RecallHit> hits)
+    {
+        var sink = TaskAmbient.Current?.OnSourceCited;
+        if (sink is null) return;
+
+        foreach (var hit in hits.Take(MaxRecallCitations))
+        {
+            var target = VaultTarget(hit.FilePath);
+            if (target.Length == 0) continue;
+            sink(new SourceCitation(SourceCitationKind.VaultPage, target, PageName(target), hit.Heading));
+        }
+    }
+
+    private static void CiteTopic(TopicRead topic)
+    {
+        var sink = TaskAmbient.Current?.OnSourceCited;
+        if (sink is null || !topic.Found) return;
+
+        var target = VaultTarget(topic.Ref);
+        if (target.Length == 0) return;
+        var label = string.IsNullOrWhiteSpace(topic.Title) ? PageName(target) : topic.Title;
+        sink(new SourceCitation(SourceCitationKind.VaultPage, target, label, string.Empty));
+    }
+
+    // A wikilink target, the form VaultIndexService.WikiTargetReferences resolves: no memory/ prefix and no
+    // .md, but any #heading kept — it addresses a section verbatim and slugging it would corrupt it.
+    private static string VaultTarget(string filePath)
+    {
+        var target = (filePath ?? string.Empty).Replace('\\', '/').Trim().Trim('/');
+        if (target.StartsWith("memory/", StringComparison.OrdinalIgnoreCase))
+            target = target["memory/".Length..];
+
+        var hash = target.IndexOf('#');
+        var path = hash >= 0 ? target[..hash] : target;
+        var heading = hash >= 0 ? target[hash..] : string.Empty;
+        if (path.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+            path = path[..^3];
+
+        return path.Length == 0 ? string.Empty : path + heading;
+    }
+
+    private static string PageName(string target)
+    {
+        var path = target.Split('#')[0];
+        var slash = path.LastIndexOf('/');
+        return slash >= 0 ? path[(slash + 1)..] : path;
     }
 
     private async Task<object?> HandleBrowseIndex()
@@ -170,7 +222,9 @@ public class MemoryToolHandler : IMemoryToolHandler
             return "Error: reference parameter is required";
 
         _logger.SensitiveDebug("read_topic reference: {Ref}", reference);
-        return await _memoryService.ReadTopicAsync(reference);
+        var topic = await _memoryService.ReadTopicAsync(reference);
+        CiteTopic(topic);
+        return topic;
     }
 
     private async Task<object?> HandleReadSource(IDictionary<string, object?> args)
