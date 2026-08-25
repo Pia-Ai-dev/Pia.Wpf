@@ -163,6 +163,13 @@
                    Margin="22,4,0,0"/>
       </StackPanel>
 
+      <StackPanel Margin="0,0,0,20">
+        <CheckBox Content="{loc:Str Settings_AssistantChatHistoryToolsEnabled}"
+                  IsChecked="{Binding ChatHistoryToolsEnabled}"
+                  IsEnabled="{Binding Policy[AssistantChatHistoryToolsEnabled]}"
+                  AutomationProperties.AutomationId="Settings_Assistant_ChatHistoryToolsEnabled"/>
+      </StackPanel>
+
       <StackPanel Margin="0,0,0,20"
                   IsEnabled="{Binding ChatHistoryEnabled}">
         <TextBlock Text="{loc:Str Settings_Chat_RetentionDays_Label}"

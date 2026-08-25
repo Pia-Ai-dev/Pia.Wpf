@@ -129,6 +129,9 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
     /// <summary>Git tools need both a git install and no policy lock, so the two gates AND together.</summary>
     public bool GitToolsEditable => GitToolsAvailable && Policy[nameof(AppSettings.AssistantGitToolsEnabled)];
 
+    [ObservableProperty]
+    private bool _chatHistoryToolsEnabled = true;
+
     // "<folder>\Vault" — shown beneath the folder so the user sees where memory lives.
     [ObservableProperty]
     private string? _vaultLocationDisplay;
@@ -181,6 +184,11 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
     }
 
     partial void OnGitToolsEnabledChanged(bool value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
+    partial void OnChatHistoryToolsEnabledChanged(bool value)
     {
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
@@ -510,6 +518,7 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
         FilesFolder = settings.AssistantFilesFolder; // OnFilesFolderChanged sets VaultLocationDisplay
         FileToolsEnabled = settings.AssistantFileToolsEnabled;
         GitToolsEnabled = settings.AssistantGitToolsEnabled;
+        ChatHistoryToolsEnabled = settings.AssistantChatHistoryToolsEnabled;
 
         DefaultWorkingDirectory = settings.AssistantDefaultWorkingDirectory;
         ChatHistoryEnabled = settings.ChatHistoryEnabled;
@@ -679,6 +688,7 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
             settings.AssistantFilesFolder = FilesFolder;
         settings.AssistantFileToolsEnabled = FileToolsEnabled;
         settings.AssistantGitToolsEnabled = GitToolsEnabled;
+        settings.AssistantChatHistoryToolsEnabled = ChatHistoryToolsEnabled;
         if (DefaultWorkingDirectory is not null)
             settings.AssistantDefaultWorkingDirectory = DefaultWorkingDirectory;
         settings.ChatHistoryEnabled = ChatHistoryEnabled;

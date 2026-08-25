@@ -31,11 +31,16 @@ public readonly record struct FileTouch(string AbsolutePath, FileTouchKind Kind)
 /// containment (<c>..</c>/absolute/symlink) rejections re-anchor to the run workspace (G-1).
 /// Null = the interactive sandbox (existing behavior).
 /// </param>
+/// <param name="ChatId">
+/// The turn's CHAT id. Distinct from <paramref name="TaskId"/>, which is the RUN id on every run
+/// surface, so a reader that must know which conversation it is in cannot use TaskId. Null = unknown.
+/// </param>
 public readonly record struct TaskContext(
     Guid? TaskId,
     string? WorkingSubpath,
     Action<FileTouch>? OnFileTouched = null,
-    string? WorkspaceRoot = null);
+    string? WorkspaceRoot = null,
+    Guid? ChatId = null);
 
 /// <summary>
 /// Flows the current turn's <see cref="TaskContext"/> down a single logical async turn via

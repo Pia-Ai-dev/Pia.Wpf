@@ -91,6 +91,8 @@
   <data name="Msg_Assistant_StatusDeletingReminder" xml:space="preserve"><value>Suppression du rappel...</value></data>
   <data name="Msg_Assistant_StatusDeletingTodo" xml:space="preserve"><value>Suppression de la tâche...</value></data>
   <data name="Msg_Assistant_StatusProcessing" xml:space="preserve"><value>Traitement...</value></data>
+  <data name="Msg_Assistant_StatusReadingChat" xml:space="preserve"><value>Lecture d'une conversation passée...</value></data>
+  <data name="Msg_Assistant_StatusSearchingChats" xml:space="preserve"><value>Recherche dans les conversations passées...</value></data>
   <data name="Msg_Assistant_StatusSearchingMemory" xml:space="preserve"><value>Recherche dans la mémoire...</value></data>
   <data name="Msg_Assistant_StatusThinking" xml:space="preserve"><value>Réflexion...</value></data>
   <data name="Msg_Assistant_StatusUpdatingMemory" xml:space="preserve"><value>Mise à jour de la mémoire...</value></data>

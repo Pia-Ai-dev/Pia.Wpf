@@ -466,6 +466,7 @@
   <data name="Settings_AssistantFilesFolder_Change" xml:space="preserve"><value>Change…</value></data>
   <data name="Settings_AssistantFileToolsEnabled" xml:space="preserve"><value>Allow the assistant to read and write files in this folder</value></data>
   <data name="Settings_AssistantGitToolsEnabled" xml:space="preserve"><value>Allow the assistant to run git commands in this folder</value></data>
+  <data name="Settings_AssistantChatHistoryToolsEnabled" xml:space="preserve"><value>Allow the assistant to search and read your past chats</value></data>
   <data name="Settings_AssistantGitToolsUnavailable" xml:space="preserve"><value>Git is not installed</value></data>
   <data name="Settings_AssistantVaultLocation" xml:space="preserve"><value>Memory vault: {0}</value></data>
   <data name="Settings_FolderMove_Confirm" xml:space="preserve"><value>Move your assistant files and memory to {0}? This copies, verifies, then removes the old location.</value></data>

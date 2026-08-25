@@ -21,6 +21,7 @@ public class PluginService : IPluginService
     private readonly IFilesToolHandler _filesToolHandler;
     private readonly IIngestToolHandler _ingestToolHandler;
     private readonly IGitToolHandler _gitToolHandler;
+    private readonly IChatHistoryToolHandler _chatHistoryToolHandler;
     private readonly ISettingsService _settingsService;
     private readonly ILogger<PluginService> _logger;
     private readonly SqliteContext _sqliteContext;
@@ -48,6 +49,7 @@ public class PluginService : IPluginService
         IFilesToolHandler filesToolHandler,
         IIngestToolHandler ingestToolHandler,
         IGitToolHandler gitToolHandler,
+        IChatHistoryToolHandler chatHistoryToolHandler,
         ISettingsService settingsService,
         ILogger<PluginService> logger,
         SqliteContext sqliteContext,
@@ -60,6 +62,7 @@ public class PluginService : IPluginService
         _filesToolHandler = filesToolHandler;
         _ingestToolHandler = ingestToolHandler;
         _gitToolHandler = gitToolHandler;
+        _chatHistoryToolHandler = chatHistoryToolHandler;
         _settingsService = settingsService;
         _logger = logger;
         _sqliteContext = sqliteContext;
@@ -88,6 +91,7 @@ public class PluginService : IPluginService
                 "files" => BuiltInPluginHandler.FromFilesHandler(_filesToolHandler, config),
                 "ingest" => BuiltInPluginHandler.FromIngestHandler(_ingestToolHandler, config),
                 "git" => BuiltInPluginHandler.FromGitHandler(_gitToolHandler, config),
+                "chat-history" => BuiltInPluginHandler.FromChatHistoryHandler(_chatHistoryToolHandler, config),
                 _ => throw new InvalidOperationException($"Unknown built-in handler for plugin {config.Name}")
             };
 

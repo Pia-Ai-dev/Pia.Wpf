@@ -51,6 +51,7 @@ public sealed class PluginServiceToolCatalogTests : IDisposable
             Substitute.For<IFilesToolHandler>(),
             Substitute.For<IIngestToolHandler>(),
             Substitute.For<IGitToolHandler>(),
+            Substitute.For<IChatHistoryToolHandler>(),
             Substitute.For<ISettingsService>(),
             NullLogger<PluginService>.Instance,
             _sqlite);

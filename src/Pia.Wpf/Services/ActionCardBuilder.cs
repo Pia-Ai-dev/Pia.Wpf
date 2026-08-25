@@ -166,6 +166,8 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         "complete_todo" => _localizationService["Msg_Assistant_StatusCompletingTodo"],
         "update_todo" => _localizationService["Msg_Assistant_StatusUpdatingTodo"],
         "delete_todo" => _localizationService["Msg_Assistant_StatusDeletingTodo"],
+        "search_chats" => _localizationService["Msg_Assistant_StatusSearchingChats"],
+        "read_chat" => _localizationService["Msg_Assistant_StatusReadingChat"],
         var t when t.StartsWith("git_", StringComparison.Ordinal) => _localizationService["Msg_Assistant_StatusRunningGit"],
         _ => _localizationService["Msg_Assistant_StatusProcessing"]
     };

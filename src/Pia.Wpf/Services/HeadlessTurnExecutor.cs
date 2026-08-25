@@ -487,7 +487,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         var previousTask = TaskAmbient.Current;
         if (_tokenizationEnabled)
             TokenMapAmbient.Current = _tokenMap;
-        TaskAmbient.Current = new TaskContext(_runId, WorkingSubpath: null, OnFileTouched: null, WorkspaceRoot: _workspaceRoot);
+        TaskAmbient.Current = new TaskContext(_runId, WorkingSubpath: null, OnFileTouched: null, WorkspaceRoot: _workspaceRoot, ChatId: _chatId);
 
         BackgroundAssistantTurnRunner.ExchangeResult exchange;
         try

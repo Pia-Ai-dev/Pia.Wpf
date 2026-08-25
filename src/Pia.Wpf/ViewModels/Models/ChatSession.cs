@@ -335,7 +335,7 @@ public sealed class ChatSession : IDisposable
                 FileTouchKind.Created => FileRefKind.Created,
                 FileTouchKind.Updated => FileRefKind.Updated,
                 _ => FileRefKind.Read,
-            })));
+            })), ChatId: Id);
 
         var succeeded = false;
         try
@@ -730,7 +730,8 @@ public sealed class ChatSession : IDisposable
             // Confines this step's file tools to the run's workspace. The chip built just above
             // therefore carries a path inside runs\<runId>, which is why opening one resolves through
             // RunWorkspaceRedirects once the run's work is promoted out (plan D8).
-            spec.WorkspaceRoot);
+            spec.WorkspaceRoot,
+            ChatId: Id);
 
         // Armed IFF offered: the sink exists exactly when LiveTurnExecutor.BuildSpec put
         // emit_step_result in this step's tool list, derived from the list itself rather than from a second

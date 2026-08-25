@@ -226,6 +226,21 @@ public class BuiltInPluginHandler : IPluginToolHandler
             GetSystemPromptFromConfig(config.ConfigJson));
     }
 
+    /// <summary>Factory: creates adapter wrapping IChatHistoryToolHandler — inline-only like ingest, but
+    /// with git's availability gate, so the off switch suppresses both the tools and the prompt.</summary>
+    public static BuiltInPluginHandler FromChatHistoryHandler(
+        IChatHistoryToolHandler handler, SyncPlugin config)
+    {
+        return new BuiltInPluginHandler(
+            config.Id,
+            config.Name,
+            handler.GetTools,
+            async (toolCall, ct) => (await handler.HandleToolCallAsync(toolCall, ct), (PluginToolCall?)null),
+            _ => throw new InvalidOperationException("The chat-history plugin has no pending actions."),
+            GetSystemPromptFromConfig(config.ConfigJson),
+            isAvailable: () => handler.IsAvailable);
+    }
+
     private static string? GetSystemPromptFromConfig(string configJson)
     {
         try

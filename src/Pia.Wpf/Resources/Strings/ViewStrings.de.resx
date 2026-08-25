@@ -500,6 +500,7 @@
   <data name="Settings_AssistantFilesFolder_Change" xml:space="preserve"><value>Ändern…</value></data>
   <data name="Settings_AssistantFileToolsEnabled" xml:space="preserve"><value>Dem Assistenten erlauben, Dateien in diesem Ordner zu lesen und zu schreiben</value></data>
   <data name="Settings_AssistantGitToolsEnabled" xml:space="preserve"><value>Dem Assistenten erlauben, Git-Befehle in diesem Ordner auszuführen</value></data>
+  <data name="Settings_AssistantChatHistoryToolsEnabled" xml:space="preserve"><value>Dem Assistenten erlauben, frühere Chats zu durchsuchen und zu lesen</value></data>
   <data name="Settings_AssistantGitToolsUnavailable" xml:space="preserve"><value>Git ist nicht installiert</value></data>
   <data name="Settings_AssistantVaultLocation" xml:space="preserve"><value>Speicher-Tresor: {0}</value></data>
   <data name="Settings_FolderMove_Confirm" xml:space="preserve"><value>Assistenten-Dateien und Speicher nach {0} verschieben? Dabei wird kopiert, überprüft und der alte Speicherort entfernt.</value></data>

@@ -500,6 +500,7 @@
   <data name="Settings_AssistantFilesFolder_Change" xml:space="preserve"><value>Modifier…</value></data>
   <data name="Settings_AssistantFileToolsEnabled" xml:space="preserve"><value>Autoriser l'assistant à lire et écrire des fichiers dans ce dossier</value></data>
   <data name="Settings_AssistantGitToolsEnabled" xml:space="preserve"><value>Autoriser l'assistant à exécuter des commandes git dans ce dossier</value></data>
+  <data name="Settings_AssistantChatHistoryToolsEnabled" xml:space="preserve"><value>Autoriser l'assistant à rechercher et lire vos conversations passées</value></data>
   <data name="Settings_AssistantGitToolsUnavailable" xml:space="preserve"><value>Git n'est pas installé</value></data>
   <data name="Settings_AssistantVaultLocation" xml:space="preserve"><value>Coffre de mémoire : {0}</value></data>
   <data name="Settings_FolderMove_Confirm" xml:space="preserve"><value>Déplacer les fichiers et la mémoire de l'assistant vers {0} ? Cette opération copie, vérifie, puis supprime l'ancien emplacement.</value></data>

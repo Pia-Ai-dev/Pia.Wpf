@@ -14,6 +14,15 @@ public sealed class AssistantChatChangedEventArgs : EventArgs
     public required AssistantChatChangeKind Kind { get; init; }
 }
 
+/// <summary>One relevance-ranked chat hit: metadata plus an FTS excerpt of the matching message text.</summary>
+public readonly record struct AssistantChatSearchHit(
+    Guid Id,
+    string? Title,
+    DateTime UpdatedAt,
+    Guid? ProviderId,
+    string Snippet,
+    int MessageCount);
+
 public interface IAssistantChatService
 {
     event EventHandler<AssistantChatChangedEventArgs>? ChatsChanged;
@@ -78,6 +87,19 @@ public interface IAssistantChatService
         Guid? providerId = null,
         int offset = 0,
         int limit = 50,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// <see cref="SearchAsync"/>'s ranked sibling: FTS relevance order plus a snippet of the matching message
+    /// text, because a metadata-only hit carries no evidence to choose between hits by.
+    /// </summary>
+    Task<IReadOnlyList<AssistantChatSearchHit>> SearchRankedAsync(
+        string searchText,
+        DateTime? fromDate,
+        DateTime? toDate,
+        Guid? providerId,
+        Guid? excludeChatId,
+        int limit,
         CancellationToken ct = default);
 
     /// <summary>How many chats the same filter would match, so a paged view can say what it is not showing.</summary>

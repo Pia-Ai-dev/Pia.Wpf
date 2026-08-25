@@ -399,6 +399,8 @@ public class AppSettings
     // handler's IsAvailable also requires GitLocator.IsAvailable); the settings toggle is greyed out then.
     public bool AssistantGitToolsEnabled { get; set; } = true;
 
+    public bool AssistantChatHistoryToolsEnabled { get; set; } = true;
+
     // Layout-migration marker, distinct from VaultVersion (SQLite->vault). 0 = pre-nesting
     // (legacy vault at %LOCALAPPDATA%\Pia\Vault, sibling of workdir); 1 = vault nested under
     // AssistantFilesFolder. Set once the in-place nesting migration completes on this device.

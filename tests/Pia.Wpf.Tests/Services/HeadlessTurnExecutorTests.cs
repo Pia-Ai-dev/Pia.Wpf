@@ -489,6 +489,9 @@ public sealed class HeadlessTurnExecutorTests
         public Task<IReadOnlyList<SyncAssistantChat>> SearchAsync(string? searchText = null, DateTime? fromDate = null,
             DateTime? toDate = null, Guid? providerId = null, int offset = 0, int limit = 50, CancellationToken ct = default)
             => _inner.SearchAsync(searchText, fromDate, toDate, providerId, offset, limit, ct);
+        public Task<IReadOnlyList<AssistantChatSearchHit>> SearchRankedAsync(string searchText, DateTime? fromDate,
+            DateTime? toDate, Guid? providerId, Guid? excludeChatId, int limit, CancellationToken ct = default)
+            => _inner.SearchRankedAsync(searchText, fromDate, toDate, providerId, excludeChatId, limit, ct);
         public Task<int> CountAsync(string? searchText = null, DateTime? fromDate = null,
             DateTime? toDate = null, Guid? providerId = null, CancellationToken ct = default)
             => _inner.CountAsync(searchText, fromDate, toDate, providerId, ct);

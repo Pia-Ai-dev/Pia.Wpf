@@ -398,6 +398,85 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         }
     }
 
+    public async Task<IReadOnlyList<AssistantChatSearchHit>> SearchRankedAsync(
+        string searchText,
+        DateTime? fromDate,
+        DateTime? toDate,
+        Guid? providerId,
+        Guid? excludeChatId,
+        int limit,
+        CancellationToken ct = default)
+    {
+        var ftsQuery = BuildFtsQuery(searchText);
+        if (string.IsNullOrEmpty(ftsQuery)) return Array.Empty<AssistantChatSearchHit>();
+
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return Array.Empty<AssistantChatSearchHit>();
+
+            using var command = Connection().CreateCommand();
+            var conditions = new List<string> { "AssistantChatsFts MATCH @Search", HasMessagesClause };
+            command.Parameters.AddWithValue("@Search", ftsQuery);
+
+            if (excludeChatId.HasValue)
+            {
+                conditions.Add("AssistantChats.Id <> @ExcludeId");
+                command.Parameters.AddWithValue("@ExcludeId", excludeChatId.Value.ToString());
+            }
+            if (fromDate.HasValue)
+            {
+                conditions.Add("AssistantChats.UpdatedAt >= @FromDate");
+                command.Parameters.AddWithValue("@FromDate", fromDate.Value.ToString("O"));
+            }
+            if (toDate.HasValue)
+            {
+                // Same end-of-day expansion as BuildSearchWhere: a to-date that meant one thing on the
+                // recency path and another here would silently change the answer with the query.
+                var endOfDay = toDate.Value.Date.AddDays(1).AddTicks(-1);
+                conditions.Add("AssistantChats.UpdatedAt <= @ToDate");
+                command.Parameters.AddWithValue("@ToDate", endOfDay.ToString("O"));
+            }
+            if (providerId.HasValue)
+            {
+                conditions.Add("AssistantChats.ProviderId = @ProviderId");
+                command.Parameters.AddWithValue("@ProviderId", providerId.Value.ToString());
+            }
+
+            // Column 2 is Body (0 = ChatId, 1 = Title), and the join only resolves because the FTS
+            // table carries content — an older contentless one returned NULL for every column.
+            command.CommandText = $"""
+                SELECT AssistantChats.Id, AssistantChats.Title, AssistantChats.UpdatedAt, AssistantChats.ProviderId,
+                       snippet(AssistantChatsFts, 2, '', '', '…', 24),
+                       (SELECT COUNT(*) FROM AssistantChatMessages WHERE AssistantChatMessages.ChatId = AssistantChats.Id)
+                FROM AssistantChatsFts
+                JOIN AssistantChats ON AssistantChats.Id = AssistantChatsFts.ChatId
+                WHERE {string.Join(" AND ", conditions)}
+                ORDER BY AssistantChatsFts.rank
+                LIMIT @Limit
+                """;
+            command.Parameters.AddWithValue("@Limit", limit);
+
+            var hits = new List<AssistantChatSearchHit>();
+            using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                hits.Add(new AssistantChatSearchHit(
+                    Guid.Parse(reader.GetString(0)),
+                    reader.IsDBNull(1) ? null : reader.GetString(1),
+                    DateTime.Parse(reader.GetString(2)).ToUniversalTime(),
+                    reader.IsDBNull(3) ? null : Guid.Parse(reader.GetString(3)),
+                    reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
+                    reader.GetInt32(5)));
+            }
+            return hits.AsReadOnly();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task<int> CountAsync(
         string? searchText = null,
         DateTime? fromDate = null,
@@ -422,6 +501,11 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         }
     }
 
+    /// <summary>Shared by both search paths, so the recency list and the ranked list cannot disagree about
+    /// which chats exist.</summary>
+    private const string HasMessagesClause =
+        "EXISTS (SELECT 1 FROM AssistantChatMessages WHERE AssistantChatMessages.ChatId = AssistantChats.Id)";
+
     /// <summary>
     /// Binds the shared history filter onto <paramref name="command"/> and returns its WHERE clause, so a
     /// page query and its total count cannot drift apart.
@@ -439,9 +523,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         // stub AssistantChats row up front (the FK target its AgentRun needs — §16 R1) that never
         // receives messages; such stubs should not clutter history. Real chats always have ≥1
         // message. The stub stays reachable via its run (FlowAction.OpenRun, milestone 1.4).
-        conditions.Add("""
-            EXISTS (SELECT 1 FROM AssistantChatMessages WHERE AssistantChatMessages.ChatId = AssistantChats.Id)
-            """);
+        conditions.Add(HasMessagesClause);
 
         if (fromDate.HasValue)
         {
