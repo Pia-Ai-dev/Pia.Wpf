@@ -10,6 +10,7 @@ using Pia.Models;
 using Pia.Navigation;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.ViewModels.Models;
 
 namespace Pia.ViewModels;
 
@@ -29,7 +30,13 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     private readonly IDialogService _dialogs;
     private readonly IWindowManagerService _windowManager;
     private readonly ILocalizationService _localization;
+    private readonly IPluginService _plugins;
     private readonly ILogger<RoutinesViewModel> _logger;
+
+    /// <summary>The grant list as it will be persisted: insertion-ordered, deduped OrdinalIgnoreCase. The rows
+    /// project this, never the reverse — the stored column is a JSON array, so saving in display order would
+    /// rewrite it on every save and manufacture a sync diff on a routine nobody edited.</summary>
+    private readonly List<string> _editGrantSelection = [];
 
     /// <summary>Which card opened the editor, so a save can record it. Not an editable field — a blank start
     /// and an edit of an existing job both clear it.</summary>
@@ -241,9 +248,23 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     [ObservableProperty]
     private RoutineProviderChoice? _editProvider;
 
-    /// <summary>Comma-separated write-tool names. The stored field is a list; this is its flat form.</summary>
-    [ObservableProperty]
-    private string _editGrantedTools = string.Empty;
+    /// <summary>Every tool this device offers, grouped by plugin, plus a trailing group for stored grants
+    /// nothing here provides.</summary>
+    public ObservableCollection<RoutineToolGroup> EditToolGroups { get; } = [];
+
+    public bool HasEditToolCatalog => EditToolGroups.Any(g => !g.IsUnavailableGroup);
+
+    public bool HasEditMissingTools => EditToolGroups.Any(g => g.IsUnavailableGroup);
+
+    public bool EditorIsAgentTask => EditKind == ScheduledJobKind.AgentTask;
+
+    /// <summary>The collapsed picker's one line. Names the launcher's default OUT LOUD when nothing is ticked
+    /// on an agent routine: a header reading "none" would restate the very lie this picker removes.</summary>
+    public string EditToolsSummary => _editGrantSelection.Count > 0
+        ? string.Join(", ", _editGrantSelection)
+        : EditKind == ScheduledJobKind.AgentTask
+            ? _localization["Routines_Field_Tools_Summary_None_Agent"]
+            : _localization["Routines_Field_Tools_Summary_None_Research"];
 
     /// <summary>Suppresses the SUCCESS notification this job would raise. Failures still notify, and the result
     /// chat is written either way. Device-local, so it is not part of what syncs with the job.</summary>
@@ -275,6 +296,13 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         OnPropertyChanged(nameof(EditorWantsMonth));
     }
 
+    // The kind decides what an EMPTY grant list means, so switching it rewrites both lines the picker shows.
+    partial void OnEditKindChanged(ScheduledJobKind value)
+    {
+        OnPropertyChanged(nameof(EditorIsAgentTask));
+        OnPropertyChanged(nameof(EditToolsSummary));
+    }
+
     public RoutinesViewModel(
         IScheduledJobService jobs,
         IScheduledJobRunner runner,
@@ -284,6 +312,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         IDialogService dialogs,
         IWindowManagerService windowManager,
         ILocalizationService localization,
+        IPluginService plugins,
         ILogger<RoutinesViewModel> logger)
     {
         _jobs = jobs;
@@ -294,6 +323,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         _dialogs = dialogs;
         _windowManager = windowManager;
         _localization = localization;
+        _plugins = plugins;
         _logger = logger;
 
         JobKinds = [.. Enum.GetValues<ScheduledJobKind>()
@@ -509,7 +539,12 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             EffortLabel = job.ReasoningEffort is { } effort
                 ? _localization[$"Routines_Effort_{effort}"]
                 : string.Empty,
-            GrantedTools = string.Join(", ", job.GrantedTools),
+            GrantedToolNames = [.. job.GrantedTools],
+            ToolsSummary = job.GrantedTools.Count > 0
+                ? string.Join(", ", job.GrantedTools)
+                : job.Kind == ScheduledJobKind.AgentTask
+                    ? _localization["Routines_Detail_Tools_AgentDefault"]
+                    : _localization["Routines_Detail_Tools_None"],
             QuietOnSuccess = job.QuietOnSuccess,
             RecentRunsSummary = BuildRecentRunsSummary(recentFirings),
             RecentRuns = [.. recentFirings.Select(BuildRunRow)],
@@ -536,7 +571,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditDayOfMonth = now.Day;
         EditMonth = now.Month;
         EditSpecificDate = null;
-        EditGrantedTools = string.Empty;
+        ResetEditTools([]);
         EditQuietOnSuccess = false;
         ApplyPinChoices(null, null, null);
         ResetEditSlots(null);
@@ -635,7 +670,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditDayOfMonth = now.Day;
         EditMonth = now.Month;
         EditSpecificDate = null;
-        EditGrantedTools = string.Join(", ", blueprint.GrantedTools);
+        ResetEditTools(blueprint.GrantedTools);
         EditQuietOnSuccess = blueprint.QuietOnSuccess;
         ApplyPinChoices(null, null, blueprint.DefaultEffort);
         ResetEditSlots(blueprint);
@@ -666,7 +701,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditDayOfMonth = row.DayOfMonth ?? row.NextFireAt.Day;
         EditMonth = row.Month ?? row.NextFireAt.Month;
         EditSpecificDate = row.SpecificDate;
-        EditGrantedTools = row.GrantedTools;
+        ResetEditTools(row.GrantedToolNames);
         EditQuietOnSuccess = row.QuietOnSuccess;
         ApplyPinChoices(row.ProviderId, row.PersonaId, row.ReasoningEffort);
         // No slot block on an edit: the stored query is the user's own text, and re-rendering it from slot
@@ -701,6 +736,97 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         return missing;
     }
 
+    /// <summary>Seed the picker for one editor session. The catalog is read here rather than subscribed to:
+    /// this VM is scoped and re-navigable, so a PluginsChanged handler would leak one per navigation.</summary>
+    private void ResetEditTools(IEnumerable<string> granted)
+    {
+        _editGrantSelection.Clear();
+        foreach (var name in granted)
+        {
+            var trimmed = name.Trim();
+            if (trimmed.Length == 0) continue;
+            if (_editGrantSelection.Contains(trimmed, StringComparer.OrdinalIgnoreCase)) continue;
+            _editGrantSelection.Add(trimmed);
+        }
+
+        RebuildEditToolGroups();
+    }
+
+    private void RebuildEditToolGroups()
+    {
+        EditToolGroups.Clear();
+
+        IReadOnlyList<ToolCatalogEntry> catalog;
+        try
+        {
+            catalog = _plugins.GetToolCatalog();
+        }
+        catch (Exception ex)
+        {
+            // Degrade to "no tools offered" rather than dropping grants: the selection list is untouched.
+            _logger.LogWarning(ex, "Could not read the tool catalog for the routines editor");
+            catalog = [];
+        }
+
+        var offered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var group in catalog.GroupBy(e => e.PluginName, StringComparer.Ordinal)
+                                     .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            var rows = group.OrderBy(e => e.ToolName, StringComparer.OrdinalIgnoreCase)
+                            .Select(e => RoutineToolRow.FromCatalog(e, _localization, OnToolRowToggled))
+                            .ToList();
+            foreach (var row in rows) offered.Add(row.ToolName);
+            EditToolGroups.Add(new RoutineToolGroup(group.Key, false, rows));
+        }
+
+        var orphans = _editGrantSelection.Where(n => !offered.Contains(n)).ToList();
+        if (orphans.Count > 0)
+        {
+            // Same contract as an unresolvable persona pin: shown, not dropped, or the next save would revoke
+            // a grant the user never touched. Filed on their own — an orphan has no plugin to sit under.
+            EditToolGroups.Add(new RoutineToolGroup(
+                _localization["Routines_Field_Tools_Missing"], true,
+                [.. orphans.Select(n => RoutineToolRow.Unavailable(n, _localization, OnToolRowToggled))]));
+            _logger.LogInformation(
+                "The routines editor opened on {Count} granted tool(s) with no catalog row", orphans.Count);
+        }
+
+        foreach (var row in EditToolGroups.SelectMany(g => g.Tools))
+            row.SyncSelection(_editGrantSelection.Contains(row.ToolName, StringComparer.OrdinalIgnoreCase));
+
+        NotifyToolSelectionChanged();
+    }
+
+    private void OnToolRowToggled(RoutineToolRow row, bool selected)
+    {
+        if (selected)
+        {
+            // Append, never insert or sort: the stored column is a JSON array whose order reaches sync.
+            if (!_editGrantSelection.Contains(row.ToolName, StringComparer.OrdinalIgnoreCase))
+                _editGrantSelection.Add(row.ToolName);
+        }
+        else
+        {
+            _editGrantSelection.RemoveAll(n => string.Equals(n, row.ToolName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // A grant is by NAME, so a second plugin exposing the same name is the same grant and must not show a
+        // different tick. SyncSelection, not the setter, or this callback recurses.
+        foreach (var other in EditToolGroups.SelectMany(g => g.Tools))
+            if (!ReferenceEquals(other, row)
+                && string.Equals(other.ToolName, row.ToolName, StringComparison.OrdinalIgnoreCase))
+                other.SyncSelection(selected);
+
+        NotifyToolSelectionChanged();
+    }
+
+    private void NotifyToolSelectionChanged()
+    {
+        OnPropertyChanged(nameof(EditToolsSummary));
+        OnPropertyChanged(nameof(HasEditToolCatalog));
+        OnPropertyChanged(nameof(HasEditMissingTools));
+    }
+
     [RelayCommand]
     private void CancelEdit()
     {
@@ -725,10 +851,9 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             return;
         }
 
-        var grants = EditGrantedTools
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        // From the selection list, not the rows: row order is display order, and the stored column is a JSON
+        // array. Trimming and deduping already happened on the way in, so the invariant holds by construction.
+        var grants = _editGrantSelection.ToList();
 
         // Each field is carried only for the recurrences that read it; a value left behind on a job switched to
         // another recurrence is inert, and is what lets the editor remember the old day if the user switches back.
@@ -1117,8 +1242,12 @@ public sealed class RoutineRow
     public required string EffortLabel { get; init; }
     public bool HasEffortPin => ReasoningEffort is not null;
 
-    public required string GrantedTools { get; init; }
-    public bool HasGrantedTools => !string.IsNullOrEmpty(GrantedTools);
+    /// <summary>The stored list, raw — what the editor seeds its ticks from, NOT what the pane renders.</summary>
+    public required IReadOnlyList<string> GrantedToolNames { get; init; }
+
+    /// <summary>What this routine may actually use at fire time, its kind included. An agent routine storing
+    /// nothing still names write_file: hiding the line let the pane imply it could not write at all.</summary>
+    public required string ToolsSummary { get; init; }
 
     /// <summary>This job's successes are not announced (device-local; failures still are).</summary>
     public required bool QuietOnSuccess { get; init; }

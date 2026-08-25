@@ -821,6 +821,9 @@
   <data name="ToolCatalog_Caution_Destructive" xml:space="preserve"><value>À savoir : cet outil détruit des données, et une autorisation ici couvre aussi des appels ultérieurs dont vous ne verrez jamais les arguments. Laissez la case décochée pour être consulté chaque fois.</value></data>
   <data name="ToolCatalog_Caution_WorkDiscarding" xml:space="preserve"><value>À savoir : cet outil peut supprimer du travail non validé, et une autorisation ici couvre aussi des appels ultérieurs dont vous ne verrez jamais les arguments.</value></data>
   <data name="ToolCatalog_Caution_AuthorityAuthoring" xml:space="preserve"><value>À savoir : cet outil accorde des autorisations que des exécutions ultérieures sans surveillance utiliseront — l'autoriser ici permet à Pia d'élargir ce qu'elle pourra faire plus tard.</value></data>
+  <data name="ToolCatalog_Caution_Routine_Destructive" xml:space="preserve"><value>À savoir : cet outil détruit des données, et une routine s'exécute sans surveillance. Non coché, une exécution qui y recourt est refusée plutôt que suspendue pour vous.</value></data>
+  <data name="ToolCatalog_Caution_Routine_WorkDiscarding" xml:space="preserve"><value>À savoir : cet outil peut jeter du travail non validé, et une routine s'exécute sans surveillance.</value></data>
+  <data name="ToolCatalog_Caution_Routine_AuthorityAuthoring" xml:space="preserve"><value>À savoir : cet outil accorde des autorisations que des exécutions ultérieures utiliseront — l'autoriser élargit ce que cette routine permet à Pia de faire.</value></data>
   <data name="ActionCard_CurrentValue" xml:space="preserve"><value>Valeur actuelle :</value></data>
   <data name="ActionCard_NewValue" xml:space="preserve"><value>Nouvelle valeur :</value></data>
   <data name="ActionCard_Category_Memory" xml:space="preserve"><value>Mémoire</value></data>
@@ -1109,7 +1112,6 @@
   <data name="Settings_ScheduledJobs_Field_Time" xml:space="preserve"><value>Heure (HH:mm)</value></data>
   <data name="Settings_ScheduledJobs_Field_Date" xml:space="preserve"><value>Date</value></data>
   <data name="Settings_ScheduledJobs_Field_Provider" xml:space="preserve"><value>Fournisseur</value></data>
-  <data name="Settings_ScheduledJobs_Field_GrantedTools" xml:space="preserve"><value>Outils d'écriture autorisés (séparés par des virgules)</value></data>
   <data name="Settings_ScheduledJobs_Field_QuietOnSuccess" xml:space="preserve"><value>Discret : aucune notification en cas de succès</value></data>
   <data name="Settings_ScheduledJobs_Field_QuietOnSuccess_Hint" xml:space="preserve"><value>Pour les tâches de surveillance qui signalent surtout « aucun changement ». Les échecs sont toujours notifiés et le chat de résultat est toujours enregistré.</value></data>
   <data name="Settings_ScheduledJobs_RecentRuns" xml:space="preserve"><value>{0} dernières exécutions : {1} ok, {2} en échec</value></data>
@@ -1140,6 +1142,18 @@
   <data name="Routines_Field_Effort" xml:space="preserve"><value>Effort de raisonnement</value></data>
   <data name="Routines_Field_Effort_Default" xml:space="preserve"><value>Utiliser le réglage de la persona</value></data>
   <data name="Routines_Field_Effort_Hint" xml:space="preserve"><value>Remplace l'effort de raisonnement de la persona pour les exécutions de cette routine.</value></data>
+  <data name="Routines_Field_Tools" xml:space="preserve"><value>Outils que cette routine peut utiliser</value></data>
+  <data name="Routines_Field_Tools_Hint" xml:space="preserve"><value>Facultatif. Un outil coché peut être utilisé par les exécutions de cette routine sans demander.</value></data>
+  <data name="Routines_Field_Tools_AgentDefault" xml:space="preserve"><value>Sans rien de coché, une routine agent peut toujours utiliser write_file. Cocher un outil remplace cette valeur par défaut au lieu de s'y ajouter.</value></data>
+  <data name="Routines_Field_Tools_Empty" xml:space="preserve"><value>Aucun plugin de cet appareil ne propose d'outils.</value></data>
+  <data name="Routines_Field_Tools_Missing" xml:space="preserve"><value>Plus disponible</value></data>
+  <data name="Routines_Field_Tools_Missing_Hint" xml:space="preserve"><value>Conservé à l'enregistrement. Rien sur cet appareil ne le fournit, les exécutions ici ne peuvent donc pas l'utiliser.</value></data>
+  <data name="Routines_Field_Tools_Missing_Notice" xml:space="preserve"><value>Certains outils nommés par cette routine ne sont plus disponibles sur cet appareil.</value></data>
+  <data name="Routines_Field_Tools_Summary_None_Agent" xml:space="preserve"><value>Rien de coché — les exécutions peuvent toujours utiliser write_file.</value></data>
+  <data name="Routines_Field_Tools_Summary_None_Research" xml:space="preserve"><value>Rien de coché — les exécutions se contentent de lire et de rapporter.</value></data>
+  <data name="Routines_Detail_Tools" xml:space="preserve"><value>Outils</value></data>
+  <data name="Routines_Detail_Tools_AgentDefault" xml:space="preserve"><value>write_file uniquement — la valeur par défaut d'une routine agent.</value></data>
+  <data name="Routines_Detail_Tools_None" xml:space="preserve"><value>Aucun — cette routine se contente de lire et de rapporter.</value></data>
   <data name="Routines_Effort_None" xml:space="preserve"><value>Sans raisonnement</value></data>
   <data name="Routines_Effort_Minimal" xml:space="preserve"><value>Minimal</value></data>
   <data name="Routines_Effort_Low" xml:space="preserve"><value>Faible</value></data>

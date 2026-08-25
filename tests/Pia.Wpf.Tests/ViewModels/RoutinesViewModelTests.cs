@@ -8,6 +8,7 @@ using Pia.Resources.Strings;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.ViewModels;
+using Pia.ViewModels.Models;
 using Xunit;
 
 namespace Pia.Tests.ViewModels;
@@ -27,6 +28,20 @@ public class RoutinesViewModelTests
         return loc;
     }
 
+    private static readonly Guid FilesPlugin = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private static readonly Guid TodoPlugin = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    private static readonly Guid McpPlugin = Guid.Parse("33333333-3333-3333-3333-333333333333");
+
+    /// <summary>Deliberately unsorted, so the ordering assertion is not vacuous, and with two plugins exposing
+    /// one tool name — the grant list is name-only, so those two rows are a single grant.</summary>
+    private static IReadOnlyList<ToolCatalogEntry> ToolCatalog() =>
+    [
+        new(TodoPlugin, "todo", "create_todo", "Create a todo", IsExternalRoute: false, ServerDeclaredDestructive: false),
+        new(FilesPlugin, "files", "write_file", "Write a file", IsExternalRoute: false, ServerDeclaredDestructive: false),
+        new(FilesPlugin, "files", "delete_file", "Delete a file", IsExternalRoute: false, ServerDeclaredDestructive: false),
+        new(McpPlugin, "some-mcp-server", "create_todo", "Create a todo", IsExternalRoute: true, ServerDeclaredDestructive: false),
+    ];
+
     private sealed record Sut(
         RoutinesViewModel Vm,
         IScheduledJobService Jobs,
@@ -35,7 +50,8 @@ public class RoutinesViewModelTests
         IPersonaService Personas,
         IAgentRunService Runs,
         IDialogService Dialogs,
-        IWindowManagerService Windows);
+        IWindowManagerService Windows,
+        IPluginService Plugins);
 
     private static Sut CreateSut(params ScheduledJob[] jobs) => CreateSut(runs: null, jobs);
 
@@ -69,11 +85,27 @@ public class RoutinesViewModelTests
 
         var windows = Substitute.For<IWindowManagerService>();
 
-        var vm = new RoutinesViewModel(service, runner, providers, personas, runs, dialogs, windows, Localizer(),
-            NullLogger<RoutinesViewModel>.Instance);
+        // Stubbed explicitly: an auto-valued catalogue would silently make every picker assertion vacuous.
+        var plugins = Substitute.For<IPluginService>();
+        plugins.GetToolCatalog().Returns(ToolCatalog());
 
-        return new Sut(vm, service, runner, providers, personas, runs, dialogs, windows);
+        var vm = new RoutinesViewModel(service, runner, providers, personas, runs, dialogs, windows, Localizer(),
+            plugins, NullLogger<RoutinesViewModel>.Instance);
+
+        return new Sut(vm, service, runner, providers, personas, runs, dialogs, windows, plugins);
     }
+
+    /// <summary>Distinct because one tool name can appear under two plugins, and that is a single grant.</summary>
+    private static IReadOnlyList<string> TickedTools(RoutinesViewModel vm) =>
+    [
+        .. vm.EditToolGroups.SelectMany(g => g.Tools)
+             .Where(t => t.IsSelected)
+             .Select(t => t.ToolName)
+             .Distinct(StringComparer.OrdinalIgnoreCase)
+    ];
+
+    private static RoutineToolRow Row(RoutinesViewModel vm, string toolName) =>
+        vm.EditToolGroups.SelectMany(g => g.Tools).First(t => t.ToolName == toolName);
 
     private static Persona NewPersona(string name) => new()
     {
@@ -598,7 +630,7 @@ public class RoutinesViewModelTests
         {
             vm = new RoutinesViewModel(jobs, Substitute.For<IScheduledJobRunner>(), providers, personas, runs,
                 Substitute.For<IDialogService>(), Substitute.For<IWindowManagerService>(), Localizer(),
-                NullLogger<RoutinesViewModel>.Instance);
+                Substitute.For<IPluginService>(), NullLogger<RoutinesViewModel>.Instance);
         }
         finally
         {
@@ -657,7 +689,9 @@ public class RoutinesViewModelTests
         Assert.Equal(blueprint.Kind, sut.Vm.EditKind);
         Assert.Equal(blueprint.Recurrence, sut.Vm.EditRecurrence);
         Assert.Equal("08:00", sut.Vm.EditTimeOfDay);
-        Assert.Equal(string.Join(", ", blueprint.GrantedTools), sut.Vm.EditGrantedTools);
+        Assert.Equal(
+            blueprint.GrantedTools.OrderBy(t => t, StringComparer.Ordinal),
+            TickedTools(sut.Vm).OrderBy(t => t, StringComparer.Ordinal));
         Assert.Equal(blueprint.QuietOnSuccess, sut.Vm.EditQuietOnSuccess);
         Assert.Null(sut.Vm.EditSpecificDate);
         Assert.Equal(sut.Vm.ProviderChoices.FirstOrDefault(), sut.Vm.EditProvider);
@@ -1409,5 +1443,238 @@ public class RoutinesViewModelTests
             Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<ScheduledJobKind>(), Arg.Any<bool>(),
             personaId: Arg.Any<Guid?>(), reasoningEffort: Arg.Any<ReasoningEffort?>(),
             blueprintKey: RoutineBlueprintCatalog.TopicDigest);
+    }
+
+    /// <summary>The editor must open showing what the routine STORES, not what the launcher will substitute.
+    /// Pre-ticking write_file would pin an implicit default on every routine the user merely touched.</summary>
+    [Fact]
+    public async Task AnAgentRoutineStoringNoGrants_OpensWithNothingTicked_AndSavesNothing()
+    {
+        var job = NewJob();
+        job.Kind = ScheduledJobKind.AgentTask;
+        var sut = CreateSut(job);
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+
+        sut.Vm.StartEditCommand.Execute(null);
+
+        Assert.Empty(TickedTools(sut.Vm));
+        Assert.True(sut.Vm.EditorIsAgentTask);
+        Assert.Equal("Routines_Field_Tools_Summary_None_Agent", sut.Vm.EditToolsSummary);
+
+        sut.Vm.EditName = "Renamed";
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        await sut.Jobs.Received(1).UpdateAsync(job.Id, name: Arg.Any<string>(), query: Arg.Any<string>(),
+            recurrence: Arg.Any<RecurrenceType?>(), timeOfDay: Arg.Any<TimeOnly?>(),
+            dayOfWeek: Arg.Any<DayOfWeek?>(), dayOfMonth: Arg.Any<int?>(), month: Arg.Any<int?>(),
+            providerId: Arg.Any<Guid?>(), grantedTools: Arg.Is<IReadOnlyCollection<string>>(g => g.Count == 0),
+            specificDate: Arg.Any<DateTime?>(), kind: Arg.Any<ScheduledJobKind?>(),
+            quietOnSuccess: Arg.Any<bool?>(), personaId: Arg.Any<Guid?>(),
+            reasoningEffort: Arg.Any<ReasoningEffort?>(), clearReasoningEffort: Arg.Any<bool>());
+    }
+
+    /// <summary>The collapsed header is the only line most users read, so it has to track a tick.</summary>
+    [Fact]
+    public async Task TickingATool_UpdatesTheSummary_AndReachesTheSavePayload()
+    {
+        var job = NewJob();
+        var sut = CreateSut(job);
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+        sut.Vm.StartEditCommand.Execute(null);
+
+        var raised = new List<string?>();
+        sut.Vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        Row(sut.Vm, "write_file").IsSelected = true;
+
+        Assert.Contains(nameof(RoutinesViewModel.EditToolsSummary), raised);
+        Assert.Equal("write_file", sut.Vm.EditToolsSummary);
+
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        await sut.Jobs.Received(1).UpdateAsync(job.Id, name: Arg.Any<string>(), query: Arg.Any<string>(),
+            recurrence: Arg.Any<RecurrenceType?>(), timeOfDay: Arg.Any<TimeOnly?>(),
+            dayOfWeek: Arg.Any<DayOfWeek?>(), dayOfMonth: Arg.Any<int?>(), month: Arg.Any<int?>(),
+            providerId: Arg.Any<Guid?>(),
+            grantedTools: Arg.Is<IReadOnlyCollection<string>>(g => g.SequenceEqual(new[] { "write_file" })),
+            specificDate: Arg.Any<DateTime?>(), kind: Arg.Any<ScheduledJobKind?>(),
+            quietOnSuccess: Arg.Any<bool?>(), personaId: Arg.Any<Guid?>(),
+            reasoningEffort: Arg.Any<ReasoningEffort?>(), clearReasoningEffort: Arg.Any<bool>());
+    }
+
+    /// <summary>A grant is stored by NAME, so two plugins exposing one name are one grant. Rows that disagreed
+    /// would let a user untick the tool and leave it granted anyway.</summary>
+    [Fact]
+    public async Task TwoPluginsSharingAToolName_ToggleTogether_AndSaveOneGrant()
+    {
+        var sut = CreateSut(NewJob());
+        await sut.Vm.RefreshAsync();
+        sut.Vm.StartCreateCommand.Execute(null);
+
+        var rows = sut.Vm.EditToolGroups.SelectMany(g => g.Tools)
+                        .Where(t => t.ToolName == "create_todo").ToList();
+        Assert.Equal(2, rows.Count);
+
+        rows[0].IsSelected = true;
+        Assert.All(rows, r => Assert.True(r.IsSelected));
+        Assert.Single(TickedTools(sut.Vm));
+
+        rows[1].IsSelected = false;
+        Assert.All(rows, r => Assert.False(r.IsSelected));
+        Assert.Empty(TickedTools(sut.Vm));
+    }
+
+    /// <summary>The stored column is a JSON array, so re-ordering it on an untouched save manufactures a sync
+    /// diff. The direct guard on reading the selection list rather than the display rows.</summary>
+    [Fact]
+    public async Task SavingAnUntouchedRoutine_PreservesTheStoredGrantOrder()
+    {
+        var job = NewJob();
+        job.GrantedTools = ["write_file", "create_todo"];
+        var sut = CreateSut(job);
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+        sut.Vm.StartEditCommand.Execute(null);
+
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        await sut.Jobs.Received(1).UpdateAsync(job.Id, name: Arg.Any<string>(), query: Arg.Any<string>(),
+            recurrence: Arg.Any<RecurrenceType?>(), timeOfDay: Arg.Any<TimeOnly?>(),
+            dayOfWeek: Arg.Any<DayOfWeek?>(), dayOfMonth: Arg.Any<int?>(), month: Arg.Any<int?>(),
+            providerId: Arg.Any<Guid?>(),
+            grantedTools: Arg.Is<IReadOnlyCollection<string>>(
+                g => g.SequenceEqual(new[] { "write_file", "create_todo" })),
+            specificDate: Arg.Any<DateTime?>(), kind: Arg.Any<ScheduledJobKind?>(),
+            quietOnSuccess: Arg.Any<bool?>(), personaId: Arg.Any<Guid?>(),
+            reasoningEffort: Arg.Any<ReasoningEffort?>(), clearReasoningEffort: Arg.Any<bool>());
+    }
+
+    /// <summary>Same contract as an unresolvable persona pin: a grant nothing here provides is shown and kept,
+    /// never silently revoked by the next save. It stays removable, or it could never be revoked at all.</summary>
+    [Fact]
+    public async Task AGrantWithNoCatalogRow_ShowsAsUnavailable_SurvivesTheSave_AndCanBeRemoved()
+    {
+        var job = NewJob();
+        job.GrantedTools = ["jira_create_issue"];
+        var sut = CreateSut(job);
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+        sut.Vm.StartEditCommand.Execute(null);
+
+        Assert.True(sut.Vm.HasEditMissingTools);
+        var orphan = Row(sut.Vm, "jira_create_issue");
+        Assert.True(orphan.IsUnavailable);
+        Assert.True(orphan.IsSelected);
+        Assert.Equal("Routines_Field_Tools_Missing_Hint", orphan.UnavailableReason);
+
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        await sut.Jobs.Received(1).UpdateAsync(job.Id, name: Arg.Any<string>(), query: Arg.Any<string>(),
+            recurrence: Arg.Any<RecurrenceType?>(), timeOfDay: Arg.Any<TimeOnly?>(),
+            dayOfWeek: Arg.Any<DayOfWeek?>(), dayOfMonth: Arg.Any<int?>(), month: Arg.Any<int?>(),
+            providerId: Arg.Any<Guid?>(),
+            grantedTools: Arg.Is<IReadOnlyCollection<string>>(g => g.Contains("jira_create_issue")),
+            specificDate: Arg.Any<DateTime?>(), kind: Arg.Any<ScheduledJobKind?>(),
+            quietOnSuccess: Arg.Any<bool?>(), personaId: Arg.Any<Guid?>(),
+            reasoningEffort: Arg.Any<ReasoningEffort?>(), clearReasoningEffort: Arg.Any<bool>());
+
+        sut.Vm.StartEditCommand.Execute(null);
+        Row(sut.Vm, "jira_create_issue").IsSelected = false;
+        Assert.Empty(TickedTools(sut.Vm));
+    }
+
+    /// <summary>The synthetic group belongs to one routine; left behind it offers a stranger's dead grant.</summary>
+    [Fact]
+    public async Task TheUnavailableToolGroup_DoesNotSurviveIntoTheNextEditorSession()
+    {
+        var job = NewJob();
+        job.GrantedTools = ["jira_create_issue"];
+        var sut = CreateSut(job);
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+        sut.Vm.StartEditCommand.Execute(null);
+        Assert.True(sut.Vm.HasEditMissingTools);
+
+        sut.Vm.StartCreateCommand.Execute(null);
+
+        Assert.False(sut.Vm.HasEditMissingTools);
+        Assert.DoesNotContain(sut.Vm.EditToolGroups.SelectMany(g => g.Tools), t => t.IsUnavailable);
+    }
+
+    /// <summary>The kind decides what an empty list means, so the type dropdown must rewrite both lines.</summary>
+    [Fact]
+    public async Task SwitchingTheKind_RewritesTheEmptySelectionLines()
+    {
+        var sut = CreateSut(NewJob());
+        await sut.Vm.RefreshAsync();
+        sut.Vm.StartCreateCommand.Execute(null);
+
+        var raised = new List<string?>();
+        sut.Vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        sut.Vm.EditKind = ScheduledJobKind.Research;
+
+        Assert.Contains(nameof(RoutinesViewModel.EditToolsSummary), raised);
+        Assert.Contains(nameof(RoutinesViewModel.EditorIsAgentTask), raised);
+        Assert.False(sut.Vm.EditorIsAgentTask);
+        Assert.Equal("Routines_Field_Tools_Summary_None_Research", sut.Vm.EditToolsSummary);
+    }
+
+    /// <summary>The catalogue arrives in arbitrary handler order, so grouping and sorting are the picker's job.</summary>
+    [Fact]
+    public async Task TheToolGroupsSortByPluginThenByTool()
+    {
+        var sut = CreateSut(NewJob());
+        await sut.Vm.RefreshAsync();
+        sut.Vm.StartCreateCommand.Execute(null);
+
+        Assert.Equal(["files", "some-mcp-server", "todo"],
+            sut.Vm.EditToolGroups.Where(g => !g.IsUnavailableGroup).Select(g => g.Header));
+        Assert.Equal(["delete_file", "write_file"],
+            sut.Vm.EditToolGroups.First(g => g.Header == "files").Tools.Select(t => t.ToolName));
+    }
+
+    /// <summary>A destructive tool carries the ROUTINE caution: unattended, an unnamed one is refused outright,
+    /// so the Tool access page's "you will be asked each time" would be a false promise here.</summary>
+    [Fact]
+    public async Task ATickedDestructiveTool_CarriesTheRoutineCaution()
+    {
+        var sut = CreateSut(NewJob());
+        await sut.Vm.RefreshAsync();
+        sut.Vm.StartCreateCommand.Execute(null);
+
+        var row = Row(sut.Vm, "delete_file");
+        Assert.False(row.HasCaution);
+
+        row.IsSelected = true;
+
+        Assert.True(row.HasCaution);
+        Assert.Equal("ToolCatalog_Caution_Routine_Destructive", row.CautionText);
+    }
+
+    /// <summary>Hiding the line when nothing is stored let the pane imply an agent routine could not write.</summary>
+    [Fact]
+    public async Task TheDetailPane_NamesTheLauncherDefault_ForAnAgentRoutineWithNoGrants()
+    {
+        var agent = NewJob();
+        agent.Kind = ScheduledJobKind.AgentTask;
+        var sut = CreateSut(agent);
+        await sut.Vm.RefreshAsync();
+
+        Assert.Equal("Routines_Detail_Tools_AgentDefault", sut.Vm.Jobs[0].ToolsSummary);
+    }
+
+    /// <summary>A research routine with no grants genuinely is read-only, and must not borrow the agent line.</summary>
+    [Fact]
+    public async Task TheDetailPane_SaysReadOnly_ForAResearchRoutineWithNoGrants()
+    {
+        var research = NewJob();
+        research.Kind = ScheduledJobKind.Research;
+        var sut = CreateSut(research);
+        await sut.Vm.RefreshAsync();
+
+        Assert.Equal("Routines_Detail_Tools_None", sut.Vm.Jobs[0].ToolsSummary);
     }
 }

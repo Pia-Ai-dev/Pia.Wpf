@@ -787,6 +787,9 @@
   <data name="ToolCatalog_Caution_Destructive" xml:space="preserve"><value>Worth knowing: this tool destroys data, and an approval here covers later calls whose arguments you never see. Leave it unticked to be asked each time.</value></data>
   <data name="ToolCatalog_Caution_WorkDiscarding" xml:space="preserve"><value>Worth knowing: this tool can throw away uncommitted work, and an approval here covers later calls whose arguments you never see.</value></data>
   <data name="ToolCatalog_Caution_AuthorityAuthoring" xml:space="preserve"><value>Worth knowing: this tool grants permissions that later, unattended runs will use — approving it once lets Pia widen what it may do later.</value></data>
+  <data name="ToolCatalog_Caution_Routine_Destructive" xml:space="preserve"><value>Worth knowing: this tool destroys data, and a routine runs with nobody watching. Left unticked, a run that reaches for it is refused rather than paused for you.</value></data>
+  <data name="ToolCatalog_Caution_Routine_WorkDiscarding" xml:space="preserve"><value>Worth knowing: this tool can throw away uncommitted work, and a routine runs with nobody watching.</value></data>
+  <data name="ToolCatalog_Caution_Routine_AuthorityAuthoring" xml:space="preserve"><value>Worth knowing: this tool grants permissions later runs will use, so allowing it lets this routine widen what Pia may do.</value></data>
   <data name="ActionCard_CurrentValue" xml:space="preserve"><value>Current value:</value></data>
   <data name="ActionCard_NewValue" xml:space="preserve"><value>New value:</value></data>
   <data name="ActionCard_Category_Memory" xml:space="preserve"><value>Memory</value></data>
@@ -1119,7 +1122,6 @@
   <data name="Settings_ScheduledJobs_Field_Time" xml:space="preserve"><value>Time (HH:mm)</value></data>
   <data name="Settings_ScheduledJobs_Field_Date" xml:space="preserve"><value>Date</value></data>
   <data name="Settings_ScheduledJobs_Field_Provider" xml:space="preserve"><value>Provider</value></data>
-  <data name="Settings_ScheduledJobs_Field_GrantedTools" xml:space="preserve"><value>Allowed write tools (comma separated)</value></data>
   <data name="Settings_ScheduledJobs_Field_QuietOnSuccess" xml:space="preserve"><value>Quiet: no notification when it succeeds</value></data>
   <data name="Settings_ScheduledJobs_Field_QuietOnSuccess_Hint" xml:space="preserve"><value>For monitor jobs that mostly report "nothing changed". Failures still notify, and the result chat is always saved.</value></data>
   <data name="Settings_ScheduledJobs_RecentRuns" xml:space="preserve"><value>Last {0} runs: {1} ok, {2} failed</value></data>
@@ -1150,6 +1152,18 @@
   <data name="Routines_Field_Effort" xml:space="preserve"><value>Reasoning effort</value></data>
   <data name="Routines_Field_Effort_Default" xml:space="preserve"><value>Use the persona's setting</value></data>
   <data name="Routines_Field_Effort_Hint" xml:space="preserve"><value>Overrides the persona's own reasoning effort for this routine's runs.</value></data>
+  <data name="Routines_Field_Tools" xml:space="preserve"><value>Tools this routine may use</value></data>
+  <data name="Routines_Field_Tools_Hint" xml:space="preserve"><value>Optional. Tick a tool and this routine&#x27;s runs may use it without asking.</value></data>
+  <data name="Routines_Field_Tools_AgentDefault" xml:space="preserve"><value>With nothing ticked, an agent routine may still use write_file. Ticking any tool replaces that default rather than adding to it.</value></data>
+  <data name="Routines_Field_Tools_Empty" xml:space="preserve"><value>No plugin on this device offers any tools.</value></data>
+  <data name="Routines_Field_Tools_Missing" xml:space="preserve"><value>No longer available</value></data>
+  <data name="Routines_Field_Tools_Missing_Hint" xml:space="preserve"><value>Kept when you save. Nothing on this device provides it, so runs here cannot use it.</value></data>
+  <data name="Routines_Field_Tools_Missing_Notice" xml:space="preserve"><value>Some tools this routine names are no longer available on this device.</value></data>
+  <data name="Routines_Field_Tools_Summary_None_Agent" xml:space="preserve"><value>Nothing ticked — runs may still use write_file.</value></data>
+  <data name="Routines_Field_Tools_Summary_None_Research" xml:space="preserve"><value>Nothing ticked — runs only read and report.</value></data>
+  <data name="Routines_Detail_Tools" xml:space="preserve"><value>Tools</value></data>
+  <data name="Routines_Detail_Tools_AgentDefault" xml:space="preserve"><value>write_file only — the default for an agent routine.</value></data>
+  <data name="Routines_Detail_Tools_None" xml:space="preserve"><value>None — this routine only reads and reports.</value></data>
   <data name="Routines_Effort_None" xml:space="preserve"><value>No reasoning</value></data>
   <data name="Routines_Effort_Minimal" xml:space="preserve"><value>Minimal</value></data>
   <data name="Routines_Effort_Low" xml:space="preserve"><value>Low</value></data>

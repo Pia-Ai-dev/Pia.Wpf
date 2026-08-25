@@ -398,6 +398,7 @@ public class RoutineBlueprintCatalogTests
             Substitute.For<IDialogService>(),
             Substitute.For<IWindowManagerService>(),
             localization,
+            Substitute.For<IPluginService>(),
             NullLogger<RoutinesViewModel>.Instance);
     }
 

@@ -104,7 +104,7 @@ public partial class ToolCatalogRow : ObservableObject
 
     /// <summary>First match wins, and destructive is tested FIRST: it is the one a server can declare on a
     /// benign-looking name, and the strongest thing to say about a tool that carries more than one.</summary>
-    private static ToolGrantCaution CautionFor(string toolName, bool serverDeclaredDestructive)
+    public static ToolGrantCaution CautionFor(string toolName, bool serverDeclaredDestructive)
     {
         if (ToolPermissionService.IsDeleteLike(toolName, serverDeclaredDestructive))
             return ToolGrantCaution.Destructive;
