@@ -597,7 +597,7 @@ from a blueprint card does.
 | Time | `Routines_Field_Time` | ValuePattern, `HH:mm` 24-hour |
 | Provider | `Routines_Field_Provider` | `ww_select` — must be tool-capable |
 | Persona | `Routines_Field_Persona` | `ww_select` — must have tools, same requirement as §2.2 minus the lever |
-| Granted tools | `Routines_Field_GrantedTools` | ValuePattern, comma-separated; empty ⇒ `{write_file}` |
+| Granted tools | `Routines_Tools_Picker` | expand it, then `ww_set_checked` per `Routines_Tools_Allow_<tool>`; nothing ticked ⇒ `{write_file}` for an agent routine, `{}` for a research one |
 | Quiet on success | `Routines_Field_Quiet` | tick it, or every run raises a Flow item and a toast |
 | Save | `Routines_Save` | `ww_invoke` |
 
@@ -633,7 +633,7 @@ run is allowed to park (`HeadlessRunLauncher.cs:144`). A parked run never reache
 probe line at all** — only a Continue card nobody is there to press.
 
 Two fixes, either is fine: tick `Settings_Assistant_Agent_AutoApproveBuiltInWrites` once (§2.4), or name
-the tools per routine in `Routines_Field_GrantedTools`. §5's categories **C** (todos and reminders) and
+the tools per routine in `Routines_Tools_Picker`. §5's categories **C** (todos and reminders) and
 **E** (memory and kanban) are exactly the ones this bites, which is also why dropping them would bias the
 ratio being measured. Keep deletes and MCP tools out of these prompts entirely: the gate refuses to *ask*
 about a delete-like or external tool and denies it outright.

@@ -179,7 +179,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
             _logger.SensitiveDebug("create_scheduled_research refused grants: {Tools}", string.Join(", ", rejectedTools));
         }
 
-        var effectiveGrants = EffectiveGrants(grantedTools, kind);
+        var effectiveGrants = ScheduledJobGrants.Effective(grantedTools, kind);
 
         var providerId = await ResolveProviderIdAsync(providerName);
 
@@ -284,7 +284,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
             ? dow
             : blueprint.DefaultDayOfWeek;
 
-        var effectiveGrants = EffectiveGrants(blueprint.GrantedTools, blueprint.Kind);
+        var effectiveGrants = ScheduledJobGrants.Effective(blueprint.GrantedTools, blueprint.Kind);
 
         var detailSb = new StringBuilder();
         detailSb.AppendLine($"{_localizationService["Tool_ScheduledResearch_Detail_Name"]}: {name}");
@@ -314,19 +314,6 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
 
         return (null, pending);
     }
-
-    /// <summary>
-    /// The grant set that will ACTUALLY be in force at fire time. An AgentTask job with no explicit grant
-    /// silently receives the launcher's default, so the approval card renders that default instead of
-    /// omitting the line — the user must be able to see what the job may write. A Research job with no
-    /// grants genuinely is read-only, so it keeps no line at all.
-    /// </summary>
-    private static IReadOnlyList<string> EffectiveGrants(IReadOnlyList<string> granted, ScheduledJobKind kind) =>
-        granted.Count > 0
-            ? granted
-            : kind == ScheduledJobKind.AgentTask
-                ? HeadlessRunRequest.DefaultGrantedWrites.ToList()
-                : [];
 
     /// <summary>A JSON object of slot name to value. Not a comma-separated list: a slot value is free text that
     /// routinely contains commas, which is exactly what "which companies" produces.</summary>

@@ -821,6 +821,9 @@
   <data name="ToolCatalog_Caution_Destructive" xml:space="preserve"><value>Gut zu wissen: Dieses Tool zerstört Daten, und eine Erlaubnis hier deckt auch spätere Aufrufe ab, deren Argumente Sie nie zu sehen bekommen. Lassen Sie sie leer, um jedes Mal gefragt zu werden.</value></data>
   <data name="ToolCatalog_Caution_WorkDiscarding" xml:space="preserve"><value>Gut zu wissen: Dieses Tool kann nicht committete Arbeit verwerfen, und eine Erlaubnis hier deckt auch spätere Aufrufe ab, deren Argumente Sie nie zu sehen bekommen.</value></data>
   <data name="ToolCatalog_Caution_AuthorityAuthoring" xml:space="preserve"><value>Gut zu wissen: Dieses Tool erteilt Berechtigungen, die spätere unbeaufsichtigte Ausführungen nutzen werden — eine Erlaubnis hier lässt Pia ihren eigenen Handlungsrahmen erweitern.</value></data>
+  <data name="ToolCatalog_Caution_Routine_Destructive" xml:space="preserve"><value>Gut zu wissen: Dieses Tool zerstört Daten, und eine Routine läuft ohne Aufsicht. Nicht angehakt wird ein Lauf, der danach greift, abgelehnt statt für Sie angehalten.</value></data>
+  <data name="ToolCatalog_Caution_Routine_WorkDiscarding" xml:space="preserve"><value>Gut zu wissen: Dieses Tool kann nicht committete Arbeit verwerfen, und eine Routine läuft ohne Aufsicht.</value></data>
+  <data name="ToolCatalog_Caution_Routine_AuthorityAuthoring" xml:space="preserve"><value>Gut zu wissen: Dieses Tool erteilt Berechtigungen, die spätere Läufe nutzen — es zu erlauben lässt diese Routine Pias Handlungsrahmen erweitern.</value></data>
   <data name="ActionCard_CurrentValue" xml:space="preserve"><value>Aktueller Wert:</value></data>
   <data name="ActionCard_NewValue" xml:space="preserve"><value>Neuer Wert:</value></data>
   <data name="ActionCard_Category_Memory" xml:space="preserve"><value>Erinnerung</value></data>
@@ -1109,7 +1112,6 @@
   <data name="Settings_ScheduledJobs_Field_Time" xml:space="preserve"><value>Uhrzeit (HH:mm)</value></data>
   <data name="Settings_ScheduledJobs_Field_Date" xml:space="preserve"><value>Datum</value></data>
   <data name="Settings_ScheduledJobs_Field_Provider" xml:space="preserve"><value>Anbieter</value></data>
-  <data name="Settings_ScheduledJobs_Field_GrantedTools" xml:space="preserve"><value>Erlaubte Schreib-Tools (durch Komma getrennt)</value></data>
   <data name="Settings_ScheduledJobs_Field_QuietOnSuccess" xml:space="preserve"><value>Leise: keine Benachrichtigung bei Erfolg</value></data>
   <data name="Settings_ScheduledJobs_Field_QuietOnSuccess_Hint" xml:space="preserve"><value>Für Überwachungsaufträge, die meist „keine Änderung“ melden. Fehler werden weiterhin gemeldet, und der Ergebnis-Chat wird immer gespeichert.</value></data>
   <data name="Settings_ScheduledJobs_RecentRuns" xml:space="preserve"><value>Letzte {0} Ausführungen: {1} ok, {2} fehlgeschlagen</value></data>
@@ -1140,6 +1142,18 @@
   <data name="Routines_Field_Effort" xml:space="preserve"><value>Denkaufwand</value></data>
   <data name="Routines_Field_Effort_Default" xml:space="preserve"><value>Einstellung der Persona verwenden</value></data>
   <data name="Routines_Field_Effort_Hint" xml:space="preserve"><value>Überschreibt für die Läufe dieser Routine den Denkaufwand der Persona.</value></data>
+  <data name="Routines_Field_Tools" xml:space="preserve"><value>Tools, die diese Routine nutzen darf</value></data>
+  <data name="Routines_Field_Tools_Hint" xml:space="preserve"><value>Optional. Ein angehaktes Tool dürfen die Läufe dieser Routine ohne Rückfrage nutzen.</value></data>
+  <data name="Routines_Field_Tools_AgentDefault" xml:space="preserve"><value>Ohne Haken darf eine Agenten-Routine weiterhin write_file nutzen. Ein gesetzter Haken ersetzt diese Vorgabe, statt sie zu ergänzen.</value></data>
+  <data name="Routines_Field_Tools_Empty" xml:space="preserve"><value>Kein Plugin auf diesem Gerät bietet Tools an.</value></data>
+  <data name="Routines_Field_Tools_Missing" xml:space="preserve"><value>Nicht mehr verfügbar</value></data>
+  <data name="Routines_Field_Tools_Missing_Hint" xml:space="preserve"><value>Bleibt beim Speichern erhalten. Auf diesem Gerät stellt es nichts bereit, Läufe hier können es also nicht nutzen.</value></data>
+  <data name="Routines_Field_Tools_Missing_Notice" xml:space="preserve"><value>Einige von dieser Routine genannte Tools sind auf diesem Gerät nicht mehr verfügbar.</value></data>
+  <data name="Routines_Field_Tools_Summary_None_Agent" xml:space="preserve"><value>Nichts angehakt — Läufe dürfen weiterhin write_file nutzen.</value></data>
+  <data name="Routines_Field_Tools_Summary_None_Research" xml:space="preserve"><value>Nichts angehakt — Läufe lesen und berichten nur.</value></data>
+  <data name="Routines_Detail_Tools" xml:space="preserve"><value>Tools</value></data>
+  <data name="Routines_Detail_Tools_AgentDefault" xml:space="preserve"><value>Nur write_file — die Vorgabe für eine Agenten-Routine.</value></data>
+  <data name="Routines_Detail_Tools_None" xml:space="preserve"><value>Keine — diese Routine liest und berichtet nur.</value></data>
   <data name="Routines_Effort_None" xml:space="preserve"><value>Ohne Denkaufwand</value></data>
   <data name="Routines_Effort_Minimal" xml:space="preserve"><value>Minimal</value></data>
   <data name="Routines_Effort_Low" xml:space="preserve"><value>Niedrig</value></data>

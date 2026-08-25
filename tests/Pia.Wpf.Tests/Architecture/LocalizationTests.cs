@@ -306,6 +306,35 @@ public class LocalizationTests
             $"every tool-catalogue reason key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
     }
 
+    /// <summary>The routine picker's own copy: unattended there is nobody to ask, so it cannot reuse the Tool
+    /// access wording. Same helper-not-literal problem as the pair above.</summary>
+    [Fact]
+    public void EveryRoutineToolCautionKeyResolvesInAllThreeLocales()
+    {
+        var keys = Enum.GetValues<ToolGrantCaution>()
+            .Select(RoutineToolRow.RoutineCautionKeyFor)
+            .Where(k => k is not null)
+            .Distinct()
+            .ToList();
+
+        Assert.Equal(Enum.GetValues<ToolGrantCaution>().Length - 1, keys.Count);
+
+        // Distinct from the Tool access copy, or the routine surface would inherit "you will be asked each
+        // time" — false for a run with no human in front of it.
+        Assert.Empty(keys.Intersect(Enum.GetValues<ToolGrantCaution>().Select(ToolCatalogRow.CautionKeyFor)));
+
+        var missing = new List<string>();
+        foreach (var culture in new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") })
+        {
+            var available = GetResourceKeysForCulture(ViewStrings.ResourceManager, culture);
+            foreach (var key in keys.Where(k => !available.Contains(k!)))
+                missing.Add($"{culture.Name}: {key}");
+        }
+
+        Assert.True(missing.Count == 0,
+            $"every routine caution key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
+    }
+
     /// <summary>The status key is formatted from the enum, so this file's literal-key regexes cannot see it.</summary>
     [Fact]
     public void EveryAssignmentStatusKeyResolvesInAllThreeLocales()
