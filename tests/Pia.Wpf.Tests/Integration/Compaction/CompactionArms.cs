@@ -4,7 +4,6 @@ using Microsoft.Extensions.AI;
 
 namespace Pia.Tests.Integration.Compaction;
 
-/// <summary>One recovered message, in the shape <c>IAssistantChatService.SearchMessagesAsync</c> returns.</summary>
 internal sealed record RecoveredMessage(int Ordinal, string Role, string Snippet);
 
 /// <summary>
@@ -159,12 +158,8 @@ internal static class CompactionArms
         return context;
     }
 
-    /// <summary>
-    /// The search a recovery pointer is only honest if it actually has. Same shape as
-    /// <c>IAssistantChatService.SearchMessagesAsync</c> — one chat's messages, case-insensitive substring, in
-    /// transcript order, with the ordinal that makes a hit citable — over the removed set rather than the
-    /// database, because a synthetic transcript was never persisted.
-    /// </summary>
+    /// <summary>Case-insensitive substring over the removed set in transcript order, not the database: a
+    /// synthetic transcript was never persisted.</summary>
     internal static List<RecoveredMessage> Search(
         IReadOnlyList<ChatMessage> transcript,
         IReadOnlyList<ChatMessage> removed,

@@ -79,6 +79,10 @@ public static class Bootstrapper
 
     public static async Task InitializeAsync()
     {
+        // Not inside the AddLogging lambda: that delegate runs eagerly, and three architecture tests
+        // reflect-invoke ConfigureServices against the real, un-redirected profile.
+        var logRetention = LogFileRetention.Sweep(PiaPaths.LogsDirectory, LogFileRetention.DefaultRetainedDays);
+
         var services = new ServiceCollection();
         ConfigureServices(services);
 
@@ -97,6 +101,10 @@ public static class Bootstrapper
         bootstrapLogger.LogInformation(
             "Data directories: Roaming={Roaming}, Local={Local}, Overridden={Overridden}",
             PiaPaths.RoamingDataDirectory, PiaPaths.LocalDataDirectory, PiaPaths.IsOverridden);
+
+        bootstrapLogger.LogInformation(
+            "Log retention: kept {Kept}, deleted {Deleted}, skipped {Skipped}, cutoff {Cutoff:yyyy-MM-dd}",
+            logRetention.Kept, logRetention.Deleted, logRetention.Skipped, logRetention.Cutoff);
 
         var envServerUrl = Environment.GetEnvironmentVariable(ServerUrlEnvVar);
 #if DEBUG
@@ -358,7 +366,9 @@ public static class Bootstrapper
                 Append = true,
                 MinLevel = IsDevMode ? LogLevel.Debug : LogLevel.Information,
                 FileSizeLimitBytes = 10 * 1024 * 1024, // 10 MB per file
-                MaxRollingFiles = 7,                    // Keep 7 days
+                // Bounds ONE day's rolls; LogFileRetention bounds the days. Alone it prunes nothing, because
+                // FormatLogFileName mints a new base name every day.
+                MaxRollingFiles = 7,
                 FormatLogFileName = name =>
                 {
                     var ext = Path.GetExtension(name);

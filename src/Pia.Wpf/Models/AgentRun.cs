@@ -82,6 +82,9 @@ public sealed class AgentRun
 
     public string? ExtraJson { get; set; }
 
+    /// <summary>The serialized <see cref="PiaFailure"/>, set only on a failure that had one. Its own column rather than part of <see cref="ExtraJson"/> for <see cref="ClarificationsJson"/>'s reason.</summary>
+    public string? FailureJson { get; set; }
+
     /// <summary>The ordered plan (live model view). Empty for <see cref="RunShape.SingleTurn"/>.</summary>
     public IReadOnlyList<AgentStep> Plan { get; set; } = [];
 }

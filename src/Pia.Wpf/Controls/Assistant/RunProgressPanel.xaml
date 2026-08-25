@@ -603,6 +603,23 @@
           <TextBlock Style="{StaticResource RunWarnLineStyle}" Text="{Binding FailureNote}"
                      Visibility="{Binding FailureNote, Converter={StaticResource NullToVisibilityConverter}}" />
 
+          <!-- WHICH layer failed, and the one thing to do about it. Both are absent unless the descriptor
+               named a layer, so an unclassified failure renders exactly as it did before they existed. The
+               button navigates; the diagnostics export owns its own consent dialog and is not re-raised here. -->
+          <StackPanel Margin="0,3,0,0" Orientation="Horizontal"
+                      Visibility="{Binding FailureLayerName, Converter={StaticResource NullToVisibilityConverter}}">
+            <TextBlock Style="{StaticResource RunNoteLineStyle}" VerticalAlignment="Center"
+                       AutomationProperties.AutomationId="Run_FailureLayer"
+                       Text="{Binding FailureLayerName}" />
+            <ui:Button Margin="10,0,0,0" Padding="8,2" VerticalAlignment="Center"
+                       Appearance="Secondary"
+                       AutomationProperties.AutomationId="Run_FailureAction"
+                       Command="{Binding RunFailureActionCommand}"
+                       Content="{Binding FailureActionLabel}"
+                       FontSize="11"
+                       Visibility="{Binding FailureActionLabel, Converter={StaticResource NullToVisibilityConverter}}" />
+          </StackPanel>
+
           <!-- Conditional note lines, all quiet on an ordinary run.
                (1) the standing offer, while a settled run's files are still in its workspace;
                (2) the result of a publish the user asked for;

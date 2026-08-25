@@ -1,8 +1,10 @@
 using System.IO;
+using System.Net.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
+using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 using Pia.Services.Scheduling;
 using Xunit;
@@ -320,6 +322,45 @@ public class ScheduledJobServiceTests : IDisposable
         Assert.DoesNotContain(await _service.GetDueJobsAsync(), j => j.Id == job.Id);
         // Still Active, so the row is still listed and still owns a scheduled firing.
         Assert.Contains(await _service.GetActiveAsync(), j => j.Id == job.Id);
+    }
+
+    /// <summary>
+    /// The gap IsPreModelFailure's own doc comment recorded: a launch that threw before the run existed
+    /// arrived as a bare message and retired a one-off on the first strike. A descriptor its raiser vouched
+    /// for now re-arms it, without the classifier ever matching on message text.
+    /// </summary>
+    [Fact]
+    public async Task MarkRunFailedAsync_OnceJob_VouchedForPreModelDescriptor_ReArmsThoughTheReasonIsAMessage()
+    {
+        var job = await _service.CreateAsync("TEST_OnceVouched", "q", RecurrenceType.Once, new TimeOnly(9, 0),
+            specificDate: DateTime.Now.Date.AddDays(-1));
+        await ForceNextFireAtAsync(job.Id, DateTime.Now.AddMinutes(-5));
+
+        await _service.MarkRunFailedAsync(
+            job.Id,
+            "No provider configured for a headless agent run.",
+            FailureMapper.ForException(new PreModelLaunchException("no provider")));
+
+        var after = await _service.GetAsync(job.Id);
+        Assert.Equal(ScheduledJobStatus.Active, after!.Status);
+        Assert.True(after.NextFireAt > DateTime.Now.AddMinutes(5), "the one-off must have been re-armed");
+    }
+
+    /// <summary>Widening, not loosening: an ordinary fault still settles terminally on the first strike.</summary>
+    [Fact]
+    public async Task MarkRunFailedAsync_OnceJob_MidRunFaultDescriptor_StillRetiresOnTheFirstStrike()
+    {
+        var job = await _service.CreateAsync("TEST_OnceMidRun", "q", RecurrenceType.Once, new TimeOnly(9, 0),
+            specificDate: DateTime.Now.Date.AddDays(-1));
+        await ForceNextFireAtAsync(job.Id, DateTime.Now.AddMinutes(-5));
+
+        // A 503 is transient by hermes's meaning of "retryable" and emphatically not safe to re-dispatch:
+        // the run may already have written to the vault.
+        await _service.MarkRunFailedAsync(
+            job.Id, "upstream 503", FailureMapper.ForException(new HttpRequestException("503")));
+
+        var after = await _service.GetAsync(job.Id);
+        Assert.Equal(ScheduledJobStatus.Failed, after!.Status);
     }
 
     [Fact]

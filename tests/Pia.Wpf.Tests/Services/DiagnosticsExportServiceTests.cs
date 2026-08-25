@@ -75,6 +75,9 @@ public sealed class DiagnosticsExportServiceTests : IDisposable
         File.WriteAllText(
             Path.Combine(_source, $"pia-{date}.log"), Prefix + new string('x', bytes) + "\r\n");
 
+    private void LogFileOfSize(string fileName, int bytes) =>
+        File.WriteAllText(Path.Combine(_source, fileName), Prefix + new string('x', bytes) + "\r\n");
+
     private string ZipPath => Path.Combine(_output, "export.zip");
 
     private Task<DiagnosticsExportResult> ExportAsync(DiagnosticsExportCaps? caps = null) =>
@@ -253,16 +256,16 @@ public sealed class DiagnosticsExportServiceTests : IDisposable
             Entries(ZipPath).Where(e => e.StartsWith("logs/", StringComparison.Ordinal)));
 
         // 08-20 is small enough to fit after 08-21 is refused, and is still excluded: a set with a hole in
-        // it is not something a support engineer can reason about.
+        // it is not something a support engineer can reason about. Both name the BYTE cap — only 2 of the 9
+        // file slots were used, so raising MaxLogFiles would change nothing.
         var plan = result.Plan;
         Assert.True(plan.CapApplied);
         Assert.Equal(4, plan.Files.Count);
-        Assert.Equal(
-            DiagnosticsExclusionReason.OverTotalByteCap,
-            plan.Files.Single(f => f.FileName == "pia-2026-08-21.log").ExclusionReason);
-        Assert.Equal(
-            DiagnosticsExclusionReason.OverFileCountCap,
-            plan.Files.Single(f => f.FileName == "pia-2026-08-20.log").ExclusionReason);
+        Assert.All(
+            new[] { "pia-2026-08-21.log", "pia-2026-08-20.log" },
+            name => Assert.Equal(
+                DiagnosticsExclusionReason.OverTotalByteCap,
+                plan.Files.Single(f => f.FileName == name).ExclusionReason));
         Assert.Equal(new DateOnly(2026, 8, 22), plan.OldestIncluded);
         Assert.Equal(new DateOnly(2026, 8, 23), plan.NewestIncluded);
     }
@@ -306,26 +309,33 @@ public sealed class DiagnosticsExportServiceTests : IDisposable
         File.WriteAllText(Path.Combine(_source, "pia.log"), "x");
         File.WriteAllText(Path.Combine(_source, "pia-nope.log"), "x");
         File.WriteAllText(Path.Combine(_source, "pia-2026-08-22x.log"), "x");
+        File.WriteAllText(Path.Combine(_source, "pia-2026-08-22-x.log"), "x");
+        // Right shape, wrong prefix: a fixed-offset slice at 4 reads a valid date out of this one.
+        File.WriteAllText(Path.Combine(_source, "pia_2026-08-22.log"), "x");
 
         var plan = Build().Plan(_source, DiagnosticsExportCaps.Default);
 
         Assert.Equal(1, plan.IncludedCount);
         Assert.Equal(
-            ["pia-2026-08-22x.log", "pia-nope.log", "pia.log"],
+            [
+                "pia-2026-08-22-x.log", "pia-2026-08-22x.log", "pia-nope.log", "pia.log",
+                "pia_2026-08-22.log",
+            ],
             plan.Files.Where(f => f.ExclusionReason == DiagnosticsExclusionReason.UnrecognisedName)
                 .Select(f => f.FileName).OrderBy(n => n, StringComparer.Ordinal));
     }
 
     /// <summary>
-    /// The sink rolls at 10 MB and the rolled name carries a suffix. A fixed-width pia-????-??-??.log
-    /// pattern would have dropped it from the export AND from the manifest, so nothing would say it existed.
+    /// The sink appends the roll index with NO separator, so pia-2026-08-22.log rolls to pia-2026-08-221.log.
+    /// A fixed-width pia-????-??-??.log pattern drops it from the export AND from the manifest, so nothing
+    /// would say it existed.
     /// </summary>
     [Fact]
     public async Task ARolledFileIsIncludedAlongsideItsDay_AndRedactedLikeAnyOther()
     {
         Log("2026-08-22", "first");
         File.WriteAllText(
-            Path.Combine(_source, "pia-2026-08-22-1.log"),
+            Path.Combine(_source, "pia-2026-08-221.log"),
             Prefix + @"rolled from C:\Users\lovelace\AppData\Local\Pia" + "\r\n");
 
         var plan = Build().Plan(_source, DiagnosticsExportCaps.Default);
@@ -338,11 +348,79 @@ public sealed class DiagnosticsExportServiceTests : IDisposable
 
         Assert.True(result.Succeeded);
         Assert.Equal(
-            ["logs/pia-2026-08-22-1.log", "logs/pia-2026-08-22.log"],
+            ["logs/pia-2026-08-22.log", "logs/pia-2026-08-221.log"],
             Entries(ZipPath).Where(e => e.StartsWith("logs/", StringComparison.Ordinal)));
         Assert.Equal(
             Prefix + "rolled from <profile-local>\r\n",
-            ReadEntry(ZipPath, "logs/pia-2026-08-22-1.log"));
+            ReadEntry(ZipPath, "logs/pia-2026-08-221.log"));
+    }
+
+    [Theory]
+    // The first is what the sink writes; the second only arrives by hand or from an older sink.
+    [InlineData("pia-2026-08-221.log")]
+    [InlineData("pia-2026-08-22-1.log")]
+    public void ARollSuffixCountsAsThatDay(string rolled)
+    {
+        Log("2026-08-22", "first");
+        LogFileOfSize(rolled, 10);
+
+        var plan = Build().Plan(_source, DiagnosticsExportCaps.Default);
+
+        Assert.Equal(2, plan.IncludedCount);
+        Assert.All(plan.Files, f => Assert.Null(f.ExclusionReason));
+    }
+
+    /// <summary>
+    /// Ascending rolling WRAPS back onto the un-indexed base file, so neither the highest roll index nor the
+    /// last name in ordinal order is the newest slice of a day.
+    /// </summary>
+    [Fact]
+    public void TheNewestSliceOfADayWins_ByWriteTimeNotByName()
+    {
+        // Only the base file holding the newer content discriminates: with the roll newer, a roll-index or
+        // ordinal tiebreak would pick the same winner.
+        const string newer = "pia-2026-08-22.log";
+        const string older = "pia-2026-08-221.log";
+
+        // Both writes first: WriteAllText stamps the write time itself.
+        LogFileOfSize(newer, 4000);
+        LogFileOfSize(older, 4000);
+        File.SetLastWriteTimeUtc(
+            Path.Combine(_source, newer), new DateTime(2026, 8, 22, 18, 0, 0, DateTimeKind.Utc));
+        File.SetLastWriteTimeUtc(
+            Path.Combine(_source, older), new DateTime(2026, 8, 22, 12, 0, 0, DateTimeKind.Utc));
+
+        // Prefix is 58 chars, so each file is 4060 bytes and this cap admits exactly one of them.
+        var plan = Build().Plan(_source, new DiagnosticsExportCaps(MaxTotalSourceBytes: 5000));
+
+        Assert.Equal([newer], plan.Files.Where(f => f.Included).Select(f => f.FileName));
+        Assert.Equal(
+            DiagnosticsExclusionReason.OverTotalByteCap,
+            plan.Files.Single(f => f.FileName == older).ExclusionReason);
+    }
+
+    /// <summary>
+    /// Write time is a tiebreak INSIDE a day and nothing more: a folder a sync tool restored, or a profile
+    /// seeded in one loop, can carry the fresher mtime on the older day.
+    /// </summary>
+    [Fact]
+    public void TheNewestDayWins_EvenWhenAnOlderDayWasWrittenLast()
+    {
+        LogOfSize("2026-08-22", 100);
+        LogOfSize("2026-08-24", 100);
+        File.SetLastWriteTimeUtc(
+            Path.Combine(_source, "pia-2026-08-22.log"),
+            new DateTime(2026, 8, 25, 9, 0, 0, DateTimeKind.Utc));
+        File.SetLastWriteTimeUtc(
+            Path.Combine(_source, "pia-2026-08-24.log"),
+            new DateTime(2026, 8, 24, 9, 0, 0, DateTimeKind.Utc));
+
+        var plan = Build().Plan(_source, new DiagnosticsExportCaps(MaxLogFiles: 1));
+
+        Assert.Equal(
+            ["pia-2026-08-24.log"], plan.Files.Where(f => f.Included).Select(f => f.FileName));
+        Assert.Equal(new DateOnly(2026, 8, 24), plan.NewestIncluded);
+        Assert.Equal(new DateOnly(2026, 8, 24), plan.OldestIncluded);
     }
 
     [Fact]

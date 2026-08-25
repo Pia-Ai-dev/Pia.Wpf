@@ -478,9 +478,10 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
     [RelayCommand]
     private async Task ExportDiagnosticsAsync()
     {
+        var caps = DiagnosticsExportCaps.Default;
         // Planned before the dialog so "nothing to export" is told apart from "the export failed", and so
         // the consent message can state the real count rather than a promise.
-        var plan = _diagnosticsExportService.Plan(PiaPaths.LogsDirectory, DiagnosticsExportCaps.Default);
+        var plan = _diagnosticsExportService.Plan(PiaPaths.LogsDirectory, caps);
         if (plan.IncludedCount == 0)
         {
             _snackbarService.Show(
@@ -491,10 +492,25 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         }
 
         var destination = PiaPaths.DiagnosticsDirectory;
+        var body = _localizationService.Format("Settings_ExportDiagnostics_Confirm_Message", plan.IncludedCount, destination);
+        // Counted by kind: a name with no date is left out at any cap, so folding it into the cap sentence
+        // blames the cap for an exclusion it did not cause.
+        var byCap = plan.Files.Count(f => f.ExclusionReason is DiagnosticsExclusionReason.OverFileCountCap
+            or DiagnosticsExclusionReason.OverTotalByteCap);
+        if (byCap > 0)
+        {
+            body += " " + _localizationService.Format("Settings_ExportDiagnostics_Confirm_ExcludedByCap",
+                byCap, caps.MaxLogFiles, caps.MaxTotalSourceBytes / (1024 * 1024));
+        }
+
+        if (plan.ExcludedCount - byCap > 0)
+        {
+            body += " " + _localizationService.Format(
+                "Settings_ExportDiagnostics_Confirm_Excluded", plan.ExcludedCount - byCap);
+        }
+
         var confirmed = await _dialogService.ShowConfirmationDialogAsync(
-            _localizationService["Settings_ExportDiagnostics_Confirm_Title"],
-            _localizationService.Format(
-                "Settings_ExportDiagnostics_Confirm_Message", plan.IncludedCount, destination));
+            _localizationService["Settings_ExportDiagnostics_Confirm_Title"], body);
 
         if (!confirmed)
             return;
@@ -506,7 +522,7 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
                 new DiagnosticsExportRequest(
                     PiaPaths.LogsDirectory,
                     Path.Combine(destination, DiagnosticsExportRequest.BuildFileName(DateTimeOffset.Now)),
-                    DiagnosticsExportCaps.Default),
+                    caps),
                 CancellationToken.None);
 
             if (!result.Succeeded || result.OutputZipPath is null)

@@ -1,6 +1,10 @@
 # Brief — Next Implementation Batch (Hermes Follow-Up)
 
-**Status:** ready to execute. Self-contained: paste §0 into a fresh session and it has everything.
+**Status:** SUPERSEDED, and awaiting deletion — do not execute it. Its one line worth keeping (a `Focus()`
+inside `IsVisibleChanged` silently doing nothing) is now in
+[`../ui_automation/ui-automation-playbook.md`](../ui_automation/ui-automation-playbook.md); the rest is
+wrong about the branch, the OS and the gate. It survives only because a frozen C-track doc links it — see the
+**Phase 2** table in [`2026-08-22-hermes-followup-checklist.md`](2026-08-22-hermes-followup-checklist.md).
 **Owner:** unassigned. **Written:** 2026-08-22.
 **Origin:** the rows left over after batch 1 of
 [`2026-08-22-hermes-followup-checklist.md`](2026-08-22-hermes-followup-checklist.md).
@@ -39,7 +43,7 @@ A1 is a decision gate that closes A2–A4, A6 and A7. Its first reading came off
 23 declarations over 7 verifier runs, 57% `found`, 43% `not a file reference`, **zero `NOT FOUND`**.
 That refutes *"already high"* but it is one machine over three days on code-shaped tasks. More logs
 are being collected per
-[`2026-08-22-a1-log-collection-runbook.md`](2026-08-22-a1-log-collection-runbook.md).
+[`artifact-evidence.md`](artifact-evidence.md).
 
 **Until that sample lands, A2, A3, A4, A6 and A7 are out of scope.** So is review recommendation #13
 (planner discipline), which is A4 wearing a different hat. A5 already shipped and is done.
@@ -91,7 +95,7 @@ work and it is the whole point of the row.
 
 ### D7 — AutomationId gap-fill *(Med, and it unblocks the A track's data collection)*
 
-Deps D1, satisfied. Source: `2026-08-22-guided-tour-tool-plan.md` §8 step 7.
+Deps D1, satisfied. Source: `../guided_tour/2026-08-24-d-track-parked.md` Part II §8 step 7.
 
 The checklist calls this `S`. It is scoped as `S` per view, and **ten views have zero AutomationIds**:
 

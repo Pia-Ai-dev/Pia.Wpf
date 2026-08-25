@@ -91,7 +91,7 @@ public interface IScheduledJobService
     /// the exact value it accepts and why the boundary sits there.
     /// </para>
     /// </summary>
-    Task MarkRunFailedAsync(Guid id, string reason);
+    Task MarkRunFailedAsync(Guid id, string reason, PiaFailure? failure = null);
 
     /// <summary>
     /// Advances <c>NextFireAt</c> for a job whose missed-run prompt was answered "Skip"

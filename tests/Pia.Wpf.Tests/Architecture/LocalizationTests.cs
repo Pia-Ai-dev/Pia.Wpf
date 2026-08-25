@@ -446,6 +446,8 @@ public class LocalizationTests
     /// </summary>
     [Theory]
     [InlineData("Settings_ExportDiagnostics_Confirm_Message", 2)]
+    [InlineData("Settings_ExportDiagnostics_Confirm_ExcludedByCap", 3)]
+    [InlineData("Settings_ExportDiagnostics_Confirm_Excluded", 1)]
     public void ADiagnosticsKeyCarriesTheSamePlaceholdersInEveryLocale(string key, int expected)
     {
         var placeholder = new Regex(@"\{(\d+)");
@@ -459,6 +461,26 @@ public class LocalizationTests
             Assert.Equal(Enumerable.Range(0, expected).Select(i => i.ToString(CultureInfo.InvariantCulture)),
                 indexes);
         }
+    }
+
+    /// <summary>Both sentences can appear in one dialog body, so a shared opening clause reads as a stutter.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("de")]
+    [InlineData("fr")]
+    public void TheTwoExclusionSentencesDoNotShareAnOpeningClause(string culture)
+    {
+        var info = culture.Length == 0 ? CultureInfo.InvariantCulture : new CultureInfo(culture);
+        var byCap = ViewStrings.ResourceManager.GetString("Settings_ExportDiagnostics_Confirm_ExcludedByCap", info)!;
+        var other = ViewStrings.ResourceManager.GetString("Settings_ExportDiagnostics_Confirm_Excluded", info)!;
+
+        var shared = 0;
+        while (shared < byCap.Length && shared < other.Length && byCap[shared] == other[shared])
+            shared++;
+
+        Assert.True(shared < 15,
+            $"in {info.Name} these two sentences share their first {shared} characters, and both are appended " +
+            $"to the same consent body, so the user reads the same clause twice: \"{byCap[..shared]}\"");
     }
 
     /// <summary>The snackbar bodies take one argument each, so a stray {1} throws at render time.</summary>

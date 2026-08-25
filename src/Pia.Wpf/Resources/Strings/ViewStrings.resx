@@ -1352,4 +1352,31 @@
   <data name="Settings_ExportDiagnostics_Confirm_Message" xml:space="preserve">
     <value>{0} log file(s) will be redacted and written to {1}. Nothing is sent anywhere — open the zip and check it before you share it.</value>
   </data>
+  <data name="Run_FailureLayer_App" xml:space="preserve">
+    <value>App</value>
+  </data>
+  <data name="Run_FailureLayer_Workspace" xml:space="preserve">
+    <value>Workspace</value>
+  </data>
+  <data name="Run_FailureLayer_Provider" xml:space="preserve">
+    <value>Provider</value>
+  </data>
+  <data name="Run_FailureLayer_Endpoint" xml:space="preserve">
+    <value>Endpoint</value>
+  </data>
+  <data name="Run_FailureLayer_Tool" xml:space="preserve">
+    <value>Tool</value>
+  </data>
+  <data name="Run_FailureAction_Providers" xml:space="preserve">
+    <value>Check providers</value>
+  </data>
+  <data name="Run_FailureAction_Diagnostics" xml:space="preserve">
+    <value>Export diagnostics</value>
+  </data>
+  <data name="Settings_ExportDiagnostics_Confirm_ExcludedByCap" xml:space="preserve">
+    <value>This is not your whole log history: an export stops at {1} log files or {2} MB, whichever comes first, so {0} file(s) are left out. Mention it in your support request if you need those too.</value>
+  </data>
+  <data name="Settings_ExportDiagnostics_Confirm_Excluded" xml:space="preserve">
+    <value>A further {0} file(s) in that folder are not recognised as Pia logs; the archive lists them in its manifest.</value>
+  </data>
 </root>

@@ -14,14 +14,6 @@ public sealed class AssistantChatChangedEventArgs : EventArgs
     public required AssistantChatChangeKind Kind { get; init; }
 }
 
-/// <summary>
-/// One message of one chat that mentioned a search term. <c>AssistantChatsFts</c> is indexed per CHAT, so it
-/// can only answer "which conversation said this" — a run recovering an evicted fact needs the row.
-/// </summary>
-/// <param name="Ordinal">Position in the chat, which is what makes a hit citable back to the transcript.</param>
-/// <param name="Snippet">SENSITIVE (user content) — a window of <c>Content</c> around the match, never logged.</param>
-public sealed record AssistantChatMessageHit(Guid MessageId, int Ordinal, string Role, string Snippet);
-
 public interface IAssistantChatService
 {
     event EventHandler<AssistantChatChangedEventArgs>? ChatsChanged;
@@ -78,16 +70,6 @@ public interface IAssistantChatService
     /// <summary>The chat's provider alone. <see cref="GetAsync"/> reads the whole transcript, which a caller
     /// that only needs this field must not pay for.</summary>
     Task<Guid?> GetProviderIdAsync(Guid id, CancellationToken ct = default);
-
-    /// <summary>
-    /// Which MESSAGES of one chat mention <paramref name="term"/>, oldest first. A substring match over one
-    /// chat's rows rather than a second FTS index: the recovery this exists for is scoped to a single
-    /// conversation, and an index would need backfill plus save/delete/evict maintenance bought before any
-    /// measurement says it is worth it.
-    /// </summary>
-    /// <param name="term">Matched case-insensitively as a substring. Blank ⇒ no hits, never every row.</param>
-    Task<IReadOnlyList<AssistantChatMessageHit>> SearchMessagesAsync(
-        Guid chatId, string term, int limit = 20, CancellationToken ct = default);
 
     Task<IReadOnlyList<SyncAssistantChat>> SearchAsync(
         string? searchText = null,

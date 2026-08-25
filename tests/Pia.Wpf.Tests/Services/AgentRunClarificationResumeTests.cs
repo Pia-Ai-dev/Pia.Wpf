@@ -136,8 +136,10 @@ public sealed class AgentRunClarificationResumeTests
             => _inner.SetRunMessageRangeAsync(runId, firstMessageId, lastMessageId, ct);
         public Task CompleteAsync(Guid runId, bool truncated = false, string? truncationReason = null, CancellationToken ct = default)
             => _inner.CompleteAsync(runId, truncated, truncationReason, ct);
-        public Task FailAsync(Guid runId, string? error, bool cancelled = false, CancellationToken ct = default)
-            => _inner.FailAsync(runId, error, cancelled, ct);
+        public Task FailAsync(
+            Guid runId, string? error, bool cancelled = false, CancellationToken ct = default,
+            PiaFailure? failure = null)
+            => _inner.FailAsync(runId, error, cancelled, ct, failure);
         public Task PauseAsync(Guid runId, string? reason, CancellationToken ct = default, string? approvalTool = null)
             => _inner.PauseAsync(runId, reason, ct, approvalTool);
         public Task UpdatePolicyJsonAsync(Guid runId, string? policyJson, CancellationToken ct = default)

@@ -3,8 +3,9 @@
 **Status:** pre-registered. §1–§8 were written and committed **before the first provider call**; §9 is the
 only section added afterwards.
 **Owner:** Marco Altmann. **Written:** 2026-08-23.
-**Origin:** [`2026-08-22-compaction-recall-test-plan.md`](2026-08-22-compaction-recall-test-plan.md)
-steps B3 + B4, with the owner answers in its §15.
+**Origin:** the compaction recall test plan,
+steps B3 + B4, with the owner answers in its §15. That plan is deleted; it and this reading
+are folded into [`2026-08-24-compaction-recall-closeout.md`](2026-08-24-compaction-recall-closeout.md).
 
 ---
 

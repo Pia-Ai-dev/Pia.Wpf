@@ -299,7 +299,9 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         return Task.CompletedTask;
     }
 
-    public Task FailAsync(Guid runId, string? error, bool cancelled = false, CancellationToken ct = default)
+    public Task FailAsync(
+        Guid runId, string? error, bool cancelled = false, CancellationToken ct = default,
+        PiaFailure? failure = null)
     {
         var state = cancelled ? AgentRunState.Cancelled : AgentRunState.Failed;
         var now = DateTime.UtcNow;
@@ -309,15 +311,21 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
 
             MoveLedgerClock(runId, LedgerClock.CloseSegment);
 
+            // The descriptor is ADDITIVE: the free-text reason is written exactly as before, so an
+            // unmapped message still reaches the card unchanged.
             var extraJson = error is not null
                 ? JsonSerializer.Serialize(new { error }, JsonOptions)
                 : null;
+            var failureJson = failure?.ToJson();
 
             using var cmd = Connection().CreateCommand();
-            cmd.CommandText = "UPDATE AgentRuns SET State=@State, CompletedAt=@Now, UpdatedAt=@Now, ExtraJson=@Extra WHERE Id=@Id";
+            cmd.CommandText =
+                "UPDATE AgentRuns SET State=@State, CompletedAt=@Now, UpdatedAt=@Now, ExtraJson=@Extra, " +
+                "FailureJson=@Failure WHERE Id=@Id";
             cmd.Parameters.AddWithValue("@State", (int)state);
             cmd.Parameters.AddWithValue("@Now", now.ToString("O"));
             cmd.Parameters.AddWithValue("@Extra", ToParam(extraJson));
+            cmd.Parameters.AddWithValue("@Failure", ToParam(failureJson));
             cmd.Parameters.AddWithValue("@Id", runId.ToString());
             cmd.ExecuteNonQuery();
         }
@@ -1310,7 +1318,7 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
     private const string RunColumns =
         "Id, SchemaVersion, ChatId, RunShape, State, TriggerKind, TriggerRef, ParentRunId, OwnerDeviceId, " +
         "Goal, FirstMessageId, LastMessageId, PolicyJson, LedgerJson, CreatedAt, UpdatedAt, StartedAt, CompletedAt, ExtraJson, " +
-        "ClarificationsJson, PersonaId, ReasoningEffort, EffortPinRecorded";
+        "ClarificationsJson, PersonaId, ReasoningEffort, EffortPinRecorded, FailureJson";
 
     private const string StepColumns =
         "Id, RunId, Ordinal, Title, Intent, Status, ExpectedArtifact, AssignedPersonaId, DependsOnJson, " +
@@ -1342,6 +1350,7 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         PersonaId = ParseNullableGuid(r, 20),
         ReasoningEffort = r.IsDBNull(21) ? null : ParseReasoningEffort(r.GetString(21)),
         EffortPinRecorded = r.GetInt32(22) == 1,
+        FailureJson = r.IsDBNull(23) ? null : r.GetString(23),
     };
 
     private static AgentStep MapStep(SqliteDataReader r) => new()

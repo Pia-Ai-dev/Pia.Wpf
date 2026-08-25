@@ -1342,4 +1342,31 @@
   <data name="Settings_ExportDiagnostics_Confirm_Message" xml:space="preserve">
     <value>{0} fichier(s) journal seront expurgés et écrits dans {1}. Rien n'est envoyé — ouvrez l'archive et vérifiez-la avant de la partager.</value>
   </data>
+  <data name="Run_FailureLayer_App" xml:space="preserve">
+    <value>Application</value>
+  </data>
+  <data name="Run_FailureLayer_Workspace" xml:space="preserve">
+    <value>Espace de travail</value>
+  </data>
+  <data name="Run_FailureLayer_Provider" xml:space="preserve">
+    <value>Fournisseur</value>
+  </data>
+  <data name="Run_FailureLayer_Endpoint" xml:space="preserve">
+    <value>Point de terminaison</value>
+  </data>
+  <data name="Run_FailureLayer_Tool" xml:space="preserve">
+    <value>Outil</value>
+  </data>
+  <data name="Run_FailureAction_Providers" xml:space="preserve">
+    <value>Vérifier les fournisseurs</value>
+  </data>
+  <data name="Run_FailureAction_Diagnostics" xml:space="preserve">
+    <value>Exporter le diagnostic</value>
+  </data>
+  <data name="Settings_ExportDiagnostics_Confirm_ExcludedByCap" xml:space="preserve">
+    <value>Ce n'est pas tout votre historique de journaux : un export s'arrête à {1} fichiers journaux ou {2} Mo, selon la limite atteinte en premier — {0} fichier(s) sont laissés de côté. Précisez-le dans votre demande d'assistance s'il vous les faut aussi.</value>
+  </data>
+  <data name="Settings_ExportDiagnostics_Confirm_Excluded" xml:space="preserve">
+    <value>{0} autre(s) fichier(s) de ce dossier ne sont pas reconnus comme journaux Pia ; l'archive les répertorie dans son manifeste.</value>
+  </data>
 </root>

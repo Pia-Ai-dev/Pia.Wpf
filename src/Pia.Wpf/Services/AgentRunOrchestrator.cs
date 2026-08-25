@@ -582,7 +582,7 @@ public sealed class AgentRunOrchestrator
         catch (Exception ex) // planner-cannot-plan (threw) / executor crash — critical path, fail the run
         {
             _logger.LogError(ex, "Agent run {RunId} failed", run.Id);
-            await SafeFail(run.Id, ex.Message, cancelled: false).ConfigureAwait(false);
+            await SafeFail(run.Id, ex.Message, cancelled: false, FailureMapper.ForException(ex)).ConfigureAwait(false);
             await SafeEndRun(executor, run, ctx, cancelled: false, failed: true).ConfigureAwait(false);
         }
     }
@@ -1509,7 +1509,8 @@ public sealed class AgentRunOrchestrator
                 // prevent.
                 if (AgentRunStates.IsParked(old.State))
                     await _runService.FailAsync(old.Id, SupersededFailureReason, cancelled: true,
-                        CancellationToken.None).ConfigureAwait(false);
+                        CancellationToken.None, FailureMapper.ForReason(SupersededFailureReason))
+                        .ConfigureAwait(false);
 
                 superseded++;
             }
@@ -1891,10 +1892,13 @@ public sealed class AgentRunOrchestrator
         }
     }
 
-    private async Task SafeFail(Guid runId, string? error, bool cancelled)
+    private async Task SafeFail(Guid runId, string? error, bool cancelled, PiaFailure? failure = null)
     {
+        // A caller holding the exception hands the descriptor over; everyone else passes a named constant,
+        // which is the only thing ForReason recognises.
+        failure ??= FailureMapper.ForReason(error);
         // Terminal fail writes run un-cancelled so a cancel does not swallow the Failed/Cancelled record.
-        try { await _runService.FailAsync(runId, error, cancelled, CancellationToken.None).ConfigureAwait(false); }
+        try { await _runService.FailAsync(runId, error, cancelled, CancellationToken.None, failure).ConfigureAwait(false); }
         catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (fail) failed for {RunId}", runId); }
     }
 

@@ -420,7 +420,7 @@ public class ScheduledJobToolHandlerTests
         public Task DisableAsync(Guid id) => throw new NotImplementedException();
         public Task EnableAsync(Guid id) => throw new NotImplementedException();
         public Task MarkRunCompleteAsync(Guid id, Guid resultEntryId) => throw new NotImplementedException();
-        public Task MarkRunFailedAsync(Guid id, string reason) => throw new NotImplementedException();
+        public Task MarkRunFailedAsync(Guid id, string reason, PiaFailure? failure = null) => throw new NotImplementedException();
         public Task AdvanceMissedRunAsync(Guid id) => throw new NotImplementedException();
         public Task MarkOccurrenceDispatchedAsync(Guid id) => throw new NotImplementedException();
 
