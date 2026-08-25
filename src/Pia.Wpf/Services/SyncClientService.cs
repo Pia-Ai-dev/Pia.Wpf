@@ -1066,6 +1066,36 @@ public class SyncClientService : ISyncClientService, IDisposable
             || pull.ScheduledJobs.Upserted.Any(x => x.EncryptedPayload is not null);
     }
 
+    /// <summary>
+    /// Drops rows that arrived with neither ciphertext nor content, returning how many were dropped.
+    /// </summary>
+    /// <remarks>
+    /// The account is flagged E2EE from the moment the recovery key is stored, which is before any row
+    /// has been encrypted. Until each row is migrated the server takes its E2EE projection branch and
+    /// emits a shell: no ciphertext, and the plaintext columns skipped. Applying one blanks the local
+    /// copy exactly like the unreadable-ciphertext case, but there is no ciphertext here to detect.
+    ///
+    /// Dropping the row leaves the local copy alone; the row's SyncedAt bumps when it is finally
+    /// migrated, so it comes down intact then. Deliberately NOT a page-level refusal: a migration that
+    /// died partway (the push has no retry) would otherwise wedge sync for good.
+    ///
+    /// Settings is excluded on purpose — there the server falls back to real plaintext rather than a
+    /// shell, so a Settings row without ciphertext still carries the user's actual values.
+    /// </remarks>
+    private int DropUnmigratedShells(SyncPullResponse pull)
+    {
+        if (_e2ee?.IsReady() != true) return 0;
+
+        return pull.Templates.Upserted.RemoveAll(x => x.EncryptedPayload is null)
+            + pull.Personas.Upserted.RemoveAll(x => x.EncryptedPayload is null)
+            + pull.Providers.Upserted.RemoveAll(x => x.EncryptedPayload is null)
+            + pull.Sessions.Added.RemoveAll(x => x.EncryptedPayload is null)
+            + pull.Memories.Upserted.RemoveAll(x => x.EncryptedPayload is null)
+            + pull.Todos.Upserted.RemoveAll(x => x.EncryptedPayload is null)
+            + pull.KanbanColumns.Upserted.RemoveAll(x => x.EncryptedPayload is null)
+            + pull.ScheduledJobs.Upserted.RemoveAll(x => x.EncryptedPayload is null);
+    }
+
     private async Task<(bool NotModified, bool PullSucceeded, int Pulled, int DecryptionErrors, DateTime? ServerTimestamp, bool HasMore)> PullPageAsync(HttpClient client, string serverUrl, AppSettings settings, DateTime sinceUtc, bool isFirstPage)
     {
         var since = sinceUtc.ToString("O");
@@ -1180,6 +1210,15 @@ public class SyncClientService : ISyncClientService, IDisposable
                 _e2ee?.IsReady() == true, userId is not null);
             NotifyE2EEOnboardingRequired();
             return (false, false, 0, 0, null, false);
+        }
+
+        var shellsDropped = DropUnmigratedShells(pullResponse);
+        if (shellsDropped > 0)
+        {
+            _logger.LogWarning(
+                "Dropped {Count} row(s) the server sent with neither ciphertext nor content; "
+                + "they are not migrated to E2EE yet and applying them would blank the local copy",
+                shellsDropped);
         }
 
         var decryptionErrors = 0;

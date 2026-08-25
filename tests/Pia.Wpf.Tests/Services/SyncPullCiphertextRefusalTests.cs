@@ -139,6 +139,38 @@ public class SyncPullCiphertextRefusalTests
             Arg.Is<AiProvider>(p => p.Name == "plain"), Arg.Any<string?>());
     }
 
+    // The account is flagged E2EE before any row is encrypted, so until a row is migrated the server
+    // emits it with no ciphertext AND no plaintext. There is nothing here for the ciphertext scan to
+    // catch, so it needs its own guard: leave the local copy alone rather than blank it.
+    [Fact]
+    public async Task PullPage_unmigratedShell_isDroppedNotApplied()
+    {
+        var sut = CreateSut(e2eeReady: true);
+        var response = new SyncPullResponse { ServerTimestamp = DateTime.UtcNow };
+        response.Providers.Upserted.Add(new SyncProvider
+        {
+            Id = Guid.NewGuid(),
+            Name = null,
+            ProviderType = 0,
+            EncryptedPayload = null, // not migrated yet
+            WrappedDek = null,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        using var client = new HttpClient(new StubHandler(JsonSerializer.Serialize(response)));
+
+        var result = await InvokePullPageAsync(sut, client, new AppSettings
+        {
+            SyncEnabled = true,
+            ServerUrl = "http://test",
+            SyncUserId = "user-1",
+        });
+
+        // The page itself is fine — only the shell row is dropped, so the cursor still advances.
+        Assert.True(result.PullSucceeded);
+        await _providerService.DidNotReceive().AddProviderAsync(Arg.Any<AiProvider>(), Arg.Any<string?>());
+        await _providerService.DidNotReceive().UpdateProviderAsync(Arg.Any<AiProvider>(), Arg.Any<string?>());
+    }
+
     private sealed class StubHandler(string body) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

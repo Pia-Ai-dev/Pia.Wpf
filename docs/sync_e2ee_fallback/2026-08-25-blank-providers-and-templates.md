@@ -156,3 +156,30 @@ real types and names — the state a successful repair pull produces — restore
 4. **Repair existing victims.** Detect blanked rows and force a full resync, which restores the
    providers from the intact server ciphertext.
 5. Fix the `ExampleText` payload-name mismatch.
+
+## Second hole: the unmigrated shell
+
+Found while answering "so no server code change?". The account is flagged E2EE the moment the
+recovery key is stored (`E2EERecoveryService.cs:72`) — before a single row has been encrypted. Until
+each row is migrated the server takes its E2EE projection branch and emits **neither** ciphertext nor
+plaintext: an empty shell that the client applies over real local data. Settings alone got this
+right, pairing `isE2EE` with `EncryptedPayload is not null`; the other nine projections did not.
+
+The guard above does not catch it — there is no ciphertext to detect.
+
+It is durable, not just a startup window: `PerformFirstSyncMigrationAsync` contains no `catch`, so a
+batch that fails mid-migration leaves the rest unencrypted on an account already flagged E2EE, and
+the delta push only sends rows modified since the cursor, so it never revisits them.
+
+Closed on both sides:
+
+- **Server** — all nine projections now pair `isE2EE` with `EncryptedPayload is not null` and fall
+  back to plaintext, matching Settings.
+- **Client** — `DropUnmigratedShells` drops a ciphertext-free row while E2EE is active, leaving the
+  local copy alone. Deliberately a per-row drop rather than a page refusal: a migration that died
+  partway would otherwise wedge sync permanently. This also protects clients talking to an older
+  server.
+
+A note on what the server can never do: it cannot decrypt, so "ciphertext of an empty name" is
+indistinguishable from "ciphertext of a real name". No server-side validation could have stopped the
+blanked rows being pushed back over the originals — only the client can.
