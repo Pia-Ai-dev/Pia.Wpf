@@ -552,6 +552,7 @@
   <data name="Providers_Delete" xml:space="preserve"><value>Löschen</value></data>
   <data name="Providers_CloudNotSetup" xml:space="preserve"><value>Pia Cloud ist nicht eingerichtet. Melden Sie sich an, um cloudbasierte KI zu nutzen.</value></data>
   <data name="Providers_GoToCloudSync" xml:space="preserve"><value>Cloud-Sync einrichten</value></data>
+  <data name="Providers_Subtitle" xml:space="preserve"><value>Anbieter sind die KI-Dienste, an die Pia Ihre Anfragen sendet.</value></data>
   <!-- Templates Settings -->
   <data name="Templates_Add" xml:space="preserve"><value>Vorlage hinzufügen</value></data>
   <data name="Templates_Description" xml:space="preserve"><value>Vorlagen für Textoptimierung verwalten</value></data>

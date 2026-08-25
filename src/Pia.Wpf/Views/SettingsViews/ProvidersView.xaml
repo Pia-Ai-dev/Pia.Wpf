@@ -1,72 +1,20 @@
 <UserControl x:Class="Pia.Views.SettingsViews.ProvidersView"
-              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-              xmlns:loc="clr-namespace:Pia.Localization">
-  <Grid>
-    <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="280"/>
-      <ColumnDefinition Width="16"/>
-      <ColumnDefinition Width="*"/>
-    </Grid.ColumnDefinitions>
-
-    <!-- Left panel: Default Providers -->
-    <Border Grid.Column="0"
-            Style="{StaticResource PiaCardStyle}"
-            Padding="16"
-            VerticalAlignment="Top">
-      <StackPanel>
-        <TextBlock Text="{loc:Str Providers_DefaultProviders}"
-                   FontSize="14"
-                   FontWeight="SemiBold"
-                   Foreground="{DynamicResource TextDefaultBrush}"
-                   Margin="0,0,0,12"/>
-
-        <CheckBox Content="{loc:Str Providers_SameForAllModes}"
-                  IsChecked="{Binding UseSameProviderForAllModes}"
-                  IsEnabled="{Binding IsUseSameProviderEnforced, Converter={StaticResource InverseBooleanConverter}}"
-                  Margin="0,0,0,12"
-                  AutomationProperties.AutomationId="Settings_Providers_UseSameProviderForAllModes"/>
-
-        <!-- Optimize / All Modes dropdown -->
-        <TextBlock Text="{Binding OptimizeProviderLabel}"
-                   Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-        <ComboBox ItemsSource="{Binding Providers}"
-                  SelectedValue="{Binding OptimizeProviderId}"
-                  SelectedValuePath="Id"
-                  DisplayMemberPath="Name"
-                  Margin="0,0,0,8"
-                  AutomationProperties.AutomationId="Settings_Providers_OptimizeProvider"/>
-
-        <!-- Assistant dropdown only when "same for all" is unchecked -->
-        <StackPanel Visibility="{Binding UseSameProviderForAllModes, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-          <TextBlock Text="{loc:Str Providers_Assistant}"
-                     Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-          <ComboBox ItemsSource="{Binding Providers}"
-                    SelectedValue="{Binding AssistantProviderId}"
-                    SelectedValuePath="Id"
-                    DisplayMemberPath="Name"
-                    AutomationProperties.AutomationId="Settings_Providers_AssistantProvider"/>
-        </StackPanel>
-      </StackPanel>
-    </Border>
-
-    <!-- Right panel: Provider list -->
-    <Grid Grid.Column="2">
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto"/>
-        <RowDefinition Height="Auto"/>
-        <RowDefinition Height="*"/>
-      </Grid.RowDefinitions>
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:controls="clr-namespace:Pia.Controls"
+             xmlns:loc="clr-namespace:Pia.Localization">
+  <!-- Horizontal scroll disabled so the ColumnsPanel is measured at a finite width and can pick its column count. -->
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel MaxWidth="1080" HorizontalAlignment="Left">
 
       <!-- Cloud not set up banner -->
-      <Border Grid.Row="0"
-              Background="{DynamicResource WarnSoftBrush}"
+      <Border Background="{DynamicResource WarnSoftBrush}"
               BorderBrush="{DynamicResource WarnBrush}"
               BorderThickness="1"
               CornerRadius="{StaticResource MediumRadius}"
               Padding="12"
-              Margin="0,0,0,12"
+              Margin="0,0,0,16"
               Visibility="{Binding ShowCloudSetupBanner, Converter={StaticResource BooleanToVisibilityConverter}}">
         <Grid>
           <Grid.ColumnDefinitions>
@@ -98,8 +46,59 @@
         </Grid>
       </Border>
 
-      <!-- Header with Add button -->
-      <Grid Grid.Row="1" Margin="0,0,0,12">
+      <!-- Default providers -->
+      <Border Style="{StaticResource PiaSettingsCardStyle}"
+              Padding="14,12"
+              Margin="0,0,0,20"
+              HorizontalAlignment="Left">
+        <StackPanel>
+          <TextBlock Text="{loc:Str Providers_DefaultProviders}"
+                     FontSize="14"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource TextDefaultBrush}"
+                     Margin="0,0,0,10"/>
+
+          <CheckBox Content="{loc:Str Providers_SameForAllModes}"
+                    IsChecked="{Binding UseSameProviderForAllModes}"
+                    IsEnabled="{Binding IsUseSameProviderEnforced, Converter={StaticResource InverseBooleanConverter}}"
+                    Margin="0,0,0,12"
+                    AutomationProperties.AutomationId="Settings_Providers_UseSameProviderForAllModes"/>
+
+          <!-- Fixed columns, not Auto: the Assistant field collapses with the checkbox and the card
+               must not resize under it. -->
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="245"/>
+              <ColumnDefinition Width="16"/>
+              <ColumnDefinition Width="245"/>
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0">
+              <TextBlock Text="{Binding OptimizeProviderLabel}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <ComboBox ItemsSource="{Binding Providers}"
+                        SelectedValue="{Binding OptimizeProviderId}"
+                        SelectedValuePath="Id"
+                        DisplayMemberPath="Name"
+                        AutomationProperties.AutomationId="Settings_Providers_OptimizeProvider"/>
+            </StackPanel>
+
+            <StackPanel Grid.Column="2"
+                        Visibility="{Binding UseSameProviderForAllModes, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+              <TextBlock Text="{loc:Str Providers_Assistant}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <ComboBox ItemsSource="{Binding Providers}"
+                        SelectedValue="{Binding AssistantProviderId}"
+                        SelectedValuePath="Id"
+                        DisplayMemberPath="Name"
+                        AutomationProperties.AutomationId="Settings_Providers_AssistantProvider"/>
+            </StackPanel>
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- Providers section header -->
+      <Grid Margin="0,0,0,8">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*"/>
           <ColumnDefinition Width="Auto"/>
@@ -112,6 +111,7 @@
         <ui:Button Grid.Column="1"
                    Appearance="Secondary"
                    Command="{Binding AddProviderCommand}"
+                   AutomationProperties.Name="{loc:Str Providers_Add}"
                    Visibility="{Binding CanManageProviders, Converter={StaticResource BooleanToVisibilityConverter}}"
                    AutomationProperties.AutomationId="Settings_Providers_AddProvider">
           <StackPanel Orientation="Horizontal">
@@ -128,88 +128,60 @@
                    Visibility="{Binding CanManageProviders, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
       </Grid>
 
-      <!-- Provider cards -->
-      <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
-        <ItemsControl ItemsSource="{Binding ProviderDisplayItems}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate>
-              <Border Style="{StaticResource PiaSettingsCardStyle}"
-                      Padding="16"
-                      Margin="0,0,0,8">
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                  </Grid.ColumnDefinitions>
+      <TextBlock Text="{loc:Str Providers_Subtitle}"
+                 FontSize="12"
+                 Foreground="{DynamicResource TextMutedBrush}"
+                 TextWrapping="Wrap"
+                 Margin="0,0,0,12"/>
 
-                  <StackPanel Grid.Column="0">
-                    <TextBlock FontSize="15"
-                               FontWeight="SemiBold"
-                               Foreground="{DynamicResource TextDefaultBrush}">
-                      <Run Text="{Binding Provider.Name}"/>
-                      <Run Text=" · " Foreground="{DynamicResource TextSubtleBrush}"/>
-                      <Run Text="{Binding Provider.ProviderType}" Foreground="{DynamicResource TextSubtleBrush}"/>
-                    </TextBlock>
-                    <TextBlock Text="{Binding Provider.Endpoint}"
-                               FontSize="12"
-                               Foreground="{DynamicResource TextMutedBrush}"
-                               Margin="0,4,0,0"
-                               TextWrapping="Wrap"/>
-                    <TextBlock Text="{Binding Provider.ModelName}"
-                               FontSize="12"
-                               Foreground="{DynamicResource TextSubtleBrush}"
-                               Margin="0,2,0,0"/>
-                    <!-- Mode chips + status badges -->
-                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                      <Border Margin="0,0,4,0">
-                        <Border.Visibility>
-                          <MultiBinding Converter="{StaticResource IdEqualsVisibilityConverter}">
-                            <Binding Path="Provider.Id"/>
-                            <Binding Path="DataContext.OptimizeProviderId"
-                                     RelativeSource="{RelativeSource AncestorType=UserControl}"/>
-                          </MultiBinding>
-                        </Border.Visibility>
-                        <ui:Badge Content="{loc:Str Providers_Optimize}" Appearance="Info"/>
-                      </Border>
-                      <Border Margin="0,0,4,0">
-                        <Border.Visibility>
-                          <MultiBinding Converter="{StaticResource IdEqualsVisibilityConverter}">
-                            <Binding Path="Provider.Id"/>
-                            <Binding Path="DataContext.AssistantProviderId"
-                                     RelativeSource="{RelativeSource AncestorType=UserControl}"/>
-                          </MultiBinding>
-                        </Border.Visibility>
-                        <ui:Badge Content="{loc:Str Providers_Assistant}" Appearance="Info"/>
-                      </Border>
-                      <ui:Badge Content="{Binding FailReason}"
-                                Visibility="{Binding ShowFailBadge, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                Appearance="Danger"
-                                Margin="0,0,4,0"/>
-                      <ui:Badge Content="{loc:Str Providers_NoToolCalling}"
-                                Visibility="{Binding Provider.SupportsToolCalling, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
-                                Appearance="Caution"
-                                Margin="0,0,4,0"/>
-                      <ui:Badge Content="{loc:Str Providers_NoStreaming}"
-                                Visibility="{Binding Provider.SupportsStreaming, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
-                                Appearance="Caution"
-                                Margin="0,0,4,0"/>
-                    </StackPanel>
-                  </StackPanel>
-
-                  <!-- Action buttons: Test, Edit, Delete -->
-                  <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+      <ItemsControl ItemsSource="{Binding ProviderDisplayItems}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <controls:ColumnsPanel MaxColumns="2" MinColumnWidth="380" ColumnSpacing="10" RowSpacing="10" UniformRowHeight="True" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Border Style="{StaticResource PiaSettingsCardStyle}"
+                    Padding="14,12">
+              <DockPanel LastChildFill="False">
+                <StackPanel DockPanel.Dock="Top">
+                  <TextBlock FontSize="14"
+                             FontWeight="SemiBold"
+                             Foreground="{DynamicResource TextDefaultBrush}"
+                             TextTrimming="CharacterEllipsis">
+                    <Run Text="{Binding Provider.Name}"/>
+                    <Run Text=" · " Foreground="{DynamicResource TextSubtleBrush}"/>
+                    <Run Text="{Binding Provider.ProviderType}" Foreground="{DynamicResource TextSubtleBrush}"/>
+                  </TextBlock>
+                  <!-- Collapsed when blank, or Pia Cloud (which has neither) leaves two empty lines
+                       that the uniform row height then pads out. -->
+                  <TextBlock Text="{Binding Provider.Endpoint}"
+                             Visibility="{Binding Provider.Endpoint, Converter={StaticResource NullToVisibilityConverter}}"
+                             FontSize="12"
+                             Foreground="{DynamicResource TextMutedBrush}"
+                             Margin="0,2,0,0"
+                             TextWrapping="Wrap"/>
+                  <TextBlock Text="{Binding Provider.ModelName}"
+                             Visibility="{Binding Provider.ModelName, Converter={StaticResource NullToVisibilityConverter}}"
+                             FontSize="12"
+                             Foreground="{DynamicResource TextSubtleBrush}"
+                             Margin="0,2,0,0"/>
+                </StackPanel>
+                <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                  <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                     <ui:Button Command="{Binding DataContext.TestConnectionCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                              CommandParameter="{Binding Provider}"
-                              IsEnabled="{Binding DataContext.IsTestConnectionInProgress, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource InverseBooleanConverter}}"
-                              Appearance="Secondary"
-                              Width="36"
-                              Height="36"
+                               CommandParameter="{Binding Provider}"
+                               IsEnabled="{Binding DataContext.IsTestConnectionInProgress, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource InverseBooleanConverter}}"
+                               Appearance="Secondary"
+                               Width="30"
+                               Height="30"
                                Padding="0"
-                               Margin="0,0,6,0"
+                               Margin="0,0,4,0"
                                AutomationProperties.Name="{loc:Str Providers_Test}"
                                AutomationProperties.AutomationId="{Binding Provider.Id, StringFormat='Provider_Test_{0}'}">
                       <Grid>
-                        <ui:SymbolIcon Symbol="PlugConnected24" FontSize="16">
+                        <ui:SymbolIcon Symbol="PlugConnected24" FontSize="14">
                           <ui:SymbolIcon.Visibility>
                             <MultiBinding Converter="{StaticResource IdEqualsVisibilityConverter}" ConverterParameter="Invert">
                               <Binding Path="Provider.Id"/>
@@ -217,7 +189,7 @@
                             </MultiBinding>
                           </ui:SymbolIcon.Visibility>
                         </ui:SymbolIcon>
-                        <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16">
+                        <ui:ProgressRing IsIndeterminate="True" Width="14" Height="14">
                           <ui:ProgressRing.Visibility>
                             <MultiBinding Converter="{StaticResource IdEqualsVisibilityConverter}">
                               <Binding Path="Provider.Id"/>
@@ -231,41 +203,76 @@
                       </ui:Button.ToolTip>
                     </ui:Button>
                     <ui:Button Command="{Binding DataContext.EditProviderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                              CommandParameter="{Binding Provider}"
-                              Appearance="Secondary"
-                              Width="36"
-                              Height="36"
+                               CommandParameter="{Binding Provider}"
+                               Appearance="Secondary"
+                               Width="30"
+                               Height="30"
                                Padding="0"
-                               Margin="0,0,6,0"
+                               Margin="0,0,4,0"
                                AutomationProperties.Name="{loc:Str Providers_Edit}"
                                AutomationProperties.AutomationId="{Binding Provider.Id, StringFormat='Provider_Edit_{0}'}">
-                      <ui:SymbolIcon Symbol="Edit24" FontSize="16"/>
+                      <ui:SymbolIcon Symbol="Edit24" FontSize="14"/>
                       <ui:Button.ToolTip>
                         <ToolTip Content="{loc:Str Providers_Edit}"/>
                       </ui:Button.ToolTip>
                     </ui:Button>
                     <ui:Button Command="{Binding DataContext.DeleteProviderCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                              CommandParameter="{Binding Provider}"
-                              Visibility="{Binding Provider.ProviderType, Converter={StaticResource ProviderTypeToVisibilityConverter}, ConverterParameter=Delete}"
-                              Appearance="Secondary"
-                              Width="36"
-                               Height="36"
+                               CommandParameter="{Binding Provider}"
+                               Visibility="{Binding Provider.ProviderType, Converter={StaticResource ProviderTypeToVisibilityConverter}, ConverterParameter=Delete}"
+                               Appearance="Secondary"
+                               Width="30"
+                               Height="30"
                                Padding="0"
                                AutomationProperties.Name="{loc:Str Providers_Delete}"
                                AutomationProperties.AutomationId="{Binding Provider.Id, StringFormat='Provider_Delete_{0}'}">
-                      <ui:SymbolIcon Symbol="Delete24" FontSize="16"
+                      <ui:SymbolIcon Symbol="Delete24" FontSize="14"
                                      Foreground="{DynamicResource PiaDangerBrush}"/>
                       <ui:Button.ToolTip>
                         <ToolTip Content="{loc:Str Providers_Delete}"/>
                       </ui:Button.ToolTip>
                     </ui:Button>
                   </StackPanel>
-                </Grid>
-              </Border>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </ScrollViewer>
-    </Grid>
-  </Grid>
+                  <!-- WrapPanel, not a row: one provider can carry five of these at once. -->
+                  <WrapPanel VerticalAlignment="Center">
+                    <Border Margin="0,2,4,2">
+                      <Border.Visibility>
+                        <MultiBinding Converter="{StaticResource IdEqualsVisibilityConverter}">
+                          <Binding Path="Provider.Id"/>
+                          <Binding Path="DataContext.OptimizeProviderId"
+                                   RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                        </MultiBinding>
+                      </Border.Visibility>
+                      <ui:Badge Content="{loc:Str Providers_Optimize}" Appearance="Info"/>
+                    </Border>
+                    <Border Margin="0,2,4,2">
+                      <Border.Visibility>
+                        <MultiBinding Converter="{StaticResource IdEqualsVisibilityConverter}">
+                          <Binding Path="Provider.Id"/>
+                          <Binding Path="DataContext.AssistantProviderId"
+                                   RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                        </MultiBinding>
+                      </Border.Visibility>
+                      <ui:Badge Content="{loc:Str Providers_Assistant}" Appearance="Info"/>
+                    </Border>
+                    <ui:Badge Content="{Binding FailReason}"
+                              Visibility="{Binding ShowFailBadge, Converter={StaticResource BooleanToVisibilityConverter}}"
+                              Appearance="Danger"
+                              Margin="0,2,4,2"/>
+                    <ui:Badge Content="{loc:Str Providers_NoToolCalling}"
+                              Visibility="{Binding Provider.SupportsToolCalling, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
+                              Appearance="Caution"
+                              Margin="0,2,4,2"/>
+                    <ui:Badge Content="{loc:Str Providers_NoStreaming}"
+                              Visibility="{Binding Provider.SupportsStreaming, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
+                              Appearance="Caution"
+                              Margin="0,2,4,2"/>
+                  </WrapPanel>
+                </DockPanel>
+              </DockPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ScrollViewer>
 </UserControl>
