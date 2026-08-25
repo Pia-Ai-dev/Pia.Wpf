@@ -480,6 +480,12 @@ public class AppSettings
     public int E2EEUmkVersion { get; set; }
     public bool E2EERecoveryConfigured { get; set; }
 
+    // One-shot marker for the blanked-row repair. A build before the E2EE pull guard could write
+    // empty rows over real ones and then advance the cursor past them; the repair resets the cursor
+    // so they re-pull. Marked once so a repair that finds nothing left on the server (the rows were
+    // pushed back blank) does not force a full resync on every launch.
+    public DateTime? BlankedSyncRowRepairAt { get; set; }
+
     // Privacy settings
     public PrivacySettings Privacy { get; set; } = new();
 

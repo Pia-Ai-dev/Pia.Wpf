@@ -266,6 +266,10 @@ public partial class App : Application
         if (authService.IsLoggedIn)
         {
             var syncService = Bootstrapper.ServiceProvider.GetRequiredService<ISyncClientService>();
+            // Heal rows an older build blanked before the E2EE pull guard existed. Off the startup
+            // path: it can trigger a full resync, and background sync waits 10s before its first cycle.
+            syncService.RepairBlankedSyncRowsAsync().SafeFireAndForget(
+                Bootstrapper.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("SyncRepair"));
             syncService.StartBackgroundSync();
         }
 

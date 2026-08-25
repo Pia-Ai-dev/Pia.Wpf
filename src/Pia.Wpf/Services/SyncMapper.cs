@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -29,6 +30,33 @@ public class SyncMapper
     }
 
     private bool IsE2EEActive => _e2ee?.IsReady() == true;
+
+    /// <summary>
+    /// True when the row carries ciphertext this client can decrypt; false when it carries none.
+    /// Throws rather than returning false when the row IS encrypted but this client cannot read it.
+    /// </summary>
+    /// <remarks>
+    /// The server blanks the plaintext columns of an E2EE row, so falling through to the plaintext
+    /// branch does not degrade — it writes an all-default entity (empty name, ProviderType 0 =
+    /// PiaCloud) over real data, and the pull cursor then advances past the row for good.
+    /// </remarks>
+    private bool CanDecryptRow(
+        [NotNullWhen(true)] string? encryptedPayload,
+        [NotNullWhen(true)] string? wrappedDek,
+        [NotNullWhen(true)] string? userId,
+        string entityType)
+    {
+        if (encryptedPayload is null || wrappedDek is null)
+            return false;
+
+        if (!IsE2EEActive || userId is null)
+        {
+            throw new InvalidOperationException(
+                $"Incoming {entityType} is encrypted but E2EE is not active on this client.");
+        }
+
+        return true;
+    }
 
     private static DateTime ToUtc(DateTime dt) =>
         dt.Kind == DateTimeKind.Utc ? dt : dt.ToUniversalTime();
@@ -72,12 +100,9 @@ public class SyncMapper
 
     public OptimizationTemplate FromSyncTemplate(SyncTemplate sync, string? userId = null)
     {
-        if (IsE2EEActive
-            && sync.EncryptedPayload is not null
-            && sync.WrappedDek is not null
-            && userId is not null)
+        if (CanDecryptRow(sync.EncryptedPayload, sync.WrappedDek, userId, "template"))
         {
-            var decrypted = _e2ee!.DecryptRecord<SyncTemplate>(
+            var decrypted = _e2ee!.DecryptRecord<TemplateCipherPayload>(
                 sync.EncryptedPayload, sync.WrappedDek, userId, "template", sync.Id.ToString());
 
             return new OptimizationTemplate
@@ -162,10 +187,7 @@ public class SyncMapper
         string? name, tagline, systemPrompt, guardrails, outputFormat;
         List<string>? expertise;
 
-        if (IsE2EEActive
-            && sync.EncryptedPayload is not null
-            && sync.WrappedDek is not null
-            && userId is not null)
+        if (CanDecryptRow(sync.EncryptedPayload, sync.WrappedDek, userId, "persona"))
         {
             var decrypted = _e2ee!.DecryptRecord<SyncPersona>(
                 sync.EncryptedPayload, sync.WrappedDek, userId, "persona", sync.Id.ToString());
@@ -310,10 +332,7 @@ public class SyncMapper
 
     public AiProvider FromSyncProvider(SyncProvider sync, string? userId = null)
     {
-        if (IsE2EEActive
-            && sync.EncryptedPayload is not null
-            && sync.WrappedDek is not null
-            && userId is not null)
+        if (CanDecryptRow(sync.EncryptedPayload, sync.WrappedDek, userId, "provider"))
         {
             var decrypted = _e2ee!.DecryptRecord<SyncProvider>(
                 sync.EncryptedPayload, sync.WrappedDek, userId, "provider", sync.Id.ToString());
@@ -442,10 +461,7 @@ public class SyncMapper
 
     public OptimizationSession FromSyncSession(SyncSession sync, string? userId = null)
     {
-        if (IsE2EEActive
-            && sync.EncryptedPayload is not null
-            && sync.WrappedDek is not null
-            && userId is not null)
+        if (CanDecryptRow(sync.EncryptedPayload, sync.WrappedDek, userId, "session"))
         {
             var decrypted = _e2ee!.DecryptRecord<SyncSession>(
                 sync.EncryptedPayload, sync.WrappedDek, userId, "session", sync.Id.ToString());
@@ -517,10 +533,7 @@ public class SyncMapper
 
     public MemoryObject FromSyncMemory(SyncMemory sync, string? userId = null)
     {
-        if (IsE2EEActive
-            && sync.EncryptedPayload is not null
-            && sync.WrappedDek is not null
-            && userId is not null)
+        if (CanDecryptRow(sync.EncryptedPayload, sync.WrappedDek, userId, "memory"))
         {
             var decrypted = _e2ee!.DecryptRecord<SyncMemory>(
                 sync.EncryptedPayload, sync.WrappedDek, userId, "memory", sync.Id.ToString());
@@ -658,10 +671,7 @@ public class SyncMapper
 
     public TodoItem FromSyncTodo(SyncTodo sync, string? userId = null)
     {
-        if (IsE2EEActive
-            && sync.EncryptedPayload is not null
-            && sync.WrappedDek is not null
-            && userId is not null)
+        if (CanDecryptRow(sync.EncryptedPayload, sync.WrappedDek, userId, "todo"))
         {
             var decrypted = _e2ee!.DecryptRecord<SyncTodo>(
                 sync.EncryptedPayload, sync.WrappedDek, userId, "todo", sync.Id.ToString());
@@ -733,10 +743,7 @@ public class SyncMapper
 
     public KanbanColumn FromSyncKanbanColumn(SyncKanbanColumn sync, string? userId = null)
     {
-        if (IsE2EEActive
-            && sync.EncryptedPayload is not null
-            && sync.WrappedDek is not null
-            && userId is not null)
+        if (CanDecryptRow(sync.EncryptedPayload, sync.WrappedDek, userId, "kanban_column"))
         {
             var decrypted = _e2ee!.DecryptRecord<SyncKanbanColumn>(
                 sync.EncryptedPayload, sync.WrappedDek, userId, "kanban_column", sync.Id.ToString());
@@ -868,10 +875,7 @@ public class SyncMapper
 
     public void ApplySyncSettings(SyncSettings sync, AppSettings target, string? userId = null)
     {
-        if (IsE2EEActive
-            && sync.EncryptedPayload is not null
-            && sync.WrappedDek is not null
-            && userId is not null)
+        if (CanDecryptRow(sync.EncryptedPayload, sync.WrappedDek, userId, "settings"))
         {
             var decrypted = _e2ee!.DecryptRecord<SyncSettings>(
                 sync.EncryptedPayload, sync.WrappedDek, userId, "settings", "user-settings");
@@ -1028,10 +1032,7 @@ public class SyncMapper
 
     public ScheduledJob FromSyncScheduledJob(SyncScheduledJob sync, string? userId = null)
     {
-        if (IsE2EEActive
-            && sync.EncryptedPayload is not null
-            && sync.WrappedDek is not null
-            && userId is not null)
+        if (CanDecryptRow(sync.EncryptedPayload, sync.WrappedDek, userId, "scheduled_job"))
         {
             var decrypted = _e2ee!.DecryptRecord<SyncScheduledJob>(
                 sync.EncryptedPayload, sync.WrappedDek, userId, "scheduled_job", sync.Id.ToString());
@@ -1199,6 +1200,20 @@ public class SyncMapper
     /// ([JsonExtensionData]), which is what lets unknown fields round-trip through the
     /// ciphertext instead of the plaintext wire.
     /// </summary>
+    /// <summary>
+    /// Serialization shape of the encrypted template payload. Decrypting into <see cref="SyncTemplate"/>
+    /// instead loses the style description on every round-trip: that DTO renames the member to
+    /// <c>ExampleText</c> for the plaintext wire, but the ciphertext has always held
+    /// <c>StyleDescription</c>. Names here match the ciphertext, so existing payloads stay readable.
+    /// </summary>
+    private sealed class TemplateCipherPayload
+    {
+        public string? Name { get; set; }
+        public string? Prompt { get; set; }
+        public string? Description { get; set; }
+        public string? StyleDescription { get; set; }
+    }
+
     private sealed class AssistantChatCipherPayload
     {
         public string? Title { get; set; }

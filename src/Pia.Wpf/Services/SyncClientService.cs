@@ -327,19 +327,32 @@ public class SyncClientService : ISyncClientService, IDisposable
                 return null;
             }
 
-            // One-time server E2EE check: if local E2EE is off, verify against server
-            // to catch cases where E2EE was enabled on another device (e.g., first-run
-            // wizard login, app restart). Without this, sync would push IsE2EEEncrypted=false.
+            // Server E2EE check: if local E2EE is off, verify against server to catch cases where
+            // E2EE was enabled on another device (e.g., first-run wizard login, app restart).
+            // Without this, sync would push IsE2EEEncrypted=false and pull rows it cannot decrypt.
+            //
+            // The latch is set only on a CONCLUSIVE answer. It used to be set before the call, so a
+            // device awaiting recovery-code onboarding checked once, bailed, and then sailed straight
+            // through this guard on every later cycle — pulling ciphertext with E2EE inactive. An
+            // unreachable server is likewise "unknown", not "off": skip the cycle rather than sync
+            // under an assumption that silently blanks encrypted rows.
             if (!_hasVerifiedServerE2EEStatus && _deviceMgmt is not null && !settings.IsE2EEEnabled)
             {
-                _hasVerifiedServerE2EEStatus = true;
                 var serverStatus = await _deviceMgmt.CheckE2EEStatusAsync();
-                if (serverStatus is { IsEnabled: true })
+                if (serverStatus is null)
+                {
+                    _logger.LogWarning("Could not determine server E2EE status; skipping this sync cycle");
+                    return null;
+                }
+
+                if (serverStatus.IsEnabled)
                 {
                     _logger.LogWarning("E2EE enabled on server but not locally; onboarding required");
                     NotifyE2EEOnboardingRequired();
                     return null;
                 }
+
+                _hasVerifiedServerE2EEStatus = true;
             }
 
             var accessToken = await _authService.GetAccessTokenAsync();
@@ -426,6 +439,34 @@ public class SyncClientService : ISyncClientService, IDisposable
 
             if (!settings.SyncEnabled || string.IsNullOrEmpty(settings.ServerUrl))
                 return;
+
+            // Same readiness gate SyncNowAsync applies. This path pushes EVERY local row with no
+            // dirty filter, so running it while the UMK is missing does double damage: it pulls
+            // ciphertext it cannot read, and it re-uploads whatever is in the local store over the
+            // server's copy. On a restored device the server holds the only copy.
+            if (_e2ee is not null && settings.IsE2EEEnabled && !_e2ee.IsReady())
+            {
+                _logger.LogWarning("E2EE enabled but UMK not available; skipping first-sync migration");
+                NotifyE2EEOnboardingRequired();
+                return;
+            }
+
+            // Local E2EE off is not proof the account's is: a restored device has not activated yet.
+            // Callers reach this method after a CheckE2EEStatusAsync that returns null on an
+            // unreachable server, and null used to read as "no E2EE" and fall straight through.
+            if (_e2ee is not null && _deviceMgmt is not null && !settings.IsE2EEEnabled)
+            {
+                var serverStatus = await _deviceMgmt.CheckE2EEStatusAsync();
+                if (serverStatus is null or { IsEnabled: true })
+                {
+                    _logger.LogWarning(
+                        "Server E2EE status is {Status}; skipping first-sync migration",
+                        serverStatus is null ? "unknown" : "enabled");
+                    if (serverStatus is not null)
+                        NotifyE2EEOnboardingRequired();
+                    return;
+                }
+            }
 
             var accessToken = await _authService.GetAccessTokenAsync();
             if (string.IsNullOrEmpty(accessToken))
@@ -584,6 +625,45 @@ public class SyncClientService : ISyncClientService, IDisposable
         var wait = SyncRateLimitWindow - (now - sendTimes.Peek());
         if (wait > TimeSpan.Zero)
             await Task.Delay(wait);
+    }
+
+    /// <summary>
+    /// Repairs provider rows a pre-guard E2EE pull blanked, by resetting the sync cursor so the
+    /// server's intact ciphertext is fetched again.
+    /// </summary>
+    /// <remarks>
+    /// The tell is unambiguous: a provider typed <see cref="AiProviderType.PiaCloud"/> whose Id is not
+    /// the well-known Pia Cloud Id. Sync never carries a real one — the push filters PiaCloud out — so
+    /// such a row can only be the all-defaults entity the old plaintext fallback produced from a row
+    /// whose plaintext columns the server had blanked.
+    ///
+    /// Providers are repairable because that same push filter kept the blanked rows from being
+    /// uploaded over the server's copies. Templates were not so lucky and are not repairable here.
+    /// </remarks>
+    public async Task<bool> RepairBlankedSyncRowsAsync()
+    {
+        if (!_authService.IsLoggedIn) return false;
+
+        var settings = await _settingsService.GetSettingsAsync();
+        if (!settings.SyncEnabled || settings.BlankedSyncRowRepairAt is not null)
+            return false;
+
+        var providers = await _providerService.GetProvidersAsync();
+        var blanked = providers.Count(p =>
+            p.ProviderType == AiProviderType.PiaCloud
+            && p.Id != ProviderService.PiaCloudProviderId);
+
+        if (blanked == 0) return false;
+
+        _logger.LogWarning(
+            "Found {Count} provider row(s) blanked by an E2EE pull that could not decrypt; forcing a full resync",
+            blanked);
+
+        settings.BlankedSyncRowRepairAt = DateTime.UtcNow;
+        await _settingsService.SaveSettingsAsync(settings);
+
+        await ForceFullResyncAsync();
+        return true;
     }
 
     public async Task ForceFullResyncAsync()
@@ -952,6 +1032,25 @@ public class SyncClientService : ISyncClientService, IDisposable
     /// Requests and applies a single pull page. Returns the page outcome including
     /// <c>HasMore</c> so the <see cref="PullChangesAsync"/> drain loop knows whether to continue.
     /// </summary>
+    /// <summary>
+    /// True when the page holds at least one E2EE row and this client is not in a state to decrypt it.
+    /// </summary>
+    private bool CarriesUnreadableCiphertext(SyncPullResponse pull, string? userId)
+    {
+        if (_e2ee?.IsReady() == true && userId is not null)
+            return false;
+
+        return pull.Settings?.EncryptedPayload is not null
+            || pull.Templates.Upserted.Any(x => x.EncryptedPayload is not null)
+            || pull.Personas.Upserted.Any(x => x.EncryptedPayload is not null)
+            || pull.Providers.Upserted.Any(x => x.EncryptedPayload is not null)
+            || pull.Sessions.Added.Any(x => x.EncryptedPayload is not null)
+            || pull.Memories.Upserted.Any(x => x.EncryptedPayload is not null)
+            || pull.Todos.Upserted.Any(x => x.EncryptedPayload is not null)
+            || pull.KanbanColumns.Upserted.Any(x => x.EncryptedPayload is not null)
+            || pull.ScheduledJobs.Upserted.Any(x => x.EncryptedPayload is not null);
+    }
+
     private async Task<(bool NotModified, bool PullSucceeded, int Pulled, int DecryptionErrors, DateTime? ServerTimestamp, bool HasMore)> PullPageAsync(HttpClient client, string serverUrl, AppSettings settings, DateTime sinceUtc, bool isFirstPage)
     {
         var since = sinceUtc.ToString("O");
@@ -1052,6 +1151,21 @@ public class SyncClientService : ISyncClientService, IDisposable
             pullResponse.ClientPolicy is not null);
 
         var userId = settings.SyncUserId;
+
+        // Refuse the whole page rather than apply any of it, when it carries ciphertext this client
+        // cannot read. The server blanks the plaintext columns of an E2EE row, so applying one row at
+        // a time would write empty entities over real data — and because the cursor advances on a
+        // successful pull, those rows would never be fetched again. Reporting the page as failed keeps
+        // LastSyncTimestamp where it is, so the pull retries intact once onboarding completes.
+        if (CarriesUnreadableCiphertext(pullResponse, userId))
+        {
+            _logger.LogError(
+                "Pull page carries E2EE ciphertext but this client cannot decrypt it "
+                + "(e2eeReady: {Ready}, userId present: {HasUserId}) — refusing the page and keeping the sync cursor",
+                _e2ee?.IsReady() == true, userId is not null);
+            NotifyE2EEOnboardingRequired();
+            return (false, false, 0, 0, null, false);
+        }
 
         var decryptionErrors = 0;
         var mergeInserted = 0;

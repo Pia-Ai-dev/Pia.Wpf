@@ -80,4 +80,10 @@ public interface ISyncClientService
     /// Use when a previous sync failed to receive data.
     /// </summary>
     Task ForceFullResyncAsync();
+
+    /// <summary>
+    /// Detects provider rows blanked by a pre-guard E2EE pull and resets the sync cursor so they
+    /// re-pull intact. Returns true when a repair was triggered.
+    /// </summary>
+    Task<bool> RepairBlankedSyncRowsAsync();
 }
