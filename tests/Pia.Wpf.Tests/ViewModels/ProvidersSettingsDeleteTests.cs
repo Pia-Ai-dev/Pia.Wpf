@@ -32,10 +32,13 @@ public class ProvidersSettingsDeleteTests
             Substitute.For<IAuthService>(), localization, Substitute.For<IPolicyService>());
     }
 
-    private static ILocalizationService EchoingLocalization()
+    // Stubbed per key, not per method: an echo of every Format call would pass just as happily on the
+    // wrong key, and nothing else in this VM would notice.
+    private static ILocalizationService Localization()
     {
         var localization = Substitute.For<ILocalizationService>();
-        localization.Format(Arg.Any<string>(), Arg.Any<object[]>())
+        localization["Msg_Settings_DeleteProviderTitle"].Returns("Delete Provider");
+        localization.Format("Msg_Settings_DeleteProviderConfirm", Arg.Any<object[]>())
             .Returns(call => string.Join("|", call.ArgAt<object[]>(1)));
         return localization;
     }
@@ -48,7 +51,7 @@ public class ProvidersSettingsDeleteTests
         var dialogService = Substitute.For<IDialogService>();
         dialogService.ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
 
-        var sut = Sut(providerService, dialogService, EchoingLocalization());
+        var sut = Sut(providerService, dialogService, Localization());
 
         await sut.DeleteProviderCommand.ExecuteAsync(provider);
 
@@ -63,7 +66,7 @@ public class ProvidersSettingsDeleteTests
         var dialogService = Substitute.For<IDialogService>();
         dialogService.ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(false);
 
-        var sut = Sut(providerService, dialogService, EchoingLocalization());
+        var sut = Sut(providerService, dialogService, Localization());
 
         await sut.DeleteProviderCommand.ExecuteAsync(provider);
 
@@ -79,12 +82,12 @@ public class ProvidersSettingsDeleteTests
         var dialogService = Substitute.For<IDialogService>();
         dialogService.ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(false);
 
-        var sut = Sut(providerService, dialogService, EchoingLocalization());
+        var sut = Sut(providerService, dialogService, Localization());
 
         await sut.DeleteProviderCommand.ExecuteAsync(provider);
 
         await dialogService.Received(1).ShowConfirmationDialogAsync(
-            Arg.Any<string>(), Arg.Is<string>(message => message.Contains(provider.Name)));
+            "Delete Provider", Arg.Is<string>(message => message.Contains(provider.Name)));
     }
 
     [Fact]
@@ -95,7 +98,7 @@ public class ProvidersSettingsDeleteTests
         var dialogService = Substitute.For<IDialogService>();
         dialogService.ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
 
-        var sut = Sut(providerService, dialogService, EchoingLocalization());
+        var sut = Sut(providerService, dialogService, Localization());
         sut.AssistantProviderId = provider.Id;
 
         await sut.DeleteProviderCommand.ExecuteAsync(provider);
