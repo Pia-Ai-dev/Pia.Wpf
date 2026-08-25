@@ -12,10 +12,9 @@ namespace Pia.Services.Wiki;
 /// <see cref="IAiClientService.SendRequestAsync"/> and parses the model output defensively into
 /// <see cref="ExtractedTopic"/> records.
 ///
-/// <para><b>Provider selection.</b> There is no dedicated "ingest provider" setting; we use
-/// <see cref="IProviderService.GetDefaultProviderAsync"/>, which returns the configured default provider
-/// or — when none is explicitly defaulted — the first configured provider. When no provider is configured
-/// at all, discovery degrades gracefully: no topics are returned (ingest then no-ops rather than throwing).</para>
+/// <para><b>Provider selection.</b> There is no dedicated "ingest provider" setting, so ingest follows the
+/// Assistant mode's provider — the same model the user talks to. When none is configured, discovery
+/// degrades gracefully: no topics are returned (ingest then no-ops rather than throwing).</para>
 ///
 /// <para><b>Parsing.</b> The prompt asks for a small JSON array of <c>{subject, category}</c> objects;
 /// we parse that first and fall back to a line-oriented format (each bare line → a topic with the default
@@ -43,7 +42,7 @@ public sealed class AiIngestExtractionService : IIngestExtractor
     public async Task<IReadOnlyList<ExtractedTopic>> DiscoverTopicsAsync(
         string content, string charter, CancellationToken ct = default)
     {
-        var provider = await _providers.GetDefaultProviderAsync();
+        var provider = await _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant);
         if (provider is null)
         {
             _logger.SensitiveDebug("Ingest topic discovery skipped: no provider configured");

@@ -8,9 +8,10 @@ namespace Pia.Services.Wiki;
 
 /// <summary>
 /// Production <see cref="IIngestSynthesizer"/>: re-reads the union of a topic's raw sources and asks the
-/// default provider (via <see cref="IAiClientService.SendRequestAsync"/>) to write a single coherent wiki
-/// page merged across all of them. Mirrors <see cref="AiIngestExtractionService"/>'s provider selection
-/// (<see cref="IProviderService.GetDefaultProviderAsync"/>) and per-source truncation.
+/// Assistant mode's provider (via <see cref="IAiClientService.SendRequestAsync"/>) to write a single
+/// coherent wiki page merged across all of them. Mirrors <see cref="AiIngestExtractionService"/>'s
+/// provider selection (<see cref="IProviderService.GetDefaultProviderForModeAsync"/>) and per-source
+/// truncation.
 ///
 /// <para><b>Degradation.</b> When no provider is configured, or the model returns blank output, synthesis
 /// yields an empty <see cref="SynthesizedPage"/> so the caller skips writing the page (no throw).</para>
@@ -49,7 +50,7 @@ public sealed class AiIngestSynthesisService : IIngestSynthesizer
         IReadOnlyList<(string Ref, string Text)> sources,
         IReadOnlyCollection<string> knownSlugs, CancellationToken ct = default)
     {
-        var provider = await _providers.GetDefaultProviderAsync();
+        var provider = await _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant);
         if (provider is null)
         {
             _logger.SensitiveDebug("Ingest synthesis skipped for {Title}: no provider configured", title);

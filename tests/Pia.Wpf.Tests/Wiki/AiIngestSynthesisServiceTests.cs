@@ -54,6 +54,36 @@ public class AiIngestSynthesisServiceTests
     }
 
     [Fact]
+    public async Task SynthesizeAsync_asks_the_assistant_mode_provider_not_the_first_in_the_list()
+    {
+        var listFirst = new AiProvider { Name = "Pia Cloud", Endpoint = "http://cloud" };
+        var assistant = new AiProvider { Name = "DeepSeek", Endpoint = "http://deepseek" };
+        var providers = Substitute.For<IProviderService>();
+        providers.GetDefaultProviderAsync().Returns(listFirst);
+        providers.GetDefaultProviderForModeAsync(WindowMode.Assistant).Returns(assistant);
+
+        var ai = Substitute.For<IAiClientService>();
+        ai.SendRequestAsync(Arg.Any<AiProvider>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<string>())
+            .Returns(new AiCompletionResult("SUMMARY: About Pia.\n\nPia is a desktop assistant.", 0));
+
+        var svc = new AiIngestSynthesisService(
+            ai,
+            providers,
+            NewEmptyTokenMap,
+            NewSettings(tokenizationEnabled: false),
+            NullLogger<AiIngestSynthesisService>.Instance);
+
+        await svc.SynthesizeAsync(
+            "Pia", "product", "charter",
+            [("sources/a.md", "some raw text")], [], TestContext.Current.CancellationToken);
+
+        await ai.Received().SendRequestAsync(
+            assistant, Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<string>());
+        await ai.DidNotReceive().SendRequestAsync(
+            listFirst, Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<string>());
+    }
+
+    [Fact]
     public async Task SynthesizeAsync_reidentifies_mangled_pii_placeholder_before_returning()
     {
         // A real token map that maps the canonical token [Person_1] -> "Alice Anderson".
