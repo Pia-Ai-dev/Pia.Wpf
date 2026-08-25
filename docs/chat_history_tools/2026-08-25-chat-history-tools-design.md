@@ -149,11 +149,12 @@ real profile proves otherwise.
 ## 4. Excluding the current chat — `TaskContext` needs a `ChatId`
 
 The obvious source for "which chat am I in" is `TaskAmbient.Current?.TaskId`, and **it is wrong
-on two of the four surfaces**:
+on three of the four surfaces** — this table said two until the implementation read the code:
 
 | Site | `TaskId` is |
 |---|---|
-| `ChatSession.cs:332`, `:716` | the chat id ✔ |
+| `ChatSession.cs:332` | the chat id ✔ |
+| `ChatSession.cs:716` | `spec.RunId` — the **run** id, on the step-turn path |
 | `BackgroundAssistantTurnRunner.cs:152` | `run?.Id ?? chatId` — the **run** id whenever a run exists |
 | `HeadlessTurnExecutor.cs:490` | `_runId` |
 
