@@ -16,7 +16,9 @@ public interface IProviderService
     Task<TestConnectionResult> TestConnectionAsync(AiProvider provider);
     Task<TestConnectionResult> TestConnectionAsync(AiProvider provider, string? plainApiKey);
     Task EnsureBuiltInProviderAsync();
-    Task<List<string>> FetchModelsAsync(string endpoint, string? apiKey, AiProviderType providerType);
+    /// <summary>A blank <paramref name="apiKey"/> falls back to the stored key of <paramref name="providerId"/>,
+    /// which is the only key an editor that never loads one into its box can offer.</summary>
+    Task<List<string>> FetchModelsAsync(string endpoint, string? apiKey, AiProviderType providerType, Guid? providerId = null);
     Task<bool> IsProviderActiveAsync(AiProvider provider);
 
     /// <summary>

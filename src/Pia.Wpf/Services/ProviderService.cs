@@ -436,15 +436,16 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
             && !string.IsNullOrEmpty(provider.EncryptedApiKey));
     }
 
-    public async Task<List<string>> FetchModelsAsync(string endpoint, string? apiKey, AiProviderType providerType)
+    public async Task<List<string>> FetchModelsAsync(string endpoint, string? apiKey, AiProviderType providerType, Guid? providerId = null)
     {
         if (string.IsNullOrWhiteSpace(endpoint))
             throw new ArgumentException("Endpoint is required to fetch models.");
 
         using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
 
-        if (!string.IsNullOrEmpty(apiKey))
-            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        var key = await ResolveFetchKeyAsync(apiKey, providerId);
+        if (!string.IsNullOrEmpty(key))
+            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", key);
 
         string requestUrl;
         if (providerType == AiProviderType.Ollama)
@@ -500,6 +501,28 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
         models.Sort(StringComparer.OrdinalIgnoreCase);
         _logger.LogInformation("Fetched {Count} models from {Url}", models.Count, SafeUrl.Format(requestUrl));
         return models;
+    }
+
+    /// <summary>
+    /// A typed key wins so a rotation can be verified before it is saved; otherwise the stored one is used,
+    /// which keeps the plaintext out of the editor entirely.
+    /// </summary>
+    internal async Task<string?> ResolveFetchKeyAsync(string? typedKey, Guid? providerId)
+    {
+        if (!string.IsNullOrWhiteSpace(typedKey))
+            return typedKey;
+
+        if (providerId is not { } id)
+            return null;
+
+        var stored = (await LoadProvidersAsync()).FirstOrDefault(p => p.Id == id);
+        if (stored is null)
+        {
+            _logger.LogInformation("No stored provider {Id} to take a model-list key from", id);
+            return null;
+        }
+
+        return GetDecryptedApiKey(stored);
     }
 
     public async Task ReassignProviderIdAsync(Guid oldId, Guid newId, AiProvider merged)

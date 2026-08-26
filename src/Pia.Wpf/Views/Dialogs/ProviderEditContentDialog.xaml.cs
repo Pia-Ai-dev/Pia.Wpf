@@ -56,7 +56,7 @@ public partial class ProviderEditContentDialog : ContentDialog
         try
         {
             var models = await _providerService.FetchModelsAsync(
-                Provider.Endpoint, Provider.ApiKey, Provider.ProviderType);
+                Provider.Endpoint, Provider.ApiKey, Provider.ProviderType, Provider.Id);
 
             Provider.AvailableModels.Clear();
             foreach (var model in models)

@@ -254,7 +254,7 @@ public class AiIngestSynthesisServiceTests
         public Task<TestConnectionResult> TestConnectionAsync(AiProvider provider) => throw new NotImplementedException();
         public Task<TestConnectionResult> TestConnectionAsync(AiProvider provider, string? plainApiKey) => throw new NotImplementedException();
         public Task EnsureBuiltInProviderAsync() => Task.CompletedTask;
-        public Task<List<string>> FetchModelsAsync(string endpoint, string? apiKey, AiProviderType providerType) => throw new NotImplementedException();
+        public Task<List<string>> FetchModelsAsync(string endpoint, string? apiKey, AiProviderType providerType, Guid? providerId = null) => throw new NotImplementedException();
         public Task<bool> IsProviderActiveAsync(AiProvider provider) => Task.FromResult(false);
         public Task ReassignProviderIdAsync(Guid oldId, Guid newId, AiProvider merged) => Task.CompletedTask;
         public Task RepairModeDefaultsAsync() => Task.CompletedTask;
@@ -279,7 +279,7 @@ public class AiIngestSynthesisServiceTests
         public Task<TestConnectionResult> TestConnectionAsync(AiProvider provider) => throw new NotImplementedException();
         public Task<TestConnectionResult> TestConnectionAsync(AiProvider provider, string? plainApiKey) => throw new NotImplementedException();
         public Task EnsureBuiltInProviderAsync() => Task.CompletedTask;
-        public Task<List<string>> FetchModelsAsync(string endpoint, string? apiKey, AiProviderType providerType) => throw new NotImplementedException();
+        public Task<List<string>> FetchModelsAsync(string endpoint, string? apiKey, AiProviderType providerType, Guid? providerId = null) => throw new NotImplementedException();
         public Task<bool> IsProviderActiveAsync(AiProvider provider) => Task.FromResult(true);
         public Task ReassignProviderIdAsync(Guid oldId, Guid newId, AiProvider merged) => Task.CompletedTask;
         public Task RepairModeDefaultsAsync() => Task.CompletedTask;
