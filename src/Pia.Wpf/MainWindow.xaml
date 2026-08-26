@@ -72,6 +72,7 @@
           <ui:Button Grid.Column="1"
                      Content="Restart Now"
                      Command="{Binding RestartToUpdateCommand}"
+                     AutomationProperties.AutomationId="Update_RestartNow"
                      Appearance="Light"
                      Margin="8,0"
                      Padding="12,4"/>
@@ -79,6 +80,7 @@
           <ui:Button Grid.Column="2"
                      Content="&#x2715;"
                      Command="{Binding DismissUpdateBarCommand}"
+                     AutomationProperties.AutomationId="Update_Dismiss"
                      Appearance="Transparent"
                      Foreground="White"
                      Padding="6,2"/>
@@ -111,6 +113,7 @@
           <ui:Button Grid.Column="2"
                      Content="{loc:Str E2EE_Onboarding_Bar_Action}"
                      Command="{Binding OpenE2EEOnboardingCommand}"
+                     AutomationProperties.AutomationId="E2EE_OpenOnboarding"
                      Appearance="Primary"
                      Margin="8,0,0,0"
                      Padding="12,4"/>
@@ -163,6 +166,7 @@
             <WrapPanel HorizontalAlignment="Center"
                        ItemHeight="44">
               <ui:Button Command="{Binding NavigateToSettingsCommand}"
+                         AutomationProperties.AutomationId="Setup_OpenSettings"
                          Appearance="Primary"
                          Padding="20,0"
                          Margin="0,0,12,8">
@@ -172,6 +176,7 @@
                 </StackPanel>
               </ui:Button>
               <ui:Button Command="{Binding OpenFirstRunWizardCommand}"
+                         AutomationProperties.AutomationId="Setup_RunWizard"
                          Appearance="Secondary"
                          Padding="20,0"
                          Margin="0,0,0,8">

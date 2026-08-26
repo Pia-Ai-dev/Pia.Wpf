@@ -51,6 +51,7 @@
 
         <ui:Button Grid.Column="1"
                    Command="{Binding ToggleStatsCommand}"
+                   AutomationProperties.AutomationId="DirectTrans_ToggleStats"
                    Width="36"
                    Height="36"
                    Padding="0"
@@ -64,6 +65,7 @@
 
         <ui:Button Grid.Column="2"
                    Command="{Binding CloseCommand}"
+                   AutomationProperties.AutomationId="DirectTrans_Close"
                    Width="36"
                    Height="36"
                    Padding="0"
@@ -149,6 +151,7 @@
           </Border>
 
           <ui:ToggleSwitch Content="{loc:Str DirectTrans_Disclaimer_Accept}"
+                           AutomationProperties.AutomationId="DirectTrans_DisclaimerAccept"
                            IsChecked="{Binding DisclaimerAccepted}"
                            HorizontalAlignment="Center"
                            Margin="0,0,0,16" />
@@ -161,12 +164,14 @@
           <StackPanel Orientation="Horizontal"
                       HorizontalAlignment="Center">
             <ui:Button Command="{Binding CloseCommand}"
+                       AutomationProperties.AutomationId="DirectTrans_DisclaimerClose"
                        Padding="20,10"
                        Margin="0,0,8,0"
                        Appearance="Secondary"
                        Icon="{ui:SymbolIcon Dismiss24}"
                        Content="{loc:Str DirectTrans_Close}" />
             <ui:Button Command="{Binding StartCommand}"
+                       AutomationProperties.AutomationId="DirectTrans_Start"
                        Padding="20,10"
                        Appearance="Primary"
                        Icon="{ui:SymbolIcon Mic24}"
@@ -221,12 +226,18 @@
                             Command="{Binding PlacementTarget.Tag.RenameSpeakerLabelCommand,
                                        RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                             CommandParameter="{Binding PlacementTarget.DataContext.SpeakerLabel,
-                                                RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                            AutomationProperties.AutomationId="{Binding PlacementTarget.DataContext.SpeakerLabel,
+                                                               RelativeSource={RelativeSource AncestorType=ContextMenu},
+                                                               StringFormat='DirectTrans_ChipRename_{0}'}" />
                   <MenuItem Header="{loc:Str DirectTrans_RevokeSpeaker_MenuItem}"
                             Command="{Binding PlacementTarget.Tag.RevokeSpeakerCommand,
                                        RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                             CommandParameter="{Binding PlacementTarget.DataContext.SpeakerLabel,
-                                                RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                            AutomationProperties.AutomationId="{Binding PlacementTarget.DataContext.SpeakerLabel,
+                                                               RelativeSource={RelativeSource AncestorType=ContextMenu},
+                                                               StringFormat='DirectTrans_ChipRevoke_{0}'}" />
                 </ContextMenu>
               </Border.ContextMenu>
               <Border.Tag>
@@ -401,7 +412,8 @@
                                Cursor="Hand"
                                ToolTip="{loc:Str DirectTrans_RenameSpeaker_MenuItem}"
                                Command="{Binding DataContext.RenameSpeakerLabelCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                               CommandParameter="{Binding SpeakerLabel}">
+                               CommandParameter="{Binding SpeakerLabel}"
+                               AutomationProperties.AutomationId="{Binding SpeakerLabel, StringFormat='DirectTrans_RenameSpeaker_{0}'}">
                       <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock FontSize="11"
                                    VerticalAlignment="Center"
@@ -501,12 +513,14 @@
       <StackPanel HorizontalAlignment="Center"
                   Orientation="Horizontal">
         <ui:Button Command="{Binding CloseCommand}"
+                   AutomationProperties.AutomationId="DirectTrans_FooterClose"
                    Margin="0,0,8,0"
                    Padding="20,10"
                    Appearance="Secondary"
                    Icon="{ui:SymbolIcon Dismiss24}"
                    Content="{loc:Str DirectTrans_Close}" />
         <ui:Button Command="{Binding StopCommand}"
+                   AutomationProperties.AutomationId="DirectTrans_Stop"
                    Margin="0,0,8,0"
                    Padding="20,10"
                    Appearance="Danger"
@@ -514,6 +528,7 @@
                    Content="{loc:Str DirectTrans_Stop}"
                    Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}" />
         <ui:Button Command="{Binding ResumeCommand}"
+                   AutomationProperties.AutomationId="DirectTrans_Resume"
                    Margin="0,0,8,0"
                    Padding="20,10"
                    Appearance="Primary"
@@ -521,6 +536,7 @@
                    Content="{loc:Str DirectTrans_Resume}"
                    Visibility="{Binding IsRunning, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
         <ui:Button Command="{Binding SaveTranscriptCommand}"
+                   AutomationProperties.AutomationId="DirectTrans_Save"
                    Margin="0,0,8,0"
                    Padding="20,10"
                    Appearance="Secondary"
@@ -528,6 +544,7 @@
                    Content="{loc:Str DirectTrans_Save}"
                    Visibility="{Binding IsRunning, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
         <ui:Button Command="{Binding SaveToVaultCommand}"
+                   AutomationProperties.AutomationId="DirectTrans_SaveToVault"
                    Margin="0,0,8,0"
                    Padding="20,10"
                    Appearance="Secondary"
@@ -535,6 +552,7 @@
                    Content="{loc:Str DirectTrans_SaveToVault}"
                    Visibility="{Binding IsRunning, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
         <ui:Button Command="{Binding SummarizeWithAssistantCommand}"
+                   AutomationProperties.AutomationId="DirectTrans_Summarize"
                    Padding="20,10"
                    Appearance="Primary"
                    Icon="{ui:SymbolIcon Sparkle24}"

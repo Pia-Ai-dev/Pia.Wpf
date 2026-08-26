@@ -20,7 +20,11 @@ with every file containing one of the seven walker-recognized element types. Tha
 remaining scope — not a guess. `FirstRunWizardWindow.xaml` (root `<Window`) and `MainWindow.xaml`
 / the `Resources/Styles/*.xaml` resource dictionaries are out of scope for this mechanism (the
 walker does `Activator.CreateInstance` on the type, which only works for a parameterless
-`UserControl`); they get ids by hand with no test lock.
+`UserControl`); they get ids by hand with no test lock. `MainWindow.xaml`'s 5 controls were done
+that way on 2026-08-26 — `Setup_OpenSettings` / `Setup_RunWizard` (the setup-required overlay,
+which covers any feature view until a provider is configured and so blocks a fresh-profile script
+before it reaches anything else), `Update_RestartNow` / `Update_Dismiss`, `E2EE_OpenOnboarding`.
+The setup pair is live-confirmed; the two bars need states a throwaway profile cannot reach.
 
 **Already done** (slice 1 + slice 2 of this branch, both committed, gate green at each step):
 `AssistantView` (composer toolbar, suggestion chips, weak-provider banner, persona picker,
@@ -213,7 +217,7 @@ mechanism too, and it already has an id.
   all three menu items once opened. Literal ids are fine here since only one context menu is ever
   open at a time; not walker-visible, no test lock.
   Suggestion/SwitchToAgent live in `PiaSuggestionChips`/`PiaAgentModeChip` (E8) and
-  ManageToolPermissions in `ActionCardControl` (G2) — both still open, not closed by this item.
+  ManageToolPermissions in `ActionCardControl` (G2) — both closed separately, not by this item.
   Highest-traffic item in this whole checklist: every assistant reply renders this.
   *Deps:* none · *Effort:* **M** (313 lines, 7 distinct actions) · *Value:* **High**
 - [x] **E2 · `RunProgressPanel`.** 850 lines, 21 walker-visible controls — measured, not guessed.
@@ -228,17 +232,40 @@ mechanism too, and it already has an id.
   Steps template via a `Binding`, not a literal `DataTemplate`, so the walker never expands it —
   the ids on the Steps template cover it for free at runtime with no separate handling needed.
   *Deps:* none · *Effort:* **M** · *Value:* **High**
-- [ ] **E3 · `PiaChatTitleChip`.** 512 lines, chat-title editing chip in the composer header.
+- [x] **E3 · `PiaChatTitleChip`.** The chat-history picker at the top-left of the Assistant view,
+  measured at 11 walker-visible controls. Own prefix `ChatChip_`, deliberately not `AssistantChat_`
+  — the flyout's rows embed `PiaAssistantChatRowContent`, so a shared prefix would make one
+  enumeration return the chip's chrome and the row buttons together. 9 literal
+  (`ChatChip_Toggle`/`_Search`/`_WorkingDir`/`_NewChat`/`_ShowAllChats`/`_NewFolder`/
+  `_NewFolderName`/`_NewFolderConfirm`/`_NewFolderCancel`) and 2 per-item: `ChatChip_Resume_<chatId>`
+  keyed on `ChatChipItemViewModel.Id` and `ChatChip_Crumb_<index>` keyed on
+  `WorkingDirectoryCrumb.Index` (0 = root — `Name` is a user-chosen folder name, so it stays out of
+  a permanent enumerable property). The `WorkingDirEntries` `ListBox` got a literal
+  `ChatChip_FolderEntries` with no per-row ids: its items are bare folder-name strings, so a
+  container id could only key on the name itself. `PiaAssistantChatRowContent` is a genuine
+  nested-view stop. Live-confirmed through both popups.
   *Deps:* none · *Effort:* **M** · *Value:* **Med**
 - [x] **E4 · `PiaChatQuickSwitcher`.** Measured at exactly 1 control (`QueryBox`, the search input);
   its `ListBox`/`ListBoxItem` match list is not a walker-recognized type, same exclusion reasoning
   as `NavigationSidebarView`. Ided `QuickSwitcher_Query` — its own prefix, not `AssistantChat_`,
   since nothing else needs disambiguating from it.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
-- [ ] **E5 · `VoiceModeOverlay`.** Voice-mode full overlay, 0 ids today.
+- [x] **E5 · `VoiceModeOverlay`.** Exactly 3 controls, all literal: `VoiceMode_Done` (Listening
+  only), `VoiceMode_Stop` (Speaking only), `VoiceMode_End` (always). `RecordingIndicator` is a
+  nested-view stop with zero interactive controls of its own. Test-locked only — entering the
+  overlay needs `_ttsService.HasVoiceLoaded`, which a throwaway profile has no way to satisfy.
   *Deps:* none · *Effort:* **S** · *Value:* **Med**
-- [ ] **E6 · `DirectTranscriptionOverlay`.** 546 lines, 0 ids today — the largest overlay on this
-  list.
+- [x] **E6 · `DirectTranscriptionOverlay`.** 12 walker-visible controls, prefix `DirectTrans_` to
+  match its resource keys and stay disjoint from `MeetingAttendee_`. 11 literal — `_ToggleStats`,
+  `_Close`, `_DisclaimerAccept` (a `ui:ToggleSwitch`, which is a `ButtonBase` and so IS swept),
+  `_DisclaimerClose`, `_Start`, `_FooterClose`, `_Stop`, `_Resume`, `_Save`, `_SaveToVault`,
+  `_Summarize` — plus per-bubble `DirectTrans_RenameSpeaker_<speakerLabel>`, mirroring
+  `MeetingAttendee_RenameSpeaker_<speakerLabel>` and keyed on the raw diarizer label rather than
+  the renamed display name. Three separate buttons bind `CloseCommand` in mutually visible
+  regions, hence the `_Close` / `_DisclaimerClose` / `_FooterClose` split. The consent chip is a
+  `Border` with a `ContextMenu` — no automation peer, so its two `MenuItem`s got
+  `DirectTrans_ChipRename_<label>` / `_ChipRevoke_<label>` with no test lock. Live-confirmed
+  through the disclaimer, running and stopped states.
   *Deps:* none · *Effort:* **M** · *Value:* **Med**
 - [x] **E7 · `AutocompletePopup`.** Audited, dropped — same shape as `J2`. Its only interactive
   surface is a `ListBox`/`ListBoxItem` match list, neither a walker-recognized type; zero
@@ -246,8 +273,8 @@ mechanism too, and it already has an id.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
 - **E8 · `PiaSuggestionChips`, `PiaFileChip`, `PiaSourceChip`, `PiaChipOverflowPanel`,
   `PiaAgentModeChip`.** Small chip controls rendered inside assistant messages / the composer.
-  Split three done, two audited-and-skipped — the audit surfaced a real identity question, not
-  just mechanics.
+  All five done, though the last two took a second pass — the audit surfaced a real identity
+  question, not just mechanics.
   - [x] `PiaFileChip`. 3 buttons (open default / open in VS Code / reveal), none inside an
     `ItemsControl` — each `PiaFileChip` instance is itself one file, so the ambiguity is across
     *sibling instances* (a message with several file chips), not template rows. Keyed on the
@@ -265,19 +292,21 @@ mechanism too, and it already has an id.
     ambiguity, not just a documented caveat, so it needed a real fix: added a `GroupName` DP the
     call site sets (`"Sources"` / `"Files"`), bound via `ElementName=Root`:
     `ChipOverflow_More_<groupName>`.
-  - [x] `PiaSuggestionChips`, `PiaAgentModeChip` — **audited, no id added, no test row (same shape
-    as `E7`/`J2`).** Each has exactly one control (a `Button`) inside a literal `ItemsControl`
-    template, but the bound item is either a raw `string` (`Suggestions`) or a
-    `(Goal, Reason)` record with both fields explicitly documented as model-generated content
-    (`AgentModeSuggestion`) — there is no non-content field to key a per-item id on. A synthetic
-    index (`ItemsControl.AlternationIndex`) was considered and rejected: the test walker's
-    `LoadContent()` builds the `DataTemplate` in isolation with no real `ItemsControl` generator
-    behind it, so a `RelativeSource AncestorType=ContentPresenter` binding would register as a
-    valid per-item `Binding` (test green) while resolving to nothing at that moment — passing a
-    test that doesn't check what it claims to. The localization argument that motivates ids
-    elsewhere doesn't apply here either: this text is dynamic model output, never a fixed
-    localized string, so a script already has to match on `Content`/text, making a content-derived
-    id redundant with what's already there.
+  - [x] `PiaSuggestionChips`, `PiaAgentModeChip` — **ided 2026-08-26, reversing the earlier
+    audited skip.** The item is content all the way down (a raw `string`, or an
+    `AgentModeSuggestion`'s model-generated `Goal`/`Reason`), so the id keys on the CONTAINER
+    instead: `{Binding (ItemsControl.AlternationIndex), RelativeSource={RelativeSource
+    AncestorType=ContentPresenter}, StringFormat='Suggestion_Chip_{0}'}`, and `AgentMode_Chip_{0}`.
+    `AlternationCount="20"` is required — without it every row reports index 0. The original
+    rejection was right about the mechanism and wrong about the conclusion: `LoadContent()` builds
+    the template with no generator behind it, so the sweep really would go green on a binding that
+    resolves to nothing. That is why this one is locked by a SECOND test,
+    `FollowUpChipAutomationIdTests`, which renders both lists through a real layout pass and asserts
+    the resolved strings (`Suggestion_Chip_0/1/2`, `AgentMode_Chip_0/1`) rather than the presence of
+    a `Binding`. The "a script has to match on the text anyway" argument does not survive either: an
+    index id is positional, so a script can press the first follow-up chip without knowing what the
+    model wrote. Caveat: the index is arrival order within one reply, not globally unique, and it
+    wraps past `AlternationCount`. Not live-confirmed — a follow-up chip needs a real provider reply.
   *Deps:* E1 (same message surface) · *Effort:* **S** total · *Value:* **Med**
 - [x] **E9 · `PiaReasoningView`.** No `Expander` despite the description — the collapse is hand-rolled
   via a bool + `Visibility` triggers. Exactly 1 control, the collapsed-state toggle button, reused
@@ -430,6 +459,7 @@ B1 → B4                                                 # DONE (slice 5) — T
 E2 → E4 → E7 → E9 → E8                                  # DONE (slice 6) — remaining composer-adjacent controls
 G2 → G3 → G4                                            # DONE (slice 7) — Cards & Flow
 H1 → H2 → H3 → H4 → I5                                  # DONE (slice 8) — dialogs + Assignments
+E3 → E5 → E6                                            # DONE (slice 9) — chat-title chip + the two overlays
 I3 → I4                                                 # the long-standing Settings gaps — next up
-E3 → E5 → E6 → I2 → I1                                  # remaining overlays + the wizard, lowest value/traffic
+I2 → I1                                                 # the wizard, lowest value/traffic
 ```

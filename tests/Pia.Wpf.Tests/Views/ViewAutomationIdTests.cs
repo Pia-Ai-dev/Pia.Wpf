@@ -82,6 +82,12 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Controls.ActionCardControl), 3, 3, "CardDecisionBar,FileDiffCard")]
     [InlineData(typeof(Pia.Controls.Cards.FileDiffCard), 1, 1, "")]
     [InlineData(typeof(Pia.Controls.Flow.FlowView), 10, 10, "CardDecisionBar,PiaChatStateBadge")]
+    [InlineData(typeof(Pia.Controls.Assistant.PiaChatTitleChip), 11, 2, "PiaAssistantChatRowContent")]
+    [InlineData(typeof(Pia.Views.VoiceModeOverlay), 3, 0, "RecordingIndicator")]
+    [InlineData(typeof(Pia.Views.DirectTranscriptionOverlay), 12, 1, "ListeningIndicator")]
+    [InlineData(typeof(Pia.Controls.Chat.PiaSuggestionChips), 1, 1, "")]
+    [InlineData(typeof(Pia.Controls.Chat.PiaAgentModeChip), 1, 1, "")]
+    [InlineData(typeof(Pia.Controls.MarkdownMessageControl), 1, 0, "")]
     public void EveryInteractiveControl_CarriesAnAutomationId(
         Type viewType, int minimumInspected, int minimumPerItemIds, string expectedNestedViews)
     {

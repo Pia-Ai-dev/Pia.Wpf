@@ -44,6 +44,14 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Meeting attendee overlay | `MeetingAttendee_Url`, `_DisplayName`, `_Consent`, `_Join`, `_Stop`, `_Save`, `_SpeakerDisclaimer`, `_Close`, `_OpenSettings`, `_SaveToVault`, `_Summarize`, per-bubble `_RenameSpeaker_<speakerLabel>` (shared across every bubble from the same speaker — renaming applies to the label, not one utterance). Open the overlay with the composer button named "Join a meeting and transcribe". Bubble labels carry no id — read them as `Text` elements, which is what `Invoke-MeetingReplay.ps1` does to check the numbering. |
 | Edit dialogs (shared) | `PrimaryButton` (Save), `CloseButton` (Cancel), `Dialog_RequiredHint`. **Wpf.Ui’s own `SimpleContentDialog`, the one `ShowConfirmationDialogAsync` raises, carries the same two ids** — verified on the export-diagnostics confirmation, where they are named `Yes`/`No`. |
 | Chat history import/export | `AssistantHistory_Import`, `AssistantHistory_ExportAll`, `AssistantHistory_LoadMore` (header/list), `AssistantHistory_ExportArchive` (inspector, needs a selected chat), `AssistantHistory_ImportStatus` / `AssistantHistory_ImportProgress` (status bar, present only while an import runs) |
+| Chat title chip + history flyout (`PiaChatTitleChip`) | The picker at the top-left of the Assistant view. `ChatChip_Toggle` opens it; inside, `ChatChip_Search`, `ChatChip_NewChat`, `ChatChip_ShowAllChats`, and per-chat `ChatChip_Resume_<chatId>` (keyed on `ChatChipItemViewModel.Id`). Each row's hover trash is `AssistantChat_Delete_<chatId>` — the row body is the shared `PiaAssistantChatRowContent`, and its `AssistantChat_Open_<id>` sibling is **collapsed here** because the chip passes only `DeleteCommand`, so resume through `ChatChip_Resume_<chatId>`. The flyout is `StaysOpen="False"`: query it in the call right after the invoke, with no `ww_window activate` in between. |
+| Working-directory picker (inside that flyout) | `ChatChip_WorkingDir` opens the drill-down; per-crumb `ChatChip_Crumb_<index>` keyed on `WorkingDirectoryCrumb.Index` (0 = root). `ChatChip_NewFolder` reveals the inline row: `ChatChip_NewFolderName`, `ChatChip_NewFolderConfirm`, `ChatChip_NewFolderCancel`. The child-folder list is `ChatChip_FolderEntries`; its rows are bare folder-name strings with no non-content field to key on, so scope a name match inside that list rather than expecting per-row ids. |
+| Voice mode overlay (`VoiceModeOverlay`) | `VoiceMode_Done` (Listening only), `VoiceMode_Stop` (Speaking only), `VoiceMode_End` (always). Entering the overlay needs a loaded TTS voice (`CanEnterVoiceMode`), so a throwaway profile cannot reach it — these are test-locked, not walkthrough-confirmed. |
+| Direct transcription overlay (`DirectTranscriptionOverlay`) | Header: `DirectTrans_ToggleStats` (hidden while the disclaimer shows), `DirectTrans_Close`. Disclaimer: `DirectTrans_DisclaimerAccept` (a `ui:ToggleSwitch` — `ww_set_checked`, it has no InvokePattern), `DirectTrans_DisclaimerClose`, `DirectTrans_Start`. Footer, after Start: `DirectTrans_FooterClose`, `_Stop` (running), `_Resume` / `_Save` / `_SaveToVault` / `_Summarize` (stopped). `DirectTrans_Save` is a prefix of `_SaveToVault`, so match the full id — same caveat as `Settings_Assistant_ChatHistory`. Per-bubble `DirectTrans_RenameSpeaker_<speakerLabel>`, keyed on the raw diarizer label, not the renamed display name. |
+| Direct transcription consent chip | The chip is a `Border` with a `ContextMenu` — no `AutomationId`, no InvokePattern. Right-click it, then `DirectTrans_ChipRename_<speakerLabel>` / `DirectTrans_ChipRevoke_<speakerLabel>`. `MenuItem`s, so no test lock. |
+| Follow-up chips (`PiaSuggestionChips` / `PiaAgentModeChip`) | `Suggestion_Chip_<n>` and `AgentMode_Chip_<n>`, keyed on the container's `ItemsControl.AlternationIndex` — arrival order within one reply, not globally unique, and it wraps past `AlternationCount` (20). Both bound items are model-generated content (a raw suggestion string; `AgentModeSuggestion.Goal`/`Reason`), so there is no stable field to key on. Distinctness is locked by `FollowUpChipAutomationIdTests`, which renders both lists through a real layout pass — the sweep alone would go green on a binding that resolves to nothing. `automationId*=Suggestion_` also matches the empty-state `Assistant_Suggestion_<Group>` chips, but never at the same time: that panel is `Collapsed` (out of the UIA tree, not merely hidden) once the chat has messages, and a follow-up chip only exists on a reply. |
+| Reply PII context menu (`MarkdownMessageControl`) | Right-click an assistant reply: `PiiMenu_Open`, then `PiiMenu_Person` / `_Nickname` / `_Email` / `_Phone` / `_Address` / `_Date` / `_Custom`. `MenuItem`s, so no test lock — same caveat as the reply toolbar's regenerate menu. |
+| Main-window chrome (`MainWindow`) | Setup-required overlay (covers any feature view until a provider is configured, so a fresh-profile script hits it first): `Setup_OpenSettings`, `Setup_RunWizard`. Update bar: `Update_RestartNow`, `Update_Dismiss`. E2EE bar: `E2EE_OpenOnboarding`. `MainWindow`'s constructor takes DI parameters, so `Activator.CreateInstance` fails and it can never get an `[InlineData]` row — same class as the content dialogs below. |
 | Assistant chat history row / group card | Per-chat **open** and delete buttons, both on `PiaAssistantChatRowContent` and both revealed by hovering the row (keyed on `AssistantChatRowViewModel.Id`, i.e. `Chat.Id`): `AssistantChat_Open_<id>`, `AssistantChat_Delete_<id>`. The row CONTAINER carries `AssistantChat_Row_<id>` and reports the chat title as its UIA name. `AssistantChat_Open_<id>` resumes the named chat in one invoke - selecting the row does not open it, that needs the inspector's Resume button. Group header expand/collapse, per-bucket: `AssistantHistory_GroupToggle_<bucket>`, keyed on `AssistantChatGroupViewModel.Bucket` (its nullable `GroupKey` string was skipped in favor of this non-null enum, same identity the group is actually built from). |
 | Page-header help hints | `Routines_Help`, `Assignments_Help`, `History_Help`, `AssistantHistory_Help`, `Memory_Help`, `Todo_Help`, `Reminders_Help` |
 | Settings help hints | `Settings_ToolPermissions_Page_Help` (tab intro), `Settings_ToolPermissions_Session_Help` (session tier), `Settings_ToolPermissions_Help` (always-allowed list), `Settings_MeetingBrowser_Help`, `Settings_Agent_Roster_Help`, `Settings_Scheduled_Help` |
@@ -226,11 +234,16 @@ Committed recordings, the settings fixture they start from and the replay harnes
   controls are covered and locked in `ViewAutomationIdTests`** (composer toolbar, suggestion
   chips, weak-provider banner, persona picker, chat/agent lever, send/run-in-background, the
   meeting overlay's close/settings/save-to-vault/summarize/rename-speaker, the run-history
-  open-chat link — table above), but the walk that backs that test stops at every nested
-  `UserControl`, so these still have **no ids of their own**: `PiaChatTitleChip`,
-  `VoiceModeOverlay`, `DirectTranscriptionOverlay`. `TodoPanelControl`, `RunProgressPanel`,
-  `PiaChatQuickSwitcher` closed this gap (table above), even though each is still a nested-view
-  stop when walking `AssistantView` itself. `AutocompletePopup` never had a gap to close here in
+  open-chat link — table above), and the walk that backs that test stops at every nested
+  `UserControl`, so each of those needs its own row. **Every one now has it**: `PiaChatTitleChip`,
+  `VoiceModeOverlay`, `DirectTranscriptionOverlay`, `TodoPanelControl`, `RunProgressPanel`,
+  `PiaChatQuickSwitcher` (table above). A `ww_dump_tree` of a running Assistant window reports an
+  `AutomationId` on every `Button`/`Edit`/`ComboBox`/`RadioButton` in the states that were actually
+  rendered — empty state, setup overlay, composer, chip flyout with a chat row, working-directory
+  picker, direct-transcription overlay — leaving only `Text`, `Separator`, `Image` and the item
+  containers bare. The voice/meeting overlays, run-progress panel, todo panel, quick switcher,
+  action cards and the expanded Flow rail were NOT in those dumps; they rest on their test rows.
+  `AutocompletePopup` never had a gap to close here in
   the first place: its only interactive surface is a `ListBox`/`ListBoxItem` match list, neither a
   walker-recognized type — same exclusion as `NavigationSidebarView`, zero ids possible or needed.
   `PiaAssistantMessage` itself declares no
@@ -238,17 +251,16 @@ Committed recordings, the settings fixture they start from and the replay harnes
   Copy/Speak/Regenerate/Export/rate buttons are now ided per-reply via `PiaAnswerToolbar`
   (`Answer_*_<messageId>`, table above), and its reasoning-trace toggle via `PiaReasoningView`
   (`Reasoning_Toggle_<messageId>`, table above). `PiaFileChip`/`PiaSourceChip`/
-  `PiaChipOverflowPanel`/`ActionCardControl`/`FileDiffCard` are also closed (table above). Still
-  open: Suggestion/SwitchToAgent (`PiaSuggestionChips` /
-  `PiaAgentModeChip`) — audited and deliberately left without ids: each has one
-  `Button` inside an `ItemsControl` template, but the bound item is content only (a raw
-  `Suggestions` string, or an `AgentModeSuggestion`'s `Goal`/`Reason`, both documented as
-  model-generated) with no non-content field to key a per-item id on, and a script targeting one
-  already has to match on that same text since it is never a fixed localized string. Same
-  reasoning class as `AutocompletePopup`/`J2`, just for a different mechanical reason (content, not
-  a missing walker-recognized type).
-- **`PiaHistorySearchBar`'s two `DatePicker`s and `PiaAnswerToolbar`'s regenerate-style context
-  menu carry ids the test cannot lock in.** `Activator.CreateInstance` never runs a layout pass,
+  `PiaChipOverflowPanel`/`ActionCardControl`/`FileDiffCard` are also closed (table above).
+  `PiaSuggestionChips` / `PiaAgentModeChip` were long left open because the bound item is content
+  only (a raw suggestion string, or an `AgentModeSuggestion`'s model-generated `Goal`/`Reason`) with
+  no field to key a per-item id on. They are now closed by binding the id to the CONTAINER's
+  `ItemsControl.AlternationIndex` instead of anything on the item — reach for that whenever a
+  template's item is content all the way down, and set `AlternationCount` or every row silently
+  reports index 0.
+- **`PiaHistorySearchBar`'s two `DatePicker`s, `PiaAnswerToolbar`'s regenerate-style context menu,
+  `MarkdownMessageControl`'s `PiiMenu_*` items and `DirectTranscriptionOverlay`'s `DirectTrans_Chip*`
+  items carry ids the test cannot lock in.** `Activator.CreateInstance` never runs a layout pass,
   so a `DatePicker`'s `OnApplyTemplate` never fires and its internal `DatePickerTextBox` (part of
   the `ControlTemplate`, not the logical tree) never appears to the walker — confirmed empirically
   (they contribute 0 to the measured control count). A `ContextMenu`'s `MenuItem`s aren't one of

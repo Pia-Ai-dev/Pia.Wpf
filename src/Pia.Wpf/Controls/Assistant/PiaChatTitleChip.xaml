@@ -16,6 +16,7 @@
                Padding="10,4"
                Cursor="Hand"
                Click="ChipButton_Click"
+               AutomationProperties.AutomationId="ChatChip_Toggle"
                ToolTip="{loc:Str AssistantChat_Chip_Tooltip}">
       <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
         <ui:SymbolIcon Symbol="Chat24"
@@ -111,6 +112,7 @@
                       Icon="{ui:SymbolIcon Symbol=Search24}"
                       PlaceholderText="{loc:Str AssistantChat_Flyout_SearchPlaceholder}"
                       PlaceholderEnabled="True"
+                      AutomationProperties.AutomationId="ChatChip_Search"
                       Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}" />
 
           <!-- Split pill: [ ⌂ \  ▾ | + New Chat ]. One bordered container with a folder
@@ -138,6 +140,7 @@
                       Padding="10,6"
                       HorizontalContentAlignment="Left"
                       Click="WorkingDirButton_Click"
+                      AutomationProperties.AutomationId="ChatChip_WorkingDir"
                       ToolTip="{loc:Str AssistantChat_WorkingDir_Tooltip}">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                   <ui:SymbolIcon Symbol="Home24"
@@ -178,6 +181,7 @@
               <!-- + New Chat -->
               <Button Grid.Column="2"
                       Cursor="Hand"
+                      AutomationProperties.AutomationId="ChatChip_NewChat"
                       Command="{Binding NewChatCommand}">
                 <Button.Template>
                   <ControlTemplate TargetType="Button">
@@ -264,7 +268,8 @@
                                 Cursor="Hand"
                                 Padding="4,2"
                                 Command="{Binding DataContext.JumpToCrumbCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                CommandParameter="{Binding Index}">
+                                CommandParameter="{Binding Index}"
+                                AutomationProperties.AutomationId="{Binding Index, StringFormat='ChatChip_Crumb_{0}'}">
                           <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <ui:SymbolIcon Symbol="Home24"
                                            FontSize="13"
@@ -296,6 +301,7 @@
                           Padding="4,2"
                           VerticalAlignment="Center"
                           Click="NewFolderButton_Click"
+                          AutomationProperties.AutomationId="ChatChip_NewFolder"
                           ToolTip="{loc:Str AssistantChat_WorkingDir_NewFolder_Tooltip}">
                     <ui:SymbolIcon Symbol="FolderAdd24"
                                    FontSize="15"
@@ -328,6 +334,7 @@
                                 Text="{Binding NewFolderName, UpdateSourceTrigger=PropertyChanged}"
                                 PlaceholderText="{loc:Str AssistantChat_WorkingDir_NewFolder_Placeholder}"
                                 PlaceholderEnabled="True"
+                                AutomationProperties.AutomationId="ChatChip_NewFolderName"
                                 PreviewKeyDown="NewFolderTextBox_PreviewKeyDown" />
                     <Button Grid.Column="2"
                             Style="{StaticResource UnstyledButton}"
@@ -337,6 +344,7 @@
                             VerticalAlignment="Center"
                             Command="{Binding ConfirmCreateFolderCommand}"
                             Click="ConfirmCreateFolderButton_Click"
+                            AutomationProperties.AutomationId="ChatChip_NewFolderConfirm"
                             ToolTip="{loc:Str AssistantChat_WorkingDir_NewFolder_Confirm}">
                       <ui:SymbolIcon Symbol="Checkmark24"
                                      FontSize="15"
@@ -349,6 +357,7 @@
                             VerticalAlignment="Center"
                             Command="{Binding CancelCreateFolderCommand}"
                             Click="CancelCreateFolderButton_Click"
+                            AutomationProperties.AutomationId="ChatChip_NewFolderCancel"
                             ToolTip="{loc:Str AssistantChat_WorkingDir_NewFolder_Cancel}">
                       <ui:SymbolIcon Symbol="Dismiss24"
                                      FontSize="14"
@@ -369,7 +378,10 @@
                              Visibility="{Binding IsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}"
                              Text="{loc:Str AssistantChat_WorkingDir_PickerEmpty}" />
 
+                  <!-- Entries are bare folder-name strings, so a per-row id would have to key on the
+                       name itself; scope a name match inside this list instead. -->
                   <ListBox x:Name="WorkingDirEntries"
+                           AutomationProperties.AutomationId="ChatChip_FolderEntries"
                            ItemsSource="{Binding Entries}"
                            Background="Transparent"
                            BorderThickness="0"
@@ -468,7 +480,8 @@
                             <Button Style="{StaticResource UnstyledButton}"
                                     Padding="10,4"
                                     Command="{Binding DataContext.ResumeChatCommand, ElementName=ChipRoot}"
-                                    CommandParameter="{Binding Id}">
+                                    CommandParameter="{Binding Id}"
+                                    AutomationProperties.AutomationId="{Binding Id, StringFormat='ChatChip_Resume_{0}'}">
                               <!-- time | title | state badge | date; badge State is a
                                    snapshot read once at flyout build. Hover reveals a quick-delete
                                    trash (replaces the date) wired to the chip's delete command. -->
@@ -491,6 +504,7 @@
             <Button Style="{StaticResource UnstyledButton}"
                     Margin="0,3,0,0"
                     Padding="10,5"
+                    AutomationProperties.AutomationId="ChatChip_ShowAllChats"
                     Command="{Binding ShowAllChatsCommand}">
               <StackPanel Orientation="Horizontal">
                 <ui:SymbolIcon Symbol="History24"

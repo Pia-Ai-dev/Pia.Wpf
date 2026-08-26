@@ -2,7 +2,10 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Name="Root">
-  <ItemsControl ItemsSource="{Binding ItemsSource, ElementName=Root}">
+  <!-- The bound item is the suggestion string itself, so the only non-content key for a per-item id is
+       the container's alternation index; the count caps how many stay distinct before it wraps. -->
+  <ItemsControl ItemsSource="{Binding ItemsSource, ElementName=Root}"
+                AlternationCount="20">
     <ItemsControl.ItemsPanel>
       <ItemsPanelTemplate>
         <WrapPanel Orientation="Horizontal" />
@@ -20,7 +23,10 @@
                 BorderThickness="1"
                 Foreground="{DynamicResource TextDefaultBrush}"
                 Command="{Binding ItemClickCommand, ElementName=Root}"
-                CommandParameter="{Binding}">
+                CommandParameter="{Binding}"
+                AutomationProperties.AutomationId="{Binding (ItemsControl.AlternationIndex),
+                                                    RelativeSource={RelativeSource AncestorType=ContentPresenter},
+                                                    StringFormat='Suggestion_Chip_{0}'}">
           <Button.Template>
             <ControlTemplate TargetType="Button">
               <Border CornerRadius="{StaticResource BubbleRadius}"

@@ -19,14 +19,22 @@
             <ContextMenu>
                 <MenuItem Command="ApplicationCommands.Copy" />
                 <Separator />
-                <MenuItem x:Name="AddToPiiMenu" Header="{loc:Str Assistant_AddToPiiList}">
-                    <MenuItem Header="{loc:Str PiiCategory_Person}" Tag="Person" Click="AddToPii_Click" />
-                    <MenuItem Header="{loc:Str PiiCategory_Nickname}" Tag="Nickname" Click="AddToPii_Click" />
-                    <MenuItem Header="{loc:Str PiiCategory_Email}" Tag="Email" Click="AddToPii_Click" />
-                    <MenuItem Header="{loc:Str PiiCategory_Phone}" Tag="Phone" Click="AddToPii_Click" />
-                    <MenuItem Header="{loc:Str PiiCategory_Address}" Tag="Address" Click="AddToPii_Click" />
-                    <MenuItem Header="{loc:Str PiiCategory_Date}" Tag="Date" Click="AddToPii_Click" />
-                    <MenuItem Header="{loc:Str PiiCategory_Custom}" Tag="Custom" Click="AddToPii_Click" />
+                <MenuItem x:Name="AddToPiiMenu" Header="{loc:Str Assistant_AddToPiiList}"
+                          AutomationProperties.AutomationId="PiiMenu_Open">
+                    <MenuItem Header="{loc:Str PiiCategory_Person}" Tag="Person" Click="AddToPii_Click"
+                              AutomationProperties.AutomationId="PiiMenu_Person" />
+                    <MenuItem Header="{loc:Str PiiCategory_Nickname}" Tag="Nickname" Click="AddToPii_Click"
+                              AutomationProperties.AutomationId="PiiMenu_Nickname" />
+                    <MenuItem Header="{loc:Str PiiCategory_Email}" Tag="Email" Click="AddToPii_Click"
+                              AutomationProperties.AutomationId="PiiMenu_Email" />
+                    <MenuItem Header="{loc:Str PiiCategory_Phone}" Tag="Phone" Click="AddToPii_Click"
+                              AutomationProperties.AutomationId="PiiMenu_Phone" />
+                    <MenuItem Header="{loc:Str PiiCategory_Address}" Tag="Address" Click="AddToPii_Click"
+                              AutomationProperties.AutomationId="PiiMenu_Address" />
+                    <MenuItem Header="{loc:Str PiiCategory_Date}" Tag="Date" Click="AddToPii_Click"
+                              AutomationProperties.AutomationId="PiiMenu_Date" />
+                    <MenuItem Header="{loc:Str PiiCategory_Custom}" Tag="Custom" Click="AddToPii_Click"
+                              AutomationProperties.AutomationId="PiiMenu_Custom" />
                 </MenuItem>
             </ContextMenu>
         </RichTextBox.ContextMenu>

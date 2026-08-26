@@ -6,7 +6,10 @@
              x:Name="Root">
   <!-- R8: a typed "switch to Agent mode" chip, visually distinct from the plain string suggestion
        chips (accent-outlined pill + Bot glyph) so it never reads as a text-paste suggestion. -->
-  <ItemsControl ItemsSource="{Binding ItemsSource, ElementName=Root}">
+  <!-- Goal and Reason are both model-generated content, so the per-item id keys on the container's
+       alternation index instead; the count caps how many stay distinct before it wraps. -->
+  <ItemsControl ItemsSource="{Binding ItemsSource, ElementName=Root}"
+                AlternationCount="20">
     <ItemsControl.ItemsPanel>
       <ItemsPanelTemplate>
         <WrapPanel Orientation="Horizontal" />
@@ -25,7 +28,10 @@
                 Foreground="{DynamicResource PiaInkBrush}"
                 ToolTip="{Binding Reason}"
                 Command="{Binding ItemClickCommand, ElementName=Root}"
-                CommandParameter="{Binding}">
+                CommandParameter="{Binding}"
+                AutomationProperties.AutomationId="{Binding (ItemsControl.AlternationIndex),
+                                                    RelativeSource={RelativeSource AncestorType=ContentPresenter},
+                                                    StringFormat='AgentMode_Chip_{0}'}">
           <Button.Template>
             <ControlTemplate TargetType="Button">
               <Border CornerRadius="{StaticResource SmallRadius}"
