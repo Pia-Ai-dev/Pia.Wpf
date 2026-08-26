@@ -195,7 +195,7 @@ public class AssignmentToolHandlerTests
 
         var text = Text(await CallAsync("query_assignments"));
 
-        Assert.Contains("2026-08-26 09:00 UTC", text);
+        Assert.Contains("2026/08/26 09:00 UTC", text);
     }
 
     [Fact]
@@ -509,4 +509,21 @@ public class AssignmentToolHandlerTests
             new FunctionCallContent("call-1", "start_assignment",
                 new Dictionary<string, object?> { ["skill"] = skill, ["prompt"] = prompt }),
             TestContext.Current.CancellationToken);
+
+    /// <summary>A hyphenated date reads as a phone number to the PII detector, which replaced the stamp with a
+    /// [Phone_N] token before the model saw it. Runs the real detector over the real result.</summary>
+    [Fact]
+    public async Task TimestampsSurviveThePiiDetector()
+    {
+        var id = Guid.NewGuid();
+        StubList(Dto(id, events: [Event()]));
+        _api.GetAsync(id, Arg.Any<CancellationToken>()).Returns(Dto(id, events: [Event()]));
+
+        var text = Text(await CallAsync("query_assignments")) + Text(await GetAsync(id));
+
+        var phone = new StructuredPiiDetector().DetectPii(text).Where(m => m.Category == "Phone").ToList();
+        Assert.True(phone.Count == 0,
+            $"the detector would tokenise {string.Join(", ", phone.Select(m => m.Value))}");
+        Assert.Contains("2026/08/26 09:00 UTC", text);
+    }
 }
