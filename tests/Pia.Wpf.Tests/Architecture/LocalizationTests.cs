@@ -246,6 +246,28 @@ public class LocalizationTests
         Assert.Equal(categories, keys.Length);
     }
 
+    /// <summary>The keys sit in a static table, so this file's literal-key regexes cannot see them and a
+    /// typo would only surface as a blank chip at runtime.</summary>
+    [Fact]
+    public void EveryStarterSuggestionKeyResolvesInAllThreeLocales()
+    {
+        var keys = StarterSuggestionService.AllKeys;
+
+        Assert.True(keys.Count >= 20,
+            $"non-vacuity: expected at least 20 distinct starter-suggestion keys, found {keys.Count}");
+
+        var missing = new List<string>();
+        foreach (var culture in new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") })
+        {
+            var available = GetResourceKeysForCulture(ViewStrings.ResourceManager, culture);
+            foreach (var key in keys.Where(k => !available.Contains(k)))
+                missing.Add($"{culture.Name}: {key}");
+        }
+
+        Assert.True(missing.Count == 0,
+            $"every starter-suggestion key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
+    }
+
     /// <summary>The mapping lives in a helper, so this file's literal-key regexes cannot see the keys it returns.</summary>
     [Fact]
     public void EveryAutoApprovedStatusKeyResolvesInAllThreeLocales()

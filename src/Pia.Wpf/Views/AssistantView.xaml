@@ -67,43 +67,35 @@
                  HorizontalAlignment="Center"
                  Foreground="{DynamicResource TextPlaceholderColorBrush}" />
 
-      <WrapPanel HorizontalAlignment="Center"
-                 Margin="0,24,0,0"
-                 MaxWidth="420">
-        <ui:Button Appearance="Secondary"
-                   Margin="4"
-                   Padding="10,6"
-                   CornerRadius="14"
-                   Cursor="Hand"
-                   Command="{Binding UseSuggestionCommand}"
-                   CommandParameter="{Binding SuggestionReminder}"
-                   AutomationProperties.AutomationId="Assistant_Suggestion_Reminder">
-          <TextBlock Text="{Binding SuggestionReminder}"
-                     FontSize="12" />
-        </ui:Button>
-        <ui:Button Appearance="Secondary"
-                   Margin="4"
-                   Padding="10,6"
-                   CornerRadius="14"
-                   Cursor="Hand"
-                   Command="{Binding UseSuggestionCommand}"
-                   CommandParameter="{Binding SuggestionTodo}"
-                   AutomationProperties.AutomationId="Assistant_Suggestion_Todo">
-          <TextBlock Text="{Binding SuggestionTodo}"
-                     FontSize="12" />
-        </ui:Button>
-        <ui:Button Appearance="Secondary"
-                   Margin="4"
-                   Padding="10,6"
-                   CornerRadius="14"
-                   Cursor="Hand"
-                   Command="{Binding UseSuggestionCommand}"
-                   CommandParameter="{Binding SuggestionMemory}"
-                   AutomationProperties.AutomationId="Assistant_Suggestion_Memory">
-          <TextBlock Text="{Binding SuggestionMemory}"
-                     FontSize="12" />
-        </ui:Button>
-      </WrapPanel>
+      <!-- Drawn per visit from the capability groups the profile actually has data for, so the id is
+           per-item: a literal here would make every chip report the same one. -->
+      <ItemsControl ItemsSource="{Binding Suggestions}"
+                    HorizontalAlignment="Center"
+                    Margin="0,24,0,0"
+                    MaxWidth="420">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel HorizontalAlignment="Center" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <ui:Button Appearance="Secondary"
+                       Margin="4"
+                       Padding="10,6"
+                       CornerRadius="14"
+                       Cursor="Hand"
+                       Command="{Binding DataContext.UseSuggestionCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                       CommandParameter="{Binding Text}"
+                       AutomationProperties.AutomationId="{Binding Id, StringFormat='Assistant_Suggestion_{0}'}">
+              <TextBlock Text="{Binding Text}"
+                         FontSize="12"
+                         MaxWidth="380"
+                         TextWrapping="Wrap" />
+            </ui:Button>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
     </StackPanel>
 
     <!-- Message list -->

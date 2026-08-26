@@ -65,21 +65,30 @@
   <data name="Assistant_EmptyState" xml:space="preserve"><value>Commencez une conversation avec Pia</value></data>
   <data name="Assistant_ProtectedRoute_Label" xml:space="preserve"><value>Protégé</value></data>
   <data name="Assistant_ProtectedRoute_Tooltip" xml:space="preserve"><value>Cette réponse a été traitée par un modèle protégé.</value></data>
-  <data name="Assistant_Suggestion_Reminder1" xml:space="preserve"><value>Rappelle-moi d'appeler le dentiste demain</value></data>
-  <data name="Assistant_Suggestion_Reminder2" xml:space="preserve"><value>Crée un rappel quotidien pour boire de l'eau</value></data>
-  <data name="Assistant_Suggestion_Reminder3" xml:space="preserve"><value>Rappelle-moi la réunion à 15 heures</value></data>
-  <data name="Assistant_Suggestion_Reminder4" xml:space="preserve"><value>Crée un rappel hebdomadaire pour revoir mes objectifs</value></data>
-  <data name="Assistant_Suggestion_Reminder5" xml:space="preserve"><value>Rappelle-moi de récupérer le colis vendredi</value></data>
-  <data name="Assistant_Suggestion_Todo1" xml:space="preserve"><value>Ajoute "faire les courses" à ma liste de tâches</value></data>
-  <data name="Assistant_Suggestion_Todo2" xml:space="preserve"><value>Qu'est-ce qu'il y a sur ma liste de tâches ?</value></data>
-  <data name="Assistant_Suggestion_Todo3" xml:space="preserve"><value>Marque la tâche lessive comme terminée</value></data>
-  <data name="Assistant_Suggestion_Todo4" xml:space="preserve"><value>Ajoute une tâche prioritaire : terminer le rapport</value></data>
-  <data name="Assistant_Suggestion_Todo5" xml:space="preserve"><value>Quelles tâches sont prévues cette semaine ?</value></data>
-  <data name="Assistant_Suggestion_Memory1" xml:space="preserve"><value>Retiens que ma couleur préférée est le bleu</value></data>
-  <data name="Assistant_Suggestion_Memory2" xml:space="preserve"><value>Que sais-tu sur moi ?</value></data>
-  <data name="Assistant_Suggestion_Memory3" xml:space="preserve"><value>Retiens que je suis allergique aux arachides</value></data>
-  <data name="Assistant_Suggestion_Memory4" xml:space="preserve"><value>Change ma langue préférée en français</value></data>
-  <data name="Assistant_Suggestion_Memory5" xml:space="preserve"><value>Retiens que mon partenaire s'appelle Alex</value></data>
+  <data name="Assistant_Suggestion_Memory_Start1" xml:space="preserve"><value>Retiens que je suis allergique aux arachides</value></data>
+  <data name="Assistant_Suggestion_Memory_Start2" xml:space="preserve"><value>Retiens que je préfère des réponses courtes</value></data>
+  <data name="Assistant_Suggestion_Memory_Grow1" xml:space="preserve"><value>Mets à jour ce que tu sais sur mon travail</value></data>
+  <data name="Assistant_Suggestion_Memory_Grow2" xml:space="preserve"><value>Retiens que mes priorités ont changé</value></data>
+  <data name="Assistant_Suggestion_Recall_Start1" xml:space="preserve"><value>Que peux-tu retenir pour moi ?</value></data>
+  <data name="Assistant_Suggestion_Recall_Start2" xml:space="preserve"><value>Comment fonctionne ta mémoire ?</value></data>
+  <data name="Assistant_Suggestion_Recall_Grow1" xml:space="preserve"><value>Que sais-tu déjà sur moi ?</value></data>
+  <data name="Assistant_Suggestion_Recall_Grow2" xml:space="preserve"><value>Qu'y a-t-il dans ma base de connaissances ?</value></data>
+  <data name="Assistant_Suggestion_Todo_Start1" xml:space="preserve"><value>Nouvelle tâche : terminer le rapport trimestriel</value></data>
+  <data name="Assistant_Suggestion_Todo_Start2" xml:space="preserve"><value>Crée une liste de tâches pour cette semaine</value></data>
+  <data name="Assistant_Suggestion_Todo_Grow1" xml:space="preserve"><value>Quelles tâches sont prévues cette semaine ?</value></data>
+  <data name="Assistant_Suggestion_Todo_Grow2" xml:space="preserve"><value>Quelles tâches sont en retard ?</value></data>
+  <data name="Assistant_Suggestion_Reminder_Start1" xml:space="preserve"><value>Rappelle-moi la réunion à 15 heures</value></data>
+  <data name="Assistant_Suggestion_Reminder_Start2" xml:space="preserve"><value>Rappel hebdomadaire : revoir mes objectifs</value></data>
+  <data name="Assistant_Suggestion_Reminder_Grow1" xml:space="preserve"><value>Quels rappels sont à venir ?</value></data>
+  <data name="Assistant_Suggestion_Reminder_Grow2" xml:space="preserve"><value>Décale mon prochain rappel à l'après-midi</value></data>
+  <data name="Assistant_Suggestion_Routine_Start1" xml:space="preserve"><value>Crée une routine hebdomadaire de planification</value></data>
+  <data name="Assistant_Suggestion_Routine_Start2" xml:space="preserve"><value>Quelles routines peux-tu exécuter pour moi ?</value></data>
+  <data name="Assistant_Suggestion_Routine_Grow1" xml:space="preserve"><value>Comment se passent mes routines ?</value></data>
+  <data name="Assistant_Suggestion_Routine_Grow2" xml:space="preserve"><value>Ajoute une routine de briefing matinal</value></data>
+  <data name="Assistant_Suggestion_Plan1" xml:space="preserve"><value>Découpe mon plan de lancement en tâches</value></data>
+  <data name="Assistant_Suggestion_Plan2" xml:space="preserve"><value>Planifie ma semaine, puis crée les tâches</value></data>
+  <data name="Assistant_Suggestion_Chats_Grow1" xml:space="preserve"><value>De quoi avons-nous parlé la semaine dernière ?</value></data>
+  <data name="Assistant_Suggestion_Chats_Grow2" xml:space="preserve"><value>Retrouve le chat sur la préparation du séminaire</value></data>
   <data name="Assistant_InputPlaceholder" xml:space="preserve"><value>Tapez un message...</value></data>
   <data name="Assistant_Copy_Tooltip" xml:space="preserve"><value>Copier</value></data>
   <data name="Assistant_ReadAloud_Tooltip" xml:space="preserve"><value>Lire à voix haute</value></data>

@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Windows.Media.Imaging;
@@ -56,6 +55,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IDialogService _dialogService;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly IVolatileWorkStore? _volatileWork;
+    private readonly IStarterSuggestionService? _starterSuggestions;
 
     /// <summary>Tool-permission state consulted by the voice-mode gate.</summary>
     private readonly IToolPermissionService _permissions;
@@ -153,14 +153,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     [ObservableProperty]
     private bool _isDirectTranscriptionAvailable = true;
 
-    [ObservableProperty]
-    private string _suggestionReminder = string.Empty;
-
-    [ObservableProperty]
-    private string _suggestionTodo = string.Empty;
-
-    [ObservableProperty]
-    private string _suggestionMemory = string.Empty;
+    /// <summary>Empty-state chips. Drawn per visit, so a chat that already has messages never pays for them.</summary>
+    public ObservableCollection<StarterSuggestion> Suggestions { get; } = new();
 
     /// <summary>The persona shown in the picker chip. Changing it persists the per-mode selection
     /// (synced via SyncSettings); the new persona applies from the next turn.</summary>
@@ -185,26 +179,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     [ObservableProperty]
     private RunProgressViewModel? _activeRunProgress;
 
-    private static readonly string[] SuggestionReminderKeys =
-    [
-        "Assistant_Suggestion_Reminder1", "Assistant_Suggestion_Reminder2",
-        "Assistant_Suggestion_Reminder3", "Assistant_Suggestion_Reminder4",
-        "Assistant_Suggestion_Reminder5"
-    ];
-
-    private static readonly string[] SuggestionTodoKeys =
-    [
-        "Assistant_Suggestion_Todo1", "Assistant_Suggestion_Todo2",
-        "Assistant_Suggestion_Todo3", "Assistant_Suggestion_Todo4",
-        "Assistant_Suggestion_Todo5"
-    ];
-
-    private static readonly string[] SuggestionMemoryKeys =
-    [
-        "Assistant_Suggestion_Memory1", "Assistant_Suggestion_Memory2",
-        "Assistant_Suggestion_Memory3", "Assistant_Suggestion_Memory4",
-        "Assistant_Suggestion_Memory5"
-    ];
+    private const int VisibleSuggestionCount = 3;
 
     public IAutocompleteService AutocompleteService => _autocompleteService;
 
@@ -300,7 +275,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         Func<AssignmentConsentViewModel>? assignmentConsentFactory = null,
         // Where this window publishes "a restart would destroy something here" so the policy-restart overlay
         // in EVERY window defers. Trailing and defaulted; null ⇒ nothing is published.
-        IVolatileWorkStore? volatileWork = null)
+        IVolatileWorkStore? volatileWork = null,
+        // Trailing and defaulted, same discipline as the ones above; null ⇒ the empty state shows no chips.
+        IStarterSuggestionService? starterSuggestions = null)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -343,6 +320,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _assignmentSurfaceCache = assignmentSurfaceCache;
         _assignmentConsentFactory = assignmentConsentFactory;
         _volatileWork = volatileWork;
+        _starterSuggestions = starterSuggestions;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         RunInBackgroundCommand = new AsyncRelayCommand(ExecuteRunInBackground, CanExecuteRunInBackground);
@@ -1107,6 +1085,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ChatTitleChip.SetWorkingDirectory(session.WorkingDirectory);
         _filesToolHandler.ActiveUiWorkingSubpath = session.WorkingDirectory;
         InputText = string.Empty;
+
+        // The empty state is back, and the stores may have moved since it was last on screen.
+        RefreshSuggestionsAsync().SafeFireAndForget(_logger);
     }
 
     private async Task ResumeChatAsync(Guid chatId)
@@ -1308,17 +1289,28 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
     }
 
-    private void RandomizeSuggestions()
+    /// <summary>The draw probes the local stores, so it is skipped whenever the empty state is hidden anyway.</summary>
+    private async Task RefreshSuggestionsAsync()
     {
-        SuggestionReminder = _localizationService[SuggestionReminderKeys[RandomNumberGenerator.GetInt32(SuggestionReminderKeys.Length)]];
-        SuggestionTodo = _localizationService[SuggestionTodoKeys[RandomNumberGenerator.GetInt32(SuggestionTodoKeys.Length)]];
-        SuggestionMemory = _localizationService[SuggestionMemoryKeys[RandomNumberGenerator.GetInt32(SuggestionMemoryKeys.Length)]];
+        if (_starterSuggestions is null || HasMessages) return;
+
+        try
+        {
+            var drawn = await _starterSuggestions.DrawAsync(VisibleSuggestionCount);
+            await _uiDispatcher.PostAsync(() =>
+            {
+                Suggestions.Clear();
+                foreach (var suggestion in drawn) Suggestions.Add(suggestion);
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to draw the empty-state suggestions");
+        }
     }
 
     public void OnNavigatedTo(object? parameter)
     {
-        RandomizeSuggestions();
-
         // Non-Guid synchronous setup (string / selection params). Guid-activation
         // is awaited in OnNavigatedToAsync so its exceptions are observed.
         if (parameter is string text && !string.IsNullOrWhiteSpace(text))
@@ -1340,6 +1332,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         {
             await ResumeChatAsync(chatId);
         }
+
+        // After the activation above, which is what settles HasMessages for the resumed chat.
+        await RefreshSuggestionsAsync();
 
         try
         {

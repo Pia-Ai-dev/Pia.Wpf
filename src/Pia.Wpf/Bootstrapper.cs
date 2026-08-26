@@ -530,6 +530,7 @@ public static class Bootstrapper
         services.AddSingleton<IKanbanColumnService, KanbanColumnService>();
         services.AddSingleton<ITodoService, TodoService>();
         services.AddSingleton<ITodoToolHandler, TodoToolHandler>();
+        services.AddSingleton<IStarterSuggestionService, StarterSuggestionService>();
         services.AddSingleton<IFileStalenessStore, FileStalenessStore>();
         services.AddSingleton<IFilesToolHandler, FilesToolHandler>();
         services.AddSingleton<Pia.Helpers.IGitProcessRunner, Pia.Helpers.GitProcessRunner>();

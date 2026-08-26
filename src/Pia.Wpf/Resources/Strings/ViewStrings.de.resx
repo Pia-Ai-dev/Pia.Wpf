@@ -65,21 +65,30 @@
   <data name="Assistant_EmptyState" xml:space="preserve"><value>Starte eine Unterhaltung mit Pia</value></data>
   <data name="Assistant_ProtectedRoute_Label" xml:space="preserve"><value>Geschützt</value></data>
   <data name="Assistant_ProtectedRoute_Tooltip" xml:space="preserve"><value>Diese Antwort wurde von einem geschützten Modell verarbeitet.</value></data>
-  <data name="Assistant_Suggestion_Reminder1" xml:space="preserve"><value>Erinnere mich morgen den Zahnarzt anzurufen</value></data>
-  <data name="Assistant_Suggestion_Reminder2" xml:space="preserve"><value>Erstelle eine tägliche Erinnerung, Wasser zu trinken</value></data>
-  <data name="Assistant_Suggestion_Reminder3" xml:space="preserve"><value>Erinnere mich an das Meeting um 15 Uhr</value></data>
-  <data name="Assistant_Suggestion_Reminder4" xml:space="preserve"><value>Erstelle eine wöchentliche Erinnerung, meine Ziele zu überprüfen</value></data>
-  <data name="Assistant_Suggestion_Reminder5" xml:space="preserve"><value>Erinnere mich am Freitag das Paket abzuholen</value></data>
-  <data name="Assistant_Suggestion_Todo1" xml:space="preserve"><value>Füge "Einkaufen gehen" zu meiner Todo-Liste hinzu</value></data>
-  <data name="Assistant_Suggestion_Todo2" xml:space="preserve"><value>Was steht auf meiner Todo-Liste?</value></data>
-  <data name="Assistant_Suggestion_Todo3" xml:space="preserve"><value>Markiere die Wäsche-Aufgabe als erledigt</value></data>
-  <data name="Assistant_Suggestion_Todo4" xml:space="preserve"><value>Füge eine wichtige Aufgabe hinzu: Bericht fertigstellen</value></data>
-  <data name="Assistant_Suggestion_Todo5" xml:space="preserve"><value>Welche Aufgaben sind diese Woche fällig?</value></data>
-  <data name="Assistant_Suggestion_Memory1" xml:space="preserve"><value>Merk dir, dass meine Lieblingsfarbe blau ist</value></data>
-  <data name="Assistant_Suggestion_Memory2" xml:space="preserve"><value>Was weißt du über mich?</value></data>
-  <data name="Assistant_Suggestion_Memory3" xml:space="preserve"><value>Merk dir, dass ich eine Erdnussallergie habe</value></data>
-  <data name="Assistant_Suggestion_Memory4" xml:space="preserve"><value>Ändere meine bevorzugte Sprache auf Französisch</value></data>
-  <data name="Assistant_Suggestion_Memory5" xml:space="preserve"><value>Merk dir, dass mein Partner Alex heißt</value></data>
+  <data name="Assistant_Suggestion_Memory_Start1" xml:space="preserve"><value>Merk dir, dass ich eine Erdnussallergie habe</value></data>
+  <data name="Assistant_Suggestion_Memory_Start2" xml:space="preserve"><value>Merk dir, dass ich kurze, direkte Antworten mag</value></data>
+  <data name="Assistant_Suggestion_Memory_Grow1" xml:space="preserve"><value>Aktualisiere, was du über meine Arbeit weißt</value></data>
+  <data name="Assistant_Suggestion_Memory_Grow2" xml:space="preserve"><value>Merk dir, dass sich meine Prioritäten geändert haben</value></data>
+  <data name="Assistant_Suggestion_Recall_Start1" xml:space="preserve"><value>Was kannst du dir alles für mich merken?</value></data>
+  <data name="Assistant_Suggestion_Recall_Start2" xml:space="preserve"><value>Wie funktioniert dein Gedächtnis?</value></data>
+  <data name="Assistant_Suggestion_Recall_Grow1" xml:space="preserve"><value>Was weißt du schon über mich?</value></data>
+  <data name="Assistant_Suggestion_Recall_Grow2" xml:space="preserve"><value>Was steht in meiner Wissensdatenbank?</value></data>
+  <data name="Assistant_Suggestion_Todo_Start1" xml:space="preserve"><value>Neue Aufgabe: Quartalsbericht fertigstellen</value></data>
+  <data name="Assistant_Suggestion_Todo_Start2" xml:space="preserve"><value>Leg eine Aufgabenliste für diese Woche an</value></data>
+  <data name="Assistant_Suggestion_Todo_Grow1" xml:space="preserve"><value>Welche Aufgaben sind diese Woche fällig?</value></data>
+  <data name="Assistant_Suggestion_Todo_Grow2" xml:space="preserve"><value>Welche meiner Aufgaben sind überfällig?</value></data>
+  <data name="Assistant_Suggestion_Reminder_Start1" xml:space="preserve"><value>Erinnere mich an das Meeting um 15 Uhr</value></data>
+  <data name="Assistant_Suggestion_Reminder_Start2" xml:space="preserve"><value>Wöchentliche Erinnerung: Ziele überprüfen</value></data>
+  <data name="Assistant_Suggestion_Reminder_Grow1" xml:space="preserve"><value>Welche Erinnerungen stehen bald an?</value></data>
+  <data name="Assistant_Suggestion_Reminder_Grow2" xml:space="preserve"><value>Verschieb meine nächste Erinnerung auf nachmittags</value></data>
+  <data name="Assistant_Suggestion_Routine_Start1" xml:space="preserve"><value>Richte eine wöchentliche Wochenplanung ein</value></data>
+  <data name="Assistant_Suggestion_Routine_Start2" xml:space="preserve"><value>Welche Routinen kannst du für mich ausführen?</value></data>
+  <data name="Assistant_Suggestion_Routine_Grow1" xml:space="preserve"><value>Wie laufen meine Routinen?</value></data>
+  <data name="Assistant_Suggestion_Routine_Grow2" xml:space="preserve"><value>Füge eine tägliche Morgen-Briefing-Routine hinzu</value></data>
+  <data name="Assistant_Suggestion_Plan1" xml:space="preserve"><value>Zerlege meinen Launch-Plan in Aufgaben</value></data>
+  <data name="Assistant_Suggestion_Plan2" xml:space="preserve"><value>Plane meine nächste Woche und leg die Todos an</value></data>
+  <data name="Assistant_Suggestion_Chats_Grow1" xml:space="preserve"><value>Worüber haben wir letzte Woche gesprochen?</value></data>
+  <data name="Assistant_Suggestion_Chats_Grow2" xml:space="preserve"><value>Finde den Chat zur Offsite-Planung</value></data>
   <data name="Assistant_InputPlaceholder" xml:space="preserve"><value>Nachricht eingeben...</value></data>
   <data name="Assistant_Copy_Tooltip" xml:space="preserve"><value>Kopieren</value></data>
   <data name="Assistant_ReadAloud_Tooltip" xml:space="preserve"><value>Vorlesen</value></data>
