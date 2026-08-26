@@ -47,7 +47,8 @@ public class MainWindowViewModelTests
             Substitute.For<IProviderService>(),
             _auth,
             Substitute.For<ISyncClientService>(),
-            _assignments,
+            new AssignmentSurfaceCache(_assignments, TimeProvider.System,
+                NullLogger<AssignmentSurfaceCache>.Instance),
             _policy,
             _tourTargets,
             _clipboard)

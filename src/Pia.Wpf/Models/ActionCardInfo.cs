@@ -29,7 +29,10 @@ public enum ActionCardCategory
     /// fall through to <see cref="Mcp"/>, so a built-in scheduling tool was titled "External tool" and had
     /// its key/value details parsed as JSON.
     /// </summary>
-    Scheduled
+    Scheduled,
+
+    /// <summary>The built-in background-assignment tools (plugin <c>assignments</c>).</summary>
+    Assignment
 }
 
 public record ActionCardDetail(string Label, string Value);

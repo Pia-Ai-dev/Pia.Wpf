@@ -821,7 +821,7 @@
   <data name="ToolCatalog_Always" xml:space="preserve"><value>Toujours</value></data>
   <data name="ToolCatalog_Caution_Destructive" xml:space="preserve"><value>À savoir : cet outil détruit des données, et une autorisation ici couvre aussi des appels ultérieurs dont vous ne verrez jamais les arguments. Laissez la case décochée pour être consulté chaque fois.</value></data>
   <data name="ToolCatalog_Caution_WorkDiscarding" xml:space="preserve"><value>À savoir : cet outil peut supprimer du travail non validé, et une autorisation ici couvre aussi des appels ultérieurs dont vous ne verrez jamais les arguments.</value></data>
-  <data name="ToolCatalog_Caution_AuthorityAuthoring" xml:space="preserve"><value>À savoir : cet outil accorde des autorisations que des exécutions ultérieures sans surveillance utiliseront — l'autoriser ici permet à Pia d'élargir ce qu'elle pourra faire plus tard.</value></data>
+  <data name="ToolCatalog_Caution_AuthorityAuthoring" xml:space="preserve"><value>À savoir : cet outil met en place un travail qui s'exécutera ensuite sans surveillance — l'autoriser ici permet à Pia d'élargir ce qu'elle pourra faire sans redemander.</value></data>
   <data name="ToolCatalog_Caution_Routine_Destructive" xml:space="preserve"><value>À savoir : cet outil détruit des données, et une routine s'exécute sans surveillance. Non coché, une exécution qui y recourt est refusée plutôt que suspendue pour vous.</value></data>
   <data name="ToolCatalog_Caution_Routine_WorkDiscarding" xml:space="preserve"><value>À savoir : cet outil peut jeter du travail non validé, et une routine s'exécute sans surveillance.</value></data>
   <data name="ToolCatalog_Caution_Routine_AuthorityAuthoring" xml:space="preserve"><value>À savoir : cet outil accorde des autorisations que des exécutions ultérieures utiliseront — l'autoriser élargit ce que cette routine permet à Pia de faire.</value></data>
@@ -843,6 +843,7 @@
   <data name="ActionCard_Category_Git" xml:space="preserve"><value>Git</value></data>
   <data name="ActionCard_Category_Mcp" xml:space="preserve"><value>Outil externe</value></data>
   <data name="ActionCard_Category_Scheduled" xml:space="preserve"><value>Tâche planifiée</value></data>
+  <data name="ActionCard_Category_Assignment" xml:space="preserve"><value>Tâche en arrière-plan</value></data>
   <data name="ActionCard_Action_Initialize" xml:space="preserve"><value>Initialiser</value></data>
   <data name="ActionCard_Action_Stage" xml:space="preserve"><value>Indexer</value></data>
   <data name="ActionCard_Action_Commit" xml:space="preserve"><value>Valider</value></data>

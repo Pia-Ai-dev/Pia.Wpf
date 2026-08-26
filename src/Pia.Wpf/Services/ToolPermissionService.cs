@@ -92,26 +92,27 @@ public class ToolPermissionService : IToolPermissionService
         => IsDeleteLike(toolName) && !BuiltInDestructiveTools.Contains(toolName!);
 
     /// <summary>
-    /// Tools whose ARGUMENTS ARE A GRANT LIST — calling one AUTHORS authority that some later, unattended run
-    /// will exercise with nobody looking. Their <c>grantedTools</c> CSV becomes <c>ScheduledJob.GrantedTools</c>
-    /// and reaches <see cref="ToolAutonomy.Resolve"/> as a NAMED grant, which auto-runs any tool it names —
-    /// <c>delete_file</c> included. <see cref="IsPresumedExternalDeleteLike"/> is its only create-time filter.
+    /// Tools that SET UP LATER UNATTENDED WORK — calling one commits some future run to act with nobody
+    /// looking. For the scheduled-job trio the arguments are literally a grant list: their <c>grantedTools</c>
+    /// CSV becomes <c>ScheduledJob.GrantedTools</c> and reaches <see cref="ToolAutonomy.Resolve"/> as a NAMED
+    /// grant, which auto-runs any tool it names — <c>delete_file</c> included.
+    /// <see cref="IsPresumedExternalDeleteLike"/> is its only create-time filter.
     /// </summary>
     /// <remarks>Only <c>ScheduledJobToolHandler</c> takes a grant list today; add a name here if that
     /// changes. <c>create_routine_from_blueprint</c> is here despite taking no grant argument: the blueprint
     /// owns the grants, but the job it creates still exercises them unattended, which is what the caution is
-    /// about.</remarks>
+    /// about. <c>start_assignment</c> too: granted, it lets a later background run send a model-authored
+    /// prompt to the server with nobody there to confirm it.</remarks>
     private static readonly HashSet<string> AuthorityAuthoringTools = new(StringComparer.OrdinalIgnoreCase)
     {
         "create_scheduled_research",
         "update_scheduled_research",
-        "create_routine_from_blueprint"
+        "create_routine_from_blueprint",
+        "start_assignment"
     };
 
-    /// <summary>
-    /// True for a tool one of whose arguments is itself future authority — see
-    /// <see cref="AuthorityAuthoringTools"/>. Case-insensitive like the other two name tests.
-    /// </summary>
+    /// <summary>True for a tool that commits a later unattended run to act — see
+    /// <see cref="AuthorityAuthoringTools"/>. Case-insensitive like the other two name tests.</summary>
     public static bool IsAuthorityAuthoring(string? toolName)
         => toolName is not null && AuthorityAuthoringTools.Contains(toolName);
 

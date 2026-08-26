@@ -617,6 +617,34 @@ public sealed class HeadlessTurnExecutorTests
         }
     }
 
+    /// <summary>The granter is captured in BeginRunAsync but published per step, so the two must stay in step:
+    /// a tool that mints an assignment reads it to learn nobody can be asked, and an empty one would name no
+    /// granter in the consent audit line.</summary>
+    [Fact]
+    public async Task AStepExchange_CarriesTheRunsGranterOnTheAmbient()
+    {
+        using var h = new DurabilityHarness();
+        var run = await h.NewRunAsync("the goal");
+        var jobId = Guid.NewGuid();
+        run.TriggerKind = AgentRunTrigger.Schedule;
+        run.TriggerRef = jobId;
+
+        string? granter = null;
+        h.OnTurn = _ => granter = TaskAmbient.Current?.UnattendedGranter;
+
+        var ct = TestContext.Current.CancellationToken;
+        var ctx = new RunContext("the goal", RunProfile.Interactive);
+        var executor = h.NewExecutor();
+        executor.Initialize(workspaceRoot: null, [], h.Provider);
+        await executor.BeginRunAsync(run, ctx, ct);
+        await executor.ExecuteStepAsync(
+            run,
+            new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "s", Intent = "i", Status = AgentStepStatus.Pending },
+            ctx, ct);
+
+        Assert.Equal($"routine:{jobId}", granter);
+    }
+
     private static List<AgentStep> Steps(int count)
     {
         var steps = new List<AgentStep>();

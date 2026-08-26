@@ -30,6 +30,10 @@ public enum ToolClass
     /// treated as an external/MCP tool the way <c>scheduled-research</c> was.
     /// </summary>
     Ingest = 8,
+
+    /// <summary>The built-in background-assignment tools (plugin <c>assignments</c>). No autonomy preset covers
+    /// it, so only an explicit grant starts one unattended; voice refuses it at every tier.</summary>
+    Assignment = 9,
 }
 
 /// <summary>Which gate asked. PERSISTED, so the ordinals are APPEND-ONLY.</summary>

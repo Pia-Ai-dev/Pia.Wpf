@@ -34,7 +34,7 @@ public class AssignmentConsentViewModelTests
 
         _consent.RecordAsync(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<AssignmentScopeItem>>(),
-                Arg.Any<CancellationToken>())
+                Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(ci => new AssignmentConsentReceipt(
                 Guid.NewGuid(),
                 ci.ArgAt<string>(0),
@@ -108,7 +108,7 @@ public class AssignmentConsentViewModelTests
         var status = await vm.SendAsync(Ct);
 
         Assert.Equal(AssignmentStartStatus.ConsentMissing, status);
-        await _consent.DidNotReceiveWithAnyArgs().RecordAsync(default!, default!, default!, Ct);
+        await _consent.DidNotReceiveWithAnyArgs().RecordAsync(default!, default!, default!, default!, default, Ct);
         await _orchestrator.DidNotReceiveWithAnyArgs().StartAsync(default!, default!, Ct);
     }
 
@@ -177,7 +177,8 @@ public class AssignmentConsentViewModelTests
         Received.InOrder(() =>
         {
             _consent.RecordAsync(
-                "brief", "brief", Arg.Any<IReadOnlyList<AssignmentScopeItem>>(), Arg.Any<CancellationToken>());
+                "brief", "brief", Arg.Any<IReadOnlyList<AssignmentScopeItem>>(),
+                AssignmentGranter.User, "Summarise these".Length, Arg.Any<CancellationToken>());
             _orchestrator.StartAsync(
                 Arg.Any<AssignmentRequest>(), Arg.Any<AssignmentConsentReceipt>(), Arg.Any<CancellationToken>());
         });
@@ -432,10 +433,54 @@ public class AssignmentConsentViewModelTests
     {
         var vm = Create();
 
-        await vm.InitializeAsync(Surface(Skill()), new string('x', AssignmentInput.MaxPromptChars + 50), Ct);
+        await vm.InitializeAsync(Surface(Skill()), new string('x', AssignmentInput.MaxPromptChars + 50), ct: Ct);
 
         Assert.Equal(AssignmentInput.MaxPromptChars, vm.Prompt.Length);
         vm.IsAffirmed = true;
         Assert.True(vm.CanSend);
+    }
+
+    /// <summary>The record listing runs off the skill change, so asserting the picked skill without asserting
+    /// its records would pass on a dialog that selected one skill and listed another's records.</summary>
+    [Fact]
+    public async Task InitializeAsync_WithASkillName_SelectsThatSkill()
+    {
+        var vm = Create();
+        OfferPerType();
+
+        await vm.InitializeAsync(TwoSkills(), prefillSkillName: "second", ct: Ct);
+
+        Assert.Equal("second", vm.SelectedSkill?.Name);
+        Assert.True(vm.PendingRecordLoad.IsCompleted);
+        Assert.Equal(new[] { "A todo" }, vm.Records.Select(r => r.Title));
+    }
+
+    [Fact]
+    public async Task InitializeAsync_WithAnUnknownSkillName_FallsBackToTheFirst()
+    {
+        var vm = Create();
+        OfferPerType();
+
+        await vm.InitializeAsync(TwoSkills(), prefillSkillName: "no-such-skill", ct: Ct);
+
+        Assert.Equal("first", vm.SelectedSkill?.Name);
+        Assert.True(vm.PendingRecordLoad.IsCompleted);
+        Assert.Equal(new[] { "A memory" }, vm.Records.Select(r => r.Title));
+    }
+
+    private static AssignmentSurface TwoSkills() => Surface(
+        new AssignmentSkill("first", "First", "brief", [AssignmentInputEntityTypes.Memory]),
+        new AssignmentSkill("second", "Second", "brief", [AssignmentInputEntityTypes.Todo]));
+
+    private void OfferPerType()
+    {
+        IReadOnlyList<AssignmentScopeItem> memories = [Item(10, "A memory")];
+        IReadOnlyList<AssignmentScopeItem> todos =
+            [new AssignmentScopeItem(AssignmentInputEntityTypes.Todo, Guid.NewGuid(), "A todo", 10, DateTime.UtcNow)];
+
+        _scope.ListAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.ArgAt<IReadOnlyList<string>>(0)[0] == AssignmentInputEntityTypes.Memory
+                ? memories
+                : todos);
     }
 }

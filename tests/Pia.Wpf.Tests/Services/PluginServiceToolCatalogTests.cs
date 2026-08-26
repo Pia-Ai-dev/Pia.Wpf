@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Infrastructure;
 using Pia.Services.Interfaces;
+using Pia.Services.Operators;
 using Pia.Services.Plugins;
 using Pia.Shared.Models;
 using Xunit;
@@ -52,6 +53,8 @@ public sealed class PluginServiceToolCatalogTests : IDisposable
             Substitute.For<IIngestToolHandler>(),
             Substitute.For<IGitToolHandler>(),
             Substitute.For<IChatHistoryToolHandler>(),
+            Substitute.For<IAssignmentToolHandler>(),
+            Substitute.For<IAssignmentSurfaceCache>(),
             Substitute.For<ISettingsService>(),
             NullLogger<PluginService>.Instance,
             _sqlite);

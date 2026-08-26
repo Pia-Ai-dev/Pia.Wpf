@@ -4,6 +4,7 @@ using Pia.Helpers;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.Operators;
 using Pia.Shared.Models;
 
 namespace Pia.Services;
@@ -63,6 +64,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     private bool _tokenizationEnabled;
     private Guid _chatId;
     private Guid _runId;
+    private string _grantedBy = string.Empty;
 
     // Captured at BeginRunAsync so the interim (per-step) and the terminal chat write build the SAME
     // row from one place — an interim save must never drop a column the terminal save preserves.
@@ -252,6 +254,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // bracket here would leave the exchange with no ambient. Setting it around each exchange keeps the
         // run-stable TaskId live where it is read (§16 R9).
         _runId = run.Id;
+        _grantedBy = AssignmentGranter.ForUnattendedRun(run.TriggerKind, run.TriggerRef, run.Id);
         // Read directly from the row, unlike _canPark (seeded by the launcher) — this is a structural fact,
         // not a grant.
         _canAskUser = AgentStepTools.CanRequestUserInput(run.ParentRunId);
@@ -487,7 +490,8 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         var previousTask = TaskAmbient.Current;
         if (_tokenizationEnabled)
             TokenMapAmbient.Current = _tokenMap;
-        TaskAmbient.Current = new TaskContext(_runId, WorkingSubpath: null, OnFileTouched: null, WorkspaceRoot: _workspaceRoot, ChatId: _chatId);
+        TaskAmbient.Current = new TaskContext(_runId, WorkingSubpath: null, OnFileTouched: null, WorkspaceRoot: _workspaceRoot, ChatId: _chatId,
+            UnattendedGranter: _grantedBy);
 
         BackgroundAssistantTurnRunner.ExchangeResult exchange;
         try

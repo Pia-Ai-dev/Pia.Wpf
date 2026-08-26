@@ -53,8 +53,10 @@ public class AssignmentRunOrchestratorTests : IDisposable
     private static AssignmentScopeItem Item(string entityType = AssignmentInputEntityTypes.Memory, int chars = 12) =>
         new(entityType, Guid.NewGuid(), "a title", chars, DateTime.UtcNow);
 
+    private const string Prompt = "what did we decide?";
+
     private static AssignmentRequest Request(params AssignmentScopeItem[] items) =>
-        new("research", "what did we decide?", items);
+        new("research", Prompt, items);
 
     /// <summary>
     /// The whole point of the receipt being a required argument. A caller with no consent record — a headless
@@ -82,7 +84,8 @@ public class AssignmentRunOrchestratorTests : IDisposable
     public async Task StartAsync_WithAReceiptForADifferentSelection_IsRefused()
     {
         var consented = Item();
-        var receipt = await _consent.RecordAsync("research", "Research", [consented], Ct);
+        var receipt = await _consent.RecordAsync(
+            "research", "Research", [consented], AssignmentGranter.User, Prompt.Length, Ct);
         var request = Request(consented, Item());
 
         var outcome = await CreateSut().StartAsync(request, receipt, Ct);
@@ -96,7 +99,8 @@ public class AssignmentRunOrchestratorTests : IDisposable
     public async Task StartAsync_ReadsTheRecordsOnlyAfterTheConsentRecordIsOnDisk()
     {
         var item = Item();
-        var receipt = await _consent.RecordAsync("research", "Research", [item], Ct);
+        var receipt = await _consent.RecordAsync(
+            "research", "Research", [item], AssignmentGranter.User, Prompt.Length, Ct);
         var logPath = Path.Combine(_consentDirectory, "assignments.jsonl");
 
         // The record is durable BEFORE anything is read: RecordAsync awaited the write, so the evidence
@@ -118,7 +122,8 @@ public class AssignmentRunOrchestratorTests : IDisposable
         var item = new AssignmentScopeItem(
             AssignmentInputEntityTypes.Memory, Guid.NewGuid(), "Quarterly revenue plan", 40, DateTime.UtcNow);
 
-        await _consent.RecordAsync("research", "Research", [item], Ct);
+        await _consent.RecordAsync(
+            "research", "Research", [item], AssignmentGranter.User, Prompt.Length, Ct);
 
         var written = await File.ReadAllTextAsync(Path.Combine(_consentDirectory, "assignments.jsonl"), Ct);
         Assert.DoesNotContain("Quarterly revenue plan", written, StringComparison.Ordinal);
@@ -132,7 +137,8 @@ public class AssignmentRunOrchestratorTests : IDisposable
     public async Task StartAsync_OverThePerItemCap_RefusesWithoutReadingOrSending()
     {
         var huge = Item(chars: AssignmentInput.MaxItemChars + 1);
-        var receipt = await _consent.RecordAsync("research", "Research", [huge], Ct);
+        var receipt = await _consent.RecordAsync(
+            "research", "Research", [huge], AssignmentGranter.User, Prompt.Length, Ct);
 
         var outcome = await CreateSut().StartAsync(Request(huge), receipt, Ct);
 
@@ -144,7 +150,8 @@ public class AssignmentRunOrchestratorTests : IDisposable
     public async Task StartAsync_OverTheTotalCap_RefusesWithoutReadingOrSending()
     {
         var items = Enumerable.Range(0, 5).Select(_ => Item(chars: 7_000)).ToArray();
-        var receipt = await _consent.RecordAsync("research", "Research", items, Ct);
+        var receipt = await _consent.RecordAsync(
+            "research", "Research", items, AssignmentGranter.User, Prompt.Length, Ct);
 
         var outcome = await CreateSut().StartAsync(Request(items), receipt, Ct);
 
@@ -156,7 +163,8 @@ public class AssignmentRunOrchestratorTests : IDisposable
     public async Task StartAsync_RemembersTheRun_SoARestartCanStillCollectIt()
     {
         var item = Item();
-        var receipt = await _consent.RecordAsync("research", "Research", [item], Ct);
+        var receipt = await _consent.RecordAsync(
+            "research", "Research", [item], AssignmentGranter.User, Prompt.Length, Ct);
 
         var outcome = await CreateSut().StartAsync(Request(item), receipt, Ct);
 

@@ -33,7 +33,7 @@ public class NamingConventionTests
             "Calculator", "Resolver", "Surface", "Buffer", "Builder", "Composer", "Store", "Runner",
             "Indexer", "Watcher", "Renderer", "Clusterer", "Extractor", "Collector",
             "Planner", "Orchestrator", "Coordinator", "Verifier", "Launcher", "Executor", "Context",
-            "Provisioner", "Session", "Resampler", "Reconciler", "Pool", "Throttle",
+            "Provisioner", "Session", "Resampler", "Reconciler", "Pool", "Throttle", "Cache",
         };
 
         var serviceTypes = Types.InAssembly(PiaAssembly)

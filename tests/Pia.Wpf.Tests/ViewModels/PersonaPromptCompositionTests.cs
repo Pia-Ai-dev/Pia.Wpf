@@ -126,6 +126,30 @@ public class PersonaPromptCompositionTests
     }
 
     [Fact]
+    public void GetAtCommandToolMapping_Assignment_ScopesToAllThreeAssignmentTools()
+    {
+        // Dropping start_assignment here would make @Assignment the one surface where the model cannot
+        // propose a run, because the mapping is also what scopes the turn's tool set.
+        var (categoryLabel, queryTool, toolNames) =
+            AssistantPromptComposer.GetAtCommandToolMapping(AtCommandDomain.Assignment);
+
+        Assert.Equal("background assignment", categoryLabel);
+        Assert.Equal("query_assignments", queryTool);
+        Assert.Equal(["query_assignments", "get_assignment", "start_assignment"], toolNames);
+    }
+
+    [Fact]
+    public void GetAtCommandToolMapping_Routine_KeepsTheScheduledJobTools()
+    {
+        var (_, queryTool, toolNames) =
+            AssistantPromptComposer.GetAtCommandToolMapping(AtCommandDomain.Routine);
+
+        Assert.Equal("query_scheduled_research", queryTool);
+        Assert.Contains("create_scheduled_research", toolNames);
+        Assert.Contains("list_routine_blueprints", toolNames);
+    }
+
+    [Fact]
     public void GetAtCommandToolMapping_Files_MapsToFileTools()
     {
         var (_, _, toolNames) = AssistantPromptComposer.GetAtCommandToolMapping(AtCommandDomain.Files);

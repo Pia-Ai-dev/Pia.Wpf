@@ -787,7 +787,7 @@
   <data name="ToolCatalog_Always" xml:space="preserve"><value>Always</value></data>
   <data name="ToolCatalog_Caution_Destructive" xml:space="preserve"><value>Worth knowing: this tool destroys data, and an approval here covers later calls whose arguments you never see. Leave it unticked to be asked each time.</value></data>
   <data name="ToolCatalog_Caution_WorkDiscarding" xml:space="preserve"><value>Worth knowing: this tool can throw away uncommitted work, and an approval here covers later calls whose arguments you never see.</value></data>
-  <data name="ToolCatalog_Caution_AuthorityAuthoring" xml:space="preserve"><value>Worth knowing: this tool grants permissions that later, unattended runs will use — approving it once lets Pia widen what it may do later.</value></data>
+  <data name="ToolCatalog_Caution_AuthorityAuthoring" xml:space="preserve"><value>Worth knowing: this tool sets up work that later runs unattended — approving it once lets Pia widen what it may do without asking again.</value></data>
   <data name="ToolCatalog_Caution_Routine_Destructive" xml:space="preserve"><value>Worth knowing: this tool destroys data, and a routine runs with nobody watching. Left unticked, a run that reaches for it is refused rather than paused for you.</value></data>
   <data name="ToolCatalog_Caution_Routine_WorkDiscarding" xml:space="preserve"><value>Worth knowing: this tool can throw away uncommitted work, and a routine runs with nobody watching.</value></data>
   <data name="ToolCatalog_Caution_Routine_AuthorityAuthoring" xml:space="preserve"><value>Worth knowing: this tool grants permissions later runs will use, so allowing it lets this routine widen what Pia may do.</value></data>
@@ -809,6 +809,7 @@
   <data name="ActionCard_Category_Git" xml:space="preserve"><value>Git</value></data>
   <data name="ActionCard_Category_Mcp" xml:space="preserve"><value>External tool</value></data>
   <data name="ActionCard_Category_Scheduled" xml:space="preserve"><value>Scheduled job</value></data>
+  <data name="ActionCard_Category_Assignment" xml:space="preserve"><value>Background assignment</value></data>
   <data name="ActionCard_Action_Initialize" xml:space="preserve"><value>Initialize</value></data>
   <data name="ActionCard_Action_Stage" xml:space="preserve"><value>Stage</value></data>
   <data name="ActionCard_Action_Commit" xml:space="preserve"><value>Commit</value></data>

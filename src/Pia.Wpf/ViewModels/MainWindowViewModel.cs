@@ -21,7 +21,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
     private readonly Services.Interfaces.IProviderService _providerService;
     private readonly Services.Interfaces.IAuthService _authService;
     private readonly Services.Interfaces.ISyncClientService _syncClientService;
-    private readonly Services.Operators.IAssignmentApiClient _assignmentApiClient;
+    private readonly Services.Operators.IAssignmentSurfaceCache _assignmentSurfaceCache;
     private readonly Services.Interfaces.IPolicyService _policyService;
     private readonly Services.Interfaces.ITourTargetCollector _tourTargetCollector;
     private readonly Services.Interfaces.IClipboardService _clipboardService;
@@ -101,7 +101,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         Pia.Services.Interfaces.IProviderService providerService,
         Pia.Services.Interfaces.IAuthService authService,
         Pia.Services.Interfaces.ISyncClientService syncClientService,
-        Pia.Services.Operators.IAssignmentApiClient assignmentApiClient,
+        Pia.Services.Operators.IAssignmentSurfaceCache assignmentSurfaceCache,
         Pia.Services.Interfaces.IPolicyService policyService,
         Pia.Services.Interfaces.ITourTargetCollector tourTargetCollector,
         Pia.Services.Interfaces.IClipboardService clipboardService)
@@ -116,7 +116,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         _providerService = providerService;
         _authService = authService;
         _syncClientService = syncClientService;
-        _assignmentApiClient = assignmentApiClient;
+        _assignmentSurfaceCache = assignmentSurfaceCache;
         _policyService = policyService;
         _tourTargetCollector = tourTargetCollector;
         _clipboardService = clipboardService;
@@ -190,15 +190,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
 
     private async Task RefreshAssignmentSurfaceAsync()
     {
-        try
-        {
-            _assignmentSurfaceAvailable = (await _assignmentApiClient.GetSurfaceAsync()).Available;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogInformation(ex, "Could not read the background-assignment surface; keeping it hidden");
-            _assignmentSurfaceAvailable = false;
-        }
+        _assignmentSurfaceAvailable = (await _assignmentSurfaceCache.RefreshAsync()).Available;
 
         await PostAsync(RefreshAssignmentsNavVisible);
     }

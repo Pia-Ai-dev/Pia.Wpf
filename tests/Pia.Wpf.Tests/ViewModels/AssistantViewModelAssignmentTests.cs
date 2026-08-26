@@ -104,7 +104,8 @@ public class AssistantViewModelAssignmentTests
             _dialog,
             new InlineUiDispatcher(),
             Substitute.For<IToolPermissionService>(),
-            assignmentApiClient: _assignments,
+            assignmentSurfaceCache: new AssignmentSurfaceCache(
+                _assignments, TimeProvider.System, NullLogger<AssignmentSurfaceCache>.Instance),
             assignmentConsentFactory: () => _consent);
     }
 

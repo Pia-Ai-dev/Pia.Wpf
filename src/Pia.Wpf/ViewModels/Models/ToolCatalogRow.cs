@@ -13,7 +13,7 @@ namespace Pia.ViewModels.Models;
 /// <remarks>
 /// All three are about what a MULTI-CALL grant can consent to: the card that collects one shows the arguments
 /// of ONE call, and every later call's arguments are invisible. Hence a note for any destructive tool, for the
-/// git trio that sheds uncommitted work, and for the tools whose ARGUMENTS ARE THEMSELVES A GRANT LIST.
+/// git trio that sheds uncommitted work, and for the tools that SET UP LATER UNATTENDED WORK.
 /// </remarks>
 public enum ToolGrantCaution
 {

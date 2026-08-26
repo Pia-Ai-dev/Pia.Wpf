@@ -5,6 +5,7 @@ using Pia.Helpers;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.Operators;
 using Pia.Shared.Models;
 
 namespace Pia.Services;
@@ -149,7 +150,9 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             // The file tools key per-run state against this id; without it headless writes all shared
             // Guid.Empty. The run's id when bookkeeping created one, else the chat's.
             var previousTask = TaskAmbient.Current;
-            TaskAmbient.Current = new TaskContext(run?.Id ?? chatId, WorkingSubpath: null, OnFileTouched: null, ChatId: chatId);
+            TaskAmbient.Current = new TaskContext(run?.Id ?? chatId, WorkingSubpath: null, OnFileTouched: null, ChatId: chatId,
+                UnattendedGranter: AssignmentGranter.ForUnattendedRun(
+                    request.Trigger, request.TriggerRef, run?.Id ?? chatId));
 
             // Accrue per-round usage into the run ledger; best-effort, never fails the turn.
             Func<UsageDetails, Task>? onUsage = null;

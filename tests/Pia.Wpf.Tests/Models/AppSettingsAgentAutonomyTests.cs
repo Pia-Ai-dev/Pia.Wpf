@@ -59,6 +59,9 @@ public class AppSettingsAgentAutonomyTests
         Assert.False(policy.Covers(ToolClass.External));
         Assert.False(policy.Covers(ToolClass.Unknown));
         Assert.False(policy.Covers(ToolClass.Ingest));
+        // A preset must not blanket-approve starting a background assignment: that is the one write that
+        // sends decrypted records off the device, and only a named grant may authorize it unattended.
+        Assert.False(policy.Covers(ToolClass.Assignment));
         Assert.Equal(5, policy.AutoApproveClasses.Count);
     }
 }

@@ -42,6 +42,7 @@ public static class ToolClassifier
         "git" => ToolClass.Git,
         "scheduled-research" => ToolClass.Scheduling,
         "ingest" => ToolClass.Ingest,
+        "assignments" => ToolClass.Assignment,
         _ => ToolClass.Unknown,
     };
 }

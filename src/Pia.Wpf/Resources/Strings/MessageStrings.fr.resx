@@ -91,9 +91,11 @@
   <data name="Msg_Assistant_StatusDeletingReminder" xml:space="preserve"><value>Suppression du rappel...</value></data>
   <data name="Msg_Assistant_StatusDeletingTodo" xml:space="preserve"><value>Suppression de la tâche...</value></data>
   <data name="Msg_Assistant_StatusProcessing" xml:space="preserve"><value>Traitement...</value></data>
+  <data name="Msg_Assistant_StatusCheckingAssignments" xml:space="preserve"><value>Vérification des tâches en arrière-plan...</value></data>
   <data name="Msg_Assistant_StatusReadingChat" xml:space="preserve"><value>Lecture d'une conversation passée...</value></data>
   <data name="Msg_Assistant_StatusSearchingChats" xml:space="preserve"><value>Recherche dans les conversations passées...</value></data>
   <data name="Msg_Assistant_StatusSearchingMemory" xml:space="preserve"><value>Recherche dans la mémoire...</value></data>
+  <data name="Msg_Assistant_StatusStartingAssignment" xml:space="preserve"><value>Démarrage d'une tâche en arrière-plan...</value></data>
   <data name="Msg_Assistant_StatusThinking" xml:space="preserve"><value>Réflexion...</value></data>
   <data name="Msg_Assistant_StatusUpdatingMemory" xml:space="preserve"><value>Mise à jour de la mémoire...</value></data>
   <data name="Msg_Assistant_StatusUpdatingReminder" xml:space="preserve"><value>Mise à jour du rappel...</value></data>
@@ -360,6 +362,10 @@ Les modifications seront appliquées.</value></data>
   <data name="Tool_ScheduledResearch_Desc_Create" xml:space="preserve"><value>Planifier une recherche : {0} ({1})</value></data>
   <data name="Tool_ScheduledResearch_Desc_Update" xml:space="preserve"><value>Mettre à jour la recherche planifiée '{0}'</value></data>
   <data name="Tool_ScheduledResearch_Desc_Delete" xml:space="preserve"><value>Supprimer la recherche planifiée '{0}'</value></data>
+  <data name="Tool_Assignment_Desc_Start" xml:space="preserve"><value>Démarrer une tâche en arrière-plan : {0}</value></data>
+  <data name="Tool_Assignment_Detail_PromptLength" xml:space="preserve"><value>Instruction : {0} caractères</value></data>
+  <data name="Tool_Assignment_Detail_Skill" xml:space="preserve"><value>Compétence</value></data>
+  <data name="Tool_Assignment_Skill_Unset" xml:space="preserve"><value>non choisie — l’utilisateur décide</value></data>
   <data name="Tool_ScheduledResearch_Detail_Name" xml:space="preserve"><value>Nom</value></data>
   <data name="Tool_ScheduledResearch_Detail_Query" xml:space="preserve"><value>Requête</value></data>
   <data name="Tool_ScheduledResearch_Detail_Kind" xml:space="preserve"><value>Type</value></data>

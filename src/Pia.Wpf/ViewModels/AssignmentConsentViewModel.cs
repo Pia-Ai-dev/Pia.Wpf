@@ -107,7 +107,10 @@ public sealed partial class AssignmentConsentViewModel : ObservableObject
         && SelectedChars <= AssignmentInput.MaxTotalItemChars;
 
     public async Task InitializeAsync(
-        AssignmentSurface surface, string? prefillPrompt = null, CancellationToken ct = default)
+        AssignmentSurface surface,
+        string? prefillPrompt = null,
+        string? prefillSkillName = null,
+        CancellationToken ct = default)
     {
         Skills.Clear();
         foreach (var skill in surface.Skills) Skills.Add(skill);
@@ -120,7 +123,8 @@ public sealed partial class AssignmentConsentViewModel : ObservableObject
                 : prefillPrompt[..AssignmentInput.MaxPromptChars];
         }
 
-        SelectedSkill = Skills.FirstOrDefault();
+        // Assign before awaiting: the record listing is started by the skill change, not by this method.
+        SelectedSkill = FindSkill(prefillSkillName) ?? Skills.FirstOrDefault();
         await PendingRecordLoad.WaitAsync(ct);
     }
 
@@ -136,13 +140,15 @@ public sealed partial class AssignmentConsentViewModel : ObservableObject
 
         var skill = SelectedSkill!;
         var items = Records.Where(r => r.IsSelected).Select(r => r.Item).ToList();
+        var prompt = Prompt.Trim();
         HasSent = true;
 
         try
         {
-            var receipt = await _consent.RecordAsync(skill.Name, skill.Mode, items, ct);
+            var receipt = await _consent.RecordAsync(
+                skill.Name, skill.Mode, items, AssignmentGranter.User, prompt.Length, ct);
             var outcome = await _orchestrator.StartAsync(
-                new AssignmentRequest(skill.Name, Prompt.Trim(), items), receipt, ct);
+                new AssignmentRequest(skill.Name, prompt, items), receipt, ct);
 
             ResultMessage = _localization[StartResultKey(outcome.Status)];
             _logger.LogInformation(
@@ -157,6 +163,10 @@ public sealed partial class AssignmentConsentViewModel : ObservableObject
             return AssignmentStartStatus.Refused;
         }
     }
+
+    private AssignmentSkill? FindSkill(string? name) => string.IsNullOrWhiteSpace(name)
+        ? null
+        : Skills.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.Ordinal));
 
     internal static string StartResultKey(AssignmentStartStatus status) => status switch
     {

@@ -821,7 +821,7 @@
   <data name="ToolCatalog_Always" xml:space="preserve"><value>Immer</value></data>
   <data name="ToolCatalog_Caution_Destructive" xml:space="preserve"><value>Gut zu wissen: Dieses Tool zerstört Daten, und eine Erlaubnis hier deckt auch spätere Aufrufe ab, deren Argumente Sie nie zu sehen bekommen. Lassen Sie sie leer, um jedes Mal gefragt zu werden.</value></data>
   <data name="ToolCatalog_Caution_WorkDiscarding" xml:space="preserve"><value>Gut zu wissen: Dieses Tool kann nicht committete Arbeit verwerfen, und eine Erlaubnis hier deckt auch spätere Aufrufe ab, deren Argumente Sie nie zu sehen bekommen.</value></data>
-  <data name="ToolCatalog_Caution_AuthorityAuthoring" xml:space="preserve"><value>Gut zu wissen: Dieses Tool erteilt Berechtigungen, die spätere unbeaufsichtigte Ausführungen nutzen werden — eine Erlaubnis hier lässt Pia ihren eigenen Handlungsrahmen erweitern.</value></data>
+  <data name="ToolCatalog_Caution_AuthorityAuthoring" xml:space="preserve"><value>Gut zu wissen: Dieses Tool richtet Arbeit ein, die später unbeaufsichtigt läuft — eine Erlaubnis hier lässt Pia ihren eigenen Handlungsrahmen erweitern, ohne erneut zu fragen.</value></data>
   <data name="ToolCatalog_Caution_Routine_Destructive" xml:space="preserve"><value>Gut zu wissen: Dieses Tool zerstört Daten, und eine Routine läuft ohne Aufsicht. Nicht angehakt wird ein Lauf, der danach greift, abgelehnt statt für Sie angehalten.</value></data>
   <data name="ToolCatalog_Caution_Routine_WorkDiscarding" xml:space="preserve"><value>Gut zu wissen: Dieses Tool kann nicht committete Arbeit verwerfen, und eine Routine läuft ohne Aufsicht.</value></data>
   <data name="ToolCatalog_Caution_Routine_AuthorityAuthoring" xml:space="preserve"><value>Gut zu wissen: Dieses Tool erteilt Berechtigungen, die spätere Läufe nutzen — es zu erlauben lässt diese Routine Pias Handlungsrahmen erweitern.</value></data>
@@ -843,6 +843,7 @@
   <data name="ActionCard_Category_Git" xml:space="preserve"><value>Git</value></data>
   <data name="ActionCard_Category_Mcp" xml:space="preserve"><value>Externes Tool</value></data>
   <data name="ActionCard_Category_Scheduled" xml:space="preserve"><value>Geplanter Auftrag</value></data>
+  <data name="ActionCard_Category_Assignment" xml:space="preserve"><value>Hintergrundauftrag</value></data>
   <data name="ActionCard_Action_Initialize" xml:space="preserve"><value>Initialisieren</value></data>
   <data name="ActionCard_Action_Stage" xml:space="preserve"><value>Bereitstellen</value></data>
   <data name="ActionCard_Action_Commit" xml:space="preserve"><value>Committen</value></data>

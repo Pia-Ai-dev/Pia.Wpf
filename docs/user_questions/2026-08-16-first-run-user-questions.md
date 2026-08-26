@@ -143,9 +143,11 @@ Optimize mode (Ctrl+Alt+O) rewrites selected text with a template.
 ### Using `@` to point Pia at something
 
 Typing `@` in the composer is meant to open a picker that tags a specific item into the turn. Per
-`AutocompleteService.cs` the domains are `@Memory`, `@Todo`, `@Reminder` and `@Research` (which
-resolves to scheduled jobs), plus `@Files` — the last only when a sandbox folder is configured,
-because tagging `@Files` restricts the turn to the file tools.
+`AutocompleteService.cs` the domains are `@Memory`, `@Todo`, `@Reminder` and `@Routine` (which
+resolves to scheduled jobs, and still accepts the older `@Research` spelling without offering it),
+plus `@Files` and `@Assignment` — those two only when a sandbox folder is configured, or when the
+Pia server offers background assignments, because tagging either restricts the turn to that
+domain's tools.
 
 **Unverified:** the picker did not render during this walkthrough under either synthetic text entry
 or real keystrokes, so the list above is from the source, not from the screen. Worth a manual check

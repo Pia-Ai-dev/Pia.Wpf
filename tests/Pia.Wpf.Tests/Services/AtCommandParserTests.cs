@@ -179,28 +179,73 @@ public class AtCommandParserTests
     }
 
     [Fact]
-    public void ExtractAllCommands_ResearchDomain_ReturnsOne()
+    public void ExtractAllCommands_RoutineDomain_ReturnsOne()
     {
-        var commands = AtCommandParser.ExtractAllCommands("@research check status");
+        var commands = AtCommandParser.ExtractAllCommands("@routine check status");
         Assert.Single(commands);
-        Assert.Equal(AtCommandDomain.Research, commands[0].Domain);
+        Assert.Equal(AtCommandDomain.Routine, commands[0].Domain);
         Assert.Null(commands[0].ItemTitle);
     }
 
     [Fact]
-    public void ParseTriggerFragment_ResearchExactDomain_ReturnsDomainNoFilter()
+    public void ParseTriggerFragment_RoutineExactDomain_ReturnsDomainNoFilter()
     {
-        var (domain, filter) = AtCommandParser.ParseTriggerFragment("Research");
-        Assert.Equal(AtCommandDomain.Research, domain);
+        var (domain, filter) = AtCommandParser.ParseTriggerFragment("Routine");
+        Assert.Equal(AtCommandDomain.Routine, domain);
         Assert.Null(filter);
     }
 
     [Fact]
-    public void ParseTriggerFragment_ResearchPartial_ReturnsTier1Filter()
+    public void ParseTriggerFragment_RoutinePartial_ReturnsTier1Filter()
     {
-        var (domain, filter) = AtCommandParser.ParseTriggerFragment("Res");
+        var (domain, filter) = AtCommandParser.ParseTriggerFragment("Rou");
         Assert.Null(domain);
-        Assert.Equal("Res", filter);
+        Assert.Equal("Rou", filter);
+    }
+
+    [Fact]
+    public void ExtractAllCommands_ResearchAlias_StillParsesAsRoutine()
+    {
+        var commands = AtCommandParser.ExtractAllCommands("@Research check the news");
+        Assert.Single(commands);
+        Assert.Equal(AtCommandDomain.Routine, commands[0].Domain);
+    }
+
+    [Fact]
+    public void ParseTriggerFragment_ResearchAlias_ResolvesToRoutine()
+    {
+        var (domain, filter) = AtCommandParser.ParseTriggerFragment("Research");
+        Assert.Equal(AtCommandDomain.Routine, domain);
+        Assert.Null(filter);
+    }
+
+    [Fact]
+    public void GetKeyword_Routine_IsTheCanonicalSpelling_NotTheAlias()
+    {
+        Assert.Equal("Routine", AtCommandParser.GetKeyword(AtCommandDomain.Routine));
+    }
+
+    [Fact]
+    public void ExtractAllCommands_AssignmentDomain_ReturnsOne()
+    {
+        var commands = AtCommandParser.ExtractAllCommands("@Assignment how is it going");
+        Assert.Single(commands);
+        Assert.Equal(AtCommandDomain.Assignment, commands[0].Domain);
+        Assert.Null(commands[0].ItemTitle);
+    }
+
+    [Fact]
+    public void ExtractAllCommands_AssignmentWithASuggestionLabel_KeepsTheWholeLabel()
+    {
+        // What the popup inserts is the tier-2 DisplayText, run through FormatItemTitle. A label whose
+        // separator broke the regex's quoted branch would silently truncate at the first space.
+        var label = AtCommandParser.FormatItemTitle("weekly-digest — Running");
+
+        var commands = AtCommandParser.ExtractAllCommands($"@Assignment:{label} summarise it");
+
+        Assert.Single(commands);
+        Assert.Equal(AtCommandDomain.Assignment, commands[0].Domain);
+        Assert.Equal("weekly-digest — Running", commands[0].ItemTitle);
     }
 
     // --- GetKeyword: enforces that every enum value has a registered keyword ---

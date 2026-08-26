@@ -848,6 +848,10 @@ public static class Bootstrapper
         services.AddSingleton<Services.Operators.IAssignmentApiClient, Services.Operators.AssignmentApiClient>();
         services.AddSingleton<Services.Operators.IAssignmentScopeResolver, Services.Operators.AssignmentScopeResolver>();
         services.AddSingleton<Services.Operators.IAssignmentPendingStore, Services.Operators.AssignmentPendingStore>();
+        // One shared surface read: a tool handler asks for it inside PluginService's constructor, where an
+        // awaited HTTP probe would block launch.
+        services.AddSingleton<Services.Operators.IAssignmentSurfaceCache, Services.Operators.AssignmentSurfaceCache>();
+        services.AddSingleton<IAssignmentToolHandler, AssignmentToolHandler>();
         // The concrete type is registered too, so the notification surface can subscribe to the SAME
         // instance's Completed event that the drain worker drives.
         services.AddSingleton<Services.Operators.AssignmentRunOrchestrator>();
@@ -860,6 +864,12 @@ public static class Bootstrapper
         services.AddTransient<AssignmentConsentViewModel>();
         services.AddSingleton<Func<AssignmentConsentViewModel>>(sp =>
             sp.GetRequiredService<AssignmentConsentViewModel>);
+        // Finds its own dialog host instead of taking the per-window IDialogService: the tool handler that
+        // reaches it is a singleton, outside any window scope.
+        services.AddSingleton<IAssignmentConsentPrompt, Views.Dialogs.AssignmentConsentPrompt>();
+        // Both surfaces are registered; which one a start goes to is decided in one place, by the granter
+        // AssignmentToolHandler reads off the turn's ambient context.
+        services.AddSingleton<IHeadlessAssignmentLauncher, HeadlessAssignmentLauncher>();
 
         // Auto-update
         services.AddSingleton<IUpdateService, UpdateService>();

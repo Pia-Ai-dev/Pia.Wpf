@@ -42,6 +42,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             ToolClass.Files => ActionCardCategory.Files,
             ToolClass.Git => ActionCardCategory.Git,
             ToolClass.Scheduling => ActionCardCategory.Scheduled,
+            ToolClass.Assignment => ActionCardCategory.Assignment,
             // External, Unknown (a plugin name this build does not recognise, e.g. a renamed built-in) and
             // Ingest (which returns no pending action, so it never reaches a card) all render as the generic
             // external-tool card — today's shape for anything the builder cannot name.
@@ -168,6 +169,8 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         "delete_todo" => _localizationService["Msg_Assistant_StatusDeletingTodo"],
         "search_chats" => _localizationService["Msg_Assistant_StatusSearchingChats"],
         "read_chat" => _localizationService["Msg_Assistant_StatusReadingChat"],
+        "query_assignments" or "get_assignment" => _localizationService["Msg_Assistant_StatusCheckingAssignments"],
+        "start_assignment" => _localizationService["Msg_Assistant_StatusStartingAssignment"],
         var t when t.StartsWith("git_", StringComparison.Ordinal) => _localizationService["Msg_Assistant_StatusRunningGit"],
         _ => _localizationService["Msg_Assistant_StatusProcessing"]
     };
@@ -196,6 +199,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             ActionCardCategory.Files => "ActionCard_Category_File",
             ActionCardCategory.Git => "ActionCard_Category_Git",
             ActionCardCategory.Scheduled => "ActionCard_Category_Scheduled",
+            ActionCardCategory.Assignment => "ActionCard_Category_Assignment",
             _ => "ActionCard_Category_Memory"
         };
 

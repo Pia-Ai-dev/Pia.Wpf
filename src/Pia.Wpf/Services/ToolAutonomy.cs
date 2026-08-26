@@ -71,6 +71,12 @@ public static class ToolAutonomy
         if (input.HasNamedDenial)
             return new ToolGateVerdict(ToolGateOutcome.Refuse, ToolGateDecision.DeniedForRun);
 
+        // VOICE NEVER STARTS AN ASSIGNMENT. Confirming one opens a modal dialog a speaker can neither see nor
+        // dismiss, so the round would hang on it. Its own arm above every auto-approval rather than a clause on
+        // one of them: no tier can make that dialog visible, so none of them may authorize it.
+        if (input.Surface == ToolGateSurface.Voice && input.ToolClass == ToolClass.Assignment)
+            return new ToolGateVerdict(ToolGateOutcome.Refuse, ToolGateDecision.DeniedNotGranted);
+
         // POLICY — the autonomy SWITCH, not a grant: additive over classes, and never over a delete-like name.
         // ToolClass.Files holds both write_file and delete_file, so without the exclusion a "let the agent
         // write files" preset would hand an unattended run card-free delete_file. A NAMED grant for a delete

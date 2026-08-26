@@ -864,4 +864,72 @@ public class BackgroundAssistantTurnRunnerTests
         Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, row.Decision);
         Assert.Equal(AgentTimelineOutcome.Ok, row.Outcome);
     }
+
+    /// <summary>The assignment class is deliberately outside the autonomy presets, so a background run that was
+    /// never granted start_assignment cannot reach the mint — the grant list is the whole gate.</summary>
+    [Fact]
+    public async Task AnUngrantedAssignmentStart_NeverReachesExecute()
+    {
+        var h = new Harness();
+        var executed = false;
+        h.Plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(((object?)null, Pending("start_assignment", "assignments", () => executed = true)));
+
+        var runner = h.Build([Call("start_assignment")]);
+        await runner.RunAsync(
+            new BackgroundTurnRequest { Prompt = "go", Provider = Provider() }, CancellationToken.None);
+
+        Assert.False(executed);
+        Assert.Contains("Denied", Assert.IsType<string>(h.HandlerResults[0].Returned));
+    }
+
+    /// <summary>What a tool reads to learn nobody can be asked. A routine names the job that fired it, so the
+    /// consent audit line points at the thing the user can go and switch off.</summary>
+    [Fact]
+    public async Task AScheduledTurn_NamesItsRoutineInTheAmbient()
+    {
+        var jobId = Guid.NewGuid();
+        var h = new Harness();
+        string? granter = null;
+        h.Plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                granter = TaskAmbient.Current?.UnattendedGranter;
+                return ((object?)"read-result", (PluginToolCall?)null);
+            });
+
+        var runner = h.Build([Call("query_assignments")]);
+        await runner.RunAsync(
+            new BackgroundTurnRequest
+            {
+                Prompt = "go",
+                Provider = Provider(),
+                Trigger = AgentRunTrigger.Schedule,
+                TriggerRef = jobId,
+            },
+            CancellationToken.None);
+
+        Assert.Equal($"routine:{jobId}", granter);
+    }
+
+    [Fact]
+    public async Task AnUnscheduledBackgroundTurn_NamesItsRunInTheAmbient()
+    {
+        var h = new Harness();
+        string? granter = null;
+        h.Plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                granter = TaskAmbient.Current?.UnattendedGranter;
+                return ((object?)"read-result", (PluginToolCall?)null);
+            });
+
+        var runner = h.Build([Call("query_assignments")]);
+        await runner.RunAsync(
+            new BackgroundTurnRequest { Prompt = "go", Provider = Provider() }, CancellationToken.None);
+
+        Assert.NotNull(granter);
+        Assert.StartsWith("background:", granter, StringComparison.Ordinal);
+        Assert.True(Guid.TryParse(granter!["background:".Length..], out _));
+    }
 }

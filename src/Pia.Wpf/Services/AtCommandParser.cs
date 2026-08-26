@@ -18,12 +18,22 @@ public static partial class AtCommandParser
         (AtCommandDomain.Memory, "Memory"),
         (AtCommandDomain.Todo, "Todo"),
         (AtCommandDomain.Reminder, "Reminder"),
-        (AtCommandDomain.Research, "Research"),
-        (AtCommandDomain.Files, "Files")
+        (AtCommandDomain.Routine, "Routine"),
+        (AtCommandDomain.Files, "Files"),
+        (AtCommandDomain.Assignment, "Assignment")
+    ];
+
+    /// <summary>
+    /// Keywords that still parse but are never offered. They cannot live in <see cref="Domains"/>:
+    /// <see cref="KeywordMap"/> keys on the domain, so a second row for one throws at type load.
+    /// </summary>
+    private static readonly (AtCommandDomain Domain, string Keyword)[] Aliases =
+    [
+        (AtCommandDomain.Routine, "Research")
     ];
 
     private static readonly Dictionary<string, AtCommandDomain> DomainMap =
-        Domains.ToDictionary(d => d.Keyword, d => d.Domain, StringComparer.OrdinalIgnoreCase);
+        Domains.Concat(Aliases).ToDictionary(d => d.Keyword, d => d.Domain, StringComparer.OrdinalIgnoreCase);
 
     private static readonly Dictionary<AtCommandDomain, string> KeywordMap =
         Domains.ToDictionary(d => d.Domain, d => d.Keyword);

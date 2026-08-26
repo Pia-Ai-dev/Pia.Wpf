@@ -73,7 +73,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IAgentRunSteeringService? _steering;
     private readonly IThemeService? _themeService;
     private readonly ITimelineWatcher? _timelineWatcher;
-    private readonly IAssignmentApiClient? _assignmentApiClient;
+    private readonly IAssignmentSurfaceCache? _assignmentSurfaceCache;
     private readonly Func<AssignmentConsentViewModel>? _assignmentConsentFactory;
     private AssignmentSurface _assignmentSurface = AssignmentSurface.Hidden;
     private bool _disposed;
@@ -296,7 +296,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ITimelineWatcher? timelineWatcher = null,
         // Trailing and defaulted for the same reason as the five above; null ⇒ the background-assignment
         // action never appears, which is also what an unavailable surface looks like.
-        IAssignmentApiClient? assignmentApiClient = null,
+        IAssignmentSurfaceCache? assignmentSurfaceCache = null,
         Func<AssignmentConsentViewModel>? assignmentConsentFactory = null,
         // Where this window publishes "a restart would destroy something here" so the policy-restart overlay
         // in EVERY window defers. Trailing and defaulted; null ⇒ nothing is published.
@@ -340,7 +340,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _steering = steering;
         _themeService = themeService;
         _timelineWatcher = timelineWatcher;
-        _assignmentApiClient = assignmentApiClient;
+        _assignmentSurfaceCache = assignmentSurfaceCache;
         _assignmentConsentFactory = assignmentConsentFactory;
         _volatileWork = volatileWork;
 
@@ -1391,17 +1391,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     internal async Task RefreshAssignmentSurfaceAsync()
     {
-        if (_assignmentApiClient is null) return;
+        if (_assignmentSurfaceCache is null) return;
 
-        try
-        {
-            _assignmentSurface = await _assignmentApiClient.GetSurfaceAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogInformation(ex, "Could not read the background-assignment surface; keeping it hidden");
-            _assignmentSurface = AssignmentSurface.Hidden;
-        }
+        _assignmentSurface = await _assignmentSurfaceCache.RefreshAsync();
 
         await _uiDispatcher.PostAsync(() => IsAssignmentSurfaceAvailable = _assignmentSurface.Available);
     }

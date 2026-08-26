@@ -91,9 +91,11 @@
   <data name="Msg_Assistant_StatusDeletingReminder" xml:space="preserve"><value>Erinnerung wird gelöscht...</value></data>
   <data name="Msg_Assistant_StatusDeletingTodo" xml:space="preserve"><value>Aufgabe wird gelöscht...</value></data>
   <data name="Msg_Assistant_StatusProcessing" xml:space="preserve"><value>Verarbeitung...</value></data>
+  <data name="Msg_Assistant_StatusCheckingAssignments" xml:space="preserve"><value>Hintergrundaufträge werden geprüft...</value></data>
   <data name="Msg_Assistant_StatusReadingChat" xml:space="preserve"><value>Früherer Chat wird gelesen...</value></data>
   <data name="Msg_Assistant_StatusSearchingChats" xml:space="preserve"><value>Frühere Chats werden durchsucht...</value></data>
   <data name="Msg_Assistant_StatusSearchingMemory" xml:space="preserve"><value>Gedächtnis wird durchsucht...</value></data>
+  <data name="Msg_Assistant_StatusStartingAssignment" xml:space="preserve"><value>Hintergrundauftrag wird gestartet...</value></data>
   <data name="Msg_Assistant_StatusThinking" xml:space="preserve"><value>Denke nach...</value></data>
   <data name="Msg_Assistant_StatusUpdatingMemory" xml:space="preserve"><value>Erinnerung wird aktualisiert...</value></data>
   <data name="Msg_Assistant_StatusUpdatingReminder" xml:space="preserve"><value>Erinnerung wird aktualisiert...</value></data>
@@ -361,6 +363,10 @@
   <data name="Tool_ScheduledResearch_Desc_Create" xml:space="preserve"><value>Recherche planen: {0} ({1})</value></data>
   <data name="Tool_ScheduledResearch_Desc_Update" xml:space="preserve"><value>Geplante Recherche '{0}' aktualisieren</value></data>
   <data name="Tool_ScheduledResearch_Desc_Delete" xml:space="preserve"><value>Geplante Recherche '{0}' löschen</value></data>
+  <data name="Tool_Assignment_Desc_Start" xml:space="preserve"><value>Hintergrundauftrag starten: {0}</value></data>
+  <data name="Tool_Assignment_Detail_PromptLength" xml:space="preserve"><value>Anweisung: {0} Zeichen</value></data>
+  <data name="Tool_Assignment_Detail_Skill" xml:space="preserve"><value>Fähigkeit</value></data>
+  <data name="Tool_Assignment_Skill_Unset" xml:space="preserve"><value>nicht gewählt — der Nutzer entscheidet</value></data>
   <data name="Tool_ScheduledResearch_Detail_Name" xml:space="preserve"><value>Name</value></data>
   <data name="Tool_ScheduledResearch_Detail_Query" xml:space="preserve"><value>Frage</value></data>
   <data name="Tool_ScheduledResearch_Detail_Kind" xml:space="preserve"><value>Typ</value></data>

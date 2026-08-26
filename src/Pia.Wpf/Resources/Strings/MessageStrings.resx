@@ -92,9 +92,11 @@
   <data name="Msg_Assistant_StatusDeletingReminder" xml:space="preserve"><value>Deleting reminder...</value></data>
   <data name="Msg_Assistant_StatusDeletingTodo" xml:space="preserve"><value>Deleting todo...</value></data>
   <data name="Msg_Assistant_StatusProcessing" xml:space="preserve"><value>Processing...</value></data>
+  <data name="Msg_Assistant_StatusCheckingAssignments" xml:space="preserve"><value>Checking background assignments...</value></data>
   <data name="Msg_Assistant_StatusReadingChat" xml:space="preserve"><value>Reading a past chat...</value></data>
   <data name="Msg_Assistant_StatusSearchingChats" xml:space="preserve"><value>Searching past chats...</value></data>
   <data name="Msg_Assistant_StatusSearchingMemory" xml:space="preserve"><value>Searching memory...</value></data>
+  <data name="Msg_Assistant_StatusStartingAssignment" xml:space="preserve"><value>Starting a background assignment...</value></data>
   <data name="Msg_Assistant_StatusThinking" xml:space="preserve"><value>Thinking...</value></data>
   <data name="Msg_Assistant_StatusUpdatingMemory" xml:space="preserve"><value>Updating memory...</value></data>
   <data name="Msg_Assistant_StatusUpdatingReminder" xml:space="preserve"><value>Updating reminder...</value></data>
@@ -369,6 +371,10 @@ Changes will be applied.</value></data>
   <data name="Tool_ScheduledResearch_Desc_Create" xml:space="preserve"><value>Schedule research: {0} ({1})</value></data>
   <data name="Tool_ScheduledResearch_Desc_Update" xml:space="preserve"><value>Update scheduled research '{0}'</value></data>
   <data name="Tool_ScheduledResearch_Desc_Delete" xml:space="preserve"><value>Delete scheduled research '{0}'</value></data>
+  <data name="Tool_Assignment_Desc_Start" xml:space="preserve"><value>Start background assignment: {0}</value></data>
+  <data name="Tool_Assignment_Detail_PromptLength" xml:space="preserve"><value>Prompt: {0} characters</value></data>
+  <data name="Tool_Assignment_Detail_Skill" xml:space="preserve"><value>Skill</value></data>
+  <data name="Tool_Assignment_Skill_Unset" xml:space="preserve"><value>not chosen — the user picks</value></data>
   <data name="Tool_ScheduledResearch_Detail_Name" xml:space="preserve"><value>Name</value></data>
   <data name="Tool_ScheduledResearch_Detail_Query" xml:space="preserve"><value>Query</value></data>
   <data name="Tool_ScheduledResearch_Detail_Kind" xml:space="preserve"><value>Type</value></data>

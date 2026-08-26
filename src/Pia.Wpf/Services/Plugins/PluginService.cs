@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
 using Pia.Logging;
 using Pia.Services.Interfaces;
+using Pia.Services.Operators;
 using Pia.Shared.Models;
 
 namespace Pia.Services.Plugins;
@@ -22,6 +23,8 @@ public class PluginService : IPluginService
     private readonly IIngestToolHandler _ingestToolHandler;
     private readonly IGitToolHandler _gitToolHandler;
     private readonly IChatHistoryToolHandler _chatHistoryToolHandler;
+    private readonly IAssignmentToolHandler _assignmentToolHandler;
+    private readonly IAssignmentSurfaceCache _assignmentSurfaceCache;
     private readonly ISettingsService _settingsService;
     private readonly ILogger<PluginService> _logger;
     private readonly SqliteContext _sqliteContext;
@@ -50,6 +53,8 @@ public class PluginService : IPluginService
         IIngestToolHandler ingestToolHandler,
         IGitToolHandler gitToolHandler,
         IChatHistoryToolHandler chatHistoryToolHandler,
+        IAssignmentToolHandler assignmentToolHandler,
+        IAssignmentSurfaceCache assignmentSurfaceCache,
         ISettingsService settingsService,
         ILogger<PluginService> logger,
         SqliteContext sqliteContext,
@@ -63,6 +68,8 @@ public class PluginService : IPluginService
         _ingestToolHandler = ingestToolHandler;
         _gitToolHandler = gitToolHandler;
         _chatHistoryToolHandler = chatHistoryToolHandler;
+        _assignmentToolHandler = assignmentToolHandler;
+        _assignmentSurfaceCache = assignmentSurfaceCache;
         _settingsService = settingsService;
         _logger = logger;
         _sqliteContext = sqliteContext;
@@ -74,6 +81,10 @@ public class PluginService : IPluginService
         // Plugins whose tool list depends on settings (files plugin's sandbox folder)
         // need their routes rebuilt whenever those settings change.
         _settingsService.SettingsChanged += (_, _) => RebuildToolNameRoutes();
+
+        // The assignment pack's availability is a server probe, not a setting, so it flips outside every
+        // other rebuild trigger. Without this the first probe that turns it on offers tools with no route.
+        _assignmentSurfaceCache.Changed += (_, _) => RebuildToolNameRoutes();
     }
 
     private void InitializeBuiltInPlugins()
@@ -92,6 +103,7 @@ public class PluginService : IPluginService
                 "ingest" => BuiltInPluginHandler.FromIngestHandler(_ingestToolHandler, config),
                 "git" => BuiltInPluginHandler.FromGitHandler(_gitToolHandler, config),
                 "chat-history" => BuiltInPluginHandler.FromChatHistoryHandler(_chatHistoryToolHandler, config),
+                "assignments" => BuiltInPluginHandler.FromAssignmentHandler(_assignmentToolHandler, config),
                 _ => throw new InvalidOperationException($"Unknown built-in handler for plugin {config.Name}")
             };
 

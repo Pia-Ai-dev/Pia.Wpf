@@ -192,7 +192,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
             "reminder",
             "query_reminders",
             (IReadOnlyList<string>)["query_reminders", "create_reminder", "update_reminder", "delete_reminder"]),
-        Pia.Models.AtCommandDomain.Research => (
+        Pia.Models.AtCommandDomain.Routine => (
             "scheduled research job",
             "query_scheduled_research",
             (IReadOnlyList<string>)["query_scheduled_research", "create_scheduled_research", "update_scheduled_research", "delete_scheduled_research", "list_routine_blueprints", "create_routine_from_blueprint"]),
@@ -200,6 +200,10 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
             "file",
             "read_file",
             (IReadOnlyList<string>)["list_files", "read_file", "write_file", "delete_file", "search_files"]),
+        Pia.Models.AtCommandDomain.Assignment => (
+            "background assignment",
+            "query_assignments",
+            (IReadOnlyList<string>)["query_assignments", "get_assignment", "start_assignment"]),
         _ => throw new ArgumentOutOfRangeException(nameof(domain), domain,
             $"No tool mapping registered for at-command domain {domain}. Add a row to GetAtCommandToolMapping.")
     };

@@ -49,13 +49,19 @@ public readonly record struct SourceCitation(
 /// Optional per-turn sink, the <paramref name="OnFileTouched"/> twin for the vault and chat-history read
 /// tools, so the pages and conversations an answer drew on surface as source chips. Null = collect nothing.
 /// </param>
+/// <param name="UnattendedGranter">
+/// Who authorised this turn's actions when nobody is watching — <c>routine:&lt;jobId&gt;</c> or
+/// <c>background:&lt;runId&gt;</c>. Null on every surface with a human in front of it, which is what tells a
+/// tool it may still ask one.
+/// </param>
 public readonly record struct TaskContext(
     Guid? TaskId,
     string? WorkingSubpath,
     Action<FileTouch>? OnFileTouched = null,
     string? WorkspaceRoot = null,
     Guid? ChatId = null,
-    Action<SourceCitation>? OnSourceCited = null);
+    Action<SourceCitation>? OnSourceCited = null,
+    string? UnattendedGranter = null);
 
 /// <summary>
 /// Flows the current turn's <see cref="TaskContext"/> down a single logical async turn via

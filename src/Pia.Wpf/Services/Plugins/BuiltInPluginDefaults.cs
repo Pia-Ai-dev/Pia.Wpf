@@ -6,8 +6,8 @@ namespace Pia.Services.Plugins;
 /// Hardcoded defaults for built-in plugins. Used on first launch or offline when no server data is cached. The
 /// GUIDs are well-known and stable, but they do NOT all match server seed data: only memory/todo/reminder
 /// (...001-...003) are seeded server-side. scheduled-research (...004), files (...006), ingest (...007), git
-/// (...008) and chat-history (...009) are client-only built-ins with no server plugin row — the server's sync
-/// push tolerates a preference referencing such an unknown plugin id by skipping it, so toggling a client-only
+/// (...008), chat-history (...009) and assignments (...00A) are client-only built-ins with no server plugin
+/// row — the server's sync push tolerates a preference referencing such an unknown plugin id by skipping it, so toggling a client-only
 /// built-in cannot wedge preference sync (SyncService.PushAsync in the Pia server repo).
 /// </summary>
 public static class BuiltInPluginDefaults
@@ -24,11 +24,12 @@ public static class BuiltInPluginDefaults
     public static readonly Guid IngestPluginId = new("10000000-0000-0000-0000-000000000007");
     public static readonly Guid GitPluginId = new("10000000-0000-0000-0000-000000000008");
     public static readonly Guid ChatHistoryPluginId = new("10000000-0000-0000-0000-000000000009");
+    public static readonly Guid AssignmentsPluginId = new("10000000-0000-0000-0000-00000000000A");
 
     public static readonly HashSet<Guid> PreloadedPluginIds = [
         MemoryPluginId, TodoPluginId, ReminderPluginId,
         ScheduledResearchPluginId, ResearchHistoryPluginId, FilesPluginId, IngestPluginId, GitPluginId,
-        ChatHistoryPluginId];
+        ChatHistoryPluginId, AssignmentsPluginId];
 
     public static readonly IReadOnlyDictionary<Guid, SyncPlugin> Defaults = new Dictionary<Guid, SyncPlugin>
     {
@@ -127,6 +128,18 @@ public static class BuiltInPluginDefaults
             Version = "1.0.0",
             ConfigJson = """{"handlerId":"chat-history","defaultEnabled":true,"systemPromptAddition":"You can look up the user's PAST conversations with you. The CURRENT conversation is already in front of you: it is never returned by search_chats, and read_chat will refuse its id, so never pass it. Tools: search_chats(query, from_date, to_date, limit) returns past chats that match, each with a title, a date and a relevance snippet — omit query to list the most recent chats instead; read_chat(chat_id, offset, limit) returns a window of one chat's messages, oldest first. Always work in two steps: search first, then read the chat_id you actually need — a snippet is an excerpt, not a quotation, so never quote it or draw a conclusion from it alone. read_chat is paged: when has_more is true, call it again with next_offset. This history is NOT complete — chats older than the user's retention setting are deleted and an imported chat may have no useful title — so when a search misses, say you could not find it rather than asserting the conversation never happened."}""",
             UpdatedAt = new DateTime(2026, 8, 25, 0, 0, 0, DateTimeKind.Utc)
+        },
+        [AssignmentsPluginId] = new SyncPlugin
+        {
+            Id = AssignmentsPluginId,
+            Kind = "builtin_tool_pack",
+            Name = "assignments",
+            Description = "Follow the user's background assignments — work the Pia server runs remotely on records they select.",
+            IsPreloaded = true,
+            IsActive = true,
+            Version = "1.0.0",
+            ConfigJson = """{"handlerId":"assignments","defaultEnabled":true,"systemPromptAddition":"The user can hand work to background assignments — the Pia server running a skill remotely over records the user picks, outside this chat. Tools: query_assignments lists their runs, newest first; get_assignment(assignment_id) reports one run's progress; start_assignment(skill, prompt) asks for a new run — in a chat it does not start until the user confirms it in a dialog and picks the records themselves, but in a background run that has been granted this tool it starts at once with no records attached, so never call it speculatively. A finished run's answer does NOT come back through these tools: it arrives as a new chat in the user's history, so point them there rather than promising to fetch it. You may propose what a run should do, but you never choose which records are sent — either the user selects those in the confirmation dialog or none are sent at all."}""",
+            UpdatedAt = new DateTime(2026, 8, 26, 0, 0, 0, DateTimeKind.Utc)
         },
     };
 }

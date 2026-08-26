@@ -440,7 +440,8 @@ public class ToolAutonomyTests
         Assert.Equal(ToolGateDecision.DeniedNotGranted, unnamed.Decision);
     }
 
-    /// <summary>An "Always" grant reaches every surface — chat, voice and headless alike.</summary>
+    /// <summary>An "Always" grant reaches every surface — chat, voice and headless alike. The one carve-out is
+    /// <see cref="ToolClass.Assignment"/> on voice, pinned by its own fact below.</summary>
     [Fact]
     public void StandingGrant_AutoRunsADestructiveTool_OnEverySurfaceThatReadsOne()
     {
@@ -564,5 +565,36 @@ public class ToolAutonomyTests
         var denied = ToolAutonomy.Resolve(Input(
             ToolGateSurface.Unattended, "write_file", ToolClass.Files, standingGrant: true, namedDenial: true));
         Assert.Equal(ToolGateDecision.DeniedForRun, denied.Decision);
+    }
+
+    /// <summary>Starting an assignment opens a modal confirmation, which a speaker can neither see nor dismiss,
+    /// so voice refuses it however it was granted — the standing tier included.</summary>
+    [Fact]
+    public void VoiceSurface_RefusesAnAssignment_WhicheverTierGrantedIt()
+    {
+        // Every tier at once, EveryClassPolicy included: the arm sits above all of them, so none authorizes.
+        foreach (var standing in new[] { false, true })
+        foreach (var session in new[] { false, true })
+        foreach (var named in new[] { false, true })
+        foreach (var allowlisted in new[] { false, true })
+        {
+            var verdict = ToolAutonomy.Resolve(Input(
+                ToolGateSurface.Voice, "start_assignment", ToolClass.Assignment, EveryClassPolicy,
+                allowlisted: allowlisted, standingGrant: standing, sessionGrant: session, namedGrant: named,
+                canPark: true));
+
+            Assert.Equal(ToolGateOutcome.Refuse, verdict.Outcome);
+            Assert.Equal(ToolGateDecision.DeniedNotGranted, verdict.Decision);
+        }
+
+        // Controls: the same grant on the two surfaces that DO have somewhere to put the confirmation.
+        foreach (var surface in new[] { ToolGateSurface.Interactive, ToolGateSurface.Unattended })
+        {
+            var honoured = ToolAutonomy.Resolve(Input(
+                surface, "start_assignment", ToolClass.Assignment, standingGrant: true));
+
+            Assert.Equal(ToolGateOutcome.AutoRun, honoured.Outcome);
+            Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, honoured.Decision);
+        }
     }
 }
