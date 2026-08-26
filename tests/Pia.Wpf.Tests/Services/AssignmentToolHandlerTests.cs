@@ -521,9 +521,26 @@ public class AssignmentToolHandlerTests
 
         var text = Text(await CallAsync("query_assignments")) + Text(await GetAsync(id));
 
-        var phone = new StructuredPiiDetector().DetectPii(text).Where(m => m.Category == "Phone").ToList();
-        Assert.True(phone.Count == 0,
-            $"the detector would tokenise {string.Join(", ", phone.Select(m => m.Value))}");
-        Assert.Contains("2026/08/26 09:00 UTC", text);
+        const string stamp = "2026/08/26 09:00 UTC";
+        Assert.Contains(stamp, text);
+
+        // Scoped to the stamps by span, not asserted over the whole payload: the guids in there carry
+        // phone-shaped digit runs of their own about a third of the time, and tokenising one is harmless.
+        var stamps = StampSpans(text, stamp);
+        var onAStamp = new StructuredPiiDetector().DetectPii(text)
+            .Where(m => m.Category == "Phone")
+            .Where(m => stamps.Any(s => m.Start < s + stamp.Length && s < m.Start + m.Length))
+            .ToList();
+        Assert.True(onAStamp.Count == 0,
+            $"the detector would tokenise {string.Join(", ", onAStamp.Select(m => m.Value))}");
+    }
+
+    private static List<int> StampSpans(string text, string stamp)
+    {
+        var spans = new List<int>();
+        for (var i = text.IndexOf(stamp, StringComparison.Ordinal); i >= 0;
+             i = text.IndexOf(stamp, i + 1, StringComparison.Ordinal))
+            spans.Add(i);
+        return spans;
     }
 }
