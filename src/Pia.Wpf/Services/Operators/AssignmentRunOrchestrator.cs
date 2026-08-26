@@ -219,8 +219,7 @@ public sealed class AssignmentRunOrchestrator : IAssignmentRunOrchestrator
     private async Task WriteArtifactChatAsync(
         PendingAssignment run, AssignmentDto assignment, CancellationToken ct)
     {
-        var answer = assignment.ArtifactText
-            ?? $"This background assignment finished without a result ({assignment.ErrorCode ?? assignment.Status}).";
+        var answer = assignment.ArtifactText ?? NoResultMessage(assignment);
 
         var now = DateTime.UtcNow;
         var chat = new SyncAssistantChat
@@ -254,6 +253,16 @@ public sealed class AssignmentRunOrchestrator : IAssignmentRunOrchestrator
         _logger.LogInformation(
             "Stored the artifact of assignment {AssignmentId} as chat {ChatId}.", run.AssignmentId, run.ChatId);
         _logger.SensitiveDebug("Artifact for {AssignmentId}: {Answer}", run.AssignmentId, answer);
+    }
+
+    /// <summary>ErrorCode is the CLR exception type name whenever a failure escaped the server untyped, so the
+    /// server's own sentence comes first and the code is only the fallback.</summary>
+    private static string NoResultMessage(AssignmentDto assignment)
+    {
+        const string preamble = "This background assignment finished without a result";
+        return assignment.ErrorMessage is { Length: > 0 } message
+            ? $"{preamble}: {message}"
+            : $"{preamble} ({assignment.ErrorCode ?? assignment.Status}).";
     }
 
     /// <summary>The receipt has to be about the request being made, not merely exist — otherwise a stale one

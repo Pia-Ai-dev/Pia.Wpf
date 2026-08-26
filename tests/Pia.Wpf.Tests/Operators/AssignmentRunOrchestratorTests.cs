@@ -310,6 +310,58 @@ public class AssignmentRunOrchestratorTests : IDisposable
     }
 
     /// <summary>
+    /// The reason the user reads must be the server's sentence, not <c>ErrorCode</c>: Temporal stamps the code
+    /// from the CLR type name whenever a failure escapes untyped, so preferring the code showed people
+    /// "HttpRequestException" for an upstream timeout. The message is still on the row when the drain pass
+    /// reads it — redaction only nulls it on the later collect acknowledgement.
+    /// </summary>
+    [Fact]
+    public async Task DrainAsync_AFailedRunCarryingAMessage_TellsTheUserTheMessageNotTheErrorCode()
+    {
+        var run = await SeedPendingAsync();
+        _api.Assignment = Failed(
+            run.AssignmentId, "operator_upstream_timeout", "The upstream AI provider timed out.");
+
+        await CreateSut().DrainAsync(Ct);
+
+        var answer = LastAnswer();
+        Assert.Contains("The upstream AI provider timed out.", answer);
+        Assert.DoesNotContain("operator_upstream_timeout", answer);
+    }
+
+    /// <summary>Without a message there is nothing better than the code — but a blank one must not leave the
+    /// user a sentence that trails off, so it falls through the same way null does.</summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public async Task DrainAsync_AFailedRunWithNoMessage_FallsBackToTheErrorCode(string? message)
+    {
+        var run = await SeedPendingAsync();
+        _api.Assignment = Failed(run.AssignmentId, "operator_token_ceiling_exceeded", message);
+
+        await CreateSut().DrainAsync(Ct);
+
+        Assert.Contains("(operator_token_ceiling_exceeded)", LastAnswer());
+    }
+
+    /// <summary>A row the server force-failed without either field still has to say something.</summary>
+    [Fact]
+    public async Task DrainAsync_AFailedRunWithNeitherMessageNorCode_FallsBackToTheStatus()
+    {
+        var run = await SeedPendingAsync();
+        _api.Assignment = Failed(run.AssignmentId, errorCode: null, errorMessage: null);
+
+        await CreateSut().DrainAsync(Ct);
+
+        Assert.Contains("(Failed)", LastAnswer());
+    }
+
+    private string LastAnswer() => _chats.ReceivedCalls()
+        .Where(c => c.GetMethodInfo().Name == nameof(IAssistantChatService.SaveAsync))
+        .Select(c => ((SyncAssistantChat)c.GetArguments()[0]!).Messages.Last(m => m.Role == "assistant").Content)
+        .Last();
+
+    /// <summary>
     /// The headless block, as a dependency direction rather than a runtime check: a background entry point that
     /// could reach the coordinator would satisfy every server-side check while nobody was present to consent.
     /// </summary>
@@ -348,6 +400,10 @@ public class AssignmentRunOrchestratorTests : IDisposable
     private static AssignmentDto Completed(Guid id, string artifactText) => new(
         id, "research", "Research", "Completed", 1, 100, 0, DateTime.UtcNow, DateTime.UtcNow,
         DateTime.UtcNow, DateTime.UtcNow, "{}", null, null, artifactText);
+
+    private static AssignmentDto Failed(Guid id, string? errorCode, string? errorMessage) => new(
+        id, "research", "Research", "Failed", 0, 0, 0, DateTime.UtcNow, DateTime.UtcNow,
+        DateTime.UtcNow, DateTime.UtcNow, null, errorCode, errorMessage);
 
     private sealed class TraceScopeReader(List<string> trace) : IAssignmentScopeResolver
     {
