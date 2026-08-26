@@ -286,6 +286,14 @@
               </ui:Button>
             </StackPanel>
           </Border>
+          <!-- Says what the mode changed, in the spot the goal-too-short hint uses; the VM hides this one
+               when that one appears. -->
+          <TextBlock Text="{loc:Str Assistant_AgentMode_Hint}"
+                     Margin="2,0,0,6"
+                     FontSize="12"
+                     TextWrapping="Wrap"
+                     Foreground="{DynamicResource TextSubtleBrush}"
+                     Visibility="{Binding AgentModeHintVisible, Converter={StaticResource BooleanToVisibilityConverter}}" />
           <!-- Explains the dead Run-in-background button; above the box so the composer's bottom edge stays put. -->
           <TextBlock Text="{loc:Str Assistant_GoalTooShort_Hint}"
                      Margin="2,0,0,6"
@@ -540,11 +548,11 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
               </Grid.ColumnDefinitions>
-              <!-- Run in background: Agent mode only. Green, not Send's blue, so the two sends never read
-                   as one control; the tooltip names what the icon detaches. -->
+              <!-- Run in background: Agent mode only. Deliberately quieter than Send's Primary fill, so the
+                   two sends never read as one control; the tooltip names what the icon detaches. -->
               <ui:Button Grid.Column="0"
                          Command="{Binding RunInBackgroundCommand}"
-                         Appearance="Success"
+                         Appearance="Secondary"
                          Padding="10,4" Margin="0,0,4,0"
                          AutomationProperties.Name="{loc:Str Assistant_RunInBackground_Tooltip}"
                          AutomationProperties.AutomationId="Assistant_RunInBackground"

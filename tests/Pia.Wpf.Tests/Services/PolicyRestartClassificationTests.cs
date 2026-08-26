@@ -18,6 +18,7 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.AgentPlanReasoningTurnEnabled),
         nameof(AppSettings.AgentRunAutoApproveBuiltInWrites),
         nameof(AppSettings.AgentWallClockMinutes),
+        nameof(AppSettings.AssistantBackgroundRunConfirmSuppressed),
         nameof(AppSettings.AutoCaptureSelectedText),
         nameof(AppSettings.AutoTypeDelayMs),
         nameof(AppSettings.AutoUpdateEnabled),
@@ -173,7 +174,7 @@ public class PolicyRestartClassificationTests
     public void ANewSettingForcesAnExplicitClassification()
     {
         Assert.True(
-            LiveAlready.Length == 41 && LiveWithWork.Length == 23
+            LiveAlready.Length == 42 && LiveWithWork.Length == 23
                 && RestartRequired.Length == 12 && NoRuntimeEffect.Length == 27,
             "the four sets are written out in full, found "
                 + $"{LiveAlready.Length}/{LiveWithWork.Length}/{RestartRequired.Length}/{NoRuntimeEffect.Length}");

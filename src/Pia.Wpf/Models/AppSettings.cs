@@ -195,6 +195,9 @@ public class AppSettings
     /// <summary>Global last-used Chat/Agent lever default (R15). Not per-chat, not per-mode. false = Chat.</summary>
     public bool AssistantAgentModeDefault { get; set; } = false;
 
+    /// <summary>Set by the confirm dialog's "don't ask again"; device-local (never in the sync projection).</summary>
+    public bool AssistantBackgroundRunConfirmSuppressed { get; set; } = false;
+
     // Agent-run budget envelope (§5/§13.8) — the generous terminal caps an interactive Planned run
     // stops at. Surfaced in Assistant settings so a user can tighten/loosen them; clamped when a
     // RunProfile is built (RunProfile.FromBudget). Defaults match RunProfile.Interactive.

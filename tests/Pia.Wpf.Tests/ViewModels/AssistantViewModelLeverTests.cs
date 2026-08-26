@@ -174,6 +174,76 @@ public class AssistantViewModelLeverTests
         _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
     }
 
+
+    // ---- Agent-mode hint -------------------------------------------------------------------------
+
+    [Fact]
+    public void FlippingToAgent_ShowsTheModeHint()
+    {
+        var vm = CreateSut();
+
+        vm.AgentModeEnabled = true;
+
+        Assert.True(vm.AgentModeHintVisible);
+    }
+
+    [Fact]
+    public void FlippingBackToChat_HidesTheModeHint()
+    {
+        var vm = CreateSut();
+        vm.AgentModeEnabled = true;
+
+        vm.AgentModeEnabled = false;
+
+        Assert.False(vm.AgentModeHintVisible);
+    }
+
+    [Fact]
+    public void TheModeHint_ExpiresOnItsOwn()
+    {
+        var vm = CreateSut();
+        vm.AgentModeHintDuration = TimeSpan.Zero;
+
+        vm.AgentModeEnabled = true;
+
+        Assert.True(SpinWait.SpinUntil(() => !vm.AgentModeHintVisible, TimeSpan.FromSeconds(3)));
+    }
+
+    /// <summary>Both hints render in the same composer line, and the concrete one wins.</summary>
+    [Fact]
+    public void TheGoalTooShortHint_TakesTheModeHintsPlace()
+    {
+        var vm = CreateSut();
+        vm.AgentModeEnabled = true;
+
+        vm.GoalTooShortHintVisible = true;
+
+        Assert.False(vm.AgentModeHintVisible);
+    }
+
+    [Fact]
+    public void AStartedTurn_RetiresTheModeHint()
+    {
+        // The hint explains what a send would do, so it has nothing left to say once one is under way.
+        var vm = CreateSut();
+        vm.AgentModeEnabled = true;
+
+        vm.IsStreaming = true;
+
+        Assert.False(vm.AgentModeHintVisible);
+    }
+
+    [Fact]
+    public void Seed_FromSettings_ShowsNoModeHint()
+    {
+        // Restoring the lever at startup is not a switch the user just made.
+        var vm = CreateSut();
+
+        vm.SeedAgentModeFromSettings(new AppSettings { AssistantAgentModeDefault = true });
+
+        Assert.True(vm.AgentModeEnabled);
+        Assert.False(vm.AgentModeHintVisible);
+    }
     // ---- SwitchToAgent chip ----------------------------------------------------------------------
 
     [Fact]

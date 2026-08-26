@@ -100,6 +100,16 @@ public class DialogService : IDialogService
         return result == ContentDialogResult.Primary;
     }
 
+    public async Task<OptOutConfirmation> ShowOptOutConfirmationDialogAsync(
+        string title, string message, string confirmText)
+    {
+        var dialogHost = _contentDialogService.GetDialogHostEx()
+            ?? throw new InvalidOperationException("No dialog host available");
+        var dialog = new OptOutConfirmContentDialog(dialogHost, title, message, confirmText);
+        var result = await dialog.ShowAsync();
+        return new OptOutConfirmation(result == ContentDialogResult.Primary, dialog.DontAskAgain);
+    }
+
     public async Task ShowMessageDialogAsync(string title, string message)
     {
         await _contentDialogService.ShowSimpleDialogAsync(

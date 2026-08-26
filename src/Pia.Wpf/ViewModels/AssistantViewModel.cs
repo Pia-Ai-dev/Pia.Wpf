@@ -121,6 +121,16 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     private int _goalHintGeneration;
 
+    /// <summary>Says what agent mode changes about a send; shown when the lever is flipped to Agent and
+    /// yields to the goal-too-short hint, which shares this spot in the composer.</summary>
+    [ObservableProperty]
+    private bool _agentModeHintVisible;
+
+    /// <summary>How long that hint stays; internal so tests can zero it.</summary>
+    internal TimeSpan AgentModeHintDuration { get; set; } = TimeSpan.FromSeconds(8);
+
+    private int _agentHintGeneration;
+
     [ObservableProperty]
     private bool _hasMessages;
 
@@ -732,9 +742,49 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         PersistAgentModeDefaultAsync(value).SafeFireAndForget(_logger);
         // Warning-first (§14.4): surface the subtle Weak-provider adorner when flipping to Agent.
         if (value)
+        {
             EvaluateProviderWarningAsync().SafeFireAndForget(_logger);
+            ShowAgentModeHint();
+        }
         else
+        {
             WeakProviderWarningVisible = false;
+            HideAgentModeHint();
+        }
+    }
+
+    // Seeding the lever from settings returns before this (the guard above), so the hint marks a switch the
+    // user made rather than every app start.
+    private void ShowAgentModeHint()
+    {
+        var generation = ++_agentHintGeneration;
+        AgentModeHintVisible = true;
+        _ = HideAgentModeHintAfterDelayAsync(generation);
+    }
+
+    // Bumps the generation so a pending expiry can never hide a hint shown after it.
+    private void HideAgentModeHint()
+    {
+        _agentHintGeneration++;
+        AgentModeHintVisible = false;
+    }
+
+    private async Task HideAgentModeHintAfterDelayAsync(int generation)
+    {
+        await Task.Delay(AgentModeHintDuration);
+        _uiDispatcher.PostOrRun(() =>
+        {
+            if (generation == _agentHintGeneration)
+                AgentModeHintVisible = false;
+        });
+    }
+
+    // One line in the composer, two claimants: the concrete "this goal won't run" beats the general
+    // explanation of the mode.
+    partial void OnGoalTooShortHintVisibleChanged(bool value)
+    {
+        if (value)
+            AgentModeHintVisible = false;
     }
 
     // Weak-provider warning surface (§14.4). Set true when the active provider is not Capable of tool
@@ -768,6 +818,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (e.PropertyName is nameof(IsStreaming) or nameof(IsVoiceModeActive))
         {
             EnterVoiceModeCommand.NotifyCanExecuteChanged();
+        }
+
+        // A turn is under way, so the explanation of what a send would do has been answered.
+        if (e.PropertyName is nameof(IsStreaming) && IsStreaming)
+        {
+            HideAgentModeHint();
         }
     }
 
@@ -976,12 +1032,23 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         var userText = InputText.Trim();
         if (string.IsNullOrWhiteSpace(userText)) return;
+
+        // Asked before the composer is cleared, so backing out of the dialog leaves the goal where it was.
+        if (!await ConfirmBackgroundRunAsync()) return;
+
         InputText = string.Empty;
         try
         {
             // The detached run inherits the composer chat's working directory, mirroring the live turn path.
             await _chatSessionManager.StartBackgroundRunAsync(
                 userText, _chatSessionManager.ActiveSession?.WorkingDirectory);
+
+            // Nothing else marks the detach: no live session appears and the run's own Flow item is only
+            // published when it settles, which is what made the button look dead.
+            _snackbarService.Show(
+                _localizationService["Assistant_RunInBackground_Queued"],
+                _localizationService["Assistant_RunInBackground_Queued_Body"],
+                Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(4));
         }
         catch (Exception ex)
         {
@@ -995,6 +1062,44 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 _localizationService.Format("Assistant_RunInBackground_Failed", ex.Message),
                 Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(5));
         }
+    }
+
+    /// <summary>
+    /// Puts the unattended run to the user once, unless they ticked "don't ask again" — the tick is honoured
+    /// only on a Yes, since a No means they did not want this run, not that they want the next one to start
+    /// unasked. Stored in <see cref="AppSettings.AssistantBackgroundRunConfirmSuppressed"/>, which is outside
+    /// the settings sync projection, so the decision stays on this device.
+    /// </summary>
+    private async Task<bool> ConfirmBackgroundRunAsync()
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        if (settings.AssistantBackgroundRunConfirmSuppressed) return true;
+
+        OptOutConfirmation answer;
+        try
+        {
+            answer = await _dialogService.ShowOptOutConfirmationDialogAsync(
+                _localizationService["BackgroundRunConfirm_Title"],
+                _localizationService["BackgroundRunConfirm_Body"],
+                _localizationService["BackgroundRunConfirm_Start"]);
+        }
+        catch (Exception ex)
+        {
+            // Never shown is not the same as approved (and not a launch failure either — reporting it as one
+            // would blame the run for a missing dialog host).
+            _logger.LogWarning(ex, "The background-run confirmation could not be shown");
+            return false;
+        }
+
+        if (!answer.Confirmed) return false;
+
+        if (answer.DontAskAgain)
+        {
+            settings.AssistantBackgroundRunConfirmSuppressed = true;
+            await _settingsService.SaveSettingsAsync(settings);
+        }
+
+        return true;
     }
 
     private async Task ExecuteToggleRecording()
@@ -2025,6 +2130,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _personaService.ManagedPersonaWithdrawn -= OnManagedPersonaWithdrawn;
         PropertyChanged -= OnPropertyChanged;
         _goalHintGeneration++;
+        _agentHintGeneration++;
 
         // Unsubscribe only — the manager owns session lifetime and tears them down
         // (cancelling each Cts + pending action cards) when the window scope disposes.

@@ -12,6 +12,11 @@ public interface IDialogService
     Task<bool> ShowTodoEditDialogAsync(TodoEditModel todo);
     Task<bool> ShowMeetingSaveDialogAsync(MeetingSaveEditModel meeting);
     Task<bool> ShowConfirmationDialogAsync(string title, string message);
+
+    /// <summary>A confirmation that also carries back a "don't ask again" tick — where the suppression is
+    /// stored is the caller's business. Declining is the answer for a dialog that could not be shown.</summary>
+    Task<OptOutConfirmation> ShowOptOutConfirmationDialogAsync(string title, string message, string confirmText);
+
     Task ShowMessageDialogAsync(string title, string message);
     Task ShowRecoveryCodeDialogAsync(string recoveryCode);
     Task<ModelDownloadResult> ShowModelDownloadDialogAsync(string modelName, IProgress<ModelDownloadProgress> progress, CancellationToken cancellationToken);
@@ -39,3 +44,6 @@ public interface IDialogService
 }
 
 public record ModelDownloadResult(bool Completed, bool Cancelled);
+
+/// <summary>A struct, not a record class, so an unstubbed test double answers "declined" instead of null.</summary>
+public readonly record struct OptOutConfirmation(bool Confirmed, bool DontAskAgain);

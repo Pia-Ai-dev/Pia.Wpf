@@ -113,6 +113,13 @@
   <data name="Assistant_PlanApprovalActive_Hint" xml:space="preserve"><value>Genehmigen oder lehnen Sie den vorgeschlagenen Plan ab, bevor Sie eine weitere Nachricht senden.</value></data>
   <data name="Assistant_GoalTooShort_Hint" xml:space="preserve"><value>Das ist als Ziel zu kurz, um ausgeführt zu werden. Ergänze ein paar Wörter, damit es sich planen lässt.</value></data>
   <data name="Assistant_RunInBackground_Failed" xml:space="preserve"><value>Hintergrundausführung konnte nicht gestartet werden: {0}</value></data>
+  <data name="Assistant_AgentMode_Hint" xml:space="preserve"><value>Im Agentenmodus wird deine Anfrage zu einem Ziel: Pia plant es und arbeitet die Schritte mit Tools ab. Sende es hier – oder löse es mit „Im Hintergrund ausführen“ ab.</value></data>
+  <data name="Assistant_RunInBackground_Queued" xml:space="preserve"><value>Hintergrundausführung eingereiht</value></data>
+  <data name="Assistant_RunInBackground_Queued_Body" xml:space="preserve"><value>Sie läuft ab jetzt allein weiter. Du wirst benachrichtigt, sobald sie fertig ist.</value></data>
+  <data name="BackgroundRunConfirm_Title" xml:space="preserve"><value>Unbeaufsichtigten Hintergrundauftrag starten?</value></data>
+  <data name="BackgroundRunConfirm_Body" xml:space="preserve"><value>Pia übernimmt das unbeaufsichtigt: Sie plant das Ziel, arbeitet die Schritte ab und ruft dabei Tools auf, ohne dass du zusiehst. Das Ergebnis landet in einem eigenen Chat, und du wirst benachrichtigt, sobald es fertig ist.</value></data>
+  <data name="Dialog_DontAskAgain" xml:space="preserve"><value>Auf diesem Gerät nicht mehr fragen</value></data>
+  <data name="BackgroundRunConfirm_Start" xml:space="preserve"><value>Im Hintergrund starten</value></data>
   <data name="Settings_Agent_Tab" xml:space="preserve"><value>Agentenläufe</value></data>
   <data name="Settings_Agent_Section_Description" xml:space="preserve"><value>Grenzen, an denen eine Agent-Ausführung stoppt, damit sie nie außer Kontrolle gerät. Eine Ausführung, die ein Limit erreicht, pausiert und wartet auf dich – du kannst sie im Ausführungsbereich fortsetzen.</value></data>
   <data name="Settings_Agent_MaxSteps_Label" xml:space="preserve"><value>Maximale Schritte</value></data>

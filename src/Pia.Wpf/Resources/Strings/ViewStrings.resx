@@ -113,6 +113,13 @@
   <data name="Assistant_PlanApprovalActive_Hint" xml:space="preserve"><value>Approve or reject the proposed plan before sending another message.</value></data>
   <data name="Assistant_GoalTooShort_Hint" xml:space="preserve"><value>This looks too short to run as a goal. Add a few more words so it can be planned.</value></data>
   <data name="Assistant_RunInBackground_Failed" xml:space="preserve"><value>Couldn't start the background run: {0}</value></data>
+  <data name="Assistant_AgentMode_Hint" xml:space="preserve"><value>In agent mode your request becomes a goal: Pia plans it, then works through the steps with tools. Send it here, or detach it with Run in background.</value></data>
+  <data name="Assistant_RunInBackground_Queued" xml:space="preserve"><value>Background run queued</value></data>
+  <data name="Assistant_RunInBackground_Queued_Body" xml:space="preserve"><value>It works on its own from here. You'll be notified when it finishes.</value></data>
+  <data name="BackgroundRunConfirm_Title" xml:space="preserve"><value>Start a headless background job?</value></data>
+  <data name="BackgroundRunConfirm_Body" xml:space="preserve"><value>Pia takes this on unattended: it plans the goal, works through the steps and calls tools without you watching. The result lands in its own chat, and you are notified when it finishes.</value></data>
+  <data name="Dialog_DontAskAgain" xml:space="preserve"><value>Don't ask again on this device</value></data>
+  <data name="BackgroundRunConfirm_Start" xml:space="preserve"><value>Start in background</value></data>
   <data name="Assistant_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Toggle todo panel</value></data>
   <!-- Research View -->
   <data name="Research_Title" xml:space="preserve"><value>Research Mode</value></data>

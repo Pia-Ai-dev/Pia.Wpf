@@ -71,6 +71,7 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Recovery code dialog (`RecoveryCodeContentDialog`) | `RecoveryCode_Copy`, `_Confirm`. No test lock. |
 | Meeting save dialog (`MeetingSaveContentDialog`) | `MeetingSave_Title`, `_Attendees`, `_Tags`, `_Project`, `_Notes`. No test lock. |
 | Assignment consent dialog (`AssignmentConsentContentDialog`) | `AssignmentConsent_Skill`, `_Prompt`, `_Affirm`; per-record (keyed on `AssignmentScopeItemViewModel.Item.EntityId`): `AssignmentConsent_Record_<id>`. No test lock. |
+| Opt-out confirm dialog (`OptOutConfirmContentDialog`) | `OptOutConfirm_DontAskAgain`. Generic over the caller's strings, so the title is the only thing that names which confirm it is; raised by "Run in background". |
 | Assignments list (`AssignmentsView`) | `Assignments_Refresh`, `_New` (plus the existing `Assignments_Help`); per-row, keyed on `AssignmentRowViewModel.Id`: `Assignments_OpenChat_<id>`, `_Cancel_<id>`. |
 
 Import and Export open a native file picker, which is not reliably scriptable: `ww_dialog handle_file`

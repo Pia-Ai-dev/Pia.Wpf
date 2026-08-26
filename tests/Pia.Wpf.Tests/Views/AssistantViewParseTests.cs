@@ -39,6 +39,11 @@ public class AssistantViewParseTests
     private const string PlanApprovalHintText =
         "Approve or reject the proposed plan before sending another message.";
 
+    /// <summary>Composer hint shown when the lever flips to Agent (Assistant_AgentMode_Hint).</summary>
+    private const string AgentModeHintText =
+        "In agent mode your request becomes a goal: Pia plans it, then works through the steps with tools. " +
+        "Send it here, or detach it with Run in background.";
+
     [Fact]
     public void ComposerHint_Parses_AndTracksForeignRunActive()
     {
@@ -189,6 +194,56 @@ public class AssistantViewParseTests
         Assert.True(found,
             $"No TextBlock in the parsed AssistantView renders '{GoalTooShortHintText}'. Either the view " +
             "failed to parse, or the loc:Str key Assistant_GoalTooShort_Hint no longer resolves.");
+        Assert.Equal(Visibility.Collapsed, before);
+        Assert.Equal(Visibility.Visible, after);
+    }
+
+    // Same seam as the case above: the property the XAML binds to, never InputText.
+    [Fact]
+    public void ComposerHint_Parses_AndTracksAgentModeHintVisible()
+    {
+        AssistantViewModel? vm = null;
+        AssistantView? view = null;
+        TextBlock? hint = null;
+        bool found;
+        Visibility? before, after;
+        try
+        {
+            WpfStaHost.Run(() =>
+            {
+                vm = CreateAssistantViewModel();
+                view = new AssistantView { DataContext = vm };
+                return 0;
+            });
+            WpfStaHost.Pump();
+
+            (found, before) = WpfStaHost.Run(() =>
+            {
+                hint = FindTextBlocks(view!).FirstOrDefault(tb => tb.Text == AgentModeHintText);
+                return (hint is not null, hint?.Visibility);
+            });
+
+            WpfStaHost.Run(() =>
+            {
+                vm!.AgentModeHintVisible = true;
+                return 0;
+            });
+            WpfStaHost.Pump();
+
+            after = WpfStaHost.Run(() => hint?.Visibility);
+        }
+        finally
+        {
+            WpfStaHost.Run(() =>
+            {
+                vm?.Dispose();
+                return 0;
+            });
+        }
+
+        Assert.True(found,
+            $"No TextBlock in the parsed AssistantView renders '{AgentModeHintText}'. Either the view failed " +
+            "to parse, or the loc:Str key Assistant_AgentMode_Hint no longer resolves.");
         Assert.Equal(Visibility.Collapsed, before);
         Assert.Equal(Visibility.Visible, after);
     }

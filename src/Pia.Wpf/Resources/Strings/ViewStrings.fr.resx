@@ -113,6 +113,13 @@
   <data name="Assistant_PlanApprovalActive_Hint" xml:space="preserve"><value>Approuvez ou rejetez le plan proposé avant d'envoyer un autre message.</value></data>
   <data name="Assistant_GoalTooShort_Hint" xml:space="preserve"><value>Cela semble trop court pour être exécuté comme objectif. Ajoutez quelques mots pour qu'il puisse être planifié.</value></data>
   <data name="Assistant_RunInBackground_Failed" xml:space="preserve"><value>Impossible de démarrer l'exécution en arrière-plan : {0}</value></data>
+  <data name="Assistant_AgentMode_Hint" xml:space="preserve"><value>En mode agent, votre demande devient un objectif : Pia le planifie puis déroule les étapes avec des outils. Envoyez-le ici, ou détachez-le avec « Exécuter en arrière-plan ».</value></data>
+  <data name="Assistant_RunInBackground_Queued" xml:space="preserve"><value>Exécution en arrière-plan mise en file</value></data>
+  <data name="Assistant_RunInBackground_Queued_Body" xml:space="preserve"><value>Elle continue seule ; vous serez averti dès qu'elle sera terminée.</value></data>
+  <data name="BackgroundRunConfirm_Title" xml:space="preserve"><value>Démarrer une tâche en arrière-plan sans surveillance ?</value></data>
+  <data name="BackgroundRunConfirm_Body" xml:space="preserve"><value>Pia s'en charge seule : elle planifie l'objectif, déroule les étapes et appelle des outils sans que vous regardiez. Le résultat arrive dans son propre chat, et vous êtes averti dès que c'est terminé.</value></data>
+  <data name="Dialog_DontAskAgain" xml:space="preserve"><value>Ne plus demander sur cet appareil</value></data>
+  <data name="BackgroundRunConfirm_Start" xml:space="preserve"><value>Démarrer en arrière-plan</value></data>
   <data name="Settings_Agent_Tab" xml:space="preserve"><value>Exécutions d'agent</value></data>
   <data name="Settings_Agent_Section_Description" xml:space="preserve"><value>Limites auxquelles une exécution d'agent s'arrête, pour qu'elle ne s'emballe jamais. Une exécution qui atteint une limite se met en pause et vous attend — vous pouvez la reprendre depuis le panneau d'exécution.</value></data>
   <data name="Settings_Agent_MaxSteps_Label" xml:space="preserve"><value>Étapes maximales</value></data>
