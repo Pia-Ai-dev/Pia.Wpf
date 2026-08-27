@@ -325,6 +325,80 @@ public class AssistantViewModelLeverTests
         Assert.False(vm.AgentModeEnabled);
     }
 
+    /// <summary>
+    /// The fall-back is a COMPOSER decision, so it must not rewrite the user's saved default. It used to: a
+    /// run finishing wrote AssistantAgentModeDefault=false, and the next new chat — which inherits the lever —
+    /// opened in Chat mode, where Run in background is not even rendered.
+    /// </summary>
+    [Fact]
+    public void ARunSettling_DoesNotRewriteTheSavedDefault()
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var runId = Guid.NewGuid();
+        var run = new AgentRun { Id = runId, State = AgentRunState.Running, Plan = [] };
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(run);
+
+        var vm = CreateSut(runs);
+        vm.SyncRunProgress(runId);
+        vm.AgentModeEnabled = true;
+
+        // AFTER the user-intent write above, which legitimately persists — clearing before it would make the
+        // assertion pass on the setup call rather than on the settle.
+        _settings.ClearReceivedCalls();
+
+        run.State = AgentRunState.Completed;
+        runs.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Completed, null));
+
+        Assert.False(vm.AgentModeEnabled);
+        _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
+    }
+
+    /// <summary>The guard covers the persist alone. The rest of the handler still runs, or the fall-back would
+    /// leave an Agent-mode hint on screen for a mode the composer is no longer in.</summary>
+    [Fact]
+    public void ARunSettling_StillClearsTheAgentModeHint()
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var runId = Guid.NewGuid();
+        var run = new AgentRun { Id = runId, State = AgentRunState.Running, Plan = [] };
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(run);
+
+        var vm = CreateSut(runs);
+        vm.SyncRunProgress(runId);
+        vm.AgentModeEnabled = true;
+        Assert.True(vm.AgentModeHintVisible);
+
+        run.State = AgentRunState.Completed;
+        runs.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Completed, null));
+
+        Assert.False(vm.AgentModeHintVisible);
+        Assert.False(vm.WeakProviderWarningVisible);
+    }
+
+    /// <summary>The guard is armed for one write and disarmed again: the click AFTER a settle still persists.</summary>
+    [Fact]
+    public void AClickAfterASettle_StillPersists()
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var runId = Guid.NewGuid();
+        var run = new AgentRun { Id = runId, State = AgentRunState.Running, Plan = [] };
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(run);
+
+        var vm = CreateSut(runs);
+        vm.SyncRunProgress(runId);
+        vm.AgentModeEnabled = true;
+        run.State = AgentRunState.Completed;
+        runs.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Completed, null));
+        _settings.ClearReceivedCalls();
+
+        vm.AgentModeEnabled = true;
+
+        _settings.Received().SaveSettingsAsync(Arg.Is<AppSettings>(s => s.AssistantAgentModeDefault));
+    }
+
     [Fact]
     public void AttachingToAnAlreadySettledRun_KeepsTheLever()
     {

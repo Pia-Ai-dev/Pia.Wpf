@@ -182,6 +182,14 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// (mirrors <see cref="_isLoadingPersonas"/> for the persona seed).</summary>
     private bool _isLoadingAgentMode;
 
+    /// <summary>
+    /// Guards the run-settled fall-back to Chat so it changes the composer without rewriting the user's saved
+    /// default. A flag of its own rather than <see cref="_isLoadingAgentMode"/>: that one returns over the
+    /// WHOLE handler, and mid-session that would also strand the Agent-mode hint line and the Weak-provider
+    /// adorner the fall-back has to clear.
+    /// </summary>
+    private bool _isSettlingAgentMode;
+
     /// <summary>The run-progress view-model for the active session's live/selected run (§15.1); null when
     /// the active chat has no run to surface. New'd on the UI thread, disposed on session swap (not DI'd).</summary>
     private RunProgressViewModel? _runProgress;
@@ -505,10 +513,17 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     // A finished run must not silently arm the NEXT send as a fresh run: the lever falls back to Chat so a
     // follow-up message lands in the conversation instead of replacing the settled header with a new one.
+    // It is a COMPOSER decision, not the user's: without the guard the fall-back wrote
+    // AssistantAgentModeDefault=false, so finishing a run silently changed a preference nobody touched — and
+    // the next new chat inherited it.
     private void OnRunProgressSettled()
     {
-        if (AgentModeEnabled)
-            AgentModeEnabled = false;
+        if (!AgentModeEnabled)
+            return;
+
+        _isSettlingAgentMode = true;
+        try { AgentModeEnabled = false; }
+        finally { _isSettlingAgentMode = false; }
     }
 
     partial void OnMessagesChanged(ObservableCollection<AssistantMessage>? oldValue, ObservableCollection<AssistantMessage> newValue)
@@ -739,7 +754,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         if (_isLoadingAgentMode)
             return;
-        PersistAgentModeDefaultAsync(value).SafeFireAndForget(_logger);
+        // Everything BELOW still runs on a settle: the fall-back has to clear the hint and the adorner, it
+        // just must not save. Only the persist is gated.
+        if (!_isSettlingAgentMode)
+            PersistAgentModeDefaultAsync(value).SafeFireAndForget(_logger);
         // Warning-first (§14.4): surface the subtle Weak-provider adorner when flipping to Agent.
         if (value)
         {
@@ -753,8 +771,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
     }
 
-    // Seeding the lever from settings returns before this (the guard above), so the hint marks a switch the
-    // user made rather than every app start.
+    // Seeding the lever from settings returns before this (the first guard above), so the hint marks a switch
+    // the user made rather than every app start. The settle fall-back does NOT return: it reaches
+    // HideAgentModeHint below, which is the arm it needs.
     private void ShowAgentModeHint()
     {
         var generation = ++_agentHintGeneration;
