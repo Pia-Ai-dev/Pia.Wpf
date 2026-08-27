@@ -85,7 +85,8 @@
            StaysOpen="False"
            AllowsTransparency="True"
            PopupAnimation="Fade"
-           Opened="FlyoutPopup_Opened">
+           Opened="FlyoutPopup_Opened"
+           Closed="FlyoutPopup_Closed">
       <Border Background="{DynamicResource SurfaceBrush}"
               BorderBrush="{DynamicResource BorderBrush_}"
               BorderThickness="1"
@@ -228,7 +229,8 @@
                  StaysOpen="False"
                  AllowsTransparency="True"
                  PopupAnimation="Fade"
-                 Opened="WorkingDirPopup_Opened">
+                 Opened="WorkingDirPopup_Opened"
+                 Closed="WorkingDirPopup_Closed">
             <Border Background="{DynamicResource SurfaceBrush}"
                     BorderBrush="{DynamicResource BorderBrush_}"
                     BorderThickness="1"

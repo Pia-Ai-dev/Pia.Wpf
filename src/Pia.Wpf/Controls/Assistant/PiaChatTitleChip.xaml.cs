@@ -11,10 +11,12 @@ public partial class PiaChatTitleChip : UserControl
 {
     public PiaChatTitleChip() => InitializeComponent();
 
+    // Read the POPUP, not the flag (and see the Closed handlers): a dismissal the flag misses leaves
+    // the next press toggling a stale value and opening nothing.
     private void ChipButton_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is ChatTitleChipViewModel vm)
-            vm.IsFlyoutOpen = !vm.IsFlyoutOpen;
+            vm.IsFlyoutOpen = !FlyoutPopup.IsOpen;
     }
 
     private void FlyoutPopup_Opened(object? sender, EventArgs e)
@@ -23,16 +25,29 @@ public partial class PiaChatTitleChip : UserControl
         Keyboard.Focus(SearchBox);
     }
 
+    private void FlyoutPopup_Closed(object? sender, EventArgs e)
+    {
+        if (DataContext is ChatTitleChipViewModel vm)
+            vm.IsFlyoutOpen = false;
+    }
+
     private void WorkingDirButton_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is ChatTitleChipViewModel vm)
-            vm.IsPickerOpen = !vm.IsPickerOpen;
+            vm.IsPickerOpen = !WorkingDirPopup.IsOpen;
     }
 
     // When the drill-down opens, move keyboard focus into the folder list so the arrow keys
-    // navigate folders instead of falling through to the chat-history list below the pill.
+    // navigate folders instead of falling through to the chat-history list below the pill. Posted
+    // only here: the popup's content is still being connected when Opened fires.
     private void WorkingDirPopup_Opened(object? sender, EventArgs e) =>
         Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(FocusFirstEntry));
+
+    private void WorkingDirPopup_Closed(object? sender, EventArgs e)
+    {
+        if (DataContext is ChatTitleChipViewModel vm)
+            vm.IsPickerOpen = false;
+    }
 
     // Header "+ folder" button: toggle the inline creation row. Opening it moves focus into the
     // name box; the second click (while creating) cancels.
@@ -149,7 +164,7 @@ public partial class PiaChatTitleChip : UserControl
                 {
                     picker.EnterCommand.Execute(name);
                     e.Handled = true;
-                    Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(FocusFirstEntry));
+                    FocusFirstEntry();
                 }
                 break;
 
@@ -159,7 +174,7 @@ public partial class PiaChatTitleChip : UserControl
                 {
                     picker.JumpToCrumbCommand.Execute(picker.Crumbs.Count - 2);
                     e.Handled = true;
-                    Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(FocusFirstEntry));
+                    FocusFirstEntry();
                 }
                 break;
 
@@ -186,12 +201,14 @@ public partial class PiaChatTitleChip : UserControl
         {
             picker.EnterCommand.Execute(name);
             e.Handled = true;
-            Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(FocusFirstEntry));
+            FocusFirstEntry();
         }
     }
 
     // Highlight + focus the first folder row so arrows work immediately. Re-run after every
-    // drill/ascend because the entry list is rebuilt each time.
+    // drill/ascend because the entry list is rebuilt each time, and run SYNCHRONOUSLY from the key
+    // handler: posted, the next key of a burst arrives before the selection has moved and is lost.
+    // UpdateLayout below is what makes that safe — it forces the new containers into existence.
     private void FocusFirstEntry()
     {
         WorkingDirEntries.UpdateLayout();
