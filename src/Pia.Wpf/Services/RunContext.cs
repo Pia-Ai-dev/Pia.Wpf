@@ -69,6 +69,13 @@ public sealed class RunContext
     /// </summary>
     public string? WorkspaceRoot { get; set; }
 
+    /// <summary>
+    /// This run is somebody's delegate. Set by the orchestrator from <c>run.ParentRunId</c> before the plan
+    /// turn: a child has no surface that could show a question, so its planner is given no way to ask one —
+    /// a fully-specified child goal that got declined dead-ended the whole fan-out until a person noticed.
+    /// </summary>
+    public bool IsDelegated { get; set; }
+
     // hermes #9: `public StringBuilder Scratchpad { get; } = new();` used to sit here. It was declared in the
     // original run-context sketch as the free-form carrier for "what the steps learned", and in the whole
     // repo it had no writer, no reader and no test — the one hit for the name was its own declaration.

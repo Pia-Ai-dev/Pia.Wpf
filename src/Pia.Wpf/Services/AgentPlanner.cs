@@ -195,7 +195,11 @@ public sealed class AgentPlanner : IAgentPlanner
         // disk, not about what the model said, so re-reading it would only cost another directory walk).
         var grounding = await TryBuildGroundingAsync(ctx, ct).ConfigureAwait(false);
 
-        var turn = await TryCaptureAsync(BuildPlanMessages(answeredGoal, persona, firm: false, analysis, roster, grounding), provider, EmitPlanTool, ct).ConfigureAwait(false);
+        // A delegated run is offered the REPLAN-shaped tool: same tool name, no cannotGround and no question.
+        // Nothing would surface a child's question, so the shape it cannot call is better than the prompt line
+        // asking it not to — which it is also given, below.
+        var planTool = ctx.IsDelegated ? EmitRevisedPlanTool : EmitPlanTool;
+        var turn = await TryCaptureAsync(BuildPlanMessages(answeredGoal, persona, firm: false, analysis, roster, grounding, ctx.IsDelegated), provider, planTool, ct).ConfigureAwait(false);
         usage = AgentTurnUsage.Sum(usage, turn.Usage);
 
         // Checked before both `Steps is null` and ValidatePlan: a decline is not silence (the model did call
@@ -207,7 +211,7 @@ public sealed class AgentPlanner : IAgentPlanner
         {
             // The firm retry REUSES the one analysis: the retry exists because the model wrote prose
             // instead of calling emit_plan, which a second reasoning turn would not fix and would pay for.
-            var retried = await TryCaptureAsync(BuildPlanMessages(answeredGoal, persona, firm: true, analysis, roster, grounding), provider, EmitPlanTool, ct).ConfigureAwait(false); // R10 retry once
+            var retried = await TryCaptureAsync(BuildPlanMessages(answeredGoal, persona, firm: true, analysis, roster, grounding, ctx.IsDelegated), provider, planTool, ct).ConfigureAwait(false); // R10 retry once
             usage = AgentTurnUsage.Sum(usage, retried.Usage); // I1: the retry's rounds were paid for too
             // A decline on the retry still counts as declined, not as a plan to fabricate.
             if (retried.CannotGround)
@@ -773,7 +777,7 @@ public sealed class AgentPlanner : IAgentPlanner
 
     private static List<ChatMessage> BuildPlanMessages(
         string goal, Persona persona, bool firm, string? analysis, IReadOnlyList<Persona> roster,
-        string? grounding = null)
+        string? grounding = null, bool delegated = false)
     {
         var sb = new StringBuilder();
         sb.AppendLine(persona.SystemPrompt);
@@ -783,8 +787,15 @@ public sealed class AgentPlanner : IAgentPlanner
         sb.AppendLine("Keep the plan tight — only the steps genuinely needed to accomplish the goal.");
         sb.AppendLine("Group by logical change, not by file: if one reason requires editing several files, that is ONE step listing every file in expectedArtifact — never split it into \"update file A\", \"update file B\", \"update file C\".");
         sb.AppendLine("A step that writes from data it must first read should read and write in that ONE step — a step boundary does not carry raw tool results.");
-        sb.AppendLine("If the goal is too unclear to plan at all, do NOT invent steps: call emit_plan with cannotGround set to true and question set to the one thing you need the user to clarify.");
-        sb.AppendLine("Only do that when you genuinely cannot tell what is being asked — a goal you can plan, however terse, gets a plan.");
+        if (delegated)
+        {
+            sb.AppendLine("You cannot ask anyone a question. Where the goal leaves something open, make the reasonable assumption, state it in the step intent, and proceed.");
+        }
+        else
+        {
+            sb.AppendLine("If the goal is too unclear to plan at all, do NOT invent steps: call emit_plan with cannotGround set to true and question set to the one thing you need the user to clarify.");
+            sb.AppendLine("Only do that when you genuinely cannot tell what is being asked — a goal you can plan, however terse, gets a plan.");
+        }
         AppendRoster(sb, roster);
         // The decline offer above stays available on the firm retry too — a model that wrote prose the first
         // time can decline on the second instead of fabricating a plan.

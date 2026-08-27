@@ -224,7 +224,10 @@ public sealed class AgentRunOrchestrator
             {
                 await SafeSetState(run.Id, AgentRunState.Planning, cts.Token).ConfigureAwait(false);
 
-                var plan = await _planner.PlanAsync(ctx.Goal, ctx, persona, provider, cts.Token).ConfigureAwait(false);
+                // Stated before the plan turn, not inside it: the planner has no run row, and this is the one fact
+            // that decides whether its emit_plan may decline.
+            ctx.IsDelegated = run.ParentRunId is not null;
+            var plan = await _planner.PlanAsync(ctx.Goal, ctx, persona, provider, cts.Token).ConfigureAwait(false);
                 // I1: the plan turn's rounds (≥2, doubled by the firm retry) are real spend — accrue
                 // them run-level BEFORE branching, so neither the degrade path nor the decline path below
                 // can drop them.
@@ -383,8 +386,10 @@ public sealed class AgentRunOrchestrator
                             // A PARKED child is not a finished child. Its work is durable and resumable,
                             // so failing the parent would throw it away and burn a replan. Re-park the parent
                             // through the existing budget-pause shape — its fan-out steps are still Pending, so
-                            // one Continue on the parent re-dispatches the group (and cancels this generation
-                            // first). Deliberately NO SafeEndRun and no promotion: a park is not terminal.
+                            // resuming re-dispatches the group (and cancels this generation first). The launcher
+                            // does that resume itself once the last child settles; a Continue on the parent is
+                            // the manual equivalent, and the resume CAS makes the two harmless together.
+                            // Deliberately NO SafeEndRun and no promotion: a park is not terminal.
                             await PinRange().ConfigureAwait(false);
                             await SafePause(run.Id, cts.Token, reason: ChildrenParkedReason).ConfigureAwait(false);
                             await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);

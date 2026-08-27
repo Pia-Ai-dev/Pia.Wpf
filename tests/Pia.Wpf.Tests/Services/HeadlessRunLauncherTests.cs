@@ -300,6 +300,54 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         return run;
     }
 
+    /// <summary>A settled delegated run of <paramref name="parentRunId"/>, with its own stub chat.</summary>
+    private async Task<AgentRun> SettledChildAsync(Guid parentRunId, bool complete = true)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var child = await NewChildRowAsync(parentRunId);
+        if (complete)
+            await _runs.CompleteAsync(child.Id, ct: ct);
+        else
+            await _runs.FailAsync(child.Id, "child failed", ct: ct);
+        return child;
+    }
+
+    private async Task<AgentRun> NewChildRowAsync(Guid parentRunId)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var chatId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        await _chats.SaveAsync(new SyncAssistantChat
+        {
+            Id = chatId,
+            SchemaVersion = 1,
+            Title = "child",
+            CreatedAt = now,
+            UpdatedAt = now,
+            LastAccessedAt = now,
+            WindowMode = WindowMode.Assistant.ToString(),
+            Messages = [],
+        }, ct);
+        return await _runs.CreateAsync(
+            new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.Schedule, Goal: "c",
+                ParentRunId: parentRunId), ct);
+    }
+
+    /// <summary>Polls until the run leaves <c>WaitingForInput</c>, or returns false at the deadline.</summary>
+    private async Task<bool> AwaitLeftTheParkAsync(Guid runId, int seconds = 10)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var deadline = DateTime.UtcNow.AddSeconds(seconds);
+        while (DateTime.UtcNow < deadline)
+        {
+            if ((await _runs.GetAsync(runId, ct))!.State != AgentRunState.WaitingForInput)
+                return true;
+            await Task.Delay(20, ct);
+        }
+
+        return false;
+    }
+
     /// <summary>Persists a stub chat and a parked (<c>WaitingForInput</c>) Planned run with no step rows and the given pause reason.</summary>
     private async Task<AgentRun> ParkRunWithNoStepsAsync(string reason)
     {
@@ -383,6 +431,97 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             && v.ValueKind == System.Text.Json.JsonValueKind.String
                 ? v.GetString()
                 : null;
+    }
+
+    /// <summary>
+    /// A children-parked parent used to sit at WaitingForInput after every child had finished, and recovering
+    /// it took a second human action nobody knew was needed. It resumes itself now — but only once the LAST
+    /// child settles, or the group would be re-dispatched under a child that is still running.
+    /// </summary>
+    [Fact]
+    public async Task ChildrenParkedParent_ResumesItself_OnlyOnceTheLastChildSettles()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (launcher, _) = BuildLauncher();
+        // Children first, then the park — the order the fan-out produces, and the order this handler needs:
+        // a children-parked row with no child rows yet is a state it deliberately draws no conclusion from.
+        var parent = await ParkRunWithPendingStepAsync(null);
+        var childA = await NewChildRowAsync(parent.Id);
+        var childB = await NewChildRowAsync(parent.Id);
+        await _runs.PauseAsync(parent.Id, "children-parked", ct);
+
+        await _runs.CompleteAsync(childA.Id, ct: ct);
+        Assert.False(await AwaitLeftTheParkAsync(parent.Id, seconds: 1),
+            "one of two children settling must not re-dispatch the group");
+
+        await _runs.CompleteAsync(childB.Id, ct: ct);
+        Assert.True(await AwaitLeftTheParkAsync(parent.Id));
+
+        await AwaitRunSettledAsync(launcher, parent.Id);
+    }
+
+    /// <summary>
+    /// The other edge of the same race, and the one a callback on the child's settle cannot see: the parent's
+    /// park can land AFTER its last child is already terminal, and a resume keyed only on a child settling
+    /// would then never fire. Keying on the state change catches whichever of the two is second.
+    /// </summary>
+    [Fact]
+    public async Task ChildrenParkedParent_Resumes_EvenWhenItParksAfterEveryChildHasSettled()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (launcher, _) = BuildLauncher();
+        var parent = await ParkRunWithPendingStepAsync(null);   // parked for a budget first
+        await SettledChildAsync(parent.Id);
+        await SettledChildAsync(parent.Id, complete: false);     // a FAILED child is settled too
+
+        // The park itself is the trigger here: every child was already terminal when it landed.
+        await _runs.PauseAsync(parent.Id, "children-parked", ct);
+
+        Assert.True(await AwaitLeftTheParkAsync(parent.Id));
+        await AwaitRunSettledAsync(launcher, parent.Id);
+    }
+
+    /// <summary>Every other park has a question only a person can answer, so a settling child must not answer it
+    /// for them. The reason token is the whole discriminator.</summary>
+    [Fact]
+    public async Task ABudgetParkedParent_IsNotResumedByASettlingChild()
+    {
+        var (launcher, _) = BuildLauncher();
+        var parent = await ParkRunWithPendingStepAsync(null);    // "step-cap"
+        await SettledChildAsync(parent.Id);
+
+        Assert.False(await AwaitLeftTheParkAsync(parent.Id, seconds: 1));
+
+        var still = (await _runs.GetAsync(parent.Id, TestContext.Current.CancellationToken))!;
+        Assert.Equal(AgentRunState.WaitingForInput, still.State);
+        Assert.Equal("step-cap", ReadPauseReason(still));
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>The auto-resume takes the SAME path Continue does, so the two can race — and the resume CAS is
+    /// what makes that harmless. One dispatch, whichever claim wins.</summary>
+    [Fact]
+    public async Task AManualContinueRacingTheAutoResume_DispatchesTheGroupOnce()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var turns = 0;
+        var (launcher, _) = BuildLauncher(stream: _ =>
+        {
+            Interlocked.Increment(ref turns);
+            return Drive();
+        });
+        var parent = await ParkRunWithPendingStepAsync(null);
+        var child = await NewChildRowAsync(parent.Id);
+        await _runs.PauseAsync(parent.Id, "children-parked", ct);
+
+        await _runs.CompleteAsync(child.Id, ct: ct);
+        await launcher.ResumeAsync(parent.Id, ct: ct);
+
+        Assert.True(await AwaitLeftTheParkAsync(parent.Id));
+        await AwaitRunSettledAsync(launcher, parent.Id);
+
+        // One pending step, so one model turn. A second dispatch would run it again.
+        Assert.Equal(1, turns);
     }
 
     [Fact]

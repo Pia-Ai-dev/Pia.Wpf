@@ -231,6 +231,76 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         // raising the cap is trying to fix. Deliberately NOT an initial read here: the ctor is synchronous and
         // GetSettingsAsync is not, so the width is picked up on the first launch (and on every save after).
         _settingsService.SettingsChanged += OnSettingsChanged;
+        // A children-parked parent used to need a second human action after its children were answered. The
+        // event, not the fan-out's await: by the time the parent parks, its await has already returned.
+        _agentRunService.RunChanged += OnRunChangedForParkedParent;
+    }
+
+    /// <summary>
+    /// Resume a parent that parked behind its children once the last of them settles.
+    /// <para>
+    /// BOTH edges of the same race are handled here, and that is the point of keying on the event rather than
+    /// on a settle callback: the child's terminal write and the parent's park can land in either order, so
+    /// whichever is second does the resume. A child settling first finds a parent that is not parked yet and
+    /// no-ops; the parent's own park then finds every child settled and resumes.
+    /// </para>
+    /// </summary>
+    private void OnRunChangedForParkedParent(object? sender, AgentRunChangedEventArgs e)
+    {
+        if (_disposed)
+            return;
+
+        // The parent's own park, or a child reaching a terminal state. Every other transition is noise here.
+        if (e.State is not (AgentRunState.WaitingForInput
+            or AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled))
+        {
+            return;
+        }
+
+        ResumeParkedParentIfSettledAsync(e.RunId, e.State).SafeFireAndForget(_logger);
+    }
+
+    private async Task ResumeParkedParentIfSettledAsync(Guid runId, AgentRunState state)
+    {
+        Guid parentId;
+        if (state == AgentRunState.WaitingForInput)
+        {
+            parentId = runId;
+        }
+        else
+        {
+            var settled = await _agentRunService.GetAsync(runId, _shutdownCts.Token).ConfigureAwait(false);
+            if (settled?.ParentRunId is not { } id)
+                return;
+            parentId = id;
+        }
+
+        var parent = await _agentRunService.GetAsync(parentId, _shutdownCts.Token).ConfigureAwait(false);
+        if (parent is null
+            || parent.State != AgentRunState.WaitingForInput
+            || RunPauseEnvelope.ReadReason(parent) != AgentRunOrchestrator.ChildrenParkedReason)
+        {
+            return;
+        }
+
+        var children = await _agentRunService.GetChildRunsAsync(parentId, _shutdownCts.Token).ConfigureAwait(false);
+        // NO children at all is not "they all settled": this reason is only ever written for a child that
+        // parked, so an empty set means the rows are gone (a deleted chat cascades) and there is nothing here
+        // to conclude. Leave it parked — Continue still works.
+        if (children.Count == 0)
+            return;
+
+        // Outstanding = not settled. Spelled through the two existing predicates rather than as the positive
+        // three-member set, so an appended state counts as outstanding and holds the parent rather than
+        // resuming it out from under a live child.
+        if (children.Any(c => AgentRunStates.IsExecuting(c.State) || AgentRunStates.IsParked(c.State)))
+            return;
+
+        _logger.LogInformation(
+            "Run {RunId}: every delegated run has settled, resuming the parked group", parentId);
+        // The SAME path Continue takes, and no nudge: nothing new enters the orchestrator, and TryBeginResumeAsync's
+        // CAS makes a manual Continue racing this harmless — one of the two claims the row and the other returns false.
+        await ResumeAsync(parentId, nudge: null, _shutdownCts.Token).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1368,6 +1438,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         // Beside the ChatsChanged unsubscribe and for the same reason — this launcher is a singleton, and
         // a live handler on the settings service outlives it (in tests, it pins a per-test substitute).
         _settingsService.SettingsChanged -= OnSettingsChanged;
+        _agentRunService.RunChanged -= OnRunChangedForParkedParent;
         _shutdownCts.Dispose();
     }
 }

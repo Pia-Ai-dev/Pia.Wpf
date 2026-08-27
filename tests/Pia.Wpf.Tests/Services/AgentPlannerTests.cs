@@ -387,6 +387,64 @@ public sealed class AgentPlannerTests
     }
 
     // Annotating the steps parameter as nullable must not propagate nullability down into the item properties.
+    /// <summary>
+    /// A delegated run's plan turn gets the replan-shaped tool: nothing surfaces a child's question, and a
+    /// fully-specified child goal that got declined parked the child needs-goal, re-parked its parent behind
+    /// it, and cost two human actions to recover.
+    /// </summary>
+    [Fact]
+    public async Task PlanAsync_ForADelegatedRun_OffersNoDecline_InTheSchemaOrThePrompt()
+    {
+        ReturnsPlan(Steps(("Do", "do the thing", null)));
+        var ctx = Ctx();
+        ctx.IsDelegated = true;
+
+        var result = await BuildPlanner().PlanAsync(Goal, ctx, Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        Assert.Single(result.Steps);
+        var props = ToolSchemaOfTurn(0).GetProperty("properties");
+        Assert.False(props.TryGetProperty("cannotGround", out _));
+        Assert.False(props.TryGetProperty("question", out _));
+
+        // The shape it cannot call AND the instruction that says so: a model handed only the narrow schema
+        // tends to write prose about being unable to proceed instead.
+        Assert.All(_systemPrompts, p => Assert.DoesNotContain("cannotGround", p, StringComparison.Ordinal));
+        Assert.All(_systemPrompts, p => Assert.Contains("You cannot ask anyone a question", p, StringComparison.Ordinal));
+        Assert.All(_systemPrompts, p => Assert.Contains("make the reasonable assumption", p, StringComparison.Ordinal));
+    }
+
+    /// <summary>The complement, so the arm above is a narrowing and not a rewrite: a top-level run may still
+    /// decline a goal it genuinely cannot ground.</summary>
+    [Fact]
+    public async Task PlanAsync_ForATopLevelRun_StillOffersTheDecline()
+    {
+        ReturnsPlan(Steps(("Do", "do the thing", null)));
+        var ctx = Ctx();
+
+        await BuildPlanner().PlanAsync(Goal, ctx, Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        Assert.False(ctx.IsDelegated);
+        var props = ToolSchemaOfTurn(0).GetProperty("properties");
+        Assert.True(props.TryGetProperty("cannotGround", out _));
+        Assert.All(_systemPrompts, p => Assert.DoesNotContain("You cannot ask anyone a question", p, StringComparison.Ordinal));
+    }
+
+    /// <summary>The firm retry is the other turn a decline could sneak back in on — it re-sends the tool.</summary>
+    [Fact]
+    public async Task PlanAsync_ForADelegatedRun_KeepsTheNarrowToolOnTheFirmRetry()
+    {
+        ReturnsPlanTurns(null, null, Steps(("Do", "do the thing", null)));
+        var ctx = Ctx();
+        ctx.IsDelegated = true;
+
+        var result = await BuildPlanner().PlanAsync(Goal, ctx, Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        Assert.Single(result.Steps);
+        Assert.Equal(2, _toolSets.Count);
+        for (var turn = 0; turn < _toolSets.Count; turn++)
+            Assert.False(ToolSchemaOfTurn(turn).GetProperty("properties").TryGetProperty("cannotGround", out _));
+    }
+
     [Fact]
     public async Task PlanAsync_PlanTool_OffersTheDecline_ButKeepsTheStepItemsStrict()
     {
