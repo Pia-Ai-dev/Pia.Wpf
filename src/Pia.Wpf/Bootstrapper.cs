@@ -117,7 +117,7 @@ public static class Bootstrapper
 
         // Resolve enforcement up-front so both branches can short-circuit cleanly.
         // Enterprise policy.enforce.serverUrl always wins over both the hardcoded production URL
-        // and the PIA_CLOUD_SERVER_URL dev override (precedence chain in docs/preset-settings.md).
+        // and the PIA_CLOUD_SERVER_URL dev override (precedence chain in docs/deployment_presets/preset-settings.md).
         var policyService = _serviceProvider.GetRequiredService<IPolicyService>();
         await policyService.GetPolicyAsync();
         var serverUrlEnforced = policyService.IsEnforced(nameof(AppSettings.ServerUrl));
