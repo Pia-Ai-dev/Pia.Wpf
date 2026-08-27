@@ -137,12 +137,15 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
               </Grid.ColumnDefinitions>
+              <!-- x:Name is the trigger target, and it doubles as the AutomationId unless one is set —
+                   which would make every card in the rail answer to the same id. -->
               <TextBlock x:Name="TitleText"
                          Grid.Column="0"
                          FontSize="13"
                          FontWeight="SemiBold"
                          Foreground="{DynamicResource TextDefaultBrush}"
                          Text="{Binding Title}"
+                         AutomationProperties.AutomationId="{Binding Item.Id, StringFormat='Flow_Title_{0}'}"
                          TextTrimming="CharacterEllipsis" />
               <TextBlock Grid.Column="1"
                          Margin="8,0,0,0"
@@ -162,6 +165,7 @@
                        FontSize="12"
                        Foreground="{DynamicResource TextMutedBrush}"
                        Text="{Binding Body}"
+                       AutomationProperties.AutomationId="{Binding Item.Id, StringFormat='Flow_Body_{0}'}"
                        TextTrimming="CharacterEllipsis" />
             <ui:Button x:Name="ActionLink"
                        Margin="0,6,0,0"
@@ -184,6 +188,7 @@
                                    Margin="0,6,0,0"
                                    HorizontalAlignment="Left"
                                    ItemsSource="{Binding Decisions}"
+                                   AutomationProperties.AutomationId="{Binding Item.Id, StringFormat='Flow_Decisions_{0}'}"
                                    Visibility="{Binding HasDecisions, Converter={StaticResource BooleanToVisibilityConverter}}" />
           </StackPanel>
 
@@ -368,8 +373,18 @@
         <Grid Grid.Row="1">
           <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                         VerticalScrollBarVisibility="Auto">
+            <!-- The generated ContentPresenter is the node UIA offers as the card; unstyled it reports
+                 no id and the view-model's ToString(), leaving no way to name one card. -->
             <ItemsControl ItemsSource="{Binding Items}"
-                          ItemTemplate="{StaticResource FlowItemCardTemplate}" />
+                          ItemTemplate="{StaticResource FlowItemCardTemplate}">
+              <ItemsControl.ItemContainerStyle>
+                <Style TargetType="ContentPresenter">
+                  <Setter Property="AutomationProperties.AutomationId"
+                          Value="{Binding Item.Id, StringFormat='Flow_Card_{0}'}" />
+                  <Setter Property="AutomationProperties.Name" Value="{Binding Title}" />
+                </Style>
+              </ItemsControl.ItemContainerStyle>
+            </ItemsControl>
           </ScrollViewer>
           <TextBlock HorizontalAlignment="Center"
                      VerticalAlignment="Center"
