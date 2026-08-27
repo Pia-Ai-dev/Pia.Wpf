@@ -54,15 +54,45 @@ twice over here — joining most of the way through captures little, and the per
 the meeting. The occurrence is spent (`AdvanceMissedRunAsync`), so tomorrow's standup still fires.
 
 `ExecuteMeetingAttendanceAsync` refuses, each with its own reason, when the attendee is policy-disabled,
-consent was never acknowledged, the link is missing or not a Teams URL, or the local audio stack is busy
-(either the attendee or direct transcription — they share it, and until now only `AssistantViewModel`
-enforced that, for the user's own clicks). Every refusal is checked **before** the schedule moves on, so a
-job that could never have run keeps its occurrence.
+consent was never acknowledged, or the link is missing or not a Teams URL. Every refusal is checked
+**before** a slot is taken and before the schedule moves on, so a misconfigured job neither starves the
+pool nor burns its occurrence.
 
-Then it dispatches and returns, like the other two legs. Concurrency needs no new bound: the attendee is a
-singleton owning one browser, and the busy check turns that into an honest refusal.
+Then it takes a session (§3) and dispatches, like the other two legs — a meeting runs for an hour and a
+tick must not wait for it.
 
-### 3. The recorder
+### 3. Concurrency, and why it is safe
+
+Scheduled meetings do **not** run on the overlay's shared attendee. That singleton holds one session, one
+`SingleReader` utterance channel and one end-watch loop, and refuses a second start. `IBackgroundMeetingSessions`
+hands out a fresh `MeetingAttendeeService` per meeting, bounded by
+`AppSettings.MaxConcurrentBackgroundMeetings` (JSON-only, default 2, values below 1 read as 1).
+
+Every session it hands out is `SilentCaptureOnly`, which is the load-bearing part. It forces three things:
+
+- the browser window stays hidden regardless of `MeetingAttendeeShowBrowserWindow`,
+- capture goes through the in-browser Web Audio tap, which is **per page** and leaves the meeting muted,
+- and a silent-capture failure **fails the join** instead of degrading to endpoint loopback.
+
+That last one is the whole reason concurrency works. Endpoint loopback records the default render device's
+whole mix, so two meetings degrading to it would each transcribe both meetings — and a "silent" session that
+degraded would start playing out loud. The degrade is still there for the overlay's own meeting, where it is
+the right trade (hidden but audible beats silent and untranscribed).
+
+Because sessions are silent and per-page, there is no contention with the overlay's meeting or with direct
+transcription's microphone and loopback, so the dispatcher no longer refuses on either. What is bounded is
+CPU and memory: each session runs its own VAD, STT engine and diarizer.
+
+The slot is taken by `TryAcquireAsync` **before** the schedule moves on, and the acquire itself is the
+reservation — a capacity check followed by a later acquire would let two meetings coming due on the same
+tick both pass it. A meeting that finds no free slot is not failed and not skipped: nothing is written, so
+the occurrence stays due and the next tick retries. If nothing frees up inside the join window the lateness
+gate skips it, which beats retiring a standup because another meeting overran.
+
+The lease owns the session's lifetime. Disposing it disposes the attendee (browser, models, loops) and only
+then returns the slot, so a fresh acquire can never race a teardown.
+
+### 4. The recorder
 
 `ScheduledMeetingRecorder` collects before joining (an utterance produced between the join completing and
 a later subscribe would be lost), applies retroactive `SpeakersReassigned` corrections, and on meeting end
@@ -81,7 +111,7 @@ Two waits, both hardcoded constants, both settable only so tests need not sit th
 `NothingCaptured` (attended, nobody spoke) completes the job rather than failing it — booking it as a
 failure would spend a strike on a meeting that worked.
 
-### 4. Vault transcripts moved — this changed existing behaviour
+### 5. Vault transcripts moved — this changed existing behaviour
 
 `MeetingVaultMarkdown.BuildReference` now returns `sources/transcripts/meeting-<ts>-<slug>.md`. This
 applies to the **manual** Save-to-vault flow too; they share the one helper, which is why it was cheap.
@@ -95,7 +125,7 @@ reconciles with `AllDirectories`; and the `meeting-followup` blueprint hardcodes
 Meetings already saved under `sources/` stay where they are. They remain readable and ingested, so there
 is no migration.
 
-### 5. A SingleReader hazard, closed
+### 6. A SingleReader hazard, closed
 
 `MeetingAttendeeViewModel.StartAsync` attaches its utterance consumer **before** calling the service, on a
 channel documented `SingleReader`. If a scheduled meeting was attending and the user clicked Join, a
@@ -105,7 +135,7 @@ second reader attached and silently stole utterances from the recorder before th
 `_service.State` rather than assuming idle — a window opened mid-meeting gets no `StateChanged` to correct
 it.
 
-### 6. UI and notification
+### 7. UI and notification
 
 Routines gained the third kind. A meeting shows a link field and a consent tick; the goal, provider,
 persona, effort and tool-grant fields are hidden, because none of them mean anything when the "run" is a
@@ -118,7 +148,7 @@ produces a vault source, not a chat: an "Open chat" button would be dead. It hon
 **Trap worth remembering:** `RecurrenceCalculator` treats `Once` *without* a `SpecificDate` as a daily
 clamp — it repeats forever. A one-off meeting must always write `SpecificDate`.
 
-## 7. What a human still owes
+## 8. What a human still owes
 
 `dotnet test` cannot execute on the author's Mac (net10.0-windows), so the suite has been compiled but not
 run; both projects build with **0 warnings** in Debug and Release.
@@ -132,9 +162,13 @@ run; both projects build with **0 warnings** in Debug and Release.
    during the second attempt. Expect one retry, ~60 s apart.
 4. Lateness: schedule one 10 minutes in the past, restart, confirm it is skipped with a notification and
    that **no** missed-run dialog appears.
-5. Conflict: start a manual meeting, let a scheduled one come due. Expect a refusal, not a double join.
-6. Manual Save-to-vault still works and also lands in `sources/transcripts/`.
-7. Sync: pair a second device and confirm the meeting job does not appear there.
+5. Concurrency: schedule two meetings for the same minute. Expect two hidden browsers, two transcripts,
+   and neither transcript containing the other meeting's speech. Then set
+   `MaxConcurrentBackgroundMeetings` to 1 and confirm the second waits and is skipped at the join window.
+6. No contention: start a manual meeting or direct transcription, let a scheduled one come due. Expect it
+   to join anyway, silently, without disturbing either.
+7. Manual Save-to-vault still works and also lands in `sources/transcripts/`.
+8. Sync: pair a second device and confirm the meeting job does not appear there.
 
 ## Limitations accepted up front
 
@@ -143,8 +177,10 @@ run; both projects build with **0 warnings** in Debug and Release.
 - **Anonymous join.** The attendee joins as a guest. Meetings locked to authenticated org members reject
   it. Already true of the manual flow; scheduling makes it more visible.
 - **Machine state.** A sleeping or powered-off machine does not join. Wake timers are out of scope.
-- **No live view.** During a scheduled meeting the recorder owns the utterance channel, so the overlay
-  shows nothing until the transcript lands. Worth revisiting.
+- **No live view.** A scheduled meeting runs on its own session, which the overlay is not attached to, so
+  it shows nothing until the transcript lands. Worth revisiting.
+- **The concurrency ceiling is a guess, not a measurement.** The default of 2 was chosen for caution; two
+  real-time STT streams plus diarization on one machine has not been benchmarked here.
 - **Shutdown mid-meeting drops the transcript.** The save runs after the meeting ends; quitting Pia while
   a scheduled meeting is being recorded abandons what was collected. Writing to the vault under a
   cancelled token is its own hazard, so this was left rather than half-solved.

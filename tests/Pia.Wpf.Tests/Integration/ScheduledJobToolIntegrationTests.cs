@@ -68,8 +68,8 @@ public class ScheduledJobToolIntegrationTests : IDisposable
         var bg = new ScheduledJobBackgroundService(
             jobs, scopeFactory, providers, notifications,
             Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(),
-            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
-            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IBackgroundMeetingSessions>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
 
         // Create a job via the tool handler so the path exercises the actual JSON arg parsing.
         var providerSvc = new StubProviderService();

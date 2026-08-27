@@ -92,9 +92,9 @@ public sealed class ScheduledMeetingRecorderTests
     }
 
     private static ScheduledMeetingRecorder NewRecorder(
-        FakeAttendee attendee, IMemoryService memory, IIngestScheduler? ingest = null, AppSettings? settings = null) =>
+        IMemoryService memory, IIngestScheduler? ingest = null, AppSettings? settings = null) =>
         Quickened(new ScheduledMeetingRecorder(
-            attendee, NewSettings(settings), memory, ingest ?? Substitute.For<IIngestScheduler>(),
+            NewSettings(settings), memory, ingest ?? Substitute.For<IIngestScheduler>(),
             NullLogger<ScheduledMeetingRecorder>.Instance));
 
     /// <summary>Both waits exist for a real meeting's pace; a test should not sit out a real minute.</summary>
@@ -117,7 +117,7 @@ public sealed class ScheduledMeetingRecorderTests
     private static async Task<MeetingRecordingResult> RunAsync(
         ScheduledMeetingRecorder recorder, FakeAttendee attendee, Action<FakeAttendee> duringMeeting)
     {
-        var recording = recorder.RecordAsync(Url, "Q3 roadmap sync");
+        var recording = recorder.RecordAsync(attendee, Url, "Q3 roadmap sync");
 
         while (attendee.State != MeetingAttendeeState.Attending && !recording.IsCompleted)
             await Task.Delay(10);
@@ -135,7 +135,7 @@ public sealed class ScheduledMeetingRecorderTests
         var memory = NewMemory();
         var ingest = Substitute.For<IIngestScheduler>();
 
-        var result = await RunAsync(NewRecorder(attendee, memory, ingest), attendee, a =>
+        var result = await RunAsync(NewRecorder(memory, ingest), attendee, a =>
         {
             a.Emit(Utterance("agenda item one", 0, "Speaker 1", 1));
             a.Emit(Utterance("agreed", 40, "Speaker 2", 2));
@@ -162,7 +162,7 @@ public sealed class ScheduledMeetingRecorderTests
         var attendee = new FakeAttendee();
         var ingest = Substitute.For<IIngestScheduler>();
 
-        var result = await RunAsync(NewRecorder(attendee, NewMemory(), ingest), attendee,
+        var result = await RunAsync(NewRecorder(NewMemory(), ingest), attendee,
             a => a.Emit(Utterance("hello", 0, "Speaker 1", 1)));
 
         await ingest.Received(1).RunAsync(result.Reference!, Arg.Any<CancellationToken>());
@@ -174,7 +174,7 @@ public sealed class ScheduledMeetingRecorderTests
         var attendee = new FakeAttendee();
         var memory = NewMemory();
 
-        await RunAsync(NewRecorder(attendee, memory), attendee, a =>
+        await RunAsync(NewRecorder(memory), attendee, a =>
         {
             a.Emit(Utterance("first", 0, "Speaker 1", 1));
             a.Emit(Utterance("second", 40, "Speaker 7", 2));
@@ -197,7 +197,7 @@ public sealed class ScheduledMeetingRecorderTests
         var attendee = new FakeAttendee { AdmissionTimeouts = 1 };
         var memory = NewMemory();
 
-        var result = await RunAsync(NewRecorder(attendee, memory), attendee,
+        var result = await RunAsync(NewRecorder(memory), attendee,
             a => a.Emit(Utterance("made it", 0, "Speaker 1", 1)));
 
         Assert.Equal(2, attendee.StartCount);
@@ -209,7 +209,7 @@ public sealed class ScheduledMeetingRecorderTests
     {
         var attendee = new FakeAttendee { AdmissionTimeouts = 2 };
 
-        var result = await NewRecorder(attendee, NewMemory()).RecordAsync(Url, "Standup", TestContext.Current.CancellationToken);
+        var result = await NewRecorder(NewMemory()).RecordAsync(attendee, Url, "Standup", TestContext.Current.CancellationToken);
 
         Assert.Equal(2, attendee.StartCount);
         Assert.Equal(MeetingRecordingOutcome.JoinFailed, result.Outcome);
@@ -220,7 +220,7 @@ public sealed class ScheduledMeetingRecorderTests
     {
         var attendee = new ThrowingAttendee();
 
-        var result = await NewRecorder2(attendee).RecordAsync(Url, "Standup", TestContext.Current.CancellationToken);
+        var result = await NewRecorder(NewMemory()).RecordAsync(attendee, Url, "Standup", TestContext.Current.CancellationToken);
 
         Assert.Equal(1, attendee.StartCount);
         Assert.Equal(MeetingRecordingOutcome.JoinFailed, result.Outcome);
@@ -232,7 +232,7 @@ public sealed class ScheduledMeetingRecorderTests
         var attendee = new FakeAttendee();
         var memory = NewMemory();
 
-        var result = await RunAsync(NewRecorder(attendee, memory), attendee, _ => { });
+        var result = await RunAsync(NewRecorder(memory), attendee, _ => { });
 
         Assert.Equal(MeetingRecordingOutcome.NothingCaptured, result.Outcome);
         await memory.DidNotReceive().CreateSourceAsync(Arg.Any<string>(), Arg.Any<string>());
@@ -243,7 +243,7 @@ public sealed class ScheduledMeetingRecorderTests
     {
         var attendee = new FakeAttendee();
 
-        var result = await RunAsync(NewRecorder(attendee, NewMemory(writeSucceeds: false)), attendee,
+        var result = await RunAsync(NewRecorder(NewMemory(writeSucceeds: false)), attendee,
             a => a.Emit(Utterance("hello", 0, "Speaker 1", 1)));
 
         Assert.Equal(MeetingRecordingOutcome.SaveFailed, result.Outcome);
@@ -261,17 +261,14 @@ public sealed class ScheduledMeetingRecorderTests
         memory.CreateSourceAsync(Arg.Any<string>(), Arg.Any<string>())
             .Returns(ci => Task.FromResult(new SourceWrite(true, (string)ci[0], null)));
 
-        var result = await RunAsync(NewRecorder(attendee, memory), attendee,
+        var result = await RunAsync(NewRecorder(memory), attendee,
             a => a.Emit(Utterance("hello", 0, "Speaker 1", 1)));
 
         // A second meeting in the same minute must not clobber the first.
         Assert.EndsWith("-2.md", result.Reference, StringComparison.Ordinal);
     }
 
-    private static ScheduledMeetingRecorder NewRecorder2(ThrowingAttendee attendee) =>
-        Quickened(new ScheduledMeetingRecorder(
-            attendee, NewSettings(), NewMemory(), Substitute.For<IIngestScheduler>(),
-            NullLogger<ScheduledMeetingRecorder>.Instance));
+
 
     /// <summary>Fails the join for a reason the retry must not treat as "try again in a minute".</summary>
     private sealed class ThrowingAttendee : IMeetingAttendeeService

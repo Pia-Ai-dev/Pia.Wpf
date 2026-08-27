@@ -61,8 +61,7 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
     private readonly ISettingsService _settingsService;
     private readonly IAgentRunService _runService;
     private readonly Services.MeetingAttendee.IScheduledMeetingRecorder _meetingRecorder;
-    private readonly Services.MeetingAttendee.IMeetingAttendeeService _meetingAttendee;
-    private readonly IDirectTranscriptionService _directTranscription;
+    private readonly Services.MeetingAttendee.IBackgroundMeetingSessions _meetingSessions;
     private readonly ILogger<ScheduledJobBackgroundService> _logger;
 
     /// <summary>
@@ -195,8 +194,7 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
         ISettingsService settingsService,
         IAgentRunService runService,
         Services.MeetingAttendee.IScheduledMeetingRecorder meetingRecorder,
-        Services.MeetingAttendee.IMeetingAttendeeService meetingAttendee,
-        IDirectTranscriptionService directTranscription,
+        Services.MeetingAttendee.IBackgroundMeetingSessions meetingSessions,
         ILogger<ScheduledJobBackgroundService> logger)
     {
         _jobs = jobs;
@@ -207,8 +205,7 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
         _settingsService = settingsService;
         _runService = runService;
         _meetingRecorder = meetingRecorder;
-        _meetingAttendee = meetingAttendee;
-        _directTranscription = directTranscription;
+        _meetingSessions = meetingSessions;
         _logger = logger;
 
         // T0-1(b). The launch path books its outcome from a continuation on the handle; the RESUME path hands
@@ -510,7 +507,6 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
     internal const string MeetingDisabledReason = "The meeting attendee is switched off.";
     internal const string MeetingNoConsentReason = "Recording consent was never acknowledged for this meeting.";
     internal const string MeetingNoUrlReason = "This meeting job has no usable Teams link.";
-    internal const string MeetingBusyReason = "The local audio stack is already in use by another meeting.";
 
     /// <summary>
     /// Dispatches a scheduled meeting and RETURNS, like the other two legs — a meeting runs for an hour and
@@ -534,13 +530,29 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
             return;
         }
 
+        // Taken BEFORE the schedule moves on, and it is the acquire — not a preceding capacity check —
+        // that reserves the slot: two meetings coming due on the same tick would both pass a check.
+        var lease = await _meetingSessions.TryAcquireAsync(ct);
+        if (lease is null)
+        {
+            // No strike and no schedule write, so the occurrence stays due and the next tick retries. If
+            // nothing frees up inside the join window, the lateness gate skips it with a notification —
+            // which beats retiring a standup because another meeting overran.
+            _logger.LogInformation("Scheduled meeting {Id} deferred: every meeting slot is busy", job.Id);
+            return;
+        }
+
         // A FAULTED write skips the occurrence rather than dispatching it, as on the research leg and for a
         // sharper version of the same reason: a meeting creates no AgentRuns row, so the TriggerRef guard is
         // blind to it entirely and this write is the ONLY thing keeping the next tick off the occurrence.
         // Re-dispatching every 30 s would then refuse as busy each time, spending a failure strike per tick.
-        if (!await MoveScheduleOnAsync(job)) return;
+        if (!await MoveScheduleOnAsync(job))
+        {
+            await lease.DisposeAsync();
+            return;
+        }
 
-        TrackDispatch(RunMeetingAsync(job, ct));
+        TrackDispatch(RunMeetingAsync(job, lease, ct));
     }
 
     private string? ClassifyMeetingRefusal(ScheduledJob job, AppSettings settings)
@@ -549,19 +561,22 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
         if (job.MeetingConsentAckAt is null) return MeetingNoConsentReason;
         if (!Services.MeetingAttendee.TeamsMeetingUrl.IsLikelyTeamsUrl(job.MeetingUrl)) return MeetingNoUrlReason;
 
-        // Both surfaces own the local audio stack, so only one may run at a time. The overlay enforces this
-        // for the user's own clicks; nothing enforced it for a schedule until here.
-        if (_meetingAttendee.State is not Services.MeetingAttendee.MeetingAttendeeState.Idle) return MeetingBusyReason;
-        if (_directTranscription.State is not DirectTranscriptionState.Idle) return MeetingBusyReason;
-
+        // Deliberately no "is anything else running?" check. A background session captures through the
+        // in-browser tap, which is per-page and leaves the meeting muted, so it contends with neither the
+        // overlay's own meeting nor direct transcription's microphone and loopback. What is bounded is CPU
+        // and memory, and IBackgroundMeetingSessions bounds that by handing out slots.
         return null;
     }
 
-    private async Task RunMeetingAsync(ScheduledJob job, CancellationToken ct)
+    private async Task RunMeetingAsync(
+        ScheduledJob job, Services.MeetingAttendee.BackgroundMeetingLease lease, CancellationToken ct)
     {
+        // The lease IS the meeting: disposing it tears the browser and the models down and hands the slot
+        // back, so it has to outlive the recording and nothing else may end it early.
+        await using var _ = lease;
         try
         {
-            var result = await _meetingRecorder.RecordAsync(job.MeetingUrl!, job.Name, ct);
+            var result = await _meetingRecorder.RecordAsync(lease.Attendee, job.MeetingUrl!, job.Name, ct);
 
             if (result.Outcome is Services.MeetingAttendee.MeetingRecordingOutcome.Saved)
             {

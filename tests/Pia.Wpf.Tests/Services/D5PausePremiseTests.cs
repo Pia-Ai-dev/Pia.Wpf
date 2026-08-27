@@ -138,8 +138,8 @@ public sealed class D5PausePremiseTests : IDisposable
 
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(), new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
-            recorder, settings, _runs, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
-            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
+            recorder, settings, _runs, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IBackgroundMeetingSessions>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
 
         try
         {
@@ -203,8 +203,8 @@ public sealed class D5PausePremiseTests : IDisposable
 
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(), new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
-            launcher, settings, runService, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
-            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
+            launcher, settings, runService, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IBackgroundMeetingSessions>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
 
@@ -250,8 +250,8 @@ public sealed class D5PausePremiseTests : IDisposable
 
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(), new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
-            launcher, settings, runService, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
-            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
+            launcher, settings, runService, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IBackgroundMeetingSessions>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
         Assert.Equal(1, Volatile.Read(ref launches));  // the due job dispatched; its run is unsettled
@@ -295,8 +295,8 @@ public sealed class D5PausePremiseTests : IDisposable
 
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(), new FakeProviderResolver(NewProvider()), notifications,
-            launcher, settings, runService, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
-            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
+            launcher, settings, runService, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IBackgroundMeetingSessions>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(ct);
         await SettleAsync(bg, ct);
@@ -331,8 +331,8 @@ public sealed class D5PausePremiseTests : IDisposable
 
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(), new FakeProviderResolver(NewProvider()), notifications,
-            recorder, settings, _runs, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
-            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
+            recorder, settings, _runs, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IBackgroundMeetingSessions>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
 
         try
         {
@@ -401,8 +401,8 @@ public sealed class D5PausePremiseTests : IDisposable
 
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(), new FakeProviderResolver(NewProvider()), notifications,
-            recorder, settings, _runs, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
-            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
+            recorder, settings, _runs, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IBackgroundMeetingSessions>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
 
         try
         {
@@ -463,8 +463,8 @@ public sealed class D5PausePremiseTests : IDisposable
 
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(), new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
-            recorder, settings, _runs, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
-            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
+            recorder, settings, _runs, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IBackgroundMeetingSessions>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
 
         try
         {

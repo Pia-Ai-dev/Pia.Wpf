@@ -514,6 +514,54 @@ public sealed class MeetingAttendeeServiceStateTests
     }
 
     [Fact]
+    public async Task StartAsync_SilentCaptureFailure_DegradesToLoopback_ForTheOverlaysSession()
+    {
+        var fx = new Fixture { SilentSourceThrows = true };
+
+        await fx.Service.StartAsync("https://teams.microsoft.com/l/meetup-join/x",
+            TestContext.Current.CancellationToken);
+
+        // Asked for silent, it failed, so it asked again for the audible endpoint loopback: a hidden but
+        // audible meeting beats a silent untranscribed one when only one meeting can be running.
+        Assert.Equal([true, false], fx.AudioSourceRequests);
+        Assert.Equal(MeetingAttendeeState.Attending, fx.Service.State);
+    }
+
+    [Fact]
+    public async Task StartAsync_SilentCaptureFailure_FailsABackgroundSessionInsteadOfDegrading()
+    {
+        var fx = new Fixture { SilentSourceThrows = true };
+        fx.Service.SilentCaptureOnly = true;
+
+        await Assert.ThrowsAnyAsync<Exception>(() => fx.Service.StartAsync(
+            "https://teams.microsoft.com/l/meetup-join/x", TestContext.Current.CancellationToken));
+
+        // Exactly one attempt, and never the loopback one: that path records the whole system mix, so a
+        // second concurrent meeting would land in this transcript too.
+        Assert.Equal([true], fx.AudioSourceRequests);
+        Assert.Equal(MeetingAttendeeState.Error, fx.Service.State);
+    }
+
+    [Fact]
+    public async Task ResolveLaunchSpecAsync_BackgroundSession_StaysHidden_EvenWhenTheUserAsksForAWindow()
+    {
+        var fx = new Fixture();
+        fx.Service.SilentCaptureOnly = true;
+
+        var spec = await fx.Service.ResolveLaunchSpecAsync(
+            new AppSettings
+            {
+                MeetingBrowserSelection = MeetingBrowserSelection.BundledChromium,
+                MeetingAttendeeShowBrowserWindow = true,
+            },
+            TestContext.Current.CancellationToken);
+
+        // A shown window is an AUDIBLE meeting captured off endpoint loopback, which is exactly what a
+        // background session must never do — with a second meeting running it records both.
+        Assert.False(spec.ShowWindow);
+    }
+
+    [Fact]
     public async Task ResolveLaunchSpecAsync_SystemChrome_UsesChromeChannel_NoProvision()
     {
         var fx = new Fixture();
@@ -760,6 +808,12 @@ public sealed class MeetingAttendeeServiceStateTests
 
         public bool SessionFactoryRan { get; private set; }
         public bool AudioSourceFactoryRan { get; private set; }
+
+        /// <summary>Makes the in-browser tap fail to start, which is what triggers the loopback degrade.</summary>
+        public bool SilentSourceThrows { get; init; }
+
+        /// <summary>The useSilentCapture argument of every audio source asked for, in order.</summary>
+        public List<bool> AudioSourceRequests { get; } = new();
         public bool EngineBuilt { get; private set; }
 
         public MeetingAttendeeService Service { get; }
@@ -820,10 +874,13 @@ public sealed class MeetingAttendeeServiceStateTests
                     SessionFactoryRan = true;
                     return Session;
                 },
-                audioSourceFactory: (_, _) =>
+                audioSourceFactory: (_, useSilentCapture) =>
                 {
                     AudioSourceFactoryRan = true;
-                    return AudioSource;
+                    AudioSourceRequests.Add(useSilentCapture);
+                    return SilentSourceThrows && useSilentCapture
+                        ? new FakeAudioSource(order, throwOnStart: true)
+                        : AudioSource;
                 },
                 engineServiceFactory: (_, _, _, _, _, _, _) =>
                 {

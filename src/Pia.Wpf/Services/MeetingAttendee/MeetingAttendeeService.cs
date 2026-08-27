@@ -67,6 +67,15 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     private readonly SemaphoreSlim _disposeGate = new(1, 1);
     private MeetingAttendeeState _state = MeetingAttendeeState.Idle;
 
+    /// <summary>
+    /// This instance is a background session, so it may only ever capture through the in-browser tap:
+    /// hidden window, page muted, and a silent-capture failure fails the join instead of degrading to
+    /// endpoint loopback. That degrade records the whole system mix, which with a second meeting running
+    /// would put both meetings in both transcripts — and with none running would make a "silent" session
+    /// audible on the user's speakers. Set by the session pool, never by the overlay.
+    /// </summary>
+    internal bool SilentCaptureOnly { get; set; }
+
     private IMeetingSession? _session;
     private IAudioCaptureSource? _audioSource;
     private IAsyncDisposable? _engineService;
@@ -291,7 +300,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             //    in-browser capture when the window is hidden — with a dispose-then-degrade fallback to
             //    the audible endpoint loopback if the silent path fails (disposing the silent source
             //    unmutes the meeting, so the degrade is actually audible).
-            var useSilentCapture = UseSilentBrowserCapture(settings);
+            var useSilentCapture = SilentCaptureOnly || UseSilentBrowserCapture(settings);
             var source = _audioSourceFactory(session, useSilentCapture);
             _audioSource = source;
             try
@@ -300,7 +309,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
                 if (useSilentCapture)
                     _logger.LogInformation("Meeting attendee using silent in-browser audio capture");
             }
-            catch (Exception ex) when (useSilentCapture && ex is not OperationCanceledException)
+            catch (Exception ex) when (useSilentCapture && !SilentCaptureOnly && ex is not OperationCanceledException)
             {
                 // Silent in-browser capture failed to produce audio (e.g. the in-page hook captured no
                 // remote track, or the tap could not be armed). Dispose it FIRST — that runs the source's
@@ -433,7 +442,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     /// </summary>
     internal async Task<BrowserLaunchSpec> ResolveLaunchSpecAsync(AppSettings settings, CancellationToken ct)
     {
-        var show = settings.MeetingAttendeeShowBrowserWindow;
+        var show = !SilentCaptureOnly && settings.MeetingAttendeeShowBrowserWindow;
         var selection = settings.MeetingBrowserSelection;
 
         // #3: resolve "system default" to a concrete Chromium-family selection, or fall back to bundled

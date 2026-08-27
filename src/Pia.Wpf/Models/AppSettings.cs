@@ -176,6 +176,12 @@ public class AppSettings
     // roster snapshots entirely. Best-effort: a roster miss never affects the meeting. Local-only.
     public int MeetingAttendeeRosterSnapshotMinutes { get; set; } = 2;
 
+    // How many SCHEDULED meetings may run at once. The overlay's own meeting is separate and not counted.
+    // Each one costs a browser, a VAD, an STT engine and a diarizer, so the ceiling is CPU and memory, not
+    // audio — the in-browser tap is per-page, so hidden sessions never contend for a device. Values below 1
+    // are read as 1. Machine-specific, so local-only. JSON-only (no settings UI), like the roster cadence.
+    public int MaxConcurrentBackgroundMeetings { get; set; } = 2;
+
     // Automatically ingest documents in the vault's sources/ folder (watcher + startup reconcile).
     // Each ingest costs two LLM calls to the default provider and writes synced memory pages, so this
     // is the consent gate. Gates only the automatic triggers — the chat ingest tool always works.

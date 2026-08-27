@@ -639,13 +639,18 @@ public static class Bootstrapper
         services.AddSingleton<Services.MeetingAttendee.IBrowserProvisioner, Services.MeetingAttendee.ChromiumProvisioner>();
         services.AddSingleton<Services.MeetingAttendee.IDefaultBrowserResolver, Services.MeetingAttendee.DefaultBrowserResolver>();
         services.AddSingleton<Services.MeetingAttendee.IScheduledMeetingRecorder, Services.MeetingAttendee.ScheduledMeetingRecorder>();
+
+        // ONE construction expression, used for both the overlay's shared instance and every background
+        // session the pool hands out — so a DEBUG replay or dump composes a scheduled meeting exactly the
+        // way it composes the interactive one, instead of the two drifting apart.
+        Func<IServiceProvider, Services.MeetingAttendee.MeetingAttendeeService> buildAttendee;
 #if DEBUG
         var debugMeetingAttendeeAudioFile = Environment.GetEnvironmentVariable(DebugMeetingAttendeeAudioFileEnvVar);
         if (!string.IsNullOrEmpty(debugMeetingAttendeeAudioFile))
         {
             var debugRoster = Services.MeetingAttendee.DebugNoOpMeetingSession.ParseRoster(
                 Environment.GetEnvironmentVariable(DebugMeetingAttendeeRosterEnvVar));
-            services.AddSingleton<Services.MeetingAttendee.IMeetingAttendeeService>(sp =>
+            buildAttendee = sp =>
                 new Services.MeetingAttendee.MeetingAttendeeService(
                     sp.GetRequiredService<ISettingsService>(),
                     sp.GetRequiredService<ILoggerFactory>(),
@@ -663,14 +668,15 @@ public static class Bootstrapper
                             sp.GetRequiredService<ILoggerFactory>().CreateLogger<Services.LiveTranscription.DebugFileAudioCaptureService>()),
                         DebugMeetingAttendeeAudioDumpEnvVar, "replay", sp.GetRequiredService<ILoggerFactory>()),
                     engineServiceFactory: Services.MeetingAttendee.MeetingAttendeeService.CreateEngineServiceFactory(
-                        sp.GetRequiredService<ILoggerFactory>())));
+                        sp.GetRequiredService<ILoggerFactory>()));
         }
         else if (Environment.GetEnvironmentVariable(DebugMeetingAttendeeAudioDumpEnvVar) is { Length: > 0 })
         {
-            // The factory runs a second time when silent capture fails, so each instance gets its own
-            // ordinal: the two captures are not contiguous and must not share a file.
+            // The factory runs a second time when silent capture fails, and once more per concurrent
+            // background session, so each instance gets its own ordinal: the captures are not contiguous
+            // and must not share a file.
             var instance = 0;
-            services.AddSingleton<Services.MeetingAttendee.IMeetingAttendeeService>(sp =>
+            buildAttendee = sp =>
             {
                 var settings = sp.GetRequiredService<ISettingsService>();
                 var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
@@ -688,18 +694,27 @@ public static class Bootstrapper
                         loggerFactory.CreateLogger<Services.MeetingAttendee.TeamsMeetingSession>()),
                     audioSourceFactory: (session, useSilentCapture) => DebugTee(
                         production(session, useSilentCapture),
-                        DebugMeetingAttendeeAudioDumpEnvVar, ++instance, loggerFactory),
+                        DebugMeetingAttendeeAudioDumpEnvVar, Interlocked.Increment(ref instance), loggerFactory),
                     engineServiceFactory: Services.MeetingAttendee.MeetingAttendeeService.CreateEngineServiceFactory(loggerFactory),
                     defaultBrowserResolver: sp.GetRequiredService<Services.MeetingAttendee.IDefaultBrowserResolver>());
-            });
+            };
         }
         else
         {
-            services.AddSingleton<Services.MeetingAttendee.IMeetingAttendeeService, Services.MeetingAttendee.MeetingAttendeeService>();
+            buildAttendee = sp => ActivatorUtilities.CreateInstance<Services.MeetingAttendee.MeetingAttendeeService>(sp);
         }
 #else
-        services.AddSingleton<Services.MeetingAttendee.IMeetingAttendeeService, Services.MeetingAttendee.MeetingAttendeeService>();
+        buildAttendee = sp => ActivatorUtilities.CreateInstance<Services.MeetingAttendee.MeetingAttendeeService>(sp);
 #endif
+
+        // The overlay's shared instance. Scheduled meetings deliberately do NOT use it: it holds one
+        // session, one utterance channel and one end-watch loop, and refuses a second start.
+        services.AddSingleton<Services.MeetingAttendee.IMeetingAttendeeService>(sp => buildAttendee(sp));
+        services.AddSingleton<Services.MeetingAttendee.IBackgroundMeetingSessions>(sp =>
+            new Services.MeetingAttendee.BackgroundMeetingSessions(
+                () => buildAttendee(sp),
+                sp.GetRequiredService<ISettingsService>(),
+                sp.GetRequiredService<ILogger<Services.MeetingAttendee.BackgroundMeetingSessions>>()));
 
         // Direct transcription (in-session voice consent + live capture). Session-scoped consent
         // only (owner decision D-3/D-4): no persistent voice-profile store, no evidence retention worker.

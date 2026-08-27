@@ -25,20 +25,17 @@ public sealed class ScheduledMeetingRecorder : IScheduledMeetingRecorder
 
     private const int MaxVaultReferenceAttempts = 50;
 
-    private readonly IMeetingAttendeeService _attendee;
     private readonly ISettingsService _settingsService;
     private readonly IMemoryService _memoryService;
     private readonly IIngestScheduler _ingestScheduler;
     private readonly ILogger<ScheduledMeetingRecorder> _logger;
 
     public ScheduledMeetingRecorder(
-        IMeetingAttendeeService attendee,
         ISettingsService settingsService,
         IMemoryService memoryService,
         IIngestScheduler ingestScheduler,
         ILogger<ScheduledMeetingRecorder> logger)
     {
-        _attendee = attendee;
         _settingsService = settingsService;
         _memoryService = memoryService;
         _ingestScheduler = ingestScheduler;
@@ -46,8 +43,9 @@ public sealed class ScheduledMeetingRecorder : IScheduledMeetingRecorder
     }
 
     public async Task<MeetingRecordingResult> RecordAsync(
-        string meetingUrl, string title, CancellationToken cancellationToken = default)
+        IMeetingAttendeeService attendee, string meetingUrl, string title, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(attendee);
         ArgumentException.ThrowIfNullOrWhiteSpace(meetingUrl);
 
         var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
@@ -58,15 +56,15 @@ public sealed class ScheduledMeetingRecorder : IScheduledMeetingRecorder
         // the join completing and a later subscribe would be lost, and nothing replays it.
         using var collectCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         void OnReassigned(object? _, IReadOnlyList<SpeakerReassignment> changes) => journal.ApplyReassignments(changes);
-        _attendee.SpeakersReassigned += OnReassigned;
-        var collector = Task.Run(() => CollectAsync(journal, collectCts.Token), CancellationToken.None);
+        attendee.SpeakersReassigned += OnReassigned;
+        var collector = Task.Run(() => CollectAsync(attendee, journal, collectCts.Token), CancellationToken.None);
 
         try
         {
-            if (!await TryJoinAsync(meetingUrl, cancellationToken).ConfigureAwait(false))
+            if (!await TryJoinAsync(attendee, meetingUrl, cancellationToken).ConfigureAwait(false))
                 return new MeetingRecordingResult(MeetingRecordingOutcome.JoinFailed, null, "The meeting attendee was never admitted.");
 
-            await WaitForMeetingEndAsync(cancellationToken).ConfigureAwait(false);
+            await WaitForMeetingEndAsync(attendee, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -83,8 +81,8 @@ public sealed class ScheduledMeetingRecorder : IScheduledMeetingRecorder
 
             await collectCts.CancelAsync().ConfigureAwait(false);
             try { await collector.ConfigureAwait(false); } catch { /* logged inside */ }
-            _attendee.SpeakersReassigned -= OnReassigned;
-            journal.DrainRemaining(_attendee.Utterances);
+            attendee.SpeakersReassigned -= OnReassigned;
+            journal.DrainRemaining(attendee.Utterances);
         }
 
         var bubbles = journal.Project();
@@ -94,7 +92,7 @@ public sealed class ScheduledMeetingRecorder : IScheduledMeetingRecorder
             return new MeetingRecordingResult(MeetingRecordingOutcome.NothingCaptured, null, null);
         }
 
-        return await SaveAsync(bubbles, title, sessionStart, settings).ConfigureAwait(false);
+        return await SaveAsync(attendee, bubbles, title, sessionStart, settings).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -102,11 +100,11 @@ public sealed class ScheduledMeetingRecorder : IScheduledMeetingRecorder
     /// failure is retried: the failed start already tore its browser down and left the service in
     /// <see cref="MeetingAttendeeState.Error"/>, which <c>StartAsync</c> accepts as a fresh start.
     /// </summary>
-    private async Task<bool> TryJoinAsync(string meetingUrl, CancellationToken ct)
+    private async Task<bool> TryJoinAsync(IMeetingAttendeeService attendee, string meetingUrl, CancellationToken ct)
     {
         try
         {
-            await _attendee.StartAsync(meetingUrl, ct).ConfigureAwait(false);
+            await attendee.StartAsync(meetingUrl, ct).ConfigureAwait(false);
             return true;
         }
         catch (MeetingAdmissionTimeoutException ex)
@@ -118,7 +116,7 @@ public sealed class ScheduledMeetingRecorder : IScheduledMeetingRecorder
 
         try
         {
-            await _attendee.StartAsync(meetingUrl, ct).ConfigureAwait(false);
+            await attendee.StartAsync(meetingUrl, ct).ConfigureAwait(false);
             return true;
         }
         catch (MeetingAdmissionTimeoutException ex)
@@ -132,7 +130,7 @@ public sealed class ScheduledMeetingRecorder : IScheduledMeetingRecorder
     /// Waits for the attendee to stop itself, which is what a meeting ending looks like from here. The
     /// state is re-read AFTER subscribing so a meeting that ended in between is not waited on forever.
     /// </summary>
-    private async Task WaitForMeetingEndAsync(CancellationToken ct)
+    private static async Task WaitForMeetingEndAsync(IMeetingAttendeeService attendee, CancellationToken ct)
     {
         var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         void OnStateChanged(object? _, MeetingAttendeeState state)
@@ -140,23 +138,23 @@ public sealed class ScheduledMeetingRecorder : IScheduledMeetingRecorder
             if (state is MeetingAttendeeState.Idle or MeetingAttendeeState.Error) ended.TrySetResult();
         }
 
-        _attendee.StateChanged += OnStateChanged;
+        attendee.StateChanged += OnStateChanged;
         try
         {
-            if (_attendee.State is MeetingAttendeeState.Idle or MeetingAttendeeState.Error) return;
+            if (attendee.State is MeetingAttendeeState.Idle or MeetingAttendeeState.Error) return;
             await ended.Task.WaitAsync(ct).ConfigureAwait(false);
         }
         finally
         {
-            _attendee.StateChanged -= OnStateChanged;
+            attendee.StateChanged -= OnStateChanged;
         }
     }
 
-    private async Task CollectAsync(MeetingJournal journal, CancellationToken ct)
+    private async Task CollectAsync(IMeetingAttendeeService attendee, MeetingJournal journal, CancellationToken ct)
     {
         try
         {
-            await foreach (var utterance in _attendee.Utterances.ReadAllAsync(ct).ConfigureAwait(false))
+            await foreach (var utterance in attendee.Utterances.ReadAllAsync(ct).ConfigureAwait(false))
                 journal.Add(utterance);
         }
         catch (OperationCanceledException) { /* expected: the meeting ended */ }
@@ -167,7 +165,8 @@ public sealed class ScheduledMeetingRecorder : IScheduledMeetingRecorder
     }
 
     private async Task<MeetingRecordingResult> SaveAsync(
-        IReadOnlyList<TranscriptBubble> bubbles, string title, DateTimeOffset sessionStart, AppSettings settings)
+        IMeetingAttendeeService attendee, IReadOnlyList<TranscriptBubble> bubbles, string title,
+        DateTimeOffset sessionStart, AppSettings settings)
     {
         var (reference, refusal) = await ResolveFreeReferenceAsync(sessionStart, title).ConfigureAwait(false);
         if (reference is null)
@@ -178,7 +177,7 @@ public sealed class ScheduledMeetingRecorder : IScheduledMeetingRecorder
             Start: sessionStart,
             End: bubbles[^1].EndTimestamp,
             Source: "teams",
-            Attendees: _attendee.ObservedAttendees,
+            Attendees: attendee.ObservedAttendees,
             Tags: [],
             Project: null,
             Notes: null);

@@ -26,5 +26,11 @@ public readonly record struct MeetingRecordingResult(
 /// </summary>
 public interface IScheduledMeetingRecorder
 {
-    Task<MeetingRecordingResult> RecordAsync(string meetingUrl, string title, CancellationToken cancellationToken = default);
+    /// <param name="attendee">
+    /// The session to run this meeting on, from <see cref="IBackgroundMeetingSessions"/>. Passed in rather
+    /// than injected because concurrent meetings each need their own — the shared singleton holds one
+    /// session and refuses a second start. The caller owns its lifetime; this never disposes it.
+    /// </param>
+    Task<MeetingRecordingResult> RecordAsync(
+        IMeetingAttendeeService attendee, string meetingUrl, string title, CancellationToken cancellationToken = default);
 }
