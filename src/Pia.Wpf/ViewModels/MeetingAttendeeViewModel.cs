@@ -124,6 +124,10 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         _service.SpeakersReassigned += OnSpeakersReassigned;
 
         StatusText = _localizationService["MeetingAttendee_Status_Idle"];
+
+        // Seed from the CURRENT state, not from idle: a scheduled meeting may already be attending when this
+        // window opens, and no StateChanged is coming to correct an assumed-idle start. Last, so it wins.
+        OnServiceStateChanged(this, _service.State);
     }
 
     // ---- Open / pre-fill --------------------------------------------------------------------------
@@ -155,8 +159,12 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
 
     // ---- Start ------------------------------------------------------------------------------------
 
+    // The service state is checked directly, not only through IsRunning: Utterances is a SingleReader
+    // channel and StartReaderAsync attaches BEFORE the service refuses, so joining on top of a meeting that
+    // is already running (a scheduled one, say) would silently split the transcript between two readers.
     private bool CanStart()
         => !IsRunning
+           && _service.State is MeetingAttendeeState.Idle or MeetingAttendeeState.Error
            && ConsentAcknowledged
            && TeamsMeetingUrl.IsLikelyTeamsUrl(MeetingUrl);
 
