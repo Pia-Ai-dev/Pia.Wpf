@@ -33,7 +33,7 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
 {
     private const int MaxBubbles = 200;
     private const int TrimBatch = 20;
-    internal const int BubbleWindowSeconds = 25;
+    internal const int BubbleWindowSeconds = TranscriptGrouping.BubbleWindowSeconds;
     private const int SpeakerColorPaletteSize = 5;
     private const int MaxVaultReferenceAttempts = 50;
 
@@ -43,9 +43,7 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     // Display numbering, in first-appearance order. Matches the diarizer's own "Speaker {n}" format,
     // so a user who renames a speaker to "Speaker 12" is renumbered too — harmless, since Rename's
     // collision guard already stops two identities sharing a display string.
-    private static readonly System.Text.RegularExpressions.Regex AutoSpeakerLabel =
-        new(@"^Speaker \d+$", System.Text.RegularExpressions.RegexOptions.Compiled);
-    private readonly Dictionary<string, int> _displayNumberByLabel = new(StringComparer.Ordinal);
+    private readonly SpeakerDisplayNumbering _displayNumbering = new();
 
     // Per-utterance retention so adaptive reassignments can rebuild bubbles retroactively.
     // Comfortably above MaxBubbles; the rebuild trims to MaxBubbles at the end.
@@ -261,17 +259,7 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         TranscriptSpeaker speaker, DateTimeOffset timestamp, string? speakerLabel, bool createIfMissing)
     {
         var last = Bubbles.Count > 0 ? Bubbles[^1] : null;
-        bool sameWindow = last is not null
-            && last.Speaker == speaker
-            && (timestamp - last.StartTimestamp).TotalSeconds < BubbleWindowSeconds;
-
-        if (sameWindow && string.Equals(last!.SpeakerLabel, speakerLabel, StringComparison.Ordinal))
-            return last;
-
-        if (sameWindow
-            && string.IsNullOrWhiteSpace(speakerLabel)
-            && !string.IsNullOrWhiteSpace(last!.SpeakerLabel))
-            return last;
+        if (TranscriptGrouping.ShouldReuse(last, speaker, timestamp, speakerLabel)) return last;
 
         if (!createIfMissing) return null;
 
@@ -289,18 +277,8 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     /// is <see cref="ISpeakerIdentificationService"/>'s mint counter leaking into the UI; a user-renamed
     /// label carries a real name and passes through untouched.
     /// </summary>
-    private string? ResolveDisplayLabel(string? speakerLabel)
-    {
-        if (string.IsNullOrWhiteSpace(speakerLabel)) return speakerLabel;
-        if (SuppressSpeakerLabels) return null;
-        if (!AutoSpeakerLabel.IsMatch(speakerLabel)) return speakerLabel;
-        if (!_displayNumberByLabel.TryGetValue(speakerLabel, out var number))
-        {
-            number = _displayNumberByLabel.Count + 1;
-            _displayNumberByLabel[speakerLabel] = number;
-        }
-        return $"Speaker {number}";
-    }
+    private string? ResolveDisplayLabel(string? speakerLabel) =>
+        _displayNumbering.Resolve(speakerLabel, SuppressSpeakerLabels);
 
     partial void OnSuppressSpeakerLabelsChanged(bool value)
     {
@@ -386,7 +364,7 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         Bubbles.Clear();
         // Rebuilt from scratch, unlike the palette map: a stale label dropped by a pass must not keep
         // its number, or the renumbering would not close the gaps it exists to close.
-        _displayNumberByLabel.Clear();
+        _displayNumbering.Reset();
         foreach (var entry in _journal)
         {
             var bubble = GetOrCreateBubble(entry.Speaker, entry.Timestamp, entry.Label, createIfMissing: true);
@@ -413,7 +391,7 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         Bubbles.Clear();
         _journal.Clear();
         _pendingReassignments.Clear();
-        _displayNumberByLabel.Clear();
+        _displayNumbering.Reset();
     }
 
     /// <summary>
