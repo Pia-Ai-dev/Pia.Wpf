@@ -612,7 +612,7 @@
                dead Send to it. Bound to ForeignRunActive alone, so it never appears for the streaming or
                empty-composer disabled states. Collapsed costs zero height in this StackPanel (the composer
                row is Auto), so the layout does not shift when the hint is hidden. -->
-          <TextBlock Text="{loc:Str Assistant_BackgroundRunActive_Hint}"
+          <TextBlock Text="{loc:Str Assistant_RunActive_Hint}"
                      Margin="2,6,0,0"
                      FontSize="12"
                      TextWrapping="Wrap"

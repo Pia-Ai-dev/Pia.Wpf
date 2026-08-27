@@ -109,7 +109,7 @@
   <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Envoyer (Entrée)</value></data>
   <data name="Assistant_Working_Tooltip" xml:space="preserve"><value>Traitement du dernier message…</value></data>
   <data name="Assistant_RunInBackground_Tooltip" xml:space="preserve"><value>Exécuter en arrière-plan</value></data>
-  <data name="Assistant_BackgroundRunActive_Hint" xml:space="preserve"><value>Une exécution en arrière-plan écrit dans ce chat. L'envoi reprend dès qu'elle est terminée.</value></data>
+  <data name="Assistant_RunActive_Hint" xml:space="preserve"><value>Une exécution écrit dans ce chat. L'envoi reprend dès qu'elle est terminée.</value></data>
   <data name="Assistant_PlanApprovalActive_Hint" xml:space="preserve"><value>Approuvez ou rejetez le plan proposé avant d'envoyer un autre message.</value></data>
   <data name="Assistant_GoalTooShort_Hint" xml:space="preserve"><value>Cela semble trop court pour être exécuté comme objectif. Ajoutez quelques mots pour qu'il puisse être planifié.</value></data>
   <data name="Assistant_RunInBackground_Failed" xml:space="preserve"><value>Impossible de démarrer l'exécution en arrière-plan : {0}</value></data>

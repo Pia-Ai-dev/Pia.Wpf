@@ -29,7 +29,7 @@ public class AssistantViewParseTests
     // ViewStrings.resx (neutral = EN): LocalizationSource stays on InvariantCulture because no test ever calls
     // SetCulture, so the neutral resx is deterministically what the view renders.
     private const string HintText =
-        "A background run is writing to this chat. Sending resumes when it finishes.";
+        "A run is writing to this chat. Sending resumes when it finishes.";
 
     /// <summary>Composer hint for a too-short goal (Assistant_GoalTooShort_Hint), same resx source as <see cref="HintText"/> above.</summary>
     private const string GoalTooShortHintText =
@@ -94,7 +94,7 @@ public class AssistantViewParseTests
 
         Assert.True(found,
             $"No TextBlock in the parsed AssistantView renders '{HintText}'. Either the view failed to " +
-            "parse, or the loc:Str key Assistant_BackgroundRunActive_Hint no longer resolves.");
+            "parse, or the loc:Str key Assistant_RunActive_Hint no longer resolves.");
         Assert.Equal(Visibility.Collapsed, before);
         Assert.Equal(Visibility.Visible, after);
     }

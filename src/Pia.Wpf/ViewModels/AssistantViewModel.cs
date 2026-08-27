@@ -97,8 +97,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// <summary>
     /// W2: a run attached to this chat is executing under an executor this session does not own (headlessly),
     /// so it is a second full-chat writer and Send must stay disabled until it stops. Also drives the composer
-    /// hint line (Assistant_BackgroundRunActive_Hint): the embedded <see cref="ActiveRunProgress"/> panel does
-    /// show the run executing, but nothing there attributes the dead Send to it, so the hint says it in words.
+    /// hint line (Assistant_RunActive_Hint): the embedded <see cref="ActiveRunProgress"/> panel does show the
+    /// run executing, but nothing there attributes the dead Send to it, so the hint says it in words. The hint
+    /// does NOT say "background": approving a plan hands a foreground run to the headless executor, so this is
+    /// what the person who pressed Send sees, and naming a button they did not press reads as their mistake.
     /// </summary>
     [ObservableProperty]
     private bool _foreignRunActive;
