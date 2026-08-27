@@ -124,7 +124,7 @@ public class MeetingVaultMarkdownTests
         var reference = MeetingVaultMarkdown.BuildReference(Start, "Café (work)! Q3");
 
         Assert.Equal(
-            $"sources/meeting-{Start.LocalDateTime:yyyyMMdd-HHmm}-cafe-work-q3.md", reference);
+            $"sources/transcripts/meeting-{Start.LocalDateTime:yyyyMMdd-HHmm}-cafe-work-q3.md", reference);
     }
 
     [Fact]

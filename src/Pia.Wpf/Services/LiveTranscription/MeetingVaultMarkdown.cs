@@ -58,6 +58,9 @@ public static class MeetingVaultMarkdown
         return sb.ToString();
     }
 
+    /// <summary>Folder meetings are saved under, so transcripts do not sit loose among every other raw source.</summary>
+    public const string TranscriptsFolder = "sources/transcripts";
+
     /// <summary>
     /// The vault-relative ref a meeting is saved under. The slug is the normative §6 algorithm, so a
     /// title with punctuation or diacritics still yields a portable filename.
@@ -65,7 +68,7 @@ public static class MeetingVaultMarkdown
     public static string BuildReference(DateTimeOffset start, string? title)
     {
         var stamp = start.LocalDateTime.ToString("yyyyMMdd-HHmm", CultureInfo.InvariantCulture);
-        return $"sources/meeting-{stamp}-{VaultSlug.Slugify(title ?? string.Empty)}.md";
+        return $"{TranscriptsFolder}/meeting-{stamp}-{VaultSlug.Slugify(title ?? string.Empty)}.md";
     }
 
     /// <summary>Splits a comma-separated form field into trimmed, non-empty entries.</summary>

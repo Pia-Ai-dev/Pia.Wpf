@@ -791,7 +791,7 @@ public class MeetingAttendeeViewModelTests
         var reference = (string)call.GetArguments()[0]!;
         var markdown = (string)call.GetArguments()[1]!;
 
-        Assert.StartsWith("sources/meeting-", reference, StringComparison.Ordinal);
+        Assert.StartsWith("sources/transcripts/meeting-", reference, StringComparison.Ordinal);
         Assert.EndsWith("-q3-roadmap-sync.md", reference, StringComparison.Ordinal);
         Assert.Contains("schema: pia-meeting/v1", markdown, StringComparison.Ordinal);
         Assert.Contains("title: Q3 roadmap sync", markdown, StringComparison.Ordinal);
