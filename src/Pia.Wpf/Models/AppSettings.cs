@@ -73,7 +73,7 @@ public class AppSettings
     public bool AutoCaptureSelectedText { get; set; } = true;
     public TargetLanguage? TargetLanguage { get; set; }
     public TargetSpeechLanguage TargetSpeechLanguage { get; set; } = TargetSpeechLanguage.Auto;
-    public WindowMode DefaultWindowMode { get; set; } = WindowMode.Optimize;
+    public WindowMode DefaultWindowMode { get; set; } = WindowMode.Assistant;
     public TargetLanguage UiLanguage { get; set; } = Models.TargetLanguage.EN;
     public Dictionary<WindowMode, Guid> ModeProviderDefaults { get; set; } = new();
     public bool UseSameProviderForAllModes { get; set; } = true;

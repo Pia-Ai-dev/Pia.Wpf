@@ -103,9 +103,6 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
         Post(() => OnPropertyChanged(nameof(GitToolsEditable)));
 
     [ObservableProperty]
-    private WindowMode _defaultWindowMode;
-
-    [ObservableProperty]
     private bool _suggestionsEnabled;
 
     // Display-only: the current assistant files folder. Changed via the Change… command (which runs
@@ -157,13 +154,6 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
 
     public string RetentionDaysDisplay =>
         _localizationService.Format("Settings_Chat_RetentionDays", ChatHistoryRetentionDays);
-
-    public IEnumerable<WindowMode> WindowModes => Enum.GetValues<WindowMode>();
-
-    partial void OnDefaultWindowModeChanged(WindowMode value)
-    {
-        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
-    }
 
     partial void OnSuggestionsEnabledChanged(bool value)
     {
@@ -513,7 +503,6 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
 
     private void ApplySettings(AppSettings settings)
     {
-        DefaultWindowMode = settings.DefaultWindowMode;
         SuggestionsEnabled = settings.AssistantSuggestionsEnabled;
         FilesFolder = settings.AssistantFilesFolder; // OnFilesFolderChanged sets VaultLocationDisplay
         FileToolsEnabled = settings.AssistantFileToolsEnabled;
@@ -681,7 +670,6 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
     private async Task SaveSettingsAsync()
     {
         var settings = await _settingsService.GetSettingsAsync();
-        settings.DefaultWindowMode = DefaultWindowMode;
         settings.AssistantSuggestionsEnabled = SuggestionsEnabled;
         // The folder is owned by the relocation move; never clear it here (the vault lives under it).
         if (!string.IsNullOrWhiteSpace(FilesFolder))

@@ -1,5 +1,5 @@
 {
-  "_comment": "Minimal machine-wide policy. Copy to the install root next to Pia.Wpf.exe. Every key present here takes effect, so add lock settings deliberately — see docs/preset-settings.md for the full list.",
+  "_comment": "Minimal machine-wide policy. Copy to the install root next to Pia.Wpf.exe. Every key present here takes effect, so add lock settings deliberately — see docs/deployment_presets/preset-settings.md for the full list.",
   "defaults": {
     "theme": "Dark",
     "uiLanguage": "DE",

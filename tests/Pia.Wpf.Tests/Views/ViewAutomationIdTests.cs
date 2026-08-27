@@ -40,8 +40,8 @@ public class ViewAutomationIdTests
     // part of a covered view later extracted into its own UserControl cannot drop out of coverage silently.
     // The playbook's "Known gaps" section is the single source of truth for what still has no row here.
     [Theory]
-    [InlineData(typeof(Pia.Views.SettingsViews.GeneralView), 24, 4, "")]
-    [InlineData(typeof(Pia.Views.SettingsViews.AssistantView), 36, 5, "PersonaGlyph,PersonasView,PiaHelpHint")]
+    [InlineData(typeof(Pia.Views.SettingsViews.GeneralView), 25, 4, "")]
+    [InlineData(typeof(Pia.Views.SettingsViews.AssistantView), 35, 5, "PersonaGlyph,PersonasView,PiaHelpHint")]
     [InlineData(typeof(Pia.Views.SettingsViews.ProvidersView), 6, 3, "")]
     // AccountView declares no DataTemplate, so it is the one view with no per-item floor to hold.
     [InlineData(typeof(Pia.Views.SettingsViews.AccountView), 12, 0, "E2EEOnboardingView")]

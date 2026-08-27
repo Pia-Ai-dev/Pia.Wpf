@@ -114,6 +114,9 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
     [ObservableProperty]
     private bool _autoCaptureSelectedText;
 
+    [ObservableProperty]
+    private WindowMode _defaultWindowMode;
+
     // Hotkeys
     [ObservableProperty]
     private string _optimizeHotkeyDisplayText = "Ctrl+Alt+O";
@@ -155,6 +158,7 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
     public IEnumerable<WhisperModelSize> WhisperModels => Enum.GetValues<WhisperModelSize>();
     public IEnumerable<TargetSpeechLanguage> TargetSpeechLanguages => Enum.GetValues<TargetSpeechLanguage>();
     public IEnumerable<TargetLanguage> UiLanguages => Enum.GetValues<TargetLanguage>();
+    public IEnumerable<WindowMode> WindowModes => Enum.GetValues<WindowMode>();
 
     partial void OnUiLanguageChanged(TargetLanguage value)
     {
@@ -166,6 +170,11 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
     }
 
     partial void OnStartMinimizedChanged(bool value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
+    partial void OnDefaultWindowModeChanged(WindowMode value)
     {
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
@@ -238,6 +247,7 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         StartMinimized = settings.StartMinimized;
         LaunchAtStartup = settings.LaunchAtStartup;
         AutoCaptureSelectedText = settings.AutoCaptureSelectedText;
+        DefaultWindowMode = settings.DefaultWindowMode;
         SttBackend = settings.SttBackend;
         WhisperModel = settings.WhisperModel;
         TargetSpeechLanguage = settings.TargetSpeechLanguage;
@@ -621,6 +631,7 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         settings.StartMinimized = StartMinimized;
         settings.LaunchAtStartup = LaunchAtStartup;
         settings.AutoCaptureSelectedText = AutoCaptureSelectedText;
+        settings.DefaultWindowMode = DefaultWindowMode;
         settings.SttBackend = SttBackend;
         settings.WhisperModel = WhisperModel;
         settings.TargetSpeechLanguage = TargetSpeechLanguage;

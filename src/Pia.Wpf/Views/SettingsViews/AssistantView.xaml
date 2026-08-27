@@ -58,26 +58,6 @@
                  Style="{StaticResource PiaSettingsSectionLabelStyle}"
                  Margin="0,0,0,8"/>
 
-      <!-- Default Window Mode -->
-      <StackPanel Margin="0,0,0,20">
-        <TextBlock Text="{loc:Str Settings_DefaultWindowMode}"
-                   Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-        <ComboBox ItemsSource="{Binding WindowModes}"
-                  SelectedItem="{Binding DefaultWindowMode}"
-                  IsEnabled="{Binding Policy[DefaultWindowMode]}"
-                  AutomationProperties.AutomationId="Settings_Assistant_DefaultWindowMode"
-                  Width="400"
-                  HorizontalAlignment="Left">
-          <ComboBox.ItemTemplate>
-            <DataTemplate>
-              <TextBlock Text="{Binding Converter={StaticResource EnumToLocalizedStringConverter}}"/>
-            </DataTemplate>
-          </ComboBox.ItemTemplate>
-        </ComboBox>
-        <TextBlock Text="{loc:Str Settings_DefaultWindowMode_Description}"
-                   Style="{StaticResource PiaSettingsDescriptionStyle}"/>
-      </StackPanel>
-
       <!-- Follow-up Suggestion Chips -->
       <StackPanel Margin="0,0,0,20">
         <CheckBox Content="{loc:Str Settings_AssistantSuggestions}"

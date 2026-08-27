@@ -1,6 +1,6 @@
 # Deploying Pia.Wpf with presets — what `policy.json` can manage
 
-Current as of 2026-08-19. The policy engine was rewritten on the same day to key off **which keys the
+Current as of 2026-08-27. The policy engine was rewritten on 2026-08-19 to key off **which keys the
 admin wrote** instead of comparing values against the built-in defaults; see **Upgrade note** for what
 that changes for an existing deployment.
 
@@ -63,6 +63,9 @@ effect. `enforce.trustSelfSignedCertificates: false` and `enforce.autoUpdateEnab
 common cases — both used to be silent no-ops and now do what they always read as doing. Anything you
 wrote expecting it to be inert is now live. Deleting a key is how you make it inert.
 
+`defaultWindowMode`'s built-in default changed from `Optimize` to `Assistant` on 2026-08-27, which moves
+which value a `defaults` entry can overwrite — see its row in the inventory.
+
 ## The one remaining gap: not every enforced setting greys out
 
 Enforcement applies to every property, and the settings screens now render the read-only state for the
@@ -111,7 +114,7 @@ the local `settings.json` (that is the anti-circumvention path), they just never
 | `launchAtStartup` | bool, `true` | 🔒 ✓ |
 | `startMinimized` | bool, `false` | 🔒 ✓ |
 | `autoUpdateEnabled` | bool, `true` | ✓ |
-| `defaultWindowMode` | `Optimize` \| `Assistant`, `Optimize` | ✓ |
+| `defaultWindowMode` | `Optimize` \| `Assistant`, `Assistant` | 🔒 ✓ On the General tab. A `defaults` value of `Optimize` also overwrites users who picked `Assistant` themselves — that is the built-in default, so the engine cannot tell a deliberate choice from an untouched profile. Use `enforce` if that distinction matters |
 | `userOperatingMode` | `Personal` \| `Business`, `null` | ✓ |
 | `hasCompletedFirstRunWizard` | bool, `false` | ✓ mechanically settable to skip the wizard — untested as a deployment lever, and it skips provider setup too |
 | `flowPinned` · `lastActiveView` · `draftText` · `windowWidth` · `windowHeight` · `windowLeft` · `windowTop` · `todoColumnWidths` | — | ✗ per-user window state |
