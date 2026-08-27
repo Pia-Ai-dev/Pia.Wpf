@@ -2051,7 +2051,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 Policy: RunAutonomyPolicy.FromSettings(settings),
                 // A voice turn is not a run — there is no row to park, no Continue card that would
                 // reach the speaker, and the refusal below is already spoken back as a remedy.
-                CanPark: false));
+                CanPark: false,
+                // A voice turn belongs to no run, so there is no run row to answer this from.
+                IsTopLevelUserRun: false));
 
             if (verdict.Outcome != ToolGateOutcome.AutoRun)
             {

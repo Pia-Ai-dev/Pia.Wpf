@@ -143,6 +143,7 @@ public class ActionCardBuilderScheduledCategoryTests
         ToolGateVerdict Interactive(bool standing) => ToolAutonomy.Resolve(new ToolGateInput(
             ToolGateSurface.Interactive, toolName, toolClass,
             ServerDeclaredDestructive: false, IsAllowlisted: false, HasSessionGrant: !standing,
-            HasStandingGrant: standing, IsNamedGrant: false, HasNamedDenial: false, Policy: null, CanPark: false));
+            HasStandingGrant: standing, IsNamedGrant: false, HasNamedDenial: false, Policy: null, CanPark: false,
+            IsTopLevelUserRun: false));
     }
 }

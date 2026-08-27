@@ -38,14 +38,24 @@ public sealed class ToolApprovalStore
     /// away (<c>HeadlessRunLauncher.CanParkForApproval</c> exists because "a park ACQUIRES authority" — so does
     /// a session grant). Threaded through the same per-step store, the child answer is the safe one for free.
     /// </param>
-    public ToolApprovalStore(bool canPark, ISessionToolGrantStore? sessionGrants = null)
+    /// <param name="isTopLevelUserRun">
+    /// The run is the one a person started from the composer and is not a delegate. Resolved by the executor
+    /// from the run row, never from a tool name; relayed into <c>ToolGateInput.IsTopLevelUserRun</c>, which is
+    /// what lets the park ask about a delete-like tool rather than refusing outright.
+    /// </param>
+    public ToolApprovalStore(bool canPark, ISessionToolGrantStore? sessionGrants = null, bool isTopLevelUserRun = false)
     {
         CanPark = canPark;
         _sessionGrants = sessionGrants;
+        IsTopLevelUserRun = isTopLevelUserRun;
     }
 
     /// <summary>May this run stop and ask a human? Relayed verbatim into <c>ToolGateInput.CanPark</c>.</summary>
     public bool CanPark { get; }
+
+    /// <summary>Is somebody expected at the machine for THIS run? Relayed into
+    /// <c>ToolGateInput.IsTopLevelUserRun</c>.</summary>
+    public bool IsTopLevelUserRun { get; }
 
     /// <summary>
     /// hermes #15. Does the user hold a SESSION grant for this call? Relayed into
@@ -77,12 +87,22 @@ public sealed class ToolApprovalStore
     public int ParkedCalls { get; private set; }
 
     /// <summary>
+    /// What the parked calls asked to act on, in call order, for the affordances to render. Accumulated across
+    /// every parked call of the SAME tool: a model that asks to delete four files issues four calls in one
+    /// round, and a card naming only the first would understate what Continue is about to allow.
+    /// User content — render it, never log it.
+    /// </summary>
+    public IReadOnlyList<string> PendingToolArguments => _pendingArguments;
+
+    private readonly List<string> _pendingArguments = new();
+
+    /// <summary>
     /// Record a parked call. Returns true when THIS call is the one the run parked on (the first), false for
     /// any subsequent one — the caller uses that to tell the model "already waiting" instead of announcing a
     /// second park. A blank name is ignored entirely: an envelope naming an empty tool would produce a
     /// Continue card asking the human to approve nothing.
     /// </summary>
-    public bool Park(string toolName)
+    public bool Park(string toolName, string? arguments = null)
     {
         if (string.IsNullOrWhiteSpace(toolName))
             return false;
@@ -90,10 +110,20 @@ public sealed class ToolApprovalStore
         lock (_lock)
         {
             ParkedCalls++;
-            if (PendingToolName is not null)
-                return false;
-            PendingToolName = toolName;
-            return true;
+            var first = PendingToolName is null;
+            if (first)
+                PendingToolName = toolName;
+
+            // Only this tool's own calls. A LATER call of a DIFFERENT tool was withheld, not parked, and
+            // listing its target under this tool's name would misdescribe what Continue allows.
+            if (!string.IsNullOrWhiteSpace(arguments)
+                && string.Equals(PendingToolName, toolName, StringComparison.OrdinalIgnoreCase)
+                && !_pendingArguments.Contains(arguments, StringComparer.Ordinal))
+            {
+                _pendingArguments.Add(arguments);
+            }
+
+            return first;
         }
     }
 }

@@ -469,7 +469,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             // audit row is written and the panel never shows a queue of decisions that does not exist.
             if (approvals?.PendingToolName is { } parkedFor)
             {
-                approvals.Park(pending.ToolName);
+                approvals.Park(pending.ToolName, ToolApprovalArguments.Describe(toolCall));
                 _logger.LogInformation(
                     "Background turn withheld {ToolName}: the run is already parked on {ParkedToolName}",
                     pending.ToolName, parkedFor);
@@ -541,7 +541,10 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             Policy: policy,
             // May this run stop and ask a human rather than refuse? The executor answers it once per run and
             // hands the answer down in the store; a null store is false, i.e. a hard denial.
-            CanPark: approvals?.CanPark == true));
+            CanPark: approvals?.CanPark == true,
+            // Riding on the same store and for the same reason: read ambiently it would tell a CHILD run that
+            // somebody is watching it. A null store is false, i.e. delete-like stays a hard denial.
+            IsTopLevelUserRun: approvals?.IsTopLevelUserRun == true));
 
         return new UnattendedGateResolution(toolClass, askedAt, verdict, DateTime.UtcNow);
     }
@@ -595,7 +598,10 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             // the executor, which abandons the step, and the orchestrator parks the run naming it. The model is
             // told because it is still mid-exchange — a plain "stop" beats letting it improvise a workaround.
             case ToolGateOutcome.Park:
-                var parked = approvals is not null && approvals.Park(pending.ToolName);
+                // The arguments ride along so the Continue card can name what it is about to allow. NOT logged
+                // anywhere on this path — a path is user content, and the count is what the audit row carries.
+                var parked = approvals is not null
+                    && approvals.Park(pending.ToolName, ToolApprovalArguments.Describe(toolCall));
                 _logger.LogInformation(
                     "Background turn parked {ToolName} for human approval (first={First})", pending.ToolName, parked);
                 // Audited only for the call that actually parked the run. A second parked call in the
@@ -631,7 +637,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                        + "finish the step without it, or explain in your reply why the step is impossible without it.";
 
             default:
-                _logger.LogInformation("Background turn denied ungranted write tool {ToolName}", pending.ToolName);
+                _logger.LogInformation("Background turn denied ungranted tool {ToolName}", pending.ToolName);
                 // verdict.Decision rather than a literal, so the persisted reason is always the one the
                 // shared resolver actually returned (DeniedNotGranted on this surface today). A denial is
                 // an ANSWER, so both instants are real here too — only the park leaves DecidedAt null.
@@ -640,7 +646,10 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                     toolCallId: toolCall.CallId, round: dispatch.Round,
                     requestedAt: askedAt, decidedAt: resolvedAt,
                     argsChars);
-                return $"Denied: '{pending.ToolName}' is a write action not granted to this background job. Do not retry.";
+                // "this background job" was a lie on a foreground run the person is watching: an approved plan
+                // hands the run to this executor, so the denial a user sees names the surface they did not pick.
+                return $"Denied: '{pending.ToolName}' needs a person's approval and none was given for this run. "
+                       + "Do not retry; finish the step without it and say what was left undone.";
         }
     }
 

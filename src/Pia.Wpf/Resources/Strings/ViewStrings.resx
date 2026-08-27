@@ -982,6 +982,7 @@
   <data name="Run_Activity_UserPaused" xml:space="preserve"><value>You paused this run</value></data>
   <data name="Run_Activity_ResumeInterrupted" xml:space="preserve"><value>The continuation did not start — continue again when you are ready</value></data>
   <data name="Run_Activity_WaitingForToolApproval" xml:space="preserve"><value>Waiting for your approval to use {0}</value></data>
+  <data name="Run_ToolApprovalTarget" xml:space="preserve"><value>Affects {0}</value></data>
   <data name="Run_Activity_NeedsGoal" xml:space="preserve"><value>Waiting for you to clarify the goal in the chat</value></data>
   <data name="Run_Activity_NeedsInput" xml:space="preserve"><value>Waiting for your answer in the chat</value></data>
   <data name="Run_Activity_PlanApproval" xml:space="preserve"><value>Waiting for you to approve the plan</value></data>
@@ -1110,6 +1111,7 @@
   <data name="Flow_Run_UserPaused" xml:space="preserve"><value>You paused this run. Continue?</value></data>
   <data name="Flow_Run_ResumeInterrupted" xml:space="preserve"><value>The continuation did not start. Continue?</value></data>
   <data name="Flow_Run_ToolApproval" xml:space="preserve"><value>This run needs your approval to use {0}. Continue to allow it.</value></data>
+  <data name="Flow_Run_ToolApprovalOn" xml:space="preserve"><value>This run needs your approval to use {0} on {1}. Continue to allow it.</value></data>
   <data name="Flow_Run_NeedsGoal" xml:space="preserve"><value>This run couldn't tell what you wanted — open it to answer.</value></data>
   <data name="Flow_Run_NeedsInput" xml:space="preserve"><value>This run needs your input to keep going — open it to answer.</value></data>
   <data name="Flow_Run_PlanApproval" xml:space="preserve"><value>A run is waiting for you to approve its plan</value></data>

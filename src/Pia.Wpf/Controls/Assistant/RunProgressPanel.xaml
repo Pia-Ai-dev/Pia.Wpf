@@ -229,6 +229,14 @@
                        ToolTip="{Binding LedgerSummary}"
                        Foreground="{Binding State, Converter={StaticResource RunStateToSubLineBrushConverter}}"
                        Visibility="{Binding HasSubLine, Converter={StaticResource BooleanToVisibilityConverter}}" />
+            <!-- What a tool-approval park is about to act on. Wraps rather than ellipsises: a path the reader
+                 cannot finish reading is the one thing this line exists to prevent. -->
+            <TextBlock Text="{Binding ApprovalTargetLine}" Margin="0,2,0,0"
+                       FontSize="{StaticResource RunMetaSize}"
+                       TextWrapping="Wrap"
+                       ToolTip="{Binding ApprovalToolArguments}"
+                       Foreground="{Binding State, Converter={StaticResource RunStateToSubLineBrushConverter}}"
+                       Visibility="{Binding HasApprovalTarget, Converter={StaticResource BooleanToVisibilityConverter}}" />
           </StackPanel>
 
           <!-- Truncation reason chip. The VM resolves WHY (unverified vs. a pre-pause budget stop) from the

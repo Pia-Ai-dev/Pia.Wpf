@@ -808,7 +808,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         await deleteHandle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
         Assert.False(deleteProbe.Executed);
-        Assert.Contains("not granted", deleteProbe.GateResult ?? string.Empty);
+        Assert.Contains("needs a person's approval", deleteProbe.GateResult ?? string.Empty);
 
         var writeProbe = new ToolProbe("write_file");
         var (writeLauncher, _) = BuildLauncher(probe: writeProbe);
@@ -856,7 +856,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         await AwaitRunSettledAsync(deleteLauncher, parked.Id);
 
         Assert.False(deleteProbe.Executed);
-        Assert.Contains("not granted", deleteProbe.GateResult ?? string.Empty);
+        Assert.Contains("needs a person's approval", deleteProbe.GateResult ?? string.Empty);
 
         var writeProbe = new ToolProbe("write_file");
         var (writeLauncher, _) = BuildLauncher(probe: writeProbe);
@@ -1179,7 +1179,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         await AwaitRunSettledAsync(deleteLauncher, parked.Id);
 
         Assert.False(deleteProbe.Executed);
-        Assert.Contains("not granted", deleteProbe.GateResult ?? string.Empty); // the gate refused it — not "never asked"
+        Assert.Contains("needs a person's approval", deleteProbe.GateResult ?? string.Empty); // the gate refused it — not "never asked"
 
         var writeProbe = new ToolProbe("write_file");
         var (writeLauncher, _) = BuildLauncher(probe: writeProbe);
@@ -1296,7 +1296,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         await AwaitRunSettledAsync(launcher, parked.Id);
 
         Assert.False(probe.Executed);
-        Assert.Contains("not granted", probe.GateResult ?? string.Empty);
+        Assert.Contains("needs a person's approval", probe.GateResult ?? string.Empty);
 
         try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
     }

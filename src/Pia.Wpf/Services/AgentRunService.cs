@@ -335,7 +335,8 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         return Task.CompletedTask;
     }
 
-    public Task PauseAsync(Guid runId, string? reason, CancellationToken ct = default, string? approvalTool = null)
+    public Task PauseAsync(Guid runId, string? reason, CancellationToken ct = default, string? approvalTool = null,
+        string? approvalArgs = null)
     {
         var now = DateTime.UtcNow;
         lock (_gate)
@@ -350,9 +351,13 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
             // the ORIGINAL anonymous type and is therefore byte-identical to every pause this service has
             // ever written — no `"tool":null` appears on a budget park, a children park or a resume re-park,
             // and no existing envelope pin moves. The reader tolerates either shape.
+            // The args member joins the tool the same way the tool member joined the pair: written only when
+            // there is one, so a budget park and a re-park stay byte-identical to every envelope ever written.
             var extraJson = approvalTool is null
                 ? JsonSerializer.Serialize(new { paused = true, reason }, JsonOptions)
-                : JsonSerializer.Serialize(new { paused = true, reason, tool = approvalTool }, JsonOptions);
+                : approvalArgs is null
+                    ? JsonSerializer.Serialize(new { paused = true, reason, tool = approvalTool }, JsonOptions)
+                    : JsonSerializer.Serialize(new { paused = true, reason, tool = approvalTool, args = approvalArgs }, JsonOptions);
 
             using var cmd = Connection().CreateCommand();
             cmd.CommandText = "UPDATE AgentRuns SET State=@State, UpdatedAt=@Now, ExtraJson=@Extra WHERE Id=@Id";

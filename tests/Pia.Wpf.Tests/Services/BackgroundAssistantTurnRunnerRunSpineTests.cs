@@ -294,7 +294,8 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
         public Task FailAsync(
             Guid runId, string? error, bool cancelled = false, CancellationToken ct = default,
             PiaFailure? failure = null) => throw new InvalidOperationException("boom");
-        public Task PauseAsync(Guid runId, string? reason, CancellationToken ct = default, string? approvalTool = null) => throw new InvalidOperationException("boom");
+        public Task PauseAsync(Guid runId, string? reason, CancellationToken ct = default, string? approvalTool = null,
+            string? approvalArgs = null) => throw new InvalidOperationException("boom");
         public Task UpdatePolicyJsonAsync(Guid runId, string? policyJson, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task<IReadOnlyList<string>> AppendClarificationAsync(Guid runId, string? answer, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task<bool> TryBeginResumeAsync(Guid runId, CancellationToken ct = default) => throw new InvalidOperationException("boom");

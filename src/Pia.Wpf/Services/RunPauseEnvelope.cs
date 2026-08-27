@@ -82,4 +82,29 @@ internal static class RunPauseEnvelope
             return null;
         }
     }
+
+    /// <summary>
+    /// What the parked calls asked to act on — the paths behind the tool name, so Continue is not blind
+    /// consent. Absent on every envelope written before the member existed and on every call that carried no
+    /// string arguments, which both read as <c>null</c>: the affordances fall back to naming the tool alone.
+    /// USER CONTENT — render it, never log it.
+    /// </summary>
+    internal static string? ReadApprovalArgs(AgentRun run)
+    {
+        if (string.IsNullOrEmpty(run.ExtraJson)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(run.ExtraJson);
+            if (!doc.RootElement.TryGetProperty("paused", out var paused) || paused.ValueKind != JsonValueKind.True)
+                return null;
+            if (!doc.RootElement.TryGetProperty("args", out var args) || args.ValueKind != JsonValueKind.String)
+                return null;
+            var text = args.GetString();
+            return string.IsNullOrWhiteSpace(text) ? null : text;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }

@@ -529,7 +529,8 @@ public class BackgroundAssistantTurnRunnerTests
 
         Assert.False(executed);
         Assert.Equal(
-            "Denied: 'delete_file' is a write action not granted to this background job. Do not retry.",
+            "Denied: 'delete_file' needs a person's approval and none was given for this run. "
+            + "Do not retry; finish the step without it and say what was left undone.",
             Assert.IsType<string>(returned));
     }
 
@@ -561,7 +562,8 @@ public class BackgroundAssistantTurnRunnerTests
 
         Assert.False(executed);
         Assert.Equal(
-            "Denied: 'delete_issue' is a write action not granted to this background job. Do not retry.",
+            "Denied: 'delete_issue' needs a person's approval and none was given for this run. "
+            + "Do not retry; finish the step without it and say what was left undone.",
             Assert.IsType<string>(returned));
     }
 
@@ -580,7 +582,7 @@ public class BackgroundAssistantTurnRunnerTests
                 new AppSettings { AgentRunAutoApproveBuiltInWrites = true }));
 
         Assert.False(executed);
-        Assert.Contains("not granted", Assert.IsType<string>(returned));
+        Assert.Contains("needs a person's approval", Assert.IsType<string>(returned));
     }
 
     [Theory]

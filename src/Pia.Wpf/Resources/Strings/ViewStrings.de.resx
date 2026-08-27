@@ -1016,6 +1016,7 @@
   <data name="Run_Activity_UserPaused" xml:space="preserve"><value>Sie haben diese Ausführung pausiert</value></data>
   <data name="Run_Activity_ResumeInterrupted" xml:space="preserve"><value>Die Fortsetzung wurde nicht gestartet – setzen Sie erneut fort, wenn Sie bereit sind</value></data>
   <data name="Run_Activity_WaitingForToolApproval" xml:space="preserve"><value>Wartet auf Ihre Freigabe für {0}</value></data>
+  <data name="Run_ToolApprovalTarget" xml:space="preserve"><value>Betrifft {0}</value></data>
   <data name="Run_Activity_NeedsGoal" xml:space="preserve"><value>Wartet darauf, dass Sie das Ziel im Chat klären</value></data>
   <data name="Run_Activity_NeedsInput" xml:space="preserve"><value>Wartet auf Ihre Antwort im Chat</value></data>
   <data name="Run_Activity_PlanApproval" xml:space="preserve"><value>Wartet auf Ihre Freigabe des Plans</value></data>
@@ -1100,6 +1101,7 @@
   <data name="Flow_Run_UserPaused" xml:space="preserve"><value>Sie haben diese Ausführung pausiert. Fortsetzen?</value></data>
   <data name="Flow_Run_ResumeInterrupted" xml:space="preserve"><value>Die Fortsetzung wurde nicht gestartet. Fortsetzen?</value></data>
   <data name="Flow_Run_ToolApproval" xml:space="preserve"><value>Dieser Lauf benötigt Ihre Freigabe für {0}. Fortsetzen, um sie zu erteilen.</value></data>
+  <data name="Flow_Run_ToolApprovalOn" xml:space="preserve"><value>Dieser Lauf benötigt Ihre Freigabe für {0} auf {1}. Fortsetzen, um sie zu erteilen.</value></data>
   <data name="Flow_Run_NeedsGoal" xml:space="preserve"><value>Dieser Lauf konnte nicht erkennen, was Sie meinten – öffnen Sie ihn, um zu antworten.</value></data>
   <data name="Flow_Run_NeedsInput" xml:space="preserve"><value>Dieser Lauf benötigt Ihre Eingabe, um fortzufahren – öffnen Sie ihn, um zu antworten.</value></data>
   <data name="Flow_Run_PlanApproval" xml:space="preserve"><value>Eine Ausführung wartet auf Ihre Freigabe ihres Plans</value></data>

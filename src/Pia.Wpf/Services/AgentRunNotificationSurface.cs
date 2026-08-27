@@ -125,6 +125,12 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
     /// An approval envelope whose name did not survive formats an empty one rather than falling through to
     /// the budget wording: a vague prompt is a degrade, "stopped at its budget" would be a lie.
     /// </para>
+    /// <para>
+    /// The ARGUMENTS are the exception to that rule and a deliberate one: they ARE user content, and "allow
+    /// delete_file" without the paths is the blind consent the gate used to refuse to ask for. They ride in a
+    /// second key rather than a second placeholder on the first, so an envelope that carries none still reads
+    /// as a sentence instead of trailing off.
+    /// </para>
     /// </summary>
     internal static string PausedBody(ILocalizationService localization, AgentRun run) =>
         PausedBody(localization, run, RunPauseEnvelope.ReadReason(run));
@@ -133,10 +139,14 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
     /// on it parses the envelope's <c>ExtraJson</c> once per publish, not twice.</summary>
     private static string PausedBody(ILocalizationService localization, AgentRun run, string? reason)
     {
-        var key = PausedBodyKey(reason);
-        return reason == AgentRunOrchestrator.ToolApprovalReason
-            ? localization.Format(key, RunPauseEnvelope.ReadApprovalTool(run) ?? string.Empty)
-            : localization[key];
+        if (reason != AgentRunOrchestrator.ToolApprovalReason)
+            return localization[PausedBodyKey(reason)];
+
+        var tool = RunPauseEnvelope.ReadApprovalTool(run) ?? string.Empty;
+        var args = RunPauseEnvelope.ReadApprovalArgs(run);
+        return args is null
+            ? localization.Format(PausedBodyKey(reason), tool)
+            : localization.Format("Flow_Run_ToolApprovalOn", tool, args);
     }
 
     private void OnRunChanged(object? sender, AgentRunChangedEventArgs e)

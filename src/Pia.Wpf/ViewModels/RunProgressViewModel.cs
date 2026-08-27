@@ -151,6 +151,23 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string? _approvalToolName;
 
+    /// <summary>
+    /// What the parked calls asked to act on, already composed for display — the paths behind the tool name,
+    /// so Continue is a decision rather than blind consent. Null on an older envelope or a call with no string
+    /// arguments, which collapses the line. USER CONTENT: shown here, never logged.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ApprovalTargetLine))]
+    [NotifyPropertyChangedFor(nameof(HasApprovalTarget))]
+    private string? _approvalToolArguments;
+
+    /// <summary>The rendered "Affects …" line, or null when there is nothing to name.</summary>
+    public string? ApprovalTargetLine => ApprovalToolArguments is { } args
+        ? _localization.Format("Run_ToolApprovalTarget", args)
+        : null;
+
+    public bool HasApprovalTarget => ApprovalToolArguments is not null;
+
     /// <summary>True while the run is parked asking the user to approve its plan before any step runs.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowRejectPlanButton))]
@@ -989,6 +1006,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             : null;
         IsToolApprovalPause = approvalTool is not null;
         ApprovalToolName = approvalTool;
+        ApprovalToolArguments = approvalTool is null ? null : RunPauseEnvelope.ReadApprovalArgs(run);
 
         IsPlanApprovalPause = run.State == AgentRunState.WaitingForInput
             && RunPauseEnvelope.ReadReason(run) == AgentRunOrchestrator.PlanApprovalReason;

@@ -30,9 +30,10 @@ public class ToolAutonomyTests
         bool canPark = false,
         bool sessionGrant = false,
         bool serverDeclaredDestructive = false,
-        bool namedDenial = false)
+        bool namedDenial = false,
+        bool topLevelUserRun = false)
         => new(surface, toolName, toolClass, serverDeclaredDestructive, allowlisted, sessionGrant, standingGrant,
-               namedGrant, namedDenial, policy, canPark);
+               namedGrant, namedDenial, policy, canPark, topLevelUserRun);
 
     /// <summary>Nested loops in one Fact, not a ~3.5k-case Theory, to keep the cross product out of the suite total.</summary>
     [Fact]
@@ -51,17 +52,20 @@ public class ToolAutonomyTests
         foreach (var canPark in new[] { false, true })
         foreach (var sessionGrant in new[] { false, true })
         foreach (var namedDenial in new[] { false, true })
+        foreach (var topLevelUserRun in new[] { false, true })
         {
             var verdict = ToolAutonomy.Resolve(Input(
                 surface, name, toolClass, policy,
                 allowlisted: allowlisted, standingGrant: granted, namedGrant: named, canPark: canPark,
-                sessionGrant: sessionGrant, namedDenial: namedDenial));
+                sessionGrant: sessionGrant, namedDenial: namedDenial, topLevelUserRun: topLevelUserRun));
 
             // A policy may never be the reason a delete-like tool ran; a grant the user typed still may.
             var policyBroken = verdict.Decision == ToolGateDecision.AutoApprovedPolicy;
 
-            // A park puts an irreversible action behind a Continue button that shows no arguments.
-            var parkBroken = verdict.Outcome == ToolGateOutcome.Park;
+            // A park may ASK about an irreversible action only where somebody is expected at the machine, and
+            // never about an MCP tool whose later calls' arguments nobody sees.
+            var parkBroken = verdict.Outcome == ToolGateOutcome.Park
+                && !(topLevelUserRun && toolClass != ToolClass.External);
 
             // A session grant is NOT a violation: it is a grant the user typed on a card, and the tier now
             // admits every tool. What must never authorize a delete is a policy, a park, or a denied name.
@@ -74,7 +78,7 @@ public class ToolAutonomyTests
                 violations.Add(
                     $"{surface}/{toolClass}/{name}/policy={(policy is null ? "none" : string.Join('+', policy.AutoApproveClasses))}"
                     + $"/granted={granted}/allowlisted={allowlisted}/named={named}/canPark={canPark}"
-                    + $"/session={sessionGrant}/denied={namedDenial}"
+                    + $"/session={sessionGrant}/denied={namedDenial}/topLevel={topLevelUserRun}"
                     + $" => {verdict.Outcome} {verdict.Decision}");
             }
 
@@ -85,6 +89,44 @@ public class ToolAutonomyTests
         Assert.Empty(violations);
         // Non-vacuity, and the owner's decision restated: a destructive MCP tool DOES auto-run once granted.
         Assert.True(destructiveExternalRuns > 0);
+    }
+
+    /// <summary>
+    /// A run the person started themselves may be ASKED about a delete; a delegate, a scheduled run and an
+    /// MCP tool may not. The card names the tool and the paths now, so Continue is a decision — but a child
+    /// never acquires authority its parent narrowed away and nobody is watching a routine.
+    /// </summary>
+    [Theory]
+    [InlineData(true, ToolClass.Files, ToolGateOutcome.Park)]
+    [InlineData(false, ToolClass.Files, ToolGateOutcome.Refuse)]
+    [InlineData(true, ToolClass.External, ToolGateOutcome.Refuse)]
+    [InlineData(false, ToolClass.External, ToolGateOutcome.Refuse)]
+    public void ADeleteLikeTool_Parks_OnlyForATopLevelUserRun(
+        bool topLevelUserRun, ToolClass toolClass, ToolGateOutcome expected)
+    {
+        var verdict = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "delete_file", toolClass,
+            canPark: true, topLevelUserRun: topLevelUserRun));
+
+        Assert.Equal(expected, verdict.Outcome);
+    }
+
+    /// <summary>The new fact widens NOTHING on its own: without CanPark — a child, or a turn with no run loop
+    /// — a delete-like call is still refused, and no surface but Unattended may park at all.</summary>
+    [Fact]
+    public void TopLevelUserRun_WithoutCanPark_StillRefuses()
+    {
+        var noPark = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "delete_file", ToolClass.Files, topLevelUserRun: true));
+        Assert.Equal(ToolGateOutcome.Refuse, noPark.Outcome);
+
+        var interactive = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Interactive, "delete_file", ToolClass.Files, canPark: true, topLevelUserRun: true));
+        Assert.Equal(ToolGateOutcome.Prompt, interactive.Outcome);
+
+        var voice = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Voice, "delete_file", ToolClass.Files, canPark: true, topLevelUserRun: true));
+        Assert.Equal(ToolGateOutcome.Refuse, voice.Outcome);
     }
 
     [Fact]

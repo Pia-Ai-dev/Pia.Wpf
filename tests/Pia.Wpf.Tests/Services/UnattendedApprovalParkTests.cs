@@ -138,10 +138,10 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
-    /// <summary>An action card shows the call's arguments; the Continue button shows one sentence. Approving an irreversible
-    /// action blind, for a step that will then re-run and pick its own path, is not consent.</summary>
+    /// <summary>Nobody is expected at the machine for a scheduled run, so an irreversible call has no one to ask and a park
+    /// would strand it until somebody happened to look. A run the user started themselves parks instead — see below.</summary>
     [Fact]
-    public async Task DeleteLikeBuiltInTool_StillHardDenies_AndNeverParks()
+    public async Task DeleteLikeBuiltInTool_OnAScheduledRun_StillHardDenies_AndNeverParks()
     {
         var probe = new ToolProbe("delete_file");
         var (launcher, _) = Build(probe);
@@ -154,6 +154,78 @@ public sealed class UnattendedApprovalParkTests : IDisposable
 
         await AssertHardDeniedNotParkedAsync(handle.RunId, probe, ToolGateDecision.DeniedNotGranted);
         await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>An approved plan hands a foreground run to this executor, so this is the surface a person who pressed Send
+    /// actually meets. The park may ask them — and the envelope has to name every path, because the model issues one call per
+    /// file in a single round and a card naming the first understates what Continue allows.</summary>
+    [Fact]
+    public async Task DeleteLikeBuiltInTool_OnATopLevelUserRun_Parks_AndNamesEveryPath()
+    {
+        var probe = new ToolProbe("delete_file");
+        var (launcher, _) = Build(probe, secondToolName: "delete_file",
+            firstPath: "fragments/0001-agent-panel.md", secondPath: "fragments/0004-scroll.md");
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.User, GrantedWrites: []),
+            TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+
+        var run = await GetRunAsync(handle.RunId);
+        Assert.Equal(AgentRunState.WaitingForInput, run.State);
+        Assert.Equal("tool-approval", PauseMember(run, "reason"));
+        Assert.Equal("delete_file", PauseMember(run, "tool"));
+
+        var args = PauseMember(run, "args");
+        Assert.Contains("fragments/0001-agent-panel.md", args);
+        Assert.Contains("fragments/0004-scroll.md", args);
+
+        Assert.False(probe.Executed);
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>A delegate never acquires authority its parent narrowed away — including the authority to put an irreversible
+    /// call in front of a person. The tool here is the one a top-level user run now parks on.</summary>
+    [Fact]
+    public async Task DeleteLikeBuiltInTool_OnAChildRun_StillHardDenies()
+    {
+        var probe = new ToolProbe("delete_file");
+        var (launcher, _) = Build(probe, firstPath: "fragments/0001.md");
+
+        var parent = await NewRunAsync();
+        var child = await ParkedChildAsync(parent.Id);
+        Assert.True(await launcher.ResumeAsync(child.Id, ct: TestContext.Current.CancellationToken));
+        await AwaitSettledAsync(child.Id);
+
+        await AssertHardDeniedNotParkedAsync(child.Id, probe, ToolGateDecision.DeniedNotGranted);
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>The Flow card is the other affordance, and it has to say the same thing: the tool AND what it would act on.
+    /// An envelope with no args keeps the one-placeholder sentence rather than trailing off after "on ".</summary>
+    [Fact]
+    public void TheFlowContinueCard_NamesWhatTheCallWouldActOn()
+    {
+        var loc = Substitute.For<ILocalizationService>();
+        loc[Arg.Any<string>()].Returns(ci => (string)ci[0]);
+        loc.Format(Arg.Any<string>(), Arg.Any<object[]>())
+            .Returns(ci => (string)ci[0] + "|" + string.Join(',', ((object[])ci[1]).Select(a => a?.ToString())));
+
+        var withArgs = new AgentRun
+        {
+            Id = Guid.NewGuid(),
+            ExtraJson = """{"paused":true,"reason":"tool-approval","tool":"delete_file","args":"path=fragments/0001.md"}""",
+        };
+        Assert.Equal(
+            "Flow_Run_ToolApprovalOn|delete_file,path=fragments/0001.md",
+            AgentRunNotificationSurface.PausedBody(loc, withArgs));
+
+        var withoutArgs = new AgentRun
+        {
+            Id = Guid.NewGuid(),
+            ExtraJson = """{"paused":true,"reason":"tool-approval","tool":"git_commit"}""",
+        };
+        Assert.Equal("Flow_Run_ToolApproval|git_commit", AgentRunNotificationSurface.PausedBody(loc, withoutArgs));
     }
 
     /// <summary>The complement of the two facts above, and the reason the Tool access page is not lying: "Always" is offered for
@@ -786,7 +858,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         ToolProbe probe, bool routed = true, bool isMcpTool = false, AppSettings? appSettings = null,
         string? secondToolName = null, bool faultAfterFirstCall = false,
         ISessionToolGrantStore? sessionGrants = null, Guid? pluginId = null,
-        IToolPermissionService? permissions = null)
+        IToolPermissionService? permissions = null,
+        string? firstPath = null, string? secondPath = null)
     {
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         var persona = new Persona { Name = "Pia", SystemPrompt = "sys" };
@@ -799,7 +872,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
                 cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci => DriveWithToolCall(
                 ci.ArgAt<ToolCallHandler?>(3), probe, secondToolName,
-                faultAfterFirstCall));
+                faultAfterFirstCall, firstPath, secondPath));
 
         var plugins = Substitute.For<IPluginService>();
         plugins.IsMcpTool(Arg.Any<string>()).Returns(isMcpTool);
@@ -864,14 +937,17 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         return (launcher, planner);
     }
 
+    private static Dictionary<string, object?> PathArgs(string? path) =>
+        path is null ? new Dictionary<string, object?>() : new Dictionary<string, object?> { ["path"] = path };
+
     private static async IAsyncEnumerable<ChatStreamItem> DriveWithToolCall(
         ToolCallHandler? handler, ToolProbe probe, string? secondToolName = null,
-        bool faultAfterFirstCall = false)
+        bool faultAfterFirstCall = false, string? firstPath = null, string? secondPath = null)
     {
         await Task.Yield();
         if (handler is not null)
         {
-            probe.Record(await handler(new FunctionCallContent("call-1", probe.ToolName, new Dictionary<string, object?>()), new ToolDispatchContext(1)));
+            probe.Record(await handler(new FunctionCallContent("call-1", probe.ToolName, PathArgs(firstPath)), new ToolDispatchContext(1)));
 
             // The exchange dies on a LATER round than the one that parked. Thrown from inside the stream
             // because that is where a real transport error, a timeout and a truncation all surface.
@@ -881,7 +957,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
             // A model that keeps going after being told the run is parking. Round-tripped through the SAME
             // handler, because that is the only way the store's first-wins rule is observable.
             if (secondToolName is not null)
-                probe.Record(await handler(new FunctionCallContent("call-2", secondToolName, new Dictionary<string, object?>()), new ToolDispatchContext(1)));
+                probe.Record(await handler(new FunctionCallContent("call-2", secondToolName, PathArgs(secondPath)), new ToolDispatchContext(1)));
         }
 
         // TEXT STILL FLOWS. Every park fact in this file therefore discriminates on the RUN's state, never on

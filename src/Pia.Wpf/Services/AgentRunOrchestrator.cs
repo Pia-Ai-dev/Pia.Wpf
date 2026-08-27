@@ -469,7 +469,8 @@ public sealed class AgentRunOrchestrator
                     if (r.ApprovalRequiredTool is { } approvalTool)
                     {
                         await ParkForToolApprovalAsync(
-                            executor, run, ctx, step.Id, r.Usage, approvalTool, runFirst, runLast, cts.Token)
+                            executor, run, ctx, step.Id, r.Usage, approvalTool, r.ApprovalRequiredArguments,
+                            runFirst, runLast, cts.Token)
                             .ConfigureAwait(false);
                         return;
                     }
@@ -791,10 +792,10 @@ public sealed class AgentRunOrchestrator
     /// <summary>the step stopped on a capability a human could legitimately approve.</summary>
     private async Task ParkForToolApprovalAsync(
         IAgentTurnExecutor executor, AgentRun run, RunContext ctx, Guid stepId, UsageDetails? usage,
-        string approvalTool, Guid? runFirst, Guid runLast, CancellationToken ct)
+        string approvalTool, string? approvalArgs, Guid? runFirst, Guid runLast, CancellationToken ct)
     {
         await ReturnStepToPendingAsync(run.Id, stepId, usage, runFirst, runLast, ct).ConfigureAwait(false);
-        await SafeRequestApproval(run.Id, approvalTool).ConfigureAwait(false);
+        await SafeRequestApproval(run.Id, approvalTool, approvalArgs).ConfigureAwait(false);
         // Non-terminal executor release: NOT SafeEndRun. A park is not the end
         // of a run, and the Headless executor must not persist-and-finalize a chat whose last
         // step is going to run again.
@@ -1740,11 +1741,12 @@ public sealed class AgentRunOrchestrator
     /// well have left <c>cts.Token</c> cancelled behind it, and a park that does not reach the row leaves the
     /// run dangling <c>Running</c> — unresumable, with the human's question never asked.
     /// </summary>
-    private async Task SafeRequestApproval(Guid runId, string toolName)
+    private async Task SafeRequestApproval(Guid runId, string toolName, string? arguments)
     {
         try
         {
-            await _runService.PauseAsync(runId, ToolApprovalReason, CancellationToken.None, approvalTool: toolName)
+            await _runService.PauseAsync(runId, ToolApprovalReason, CancellationToken.None,
+                    approvalTool: toolName, approvalArgs: arguments)
                 .ConfigureAwait(false);
         }
         catch (Exception ex)

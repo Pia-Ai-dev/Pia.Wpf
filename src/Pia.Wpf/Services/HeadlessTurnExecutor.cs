@@ -91,6 +91,10 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// <summary>Whether this run may pause mid-plan to ask the user a question; false for a delegated run.</summary>
     private bool _canAskUser;
 
+    /// <summary>Is somebody expected at the machine for this run? A person started it themselves and it is
+    /// nobody's delegate — the one shape whose park may ask about a delete-like tool.</summary>
+    private bool _isTopLevelUserRun;
+
     /// <summary>
     /// hermes #15: the process-scoped session grants, or null when none were injected (⇒ no session tier).
     /// Read only through the per-step <see cref="ToolApprovalStore"/>, which arms it on the same condition as
@@ -258,6 +262,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // Read directly from the row, unlike _canPark (seeded by the launcher) — this is a structural fact,
         // not a grant.
         _canAskUser = AgentStepTools.CanRequestUserInput(run.ParentRunId);
+        // The same kind of structural fact, from the same row and never from a tool name: a scheduled or
+        // routine run has nobody watching, and a child never acquires authority its parent narrowed away.
+        _isTopLevelUserRun = run.ParentRunId is null && run.TriggerKind == AgentRunTrigger.User;
         _tokenMap = _tokenMapFactory();
         if (_tokenizationEnabled)
         {
@@ -414,7 +421,8 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // hermes #15 rides in the SAME store and is armed by the same CanPark: the session tier reaches an
         // unattended run exactly where the park does. See ToolApprovalStore.HasSessionGrant for why that
         // symmetry is the safe line — a child run must inherit neither.
-        var approvals = new ToolApprovalStore(canPark: _canPark && offerStepResultTool, _sessionGrants);
+        var approvals = new ToolApprovalStore(
+            canPark: _canPark && offerStepResultTool, _sessionGrants, isTopLevelUserRun: _isTopLevelUserRun);
 
         // hermes #9, and the placement is the point: AFTER the persona ternary above, so a step carrying an
         // AssignedPersonaId gets the tool on ITS setup. Augmenting _runDefault/_setup instead would silently
@@ -543,7 +551,8 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
                 return new StepTurnResult(
                     Succeeded: false, Cancelled: false, Error: null, VisibleText: string.Empty,
                     Usage: null, FirstMessageId: Guid.Empty, LastMessageId: Guid.Empty,
-                    ApprovalRequiredTool: parkedBeforeFault);
+                    ApprovalRequiredTool: parkedBeforeFault,
+                    ApprovalRequiredArguments: ToolApprovalArguments.Join(approvals.PendingToolArguments));
             }
 
             // A fault after an ask still returns the question instead of the error, mirroring the approval-park
@@ -584,7 +593,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             return new StepTurnResult(
                 Succeeded: false, Cancelled: false, Error: null, VisibleText: string.Empty,
                 Usage: exchange.Usage, FirstMessageId: Guid.Empty, LastMessageId: Guid.Empty,
-                ApprovalRequiredTool: parkedTool);
+                ApprovalRequiredTool: parkedTool,
+                // Never in the log line above: a path is user content, and ParkedCalls is the scalar that is safe.
+                ApprovalRequiredArguments: ToolApprovalArguments.Join(approvals.PendingToolArguments));
         }
 
         // ---- the step ASKED the user a mid-plan question ----

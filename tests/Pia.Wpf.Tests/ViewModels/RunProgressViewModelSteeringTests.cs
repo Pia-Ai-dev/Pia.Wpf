@@ -107,6 +107,54 @@ public sealed class RunProgressViewModelSteeringTests
         vm.Dispose();
     }
 
+    /// <summary>Continue on an approval park IS the grant, so the panel has to say what it is about to allow —
+    /// naming delete_file without the paths is the blind consent the gate used to refuse to ask for.</summary>
+    [Fact]
+    public async Task ToolApprovalPark_NamesWhatTheCallWouldActOn()
+    {
+        _loc.Format(Arg.Any<string>(), Arg.Any<object[]>())
+            .Returns(ci => (string)ci[0] + ":" + string.Join("|", (object[])ci[1]));
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = _runId,
+            ChatId = Guid.NewGuid(),
+            RunShape = RunShape.Planned,
+            State = AgentRunState.WaitingForInput,
+            ExtraJson = """{"paused":true,"reason":"tool-approval","tool":"delete_file","args":"path=fragments/0001.md, path=fragments/0004.md"}""",
+        });
+        var vm = CreateVm();
+
+        await vm.RefreshAsync();
+
+        Assert.True(vm.HasApprovalTarget);
+        Assert.Equal("path=fragments/0001.md, path=fragments/0004.md", vm.ApprovalToolArguments);
+        Assert.Contains("fragments/0004.md", vm.ApprovalTargetLine!);
+        vm.Dispose();
+    }
+
+    /// <summary>Every envelope written before the args member existed, and every parked call that carried no
+    /// string arguments: the line collapses rather than rendering an empty "Affects".</summary>
+    [Fact]
+    public async Task ToolApprovalPark_WithoutArguments_ShowsNoTargetLine()
+    {
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = _runId,
+            ChatId = Guid.NewGuid(),
+            RunShape = RunShape.Planned,
+            State = AgentRunState.WaitingForInput,
+            ExtraJson = """{"paused":true,"reason":"tool-approval","tool":"git_commit"}""",
+        });
+        var vm = CreateVm();
+
+        await vm.RefreshAsync();
+
+        Assert.True(vm.IsToolApprovalPause);
+        Assert.False(vm.HasApprovalTarget);
+        Assert.Null(vm.ApprovalTargetLine);
+        vm.Dispose();
+    }
+
     [Fact]
     public async Task BudgetPark_OffersNoDeny()
     {

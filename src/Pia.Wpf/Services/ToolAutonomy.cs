@@ -24,6 +24,9 @@ namespace Pia.Services;
 /// <param name="Policy">The run's autonomy policy, or null for "today's behaviour".</param>
 /// <param name="CanPark">May THIS run stop and ask a human instead of refusing? Only a ROOT unattended run
 /// passes <c>true</c> — it is the only surface with somewhere durable to put the question.</param>
+/// <param name="IsTopLevelUserRun">Is somebody expected at the machine? True only for a run a person started
+/// themselves and that is nobody's delegate (<c>TriggerKind == User</c>, no <c>ParentRunId</c>), resolved from
+/// the run row and never from a tool name. It is what lets the park ask about a delete-like tool.</param>
 public readonly record struct ToolGateInput(
     ToolGateSurface Surface,
     string ToolName,
@@ -37,7 +40,8 @@ public readonly record struct ToolGateInput(
     RunAutonomyPolicy? Policy,
     // Nothing here is defaulted: a new gate must answer every question out loud at compile time rather than
     // inherit a silent false.
-    bool CanPark);
+    bool CanPark,
+    bool IsTopLevelUserRun);
 
 /// <summary>What the gate must do, and the audit reason persisted beside it.</summary>
 public readonly record struct ToolGateVerdict(ToolGateOutcome Outcome, ToolGateDecision Decision);
@@ -137,14 +141,17 @@ public static class ToolAutonomy
         // stops and ASKS. It sits dead last because parking is the weakest possible answer: it changes nothing
         // about WHICH calls may run unattended, only what happens to the ones that may not.
         //
-        // It refuses to ask about a delete-like or EXTERNAL tool, because the affordance it reuses is one
-        // "Continue" button that shows no arguments — weaker evidence of consent than the grant list a named
-        // grant carries, not stronger. Those stay a hard denial and the model is told to ask the user directly.
+        // A delete-like tool may be ASKED ABOUT only when somebody is expected at the machine: a run the
+        // person started themselves and that is nobody's delegate. Both affordances now name the tool AND the
+        // paths it asked to act on, so Continue is no longer blind consent — but a delegate must not acquire
+        // authority its parent narrowed away, and nobody is watching a scheduled or routine run, so those stay
+        // a hard denial. EXTERNAL stays excluded on every run: an MCP tool's name and effect are server-defined
+        // and its later calls' arguments are unseen, so one approval says nothing about the next call.
         // Surface is pinned too, even though only this gate passes CanPark: a park would leave a spoken turn
         // hanging on a Flow item the speaker cannot see.
         if (input.Surface == ToolGateSurface.Unattended
             && input.CanPark
-            && !isDeleteLike
+            && (!isDeleteLike || input.IsTopLevelUserRun)
             && input.ToolClass != ToolClass.External)
         {
             return new ToolGateVerdict(ToolGateOutcome.Park, ToolGateDecision.ParkedForApproval);

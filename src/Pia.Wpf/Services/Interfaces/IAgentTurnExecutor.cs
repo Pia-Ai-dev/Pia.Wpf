@@ -152,11 +152,18 @@ public sealed record StepTurnResult(
     /// is merely waiting.
     /// </para>
     /// <para>
-    /// The NAME only. The pending call itself cannot survive a park — a park outlives the process — so what
-    /// the human approves is the capability, and the resumed step re-issues the call itself.
+    /// The pending call itself cannot survive a park — a park outlives the process — so what the human
+    /// approves is the capability, and the resumed step re-issues the call. What it acted on rides along
+    /// separately in <see cref="ApprovalRequiredArguments"/>, so the approval is not blind.
     /// </para>
     /// </summary>
     string? ApprovalRequiredTool = null,
+
+    /// <summary>
+    /// What the parked calls asked to act on — the paths a delete is about to take, rendered for the card.
+    /// Null when the call carried no string arguments. USER CONTENT: it is shown, and never logged.
+    /// </summary>
+    string? ApprovalRequiredArguments = null,
 
     /// <summary>
     /// The question this step asked through <c>request_user_input</c>, or null. Deliberately not folded into

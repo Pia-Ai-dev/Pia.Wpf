@@ -1330,7 +1330,10 @@ public sealed class ChatSession : IDisposable
             Policy: policy,
             // This surface already HAS a human — it shows the action card. Parking the whole
             // run to ask the same question through a Flow item would be strictly worse than the card.
-            CanPark: false));
+            CanPark: false,
+            // Only the park reads it, and this surface never parks. False keeps the input honest about
+            // what it is answering rather than about what happens to be reachable from here.
+            IsTopLevelUserRun: false));
 
         return new ToolGateResolution(
             pluginId, tool, toolClass, askedAt, verdict, DateTime.UtcNow);

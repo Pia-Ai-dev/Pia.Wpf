@@ -23,10 +23,12 @@ public class McpToolAnnotationHintTests
         bool standingGrant = false,
         bool sessionGrant = false,
         RunAutonomyPolicy? policy = null,
-        bool canPark = false)
+        bool canPark = false,
+        bool topLevelUserRun = false)
         => new(surface, BenignExternalTool, ToolClass.External, serverDeclaredDestructive,
                IsAllowlisted: false, HasSessionGrant: sessionGrant, HasStandingGrant: standingGrant,
-               IsNamedGrant: namedGrant, HasNamedDenial: false, Policy: policy, CanPark: canPark);
+               IsNamedGrant: namedGrant, HasNamedDenial: false, Policy: policy, CanPark: canPark,
+               IsTopLevelUserRun: topLevelUserRun);
 
     // ---- the extraction: which annotation shapes count ------------------------------------------------
 
@@ -167,7 +169,7 @@ public class McpToolAnnotationHintTests
             ServerDeclaredDestructive: false,
             IsAllowlisted: false, HasSessionGrant: true, HasStandingGrant: false,
             IsNamedGrant: false, HasNamedDenial: false,
-            Policy: new RunAutonomyPolicy([ToolClass.External]), CanPark: true));
+            Policy: new RunAutonomyPolicy([ToolClass.External]), CanPark: true, IsTopLevelUserRun: true));
 
         // Neither the policy, nor the session tier, nor the park will take it.
         Assert.Equal(ToolGateOutcome.Refuse, verdict.Outcome);

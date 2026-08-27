@@ -186,7 +186,8 @@ public interface IAgentRunService
     /// panel and the Flow card both render and why it may be logged as a scalar.
     /// </para>
     /// </param>
-    Task PauseAsync(Guid runId, string? reason, CancellationToken ct = default, string? approvalTool = null);
+    Task PauseAsync(Guid runId, string? reason, CancellationToken ct = default, string? approvalTool = null,
+        string? approvalArgs = null);
 
     /// <summary>
     /// hermes #16. Replace the run's opaque launch-grant envelope (<c>AgentRuns.PolicyJson</c>). The service
