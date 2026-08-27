@@ -1,5 +1,11 @@
+// Polls a throwaway profile's history.db and prints every agent-run state transition as it happens.
+//   node watch.mjs [root]     root defaults to %TEMP%\pia-e2e
 import { DatabaseSync } from 'node:sqlite';
-const DB = 'C:\\Users\\maltm\\AppData\\Local\\Temp\\pia-e2e-0826\\local\\history.db';
+import os from 'node:os';
+import path from 'node:path';
+
+const ROOT = process.argv[2] || path.join(os.tmpdir(), 'pia-e2e');
+const DB = path.join(ROOT, 'local', 'history.db');
 const NAMES = ['Planning', 'Running', 'Verifying', 'WaitingForInput', 'Paused',
   'Completed', 'Failed', 'Cancelled', 'WaitingForChildren'];
 const seen = new Map();
@@ -19,5 +25,6 @@ const tick = () => {
     console.log(`${kind} ${String(r.Id).slice(0, 8)} -> ${NAMES[r.State] ?? r.State}  "${String(r.Title ?? '').slice(0, 55)}"`);
   }
 };
+console.log('watching ' + DB);
 tick();
 setInterval(tick, 15000);

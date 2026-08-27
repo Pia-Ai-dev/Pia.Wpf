@@ -1,12 +1,20 @@
+// Reads AgentRuns / chats / artifacts out of a throwaway profile after an agent-run walkthrough.
+//   node probe.mjs [root] [runs|msgs|files|all]     root defaults to %TEMP%\pia-e2e
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
-const ROOT = 'C:\\Users\\maltm\\AppData\\Local\\Temp\\pia-e2e-0826';
+const ROOT = process.argv[2] || path.join(os.tmpdir(), 'pia-e2e');
 const DB = path.join(ROOT, 'local', 'history.db');
 const RUNS = path.join(ROOT, 'local', 'runs');
 const FILES = path.join(ROOT, 'files');
-const mode = process.argv[2] || 'runs';
+const mode = process.argv[3] || 'runs';
+
+if (!fs.existsSync(DB)) {
+  console.error(`no history.db at ${DB} — wrong root, or the app never launched against it`);
+  process.exit(2);
+}
 
 const db = new DatabaseSync(DB, { readOnly: true });
 

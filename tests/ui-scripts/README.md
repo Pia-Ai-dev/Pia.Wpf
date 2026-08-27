@@ -12,6 +12,7 @@ Invoke-UiScripts.ps1                    the harness
 scripts/settings-general.json           recorded flows (ww_record exports)
 fixtures/settings.ui-test-seed.json     the profile every script starts from
 artifacts/                              junit reports, healed scripts, profile backups (gitignored)
+agent-run-e2e/                          the unrecorded agent-run walkthrough (see below)
 ```
 
 ## Run them
@@ -161,3 +162,51 @@ This probes every selector against the app and writes a healed copy into `artifa
 care: `heal` only sees the screen the app is on *right now*, so steps whose target appears later are
 reported `unresolvable` even when they are fine. It is useful for confirming that a renamed
 AutomationId broke something, not as a pass/fail gate.
+
+## Agent-run e2e (unrecorded)
+
+`agent-run-e2e/` drives the foreground and background agent-run flows. There is no recorded script
+and no replay: you launch the app through `ww_launch` and work the six prompts in
+`docs/agent_run_e2e/2026-08-26-agent-run-e2e-prompts.md` through the UI yourself. Selectors are in
+`docs/ui_automation/ui-automation-playbook.md`. Like everything else in this folder it is **not**
+part of the `dotnet test` gate.
+
+Three Node scripts, no `package.json` and no dependencies. `node:sqlite` needs **Node >= 22.5**.
+
+```
+agent-run-e2e/setup-profile.mjs   seed a throwaway profile + the six fixture folders; verify the real one
+agent-run-e2e/watch.mjs           tail run-state transitions out of the throwaway history.db
+agent-run-e2e/probe.mjs           read runs / last messages / the files tree afterwards
+```
+
+A cold run:
+
+```powershell
+dotnet build
+node tests/ui-scripts/agent-run-e2e/setup-profile.mjs $env:TEMP\pia-e2e
+# ww_launch src/Pia.Wpf/bin/Debug/net10.0-windows10.0.17763.0/Pia.Wpf.exe with env
+#   PIA_DATA_DIR       = $env:TEMP\pia-e2e\roaming
+#   PIA_LOCAL_DATA_DIR = $env:TEMP\pia-e2e\local
+node tests/ui-scripts/agent-run-e2e/watch.mjs $env:TEMP\pia-e2e         # second terminal, while you drive
+node tests/ui-scripts/agent-run-e2e/probe.mjs $env:TEMP\pia-e2e all     # after the runs settle
+node tests/ui-scripts/agent-run-e2e/setup-profile.mjs $env:TEMP\pia-e2e verify
+```
+
+The throwaway root is the first argument to all three and defaults to `%TEMP%\pia-e2e`. `probe`
+takes `runs` (the default), `msgs`, `files` or `all` as its second.
+
+### How this profile differs from the fixture one
+
+`Invoke-UiScripts.ps1` writes a **fixture** `settings.json` from scratch. This one **copies** your
+real `settings.json`, `providers.json` and `templates.json` — an agent run needs a working
+provider, and the API key is DPAPI-encrypted and the sign-in is bound to the machine, so only the
+bytes survive. The copy is then patched: `syncEnabled:false`, `autoIngestSources:false`,
+`defaultWindowMode:1`, and `assistantFilesFolder` pointed at the throwaway `files\`.
+
+So it **reads** your profile and must never write it. `setup-profile.mjs` records SHA-256 hashes of
+`settings.json`, `providers.json`, `templates.json` and `history.db` at seed time into
+`real-profile-baseline.json`; `verify` re-hashes the same four and prints `real profile untouched`
+or `LEAK <file>`, exiting 1 on a leak — the same contract as the PowerShell harness's guard.
+
+`PIA_DATA_DIR` does **not** redirect the memory vault, so keep `remember`, `create_source` and
+`recall` out of any prompt you drive here — a vault write would land in the real one.

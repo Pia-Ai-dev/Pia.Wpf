@@ -287,12 +287,20 @@ documented behaviour. Those playbook entries now say what changed.
 
 ## Reproducing
 
+The harness sits beside the recorded-script one at `tests/ui-scripts/agent-run-e2e/` — three Node
+scripts, no dependencies, `node:sqlite` needs Node >= 22.5. The "Agent-run e2e (unrecorded)" section
+of [tests/ui-scripts/README.md](../../tests/ui-scripts/README.md) makes a cold run possible.
+
 ```powershell
-node C:\Users\maltm\.claude\jobs\c7d2c372\tmp\setup-profile.mjs C:\Users\maltm\AppData\Local\Temp\pia-e2e-0826
+dotnet build
+node tests/ui-scripts/agent-run-e2e/setup-profile.mjs $env:TEMP\pia-e2e
 # then ww_launch the Debug exe with PIA_DATA_DIR / PIA_LOCAL_DATA_DIR pointed at roaming\ and local\
+node tests/ui-scripts/agent-run-e2e/watch.mjs $env:TEMP\pia-e2e         # second terminal, while you drive
+node tests/ui-scripts/agent-run-e2e/probe.mjs $env:TEMP\pia-e2e all     # after the runs settle
+node tests/ui-scripts/agent-run-e2e/setup-profile.mjs $env:TEMP\pia-e2e verify
 ```
 
 The six prompts and the fixture expectations are in
-[2026-08-26-agent-run-e2e-prompts.md](2026-08-26-agent-run-e2e-prompts.md). The throwaway profile
-(artifacts, `history.db`, `local\Logs\pia-2026-08-26.log`) is kept at
+[2026-08-26-agent-run-e2e-prompts.md](2026-08-26-agent-run-e2e-prompts.md). The throwaway profile of
+the 2026-08-26 session (artifacts, `history.db`, `local\Logs\pia-2026-08-26.log`) is kept at
 `%TEMP%\pia-e2e-0826` — delete it when the findings above have been triaged.

@@ -1,22 +1,64 @@
+// Seeds a throwaway Pia profile for the agent-run e2e walkthrough, and proves the real one was
+// never written. Usage:
+//   node setup-profile.mjs [root] [seed|verify]     root defaults to %TEMP%\pia-e2e
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-const ROOT = process.argv[2];
-const REAL_ROAMING = 'C:\\Users\\maltm\\AppData\\Roaming\\Pia';
+const ROOT = process.argv[2] || path.join(os.tmpdir(), 'pia-e2e');
+const MODE = (process.argv[3] || 'seed').toLowerCase();
+
+const realRoaming = path.join(process.env.APPDATA ?? '', 'Pia');
+const realLocal = path.join(process.env.LOCALAPPDATA ?? '', 'Pia');
+
+// The four files a leak would show up in. Keys double as the guard-file field names.
+const GUARDED = {
+  'roaming/settings.json': path.join(realRoaming, 'settings.json'),
+  'roaming/providers.json': path.join(realRoaming, 'providers.json'),
+  'roaming/templates.json': path.join(realRoaming, 'templates.json'),
+  'local/history.db': path.join(realLocal, 'history.db'),
+};
+const guardPath = path.join(ROOT, 'real-profile-baseline.json');
+
+const hash = (p) => fs.existsSync(p)
+  ? crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex')
+  : 'MISSING';
+
+if (MODE === 'verify') {
+  if (!fs.existsSync(guardPath)) {
+    console.error(`no baseline at ${guardPath} — seed first`);
+    process.exit(2);
+  }
+  const before = JSON.parse(fs.readFileSync(guardPath, 'utf8'));
+  const leaked = Object.keys(GUARDED).filter((k) => before[k] !== hash(GUARDED[k]));
+  for (const k of leaked) console.log('LEAK ' + k);
+  if (leaked.length > 0) process.exit(1);
+  console.log('real profile untouched');
+  process.exit(0);
+}
+
+if (MODE !== 'seed') {
+  console.error(`unknown mode '${MODE}' — expected seed or verify`);
+  process.exit(2);
+}
 
 const roaming = path.join(ROOT, 'roaming');
 const local = path.join(ROOT, 'local');
 const files = path.join(ROOT, 'files');
 for (const d of [roaming, local, files]) fs.mkdirSync(d, { recursive: true });
 
-// --- profile copy (settings + providers + templates only) ---
+// Copied, not fabricated: the DPAPI-encrypted provider key and the sign-in only survive as bytes.
 for (const f of ['settings.json', 'providers.json', 'templates.json']) {
-  const src = path.join(REAL_ROAMING, f);
+  const src = path.join(realRoaming, f);
   if (fs.existsSync(src)) fs.copyFileSync(src, path.join(roaming, f));
 }
 
 const sPath = path.join(roaming, 'settings.json');
+if (!fs.existsSync(sPath)) {
+  console.error(`no settings.json at ${realRoaming} — run Pia once first`);
+  process.exit(2);
+}
 const s = JSON.parse(fs.readFileSync(sPath, 'utf8').replace(/^\uFEFF/, ''));
 Object.assign(s, {
   syncEnabled: false,
@@ -159,7 +201,7 @@ W('Finance/expenses-q2.csv', [
 // travel 4600>4000, software 6700>6000, hardware 3500>3000, training 2350>2000,
 // catering 1060>800, legal 1800<2500, marketing 5700>5000, office 550<1200  => 6 over
 
-/* ============ Docs: 7 relative links, 3 broken ============ */
+/* ============ Docs: 8 relative links, 3 broken ============ */
 W('Docs/index.md', `# Handbook
 
 Start with [setup](setup.md), then read [the tool guide](tools.md).
@@ -215,19 +257,13 @@ W('Config/staging.env', [
 ].join('\n') + '\n');
 
 // --- baseline hashes of the REAL profile, to prove it is untouched ---
-const hash = (p) => fs.existsSync(p)
-  ? crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex')
-  : 'MISSING';
-const guard = {
-  'roaming/settings.json': hash(path.join(REAL_ROAMING, 'settings.json')),
-  'roaming/providers.json': hash(path.join(REAL_ROAMING, 'providers.json')),
-  'roaming/templates.json': hash(path.join(REAL_ROAMING, 'templates.json')),
-  'local/history.db': hash('C:\\Users\\maltm\\AppData\\Local\\Pia\\history.db'),
-};
-fs.writeFileSync(path.join(ROOT, 'real-profile-baseline.json'), JSON.stringify(guard, null, 2));
+const guard = {};
+for (const [key, p] of Object.entries(GUARDED)) guard[key] = hash(p);
+fs.writeFileSync(guardPath, JSON.stringify(guard, null, 2));
 
 console.log('ROOT      ' + ROOT);
 console.log('roaming   ' + roaming);
 console.log('local     ' + local);
 console.log('files     ' + files);
 console.log('folders   ' + fs.readdirSync(files).join(', '));
+console.log('guard     ' + guardPath);
