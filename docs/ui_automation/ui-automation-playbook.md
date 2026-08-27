@@ -16,6 +16,19 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
   Confirm the intended state change happened (snapshot diff, expected element appears).
 - **Prefer `ww_invoke` / InvokePattern** over physical clicks; it works regardless of window
   foreground state.
+- **`ww_window action=activate` returns `{"success": true}` without foregrounding the window.** If a
+  physical click, a key burst or a hover has to land, confirm the window really is foreground —
+  `ww_inspect(action="attribute", property="HasKeyboardFocus")` on a control you just clicked is the
+  cheap check. Windows refuses `SetForegroundWindow` from a background process, so a `ww_click` can be
+  reported as successful while the click went to whatever was actually on top. Do **not** try to fix
+  that with `ww_window action=state state=minimize`: Pia minimizes out of the window enumeration, and
+  every later call fails with `no_match` until you restore it from outside WinWright.
+- **An `x:Name` doubles as the AutomationId when none is set.** Handy — it is why `#PeekItems` and
+  `#PART_VerticalScrollBar` resolve — but inside an `ItemTemplate` it means every row answers to the
+  same id, and `ViewAutomationIdTests` cannot see it for a `TextBlock` (its sweep only walks
+  `ButtonBase`/`ComboBox`/`TextBoxBase`/`PasswordBox`/`Slider`/`Expander`/`TabItem`). If a selector
+  returns one hit per row, that is the reason. `tests/Pia.Wpf.Tests/Views/FlowRailCardAutomationTests.cs`
+  walks the real peer tree to hold that line for the Flow rail.
 
 ## Stable AutomationIds
 
@@ -74,7 +87,7 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Chip overflow "+N" button (`PiaChipOverflowPanel`) | `ChipOverflow_More_<groupName>`. `PiaAssistantMessage` renders two instances per message (Sources, FileRefs) that can both be visible at once, so the control now exposes a `GroupName` DP the call site sets (`"Sources"` / `"Files"`) rather than leaving it a literal id that would collide. |
 | Action card chrome (`ActionCardControl`) | Keyed on `ActionCardInfo.Id` (a `Guid` added for this — the model had no per-card identity before): `ActionCard_ToggleDetails_<id>`, `ActionCard_Manage_<id>` (same id on both mutually-exclusive "Manage" layouts). `CardDecisionBar`'s own 4 buttons (`ToolApproval_*`, table above) are unchanged — they stay semantic-per-decision-type, not per-card. **Lifetime caveat:** `Id` defaults to `Guid.NewGuid()` at `ActionCardBuilder.Build` time — it is NOT a persisted domain id like `TodoItem.Id`/`AssistantMessage.Id`. Action cards are never serialized to chat history and `ActionCardBuilder.Build` runs exactly once per real tool call, so the id is stable for the in-memory lifetime of that card (including a DataContext re-host, since the same `AssistantMessage`/`ActionCardInfo` object is reused, not rebuilt) — but discover it at runtime, never hardcode one in a script. |
 | File diff card (`FileDiffCard`) | `ActionCard_DiffToggle_<filePath>`, keyed on `ActionCardInfo.FilePath` rather than the `Id` above — already shown in the card header, so it stays human-readable, and a same-path collision is a rare accepted corner case. |
-| Flow notification rail (`FlowView`) | Per-item, keyed on `FlowItemViewModel.Item.Id`: `Flow_ActionLink_<id>`, `Flow_Dismiss_<id>` (same formula covers both the real rail and the transient single-item arrival-peek clone, which reuses the identical template). Header (`FlowHeaderTemplate`, `DataContext` is the one `FlowViewModel`): `Flow_ClearAll_<host>`, `Flow_PinToggle_<host>`, `Flow_Collapse_<host>`, keyed on a `Tag` ("Real"/"Peek") set on each of the two `ContentControl` hosts and read back via `RelativeSource AncestorType=ContentControl` — needed because the peek clone's `Visibility="Hidden"` does NOT remove it from the UIA tree or block `InvokePattern` (only the hit-test path), so a literal id here would have been a genuine, invokable ambiguity, not a cosmetic one. |
+| Flow notification rail (`FlowView`) | Per-item, keyed on `FlowItemViewModel.Item.Id`: `Flow_Card_<id>` (the `DataItem` container, set through the rail list's `ItemContainerStyle`; its UIA name is the card title), `Flow_Title_<id>`, `Flow_Body_<id>`, `Flow_ActionLink_<id>`, `Flow_Dismiss_<id>`, `Flow_Decisions_<id>` (same formula covers both the real rail and the transient single-item arrival-peek clone, which reuses the identical template — except `Flow_Card_<id>`, which only the real rail sets, so the two can never collide during a peek). Header (`FlowHeaderTemplate`, `DataContext` is the one `FlowViewModel`): `Flow_ClearAll_<host>`, `Flow_PinToggle_<host>`, `Flow_Collapse_<host>`, keyed on a `Tag` ("Real"/"Peek") set on each of the two `ContentControl` hosts and read back via `RelativeSource AncestorType=ContentControl` — needed because the peek clone's `Visibility="Hidden"` does NOT remove it from the UIA tree or block `InvokePattern` (only the hit-test path), so a literal id here would have been a genuine, invokable ambiguity, not a cosmetic one. |
 | Todo edit dialog (`TodoEditContentDialog`) | `TodoEdit_Title`, `_Notes`, `_Priority`, `_DueDate`. No test lock — see Known gaps. |
 | Recovery code dialog (`RecoveryCodeContentDialog`) | `RecoveryCode_Copy`, `_Confirm`. No test lock. |
 | Meeting save dialog (`MeetingSaveContentDialog`) | `MeetingSave_Title`, `_Attendees`, `_Tags`, `_Project`, `_Notes`. No test lock. |
@@ -202,6 +215,45 @@ Committed recordings, the settings fixture they start from and the replay harnes
 
 ## Known gaps (don't burn time rediscovering these)
 
+- **`ChatChip_Toggle` went out of phase with the flyout — FIXED 2026-08-27.** The flyout is still
+  `StaysOpen="False"` and still closes on its own, but `ChipButton_Click` now decides from
+  `FlyoutPopup.IsOpen` instead of the view-model flag, and both popups' `Closed` handlers push that flag
+  back down, so one invoke always toggles. Same fix on `ChatChip_WorkingDir` / `IsPickerOpen`. Verified
+  live: flyout open → another window activated → one `ww_invoke` reopens it. Drop the invoke-twice
+  recipe. Still true, and not a bug: **`ww_screenshot` closes the flyout when Pia is not the foreground
+  window** (UIA read calls do not) — capture the image last, or foreground Pia first. Also unchanged and
+  separate: a physical click on the chip while the flyout is open does **not** close it. The popup
+  dismisses itself on the mouse-DOWN and the button's Click arrives on the mouse-UP, a dispatcher turn
+  later, so the button cannot tell that click apart from a fresh one. Close it with `Escape` or an
+  outside click.
+- **The working-directory picker opens inside the chat's CURRENT working directory, not at the root**, so
+  `ChatChip_FolderEntries` is legitimately empty for a leaf folder — that is not a UIA gap, and its rows
+  expose their names normally once the folder has children. Send `Backspace` to ascend, then arrow +
+  `Enter`. **Those no longer have to be separate `ww_keyboard` calls — FIXED 2026-08-27**: the picker's
+  `FocusFirstEntry` runs synchronously from the key handler now (its `UpdateLayout` is what makes that
+  safe), so `["Backspace","Down","Down","Enter"]` in ONE call works. Measured both ways from
+  `\Alpha\Beta`, same profile and same call: **before** it landed on `\Alpha\Delta` — the posted focus
+  move swallowed the FIRST arrow, so one `Down` of two survived, which is why the old symptom read as
+  "the pill keeps the old folder" rather than an error. **After**, `\Alpha\Epsilon`. Only
+  `WorkingDirPopup_Opened` still posts, because the popup's content is mid-connection when it fires.
+  Read the chosen folder back off `ChatChip_WorkingDir`'s own `Text` child.
+- **The Flow rail's cards had no per-card identity — FIXED 2026-08-27.** Every card's `DataItem`
+  container now carries `Flow_Card_<id>` and reports its title as its UIA name (via the list's
+  `ItemContainerStyle`), and title/body/decisions are per-item ids — `Flow_Title_<id>`, `Flow_Body_<id>`,
+  `Flow_Decisions_<id>` — beside the `Flow_ActionLink_<id>` / `Flow_Dismiss_<id>` that were already there.
+  Before this, title and body were addressable only through their shared `x:Name`, so `#TitleText`
+  resolved to **one hit per card** and silently returned the first; the DataItem answered to no id at all
+  and reported `Pia.ViewModels.Flow.FlowItemViewModel` as its name. That, not a realization failure, is
+  what made "the card for run X" unaddressable. Scope inside a card with
+  `automationId=Flow_Card_<id> >> automationId=Flow_ActionLink_<id>`.
+  **The reported flakiness ("no children at all", varying between calls) did not reproduce.** With 4 and
+  8 seeded cards, every card exposed every id on every consecutive `ww_dump_tree`, pinned and in overlay
+  mode, scrolled past the viewport, after dismissals, and after a collapsed-rail arrival-peek cycle. The
+  suspected cause — `FlowItemCardTemplate` being bound at two hosts — is **refuted**: `OnItemArrived`
+  returns early while the rail is open, `OnPeekCompleted` nulls `PeekItems.ItemsSource`, and an
+  in-process peer walk with the same item in both hosts resolves both correctly. The one variable not
+  reproduced is a UI thread saturated by streaming runs, which is what the e2e session had; cross-process
+  UIA marshals every call to that dispatcher, so suspect that before suspecting the ids.
 - **A `ListBoxItem` container CAN carry a per-item id and name** - through the list's `ItemContainerStyle`, as
   the chat-history and Routines lists now do. "Not a walker-recognized type" below means the
   `ViewAutomationIdTests` sweep cannot see it (it only walks controls declared inside a `DataTemplate`), not
@@ -213,7 +265,7 @@ Committed recordings, the settings fixture they start from and the replay harnes
 - **There is no snackbar to read — `RootSnackbarPresenter` is never driven.** `ISnackbarService` is
   bound to `FlowSnackbarService`, so every `Show(…)` becomes a Flow item instead. What that means for
   a script: a **Danger/Warning** notice is `FlowLifetime.Persistent` and is fully readable at leisure
-  (`#TitleText` / `#BodyText` inside the rail’s `DataItem`, plus `Flow_Dismiss_<id>`), while a
+  (`Flow_Title_<id>` / `Flow_Body_<id>` inside `Flow_Card_<id>`, plus `Flow_Dismiss_<id>`), while a
   **Success/Info** notice is `FlowLifetime.Transient` — a peek that expires before one MCP round trip
   can read it. Four attempts on a confirmed-successful action caught nothing. Assert the side effect,
   never the success notice.
