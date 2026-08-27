@@ -638,6 +638,7 @@ public static class Bootstrapper
         // IMeetingSession is intentionally NOT container-registered (no parameterless seam).
         services.AddSingleton<Services.MeetingAttendee.IBrowserProvisioner, Services.MeetingAttendee.ChromiumProvisioner>();
         services.AddSingleton<Services.MeetingAttendee.IDefaultBrowserResolver, Services.MeetingAttendee.DefaultBrowserResolver>();
+        services.AddSingleton<Services.MeetingAttendee.IScheduledMeetingRecorder, Services.MeetingAttendee.ScheduledMeetingRecorder>();
 #if DEBUG
         var debugMeetingAttendeeAudioFile = Environment.GetEnvironmentVariable(DebugMeetingAttendeeAudioFileEnvVar);
         if (!string.IsNullOrEmpty(debugMeetingAttendeeAudioFile))
