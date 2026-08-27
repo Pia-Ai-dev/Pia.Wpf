@@ -10,17 +10,6 @@ namespace Pia.Services;
 
 public class TokenizingAiClientService : IAiClientService
 {
-    private static readonly string[] WriteOperations =
-    [
-        "remember", "forget",
-        "create_reminder", "update_reminder", "delete_reminder",
-        "create_todo", "update_todo", "complete_todo", "delete_todo",
-        "create_scheduled_research", "update_scheduled_research", "delete_scheduled_research",
-        // Its slot values and name become a PERSISTED prompt. Left off this list the card would show
-        // detokenized text while the job stored the tokens, and the map dies with the session.
-        "create_routine_from_blueprint"
-    ];
-
     private readonly IAiClientService _inner;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ISettingsService _settingsService;
@@ -270,12 +259,19 @@ public class TokenizingAiClientService : IAiClientService
     public Task TestPiaCloudConnectionAsync(CancellationToken cancellationToken = default)
         => _inner.TestPiaCloudConnectionAsync(cancellationToken);
 
+    /// <summary>
+    /// Rewrites TEXT to placeholders on the way in. ASSISTANT text as well as USER text: an earlier turn's
+    /// reply was detokenized on the way OUT by <see cref="BufferedDetokenize"/>, so a User-only pass sent the
+    /// real values straight back to the provider on the next step. Nothing but text is touched — a carried
+    /// tool result is a FunctionResultContent and was already tokenized where it was produced, so it is
+    /// preserved rather than tokenized twice.
+    /// </summary>
     private IList<ChatMessage> TokenizeMessages(IList<ChatMessage> messages)
     {
         var result = new List<ChatMessage>(messages.Count);
         foreach (var msg in messages)
         {
-            if (msg.Role != ChatRole.User || string.IsNullOrEmpty(msg.Text))
+            if ((msg.Role != ChatRole.User && msg.Role != ChatRole.Assistant) || string.IsNullOrEmpty(msg.Text))
             {
                 result.Add(msg);
                 continue;
@@ -285,13 +281,13 @@ public class TokenizingAiClientService : IAiClientService
             var nonText = msg.Contents.Where(c => c is not TextContent).ToList();
             if (nonText.Count == 0)
             {
-                result.Add(new ChatMessage(ChatRole.User, tokenized));
+                result.Add(new ChatMessage(msg.Role, tokenized));
                 continue;
             }
 
             var rebuilt = new List<AIContent>(nonText.Count + 1) { new TextContent(tokenized) };
             rebuilt.AddRange(nonText);
-            result.Add(new ChatMessage(ChatRole.User, rebuilt));
+            result.Add(new ChatMessage(msg.Role, rebuilt));
         }
         return result;
     }
@@ -303,18 +299,17 @@ public class TokenizingAiClientService : IAiClientService
         // on exactly those installs — and be invisible to any test that leaves tokenization off.
         return async (toolCall, ctx) =>
         {
-            // Detokenize string arguments on write operations. Onto a COPY: the FunctionCallContent the loop
-            // handed us is the one it appended to its own message list, so an in-place rewrite would send the
-            // real values back to the provider on the next round — and, once a step carries its exchanges
-            // forward, for the rest of the run.
-            var dispatched = toolCall;
-            if (IsWriteOperation(toolCall.Name))
-            {
-                _logger.LogDebug("Detokenizing write-operation arguments for {ToolName}", toolCall.Name);
-                dispatched = DetokenizeToolCallArguments(toolCall);
-            }
-
-            var result = await handler(dispatched, ctx);
+            // EVERY tool, not a named list of write verbs. A placeholder the model copies out of a tool result
+            // and back into an argument reaches the tool verbatim otherwise, and lands on disk — no file tool
+            // was ever on that list, so write_file wrote "[Phone_9]" into a user's report. Detokenize is
+            // idempotent and passes unknown tokens through, so a read tool and the pre-route step tools are
+            // safe to include.
+            //
+            // Onto a COPY: the FunctionCallContent the loop handed us is the one it appended to its own message
+            // list, so an in-place rewrite would send the real values back to the provider on the next round —
+            // and, once a step carries its exchanges forward, for the rest of the run.
+            _logger.LogDebug("Detokenizing arguments for {ToolName}", toolCall.Name);
+            var result = await handler(DetokenizeToolCallArguments(toolCall), ctx);
             if (result is null)
                 return null;
 
@@ -393,6 +388,4 @@ public class TokenizingAiClientService : IAiClientService
         return result.ToString();
     }
 
-    internal static bool IsWriteOperation(string toolName) =>
-        WriteOperations.Contains(toolName);
 }
