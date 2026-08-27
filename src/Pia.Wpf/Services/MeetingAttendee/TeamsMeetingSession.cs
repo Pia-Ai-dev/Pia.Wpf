@@ -1050,7 +1050,7 @@ public sealed class TeamsMeetingSession : IMeetingSession
     /// <summary>
     /// Waits until the bot is admitted (hangup control present). While waiting, raises
     /// <see cref="EnteredLobby"/> the first time the lobby text is observed. Throws
-    /// <see cref="TimeoutException"/> if not admitted within <see cref="AdmissionTimeoutMs"/>.
+    /// <see cref="MeetingAdmissionTimeoutException"/> if not admitted within <see cref="AdmissionTimeoutMs"/>.
     /// </summary>
     private async Task WaitForAdmissionAsync(IPage page, CancellationToken cancellationToken)
     {
@@ -1098,7 +1098,7 @@ public sealed class TeamsMeetingSession : IMeetingSession
             await Task.Delay(PollIntervalMs, cancellationToken).ConfigureAwait(false);
         }
 
-        throw new TimeoutException(
+        throw new MeetingAdmissionTimeoutException(
             $"Meeting attendee was not admitted within {AdmissionTimeoutMs / 1000} seconds.");
     }
 
