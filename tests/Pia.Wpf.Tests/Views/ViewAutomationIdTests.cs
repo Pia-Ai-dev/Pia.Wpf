@@ -55,6 +55,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Controls.Cards.CardDecisionBar), 1, 1, "")]
     [InlineData(typeof(Pia.Controls.Vault.PiaVaultHeader), 5, 0, "PiaHelpHint")]
     [InlineData(typeof(Pia.Controls.Vault.PiaVaultSearchBar), 1, 0, "")]
+    [InlineData(typeof(Pia.Controls.Vault.PiaInspectorHeader), 4, 0, "PiaTypeChip")]
     [InlineData(typeof(Pia.Controls.Reminders.PiaRemindersHeader), 4, 0, "PiaHelpHint")]
     [InlineData(typeof(Pia.Controls.Reminders.PiaRemindersFilterBar), 5, 0, "")]
     [InlineData(typeof(Pia.Controls.History.PiaHistoryHeader), 2, 0, "PiaHelpHint")]

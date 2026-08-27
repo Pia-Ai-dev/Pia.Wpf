@@ -58,6 +58,24 @@
         <ui:SymbolIcon Symbol="FolderOpen24" FontSize="16"/>
       </ui:Button>
       <ui:Button Appearance="Secondary"
+                 Command="{Binding OpenVaultInObsidianCommand}"
+                 Visibility="{Binding IsObsidianAvailable, Converter={StaticResource BooleanToVisibilityConverter}}"
+                 AutomationProperties.Name="{loc:Str Memory_OpenInObsidian}"
+                 AutomationProperties.AutomationId="Memory_OpenInObsidian"
+                 ToolTip="{loc:Str Memory_OpenInObsidian}"
+                 Margin="0,0,6,0">
+        <Grid Width="16" Height="16">
+          <!-- Icon extracted from the installed Obsidian; falls back to a glyph if extraction failed. -->
+          <Image Source="{Binding ObsidianIcon}"
+                 Width="16" Height="16"
+                 RenderOptions.BitmapScalingMode="HighQuality"
+                 Visibility="{Binding ObsidianIcon, Converter={StaticResource NullToVisibilityConverter}}"/>
+          <ui:SymbolIcon Symbol="Notebook24"
+                         FontSize="16"
+                         Visibility="{Binding ObsidianIcon, Converter={StaticResource InverseNullToVisibilityConverter}}"/>
+        </Grid>
+      </ui:Button>
+      <ui:Button Appearance="Secondary"
                  Command="{Binding ShowHelpCommand}"
                  AutomationProperties.Name="{loc:Str Memory_Help_Tooltip}"
                  AutomationProperties.AutomationId="Memory_ShowHelp"

@@ -22,13 +22,15 @@ public class DataDirectoryRoutingTests
 
     private static readonly string Resolver = Path.Combine("Paths", "PiaPaths.cs");
 
-    /// <summary>Both locate an installed program under <c>%LOCALAPPDATA%\Programs</c> — neither reads Pia's own
-    /// data, and routing them would break git / VS Code discovery under an override.</summary>
+    /// <summary>All three locate an installed program under <c>%LOCALAPPDATA%\Programs</c>, and the Obsidian
+    /// one also reads Obsidian's own <c>%APPDATA%</c> vault list. None reads Pia's data, and routing them would
+    /// break git / VS Code / Obsidian discovery under an override.</summary>
     private static readonly string[] Allowed =
     [
         Resolver,
         Path.Combine("Helpers", "GitLocator.cs"),
         Path.Combine("Helpers", "VsCodeLauncher.cs"),
+        Path.Combine("Helpers", "ObsidianLauncher.cs"),
     ];
 
     [Fact]

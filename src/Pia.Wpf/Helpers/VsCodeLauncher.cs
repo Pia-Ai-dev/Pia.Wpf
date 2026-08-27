@@ -1,11 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
-using System.Windows;
-using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 
 namespace Pia.Helpers;
@@ -21,7 +17,7 @@ namespace Pia.Helpers;
 /// than shell-opening the file) means a script/config the assistant authored opens as text, never runs —
 /// so this deliberately supports the <c>.ps1/.bat/.cmd</c> types <see cref="ShellLauncher.OpenFile"/> refuses.
 /// </summary>
-public static partial class VsCodeLauncher
+public static class VsCodeLauncher
 {
     /// <summary>
     /// Common code / script / config / markup / text extensions VS Code is a sensible editor for. Binary
@@ -91,29 +87,7 @@ public static partial class VsCodeLauncher
         {
             if (_iconResolved) return _icon;
             _iconResolved = true;
-
-            var exe = ResolveExecutable(); // reentrant on _gate
-            if (exe is null) return _icon = null;
-
-            var large = new IntPtr[1];
-            try
-            {
-                var count = ExtractIconEx(exe, 0, large, null, 1);
-                if (count == 0 || large[0] == IntPtr.Zero) return _icon = null;
-
-                var source = Imaging.CreateBitmapSourceFromHIcon(
-                    large[0], Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-                source.Freeze();
-                return _icon = source;
-            }
-            catch
-            {
-                return _icon = null;
-            }
-            finally
-            {
-                if (large[0] != IntPtr.Zero) DestroyIcon(large[0]);
-            }
+            return _icon = AppIcon.TryLoad(ResolveExecutable()); // ResolveExecutable is reentrant on _gate
         }
     }
 
@@ -228,12 +202,4 @@ public static partial class VsCodeLauncher
         try { return File.Exists(path); }
         catch { return false; }
     }
-
-    [LibraryImport("shell32.dll", EntryPoint = "ExtractIconExW", StringMarshalling = StringMarshalling.Utf16)]
-    private static partial uint ExtractIconEx(
-        string lpszFile, int nIconIndex, [Out] IntPtr[]? phiconLarge, [Out] IntPtr[]? phiconSmall, uint nIcons);
-
-    [LibraryImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool DestroyIcon(IntPtr hIcon);
 }

@@ -340,6 +340,8 @@
   <data name="Memory_Help_Files" xml:space="preserve"><value>Everything is stored in the memory vault — one folder on this computer. Your memories are the small text files in its 'memory' folder.</value></data>
   <data name="Memory_Help_Sources" xml:space="preserve"><value>Next to it, a 'sources' folder holds original documents Pia keeps for reference — Pia reads them but never changes them. Take a look any time:</value></data>
   <data name="Memory_OpenFolder" xml:space="preserve"><value>Open memory vault</value></data>
+  <data name="Memory_OpenInObsidian" xml:space="preserve"><value>Open in Obsidian</value></data>
+  <data name="Memory_OpenNoteInObsidian" xml:space="preserve"><value>Open note in Obsidian</value></data>
   <!-- Reminders View -->
   <data name="Reminders_Title" xml:space="preserve"><value>Reminders</value></data>
   <data name="Reminders_HeaderHelp" xml:space="preserve"><value>Time-based nudges Pia surfaces when they are due. Ask the Assistant to create one.</value></data>

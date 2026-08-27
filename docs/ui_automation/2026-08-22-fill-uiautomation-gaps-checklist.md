@@ -127,7 +127,10 @@ mechanism too, and it already has an id.
   *Deps:* none · *Effort:* **S** · *Value:* **High** (the list you'd script against most)
 - [ ] **A4 · `PiaVaultInspector`.** The detail pane for a selected memory item.
   *Deps:* none · *Effort:* **S** · *Value:* **Med**
-- [ ] **A5 · `PiaInspectorHeader`.** Shared inspector header chrome (Vault uses it; check reuse).
+- [x] **A5 · `PiaInspectorHeader`.** Shared inspector header chrome (Vault uses it; check reuse).
+  Landed with the Obsidian button: `MemoryNote_Edit` / `_Copy` / `_Delete` / `_OpenObsidian`, on its own
+  prefix so the page header's `Memory_*` buttons stay prefix-disjoint. Only Vault uses it — no other
+  reuse to check. `PiaTypeChip` is its one nested-view stop.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
 - [ ] **A6 · `PiaVaultStatusBar`.** Bottom bar — likely just status text; confirm no dead buttons.
   *Deps:* none · *Effort:* **XS** · *Value:* **Enabler**

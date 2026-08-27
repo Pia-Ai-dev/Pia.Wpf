@@ -69,7 +69,8 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Assistant chat history row / group card | Per-chat **open** and delete buttons, both on `PiaAssistantChatRowContent` and both revealed by hovering the row (keyed on `AssistantChatRowViewModel.Id`, i.e. `Chat.Id`): `AssistantChat_Open_<id>`, `AssistantChat_Delete_<id>`. The row CONTAINER carries `AssistantChat_Row_<id>` and reports the chat title as its UIA name. `AssistantChat_Open_<id>` resumes the named chat in one invoke - selecting the row does not open it, that needs the inspector's Resume button. Group header expand/collapse, per-bucket: `AssistantHistory_GroupToggle_<bucket>`, keyed on `AssistantChatGroupViewModel.Bucket` (its nullable `GroupKey` string was skipped in favor of this non-null enum, same identity the group is actually built from). |
 | Page-header help hints | `Routines_Help`, `Assignments_Help`, `History_Help`, `AssistantHistory_Help`, `Memory_Help`, `Todo_Help`, `Reminders_Help` |
 | Settings help hints | `Settings_ToolPermissions_Page_Help` (tab intro), `Settings_ToolPermissions_Session_Help` (session tier), `Settings_ToolPermissions_Help` (always-allowed list), `Settings_MeetingBrowser_Help`, `Settings_Agent_Roster_Help`, `Settings_Scheduled_Help` |
-| Vault (Memory) header / search | `Memory_Back`, `_Home`, `_Refresh`, `_OpenFolder`, `_ShowHelp` (distinct from the `Memory_Help` hover hint above), `Memory_SearchQuery` |
+| Vault (Memory) header / search | `Memory_Back`, `_Home`, `_Refresh`, `_OpenFolder`, `_OpenInObsidian` (present only when an Obsidian install was found), `_ShowHelp` (distinct from the `Memory_Help` hover hint above), `Memory_SearchQuery` |
+| Vault inspector header (`PiaInspectorHeader`) | `MemoryNote_Edit`, `_Copy`, `_Delete`, `_OpenObsidian` (Obsidian-installed only). Prefixed `MemoryNote_`, not `Memory_`, so a script prefix-matching the page header's buttons never reaches the selected note's actions. One instance per view, so these are literal. |
 | Vault category card (`PiaVaultCategoryCard`) | Expand/collapse toggle, per-category: `Memory_CategoryToggle_<type>`, keyed on `MemoryGroupViewModel.Type` (the category/topic slug). `PiaVaultRow` (the per-item row inside) has no walker-recognized controls of its own — nothing else to id there. |
 | Reminders header / filters | `Reminders_Refresh`, `_DismissAll`, `_DisableAll`, `_DeleteAll`; filter bar (static `RadioButton`s, not per-item): `Reminders_Filter_All` / `_Active` / `_Snoozed` / `_Disabled` / `_Completed` |
 | Reminder row / group card | Per-reminder (keyed on `Reminder.Id`): `Reminders_ToggleEnable_<id>`, `_Snooze_<id>`, `_Dismiss_<id>`, `_Delete_<id>`. Group header expand/collapse, per-bucket: `Reminders_GroupToggle_<bucketKind>`, keyed on `ReminderGroupViewModel.BucketKind`. |
@@ -331,8 +332,9 @@ Committed recordings, the settings fixture they start from and the replay harnes
   `PiaReminderRow`'s four hover actions plus `PiaReminderGroupCard`'s bucket toggle,
   `PiaHistoryGroupCard`'s bucket toggle, and (same shape, under `AssistantHistoryView`)
   `PiaAssistantChatRowContent`'s delete button plus `PiaAssistantChatGroupCard`'s bucket toggle.
-  Still open in this family: the inspector panes (`PiaVaultInspector`, `PiaHistoryInspector*`)
-  and the status bars. A test row or an id on the top-level view accomplishes nothing; the fix
+  Still open in this family: the inspector panes' own controls (`PiaVaultInspector`'s markdown
+  editor and its save/cancel pair, `PiaHistoryInspector*`) and the status bars —
+  `PiaInspectorHeader`, the Vault inspector's header chrome, now has ids and a test row. A test row or an id on the top-level view accomplishes nothing; the fix
   has to happen one nested control at a time. `TodoView` is the exception — unlike Vault/
   History/Reminders it declares interactive controls of its own (kanban add-bar, per-column and
   per-todo actions, table above), not pure composition; it turned out to be 9 controls, not the

@@ -33,16 +33,40 @@
         <ui:Button Icon="{ui:SymbolIcon Symbol=Edit20}"
                    Appearance="Transparent"
                    ToolTip="{loc:Str Memory_Edit}"
+                   AutomationProperties.Name="{loc:Str Memory_Edit}"
+                   AutomationProperties.AutomationId="MemoryNote_Edit"
                    Command="{Binding DataContext.EditMemoryCommand, RelativeSource={RelativeSource AncestorType=views:VaultView}}"
                    CommandParameter="{Binding}"/>
         <ui:Button Icon="{ui:SymbolIcon Symbol=Copy20}"
                    Appearance="Transparent"
                    ToolTip="{loc:Str Common_Copy}"
+                   AutomationProperties.Name="{loc:Str Common_Copy}"
+                   AutomationProperties.AutomationId="MemoryNote_Copy"
                    Command="{Binding DataContext.CopyMarkdownCommand, RelativeSource={RelativeSource AncestorType=views:VaultView}}"
                    CommandParameter="{Binding}"/>
+        <ui:Button Appearance="Transparent"
+                   ToolTip="{loc:Str Memory_OpenNoteInObsidian}"
+                   AutomationProperties.Name="{loc:Str Memory_OpenNoteInObsidian}"
+                   AutomationProperties.AutomationId="MemoryNote_OpenObsidian"
+                   Visibility="{Binding DataContext.IsObsidianAvailable, RelativeSource={RelativeSource AncestorType=views:VaultView}, Converter={StaticResource BooleanToVisibilityConverter}}"
+                   Command="{Binding DataContext.OpenNoteInObsidianCommand, RelativeSource={RelativeSource AncestorType=views:VaultView}}"
+                   CommandParameter="{Binding}">
+          <Grid Width="16" Height="16">
+            <!-- Icon extracted from the installed Obsidian; falls back to a glyph if extraction failed. -->
+            <Image Source="{Binding DataContext.ObsidianIcon, RelativeSource={RelativeSource AncestorType=views:VaultView}}"
+                   Width="16" Height="16"
+                   RenderOptions.BitmapScalingMode="HighQuality"
+                   Visibility="{Binding DataContext.ObsidianIcon, RelativeSource={RelativeSource AncestorType=views:VaultView}, Converter={StaticResource NullToVisibilityConverter}}"/>
+            <ui:SymbolIcon Symbol="Notebook20"
+                           FontSize="16"
+                           Visibility="{Binding DataContext.ObsidianIcon, RelativeSource={RelativeSource AncestorType=views:VaultView}, Converter={StaticResource InverseNullToVisibilityConverter}}"/>
+          </Grid>
+        </ui:Button>
         <ui:Button Icon="{ui:SymbolIcon Symbol=Delete20}"
                    Appearance="Transparent"
                    ToolTip="{loc:Str Memory_Delete}"
+                   AutomationProperties.Name="{loc:Str Memory_Delete}"
+                   AutomationProperties.AutomationId="MemoryNote_Delete"
                    Foreground="{DynamicResource PiaDangerBrush}"
                    Command="{Binding DataContext.DeleteMemoryCommand, RelativeSource={RelativeSource AncestorType=views:VaultView}}"
                    CommandParameter="{Binding}"/>

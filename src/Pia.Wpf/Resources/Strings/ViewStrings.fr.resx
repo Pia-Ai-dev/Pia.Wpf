@@ -374,6 +374,8 @@
   <data name="Memory_Help_Files" xml:space="preserve"><value>Tout est enregistré dans le coffre de mémoire — un dossier de cet ordinateur. Vos mémoires sont les petits fichiers texte du dossier 'memory'.</value></data>
   <data name="Memory_Help_Sources" xml:space="preserve"><value>À côté, le dossier 'sources' contient les documents originaux que Pia garde comme référence — Pia les lit mais ne les modifie jamais. Jetez-y un œil à tout moment :</value></data>
   <data name="Memory_OpenFolder" xml:space="preserve"><value>Ouvrir le coffre de mémoire</value></data>
+  <data name="Memory_OpenInObsidian" xml:space="preserve"><value>Ouvrir dans Obsidian</value></data>
+  <data name="Memory_OpenNoteInObsidian" xml:space="preserve"><value>Ouvrir la note dans Obsidian</value></data>
   <!-- Reminders View -->
   <data name="Reminders_Title" xml:space="preserve"><value>Rappels</value></data>
   <data name="Reminders_HeaderHelp" xml:space="preserve"><value>Des rappels que Pia signale à l'échéance. Demander à l'assistant d'en créer un.</value></data>

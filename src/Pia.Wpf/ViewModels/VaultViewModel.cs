@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -107,6 +108,12 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
     public bool IsInspectorPlaceholderVisible
         => SelectedMemory is null && TotalObjectCount == 0 && SourceFileCount == 0;
 
+    /// <summary>Gates both Obsidian buttons; the launcher caches its probe, so this is not re-detected per read.</summary>
+    public bool IsObsidianAvailable => ObsidianLauncher.IsAvailable;
+
+    /// <summary>The installed Obsidian's own icon, or null — the XAML then falls back to a glyph.</summary>
+    public ImageSource? ObsidianIcon => ObsidianLauncher.TryGetIcon();
+
     public IAsyncRelayCommand RefreshCommand { get; }
     public IAsyncRelayCommand<VaultMemoryItem> DeleteMemoryCommand { get; }
     public IAsyncRelayCommand<VaultMemoryItem> EditMemoryCommand { get; }
@@ -121,6 +128,8 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
     public IAsyncRelayCommand ShowHelpCommand { get; }
     public IRelayCommand GoHomeCommand { get; }
     public IRelayCommand OpenVaultFolderCommand { get; }
+    public IRelayCommand OpenVaultInObsidianCommand { get; }
+    public IRelayCommand<VaultMemoryItem> OpenNoteInObsidianCommand { get; }
     public IAsyncRelayCommand<IReadOnlyList<string>> AddSourceFilesCommand { get; }
 
     public VaultViewModel(
@@ -158,6 +167,8 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         ShowHelpCommand = new AsyncRelayCommand(ExecuteShowHelp);
         GoHomeCommand = new RelayCommand(ExecuteGoHome);
         OpenVaultFolderCommand = new RelayCommand(() => ShellLauncher.RevealInExplorer(_memoryService.VaultRoot));
+        OpenVaultInObsidianCommand = new RelayCommand(() => ObsidianLauncher.OpenVault(_memoryService.VaultRoot));
+        OpenNoteInObsidianCommand = new RelayCommand<VaultMemoryItem>(ExecuteOpenNoteInObsidian);
         AddSourceFilesCommand = new AsyncRelayCommand<IReadOnlyList<string>>(ExecuteAddSourceFiles);
 
         PropertyChanged += OnPropertyChanged;
@@ -188,6 +199,14 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
                 row.IsIngesting =
                     string.Equals(row.RelativePath, sourceRef, StringComparison.OrdinalIgnoreCase);
         });
+    }
+
+    // The item's FilePath, never its Reference: a section address (path#heading) is not something Obsidian
+    // resolves, and the whole file is what it opens anyway.
+    private void ExecuteOpenNoteInObsidian(VaultMemoryItem? memory)
+    {
+        if (memory is null || !ObsidianLauncher.IsMarkdownNote(memory.FilePath)) return;
+        ObsidianLauncher.OpenNote(_memoryService.VaultRoot, memory.FilePath);
     }
 
     private async Task ExecuteCopyMarkdown(VaultMemoryItem? memory)
