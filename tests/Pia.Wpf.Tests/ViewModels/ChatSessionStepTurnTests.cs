@@ -30,7 +30,8 @@ public sealed class ChatSessionStepTurnTests
     private ChatSession CreateSession() => new(
         _tokenMap, _ai, _plugins, _cards, _permissions, _loc, _log, _ => true);
 
-    private static StepTurnSpec Spec(bool tokenizationEnabled, AiProvider? provider = null) => new(
+    private static StepTurnSpec Spec(
+        bool tokenizationEnabled, AiProvider? provider = null, bool supportsTools = false) => new(
         RunId: Guid.NewGuid(),
         Ordinal: 0,
         Intent: "do the thing",
@@ -39,8 +40,8 @@ public sealed class ChatSessionStepTurnTests
         Persona: new PersonaAttribution(Guid.NewGuid(), "Pia", "🤖"),
         Provider: provider
             ?? new AiProvider { Name = "Test", Endpoint = "http://localhost", ProviderType = AiProviderType.OpenAI },
-        Tools: null,
-        SupportsTools: false,
+        Tools: supportsTools ? new List<AITool> { AIFunctionFactory.Create(() => string.Empty, "noop") } : null,
+        SupportsTools: supportsTools,
         WebSearchActive: false,
         TokenizationEnabled: tokenizationEnabled);
 
@@ -108,8 +109,8 @@ public sealed class ChatSessionStepTurnTests
         TokenMapAmbient.Current = null;
 
         var ctx = new RunContext("goal", RunProfile.Interactive);
-        await session.RunStepTurnAsync(Spec(tokenizationEnabled: false), ctx, CancellationToken.None);
-        await session.RunStepTurnAsync(Spec(tokenizationEnabled: false), ctx, CancellationToken.None);
+        await session.RunStepTurnAsync(Spec(tokenizationEnabled: false, supportsTools: true), ctx, CancellationToken.None);
+        await session.RunStepTurnAsync(Spec(tokenizationEnabled: false, supportsTools: true), ctx, CancellationToken.None);
 
         var second = captured[1];
         Assert.Contains(second.SelectMany(m => m.Contents).OfType<FunctionResultContent>(),

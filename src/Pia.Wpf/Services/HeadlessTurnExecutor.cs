@@ -479,7 +479,11 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // Cleared BEFORE compaction so the compactor never spends a summarization pass on a body that was
         // about to become a placeholder. ClearOldResults builds, so _messages keeps the full carried results
         // and a later step can still be the one that gets them verbatim.
-        var carried = AgentToolCarryover.ClearOldResults(exchangeMessages);
+        // The same test RunExchangeAsync makes before it sends them: SupportsTools false means no tools reach
+        // the provider whatever the list holds.
+        var carried = turnSetup.SupportsTools && turnSetup.Tools is { Count: > 0 }
+            ? AgentToolCarryover.ClearOldResults(exchangeMessages)
+            : AgentToolCarryover.WithoutToolExchanges(exchangeMessages);
         var contextBudget = AgentContextBudget.From(p.Provider);
         var request = await AgentContextCompactor
             .CompactAsync(carried, contextBudget, _logger, ct)

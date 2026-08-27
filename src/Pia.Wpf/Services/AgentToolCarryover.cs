@@ -26,17 +26,53 @@ internal static class AgentToolCarryover
         "Tool results from earlier steps that are shown cleared are not in your context — read the file again "
         + "before using its content; never reconstruct it from memory.";
 
-    /// <summary>Snapshots the messages one tool round appended, capping each result at capture time.</summary>
+    /// <summary>
+    /// Snapshots the messages one tool round appended: TOOL CONTENT ONLY, each result capped at capture time.
+    /// The prose a round produced is already in the exchange's visible reply, so carrying it here too would
+    /// cost tokens and read as the model having said it twice.
+    /// </summary>
     internal static IReadOnlyList<ChatMessage> Capture(IEnumerable<ChatMessage> roundMessages)
     {
         var captured = new List<ChatMessage>();
         foreach (var message in roundMessages)
         {
-            captured.Add(NeedsTruncation(message) ? Truncate(message) : message);
+            var contents = new List<AIContent>(message.Contents.Count);
+            foreach (var content in message.Contents)
+            {
+                switch (content)
+                {
+                    case FunctionResultContent { Result: string s } result when s.Length > MaxCarriedResultChars:
+                        contents.Add(new FunctionResultContent(result.CallId, s[..MaxCarriedResultChars] + TruncationSuffix));
+                        break;
+                    case FunctionCallContent or FunctionResultContent:
+                        contents.Add(content);
+                        break;
+                }
+            }
+
+            if (contents.Count > 0)
+                captured.Add(new ChatMessage(message.Role, contents));
         }
 
         return captured;
     }
+
+    /// <summary>
+    /// The step request with every carried call and result dropped, for a turn that sends NO tools — the grace
+    /// turn, and any step whose persona resolved a provider without tool calling. A provider handed
+    /// <c>tool_calls</c> with no tools declared can reject the request outright, and a turn that cannot call
+    /// anything has no use for the pairs regardless.
+    /// </summary>
+    internal static IReadOnlyList<ChatMessage> WithoutToolExchanges(IReadOnlyList<ChatMessage> messages)
+    {
+        if (!messages.Any(HasToolContent))
+            return messages;
+
+        return [.. messages.Where(m => !HasToolContent(m))];
+    }
+
+    private static bool HasToolContent(ChatMessage message) =>
+        message.Contents.Any(c => c is FunctionCallContent or FunctionResultContent);
 
     /// <summary>
     /// Replaces the body of every tool result older than the newest <see cref="KeptResults"/> with a
@@ -90,22 +126,6 @@ internal static class AgentToolCarryover
         }
 
         return rewritten;
-    }
-
-    private static bool NeedsTruncation(ChatMessage message) =>
-        message.Contents.Any(c => c is FunctionResultContent { Result: string s } && s.Length > MaxCarriedResultChars);
-
-    private static ChatMessage Truncate(ChatMessage message)
-    {
-        var contents = new List<AIContent>(message.Contents.Count);
-        foreach (var content in message.Contents)
-        {
-            contents.Add(content is FunctionResultContent { Result: string s } result && s.Length > MaxCarriedResultChars
-                ? new FunctionResultContent(result.CallId, s[..MaxCarriedResultChars] + TruncationSuffix)
-                : content);
-        }
-
-        return new ChatMessage(message.Role, contents);
     }
 
     private static string Placeholder(IReadOnlyDictionary<string, FunctionCallContent> calls, string callId)

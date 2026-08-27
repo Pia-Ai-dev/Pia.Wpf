@@ -991,7 +991,9 @@ public sealed class ChatSession : IDisposable
 
         // Cleared before compaction, and by construction — _stepToolExchanges holds the full results and the
         // next step must still be able to be the one that gets them verbatim.
-        var carried = AgentToolCarryover.ClearOldResults(chatMessages);
+        var carried = spec.SupportsTools && spec.Tools is { Count: > 0 }
+            ? AgentToolCarryover.ClearOldResults(chatMessages)
+            : AgentToolCarryover.WithoutToolExchanges(chatMessages);
 
         // No ConfigureAwait(false) — this session is UI-thread-affine (see the class remarks), and the
         // caller resumes into code that touches Messages and the streaming target message.

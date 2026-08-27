@@ -51,14 +51,51 @@ public class AgentToolCarryoverTests
     }
 
     [Fact]
-    public void Capture_PassesAShortResultThroughByIdentity()
+    public void Capture_KeepsAShortResultVerbatim()
     {
         var round = new[] { Call("c0", "read_file", "small.csv"), Result("c0", "two rows") };
 
         var captured = AgentToolCarryover.Capture(round);
 
-        Assert.Same(round[0], captured[0]);
-        Assert.Same(round[1], captured[1]);
+        Assert.Equal("read_file", captured[0].Contents.OfType<FunctionCallContent>().Single().Name);
+        Assert.Equal("two rows", Body(captured[1]));
+    }
+
+    /// <summary>The prose a round produced is already in the exchange's visible reply; carrying it here too
+    /// would cost tokens and read as the model having said it twice.</summary>
+    [Fact]
+    public void Capture_DropsTheProseThatCameWithTheCall()
+    {
+        var round = new ChatMessage[]
+        {
+            new(ChatRole.Assistant, [
+                new TextContent("Let me read that file."),
+                new FunctionCallContent("c0", "read_file", new Dictionary<string, object?> { ["path"] = "a.csv" }),
+            ]),
+            Result("c0", "two rows"),
+        };
+
+        var captured = AgentToolCarryover.Capture(round);
+
+        Assert.DoesNotContain(captured.SelectMany(m => m.Contents), c => c is TextContent);
+        Assert.Single(captured.SelectMany(m => m.Contents).OfType<FunctionCallContent>());
+    }
+
+    /// <summary>A turn that sends no tools gets the transcript without them — a provider handed tool_calls with
+    /// no tools declared can reject the whole request.</summary>
+    [Fact]
+    public void WithoutToolExchanges_KeepsOnlyTheOrdinaryTranscript()
+    {
+        var messages = new List<ChatMessage> { new(ChatRole.System, "sys"), new(ChatRole.User, "goal") };
+        messages.AddRange(Rounds(2));
+        messages.Add(new ChatMessage(ChatRole.Assistant, "the reply"));
+
+        var stripped = AgentToolCarryover.WithoutToolExchanges(messages);
+
+        Assert.Equal(3, stripped.Count);
+        Assert.DoesNotContain(stripped.SelectMany(m => m.Contents), c => c is FunctionCallContent or FunctionResultContent);
+        // Nothing to strip returns the input rather than a copy.
+        Assert.Same(stripped, AgentToolCarryover.WithoutToolExchanges(stripped));
     }
 
     [Fact]

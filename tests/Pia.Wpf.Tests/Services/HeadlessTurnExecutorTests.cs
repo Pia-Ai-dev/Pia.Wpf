@@ -532,6 +532,10 @@ public sealed class HeadlessTurnExecutorTests
         /// </summary>
         public StepPersonaResolver? StepPersonas;
 
+        /// <summary>Whether the composed turn offers tools. A step only ever produces tool exchanges when it
+        /// had tools, and a turn that sends none drops the carried pairs — so a carry fixture must set this.</summary>
+        public bool SupportsTools;
+
         public int Turns;
 
         /// <summary>
@@ -553,7 +557,9 @@ public sealed class HeadlessTurnExecutorTests
             Composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
                     Arg.Any<bool>(), Arg.Any<bool>())
                 .Returns(ci => new AssistantTurnSetup(
-                    "system for " + ci.ArgAt<Persona>(0).Name, null, SupportsTools: false, WebSearchActive: false));
+                    "system for " + ci.ArgAt<Persona>(0).Name,
+                    SupportsTools ? new List<AITool> { AIFunctionFactory.Create(() => string.Empty, "noop") } : null,
+                    SupportsTools, WebSearchActive: false));
             Personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(Persona);
             Providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(Provider);
             SettingsService.GetSettingsAsync().Returns(_ => Task.FromResult(Settings));
@@ -1521,6 +1527,7 @@ public sealed class HeadlessTurnExecutorTests
         DurabilityHarness h, AgentRun run, params ChatMessage[][] firstStepRounds)
     {
         var ct = TestContext.Current.CancellationToken;
+        h.SupportsTools = true;
         var captured = new List<List<ChatMessage>>();
         h.Ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
@@ -1606,6 +1613,7 @@ public sealed class HeadlessTurnExecutorTests
         using var h = new DurabilityHarness();
         var run = await h.NewRunAsync("inventory report");
         var ct = TestContext.Current.CancellationToken;
+        h.SupportsTools = true;
 
         var captured = new List<List<ChatMessage>>();
         h.Ai.GetChatCompletionWithToolsAsync(
@@ -1634,6 +1642,46 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Contains("the csv rows", ResultBodies(captured[2]));
         Assert.Contains("the search hits", ResultBodies(captured[2]));
         Assert.DoesNotContain("the search hits", ResultBodies(captured[1]));
+    }
+
+    /// <summary>
+    /// A turn that sends NO tools must not be handed tool_calls: a provider can reject the request outright,
+    /// and the turn could not act on them anyway. The grace turn is the live case — it strips its tool list on
+    /// purpose, after the budget is spent.
+    /// </summary>
+    [Fact]
+    public async Task AToolFreeTurn_IsNotHandedTheCarriedExchanges()
+    {
+        using var h = new DurabilityHarness();
+        var run = await h.NewRunAsync("inventory report");
+        var ct = TestContext.Current.CancellationToken;
+        h.SupportsTools = true;
+
+        var captured = new List<List<ChatMessage>>();
+        h.Ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
+            .Returns(ci =>
+            {
+                captured.Add([.. (IList<ChatMessage>)ci[0]]);
+                return ++h.Turns == 1
+                    ? DriveToolRounds("read it", [ToolCall("c1", "read_file", "inventory.csv"), ToolResult("c1", "the csv rows")])
+                    : DriveText("wrapping up");
+            });
+
+        var ctx = new RunContext("inventory report", RunProfile.Interactive);
+        var executor = h.NewExecutor();
+        executor.Initialize(workspaceRoot: null, ["write_file"], h.Provider);
+        await executor.BeginRunAsync(run, ctx, ct);
+        await executor.ExecuteStepAsync(run, CarryStep(0), ctx, ct);
+        await executor.ExecuteStepAsync(run, CarryStep(1), ctx, ct);
+        await executor.RunGraceTurnAsync(run, ctx, ct);
+
+        // The premise: an ordinary later step DOES get the pair, so the grace turn's emptiness is the strip
+        // and not a run that never carried anything.
+        Assert.Contains("the csv rows", ResultBodies(captured[1]));
+        Assert.DoesNotContain(captured[2].SelectMany(m => m.Contents), c => c is FunctionCallContent or FunctionResultContent);
     }
 
     /// <summary>The step instruction has to say what a cleared placeholder means, or the model treats it as an

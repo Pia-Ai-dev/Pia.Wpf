@@ -184,6 +184,30 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
+    /// <summary>
+    /// THE PATH FG2 ACTUALLY TAKES, and it is not the launch path: a Planned run starts on LiveTurnExecutor,
+    /// parks for plan approval, and Approve resumes it into the headless executor. Both facts the park needs —
+    /// CanPark from the launcher and IsTopLevelUserRun from the row — have to survive that hand-off.
+    /// </summary>
+    [Fact]
+    public async Task AnApprovedPlanResume_OfAUserRun_StillParksOnADelete()
+    {
+        var probe = new ToolProbe("delete_file");
+        var (launcher, _) = Build(probe, firstPath: "fragments/0001-agent-panel.md");
+
+        var parked = await ParkedUserRunAwaitingApprovalAsync();
+        Assert.True(await launcher.ResumeAsync(parked.Id, ct: TestContext.Current.CancellationToken));
+        await AwaitParkedAsync(parked.Id);
+
+        var run = await GetRunAsync(parked.Id);
+        Assert.Equal("tool-approval", PauseMember(run, "reason"));
+        Assert.Equal("delete_file", PauseMember(run, "tool"));
+        Assert.Contains("fragments/0001-agent-panel.md", PauseMember(run, "args"));
+        Assert.False(probe.Executed);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
     /// <summary>A delegate never acquires authority its parent narrowed away — including the authority to put an irreversible
     /// call in front of a person. The tool here is the one a top-level user run now parks on.</summary>
     [Fact]
@@ -767,7 +791,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         return v.ValueKind == JsonValueKind.String ? v.GetString() : null;
     }
 
-    private async Task<AgentRun> NewRunAsync(Guid? parentRunId = null, string? policyJson = null)
+    private async Task<AgentRun> NewRunAsync(
+        Guid? parentRunId = null, string? policyJson = null, AgentRunTrigger trigger = AgentRunTrigger.Schedule)
     {
         var ct = TestContext.Current.CancellationToken;
         var chatId = Guid.NewGuid();
@@ -785,8 +810,44 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         }, ct);
 
         return await _runs.CreateAsync(
-            new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.Schedule, Goal: "g",
+            new AgentRunCreateRequest(chatId, RunShape.Planned, trigger, Goal: "g",
                 PolicyJson: policyJson, ParentRunId: parentRunId), ct);
+    }
+
+    /// <summary>The shape a plan-approval park leaves behind: a top-level USER run with a Pending step,
+    /// waiting for Approve. Resuming it is what hands a foreground run to the headless executor.</summary>
+    private async Task<AgentRun> ParkedUserRunAwaitingApprovalAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(
+            policyJson: HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User),
+            trigger: AgentRunTrigger.User);
+        await _runs.ReplaceStepsAsync(run.Id, [new AgentStep
+        {
+            Id = Guid.NewGuid(),
+            RunId = run.Id,
+            Ordinal = 0,
+            Title = "S1",
+            Intent = "delete the merged fragments",
+            Status = AgentStepStatus.Pending,
+        }], ct);
+        await _runs.PauseAsync(run.Id, "plan-approval", ct);
+        return run;
+    }
+
+    /// <summary>Polls until the run is parked again.</summary>
+    private async Task AwaitParkedAsync(Guid runId)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (DateTime.UtcNow < deadline)
+        {
+            if ((await _runs.GetAsync(runId, ct))!.State == AgentRunState.WaitingForInput)
+                return;
+            await Task.Delay(20, ct);
+        }
+
+        Assert.Equal(AgentRunState.WaitingForInput, (await _runs.GetAsync(runId, ct))!.State);
     }
 
     private async Task<AgentRun> ParkedChildAsync(Guid parentRunId)
