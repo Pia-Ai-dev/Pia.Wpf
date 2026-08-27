@@ -94,6 +94,52 @@ public sealed class RunWorkspacePromotionTests : IClassFixture<RedirectedProfile
     }
 
     /// <summary>
+    /// A run's working notes are not a deliverable. BG2 wrote file-list.txt and step-2-results.md purely to
+    /// carry state across a step boundary and both landed in the user's Docs folder; the .scratch/ convention
+    /// gives that output somewhere to go.
+    /// </summary>
+    [Fact]
+    public async Task Promote_LeavesTheRunsScratchFolderBehind()
+    {
+        var runId = Guid.NewGuid();
+        WriteMetadata(runId, RunWorkspaceMode.Copy, Stamp);
+        Write(RunRoot(runId), "report.md", "the deliverable", AfterProvision);
+        Write(RunRoot(runId), ".scratch/file-list.txt", "notes", AfterProvision);
+        Write(RunRoot(runId), ".scratch/deep/step-2-results.md", "more notes", AfterProvision);
+        // Root-level only: a .scratch the USER keeps somewhere in their tree is theirs, and a run that edits
+        // it is doing real work.
+        Write(RunRoot(runId), "docs/.scratch/kept.md", "the user's own", AfterProvision);
+
+        var result = await Build().PromoteAsync(runId, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(result);
+        Assert.Equal(2, result!.Promoted);
+        Assert.True(File.Exists(Path.Combine(_dest, "report.md")));
+        Assert.True(File.Exists(Path.Combine(_dest, "docs", ".scratch", "kept.md")));
+        Assert.False(Directory.Exists(Path.Combine(_dest, ".scratch")));
+    }
+
+    /// <summary>
+    /// The panel's "anything to publish?" probe walks the same set. If it did not, a run whose only new files
+    /// were scratch would offer a publish that publishes nothing.
+    /// </summary>
+    [Fact]
+    public async Task AWorkspaceHoldingOnlyScratch_HasNothingToPublish()
+    {
+        var runId = Guid.NewGuid();
+        WriteMetadata(runId, RunWorkspaceMode.Copy, Stamp);
+        Write(RunRoot(runId), "a.md", "copied in", BeforeProvision);
+        Write(RunRoot(runId), ".scratch/notes.md", "notes", AfterProvision);
+
+        var result = await Build().PromoteAsync(runId, TestContext.Current.CancellationToken);
+        Assert.Equal(0, result!.Promoted);
+
+        var described = await Build().DescribeAsync(runId, TestContext.Current.CancellationToken);
+        Assert.NotNull(described);
+        Assert.False(described!.HasUnpublishedFiles);
+    }
+
+    /// <summary>
     /// The promote set is decided by mtime against <c>provisionedAtUtc</c>; the user-deleted third file is the
     /// discriminator, because without the mtime rule promotion would resurrect it.
     /// </summary>

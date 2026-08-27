@@ -307,7 +307,8 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
         // --untracked-files=all so the count is FILES, not collapsed directories: it is the number this
         // promotion reports, and the panel's "N file(s)" line is read by a human.
         var pending = await RunGitAsync(
-            runRoot, ["status", "--porcelain", "--untracked-files=all"], GitCommandKind.ReadOnly, ct)
+            runRoot, ["status", "--porcelain", "--untracked-files=all", .. ExcludeScratchPathspec],
+            GitCommandKind.ReadOnly, ct)
             .ConfigureAwait(false);
         if (!pending.Succeeded)
         {
@@ -321,7 +322,7 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
         var changed = CountPorcelainEntries(pending.StandardOutput);
         if (changed > 0)
         {
-            var add = await RunGitAsync(runRoot, ["add", "-A"], GitCommandKind.Mutating, ct).ConfigureAwait(false);
+            var add = await RunGitAsync(runRoot, ["add", "-A", .. ExcludeScratchPathspec], GitCommandKind.Mutating, ct).ConfigureAwait(false);
             var commit = add.Succeeded
                 ? await RunGitAsync(runRoot, CommitArgsFor(runId), GitCommandKind.Mutating, ct).ConfigureAwait(false)
                 : add;
@@ -348,7 +349,8 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
         // artefact the run produced, most often. Removing the directory would destroy it, so keep it and let
         // the terminal retention rule age it out.
         var leftover = await RunGitAsync(
-            runRoot, ["status", "--porcelain", "--untracked-files=all", "--ignored"], GitCommandKind.ReadOnly, ct)
+            runRoot, ["status", "--porcelain", "--untracked-files=all", "--ignored", .. ExcludeScratchPathspec],
+            GitCommandKind.ReadOnly, ct)
             .ConfigureAwait(false);
         var retain = !leftover.Succeeded || CountPorcelainEntries(leftover.StandardOutput) > 0;
 
@@ -372,6 +374,15 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
     /// <c>--no-verify</c> matches <c>GitToolHandler</c>'s locked decision: repo commit hooks are out-of-band
     /// code execution.
     /// </summary>
+    /// <summary>
+    /// Keeps the run's working notes off the run branch. On all THREE git calls, not just the add: the status
+    /// before it counts what is about to be committed, and the <c>--ignored</c> leftover probe after it decides
+    /// whether the workspace is retained — without the same pathspec there, every worktree run would leave a
+    /// workspace behind because <c>.scratch/</c> is still sitting in it.
+    /// </summary>
+    private static readonly string[] ExcludeScratchPathspec =
+        ["--", ".", ":(exclude)" + RunScratchFolder.Name];
+
     private static string[] CommitArgsFor(Guid runId) =>
     [
         "-c", "user.name=Pia",
@@ -517,6 +528,12 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
     /// The files inside a run workspace that promotion may consider: the same ignore-pruned, vault-excluded,
     /// capped walk provisioning used on the way in (B6/B7), so <c>.git</c> — including one the model created
     /// itself in copy mode — never travels back out.
+    /// <para>
+    /// Filtered HERE rather than in <see cref="CollectSourceFiles"/>, which serves copy-IN too: a user's own
+    /// <c>.scratch/</c> in the working folder is still provisioned into the workspace, it just never comes
+    /// back out. Both callers of this method get the same set, which is the invariant
+    /// <see cref="HasPromotableFileNewerThan"/> depends on.
+    /// </para>
     /// </summary>
     private static (List<string> Rels, bool OverCap) CollectPromotableFiles(
         string runRoot, string destination, CancellationToken ct)
@@ -528,7 +545,7 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
             AssistantWorkspace.VaultRootFor(destination),
         };
         var (rels, _, overCap) = CollectSourceFiles(runRoot, vaultRoots, ignore, ct);
-        return (rels, overCap);
+        return ([.. rels.Where(r => !RunScratchFolder.Contains(r))], overCap);
     }
 
     public Task<RunWorkspaceOutcome?> DescribeAsync(Guid runId, CancellationToken ct)

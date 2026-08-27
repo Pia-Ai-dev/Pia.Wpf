@@ -103,8 +103,14 @@ public sealed class RunWorkspaceWorktreeDeliverableTests : IDisposable
         Assert.Equal("pia/run/" + runId, result.BranchName);
 
         var add = Assert.Single(_runner.Calls, c => c.Arguments.Count > 0 && c.Arguments[0] == "add");
-        Assert.Equal(new[] { "add", "-A" }, add.Arguments);
+        // The run's own working notes stay off the branch — the same pathspec the two status probes carry, or
+        // the counts and the retention decision would disagree with what was committed.
+        Assert.Equal(new[] { "add", "-A", "--", ".", ":(exclude).scratch" }, add.Arguments);
         Assert.Equal(ws.Root, add.WorkingDirectory);
+
+        Assert.All(
+            _runner.Calls.Where(c => c.Arguments.Count > 0 && c.Arguments[0] == "status"),
+            c => Assert.Contains(":(exclude).scratch", c.Arguments));
 
         var commit = Assert.Single(_runner.Calls, c => c.Arguments.Contains("commit"));
         Assert.Equal(ws.Root, commit.WorkingDirectory);

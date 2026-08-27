@@ -831,6 +831,6 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         var instruction = $"Execute step {ordinal + 1}: {intent}.";
         if (!string.IsNullOrEmpty(expectedArtifact))
             instruction += $" Expected: {expectedArtifact}";
-        return instruction + " " + AgentToolCarryover.ReReadHint;
+        return instruction + " " + AgentToolCarryover.ReReadHint + " " + RunScratchFolder.StepHint;
     }
 }

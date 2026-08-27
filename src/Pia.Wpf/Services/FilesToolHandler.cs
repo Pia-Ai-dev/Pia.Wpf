@@ -282,6 +282,9 @@ public class FilesToolHandler : IFilesToolHandler
                 // anything that, after junction/symlink resolution, escapes root.
                 var relDir = NormalizeSeparators(SafeRelative(root, sub));
                 if (ignore.IsIgnored(relDir, isDirectory: true)) continue;
+                // A run's own working notes. Unconditional here: list_files takes no path, so there is no
+                // request to carve out for — read_file and write_file on an explicit path still reach it.
+                if (RunScratchFolder.Contains(relDir)) continue;
                 if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, sub, out _)) continue;
                 stack.Push(sub);
             }
@@ -428,6 +431,10 @@ public class FilesToolHandler : IFilesToolHandler
         var stack = new Stack<string>();
         stack.Push(searchRoot);
 
+        // The carve-out: a search the caller pointed AT .scratch keeps seeing it. searchRoot is pushed
+        // directly and never meets the prune, so this only has to cover its subdirectories.
+        var searchingInsideScratch = RunScratchFolder.Contains(NormalizeSeparators(SafeRelative(root, searchRoot)));
+
         try
         {
             while (stack.Count > 0)
@@ -442,6 +449,9 @@ public class FilesToolHandler : IFilesToolHandler
                     // Prune by ignore pattern (matched against the root-relative path), not substring.
                     var relDir = NormalizeSeparators(SafeRelative(root, sub));
                     if (ignore.IsIgnored(relDir, isDirectory: true)) continue;
+                    // A run's own scratch is not evidence about the user's folder — BG3 reported a TODO it
+                    // had written into its own notes as a finding about the config files.
+                    if (!searchingInsideScratch && RunScratchFolder.Contains(relDir)) continue;
                     // Containment net on directories too (parity with CollectRelativeFiles) — don't
                     // descend a junction/symlink that resolves outside the sandbox base.
                     if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, sub, out _)) continue;
