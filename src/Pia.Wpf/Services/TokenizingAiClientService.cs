@@ -303,14 +303,18 @@ public class TokenizingAiClientService : IAiClientService
         // on exactly those installs — and be invisible to any test that leaves tokenization off.
         return async (toolCall, ctx) =>
         {
-            // Detokenize string arguments on write operations
+            // Detokenize string arguments on write operations. Onto a COPY: the FunctionCallContent the loop
+            // handed us is the one it appended to its own message list, so an in-place rewrite would send the
+            // real values back to the provider on the next round — and, once a step carries its exchanges
+            // forward, for the rest of the run.
+            var dispatched = toolCall;
             if (IsWriteOperation(toolCall.Name))
             {
                 _logger.LogDebug("Detokenizing write-operation arguments for {ToolName}", toolCall.Name);
-                DetokenizeToolCallArguments(toolCall);
+                dispatched = DetokenizeToolCallArguments(toolCall);
             }
 
-            var result = await handler(toolCall, ctx);
+            var result = await handler(dispatched, ctx);
             if (result is null)
                 return null;
 
@@ -328,12 +332,12 @@ public class TokenizingAiClientService : IAiClientService
         };
     }
 
-    private void DetokenizeToolCallArguments(FunctionCallContent toolCall)
+    private FunctionCallContent DetokenizeToolCallArguments(FunctionCallContent toolCall)
     {
-        if (toolCall.Arguments is null) return;
+        if (toolCall.Arguments is null) return toolCall;
 
-        var keys = toolCall.Arguments.Keys.ToList();
-        foreach (var key in keys)
+        var detokenized = new Dictionary<string, object?>(toolCall.Arguments);
+        foreach (var key in toolCall.Arguments.Keys)
         {
             var value = toolCall.Arguments[key];
             string? strValue = value switch
@@ -345,9 +349,11 @@ public class TokenizingAiClientService : IAiClientService
 
             if (strValue is not null)
             {
-                toolCall.Arguments[key] = TryGetTokenMapService()!.Detokenize(strValue);
+                detokenized[key] = TryGetTokenMapService()!.Detokenize(strValue);
             }
         }
+
+        return new FunctionCallContent(toolCall.CallId, toolCall.Name, detokenized);
     }
 
     private string BufferedDetokenize(string token, StringBuilder tokenBuffer, ref bool isBuffering)

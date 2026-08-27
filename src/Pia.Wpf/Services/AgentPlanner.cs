@@ -782,6 +782,7 @@ public sealed class AgentPlanner : IAgentPlanner
         sb.AppendLine("Call the emit_plan tool exactly once with the ordered steps. Each step needs a short title and an intent (what it accomplishes); include an expectedArtifact only when the step will write files, naming exactly the files it will write, relative to the working folder and never as a rooted path — every one of them must exist when the step finishes, so never offer alternatives to choose between.");
         sb.AppendLine("Keep the plan tight — only the steps genuinely needed to accomplish the goal.");
         sb.AppendLine("Group by logical change, not by file: if one reason requires editing several files, that is ONE step listing every file in expectedArtifact — never split it into \"update file A\", \"update file B\", \"update file C\".");
+        sb.AppendLine("A step that writes from data it must first read should read and write in that ONE step — a step boundary does not carry raw tool results.");
         sb.AppendLine("If the goal is too unclear to plan at all, do NOT invent steps: call emit_plan with cannotGround set to true and question set to the one thing you need the user to clarify.");
         sb.AppendLine("Only do that when you genuinely cannot tell what is being asked — a goal you can plan, however terse, gets a plan.");
         AppendRoster(sb, roster);
@@ -825,6 +826,7 @@ public sealed class AgentPlanner : IAgentPlanner
             sb.AppendLine($"Failure detail: {failure}");
         sb.AppendLine("Call emit_plan with the revised ordered steps (only the steps still needed).");
         sb.AppendLine("Group by logical change, not by file: if one reason requires editing several files, that is ONE step listing every file in expectedArtifact — never split it into \"update file A\", \"update file B\", \"update file C\".");
+        sb.AppendLine("A step that writes from data it must first read should read and write in that ONE step — a step boundary does not carry raw tool results.");
         AppendRoster(sb, roster);
         if (firm)
             sb.AppendLine("You MUST call the emit_plan tool now — do not write prose.");

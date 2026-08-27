@@ -268,6 +268,23 @@ public class AgentContextCompactorTests
         Assert.Equal(callIds, resultIds);
     }
 
+    /// <summary>Cross-step carry-over runs a list of tool rounds through ClearOldResults before the compactor
+    /// sees it. A cleared result is still a result: the pair must stay atomic through both passes.</summary>
+    [Fact]
+    public async Task ACarriedAndClearedToolHistory_StillNeverOrphansAToolCall()
+    {
+        var messages = ToolLoopShapedMessages(rounds: AgentToolCarryover.KeptResults + 4);
+        var carried = AgentToolCarryover.ClearOldResults(messages);
+        Assert.NotSame(messages, carried);
+
+        var result = await AgentContextCompactor.CompactAsync(
+            carried, AgentContextBudget.From(Provider(8_000, 2_000)), Logger, TestContext.Current.CancellationToken);
+
+        var callIds = result.SelectMany(m => m.Contents.OfType<FunctionCallContent>()).Select(c => c.CallId).ToHashSet();
+        var resultIds = result.SelectMany(m => m.Contents.OfType<FunctionResultContent>()).Select(c => c.CallId).ToHashSet();
+        Assert.Equal(callIds, resultIds);
+    }
+
     [Fact]
     public async Task OverBudget_NeverOrphansAToolCallOrItsResult()
     {

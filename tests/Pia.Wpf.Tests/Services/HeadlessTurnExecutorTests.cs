@@ -1486,4 +1486,168 @@ public sealed class HeadlessTurnExecutorTests
         yield break;
 #pragma warning restore CS0162
     }
+
+    // ---- cross-step tool context ----
+
+    private static AgentStep CarryStep(int ordinal) => new()
+    {
+        Id = Guid.NewGuid(), Ordinal = ordinal, Title = "s" + ordinal, Intent = "i" + ordinal,
+        Status = AgentStepStatus.Pending,
+    };
+
+    private static ChatMessage ToolCall(string callId, string tool, string path) =>
+        new(ChatRole.Assistant, [new FunctionCallContent(callId, tool, new Dictionary<string, object?> { ["path"] = path })]);
+
+    private static ChatMessage ToolResult(string callId, string result) =>
+        new(ChatRole.Tool, [new FunctionResultContent(callId, result)]);
+
+    /// <summary>What AiClientService yields for a turn that made tool calls: the marker, then the round's
+    /// call/result pair, then the visible answer.</summary>
+    private static async IAsyncEnumerable<ChatStreamItem> DriveToolRounds(string answer, params ChatMessage[][] rounds)
+    {
+        await Task.Yield();
+        for (var round = 0; round < rounds.Length; round++)
+        {
+            yield return new ToolRoundCompleted();
+            yield return new ToolRoundExchange(round + 1, rounds[round]);
+        }
+
+        yield return new TextDelta(answer);
+        yield return new Finished(null, "test-model");
+    }
+
+    /// <summary>Runs two steps against a stub whose FIRST turn made tool calls, and returns both requests.</summary>
+    private static async Task<List<List<ChatMessage>>> RunTwoStepsAsync(
+        DurabilityHarness h, AgentRun run, params ChatMessage[][] firstStepRounds)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var captured = new List<List<ChatMessage>>();
+        h.Ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
+            .Returns(ci =>
+            {
+                captured.Add([.. (IList<ChatMessage>)ci[0]]);
+                return ++h.Turns == 1 ? DriveToolRounds("read them", firstStepRounds) : DriveText("wrote them");
+            });
+
+        var ctx = new RunContext(run.Goal ?? "goal", RunProfile.Interactive);
+        var executor = h.NewExecutor();
+        executor.Initialize(workspaceRoot: null, ["write_file"], h.Provider);
+        await executor.BeginRunAsync(run, ctx, ct);
+        await executor.ExecuteStepAsync(run, CarryStep(0), ctx, ct);
+        await executor.ExecuteStepAsync(run, CarryStep(1), ctx, ct);
+        return captured;
+    }
+
+    private static IEnumerable<string> ResultBodies(IEnumerable<ChatMessage> messages) =>
+        messages.SelectMany(m => m.Contents).OfType<FunctionResultContent>().Select(r => r.Result as string ?? string.Empty);
+
+    /// <summary>The finding: a step that read a file in step 1 and wrote a report in step 3 had nothing but its
+    /// own prose to write from, and invented every row. The raw result must survive the boundary.</summary>
+    [Fact]
+    public async Task AStepsToolResult_ReachesTheNextStepsRequest()
+    {
+        using var h = new DurabilityHarness();
+        var run = await h.NewRunAsync("inventory report");
+
+        var captured = await RunTwoStepsAsync(h, run,
+            [ToolCall("c1", "read_file", "inventory.csv"), ToolResult("c1", "SKU-1001,Blue Widget,4,10,3.50")]);
+
+        var second = Assert.IsType<List<ChatMessage>>(captured[1]);
+        Assert.Contains("SKU-1001,Blue Widget,4,10,3.50", ResultBodies(second));
+        Assert.Contains(second.SelectMany(m => m.Contents).OfType<FunctionCallContent>(), c => c.Name == "read_file");
+    }
+
+    /// <summary>Carried context is model context only. _persisted is a different list of a different type, and
+    /// the chat a person reads (and a resume re-seeds from) must not grow a tool row.</summary>
+    [Fact]
+    public async Task CarriedToolExchanges_DoNotReachThePersistedChat()
+    {
+        using var h = new DurabilityHarness();
+        var run = await h.NewRunAsync("inventory report");
+
+        await RunTwoStepsAsync(h, run,
+            [ToolCall("c1", "read_file", "inventory.csv"), ToolResult("c1", "SKU-1001,Blue Widget,4,10,3.50")]);
+
+        var chat = await h.Chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
+        Assert.DoesNotContain(chat!.Messages, m => m.Role == "tool");
+        Assert.DoesNotContain(chat.Messages, m => (m.Content ?? string.Empty).Contains("SKU-1001"));
+    }
+
+    /// <summary>Past K, the oldest bodies go but the calls stay, and the placeholder says what to re-issue —
+    /// otherwise a run's whole file history rides along forever.</summary>
+    [Fact]
+    public async Task PastTheKeptCount_TheOldestResultIsClearedAndNamesItsCall()
+    {
+        using var h = new DurabilityHarness();
+        var run = await h.NewRunAsync("inventory report");
+
+        var rounds = Enumerable.Range(0, AgentToolCarryover.KeptResults + 1)
+            .Select(i => new[] { ToolCall("c" + i, "read_file", "f" + i + ".csv"), ToolResult("c" + i, "body " + i) })
+            .ToArray();
+
+        var captured = await RunTwoStepsAsync(h, run, rounds);
+        var second = captured[1];
+
+        Assert.Contains("[result cleared; call read_file on f0.csv again if you need it]", ResultBodies(second));
+        Assert.DoesNotContain("body 0", ResultBodies(second));
+        Assert.Contains("body 1", ResultBodies(second));
+        Assert.Contains("body " + AgentToolCarryover.KeptResults, ResultBodies(second));
+        Assert.Contains(second.SelectMany(m => m.Contents).OfType<FunctionCallContent>(), c => c.CallId == "c0");
+    }
+
+    /// <summary>Every step's exchanges accumulate, not just the previous one's — the fabrication case was a
+    /// read in step 1 and a write in step 3, two boundaries away.</summary>
+    [Fact]
+    public async Task EachStepsExchanges_AccumulateAcrossEveryLaterStep()
+    {
+        using var h = new DurabilityHarness();
+        var run = await h.NewRunAsync("inventory report");
+        var ct = TestContext.Current.CancellationToken;
+
+        var captured = new List<List<ChatMessage>>();
+        h.Ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
+            .Returns(ci =>
+            {
+                captured.Add([.. (IList<ChatMessage>)ci[0]]);
+                return ++h.Turns switch
+                {
+                    1 => DriveToolRounds("read it", [ToolCall("c1", "read_file", "inventory.csv"), ToolResult("c1", "the csv rows")]),
+                    2 => DriveToolRounds("searched", [ToolCall("c2", "search_files", "."), ToolResult("c2", "the search hits")]),
+                    _ => DriveText("wrote it"),
+                };
+            });
+
+        var ctx = new RunContext("inventory report", RunProfile.Interactive);
+        var executor = h.NewExecutor();
+        executor.Initialize(workspaceRoot: null, ["write_file"], h.Provider);
+        await executor.BeginRunAsync(run, ctx, ct);
+        await executor.ExecuteStepAsync(run, CarryStep(0), ctx, ct);
+        await executor.ExecuteStepAsync(run, CarryStep(1), ctx, ct);
+        await executor.ExecuteStepAsync(run, CarryStep(2), ctx, ct);
+
+        Assert.Contains("the csv rows", ResultBodies(captured[2]));
+        Assert.Contains("the search hits", ResultBodies(captured[2]));
+        Assert.DoesNotContain("the search hits", ResultBodies(captured[1]));
+    }
+
+    /// <summary>The step instruction has to say what a cleared placeholder means, or the model treats it as an
+    /// empty file rather than a prompt to read again.</summary>
+    [Fact]
+    public async Task TheStepInstruction_TellsTheModelToReReadAClearedResult()
+    {
+        using var h = new DurabilityHarness();
+        var run = await h.NewRunAsync("inventory report");
+
+        var captured = await RunTwoStepsAsync(h, run,
+            [ToolCall("c1", "read_file", "inventory.csv"), ToolResult("c1", "rows")]);
+
+        Assert.Contains(captured[0], m => m.Role == ChatRole.User && m.Text.Contains(AgentToolCarryover.ReReadHint));
+    }
+
 }

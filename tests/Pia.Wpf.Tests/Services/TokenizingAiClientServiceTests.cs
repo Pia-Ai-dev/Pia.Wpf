@@ -249,6 +249,118 @@ public class TokenizingAiClientServiceTests
         }
     }
 
+    /// <summary>A carried tool exchange is what the NEXT step is built from, so it must cross the decorator
+    /// unchanged — and unflushed text must not overtake it either.</summary>
+    [Fact]
+    public async Task ToolRoundExchange_CrossesTheDecoratorUntouched()
+    {
+        var carried = new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, [new FunctionCallContent("c1", "read_file", new Dictionary<string, object?> { ["path"] = "notes.md" })]),
+            new(ChatRole.Tool, [new FunctionResultContent("c1", "the date is [Phone_9]")]),
+        };
+        var sent = new ToolRoundExchange(1, carried);
+
+        var inner = Substitute.For<IAiClientService>();
+        inner.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(new TextDelta("prea"), sent, new TextDelta("mble"), new Finished(null, "gpt-5")));
+
+        var tokenMap = Substitute.For<ITokenMapService>();
+        // Detokenize would restore the placeholder; the point of this test is that nothing calls it here.
+        tokenMap.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => ((string)ci[0]).Replace("[Phone_9]", "2026-03-27"));
+
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings());
+        var serviceProvider = Substitute.For<IServiceProvider>();
+        serviceProvider.GetService(typeof(IServiceScopeFactory)).Returns(Substitute.For<IServiceScopeFactory>());
+
+        var sut = new TokenizingAiClientService(
+            inner, serviceProvider, settings, NullLogger<TokenizingAiClientService>.Instance);
+
+        var items = new List<ChatStreamItem>();
+        TokenMapAmbient.Current = tokenMap;
+        try
+        {
+            await foreach (var item in sut.GetChatCompletionWithToolsAsync(
+                new List<ChatMessage> { new(ChatRole.User, "hi") },
+                new AiProvider { Name = "t", Endpoint = "http://localhost", ProviderType = AiProviderType.OpenAI },
+                cancellationToken: TestContext.Current.CancellationToken))
+            {
+                items.Add(item);
+            }
+        }
+        finally
+        {
+            TokenMapAmbient.Current = null;
+        }
+
+        var relayed = Assert.Single(items.OfType<ToolRoundExchange>());
+        Assert.Same(sent, relayed);
+        Assert.Equal("the date is [Phone_9]",
+            relayed.Messages[1].Contents.OfType<FunctionResultContent>().Single().Result);
+    }
+
+    /// <summary>The handler needs the real value to write it to disk; the message the loop keeps must not get it,
+    /// or the next round — and every later step, once exchanges are carried — sends real PII back to the provider.</summary>
+    [Fact]
+    public async Task DetokenizedArguments_ReachTheHandler_ButNotTheCallTheLoopKeeps()
+    {
+        ToolCallHandler? capturedHandler = null;
+        var inner = Substitute.For<IAiClientService>();
+        inner.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                capturedHandler = ci.ArgAt<ToolCallHandler?>(3);
+                return Stream(new Finished(null, "gpt-5"));
+            });
+
+        var tokenMap = Substitute.For<ITokenMapService>();
+        tokenMap.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => ((string)ci[0]).Replace("[Phone_9]", "2026-03-27"));
+
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings());
+        var serviceProvider = Substitute.For<IServiceProvider>();
+        serviceProvider.GetService(typeof(IServiceScopeFactory)).Returns(Substitute.For<IServiceScopeFactory>());
+
+        var sut = new TokenizingAiClientService(
+            inner, serviceProvider, settings, NullLogger<TokenizingAiClientService>.Instance);
+
+        TokenMapAmbient.Current = tokenMap;
+        try
+        {
+            string? seenByHandler = null;
+            ToolCallHandler handler = (call, _) =>
+            {
+                seenByHandler = call.Arguments!["content"] as string;
+                return Task.FromResult<object?>("written");
+            };
+
+            await foreach (var _ in sut.GetChatCompletionWithToolsAsync(
+                new List<ChatMessage> { new(ChatRole.User, "hi") },
+                new AiProvider { Name = "t", Endpoint = "http://localhost", ProviderType = AiProviderType.OpenAI },
+                tools: null, toolHandler: handler, cancellationToken: TestContext.Current.CancellationToken))
+            {
+            }
+
+            var loopsCall = new FunctionCallContent("c1", "remember",
+                new Dictionary<string, object?> { ["content"] = "the date is [Phone_9]" });
+            await capturedHandler!(loopsCall, new ToolDispatchContext(1));
+
+            Assert.Equal("the date is 2026-03-27", seenByHandler);
+            Assert.Equal("the date is [Phone_9]", loopsCall.Arguments!["content"]);
+        }
+        finally
+        {
+            TokenMapAmbient.Current = null;
+        }
+    }
+
     private static async IAsyncEnumerable<ChatStreamItem> Stream(params ChatStreamItem[] items)
     {
         foreach (var item in items)

@@ -71,6 +71,79 @@ public sealed class ChatSessionStepTurnTests
 #pragma warning restore CS0162
     }
 
+    private static async IAsyncEnumerable<ChatStreamItem> ToolRoundStream(string answer, params ChatMessage[] roundMessages)
+    {
+        await Task.Yield();
+        yield return new ToolRoundCompleted();
+        yield return new ToolRoundExchange(1, roundMessages);
+        yield return new TextDelta(answer);
+        yield return new Finished(null, "m");
+    }
+
+    /// <summary>The live half of cross-step tool context. AssistantMessage.ToChatMessage() carries no tool
+    /// content, so without the splice a foreground run's step 2 has only step 1's prose to work from.</summary>
+    [Fact]
+    public async Task AStepsToolResult_ReachesTheNextStepsRequest()
+    {
+        var carried = new ChatMessage[]
+        {
+            new(ChatRole.Assistant, [new FunctionCallContent("c1", "read_file", new Dictionary<string, object?> { ["path"] = "inventory.csv" })]),
+            new(ChatRole.Tool, [new FunctionResultContent("c1", "SKU-1001,Blue Widget,4,10,3.50")]),
+        };
+
+        var captured = new List<List<ChatMessage>>();
+        var turns = 0;
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                captured.Add([.. (IList<ChatMessage>)ci[0]]);
+                return ++turns == 1 ? ToolRoundStream("read it", carried) : Stream(new TextDelta("wrote it"), new Finished(null, "m"));
+            });
+
+        var session = CreateSession();
+        session.Messages.Add(new AssistantMessage(ChatRole.User, "goal"));
+        TaskAmbient.Current = null;
+        TokenMapAmbient.Current = null;
+
+        var ctx = new RunContext("goal", RunProfile.Interactive);
+        await session.RunStepTurnAsync(Spec(tokenizationEnabled: false), ctx, CancellationToken.None);
+        await session.RunStepTurnAsync(Spec(tokenizationEnabled: false), ctx, CancellationToken.None);
+
+        var second = captured[1];
+        Assert.Contains(second.SelectMany(m => m.Contents).OfType<FunctionResultContent>(),
+            r => (r.Result as string) == "SKU-1001,Blue Widget,4,10,3.50");
+        Assert.Contains(second.SelectMany(m => m.Contents).OfType<FunctionCallContent>(), c => c.Name == "read_file");
+
+        // Model context only — the rendered and persisted transcript keeps one bubble per step.
+        Assert.DoesNotContain(session.Messages, m => (m.Content ?? string.Empty).Contains("SKU-1001"));
+    }
+
+    /// <summary>Parity with HeadlessTurnExecutor.BuildInstruction: both twins say what a cleared result means.</summary>
+    [Fact]
+    public async Task TheLiveStepInstruction_CarriesTheReReadHint()
+    {
+        var captured = new List<List<ChatMessage>>();
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                captured.Add([.. (IList<ChatMessage>)ci[0]]);
+                return Stream(new TextDelta("done"), new Finished(null, "m"));
+            });
+
+        var session = CreateSession();
+        session.Messages.Add(new AssistantMessage(ChatRole.User, "goal"));
+        TaskAmbient.Current = null;
+        TokenMapAmbient.Current = null;
+
+        await session.RunStepTurnAsync(Spec(tokenizationEnabled: false), new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
+
+        Assert.Contains(captured[0], m => m.Role == ChatRole.User && m.Text.Contains(AgentToolCarryover.ReReadHint));
+    }
+
     [Fact]
     public async Task RunStepTurn_ClearsIsStreaming_DetokenizesPii()
     {

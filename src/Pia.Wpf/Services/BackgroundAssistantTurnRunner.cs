@@ -344,6 +344,9 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         // A tool round just completed; the next TextDelta starts a fresh model turn built on the
         // tool result, not a continuation of whatever is already in textBuffer.
         var pendingRoundBreak = false;
+        // This turn's call/result pairs, for a caller that accumulates a transcript across steps. Empty on
+        // the single-turn path, which discards the result anyway.
+        var toolExchanges = new List<ChatMessage>();
 
         // The persona rides on the setup (which every caller of this method already builds via
         // PrepareTurn), so no new parameter is needed here — HeadlessTurnExecutor calls this too.
@@ -364,6 +367,9 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                     break;
                 case ToolRoundCompleted:
                     pendingRoundBreak = true;
+                    break;
+                case ToolRoundExchange round:
+                    toolExchanges.AddRange(round.Messages);
                     break;
                 case Finished finished:
                     if (finished.Usage is { } u)
@@ -386,11 +392,15 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             visible = cleaned;
         }
 
-        return new ExchangeResult(visible, string.IsNullOrEmpty(thinking) ? null : thinking, usage, model, tokens);
+        return new ExchangeResult(visible, string.IsNullOrEmpty(thinking) ? null : thinking, usage, model, tokens, toolExchanges);
     }
 
     /// <summary>The post-processed output of one <see cref="RunExchangeAsync"/> call.</summary>
-    public sealed record ExchangeResult(string Visible, string? Thinking, UsageDetails? Usage, string? Model, int? Tokens);
+    /// <param name="ToolExchanges">This turn's tool call/result messages, in round order, for a caller that
+    /// carries them into the next step. Already tokenized — they are what the model saw.</param>
+    public sealed record ExchangeResult(
+        string Visible, string? Thinking, UsageDetails? Usage, string? Model, int? Tokens,
+        IReadOnlyList<ChatMessage> ToolExchanges);
 
     /// <summary>
     /// Headless tool dispatch: reads (tools that return an immediate result) always run; writes (tools that

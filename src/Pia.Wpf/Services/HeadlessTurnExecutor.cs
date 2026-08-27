@@ -441,7 +441,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             : new UserInputRequestStore(AgentStepTools.OffersRequestUserInputTool(turnSetup.Tools));
 
         // Append the EPHEMERAL step instruction to a COPY — the accumulating _messages keeps the
-        // clean transcript (system + goal + one assistant reply per step) — §13.7.
+        // transcript (system + goal + each step's tool exchanges and assistant reply).
         //
         // Batch 07 G6, and this is the line that makes a per-step persona real rather than cosmetic: element 0
         // of the copy is THIS STEP's system prompt, not the run's. _messages[0] is left alone on purpose — it
@@ -467,9 +467,14 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // executor state to the DB is BuildChatSnapshot's `Messages = [.. _persisted]`, which serves
         // both the interim per-step write and the terminal one. A pass over a ChatMessage list is
         // therefore type-incapable of shrinking the transcript, so a resume still replays it in full.
+        //
+        // Cleared BEFORE compaction so the compactor never spends a summarization pass on a body that was
+        // about to become a placeholder. ClearOldResults builds, so _messages keeps the full carried results
+        // and a later step can still be the one that gets them verbatim.
+        var carried = AgentToolCarryover.ClearOldResults(exchangeMessages);
         var contextBudget = AgentContextBudget.From(p.Provider);
         var request = await AgentContextCompactor
-            .CompactAsync(exchangeMessages, contextBudget, _logger, ct)
+            .CompactAsync(carried, contextBudget, _logger, ct)
             .ConfigureAwait(false);
 
         // WHICH run lost context. The compactor logs the counts but holds no run id, so the correlation
@@ -633,6 +638,11 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         }
 
         var assistantMsgId = Guid.NewGuid();
+
+        // This step's tool calls and their results, ahead of the reply so call and result stay adjacent and in
+        // round order. Model context only: _persisted is a different list of a different type and does not grow
+        // here, so the chat and a resume's re-seed are unchanged.
+        _messages.AddRange(exchange.ToolExchanges);
 
         // The visible reply IS persisted and IS carried forward as context for later steps.
         _messages.Add(new ChatMessage(ChatRole.Assistant, exchange.Visible));
@@ -810,6 +820,6 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         var instruction = $"Execute step {ordinal + 1}: {intent}.";
         if (!string.IsNullOrEmpty(expectedArtifact))
             instruction += $" Expected: {expectedArtifact}";
-        return instruction;
+        return instruction + " " + AgentToolCarryover.ReReadHint;
     }
 }

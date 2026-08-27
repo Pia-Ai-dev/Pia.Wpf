@@ -390,7 +390,13 @@ public class AiClientService : IAiClientService
                 // Yielded before the dispatch (which awaits real tool execution and can throw) so
                 // consumers know a fresh model turn is coming even if the dispatch itself fails.
                 yield return new ToolRoundCompleted();
+                var appendedFrom = workingMessages.Count;
                 await DispatchToolCallsAsync(toolCalls, response, workingMessages, toolHandler, round);
+                // Materialized, not deferred: the next iteration's compaction REASSIGNS workingMessages, so
+                // a lazy Skip() would enumerate a list this round never appended to. Capped here because a
+                // step executor carries this slice into the NEXT step and pays for it for the rest of the run.
+                yield return new ToolRoundExchange(
+                    round + 1, AgentToolCarryover.Capture(workingMessages.Skip(appendedFrom)));
                 // Continue the loop to get the AI's response after tool execution
                 continue;
             }

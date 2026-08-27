@@ -89,6 +89,13 @@ public sealed class ChatSession : IDisposable
     /// <summary>The interactive twin of <see cref="_stepOutcomeStore"/> for <c>request_user_input</c>; non-null is the gate on the pre-route interception.</summary>
     private UserInputRequestStore? _userInputRequest;
 
+    /// <summary>
+    /// Each step's tool call/result messages, keyed by the <see cref="AssistantMessage.Id"/> of the reply they
+    /// belong to. The live half of cross-step tool context: deliberately NOT in <see cref="Messages"/>, which
+    /// is rendered and persisted, and read only by <see cref="BuildStepChatMessagesAsync"/>.
+    /// </summary>
+    private readonly Dictionary<Guid, List<ChatMessage>> _stepToolExchanges = new();
+
     /// <summary>Raised on every real state transition (no-op on unchanged value).</summary>
     public event EventHandler<ChatStateChangedEventArgs>? StateChanged;
 
@@ -541,7 +548,10 @@ public sealed class ChatSession : IDisposable
         Guid? personaId = null,
         // The persona's model-routing hint (metadata.pia_persona_type). Sourced the same way as
         // personaId; a Planned step passes nothing and routes on the mode default.
-        string? personaModelType = null)
+        string? personaModelType = null,
+        // Where this turn's tool call/result messages accumulate, so the NEXT step can be built on them.
+        // Only a Planned step passes one — the interactive turn has no next step and would grow it forever.
+        List<ChatMessage>? toolExchangeSink = null)
     {
         var rawBuffer = new StringBuilder();
         // Reasoning reaches us via two channels that never overlap for a given provider:
@@ -619,6 +629,10 @@ public sealed class ChatSession : IDisposable
 
                 case ToolRoundCompleted:
                     pendingRoundBreak = true;
+                    break;
+
+                case ToolRoundExchange round:
+                    toolExchangeSink?.AddRange(round.Messages);
                     break;
 
                 case Finished finished:
@@ -773,7 +787,8 @@ public sealed class ChatSession : IDisposable
             // run default), so the header follows the step rather than the run.
             usage = await RunModelExchangeAsync(assistantMessage, chatMessages, spec.Provider,
                 spec.Tools, spec.SupportsTools, spec.WebSearchActive, spec.TokenizationEnabled, ct,
-                AgentContextBudget.From(spec.Provider), spec.Policy, spec.Timeline, spec.Persona.Id);
+                AgentContextBudget.From(spec.Provider), spec.Policy, spec.Timeline, spec.Persona.Id,
+                toolExchangeSink: StepToolExchangeSink(assistantMessage.Id));
             succeeded = true;
             exchangeCompleted = true;
         }
@@ -927,6 +942,18 @@ public sealed class ChatSession : IDisposable
     /// unaffected. This is the LIVE half of executor parity — LiveTurnExecutor builds no message list of its
     /// own, so the parity seam lives here.
     /// </summary>
+    /// <summary>The list this step's tool exchanges accumulate into, created on first use for the step's reply.</summary>
+    private List<ChatMessage> StepToolExchangeSink(Guid assistantMessageId)
+    {
+        if (!_stepToolExchanges.TryGetValue(assistantMessageId, out var sink))
+        {
+            sink = new List<ChatMessage>();
+            _stepToolExchanges[assistantMessageId] = sink;
+        }
+
+        return sink;
+    }
+
     private async Task<List<ChatMessage>> BuildStepChatMessagesAsync(StepTurnSpec spec, RunContext ctx, AssistantMessage assistantMessage, CancellationToken ct)
     {
         var chatMessages = new List<ChatMessage>
@@ -934,7 +961,17 @@ public sealed class ChatSession : IDisposable
             new(ChatRole.System, spec.SystemPrompt),
         };
 
-        chatMessages.AddRange(Messages.Where(m => m != assistantMessage).Select(m => m.ToChatMessage()));
+        // ToChatMessage() carries text and an optional image and no tool content, so a step's calls and results
+        // are spliced back in ahead of the reply they belong to — the live twin of what HeadlessTurnExecutor
+        // keeps in _messages.
+        foreach (var message in Messages)
+        {
+            if (message == assistantMessage)
+                continue;
+            if (_stepToolExchanges.TryGetValue(message.Id, out var exchanges))
+                chatMessages.AddRange(exchanges);
+            chatMessages.Add(message.ToChatMessage());
+        }
 
         string instruction;
         if (spec.UseGoalVerbatim)
@@ -946,14 +983,19 @@ public sealed class ChatSession : IDisposable
             instruction = $"Execute step {spec.Ordinal + 1}: {spec.Intent}.";
             if (!string.IsNullOrEmpty(spec.ExpectedArtifact))
                 instruction += $" Expected: {spec.ExpectedArtifact}";
+            instruction += " " + AgentToolCarryover.ReReadHint;
         }
 
         // The ONLY place a user steering note may ride — a ChatRole.User message, never System.
         chatMessages.Add(new ChatMessage(ChatRole.User, ctx.AppendNudge(instruction)));
 
+        // Cleared before compaction, and by construction — _stepToolExchanges holds the full results and the
+        // next step must still be able to be the one that gets them verbatim.
+        var carried = AgentToolCarryover.ClearOldResults(chatMessages);
+
         // No ConfigureAwait(false) — this session is UI-thread-affine (see the class remarks), and the
         // caller resumes into code that touches Messages and the streaming target message.
-        var compacted = await AgentContextCompactor.CompactAsync(chatMessages, AgentContextBudget.From(spec.Provider), _logger, ct);
+        var compacted = await AgentContextCompactor.CompactAsync(carried, AgentContextBudget.From(spec.Provider), _logger, ct);
 
         // WHICH run and WHICH step lost context. The compactor logs the counts but holds neither id;
         // RunContext carries no run id either, but the step spec carries BOTH (it is already read for

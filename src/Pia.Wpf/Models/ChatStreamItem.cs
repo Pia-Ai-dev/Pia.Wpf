@@ -19,3 +19,8 @@ public sealed record Finished(UsageDetails? Usage, string Model, bool Protected 
 /// <summary>A tool call was just dispatched; the next <see cref="TextDelta"/> starts a fresh model turn
 /// built on the tool result, not a continuation of the text streamed before the call.</summary>
 public sealed record ToolRoundCompleted : ChatStreamItem;
+
+/// <summary>The call/result messages one tool round appended, so a caller building a multi-step transcript
+/// can carry them into the next step. Emitted AFTER the dispatch, unlike <see cref="ToolRoundCompleted"/>,
+/// and already in the form the model saw — results are tokenized before they reach this list.</summary>
+public sealed record ToolRoundExchange(int Round, IReadOnlyList<ChatMessage> Messages) : ChatStreamItem;
