@@ -73,6 +73,9 @@ public partial class ProviderEditModel : ObservableValidator
     /// <summary>Set only when loaded from the built-in cloud provider, whose type is not selectable.</summary>
     public bool IsCloudProvider { get; private init; }
 
+    /// <summary>Signed in to cloud with E2EE off, where the key never leaves this device.</summary>
+    public bool IsApiKeyDeviceLocal { get; init; }
+
     // The dialog hides the endpoint field for the cloud provider, so requiring one there would leave
     // Save unreachable. A fresh Add also sits at PiaCloud (enum 0) until a type is picked — that must
     // still require an endpoint, hence the IsCloudProvider guard rather than a bare type check.
@@ -132,11 +135,12 @@ public partial class ProviderEditModel : ObservableValidator
         OnPropertyChanged(nameof(IsMistralWebSearchAvailable));
     }
 
-    public static ProviderEditModel FromProvider(AiProvider provider)
+    public static ProviderEditModel FromProvider(AiProvider provider, bool isApiKeyDeviceLocal = false)
     {
         return new ProviderEditModel
         {
             Id = provider.Id,
+            IsApiKeyDeviceLocal = isApiKeyDeviceLocal,
             Name = provider.Name,
             ProviderType = provider.ProviderType,
             IsCloudProvider = provider.ProviderType == AiProviderType.PiaCloud,

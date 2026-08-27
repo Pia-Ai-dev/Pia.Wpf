@@ -10,6 +10,11 @@
     <Setter Property="Margin" Value="0,0,0,16" />
   </Style>
 
+  <!-- The same soft block, for a notice that belongs to one field rather than to the Save button. -->
+  <Style x:Key="PiaFieldNoticeStyle" TargetType="Border" BasedOn="{StaticResource PiaRequiredHintStyle}">
+    <Setter Property="Margin" Value="0,0,0,8" />
+  </Style>
+
   <!-- Primary Button Style -->
   <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
     <Setter Property="Padding" Value="16,8" />

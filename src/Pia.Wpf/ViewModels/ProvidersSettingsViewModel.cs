@@ -256,7 +256,7 @@ public partial class ProvidersSettingsViewModel : UiThreadViewModel, IDisposable
         if (!CanManageProviders)
             return;
 
-        var editModel = new ProviderEditModel();
+        var editModel = new ProviderEditModel { IsApiKeyDeviceLocal = await IsApiKeyDeviceLocalAsync() };
 
         if (await _dialogService.ShowProviderEditDialogAsync(editModel, _providerService))
         {
@@ -278,7 +278,7 @@ public partial class ProvidersSettingsViewModel : UiThreadViewModel, IDisposable
         if (!CanManageProviders)
             return;
 
-        var editModel = ProviderEditModel.FromProvider(provider);
+        var editModel = ProviderEditModel.FromProvider(provider, await IsApiKeyDeviceLocalAsync());
 
         if (await _dialogService.ShowProviderEditDialogAsync(editModel, _providerService))
         {
@@ -290,6 +290,11 @@ public partial class ProvidersSettingsViewModel : UiThreadViewModel, IDisposable
                 TestConnectionAsync(providerToTest).SafeFireAndForget(_logger);
         }
     }
+
+    // Without E2EE, SyncMapper.ToSyncProvider leaves the key off the wire on purpose, so the server has
+    // no copy to hand this account's other devices. The dialog has to say so before the key is entered.
+    private async Task<bool> IsApiKeyDeviceLocalAsync() =>
+        _authService.IsLoggedIn && !(await _settingsService.GetSettingsAsync()).IsE2EEEnabled;
 
     [RelayCommand(CanExecute = nameof(CanDeleteProvider))]
     private async Task DeleteProviderAsync(AiProvider? provider)

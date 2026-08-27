@@ -661,6 +661,7 @@
   <data name="Dialog_ProviderEdit_ProviderType" xml:space="preserve"><value>Type de fournisseur *</value></data>
   <data name="Dialog_ProviderEdit_Endpoint" xml:space="preserve"><value>Point d'accès *</value></data>
   <data name="Dialog_ProviderEdit_ApiKey" xml:space="preserve"><value>Clé API</value></data>
+  <data name="Dialog_ProviderEdit_ApiKeyDeviceLocalHint" xml:space="preserve"><value>Pia Cloud ne conserve les clés API des fournisseurs que si le chiffrement de bout en bout est activé. Cette clé reste sur cet appareil : saisissez-la de nouveau sur vos autres appareils, ou activez le chiffrement de bout en bout dans Compte.</value></data>
   <data name="Dialog_ProviderEdit_ModelName" xml:space="preserve"><value>Nom du modèle</value></data>
   <data name="Dialog_ProviderEdit_AzureDeploymentName" xml:space="preserve"><value>Nom de déploiement Azure</value></data>
   <data name="Dialog_ProviderEdit_FetchModels" xml:space="preserve"><value>Récupérer les modèles</value></data>

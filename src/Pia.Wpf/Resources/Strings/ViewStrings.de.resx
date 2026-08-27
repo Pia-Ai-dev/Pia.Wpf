@@ -661,6 +661,7 @@
   <data name="Dialog_ProviderEdit_ProviderType" xml:space="preserve"><value>Anbietertyp *</value></data>
   <data name="Dialog_ProviderEdit_Endpoint" xml:space="preserve"><value>Endpunkt *</value></data>
   <data name="Dialog_ProviderEdit_ApiKey" xml:space="preserve"><value>API-Schlüssel</value></data>
+  <data name="Dialog_ProviderEdit_ApiKeyDeviceLocalHint" xml:space="preserve"><value>Pia Cloud speichert API-Schlüssel von Anbietern nur bei aktivierter Ende-zu-Ende-Verschlüsselung. Dieser Schlüssel bleibt auf diesem Gerät – gib ihn auf deinen anderen Geräten erneut ein oder aktiviere die Ende-zu-Ende-Verschlüsselung unter „Konto“.</value></data>
   <data name="Dialog_ProviderEdit_ModelName" xml:space="preserve"><value>Modellname</value></data>
   <data name="Dialog_ProviderEdit_AzureDeploymentName" xml:space="preserve"><value>Azure-Bereitstellungsname</value></data>
   <data name="Dialog_ProviderEdit_FetchModels" xml:space="preserve"><value>Modelle abrufen</value></data>

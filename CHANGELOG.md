@@ -11,6 +11,11 @@ All notable changes to Pia are documented here.
 
 ### Features
 
+- The provider dialog now says so when an API key will stay on this device: with
+  a cloud account and end-to-end encryption off, Pia Cloud stores no provider API
+  keys, so the key has to be entered again on every other device. The notice sits
+  above the key box, for both a new provider and an edited one.
+
 - First-run wizard now offers end-to-end encryption setup (default on) with a
   plain-language explanation of pros and cons, an inline recovery code reveal
   with a confirmation gate, and a soft opt-out flow. Sync is deferred until the
