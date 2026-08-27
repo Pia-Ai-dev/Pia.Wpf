@@ -980,6 +980,7 @@
   <data name="Flow_BgChat_Completed" xml:space="preserve"><value>Terminé — appuyez pour consulter</value></data>
   <data name="Flow_BgChat_Error" xml:space="preserve"><value>Terminé avec une erreur</value></data>
   <data name="Flow_Job_Success" xml:space="preserve"><value>Briefing prêt</value></data>
+  <data name="Flow_Job_MeetingSaved" xml:space="preserve"><value>Transcription enregistrée</value></data>
   <data name="Flow_Job_Failure" xml:space="preserve"><value>Échec de l'exécution</value></data>
   <data name="Flow_Todo_DueSoon" xml:space="preserve"><value>À échéance sous 24 h</value></data>
   <data name="Flow_Todo_OverdueDays" xml:space="preserve"><value>En retard · {0}j</value></data>
@@ -1281,6 +1282,12 @@
   <data name="Settings_ScheduledJobs_Status_Unknown" xml:space="preserve"><value>Statut inconnu ({0})</value></data>
   <data name="Settings_ScheduledJobs_Kind_Research" xml:space="preserve"><value>Recherche</value></data>
   <data name="Settings_ScheduledJobs_Kind_AgentTask" xml:space="preserve"><value>Exécution d'agent</value></data>
+  <data name="Settings_ScheduledJobs_Kind_MeetingAttendance" xml:space="preserve"><value>Réunion Teams</value></data>
+  <data name="Routines_Field_MeetingUrl" xml:space="preserve"><value>Lien Teams</value></data>
+  <data name="Routines_Field_MeetingUrl_Hint" xml:space="preserve"><value>Collez le lien de l'invitation à la réunion</value></data>
+  <data name="Routines_Field_MeetingConsent" xml:space="preserve"><value>Tous les participants peuvent être enregistrés et transcrits</value></data>
+  <data name="Routines_Validation_MeetingUrl" xml:space="preserve"><value>Saisissez un lien de réunion Teams valide.</value></data>
+  <data name="Routines_Validation_MeetingConsent" xml:space="preserve"><value>Confirmez l'avis d'enregistrement avant d'enregistrer.</value></data>
   <data name="Settings_ScheduledJobs_Recurrence_Once" xml:space="preserve"><value>Une fois</value></data>
   <data name="Settings_ScheduledJobs_Recurrence_Daily" xml:space="preserve"><value>Quotidien</value></data>
   <data name="Settings_ScheduledJobs_Recurrence_Weekly" xml:space="preserve"><value>Hebdomadaire</value></data>

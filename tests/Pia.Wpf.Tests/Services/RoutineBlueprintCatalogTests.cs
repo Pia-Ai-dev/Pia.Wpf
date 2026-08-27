@@ -9,6 +9,7 @@ using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.ViewModels;
 using Xunit;
+using Pia.Services.MeetingAttendee;
 
 namespace Pia.Tests.Services;
 
@@ -399,6 +400,7 @@ public class RoutineBlueprintCatalogTests
             Substitute.For<IWindowManagerService>(),
             localization,
             Substitute.For<IPluginService>(),
+            Substitute.For<IBrowserProvisioner>(),
             NullLogger<RoutinesViewModel>.Instance);
     }
 

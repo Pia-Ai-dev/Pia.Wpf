@@ -258,6 +258,18 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
 
     public bool EditorIsAgentTask => EditKind == ScheduledJobKind.AgentTask;
 
+    /// <summary>A meeting routine has a link and a consent tick instead of a goal, a provider and tool grants —
+    /// none of the latter mean anything when the "run" is a browser sitting in a call.</summary>
+    public bool EditorIsMeeting => EditKind == ScheduledJobKind.MeetingAttendance;
+
+    /// <summary>Device-local: the Teams link is a bearer token for the meeting and never reaches the wire.</summary>
+    [ObservableProperty]
+    private string _editMeetingUrl = string.Empty;
+
+    /// <summary>The overlay's consent tick is per-session; an unattended join has to carry its own.</summary>
+    [ObservableProperty]
+    private bool _editMeetingConsent;
+
     /// <summary>The collapsed picker's one line. Names the launcher's default OUT LOUD when nothing is ticked
     /// on an agent routine: a header reading "none" would restate the very lie this picker removes.</summary>
     public string EditToolsSummary => _editGrantSelection.Count > 0
@@ -300,8 +312,11 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     partial void OnEditKindChanged(ScheduledJobKind value)
     {
         OnPropertyChanged(nameof(EditorIsAgentTask));
+        OnPropertyChanged(nameof(EditorIsMeeting));
         OnPropertyChanged(nameof(EditToolsSummary));
     }
+
+    private readonly Services.MeetingAttendee.IBrowserProvisioner _browserProvisioner;
 
     public RoutinesViewModel(
         IScheduledJobService jobs,
@@ -313,6 +328,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         IWindowManagerService windowManager,
         ILocalizationService localization,
         IPluginService plugins,
+        Services.MeetingAttendee.IBrowserProvisioner browserProvisioner,
         ILogger<RoutinesViewModel> logger)
     {
         _jobs = jobs;
@@ -324,6 +340,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         _windowManager = windowManager;
         _localization = localization;
         _plugins = plugins;
+        _browserProvisioner = browserProvisioner;
         _logger = logger;
 
         JobKinds = [.. Enum.GetValues<ScheduledJobKind>()
@@ -546,6 +563,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
                     ? _localization["Routines_Detail_Tools_AgentDefault"]
                     : _localization["Routines_Detail_Tools_None"],
             QuietOnSuccess = job.QuietOnSuccess,
+            MeetingUrl = job.MeetingUrl,
+            MeetingConsentAckAt = job.MeetingConsentAckAt,
             RecentRunsSummary = BuildRecentRunsSummary(recentFirings),
             RecentRuns = [.. recentFirings.Select(BuildRunRow)],
             OwnedByThisDevice = ownedHere,
@@ -571,6 +590,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditDayOfMonth = now.Day;
         EditMonth = now.Month;
         EditSpecificDate = null;
+        EditMeetingUrl = string.Empty;
+        EditMeetingConsent = false;
         ResetEditTools([]);
         EditQuietOnSuccess = false;
         ApplyPinChoices(null, null, null);
@@ -701,6 +722,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditDayOfMonth = row.DayOfMonth ?? row.NextFireAt.Day;
         EditMonth = row.Month ?? row.NextFireAt.Month;
         EditSpecificDate = row.SpecificDate;
+        EditMeetingUrl = row.MeetingUrl ?? string.Empty;
+        EditMeetingConsent = row.MeetingConsentAckAt is not null;
         ResetEditTools(row.GrantedToolNames);
         EditQuietOnSuccess = row.QuietOnSuccess;
         ApplyPinChoices(row.ProviderId, row.PersonaId, row.ReasoningEffort);
@@ -839,10 +862,27 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     {
         if (IsBusy) return;
 
-        if (string.IsNullOrWhiteSpace(EditName) || string.IsNullOrWhiteSpace(EditQuery))
+        // A meeting routine has no goal to write — the link is the instruction — so the goal requirement is
+        // relaxed to a name, and the two meeting-only fields are required in its place.
+        if (string.IsNullOrWhiteSpace(EditName) || (!EditorIsMeeting && string.IsNullOrWhiteSpace(EditQuery)))
         {
             StatusMessage = _localization["Settings_ScheduledJobs_Validation_NameAndGoal"];
             return;
+        }
+
+        if (EditorIsMeeting)
+        {
+            if (!Services.MeetingAttendee.TeamsMeetingUrl.IsLikelyTeamsUrl(EditMeetingUrl))
+            {
+                StatusMessage = _localization["Routines_Validation_MeetingUrl"];
+                return;
+            }
+
+            if (!EditMeetingConsent)
+            {
+                StatusMessage = _localization["Routines_Validation_MeetingConsent"];
+                return;
+            }
         }
 
         if (!TimeOnly.TryParseExact(EditTimeOfDay.Trim(), "HH\\:mm", out var timeOfDay))
@@ -868,6 +908,14 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         var personaId = EditPersona?.Id;
         var effort = EditEffort?.Value;
 
+        // Query is NOT NULL and carries the vault title a saved transcript is named after, so a meeting with
+        // no goal text reuses its name rather than storing a blank.
+        var query = EditorIsMeeting && string.IsNullOrWhiteSpace(EditQuery) ? EditName.Trim() : EditQuery.Trim();
+        var meetingUrl = EditorIsMeeting ? EditMeetingUrl.Trim() : null;
+        // Re-stamped on every save of a consented meeting: the acknowledgement is about the meeting as it
+        // stands now, not about whatever it was when first created.
+        var meetingConsentAt = EditorIsMeeting && EditMeetingConsent ? DateTime.Now : (DateTime?)null;
+
         IsBusy = true;
         try
         {
@@ -875,7 +923,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             {
                 await _jobs.UpdateAsync(id,
                     name: EditName.Trim(),
-                    query: EditQuery.Trim(),
+                    query: query,
                     recurrence: EditRecurrence,
                     timeOfDay: timeOfDay,
                     dayOfWeek: dayOfWeek,
@@ -888,7 +936,9 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
                     quietOnSuccess: EditQuietOnSuccess,
                     personaId: personaId ?? Guid.Empty,
                     reasoningEffort: effort,
-                    clearReasoningEffort: effort is null);
+                    clearReasoningEffort: effort is null,
+                    meetingUrl: meetingUrl,
+                    meetingConsentAckAt: meetingConsentAt);
 
                 _logger.LogInformation("Updated scheduled job {Id} from the routines view", id);
                 _logger.SensitiveDebug("Updated scheduled job {Id} name: {Name} goal: {Goal} persona: {Persona}",
@@ -896,11 +946,12 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             }
             else
             {
-                var created = await _jobs.CreateAsync(EditName.Trim(), EditQuery.Trim(), EditRecurrence,
+                var created = await _jobs.CreateAsync(EditName.Trim(), query, EditRecurrence,
                     timeOfDay, dayOfWeek: dayOfWeek, dayOfMonth: dayOfMonth, month: month,
                     specificDate: specificDate, providerId: providerId,
                     grantedTools: grants, kind: EditKind, quietOnSuccess: EditQuietOnSuccess,
-                    personaId: personaId, reasoningEffort: effort, blueprintKey: _editBlueprintKey);
+                    personaId: personaId, reasoningEffort: effort, blueprintKey: _editBlueprintKey,
+                    meetingUrl: meetingUrl, meetingConsentAckAt: meetingConsentAt);
 
                 _logger.LogInformation("Created scheduled job {Id} from the routines view ({Kind})",
                     created.Id, EditKind);
@@ -913,6 +964,11 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             // Otherwise the catalog renders over the save until the reload re-selects the row.
             IsCatalogOpen = false;
             StatusMessage = null;
+
+            // Pull Chromium down NOW rather than at the join: the first-ever meeting would otherwise spend
+            // its whole join window downloading a browser. Idempotent, so every later save is a no-op.
+            if (EditorIsMeeting)
+                _browserProvisioner.EnsureChromiumAsync(null).SafeFireAndForget(_logger);
         }
         catch (Exception ex)
         {
@@ -1251,6 +1307,11 @@ public sealed class RoutineRow
 
     /// <summary>This job's successes are not announced (device-local; failures still are).</summary>
     public required bool QuietOnSuccess { get; init; }
+
+    /// <summary>The Teams link a meeting routine joins, and when recording was acknowledged for it. Both
+    /// device-local; the link never leaves this machine.</summary>
+    public string? MeetingUrl { get; init; }
+    public DateTime? MeetingConsentAckAt { get; init; }
 
     /// <summary>"N runs: X ok, Y failed"; empty when none are recorded.</summary>
     public required string RecentRunsSummary { get; init; }

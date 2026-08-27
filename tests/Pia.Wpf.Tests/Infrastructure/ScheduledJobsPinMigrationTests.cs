@@ -123,4 +123,100 @@ public sealed class ScheduledJobsPinMigrationTests : IDisposable
         Assert.Null(migrated.ReasoningEffort);
         Assert.Null(migrated.BlueprintKey);
     }
+
+    [Fact]
+    public async Task MigrateSchema_AddsTheMeetingColumns_AndRoundTripsThem()
+    {
+        var jobId = Guid.NewGuid();
+        var now = DateTime.Now.ToString("O");
+
+        // The pre-meeting shape: everything through BlueprintKey, and neither meeting column.
+        using (var seed = new SqliteConnection($"Data Source={_dbPath}"))
+        {
+            seed.Open();
+            using (var create = seed.CreateCommand())
+            {
+                create.CommandText = """
+                    CREATE TABLE ScheduledJobs (
+                        Id TEXT PRIMARY KEY,
+                        Name TEXT NOT NULL,
+                        Query TEXT NOT NULL,
+                        Kind TEXT NOT NULL DEFAULT 'Research',
+                        AnswerLength TEXT NOT NULL DEFAULT 'Balanced',
+                        ProviderId TEXT NULL,
+                        Recurrence TEXT NOT NULL,
+                        TimeOfDay TEXT NOT NULL,
+                        DayOfWeek INTEGER NULL,
+                        DayOfMonth INTEGER NULL,
+                        Month INTEGER NULL,
+                        SpecificDate TEXT NULL,
+                        NextFireAt TEXT NOT NULL,
+                        Status TEXT NOT NULL DEFAULT 'Active',
+                        CreatedAt TEXT NOT NULL,
+                        UpdatedAt TEXT NOT NULL DEFAULT '',
+                        LastFiredAt TEXT NULL,
+                        LastResultEntryId TEXT NULL,
+                        ConsecutiveFailures INTEGER NOT NULL DEFAULT 0,
+                        OwnerDeviceId TEXT NULL,
+                        GrantedTools TEXT NOT NULL DEFAULT '[]',
+                        QuietOnSuccess INTEGER NOT NULL DEFAULT 0,
+                        PersonaId TEXT NULL,
+                        ReasoningEffort TEXT NULL,
+                        BlueprintKey TEXT NULL
+                    );
+                    """;
+                create.ExecuteNonQuery();
+            }
+            using (var insert = seed.CreateCommand())
+            {
+                insert.CommandText = """
+                    INSERT INTO ScheduledJobs
+                    (Id, Name, Query, Kind, Recurrence, TimeOfDay, NextFireAt, Status, CreatedAt, UpdatedAt)
+                    VALUES (@Id, 'pre-meeting', 'what changed', 'Research', 'Daily', '09:00',
+                            @Now, 'Active', @Now, @Now)
+                    """;
+                insert.Parameters.AddWithValue("@Id", jobId.ToString());
+                insert.Parameters.AddWithValue("@Now", now);
+                insert.ExecuteNonQuery();
+            }
+        }
+        SqlitePool.ClearFor($"Data Source={_dbPath}");
+
+        using var ctx = new SqliteContext(_dbPath);
+        var columns = new List<string>();
+        using (var pragma = ctx.GetConnection().CreateCommand())
+        {
+            pragma.CommandText = "PRAGMA table_info(ScheduledJobs)";
+            using var reader = pragma.ExecuteReader();
+            while (reader.Read())
+                columns.Add(reader.GetString(1));
+        }
+
+        Assert.Contains("MeetingUrl", columns);
+        Assert.Contains("MeetingConsentAckAt", columns);
+
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings());
+        var jobs = new ScheduledJobService(ctx, new RecurrenceCalculator(), settings,
+            new SyncDeleteTrackerService(_tmpDir, NullLogger<SyncDeleteTrackerService>.Instance),
+            NullLogger<ScheduledJobService>.Instance);
+
+        var migrated = await jobs.GetAsync(jobId);
+        Assert.NotNull(migrated);
+        Assert.Null(migrated!.MeetingUrl);
+        Assert.Null(migrated.MeetingConsentAckAt);
+
+        // The positional read is only half the contract; a create has to survive the round trip too.
+        var consentAt = new DateTime(2026, 8, 27, 9, 30, 0, DateTimeKind.Unspecified);
+        var created = await jobs.CreateAsync(
+            "Standup", "Standup", RecurrenceType.Daily, new TimeOnly(9, 0),
+            kind: ScheduledJobKind.MeetingAttendance,
+            meetingUrl: "https://teams.microsoft.com/l/meetup-join/x",
+            meetingConsentAckAt: consentAt);
+
+        var reread = await jobs.GetAsync(created.Id);
+        Assert.Equal(ScheduledJobKind.MeetingAttendance, reread!.Kind);
+        Assert.Equal("https://teams.microsoft.com/l/meetup-join/x", reread.MeetingUrl);
+        Assert.Equal(consentAt, reread.MeetingConsentAckAt);
+    }
 }

@@ -570,14 +570,17 @@
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
 
-              <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Goal}"
-                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-              <ui:TextBox Text="{Binding EditQuery, UpdateSourceTrigger=PropertyChanged}"
-                          AcceptsReturn="True"
-                          TextWrapping="Wrap"
-                          MinHeight="60"
-                          AutomationProperties.AutomationId="Routines_Field_Goal"
-                          Margin="0,2,0,8"/>
+              <!-- A meeting routine has no goal: the link is the whole instruction. -->
+              <StackPanel Visibility="{Binding EditorIsMeeting, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Goal}"
+                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                <ui:TextBox Text="{Binding EditQuery, UpdateSourceTrigger=PropertyChanged}"
+                            AcceptsReturn="True"
+                            TextWrapping="Wrap"
+                            MinHeight="60"
+                            AutomationProperties.AutomationId="Routines_Field_Goal"
+                            Margin="0,2,0,8"/>
+              </StackPanel>
 
               <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Kind}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
@@ -590,6 +593,19 @@
                         HorizontalAlignment="Left" Width="240"
                         AutomationProperties.AutomationId="Routines_Field_Kind"
                         Margin="0,2,0,8"/>
+
+              <StackPanel Visibility="{Binding EditorIsMeeting, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <TextBlock Text="{loc:Str Routines_Field_MeetingUrl}"
+                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                <ui:TextBox Text="{Binding EditMeetingUrl, UpdateSourceTrigger=PropertyChanged}"
+                            PlaceholderText="{loc:Str Routines_Field_MeetingUrl_Hint}"
+                            AutomationProperties.AutomationId="Routines_Field_MeetingUrl"
+                            Margin="0,2,0,8"/>
+                <CheckBox Content="{loc:Str Routines_Field_MeetingConsent}"
+                          IsChecked="{Binding EditMeetingConsent, Mode=TwoWay}"
+                          AutomationProperties.AutomationId="Routines_Field_MeetingConsent"
+                          Margin="0,0,0,8"/>
+              </StackPanel>
 
               <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Recurrence}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
@@ -657,161 +673,165 @@
                             Margin="0,2,0,8"/>
               </StackPanel>
 
-              <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Provider}"
-                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-              <ComboBox ItemsSource="{Binding ProviderChoices}"
-                        SelectedItem="{Binding EditProvider, Mode=TwoWay}"
-                        DisplayMemberPath="Name"
-                        HorizontalAlignment="Left" Width="240"
-                        AutomationProperties.AutomationId="Routines_Field_Provider"
-                        Margin="0,2,0,8"/>
+              <!-- None of these apply to a meeting: there is no model call, no persona and no tool grant in
+                   sitting in a call and writing down what was said. -->
+              <StackPanel Visibility="{Binding EditorIsMeeting, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Provider}"
+                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                <ComboBox ItemsSource="{Binding ProviderChoices}"
+                          SelectedItem="{Binding EditProvider, Mode=TwoWay}"
+                          DisplayMemberPath="Name"
+                          HorizontalAlignment="Left" Width="240"
+                          AutomationProperties.AutomationId="Routines_Field_Provider"
+                          Margin="0,2,0,8"/>
 
-              <!-- SelectedItem, not SelectedValue: both lists lead with a NULL-valued row, and WPF reads a null
-                   SelectedValue as no selection at all, so that row could never be shown as chosen. -->
-              <TextBlock Text="{loc:Str Routines_Field_Persona}"
-                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-              <ComboBox ItemsSource="{Binding PersonaChoices}"
-                        SelectedItem="{Binding EditPersona, Mode=TwoWay}"
-                        DisplayMemberPath="Name"
-                        IsEnabled="{Binding EditorPinsEnabled}"
-                        HorizontalAlignment="Left" Width="240"
-                        AutomationProperties.AutomationId="Routines_Field_Persona"
-                        Margin="0,2,0,4"/>
-              <TextBlock Text="{loc:Str Routines_Field_Persona_Hint}"
-                         Style="{StaticResource PiaSettingsDescriptionStyle}"
-                         TextWrapping="Wrap"
-                         Margin="0,0,0,8"/>
-
-              <TextBlock Text="{loc:Str Routines_Field_Effort}"
-                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-              <ComboBox ItemsSource="{Binding EffortChoices}"
-                        SelectedItem="{Binding EditEffort, Mode=TwoWay}"
-                        DisplayMemberPath="Label"
-                        IsEnabled="{Binding EditorPinsEnabled}"
-                        HorizontalAlignment="Left" Width="240"
-                        AutomationProperties.AutomationId="Routines_Field_Effort"
-                        Margin="0,2,0,4"/>
-              <TextBlock Text="{loc:Str Routines_Field_Effort_Hint}"
-                         Style="{StaticResource PiaSettingsDescriptionStyle}"
-                         TextWrapping="Wrap"
-                         Margin="0,0,0,4"/>
-
-              <!-- Disabled pickers with no explanation read as a bug, so the same banner says whose device owns them. -->
-              <Border Margin="0,4,0,8"
-                      Padding="12,8"
-                      CornerRadius="6"
-                      Background="{DynamicResource WarnSoftBrush}"
-                      Visibility="{Binding EditorPinsEnabled, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-                <TextBlock Text="{loc:Str Routines_NotOwnedHere}"
-                           FontSize="12"
+                <!-- SelectedItem, not SelectedValue: both lists lead with a NULL-valued row, and WPF reads a null
+                     SelectedValue as no selection at all, so that row could never be shown as chosen. -->
+                <TextBlock Text="{loc:Str Routines_Field_Persona}"
+                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                <ComboBox ItemsSource="{Binding PersonaChoices}"
+                          SelectedItem="{Binding EditPersona, Mode=TwoWay}"
+                          DisplayMemberPath="Name"
+                          IsEnabled="{Binding EditorPinsEnabled}"
+                          HorizontalAlignment="Left" Width="240"
+                          AutomationProperties.AutomationId="Routines_Field_Persona"
+                          Margin="0,2,0,4"/>
+                <TextBlock Text="{loc:Str Routines_Field_Persona_Hint}"
+                           Style="{StaticResource PiaSettingsDescriptionStyle}"
                            TextWrapping="Wrap"
-                           Foreground="{DynamicResource TextSubtleBrush}"/>
-              </Border>
+                           Margin="0,0,0,8"/>
 
-              <!-- Collapsed: the header line is what most users need, and 40-odd rows would own the editor. -->
-              <ui:CardExpander IsExpanded="False"
-                               Margin="0,4,0,8"
-                               AutomationProperties.AutomationId="Routines_Tools_Picker">
-                <ui:CardExpander.Header>
-                  <StackPanel>
-                    <TextBlock Text="{loc:Str Routines_Field_Tools}"
-                               Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-                    <TextBlock Text="{loc:Str Routines_Field_Tools_Hint}"
-                               Style="{StaticResource PiaSettingsDescriptionStyle}"
-                               TextWrapping="Wrap"/>
-                    <TextBlock Text="{Binding EditToolsSummary}"
-                               Margin="0,6,0,0"
-                               FontSize="12"
-                               TextTrimming="CharacterEllipsis"
-                               Foreground="{DynamicResource TextSubtleBrush}"
-                               AutomationProperties.AutomationId="Routines_Tools_Summary"/>
-                    <TextBlock Text="{loc:Str Routines_Field_Tools_Missing_Notice}"
-                               Margin="0,4,0,0"
-                               FontSize="12"
-                               TextWrapping="Wrap"
-                               Foreground="{DynamicResource WarnBrush}"
-                               Visibility="{Binding HasEditMissingTools, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                  </StackPanel>
-                </ui:CardExpander.Header>
+                <TextBlock Text="{loc:Str Routines_Field_Effort}"
+                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                <ComboBox ItemsSource="{Binding EffortChoices}"
+                          SelectedItem="{Binding EditEffort, Mode=TwoWay}"
+                          DisplayMemberPath="Label"
+                          IsEnabled="{Binding EditorPinsEnabled}"
+                          HorizontalAlignment="Left" Width="240"
+                          AutomationProperties.AutomationId="Routines_Field_Effort"
+                          Margin="0,2,0,4"/>
+                <TextBlock Text="{loc:Str Routines_Field_Effort_Hint}"
+                           Style="{StaticResource PiaSettingsDescriptionStyle}"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,4"/>
 
-                <StackPanel Margin="0,8,0,0">
-                  <!-- A named list REPLACES the launcher's write_file floor rather than adding to it, so an
-                       agent routine can lose file writes by ticking one unrelated tool. -->
-                  <Border Padding="12,8"
-                          CornerRadius="6"
-                          Margin="0,0,0,10"
-                          Background="{DynamicResource WarnSoftBrush}"
-                          Visibility="{Binding EditorIsAgentTask, Converter={StaticResource BooleanToVisibilityConverter}}">
-                    <TextBlock Text="{loc:Str Routines_Field_Tools_AgentDefault}"
-                               FontSize="12"
-                               TextWrapping="Wrap"
-                               Foreground="{DynamicResource TextSubtleBrush}"/>
-                  </Border>
-
-                  <TextBlock Text="{loc:Str Routines_Field_Tools_Empty}"
-                             Style="{StaticResource PiaSettingsDescriptionStyle}"
+                <!-- Disabled pickers with no explanation read as a bug, so the same banner says whose device owns them. -->
+                <Border Margin="0,4,0,8"
+                        Padding="12,8"
+                        CornerRadius="6"
+                        Background="{DynamicResource WarnSoftBrush}"
+                        Visibility="{Binding EditorPinsEnabled, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                  <TextBlock Text="{loc:Str Routines_NotOwnedHere}"
+                             FontSize="12"
                              TextWrapping="Wrap"
-                             Visibility="{Binding HasEditToolCatalog, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                             Foreground="{DynamicResource TextSubtleBrush}"/>
+                </Border>
 
-                  <!-- Capped and scrolled: a default install already lists 26 tools, 42 once files and git are up. -->
-                  <Border Style="{StaticResource PiaSettingsCardStyle}"
-                          Padding="10"
-                          MaxHeight="320"
-                          Visibility="{Binding HasEditToolCatalog, Converter={StaticResource BooleanToVisibilityConverter}}">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                  HorizontalScrollBarVisibility="Disabled"
-                                  PreviewMouseWheel="ToolPickerScroller_PreviewMouseWheel">
-                      <ItemsControl ItemsSource="{Binding EditToolGroups}">
-                        <ItemsControl.ItemTemplate>
-                          <DataTemplate>
-                            <StackPanel Margin="0,0,0,12">
-                              <TextBlock Text="{Binding Header}"
-                                         FontWeight="SemiBold"
-                                         Margin="0,0,0,6"
-                                         Foreground="{DynamicResource TextDefaultBrush}"/>
-                              <!-- Row state only, never a command through an ancestor: inside this template the
-                                   nearest ItemsControl is the inner one. -->
-                              <ItemsControl ItemsSource="{Binding Tools}">
-                                <ItemsControl.ItemTemplate>
-                                  <DataTemplate>
-                                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                              Margin="0,0,0,10"
-                                              AutomationProperties.AutomationId="{Binding ToolName, StringFormat='Routines_Tools_Allow_{0}'}"
-                                              AutomationProperties.Name="{Binding ToolName}">
-                                      <StackPanel>
-                                        <TextBlock Text="{Binding ToolName}"
-                                                   Foreground="{DynamicResource TextDefaultBrush}"/>
-                                        <TextBlock Text="{Binding Description}"
-                                                   FontSize="11"
-                                                   TextWrapping="Wrap"
-                                                   Margin="0,2,0,0"
-                                                   Foreground="{DynamicResource TextMutedBrush}"
-                                                   Visibility="{Binding HasDescription, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                        <TextBlock Text="{Binding UnavailableReason}"
-                                                   FontSize="11"
-                                                   TextWrapping="Wrap"
-                                                   Margin="0,2,0,0"
-                                                   Foreground="{DynamicResource WarnBrush}"
-                                                   Visibility="{Binding IsUnavailable, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                        <TextBlock Text="{Binding CautionText}"
-                                                   FontSize="11"
-                                                   TextWrapping="Wrap"
-                                                   Margin="0,2,0,0"
-                                                   Foreground="{DynamicResource TextSubtleBrush}"
-                                                   Visibility="{Binding HasCaution, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                      </StackPanel>
-                                    </CheckBox>
-                                  </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                              </ItemsControl>
-                            </StackPanel>
-                          </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                      </ItemsControl>
-                    </ScrollViewer>
-                  </Border>
-                </StackPanel>
-              </ui:CardExpander>
+                <!-- Collapsed: the header line is what most users need, and 40-odd rows would own the editor. -->
+                <ui:CardExpander IsExpanded="False"
+                                 Margin="0,4,0,8"
+                                 AutomationProperties.AutomationId="Routines_Tools_Picker">
+                  <ui:CardExpander.Header>
+                    <StackPanel>
+                      <TextBlock Text="{loc:Str Routines_Field_Tools}"
+                                 Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                      <TextBlock Text="{loc:Str Routines_Field_Tools_Hint}"
+                                 Style="{StaticResource PiaSettingsDescriptionStyle}"
+                                 TextWrapping="Wrap"/>
+                      <TextBlock Text="{Binding EditToolsSummary}"
+                                 Margin="0,6,0,0"
+                                 FontSize="12"
+                                 TextTrimming="CharacterEllipsis"
+                                 Foreground="{DynamicResource TextSubtleBrush}"
+                                 AutomationProperties.AutomationId="Routines_Tools_Summary"/>
+                      <TextBlock Text="{loc:Str Routines_Field_Tools_Missing_Notice}"
+                                 Margin="0,4,0,0"
+                                 FontSize="12"
+                                 TextWrapping="Wrap"
+                                 Foreground="{DynamicResource WarnBrush}"
+                                 Visibility="{Binding HasEditMissingTools, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    </StackPanel>
+                  </ui:CardExpander.Header>
+
+                  <StackPanel Margin="0,8,0,0">
+                    <!-- A named list REPLACES the launcher's write_file floor rather than adding to it, so an
+                         agent routine can lose file writes by ticking one unrelated tool. -->
+                    <Border Padding="12,8"
+                            CornerRadius="6"
+                            Margin="0,0,0,10"
+                            Background="{DynamicResource WarnSoftBrush}"
+                            Visibility="{Binding EditorIsAgentTask, Converter={StaticResource BooleanToVisibilityConverter}}">
+                      <TextBlock Text="{loc:Str Routines_Field_Tools_AgentDefault}"
+                                 FontSize="12"
+                                 TextWrapping="Wrap"
+                                 Foreground="{DynamicResource TextSubtleBrush}"/>
+                    </Border>
+
+                    <TextBlock Text="{loc:Str Routines_Field_Tools_Empty}"
+                               Style="{StaticResource PiaSettingsDescriptionStyle}"
+                               TextWrapping="Wrap"
+                               Visibility="{Binding HasEditToolCatalog, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+
+                    <!-- Capped and scrolled: a default install already lists 26 tools, 42 once files and git are up. -->
+                    <Border Style="{StaticResource PiaSettingsCardStyle}"
+                            Padding="10"
+                            MaxHeight="320"
+                            Visibility="{Binding HasEditToolCatalog, Converter={StaticResource BooleanToVisibilityConverter}}">
+                      <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                    HorizontalScrollBarVisibility="Disabled"
+                                    PreviewMouseWheel="ToolPickerScroller_PreviewMouseWheel">
+                        <ItemsControl ItemsSource="{Binding EditToolGroups}">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                              <StackPanel Margin="0,0,0,12">
+                                <TextBlock Text="{Binding Header}"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,6"
+                                           Foreground="{DynamicResource TextDefaultBrush}"/>
+                                <!-- Row state only, never a command through an ancestor: inside this template the
+                                     nearest ItemsControl is the inner one. -->
+                                <ItemsControl ItemsSource="{Binding Tools}">
+                                  <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                      <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                Margin="0,0,0,10"
+                                                AutomationProperties.AutomationId="{Binding ToolName, StringFormat='Routines_Tools_Allow_{0}'}"
+                                                AutomationProperties.Name="{Binding ToolName}">
+                                        <StackPanel>
+                                          <TextBlock Text="{Binding ToolName}"
+                                                     Foreground="{DynamicResource TextDefaultBrush}"/>
+                                          <TextBlock Text="{Binding Description}"
+                                                     FontSize="11"
+                                                     TextWrapping="Wrap"
+                                                     Margin="0,2,0,0"
+                                                     Foreground="{DynamicResource TextMutedBrush}"
+                                                     Visibility="{Binding HasDescription, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                          <TextBlock Text="{Binding UnavailableReason}"
+                                                     FontSize="11"
+                                                     TextWrapping="Wrap"
+                                                     Margin="0,2,0,0"
+                                                     Foreground="{DynamicResource WarnBrush}"
+                                                     Visibility="{Binding IsUnavailable, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                          <TextBlock Text="{Binding CautionText}"
+                                                     FontSize="11"
+                                                     TextWrapping="Wrap"
+                                                     Margin="0,2,0,0"
+                                                     Foreground="{DynamicResource TextSubtleBrush}"
+                                                     Visibility="{Binding HasCaution, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                        </StackPanel>
+                                      </CheckBox>
+                                    </DataTemplate>
+                                  </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                              </StackPanel>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </ScrollViewer>
+                    </Border>
+                  </StackPanel>
+                </ui:CardExpander>
+              </StackPanel>
 
               <!-- The label says SUCCESS out loud: failures always notify. -->
               <CheckBox Content="{loc:Str Settings_ScheduledJobs_Field_QuietOnSuccess}"

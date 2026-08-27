@@ -99,6 +99,42 @@ public sealed class ScheduledJobNotificationSurface : IScheduledJobNotificationS
         }
     }
 
+    public void NotifyMeetingSaved(ScheduledJob job)
+    {
+        if (job.QuietOnSuccess)
+        {
+            _logger.LogInformation("Scheduled meeting {Id} was attended quietly (notifications suppressed)", job.Id);
+            return;
+        }
+
+        EnsureToastActivationRegistered();
+
+        // No Action: the transcript is a vault source, not a chat, and there is no in-app view that opens
+        // one by ref. A card that says it landed beats a button that goes nowhere.
+        _flowService.Publish(new FlowItemDraft
+        {
+            Severity = FlowSeverity.Success,
+            Source = FlowSource.ScheduledJob,
+            Title = job.Name,
+            Body = _localizationService["Flow_Job_MeetingSaved"],
+            DedupKey = job.Id.ToString(),
+            Lifetime = FlowLifetime.Persistent,
+            RequestDurable = true,
+        });
+
+        try
+        {
+            new ToastContentBuilder()
+                .AddText(_localizationService["Notification_ScheduledMeeting"])
+                .AddText(_localizationService.Format("Notification_ScheduledMeeting_Body", job.Name))
+                .Show();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to show meeting toast for job {Id}", job.Id);
+        }
+    }
+
     public void NotifyFailure(ScheduledJob job, string reason)
     {
         EnsureToastActivationRegistered();

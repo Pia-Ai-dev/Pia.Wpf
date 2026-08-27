@@ -347,7 +347,7 @@ public class ScheduledJobToolHandlerTests
             IReadOnlyCollection<string>? grantedTools = null,
             ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false,
             Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
-            string? blueprintKey = null)
+            string? blueprintKey = null, string? meetingUrl = null, DateTime? meetingConsentAckAt = null)
         {
             var job = new ScheduledJob
             {
@@ -391,7 +391,8 @@ public class ScheduledJobToolHandlerTests
             IReadOnlyCollection<string>? grantedTools = null,
             DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null,
             Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
-            bool clearReasoningEffort = false)
+            bool clearReasoningEffort = false,
+            string? meetingUrl = null, DateTime? meetingConsentAckAt = null)
         {
             Updated.Add(id);
             LastUpdatedGrants = grantedTools;
@@ -419,7 +420,7 @@ public class ScheduledJobToolHandlerTests
 
         public Task DisableAsync(Guid id) => throw new NotImplementedException();
         public Task EnableAsync(Guid id) => throw new NotImplementedException();
-        public Task MarkRunCompleteAsync(Guid id, Guid resultEntryId) => throw new NotImplementedException();
+        public Task MarkRunCompleteAsync(Guid id, Guid? resultEntryId) => throw new NotImplementedException();
         public Task MarkRunFailedAsync(Guid id, string reason, PiaFailure? failure = null) => throw new NotImplementedException();
         public Task AdvanceMissedRunAsync(Guid id) => throw new NotImplementedException();
         public Task MarkOccurrenceDispatchedAsync(Guid id) => throw new NotImplementedException();

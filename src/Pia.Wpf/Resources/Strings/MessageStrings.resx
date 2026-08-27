@@ -274,6 +274,8 @@
   <data name="Notification_OpenBriefing" xml:space="preserve"><value>Open</value></data>
   <data name="Notification_ScheduledResearch" xml:space="preserve"><value>Scheduled briefing</value></data>
   <data name="Notification_ScheduledResearch_Body" xml:space="preserve"><value>'{0}' is ready</value></data>
+  <data name="Notification_ScheduledMeeting" xml:space="preserve"><value>Meeting attended</value></data>
+  <data name="Notification_ScheduledMeeting_Body" xml:space="preserve"><value>Transcript of '{0}' saved</value></data>
   <data name="Notification_ScheduledResearchInApp" xml:space="preserve"><value>Scheduled briefing '{0}' is ready</value></data>
   <data name="Notification_ScheduledResearchFailed" xml:space="preserve"><value>Scheduled briefing failed</value></data>
   <data name="Notification_ScheduledResearchFailed_Body" xml:space="preserve"><value>'{0}' could not run — see history for details</value></data>

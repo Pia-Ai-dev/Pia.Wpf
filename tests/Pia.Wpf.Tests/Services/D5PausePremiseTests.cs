@@ -10,6 +10,7 @@ using Pia.Services;
 using Pia.Services.Interfaces;
 using Xunit;
 using ReasoningEffort = Pia.Models.ReasoningEffort;
+using Pia.Services.MeetingAttendee;
 
 namespace Pia.Tests.Services;
 
@@ -137,7 +138,8 @@ public sealed class D5PausePremiseTests : IDisposable
 
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(), new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
-            recorder, settings, _runs, NullLogger<ScheduledJobBackgroundService>.Instance);
+            recorder, settings, _runs, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         try
         {
@@ -201,7 +203,8 @@ public sealed class D5PausePremiseTests : IDisposable
 
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(), new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
-            launcher, settings, runService, NullLogger<ScheduledJobBackgroundService>.Instance);
+            launcher, settings, runService, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
 
@@ -247,7 +250,8 @@ public sealed class D5PausePremiseTests : IDisposable
 
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(), new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
-            launcher, settings, runService, NullLogger<ScheduledJobBackgroundService>.Instance);
+            launcher, settings, runService, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
         Assert.Equal(1, Volatile.Read(ref launches));  // the due job dispatched; its run is unsettled
@@ -291,7 +295,8 @@ public sealed class D5PausePremiseTests : IDisposable
 
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(), new FakeProviderResolver(NewProvider()), notifications,
-            launcher, settings, runService, NullLogger<ScheduledJobBackgroundService>.Instance);
+            launcher, settings, runService, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(ct);
         await SettleAsync(bg, ct);
@@ -326,7 +331,8 @@ public sealed class D5PausePremiseTests : IDisposable
 
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(), new FakeProviderResolver(NewProvider()), notifications,
-            recorder, settings, _runs, NullLogger<ScheduledJobBackgroundService>.Instance);
+            recorder, settings, _runs, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         try
         {
@@ -395,7 +401,8 @@ public sealed class D5PausePremiseTests : IDisposable
 
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(), new FakeProviderResolver(NewProvider()), notifications,
-            recorder, settings, _runs, NullLogger<ScheduledJobBackgroundService>.Instance);
+            recorder, settings, _runs, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         try
         {
@@ -456,7 +463,8 @@ public sealed class D5PausePremiseTests : IDisposable
 
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(), new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
-            recorder, settings, _runs, NullLogger<ScheduledJobBackgroundService>.Instance);
+            recorder, settings, _runs, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         try
         {
@@ -662,7 +670,7 @@ public sealed class D5PausePremiseTests : IDisposable
     private sealed class FakeJobService : IScheduledJobService
     {
         private readonly List<ScheduledJob> _due = new();
-        public List<(Guid JobId, Guid EntryId)> Completed { get; } = new();
+        public List<(Guid JobId, Guid? EntryId)> Completed { get; } = new();
         public List<(Guid JobId, string Reason)> Failed { get; } = new();
         public List<PiaFailure?> FailedDescriptors { get; } = new();
         public List<Guid> Advanced { get; } = new();
@@ -676,7 +684,7 @@ public sealed class D5PausePremiseTests : IDisposable
         public Task<IReadOnlyList<ScheduledJob>> GetDueJobsAsync()
             => Task.FromResult<IReadOnlyList<ScheduledJob>>(_due.Where(j => j.NextFireAt <= DateTime.Now).ToList());
 
-        public Task MarkRunCompleteAsync(Guid id, Guid resultEntryId)
+        public Task MarkRunCompleteAsync(Guid id, Guid? resultEntryId)
         {
             Completed.Add((id, resultEntryId));
             var job = _due.FirstOrDefault(j => j.Id == id);
@@ -727,7 +735,7 @@ public sealed class D5PausePremiseTests : IDisposable
             IReadOnlyCollection<string>? grantedTools = null,
             ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false,
             Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
-            string? blueprintKey = null) => throw new NotImplementedException();
+            string? blueprintKey = null, string? meetingUrl = null, DateTime? meetingConsentAckAt = null) => throw new NotImplementedException();
 
         public Task<IReadOnlyList<ScheduledJob>> GetAllAsync() => throw new NotImplementedException();
         public Task<IReadOnlyList<ScheduledJob>> GetActiveAsync() => throw new NotImplementedException();
@@ -739,7 +747,8 @@ public sealed class D5PausePremiseTests : IDisposable
             IReadOnlyCollection<string>? grantedTools = null,
             DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null,
             Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
-            bool clearReasoningEffort = false) => throw new NotImplementedException();
+            bool clearReasoningEffort = false,
+            string? meetingUrl = null, DateTime? meetingConsentAckAt = null) => throw new NotImplementedException();
 
         public Task<bool> IsOwnedByThisDeviceAsync(Guid id) => Task.FromResult(true);
         public Task<bool> IsOwnedByThisDeviceAsync(ScheduledJob job) => Task.FromResult(true);
@@ -764,6 +773,8 @@ public sealed class D5PausePremiseTests : IDisposable
         public int FailureCount { get; private set; }
 
         public void NotifySuccess(ScheduledJob job, Guid chatId, string chatTitle) => SuccessCount++;
+        public void NotifyMeetingSaved(ScheduledJob job) { }
+
         public void NotifyFailure(ScheduledJob job, string reason) => FailureCount++;
         public Task<bool?> AskUserToRunMissedAsync(ScheduledJob job, DateTime scheduledFireAt)
             => Task.FromResult<bool?>(false);

@@ -5,6 +5,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Xunit;
+using Pia.Services.MeetingAttendee;
 
 namespace Pia.Tests.Services;
 
@@ -75,7 +76,8 @@ public class ScheduledJobBackgroundServiceTests
             jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
             new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
             Substitute.For<IHeadlessRunLauncher>(), NewSettings(), Substitute.For<IAgentRunService>(),
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         // A tick alone proves the premise: this job is not due, so nothing runs.
         await bg.ExecuteOnceAsync(CancellationToken.None);
@@ -102,7 +104,8 @@ public class ScheduledJobBackgroundServiceTests
             jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
             new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
             Substitute.For<IHeadlessRunLauncher>(), NewSettings(), Substitute.For<IAgentRunService>(),
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         var result = await bg.RunNowAsync(job.Id, CancellationToken.None);
 
@@ -119,7 +122,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
             new FakeNotificationSurface(), Substitute.For<IHeadlessRunLauncher>(), NewSettings(),
-            Substitute.For<IAgentRunService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IAgentRunService>(), Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         Assert.Equal(ScheduledJobRunNowResult.NotFound,
             await bg.RunNowAsync(Guid.NewGuid(), CancellationToken.None));
@@ -141,7 +145,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, scopeFactory, providers, notifications,
             Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(),
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await TickAndSettleAsync(bg, CancellationToken.None);
 
@@ -173,7 +178,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, scopeFactory, providers, notifications,
             Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(),
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await TickAndSettleAsync(bg, CancellationToken.None);
 
@@ -200,7 +206,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, scopeFactory, providers, notifications,
             Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(),
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await TickAndSettleAsync(bg, CancellationToken.None);
 
@@ -227,7 +234,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, scopeFactory, providers, notifications,
             Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(),
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await TickAndSettleAsync(bg, CancellationToken.None);
 
@@ -251,7 +259,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, scopeFactory, providers, notifications,
             Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(),
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(CancellationToken.None);
 
@@ -277,7 +286,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(null), notifications,
             launcher, NewSettings(), Substitute.For<IAgentRunService>(),
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
@@ -303,7 +313,8 @@ public class ScheduledJobBackgroundServiceTests
         var providers = new FakeProviderResolver(NewProvider());
 
         var sp = new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner);
-        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), providers, notifications, Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
+        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), providers, notifications, Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(), Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         // Settled, not just ticked: the ask and everything it decides happen on a dispatched task, so a bare
         // ExecuteOnceAsync would be a race on jobs.Advanced.
@@ -333,7 +344,8 @@ public class ScheduledJobBackgroundServiceTests
         var providers = new FakeProviderResolver(NewProvider());
 
         var sp = new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner);
-        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), providers, notifications, Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
+        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), providers, notifications, Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(), Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await TickAndSettleAsync(bg, CancellationToken.None);
 
@@ -362,7 +374,8 @@ public class ScheduledJobBackgroundServiceTests
         var providers = new FakeProviderResolver(NewProvider());
 
         var sp = new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner);
-        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), providers, notifications, Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
+        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), providers, notifications, Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(), Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await TickAndSettleAsync(bg, CancellationToken.None);
 
@@ -394,7 +407,8 @@ public class ScheduledJobBackgroundServiceTests
         var providers = new FakeProviderResolver(NewProvider());
 
         var sp = new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner);
-        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), providers, notifications, Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
+        var bg = new ScheduledJobBackgroundService(jobs, new FakeScopeFactory(sp), providers, notifications, Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(), Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         var ct = TestContext.Current.CancellationToken;
         var probe = TimeSpan.FromSeconds(1);
@@ -444,7 +458,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider()), providers, notifications,
             launcher, settings, runService,
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await TickAndSettleAsync(bg, CancellationToken.None);
 
@@ -494,7 +509,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
             new FakeNotificationSurface(), launcher, NewSettings(), runService,
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await TickAndSettleAsync(bg, CancellationToken.None);
 
@@ -531,7 +547,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
             notifications, launcher, NewSettings(), runService,
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await TickAndSettleAsync(bg, CancellationToken.None);
 
@@ -578,7 +595,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
             new FakeNotificationSurface(), launcher, NewSettings(), runService,
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await TickAndSettleAsync(bg, CancellationToken.None);
 
@@ -618,7 +636,8 @@ public class ScheduledJobBackgroundServiceTests
             jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
             new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(), launcher,
             NewSettings(), runService,
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await TickAndSettleAsync(bg, CancellationToken.None);
 
@@ -643,7 +662,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, scopeFactory, providers, notifications,
             launcher, Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(),
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await TickAndSettleAsync(bg, CancellationToken.None);
 
@@ -666,7 +686,8 @@ public class ScheduledJobBackgroundServiceTests
             jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
             new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
             Substitute.For<IHeadlessRunLauncher>(), NewSettings(), Substitute.For<IAgentRunService>(),
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await TickAndSettleAsync(bg, CancellationToken.None);
 
@@ -691,7 +712,8 @@ public class ScheduledJobBackgroundServiceTests
             jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
             new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
             Substitute.For<IHeadlessRunLauncher>(), NewSettings(), Substitute.For<IAgentRunService>(),
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await TickAndSettleAsync(bg, CancellationToken.None);
 
@@ -731,7 +753,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
             new FakeNotificationSurface(), launcher, NewSettings(), runService,
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
 
@@ -771,7 +794,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
             notifications, launcher, NewSettings(), Substitute.For<IAgentRunService>(),
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(ct);
         await bg.ExecuteOnceAsync(ct);
@@ -816,7 +840,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
             notifications, launcher, NewSettings(), runService,
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(ct);
         await bg.ExecuteOnceAsync(ct);
@@ -848,7 +873,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
             new FakeNotificationSurface(), launcher, NewSettings(), runService,
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         Assert.Equal(ScheduledJobRunNowResult.AlreadyRunning, await bg.RunNowAsync(job.Id, ct));
 
@@ -888,7 +914,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
             notifications, launcher, NewSettings(), runService,
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         var tick = bg.ExecuteOnceAsync(ct);
         Assert.True(SpinWait.SpinUntil(() => notifications.AskCount == 1, 5000), "the dialog never opened");
@@ -933,7 +960,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
             notifications, launcher, NewSettings(), Substitute.For<IAgentRunService>(),
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
 
@@ -980,7 +1008,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
             notifications, launcher, NewSettings(), Substitute.For<IAgentRunService>(),
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
 
@@ -1027,7 +1056,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
             notifications, launcher, NewSettings(), Substitute.For<IAgentRunService>(),
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
         Assert.Equal(1, notifications.AskCount);
@@ -1089,7 +1119,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
             notifications, launcher, NewSettings(), runs,
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
         Assert.True(await WaitUntilAsync(() => notifications.AskCount == 1, TimeSpan.FromSeconds(5), ct));
@@ -1133,7 +1164,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
             notifications, launcher, NewSettings(), Substitute.For<IAgentRunService>(),
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         // Stands in for the stopping token ExecuteAsync hands the tick.
         using var stopping = new CancellationTokenSource();
@@ -1174,7 +1206,8 @@ public class ScheduledJobBackgroundServiceTests
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
             notifications, launcher, NewSettings(), runService,
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await TickAndSettleAsync(bg, ct);
 
@@ -1205,7 +1238,8 @@ public class ScheduledJobBackgroundServiceTests
             jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
             new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(), launcher,
             NewSettings(), Substitute.For<IAgentRunService>(),
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await bg.ExecuteOnceAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
 
@@ -1245,7 +1279,8 @@ public class ScheduledJobBackgroundServiceTests
             jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
             new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
             Substitute.For<IHeadlessRunLauncher>(), NewSettings(), Substitute.For<IAgentRunService>(),
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         await TickAndSettleAsync(bg, ct);
 
@@ -1278,7 +1313,8 @@ public class ScheduledJobBackgroundServiceTests
         var notifications = new FakeNotificationSurface();
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
-            notifications, launcher, NewSettings(), runs, NullLogger<ScheduledJobBackgroundService>.Instance);
+            notifications, launcher, NewSettings(), runs, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         // No tick at all: the resume is a dispatch of its own, and the service must book it without any
         // occurrence ever coming due.
@@ -1338,7 +1374,8 @@ public class ScheduledJobBackgroundServiceTests
         var notifications = new FakeNotificationSurface();
         var bg = new ScheduledJobBackgroundService(
             jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
-            notifications, launcher, NewSettings(), runs, NullLogger<ScheduledJobBackgroundService>.Instance);
+            notifications, launcher, NewSettings(), runs, Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         launcher.ResumedRunSettled += Raise.EventWith(new ResumedRunSettledEventArgs(detached, chatId));
         launcher.ResumedRunSettled += Raise.EventWith(new ResumedRunSettledEventArgs(reparked, chatId));
@@ -1361,10 +1398,196 @@ public class ScheduledJobBackgroundServiceTests
         Assert.Empty(jobs.Failed);   // and still not through MarkRunFailedAsync, which would retire the job
     }
 
+    // ---- Meeting attendance -----------------------------------------------------------------------
+
+    private static ScheduledJob NewMeetingJob(int lateMinutes = 0) => new()
+    {
+        Name = "Standup",
+        Query = "Standup",
+        Kind = ScheduledJobKind.MeetingAttendance,
+        Recurrence = RecurrenceType.Daily,
+        TimeOfDay = TimeOnly.MinValue,
+        NextFireAt = DateTime.Now.AddMinutes(-lateMinutes).AddSeconds(-1),
+        MeetingUrl = "https://teams.microsoft.com/l/meetup-join/x",
+        MeetingConsentAckAt = DateTime.Now.AddDays(-1),
+    };
+
+    private static ScheduledJobBackgroundService NewMeetingService(
+        FakeJobService jobs,
+        FakeNotificationSurface notifications,
+        IScheduledMeetingRecorder recorder,
+        IMeetingAttendeeService? attendee = null,
+        IDirectTranscriptionService? direct = null,
+        AppSettings? settings = null)
+    {
+        var settingsService = Substitute.For<ISettingsService>();
+        settingsService.GetSettingsAsync().Returns(settings ?? new AppSettings());
+
+        return new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
+            notifications, Substitute.For<IHeadlessRunLauncher>(), settingsService,
+            Substitute.For<IAgentRunService>(), recorder,
+            attendee ?? Substitute.For<IMeetingAttendeeService>(),
+            direct ?? Substitute.For<IDirectTranscriptionService>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_MeetingJob_RecordsAndNotifies()
+    {
+        var jobs = new FakeJobService();
+        var job = NewMeetingJob();
+        jobs.SeedDue(job);
+
+        var recorder = Substitute.For<IScheduledMeetingRecorder>();
+        recorder.RecordAsync(job.MeetingUrl!, job.Name, Arg.Any<CancellationToken>())
+            .Returns(new MeetingRecordingResult(MeetingRecordingOutcome.Saved, "sources/transcripts/meeting-x.md", null));
+
+        var notifications = new FakeNotificationSurface();
+        await TickAndSettleAsync(NewMeetingService(jobs, notifications, recorder), CancellationToken.None);
+
+        await recorder.Received(1).RecordAsync(job.MeetingUrl!, job.Name, Arg.Any<CancellationToken>());
+        Assert.Equal(1, notifications.MeetingSavedCount);
+        Assert.Equal(0, notifications.FailureCount);
+        // No chat is produced, so the completion carries no entry id rather than an empty one.
+        Assert.Single(jobs.Completed);
+        Assert.Null(jobs.Completed[0].EntryId);
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_MeetingJobLateBeyondTheJoinWindow_IsSkippedWithoutAsking()
+    {
+        var jobs = new FakeJobService();
+        var job = NewMeetingJob(lateMinutes: 30);
+        jobs.SeedDue(job);
+
+        var recorder = Substitute.For<IScheduledMeetingRecorder>();
+        var notifications = new FakeNotificationSurface();
+
+        await TickAndSettleAsync(NewMeetingService(jobs, notifications, recorder), CancellationToken.None);
+
+        await recorder.DidNotReceive().RecordAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        // The missed-run dialog is the wrong answer for a meeting: whoever would click it is in the meeting.
+        Assert.Equal(0, notifications.AskCount);
+        Assert.Equal(1, notifications.FailureCount);
+        // Skipped, not retired: the occurrence is spent so tomorrow's standup still fires.
+        Assert.Single(jobs.Advanced);
+        Assert.Empty(jobs.Failed);
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_MeetingJobJustInsideTheJoinWindow_StillJoins()
+    {
+        var jobs = new FakeJobService();
+        var job = NewMeetingJob(lateMinutes: 2);
+        jobs.SeedDue(job);
+
+        var recorder = Substitute.For<IScheduledMeetingRecorder>();
+        recorder.RecordAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new MeetingRecordingResult(MeetingRecordingOutcome.Saved, "sources/transcripts/meeting-x.md", null));
+
+        await TickAndSettleAsync(NewMeetingService(jobs, new FakeNotificationSurface(), recorder), CancellationToken.None);
+
+        await recorder.Received(1).RecordAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_MeetingJobThatCapturedNothing_CompletesWithoutAFailureStrike()
+    {
+        var jobs = new FakeJobService();
+        var job = NewMeetingJob();
+        jobs.SeedDue(job);
+
+        var recorder = Substitute.For<IScheduledMeetingRecorder>();
+        recorder.RecordAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new MeetingRecordingResult(MeetingRecordingOutcome.NothingCaptured, null, null));
+
+        var notifications = new FakeNotificationSurface();
+        await TickAndSettleAsync(NewMeetingService(jobs, notifications, recorder), CancellationToken.None);
+
+        // Attended and silent is an honest outcome; booking it as a failure would spend a strike on a
+        // meeting that worked.
+        Assert.Single(jobs.Completed);
+        Assert.Empty(jobs.Failed);
+        Assert.Equal(0, notifications.MeetingSavedCount);
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_MeetingJobThatFailedToJoin_IsBookedAsAFailure()
+    {
+        var jobs = new FakeJobService();
+        var job = NewMeetingJob();
+        jobs.SeedDue(job);
+
+        var recorder = Substitute.For<IScheduledMeetingRecorder>();
+        recorder.RecordAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new MeetingRecordingResult(MeetingRecordingOutcome.JoinFailed, null, "never admitted"));
+
+        var notifications = new FakeNotificationSurface();
+        await TickAndSettleAsync(NewMeetingService(jobs, notifications, recorder), CancellationToken.None);
+
+        Assert.Single(jobs.Failed);
+        Assert.Equal(1, notifications.FailureCount);
+        Assert.Empty(jobs.Completed);
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_MeetingJob_DoesNotDispatch_WhenTheScheduleWriteFails()
+    {
+        var jobs = new FakeJobService();
+        var job = NewMeetingJob();
+        jobs.SeedDue(job);
+        jobs.ThrowOnDispatchAdvanceFor.Add(job.Id);
+
+        var recorder = Substitute.For<IScheduledMeetingRecorder>();
+        await TickAndSettleAsync(NewMeetingService(jobs, new FakeNotificationSurface(), recorder), CancellationToken.None);
+
+        // A meeting creates no AgentRuns row, so the TriggerRef guard cannot see it: if this write faults and
+        // we dispatched anyway, every later tick would re-dispatch and refuse as busy, one strike each.
+        await recorder.DidNotReceive().RecordAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("disabled")]
+    [InlineData("no-consent")]
+    [InlineData("no-url")]
+    [InlineData("attendee-busy")]
+    [InlineData("direct-busy")]
+    public async Task ExecuteOnceAsync_MeetingJob_RefusesBeforeSpendingTheOccurrence(string flavour)
+    {
+        var jobs = new FakeJobService();
+        var job = NewMeetingJob();
+        var settings = new AppSettings();
+        var attendee = Substitute.For<IMeetingAttendeeService>();
+        var direct = Substitute.For<IDirectTranscriptionService>();
+
+        switch (flavour)
+        {
+            case "disabled": settings.MeetingAttendeeEnabled = false; break;
+            case "no-consent": job.MeetingConsentAckAt = null; break;
+            case "no-url": job.MeetingUrl = "https://example.com/not-teams"; break;
+            case "attendee-busy": attendee.State.Returns(MeetingAttendeeState.Attending); break;
+            case "direct-busy": direct.State.Returns(DirectTranscriptionState.Running); break;
+        }
+
+        jobs.SeedDue(job);
+        var recorder = Substitute.For<IScheduledMeetingRecorder>();
+        var notifications = new FakeNotificationSurface();
+
+        await TickAndSettleAsync(
+            NewMeetingService(jobs, notifications, recorder, attendee, direct, settings), CancellationToken.None);
+
+        await recorder.DidNotReceive().RecordAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        Assert.Single(jobs.Failed);
+        Assert.Equal(1, notifications.FailureCount);
+        // A job that could never have run keeps its occurrence rather than silently burning it.
+        Assert.Empty(jobs.Dispatched);
+    }
+
     private sealed class FakeJobService : IScheduledJobService
     {
         private readonly List<ScheduledJob> _due = new();
-        public List<(Guid JobId, Guid EntryId)> Completed { get; } = new();
+        public List<(Guid JobId, Guid? EntryId)> Completed { get; } = new();
         public List<(Guid JobId, string Reason)> Failed { get; } = new();
         public List<PiaFailure?> FailedDescriptors { get; } = new();
         public List<Guid> Advanced { get; } = new();
@@ -1388,7 +1611,7 @@ public class ScheduledJobBackgroundServiceTests
             => Task.FromResult<IReadOnlyList<ScheduledJob>>(
                 _due.Where(j => j.NextFireAt <= DateTime.Now).ToList());
 
-        public Task MarkRunCompleteAsync(Guid id, Guid resultEntryId)
+        public Task MarkRunCompleteAsync(Guid id, Guid? resultEntryId)
         {
             Completed.Add((id, resultEntryId));
             return Task.CompletedTask;
@@ -1444,7 +1667,7 @@ public class ScheduledJobBackgroundServiceTests
             IReadOnlyCollection<string>? grantedTools = null,
             ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false,
             Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
-            string? blueprintKey = null) => throw new NotImplementedException();
+            string? blueprintKey = null, string? meetingUrl = null, DateTime? meetingConsentAckAt = null) => throw new NotImplementedException();
 
         public Task<IReadOnlyList<ScheduledJob>> GetAllAsync() => throw new NotImplementedException();
         public Task<IReadOnlyList<ScheduledJob>> GetActiveAsync() => throw new NotImplementedException();
@@ -1459,7 +1682,8 @@ public class ScheduledJobBackgroundServiceTests
             IReadOnlyCollection<string>? grantedTools = null,
             DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null,
             Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
-            bool clearReasoningEffort = false) => throw new NotImplementedException();
+            bool clearReasoningEffort = false,
+            string? meetingUrl = null, DateTime? meetingConsentAckAt = null) => throw new NotImplementedException();
 
         /// <summary>Drives the run-now owner refusal. True by default, which is the ordinary case (a job this
         /// device owns, or a legacy row with a null owner).</summary>
@@ -1567,6 +1791,7 @@ public class ScheduledJobBackgroundServiceTests
 
         public int SuccessCount { get; private set; }
         public int FailureCount { get; private set; }
+        public int MeetingSavedCount { get; private set; }
         public Guid? LastSuccessChatId { get; private set; }
         public bool? AskAnswer { get; set; } = false;
 
@@ -1588,7 +1813,15 @@ public class ScheduledJobBackgroundServiceTests
             LastSuccessChatId = chatId;
         }
 
-        public void NotifyFailure(ScheduledJob job, string reason) => FailureCount++;
+        public void NotifyMeetingSaved(ScheduledJob job) => MeetingSavedCount++;
+
+        public void NotifyFailure(ScheduledJob job, string reason)
+        {
+            FailureCount++;
+            LastFailureReason = reason;
+        }
+
+        public string? LastFailureReason { get; private set; }
 
         public Task<bool?> AskUserToRunMissedAsync(ScheduledJob job, DateTime scheduledFireAt)
         {

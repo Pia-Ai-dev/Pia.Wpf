@@ -980,6 +980,7 @@
   <data name="Flow_BgChat_Completed" xml:space="preserve"><value>Fertig – zum Ansehen tippen</value></data>
   <data name="Flow_BgChat_Error" xml:space="preserve"><value>Mit Fehler beendet</value></data>
   <data name="Flow_Job_Success" xml:space="preserve"><value>Briefing bereit</value></data>
+  <data name="Flow_Job_MeetingSaved" xml:space="preserve"><value>Transkript gespeichert</value></data>
   <data name="Flow_Job_Failure" xml:space="preserve"><value>Lauf fehlgeschlagen</value></data>
   <data name="Flow_Todo_DueSoon" xml:space="preserve"><value>Fällig innerhalb von 24 Std.</value></data>
   <data name="Flow_Todo_OverdueDays" xml:space="preserve"><value>Überfällig · {0}T</value></data>
@@ -1281,6 +1282,12 @@
   <data name="Settings_ScheduledJobs_Status_Unknown" xml:space="preserve"><value>Unbekannter Status ({0})</value></data>
   <data name="Settings_ScheduledJobs_Kind_Research" xml:space="preserve"><value>Recherche</value></data>
   <data name="Settings_ScheduledJobs_Kind_AgentTask" xml:space="preserve"><value>Agenten-Ausführung</value></data>
+  <data name="Settings_ScheduledJobs_Kind_MeetingAttendance" xml:space="preserve"><value>Teams-Besprechung</value></data>
+  <data name="Routines_Field_MeetingUrl" xml:space="preserve"><value>Teams-Link</value></data>
+  <data name="Routines_Field_MeetingUrl_Hint" xml:space="preserve"><value>Link aus der Besprechungseinladung einfügen</value></data>
+  <data name="Routines_Field_MeetingConsent" xml:space="preserve"><value>Alle Teilnehmenden dürfen aufgezeichnet und transkribiert werden</value></data>
+  <data name="Routines_Validation_MeetingUrl" xml:space="preserve"><value>Gib einen gültigen Teams-Besprechungslink ein.</value></data>
+  <data name="Routines_Validation_MeetingConsent" xml:space="preserve"><value>Bestätige den Aufzeichnungshinweis vor dem Speichern.</value></data>
   <data name="Settings_ScheduledJobs_Recurrence_Once" xml:space="preserve"><value>Einmal</value></data>
   <data name="Settings_ScheduledJobs_Recurrence_Daily" xml:space="preserve"><value>Täglich</value></data>
   <data name="Settings_ScheduledJobs_Recurrence_Weekly" xml:space="preserve"><value>Wöchentlich</value></data>

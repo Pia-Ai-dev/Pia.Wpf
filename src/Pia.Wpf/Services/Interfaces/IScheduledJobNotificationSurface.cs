@@ -23,6 +23,13 @@ public interface IScheduledJobNotificationSurface
     void NotifyFailure(ScheduledJob job, string reason);
 
     /// <summary>
+    /// A scheduled meeting was attended and its transcript filed. Separate from <see cref="NotifySuccess"/>
+    /// because a meeting produces a vault source rather than a chat, so there is no chat to deep-link to and
+    /// an "Open chat" button would be dead. Honours quiet mode, like the other success path.
+    /// </summary>
+    void NotifyMeetingSaved(ScheduledJob job);
+
+    /// <summary>
     /// Ask the user whether to run a missed scheduled job. Returns
     /// <c>true</c> for run-now, <c>false</c> for skip, and <c>null</c> if the
     /// dialog was closed/dismissed without an answer (used by Task 12 to dedup).

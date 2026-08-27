@@ -49,7 +49,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Views.AssistantView), 18, 2,
         "AutocompletePopup,DirectTranscriptionOverlay,MeetingAttendeeOverlay,PersonaGlyph,PiaAssistantMessage," +
         "PiaChatQuickSwitcher,PiaChatTitleChip,PiaPersonaAvatar,RunProgressPanel,TodoPanelControl,VoiceModeOverlay")]
-    [InlineData(typeof(Pia.Views.RoutinesView), 15, 1, "PiaEmptyState,PiaHelpHint,PiaRoutinesSearchBar")]
+    [InlineData(typeof(Pia.Views.RoutinesView), 17, 1, "PiaEmptyState,PiaHelpHint,PiaRoutinesSearchBar")]
     [InlineData(typeof(Pia.Views.SettingsViews.PersonasView), 3, 3, "PersonaGlyph")]
     [InlineData(typeof(Pia.Views.MeetingAttendeeOverlay), 8, 1, "ListeningIndicator")]
     [InlineData(typeof(Pia.Controls.Cards.CardDecisionBar), 1, 1, "")]

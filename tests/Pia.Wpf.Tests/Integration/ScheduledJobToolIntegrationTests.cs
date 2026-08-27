@@ -9,6 +9,7 @@ using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Services.Scheduling;
 using Xunit;
+using Pia.Services.MeetingAttendee;
 
 namespace Pia.Tests.Integration;
 
@@ -67,7 +68,8 @@ public class ScheduledJobToolIntegrationTests : IDisposable
         var bg = new ScheduledJobBackgroundService(
             jobs, scopeFactory, providers, notifications,
             Substitute.For<IHeadlessRunLauncher>(), Substitute.For<ISettingsService>(), Substitute.For<IAgentRunService>(),
-            NullLogger<ScheduledJobBackgroundService>.Instance);
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IMeetingAttendeeService>(),
+            Substitute.For<IDirectTranscriptionService>(), NullLogger<ScheduledJobBackgroundService>.Instance);
 
         // Create a job via the tool handler so the path exercises the actual JSON arg parsing.
         var providerSvc = new StubProviderService();
@@ -213,6 +215,8 @@ public class ScheduledJobToolIntegrationTests : IDisposable
         public int SuccessCount { get; private set; }
 
         public void NotifySuccess(ScheduledJob job, Guid chatId, string chatTitle) => SuccessCount++;
+        public void NotifyMeetingSaved(ScheduledJob job) { }
+
         public void NotifyFailure(ScheduledJob job, string reason) { }
 
         public Task<bool?> AskUserToRunMissedAsync(ScheduledJob job, DateTime scheduledFireAt)

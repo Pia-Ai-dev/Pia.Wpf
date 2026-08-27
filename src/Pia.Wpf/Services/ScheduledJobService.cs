@@ -68,7 +68,7 @@ public class ScheduledJobService : IScheduledJobService
         Guid? providerId = null, IReadOnlyCollection<string>? grantedTools = null,
         ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false,
         Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
-        string? blueprintKey = null)
+        string? blueprintKey = null, string? meetingUrl = null, DateTime? meetingConsentAckAt = null)
     {
         var now = DateTime.Now;
         var job = new ScheduledJob
@@ -90,6 +90,8 @@ public class ScheduledJobService : IScheduledJobService
             PersonaId = personaId == Guid.Empty ? null : personaId,
             ReasoningEffort = reasoningEffort,
             BlueprintKey = string.IsNullOrWhiteSpace(blueprintKey) ? null : blueprintKey,
+            MeetingUrl = string.IsNullOrWhiteSpace(meetingUrl) ? null : meetingUrl,
+            MeetingConsentAckAt = meetingConsentAckAt,
             CreatedAt = now,
             UpdatedAt = now,
             OwnerDeviceId = await ResolveLocalDeviceIdAsync()
@@ -155,7 +157,8 @@ public class ScheduledJobService : IScheduledJobService
         DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null,
         Guid? providerId = null, IReadOnlyCollection<string>? grantedTools = null,
         DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null,
-        Guid? personaId = null, ReasoningEffort? reasoningEffort = null, bool clearReasoningEffort = false)
+        Guid? personaId = null, ReasoningEffort? reasoningEffort = null, bool clearReasoningEffort = false,
+        string? meetingUrl = null, DateTime? meetingConsentAckAt = null)
     {
         var existing = await GetAsync(id) ?? throw new InvalidOperationException($"ScheduledJob {id} not found");
 
@@ -177,6 +180,8 @@ public class ScheduledJobService : IScheduledJobService
         // ReasoningEffort.None is a real pinnable value ("no reasoning"), so it cannot double as the sentinel.
         if (clearReasoningEffort) existing.ReasoningEffort = null;
         else if (reasoningEffort is not null) existing.ReasoningEffort = reasoningEffort;
+        if (meetingUrl is not null) existing.MeetingUrl = string.IsNullOrWhiteSpace(meetingUrl) ? null : meetingUrl;
+        if (meetingConsentAckAt is not null) existing.MeetingConsentAckAt = meetingConsentAckAt;
 
         existing.NextFireAt = ComputeNextFireAt(existing, DateTime.Now);
         existing.UpdatedAt = DateTime.Now;
@@ -215,7 +220,8 @@ public class ScheduledJobService : IScheduledJobService
                 DayOfWeek=@DayOfWeek, DayOfMonth=@DayOfMonth, Month=@Month, SpecificDate=@SpecificDate,
                 GrantedTools=@GrantedTools, ProviderId=@ProviderId, NextFireAt=@NextFireAt,
                 Status=@Status, UpdatedAt=@UpdatedAt, QuietOnSuccess=@QuietOnSuccess,
-                PersonaId=@PersonaId, ReasoningEffort=@ReasoningEffort
+                PersonaId=@PersonaId, ReasoningEffort=@ReasoningEffort,
+                MeetingUrl=@MeetingUrl, MeetingConsentAckAt=@MeetingConsentAckAt
             WHERE Id=@Id
             """;
         command.Parameters.AddWithValue("@Id", existing.Id.ToString());
@@ -237,6 +243,9 @@ public class ScheduledJobService : IScheduledJobService
         command.Parameters.AddWithValue("@QuietOnSuccess", existing.QuietOnSuccess ? 1 : 0);
         command.Parameters.AddWithValue("@PersonaId", existing.PersonaId.HasValue ? (object)existing.PersonaId.Value.ToString() : DBNull.Value);
         command.Parameters.AddWithValue("@ReasoningEffort", existing.ReasoningEffort.HasValue ? (object)existing.ReasoningEffort.Value.ToString() : DBNull.Value);
+        command.Parameters.AddWithValue("@MeetingUrl", existing.MeetingUrl is not null ? (object)existing.MeetingUrl : DBNull.Value);
+        command.Parameters.AddWithValue("@MeetingConsentAckAt",
+            existing.MeetingConsentAckAt.HasValue ? (object)existing.MeetingConsentAckAt.Value.ToString("O") : DBNull.Value);
 
         await command.ExecuteNonQueryAsync();
         _logger.LogInformation("Updated scheduled job {Id} ({Status})", id, existing.Status);
@@ -283,7 +292,7 @@ public class ScheduledJobService : IScheduledJobService
         _logger.LogInformation("Enabled scheduled job {Id}", id);
     }
 
-    public async Task MarkRunCompleteAsync(Guid id, Guid resultEntryId)
+    public async Task MarkRunCompleteAsync(Guid id, Guid? resultEntryId)
     {
         var existing = await GetAsync(id) ?? throw new InvalidOperationException($"ScheduledJob {id} not found");
 
@@ -339,7 +348,7 @@ public class ScheduledJobService : IScheduledJobService
 
         command.Parameters.AddWithValue("@Id", id.ToString());
         command.Parameters.AddWithValue("@Now", DateTime.Now.ToString("O"));
-        command.Parameters.AddWithValue("@EntryId", resultEntryId.ToString());
+        command.Parameters.AddWithValue("@EntryId", resultEntryId.HasValue ? (object)resultEntryId.Value.ToString() : DBNull.Value);
         await command.ExecuteNonQueryAsync();
 
         // nextFire is non-null exactly when the recurring branch ran; pattern-match rather than
@@ -725,11 +734,11 @@ public class ScheduledJobService : IScheduledJobService
             (Id, Name, Query, Kind, GrantedTools, ProviderId, Recurrence, TimeOfDay,
              DayOfWeek, DayOfMonth, Month, SpecificDate, NextFireAt, Status, CreatedAt, UpdatedAt,
              LastFiredAt, LastResultEntryId, ConsecutiveFailures, OwnerDeviceId, QuietOnSuccess,
-             PersonaId, ReasoningEffort, BlueprintKey)
+             PersonaId, ReasoningEffort, BlueprintKey, MeetingUrl, MeetingConsentAckAt)
             VALUES (@Id, @Name, @Query, @Kind, @GrantedTools, @ProviderId, @Recurrence, @TimeOfDay,
                     @DayOfWeek, @DayOfMonth, @Month, @SpecificDate, @NextFireAt, @Status, @CreatedAt, @UpdatedAt,
                     @LastFiredAt, @LastResultEntryId, @ConsecutiveFailures, @OwnerDeviceId, @QuietOnSuccess,
-                    @PersonaId, @ReasoningEffort, @BlueprintKey)
+                    @PersonaId, @ReasoningEffort, @BlueprintKey, @MeetingUrl, @MeetingConsentAckAt)
             """;
         AddJobParameters(command, job);
         await command.ExecuteNonQueryAsync();
@@ -755,7 +764,7 @@ public class ScheduledJobService : IScheduledJobService
             SELECT Id, Name, Query, Kind, GrantedTools, ProviderId, Recurrence, TimeOfDay,
                    DayOfWeek, DayOfMonth, Month, SpecificDate, NextFireAt, Status, CreatedAt, UpdatedAt,
                    LastFiredAt, LastResultEntryId, ConsecutiveFailures, OwnerDeviceId, QuietOnSuccess,
-                   PersonaId, ReasoningEffort, BlueprintKey
+                   PersonaId, ReasoningEffort, BlueprintKey, MeetingUrl, MeetingConsentAckAt
             FROM ScheduledJobs
             {whereOrOrder}
             """;
@@ -799,6 +808,10 @@ public class ScheduledJobService : IScheduledJobService
         command.Parameters.AddWithValue("@PersonaId", job.PersonaId.HasValue ? (object)job.PersonaId.Value.ToString() : DBNull.Value);
         command.Parameters.AddWithValue("@ReasoningEffort", job.ReasoningEffort.HasValue ? (object)job.ReasoningEffort.Value.ToString() : DBNull.Value);
         command.Parameters.AddWithValue("@BlueprintKey", job.BlueprintKey is not null ? (object)job.BlueprintKey : DBNull.Value);
+        // Device-local like the pins above, and MeetingUrl additionally never reaches SyncScheduledJob: a
+        // Teams join link admits whoever holds it.
+        command.Parameters.AddWithValue("@MeetingUrl", job.MeetingUrl is not null ? (object)job.MeetingUrl : DBNull.Value);
+        command.Parameters.AddWithValue("@MeetingConsentAckAt", job.MeetingConsentAckAt.HasValue ? (object)job.MeetingConsentAckAt.Value.ToString("O") : DBNull.Value);
     }
 
     private static ScheduledJob MapJob(SqliteDataReader r) => new()
@@ -827,6 +840,8 @@ public class ScheduledJobService : IScheduledJobService
         PersonaId = r.IsDBNull(21) ? null : Guid.Parse(r.GetString(21)),
         ReasoningEffort = r.IsDBNull(22) ? null : ParseReasoningEffort(r.GetString(22)),
         BlueprintKey = r.IsDBNull(23) ? null : r.GetString(23),
+        MeetingUrl = r.IsDBNull(24) ? null : r.GetString(24),
+        MeetingConsentAckAt = r.IsDBNull(25) ? null : DateTime.Parse(r.GetString(25)),
     };
 
     /// <summary>Unknown means unset: TryParse also accepts a bare ordinal, which would reach a provider as an

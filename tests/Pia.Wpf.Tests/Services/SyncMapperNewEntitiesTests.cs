@@ -68,6 +68,29 @@ public class SyncMapperNewEntitiesTests
     };
 
     [Fact]
+    public void ScheduledJob_MeetingLink_NeverReachesTheWire()
+    {
+        const string link = "https://teams.microsoft.com/l/meetup-join/SECRET-JOIN-TOKEN";
+        var mapper = PlainMapper();
+        var original = SampleJob();
+        original.Kind = ScheduledJobKind.MeetingAttendance;
+        original.MeetingUrl = link;
+        original.MeetingConsentAckAt = new DateTime(2026, 8, 27, 9, 0, 0, DateTimeKind.Utc);
+
+        var sync = mapper.ToSyncScheduledJob(original, UserId);
+
+        // A Teams join link admits whoever holds it, so the DTO must have nowhere to put one. Serialized
+        // rather than property-by-property: a field added later would otherwise leak it silently.
+        var wire = System.Text.Json.JsonSerializer.Serialize(sync);
+        Assert.DoesNotContain("SECRET-JOIN-TOKEN", wire, StringComparison.Ordinal);
+
+        // And a pull cannot invent one either.
+        var back = mapper.FromSyncScheduledJob(sync, UserId);
+        Assert.Null(back.MeetingUrl);
+        Assert.Null(back.MeetingConsentAckAt);
+    }
+
+    [Fact]
     public void ScheduledJob_RoundTrips_Plaintext()
     {
         var mapper = PlainMapper();

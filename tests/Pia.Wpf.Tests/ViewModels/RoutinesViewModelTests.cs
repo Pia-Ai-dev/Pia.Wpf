@@ -10,6 +10,7 @@ using Pia.Services.Interfaces;
 using Pia.ViewModels;
 using Pia.ViewModels.Models;
 using Xunit;
+using Pia.Services.MeetingAttendee;
 
 namespace Pia.Tests.ViewModels;
 
@@ -90,7 +91,7 @@ public class RoutinesViewModelTests
         plugins.GetToolCatalog().Returns(ToolCatalog());
 
         var vm = new RoutinesViewModel(service, runner, providers, personas, runs, dialogs, windows, Localizer(),
-            plugins, NullLogger<RoutinesViewModel>.Instance);
+            plugins, Substitute.For<IBrowserProvisioner>(), NullLogger<RoutinesViewModel>.Instance);
 
         return new Sut(vm, service, runner, providers, personas, runs, dialogs, windows, plugins);
     }
@@ -630,7 +631,8 @@ public class RoutinesViewModelTests
         {
             vm = new RoutinesViewModel(jobs, Substitute.For<IScheduledJobRunner>(), providers, personas, runs,
                 Substitute.For<IDialogService>(), Substitute.For<IWindowManagerService>(), Localizer(),
-                Substitute.For<IPluginService>(), NullLogger<RoutinesViewModel>.Instance);
+                Substitute.For<IPluginService>(), Substitute.For<IBrowserProvisioner>(),
+                NullLogger<RoutinesViewModel>.Instance);
         }
         finally
         {

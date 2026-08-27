@@ -533,7 +533,12 @@ public class SyncClientService : ISyncClientService, IDisposable
             var memoryDtos = memories.Select(m => _mapper.ToSyncMemory(m, userId)).ToList();
             var kanbanDtos = kanbanColumns.Select(c => _mapper.ToSyncKanbanColumn(c, userId)).ToList();
             var todoDtos = todos.Select(t => _mapper.ToSyncTodo(t, userId)).ToList();
-            var jobDtos = scheduledJobs.Select(j => _mapper.ToSyncScheduledJob(j, userId)).ToList();
+            // Meeting-attendance jobs are device-local and never pushed: their MeetingUrl is a bearer token
+            // for the meeting and has no wire field, and a peer on an older build would cast the unknown
+            // Kind ordinal and run the meeting's title through the Research leg.
+            var jobDtos = scheduledJobs
+                .Where(j => j.Kind != ScheduledJobKind.MeetingAttendance)
+                .Select(j => _mapper.ToSyncScheduledJob(j, userId)).ToList();
 
             // Chunk the push into <=FirstSyncBatchSize-session bodies (Sec 6.4) so a large first sync
             // stays well within the 30/60s rate limit and never ships one multi-MB body. At least one
@@ -867,7 +872,9 @@ public class SyncClientService : ISyncClientService, IDisposable
             },
             ScheduledJobs = new SyncEntityChanges<SyncScheduledJob>
             {
+                // Device-local, for the reasons given at the first-sync push site above.
                 Upserted = scheduledJobs
+                    .Where(j => j.Kind != ScheduledJobKind.MeetingAttendance)
                     .Select(j => _mapper.ToSyncScheduledJob(j, userId))
                     .ToList(),
                 Deleted = pendingDeletes.GetValueOrDefault("scheduledJobs", [])

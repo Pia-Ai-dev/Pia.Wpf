@@ -46,6 +46,13 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
     private static readonly TimeSpan _checkInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan _gracePeriod = TimeSpan.FromMinutes(15);
 
+    /// <summary>
+    /// How late a MEETING job may still be worth joining. The 15-minute grace above ends in a dialog, which
+    /// is the wrong answer twice over here: joining most of the way through a meeting captures little, and
+    /// the person who would answer the dialog is in the meeting. So a late meeting is skipped outright.
+    /// </summary>
+    private static readonly TimeSpan _meetingJoinWindow = TimeSpan.FromMinutes(5);
+
     private readonly IScheduledJobService _jobs;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IScheduledResearchProviderResolver _providers;
@@ -53,6 +60,9 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
     private readonly IHeadlessRunLauncher _launcher;
     private readonly ISettingsService _settingsService;
     private readonly IAgentRunService _runService;
+    private readonly Services.MeetingAttendee.IScheduledMeetingRecorder _meetingRecorder;
+    private readonly Services.MeetingAttendee.IMeetingAttendeeService _meetingAttendee;
+    private readonly IDirectTranscriptionService _directTranscription;
     private readonly ILogger<ScheduledJobBackgroundService> _logger;
 
     /// <summary>
@@ -184,6 +194,9 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
         IHeadlessRunLauncher launcher,
         ISettingsService settingsService,
         IAgentRunService runService,
+        Services.MeetingAttendee.IScheduledMeetingRecorder meetingRecorder,
+        Services.MeetingAttendee.IMeetingAttendeeService meetingAttendee,
+        IDirectTranscriptionService directTranscription,
         ILogger<ScheduledJobBackgroundService> logger)
     {
         _jobs = jobs;
@@ -193,6 +206,9 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
         _launcher = launcher;
         _settingsService = settingsService;
         _runService = runService;
+        _meetingRecorder = meetingRecorder;
+        _meetingAttendee = meetingAttendee;
+        _directTranscription = directTranscription;
         _logger = logger;
 
         // T0-1(b). The launch path books its outcome from a continuation on the handle; the RESUME path hands
@@ -318,6 +334,17 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
         if (await RefuseIfAlreadyExecutingAsync(job, ct)) return;
 
         var lateBy = DateTime.Now - job.NextFireAt;
+
+        // Before the grace check, because a late meeting is never asked about: see _meetingJoinWindow. The
+        // occurrence is spent either way, so a missed weekly standup moves to next week rather than piling up.
+        if (job.Kind == ScheduledJobKind.MeetingAttendance && lateBy > _meetingJoinWindow)
+        {
+            _logger.LogInformation(
+                "Scheduled meeting {Id} skipped: {Minutes:F0} min late", job.Id, lateBy.TotalMinutes);
+            await LockedAsync(() => _jobs.AdvanceMissedRunAsync(job.Id));
+            _notifications.NotifyFailure(job, MeetingTooLateReason);
+            return;
+        }
 
         if (lateBy <= _gracePeriod)
         {
@@ -471,8 +498,102 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
     /// duplicate-dispatch guard — both legs stamp <c>TriggerRef = job.Id</c> on the run they create, so one
     /// query answers for both.
     /// </summary>
-    private Task ExecuteJobAsync(ScheduledJob job, CancellationToken ct) =>
-        job.Kind == ScheduledJobKind.AgentTask ? ExecuteAgentTaskAsync(job, ct) : ExecuteResearchAsync(job, ct);
+    private Task ExecuteJobAsync(ScheduledJob job, CancellationToken ct) => job.Kind switch
+    {
+        ScheduledJobKind.AgentTask => ExecuteAgentTaskAsync(job, ct),
+        ScheduledJobKind.MeetingAttendance => ExecuteMeetingAttendanceAsync(job, ct),
+        _ => ExecuteResearchAsync(job, ct),
+    };
+
+    /// <summary>Reasons a meeting job refused to join. Constants so the leg and its tests cannot drift.</summary>
+    internal const string MeetingTooLateReason = "Too late to join this meeting.";
+    internal const string MeetingDisabledReason = "The meeting attendee is switched off.";
+    internal const string MeetingNoConsentReason = "Recording consent was never acknowledged for this meeting.";
+    internal const string MeetingNoUrlReason = "This meeting job has no usable Teams link.";
+    internal const string MeetingBusyReason = "The local audio stack is already in use by another meeting.";
+
+    /// <summary>
+    /// Dispatches a scheduled meeting and RETURNS, like the other two legs — a meeting runs for an hour and
+    /// a tick must not wait for it. Every refusal below is checked BEFORE the schedule moves on, so a job
+    /// that could never have run keeps its occurrence rather than silently burning it.
+    /// <para>
+    /// Concurrency needs no new bound: <c>IMeetingAttendeeService</c> is a singleton that owns one browser,
+    /// and the busy check is what turns that into an honest refusal instead of a mid-meeting failure.
+    /// </para>
+    /// </summary>
+    private async Task ExecuteMeetingAttendanceAsync(ScheduledJob job, CancellationToken ct)
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+
+        var refusal = ClassifyMeetingRefusal(job, settings);
+        if (refusal is not null)
+        {
+            _logger.LogWarning("Scheduled meeting {Id} refused: {Reason}", job.Id, refusal);
+            await LockedAsync(() => _jobs.MarkRunFailedAsync(job.Id, refusal, FailureMapper.ForReason(refusal)));
+            _notifications.NotifyFailure(job, refusal);
+            return;
+        }
+
+        // A FAULTED write skips the occurrence rather than dispatching it, as on the research leg and for a
+        // sharper version of the same reason: a meeting creates no AgentRuns row, so the TriggerRef guard is
+        // blind to it entirely and this write is the ONLY thing keeping the next tick off the occurrence.
+        // Re-dispatching every 30 s would then refuse as busy each time, spending a failure strike per tick.
+        if (!await MoveScheduleOnAsync(job)) return;
+
+        TrackDispatch(RunMeetingAsync(job, ct));
+    }
+
+    private string? ClassifyMeetingRefusal(ScheduledJob job, AppSettings settings)
+    {
+        if (!settings.MeetingAttendeeEnabled) return MeetingDisabledReason;
+        if (job.MeetingConsentAckAt is null) return MeetingNoConsentReason;
+        if (!Services.MeetingAttendee.TeamsMeetingUrl.IsLikelyTeamsUrl(job.MeetingUrl)) return MeetingNoUrlReason;
+
+        // Both surfaces own the local audio stack, so only one may run at a time. The overlay enforces this
+        // for the user's own clicks; nothing enforced it for a schedule until here.
+        if (_meetingAttendee.State is not Services.MeetingAttendee.MeetingAttendeeState.Idle) return MeetingBusyReason;
+        if (_directTranscription.State is not DirectTranscriptionState.Idle) return MeetingBusyReason;
+
+        return null;
+    }
+
+    private async Task RunMeetingAsync(ScheduledJob job, CancellationToken ct)
+    {
+        try
+        {
+            var result = await _meetingRecorder.RecordAsync(job.MeetingUrl!, job.Name, ct);
+
+            if (result.Outcome is Services.MeetingAttendee.MeetingRecordingOutcome.Saved)
+            {
+                await LockedAsync(() => _jobs.MarkRunCompleteAsync(job.Id, null));
+                _notifications.NotifyMeetingSaved(job);
+                return;
+            }
+
+            if (result.Outcome is Services.MeetingAttendee.MeetingRecordingOutcome.NothingCaptured)
+            {
+                // Attended and nobody spoke, or nothing was transcribable. That is an honest outcome, not a
+                // failure — booking it as one would spend a strike on a meeting that worked.
+                await LockedAsync(() => _jobs.MarkRunCompleteAsync(job.Id, null));
+                _logger.LogInformation("Scheduled meeting {Id} produced no transcript", job.Id);
+                return;
+            }
+
+            var reason = result.Error ?? "The meeting could not be recorded.";
+            await LockedAsync(() => _jobs.MarkRunFailedAsync(job.Id, reason, FailureMapper.ForReason(reason)));
+            _notifications.NotifyFailure(job, reason);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            _logger.LogInformation("Scheduled meeting {Id} abandoned at shutdown", job.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Scheduled meeting {Id} failed", job.Id);
+            await LockedAsync(() => _jobs.MarkRunFailedAsync(job.Id, ex.Message, FailureMapper.ForReason(ex.Message)));
+            _notifications.NotifyFailure(job, ex.Message);
+        }
+    }
 
     /// <summary>
     /// Dispatches a scheduled AgentTask as a headless Planned agent run and RETURNS: everything awaited here is

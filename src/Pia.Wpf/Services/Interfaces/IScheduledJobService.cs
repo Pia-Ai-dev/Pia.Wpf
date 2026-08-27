@@ -17,7 +17,10 @@ public interface IScheduledJobService
         Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
         // Which catalog card produced this job, or null for a blank start. Device-local: a server that does not
         // know the field would null it back out on the first pull.
-        string? blueprintKey = null);
+        string? blueprintKey = null,
+        // Meeting-attendance jobs only. Device-local, and meetingUrl never crosses the wire at all — a Teams
+        // join link admits whoever holds it.
+        string? meetingUrl = null, DateTime? meetingConsentAckAt = null);
 
     Task<IReadOnlyList<ScheduledJob>> GetAllAsync();
     Task<IReadOnlyList<ScheduledJob>> GetActiveAsync();
@@ -69,14 +72,19 @@ public interface IScheduledJobService
         // T2-18 quiet mode. Trailing, defaulted and NULLABLE like every other member here: null means "leave it
         // as it is", so a caller that does not know about the flag cannot clear it.
         bool? quietOnSuccess = null,
-        Guid? personaId = null, ReasoningEffort? reasoningEffort = null, bool clearReasoningEffort = false);
+        Guid? personaId = null, ReasoningEffort? reasoningEffort = null, bool clearReasoningEffort = false,
+        string? meetingUrl = null, DateTime? meetingConsentAckAt = null);
 
     Task DeleteAsync(Guid id);
 
     Task DisableAsync(Guid id);
     Task EnableAsync(Guid id);
 
-    Task MarkRunCompleteAsync(Guid id, Guid resultEntryId);
+    /// <param name="resultEntryId">
+    /// Chat the run produced, or null when the firing legitimately produces none — a meeting files a vault
+    /// source, not a chat, and <c>Guid.Empty</c> there would read back as a deep link to nothing.
+    /// </param>
+    Task MarkRunCompleteAsync(Guid id, Guid? resultEntryId);
 
     /// <summary>
     /// Records a failed firing. A recurring job re-arms into its next occurrence and only retires as

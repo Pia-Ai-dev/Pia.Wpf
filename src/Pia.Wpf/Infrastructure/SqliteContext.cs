@@ -352,7 +352,11 @@ public class SqliteContext : IDisposable
                 PersonaId TEXT NULL,
                 ReasoningEffort TEXT NULL,
                 -- Which catalog card produced the job. Device-local for the same reason as the two pins above.
-                BlueprintKey TEXT NULL
+                BlueprintKey TEXT NULL,
+                -- Meeting-attendance jobs. Device-local, and for MeetingUrl also privacy-load-bearing: a
+                -- Teams join link is a bearer token for the meeting, so it never reaches the wire.
+                MeetingUrl TEXT NULL,
+                MeetingConsentAckAt TEXT NULL
             );
 
             CREATE INDEX IF NOT EXISTS IX_ScheduledJobs_NextFireAt ON ScheduledJobs(NextFireAt, Status);
@@ -708,6 +712,8 @@ public class SqliteContext : IDisposable
         var hasJobPersonaId = false;
         var hasJobReasoningEffort = false;
         var hasJobBlueprintKey = false;
+        var hasJobMeetingUrl = false;
+        var hasJobMeetingConsentAckAt = false;
         using (var p = _connection!.CreateCommand())
         {
             p.CommandText = "PRAGMA table_info(ScheduledJobs)";
@@ -722,6 +728,8 @@ public class SqliteContext : IDisposable
                 else if (col == "PersonaId") hasJobPersonaId = true;
                 else if (col == "ReasoningEffort") hasJobReasoningEffort = true;
                 else if (col == "BlueprintKey") hasJobBlueprintKey = true;
+                else if (col == "MeetingUrl") hasJobMeetingUrl = true;
+                else if (col == "MeetingConsentAckAt") hasJobMeetingConsentAckAt = true;
             }
         }
         if (!hasJobUpdatedAt)
@@ -769,6 +777,18 @@ public class SqliteContext : IDisposable
         {
             using var addCol = _connection.CreateCommand();
             addCol.CommandText = "ALTER TABLE ScheduledJobs ADD COLUMN BlueprintKey TEXT NULL";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasJobMeetingUrl)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE ScheduledJobs ADD COLUMN MeetingUrl TEXT NULL";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasJobMeetingConsentAckAt)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE ScheduledJobs ADD COLUMN MeetingConsentAckAt TEXT NULL";
             addCol.ExecuteNonQuery();
         }
 

@@ -265,6 +265,8 @@
   <data name="Notification_OpenBriefing" xml:space="preserve"><value>Ouvrir</value></data>
   <data name="Notification_ScheduledResearch" xml:space="preserve"><value>Briefing planifié</value></data>
   <data name="Notification_ScheduledResearch_Body" xml:space="preserve"><value>« {0} » est prêt</value></data>
+  <data name="Notification_ScheduledMeeting" xml:space="preserve"><value>Réunion suivie</value></data>
+  <data name="Notification_ScheduledMeeting_Body" xml:space="preserve"><value>Transcription de « {0} » enregistrée</value></data>
   <data name="Notification_ScheduledResearchInApp" xml:space="preserve"><value>Briefing planifié « {0} » est prêt</value></data>
   <data name="Notification_ScheduledResearchFailed" xml:space="preserve"><value>Échec du briefing planifié</value></data>
   <data name="Notification_ScheduledResearchFailed_Body" xml:space="preserve"><value>« {0} » n'a pas pu s'exécuter — voir l'historique pour plus de détails</value></data>

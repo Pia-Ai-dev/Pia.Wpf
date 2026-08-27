@@ -1,8 +1,11 @@
 namespace Pia.Models;
 
 // Persisted as int — append-only, never reorder. AgentTask (1) runs the job's Query as an unattended
-// headless Planned agent run via IHeadlessRunLauncher (§17.1); Research (0) keeps the existing runner.
-public enum ScheduledJobKind { Research, AgentTask }
+// headless Planned agent run via IHeadlessRunLauncher; Research (0) keeps the existing runner.
+// MeetingAttendance (2) joins MeetingUrl as the browser attendee; it never crosses the sync wire,
+// because a peer on an older build would cast the unknown 2 and fall through to the Research leg,
+// running the meeting's title as a research query.
+public enum ScheduledJobKind { Research, AgentTask, MeetingAttendance }
 
 // Persisted as TEXT (Enum.Parse in ScheduledJobService.MapJob) but crosses the sync wire as an int
 // (SyncMapper.cs:905/:923 -> :953/:974, cast back with no Enum.IsDefined validation), so this enum is
@@ -109,4 +112,18 @@ public class ScheduledJob
     /// machine they were originally created on.
     /// </summary>
     public Guid? OwnerDeviceId { get; set; }
+
+    /// <summary>
+    /// Teams link a <see cref="ScheduledJobKind.MeetingAttendance"/> job joins. DEVICE-LOCAL and
+    /// deliberately absent from <c>SyncScheduledJob</c>: a join link is a bearer token for the meeting,
+    /// and <c>Query</c> is plaintext on the wire unless E2EE happens to be on.
+    /// </summary>
+    public string? MeetingUrl { get; set; }
+
+    /// <summary>
+    /// When the user acknowledged that Pia may record this meeting. Null means not acknowledged, and the
+    /// job refuses to join — the overlay's consent tick is per-session and in-memory, so an unattended
+    /// join has to carry its own. Device-local, like <see cref="MeetingUrl"/>.
+    /// </summary>
+    public DateTime? MeetingConsentAckAt { get; set; }
 }
