@@ -45,6 +45,7 @@
                Foreground="{DynamicResource TextMutedBrush}"/>
 
     <ui:HyperlinkButton Command="{Binding OpenVaultFolderCommand}"
+                        AutomationProperties.AutomationId="VaultHelp_OpenFolder"
                         HorizontalAlignment="Left"
                         Margin="0,12,0,0">
       <StackPanel Orientation="Horizontal">

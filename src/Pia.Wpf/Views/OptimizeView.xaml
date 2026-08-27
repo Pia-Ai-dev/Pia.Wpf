@@ -148,6 +148,7 @@
               </Grid.RowDefinitions>
 
               <ui:TextBox x:Name="InputTextBox" Grid.Row="0"
+                          AutomationProperties.AutomationId="OptimizeWindow_Input"
                           Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
                           PlaceholderText="{loc:Str Optimize_InputPlaceholder}"
                           PlaceholderEnabled="True"
@@ -171,6 +172,7 @@
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                   <!-- Clear button -->
                   <ui:Button Command="{Binding ClearInputCommand}"
+                             AutomationProperties.AutomationId="OptimizeWindow_Clear"
                              Appearance="Transparent"
                              Width="36"
                              Height="36"
@@ -185,6 +187,7 @@
 
                   <!-- Record button -->
                   <ui:Button Command="{Binding ToggleRecordingCommand}"
+                             AutomationProperties.AutomationId="OptimizeWindow_Record"
                              Appearance="Transparent"
                              Width="36"
                              Height="36"
@@ -196,7 +199,8 @@
                   </ui:Button>
 
                   <!-- Attach file button -->
-                  <ui:Button Appearance="Transparent"
+                  <ui:Button AutomationProperties.AutomationId="OptimizeWindow_Attach"
+                             Appearance="Transparent"
                              Width="36"
                              Height="36"
                              Padding="0"
@@ -210,7 +214,8 @@
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                   <!-- Template combo -->
-                  <ComboBox ItemsSource="{Binding Templates}"
+                  <ComboBox AutomationProperties.AutomationId="OptimizeWindow_Template"
+                            ItemsSource="{Binding Templates}"
                             SelectedValue="{Binding SelectedTemplateId}"
                             DisplayMemberPath="Name"
                             SelectedValuePath="Id"
@@ -223,7 +228,8 @@
                             local:ComboBoxBehaviors.DropDownOpenedCommand="{Binding LoadTemplatesCommand}" />
 
                   <!-- Language combo -->
-                  <ComboBox ItemsSource="{Binding Languages}"
+                  <ComboBox AutomationProperties.AutomationId="OptimizeWindow_LanguagePicker"
+                            ItemsSource="{Binding Languages}"
                             SelectedItem="{Binding SelectedLanguage, UpdateSourceTrigger=PropertyChanged}"
                             Width="84"
                             Height="36"
@@ -235,7 +241,8 @@
                     <ComboBox.ItemTemplate>
                       <DataTemplate>
                         <!-- Flag glyph; per-item tooltip shows the language name. -->
-                        <Image Width="24" Height="16"
+                        <Image AutomationProperties.AutomationId="{Binding StringFormat='OptimizeWindow_LanguageItem_{0}'}"
+                               Width="24" Height="16"
                                Stretch="Uniform"
                                SnapsToDevicePixels="True"
                                RenderOptions.BitmapScalingMode="HighQuality">
@@ -264,6 +271,7 @@
 
                   <!-- Optimize button (Primary) -->
                   <ui:Button Command="{Binding OptimizeCommand}"
+                             AutomationProperties.AutomationId="OptimizeWindow_Optimize"
                              Appearance="Primary"
                              Height="36"
                              Padding="14,0"
@@ -336,7 +344,8 @@
                         CornerRadius="8"
                         Padding="12">
                   <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <TextBox Text="{Binding InputText}"
+                    <TextBox AutomationProperties.AutomationId="OptimizeWindow_OriginalText"
+                             Text="{Binding InputText}"
                              IsReadOnly="True"
                              Background="Transparent"
                              BorderThickness="0"
@@ -390,7 +399,8 @@
                         CornerRadius="8"
                         Padding="12">
                   <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <TextBox Text="{Binding OptimizedText}"
+                    <TextBox AutomationProperties.AutomationId="OptimizeWindow_ResultText"
+                             Text="{Binding OptimizedText}"
                              Background="Transparent"
                              BorderThickness="0"
                              TextWrapping="Wrap"
@@ -426,6 +436,7 @@
 
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
             <ui:Button Command="{Binding CopyToClipboardCommand}"
+                       AutomationProperties.AutomationId="OptimizeWindow_Copy"
                        Icon="{ui:SymbolIcon Symbol=Copy20}"
                        Appearance="Transparent"
                        Margin="0,0,4,0"
@@ -433,6 +444,7 @@
                        AutomationProperties.Name="{loc:Str Optimize_Copy_Tooltip}"
                        ToolTip="{loc:Str Optimize_Copy_Tooltip}" />
             <ui:Button Command="{Binding RejectCommand}"
+                       AutomationProperties.AutomationId="OptimizeWindow_Reject"
                        Appearance="Secondary"
                        Height="36"
                        Padding="12,0"
@@ -445,6 +457,7 @@
               </StackPanel>
             </ui:Button>
             <ui:Button x:Name="SendToButton"
+                       AutomationProperties.AutomationId="OptimizeWindow_SendTo"
                        Appearance="Secondary"
                        Height="36"
                        Padding="12,0"
@@ -458,6 +471,7 @@
               <ui:Button.ContextMenu>
                 <ContextMenu>
                   <MenuItem Header="{loc:Str Nav_Assistant}"
+                            AutomationProperties.AutomationId="OptimizeWindow_TargetAssistant"
                             Command="{Binding SendToModeCommand}"
                             CommandParameter="Assistant">
                     <MenuItem.Icon>
@@ -468,6 +482,7 @@
               </ui:Button.ContextMenu>
             </ui:Button>
             <ui:Button Command="{Binding AcceptCommand}"
+                       AutomationProperties.AutomationId="OptimizeWindow_Accept"
                        Appearance="Primary"
                        Height="36"
                        Padding="14,0"

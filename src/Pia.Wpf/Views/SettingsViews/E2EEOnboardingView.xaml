@@ -46,7 +46,8 @@
           <ui:Button Content="{loc:Str E2EE_Onboarding_Approve_Button}"
                      Appearance="Primary"
                      HorizontalAlignment="Left"
-                     Command="{Binding OnboardingViewModel.StartDeviceApprovalCommand}"/>
+                     Command="{Binding OnboardingViewModel.StartDeviceApprovalCommand}"
+                     AutomationProperties.AutomationId="E2EEOnboarding_StartApproval"/>
         </StackPanel>
       </Border>
 
@@ -66,7 +67,8 @@
           <ui:Button Content="{loc:Str E2EE_Onboarding_Recovery_Button}"
                      Appearance="Secondary"
                      HorizontalAlignment="Left"
-                     Command="{Binding OnboardingViewModel.ShowRecoveryCodeEntryCommand}"/>
+                     Command="{Binding OnboardingViewModel.ShowRecoveryCodeEntryCommand}"
+                     AutomationProperties.AutomationId="E2EEOnboarding_ShowRecoveryEntry"/>
         </StackPanel>
       </Border>
     </StackPanel>
@@ -117,10 +119,12 @@
             <ui:Button Content="{loc:Str E2EE_Onboarding_Cancel}"
                        Appearance="Secondary"
                        Command="{Binding OnboardingViewModel.GoBackCommand}"
+                       AutomationProperties.AutomationId="E2EEOnboarding_WaitingCancel"
                        Margin="0,0,8,0"/>
             <ui:Button Content="{loc:Str E2EE_Onboarding_UseRecoveryInstead}"
                        Appearance="Secondary"
-                       Command="{Binding OnboardingViewModel.ShowRecoveryCodeEntryCommand}"/>
+                       Command="{Binding OnboardingViewModel.ShowRecoveryCodeEntryCommand}"
+                       AutomationProperties.AutomationId="E2EEOnboarding_WaitingShowRecoveryEntry"/>
           </StackPanel>
         </StackPanel>
       </Border>
@@ -155,6 +159,7 @@
 
           <ui:TextBox PlaceholderText="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
                       Text="{Binding OnboardingViewModel.RecoveryCodeInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                      AutomationProperties.AutomationId="E2EEOnboarding_RecoveryCodeInput"
                       FontFamily="{StaticResource PiaMonoFont}"
                       FontSize="14"
                       Margin="0,0,0,8"/>
@@ -171,10 +176,12 @@
             <ui:Button Content="{loc:Str E2EE_Onboarding_Recovery_Activate}"
                        Appearance="Primary"
                        Command="{Binding OnboardingViewModel.ActivateWithRecoveryCodeCommand}"
+                       AutomationProperties.AutomationId="E2EEOnboarding_ActivateWithRecoveryCode"
                        Margin="0,0,8,0"/>
             <ui:Button Content="{loc:Str E2EE_Onboarding_Back}"
                        Appearance="Secondary"
-                       Command="{Binding OnboardingViewModel.GoBackCommand}"/>
+                       Command="{Binding OnboardingViewModel.GoBackCommand}"
+                       AutomationProperties.AutomationId="E2EEOnboarding_RecoveryBack"/>
           </StackPanel>
         </StackPanel>
       </Border>
@@ -262,7 +269,8 @@
           <ui:Button Content="{loc:Str E2EE_Onboarding_TryAgain}"
                      Appearance="Secondary"
                      HorizontalAlignment="Left"
-                     Command="{Binding OnboardingViewModel.GoBackCommand}"/>
+                     Command="{Binding OnboardingViewModel.GoBackCommand}"
+                     AutomationProperties.AutomationId="E2EEOnboarding_ErrorTryAgain"/>
         </StackPanel>
       </Border>
     </StackPanel>

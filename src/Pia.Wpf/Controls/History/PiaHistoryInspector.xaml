@@ -34,10 +34,12 @@
                          Content="{loc:Str History_Inspector_Tab_Optimized}"
                          GroupName="HistoryInspectorTabs"
                          IsChecked="True"
+                         AutomationProperties.AutomationId="HistorySession_TabOptimized"
                          Style="{StaticResource PiaSegmentedButton}"/>
             <RadioButton x:Name="OriginalTab"
                          Content="{loc:Str History_Inspector_Tab_Original}"
                          GroupName="HistoryInspectorTabs"
+                         AutomationProperties.AutomationId="HistorySession_TabOriginal"
                          Style="{StaticResource PiaSegmentedButton}"/>
           </StackPanel>
         </Border>
@@ -46,6 +48,7 @@
                    Icon="{ui:SymbolIcon Symbol=Copy20}"
                    Appearance="Transparent"
                    ToolTip="{loc:Str History_CopyOptimized}"
+                   AutomationProperties.AutomationId="HistorySession_CopyOptimized"
                    Command="{Binding DataContext.CopyOptimizedCommand, RelativeSource={RelativeSource AncestorType=views:HistoryView}}"
                    Visibility="{Binding ElementName=OptimizedTab, Path=IsChecked, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
@@ -53,6 +56,7 @@
                    Icon="{ui:SymbolIcon Symbol=Copy20}"
                    Appearance="Transparent"
                    ToolTip="{loc:Str History_CopyOriginal}"
+                   AutomationProperties.AutomationId="HistorySession_CopyOriginal"
                    Command="{Binding DataContext.CopyOriginalCommand, RelativeSource={RelativeSource AncestorType=views:HistoryView}}"
                    Visibility="{Binding ElementName=OriginalTab, Path=IsChecked, Converter={StaticResource BooleanToVisibilityConverter}}"/>
       </Grid>
@@ -66,6 +70,7 @@
                 Visibility="{Binding ElementName=OptimizedTab, Path=IsChecked, Converter={StaticResource BooleanToVisibilityConverter}}">
           <ScrollViewer VerticalScrollBarVisibility="Auto">
             <TextBox Text="{Binding OptimizedText, Mode=OneWay}"
+                     AutomationProperties.AutomationId="HistorySession_OptimizedText"
                      IsReadOnly="True"
                      Background="Transparent"
                      BorderThickness="0"
@@ -84,6 +89,7 @@
                 Visibility="{Binding ElementName=OriginalTab, Path=IsChecked, Converter={StaticResource BooleanToVisibilityConverter}}">
           <ScrollViewer VerticalScrollBarVisibility="Auto">
             <TextBox Text="{Binding OriginalText, Mode=OneWay}"
+                     AutomationProperties.AutomationId="HistorySession_OriginalText"
                      IsReadOnly="True"
                      Background="Transparent"
                      BorderThickness="0"

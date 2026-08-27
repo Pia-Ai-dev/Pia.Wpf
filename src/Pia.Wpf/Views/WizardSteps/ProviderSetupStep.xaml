@@ -40,7 +40,8 @@
                  Margin="0,0,0,4" />
       <ComboBox ItemsSource="{Binding WizardProviderTypes}"
                 SelectedItem="{Binding SelectedProviderType}"
-                Margin="0,0,0,16" />
+                Margin="0,0,0,16"
+                AutomationProperties.AutomationId="WizardProvider_Type" />
 
       <!-- Endpoint (not for PiaCloud) -->
       <StackPanel Visibility="{Binding SelectedProviderType, Converter={StaticResource ProviderTypeToVisibilityConverter}, ConverterParameter=Endpoint}">
@@ -49,7 +50,8 @@
                    Margin="0,0,0,4" />
         <ui:TextBox Text="{Binding ProviderEndpoint, UpdateSourceTrigger=PropertyChanged}"
                     PlaceholderText="http://localhost:11434/v1"
-                    Margin="0,0,0,16" />
+                    Margin="0,0,0,16"
+                    AutomationProperties.AutomationId="WizardProvider_Endpoint" />
       </StackPanel>
 
       <!-- API Key (not for Ollama or PiaCloud) -->
@@ -58,7 +60,8 @@
                    FontWeight="SemiBold"
                    Margin="0,0,0,4" />
         <ui:PasswordBox x:Name="ApiKeyPasswordBox"
-                        Margin="0,0,0,16" />
+                        Margin="0,0,0,16"
+                        AutomationProperties.AutomationId="WizardProvider_ApiKey" />
       </StackPanel>
 
       <!-- Model Name -->
@@ -74,14 +77,16 @@
           <ComboBox Grid.Column="0"
                     IsEditable="True"
                     Text="{Binding ProviderModelName, UpdateSourceTrigger=PropertyChanged}"
-                    ItemsSource="{Binding AvailableModels}" />
+                    ItemsSource="{Binding AvailableModels}"
+                    AutomationProperties.AutomationId="WizardProvider_Model" />
           <ui:Button Grid.Column="1"
                      Margin="8,0,0,0"
                      VerticalAlignment="Stretch"
                      Command="{Binding FetchModelsCommand}"
                      AutomationProperties.Name="{loc:Str Wizard_Provider_FetchModels}"
                      ToolTip="{loc:Str Wizard_Provider_FetchModels}"
-                     IsEnabled="{Binding IsFetchingModels, Converter={StaticResource InverseBooleanConverter}}">
+                     IsEnabled="{Binding IsFetchingModels, Converter={StaticResource InverseBooleanConverter}}"
+                     AutomationProperties.AutomationId="WizardProvider_FetchModels">
             <Grid>
               <ui:SymbolIcon Symbol="ArrowSync24" FontSize="16"
                              Visibility="{Binding IsFetchingModels, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
@@ -114,7 +119,8 @@
                    FontWeight="SemiBold"
                    Margin="0,0,0,4" />
         <ui:TextBox Text="{Binding AzureDeploymentName, UpdateSourceTrigger=PropertyChanged}"
-                    Margin="0,0,0,16" />
+                    Margin="0,0,0,16"
+                    AutomationProperties.AutomationId="WizardProvider_AzureDeployment" />
       </StackPanel>
 
       <!-- Test Connection -->
@@ -124,7 +130,8 @@
                    Appearance="Primary"
                    HorizontalAlignment="Left"
                    MinWidth="160"
-                   IsEnabled="{Binding IsTestingConnection, Converter={StaticResource InverseBooleanConverter}}" />
+                   IsEnabled="{Binding IsTestingConnection, Converter={StaticResource InverseBooleanConverter}}"
+                   AutomationProperties.AutomationId="WizardProvider_TestConnection" />
 
         <!-- Testing spinner -->
         <StackPanel Orientation="Horizontal" Margin="0,8,0,0">

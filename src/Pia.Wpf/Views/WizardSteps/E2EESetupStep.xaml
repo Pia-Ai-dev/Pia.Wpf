@@ -130,7 +130,8 @@
         <ui:ToggleSwitch Content="{loc:Str Wizard_E2EE_Toggle_Label}"
                          IsChecked="{Binding ShouldEnableE2EE, Mode=TwoWay}"
                          IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBooleanConverter}}"
-                         Margin="0,0,0,12"/>
+                         Margin="0,0,0,12"
+                         AutomationProperties.AutomationId="WizardE2EE_Enable"/>
 
         <!-- Bootstrapping spinner -->
         <StackPanel Orientation="Horizontal"
@@ -181,10 +182,12 @@
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
           <ui:Button Content="{loc:Str Wizard_E2EE_OptOut_GoBack}"
                      Command="{Binding OptOutGoBackCommand}"
-                     Margin="0,0,8,0"/>
+                     Margin="0,0,8,0"
+                     AutomationProperties.AutomationId="WizardE2EE_OptOutGoBack"/>
           <ui:Button Content="{loc:Str Wizard_E2EE_OptOut_Continue}"
                      Appearance="Caution"
-                     Command="{Binding ProceedCommand}"/>
+                     Command="{Binding ProceedCommand}"
+                     AutomationProperties.AutomationId="WizardE2EE_OptOutContinue"/>
         </StackPanel>
       </StackPanel>
 
@@ -235,7 +238,8 @@
                    Icon="{ui:SymbolIcon Copy24}"
                    Command="{Binding CopyRecoveryCodeCommand}"
                    HorizontalAlignment="Center"
-                   Margin="0,0,0,16"/>
+                   Margin="0,0,0,16"
+                   AutomationProperties.AutomationId="WizardE2EE_CopyRecoveryCode"/>
 
         <ui:InfoBar Severity="Warning"
                     IsOpen="True"
@@ -245,7 +249,8 @@
 
         <CheckBox Content="{loc:Str Wizard_E2EE_Recovery_Confirm}"
                   IsChecked="{Binding HasConfirmedRecoveryCode, Mode=TwoWay}"
-                  HorizontalAlignment="Center"/>
+                  HorizontalAlignment="Center"
+                  AutomationProperties.AutomationId="WizardE2EE_ConfirmRecoveryCode"/>
       </StackPanel>
 
     </StackPanel>

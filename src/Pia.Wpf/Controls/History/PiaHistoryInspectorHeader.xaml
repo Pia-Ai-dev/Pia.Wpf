@@ -45,6 +45,7 @@
         <ui:Button Icon="{ui:SymbolIcon Symbol=Delete20}"
                    Appearance="Transparent"
                    ToolTip="{loc:Str History_Delete}"
+                   AutomationProperties.AutomationId="HistorySession_Delete"
                    Foreground="{DynamicResource PiaDangerBrush}"
                    Command="{Binding DataContext.DeleteSessionCommand, RelativeSource={RelativeSource AncestorType=views:HistoryView}}"/>
       </StackPanel>

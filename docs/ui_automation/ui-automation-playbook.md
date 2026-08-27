@@ -96,6 +96,17 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Assignment consent dialog (`AssignmentConsentContentDialog`) | `AssignmentConsent_Skill`, `_Prompt`, `_Affirm`; per-record (keyed on `AssignmentScopeItemViewModel.Item.EntityId`): `AssignmentConsent_Record_<id>`. No test lock. |
 | Opt-out confirm dialog (`OptOutConfirmContentDialog`) | `OptOutConfirm_DontAskAgain`. Generic over the caller's strings, so the title is the only thing that names which confirm it is; raised by "Run in background". |
 | Assignments list (`AssignmentsView`) | `Assignments_Refresh`, `_New` (plus the existing `Assignments_Help`); per-row, keyed on `AssignmentRowViewModel.Id`: `Assignments_OpenChat_<id>`, `_Cancel_<id>`. |
+| Vault inspector (`PiaVaultInspector`) | `MemoryNote_Body` (the raw-markdown editor, edit mode only), `MemoryNote_Cancel`, `MemoryNote_Save`. Read mode shows the nested `MarkdownMessageControl` instead, whose body is `MarkdownViewer`. The pane's toolbar — `MemoryNote_Edit` / `_Copy` / `_Delete` / `_OpenObsidian` — lives one level up in `PiaInspectorHeader` and shares the prefix deliberately: it is one pane. |
+| Vault status bar (`PiaVaultStatusBar`) | `MemoryStatus_RegenerateEmbeddings` — the only control on the strip; the model-state dot and its text are non-interactive. Own prefix so `automationId*=Memory_` still means the page header. |
+| Vault help dialog (`VaultHelpContentDialog`) | `VaultHelp_OpenFolder` (reveals the vault root). Opened from `Memory_ShowHelp`; dismissed through the dialog's own close button, which has no id. No test lock. |
+| History session inspector (`PiaHistoryInspector`) | `HistorySession_TabOptimized` / `_TabOriginal` (segmented `RadioButton`s), `HistorySession_CopyOptimized` / `_CopyOriginal`, `HistorySession_OptimizedText` / `_OriginalText` (read-only). Only one half of each pair is visible at a time, keyed to the checked tab. The pane's delete button is `HistorySession_Delete`, in the nested `PiaHistoryInspectorHeader`. `PiaHistoryInspectorEmptyState` (shown when nothing is selected) has no interactive control at all. |
+| History status bar (`PiaHistoryStatusBar`) | `HistoryStatus_LoadMore` — hidden while loading, and present-but-disabled once every session is loaded (`CanExecute` is `!IsLoading && Sessions.Count < TotalCount`), so assert on enabled-ness, not presence. |
+| Assistant chat history inspector (`PiaAssistantChatInspector`) | Needs a chat selected in the list first: `AssistantHistory_Resume`, `AssistantHistory_ExportMarkdown`, `AssistantHistory_ExportArchive`, `AssistantHistory_Delete` (acts on the SELECTED chat — distinct from the per-row `AssistantChat_Delete_<id>`, and `AssistantChat_Open_<id>` resumes in one invoke without selecting). The transcript below is an `ItemsControl` of `PiaPersonaAvatar` + `PiaAssistantMessage` with no ids of its own; reach message actions through `PiaAnswerToolbar`. |
+| Optimize hotkey window (`Views/OptimizeView`) | Composer: `OptimizeWindow_Input` (deliberately NOT the legacy `InputTextBox`, which `AssistantView` owns — that literal would match across both window types), `_Clear`, `_Record`, `_Attach`, `_Template`, `_LanguagePicker` and per-flag `OptimizeWindow_LanguageItem_<EN\|DE\|FR>`, `_Optimize`. Comparison state: `_OriginalText` (read-only), `_ResultText` (editable), `_Copy`, `_Reject`, `_SendTo` (opens the menu), `_TargetAssistant` (its Assistant entry, no test lock), `_Accept`. The embedded todo panel keeps its own `TodoPanel_` ids. |
+| Settings → Plugins (`PluginsView`) | `Plugins_GoToAccount` (disconnected state only); per-plugin `Plugins_Toggle_<guid>`, keyed on `PluginItemViewModel.Id`. The guid is discovered at runtime — enumerate with `automationId*=Plugins_Toggle_`. |
+| E2EE onboarding (`E2EEOnboardingView`, hosted in Settings → Account and in the wizard's account step) | One stage visible at a time, driven by `E2EEOnboardingViewModel.State`. Initial: `E2EEOnboarding_StartApproval`, `_ShowRecoveryEntry`. WaitingForApproval: `_WaitingCancel`, `_WaitingShowRecoveryEntry`. EnteringRecoveryCode: `_RecoveryCodeInput`, `_ActivateWithRecoveryCode`, `_RecoveryBack`. Error: `_ErrorTryAgain`. Activating and Success have no controls. |
+| First-run wizard shell (`FirstRunWizardWindow`) | `Wizard_TitleBar` (the close button lives in its `ControlTemplate` — reach it as a descendant, it has no id of its own), `Wizard_Skip` (hidden when E2EE setup is required), `Wizard_Back` (hidden on step 0), `Wizard_Next` (its label is bound and reads Next / Get Started / Finish, so always drive it by id). Keyboard equivalents: Enter = Next, Esc = Skip, Alt+Left/Right = Back/Next. The seven progress dots are bare `Ellipse`es with no automation peer — read the step from its content, not from the dots. No test lock (root is a `Window`), but `FirstRunWizardWindowParseTests` already builds it. |
+| First-run wizard steps (`WizardSteps/`) | Welcome: `WizardWelcome_Language` (set it first — it re-localizes the rest). Account: `WizardAccount_Email`, `_Password` (a plain `PasswordBox` pushed from code-behind — `ww_set_value`, there is no binding), `_SignInLocal`, `_CreateAccount`, `_ForgotPassword`, and, when policy offers them, `_SignInGoogle` (markup-disabled), `_SignInMicrosoft`, `_SignInEntraId`; with E2EE enabled this step also hosts `E2EEOnboardingView`. E2EE: `WizardE2EE_Enable` (a `ui:ToggleSwitch` — `ww_set_checked`, no InvokePattern), `_OptOutGoBack`, `_OptOutContinue`, `_CopyRecoveryCode`, `_ConfirmRecoveryCode`. Provider: `WizardProvider_Type` (pick it first — it collapses the panels the other fields live in), `_Endpoint`, `_ApiKey`, `_Model` (editable `ComboBox`), `_FetchModels`, `_AzureDeployment`, `_TestConnection`. Profile: `WizardProfile_Name` / `_Nickname` / `_Location` with their dictation buttons `WizardProfile_VoiceName` / `_VoiceNickname` / `_VoiceLocation`, plus `_ModePersonal` / `_ModeBusiness` (selection shows only as an accent border — assert the VM state, not the button). `ModesOverviewStep` and `ReadyStep` have no interactive control at all; advance them with `Wizard_Next`. |
 
 Import and Export open a native file picker, which is not reliably scriptable: `ww_dialog handle_file`
 returns `{"success": true}` without confirming the dialog, and re-invoking the button just stacks up
@@ -279,11 +290,11 @@ Committed recordings, the settings fixture they start from and the replay harnes
   plain `Text` (`"1"`, `"2"`, …), which is a cheap “something was published” probe that needs no click
   at all — and once open, the header’s `Flow_ClearAll_Real` / `Flow_PinToggle_Real` /
   `Flow_Collapse_Real` confirm you got there.
-- **`PluginsView.xaml` and the E2EE onboarding screen hosted inside Account still have no ids.**
-  The General, Assistant, Providers, Account and Optimize *settings* views are id-addressable
-  throughout, inner tab headers included, and `tests/Pia.Wpf.Tests/Views/ViewAutomationIdTests.cs`
-  fails `dotnet test` if that stops being true. It is a test, not a build error — a missing id
-  compiles fine.
+- **`PluginsView.xaml` and the E2EE onboarding screen hosted inside Account — CLOSED 2026-08-27.**
+  Both now carry ids and their own `[InlineData]` rows (`Plugins_*` 2/1, `E2EEOnboarding_*` 8/0,
+  table above), so every *settings* view is id-addressable throughout, inner tab headers included,
+  and `tests/Pia.Wpf.Tests/Views/ViewAutomationIdTests.cs` fails `dotnet test` if that stops being
+  true. It is a test, not a build error — a missing id compiles fine.
 - **`AssistantView`, `MeetingAttendeeOverlay`, `RoutinesView`, `SettingsViews/PersonasView`'s own
   controls are covered and locked in `ViewAutomationIdTests`** (composer toolbar, suggestion
   chips, weak-provider banner, persona picker, chat/agent lever, send/run-in-background, the
@@ -332,9 +343,13 @@ Committed recordings, the settings fixture they start from and the replay harnes
   `PiaReminderRow`'s four hover actions plus `PiaReminderGroupCard`'s bucket toggle,
   `PiaHistoryGroupCard`'s bucket toggle, and (same shape, under `AssistantHistoryView`)
   `PiaAssistantChatRowContent`'s delete button plus `PiaAssistantChatGroupCard`'s bucket toggle.
-  Still open in this family: the inspector panes' own controls (`PiaVaultInspector`'s markdown
-  editor and its save/cancel pair, `PiaHistoryInspector*`) and the status bars —
-  `PiaInspectorHeader`, the Vault inspector's header chrome, now has ids and a test row. A test row or an id on the top-level view accomplishes nothing; the fix
+  **The rest of this family closed 2026-08-27**: `PiaVaultInspector` (markdown editor +
+  save/cancel), `PiaVaultStatusBar`, `PiaHistoryInspector`, `PiaHistoryInspectorHeader`,
+  `PiaHistoryStatusBar` and `PiaAssistantChatInspector` all have ids and their own rows (table
+  above), alongside `PiaInspectorHeader`. Three of the panes turned out to have nothing to id at
+  all and were deliberately left bare rather than given a vacuous row:
+  `PiaHistoryInspectorEmptyState`, `PiaHistorySessionRow` and `PiaChatStateBadge` contain no
+  control of the seven types. A test row or an id on the top-level view accomplishes nothing; the fix
   has to happen one nested control at a time. `TodoView` is the exception — unlike Vault/
   History/Reminders it declares interactive controls of its own (kanban add-bar, per-column and
   per-todo actions, table above), not pure composition; it turned out to be 9 controls, not the
@@ -342,11 +357,19 @@ Committed recordings, the settings fixture they start from and the replay harnes
   of the top-level `OptimizeView` (the Optimize hotkey window, distinct from
   `SettingsViews/OptimizeView`), the first-run wizard (`FirstRunWizardWindow` and all of
   `WizardSteps/`), and most content dialogs beyond the shared `PrimaryButton` / `CloseButton` /
-  `Dialog_RequiredHint` ids. See the checklist doc below for the file-by-file work list.
+  `Dialog_RequiredHint` ids — **all three closed 2026-08-27, table above**; `ModesOverviewStep` and
+  `ReadyStep` were the two wizard steps with no interactive control at all and stayed bare.
   **Every content dialog derives from Wpf.Ui's `ContentDialog`, not `UserControl`, with a
   constructor that takes a `ContentDialogHost`** — so `Activator.CreateInstance` fails and none of
   them can ever get a `[InlineData]` row. Check a dialog's base type and constructor before
   planning one as a test-locked item; it never is.
+- **The inverse of that rule is what actually decides test-lockability, and it had been read too
+  narrowly.** A `Window` root (`FirstRunWizardWindow`) or a parameterized constructor (every
+  `ContentDialog`) rules a view out; *everything else with a public parameterless `UserControl`
+  constructor is lockable*, including surfaces long assumed not to be — all seven `WizardSteps/`,
+  the top-level `OptimizeView`, `PluginsView` and `E2EEOnboardingView` each hold a real row now.
+  Read the `.xaml.cs` before writing a view off as ids-only; a `grep` for its constructor settles it
+  in one call, and getting it wrong silently forfeits a regression guard.
 - **The walker's nested-view check misses a `UserControl` that is the literal root of a
   `DataTemplate`.** `Collect()` re-anchors its `root` parameter to whatever `LoadContent()`
   returns, so when an `ItemTemplate`'s root is itself a `UserControl` (e.g. `PiaReminderRow` as

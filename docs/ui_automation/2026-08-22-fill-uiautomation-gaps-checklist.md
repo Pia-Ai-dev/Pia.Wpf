@@ -102,6 +102,42 @@ identity lookup for its per-record checkboxes (`AssignmentScopeItemViewModel.Ite
 `Guid` two levels down through the wrapped record). `AssignmentsView` (`I5`), unlike its sibling
 dialogs, IS a plain `UserControl` and got a real `[InlineData]` row.
 
+**Slice 9** (committed as "Give the assistant view's last id-less controls an AutomationId", gate
+green): `E3`/`E5`/`E6` — the chat-title chip and the two overlays — plus, in the same commit,
+`MainWindow`'s 5 hand-added ids, `MarkdownMessageControl`, and the `E8` reversal that ided
+`PiaSuggestionChips`/`PiaAgentModeChip` on a container index and locked them with the second test,
+`FollowUpChipAutomationIdTests`. That leaves `AssistantView` itself with no id-less control left at
+any depth.
+
+**Since slice 9** — three changes landed ids without touching this file, so it drifted:
+`AssistantChat_Open_<id>` and the `AssistantChat_Row_<id>` container id on
+`PiaAssistantChatRowContent` (see `F1`); a new `PiaRoutinesSearchBar` control, ided
+(`Routines_SearchQuery`) and locked with its own `[InlineData]` row the same day it was added, with
+`RoutinesView` growing 15 → 17 walker-visible controls as the Teams-scheduling work landed; and
+`OptOutConfirmContentDialog`, a new `ui:ContentDialog` that arrived with its one id
+(`OptOutConfirm_DontAskAgain`) already on it. None of the three is an open gap — they are recorded
+here so the "exact remaining scope" claim above stays true.
+
+**Slice 10** (2026-08-27, the last slice — every remaining item): `A4`/`A6`, `D4`/`D5`, `F3`/`F4`,
+`H5`, and the whole of group `I`. Run as seven parallel units, each implemented and then re-derived
+from scratch by an independent adversarial verifier; all seven came back CLEAN, with the base types
+of every `ui:` control resolved out of Wpf.Ui 4.3.0's IL rather than assumed (`ToggleSwitch` →
+`ToggleButton`, `HyperlinkButton`/`Button` → `System.Windows.Controls.Button`, `PasswordBox` →
+`ui:TextBox` → `TextBox`; `InfoBar`/`ProgressRing`/`TitleBar`/`SymbolIcon` all excluded). 14 new
+`[InlineData]` rows, 74 new ids, 4 views deliberately dropped with zero ids
+(`PiaHistoryInspectorEmptyState`, `PiaChatStateBadge`, `ModesOverviewStep`, `ReadyStep` — all
+vacuous at floor 0). Two corrections to this file's own guesses: `PiaVaultStatusBar` was NOT "just
+status text", and the group `I` heading's "no test-lock mechanism" was wrong for four of its five
+entries. The cross-unit sweep afterwards found no new duplicate literal id anywhere in `src/` and
+one class of hygiene defect worth fixing before commit — four same-surface prefix shadowings, where
+`automationId*=X` would have returned two controls that are on screen at the same moment:
+`OptimizeWindow_Optimize` ⊂ `_OptimizedText`, `OptimizeWindow_Language` ⊂ `_LanguageItem_<id>`,
+`WizardAccount_SignIn` ⊂ `_SignInGoogle`/`_SignInMicrosoft`/`_SignInEntraId`, and `WizardProfile_Name`
+⊂ `_NameVoice` (with `_Nickname` and `_Location` the same). Renamed to `_ResultText`,
+`_LanguagePicker`, `_SignInLocal` and `WizardProfile_Voice<Field>` respectively. `WizardE2EE_*`
+containing the substring `E2EE_` was left alone: `automationId*=` is a prefix match, no field name
+is shared with `E2EE_OpenOnboarding`, and the two surfaces never render together.
+
 **Excluded, not just deferred** — `NavigationSidebarView`: its 12 `NavItem_*` buttons already all
 carry ids (verified by hand), but they hang off `ui:NavigationView.MenuItems`, which
 `LogicalTreeHelper` reports zero children for — a test row here would pass at a vacuous floor of
@@ -125,14 +161,22 @@ mechanism too, and it already has an id.
   shows up as a nested-view stop, correctly, since it's one level deeper than the template root
   (see the playbook's new "root-of-DataTemplate" hazard note).
   *Deps:* none · *Effort:* **S** · *Value:* **High** (the list you'd script against most)
-- [ ] **A4 · `PiaVaultInspector`.** The detail pane for a selected memory item.
+- [x] **A4 · `PiaVaultInspector`.** 3 walker-visible controls, measured: the raw-markdown editor
+  `MemoryNote_Body` plus the `MemoryNote_Cancel` / `_Save` pair, all three inside `Visibility`-bound
+  borders that exist only while `IsEditing`. Shares `PiaInspectorHeader`'s `MemoryNote_` prefix on
+  purpose — it is one pane, and no field name collides with that control's four. Row 3 / 0 /
+  `MarkdownMessageControl,PiaInspectorHeader`; both nested stops already hold their own rows, so the
+  read-mode body stays addressable as `MarkdownViewer`.
   *Deps:* none · *Effort:* **S** · *Value:* **Med**
 - [x] **A5 · `PiaInspectorHeader`.** Shared inspector header chrome (Vault uses it; check reuse).
   Landed with the Obsidian button: `MemoryNote_Edit` / `_Copy` / `_Delete` / `_OpenObsidian`, on its own
   prefix so the page header's `Memory_*` buttons stay prefix-disjoint. Only Vault uses it — no other
   reuse to check. `PiaTypeChip` is its one nested-view stop.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
-- [ ] **A6 · `PiaVaultStatusBar`.** Bottom bar — likely just status text; confirm no dead buttons.
+- [x] **A6 · `PiaVaultStatusBar`.** The "likely just status text" guess did not hold: it owns one
+  real `Button` bound to `RegenerateEmbeddingsCommand`, now `MemoryStatus_RegenerateEmbeddings`, so
+  it earns a row (1 / 0 / empty) instead of being dropped. The state dot and its label are an
+  `Ellipse` and a `Run`-composed `TextBlock` driven by `Style` triggers the walker never expands.
   *Deps:* none · *Effort:* **XS** · *Value:* **Enabler**
 
 ## B — Todo
@@ -197,10 +241,18 @@ mechanism too, and it already has an id.
   need checking every other item type actually exposes a usable identity too; treat as a
   separate design question if a script ever needs it.
   *Deps:* none · *Effort:* **S** · *Value:* **Med**
-- [ ] **D4 · `PiaHistoryInspector`, `PiaHistoryInspectorHeader`, `PiaHistoryInspectorEmptyState`.**
-  Detail pane for a selected session.
+- [x] **D4 · `PiaHistoryInspector`, `PiaHistoryInspectorHeader`, `PiaHistoryInspectorEmptyState`.**
+  Prefix `HistorySession_`, deliberately not the page-level `History_`. The inspector measured 6 —
+  two segmented `RadioButton` tabs, two copy buttons, two read-only `TextBox`es, one half of each
+  pair collapsed at a time — row 6 / 0 / `PiaHistoryInspectorHeader`; the header measured 1
+  (`HistorySession_Delete`), row 1 / 0 / empty. `PiaHistoryInspectorEmptyState` is
+  `Border` → `StackPanel` → icon + two `TextBlock`s: zero controls, so no ids and no row, the same
+  vacuous-floor call as `J2` and `E7`. Anchor a "nothing selected" assertion on the absence of
+  `HistorySession_*` rather than on an id of its own.
   *Deps:* none · *Effort:* **S** · *Value:* **Med**
-- [ ] **D5 · `PiaHistoryStatusBar`.** Bottom bar; confirm no dead buttons.
+- [x] **D5 · `PiaHistoryStatusBar`.** One `Button`, `HistoryStatus_LoadMore`; row 1 / 0 / empty. It
+  is collapsed while a load is in flight and present-but-disabled once every session is loaded, so a
+  script asserts presence plus `IsEnabled`, never clickability.
   *Deps:* none · *Effort:* **XS** · *Value:* **Enabler**
 
 ## E — Chat composer internals (nested under `AssistantView`, listed as gaps there)
@@ -324,9 +376,14 @@ nested rows do not)
 - [x] **F1 · `PiaAssistantChatRow`, `PiaAssistantChatRowContent`.** `PiaAssistantChatRow` itself
   has no direct controls — it just hosts `PiaAssistantChatRowContent`, a second nested
   `UserControl`, which is a genuine (one-level-deeper) nested-view stop, not the swept-in hazard
-  case. So the fix landed on `PiaAssistantChatRowContent`'s one delete button, ided per-chat
+  case. So the fix landed on `PiaAssistantChatRowContent`'s delete button, ided per-chat
   keyed on `AssistantChatRowViewModel.Id` (`Chat.Id`): `AssistantChat_Delete_<id>`. Given its own
-  standalone `[InlineData]` row (floor 1, 1 per-item, nested `PiaChatStateBadge`).
+  standalone `[InlineData]` row (nested `PiaChatStateBadge`). A later change ("Let a script open a
+  named past chat, not only delete one") added the sibling `AssistantChat_Open_<id>`, taking this
+  row to floor 2, 2 per-item — the control is now 2 buttons, not the 1 this entry originally landed
+  — and gave the row CONTAINER an `AssistantChat_Row_<id>` through
+  `PiaAssistantChatGroupCard`'s `ItemContainerStyle` (a `ListBoxItem`, so it is not walker-visible
+  and `F2`'s floor is unchanged).
   *Deps:* none · *Effort:* **S** · *Value:* **High**
 - [x] **F2 · `PiaAssistantChatGroupCard`.** Bundled with F1 since it's the same header-toggle
   shape as A3/C4/D3. Ided the header expand/collapse toggle, per-bucket:
@@ -338,11 +395,18 @@ nested rows do not)
   the row-content control, since it's one level deeper than the swept-in `PiaAssistantChatRow`
   template root, not the hazard case).
   *Deps:* F1 · *Effort:* **XS** · *Value:* **Med**
-- [ ] **F3 · `PiaAssistantChatInspector`.** Already has 1 id; audit the rest (export archive
-  button is already covered per the playbook table — confirm nothing else is missing).
+- [x] **F3 · `PiaAssistantChatInspector`.** Three were missing beside the `AssistantHistory_ExportArchive`
+  it already carried; continued the same prefix with `_Resume`, `_ExportMarkdown`, `_Delete`. Row
+  4 / 0 / `PiaAssistantMessage,PiaPersonaAvatar` — the only new row whose nested list comes out of
+  an expanded `ItemTemplate` rather than the plain logical tree. `AssistantHistory_Delete` acts on
+  the SELECTED chat and is a different affordance from the row's own `AssistantChat_Delete_<id>`;
+  the transcript below holds no ids, so message actions stay on `PiaAnswerToolbar`.
   *Deps:* none · *Effort:* **S** · *Value:* **Med**
-- [ ] **F4 · `PiaChatStateBadge`.** Small status badge; confirm whether it has any interactive
-  part at all (may be display-only, in which case drop it from this list).
+- [x] **F4 · `PiaChatStateBadge`.** Settled: display-only, so dropped rather than ided. The whole
+  markup is `Border` → `StackPanel` → `ui:SymbolIcon` + `TextBlock`, with no command, no click
+  handler, and a code-behind that is the generated constructor alone. No ids, no row — same call as
+  `J2` and `E7`. It stays visible to the suite as a nested-view stop in the
+  `PiaAssistantChatRowContent` and `FlowView` rows; read its UIA name to assert state.
   *Deps:* none · *Effort:* **XS** · *Value:* **Enabler**
 
 ## G — Cards & Flow
@@ -394,10 +458,17 @@ nested rows do not)
 
 ## H — Content dialogs with zero ids beyond the shared `PrimaryButton`/`CloseButton`
 
-All four derive from Wpf.Ui's `ContentDialog`, not `UserControl`, with constructors that take a
+`H1`-`H4` all derive from Wpf.Ui's `ContentDialog`, not `UserControl`, with constructors that take a
 `ContentDialogHost` (and more) — so `Activator.CreateInstance(viewType)` fails and none of these
-can ever get a `[InlineData]` row. Same shape as the `I` group below: ids only, no test lock, no
-measured floor.
+can ever get a `[InlineData]` row: ids only, no test lock, no measured floor.
+
+`H5` was missed when this list was built — the original scoping grep only walked files whose root is
+`<UserControl`, which is right for the test mechanism but wrong for "which dialogs need ids". A
+re-scan of `src/Pia.Wpf/Views/Dialogs/` on 2026-08-27 found exactly one id-less dialog with an
+interactive control of its own; the other seven id-less ones (`FolderMove`, `HotkeyCapture`,
+`MissedScheduledJob`, `ModelDownload`, `Optimizing`, `Recording`, `Transcribing`) are progress or
+message dialogs whose only buttons are `ContentDialog`'s shared `PrimaryButton`/`CloseButton`, which
+this group excludes by definition.
 
 - [x] **H1 · `TodoEditContentDialog`.** `TodoEdit_Title`, `_Notes`, `_Priority`, `_DueDate` (the
   `DatePicker`, no test lock possible anyway).
@@ -412,21 +483,50 @@ measured floor.
   assignments. `AssignmentConsent_Skill`, `_Prompt`, `_Affirm`; per-record (keyed on
   `AssignmentScopeItemViewModel.Item.EntityId`): `AssignmentConsent_Record_<id>`.
   *Deps:* none · *Effort:* **S** · *Value:* **Med**
+- [x] **H5 · `VaultHelpContentDialog`.** `VaultHelp_OpenFolder` on its one `ui:HyperlinkButton`; the
+  other six elements are `TextBlock`s. Ctor is `(ContentDialogHost, string vaultRoot)`, so no row —
+  exactly the `H1`-`H4` shape.
+  *Deps:* none · *Effort:* **XS** · *Value:* **Med**
 
-## I — Wizard, top-level Optimize, and remaining Settings gaps (no test-lock mechanism; ids only)
+## I — Wizard, top-level Optimize, and remaining Settings gaps
 
-- [ ] **I1 · `FirstRunWizardWindow` + all of `WizardSteps/`.** Root is a `Window` — a prior UI
-  round already found it unparseable via pack URI; investigate that before adding ids, not after.
-  Runs once per install, lowest traffic on this list.
+This group's original heading said "no test-lock mechanism; ids only". That was wrong for four of
+its five entries and is corrected here: only `FirstRunWizardWindow` itself is a `Window` with a
+parameterized constructor. The seven `WizardSteps/`, `OptimizeView`, `PluginsView` and
+`E2EEOnboardingView` are all plain `UserControl`s with a public parameterless constructor
+(verified 2026-08-27), so `Activator.CreateInstance` reaches them and each one can hold a real
+`[InlineData]` row — same as `I5` already does.
+
+- [x] **I1 · `FirstRunWizardWindow` + all of `WizardSteps/`.** The pack-URI worry was investigated
+  first, as this entry demanded, and it does not stand: `FirstRunWizardWindowParseTests` already
+  builds the window under the same `WpfStaHost` and asserts its binding paths, so nothing here is
+  unparseable today. The window is a `ui:FluentWindow` whose ctor takes three services — ids only:
+  `Wizard_TitleBar` (the close button lives in its `ControlTemplate`, reachable only as a
+  descendant), `_Skip`, `_Back`, `_Next`. The seven progress dots are bare `Ellipse`es with no
+  automation peer, so a script reads the step from its content. Five of the seven steps got ids AND
+  a row: `WelcomeStep` 1 / 0, `UserProfileStep` 8 / 0, `ProviderSetupStep` 7 / 0, `AccountSetupStep`
+  8 / 0 / `E2EEOnboardingView` (it really does host that control), `E2EESetupStep` 5 / 0.
+  `ModesOverviewStep` and `ReadyStep` hold no interactive control at all and stayed bare.
   *Deps:* none · *Effort:* **M** · *Value:* **Low**
-- [ ] **I2 · Top-level `OptimizeView.xaml`** (the Optimize hotkey window, distinct from
-  `SettingsViews/OptimizeView`). **Do not reuse the literal id `InputTextBox`** — its composer box
-  shares the `x:Name` with `AssistantView`'s, and a script targeting "the chat input" would then
-  match two elements across window types.
+- [x] **I2 · Top-level `OptimizeView.xaml`** (the Optimize hotkey window, distinct from
+  `SettingsViews/OptimizeView`). 13 walker-visible controls measured, floor set to 12 — the one row
+  in this slice with deliberate headroom. Prefix `OptimizeWindow_`, and the composer box is
+  `OptimizeWindow_Input`, so the literal `InputTextBox` now resolves to `AssistantView`'s composer
+  alone, as this entry required. Row 12 / 0 / `TodoPanelControl`. The language flags carry the one
+  binding-form id here (`OptimizeWindow_LanguageItem_<EN|DE|FR>`, a pathless
+  `{Binding StringFormat=…}` onto the bare string item) but they are `Image`s, not one of the seven,
+  so the per-item floor is honestly 0.
   *Deps:* none · *Effort:* **M** (555 lines) · *Value:* **Med**
-- [ ] **I3 · `SettingsViews/PluginsView.xaml`.** Long-standing known gap.
+- [x] **I3 · `SettingsViews/PluginsView.xaml`.** `Plugins_GoToAccount` on the disconnected-state
+  button, plus per-plugin `Plugins_Toggle_<guid>` keyed on `PluginItemViewModel.Id` — a projection
+  of `SyncPlugin.Id`, not the display name. Row 2 / 1 / empty.
   *Deps:* none · *Effort:* **S** · *Value:* **Med**
-- [ ] **I4 · `SettingsViews/E2EEOnboardingView.xaml`.** Long-standing known gap.
+- [x] **I4 · `SettingsViews/E2EEOnboardingView.xaml`.** 8 controls across five mutually exclusive
+  stages that all live in one tree, so the affordance that repeats across two stages got
+  stage-qualified names rather than one shared id (`_ShowRecoveryEntry` vs
+  `_WaitingShowRecoveryEntry`) — the split `DirectTranscriptionOverlay`'s three close buttons
+  needed. Row 8 / 0 / empty. `AccountView`'s existing row is unaffected: this control was already a
+  nested stop there.
   *Deps:* none · *Effort:* **S** · *Value:* **Med**
 - [x] **I5 · `AssignmentsView.xaml`.** Header: `Assignments_Refresh`, `_New` (already had
   `Assignments_Help`). Per-row (keyed on `AssignmentRowViewModel.Id`): `Assignments_OpenChat_<id>`,
@@ -463,6 +563,50 @@ E2 → E4 → E7 → E9 → E8                                  # DONE (slice 6)
 G2 → G3 → G4                                            # DONE (slice 7) — Cards & Flow
 H1 → H2 → H3 → H4 → I5                                  # DONE (slice 8) — dialogs + Assignments
 E3 → E5 → E6                                            # DONE (slice 9) — chat-title chip + the two overlays
-I3 → I4                                                 # the long-standing Settings gaps — next up
-I2 → I1                                                 # the wizard, lowest value/traffic
+A4 · A6 · D4 · D5 · F3 · F4 · H5 · I1 · I2 · I3 · I4    # DONE (slice 10) — everything that was left
 ```
+
+Every item on this list is now closed. What remains is not planning work — it is the live
+confirmation below, which needs a Windows desktop.
+
+## Open: live confirmation on Windows
+
+**Nothing in slice 10 was executed.** It was written on macOS, where `net10.0-windows` compiles
+(`dotnet build -p:EnableWindowsTargeting=true`, clean rebuild, `0 Warning(s)` / `0 Error(s)` in both
+Debug and Release) but no test can run and no window can open. Two things are therefore outstanding,
+in this order.
+
+**1. Run the gate.** `dotnet test` on Windows, no filter, bar is `failed: 0`. The 14 new rows have
+never executed. Their assertions fail in characteristic ways, so read the message before touching
+the XAML:
+
+- *"only N interactive controls were inspected … below the non-vacuity floor of M"* — a floor is
+  one too high. Eleven of the 14 rows use the exact measured count with no headroom (only
+  `Pia.Views.OptimizeView` at 12-of-13 has slack), so this is the likeliest failure. The fix is to
+  drop that row's floor to N, not to add an id. Most exposed: `ProviderSetupStep` at 7, whose only
+  unverified arm is `ui:PasswordBox` deriving from `TextBoxBase` — if that is wrong the row is 6.
+- *`Assert.Equal` on the nested-view list* — an exact comparison, so it fails loudly rather than
+  degrading. `PiaVaultInspector`'s `"MarkdownMessageControl,PiaInspectorHeader"` depends on
+  `ScrollViewer` reporting its `Content` as a logical child, and `PiaAssistantChatInspector`'s
+  `"PiaAssistantMessage,PiaPersonaAvatar"` is the one list that comes out of an expanded
+  `ItemTemplate` rather than the plain tree.
+- *An exception rather than an assertion* — a view that cannot be constructed at all. Five wizard
+  steps and `Pia.Views.OptimizeView` have never been instantiated standalone under `WpfStaHost`.
+  `IOException("Cannot locate resource")` here means a re-introduced authority-only pack URI, not a
+  missing id.
+
+**2. Confirm the ids reach the live UIA tree** with WinWright, per
+[`ui-automation-playbook.md`](ui-automation-playbook.md). A green test row only proves an id is
+present on a constructed object; it says nothing about whether a script can drive it. Ranked by what
+a walkthrough would hit first, and by how hard the state is to reach:
+
+| Surface | What to confirm | State needed |
+|---|---|---|
+| First-run wizard (`Wizard_*`, `Wizard<Step>_*`) | Drive the whole flow end to end with ids only, no pixel offsets. Cheapest single signal that the ids reached the live tree: `Wizard_Back` is absent on step 0 and present after. `WizardE2EE_Enable` is a `ui:ToggleSwitch` with no InvokePattern — `ww_set_checked`, not a click. | A fresh `PIA_DATA_DIR`. Re-reachable afterwards through `Setup_RunWizard` without wiping again. |
+| Optimize hotkey window (`OptimizeWindow_*`) | Input state, then the comparison state after a real optimization. `OptimizeWindow_LanguageItem_<EN\|DE\|FR>` is the one id whose binding cannot be checked without opening the dropdown. `OptimizeWindow_TargetAssistant` lives in a context-menu popup — re-scan, do not search the window subtree. Confirm `InputTextBox` now matches only the Assistant composer. | A configured provider. |
+| Vault inspector + status bar (`MemoryNote_*`, `MemoryStatus_*`) | `MemoryNote_Body` / `_Cancel` / `_Save` exist only while editing; in read mode the body must be `MarkdownViewer` instead. | A profile whose vault has at least one note. Do not invoke `MemoryStatus_RegenerateEmbeddings` outside a throwaway profile — it re-embeds. |
+| History inspector + status bar (`HistorySession_*`, `HistoryStatus_*`) | Flipping the tab swaps which copy button and which text box is visible; they overlap in one grid cell, so a script that picks the wrong one hits a collapsed element. `HistoryStatus_LoadMore` needs more sessions than one page to be enabled. | A profile with saved optimize sessions. |
+| Assistant chat-history inspector (`AssistantHistory_*`) | `automationId*=AssistantHistory_Export` must return exactly three (`ExportAll`, `ExportArchive`, `ExportMarkdown`) — the shape a script must use the full id for. `AssistantHistory_Delete` acts on the selected chat, not the hovered row. | A profile with at least one saved chat. Delete only against a throwaway chat. |
+| Settings → Plugins (`Plugins_*`) | Enumerate `automationId*=Plugins_Toggle_`: one hit per plugin, each ending in a distinct guid. That is what proves the per-item binding resolved instead of collapsing to one shared id. | A signed-in cloud account with at least one synced plugin. |
+| E2EE onboarding (`E2EEOnboarding_*`) | After `_StartApproval`, the Initial pair must go Offscreen/Collapsed while the Waiting pair appears — the check that justifies the stage-qualified names. | A sync account on an E2EE-enabled server with this device not yet approved. `_ErrorTryAgain` needs a forced activation failure and may only be verifiable by inspection. |
+| Vault help dialog (`VaultHelp_OpenFolder`) | That the id survives the `ContentDialogHost` overlay — it has no test row behind it. Do not invoke unattended; it launches Explorer. | Any profile. |

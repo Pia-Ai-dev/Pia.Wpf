@@ -26,6 +26,7 @@
       <Button Grid.Column="1"
               Command="{Binding LoadMoreCommand}"
               Content="{loc:Str History_LoadMore}"
+              AutomationProperties.AutomationId="HistoryStatus_LoadMore"
               Style="{StaticResource UnstyledButton}"
               Foreground="{DynamicResource PiaAccentBrush}"
               Padding="10,4"

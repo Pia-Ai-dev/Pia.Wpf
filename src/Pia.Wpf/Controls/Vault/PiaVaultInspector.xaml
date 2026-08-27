@@ -55,6 +55,7 @@
           <TextBox Text="{Binding DataContext.EditingData,
                                   RelativeSource={RelativeSource AncestorType=views:VaultView},
                                   UpdateSourceTrigger=PropertyChanged}"
+                   AutomationProperties.AutomationId="MemoryNote_Body"
                    AcceptsReturn="True"
                    AcceptsTab="True"
                    TextWrapping="NoWrap"
@@ -78,11 +79,13 @@
                                          Converter={StaticResource BooleanToVisibilityConverter}}">
           <ui:Button Appearance="Secondary"
                      Margin="0,0,8,0"
+                     AutomationProperties.AutomationId="MemoryNote_Cancel"
                      Command="{Binding DataContext.CancelEditCommand,
                                        RelativeSource={RelativeSource AncestorType=views:VaultView}}">
             <TextBlock Text="{loc:Str Memory_Cancel}"/>
           </ui:Button>
           <ui:Button Appearance="Primary"
+                     AutomationProperties.AutomationId="MemoryNote_Save"
                      Command="{Binding DataContext.SaveEditCommand,
                                        RelativeSource={RelativeSource AncestorType=views:VaultView}}">
             <StackPanel Orientation="Horizontal">

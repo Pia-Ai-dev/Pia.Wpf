@@ -24,6 +24,7 @@
                  HorizontalAlignment="Center"
                  Margin="0,0,0,12"/>
       <ui:Button Content="{loc:Str Plugins_GoToAccount}"
+                 AutomationProperties.AutomationId="Plugins_GoToAccount"
                  Command="{Binding GoToAccountCommand}"
                  Appearance="Primary"
                  HorizontalAlignment="Center"/>
@@ -125,6 +126,7 @@
 
                   <!-- Toggle -->
                   <ui:ToggleSwitch Grid.Column="2"
+                                   AutomationProperties.AutomationId="{Binding Id, StringFormat='Plugins_Toggle_{0}'}"
                                    VerticalAlignment="Top"
                                    IsChecked="{Binding IsEnabled, Mode=TwoWay}"
                                    Command="{Binding DataContext.TogglePluginCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"

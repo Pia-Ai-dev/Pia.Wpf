@@ -89,6 +89,22 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Controls.Chat.PiaSuggestionChips), 1, 1, "")]
     [InlineData(typeof(Pia.Controls.Chat.PiaAgentModeChip), 1, 1, "")]
     [InlineData(typeof(Pia.Controls.MarkdownMessageControl), 1, 0, "")]
+    [InlineData(typeof(Pia.Controls.Vault.PiaVaultInspector), 3, 0, "MarkdownMessageControl,PiaInspectorHeader")]
+    [InlineData(typeof(Pia.Controls.Vault.PiaVaultStatusBar), 1, 0, "")]
+    [InlineData(typeof(Pia.Controls.History.PiaHistoryInspector), 6, 0, "PiaHistoryInspectorHeader")]
+    [InlineData(typeof(Pia.Controls.History.PiaHistoryInspectorHeader), 1, 0, "")]
+    [InlineData(typeof(Pia.Controls.History.PiaHistoryStatusBar), 1, 0, "")]
+    [InlineData(typeof(Pia.Controls.AssistantHistory.PiaAssistantChatInspector), 4, 0,
+        "PiaAssistantMessage,PiaPersonaAvatar")]
+    // Pia.Views.OptimizeView is the Optimize hotkey window, not the same-named settings view above.
+    [InlineData(typeof(Pia.Views.OptimizeView), 12, 0, "TodoPanelControl")]
+    [InlineData(typeof(Pia.Views.SettingsViews.PluginsView), 2, 1, "")]
+    [InlineData(typeof(Pia.Views.SettingsViews.E2EEOnboardingView), 8, 0, "")]
+    [InlineData(typeof(Pia.Views.WizardSteps.WelcomeStep), 1, 0, "")]
+    [InlineData(typeof(Pia.Views.WizardSteps.UserProfileStep), 8, 0, "")]
+    [InlineData(typeof(Pia.Views.WizardSteps.ProviderSetupStep), 7, 0, "")]
+    [InlineData(typeof(Pia.Views.WizardSteps.AccountSetupStep), 8, 0, "E2EEOnboardingView")]
+    [InlineData(typeof(Pia.Views.WizardSteps.E2EESetupStep), 5, 0, "")]
     public void EveryInteractiveControl_CarriesAnAutomationId(
         Type viewType, int minimumInspected, int minimumPerItemIds, string expectedNestedViews)
     {

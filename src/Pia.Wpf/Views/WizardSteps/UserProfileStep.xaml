@@ -38,14 +38,16 @@
         </Grid.ColumnDefinitions>
         <ui:TextBox Grid.Column="0"
                     PlaceholderText="{loc:Str Wizard_Profile_NamePlaceholder}"
-                    Text="{Binding UserName, UpdateSourceTrigger=PropertyChanged}" />
+                    Text="{Binding UserName, UpdateSourceTrigger=PropertyChanged}"
+                    AutomationProperties.AutomationId="WizardProfile_Name" />
         <ui:Button Grid.Column="1"
                    Margin="8,0,0,0"
                    Appearance="Secondary"
                    AutomationProperties.Name="{loc:Str Wizard_Profile_VoiceTooltip}"
                    ToolTip="{loc:Str Wizard_Profile_VoiceTooltip}"
                    Command="{Binding VoiceInputNameCommand}"
-                   VerticalAlignment="Stretch">
+                   VerticalAlignment="Stretch"
+                   AutomationProperties.AutomationId="WizardProfile_VoiceName">
           <ui:SymbolIcon Symbol="Mic24" FontSize="16" />
         </ui:Button>
       </Grid>
@@ -62,14 +64,16 @@
         </Grid.ColumnDefinitions>
         <ui:TextBox Grid.Column="0"
                     PlaceholderText="{loc:Str Wizard_Profile_NicknamePlaceholder}"
-                    Text="{Binding Nickname, UpdateSourceTrigger=PropertyChanged}" />
+                    Text="{Binding Nickname, UpdateSourceTrigger=PropertyChanged}"
+                    AutomationProperties.AutomationId="WizardProfile_Nickname" />
         <ui:Button Grid.Column="1"
                    Margin="8,0,0,0"
                    Appearance="Secondary"
                    AutomationProperties.Name="{loc:Str Wizard_Profile_VoiceTooltip}"
                    ToolTip="{loc:Str Wizard_Profile_VoiceTooltip}"
                    Command="{Binding VoiceInputNicknameCommand}"
-                   VerticalAlignment="Stretch">
+                   VerticalAlignment="Stretch"
+                   AutomationProperties.AutomationId="WizardProfile_VoiceNickname">
           <ui:SymbolIcon Symbol="Mic24" FontSize="16" />
         </ui:Button>
       </Grid>
@@ -86,14 +90,16 @@
         </Grid.ColumnDefinitions>
         <ui:TextBox Grid.Column="0"
                     PlaceholderText="{loc:Str Wizard_Profile_LocationPlaceholder}"
-                    Text="{Binding Location, UpdateSourceTrigger=PropertyChanged}" />
+                    Text="{Binding Location, UpdateSourceTrigger=PropertyChanged}"
+                    AutomationProperties.AutomationId="WizardProfile_Location" />
         <ui:Button Grid.Column="1"
                    Margin="8,0,0,0"
                    Appearance="Secondary"
                    AutomationProperties.Name="{loc:Str Wizard_Profile_VoiceTooltip}"
                    ToolTip="{loc:Str Wizard_Profile_VoiceTooltip}"
                    Command="{Binding VoiceInputLocationCommand}"
-                   VerticalAlignment="Stretch">
+                   VerticalAlignment="Stretch"
+                   AutomationProperties.AutomationId="WizardProfile_VoiceLocation">
           <ui:SymbolIcon Symbol="Mic24" FontSize="16" />
         </ui:Button>
       </Grid>
@@ -116,7 +122,8 @@
                    HorizontalContentAlignment="Stretch"
                    Padding="0"
                    Command="{Binding SetOperatingModeCommand}"
-                   CommandParameter="Personal">
+                   CommandParameter="Personal"
+                   AutomationProperties.AutomationId="WizardProfile_ModePersonal">
           <Border Padding="16"
                   CornerRadius="8">
             <Border.Style>
@@ -156,7 +163,8 @@
                    HorizontalContentAlignment="Stretch"
                    Padding="0"
                    Command="{Binding SetOperatingModeCommand}"
-                   CommandParameter="Business">
+                   CommandParameter="Business"
+                   AutomationProperties.AutomationId="WizardProfile_ModeBusiness">
           <Border Padding="16"
                   CornerRadius="8">
             <Border.Style>

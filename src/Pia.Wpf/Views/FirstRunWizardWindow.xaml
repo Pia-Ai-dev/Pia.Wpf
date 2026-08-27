@@ -38,7 +38,8 @@
                  Title="{loc:Str Wizard_WindowTitle}"
                  Grid.Row="0"
                  ShowMaximize="False"
-                 ShowMinimize="False">
+                 ShowMinimize="False"
+                 AutomationProperties.AutomationId="Wizard_TitleBar">
       <ui:TitleBar.Icon>
         <ui:ImageIcon Source="{StaticResource PiaMarkImage}" />
       </ui:TitleBar.Icon>
@@ -303,7 +304,8 @@
         <ui:Button Grid.Column="0"
                    Content="{loc:Str Wizard_Skip}"
                    Appearance="Transparent"
-                   Command="{Binding SkipCommand}">
+                   Command="{Binding SkipCommand}"
+                   AutomationProperties.AutomationId="Wizard_Skip">
           <ui:Button.Style>
             <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
               <Setter Property="Visibility" Value="Visible" />
@@ -327,14 +329,16 @@
                    Margin="0,0,8,0"
                    MinWidth="80"
                    Command="{Binding BackCommand}"
-                   Visibility="{Binding IsFirstStep, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+                   Visibility="{Binding IsFirstStep, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
+                   AutomationProperties.AutomationId="Wizard_Back" />
 
         <!-- Next / Get Started Button -->
         <ui:Button Grid.Column="3"
                    Content="{Binding NextButtonText}"
                    Appearance="Primary"
                    MinWidth="120"
-                   Command="{Binding NextOrFinishCommand}" />
+                   Command="{Binding NextOrFinishCommand}"
+                   AutomationProperties.AutomationId="Wizard_Next" />
       </Grid>
     </Border>
 

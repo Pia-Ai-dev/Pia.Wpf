@@ -57,6 +57,7 @@
       <Button Grid.Column="1"
               Content="{loc:Str Memory_RegenerateEmbeddings}"
               Command="{Binding RegenerateEmbeddingsCommand}"
+              AutomationProperties.AutomationId="MemoryStatus_RegenerateEmbeddings"
               Style="{StaticResource UnstyledButton}"
               Foreground="{DynamicResource PiaAccentBrush}"
               Padding="10,4"/>
