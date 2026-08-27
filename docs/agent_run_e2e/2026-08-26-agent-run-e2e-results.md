@@ -321,11 +321,16 @@ verified untouched at the end.
 
 ### The seven, one at a time
 
-1. **Cross-step tool context.** FG1 ran 6 steps and 35 tool rounds and produced fixture-exact output
-   where it previously invented every row. **The wire format holds**: from step 2 on, every request
-   carries the earlier steps' `tool_calls` + `role:tool` messages and the provider accepted all of them
-   — 0 provider errors in the log. That shape had no test coverage at all (every test substitutes
-   `IAiClientService`), so this run is its only evidence.
+1. **Cross-step tool context — the wire format, and only that.** FG1 ran 6 steps and 35 tool rounds:
+   from step 2 on, every request carried the earlier steps' `tool_calls` + `role:tool` messages and the
+   provider accepted all of them, 0 provider errors in the log. That shape had no test coverage at all
+   (every test substitutes `IAiClientService`), so this run is its only evidence for it.
+   **The carry-forward itself was NOT exercised**, and FG1 is not evidence for it: the log shows step 4
+   doing `read_file ×3` → `write_file` → `write_file ×2` → `read_file ×2`, i.e. reading and writing
+   inside ONE step. That is the planner nudge's pattern — the same shape this doc already recorded as
+   working ("FG3 and BG1 were correct because their read and write landed in adjacent steps"). The
+   2026-08-26 failure was a read in step 1 and a write in step 3, and no run here reproduced that gap.
+   So FG1's fixture-exact output is the batch working; it is the NUDGE that earned it.
 2. **`delete_file`.** The envelope reads
    `{"paused":true,"reason":"tool-approval","tool":"delete_file","args":"path=fragments/0001-agent-panel.md, path=fragments/0002-timeout.md, path=fragments/0003-workdir.md, path=fragments/0005-e2ee.md"}`
    — all four, because the model issued four delete calls in one round and the store accumulates them.
@@ -344,6 +349,11 @@ verified untouched at the end.
    `config-todo.txt` dropping from 3 hits to 2 is the self-contamination loop closing.
 7. **Composer hint.** Reads *"A run is writing to this chat. Sending resumes when it finishes."*
 
+**Token cost, for whoever revisits `K = 8` and the 4000-char cap.** FG2's panel reported **580,604
+tokens over 5 steps** (90,357 / 115,444 / 73,037 / 75,419 / 80,907). There is no before-figure to
+compare it against, so this is not a regression claim — it is the only measurement of what a run with
+carried tool context actually costs, and it is unrecoverable once the throwaway profile is deleted.
+
 ### The one thing that did not fully land
 
 **A delete still cannot reach the user's folder, and that is workspace isolation, not the gate.** The
@@ -361,9 +371,19 @@ still there" is a worse outcome than the old honest denial.
 
 ### Not covered by this re-run
 
+- **The cross-step carry-forward itself**, per item 1 — the wire format is proven, the behaviour it
+  exists for is not.
 - **Sub-agent fan-out** (finding 3), for the reason above.
 - **Worktree-mode promotion.** The fixture folders are not git repos, so `ExcludeScratchPathspec` never
   ran live; it is covered by tests only.
 - **BG2 `Docs`** and **FG3 `Support`**, which were correct in the first session and test nothing this
   batch changed.
 - **Reject** on either gate, and the background-run queue (never more than two in flight).
+
+**One correction to Finding 2 above, measured here.** It says *"With `agentPlanReasoningTurnEnabled:
+true` … every foreground agent run parks for approval"*. The gate is actually
+`plan.Steps.Count >= 3 && executor.SupportsPlanApproval` (`AgentRunOrchestrator.cs`; only
+`LiveTurnExecutor` returns true), and `agentPlanReasoningTurnEnabled` defaults to FALSE and has nothing
+to do with it. The accurate statement is: **every foreground run of three or more steps parks for
+approval, and Approve hands it to the headless executor.** The extra 3-step run driven here parked, as
+that rule predicts.
