@@ -304,3 +304,66 @@ The six prompts and the fixture expectations are in
 [2026-08-26-agent-run-e2e-prompts.md](2026-08-26-agent-run-e2e-prompts.md). The throwaway profile of
 the 2026-08-26 session (artifacts, `history.db`, `local\Logs\pia-2026-08-26.log`) is kept at
 `%TEMP%\pia-e2e-0826` — delete it when the findings above have been triaged.
+
+## Re-run 2026-08-27 — after the seven fixes
+
+Same harness, a fresh throwaway profile at `%TEMP%\pia-e2e`, same provider
+(`deepseek/deepseek-v4-flash` via OpenRouter) and the same persona. Four of the six goals were driven —
+FG1, BG1, BG3, FG2 — plus one extra short run to catch the composer hint mid-flight. Real profile
+verified untouched at the end.
+
+| Goal | Then | Now |
+|---|---|---|
+| FG1 `Inventory` | **every row fabricated** | **correct**: 1001/1003/1005/1011, every on_hand / reorder_point matching `inventory.csv`, 1008 excluded, order quantities exactly `(reorder_point * 3) - on_hand` |
+| BG1 `Finance` | correct table, **`[Phone_9]` written into the deliverable** | **correct**, and `overspend-report.md` carries `2026-03-27` and `2026-06-01`; no `[Phone_` anywhere under `files\` |
+| BG3 `Config` | 2 values invented, `config-todo.txt` had **3** hits (one from its own scratch file) | **correct**: `eu-central` and `https://example.invalid/1` both survive; `config-todo.txt` has exactly the **2** seeded hits |
+| FG2 `ReleaseNotes` | `delete_file` **hard-denied four times** | **parks**, the card names all four paths, Continue grants it and the deletes execute — see the caveat below |
+
+### The seven, one at a time
+
+1. **Cross-step tool context.** FG1 ran 6 steps and 35 tool rounds and produced fixture-exact output
+   where it previously invented every row. **The wire format holds**: from step 2 on, every request
+   carries the earlier steps' `tool_calls` + `role:tool` messages and the provider accepted all of them
+   — 0 provider errors in the log. That shape had no test coverage at all (every test substitutes
+   `IAiClientService`), so this run is its only evidence.
+2. **`delete_file`.** The envelope reads
+   `{"paused":true,"reason":"tool-approval","tool":"delete_file","args":"path=fragments/0001-agent-panel.md, path=fragments/0002-timeout.md, path=fragments/0003-workdir.md, path=fragments/0005-e2ee.md"}`
+   — all four, because the model issued four delete calls in one round and the store accumulates them.
+   The panel rendered *"Waiting for your approval to use delete_file"* over
+   *"Affects path=fragments/0001-agent-panel.md, …"* with Continue / Deny. Continue re-ran the step and
+   the log shows `Background turn executing delete_file (GrantedByName)` … `delete_file succeeded` for
+   each. **Caveat below.**
+3. **Child decline / parent auto-resume.** Not exercised: neither BG1 nor BG3 fanned out this time
+   (both planned 3–4 in-process steps), so no child ran and no parent parked. Covered by tests only.
+4. **PII.** BG1's report has the real dates. Nothing under `files\` contains a placeholder.
+5. **Agent-mode default.** `assistantAgentModeDefault` is still `true` after five runs settled. It would
+   have read `false` after the first.
+6. **`.scratch/`.** The model used it unprompted in both runs that wanted working notes —
+   `.scratch/reorder-working-notes.md` (FG1) and `.scratch/step5-final-report.md` (FG2) — and neither
+   was promoted. No `file-list.txt` / `step-2-results.md` / `env-pairs.md` anywhere. BG3's
+   `config-todo.txt` dropping from 3 hits to 2 is the self-contamination loop closing.
+7. **Composer hint.** Reads *"A run is writing to this chat. Sending resumes when it finishes."*
+
+### The one thing that did not fully land
+
+**A delete still cannot reach the user's folder, and that is workspace isolation, not the gate.** The
+four deletes really executed — inside `runs\<runId>\fragments\` — but copy-mode promotion never
+propagates deletions, by explicit design (`RunWorkspaceService.CopyOut`: *"A run cannot delete a user
+file by promoting — that is the difference between 'promote' and 'sync', and write arbitration belongs
+to a later batch"*). So `fragments/` still holds all six files, and the model's own report
+(*"Deleted: 4 — the four merged fragment files have been removed from fragments/"*) is true of the
+workspace and false of the folder.
+
+Finding 2 was about the GATE and the gate is fixed: the tool is reachable, the approval is informed,
+and the call runs. Making the effect durable is a separate, pre-existing gap — promotion has no delete
+channel — and it is worth its own decision, because "the run says it deleted your files and they are
+still there" is a worse outcome than the old honest denial.
+
+### Not covered by this re-run
+
+- **Sub-agent fan-out** (finding 3), for the reason above.
+- **Worktree-mode promotion.** The fixture folders are not git repos, so `ExcludeScratchPathspec` never
+  ran live; it is covered by tests only.
+- **BG2 `Docs`** and **FG3 `Support`**, which were correct in the first session and test nothing this
+  batch changed.
+- **Reject** on either gate, and the background-run queue (never more than two in flight).
