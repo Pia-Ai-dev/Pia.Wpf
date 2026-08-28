@@ -23,9 +23,19 @@ public sealed class BackgroundMeetingSessionsTests
     private static (BackgroundMeetingSessions Pool, Func<int> Built) NewPool(int capacity)
     {
         var built = 0;
+        var settings = NewSettings(capacity);
         var pool = new BackgroundMeetingSessions(
-            () => { built++; return null!; },
-            NewSettings(capacity),
+            () =>
+            {
+                built++;
+                return new MeetingAttendeeService(
+                    settings,
+                    Substitute.For<IBrowserProvisioner>(),
+                    Substitute.For<System.Net.Http.IHttpClientFactory>(),
+                    Substitute.For<IDefaultBrowserResolver>(),
+                    NullLoggerFactory.Instance);
+            },
+            settings,
             NullLogger<BackgroundMeetingSessions>.Instance);
         return (pool, () => built);
     }

@@ -53,13 +53,13 @@
                    CommandParameter="{Binding}">
           <Grid Width="16" Height="16">
             <!-- Icon extracted from the installed Obsidian; falls back to a glyph if extraction failed. -->
-            <Image Source="{Binding DataContext.ObsidianIcon, RelativeSource={RelativeSource AncestorType=views:VaultView}}"
+            <Image Source="{Binding ObsidianIcon, RelativeSource={RelativeSource AncestorType=mem:PiaInspectorHeader}}"
                    Width="16" Height="16"
                    RenderOptions.BitmapScalingMode="HighQuality"
-                   Visibility="{Binding DataContext.ObsidianIcon, RelativeSource={RelativeSource AncestorType=views:VaultView}, Converter={StaticResource NullToVisibilityConverter}}"/>
+                   Visibility="{Binding ObsidianIcon, RelativeSource={RelativeSource AncestorType=mem:PiaInspectorHeader}, Converter={StaticResource NullToVisibilityConverter}}"/>
             <ui:SymbolIcon Symbol="Notebook20"
                            FontSize="16"
-                           Visibility="{Binding DataContext.ObsidianIcon, RelativeSource={RelativeSource AncestorType=views:VaultView}, Converter={StaticResource InverseNullToVisibilityConverter}}"/>
+                           Visibility="{Binding ObsidianIcon, RelativeSource={RelativeSource AncestorType=mem:PiaInspectorHeader}, Converter={StaticResource InverseNullToVisibilityConverter}}"/>
           </Grid>
         </ui:Button>
         <ui:Button Icon="{ui:SymbolIcon Symbol=Delete20}"

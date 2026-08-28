@@ -66,13 +66,13 @@
                  Margin="0,0,6,0">
         <Grid Width="16" Height="16">
           <!-- Icon extracted from the installed Obsidian; falls back to a glyph if extraction failed. -->
-          <Image Source="{Binding ObsidianIcon}"
+          <Image Source="{Binding ObsidianIcon, RelativeSource={RelativeSource AncestorType=UserControl}}"
                  Width="16" Height="16"
                  RenderOptions.BitmapScalingMode="HighQuality"
-                 Visibility="{Binding ObsidianIcon, Converter={StaticResource NullToVisibilityConverter}}"/>
+                 Visibility="{Binding ObsidianIcon, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource NullToVisibilityConverter}}"/>
           <ui:SymbolIcon Symbol="Notebook24"
                          FontSize="16"
-                         Visibility="{Binding ObsidianIcon, Converter={StaticResource InverseNullToVisibilityConverter}}"/>
+                         Visibility="{Binding ObsidianIcon, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource InverseNullToVisibilityConverter}}"/>
         </Grid>
       </ui:Button>
       <ui:Button Appearance="Secondary"

@@ -6,7 +6,6 @@ using Pia.Models;
 using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 using Pia.Services.LiveTranscription;
-using Pia.ViewModels.Models;
 
 namespace Pia.Services.MeetingAttendee;
 

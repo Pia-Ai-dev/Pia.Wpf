@@ -1,6 +1,4 @@
-using Pia.Models;
-
-namespace Pia.ViewModels.Models;
+namespace Pia.Models;
 
 /// <summary>One journaled utterance; Label is mutable (reassignments and renames retarget it).</summary>
 internal sealed class UtteranceEntry

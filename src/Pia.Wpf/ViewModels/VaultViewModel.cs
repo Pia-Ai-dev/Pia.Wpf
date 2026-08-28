@@ -1,6 +1,5 @@
 using System.Collections.ObjectModel;
 using System.IO;
-using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -110,9 +109,6 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
 
     /// <summary>Gates both Obsidian buttons; the launcher caches its probe, so this is not re-detected per read.</summary>
     public bool IsObsidianAvailable => ObsidianLauncher.IsAvailable;
-
-    /// <summary>The installed Obsidian's own icon, or null — the XAML then falls back to a glyph.</summary>
-    public ImageSource? ObsidianIcon => ObsidianLauncher.TryGetIcon();
 
     public IAsyncRelayCommand RefreshCommand { get; }
     public IAsyncRelayCommand<VaultMemoryItem> DeleteMemoryCommand { get; }
