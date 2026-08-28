@@ -122,7 +122,7 @@ public class ViewAutomationIdTests
             $"\"{{Binding <Identity>, StringFormat='<ViewPrefix>_<Field>_{{0}}'}}\" inside a DataTemplate: " +
             $"{string.Join("; ", missing)}");
 
-        // A floor, not a count, set well under the measured total so ordinary edits to the view never touch this file.
+        // A floor, not a count — though many rows sit exactly at the measured total, so removing a control does fail here.
         Assert.True(survey.Controls.Length >= minimumInspected,
             $"only {survey.Controls.Length} interactive controls were inspected in {viewType.Name}, below the " +
             $"non-vacuity floor of {minimumInspected}. The walk is logical, so suspect a container that no " +
