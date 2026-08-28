@@ -204,6 +204,9 @@ public class AppSettings
     /// <summary>Set by the confirm dialog's "don't ask again"; device-local (never in the sync projection).</summary>
     public bool AssistantBackgroundRunConfirmSuppressed { get; set; } = false;
 
+    /// <summary>Set by the Obsidian vault-registration confirm dialog's "don't ask again"; device-local.</summary>
+    public bool ObsidianVaultRegistrationConfirmSuppressed { get; set; } = false;
+
     // Agent-run budget envelope (§5/§13.8) — the generous terminal caps an interactive Planned run
     // stops at. Surfaced in Assistant settings so a user can tighten/loosen them; clamped when a
     // RunProfile is built (RunProfile.FromBudget). Defaults match RunProfile.Interactive.

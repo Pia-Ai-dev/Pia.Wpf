@@ -97,6 +97,73 @@ public sealed class ObsidianLauncherTests
     public void FindVaultId_returns_null_for_a_malformed_or_unexpected_registry(string json)
         => Assert.Null(ObsidianLauncher.FindVaultId(json, "C:\\Users\\me\\Pia\\vault"));
 
+    [Fact]
+    public void IsPathInsideAnyVault_true_for_an_exact_match()
+    {
+        const string json = """{"vaults":{"bbb":{"path":"C:\\Users\\me\\Pia\\vault","ts":1}}}""";
+
+        Assert.True(ObsidianLauncher.IsPathInsideAnyVault(json, "C:\\Users\\me\\Pia\\vault"));
+    }
+
+    // FindVaultId would miss this — no vault is filed under the note's own folder — but Obsidian's
+    // path= form still resolves it, because it searches for the most specific containing vault.
+    [Fact]
+    public void IsPathInsideAnyVault_true_when_nested_under_a_registered_vault()
+    {
+        const string json = """{"vaults":{"aaa":{"path":"C:\\Users\\me\\Notes","ts":1}}}""";
+
+        Assert.True(ObsidianLauncher.IsPathInsideAnyVault(json, "C:\\Users\\me\\Notes\\Pia\\vault"));
+    }
+
+    [Fact]
+    public void IsPathInsideAnyVault_false_when_no_registered_vault_contains_it()
+    {
+        const string json = """{"vaults":{"aaa":{"path":"C:\\Users\\me\\Notes","ts":1}}}""";
+
+        Assert.False(ObsidianLauncher.IsPathInsideAnyVault(json, "C:\\Users\\me\\Pia\\vault"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not json at all")]
+    [InlineData("""{"vaults":[]}""")]
+    [InlineData("""{"frames":{}}""")]
+    public void IsPathInsideAnyVault_false_for_a_malformed_or_unexpected_registry(string json)
+        => Assert.False(ObsidianLauncher.IsPathInsideAnyVault(json, "C:\\Users\\me\\Pia\\vault"));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("not json at all")]
+    [InlineData("""{"vaults":[]}""")]
+    public void AddVaultEntry_starts_a_fresh_registry_when_none_is_usable(string? existing)
+    {
+        var updated = ObsidianLauncher.AddVaultEntry(existing, "abc123", "C:\\Users\\me\\Pia\\vault", 1700000000000);
+
+        Assert.Equal("abc123", ObsidianLauncher.FindVaultId(updated, "C:\\Users\\me\\Pia\\vault"));
+    }
+
+    [Fact]
+    public void AddVaultEntry_leaves_every_other_vault_untouched()
+    {
+        const string json = """{"vaults":{"aaa":{"path":"C:\\Users\\me\\Notes","ts":1}}}""";
+
+        var updated = ObsidianLauncher.AddVaultEntry(json, "bbb", "C:\\Users\\me\\Pia\\vault", 1700000000000);
+
+        Assert.Equal("aaa", ObsidianLauncher.FindVaultId(updated, "C:\\Users\\me\\Notes"));
+        Assert.Equal("bbb", ObsidianLauncher.FindVaultId(updated, "C:\\Users\\me\\Pia\\vault"));
+    }
+
+    [Fact]
+    public void AddVaultEntry_is_addressable_by_the_id_it_was_given()
+    {
+        var updated = ObsidianLauncher.AddVaultEntry(null, "abc123", "C:\\Users\\me\\Pia\\vault", 1700000000000);
+
+        Assert.Equal(
+            "obsidian://open?vault=abc123",
+            ObsidianLauncher.ComposeUri("C:\\Users\\me\\Pia\\vault", null, ObsidianLauncher.FindVaultId(updated, "C:\\Users\\me\\Pia\\vault")));
+    }
+
     [Theory]
     [InlineData("\"C:\\Program Files\\Obsidian\\Obsidian.exe\" \"%1\"", "C:\\Program Files\\Obsidian\\Obsidian.exe")]
     [InlineData("C:\\Obsidian\\Obsidian.exe \"%1\"", "C:\\Obsidian\\Obsidian.exe")]

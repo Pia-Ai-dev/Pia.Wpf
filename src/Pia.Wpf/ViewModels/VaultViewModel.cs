@@ -30,6 +30,7 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
     private readonly IClipboardService _clipboardService;
     private readonly IVaultSourcesService _vaultSourcesService;
     private readonly IIngestScheduler _ingestScheduler;
+    private readonly ISettingsService _settingsService;
     private CancellationTokenSource? _debounceCts;
     private bool _disposed;
 
@@ -124,8 +125,8 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
     public IAsyncRelayCommand ShowHelpCommand { get; }
     public IRelayCommand GoHomeCommand { get; }
     public IRelayCommand OpenVaultFolderCommand { get; }
-    public IRelayCommand OpenVaultInObsidianCommand { get; }
-    public IRelayCommand<VaultMemoryItem> OpenNoteInObsidianCommand { get; }
+    public IAsyncRelayCommand OpenVaultInObsidianCommand { get; }
+    public IAsyncRelayCommand<VaultMemoryItem> OpenNoteInObsidianCommand { get; }
     public IAsyncRelayCommand<IReadOnlyList<string>> AddSourceFilesCommand { get; }
 
     public VaultViewModel(
@@ -137,7 +138,8 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         ILocalizationService localizationService,
         IClipboardService clipboardService,
         IVaultSourcesService vaultSourcesService,
-        IIngestScheduler ingestScheduler)
+        IIngestScheduler ingestScheduler,
+        ISettingsService settingsService)
     {
         _logger = logger;
         _memoryService = memoryService;
@@ -148,6 +150,7 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         _clipboardService = clipboardService;
         _vaultSourcesService = vaultSourcesService;
         _ingestScheduler = ingestScheduler;
+        _settingsService = settingsService;
 
         RefreshCommand = new AsyncRelayCommand(LoadMemoriesAsync);
         DeleteMemoryCommand = new AsyncRelayCommand<VaultMemoryItem>(ExecuteDeleteMemory);
@@ -163,8 +166,8 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         ShowHelpCommand = new AsyncRelayCommand(ExecuteShowHelp);
         GoHomeCommand = new RelayCommand(ExecuteGoHome);
         OpenVaultFolderCommand = new RelayCommand(() => ShellLauncher.RevealInExplorer(_memoryService.VaultRoot));
-        OpenVaultInObsidianCommand = new RelayCommand(() => ObsidianLauncher.OpenVault(_memoryService.VaultRoot));
-        OpenNoteInObsidianCommand = new RelayCommand<VaultMemoryItem>(ExecuteOpenNoteInObsidian);
+        OpenVaultInObsidianCommand = new AsyncRelayCommand(ExecuteOpenVaultInObsidian);
+        OpenNoteInObsidianCommand = new AsyncRelayCommand<VaultMemoryItem>(ExecuteOpenNoteInObsidian);
         AddSourceFilesCommand = new AsyncRelayCommand<IReadOnlyList<string>>(ExecuteAddSourceFiles);
 
         PropertyChanged += OnPropertyChanged;
@@ -197,12 +200,60 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         });
     }
 
+    private async Task ExecuteOpenVaultInObsidian()
+    {
+        var vaultRoot = _memoryService.VaultRoot;
+        await PrepareObsidianOpenAsync(vaultRoot);
+        ObsidianLauncher.OpenVault(vaultRoot);
+    }
+
     // The item's FilePath, never its Reference: a section address (path#heading) is not something Obsidian
     // resolves, and the whole file is what it opens anyway.
-    private void ExecuteOpenNoteInObsidian(VaultMemoryItem? memory)
+    private async Task ExecuteOpenNoteInObsidian(VaultMemoryItem? memory)
     {
         if (memory is null || !ObsidianLauncher.IsMarkdownNote(memory.FilePath)) return;
-        ObsidianLauncher.OpenNote(_memoryService.VaultRoot, memory.FilePath);
+        var vaultRoot = _memoryService.VaultRoot;
+        await PrepareObsidianOpenAsync(vaultRoot);
+        ObsidianLauncher.OpenNote(vaultRoot, memory.FilePath);
+    }
+
+    /// <summary>
+    /// Obsidian has no API to register a vault it has never seen, only its own registry file — editing that
+    /// while Obsidian runs races its own save and can corrupt every vault it lists, so registration is only
+    /// ever attempted while it's closed, and only with consent. While it's open, there is nothing safe to do
+    /// but tell the user the path is on their clipboard; either way the caller's own open call runs after
+    /// this and does the actual launching.
+    /// </summary>
+    private async Task PrepareObsidianOpenAsync(string vaultRoot)
+    {
+        if (ObsidianLauncher.IsVaultKnown(vaultRoot)) return;
+
+        if (ObsidianLauncher.IsObsidianRunning())
+        {
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Memory_ObsidianAlreadyOpen_Title"],
+                _localizationService["Memory_ObsidianAlreadyOpen_Body"]);
+            return;
+        }
+
+        var settings = await _settingsService.GetSettingsAsync();
+        if (!settings.ObsidianVaultRegistrationConfirmSuppressed)
+        {
+            var answer = await _dialogService.ShowOptOutConfirmationDialogAsync(
+                _localizationService["Memory_ObsidianRegisterConfirm_Title"],
+                _localizationService["Memory_ObsidianRegisterConfirm_Body"],
+                _localizationService["Memory_ObsidianRegisterConfirm_Confirm"]);
+
+            if (!answer.Confirmed) return;
+
+            if (answer.DontAskAgain)
+            {
+                settings.ObsidianVaultRegistrationConfirmSuppressed = true;
+                await _settingsService.SaveSettingsAsync(settings);
+            }
+        }
+
+        ObsidianLauncher.TryRegisterVault(vaultRoot);
     }
 
     private async Task ExecuteCopyMarkdown(VaultMemoryItem? memory)

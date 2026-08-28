@@ -45,6 +45,7 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.MeetingTranscriptFolder),
         nameof(AppSettings.ModePersonaDefaults),
         nameof(AppSettings.ModeProviderDefaults),
+        nameof(AppSettings.ObsidianVaultRegistrationConfirmSuppressed),
         nameof(AppSettings.ScheduledMaxReplans),
         nameof(AppSettings.ScheduledMaxSteps),
         nameof(AppSettings.ScheduledWallClockMinutes),
@@ -175,7 +176,7 @@ public class PolicyRestartClassificationTests
     public void ANewSettingForcesAnExplicitClassification()
     {
         Assert.True(
-            LiveAlready.Length == 43 && LiveWithWork.Length == 23
+            LiveAlready.Length == 44 && LiveWithWork.Length == 23
                 && RestartRequired.Length == 12 && NoRuntimeEffect.Length == 27,
             "the four sets are written out in full, found "
                 + $"{LiveAlready.Length}/{LiveWithWork.Length}/{RestartRequired.Length}/{NoRuntimeEffect.Length}");

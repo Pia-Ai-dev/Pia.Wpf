@@ -1,6 +1,9 @@
 using System.Diagnostics;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Windows;
 using System.Windows.Media;
 using Microsoft.Win32;
 
@@ -26,6 +29,36 @@ public static class ObsidianLauncher
     /// <summary>True when an installed Obsidian (<c>Obsidian.exe</c>) could be located.</summary>
     public static bool IsAvailable => ResolveExecutable() is not null;
 
+    /// <summary>True when Obsidian already resolves <paramref name="vaultRoot"/> to a vault — an exact
+    /// registered entry, or nested under one. Callers use this to decide whether registration is needed
+    /// before opening.</summary>
+    public static bool IsVaultKnown(string? vaultRoot)
+    {
+        if (string.IsNullOrWhiteSpace(vaultRoot)) return false;
+        var registry = ReadVaultRegistry();
+        return registry is not null
+            && (FindVaultId(registry, vaultRoot) is not null || IsPathInsideAnyVault(registry, vaultRoot));
+    }
+
+    /// <summary>
+    /// True when an Obsidian process is currently running. <see cref="TryRegisterVault"/> must not be called
+    /// while this is true: Obsidian holds its own in-memory copy of the same registry file and can overwrite
+    /// a racing external write on its next save, corrupting every vault it lists, not just this one.
+    /// </summary>
+    public static bool IsObsidianRunning()
+    {
+        try
+        {
+            var processes = Process.GetProcessesByName("Obsidian");
+            try { return processes.Length > 0; }
+            finally { foreach (var process in processes) process.Dispose(); }
+        }
+        catch
+        {
+            return true; // Can't tell — assume it might be running so a caller never risks the write.
+        }
+    }
+
     /// <summary>True when <paramref name="path"/> is a markdown note — the only thing Obsidian opens. Pure.</summary>
     public static bool IsMarkdownNote(string? path)
     {
@@ -36,14 +69,13 @@ public static class ObsidianLauncher
     }
 
     /// <summary>Opens <paramref name="vaultRoot"/> as a vault. No-op when Obsidian is absent or the path is empty.</summary>
-    public static void OpenVault(string? vaultRoot) => Launch(BuildUri(vaultRoot, null));
+    public static void OpenVault(string? vaultRoot) => Open(vaultRoot, null);
 
     /// <summary>
     /// Opens one note, addressed vault-relative (<c>memory/topics/foo.md</c>). Obsidian resolves the note
     /// itself, so a section anchor is deliberately not passed — the file is the addressable unit.
     /// </summary>
-    public static void OpenNote(string? vaultRoot, string? pathUnderRoot)
-        => Launch(BuildUri(vaultRoot, pathUnderRoot));
+    public static void OpenNote(string? vaultRoot, string? pathUnderRoot) => Open(vaultRoot, pathUnderRoot);
 
     /// <summary>The Obsidian application icon (cached), or null when absent / extraction failed.</summary>
     public static ImageSource? TryGetIcon()
@@ -56,17 +88,38 @@ public static class ObsidianLauncher
         }
     }
 
-    private static void Launch(string? uri)
+    /// <summary>
+    /// Obsidian has no URI or CLI action that registers a folder it has never seen as a vault — the user
+    /// has to click "Open folder as vault" themselves at least once. So when neither URI form below could
+    /// possibly resolve, this skips straight to a bare launch (landing on Obsidian's vault switcher) and
+    /// puts the vault path on the clipboard for the user to paste there, rather than firing a URI Obsidian
+    /// is guaranteed to reject with its own "Vault not found" dialog.
+    /// </summary>
+    private static void Open(string? vaultRoot, string? pathUnderRoot)
     {
-        if (uri is null) return;
+        if (string.IsNullOrWhiteSpace(vaultRoot)) return;
         var exe = ResolveExecutable();
         if (exe is null) return;
 
+        var uri = BuildUri(vaultRoot, pathUnderRoot);
+        if (uri is null)
+        {
+            TryCopyToClipboard(vaultRoot);
+        }
+
+        Launch(exe, uri);
+    }
+
+    private static void Launch(string exe, string? uri)
+    {
         try
         {
             // The exe with the URI as its argument, not a ShellExecute of the URI itself: a portable install
             // registers no obsidian:// handler, and this is exactly what the handler would have run anyway.
-            Process.Start(new ProcessStartInfo(exe, $"\"{uri}\"") { UseShellExecute = false });
+            var info = uri is null
+                ? new ProcessStartInfo(exe) { UseShellExecute = false }
+                : new ProcessStartInfo(exe, $"\"{uri}\"") { UseShellExecute = false };
+            Process.Start(info);
         }
         catch
         {
@@ -74,12 +127,96 @@ public static class ObsidianLauncher
         }
     }
 
+    private static void TryCopyToClipboard(string text)
+    {
+        try { Clipboard.SetText(text); }
+        catch
+        {
+            // Clipboard can be held by another process — Obsidian still opens, the user just types the path.
+        }
+    }
+
     // Resolved per call, not cached: the user can add the vault to Obsidian while Pia is running, and that
-    // flips which of the two URI forms below actually works.
-    private static string? BuildUri(string? vaultRoot, string? pathUnderRoot)
-        => string.IsNullOrWhiteSpace(vaultRoot)
-            ? null
-            : ComposeUri(vaultRoot, pathUnderRoot, ResolveVaultId(vaultRoot));
+    // flips which of the two URI forms below actually works — or whether either can, at all.
+    private static string? BuildUri(string vaultRoot, string? pathUnderRoot)
+    {
+        var registry = ReadVaultRegistry();
+        if (registry is null) return null;
+
+        var vaultId = FindVaultId(registry, vaultRoot);
+        if (vaultId is null && !IsPathInsideAnyVault(registry, vaultRoot)) return null;
+
+        return ComposeUri(vaultRoot, pathUnderRoot, vaultId);
+    }
+
+    private static string? ReadVaultRegistry()
+    {
+        try
+        {
+            return File.Exists(VaultRegistryPath()) ? File.ReadAllText(VaultRegistryPath()) : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string VaultRegistryPath() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "obsidian", "obsidian.json");
+
+    /// <summary>
+    /// Registers <paramref name="vaultRoot"/> in Obsidian's own vault list so <c>obsidian://open?vault=</c>
+    /// resolves it immediately — there is no supported API for this, so it edits the registry file Obsidian
+    /// itself reads on startup. The caller must have already confirmed <see cref="IsObsidianRunning"/> is
+    /// false; this does not re-check, since consent and the running-check happen together at the call site.
+    /// </summary>
+    public static bool TryRegisterVault(string vaultRoot)
+    {
+        try
+        {
+            var registry = VaultRegistryPath();
+            Directory.CreateDirectory(Path.GetDirectoryName(registry)!);
+
+            var existing = File.Exists(registry) ? File.ReadAllText(registry) : null;
+            var vaultId = RandomNumberGenerator.GetHexString(16, lowercase: true);
+            var updated = AddVaultEntry(existing, vaultId, vaultRoot, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+
+            // Write-then-move rather than a direct write, so a crash mid-write leaves the old registry intact.
+            var temp = registry + ".tmp";
+            File.WriteAllText(temp, updated);
+            File.Move(temp, registry, overwrite: true);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Merges one vault entry into the registry JSON, leaving every other vault untouched.</summary>
+    internal static string AddVaultEntry(string? existingJson, string vaultId, string vaultRoot, long timestampMs)
+    {
+        JsonObject root;
+        try
+        {
+            root = (string.IsNullOrWhiteSpace(existingJson) ? null : JsonNode.Parse(existingJson)) as JsonObject
+                ?? new JsonObject();
+        }
+        catch (JsonException)
+        {
+            root = new JsonObject();
+        }
+
+        if (root["vaults"] is not JsonObject vaults)
+        {
+            vaults = new JsonObject();
+            root["vaults"] = vaults;
+        }
+
+        vaults[vaultId] = new JsonObject { ["path"] = vaultRoot, ["ts"] = timestampMs };
+        return root.ToJsonString();
+    }
 
     /// <summary>
     /// The <c>obsidian://open</c> URI for a vault or one note in it. With a <paramref name="vaultId"/> (the
@@ -107,21 +244,6 @@ public static class ObsidianLauncher
         if (string.IsNullOrWhiteSpace(pathUnderRoot)) return null;
         var normalized = pathUnderRoot.Trim().Replace('\\', '/').TrimStart('/');
         return normalized.Length == 0 ? null : normalized;
-    }
-
-    private static string? ResolveVaultId(string vaultRoot)
-    {
-        try
-        {
-            var registry = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "obsidian", "obsidian.json");
-            return File.Exists(registry) ? FindVaultId(File.ReadAllText(registry), vaultRoot) : null;
-        }
-        catch
-        {
-            return null;
-        }
     }
 
     /// <summary>
@@ -168,6 +290,57 @@ public static class ObsidianLauncher
                 Path.TrimEndingDirectorySeparator(Path.GetFullPath(left)),
                 Path.TrimEndingDirectorySeparator(Path.GetFullPath(right)),
                 StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// True when <paramref name="path"/> is, or sits inside, any vault in the registry — what
+    /// <c>obsidian://open?path=</c> actually needs, a looser bar than <see cref="FindVaultId"/>'s exact match.
+    /// </summary>
+    internal static bool IsPathInsideAnyVault(string json, string path)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object
+                || !doc.RootElement.TryGetProperty("vaults", out var vaults)
+                || vaults.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            foreach (var vault in vaults.EnumerateObject())
+            {
+                if (vault.Value.ValueKind != JsonValueKind.Object) continue;
+                if (!vault.Value.TryGetProperty("path", out var vaultPath) || vaultPath.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                if (IsSameOrAncestor(vaultPath.GetString(), path)) return true;
+            }
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+
+        return false;
+    }
+
+    private static bool IsSameOrAncestor(string? ancestor, string? path)
+    {
+        if (string.IsNullOrWhiteSpace(ancestor) || string.IsNullOrWhiteSpace(path)) return false;
+        try
+        {
+            var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(ancestor));
+            var target = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+            return target.Equals(root, StringComparison.OrdinalIgnoreCase)
+                || target.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
         }
         catch
         {

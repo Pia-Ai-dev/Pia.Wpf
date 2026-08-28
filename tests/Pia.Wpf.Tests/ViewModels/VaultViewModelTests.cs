@@ -38,7 +38,8 @@ public class VaultViewModelTests
             localization,
             Substitute.For<IClipboardService>(),
             vaultSources,
-            Substitute.For<IIngestScheduler>());
+            Substitute.For<IIngestScheduler>(),
+            Substitute.For<ISettingsService>());
         return (vm, memory, dialog);
     }
 
@@ -66,7 +67,8 @@ public class VaultViewModelTests
             localization,
             Substitute.For<IClipboardService>(),
             vaultSources,
-            Substitute.For<IIngestScheduler>());
+            Substitute.For<IIngestScheduler>(),
+            Substitute.For<ISettingsService>());
         return (vm, memory, snackbar);
     }
 
@@ -112,7 +114,8 @@ public class VaultViewModelTests
                 localization,
                 Substitute.For<IClipboardService>(),
                 vaultSources,
-                scheduler);
+                scheduler,
+                Substitute.For<ISettingsService>());
 
             await vm.AddSourceFilesCommand.ExecuteAsync(new[] { textFile, binaryFile });
 
@@ -167,7 +170,8 @@ public class VaultViewModelTests
                 localization,
                 Substitute.For<IClipboardService>(),
                 vaultSources,
-                scheduler);
+                scheduler,
+                Substitute.For<ISettingsService>());
 
             await vm.AddSourceFilesCommand.ExecuteAsync(new[] { dropped });
 
@@ -207,7 +211,8 @@ public class VaultViewModelTests
             localization,
             Substitute.For<IClipboardService>(),
             vaultSources,
-            scheduler);
+            scheduler,
+            Substitute.For<ISettingsService>());
 
         await vm.RefreshCommand.ExecuteAsync(null);
 
