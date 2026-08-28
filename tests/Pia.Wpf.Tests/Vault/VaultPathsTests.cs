@@ -62,6 +62,20 @@ public class VaultPathsTests
         Assert.False(VaultPaths.IsRecallIndexable(relativePath));
     }
 
+    // Other tools drop their own dot-folders straight into the vault root — Obsidian's config and its
+    // own deleted-note trash, a stray .git if the vault is ever git-initialized, Syncthing's version
+    // history — none of that is a memory record, however it got a .md extension.
+    [Theory]
+    [InlineData(".obsidian/plugins/some-plugin/README.md")]
+    [InlineData(".trash/deleted-note.md")]
+    [InlineData(@".trash\deleted-note.md")]
+    [InlineData(".git/COMMIT_EDITMSG.md")]
+    [InlineData("memory/.stversions/profile~20260101.md")]
+    public void IsRecallIndexable_is_false_under_any_dot_prefixed_folder(string relativePath)
+    {
+        Assert.False(VaultPaths.IsRecallIndexable(relativePath));
+    }
+
     // Recall DOES index memory records; unlike IsRecordFile these may also sit at the vault root.
     [Theory]
     [InlineData("memory/profile.md")]

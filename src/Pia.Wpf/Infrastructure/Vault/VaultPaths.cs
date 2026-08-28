@@ -48,9 +48,11 @@ public static class VaultPaths
     /// <summary>
     /// True iff <paramref name="relativePath"/> is a <c>.md</c> file whose content should surface in
     /// recall (the <c>Chunks</c>/<c>ChunksFts</c> index): everything EXCEPT Pia's housekeeping documents
-    /// (<c>AGENTS.md</c>, <c>index.md</c>, <c>log.md</c>), the recoverable <c>.archive/</c> snapshots, and
-    /// the <c>sources/</c> RAW layer. Unlike <see cref="IsRecordFile"/> this is a denylist — not
-    /// a <c>memory/</c> allowlist — because records may live at the vault root too.
+    /// (<c>AGENTS.md</c>, <c>index.md</c>, <c>log.md</c>), the <c>sources/</c> RAW layer, and anything
+    /// under a dot-prefixed folder — Pia's own <c>.archive/</c> snapshots as well as folders other tools
+    /// drop into the vault (Obsidian's <c>.obsidian/</c> config and <c>.trash/</c> deleted notes, a stray
+    /// <c>.git/</c>, Syncthing's <c>.stversions/</c>). Unlike <see cref="IsRecordFile"/> this is a
+    /// denylist — not a <c>memory/</c> allowlist — because records may live at the vault root too.
     ///
     /// <para>The <c>sources/</c> layer is excluded so raw ingest inputs are never embedded directly: only
     /// the LLM-synthesized topic pages under <c>memory/topics/</c> reach recall. This also keeps <c>.md</c>
@@ -72,7 +74,19 @@ public static class VaultPaths
         return normalized.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
             && !Housekeeping.Contains(normalized)
             && !normalized.StartsWith("sources/", StringComparison.OrdinalIgnoreCase)
-            && !normalized.StartsWith(".archive/", StringComparison.OrdinalIgnoreCase)
-            && !normalized.Contains("/.archive/", StringComparison.OrdinalIgnoreCase);
+            && !HasDotSegment(normalized);
+    }
+
+    private static bool HasDotSegment(string normalizedPath)
+    {
+        foreach (var segment in normalizedPath.Split('/'))
+        {
+            if (segment.Length > 0 && segment[0] == '.')
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
