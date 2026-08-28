@@ -124,11 +124,13 @@ public class FlowItemViewModelTests
         Assert.Equal("Snooze", snooze.Label);
         Assert.Equal(DecisionEmphasis.Default, snooze.Emphasis);
         Assert.Same(vm.SnoozeCommand, snooze.Command);
+        Assert.Equal("Flow_Decision_Snooze", snooze.AutomationId);
 
         var done = vm.Decisions[1];
         Assert.Equal("Done", done.Label);
         Assert.Equal(DecisionEmphasis.Primary, done.Emphasis);
         Assert.Same(vm.DoneCommand, done.Command);
+        Assert.Equal("Flow_Decision_Done", done.AutomationId);
     }
 
     [Fact]
@@ -277,11 +279,13 @@ public class FlowItemViewModelTests
         Assert.Equal("Deny", deny.Label);
         Assert.Equal(DecisionEmphasis.Default, deny.Emphasis);
         Assert.Same(vm.DeclineRunCommand, deny.Command);
+        Assert.Equal("Flow_Decision_Deny", deny.AutomationId);
 
         var approve = vm.Decisions[1];
         Assert.Equal("Allow", approve.Label);
         Assert.Equal(DecisionEmphasis.Primary, approve.Emphasis);
         Assert.Same(vm.ApproveRunCommand, approve.Command);
+        Assert.Equal("Flow_Decision_Approve", approve.AutomationId);
     }
 
     [Fact]

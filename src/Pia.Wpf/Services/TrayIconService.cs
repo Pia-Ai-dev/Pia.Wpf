@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
 using Pia.Models;
@@ -82,12 +83,15 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
         contextMenu.Opened += (_, _) => RefreshMenuItems();
 
         _optimizeMenuItem = new MenuItem { Header = _localizationService["Tray_OpenOptimize"] };
+        AutomationProperties.SetAutomationId(_optimizeMenuItem, "TrayMenu_Optimize");
         _optimizeMenuItem.Click += (_, _) => ToggleWindow(WindowMode.Optimize);
 
         _assistantMenuItem = new MenuItem { Header = _localizationService["Tray_OpenAssistant"] };
+        AutomationProperties.SetAutomationId(_assistantMenuItem, "TrayMenu_Assistant");
         _assistantMenuItem.Click += (_, _) => ToggleWindow(WindowMode.Assistant);
 
         _exitMenuItem = new MenuItem { Header = _localizationService["Tray_Exit"] };
+        AutomationProperties.SetAutomationId(_exitMenuItem, "TrayMenu_Exit");
         _exitMenuItem.Click += (_, _) => ExitApplication();
 
         contextMenu.Items.Add(_optimizeMenuItem);

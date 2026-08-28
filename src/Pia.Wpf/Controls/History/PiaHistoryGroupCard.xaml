@@ -62,14 +62,22 @@
               Visibility="{Binding IsExpanded, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
       <ListBox x:Name="ItemList"
+               AutomationProperties.AutomationId="{Binding Bucket, StringFormat='History_ItemList_{0}'}"
                ItemsSource="{Binding Items}"
                SelectionChanged="ItemList_SelectionChanged"
                Background="Transparent"
                BorderThickness="0"
                Padding="0,4,0,4"
-               ItemContainerStyle="{StaticResource PiaMemoryRowItemStyle}"
                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                Visibility="{Binding IsExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <ListBox.ItemContainerStyle>
+          <!-- Named and identified on the CONTAINER, which is the node UIA offers for a row: without these
+               every row reports the view-model's ToString() and can only be reached by index. -->
+          <Style TargetType="ListBoxItem" BasedOn="{StaticResource PiaMemoryRowItemStyle}">
+            <Setter Property="AutomationProperties.AutomationId" Value="{Binding Id, StringFormat='HistorySession_Row_{0}'}"/>
+            <Setter Property="AutomationProperties.Name" Value="{Binding TemplateName, TargetNullValue='—'}"/>
+          </Style>
+        </ListBox.ItemContainerStyle>
         <ListBox.ItemTemplate>
           <DataTemplate>
             <hist:PiaHistorySessionRow/>

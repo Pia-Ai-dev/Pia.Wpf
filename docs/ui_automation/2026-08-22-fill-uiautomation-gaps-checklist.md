@@ -38,16 +38,16 @@ code-behind has a public parameterless constructor. A `Window` root or a host-ta
 
 Two questions cancel or reshape the steps under them. Do not tick a dependant without revisiting.
 
-| Gate | Question it answers | Blocks |
-|---|---|---|
-| **DG1 · rename or caveat?** | For the four prefix collisions in `P1`: rename the shadowed id, or document the caveat the way `DirectTrans_Save` already is? Renaming breaks any script pinned to the old id; a caveat leaves `automationId*=` returning 2–4 elements forever. | `P1` |
-| **DG2 · is `MarkdownViewer` load-bearing?** | `K6` makes the id per-message. The playbook prescribes the bare `automationId=MarkdownViewer` as *the* recipe for reading a reply in its "Chat and tool approval" section, and `tests/ui-scripts/` may use it. Decide whether to keep a stable alias or accept the break. | `K6` |
+| Gate | Question it answers | Blocks | Resolution |
+|---|---|---|---|
+| **DG1 · rename or caveat?** | For the four prefix collisions in `P1`: rename the shadowed id, or document the caveat the way `DirectTrans_Save` already is? Renaming breaks any script pinned to the old id; a caveat leaves `automationId*=` returning 2–4 elements forever. | `P1` | **Renamed.** `MeetingAttendee_Save`→`_SaveTranscript`, `ChatChip_NewFolder`→`_AddFolder`, `AssistantHistory_Import`→`_ImportChats`, `NavItem_Assistant`→`_AssistantChat`. Confirmed no `tests/ui-scripts/` recording referenced any of the four old ids. |
+| **DG2 · is `MarkdownViewer` load-bearing?** | `K6` makes the id per-message. The playbook prescribes the bare `automationId=MarkdownViewer` as *the* recipe for reading a reply in its "Chat and tool approval" section, and `tests/ui-scripts/` may use it. Decide whether to keep a stable alias or accept the break. | `K6` | **No alias kept.** Replaced with a per-message id (`MarkdownViewer_<messageId>` in chat, `MarkdownViewer_<Reference>` in the vault inspector); the playbook's reply-read recipe was rewritten to match. |
 
 ---
 
 ## K — Ticks that did not hold
 
-- [ ] **K1 · `CardDecisionBar`'s Flow-rail buttons have an empty id at runtime** (was `G1`, ticked as
+- [x] **K1 · `CardDecisionBar`'s Flow-rail buttons have an empty id at runtime** (was `G1`, ticked as
   "confirmed already correct"). `CardDecisionBar.xaml:22` binds
   `AutomationProperties.AutomationId="{Binding AutomationId}"`, and `ActionCardInfo.cs:163,170,177,184` does
   set the four `ToolApproval_*` constants — but `FlowItemViewModel.BuildDecisions()` builds Deny/Approve/
@@ -58,7 +58,7 @@ Two questions cancel or reshape the steps under them. Do not tick a dependant wi
   `BindingExpression`, never a resolved value — lock this in `FlowItemViewModelTests` instead, the way
   `FollowUpChipAutomationIdTests` does for a binding the sweep cannot judge.
   *Deps:* none · *Effort:* **XS** · *Value:* **High**
-- [ ] **K2 · Vault / History / Reminders row containers carry no id and no name** (was `A3` / `D3` / `C4`).
+- [x] **K2 · Vault / History / Reminders row containers carry no id and no name** (was `A3` / `D3` / `C4`).
   `PiaAssistantChatGroupCard.xaml:75-77` gets this right — a `BasedOn` style with
   `AutomationId="{Binding Id, StringFormat='AssistantChat_Row_{0}'}"` plus a `Name`. The other three apply
   `PiaMemoryRowItemStyle` raw (`PiaVaultCategoryCard.xaml:78`, `PiaHistoryGroupCard.xaml:70`,
@@ -70,21 +70,30 @@ Two questions cancel or reshape the steps under them. Do not tick a dependant wi
   that now depend on it. Vault rows additionally report the record's full `Body` as their UIA name. Revise the
   playbook's Vault/History/Reminder row entries and its Known-gaps bullet when this lands.
   *Deps:* none · *Effort:* **S** · *Value:* **High**
-- [ ] **K3 · Four group-card `ListBox`es all answer to `ItemList`** (was `A3` / `C4` / `D3` / `F2`). None has
+- [x] **K3 · Four group-card `ListBox`es all answer to `ItemList`** (was `A3` / `C4` / `D3` / `F2`). None has
   an `AutomationId`, so each falls back to its `x:Name`: `PiaHistoryGroupCard.xaml:64`,
   `PiaAssistantChatGroupCard.xaml:64`, `PiaReminderGroupCard.xaml:73`, `PiaVaultCategoryCard.xaml:72`. One
   card renders per bucket, so N buckets on a page means N elements answering `automationId=ItemList`. This
   also blocks the fallback the playbook prescribes for id-less rows — scoping a name match inside one list —
   so it has to land with `K2`, not after it.
+  **2026-08-28 close-out:** the first pass landed a literal `AutomationId="ItemList"` on
+  `PiaHistoryGroupCard.xaml`, `PiaReminderGroupCard.xaml` and `PiaVaultCategoryCard.xaml` only, and
+  skipped `PiaAssistantChatGroupCard.xaml:64` entirely — a review caught that the literal string was
+  also a no-op regardless, since WPF's `x:Name` fallback already reported that exact value with no id
+  set. A follow-up fix instead keyed each `ListBox` off its own bucket identity, matching the header
+  toggle button one row up: `History_ItemList_<bucket>`, `Reminders_ItemList_<bucketKind>`,
+  `Memory_ItemList_<type>`, `AssistantHistory_ItemList_<bucket>` (the last one new, closing the fourth
+  card). All four are now distinct per bucket. Rebuilt clean (Debug + Release, 0/0) after the
+  follow-up.
   *Deps:* none · *Effort:* **XS** · *Value:* **High**
-- [ ] **K4 · `Suggestion_Chip_<n>` / `AgentMode_Chip_<n>` repeat across replies** (was `E8`). The id binds
+- [x] **K4 · `Suggestion_Chip_<n>` / `AgentMode_Chip_<n>` repeat across replies** (was `E8`). The id binds
   `ItemsControl.AlternationIndex` (`PiaSuggestionChips.xaml:27`, `PiaAgentModeChip.xaml:32`), which restarts
   at 0 in every strip — and the strip is per-message, hosted at `PiaAssistantMessage.xaml:150,157`. `E8`
   recorded this as "arrival order within one reply, not globally unique", which reads as a numbering caveat;
   the real consequence is that two replies with follow-ups both sit in scrollback, so `Suggestion_Chip_0`
   matches two live buttons and tree order returns the **older** one. Key on message id + chip index.
   *Deps:* none · *Effort:* **S** · *Value:* **Med**
-- [ ] **K5 · The Persona / Provider / Template edit dialogs are only half ided** (claimed under "Already
+- [x] **K5 · The Persona / Provider / Template edit dialogs are only half ided** (claimed under "Already
   covered before this branch"; group `H` was scoped to dialogs with *zero* ids, so it structurally skipped
   the partially-ided ones). Measured: `PersonaEditContentDialog.xaml` has 8 ids and **10 id-less controls** —
   Description `:42`, the **AI-draft button** `:49`, Tagline `:78`, Guardrails `:108`, OutputFormat `:124`,
@@ -98,7 +107,14 @@ Two questions cancel or reshape the steps under them. Do not tick a dependant wi
   `TemplateEditContentDialog.xaml:51`'s `GeneratePromptCommand` button is the third one. No test lock possible
   for any of them (`ContentDialog`).
   *Deps:* none · *Effort:* **S** · *Value:* **Med**
-- [ ] **K6 · `MarkdownViewer` is a literal id on a per-message control**
+  **2026-08-28 close-out:** landed as `PersonaEdit_Description/GenerateDraft/Tagline/Guardrails/
+  OutputFormat/Expertise/EmojiText/AccentColor` plus per-item `PersonaEdit_EmojiSwatch_<n>` /
+  `_ColorSwatch_<n>`, and `ProviderEdit_AzureDeploymentName/ReasoningEffort/WebSearch/
+  MistralAgentId/Timeout/MaxContextWindow/MaxOutputTokens` plus `_MistralWebSearch` for the second
+  checkbox, and `TemplateEdit_GeneratePrompt`. Not `PersonaEdit_Emoji` (would have prefix-shadowed
+  its own `_EmojiSwatch_<n>` grid) or `ProviderEdit_WebSearchMistral` (would have prefix-shadowed
+  `ProviderEdit_WebSearch`) — a review pass caught both before they shipped.
+- [x] **K6 · `MarkdownViewer` is a literal id on a per-message control**
   (`MarkdownMessageControl.xaml:5-6`, claimed done as "`MarkdownViewer` id matches its `x:Name`"). Its hosts
   are `PiaAssistantMessage.xaml:48` — a per-message template — and `PiaVaultInspector.xaml:40`, so N replies
   on screen means N hits. Plumb the message id through the way `Answer_Copy_<id>` does, and revise the
@@ -110,7 +126,7 @@ Two questions cancel or reshape the steps under them. Do not tick a dependant wi
 The scoping grep looked for `<UserControl` roots *missing* ids. This file has six, so it never appeared —
 and all six are on the header's import/export/help and the status bar, none on the filter bar.
 
-- [ ] **L1 · The view's own bar is entirely id-less.** Refresh `:44`, **Delete-all-chats `:83`** (destructive),
+- [x] **L1 · The view's own bar is entirely id-less.** Refresh `:44`, **Delete-all-chats `:83`** (destructive),
   search `TextBox` `:123`, the two `DatePicker`s `:134`/`:140`, provider `ComboBox` `:146`, state `ComboBox`
   `:162`, Clear-filters `:170` (which carries an `AutomationProperties.Name` and nothing else). A script
   cannot search, date-filter, provider-filter, refresh or bulk-delete on the chat-history page. The sibling
@@ -118,7 +134,11 @@ and all six are on the header's import/export/help and the status bar, none on t
   those field names under an `AssistantHistory_` prefix. The `DatePicker`s get ids for scripts but contribute
   0 to the walker's count, same as `D2`'s pair.
   *Deps:* none · *Effort:* **S** · *Value:* **High**
-- [ ] **L2 · It has no `[InlineData]` row** — the only lockable `UserControl` with walker-visible controls
+  **2026-08-28 close-out:** landed as `AssistantHistory_Refresh/SearchQuery/StartDate/EndDate/
+  ProviderFilter/StateFilter/ClearFilters` and `_BulkDeleteChats` for delete-all — not `_DeleteAll`,
+  which a review pass caught prefix-shadowing the per-chat inspector's pre-existing
+  `AssistantHistory_Delete`.
+- [x] **L2 · It has no `[InlineData]` row** — the only lockable `UserControl` with walker-visible controls
   that lacks one (`AssistantHistoryView.xaml.cs` is a public parameterless ctor). That absence is precisely
   why `L1` survived ten slices of this work. Floor 7 (the `DatePicker`s do not count); nested stops are the
   group card and the status bar, which hold their own rows.
@@ -130,18 +150,26 @@ The mechanism only ever saw XAML. The app sets **zero** AutomationIds from C# to
 two `AutomationId` properties are view-model strings bound from XAML, not `AutomationProperties.SetAutomationId`
 calls.
 
-- [ ] **M1 · `DialogService.ShowInputDialogAsync` builds a bare `new TextBox`** with no id and no name
+- [x] **M1 · `DialogService.ShowInputDialogAsync` builds a bare `new TextBox`** with no id and no name
   (`Services/DialogService.cs:239`). It is the rename field behind four flows whose *entry* buttons are
   documented as scriptable — `TodoViewModel.cs`, `DirectTranscriptionViewModel.cs`,
   `MeetingAttendeeViewModel.cs`. It works today only via an undocumented `type=Edit` match, and breaks the
   moment the dialog grows a second field. One `AutomationProperties.SetAutomationId` call.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
-- [ ] **M2 · Markdown hyperlinks are procedural and id-less** —
+- [x] **M2 · Markdown hyperlinks are procedural and id-less** —
   `Controls/Markdown/PiaMarkdownRenderer.cs:364,386`. That includes **wiki-links between vault notes**, which
   is in-app navigation over deterministic user content, not an external URL. The playbook's procedural-render
   caveat covers only the code-fence case. Key on the href or an ordinal.
   *Deps:* none · *Effort:* **S** · *Value:* **Med**
-- [ ] **M3 · The tray-icon menu is built with `Header` + `Click` only** —
+  **2026-08-28 close-out:** landed as `Markdown_Link_<n>`, a per-render ordinal (the checklist's own
+  "key on the href or an ordinal" was satisfied by the ordinal option). Not per-message — the ordinal
+  restarts at 0 for every render call, so two different messages/notes each containing links produce
+  colliding ids, the same class of defect `K4` fixed for the suggestion chips in this same round.
+  `MarkdownMessageControl.AutomationIdSuffix` (added by `K6` in this same round) already carries the
+  right discriminator end-to-end but was not threaded into the renderer — left as a follow-up, not
+  done here, since it means changing the renderer's public `Render` signature and every call site.
+  *Deps:* none · *Effort:* **XS** · *Value:* **Enabler**
+- [x] **M3 · The tray-icon menu is built with `Header` + `Click` only** —
   `Services/TrayIconService.cs:84,87,90`. `Tray_OpenOptimize` / `Tray_OpenAssistant` / `Tray_Exit` are
   localization keys, not ids, so reaching the app from the notification area means matching localized text,
   which [`2026-08-19-ui-testability-prompts.md`](2026-08-19-ui-testability-prompts.md) rules out. Both windows
@@ -150,24 +178,33 @@ calls.
 
 ## N — Remaining single controls
 
-- [ ] **N1 · `x:Name="TodoTitle"` inside the per-todo template** (`TodoView.xaml:338`,
+- [x] **N1 · `x:Name="TodoTitle"` inside the per-todo template** (`TodoView.xaml:338`,
   `TodoPanelControl.xaml:125`). One hit per card, first silently wins — the same defect that produced
   `Flow_Title_<id>`. The sibling checkbox at `TodoView.xaml:318` already keys on `Id`, so the identity is
   right there. A `TextBlock` is outside the walker's seven types, so no row demands it.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
-- [ ] **N2 · The sidebar's new-window `ContextMenu` has two id-less `MenuItem`s**
+- [x] **N2 · The sidebar's new-window `ContextMenu` has two id-less `MenuItem`s**
   (`NavigationSidebarView.xaml:229,246`), whose `Header`s reuse the `Nav_Optimize` / `Nav_Assistant` keys the
   nav buttons publish as their UIA **Name** — an exact name collision. It is the only path to opening a
   second window in a chosen mode: `NavItem_NewWindow` at `:218` carries no `Command`. Not covered by the
   documented `NavigationView.MenuItems` exclusion, which is about the test lock only.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
-- [ ] **N3 · Transcript-bubble context menus have no ids** — `DirectTranscriptionOverlay.xaml:468,473` and
+  **2026-08-28 close-out:** landed as `NavItem_OpenOptimizeWindow` / `NavItem_OpenAssistantWindow` —
+  not `NavItem_NewWindow_Optimize` / `_Assistant`, which a review pass caught prefix-shadowing the
+  menu's own host button, `NavItem_NewWindow` at `:218`.
+- [x] **N3 · Transcript-bubble context menus have no ids** — `DirectTranscriptionOverlay.xaml:468,473` and
   `MeetingAttendeeOverlay.xaml:390-397` — while the consent-chip menu in the same file does
   (`DirectTrans_ChipRename_{0}` at `:230`, `_ChipRevoke_{0}` at `:238`). Both menus expose identically-named
   items and only one pair is addressable, so right-clicking a bubble (the affordance the UI actually offers)
   is unscriptable. Rename has an ided alternative; revoke needs `ConsentChips.Count > 0`.
   *Deps:* none · *Effort:* **XS** · *Value:* **Med**
-- [ ] **N4 · `SnackbarActionHelper.ShowSubtleWithAction` bypasses `ISnackbarService`** —
+  **2026-08-28 close-out:** `MeetingAttendeeOverlay`'s bubble menu landed as
+  `MeetingAttendee_ChipRename_<speakerLabel>`, deliberately distinct from that same file's consent-chip
+  `MeetingAttendee_RenameSpeaker_<speakerLabel>`. `DirectTranscriptionOverlay`'s second menu first
+  landed reusing the consent-chip's own `DirectTrans_ChipRename_<speakerLabel>` / `_ChipRevoke_<...>` —
+  a review pass caught that this made two separate `MenuItem`s answer to one id, and it was renamed to
+  `DirectTrans_BubbleChipRename_<speakerLabel>` / `_BubbleChipRevoke_<speakerLabel>`.
+- [x] **N4 · `SnackbarActionHelper.ShowSubtleWithAction` bypasses `ISnackbarService`** —
   `Helpers/SnackbarActionHelper.cs` constructs `new Snackbar(presenter)` and calls `Show()` directly, with a
   `StackPanel` + `Hyperlink` body carrying no id or name. Live from `BackgroundChatNotificationSurface` and
   `AssignmentNotificationSurface` when the Assistant window is foreground. The playbook says flatly "there is
@@ -175,14 +212,14 @@ calls.
   also published as `Flow_ActionLink_<id>`, so this is ids-plus-a-doc-fix, not a blocker. Revise the playbook's
   snackbar bullet when it lands.
   *Deps:* none · *Effort:* **XS** · *Value:* **Enabler**
-- [ ] **N5 · The kanban column-resize `Thumb` has no id and no `x:Name`** (`TodoView.xaml:441`, one per
+- [x] **N5 · The kanban column-resize `Thumb` has no id and no `x:Name`** (`TodoView.xaml:441`, one per
   column; the style adds none). A script cannot resize a named column or even locate the grip's rect. `Thumb`
   is outside both the walker's seven types and the CLAUDE.md enumeration, so no rule was broken here.
   *Deps:* none · *Effort:* **XS** · *Value:* **Enabler**
 
 ## P — Prefix collisions
 
-- [ ] **P1 · Four same-surface prefix shadowings the playbook lists flatly**, unlike `DirectTrans_Save` ⊂
+- [x] **P1 · Four same-surface prefix shadowings the playbook lists flatly**, unlike `DirectTrans_Save` ⊂
   `_SaveToVault` which it does caveat. `automationId*=` is a prefix match, so each returns 2–4 elements:
   `MeetingAttendee_Save` ⊂ `_SaveToVault` (same `StackPanel`, identical `IsRunning` gate —
   `MeetingAttendeeOverlay.xaml:443,451`); `ChatChip_NewFolder` ⊂ `_NewFolderName` / `_Confirm` / `_Cancel`
@@ -192,6 +229,14 @@ calls.
   permanently visible (`NavigationSidebarView.xaml:50,92`). This is the class of defect slice 10 found and
   fixed four of; these four survived because they span two files or two states.
   *Deps:* DG1 · *Effort:* **XS** as a caveat, **S** as renames · *Value:* **Med**
+  **2026-08-28 close-out:** all four renamed per DG1 (see Decision gates table above). A review pass
+  of the whole batch then caught four NEW prefix collisions this same round of fixes had introduced
+  elsewhere — `AssistantHistory_DeleteAll` ⊂ `AssistantHistory_Delete`, `PersonaEdit_Emoji` ⊂
+  `PersonaEdit_EmojiSwatch_<n>`, `ProviderEdit_WebSearchMistral` ⊃ `ProviderEdit_WebSearch`, and
+  `NavItem_NewWindow_Optimize`/`_Assistant` ⊃ `NavItem_NewWindow` — plus a true duplicate-id
+  regression in `DirectTranscriptionOverlay.xaml`'s new bubble menu (see L1, K5, N2 and N3 close-out
+  notes above for the final names). Same class of defect as `P1` itself; worth checking for on any
+  future automation-id batch, not just this one.
 
 ## Known-accepted — no action
 

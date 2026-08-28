@@ -47,7 +47,7 @@
           <Button Style="{StaticResource NavItemInvokeButtonStyle}"
                   Command="{Binding NavigationCommand}"
                   CommandParameter="Assistant"
-                  AutomationProperties.AutomationId="NavItem_Assistant"
+                  AutomationProperties.AutomationId="NavItem_AssistantChat"
                   AutomationProperties.Name="{loc:Str Nav_Assistant}">
             <StackPanel Orientation="Horizontal">
               <TextBlock Text="{loc:Str Nav_Assistant}" />
@@ -229,7 +229,8 @@
             <MenuItem Header="{loc:Str Nav_Optimize}"
                       Command="{Binding OpenNewWindowCommand}"
                       CommandParameter="{x:Static models:WindowMode.Optimize}"
-                      InputGestureText="{Binding OptimizeHotkeyHint}">
+                      InputGestureText="{Binding OptimizeHotkeyHint}"
+                      AutomationProperties.AutomationId="NavItem_OpenOptimizeWindow">
               <MenuItem.Icon>
                 <ui:SymbolIcon Symbol="Sparkle24" />
               </MenuItem.Icon>
@@ -246,7 +247,8 @@
             <MenuItem Header="{loc:Str Nav_Assistant}"
                       Command="{Binding OpenNewWindowCommand}"
                       CommandParameter="{x:Static models:WindowMode.Assistant}"
-                      InputGestureText="{Binding AssistantHotkeyHint}">
+                      InputGestureText="{Binding AssistantHotkeyHint}"
+                      AutomationProperties.AutomationId="NavItem_OpenAssistantWindow">
               <MenuItem.Icon>
                 <ui:SymbolIcon Symbol="Chat24" />
               </MenuItem.Icon>

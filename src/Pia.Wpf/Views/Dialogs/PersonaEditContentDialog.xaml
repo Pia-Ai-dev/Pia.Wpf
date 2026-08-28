@@ -45,9 +45,11 @@
                Height="64"
                VerticalScrollBarVisibility="Auto"
                IsReadOnly="{Binding IsGenerating}"
+               AutomationProperties.AutomationId="PersonaEdit_Description"
                Margin="0,0,0,8" />
       <ui:Button Command="{Binding GenerateDraftCommand}"
                  IsEnabled="{Binding IsGenerating, Converter={StaticResource InverseBooleanConverter}}"
+                 AutomationProperties.AutomationId="PersonaEdit_GenerateDraft"
                  Margin="0,0,0,16">
         <Grid>
           <StackPanel Orientation="Horizontal"
@@ -76,6 +78,7 @@
                  FontWeight="SemiBold"
                  Margin="0,0,0,4" />
       <ui:TextBox Text="{Binding Tagline, UpdateSourceTrigger=PropertyChanged}"
+                  AutomationProperties.AutomationId="PersonaEdit_Tagline"
                   Margin="0,0,0,16" />
 
       <!-- System prompt -->
@@ -110,6 +113,7 @@
                AcceptsReturn="True"
                Height="64"
                VerticalScrollBarVisibility="Auto"
+               AutomationProperties.AutomationId="PersonaEdit_Guardrails"
                Margin="0,0,0,16" />
 
       <!-- Output format -->
@@ -127,6 +131,7 @@
                Height="96"
                VerticalScrollBarVisibility="Auto"
                IsReadOnly="{Binding IsGenerating}"
+               AutomationProperties.AutomationId="PersonaEdit_OutputFormat"
                Margin="0,0,0,16" />
 
       <!-- Archetype + Model type + Tool scope -->
@@ -175,6 +180,7 @@
                  TextWrapping="Wrap"
                  Margin="0,0,0,8" />
       <ui:TextBox Text="{Binding Expertise, UpdateSourceTrigger=PropertyChanged}"
+                  AutomationProperties.AutomationId="PersonaEdit_Expertise"
                   Margin="0,0,0,16" />
 
       <!-- Emoji + accent colour (each opens a popup picker) -->
@@ -248,6 +254,7 @@
                         FontFamily="{StaticResource EmojiCapableFontFamily}"
                         MaxLength="8"
                         PlaceholderText="🙂"
+                        AutomationProperties.AutomationId="PersonaEdit_EmojiText"
                         Margin="0,0,0,8" />
             <ItemsControl ItemsSource="{Binding EmojiChoices}"
                           ButtonBase.Click="OnEmojiPicked">
@@ -260,7 +267,8 @@
                 <DataTemplate>
                   <Button Style="{StaticResource PiaEmojiSwatchButtonStyle}"
                           Command="{Binding DataContext.PickEmojiCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                          CommandParameter="{Binding}">
+                          CommandParameter="{Binding}"
+                          AutomationProperties.AutomationId="{Binding StringFormat='PersonaEdit_EmojiSwatch_{0}'}">
                     <controls:EmojiPresenter Emoji="{Binding}" GlyphSize="20" />
                     <Button.Tag>
                       <MultiBinding Converter="{StaticResource MultiStringEqualsBoolConverter}">
@@ -308,7 +316,8 @@
                           Background="{Binding Converter={StaticResource HexToBrushConverter}}"
                           Command="{Binding DataContext.PickAccentColorCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                           CommandParameter="{Binding}"
-                          ToolTip="{Binding}">
+                          ToolTip="{Binding}"
+                          AutomationProperties.AutomationId="{Binding StringFormat='PersonaEdit_ColorSwatch_{0}'}">
                     <Button.Tag>
                       <MultiBinding Converter="{StaticResource MultiStringEqualsBoolConverter}">
                         <Binding />
@@ -322,6 +331,7 @@
             <ui:TextBox Text="{Binding AccentColor, UpdateSourceTrigger=PropertyChanged}"
                         MaxLength="7"
                         PlaceholderText="#RRGGBB"
+                        AutomationProperties.AutomationId="PersonaEdit_AccentColor"
                         Margin="0,8,0,0" />
           </StackPanel>
         </Border>

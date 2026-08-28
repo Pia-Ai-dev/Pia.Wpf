@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Documents;
 using System.Windows.Media;
 using Markdig;
@@ -41,9 +42,10 @@ internal static class PiaMarkdownRenderer
         }
 
         var ast = Markdig.Markdown.Parse(markdown, _pipeline);
+        var linkOrdinal = new int[1];
         foreach (var block in ast)
         {
-            var rendered = RenderBlock(block);
+            var rendered = RenderBlock(block, linkOrdinal);
             if (rendered is not null)
             {
                 doc.Blocks.Add(rendered);
@@ -54,29 +56,29 @@ internal static class PiaMarkdownRenderer
     }
 
     // FencedCodeBlock must precede CodeBlock — it is a subtype.
-    private static WpfBlock? RenderBlock(MdBlock block) => block switch
+    private static WpfBlock? RenderBlock(MdBlock block, int[] linkOrdinal) => block switch
     {
-        HeadingBlock heading => RenderHeading(heading),
-        ParagraphBlock paragraph => RenderParagraph(paragraph),
-        ListBlock list => RenderList(list),
-        QuoteBlock quote => RenderQuote(quote),
+        HeadingBlock heading => RenderHeading(heading, linkOrdinal),
+        ParagraphBlock paragraph => RenderParagraph(paragraph, linkOrdinal),
+        ListBlock list => RenderList(list, linkOrdinal),
+        QuoteBlock quote => RenderQuote(quote, linkOrdinal),
         FencedCodeBlock fenced => RenderCodeCard(fenced.Info, JoinCodeLines(fenced)),
         CodeBlock code => RenderCodeCard(string.Empty, JoinCodeLines(code)),
         ThematicBreakBlock => RenderThematicBreak(),
-        MdTable table => RenderTable(table),
+        MdTable table => RenderTable(table, linkOrdinal),
         HtmlBlock html => RenderHtmlBlock(html),
-        CustomContainer container => RenderUnstyledContainer(container),
+        CustomContainer container => RenderUnstyledContainer(container, linkOrdinal),
         _ => null,
     };
 
     // UseAdvancedExtensions parses any ::: fence into a CustomContainer, which Pia gives no styling of its
     // own — without this the whole fenced region would vanish from the answer (HTML export keeps it).
-    private static WpfBlock? RenderUnstyledContainer(CustomContainer container)
+    private static WpfBlock? RenderUnstyledContainer(CustomContainer container, int[] linkOrdinal)
     {
         var section = new Section();
         foreach (var child in container)
         {
-            var rendered = RenderBlock(child);
+            var rendered = RenderBlock(child, linkOrdinal);
             if (rendered is not null)
             {
                 section.Blocks.Add(rendered);
@@ -85,24 +87,24 @@ internal static class PiaMarkdownRenderer
         return section.Blocks.Count > 0 ? section : null;
     }
 
-    private static Paragraph RenderHeading(HeadingBlock heading)
+    private static Paragraph RenderHeading(HeadingBlock heading, int[] linkOrdinal)
     {
         var paragraph = new Paragraph
         {
             Tag = $"Heading{Math.Clamp(heading.Level, 1, 4)}",
         };
-        AppendInlines(heading.Inline, paragraph.Inlines);
+        AppendInlines(heading.Inline, paragraph.Inlines, linkOrdinal);
         return paragraph;
     }
 
-    private static Paragraph RenderParagraph(ParagraphBlock block)
+    private static Paragraph RenderParagraph(ParagraphBlock block, int[] linkOrdinal)
     {
         var paragraph = new Paragraph();
-        AppendInlines(block.Inline, paragraph.Inlines);
+        AppendInlines(block.Inline, paragraph.Inlines, linkOrdinal);
         return paragraph;
     }
 
-    private static List RenderList(ListBlock listBlock)
+    private static List RenderList(ListBlock listBlock, int[] linkOrdinal)
     {
         var list = new List
         {
@@ -124,7 +126,7 @@ internal static class PiaMarkdownRenderer
             var item = new ListItem();
             foreach (var nested in itemBlock)
             {
-                var rendered = RenderBlock(nested);
+                var rendered = RenderBlock(nested, linkOrdinal);
                 if (rendered is not null)
                 {
                     item.Blocks.Add(rendered);
@@ -136,7 +138,7 @@ internal static class PiaMarkdownRenderer
         return list;
     }
 
-    private static Section RenderQuote(QuoteBlock quoteBlock)
+    private static Section RenderQuote(QuoteBlock quoteBlock, int[] linkOrdinal)
     {
         var section = new Section
         {
@@ -144,7 +146,7 @@ internal static class PiaMarkdownRenderer
         };
         foreach (var nested in quoteBlock)
         {
-            var rendered = RenderBlock(nested);
+            var rendered = RenderBlock(nested, linkOrdinal);
             if (rendered is not null)
             {
                 section.Blocks.Add(rendered);
@@ -187,7 +189,7 @@ internal static class PiaMarkdownRenderer
         return paragraph;
     }
 
-    private static WpfTable RenderTable(MdTable tableBlock)
+    private static WpfTable RenderTable(MdTable tableBlock, int[] linkOrdinal)
     {
         var table = new WpfTable();
 
@@ -225,7 +227,7 @@ internal static class PiaMarkdownRenderer
                 var cell = new WpfTableCell();
                 foreach (var nested in cellBlock)
                 {
-                    var rendered = RenderBlock(nested);
+                    var rendered = RenderBlock(nested, linkOrdinal);
                     if (rendered is not null)
                     {
                         cell.Blocks.Add(rendered);
@@ -268,14 +270,14 @@ internal static class PiaMarkdownRenderer
         return paragraph;
     }
 
-    private static void AppendInlines(ContainerInline? container, InlineCollection target)
+    private static void AppendInlines(ContainerInline? container, InlineCollection target, int[] linkOrdinal)
     {
         if (container is null) return;
 
         var inline = container.FirstChild;
         while (inline is not null)
         {
-            var rendered = RenderInline(inline);
+            var rendered = RenderInline(inline, linkOrdinal);
             if (rendered is not null)
             {
                 target.Add(rendered);
@@ -284,24 +286,24 @@ internal static class PiaMarkdownRenderer
         }
     }
 
-    private static WpfInline? RenderInline(MdInline inline) => inline switch
+    private static WpfInline? RenderInline(MdInline inline, int[] linkOrdinal) => inline switch
     {
         LiteralInline literal => RenderLiteral(literal.Content.ToString()),
         CodeInline codeInline => RenderCodeSpan(codeInline),
-        EmphasisInline emphasis => RenderEmphasis(emphasis),
-        LinkInline link => RenderLink(link),
-        AutolinkInline autolink => RenderAutolink(autolink),
+        EmphasisInline emphasis => RenderEmphasis(emphasis, linkOrdinal),
+        LinkInline link => RenderLink(link, linkOrdinal),
+        AutolinkInline autolink => RenderAutolink(autolink, linkOrdinal),
         LineBreakInline lineBreak => lineBreak.IsHard ? new LineBreak() : new Run(" "),
         HtmlEntityInline entity => new Run(entity.Transcoded.ToString()),
         HtmlInline => null,
-        ContainerInline container => RenderContainer(container),
+        ContainerInline container => RenderContainer(container, linkOrdinal),
         _ => null,
     };
 
-    private static Span RenderContainer(ContainerInline container)
+    private static Span RenderContainer(ContainerInline container, int[] linkOrdinal)
     {
         var span = new Span();
-        AppendInlines(container, span.Inlines);
+        AppendInlines(container, span.Inlines, linkOrdinal);
         return span;
     }
 
@@ -330,7 +332,7 @@ internal static class PiaMarkdownRenderer
         };
     }
 
-    private static WpfInline RenderEmphasis(EmphasisInline emphasis)
+    private static WpfInline RenderEmphasis(EmphasisInline emphasis, int[] linkOrdinal)
     {
         Span span;
         if (emphasis.DelimiterChar == '~')
@@ -346,11 +348,11 @@ internal static class PiaMarkdownRenderer
             span = new Italic();
         }
 
-        AppendInlines(emphasis, span.Inlines);
+        AppendInlines(emphasis, span.Inlines, linkOrdinal);
         return span;
     }
 
-    private static WpfInline RenderLink(LinkInline link)
+    private static WpfInline RenderLink(LinkInline link, int[] linkOrdinal)
     {
         if (link.IsImage)
         {
@@ -366,8 +368,9 @@ internal static class PiaMarkdownRenderer
         {
             hyperlink.NavigateUri = absolute;
         }
+        AutomationProperties.SetAutomationId(hyperlink, $"Markdown_Link_{linkOrdinal[0]++}");
 
-        AppendInlines(link, hyperlink.Inlines);
+        AppendInlines(link, hyperlink.Inlines, linkOrdinal);
         if (hyperlink.Inlines.Count == 0)
         {
             hyperlink.Inlines.Add(new Run(url));
@@ -381,13 +384,14 @@ internal static class PiaMarkdownRenderer
         return hyperlink;
     }
 
-    private static WpfInline RenderAutolink(AutolinkInline autolink)
+    private static WpfInline RenderAutolink(AutolinkInline autolink, int[] linkOrdinal)
     {
         var hyperlink = new Hyperlink(new Run(autolink.Url));
         if (Uri.TryCreate(autolink.Url, UriKind.Absolute, out var uri))
         {
             hyperlink.NavigateUri = uri;
         }
+        AutomationProperties.SetAutomationId(hyperlink, $"Markdown_Link_{linkOrdinal[0]++}");
         return hyperlink;
     }
 

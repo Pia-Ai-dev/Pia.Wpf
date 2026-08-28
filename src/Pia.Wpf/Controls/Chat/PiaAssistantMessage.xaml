@@ -48,6 +48,7 @@
           <controls:MarkdownMessageControl x:Name="Markdown"
                                            MarkdownText="{Binding Content}"
                                            IsStreaming="{Binding IsStreaming}"
+                                           AutomationIdSuffix="{Binding Id}"
                                            AddToPiiRequested="Markdown_AddToPiiRequested" />
         </Border>
 

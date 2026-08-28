@@ -337,6 +337,7 @@
                                     <Grid>
                                       <TextBlock x:Name="TodoTitle"
                                                  behaviors:EmojiTextBehavior.Text="{Binding Title}"
+                                                 AutomationProperties.AutomationId="{Binding Id, StringFormat='Todo_Title_{0}'}"
                                                  FontSize="13"
                                                  Foreground="{DynamicResource TextDefaultBrush}"
                                                  TextTrimming="CharacterEllipsis"/>
@@ -441,6 +442,7 @@
                     <Thumb Grid.RowSpan="2"
                            Style="{StaticResource ColumnResizeThumbStyle}"
                            DragDelta="OnColumnResizeThumbDragDelta"
+                           AutomationProperties.AutomationId="{Binding Column.Id, StringFormat='Todo_ColumnResize_{0}'}"
                            DataContext="{Binding}"/>
                   </Grid>
                 </Border>

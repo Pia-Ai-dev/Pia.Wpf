@@ -1,9 +1,10 @@
 <UserControl x:Class="Pia.Controls.MarkdownMessageControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:loc="clr-namespace:Pia.Localization">
+             xmlns:loc="clr-namespace:Pia.Localization"
+             x:Name="Root">
     <RichTextBox x:Name="MarkdownViewer"
-                 AutomationProperties.AutomationId="MarkdownViewer"
+                 AutomationProperties.AutomationId="{Binding AutomationIdSuffix, ElementName=Root, StringFormat='MarkdownViewer_{0}'}"
                  IsReadOnly="True"
                  IsDocumentEnabled="True"
                  BorderThickness="0"

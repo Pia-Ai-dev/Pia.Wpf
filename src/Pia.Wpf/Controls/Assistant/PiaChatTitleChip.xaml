@@ -303,7 +303,7 @@
                           Padding="4,2"
                           VerticalAlignment="Center"
                           Click="NewFolderButton_Click"
-                          AutomationProperties.AutomationId="ChatChip_NewFolder"
+                          AutomationProperties.AutomationId="ChatChip_AddFolder"
                           ToolTip="{loc:Str AssistantChat_WorkingDir_NewFolder_Tooltip}">
                     <ui:SymbolIcon Symbol="FolderAdd24"
                                    FontSize="15"

@@ -34,9 +34,9 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 
 | Element | AutomationId |
 |---|---|
-| Sidebar items | `NavItem_Assistant`, `NavItem_AssistantHistory`, `NavItem_Memory`, `NavItem_Reminders`, `NavItem_Routines`, `NavItem_Todo`, `NavItem_Settings`, `NavItem_NewWindow`, `NavItem_ThemeToggle` |
+| Sidebar items | `NavItem_AssistantChat`, `NavItem_AssistantHistory`, `NavItem_Memory`, `NavItem_Reminders`, `NavItem_Routines`, `NavItem_Todo`, `NavItem_Settings`, `NavItem_NewWindow`, `NavItem_ThemeToggle` |
 | Sidebar items, conditional | `NavItem_Optimize` / `NavItem_History` (Optimize-mode windows only), `NavItem_Assignments` (only when the server offers the surface) |
-| Chat input / scroller | `InputTextBox`, `MessageScrollViewer`, `MarkdownViewer` (assistant bubble text, via `PiaAssistantMessage` → `MarkdownMessageControl`) — a **literal** id on a per-message control, so it returns one hit per rendered reply, not "the" reply; see Known gaps |
+| Chat input / scroller | `InputTextBox`, `MessageScrollViewer`, `MarkdownViewer_<messageId>` (assistant bubble text, via `PiaAssistantMessage` → `MarkdownMessageControl`) — per-message since 2026-08-28; match the `MarkdownViewer_` prefix, then narrow by the reply's `Answer_*_<messageId>` toolbar |
 | Chat composer toolbar | per-group `Assistant_Suggestion_<Group>` (empty-state chips; 3 of `Memory`, `Recall`, `Todo`, `Reminder`, `Routine`, `Plan`, `Chats` are drawn per visit, so match on the prefix rather than one id), `Assistant_ClearConversation`, `Assistant_CancelStreaming`, `Assistant_ToggleRecording`, `Assistant_AttachFile`, `Assistant_RemoveAttachment`, `Assistant_ToggleMeetingAttendee`, `Assistant_ToggleDirectTranscription`, `Assistant_RunAssignment`, `Assistant_PersonaPicker`, `Assistant_Mode_Chat` / `_Agent`, `Assistant_RunInBackground`, `Assistant_Send`, `Assistant_WeakProvider_Continue` / `_ChooseProvider` / `_StayInChat`, per-message `Assistant_CopyMessage_<guid>` (user bubble, keyed by message `Id`) |
 | Tool-approval decisions | `ToolApproval_Decline`, `ToolApproval_AllowOnce`, `ToolApproval_AllowSession`, `ToolApproval_AlwaysAllow` |
 | Personas / Templates grids | `Personas_AddButton`, `Templates_AddButton`, `Personas_ManagedNotice` (the policy banner, present only when the org manages personas), per-item `Persona_Edit_<guid>` / `Persona_Delete_<guid>` / `Persona_Duplicate_<guid>` / `Template_Edit_<guid>` / `Template_Delete_<guid>` / `Template_ViewPrompt_<guid>` / `Template_SetDefault_<guid>` |
@@ -55,15 +55,15 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Persona dialog | `PersonaEdit_Name`, `PersonaEdit_SystemPrompt`, `PersonaEdit_Archetype`, `PersonaEdit_ModelType`, `PersonaEdit_ToolScope`, `PersonaEdit_PreferredProvider`, `PersonaEdit_ReasoningEffort` |
 | Template dialog | `TemplateEdit_Name`, `TemplateEdit_StyleDescription`, `TemplateEdit_GeneratedPrompt` |
 | Provider dialog | `ProviderEdit_Name`, `ProviderEdit_ProviderType`, `ProviderEdit_Endpoint`, `ProviderEdit_ApiKey`, `ProviderEdit_ModelName`, `ProviderEdit_FetchModels`. The key box is always blank on an edit — the saved key is never loaded into it — and Fetch Models falls back to the stored key, so leave it empty unless you are testing a rotation. `ProviderEdit_KeyStaysLocalNotice` is the device-local key notice above the box: present only when signed in to cloud with E2EE off, and only for a provider type that takes a key. |
-| Meeting attendee overlay | `MeetingAttendee_Url`, `_DisplayName`, `_Consent`, `_Join`, `_Stop`, `_Save`, `_SpeakerDisclaimer`, `_Close`, `_OpenSettings`, `_SaveToVault`, `_Summarize`, per-bubble `_RenameSpeaker_<speakerLabel>` (shared across every bubble from the same speaker — renaming applies to the label, not one utterance). Open the overlay with the composer button named "Join a meeting and transcribe". Bubble labels carry no id — read them as `Text` elements, which is what `Invoke-MeetingReplay.ps1` does to check the numbering. |
+| Meeting attendee overlay | `MeetingAttendee_Url`, `_DisplayName`, `_Consent`, `_Join`, `_Stop`, `_SaveTranscript`, `_SpeakerDisclaimer`, `_Close`, `_OpenSettings`, `_SaveToVault`, `_Summarize`, per-bubble `_RenameSpeaker_<speakerLabel>` (shared across every bubble from the same speaker — renaming applies to the label, not one utterance). Open the overlay with the composer button named "Join a meeting and transcribe". Bubble labels carry no id — read them as `Text` elements, which is what `Invoke-MeetingReplay.ps1` does to check the numbering. |
 | Edit dialogs (shared) | `PrimaryButton` (Save), `CloseButton` (Cancel), `Dialog_RequiredHint`. **Wpf.Ui’s own `SimpleContentDialog`, the one `ShowConfirmationDialogAsync` raises, carries the same two ids** — verified on the export-diagnostics confirmation, where they are named `Yes`/`No`. A `ui:ContentDialog` that sets `SecondaryButtonText` gets a third, `SecondaryButton` — `MissedScheduledJobDialog` is the one that renders all three (Run now / Skip / Later). |
 | Overlay dialogs (`OverlayDialogPanel`) | A **different** family with different ids: `PART_PrimaryButton`, `PART_SecondaryButton`, `PART_CloseButton`, from the `ControlTemplate` in `Resources/Styles/OverlayDialog.xaml` — not the `PrimaryButton` / `CloseButton` above. Raised by `DialogService` for the Optimizing (Cancel), Recording (Finish) and Transcribing (Cancel) dialogs, and by `PolicyRestartOverlayPresenter` for the restart-required panel (Restart). The body text has no id; read it as `Text`. |
-| Chat history import/export | `AssistantHistory_Import`, `AssistantHistory_ExportAll`, `AssistantHistory_LoadMore` (header/list), `AssistantHistory_ExportArchive` (inspector, needs a selected chat), `AssistantHistory_ImportStatus` / `AssistantHistory_ImportProgress` (status bar, present only while an import runs) |
+| Chat history import/export | `AssistantHistory_ImportChats`, `AssistantHistory_ExportAll`, `AssistantHistory_LoadMore` (header/list), `AssistantHistory_ExportArchive` (inspector, needs a selected chat), `AssistantHistory_ImportStatus` / `AssistantHistory_ImportProgress` (status bar, present only while an import runs) |
 | Chat title chip + history flyout (`PiaChatTitleChip`) | The picker at the top-left of the Assistant view. `ChatChip_Toggle` opens it; inside, `ChatChip_Search`, `ChatChip_NewChat`, `ChatChip_ShowAllChats`, and per-chat `ChatChip_Resume_<chatId>` (keyed on `ChatChipItemViewModel.Id`). Each row's hover trash is `AssistantChat_Delete_<chatId>` — the row body is the shared `PiaAssistantChatRowContent`, and its `AssistantChat_Open_<id>` sibling is **collapsed here** because the chip passes only `DeleteCommand`, so resume through `ChatChip_Resume_<chatId>`. The flyout is `StaysOpen="False"`: query it in the call right after the invoke, with no `ww_window activate` in between. |
-| Working-directory picker (inside that flyout) | `ChatChip_WorkingDir` opens the drill-down; per-crumb `ChatChip_Crumb_<index>` keyed on `WorkingDirectoryCrumb.Index` (0 = root). `ChatChip_NewFolder` reveals the inline row: `ChatChip_NewFolderName`, `ChatChip_NewFolderConfirm`, `ChatChip_NewFolderCancel`. The child-folder list is `ChatChip_FolderEntries`; its rows are bare folder-name strings with no non-content field to key on, so scope a name match inside that list rather than expecting per-row ids. |
+| Working-directory picker (inside that flyout) | `ChatChip_WorkingDir` opens the drill-down; per-crumb `ChatChip_Crumb_<index>` keyed on `WorkingDirectoryCrumb.Index` (0 = root). `ChatChip_AddFolder` reveals the inline row: `ChatChip_NewFolderName`, `ChatChip_NewFolderConfirm`, `ChatChip_NewFolderCancel`. The child-folder list is `ChatChip_FolderEntries`; its rows are bare folder-name strings with no non-content field to key on, so scope a name match inside that list rather than expecting per-row ids. |
 | Voice mode overlay (`VoiceModeOverlay`) | `VoiceMode_Done` (Listening only), `VoiceMode_Stop` (Speaking only), `VoiceMode_End` (always). Entering the overlay needs a loaded TTS voice (`CanEnterVoiceMode`), so a throwaway profile cannot reach it — these are test-locked, not walkthrough-confirmed. |
 | Direct transcription overlay (`DirectTranscriptionOverlay`) | Header: `DirectTrans_ToggleStats` (hidden while the disclaimer shows), `DirectTrans_Close`. Disclaimer: `DirectTrans_DisclaimerAccept` (a `ui:ToggleSwitch` — `ww_set_checked`, it has no InvokePattern), `DirectTrans_DisclaimerClose`, `DirectTrans_Start`. Footer, after Start: `DirectTrans_FooterClose`, `_Stop` (running), `_Resume` / `_Save` / `_SaveToVault` / `_Summarize` (stopped). `DirectTrans_Save` is a prefix of `_SaveToVault`, so match the full id — same caveat as `Settings_Assistant_ChatHistory`. Per-bubble `DirectTrans_RenameSpeaker_<speakerLabel>`, keyed on the raw diarizer label, not the renamed display name. |
-| Direct transcription consent chip | The chip is a `Border` with a `ContextMenu` — no `AutomationId`, no InvokePattern. Right-click it, then `DirectTrans_ChipRename_<speakerLabel>` / `DirectTrans_ChipRevoke_<speakerLabel>`. `MenuItem`s, so no test lock. |
+| Direct transcription consent chip | The chip is a `Border` with a `ContextMenu` — no `AutomationId`, no InvokePattern. Right-click it, then `DirectTrans_ChipRename_<speakerLabel>` / `DirectTrans_ChipRevoke_<speakerLabel>`. `MenuItem`s, so no test lock. **A transcript bubble's own right-click menu is a separate `ContextMenu` instance with deliberately distinct ids** — `DirectTrans_BubbleChipRename_<speakerLabel>` / `_BubbleChipRevoke_<speakerLabel>` — do not assume the two menus share one id, they don't. |
 | Follow-up chips (`PiaSuggestionChips` / `PiaAgentModeChip`) | `Suggestion_Chip_<n>` and `AgentMode_Chip_<n>`, keyed on the container's `ItemsControl.AlternationIndex` — arrival order within one reply, not globally unique, and it wraps past `AlternationCount` (20). Both bound items are model-generated content (a raw suggestion string; `AgentModeSuggestion.Goal`/`Reason`), so there is no stable field to key on. Distinctness is locked by `FollowUpChipAutomationIdTests`, which renders both lists through a real layout pass — the sweep alone would go green on a binding that resolves to nothing. `automationId*=Suggestion_` also matches the empty-state `Assistant_Suggestion_<Group>` chips, but never at the same time: that panel is `Collapsed` (out of the UIA tree, not merely hidden) once the chat has messages, and a follow-up chip only exists on a reply. |
 | Reply PII context menu (`MarkdownMessageControl`) | Right-click an assistant reply: `PiiMenu_Open`, then `PiiMenu_Person` / `_Nickname` / `_Email` / `_Phone` / `_Address` / `_Date` / `_Custom`. `MenuItem`s, so no test lock — same caveat as the reply toolbar's regenerate menu. |
 | Main-window chrome (`MainWindow`) | Setup-required overlay (covers any feature view until a provider is configured, so a fresh-profile script hits it first): `Setup_OpenSettings`, `Setup_RunWizard`. Update bar: `Update_RestartNow`, `Update_Dismiss`. E2EE bar: `E2EE_OpenOnboarding`. `MainWindow`'s constructor takes DI parameters, so `Activator.CreateInstance` fails and it can never get an `[InlineData]` row — same class as the content dialogs below. |
@@ -97,7 +97,7 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Assignment consent dialog (`AssignmentConsentContentDialog`) | `AssignmentConsent_Skill`, `_Prompt`, `_Affirm`; per-record (keyed on `AssignmentScopeItemViewModel.Item.EntityId`): `AssignmentConsent_Record_<id>`. No test lock. |
 | Opt-out confirm dialog (`OptOutConfirmContentDialog`) | `OptOutConfirm_DontAskAgain`. Generic over the caller's strings, so the title is the only thing that names which confirm it is; raised by "Run in background". |
 | Assignments list (`AssignmentsView`) | `Assignments_Refresh`, `_New` (plus the existing `Assignments_Help`); per-row, keyed on `AssignmentRowViewModel.Id`: `Assignments_OpenChat_<id>`, `_Cancel_<id>`. |
-| Vault inspector (`PiaVaultInspector`) | `MemoryNote_Body` (the raw-markdown editor, edit mode only), `MemoryNote_Cancel`, `MemoryNote_Save`. Read mode shows the nested `MarkdownMessageControl` instead, whose body is `MarkdownViewer`. The pane's toolbar — `MemoryNote_Edit` / `_Copy` / `_Delete` / `_OpenObsidian` — lives one level up in `PiaInspectorHeader` and shares the prefix deliberately: it is one pane. |
+| Vault inspector (`PiaVaultInspector`) | `MemoryNote_Body` (the raw-markdown editor, edit mode only), `MemoryNote_Cancel`, `MemoryNote_Save`. Read mode shows the nested `MarkdownMessageControl` instead, whose body is `MarkdownViewer_<Reference>`. The pane's toolbar — `MemoryNote_Edit` / `_Copy` / `_Delete` / `_OpenObsidian` — lives one level up in `PiaInspectorHeader` and shares the prefix deliberately: it is one pane. |
 | Vault status bar (`PiaVaultStatusBar`) | `MemoryStatus_RegenerateEmbeddings` — the only control on the strip; the model-state dot and its text are non-interactive. Own prefix so `automationId*=Memory_` still means the page header. |
 | Vault help dialog (`VaultHelpContentDialog`) | `VaultHelp_OpenFolder` (reveals the vault root). Opened from `Memory_ShowHelp`; dismissed through the dialog's own close button, which has no id. No test lock. |
 | History session inspector (`PiaHistoryInspector`) | `HistorySession_TabOptimized` / `_TabOriginal` (segmented `RadioButton`s), `HistorySession_CopyOptimized` / `_CopyOriginal`, `HistorySession_OptimizedText` / `_OriginalText` (read-only). Only one half of each pair is visible at a time, keyed to the checked tab. The pane's delete button is `HistorySession_Delete`, in the nested `PiaHistoryInspectorHeader`. `PiaHistoryInspectorEmptyState` (shown when nothing is selected) has no interactive control at all. |
@@ -173,13 +173,13 @@ correctly.
 
 ## Chat and tool approval
 
-- Assistant reply text: `ww_get_value(selector="automationId=MarkdownViewer")` returns the
-  rendered reply via **TextPattern** — the bubble content is not a `Text` element. An empty
+- Assistant reply text: `ww_get_value(selector="automationId=MarkdownViewer_<messageId>")` returns
+  the rendered reply via **TextPattern** — the bubble content is not a `Text` element. An empty
   string means the reply really was empty (e.g. a turn that only called a tool), not a failure.
-  **The id is literal, so it returns one hit per reply on screen**, and the vault inspector's
-  read-mode body answers to it too. Scope it to the message you mean — enumerate and take the
-  last, or narrow through that reply's `Answer_*_<messageId>` toolbar — rather than trusting a
-  bare match. Open gap, see Known gaps.
+  **The id is per message since 2026-08-28** — `MarkdownViewer_<AssistantMessage.Id>` in chat,
+  `MarkdownViewer_<Reference>` in the vault inspector — so a bare `automationId=MarkdownViewer`
+  now resolves nothing; get the message id from that reply's `Answer_*_<messageId>` toolbar rather
+  than enumerating and guessing the last one.
 - The tool-approval card exposes all four decisions as invokable buttons with the
   `ToolApproval_*` ids above, each with a matching accessible `Name`. A full write-tool flow
   (send → approve/decline → resolved card) is automatable end-to-end; the message subtree stays
@@ -233,45 +233,64 @@ Committed recordings, the settings fixture they start from and the replay harnes
 
 ## Known gaps (don't burn time rediscovering these)
 
-- **A full re-derivation of the id surface on 2026-08-28 found 19 gaps that were still open** — the
-  entries below are accurate but were never the whole list.
+- **A full re-derivation of the id surface on 2026-08-28 found 19 gaps that were still open — all but
+  one closed the same day.**
   [`2026-08-22-fill-uiautomation-gaps-checklist.md`](2026-08-22-fill-uiautomation-gaps-checklist.md) is
-  the tracking surface; the ones that actually bite a script, in the order you would hit them:
-  - **The Flow rail's decision buttons have an EMPTY AutomationId at runtime.** `CardDecisionBar` binds
-    `{Binding AutomationId}`, and `ActionCardInfo` sets the four `ToolApproval_*` constants — but
-    `FlowItemViewModel.BuildDecisions()` never sets one, so Deny/Approve on a parked tool call and
-    Snooze/Done on a reminder are reachable from the rail only by index or localized text. The
-    `ViewAutomationIdTests` row is false-green here: the sweep sees a `Binding`, not a resolved value.
-  - **`AssistantHistoryView`'s own filter bar has no ids at all** — Refresh, Delete-all-chats, the search
-    box, both `DatePicker`s, the provider and state pickers, and Clear-filters. Only the header's
-    import/export/help and the status bar are addressable. The Optimize-history equivalent
-    (`PiaHistorySearchBar`) is fully ided; do not assume the two surfaces match.
-  - **Vault, History and Reminders rows cannot be selected by identity** — their `ListBoxItem`
-    containers get `PiaMemoryRowItemStyle` raw, which sets no `AutomationProperties`. Since row
-    selection is the only route into `PiaVaultInspector` / `PiaHistoryInspector`, every `MemoryNote_*`
-    and `HistorySession_*` id below is currently unreachable in a script. Only the chat-history list
-    (`AssistantChat_Row_<id>`) does this properly.
-  - **Four group-card `ListBox`es all answer to `ItemList`** (Vault / History / Reminders / chat
-    history) — no id, so the `x:Name` is the fallback, and one card renders per bucket. That also
-    blocks the usual workaround of scoping a name match inside one list.
-  - **`Suggestion_Chip_<n>` / `AgentMode_Chip_<n>` are per-strip, not per-conversation.** The index
-    restarts at 0 in every message, so with two replies in scrollback `Suggestion_Chip_0` matches two
-    live buttons and tree order returns the older one.
-  - **The Persona and Provider edit dialogs are only half ided** — 10 and 8 controls have none,
-    including Persona's AI-draft button and Provider's three `ui:NumberBox`es (timeout, context window,
-    max output tokens) and its two identical WebSearch checkboxes.
-  - **Nothing built in C# carries an id** — `DialogService.ShowInputDialogAsync`'s text box (the rename
-    field behind todo/speaker renames), the markdown renderer's hyperlinks including vault wiki-links,
-    and the tray-icon menu. `RoutinesViewModel`'s two `AutomationId` properties are view-model strings
-    bound from XAML, not the exception to this.
-  - Also open, lower traffic: the per-todo `TodoTitle` `x:Name` repeats per card; the sidebar's
-    new-window `ContextMenu` items have no ids and collide by `Name` with the nav buttons; the
-    transcript-bubble context menus in both overlays have none while the consent-chip menu beside them
-    does; the kanban column-resize `Thumb` has none.
-  - Four prefix shadowings are documented flatly above rather than caveated, so `automationId*=` returns
-    2-4 elements: `MeetingAttendee_Save` ⊂ `_SaveToVault`, `ChatChip_NewFolder` ⊂ `_NewFolderName` /
-    `_Confirm` / `_Cancel`, `AssistantHistory_Import` ⊂ `_ImportStatus` / `_ImportProgress` during an
-    import, and `NavItem_Assistant` ⊂ `NavItem_AssistantHistory`. Match the full id on all four.
+  the tracking surface; the entries below record what changed:
+  - **The Flow rail's decision buttons had an EMPTY AutomationId at runtime — CLOSED 2026-08-28.**
+    `FlowItemViewModel.BuildDecisions()` now sets `Flow_Decision_Deny` / `_Approve` / `_Snooze` /
+    `_Done` on each `DecisionButton` — semantic per decision type, like `ToolApproval_*`, so scope into
+    a card with `Flow_Card_<id>` first. Locked in `FlowItemViewModelTests`; the `ViewAutomationIdTests`
+    sweep still can't judge a resolved binding either way.
+  - **`AssistantHistoryView`'s own filter bar had no ids at all — CLOSED 2026-08-28.** Refresh,
+    delete-all-chats, search, both `DatePicker`s, the provider and state pickers, and clear-filters are
+    now `AssistantHistory_Refresh` / `_BulkDeleteChats` / `_SearchQuery` / `_StartDate` / `_EndDate` /
+    `_ProviderFilter` / `_StateFilter` / `_ClearFilters`, and the view has its own `[InlineData]` row.
+    (Not `_DeleteAll` — that would have prefix-shadowed the inspector's pre-existing
+    `AssistantHistory_Delete`, the same class of defect `P1` was closing elsewhere in this same pass.)
+  - **Vault, History and Reminders rows could not be selected by identity — CLOSED 2026-08-28.** Their
+    `ListBoxItem` containers now carry `MemoryVault_Row_<Reference>` / `HistorySession_Row_<id>` /
+    `Reminder_Row_<id>` via `ItemContainerStyle`, the same shape the chat-history list already had.
+  - **All four group-card `ListBox`es answering to the same `ItemList` — CLOSED 2026-08-28.** A literal
+    `AutomationId="ItemList"` would not have fixed this (WPF's `x:Name` fallback already reported that
+    exact string, so it would have been a no-op); instead each `ListBox` now keys off its own bucket
+    identity, matching the header toggle button one row up: `History_ItemList_<bucket>`,
+    `Reminders_ItemList_<bucketKind>`, `Memory_ItemList_<type>`, `AssistantHistory_ItemList_<bucket>`.
+    `PiaAssistantChatGroupCard.xaml` had never gotten one at all until this pass.
+  - **`Suggestion_Chip_<n>` / `AgentMode_Chip_<n>` were per-strip, not per-conversation — CLOSED
+    2026-08-28.** Both now key on the hosting message's id ahead of the alternation index —
+    `Suggestion_Chip_<messageId>_<n>` / `AgentMode_Chip_<messageId>_<n>` — so two replies with
+    follow-ups in scrollback no longer collide. `FollowUpChipAutomationIdTests` asserts the new
+    format.
+  - **The Persona and Provider edit dialogs were only half ided — CLOSED 2026-08-28.** Every
+    remaining control now has an id — Persona's description, tagline, guardrails, output format,
+    expertise, AI-draft button and the emoji/colour swatch grids (per-item binding, kept distinct from
+    the free-text emoji field itself — `PersonaEdit_EmojiText` vs `PersonaEdit_EmojiSwatch_<n>` — since
+    one is a literal prefix of the other); Provider's Azure deployment name, reasoning effort, Mistral
+    agent id, all three `ui:NumberBox`es and both WebSearch checkboxes (kept distinct, since a
+    collapsed one still answers — `ProviderEdit_WebSearch` / `_MistralWebSearch`, not a shared prefix).
+    `TemplateEditContentDialog`'s generate-prompt button closed the same way.
+  - **Nothing built in C# carried an id — CLOSED 2026-08-28.** `DialogService.ShowInputDialogAsync`'s
+    rename text box is now `InputDialog_Value` (shared by every rename-style flow); the markdown
+    renderer's hyperlinks, including vault wiki-links, are `Markdown_Link_<n>` (a per-render ordinal —
+    match the prefix, not a specific number); the tray-icon menu is `TrayMenu_Optimize` /
+    `_Assistant` / `_Exit`.
+  - **Lower-traffic gaps — CLOSED 2026-08-28**: the per-todo `TodoTitle` is now `Todo_Title_<id>` /
+    `TodoPanel_Title_<id>`; the sidebar's new-window `ContextMenu` items are
+    `NavItem_OpenOptimizeWindow` / `NavItem_OpenAssistantWindow` (not `NavItem_NewWindow_*` — that
+    would have prefix-shadowed the button's own pre-existing `NavItem_NewWindow`); the
+    transcript-bubble context menus now carry a rename id (`MeetingAttendeeOverlay`,
+    `MeetingAttendee_ChipRename_<speakerLabel>`, deliberately distinct from that same file's
+    consent-chip `MeetingAttendee_RenameSpeaker_<speakerLabel>`) or rename-and-revoke ids (the second
+    `DirectTranscriptionOverlay` menu, `DirectTrans_BubbleChipRename_<speakerLabel>` /
+    `_BubbleChipRevoke_<speakerLabel>` — deliberately distinct from the consent-chip menu's
+    `DirectTrans_ChipRename_<speakerLabel>` / `_ChipRevoke_<speakerLabel>` in the same file, since two
+    separate `MenuItem` instances sharing one id would have made a script's invoke non-deterministic);
+    the kanban column-resize `Thumb` is `Todo_ColumnResize_<id>`.
+  - **Four prefix shadowings — CLOSED 2026-08-28, resolved by renaming the shadowed id, not
+    caveating.** `MeetingAttendee_Save` → `_SaveTranscript`, `ChatChip_NewFolder` → `_AddFolder`,
+    `AssistantHistory_Import` → `_ImportChats`, `NavItem_Assistant` → `_AssistantChat`. Confirmed no
+    `tests/ui-scripts/` recording referenced any of the four old ids.
 
 - **`ChatChip_Toggle` went out of phase with the flyout — FIXED 2026-08-27.** The flyout is still
   `StaysOpen="False"` and still closes on its own, but `ChipButton_Click` now decides from

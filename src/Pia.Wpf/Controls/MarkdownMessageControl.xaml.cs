@@ -40,6 +40,15 @@ public partial class MarkdownMessageControl : UserControl
             typeof(MarkdownMessageControl),
             new PropertyMetadata(false, OnIsStreamingChanged));
 
+    /// <summary>Host-supplied discriminator appended to the inner viewer's AutomationId so two
+    /// instances on screen at once don't report the same id.</summary>
+    public static readonly DependencyProperty AutomationIdSuffixProperty =
+        DependencyProperty.Register(
+            nameof(AutomationIdSuffix),
+            typeof(object),
+            typeof(MarkdownMessageControl),
+            new PropertyMetadata(null));
+
     public string MarkdownText
     {
         get => (string)GetValue(MarkdownTextProperty);
@@ -50,6 +59,12 @@ public partial class MarkdownMessageControl : UserControl
     {
         get => (bool)GetValue(IsStreamingProperty);
         set => SetValue(IsStreamingProperty, value);
+    }
+
+    public object? AutomationIdSuffix
+    {
+        get => GetValue(AutomationIdSuffixProperty);
+        set => SetValue(AutomationIdSuffixProperty, value);
     }
 
     public MarkdownMessageControl()

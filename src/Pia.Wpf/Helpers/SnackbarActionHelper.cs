@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Media;
@@ -55,6 +56,7 @@ public static class SnackbarActionHelper
             Appearance = ControlAppearance.Secondary,
             Timeout = timeout,
         };
+        AutomationProperties.SetAutomationId(snackbar, "Snackbar_Subtle");
 
         snackbar.SetResourceReference(System.Windows.Controls.Control.BackgroundProperty, "SurfaceBrush");
         snackbar.SetResourceReference(System.Windows.Controls.Control.BorderBrushProperty, "BorderBrush_");
@@ -91,6 +93,7 @@ public static class SnackbarActionHelper
         {
             FontWeight = FontWeights.SemiBold,
         };
+        AutomationProperties.SetAutomationId(hyperlink, "Snackbar_SubtleAction");
         // App accent makes the link read as the actionable affordance on the neutral card.
         hyperlink.SetResourceReference(Hyperlink.ForegroundProperty, "AccentFillColorDefaultBrush");
         hyperlink.Click += (_, _) =>

@@ -469,12 +469,18 @@
                                   Command="{Binding PlacementTarget.Tag.RenameSpeakerLabelCommand,
                                              RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                   CommandParameter="{Binding PlacementTarget.DataContext.SpeakerLabel,
-                                                      RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                      RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  AutomationProperties.AutomationId="{Binding PlacementTarget.DataContext.SpeakerLabel,
+                                                                     RelativeSource={RelativeSource AncestorType=ContextMenu},
+                                                                     StringFormat='DirectTrans_BubbleChipRename_{0}'}" />
                         <MenuItem Header="{loc:Str DirectTrans_RevokeSpeaker_MenuItem}"
                                   Command="{Binding PlacementTarget.Tag.RevokeSpeakerCommand,
                                              RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                   CommandParameter="{Binding PlacementTarget.DataContext.SpeakerLabel,
-                                                      RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                      RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  AutomationProperties.AutomationId="{Binding PlacementTarget.DataContext.SpeakerLabel,
+                                                                     RelativeSource={RelativeSource AncestorType=ContextMenu},
+                                                                     StringFormat='DirectTrans_BubbleChipRevoke_{0}'}" />
                       </ContextMenu>
                     </Border.ContextMenu>
                     <Border.Tag>

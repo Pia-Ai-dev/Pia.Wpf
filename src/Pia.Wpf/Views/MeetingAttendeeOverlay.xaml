@@ -393,7 +393,10 @@
                                   Command="{Binding PlacementTarget.Tag.RenameSpeakerLabelCommand,
                                              RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                   CommandParameter="{Binding PlacementTarget.DataContext.SpeakerLabel,
-                                                      RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                      RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  AutomationProperties.AutomationId="{Binding PlacementTarget.DataContext.SpeakerLabel,
+                                                                     RelativeSource={RelativeSource AncestorType=ContextMenu},
+                                                                     StringFormat='MeetingAttendee_ChipRename_{0}'}" />
                       </ContextMenu>
                     </Border.ContextMenu>
                     <Border.Tag>
@@ -440,7 +443,7 @@
                    Appearance="Danger"
                    Content="{loc:Str MeetingAttendee_Stop}"
                    Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}" />
-        <ui:Button AutomationProperties.AutomationId="MeetingAttendee_Save"
+        <ui:Button AutomationProperties.AutomationId="MeetingAttendee_SaveTranscript"
                    Command="{Binding SaveTranscriptCommand}"
                    Margin="8,0,0,0"
                    Padding="20,10"

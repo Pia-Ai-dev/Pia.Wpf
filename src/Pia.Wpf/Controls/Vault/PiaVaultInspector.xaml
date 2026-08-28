@@ -38,7 +38,8 @@
             <!-- WikiLinkConverter rewrites [[target]] wikilinks into clickable pia-memory: links (read-only,
                  display-only — the stored Body and the edit/copy paths keep the raw Obsidian syntax). -->
             <controls:MarkdownMessageControl x:Name="BodyMarkdown"
-                                             MarkdownText="{Binding DisplayBody, Converter={StaticResource WikiLinkConverter}}"/>
+                                             MarkdownText="{Binding DisplayBody, Converter={StaticResource WikiLinkConverter}}"
+                                             AutomationIdSuffix="{Binding Reference}"/>
           </ScrollViewer>
         </Border>
 

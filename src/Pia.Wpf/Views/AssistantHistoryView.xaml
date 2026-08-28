@@ -44,7 +44,8 @@
       <ui:Button Grid.Column="1"
                  Appearance="Secondary"
                  Command="{Binding RefreshCommand}"
-                 ToolTip="{loc:Str History_Refresh}">
+                 ToolTip="{loc:Str History_Refresh}"
+                 AutomationProperties.AutomationId="AssistantHistory_Refresh">
         <StackPanel Orientation="Horizontal">
           <ui:SymbolIcon Symbol="ArrowSync24" FontSize="16" Margin="0,0,6,0"
                          Visibility="{Binding IsLoading, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
@@ -61,7 +62,7 @@
                  Margin="8,0,0,0"
                  Command="{Binding ImportChatsCommand}"
                  ToolTip="{loc:Str AssistantHistory_ImportTooltip}"
-                 AutomationProperties.AutomationId="AssistantHistory_Import">
+                 AutomationProperties.AutomationId="AssistantHistory_ImportChats">
         <StackPanel Orientation="Horizontal">
           <ui:SymbolIcon Symbol="ArrowImport24" FontSize="16" Margin="0,0,6,0"/>
           <TextBlock Text="{loc:Str AssistantHistory_Import}"/>
@@ -84,7 +85,8 @@
                  Appearance="Secondary"
                  Margin="8,0,0,0"
                  Command="{Binding DeleteAllChatsCommand}"
-                 ToolTip="{loc:Str AssistantHistory_DeleteAllConfirmBody}">
+                 ToolTip="{loc:Str AssistantHistory_DeleteAllConfirmBody}"
+                 AutomationProperties.AutomationId="AssistantHistory_BulkDeleteChats">
         <StackPanel Orientation="Horizontal">
           <ui:SymbolIcon Symbol="Delete24" FontSize="16" Margin="0,0,6,0"
                          Foreground="{DynamicResource PiaDangerBrush}"/>
@@ -127,7 +129,8 @@
                    FontSize="13"
                    Padding="0,10"
                    Margin="0,0,12,0"
-                   VerticalContentAlignment="Center"/>
+                   VerticalContentAlignment="Center"
+                   AutomationProperties.AutomationId="AssistantHistory_SearchQuery"/>
         </Grid>
       </Border>
 
@@ -135,13 +138,15 @@
                   SelectedDate="{Binding FilterStartDate, Mode=TwoWay}"
                   Width="150"
                   Margin="10,0,0,0"
-                  VerticalAlignment="Center"/>
+                  VerticalAlignment="Center"
+                  AutomationProperties.AutomationId="AssistantHistory_StartDate"/>
 
       <DatePicker Grid.Column="2"
                   SelectedDate="{Binding FilterEndDate, Mode=TwoWay}"
                   Width="150"
                   Margin="6,0,0,0"
-                  VerticalAlignment="Center"/>
+                  VerticalAlignment="Center"
+                  AutomationProperties.AutomationId="AssistantHistory_EndDate"/>
 
       <ComboBox Grid.Column="3"
                 ItemsSource="{Binding Providers}"
@@ -149,7 +154,8 @@
                 SelectedValue="{Binding SelectedProviderId, Mode=TwoWay}"
                 Width="170"
                 Margin="10,0,0,0"
-                VerticalAlignment="Center">
+                VerticalAlignment="Center"
+                AutomationProperties.AutomationId="AssistantHistory_ProviderFilter">
         <ComboBox.ItemTemplate>
           <DataTemplate>
             <TextBlock Text="{Binding Name}"/>
@@ -165,7 +171,8 @@
                 SelectedItem="{Binding SelectedStateOption, Mode=TwoWay}"
                 Width="160"
                 Margin="10,0,0,0"
-                VerticalAlignment="Center"/>
+                VerticalAlignment="Center"
+                AutomationProperties.AutomationId="AssistantHistory_StateFilter"/>
 
       <ui:Button Grid.Column="5"
                  Command="{Binding ClearFilterCommand}"
@@ -176,6 +183,7 @@
                  Margin="10,0,0,0"
                  VerticalAlignment="Center"
                  AutomationProperties.Name="{loc:Str History_ClearFilters}"
+                 AutomationProperties.AutomationId="AssistantHistory_ClearFilters"
                  ToolTip="{loc:Str History_ClearFilters}">
         <ui:SymbolIcon Symbol="FilterDismiss24" FontSize="16"/>
       </ui:Button>

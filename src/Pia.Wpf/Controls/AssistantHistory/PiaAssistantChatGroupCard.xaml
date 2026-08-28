@@ -62,6 +62,7 @@
               Visibility="{Binding IsExpanded, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
       <ListBox x:Name="ItemList"
+               AutomationProperties.AutomationId="{Binding Bucket, StringFormat='AssistantHistory_ItemList_{0}'}"
                ItemsSource="{Binding Items}"
                SelectionChanged="ItemList_SelectionChanged"
                Background="Transparent"

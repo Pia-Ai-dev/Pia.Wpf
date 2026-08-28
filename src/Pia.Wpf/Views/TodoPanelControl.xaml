@@ -124,6 +124,7 @@
                     <Grid Grid.Column="1">
                       <TextBlock x:Name="TodoTitle"
                                  Text="{Binding Title}"
+                                 AutomationProperties.AutomationId="{Binding Id, StringFormat='TodoPanel_Title_{0}'}"
                                  FontSize="13"
                                  TextTrimming="CharacterEllipsis"
                                  VerticalAlignment="Center">

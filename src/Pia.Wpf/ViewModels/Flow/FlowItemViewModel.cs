@@ -123,12 +123,14 @@ public partial class FlowItemViewModel : ObservableObject
                     Label = _localizationService["Run_Action_Deny"],
                     Emphasis = DecisionEmphasis.Default,
                     Command = DeclineRunCommand,
+                    AutomationId = "Flow_Decision_Deny",
                 },
                 new DecisionButton
                 {
                     Label = _localizationService["Run_Action_Approve"],
                     Emphasis = DecisionEmphasis.Primary,
                     Command = ApproveRunCommand,
+                    AutomationId = "Flow_Decision_Approve",
                 },
             };
         }
@@ -143,12 +145,14 @@ public partial class FlowItemViewModel : ObservableObject
                 Label = _localizationService["Flow_Action_Snooze"],
                 Emphasis = DecisionEmphasis.Default,
                 Command = SnoozeCommand,
+                AutomationId = "Flow_Decision_Snooze",
             },
             new DecisionButton
             {
                 Label = _localizationService["Flow_Action_Done"],
                 Emphasis = DecisionEmphasis.Primary,
                 Command = DoneCommand,
+                AutomationId = "Flow_Decision_Done",
             },
         };
     }

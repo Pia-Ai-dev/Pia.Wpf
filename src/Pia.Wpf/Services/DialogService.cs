@@ -4,6 +4,7 @@ using Pia.ViewModels.Models;
 using Pia.Views.Controls;
 using Pia.Views.Dialogs;
 using Pia.Views.Dialogs.Overlay;
+using System.Windows.Automation;
 using Wpf.Ui;
 using Wpf.Ui.Controls;
 using Wpf.Ui.Extensions;
@@ -240,6 +241,7 @@ public class DialogService : IDialogService
         {
             Margin = new System.Windows.Thickness(0, 8, 0, 0)
         };
+        AutomationProperties.SetAutomationId(textBox, "InputDialog_Value");
 
         var stackPanel = new System.Windows.Controls.StackPanel();
         stackPanel.Children.Add(new System.Windows.Controls.TextBlock { Text = prompt });
