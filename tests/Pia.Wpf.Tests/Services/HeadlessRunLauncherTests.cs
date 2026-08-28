@@ -1,5 +1,6 @@
 using System.IO;
 using System.Reflection;
+using System.Threading;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -1463,6 +1464,32 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Equal(parked.Id, only.RunId);
         Assert.Equal(parked.ChatId, only.ChatId);
         Assert.Null(bracketedChatAtRaise);
+
+        try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
+    }
+
+    /// <summary>
+    /// StopAsync drains the in-flight set, and this event is the resume path's only completion signal, so
+    /// un-tracking the run before raising it lets a shutdown drain to empty and drop the notification. The
+    /// slow subscriber holds the window open that a load-dependent race would otherwise only sometimes hit.
+    /// </summary>
+    [Fact]
+    public async Task ResumeAsync_RaisesResumedRunSettled_BeforeStopAsyncStopsWaiting()
+    {
+        var (launcher, _) = BuildLauncher();
+        var parked = await ParkRunWithPendingStepAsync(policyJson: null);
+
+        var raised = 0;
+        launcher.ResumedRunSettled += (_, _) =>
+        {
+            Thread.Sleep(200);
+            Interlocked.Increment(ref raised);
+        };
+
+        Assert.True(await launcher.ResumeAsync(parked.Id, ct: TestContext.Current.CancellationToken));
+        await AwaitRunSettledAsync(launcher, parked.Id);
+
+        Assert.Equal(1, Volatile.Read(ref raised));
 
         try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
     }

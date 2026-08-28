@@ -1055,21 +1055,26 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             // the same key, so this release can close the NEWER bracket — fail-open, which is the
             // recoverable direction (a stale true is not recoverable).
             _executingRuns.Release(run.Id);
-            RemoveInflight(run.Id, runCts);
             // See the launch path's finally. The !started arms above re-park the row
             // themselves without entering the orchestrator, so an unconsumed request has to die here.
             _steering?.ReleaseDispatch(run.Id, steerCancel);
-            runCts.Dispose();
 
-            // T0-1(b): the resume path's substitute for a handle. LAST, and specifically AFTER the slot
-            // release above — same rule as the composer bracket beside it, for the same reason: this is
-            // bookkeeping, and a subscriber that blocks or throws must never be able to strand the
-            // shared concurrency slot. Raised on EVERY arm, including the !started re-parks, because the
-            // subscriber's state check is what tells a re-park apart from a settle; suppressing it here
-            // would silently lose the case where the orchestrator DID run and settle. Swallowing is
-            // deliberate — nothing in this finally has a caller to throw to.
+            // T0-1(b): the resume path's substitute for a handle. AFTER the slot release above — same rule
+            // as the composer bracket beside it, for the same reason: this is bookkeeping, and a subscriber
+            // that blocks or throws must never be able to strand the shared concurrency slot. Raised on
+            // EVERY arm, including the !started re-parks, because the subscriber's state check is what tells
+            // a re-park apart from a settle; suppressing it here would silently lose the case where the
+            // orchestrator DID run and settle. Swallowing is deliberate — nothing in this finally has a
+            // caller to throw to.
             try { ResumedRunSettled?.Invoke(this, new ResumedRunSettledEventArgs(run.Id, run.ChatId)); }
             catch (Exception ex) { _logger.LogWarning(ex, "A ResumedRunSettled handler threw for run {RunId}", run.Id); }
+
+            // Un-tracked only after the raise: _inflight is the set StopAsync drains, so dropping the entry
+            // first lets a shutdown see an empty set and return with this run's only completion signal still
+            // pending. The slot and the composer bracket are released above; the in-flight entry deliberately
+            // is NOT, so a subscriber that blocks delays that drain (bounded) instead of being skipped by it.
+            RemoveInflight(run.Id, runCts);
+            runCts.Dispose();
         }
     }
 
