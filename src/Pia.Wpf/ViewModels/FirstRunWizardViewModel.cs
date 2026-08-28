@@ -122,6 +122,16 @@ public partial class FirstRunWizardViewModel : ObservableObject
     [ObservableProperty]
     private bool _isLoggingIn;
 
+    /// <summary>Set after a sign-in the server considers incomplete — single sign-on never sees the form.</summary>
+    [ObservableProperty]
+    private bool _requiresBusinessProfile;
+
+    [ObservableProperty]
+    private string _companyNameInput = "";
+
+    [ObservableProperty]
+    private string? _businessProfileError;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(VisibleStepCount))]
     [NotifyPropertyChangedFor(nameof(IsE2EESetupVisible))]
@@ -245,6 +255,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
     public IAsyncRelayCommand LoginWithGoogleCommand { get; }
     public IAsyncRelayCommand LoginWithMicrosoftCommand { get; }
     public IAsyncRelayCommand LoginWithEntraIdCommand { get; }
+    public IAsyncRelayCommand SubmitBusinessProfileCommand { get; }
     public IAsyncRelayCommand LoginWithPasswordCommand { get; }
     public IRelayCommand OpenRegistrationPageCommand { get; }
     public IRelayCommand OpenForgotPasswordCommand { get; }
@@ -323,6 +334,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
         LoginWithGoogleCommand = new AsyncRelayCommand(LoginWithGoogleAsync);
         LoginWithMicrosoftCommand = new AsyncRelayCommand(LoginWithMicrosoftAsync);
         LoginWithEntraIdCommand = new AsyncRelayCommand(LoginWithEntraIdAsync);
+        SubmitBusinessProfileCommand = new AsyncRelayCommand(SubmitBusinessProfileAsync);
         LoginWithPasswordCommand = new AsyncRelayCommand(LoginWithPasswordAsync);
         OpenRegistrationPageCommand = new RelayCommand(ExecuteOpenRegistrationPage);
         OpenForgotPasswordCommand = new RelayCommand(ExecuteOpenForgotPassword);
@@ -539,8 +551,38 @@ public partial class FirstRunWizardViewModel : ObservableObject
     /// - E2EE NOT on account → defer first sync until the E2EE setup step decides.
     /// - E2EE already on and UMK available → start sync immediately.
     /// </summary>
+    private async Task SubmitBusinessProfileAsync()
+    {
+        BusinessProfileError = null;
+
+        if (string.IsNullOrWhiteSpace(CompanyNameInput))
+        {
+            BusinessProfileError = _localizationService["Sync_Cloud_BusinessProfile_CompanyRequired"];
+            return;
+        }
+
+        var (success, error) = await _authService.SubmitBusinessProfileAsync(CompanyNameInput.Trim());
+        if (!success)
+        {
+            BusinessProfileError = error;
+            return;
+        }
+
+        RequiresBusinessProfile = false;
+        CompanyNameInput = "";
+        await HandlePostLoginSyncAsync();
+    }
+
     private async Task HandlePostLoginSyncAsync()
     {
+        RequiresBusinessProfile = await _authService.RequiresBusinessProfileAsync();
+        if (RequiresBusinessProfile)
+        {
+            // Probing E2EE or syncing would only collect 403s until the declaration is in.
+            _logger.LogInformation("Account still owes its business profile; deferring sync");
+            return;
+        }
+
         var e2eeStatus = await _deviceManagement.CheckE2EEStatusAsync();
 
         if (e2eeStatus is { IsEnabled: true } && !_deviceManagement.IsInitialized())

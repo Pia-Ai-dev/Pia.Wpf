@@ -44,7 +44,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Views.SettingsViews.AssistantView), 35, 5, "PersonaGlyph,PersonasView,PiaHelpHint")]
     [InlineData(typeof(Pia.Views.SettingsViews.ProvidersView), 6, 3, "")]
     // AccountView declares no DataTemplate, so it is the one view with no per-item floor to hold.
-    [InlineData(typeof(Pia.Views.SettingsViews.AccountView), 12, 0, "E2EEOnboardingView")]
+    [InlineData(typeof(Pia.Views.SettingsViews.AccountView), 14, 0, "E2EEOnboardingView")]
     [InlineData(typeof(Pia.Views.SettingsViews.OptimizeView), 6, 4, "")]
     [InlineData(typeof(Pia.Views.AssistantView), 18, 2,
         "AutocompletePopup,DirectTranscriptionOverlay,MeetingAttendeeOverlay,PersonaGlyph,PiaAssistantMessage," +
@@ -105,7 +105,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Views.WizardSteps.WelcomeStep), 1, 0, "")]
     [InlineData(typeof(Pia.Views.WizardSteps.UserProfileStep), 8, 0, "")]
     [InlineData(typeof(Pia.Views.WizardSteps.ProviderSetupStep), 7, 0, "")]
-    [InlineData(typeof(Pia.Views.WizardSteps.AccountSetupStep), 8, 0, "E2EEOnboardingView")]
+    [InlineData(typeof(Pia.Views.WizardSteps.AccountSetupStep), 10, 0, "E2EEOnboardingView")]
     [InlineData(typeof(Pia.Views.WizardSteps.E2EESetupStep), 5, 0, "")]
     public void EveryInteractiveControl_CarriesAnAutomationId(
         Type viewType, int minimumInspected, int minimumPerItemIds, string expectedNestedViews)

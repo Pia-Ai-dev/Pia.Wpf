@@ -24,6 +24,15 @@ public interface IAuthService
     Task LogoutAsync();
 
     /// <summary>
+    /// Whether the server still wants a trader declaration for this account. True only where the
+    /// operator requires one — single sign-on skips the registration form that would have asked.
+    /// </summary>
+    Task<bool> RequiresBusinessProfileAsync();
+
+    /// <summary>Submits the company and the trader declaration. Returns success and optional error message.</summary>
+    Task<(bool Success, string? ErrorMessage)> SubmitBusinessProfileAsync(string companyName);
+
+    /// <summary>
     /// Gets a valid access token, refreshing if it has expired. Returns null if not logged in.
     /// Pass <paramref name="forceRefresh"/> to bypass the in-memory cache and force a refresh
     /// (e.g. after a 401, where the cached token may have been revoked server-side).

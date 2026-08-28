@@ -219,6 +219,16 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     [ObservableProperty]
     private bool _isSyncLoggingIn;
 
+    /// <summary>Set after a sign-in the server considers incomplete — single sign-on never sees the form.</summary>
+    [ObservableProperty]
+    private bool _requiresBusinessProfile;
+
+    [ObservableProperty]
+    private string _companyNameInput = "";
+
+    [ObservableProperty]
+    private string? _businessProfileError;
+
     [ObservableProperty]
     private string _loginEmail = "";
 
@@ -466,6 +476,29 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     }
 
     [RelayCommand]
+    private async Task SubmitBusinessProfileAsync()
+    {
+        BusinessProfileError = null;
+
+        if (string.IsNullOrWhiteSpace(CompanyNameInput))
+        {
+            BusinessProfileError = _localizationService["Sync_Cloud_BusinessProfile_CompanyRequired"];
+            return;
+        }
+
+        var (success, error) = await _authService.SubmitBusinessProfileAsync(CompanyNameInput.Trim());
+        if (!success)
+        {
+            BusinessProfileError = error;
+            return;
+        }
+
+        RequiresBusinessProfile = false;
+        CompanyNameInput = "";
+        await HandlePostLoginAsync();
+    }
+
+    [RelayCommand]
     private void OpenRegistrationPage()
     {
         var serverUrl = ServerUrl?.TrimEnd('/');
@@ -492,6 +525,14 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     private async Task HandlePostLoginAsync()
     {
         UpdateSyncState();
+
+        RequiresBusinessProfile = await _authService.RequiresBusinessProfileAsync();
+        if (RequiresBusinessProfile)
+        {
+            // Syncing would only collect 403s until the declaration is in.
+            _logger.LogInformation("Account still owes its business profile; deferring sync");
+            return;
+        }
 
         var e2eeStatus = await _deviceManagement.CheckE2EEStatusAsync();
         if (e2eeStatus is { IsEnabled: true } && !_deviceManagement.IsInitialized())

@@ -146,6 +146,9 @@
         </WrapPanel>
         <TextBlock Text="{loc:Str Sync_SignIn_Description}"
                    Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+        <!-- Single sign-on skips the registration form, so the trader declaration is only stated here. -->
+        <TextBlock Text="{loc:Str Sync_Cloud_BusinessNote}"
+                   Style="{StaticResource PiaSettingsDescriptionStyle}"/>
       </StackPanel>
 
       <!-- Loading indicator -->
@@ -158,6 +161,36 @@
         <TextBlock Text="{loc:Str Sync_WaitingForSignIn}"
                    VerticalAlignment="Center"
                    Foreground="{DynamicResource TextMutedBrush}"/>
+      </StackPanel>
+
+      <!-- Trader declaration: single sign-on skips the registration form that would have asked. -->
+      <StackPanel Margin="0,0,0,20"
+                  Visibility="{Binding RequiresBusinessProfile, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <TextBlock Text="{loc:Str Sync_Cloud_BusinessProfile_Title}"
+                   Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+        <Border Style="{StaticResource PiaSettingsCardStyle}"
+                Padding="16">
+          <StackPanel Width="400" HorizontalAlignment="Left">
+            <TextBlock Text="{loc:Str Sync_Cloud_BusinessProfile_Body}"
+                       Style="{StaticResource PiaSettingsDescriptionStyle}"
+                       Margin="0,0,0,12"/>
+            <TextBlock Text="{loc:Str Sync_Cloud_BusinessProfile_Company}"
+                       Margin="0,0,0,4"/>
+            <ui:TextBox Text="{Binding CompanyNameInput, UpdateSourceTrigger=PropertyChanged}"
+                        AutomationProperties.AutomationId="Settings_Account_CompanyName"
+                        Margin="0,0,0,8"/>
+            <TextBlock Text="{Binding BusinessProfileError}"
+                       Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,8"
+                       Visibility="{Binding BusinessProfileError, Converter={StaticResource NullToVisibilityConverter}}"/>
+            <ui:Button Content="{loc:Str Sync_Cloud_BusinessProfile_Confirm}"
+                       Command="{Binding SubmitBusinessProfileCommand}"
+                       AutomationProperties.AutomationId="Settings_Account_ConfirmBusinessProfile"
+                       Appearance="Primary"
+                       HorizontalAlignment="Left"/>
+          </StackPanel>
+        </Border>
       </StackPanel>
 
       <!-- Logged in state -->

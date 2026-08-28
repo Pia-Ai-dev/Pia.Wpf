@@ -258,6 +258,69 @@ public class AuthService : IAuthService
         }
     }
 
+    // The wire shapes are read inline rather than through Pia.Shared: only this client speaks them,
+    // and /auth/me carries far more than the one flag we care about.
+    public async Task<bool> RequiresBusinessProfileAsync()
+    {
+        try
+        {
+            var serverUrl = (await _settingsService.GetSettingsAsync()).ServerUrl?.TrimEnd('/');
+            var token = await GetAccessTokenAsync();
+            if (string.IsNullOrEmpty(serverUrl) || string.IsNullOrEmpty(token))
+                return false;
+
+            using var client = _httpClientFactory.CreateClient();
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"{serverUrl}/auth/me");
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+            var response = await client.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+                return false;
+
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            return body.TryGetProperty("requiresBusinessProfile", out var flag)
+                   && flag.ValueKind == JsonValueKind.True;
+        }
+        catch (Exception ex)
+        {
+            // A probe failure must not block sign-in; the server still refuses the data endpoints.
+            _logger.LogWarning(ex, "Could not read the business-profile state");
+            return false;
+        }
+    }
+
+    public async Task<(bool Success, string? ErrorMessage)> SubmitBusinessProfileAsync(string companyName)
+    {
+        try
+        {
+            var serverUrl = (await _settingsService.GetSettingsAsync()).ServerUrl?.TrimEnd('/');
+            var token = await GetAccessTokenAsync();
+            if (string.IsNullOrEmpty(serverUrl) || string.IsNullOrEmpty(token))
+                return (false, _localizationService["Sync_LocalAuth_ServerUrlRequired"]);
+
+            using var client = _httpClientFactory.CreateClient();
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{serverUrl}/auth/business-profile")
+            {
+                Content = JsonContent.Create(new { companyName, actingAsBusiness = true })
+            };
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+            var response = await client.SendAsync(request);
+            if (response.IsSuccessStatusCode)
+                return (true, null);
+
+            var error = await response.Content.ReadFromJsonAsync<JsonElement>();
+            return (false, error.TryGetProperty("message", out var msg)
+                ? msg.GetString()
+                : _localizationService["Sync_Cloud_BusinessProfile_Error"]);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Submitting the business profile failed");
+            return (false, _localizationService["Sync_Cloud_BusinessProfile_Error"]);
+        }
+    }
+
     public async Task LogoutAsync()
     {
         try

@@ -195,6 +195,35 @@
           </ui:Button>
         </WrapPanel>
 
+        <!-- Single sign-on skips the registration form, so the trader declaration is only stated here. -->
+        <TextBlock Text="{loc:Str Sync_Cloud_BusinessNote}"
+                   FontSize="11" Opacity="0.7" TextWrapping="Wrap"
+                   MaxWidth="400" HorizontalAlignment="Center" TextAlignment="Center"
+                   Margin="0,4,0,0" />
+      </StackPanel>
+
+      <!-- ...and where the server insists on it, this is where it gets asked. -->
+      <StackPanel MaxWidth="400" HorizontalAlignment="Center" Margin="0,0,0,16"
+                  Visibility="{Binding RequiresBusinessProfile, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <TextBlock Text="{loc:Str Sync_Cloud_BusinessProfile_Title}"
+                   FontWeight="SemiBold" Margin="0,0,0,4" HorizontalAlignment="Center"/>
+        <TextBlock Text="{loc:Str Sync_Cloud_BusinessProfile_Body}"
+                   FontSize="12" Opacity="0.8" TextWrapping="Wrap"
+                   TextAlignment="Center" Margin="0,0,0,12"/>
+        <TextBlock Text="{loc:Str Sync_Cloud_BusinessProfile_Company}"
+                   FontSize="12" Margin="0,0,0,4"/>
+        <ui:TextBox Text="{Binding CompanyNameInput, UpdateSourceTrigger=PropertyChanged}"
+                    AutomationProperties.AutomationId="WizardAccount_CompanyName"
+                    Margin="0,0,0,8"/>
+        <TextBlock Text="{Binding BusinessProfileError}"
+                   Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                   TextWrapping="Wrap" FontSize="12" Margin="0,0,0,8"
+                   Visibility="{Binding BusinessProfileError, Converter={StaticResource NullToVisibilityConverter}}"/>
+        <ui:Button Content="{loc:Str Sync_Cloud_BusinessProfile_Confirm}"
+                   Command="{Binding SubmitBusinessProfileCommand}"
+                   AutomationProperties.AutomationId="WizardAccount_ConfirmBusinessProfile"
+                   Appearance="Primary" MinWidth="180" HorizontalAlignment="Center"/>
+
         <!-- Loading state -->
         <StackPanel Orientation="Horizontal"
                     HorizontalAlignment="Center"

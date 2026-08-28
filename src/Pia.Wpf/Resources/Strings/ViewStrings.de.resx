@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:element name="root" msdata:IsDataSet="true">
@@ -613,6 +613,13 @@
   <data name="Sync_SignInWithMicrosoft" xml:space="preserve"><value>Mit Microsoft anmelden</value></data>
   <data name="Sync_SignInWithEntraId" xml:space="preserve"><value>Mit Entra ID anmelden</value></data>
   <data name="Sync_SignIn_Description" xml:space="preserve"><value>Dein Browser wird geöffnet, um den Anmeldevorgang abzuschließen</value></data>
+  <data name="Sync_Cloud_BusinessNote" xml:space="preserve"><value>Pia Cloud richtet sich an Unternehmen. Die Pia-App selbst bleibt für alle kostenlos.</value></data>
+  <data name="Sync_Cloud_BusinessProfile_Title" xml:space="preserve"><value>Noch eine Sache</value></data>
+  <data name="Sync_Cloud_BusinessProfile_Body" xml:space="preserve"><value>Pia Cloud richtet sich an Unternehmen. Nenne uns das Unternehmen, zu dem dieses Konto gehört, dann kann es losgehen.</value></data>
+  <data name="Sync_Cloud_BusinessProfile_Company" xml:space="preserve"><value>Unternehmen</value></data>
+  <data name="Sync_Cloud_BusinessProfile_Confirm" xml:space="preserve"><value>Bestätigen</value></data>
+  <data name="Sync_Cloud_BusinessProfile_CompanyRequired" xml:space="preserve"><value>Bitte gib ein Unternehmen an.</value></data>
+  <data name="Sync_Cloud_BusinessProfile_Error" xml:space="preserve"><value>Das Unternehmen konnte nicht gespeichert werden. Bitte versuche es erneut.</value></data>
   <data name="Sync_LocalAuth_Email" xml:space="preserve"><value>E-Mail</value></data>
   <data name="Sync_LocalAuth_Password" xml:space="preserve"><value>Passwort</value></data>
   <data name="Sync_LocalAuth_SignIn" xml:space="preserve"><value>Anmelden</value></data>

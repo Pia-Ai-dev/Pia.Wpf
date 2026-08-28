@@ -14,4 +14,10 @@ public class LocalLoginUser
     public required string Email { get; set; }
     public string? DisplayName { get; set; }
     public required string Provider { get; set; }
+
+    /// <summary>
+    /// The account still owes its trader declaration — single sign-on skips the registration form.
+    /// Until it is supplied, the server answers everything but the auth surface with 403.
+    /// </summary>
+    public bool RequiresBusinessProfile { get; set; }
 }
