@@ -5,6 +5,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using Pia.Helpers;
+using Pia.Models;
 using Pia.Models.Vault;
 using Pia.Services.Interfaces;
 using Pia.ViewModels;
@@ -39,7 +41,8 @@ public class VaultViewModelTests
             Substitute.For<IClipboardService>(),
             vaultSources,
             Substitute.For<IIngestScheduler>(),
-            Substitute.For<ISettingsService>());
+            Substitute.For<ISettingsService>(),
+            Substitute.For<IObsidianService>());
         return (vm, memory, dialog);
     }
 
@@ -68,7 +71,8 @@ public class VaultViewModelTests
             Substitute.For<IClipboardService>(),
             vaultSources,
             Substitute.For<IIngestScheduler>(),
-            Substitute.For<ISettingsService>());
+            Substitute.For<ISettingsService>(),
+            Substitute.For<IObsidianService>());
         return (vm, memory, snackbar);
     }
 
@@ -115,7 +119,8 @@ public class VaultViewModelTests
                 Substitute.For<IClipboardService>(),
                 vaultSources,
                 scheduler,
-                Substitute.For<ISettingsService>());
+                Substitute.For<ISettingsService>(),
+                Substitute.For<IObsidianService>());
 
             await vm.AddSourceFilesCommand.ExecuteAsync(new[] { textFile, binaryFile });
 
@@ -171,7 +176,8 @@ public class VaultViewModelTests
                 Substitute.For<IClipboardService>(),
                 vaultSources,
                 scheduler,
-                Substitute.For<ISettingsService>());
+                Substitute.For<ISettingsService>(),
+                Substitute.For<IObsidianService>());
 
             await vm.AddSourceFilesCommand.ExecuteAsync(new[] { dropped });
 
@@ -212,7 +218,8 @@ public class VaultViewModelTests
             Substitute.For<IClipboardService>(),
             vaultSources,
             scheduler,
-            Substitute.For<ISettingsService>());
+            Substitute.For<ISettingsService>(),
+            Substitute.For<IObsidianService>());
 
         await vm.RefreshCommand.ExecuteAsync(null);
 
@@ -743,4 +750,201 @@ public class VaultViewModelTests
 
         vm.Dispose();
     }
+    private const string VaultRoot = @"C:\Users\me\Pia\vault";
+
+    private static (VaultViewModel Vm, IObsidianService Obsidian, IDialogService Dialog,
+        IClipboardService Clipboard, AppSettings Settings) CreateForObsidian()
+    {
+        var memory = Substitute.For<IMemoryService>();
+        memory.ListMemoriesAsync().Returns(new VaultMemorySnapshot([], 0));
+        memory.VaultRoot.Returns(VaultRoot);
+
+        var vaultSources = Substitute.For<IVaultSourcesService>();
+        vaultSources.ListSourcesAsync().Returns([]);
+
+        var localization = Substitute.For<ILocalizationService>();
+        localization[Arg.Any<string>()].Returns(ci => ci.ArgAt<string>(0));
+
+        var settings = new AppSettings();
+        var settingsService = Substitute.For<ISettingsService>();
+        settingsService.GetSettingsAsync().Returns(settings);
+
+        var dialog = Substitute.For<IDialogService>();
+        var clipboard = Substitute.For<IClipboardService>();
+        var obsidian = Substitute.For<IObsidianService>();
+
+        var vm = new VaultViewModel(
+            NullLogger<VaultViewModel>.Instance,
+            memory,
+            Substitute.For<IEmbeddingService>(),
+            dialog,
+            Substitute.For<global::Wpf.Ui.ISnackbarService>(),
+            localization,
+            clipboard,
+            vaultSources,
+            Substitute.For<IIngestScheduler>(),
+            settingsService,
+            obsidian);
+        return (vm, obsidian, dialog, clipboard, settings);
+    }
+
+    [Fact]
+    public async Task Opening_a_known_vault_asks_nothing_and_registers_nothing()
+    {
+        var (vm, obsidian, dialog, clipboard, _) = CreateForObsidian();
+        obsidian.GetRegistrationState(VaultRoot).Returns(VaultRegistrationState.Registered);
+
+        await vm.OpenVaultInObsidianCommand.ExecuteAsync(null);
+
+        obsidian.DidNotReceive().TryRegisterVault(Arg.Any<string>());
+        await dialog.DidNotReceive().ShowOptOutConfirmationDialogAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+        clipboard.DidNotReceive().SetText(Arg.Any<string>());
+        obsidian.Received(1).OpenVault(VaultRoot);
+
+        vm.Dispose();
+    }
+
+    // The dialog tells the user the path is on their clipboard, so it has to BE there before it is shown.
+    [Fact]
+    public async Task A_running_obsidian_gets_the_path_on_the_clipboard_before_the_dialog_claims_it()
+    {
+        var (vm, obsidian, dialog, clipboard, _) = CreateForObsidian();
+        obsidian.GetRegistrationState(VaultRoot).Returns(VaultRegistrationState.Registrable);
+        obsidian.IsObsidianRunning().Returns(true);
+
+        var copied = false;
+        clipboard.When(c => c.SetText(VaultRoot)).Do(_ => copied = true);
+        dialog.ShowMessageDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(_ =>
+        {
+            Assert.True(copied, "the dialog claims the clipboard holds the path before it does");
+            return Task.CompletedTask;
+        });
+
+        await vm.OpenVaultInObsidianCommand.ExecuteAsync(null);
+
+        clipboard.Received(1).SetText(VaultRoot);
+        await dialog.Received(1).ShowMessageDialogAsync(Arg.Any<string>(), Arg.Any<string>());
+        obsidian.DidNotReceive().TryRegisterVault(Arg.Any<string>());
+
+        vm.Dispose();
+    }
+
+    // Pia cannot see the list this Obsidian reads, so it must not offer to write one — but it must still
+    // say so, instead of dropping the user on the vault switcher with no explanation.
+    [Fact]
+    public async Task An_unreadable_registry_advises_a_manual_add_and_never_offers_to_write()
+    {
+        var (vm, obsidian, dialog, clipboard, _) = CreateForObsidian();
+        obsidian.GetRegistrationState(VaultRoot).Returns(VaultRegistrationState.Undetermined);
+
+        await vm.OpenVaultInObsidianCommand.ExecuteAsync(null);
+
+        obsidian.DidNotReceive().TryRegisterVault(Arg.Any<string>());
+        obsidian.DidNotReceive().IsObsidianRunning();
+        await dialog.DidNotReceive().ShowOptOutConfirmationDialogAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+        clipboard.Received(1).SetText(VaultRoot);
+        await dialog.Received(1).ShowMessageDialogAsync(
+            "Memory_ObsidianAddManually_Title", "Memory_ObsidianAddManually_Body");
+        obsidian.Received(1).OpenVault(VaultRoot);
+
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task Declining_registration_writes_nothing_and_leaves_the_path_to_paste()
+    {
+        var (vm, obsidian, dialog, clipboard, _) = CreateForObsidian();
+        obsidian.GetRegistrationState(VaultRoot).Returns(VaultRegistrationState.Registrable);
+        obsidian.IsObsidianRunning().Returns(false);
+        dialog.ShowOptOutConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(new OptOutConfirmation(Confirmed: false, DontAskAgain: false));
+
+        await vm.OpenVaultInObsidianCommand.ExecuteAsync(null);
+
+        obsidian.DidNotReceive().TryRegisterVault(Arg.Any<string>());
+        clipboard.Received(1).SetText(VaultRoot);
+        obsidian.Received(1).OpenVault(VaultRoot);
+
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task Consenting_registers_the_vault_and_leaves_the_clipboard_alone()
+    {
+        var (vm, obsidian, dialog, clipboard, settings) = CreateForObsidian();
+        obsidian.GetRegistrationState(VaultRoot).Returns(VaultRegistrationState.Registrable);
+        obsidian.IsObsidianRunning().Returns(false);
+        obsidian.TryRegisterVault(VaultRoot).Returns(true);
+        dialog.ShowOptOutConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(new OptOutConfirmation(Confirmed: true, DontAskAgain: false));
+
+        await vm.OpenVaultInObsidianCommand.ExecuteAsync(null);
+
+        obsidian.Received(1).TryRegisterVault(VaultRoot);
+        clipboard.DidNotReceive().SetText(Arg.Any<string>());
+        await dialog.DidNotReceive().ShowMessageDialogAsync(Arg.Any<string>(), Arg.Any<string>());
+        Assert.False(settings.ObsidianVaultRegistrationConfirmSuppressed);
+
+        vm.Dispose();
+    }
+
+    // A silent no-op would leave the user on Obsidian's vault switcher with no idea why.
+    [Fact]
+    public async Task A_failed_registration_is_reported_instead_of_swallowed()
+    {
+        var (vm, obsidian, dialog, clipboard, _) = CreateForObsidian();
+        obsidian.GetRegistrationState(VaultRoot).Returns(VaultRegistrationState.Registrable);
+        obsidian.IsObsidianRunning().Returns(false);
+        obsidian.TryRegisterVault(VaultRoot).Returns(false);
+        dialog.ShowOptOutConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(new OptOutConfirmation(Confirmed: true, DontAskAgain: false));
+
+        await vm.OpenVaultInObsidianCommand.ExecuteAsync(null);
+
+        clipboard.Received(1).SetText(VaultRoot);
+        await dialog.Received(1).ShowMessageDialogAsync(
+            "Memory_ObsidianRegisterFailed_Title", "Memory_ObsidianRegisterFailed_Body");
+
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task Dont_ask_again_is_persisted_and_skips_the_dialog_next_time()
+    {
+        var (vm, obsidian, dialog, _, settings) = CreateForObsidian();
+        obsidian.GetRegistrationState(VaultRoot).Returns(VaultRegistrationState.Registrable);
+        obsidian.IsObsidianRunning().Returns(false);
+        obsidian.TryRegisterVault(VaultRoot).Returns(true);
+        dialog.ShowOptOutConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(new OptOutConfirmation(Confirmed: true, DontAskAgain: true));
+
+        await vm.OpenVaultInObsidianCommand.ExecuteAsync(null);
+        Assert.True(settings.ObsidianVaultRegistrationConfirmSuppressed);
+
+        await vm.OpenVaultInObsidianCommand.ExecuteAsync(null);
+
+        await dialog.Received(1).ShowOptOutConfirmationDialogAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+        obsidian.Received(2).TryRegisterVault(VaultRoot);
+
+        vm.Dispose();
+    }
+
+    // Obsidian only opens markdown, so a non-note must not even reach the consent gate.
+    [Fact]
+    public async Task Opening_a_non_markdown_note_does_nothing_at_all()
+    {
+        var (vm, obsidian, _, _, _) = CreateForObsidian();
+
+        await vm.OpenNoteInObsidianCommand.ExecuteAsync(
+            Item("sources/raw.pdf", "sources/raw.pdf", "source", "Raw"));
+
+        obsidian.DidNotReceive().GetRegistrationState(Arg.Any<string>());
+        obsidian.DidNotReceive().OpenNote(Arg.Any<string>(), Arg.Any<string>());
+
+        vm.Dispose();
+    }
+
 }

@@ -20,6 +20,20 @@ public class VaultPathsTests
         Assert.False(VaultPaths.IsRecordFile(relativePath));
     }
 
+    // A foreign dot-folder under memory/ is not a record however it got there. Sharper than tidiness:
+    // the migration's populated-vault guard counts records, so one Syncthing version file would make an
+    // empty vault look populated and strand the legacy JSON. Kept in step with IsRecallIndexable.
+    [Theory]
+    [InlineData("memory/.stversions/profile~20260101.md")]
+    [InlineData("memory/.obsidian/plugins/some-plugin/README.md")]
+    [InlineData("memory/.trash/deleted-note.md")]
+    [InlineData("memory/notes/.stversions/foo.md")]
+    [InlineData("memory/.draft.md")]
+    public void IsRecordFile_is_false_under_any_dot_prefixed_segment(string relativePath)
+    {
+        Assert.False(VaultPaths.IsRecordFile(relativePath));
+    }
+
     // Real record locations: the three structured documents and the per-type freeform files.
     [Theory]
     [InlineData("memory/profile.md")]

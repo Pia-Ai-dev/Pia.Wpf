@@ -23,8 +23,9 @@ public class DataDirectoryRoutingTests
     private static readonly string Resolver = Path.Combine("Paths", "PiaPaths.cs");
 
     /// <summary>All three locate an installed program under <c>%LOCALAPPDATA%\Programs</c>, and the Obsidian
-    /// one also reads Obsidian's own <c>%APPDATA%</c> vault list. None reads Pia's data, and routing them would
-    /// break git / VS Code / Obsidian discovery under an override.</summary>
+    /// one also reads AND (on consent) writes Obsidian's own <c>%APPDATA%</c> vault list. None touches Pia's
+    /// data, and routing them would break git / VS Code / Obsidian discovery under an override. The write is
+    /// retargetable via <c>ObsidianLauncher.OverrideRegistryPathForTests</c>, so no test hits a real profile.</summary>
     private static readonly string[] Allowed =
     [
         Resolver,

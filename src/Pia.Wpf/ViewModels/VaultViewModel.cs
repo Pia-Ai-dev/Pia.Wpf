@@ -31,6 +31,7 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
     private readonly IVaultSourcesService _vaultSourcesService;
     private readonly IIngestScheduler _ingestScheduler;
     private readonly ISettingsService _settingsService;
+    private readonly IObsidianService _obsidianService;
     private CancellationTokenSource? _debounceCts;
     private bool _disposed;
 
@@ -109,7 +110,7 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         => SelectedMemory is null && TotalObjectCount == 0 && SourceFileCount == 0;
 
     /// <summary>Gates both Obsidian buttons; the launcher caches its probe, so this is not re-detected per read.</summary>
-    public bool IsObsidianAvailable => ObsidianLauncher.IsAvailable;
+    public bool IsObsidianAvailable => _obsidianService.IsAvailable;
 
     public IAsyncRelayCommand RefreshCommand { get; }
     public IAsyncRelayCommand<VaultMemoryItem> DeleteMemoryCommand { get; }
@@ -139,7 +140,8 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         IClipboardService clipboardService,
         IVaultSourcesService vaultSourcesService,
         IIngestScheduler ingestScheduler,
-        ISettingsService settingsService)
+        ISettingsService settingsService,
+        IObsidianService obsidianService)
     {
         _logger = logger;
         _memoryService = memoryService;
@@ -151,6 +153,7 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         _vaultSourcesService = vaultSourcesService;
         _ingestScheduler = ingestScheduler;
         _settingsService = settingsService;
+        _obsidianService = obsidianService;
 
         RefreshCommand = new AsyncRelayCommand(LoadMemoriesAsync);
         DeleteMemoryCommand = new AsyncRelayCommand<VaultMemoryItem>(ExecuteDeleteMemory);
@@ -204,7 +207,7 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
     {
         var vaultRoot = _memoryService.VaultRoot;
         await PrepareObsidianOpenAsync(vaultRoot);
-        ObsidianLauncher.OpenVault(vaultRoot);
+        _obsidianService.OpenVault(vaultRoot);
     }
 
     // The item's FilePath, never its Reference: a section address (path#heading) is not something Obsidian
@@ -214,23 +217,37 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         if (memory is null || !ObsidianLauncher.IsMarkdownNote(memory.FilePath)) return;
         var vaultRoot = _memoryService.VaultRoot;
         await PrepareObsidianOpenAsync(vaultRoot);
-        ObsidianLauncher.OpenNote(vaultRoot, memory.FilePath);
+        _obsidianService.OpenNote(vaultRoot, memory.FilePath);
     }
 
     /// <summary>
     /// Obsidian has no API to register a vault it has never seen, only its own registry file — editing that
     /// while Obsidian runs races its own save and can corrupt every vault it lists, so registration is only
-    /// ever attempted while it's closed, and only with consent. While it's open, there is nothing safe to do
-    /// but tell the user the path is on their clipboard; either way the caller's own open call runs after
-    /// this and does the actual launching.
+    /// ever attempted while it's closed, and only with consent. Every branch that ends without a registered
+    /// vault hands the user the path to paste instead, rather than dropping them on Obsidian's vault
+    /// switcher with no explanation. The caller's open call runs after this either way.
     /// </summary>
     private async Task PrepareObsidianOpenAsync(string vaultRoot)
     {
-        if (ObsidianLauncher.IsVaultKnown(vaultRoot)) return;
-
-        if (ObsidianLauncher.IsObsidianRunning())
+        switch (_obsidianService.GetRegistrationState(vaultRoot))
         {
-            await _dialogService.ShowMessageDialogAsync(
+            case VaultRegistrationState.Registered:
+                return;
+
+            // Nothing to offer: Pia cannot see the list Obsidian is reading, so it has no entry to merge
+            // into and would only be guessing at where to write one.
+            case VaultRegistrationState.Undetermined:
+                await AdviseManualAddAsync(
+                    vaultRoot,
+                    _localizationService["Memory_ObsidianAddManually_Title"],
+                    _localizationService["Memory_ObsidianAddManually_Body"]);
+                return;
+        }
+
+        if (_obsidianService.IsObsidianRunning())
+        {
+            await AdviseManualAddAsync(
+                vaultRoot,
                 _localizationService["Memory_ObsidianAlreadyOpen_Title"],
                 _localizationService["Memory_ObsidianAlreadyOpen_Body"]);
             return;
@@ -244,7 +261,11 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
                 _localizationService["Memory_ObsidianRegisterConfirm_Body"],
                 _localizationService["Memory_ObsidianRegisterConfirm_Confirm"]);
 
-            if (!answer.Confirmed) return;
+            if (!answer.Confirmed)
+            {
+                CopyVaultPathForPasting(vaultRoot);
+                return;
+            }
 
             if (answer.DontAskAgain)
             {
@@ -253,7 +274,32 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
             }
         }
 
-        ObsidianLauncher.TryRegisterVault(vaultRoot);
+        if (_obsidianService.TryRegisterVault(vaultRoot)) return;
+
+        await AdviseManualAddAsync(
+            vaultRoot,
+            _localizationService["Memory_ObsidianRegisterFailed_Title"],
+            _localizationService["Memory_ObsidianRegisterFailed_Body"]);
+    }
+
+    // The copy comes first: every one of these bodies tells the user the path is already on their clipboard.
+    private async Task AdviseManualAddAsync(string vaultRoot, string title, string body)
+    {
+        CopyVaultPathForPasting(vaultRoot);
+        await _dialogService.ShowMessageDialogAsync(title, body);
+    }
+
+    private void CopyVaultPathForPasting(string vaultRoot)
+    {
+        try
+        {
+            _clipboardService.SetText(vaultRoot);
+        }
+        catch (Exception ex)
+        {
+            // Obsidian still opens on its vault switcher; the user types the path instead of pasting it.
+            _logger.LogWarning(ex, "Failed to copy the vault path to the clipboard for Obsidian");
+        }
     }
 
     private async Task ExecuteCopyMarkdown(VaultMemoryItem? memory)

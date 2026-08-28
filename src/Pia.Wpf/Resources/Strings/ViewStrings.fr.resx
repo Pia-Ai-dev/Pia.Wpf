@@ -378,9 +378,13 @@
   <data name="Memory_OpenNoteInObsidian" xml:space="preserve"><value>Ouvrir la note dans Obsidian</value></data>
   <data name="Memory_ObsidianAlreadyOpen_Title" xml:space="preserve"><value>Obsidian est déjà ouvert</value></data>
   <data name="Memory_ObsidianAlreadyOpen_Body" xml:space="preserve"><value>Ce coffre n'est pas encore ajouté à Obsidian, et Pia ne modifie pas ses paramètres pendant qu'il est en cours d'exécution. Le chemin du coffre a été copié dans le presse-papiers — collez-le dans la boîte de dialogue « Ouvrir un dossier en tant que coffre » d'Obsidian pour l'ajouter.</value></data>
+  <data name="Memory_ObsidianAddManually_Title" xml:space="preserve"><value>Ajouter ce coffre dans Obsidian</value></data>
+  <data name="Memory_ObsidianAddManually_Body" xml:space="preserve"><value>Pia ne voit pas la liste des coffres utilisée par cet Obsidian et ne devinera pas où l'écrire. Le chemin du coffre est dans le presse-papiers — collez-le dans la boîte de dialogue « Ouvrir un dossier en tant que coffre » d'Obsidian pour l'ajouter.</value></data>
   <data name="Memory_ObsidianRegisterConfirm_Title" xml:space="preserve"><value>Enregistrer ce coffre auprès d'Obsidian ?</value></data>
   <data name="Memory_ObsidianRegisterConfirm_Body" xml:space="preserve"><value>Pia peut ajouter ce dossier à la liste des coffres d'Obsidian afin qu'il s'ouvre immédiatement, au lieu que vous l'ajoutiez vous-même. Cela ne se produit qu'une seule fois, et uniquement lorsque Obsidian est fermé.</value></data>
   <data name="Memory_ObsidianRegisterConfirm_Confirm" xml:space="preserve"><value>Enregistrer et ouvrir</value></data>
+  <data name="Memory_ObsidianRegisterFailed_Title" xml:space="preserve"><value>Impossible d'ajouter le coffre</value></data>
+  <data name="Memory_ObsidianRegisterFailed_Body" xml:space="preserve"><value>Pia a laissé les paramètres d'Obsidian intacts plutôt que de risquer de les écraser. Le chemin du coffre est dans le presse-papiers — collez-le dans la boîte de dialogue « Ouvrir un dossier en tant que coffre » d'Obsidian pour l'ajouter vous-même.</value></data>
   <!-- Reminders View -->
   <data name="Reminders_Title" xml:space="preserve"><value>Rappels</value></data>
   <data name="Reminders_HeaderHelp" xml:space="preserve"><value>Des rappels que Pia signale à l'échéance. Demander à l'assistant d'en créer un.</value></data>

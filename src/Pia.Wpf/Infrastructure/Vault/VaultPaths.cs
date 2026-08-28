@@ -25,8 +25,13 @@ public static class VaultPaths
     /// <summary>
     /// True iff <paramref name="relativePath"/> (vault-root-relative; either <c>/</c> or <c>\</c>
     /// separators) is a user-facing memory record: a <c>.md</c> file under <c>memory/</c> that is neither
-    /// a housekeeping document nor under <c>memory/.archive/</c>. Files under <c>sources/</c> are excluded
+    /// a housekeeping document nor dot-prefixed at any segment. Files under <c>sources/</c> are excluded
     /// because they are not under <c>memory/</c>.
+    ///
+    /// <para>Dot segments are denied on the same terms as <see cref="IsRecallIndexable"/>, and for a sharper
+    /// reason than tidiness: the migration's populated-vault guard counts record files, so one foreign
+    /// <c>memory/.stversions/note.md</c> would make an empty vault look populated and strand the legacy
+    /// JSON unmigrated.</para>
     /// </summary>
     public static bool IsRecordFile(string relativePath)
     {
@@ -41,18 +46,19 @@ public static class VaultPaths
 
         return normalized.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
             && normalized.StartsWith("memory/", StringComparison.OrdinalIgnoreCase)
-            && !normalized.StartsWith("memory/.archive/", StringComparison.OrdinalIgnoreCase)
+            && !HasDotSegment(normalized)
             && !Housekeeping.Contains(normalized);
     }
 
     /// <summary>
     /// True iff <paramref name="relativePath"/> is a <c>.md</c> file whose content should surface in
     /// recall (the <c>Chunks</c>/<c>ChunksFts</c> index): everything EXCEPT Pia's housekeeping documents
-    /// (<c>AGENTS.md</c>, <c>index.md</c>, <c>log.md</c>), the <c>sources/</c> RAW layer, and anything
-    /// under a dot-prefixed folder — Pia's own <c>.archive/</c> snapshots as well as folders other tools
-    /// drop into the vault (Obsidian's <c>.obsidian/</c> config and <c>.trash/</c> deleted notes, a stray
-    /// <c>.git/</c>, Syncthing's <c>.stversions/</c>). Unlike <see cref="IsRecordFile"/> this is a
-    /// denylist — not a <c>memory/</c> allowlist — because records may live at the vault root too.
+    /// (<c>AGENTS.md</c>, <c>index.md</c>, <c>log.md</c>), the <c>sources/</c> RAW layer, and anything with
+    /// a dot-prefixed path segment — Pia's own <c>.archive/</c> snapshots, folders other tools drop into the
+    /// vault (Obsidian's <c>.obsidian/</c> config and <c>.trash/</c> deleted notes, a stray <c>.git/</c>,
+    /// Syncthing's <c>.stversions/</c>), and dot-prefixed files such as <c>memory/.draft.md</c>. Unlike
+    /// <see cref="IsRecordFile"/> this is a denylist — not a <c>memory/</c> allowlist — because records may
+    /// live at the vault root too.
     ///
     /// <para>The <c>sources/</c> layer is excluded so raw ingest inputs are never embedded directly: only
     /// the LLM-synthesized topic pages under <c>memory/topics/</c> reach recall. This also keeps <c>.md</c>

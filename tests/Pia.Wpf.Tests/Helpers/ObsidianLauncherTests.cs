@@ -131,16 +131,42 @@ public sealed class ObsidianLauncherTests
     public void IsPathInsideAnyVault_false_for_a_malformed_or_unexpected_registry(string json)
         => Assert.False(ObsidianLauncher.IsPathInsideAnyVault(json, "C:\\Users\\me\\Pia\\vault"));
 
+    // Empty only: Obsidian leaves a zero-byte obsidian.json behind if it is interrupted mid-write, and
+    // there is nothing there to lose. A vaults ARRAY is not Obsidian's format either, but the other
+    // top-level keys around it still are, so those survive.
     [Theory]
     [InlineData(null)]
     [InlineData("")]
-    [InlineData("not json at all")]
+    [InlineData("   ")]
     [InlineData("""{"vaults":[]}""")]
-    public void AddVaultEntry_starts_a_fresh_registry_when_none_is_usable(string? existing)
+    public void AddVaultEntry_starts_a_fresh_vault_list_when_there_is_none_to_lose(string? existing)
     {
         var updated = ObsidianLauncher.AddVaultEntry(existing, "abc123", "C:\\Users\\me\\Pia\\vault", 1700000000000);
 
-        Assert.Equal("abc123", ObsidianLauncher.FindVaultId(updated, "C:\\Users\\me\\Pia\\vault"));
+        Assert.Equal("abc123", ObsidianLauncher.FindVaultId(updated!, "C:\\Users\\me\\Pia\\vault"));
+    }
+
+    // The whole point of the merge: rewriting a registry that will not parse would drop every vault the
+    // user has AND Obsidian's other top-level settings. Refusing is the only non-destructive answer.
+    [Theory]
+    [InlineData("not json at all")]
+    [InlineData("""{"vaults":{"aaa":{"path":"C:\\Users\\me\\Notes"}""")] // truncated mid-write
+    [InlineData("[]")]
+    [InlineData("42")]
+    public void AddVaultEntry_refuses_to_rewrite_a_registry_it_cannot_parse(string existing)
+        => Assert.Null(ObsidianLauncher.AddVaultEntry(existing, "abc123", "C:\\Users\\me\\Pia\\vault", 1700000000000));
+
+    [Fact]
+    public void AddVaultEntry_keeps_the_top_level_keys_it_does_not_own()
+    {
+        const string json =
+            """{"frames":[{"x":1}],"updateDisabled":true,"vaults":{"aaa":{"path":"C:\\Users\\me\\Notes","ts":1}}}""";
+
+        var updated = ObsidianLauncher.AddVaultEntry(json, "bbb", "C:\\Users\\me\\Pia\\vault", 1700000000000);
+
+        Assert.Contains("frames", updated);
+        Assert.Contains("updateDisabled", updated);
+        Assert.Equal("aaa", ObsidianLauncher.FindVaultId(updated!, "C:\\Users\\me\\Notes"));
     }
 
     [Fact]
@@ -150,8 +176,8 @@ public sealed class ObsidianLauncherTests
 
         var updated = ObsidianLauncher.AddVaultEntry(json, "bbb", "C:\\Users\\me\\Pia\\vault", 1700000000000);
 
-        Assert.Equal("aaa", ObsidianLauncher.FindVaultId(updated, "C:\\Users\\me\\Notes"));
-        Assert.Equal("bbb", ObsidianLauncher.FindVaultId(updated, "C:\\Users\\me\\Pia\\vault"));
+        Assert.Equal("aaa", ObsidianLauncher.FindVaultId(updated!, "C:\\Users\\me\\Notes"));
+        Assert.Equal("bbb", ObsidianLauncher.FindVaultId(updated!, "C:\\Users\\me\\Pia\\vault"));
     }
 
     [Fact]
@@ -161,7 +187,7 @@ public sealed class ObsidianLauncherTests
 
         Assert.Equal(
             "obsidian://open?vault=abc123",
-            ObsidianLauncher.ComposeUri("C:\\Users\\me\\Pia\\vault", null, ObsidianLauncher.FindVaultId(updated, "C:\\Users\\me\\Pia\\vault")));
+            ObsidianLauncher.ComposeUri("C:\\Users\\me\\Pia\\vault", null, ObsidianLauncher.FindVaultId(updated!, "C:\\Users\\me\\Pia\\vault")));
     }
 
     [Theory]
@@ -179,4 +205,110 @@ public sealed class ObsidianLauncherTests
     [InlineData("rundll32 shell32.dll,OpenAs_RunDLL %1")] // no .exe to cut at
     public void ExtractExecutable_returns_null_for_a_command_it_cannot_parse(string? command)
         => Assert.Null(ObsidianLauncher.ExtractExecutable(command));
+
+    // TryRegisterVault edits a file Obsidian owns, so these run against a redirected registry — never the
+    // developer's real %APPDATA%.
+    [Fact]
+    public void TryRegisterVault_refuses_when_obsidian_keeps_no_registry_here()
+    {
+        using var registry = new TempRegistry(content: null);
+
+        Assert.False(ObsidianLauncher.TryRegisterVault("C:\\Users\\me\\Pia\\vault"));
+        Assert.False(File.Exists(registry.RegistryPath));
+    }
+
+    [Fact]
+    public void TryRegisterVault_leaves_a_registry_it_cannot_parse_byte_identical()
+    {
+        const string garbage = """{"vaults":{"aaa":{"path":"C:\\Users\\me\\Notes"}""";
+        using var registry = new TempRegistry(garbage);
+
+        Assert.False(ObsidianLauncher.TryRegisterVault("C:\\Users\\me\\Pia\\vault"));
+        Assert.Equal(garbage, File.ReadAllText(registry.RegistryPath));
+    }
+
+    [Fact]
+    public void TryRegisterVault_merges_into_an_existing_registry()
+    {
+        using var registry = new TempRegistry("""{"vaults":{"aaa":{"path":"C:\\Users\\me\\Notes","ts":1}}}""");
+
+        Assert.True(ObsidianLauncher.TryRegisterVault("C:\\Users\\me\\Pia\\vault"));
+
+        var written = File.ReadAllText(registry.RegistryPath);
+        Assert.Equal("aaa", ObsidianLauncher.FindVaultId(written, "C:\\Users\\me\\Notes"));
+        Assert.NotNull(ObsidianLauncher.FindVaultId(written, "C:\\Users\\me\\Pia\\vault"));
+        Assert.Equal(
+            VaultRegistrationState.Registered,
+            ObsidianLauncher.GetRegistrationState("C:\\Users\\me\\Pia\\vault"));
+    }
+
+    // A registry we cannot read is not evidence the vault is unregistered. Collapsing this into Registrable
+    // would let the caller write an id into a file Obsidian never reads, after which every open fires a URI
+    // it rejects; collapsing it into Registered would silently swallow the case instead of telling the user.
+    [Fact]
+    public void GetRegistrationState_is_undetermined_when_there_is_no_registry_to_consult()
+    {
+        using var registry = new TempRegistry(content: null);
+
+        Assert.Equal(
+            VaultRegistrationState.Undetermined,
+            ObsidianLauncher.GetRegistrationState("C:\\Users\\me\\Pia\\vault"));
+    }
+
+    [Fact]
+    public void GetRegistrationState_is_registrable_when_a_readable_registry_does_not_list_it()
+    {
+        using var registry = new TempRegistry("""{"vaults":{"aaa":{"path":"C:\\Users\\me\\Notes","ts":1}}}""");
+
+        Assert.Equal(
+            VaultRegistrationState.Registrable,
+            ObsidianLauncher.GetRegistrationState("C:\\Users\\me\\Pia\\vault"));
+    }
+
+    // Nested under a registered vault is what obsidian://open?path= resolves, so it needs no registration.
+    [Fact]
+    public void GetRegistrationState_is_registered_for_a_folder_inside_a_registered_vault()
+    {
+        using var registry = new TempRegistry("""{"vaults":{"aaa":{"path":"C:\\Users\\me\\Notes","ts":1}}}""");
+
+        Assert.Equal(
+            VaultRegistrationState.Registered,
+            ObsidianLauncher.GetRegistrationState("C:\\Users\\me\\Notes\\Pia\\vault"));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void GetRegistrationState_is_undetermined_for_a_missing_vault_root(string? vaultRoot)
+    {
+        using var registry = new TempRegistry("""{"vaults":{"aaa":{"path":"C:\\Users\\me\\Notes","ts":1}}}""");
+
+        Assert.Equal(VaultRegistrationState.Undetermined, ObsidianLauncher.GetRegistrationState(vaultRoot));
+    }
+
+    /// <summary>Redirects Obsidian's registry into a throwaway folder for the life of one test.</summary>
+    private sealed class TempRegistry : IDisposable
+    {
+        private readonly string _dir;
+        private readonly IDisposable _override;
+
+        internal TempRegistry(string? content)
+        {
+            _dir = Path.Combine(Path.GetTempPath(), "pia-obsidian-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(_dir);
+            RegistryPath = Path.Combine(_dir, "obsidian.json");
+            if (content is not null) File.WriteAllText(RegistryPath, content);
+            _override = ObsidianLauncher.OverrideRegistryPathForTests(RegistryPath);
+        }
+
+        internal string RegistryPath { get; }
+
+        public void Dispose()
+        {
+            _override.Dispose();
+            try { Directory.Delete(_dir, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
 }

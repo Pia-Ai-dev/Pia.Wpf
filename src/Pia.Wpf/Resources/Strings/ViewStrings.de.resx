@@ -377,10 +377,14 @@
   <data name="Memory_OpenInObsidian" xml:space="preserve"><value>In Obsidian öffnen</value></data>
   <data name="Memory_OpenNoteInObsidian" xml:space="preserve"><value>Notiz in Obsidian öffnen</value></data>
   <data name="Memory_ObsidianAlreadyOpen_Title" xml:space="preserve"><value>Obsidian ist bereits geöffnet</value></data>
-  <data name="Memory_ObsidianAlreadyOpen_Body" xml:space="preserve"><value>Dieser Tresor ist noch nicht in Obsidian hinzugefügt, und Pia ändert dessen Einstellungen nicht, während es läuft. Der Tresor-Pfad wurde in die Zwischenablage kopiert – füge ihn im Obsidian-Dialog „Ordner als Tresor öffnen" ein, um ihn hinzuzufügen.</value></data>
+  <data name="Memory_ObsidianAlreadyOpen_Body" xml:space="preserve"><value>Dieser Tresor ist noch nicht in Obsidian hinzugefügt, und Pia ändert dessen Einstellungen nicht, während es läuft. Der Tresor-Pfad wurde in die Zwischenablage kopiert – füge ihn im Obsidian-Dialog „Ordner als Tresor öffnen“ ein, um ihn hinzuzufügen.</value></data>
+  <data name="Memory_ObsidianAddManually_Title" xml:space="preserve"><value>Diesen Tresor in Obsidian hinzufügen</value></data>
+  <data name="Memory_ObsidianAddManually_Body" xml:space="preserve"><value>Pia kann die Tresor-Liste dieses Obsidian nicht sehen und rät nicht, wohin sie zu schreiben wäre. Der Tresor-Pfad wurde in die Zwischenablage kopiert – füge ihn im Obsidian-Dialog „Ordner als Tresor öffnen“ ein, um ihn hinzuzufügen.</value></data>
   <data name="Memory_ObsidianRegisterConfirm_Title" xml:space="preserve"><value>Diesen Tresor bei Obsidian registrieren?</value></data>
   <data name="Memory_ObsidianRegisterConfirm_Body" xml:space="preserve"><value>Pia kann diesen Ordner zu Obsidians Tresor-Liste hinzufügen, damit er sofort geöffnet wird, statt dass du ihn selbst hinzufügst. Das geschieht nur einmal und nur, wenn Obsidian geschlossen ist.</value></data>
   <data name="Memory_ObsidianRegisterConfirm_Confirm" xml:space="preserve"><value>Registrieren und öffnen</value></data>
+  <data name="Memory_ObsidianRegisterFailed_Title" xml:space="preserve"><value>Tresor konnte nicht hinzugefügt werden</value></data>
+  <data name="Memory_ObsidianRegisterFailed_Body" xml:space="preserve"><value>Pia hat Obsidians Einstellungen unverändert gelassen, statt zu riskieren, sie zu überschreiben. Der Tresor-Pfad wurde in die Zwischenablage kopiert – füge ihn im Obsidian-Dialog „Ordner als Tresor öffnen“ ein, um ihn selbst hinzuzufügen.</value></data>
   <!-- Reminders View -->
   <data name="Reminders_Title" xml:space="preserve"><value>Erinnerungen</value></data>
   <data name="Reminders_HeaderHelp" xml:space="preserve"><value>Zeitgesteuerte Erinnerungen, die Pia meldet, sobald sie fällig sind. Lass eine im Assistenten-Chat anlegen.</value></data>

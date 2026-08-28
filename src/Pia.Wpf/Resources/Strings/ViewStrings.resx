@@ -344,9 +344,13 @@
   <data name="Memory_OpenNoteInObsidian" xml:space="preserve"><value>Open note in Obsidian</value></data>
   <data name="Memory_ObsidianAlreadyOpen_Title" xml:space="preserve"><value>Obsidian is already open</value></data>
   <data name="Memory_ObsidianAlreadyOpen_Body" xml:space="preserve"><value>This vault isn't added to Obsidian yet, and Pia won't touch its settings while it's running. The vault path is on your clipboard — paste it into Obsidian's "Open folder as vault" dialog to add it.</value></data>
+  <data name="Memory_ObsidianAddManually_Title" xml:space="preserve"><value>Add this vault in Obsidian</value></data>
+  <data name="Memory_ObsidianAddManually_Body" xml:space="preserve"><value>Pia can't see the vault list this Obsidian is using, so it won't guess where to write one. The vault path is on your clipboard — paste it into Obsidian's "Open folder as vault" dialog to add it.</value></data>
   <data name="Memory_ObsidianRegisterConfirm_Title" xml:space="preserve"><value>Register this vault with Obsidian?</value></data>
   <data name="Memory_ObsidianRegisterConfirm_Body" xml:space="preserve"><value>Pia can add this folder to Obsidian's vault list so it opens right away, instead of you adding it yourself. This only happens once, and only while Obsidian is closed.</value></data>
   <data name="Memory_ObsidianRegisterConfirm_Confirm" xml:space="preserve"><value>Register and open</value></data>
+  <data name="Memory_ObsidianRegisterFailed_Title" xml:space="preserve"><value>Could not add the vault</value></data>
+  <data name="Memory_ObsidianRegisterFailed_Body" xml:space="preserve"><value>Pia left Obsidian's settings untouched rather than risk overwriting them. The vault path is on your clipboard — paste it into Obsidian's "Open folder as vault" dialog to add it yourself.</value></data>
   <!-- Reminders View -->
   <data name="Reminders_Title" xml:space="preserve"><value>Reminders</value></data>
   <data name="Reminders_HeaderHelp" xml:space="preserve"><value>Time-based nudges Pia surfaces when they are due. Ask the Assistant to create one.</value></data>
