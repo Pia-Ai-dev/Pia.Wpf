@@ -348,8 +348,19 @@ public partial class FirstRunWizardViewModel : ObservableObject
         {
             // No IsLoggedIn guard: it can still be false while the stored token loads, and the
             // service answers null without a token, which leaves the state alone.
-            if (await _authService.RequiresBusinessProfileAsync() is bool requires)
-                RequiresBusinessProfile = requires;
+            var requires = await _authService.RequiresBusinessProfileAsync();
+
+            // A restored session has to reach the view too, or the declaration blocks Next behind a
+            // step still offering the sign-in buttons.
+            if (_authService.IsLoggedIn)
+            {
+                IsLoggedIn = true;
+                LoginDisplayName = _authService.UserDisplayName;
+                LoginEmail = _authService.UserEmail;
+            }
+
+            if (requires is bool outstanding)
+                RequiresBusinessProfile = outstanding;
         }
         catch (Exception ex)
         {

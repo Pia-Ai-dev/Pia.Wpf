@@ -160,9 +160,23 @@ public class AuthService : IAuthService
                 }
             }
 
+            if (login is not null)
+            {
+                try
+                {
+                    await ApplyLoginAsync(login, provider, settings);
+                }
+                catch (Exception ex)
+                {
+                    // Stored before the page is painted, so "All set" can never sit above a login that was lost.
+                    _logger.LogError(ex, "Storing the login failed");
+                    login = null;
+                    failure = "Login failed";
+                }
+            }
+
             try
             {
-                // Written after the exchange so the browser page shows the real outcome.
                 await WriteBrowserResponseAsync(context,
                     login is not null
                         ? BuildLoginSuccessHtml(login.User.DisplayName)
@@ -175,11 +189,7 @@ public class AuthService : IAuthService
                 _logger.LogWarning(ex, "Failed to write the OAuth browser response");
             }
 
-            if (login is null)
-                return (false, failure ?? "Login failed");
-
-            await ApplyLoginAsync(login, provider, settings);
-            return (true, null);
+            return login is null ? (false, failure ?? "Login failed") : (true, null);
         }
         catch (OperationCanceledException)
         {
@@ -263,7 +273,14 @@ public class AuthService : IAuthService
             var login = await response.Content.ReadFromJsonAsync<LocalLoginResponse>(ct);
             return login is null ? (null, "Invalid server response") : (login, null);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // The exchange owns this token, so its expiry is a result like any other — letting it throw
+            // would skip the browser page this method exists to guarantee.
+            _logger.LogWarning("Login code exchange timed out");
+            return (null, "Login timed out");
+        }
+        catch (Exception ex)
         {
             _logger.LogError(ex, "Login code exchange failed");
             return (null, "Login failed");
@@ -389,8 +406,16 @@ public class AuthService : IAuthService
                 return null;
 
             var body = await response.Content.ReadFromJsonAsync<JsonElement>();
-            return body.TryGetProperty("requiresBusinessProfile", out var flag)
-                   && flag.ValueKind == JsonValueKind.True;
+            if (body.ValueKind != JsonValueKind.Object
+                || !body.TryGetProperty("requiresBusinessProfile", out var flag))
+                return null;
+
+            return flag.ValueKind switch
+            {
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                _ => null
+            };
         }
         catch (Exception ex)
         {

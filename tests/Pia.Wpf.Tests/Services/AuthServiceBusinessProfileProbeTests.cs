@@ -94,6 +94,22 @@ public class AuthServiceBusinessProfileProbeTests
         Assert.False(await sut.RequiresBusinessProfileAsync());
     }
 
+    [Fact]
+    public async Task AnAnswerWithoutTheFlag_IsNotAnAnswerEither()
+    {
+        var sut = CreateSut(HttpStatusCode.OK, """{"email":"a@example.com"}""");
+
+        Assert.Null(await sut.RequiresBusinessProfileAsync());
+    }
+
+    [Fact]
+    public async Task AnAnswerThatIsNotAnObject_IsNotAnAnswerEither()
+    {
+        var sut = CreateSut(HttpStatusCode.OK, "[]");
+
+        Assert.Null(await sut.RequiresBusinessProfileAsync());
+    }
+
     /// <summary>Both ViewModels re-read the flag straight after submitting, so a stale true traps the user.</summary>
     [Fact]
     public async Task SubmittingTheDeclaration_ClearsTheFlagTheLoginSet()

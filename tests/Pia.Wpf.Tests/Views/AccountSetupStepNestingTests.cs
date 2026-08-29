@@ -1,5 +1,7 @@
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Data;
 using Pia.Views.WizardSteps;
 using Xunit;
 
@@ -46,10 +48,14 @@ public class AccountSetupStepNestingTests
             $"found {gates.Length}. Until that panel is locatable by its binding again, this test proves nothing " +
             "about where the sign-in feedback sits.");
 
-        return [.. Ancestors(locate(step))
-            .OfType<FrameworkElement>()
-            .Where(IsBusinessProfileGate)
-            .Select(e => e.GetType().Name)];
+        var element = locate(step);
+        var ancestors = Ancestors(element).OfType<FrameworkElement>().ToArray();
+
+        // Without this, moving the element up to the root panel would satisfy the check below just as well,
+        // and it would then render over the signed-in success card.
+        Assert.Contains(LoginPanel(step), ancestors);
+
+        return [.. ancestors.Where(IsBusinessProfileGate).Select(e => e.GetType().Name)];
     }
 
     private static FrameworkElement FindLoginErrorText(AccountSetupStep step)
@@ -78,6 +84,28 @@ public class AccountSetupStepNestingTests
 
     private static bool IsBusinessProfileGate(FrameworkElement element) =>
         BindingPathWalker.PathOf(element, UIElement.VisibilityProperty) == BusinessProfileGate;
+
+    // The login panel hides itself through a Style trigger rather than a Visibility binding, so it is found
+    // by that trigger and pinned to the sign-in button — the success card triggers on IsLoggedIn too.
+    private static FrameworkElement LoginPanel(AccountSetupStep step)
+    {
+        var signIn = OwnMarkup(step)
+            .Single(e => AutomationProperties.GetAutomationId(e) == "WizardAccount_SignInMicrosoft");
+
+        var found = Ancestors(signIn).OfType<FrameworkElement>().Where(HidesWhenLoggedIn).ToArray();
+
+        Assert.True(found.Length == 1,
+            $"expected exactly one ancestor of the sign-in button that collapses once IsLoggedIn, found " +
+            $"{found.Length}. Until that panel is locatable, this test cannot say the feedback lives with it.");
+
+        return found[0];
+    }
+
+    private static bool HidesWhenLoggedIn(FrameworkElement element) =>
+        element.Style?.Triggers.OfType<DataTrigger>().Any(t =>
+            (t.Binding as Binding)?.Path.Path == "IsLoggedIn"
+            && t.Setters.OfType<Setter>().Any(s =>
+                s.Property == UIElement.VisibilityProperty && (Visibility)s.Value == Visibility.Collapsed)) == true;
 
     /// <summary>Nested views are excluded because they declare spinners of their own.</summary>
     private static FrameworkElement[] OwnMarkup(AccountSetupStep step) =>

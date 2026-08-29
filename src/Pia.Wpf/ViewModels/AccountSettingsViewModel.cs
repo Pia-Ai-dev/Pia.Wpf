@@ -322,14 +322,22 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
         _isLoading = false;
 
         // A restored session carries no answer, so ask — off the initialization path, which the UI waits on.
-        if (_authService.IsLoggedIn)
+        // No IsLoggedIn guard: it races the service's own token load, and the probe answers null without a token.
+        if (!_businessProfileAnswered)
             RefreshBusinessProfileStateAsync().SafeFireAndForget(_logger);
     }
 
+    // Settings is re-initialized on every navigation to it, and only a login or a submit can change the
+    // answer — both of which set the flag directly.
+    private bool _businessProfileAnswered;
+
     private async Task RefreshBusinessProfileStateAsync()
     {
-        if (await _authService.RequiresBusinessProfileAsync() is bool requires)
-            RequiresBusinessProfile = requires;
+        if (await _authService.RequiresBusinessProfileAsync() is not bool requires)
+            return;
+
+        _businessProfileAnswered = true;
+        RequiresBusinessProfile = requires;
     }
 
     // IsE2EEEnabled is hand-managed across onboarding and revocation, so it is not mirrored here.

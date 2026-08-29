@@ -158,4 +158,33 @@ public class FirstRunWizardBusinessProfileTests
 
         Assert.False(sut.RequiresBusinessProfile);
     }
+
+    [Fact]
+    public async Task LoadProbe_OnARestoredSession_ShowsTheAccountAsSignedIn()
+    {
+        _auth.RequiresBusinessProfileAsync().Returns((bool?)true);
+        _auth.IsLoggedIn.Returns(true);
+        _auth.UserEmail.Returns("a@example.com");
+        var sut = CreateSut();
+
+        await sut.InitializeAsync();
+        sut.CurrentStep = 1;
+
+        // Next is blocked here, so the step has to show the account rather than the sign-in buttons.
+        Assert.False(sut.NextOrFinishCommand.CanExecute(null));
+        Assert.True(sut.IsLoggedIn);
+        Assert.Equal("a@example.com", sut.LoginEmail);
+    }
+
+    [Fact]
+    public async Task LoadProbe_WithNoStoredSession_LeavesTheStepSignedOut()
+    {
+        _auth.RequiresBusinessProfileAsync().Returns((bool?)null);
+        _auth.IsLoggedIn.Returns(false);
+        var sut = CreateSut();
+
+        await sut.InitializeAsync();
+
+        Assert.False(sut.IsLoggedIn);
+    }
 }
