@@ -28,6 +28,25 @@ public class AssistantMessageMapperTests
     }
 
     [Fact]
+    public void RoundTrip_PreservesProviderAndSurvivesMissingTokens()
+    {
+        var src = new AssistantMessage(ChatRole.Assistant, "answer")
+        {
+            Stats = new AnswerStats(null, "gpt-4o", "OpenAI"),
+        };
+
+        var dto = AssistantMessageMapper.ToDto(src);
+        Assert.Null(dto.Tokens);
+        Assert.Equal("gpt-4o", dto.ModelName);
+        Assert.Equal("OpenAI", dto.ProviderName);
+
+        var back = AssistantMessageMapper.FromDto(dto);
+        Assert.NotNull(back.Stats);
+        Assert.Null(back.Stats!.Tokens);
+        Assert.Equal("OpenAI · gpt-4o", back.Stats.ProvenanceLabel);
+    }
+
+    [Fact]
     public void ToDto_DoesNotMapPendingConfirmation()
     {
         var src = new AssistantMessage(ChatRole.Assistant, "answer");

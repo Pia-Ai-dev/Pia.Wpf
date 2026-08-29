@@ -20,6 +20,7 @@ internal static class AssistantMessageMapper
         Timestamp = m.Timestamp.ToUniversalTime(),
         Tokens = m.Stats?.Tokens,
         ModelName = m.Stats?.Model,
+        ProviderName = m.Stats?.Provider,
         Persona = m.Persona is { } p
             ? new SyncMessagePersona { Id = p.Id, Name = p.Name, Emoji = p.Emoji }
             : null,
@@ -31,8 +32,8 @@ internal static class AssistantMessageMapper
         var message = new AssistantMessage(dto.Id, role, dto.Content, dto.Timestamp.ToLocalTime());
         if (!string.IsNullOrEmpty(dto.ThinkingContent))
             message.ThinkingContent = dto.ThinkingContent;
-        if (dto.Tokens is { } tokens && !string.IsNullOrEmpty(dto.ModelName))
-            message.Stats = new AnswerStats(tokens, dto.ModelName);
+        if (!string.IsNullOrEmpty(dto.ModelName))
+            message.Stats = new AnswerStats(dto.Tokens, dto.ModelName, dto.ProviderName);
         if (dto.Persona is { } p)
             message.Persona = new PersonaAttribution(p.Id, p.Name, p.Emoji);
         return message;

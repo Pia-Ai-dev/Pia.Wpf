@@ -139,6 +139,23 @@ public class MeetingAttendeeViewModelTests
         Assert.Equal(expected, vm.AssistantDisplayName);
     }
 
+    [Fact]
+    public async Task EffectiveDisplayName_AppendsTheAiSuffix_ToTheTypedNameAndToTheDefault()
+    {
+        var (vm, _, _) = CreateSutFull(new AppSettings { SyncUserDisplayName = "Alex" });
+        await vm.PrepareForDisplayAsync();
+
+        // The localization stub echoes keys, so the suffix shows up as its resource key.
+        Assert.Equal("Alex's assistant (MeetingAttendee_DisplayName_AiSuffix)", vm.EffectiveDisplayName);
+
+        vm.AssistantDisplayName = "Conference bot";
+        Assert.Equal("Conference bot (MeetingAttendee_DisplayName_AiSuffix)", vm.EffectiveDisplayName);
+        Assert.Contains("MeetingAttendee_DisplayName_Effective", vm.EffectiveDisplayNameHint, StringComparison.Ordinal);
+
+        vm.AssistantDisplayName = "";
+        Assert.Equal("Alex's assistant (MeetingAttendee_DisplayName_AiSuffix)", vm.EffectiveDisplayName);
+    }
+
     [Theory]
     [InlineData("  Conference bot  ", "Conference bot")]
     [InlineData("", null)]

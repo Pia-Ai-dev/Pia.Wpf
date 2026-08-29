@@ -11,7 +11,8 @@ public enum SettingsTab
     Optimize = 2,
     Assistant = 3,
     Account = 4,
-    Plugins = 5
+    Plugins = 5,
+    About = 6
 }
 
 /// <summary>Inner tabs of the General settings pane (GeneralView.xaml).</summary>

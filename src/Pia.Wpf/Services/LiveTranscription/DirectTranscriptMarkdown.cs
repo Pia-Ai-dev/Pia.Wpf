@@ -89,6 +89,7 @@ public static class DirectTranscriptMarkdown
     {
         sb.Append("---\n");
         sb.Append("schema: ").Append(Schema).Append('\n');
+        sb.Append(AiContentMarking.YamlLines());
         sb.Append("start: ").Append(sessionStart.ToString("O", CultureInfo.InvariantCulture)).Append('\n');
         sb.Append("end: ").Append(sessionEnd.ToString("O", CultureInfo.InvariantCulture)).Append('\n');
 

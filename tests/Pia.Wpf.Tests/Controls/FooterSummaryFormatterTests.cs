@@ -45,4 +45,25 @@ public class FooterSummaryFormatterTests : IDisposable
     {
         Assert.Equal(string.Empty, FooterSummaryFormatter.Compose(null, null));
     }
+
+    [Fact]
+    public void Provider_IsNamedBeforeTheModel()
+    {
+        var text = FooterSummaryFormatter.Compose(new AnswerStats(1234, "gpt-4o", "OpenAI"), "Marketing Writer");
+        Assert.Equal("1,234 Tokens · Marketing Writer · OpenAI · gpt-4o", text);
+    }
+
+    [Fact]
+    public void NoUsage_StillNamesProviderAndModel()
+    {
+        var text = FooterSummaryFormatter.Compose(new AnswerStats(null, "llama3:latest", "Ollama"), null);
+        Assert.Equal("Ollama · llama3:latest", text);
+    }
+
+    [Fact]
+    public void PiaCloud_IsNamedAsTheServiceOnly()
+    {
+        var text = FooterSummaryFormatter.Compose(new AnswerStats(80, AnswerProvenance.PiaCloudLabel), null);
+        Assert.Equal("80 Tokens · Pia Cloud", text);
+    }
 }

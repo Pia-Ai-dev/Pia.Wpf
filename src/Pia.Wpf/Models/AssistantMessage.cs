@@ -54,7 +54,11 @@ public partial class AssistantMessage : ObservableObject
     private MessageMeta? _meta;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsRateable))]
     private AnswerStats? _stats;
+
+    /// <summary>Only Pia Cloud answers can be rated or reported — a BYOK model is the user's own, not ours.</summary>
+    public bool IsRateable => Stats?.IsPiaCloud == true;
 
     /// <summary>True when the server routed this answer to the protected/private model (guardrail
     /// HIT/ERROR). Drives the neutral shield indicator. In-memory only — not persisted (v1).</summary>

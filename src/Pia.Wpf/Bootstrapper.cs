@@ -625,6 +625,7 @@ public static class Bootstrapper
         services.AddSingleton<IAgentRunResumeService>(sp => sp.GetRequiredService<HeadlessRunLauncher>());
         services.AddScoped<IActionCardBuilder, ActionCardBuilder>();
         services.AddSingleton<IMarkdownExportService, MarkdownExportService>();
+        services.AddSingleton<IAiFeedbackService, AiFeedbackService>();
         services.AddSingleton<IWindowTrackingService, WindowTrackingService>();
         services.AddSingleton<INativeHotkeyServiceFactory, NativeHotkeyServiceFactory>();
         services.AddSingleton<ISelectedTextService, SelectedTextService>();
@@ -669,7 +670,8 @@ public static class Bootstrapper
                             sp.GetRequiredService<ILoggerFactory>().CreateLogger<Services.LiveTranscription.DebugFileAudioCaptureService>()),
                         DebugMeetingAttendeeAudioDumpEnvVar, "replay", sp.GetRequiredService<ILoggerFactory>()),
                     engineServiceFactory: Services.MeetingAttendee.MeetingAttendeeService.CreateEngineServiceFactory(
-                        sp.GetRequiredService<ILoggerFactory>()));
+                        sp.GetRequiredService<ILoggerFactory>()),
+                    localization: sp.GetRequiredService<ILocalizationService>());
         }
         else if (Environment.GetEnvironmentVariable(DebugMeetingAttendeeAudioDumpEnvVar) is { Length: > 0 })
         {
@@ -697,7 +699,8 @@ public static class Bootstrapper
                         production(session, useSilentCapture),
                         DebugMeetingAttendeeAudioDumpEnvVar, Interlocked.Increment(ref instance), loggerFactory),
                     engineServiceFactory: Services.MeetingAttendee.MeetingAttendeeService.CreateEngineServiceFactory(loggerFactory),
-                    defaultBrowserResolver: sp.GetRequiredService<Services.MeetingAttendee.IDefaultBrowserResolver>());
+                    defaultBrowserResolver: sp.GetRequiredService<Services.MeetingAttendee.IDefaultBrowserResolver>(),
+                    localization: sp.GetRequiredService<ILocalizationService>());
             };
         }
         else

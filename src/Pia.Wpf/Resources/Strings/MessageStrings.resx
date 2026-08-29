@@ -442,4 +442,7 @@ Changes will be applied.</value></data>
   <data name="Msg_Settings_DiagnosticsFailed_NoDestination" xml:space="preserve">
     <value>The Diagnostics folder could not be created.</value>
   </data>
+  <data name="Msg_Assistant_FeedbackSent_Title" xml:space="preserve"><value>Thank you</value></data>
+  <data name="Msg_Assistant_FeedbackSent" xml:space="preserve"><value>Your feedback was sent to the Pia Cloud team.</value></data>
+  <data name="Msg_Assistant_FeedbackFailed" xml:space="preserve"><value>The feedback could not be sent. Check your Pia Cloud connection and try again.</value></data>
 </root>

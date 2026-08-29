@@ -147,4 +147,6 @@
   <data name="MeetingSave_Notes_Label" xml:space="preserve"><value>Notizen</value></data>
   <data name="MeetingSave_Notes_Placeholder" xml:space="preserve"><value>Kontext, der zum Transkript gehört</value></data>
   <data name="MeetingSave_TargetPath_Label" xml:space="preserve"><value>Gespeichert als</value></data>
+  <data name="MeetingAttendee_DisplayName_AiSuffix" xml:space="preserve"><value>KI-Protokoll</value></data>
+  <data name="MeetingAttendee_DisplayName_Effective" xml:space="preserve"><value>Für die Teilnehmer sichtbar als: {0}</value></data>
 </root>

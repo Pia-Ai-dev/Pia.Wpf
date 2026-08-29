@@ -14,7 +14,9 @@ public sealed record ReasoningDelta(string Text) : ChatStreamItem;
 
 /// <param name="ToolRoundsExhausted">True when the in-step tool loop ran out of rounds before the model
 /// stopped calling tools on its own.</param>
-public sealed record Finished(UsageDetails? Usage, string Model, bool Protected = false, bool ToolRoundsExhausted = false) : ChatStreamItem;
+/// <param name="Provider">Display label of the model's provider; null for Pia Cloud (see <see cref="AnswerProvenance"/>).</param>
+public sealed record Finished(
+    UsageDetails? Usage, string Model, string? Provider = null, bool Protected = false, bool ToolRoundsExhausted = false) : ChatStreamItem;
 
 /// <summary>A tool call was just dispatched; the next <see cref="TextDelta"/> starts a fresh model turn
 /// built on the tool result, not a continuation of the text streamed before the call.</summary>

@@ -46,6 +46,8 @@ public class DirectTranscriptMarkdownTests
 
         Assert.Contains($"schema: {DirectTranscriptMarkdown.Schema}", md, StringComparison.Ordinal);
         Assert.Equal("pia-direct-transcript/v1", DirectTranscriptMarkdown.Schema);
+        Assert.Contains($"generator: {AppVersionInfo.Generator}\n", md, StringComparison.Ordinal);
+        Assert.Contains("aiGenerated: true\n", md, StringComparison.Ordinal);
     }
 
     [Fact]

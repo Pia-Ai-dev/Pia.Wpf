@@ -1,3 +1,4 @@
+using Pia.Models;
 using Pia.Services.LiveTranscription;
 using Xunit;
 
@@ -29,9 +30,11 @@ public class MeetingVaultMarkdownTests
             "# Meeting\n\nbody text\n");
 
         Assert.Equal(
-            """
+            $"""
             ---
             schema: pia-meeting/v1
+            generator: {AppVersionInfo.Generator}
+            aiGenerated: true
             title: Q3 roadmap sync
             date: 2026-08-12
             start: 2026-08-12T09:00:00.0000000+02:00

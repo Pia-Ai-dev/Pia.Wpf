@@ -7,8 +7,12 @@ namespace Pia.Services.Interfaces;
 /// </summary>
 public interface IMarkdownExportService
 {
-    /// <summary>Renders <paramref name="markdown"/> to a full HTML document using the built-in template.</summary>
-    string ToHtml(string markdown, string title);
+    /// <summary>
+    /// Renders <paramref name="markdown"/> to a full HTML document using the built-in template. The document is
+    /// marked as AI-generated (generator / ai-generated meta, visible footer); <paramref name="aiModelLabel"/>
+    /// names the producing provider and model when known.
+    /// </summary>
+    string ToHtml(string markdown, string title, string? aiModelLabel = null);
 
     /// <summary>
     /// Writes <paramref name="markdown"/> as an HTML file under the assistant working directory
@@ -20,6 +24,8 @@ public interface IMarkdownExportService
     /// back to <paramref name="fallbackTitle"/>.</param>
     /// <param name="fallbackTitle">Localized default title (e.g. "Pia answer") used when none can be derived.</param>
     /// <param name="workingSubpath">Active chat's working dir relative to the sandbox root (forward slashes); null = root.</param>
+    /// <param name="aiModelLabel">Provider · model that produced the answer, for the AI marking; null when unknown.</param>
     Task<string> ExportAsync(
-        string markdown, string? title, string fallbackTitle, string? workingSubpath, CancellationToken ct = default);
+        string markdown, string? title, string fallbackTitle, string? workingSubpath, string? aiModelLabel = null,
+        CancellationToken ct = default);
 }

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Pia.Infrastructure.Vault;
+using Pia.Models;
 
 namespace Pia.Services.LiveTranscription;
 
@@ -38,6 +39,7 @@ public static class MeetingVaultMarkdown
         var sb = new StringBuilder();
         sb.Append("---\n");
         sb.Append("schema: ").Append(Schema).Append('\n');
+        sb.Append(AiContentMarking.YamlLines());
         sb.Append("title: ").Append(YamlText.Scalar(meta.Title?.Trim())).Append('\n');
         sb.Append("date: ").Append(meta.Start.LocalDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).Append('\n');
         sb.Append("start: ").Append(meta.Start.ToString("O", CultureInfo.InvariantCulture)).Append('\n');

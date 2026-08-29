@@ -1,4 +1,5 @@
 using Pia.Infrastructure.Vault;
+using Pia.Models;
 using Xunit;
 
 namespace Pia.Tests.Vault;
@@ -19,6 +20,17 @@ public class VaultFrontmatterTests
         var categoryIndex = fm.IndexOf("category: product\n", StringComparison.Ordinal);
         Assert.True(titleIndex >= 0);
         Assert.True(categoryIndex > titleIndex, "category line must appear after the title line");
+    }
+
+    [Fact]
+    public void Build_and_BuildPreserving_mark_the_page_as_ai_generated()
+    {
+        foreach (var fm in new[] { VaultFrontmatter.Build("note", "X"), VaultFrontmatter.BuildPreserving(null, "T", "concept") })
+        {
+            Assert.Contains($"generator: {AppVersionInfo.Generator}\n", fm);
+            Assert.Contains("aiGenerated: true\n", fm);
+            Assert.EndsWith("schemaVersion: 1\n---\n", fm);
+        }
     }
 
     [Fact]

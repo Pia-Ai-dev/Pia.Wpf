@@ -53,6 +53,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IFilesToolHandler _filesToolHandler;
     private readonly IMarkdownExportService _markdownExportService;
     private readonly IDialogService _dialogService;
+    private readonly IAiFeedbackService? _aiFeedback;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly IVolatileWorkStore? _volatileWork;
     private readonly IStarterSuggestionService? _starterSuggestions;
@@ -224,6 +225,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IAsyncRelayCommand<AssistantMessage> RegenerateMessageCommand { get; }
     public IAsyncRelayCommand<RegenerateRequest> RegenerateStyledCommand { get; }
     public IAsyncRelayCommand<AssistantMessage> ExportMessageHtmlCommand { get; }
+    public IAsyncRelayCommand<AnswerRatingRequest> RateMessageCommand { get; }
     public IAsyncRelayCommand EnterVoiceModeCommand { get; }
     public IRelayCommand<string> UseSuggestionCommand { get; }
     public IRelayCommand<string> UseFollowupCommand { get; }
@@ -297,7 +299,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // in EVERY window defers. Trailing and defaulted; null ⇒ nothing is published.
         IVolatileWorkStore? volatileWork = null,
         // Trailing and defaulted, same discipline as the ones above; null ⇒ the empty state shows no chips.
-        IStarterSuggestionService? starterSuggestions = null)
+        IStarterSuggestionService? starterSuggestions = null,
+        // Trailing and defaulted, same discipline; null ⇒ thumbs on Pia Cloud answers do nothing.
+        IAiFeedbackService? aiFeedback = null)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -341,6 +345,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _assignmentConsentFactory = assignmentConsentFactory;
         _volatileWork = volatileWork;
         _starterSuggestions = starterSuggestions;
+        _aiFeedback = aiFeedback;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         RunInBackgroundCommand = new AsyncRelayCommand(ExecuteRunInBackground, CanExecuteRunInBackground);
@@ -353,6 +358,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         RegenerateMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecuteRegenerateMessage);
         RegenerateStyledCommand = new AsyncRelayCommand<RegenerateRequest>(ExecuteRegenerateStyled);
         ExportMessageHtmlCommand = new AsyncRelayCommand<AssistantMessage>(ExecuteExportMessageHtml);
+        RateMessageCommand = new AsyncRelayCommand<AnswerRatingRequest>(ExecuteRateMessage);
         EnterVoiceModeCommand = new AsyncRelayCommand(ExecuteEnterVoiceMode, CanEnterVoiceMode);
         UseSuggestionCommand = new RelayCommand<string>(ExecuteUseSuggestion);
         UseFollowupCommand = new RelayCommand<string>(ExecuteUseFollowup);
@@ -1355,7 +1361,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         {
             var fallbackTitle = _localizationService["Msg_Assistant_ExportDefaultTitle"];
             var path = await _markdownExportService.ExportAsync(
-                message.Content, title: null, fallbackTitle, _chatSessionManager.ActiveSession?.WorkingDirectory);
+                message.Content, title: null, fallbackTitle, _chatSessionManager.ActiveSession?.WorkingDirectory,
+                message.Stats?.ProvenanceLabel);
 
             // Surface the generated file as an open-file/open-folder chip, and open it in the browser.
             message.AddOrUpgradeFileRef(new FileRef(path, FileRefKind.Exported));
@@ -1373,6 +1380,48 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 _localizationService["Msg_Error"],
                 _localizationService["Msg_Assistant_ExportFailed"],
                 Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(3));
+        }
+    }
+
+    /// <summary>
+    /// Thumbs-up sends a bare rating; thumbs-down opens the report dialog first. Both go to the connected
+    /// Pia Cloud server — BYOK answers never reach here because the message hides the buttons.
+    /// </summary>
+    private async Task ExecuteRateMessage(AnswerRatingRequest? request)
+    {
+        if (request is null || _aiFeedback is null || !request.Message.IsRateable)
+            return;
+
+        try
+        {
+            var chatId = _chatSessionManager.ActiveSession?.Id;
+            Shared.Models.AiFeedbackRequest report;
+            if (request.Positive)
+            {
+                report = await _aiFeedback.BuildRequestAsync(
+                    request.Message, chatId, Shared.Models.AiFeedbackRequest.RatingUp, comment: null, includeAnswer: false);
+            }
+            else
+            {
+                var settings = await _settingsService.GetSettingsAsync();
+                var edit = new AiFeedbackEditModel(settings.Privacy.TokenizationEnabled);
+                if (!await _dialogService.ShowAiFeedbackDialogAsync(edit))
+                    return;
+
+                report = await _aiFeedback.BuildRequestAsync(
+                    request.Message, chatId, Shared.Models.AiFeedbackRequest.RatingDown, edit.Comment, edit.IncludeAnswer);
+            }
+
+            var sent = await _aiFeedback.SendAsync(report);
+            _snackbarService.Show(
+                _localizationService[sent ? "Msg_Assistant_FeedbackSent_Title" : "Msg_Error"],
+                _localizationService[sent ? "Msg_Assistant_FeedbackSent" : "Msg_Assistant_FeedbackFailed"],
+                sent ? Wpf.Ui.Controls.ControlAppearance.Success : Wpf.Ui.Controls.ControlAppearance.Danger,
+                null, TimeSpan.FromSeconds(3));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send AI feedback for message {MessageId}", request.Message.Id);
         }
     }
 

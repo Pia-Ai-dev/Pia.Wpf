@@ -14,6 +14,7 @@
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
     <!-- Row 0: Main indicator area -->
@@ -44,8 +45,25 @@
       </ScrollViewer>
     </Border>
 
-    <!-- Row 2: Control buttons -->
+    <!-- Row 2: the spoken reply is synthesized speech, said so while it plays -->
     <StackPanel Grid.Row="2"
+                Orientation="Horizontal"
+                HorizontalAlignment="Center"
+                Margin="0,0,0,12"
+                Visibility="{Binding State,
+                  Converter={StaticResource VoiceModeStateToVisibilityConverter},
+                  ConverterParameter=Speaking}">
+      <ui:SymbolIcon Symbol="Speaker220" FontSize="13" Margin="0,0,6,0" VerticalAlignment="Center"
+                     Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+      <TextBlock Text="{loc:Str VoiceMode_AiVoice}"
+                 AutomationProperties.AutomationId="VoiceMode_AiVoiceNotice"
+                 FontSize="12"
+                 VerticalAlignment="Center"
+                 Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+    </StackPanel>
+
+    <!-- Row 3: Control buttons -->
+    <StackPanel Grid.Row="3"
                 HorizontalAlignment="Center"
                 Orientation="Horizontal"
                 Margin="0,0,0,24">

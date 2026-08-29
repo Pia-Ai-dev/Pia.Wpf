@@ -80,7 +80,7 @@ public sealed class MeetingAttendeeServiceStateTests
 
         await fx.Service.StartAsync(MeetingUrl, TestContext.Current.CancellationToken);
 
-        await fx.Session.Received(1).JoinAsync(MeetingUrl, "Alex's assistant", Arg.Any<CancellationToken>());
+        await fx.Session.Received(1).JoinAsync(MeetingUrl, "Alex's assistant (AI notetaker)", Arg.Any<CancellationToken>());
 
         await fx.Service.DisposeAsync();
     }
@@ -99,7 +99,7 @@ public sealed class MeetingAttendeeServiceStateTests
 
         await fx.Service.StartAsync(MeetingUrl, TestContext.Current.CancellationToken);
 
-        await fx.Session.Received(1).JoinAsync(MeetingUrl, "Conference bot", Arg.Any<CancellationToken>());
+        await fx.Session.Received(1).JoinAsync(MeetingUrl, "Conference bot (AI notetaker)", Arg.Any<CancellationToken>());
 
         await fx.Service.DisposeAsync();
     }
@@ -748,6 +748,49 @@ public sealed class MeetingAttendeeServiceStateTests
     public void BuildDisplayName_FormatsUsersAssistant(string? input, string expected)
     {
         Assert.Equal(expected, MeetingAttendeeService.BuildDisplayName(input));
+    }
+
+    [Theory]
+    [InlineData("Alex's assistant", "Alex's assistant (AI notetaker)")]
+    [InlineData("  Conference bot  ", "Conference bot (AI notetaker)")]
+    [InlineData("Conference bot (AI notetaker)", "Conference bot (AI notetaker)")]
+    [InlineData("Conference bot (ai NOTETAKER)", "Conference bot (ai NOTETAKER)")]
+    [InlineData("", "Pia's assistant (AI notetaker)")]
+    public void WithAiSuffix_AppendsTheSuffixExactlyOnce(string input, string expected)
+    {
+        Assert.Equal(expected, MeetingAttendeeService.WithAiSuffix(input, MeetingAttendeeService.DefaultAiSuffix));
+    }
+
+    [Fact]
+    public void WithAiSuffix_ShortensALongName_SoTheSuffixSurvivesTheTeamsCap()
+    {
+        var name = MeetingAttendeeService.WithAiSuffix(new string('x', 80), MeetingAttendeeService.DefaultAiSuffix);
+
+        Assert.True(name.Length <= MeetingAttendeeService.TeamsDisplayNameMaxLength, name);
+        Assert.EndsWith("… (AI notetaker)", name, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RosterSnapshots_ExcludeBot_WhenTeamsShowsTheSuffixedName()
+    {
+        // Teams renders the bot's own row as "<name> (AI notetaker) (You)"; the cleaner keeps the inner
+        // parenthetical, and a row without "(You)" loses the suffix instead — both must still be the bot.
+        var fx = new Fixture();
+        fx.Settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            SyncUserDisplayName = "Alex",
+            MeetingAttendeeRosterSnapshotMinutes = 1,
+        });
+        fx.Session.GetAttendeeNamesAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<string>>(
+                new[] { "Alex's assistant (AI notetaker) (You)", "Alex's assistant (AI notetaker)", "Jane Doe" }));
+
+        await fx.Service.StartAsync(MeetingUrl, TestContext.Current.CancellationToken);
+        await WaitForAttendeesAsync(fx.Service, 1);
+
+        Assert.Equal(new[] { "Jane Doe" }, fx.Service.ObservedAttendees);
+
+        await fx.Service.DisposeAsync();
     }
 
     [Fact]

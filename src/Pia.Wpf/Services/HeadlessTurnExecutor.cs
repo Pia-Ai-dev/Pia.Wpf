@@ -670,6 +670,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             Timestamp = DateTime.UtcNow,
             Tokens = exchange.Tokens,
             ModelName = exchange.Model,
+            ProviderName = exchange.Provider,
             Persona = new SyncMessagePersona { Id = p.Persona.Id, Name = p.Persona.Name, Emoji = p.Persona.Emoji },
         });
 

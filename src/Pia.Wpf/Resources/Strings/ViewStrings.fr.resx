@@ -1431,4 +1431,26 @@
   <data name="Settings_ExportDiagnostics_Confirm_Excluded" xml:space="preserve">
     <value>{0} autre(s) fichier(s) de ce dossier ne sont pas reconnus comme journaux Pia ; l'archive les répertorie dans son manifeste.</value>
   </data>
+  <data name="Settings_Tab_About" xml:space="preserve"><value>À propos</value></data>
+  <data name="About_Title" xml:space="preserve"><value>À propos de Pia</value></data>
+  <data name="About_Version_Label" xml:space="preserve"><value>Version</value></data>
+  <data name="About_Publisher" xml:space="preserve"><value>Édité par neo42 GmbH</value></data>
+  <data name="About_AiNotice_Title" xml:space="preserve"><value>Intelligence artificielle</value></data>
+  <data name="About_AiNotice_Text" xml:space="preserve"><value>Pia est un système d'IA. Ses réponses, reformulations, résumés et réponses vocales sont générés par des modèles d'apprentissage automatique ; le fournisseur et le modèle sont indiqués sous chaque réponse, et les fichiers exportés portent un marquage IA lisible par machine. Vérifiez les résultats importants avant de vous y fier.</value></data>
+  <data name="About_Legal_Title" xml:space="preserve"><value>Informations légales</value></data>
+  <data name="About_Link_Website" xml:space="preserve"><value>Site web</value></data>
+  <data name="About_Link_Imprint" xml:space="preserve"><value>Mentions légales</value></data>
+  <data name="About_Link_Privacy" xml:space="preserve"><value>Politique de confidentialité</value></data>
+  <data name="About_Link_Docs" xml:space="preserve"><value>Documentation</value></data>
+  <data name="VoiceMode_AiVoice" xml:space="preserve"><value>Voix générée par IA</value></data>
+  <data name="Assistant_AiVoice_Badge" xml:space="preserve"><value>Voix IA</value></data>
+  <data name="AiFeedback_DialogTitle" xml:space="preserve"><value>Signaler cette réponse</value></data>
+  <data name="AiFeedback_Intro" xml:space="preserve"><value>Décrivez ce qui n'allait pas. Le signalement est envoyé à l'équipe Pia Cloud de neo42 avec le nom du modèle et l'heure de la réponse.</value></data>
+  <data name="AiFeedback_Comment_Label" xml:space="preserve"><value>Qu'est-ce qui n'allait pas ?</value></data>
+  <data name="AiFeedback_Comment_Placeholder" xml:space="preserve"><value>Facultatif – p. ex. faits erronés, ton inapproprié, refus injustifié</value></data>
+  <data name="AiFeedback_IncludeAnswer" xml:space="preserve"><value>Joindre le texte de la réponse</value></data>
+  <data name="AiFeedback_PrivacyNote_Tokenized" xml:space="preserve"><value>Les données personnelles du texte sont remplacées par des espaces réservés avant l'envoi, comme dans vos conversations.</value></data>
+  <data name="AiFeedback_PrivacyNote_Plain" xml:space="preserve"><value>Le texte est envoyé tel qu'affiché ; la tokenisation des données personnelles est désactivée dans vos paramètres de confidentialité.</value></data>
+  <data name="About_AiFeedback_Title" xml:space="preserve"><value>Retours et réclamations sur l'IA</value></data>
+  <data name="About_AiFeedback_Text" xml:space="preserve"><value>Les préoccupations concernant le comportement de l'IA de Pia sont à adresser ci-dessous. Les réponses de Pia Cloud peuvent aussi être signalées directement sous la réponse.</value></data>
 </root>

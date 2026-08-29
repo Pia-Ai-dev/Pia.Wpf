@@ -53,7 +53,20 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
     /// default in the service, so an empty box never blocks joining.
     /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EffectiveDisplayName), nameof(EffectiveDisplayNameHint))]
     private string _assistantDisplayName = string.Empty;
+
+    private string? _userDisplayNameForDefault;
+
+    /// <summary>The name participants actually see: the box's text (or the built default) plus the enforced AI suffix.</summary>
+    public string EffectiveDisplayName => MeetingAttendeeService.WithAiSuffix(
+        string.IsNullOrWhiteSpace(AssistantDisplayName)
+            ? MeetingAttendeeService.BuildDisplayName(_userDisplayNameForDefault)
+            : AssistantDisplayName,
+        _localizationService["MeetingAttendee_DisplayName_AiSuffix"]);
+
+    public string EffectiveDisplayNameHint =>
+        _localizationService.Format("MeetingAttendee_DisplayName_Effective", EffectiveDisplayName);
 
     /// <summary>
     /// True during the transitional join/leave phases (provisioning, joining, lobby, stopping) so the
@@ -146,6 +159,7 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
             : settings.MeetingAttendeeDisplayName;
         DispatchToUi(() =>
         {
+            _userDisplayNameForDefault = settings.SyncUserDisplayName;
             AssistantDisplayName = name;
             // Fresh open: show the join form again even if a previous meeting was attended this session,
             // and discard that meeting's transcript so the form is never rendered above a stale transcript
@@ -298,9 +312,7 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
     /// </summary>
     private string BuildSummaryPrompt()
     {
-        var name = string.IsNullOrWhiteSpace(AssistantDisplayName)
-            ? MeetingAttendeeService.BuildDisplayName(null)
-            : AssistantDisplayName.Trim();
+        var name = EffectiveDisplayName;
         var when = _sessionStart.LocalDateTime.ToString("f");
         var instruction = _localizationService.Format("MeetingAttendee_SummaryPrompt", name, when);
 
