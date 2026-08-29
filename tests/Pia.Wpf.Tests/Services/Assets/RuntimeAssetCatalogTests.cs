@@ -15,15 +15,39 @@ public class RuntimeAssetCatalogTests
     private static readonly string RepoRoot = Path.GetFullPath(
         Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
 
+    private static readonly string Script =
+        File.ReadAllText(Path.Combine(RepoRoot, "scripts", "RuntimeAssetCatalogue.ps1"));
+
     [Fact]
     public void The_publishing_script_uploads_exactly_the_keys_the_client_asks_for()
     {
-        var script = File.ReadAllText(Path.Combine(RepoRoot, "scripts", "RuntimeAssetCatalogue.ps1"));
-        var fromScript = Regex.Matches(script, @"MirrorKey\s*=\s*'([^']+)'")
+        var fromScript = Regex.Matches(Script, @"MirrorKey\s*=\s*'([^']+)'")
             .Select(m => m.Groups[1].Value)
             .Order(StringComparer.Ordinal);
 
         var fromClient = RuntimeAssetCatalog.All.Select(a => a.MirrorKey).Order(StringComparer.Ordinal);
+
+        Assert.Equal(fromClient, fromScript);
+    }
+
+    /// <summary>
+    /// The keys agreeing is not enough. If the script's <c>Url</c> drifts from the client's upstream URL
+    /// for the same key, the mirror serves the wrong bytes under a right-looking name and every client
+    /// takes them happily — the fallback never fires and nothing errors. It is the one drift here that
+    /// produces wrong content rather than a silent fetch from upstream.
+    /// </summary>
+    [Fact]
+    public void The_publishing_script_stages_from_the_same_upstream_urls_the_client_falls_back_to()
+    {
+        var bases = Regex.Matches(Script, @"\$script:(\w+)\s*=\s*'([^']+)'")
+            .ToDictionary(m => m.Groups[1].Value, m => m.Groups[2].Value, StringComparer.Ordinal);
+
+        var fromScript = Regex.Matches(Script, """Url\s*=\s*(?:'([^']+)'|"([^"]+)")""")
+            .Select(m => m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value)
+            .Select(url => Regex.Replace(url, @"\$script:(\w+)", m => bases[m.Groups[1].Value]))
+            .Order(StringComparer.Ordinal);
+
+        var fromClient = RuntimeAssetCatalog.All.Select(a => a.UpstreamUrl).Order(StringComparer.Ordinal);
 
         Assert.Equal(fromClient, fromScript);
     }

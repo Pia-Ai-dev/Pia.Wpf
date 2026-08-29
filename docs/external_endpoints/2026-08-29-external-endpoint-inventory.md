@@ -189,8 +189,8 @@ pwsh scripts/Test-ExternalEndpoints.ps1
 
 Follows redirects, reports final status and `Content-Length` per endpoint, and exits non-zero if any
 row is unhealthy. A provider host answering `401` counts as healthy — it proves the host is up, and
-the script deliberately sends no key. As of 2026-08-29: 25 of 26 healthy, the update feed being the
-one red row.
+the script deliberately sends no key. As of 2026-08-29: 25 of 27 healthy. Both red rows are the same
+host — the update feed and the asset mirror added in §10 — and the same cause, §5.1.
 
 ## 9. Pre-fetching the downloads
 
