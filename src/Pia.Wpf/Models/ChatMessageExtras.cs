@@ -68,9 +68,13 @@ public sealed record AgentModeSuggestion(string Goal, string Reason);
 
 public sealed record MessageMeta(string Timing, string? ProfileLabel = null);
 
-public sealed record AnswerStats(int Tokens, string Model)
+/// <param name="Tokens">Null when the provider sent no usage — the model is still shown then.</param>
+/// <param name="Provider">Null for Pia Cloud, which picks the upstream model itself and is named as the service.</param>
+public sealed record AnswerStats(int? Tokens, string Model, string? Provider = null)
 {
-    public string Summary => $"{Tokens:N0} Tokens · {Model}";
+    public string ProvenanceLabel => string.IsNullOrWhiteSpace(Provider) ? Model : $"{Provider} · {Model}";
+
+    public bool IsPiaCloud => Provider is null && Model == AnswerProvenance.PiaCloudLabel;
 }
 
 /// <summary>

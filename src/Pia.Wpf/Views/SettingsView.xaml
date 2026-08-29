@@ -87,6 +87,13 @@
             <TextBlock Text="{loc:Str Settings_Tab_Plugins}" VerticalAlignment="Center"/>
           </StackPanel>
         </ListBoxItem>
+        <ListBoxItem AutomationProperties.AutomationId="SettingsCategory_About"
+                     AutomationProperties.Name="{loc:Str Settings_Tab_About}">
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="Info24" FontSize="16" Margin="0,0,10,0"/>
+            <TextBlock Text="{loc:Str Settings_Tab_About}" VerticalAlignment="Center"/>
+          </StackPanel>
+        </ListBoxItem>
       </ListBox>
 
       <!-- Content area -->
@@ -168,6 +175,19 @@
             </Style>
           </localSettings:PluginsView.Style>
         </localSettings:PluginsView>
+
+        <localSettings:AboutView DataContext="{Binding AboutVm}">
+          <localSettings:AboutView.Style>
+            <Style TargetType="localSettings:AboutView">
+              <Setter Property="Visibility" Value="Collapsed"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding DataContext.SelectedTabIndex, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="6">
+                  <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </localSettings:AboutView.Style>
+        </localSettings:AboutView>
       </Grid>
     </Grid>
   </Grid>

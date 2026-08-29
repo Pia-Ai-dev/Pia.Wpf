@@ -7,6 +7,7 @@ using Markdig.Syntax.Inlines;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
 using Pia.Logging;
+using Pia.Models;
 using Pia.Services.Interfaces;
 
 namespace Pia.Services;
@@ -33,13 +34,14 @@ public sealed class MarkdownExportService : IMarkdownExportService
     }
 
     public async Task<string> ExportAsync(
-        string markdown, string? title, string fallbackTitle, string? workingSubpath, CancellationToken ct = default)
+        string markdown, string? title, string fallbackTitle, string? workingSubpath, string? aiModelLabel = null,
+        CancellationToken ct = default)
     {
         var effectiveTitle = !string.IsNullOrWhiteSpace(title)
             ? title!
             : DeriveTitle(markdown) ?? fallbackTitle;
 
-        var html = ToHtml(markdown, effectiveTitle);
+        var html = ToHtml(markdown, effectiveTitle, aiModelLabel);
 
         var folder = await ResolveOutputFolderAsync(workingSubpath);
         Directory.CreateDirectory(folder);
@@ -52,10 +54,14 @@ public sealed class MarkdownExportService : IMarkdownExportService
         return path;
     }
 
-    public string ToHtml(string markdown, string title)
+    public string ToHtml(string markdown, string title, string? aiModelLabel = null)
     {
         var htmlBody = Markdig.Markdown.ToHtml(markdown, _pipeline);
         var safeTitle = WebUtility.HtmlEncode(title);
+        var safeGenerator = WebUtility.HtmlEncode(AppVersionInfo.Generator);
+        var safeModel = string.IsNullOrWhiteSpace(aiModelLabel) ? null : WebUtility.HtmlEncode(aiModelLabel.Trim());
+        var modelMeta = safeModel is null ? string.Empty : $"\n    <meta name=\"ai-model\" content=\"{safeModel}\">";
+        var modelFooter = safeModel is null ? string.Empty : $" · {safeModel}";
 
         return $$"""
             <!DOCTYPE html>
@@ -63,6 +69,8 @@ public sealed class MarkdownExportService : IMarkdownExportService
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <meta name="generator" content="{{safeGenerator}}">
+                <meta name="ai-generated" content="true">{{modelMeta}}
                 <title>{{safeTitle}}</title>
                 {{ThemeInitScript}}
                 {{Styles}}
@@ -71,7 +79,7 @@ public sealed class MarkdownExportService : IMarkdownExportService
                 {{ThemeToggle}}
                 <main class="pia-doc">
             {{htmlBody}}
-                    <footer class="pia-doc-footer"><a class="pia-footer-link" href="https://pia-ai.de"><span class="pia-wordmark">Pia</span> — Personal Intelligent Assistant</a></footer>
+                    <footer class="pia-doc-footer"><span class="pia-ai-mark">AI-generated content · {{safeGenerator}}{{modelFooter}}</span><br><a class="pia-footer-link" href="https://pia-ai.de"><span class="pia-wordmark">Pia</span> — Personal Intelligent Assistant</a></footer>
                 </main>
                 {{ThemeScript}}
             </body>
@@ -236,6 +244,7 @@ public sealed class MarkdownExportService : IMarkdownExportService
             transition: color 0.2s ease;
         }
         .pia-footer-link:hover { color: var(--ink); border-bottom: none; }
+        .pia-ai-mark { color: var(--ink-muted); font-size: 0.8rem; }
         .pia-wordmark { font-family: var(--font-display); font-weight: 600; color: var(--accent); font-size: 1.1rem; }
         .theme-toggle {
             position: fixed;

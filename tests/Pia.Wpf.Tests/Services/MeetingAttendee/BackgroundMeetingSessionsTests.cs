@@ -33,7 +33,8 @@ public sealed class BackgroundMeetingSessionsTests
                     Substitute.For<IBrowserProvisioner>(),
                     Substitute.For<System.Net.Http.IHttpClientFactory>(),
                     Substitute.For<IDefaultBrowserResolver>(),
-                    NullLoggerFactory.Instance);
+                    NullLoggerFactory.Instance,
+                    Substitute.For<ILocalizationService>());
             },
             settings,
             NullLogger<BackgroundMeetingSessions>.Instance);
@@ -92,7 +93,8 @@ public sealed class BackgroundMeetingSessionsTests
                 Substitute.For<IBrowserProvisioner>(),
                 Substitute.For<System.Net.Http.IHttpClientFactory>(),
                 Substitute.For<IDefaultBrowserResolver>(),
-                NullLoggerFactory.Instance),
+                NullLoggerFactory.Instance,
+                Substitute.For<ILocalizationService>()),
             settings,
             NullLogger<BackgroundMeetingSessions>.Instance);
 

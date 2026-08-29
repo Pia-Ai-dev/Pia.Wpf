@@ -21,6 +21,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
     public AccountSettingsViewModel AccountVm { get; }
     public PluginsSettingsViewModel PluginsVm { get; }
     public PersonaSettingsViewModel PersonasVm { get; }
+    public AboutSettingsViewModel AboutVm { get; } = new();
 
     [ObservableProperty]
     private int _selectedTabIndex;

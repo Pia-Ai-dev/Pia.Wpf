@@ -101,6 +101,7 @@ public class ViewAutomationIdTests
     // Pia.Views.OptimizeView is the Optimize hotkey window, not the same-named settings view above.
     [InlineData(typeof(Pia.Views.OptimizeView), 12, 0, "TodoPanelControl")]
     [InlineData(typeof(Pia.Views.SettingsViews.PluginsView), 2, 1, "")]
+    [InlineData(typeof(Pia.Views.SettingsViews.AboutView), 5, 0, "")]
     [InlineData(typeof(Pia.Views.SettingsViews.E2EEOnboardingView), 8, 0, "")]
     [InlineData(typeof(Pia.Views.WizardSteps.WelcomeStep), 1, 0, "")]
     [InlineData(typeof(Pia.Views.WizardSteps.UserProfileStep), 8, 0, "")]

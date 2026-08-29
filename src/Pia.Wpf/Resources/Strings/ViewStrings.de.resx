@@ -1430,4 +1430,26 @@
   <data name="Settings_ExportDiagnostics_Confirm_Excluded" xml:space="preserve">
     <value>Weitere {0} Datei(en) in diesem Ordner werden nicht als Pia-Logs erkannt; das Archiv führt sie in seinem Manifest auf.</value>
   </data>
+  <data name="Settings_Tab_About" xml:space="preserve"><value>Info</value></data>
+  <data name="About_Title" xml:space="preserve"><value>Über Pia</value></data>
+  <data name="About_Version_Label" xml:space="preserve"><value>Version</value></data>
+  <data name="About_Publisher" xml:space="preserve"><value>Herausgegeben von der neo42 GmbH</value></data>
+  <data name="About_AiNotice_Title" xml:space="preserve"><value>Künstliche Intelligenz</value></data>
+  <data name="About_AiNotice_Text" xml:space="preserve"><value>Pia ist ein KI-System. Antworten, Umformulierungen, Zusammenfassungen und Sprachausgaben werden von Machine-Learning-Modellen erzeugt; Anbieter und Modell stehen unter jeder Antwort, und exportierte Dateien tragen eine maschinenlesbare KI-Kennzeichnung. Prüfen Sie wichtige Ergebnisse, bevor Sie sich darauf verlassen.</value></data>
+  <data name="About_Legal_Title" xml:space="preserve"><value>Rechtliches</value></data>
+  <data name="About_Link_Website" xml:space="preserve"><value>Website</value></data>
+  <data name="About_Link_Imprint" xml:space="preserve"><value>Impressum</value></data>
+  <data name="About_Link_Privacy" xml:space="preserve"><value>Datenschutzerklärung</value></data>
+  <data name="About_Link_Docs" xml:space="preserve"><value>Dokumentation</value></data>
+  <data name="VoiceMode_AiVoice" xml:space="preserve"><value>KI-generierte Stimme</value></data>
+  <data name="Assistant_AiVoice_Badge" xml:space="preserve"><value>KI-Stimme</value></data>
+  <data name="AiFeedback_DialogTitle" xml:space="preserve"><value>Antwort melden</value></data>
+  <data name="AiFeedback_Intro" xml:space="preserve"><value>Beschreiben Sie, was nicht gestimmt hat. Die Meldung geht mit Modellname und Zeitpunkt der Antwort an das Pia-Cloud-Team bei neo42.</value></data>
+  <data name="AiFeedback_Comment_Label" xml:space="preserve"><value>Was war falsch?</value></data>
+  <data name="AiFeedback_Comment_Placeholder" xml:space="preserve"><value>Optional – z. B. falsche Fakten, unangemessener Ton, grundlose Verweigerung</value></data>
+  <data name="AiFeedback_IncludeAnswer" xml:space="preserve"><value>Antworttext mitsenden</value></data>
+  <data name="AiFeedback_PrivacyNote_Tokenized" xml:space="preserve"><value>Personenbezogene Daten im Text werden vor dem Senden durch Platzhalter ersetzt – wie in Ihren Chats.</value></data>
+  <data name="AiFeedback_PrivacyNote_Plain" xml:space="preserve"><value>Der Text wird so gesendet, wie er angezeigt wird; die PII-Tokenisierung ist in Ihren Datenschutzeinstellungen aus.</value></data>
+  <data name="About_AiFeedback_Title" xml:space="preserve"><value>KI-Feedback und Beschwerden</value></data>
+  <data name="About_AiFeedback_Text" xml:space="preserve"><value>Anliegen zum KI-Verhalten von Pia gehen an die Adresse unten. Antworten aus Pia Cloud lassen sich außerdem direkt unter der Antwort melden.</value></data>
 </root>

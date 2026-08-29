@@ -78,6 +78,15 @@ public class DialogService : IDialogService
         return result == ContentDialogResult.Primary;
     }
 
+    public async Task<bool> ShowAiFeedbackDialogAsync(AiFeedbackEditModel feedback)
+    {
+        var dialogHost = _contentDialogService.GetDialogHostEx()
+            ?? throw new InvalidOperationException("No dialog host available");
+        var dialog = new AiFeedbackContentDialog(dialogHost, feedback);
+        var result = await dialog.ShowAsync();
+        return result == ContentDialogResult.Primary;
+    }
+
     public async Task<bool> ShowAssignmentConsentDialogAsync(ViewModels.AssignmentConsentViewModel viewModel)
     {
         var dialogHost = _contentDialogService.GetDialogHostEx()

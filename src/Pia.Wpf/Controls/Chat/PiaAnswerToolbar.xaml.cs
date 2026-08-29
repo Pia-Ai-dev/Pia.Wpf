@@ -126,4 +126,14 @@ public partial class PiaAnswerToolbar : UserControl
         if (RegenerateStyledCommand?.CanExecute(request) == true)
             RegenerateStyledCommand.Execute(request);
     }
+
+    private void OnRateClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: string direction }) return;
+        if (CommandParameter is not AssistantMessage message) return;
+
+        var request = new AnswerRatingRequest(message, Positive: direction == "Up");
+        if (RateCommand?.CanExecute(request) == true)
+            RateCommand.Execute(request);
+    }
 }

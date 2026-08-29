@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -535,7 +536,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         {
             var fallbackTitle = _localizationService["Msg_Assistant_ExportDefaultTitle"];
             var path = await _markdownExportService.ExportAsync(
-                message.Content, title: null, fallbackTitle, workingSubpath: null);
+                message.Content, title: null, fallbackTitle, workingSubpath: null, message.Stats?.ProvenanceLabel);
 
             message.AddOrUpgradeFileRef(new FileRef(path, FileRefKind.Exported));
             ShellLauncher.OpenFile(path);
@@ -775,9 +776,14 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         return summary.ToString();
     }
 
-    private static string BuildMarkdown(SyncAssistantChat chat)
+    internal static string BuildMarkdown(SyncAssistantChat chat)
     {
         var sb = new StringBuilder();
+        // The frontmatter is the machine-readable AI marking; the "AI-generated" line under each answer is the visible one.
+        sb.AppendLine("---");
+        sb.Append(AiContentMarking.YamlLines().Replace("\n", Environment.NewLine));
+        sb.Append("exported: ").AppendLine(DateTimeOffset.Now.ToString("O", CultureInfo.InvariantCulture));
+        sb.AppendLine("---");
         var title = string.IsNullOrWhiteSpace(chat.Title) ? "Assistant chat" : chat.Title;
         sb.Append("# ").AppendLine(title);
         sb.AppendLine();
@@ -786,10 +792,18 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
 
         foreach (var msg in chat.Messages)
         {
-            var role = string.Equals(msg.Role, "user", StringComparison.OrdinalIgnoreCase) ? "User" : "Assistant";
-            sb.Append("## ").Append(role).Append(" — ")
+            var isUser = string.Equals(msg.Role, "user", StringComparison.OrdinalIgnoreCase);
+            sb.Append("## ").Append(isUser ? "User" : "Assistant").Append(" — ")
               .AppendLine(msg.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"));
             sb.AppendLine();
+            if (!isUser)
+            {
+                var stats = string.IsNullOrEmpty(msg.ModelName) ? null : new AnswerStats(msg.Tokens, msg.ModelName, msg.ProviderName);
+                sb.Append("*AI-generated");
+                if (stats is not null) sb.Append(" · ").Append(stats.ProvenanceLabel);
+                sb.AppendLine("*");
+                sb.AppendLine();
+            }
             sb.AppendLine(msg.Content);
             sb.AppendLine();
         }

@@ -1,4 +1,5 @@
 using System.Globalization;
+using Pia.Models;
 using Pia.Models.Vault;
 
 namespace Pia.Infrastructure.Vault;
@@ -32,6 +33,7 @@ public static class VaultFrontmatter
                categoryLine +
                $"created: {now}\n" +
                $"updated: {now}\n" +
+               AiContentMarking.YamlLines() +
                "schemaVersion: 1\n" +
                "---\n";
     }
@@ -65,6 +67,7 @@ public static class VaultFrontmatter
                $"category: {category}\n" +
                $"created: {created}\n" +
                $"updated: {now}\n" +
+               AiContentMarking.YamlLines() +
                "schemaVersion: 1\n" +
                "---\n";
     }

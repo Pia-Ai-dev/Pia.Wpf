@@ -31,13 +31,15 @@ namespace Pia.Services.MeetingAttendee;
 /// </summary>
 public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisposable
 {
-    // The bot's display name is "{user}'s assistant". The localized format string formally belongs to
-    // Unit 5's resources; until that key exists this fallback keeps the orchestrator compiling and
-    // self-contained. Unit 5 should replace this with a CommonStrings key. (See assumptions/handover.)
     private const string DisplayNameFormat = "{0}'s assistant";
     private const string DefaultUserName = "Pia";
+    /// <summary>Fallback when no localization is wired (tests); production reads MeetingAttendee_DisplayName_AiSuffix.</summary>
+    internal const string DefaultAiSuffix = "AI notetaker";
+    /// <summary>Teams caps the anonymous-join name; the suffix must survive, so the user's part gives way.</summary>
+    internal const int TeamsDisplayNameMaxLength = 50;
 
     private readonly ISettingsService _settingsService;
+    private readonly ILocalizationService? _localization;
     private readonly ILogger<MeetingAttendeeService> _logger;
     private readonly IDefaultBrowserResolver _defaultBrowserResolver;
 
@@ -135,7 +137,8 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         IBrowserProvisioner browserProvisioner,
         IHttpClientFactory httpClientFactory,
         IDefaultBrowserResolver defaultBrowserResolver,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        ILocalizationService localizationService)
         : this(
             settingsService,
             loggerFactory,
@@ -147,7 +150,8 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
                 loggerFactory.CreateLogger<TeamsMeetingSession>()),
             audioSourceFactory: null,
             engineServiceFactory: CreateEngineServiceFactory(loggerFactory),
-            defaultBrowserResolver: defaultBrowserResolver)
+            defaultBrowserResolver: defaultBrowserResolver,
+            localization: localizationService)
     {
     }
 
@@ -211,9 +215,11 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         Func<BrowserLaunchSpec, IMeetingSession> sessionFactory,
         Func<IMeetingSession, bool, IAudioCaptureSource>? audioSourceFactory,
         Func<IAudioCaptureSource, string, ITranscriptionEngine, ChannelWriter<TranscriptUtterance>, ISpeakerIdentificationService?, int, CancellationToken, Task<IAsyncDisposable>> engineServiceFactory,
-        IDefaultBrowserResolver? defaultBrowserResolver = null)
+        IDefaultBrowserResolver? defaultBrowserResolver = null,
+        ILocalizationService? localization = null)
     {
         _settingsService = settingsService;
+        _localization = localization;
         _logger = loggerFactory.CreateLogger<MeetingAttendeeService>();
 
         _provisionChromium = provisionChromium;
@@ -264,10 +270,13 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         {
             var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
             // Prefer the user-edited name from the join dialog (persisted in settings); fall back to the
-            // auto-built "{user}'s assistant" when it was never set or left blank.
-            var displayName = string.IsNullOrWhiteSpace(settings.MeetingAttendeeDisplayName)
-                ? BuildDisplayName(settings.SyncUserDisplayName)
-                : settings.MeetingAttendeeDisplayName.Trim();
+            // auto-built "{user}'s assistant" when it was never set or left blank. The AI suffix is not
+            // editable: participants who never installed Pia only ever see this name (AI Act Art. 50(1)).
+            var displayName = WithAiSuffix(
+                string.IsNullOrWhiteSpace(settings.MeetingAttendeeDisplayName)
+                    ? BuildDisplayName(settings.SyncUserDisplayName)
+                    : settings.MeetingAttendeeDisplayName,
+                AiSuffix);
 
             // 1) Resolve the browser launch spec from settings. For the bundled selection this provisions
             //    Chromium on disk (idempotent; skips fast when cached); Channel selections skip provisioning.
@@ -598,7 +607,10 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             {
                 var name = CleanAttendeeName(raw);
                 if (string.IsNullOrEmpty(name)) continue;
-                if (string.Equals(name, botDisplayName, StringComparison.OrdinalIgnoreCase)) continue;
+                // The cleaner strips one trailing parenthetical, which on the bot's own row may be the AI
+                // suffix rather than "(You)" — so the suffix-less name is the bot too.
+                if (string.Equals(name, botDisplayName, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(name, CleanAttendeeName(botDisplayName), StringComparison.OrdinalIgnoreCase)) continue;
                 if (_attendees.Any(a => string.Equals(a, name, StringComparison.OrdinalIgnoreCase))) continue;
                 _attendees.Add(name);
             }
@@ -826,6 +838,30 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     {
         var name = string.IsNullOrWhiteSpace(userDisplayName) ? DefaultUserName : userDisplayName.Trim();
         return string.Format(DisplayNameFormat, name);
+    }
+
+    private string AiSuffix
+    {
+        get
+        {
+            var s = _localization?["MeetingAttendee_DisplayName_AiSuffix"];
+            return string.IsNullOrWhiteSpace(s) ? DefaultAiSuffix : s;
+        }
+    }
+
+    /// <summary>"{name} ({suffix})", appended once; a long name is shortened so the suffix always fits.</summary>
+    internal static string WithAiSuffix(string baseName, string suffix)
+    {
+        var name = string.IsNullOrWhiteSpace(baseName) ? BuildDisplayName(null) : baseName.Trim();
+        var tag = $"({suffix.Trim()})";
+        if (name.EndsWith(tag, StringComparison.OrdinalIgnoreCase))
+            return name;
+
+        var room = TeamsDisplayNameMaxLength - tag.Length - 1;
+        if (room >= 2 && name.Length > room)
+            name = name[..(room - 1)].TrimEnd() + "…";
+
+        return $"{name} {tag}";
     }
 
     private void TransitionState(MeetingAttendeeState newState)

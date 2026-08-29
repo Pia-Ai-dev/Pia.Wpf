@@ -198,6 +198,24 @@
           </StackPanel>
         </Grid>
       </Button>
+      <!-- Synthetic-speech marker, shown only while this answer is being read aloud. -->
+      <TextBlock Text="{loc:Str Assistant_AiVoice_Badge}"
+                 AutomationProperties.AutomationId="{Binding CommandParameter.Id, ElementName=Root, StringFormat='Answer_AiVoiceBadge_{0}'}"
+                 VerticalAlignment="Center"
+                 Margin="0,0,8,0"
+                 FontSize="11"
+                 Foreground="{DynamicResource PiaAccentBrush}">
+        <TextBlock.Style>
+          <Style TargetType="TextBlock">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding CommandParameter.IsSpeaking, ElementName=Root}" Value="True">
+                <Setter Property="Visibility" Value="Visible" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </TextBlock.Style>
+      </TextBlock>
 
       <!-- Regenerate -->
       <Button Padding="8,4"
@@ -285,30 +303,46 @@
         </StackPanel>
       </Button>
 
-      <Separator Width="1" Margin="4,2"
-                 Background="{DynamicResource BorderBrush_}"
-                 Visibility="{Binding RateCommand, ElementName=Root, Converter={StaticResource NullToVisibilityConverter}}" />
+      <!-- Rating/report: only for answers the message itself says are rateable (Pia Cloud). -->
+      <StackPanel Orientation="Horizontal">
+        <StackPanel.Style>
+          <Style TargetType="StackPanel">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding CommandParameter.IsRateable, ElementName=Root}" Value="True">
+                <Setter Property="Visibility" Value="Visible" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </StackPanel.Style>
 
-      <ui:Button Appearance="Transparent"
-                 Padding="6,3"
-                 Margin="0,0,2,0"
-                 Command="{Binding RateCommand, ElementName=Root}"
-                 CommandParameter="Up"
-                 AutomationProperties.Name="{loc:Str Assistant_RateUp_Tooltip}"
-                 AutomationProperties.AutomationId="{Binding CommandParameter.Id, ElementName=Root, StringFormat='Answer_RateUp_{0}'}"
-                 Visibility="{Binding RateCommand, ElementName=Root, Converter={StaticResource NullToVisibilityConverter}}">
-        <ui:SymbolIcon Symbol="ThumbLike20" FontSize="13" />
-      </ui:Button>
+        <Separator Width="1" Margin="4,2"
+                   Background="{DynamicResource BorderBrush_}"
+                   Visibility="{Binding RateCommand, ElementName=Root, Converter={StaticResource NullToVisibilityConverter}}" />
 
-      <ui:Button Appearance="Transparent"
-                 Padding="6,3"
-                 Command="{Binding RateCommand, ElementName=Root}"
-                 CommandParameter="Down"
-                 AutomationProperties.Name="{loc:Str Assistant_RateDown_Tooltip}"
-                 AutomationProperties.AutomationId="{Binding CommandParameter.Id, ElementName=Root, StringFormat='Answer_RateDown_{0}'}"
-                 Visibility="{Binding RateCommand, ElementName=Root, Converter={StaticResource NullToVisibilityConverter}}">
-        <ui:SymbolIcon Symbol="ThumbDislike20" FontSize="13" />
-      </ui:Button>
+        <ui:Button Appearance="Transparent"
+                   Padding="6,3"
+                   Margin="0,0,2,0"
+                   Tag="Up"
+                   Click="OnRateClick"
+                   ToolTip="{loc:Str Assistant_RateUp_Tooltip}"
+                   AutomationProperties.Name="{loc:Str Assistant_RateUp_Tooltip}"
+                   AutomationProperties.AutomationId="{Binding CommandParameter.Id, ElementName=Root, StringFormat='Answer_RateUp_{0}'}"
+                   Visibility="{Binding RateCommand, ElementName=Root, Converter={StaticResource NullToVisibilityConverter}}">
+          <ui:SymbolIcon Symbol="ThumbLike20" FontSize="13" />
+        </ui:Button>
+
+        <ui:Button Appearance="Transparent"
+                   Padding="6,3"
+                   Tag="Down"
+                   Click="OnRateClick"
+                   ToolTip="{loc:Str Assistant_RateDown_Tooltip}"
+                   AutomationProperties.Name="{loc:Str Assistant_RateDown_Tooltip}"
+                   AutomationProperties.AutomationId="{Binding CommandParameter.Id, ElementName=Root, StringFormat='Answer_RateDown_{0}'}"
+                   Visibility="{Binding RateCommand, ElementName=Root, Converter={StaticResource NullToVisibilityConverter}}">
+          <ui:SymbolIcon Symbol="ThumbDislike20" FontSize="13" />
+        </ui:Button>
+      </StackPanel>
     </StackPanel>
 
     <TextBlock Grid.Column="1"

@@ -147,4 +147,6 @@
   <data name="MeetingSave_Notes_Label" xml:space="preserve"><value>Notes</value></data>
   <data name="MeetingSave_Notes_Placeholder" xml:space="preserve"><value>Contexte à conserver avec la transcription</value></data>
   <data name="MeetingSave_TargetPath_Label" xml:space="preserve"><value>Enregistré sous</value></data>
+  <data name="MeetingAttendee_DisplayName_AiSuffix" xml:space="preserve"><value>assistant IA</value></data>
+  <data name="MeetingAttendee_DisplayName_Effective" xml:space="preserve"><value>Affiché aux participants comme : {0}</value></data>
 </root>

@@ -1447,20 +1447,16 @@ public sealed class ChatSession : IDisposable
 
     private void ApplyStats(AssistantMessage message, Finished finished, AiProvider provider)
     {
-        if (finished.Usage is not { } usage)
+        int? totalTokens = null;
+        if (finished.Usage is { } usage)
         {
-            _logger.LogDebug("Stream finished without usage details (providerType={ProviderType})", provider.ProviderType);
-            return;
+            var total = (usage.InputTokenCount ?? 0) + (usage.OutputTokenCount ?? 0);
+            if (total > 0) totalTokens = (int)total;
         }
+        if (totalTokens is null)
+            _logger.LogDebug("Stream finished without usable usage details (providerType={ProviderType})", provider.ProviderType);
 
-        var totalTokens = (int)((usage.InputTokenCount ?? 0) + (usage.OutputTokenCount ?? 0));
-        if (totalTokens <= 0)
-        {
-            _logger.LogDebug("Stream finished with zero tokens (providerType={ProviderType})", provider.ProviderType);
-            return;
-        }
-
-        message.Stats = new AnswerStats(totalTokens, finished.Model);
+        message.Stats = new AnswerStats(totalTokens, finished.Model, finished.Provider);
     }
 
     /// <summary>

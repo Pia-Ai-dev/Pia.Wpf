@@ -3,20 +3,20 @@ using Pia.Models;
 namespace Pia.Controls.Chat;
 
 /// <summary>
-/// Builds the assistant-message footer text: token count, persona name, model — joined by " · ",
-/// omitting any part that is absent. Pure so it can be unit-tested without WPF.
+/// Builds the assistant-message footer text: token count, persona name, provider · model — joined by
+/// " · ", omitting any part that is absent. Pure so it can be unit-tested without WPF.
 /// </summary>
 internal static class FooterSummaryFormatter
 {
     public static string Compose(AnswerStats? stats, string? personaName)
     {
         var parts = new List<string>(3);
-        if (stats is not null)
+        if (stats?.Tokens is > 0)
             parts.Add($"{stats.Tokens:N0} Tokens");
         if (!string.IsNullOrWhiteSpace(personaName))
             parts.Add(personaName);
         if (stats is not null && !string.IsNullOrWhiteSpace(stats.Model))
-            parts.Add(stats.Model);
+            parts.Add(stats.ProvenanceLabel);
         return string.Join(" · ", parts);
     }
 }

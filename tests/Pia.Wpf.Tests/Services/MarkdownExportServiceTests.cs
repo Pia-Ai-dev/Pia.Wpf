@@ -74,7 +74,7 @@ public class MarkdownExportServiceTests
         {
             var svc = NewService(dir);
 
-            var path = await svc.ExportAsync("# Derived Heading\n\nbody", title: null, fallbackTitle: "Pia answer", workingSubpath: null, TestContext.Current.CancellationToken);
+            var path = await svc.ExportAsync("# Derived Heading\n\nbody", title: null, fallbackTitle: "Pia answer", workingSubpath: null, ct: TestContext.Current.CancellationToken);
 
             Assert.True(File.Exists(path));
             Assert.StartsWith("pia-answer-", Path.GetFileName(path));
@@ -96,7 +96,7 @@ public class MarkdownExportServiceTests
         {
             var svc = NewService(dir);
 
-            var path = await svc.ExportAsync("first line here\n\nmore body", title: null, fallbackTitle: "Pia answer", workingSubpath: null, TestContext.Current.CancellationToken);
+            var path = await svc.ExportAsync("first line here\n\nmore body", title: null, fallbackTitle: "Pia answer", workingSubpath: null, ct: TestContext.Current.CancellationToken);
 
             var content = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
             Assert.Contains("<title>first line here</title>", content);
@@ -116,7 +116,7 @@ public class MarkdownExportServiceTests
         {
             var svc = NewService(dir);
 
-            var path = await svc.ExportAsync("   \n  \n", title: null, fallbackTitle: "Pia answer", workingSubpath: null, TestContext.Current.CancellationToken);
+            var path = await svc.ExportAsync("   \n  \n", title: null, fallbackTitle: "Pia answer", workingSubpath: null, ct: TestContext.Current.CancellationToken);
 
             var content = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
             Assert.Contains("<title>Pia answer</title>", content);
@@ -136,7 +136,7 @@ public class MarkdownExportServiceTests
         {
             var svc = NewService(dir);
 
-            var path = await svc.ExportAsync("# Heading\n\nbody", title: null, fallbackTitle: "Pia answer", workingSubpath: null, TestContext.Current.CancellationToken);
+            var path = await svc.ExportAsync("# Heading\n\nbody", title: null, fallbackTitle: "Pia answer", workingSubpath: null, ct: TestContext.Current.CancellationToken);
 
             Assert.True(File.Exists(path));
             Assert.Equal(Path.Combine(Path.GetFullPath(dir), "Exports"), Path.GetDirectoryName(path));
@@ -156,8 +156,8 @@ public class MarkdownExportServiceTests
         {
             var svc = NewService(dir);
 
-            var first = await svc.ExportAsync("# One", null, "Pia answer", null, TestContext.Current.CancellationToken);
-            var second = await svc.ExportAsync("# Two", null, "Pia answer", null, TestContext.Current.CancellationToken);
+            var first = await svc.ExportAsync("# One", null, "Pia answer", null, ct: TestContext.Current.CancellationToken);
+            var second = await svc.ExportAsync("# Two", null, "Pia answer", null, ct: TestContext.Current.CancellationToken);
 
             Assert.NotEqual(first, second);
             Assert.True(File.Exists(first));

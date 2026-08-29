@@ -14,6 +14,8 @@ internal sealed class CapturingRequestHandler : HttpMessageHandler
 
     public string? LastBody { get; private set; }
 
+    public string? LastAuthorization { get; private set; }
+
     public CapturingRequestHandler(string responseBody = "{}")
     {
         _responseBody = responseBody;
@@ -24,6 +26,7 @@ internal sealed class CapturingRequestHandler : HttpMessageHandler
         CancellationToken cancellationToken)
     {
         LastRequestUri = request.RequestUri;
+        LastAuthorization = request.Headers.Authorization?.ToString();
         if (request.Content is not null)
             LastBody = await request.Content.ReadAsStringAsync(cancellationToken);
         return new HttpResponseMessage(HttpStatusCode.OK)

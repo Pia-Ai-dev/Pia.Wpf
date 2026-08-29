@@ -186,6 +186,7 @@ public class AiClientService : IAiClientService
         long aggregatedOutput = 0;
         bool hasUsage = false;
         bool protectedRoute = false;
+        string? lastModelId = null;
 
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
         var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
@@ -354,6 +355,9 @@ public class AiClientService : IAiClientService
             if (response.AdditionalProperties is { } respProps && respProps.ContainsKey(GuardrailMarker.AdditionalPropertyKey))
                 protectedRoute = true;
 
+            if (!string.IsNullOrWhiteSpace(response.ModelId))
+                lastModelId = response.ModelId;
+
             if (response.Usage is { } roundUsage)
             {
                 if (roundUsage.InputTokenCount is long input) { aggregatedInput += input; hasUsage = true; }
@@ -402,7 +406,7 @@ public class AiClientService : IAiClientService
             }
 
             _logger.LogDebug("Round {Round}: no tool calls, completing", round + 1);
-            yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput, protectedRoute);
+            yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput, protectedRoute, lastModelId);
             yield break;
         }
 
@@ -410,7 +414,7 @@ public class AiClientService : IAiClientService
 
         var wrapUp = await RunToolRoundWrapUpAsync(
             chatClient, providerHandler, provider, workingMessages, contextBudget, timeout,
-            protectedRoute, aggregatedInput, aggregatedOutput, hasUsage, cancellationToken);
+            protectedRoute, aggregatedInput, aggregatedOutput, hasUsage, lastModelId, cancellationToken);
 
         if (!string.IsNullOrEmpty(wrapUp.Text))
         {
@@ -421,7 +425,7 @@ public class AiClientService : IAiClientService
         // the tokenizing decorator flushes its pending detokenize buffer on it.
         yield return BuildFinishedItem(
             provider, wrapUp.HasUsage, wrapUp.AggregatedInput, wrapUp.AggregatedOutput, wrapUp.ProtectedRoute,
-            toolRoundsExhausted: true);
+            wrapUp.ModelId, toolRoundsExhausted: true);
 
         // A throw, not a flag, so a Planned step cannot accept the half answer as its output.
         if (wrapUp.Truncated)
@@ -650,6 +654,7 @@ public class AiClientService : IAiClientService
         long aggregatedInput,
         long aggregatedOutput,
         bool hasUsage,
+        string? modelId,
         CancellationToken cancellationToken)
     {
         string? wrapUpText = null;
@@ -692,6 +697,8 @@ public class AiClientService : IAiClientService
                 {
                     protectedRoute = true;
                 }
+                if (!string.IsNullOrWhiteSpace(wrapUpResponse.ModelId))
+                    modelId = wrapUpResponse.ModelId;
                 if (wrapUpResponse.Usage is { } wrapUpUsage)
                 {
                     if (wrapUpUsage.InputTokenCount is long wrapUpInput) { aggregatedInput += wrapUpInput; hasUsage = true; }
@@ -712,7 +719,7 @@ public class AiClientService : IAiClientService
         }
 
         return new WrapUpOutcome(
-            wrapUpText, wrapUpTruncated, protectedRoute, aggregatedInput, aggregatedOutput, hasUsage);
+            wrapUpText, wrapUpTruncated, protectedRoute, aggregatedInput, aggregatedOutput, hasUsage, modelId);
     }
 
     private readonly record struct WrapUpOutcome(
@@ -721,7 +728,8 @@ public class AiClientService : IAiClientService
         bool ProtectedRoute,
         long AggregatedInput,
         long AggregatedOutput,
-        bool HasUsage);
+        bool HasUsage,
+        string? ModelId);
 
     public async Task<ChatResponse> GetChatResponseAsync(
             IList<Microsoft.Extensions.AI.ChatMessage> messages,
@@ -1321,7 +1329,9 @@ public class AiClientService : IAiClientService
         }
     }
 
-    private ChatStreamItem BuildFinishedItem(AiProvider provider, bool hasUsage, long aggregatedInput, long aggregatedOutput, bool protectedRoute, bool toolRoundsExhausted = false)
+    private ChatStreamItem BuildFinishedItem(
+        AiProvider provider, bool hasUsage, long aggregatedInput, long aggregatedOutput, bool protectedRoute,
+        string? responseModelId, bool toolRoundsExhausted = false)
     {
         UsageDetails? usage = null;
         if (hasUsage)
@@ -1340,10 +1350,8 @@ public class AiClientService : IAiClientService
             _logger.LogDebug("Stream finished without usage details, providerType={ProviderType}", provider.ProviderType);
         }
 
-        var modelLabel = !string.IsNullOrWhiteSpace(provider.ModelName)
-            ? provider.ModelName
-            : provider.Name;
-        return new Finished(usage, modelLabel, protectedRoute, toolRoundsExhausted);
+        var (model, providerLabel) = AnswerProvenance.Describe(provider, responseModelId);
+        return new Finished(usage, model, providerLabel, protectedRoute, toolRoundsExhausted);
     }
 
     /// <summary>

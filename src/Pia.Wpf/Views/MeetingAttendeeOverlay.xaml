@@ -167,6 +167,12 @@
                         PlaceholderText="{loc:Str MeetingAttendee_DisplayName_Placeholder}"
                         PlaceholderEnabled="True"
                         FontSize="13" />
+            <!-- The AI suffix is appended by the service and cannot be edited away; this shows the result. -->
+            <TextBlock Text="{Binding EffectiveDisplayNameHint}"
+                       AutomationProperties.AutomationId="MeetingAttendee_EffectiveDisplayName"
+                       Style="{StaticResource PiaSettingsDescriptionStyle}"
+                       TextWrapping="Wrap"
+                       Margin="0,6,0,0" />
 
             <CheckBox AutomationProperties.AutomationId="MeetingAttendee_Consent"
                       IsChecked="{Binding ConsentAcknowledged}"

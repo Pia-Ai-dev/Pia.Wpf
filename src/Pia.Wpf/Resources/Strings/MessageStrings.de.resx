@@ -434,4 +434,7 @@
   <data name="Msg_Settings_DiagnosticsFailed_NoDestination" xml:space="preserve">
     <value>Der Diagnose-Ordner konnte nicht erstellt werden.</value>
   </data>
+  <data name="Msg_Assistant_FeedbackSent_Title" xml:space="preserve"><value>Danke</value></data>
+  <data name="Msg_Assistant_FeedbackSent" xml:space="preserve"><value>Ihr Feedback wurde an das Pia-Cloud-Team gesendet.</value></data>
+  <data name="Msg_Assistant_FeedbackFailed" xml:space="preserve"><value>Das Feedback konnte nicht gesendet werden. Prüfen Sie die Pia-Cloud-Verbindung und versuchen Sie es erneut.</value></data>
 </root>

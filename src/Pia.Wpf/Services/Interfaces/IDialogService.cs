@@ -11,6 +11,8 @@ public interface IDialogService
     Task<bool> ShowPersonaEditDialogAsync(PersonaEditModel persona);
     Task<bool> ShowTodoEditDialogAsync(TodoEditModel todo);
     Task<bool> ShowMeetingSaveDialogAsync(MeetingSaveEditModel meeting);
+    /// <summary>True when the user chose Send; the report itself is built by <see cref="IAiFeedbackService"/>.</summary>
+    Task<bool> ShowAiFeedbackDialogAsync(AiFeedbackEditModel feedback);
     Task<bool> ShowConfirmationDialogAsync(string title, string message);
 
     /// <summary>A confirmation that also carries back a "don't ask again" tick — where the suppression is
