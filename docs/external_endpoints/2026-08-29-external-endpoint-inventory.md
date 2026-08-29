@@ -52,7 +52,7 @@ Fetched once on first use and cached under `%LOCALAPPDATA%\Pia`. All GET-only, n
 | `huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/…` ×3 | First embedding — vault recall | none | `Models\` |
 | `github.com/rhasspy/piper` releases | First use of text-to-speech — the Piper engine | none | `Piper\piper\` |
 | `huggingface.co/rhasspy/piper-voices` | Downloading a TTS voice | none | `Piper\models\<voice-key>\` |
-| `cdn.playwright.dev` | First meeting-attendee join on bundled Chromium | `ChromiumProvisioner.DownloadHostOverride` → `PLAYWRIGHT_DOWNLOAD_HOST`; currently null, i.e. Playwright's own version-matched default | `Browsers\` |
+| `cdn.playwright.dev` | First meeting-attendee join, then again whenever the pinned `Microsoft.Playwright` version changes; not reached at all when the release bundles the browser (`docs/meeting_browser_lifecycle/2026-08-29-chromium-lifecycle.md`) | `ChromiumProvisioner.DownloadHostOverride` → `PLAYWRIGHT_DOWNLOAD_HOST`; currently null, i.e. Playwright's own version-matched default | `Browsers\` |
 
 **Every one of these redirects off the source host,** which is what an egress allowlist actually
 needs:

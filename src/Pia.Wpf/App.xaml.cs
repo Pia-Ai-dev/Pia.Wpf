@@ -25,7 +25,13 @@ public partial class App : Application
         VelopackApp.Build()
             .OnAfterInstallFastCallback(v => AutostartService.EnableStatic())
             .OnAfterUpdateFastCallback(v => AutostartService.UpdatePathIfEnabled())
-            .OnBeforeUninstallFastCallback(v => AutostartService.DisableStatic())
+            .OnBeforeUninstallFastCallback(v =>
+            {
+                AutostartService.DisableStatic();
+                // The uninstaller only removes the app directory, and the browser download lives
+                // outside it — left behind it is an unpatched Chromium nobody will ever update.
+                Services.MeetingAttendee.ChromiumProvisioner.DeleteDownloadCache();
+            })
             .Run();
 
         var app = new App();

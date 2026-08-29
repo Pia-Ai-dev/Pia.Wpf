@@ -9,6 +9,11 @@ on:
       branch:
         description: 'Branch to build'
         required: false
+      bundle_chromium:
+        description: 'Ship Chromium inside the installer (+~400 MB, no first-run download)'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -83,6 +88,14 @@ jobs:
             -fd sha256 `
             -v `
             publish/Pia.Wpf.exe
+
+      # Off by default: the browser is otherwise downloaded on the first meeting join. Turning this on
+      # puts a Chromium that updates and uninstalls with the app into the payload, at ~400 MB per
+      # release (deltas absorb most of it) paid by every user, meeting attendee or not.
+      - name: Bundle Chromium into the payload
+        if: ${{ inputs.bundle_chromium }}
+        shell: pwsh
+        run: pwsh scripts/Save-RuntimeAssets.ps1 -Include Chromium -DestinationRoot publish
 
       - name: Install Velopack CLI
         run: dotnet tool install -g vpk --allow-roll-forward --prerelease

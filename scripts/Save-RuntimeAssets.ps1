@@ -37,6 +37,9 @@
   deliberately ignores PIA_LOCAL_DATA_DIR for downloaded artifacts. Point it elsewhere to stage a
   bundle for an air-gapped machine, then copy the tree to that machine's %LOCALAPPDATA%\Pia.
 
+  Pointing it at a publish payload (-Include Chromium -DestinationRoot publish) is how a release
+  bundles the browser: the app prefers a Browsers\ folder beside its own exe over the download.
+
 .PARAMETER Force
   Re-fetch even when the asset is already present and the right size.
 
@@ -254,6 +257,8 @@ function Save-Bundle($Asset, [Nullable[long]]$RemoteLength) {
 function Save-Chromium($Asset) {
     $repoRoot = Split-Path -Parent $PSScriptRoot
     $candidates = @(
+        # A publish payload first, so staging a release bundle needs no separate repo build.
+        Join-Path $DestinationRoot 'playwright.ps1'
         Join-Path $repoRoot 'src/Pia.Wpf/bin/Release/net10.0-windows10.0.17763.0/playwright.ps1'
         Join-Path $repoRoot 'src/Pia.Wpf/bin/Debug/net10.0-windows10.0.17763.0/playwright.ps1'
     )
@@ -266,12 +271,21 @@ function Save-Chromium($Asset) {
     $previous = $env:PLAYWRIGHT_BROWSERS_PATH
     try {
         $env:PLAYWRIGHT_BROWSERS_PATH = $Asset.Target
-        & $installer install chromium
+        # --no-shell: the app launches the full headed build for a real audio render session, so the
+        # headless shell would be 260 MB of binary nothing ever executes.
+        & $installer install chromium --no-shell
         if ($LASTEXITCODE -ne 0) { throw "Playwright installer failed with exit code $LASTEXITCODE." }
     }
     finally {
         $env:PLAYWRIGHT_BROWSERS_PATH = $previous
     }
+
+    # The installer records THIS machine's driver path in .links. Carried onto another machine that
+    # link is dead, and a registry whose links are all dead is one install away from having every
+    # browser directory in it deleted as unreferenced.
+    $links = Join-Path $Asset.Target '.links'
+    if (Test-Path -LiteralPath $links) { Remove-Item -LiteralPath $links -Recurse -Force }
+
     return $null
 }
 
