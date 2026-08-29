@@ -16,7 +16,7 @@
 
   <ItemGroup>
     <Resource Include="Resources\Icons\Pia.ico" />
-    <Resource Include="Resources\Images\Pia_Persona.png" />
+    <Resource Include="Resources\Images\Pia_Persona_edge.png" />
   </ItemGroup>
 
   <ItemGroup>
