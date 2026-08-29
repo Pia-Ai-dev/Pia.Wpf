@@ -14,6 +14,13 @@ URL presents as "nothing happened", not as an error.
 **Scope.** Runtime egress from the shipped client. Build-time feeds (`api.nuget.org`) and the
 live-provider endpoints under `tests/` are excluded; a user's machine never dials those.
 
+**How it was built.** A grep over `src/` finds only the URLs we wrote; three of the hosts below live
+inside NuGet packages instead (Velopack → `api.github.com`, Playwright → `cdn.playwright.dev`,
+PiperSharp → Hugging Face and rhasspy). So the shipped assemblies were also string-swept — every
+non-`Pia`/non-BCL `.dll` in the Release output, scanned for UTF-16 and UTF-8 URL literals. That sweep
+turns up nothing beyond what is listed here: the rest is repository and documentation metadata that
+is never fetched, certificate-chain URLs, and XML namespaces.
+
 **The list is exhaustive for what the repo hard-codes, not for what the process can dial.** Three
 categories are unbounded by design and cannot be enumerated from source: a user-configured provider
 endpoint, an MCP server a user adds, and every asset host the Teams web client pulls in once the
@@ -156,6 +163,9 @@ These look like endpoints in a grep but are not. Listed so a future audit does n
 | `http://www.w3.org/2000/svg` | `Services/MarkdownExportService.cs` | XML namespace |
 | `schemas.microsoft.com`, `schemas.openxmlformats.org`, `schemas.lepo.co` | every XAML file | XAML namespace URIs, never fetched |
 | `api.nuget.org` | `NuGet.config` | Build-time only |
+| `builds.dotnet.microsoft.com`, `dotnetcli.blob.core.windows.net`, `download.microsoft.com/…/vcredist_*` | `Velopack.dll` | Velopack's bootstrapper, for installing a missing .NET runtime or VC++ redist. `scripts/build-velopack.ps1` publishes `--self-contained true`, so it never fires |
+| `ocsp.digicert.com`, `crl3`/`crl4.digicert.com`, `crl.microsoft.com` | the Authenticode signatures on shipped assemblies | Certificate revocation, performed by Windows when validating a signature or a TLS chain — not the app dialing out. Worth knowing on a locked-down network, where blocking them shows up as a slow start rather than an error |
+| every other `github.com/<org>/<repo>` in a package assembly | `RepositoryUrl` metadata | Never fetched |
 
 ## 8. Re-running the sweep
 
