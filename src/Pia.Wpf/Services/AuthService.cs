@@ -1,8 +1,10 @@
+using System.Buffers.Text;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
@@ -109,6 +111,7 @@ public class AuthService : IAuthService
             var port = GetRandomPort();
             var redirectUri = $"http://localhost:{port}/";
             var (codeVerifier, codeChallenge) = PkceCodes.Create();
+            var state = CreateLoginState();
 
             // Listen before the browser opens, so the callback can never arrive at an unbound port.
             using var listener = new HttpListener();
@@ -119,48 +122,57 @@ public class AuthService : IAuthService
             // The server answers with a one-time code, never tokens; only this process holds the verifier.
             var loginUrl = $"{serverUrl}/auth/login?provider={provider}"
                 + $"&redirect_uri={Uri.EscapeDataString(redirectUri)}"
-                + $"&code_challenge={codeChallenge}";
+                + $"&code_challenge={codeChallenge}"
+                + "&code_challenge_method=S256"
+                + $"&state={Uri.EscapeDataString(state)}";
             Process.Start(new ProcessStartInfo(loginUrl) { UseShellExecute = true });
 
             using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
-            var context = await WaitForLoginCallbackAsync(listener, cts.Token);
+            var context = await WaitForLoginCallbackAsync(listener, state, cts.Token);
             _logger.LogInformation("OAuth callback received");
 
             var query = context.Request.QueryString;
             var error = query["error"];
             var errorMessage = query["message"];
-            var code = query["code"];
+            var triage = TriageLoginCallback(error, errorMessage, query["access_token"], query["code"]);
 
             LocalLoginResponse? login = null;
-            string? failure = null;
-            if (!string.IsNullOrEmpty(error))
+            var failure = triage.Failure;
+            switch (triage.Kind)
             {
-                _logger.LogWarning("OAuth callback returned error: {Error} - {Message}", error, errorMessage);
-                failure = errorMessage ?? "Login failed";
-            }
-            else if (!string.IsNullOrEmpty(query["access_token"]))
-            {
-                // A server from before the exchange answered with tokens in the URL. They are never taken: the
-                // whole point of the exchange is that a query string cannot log this client in.
-                _logger.LogWarning("OAuth callback carried tokens in the URL; the server predates the code exchange");
-                failure = "Login failed - the server does not support this client's login flow yet";
-            }
-            else if (string.IsNullOrEmpty(code))
-            {
-                _logger.LogWarning("OAuth callback carried no login code");
-                failure = "Login failed - no login code received";
-            }
-            else
-            {
-                (login, failure) = await ExchangeLoginCodeAsync(serverUrl, code, codeVerifier, cts.Token);
+                case LoginCallbackKind.ProviderError:
+                    _logger.LogWarning("OAuth callback returned error: {Error} - {Message}", error, errorMessage);
+                    break;
+                case LoginCallbackKind.LegacyTokens:
+                    _logger.LogWarning("OAuth callback carried tokens in the URL; the server predates the code exchange");
+                    break;
+                case LoginCallbackKind.MissingCode:
+                    _logger.LogWarning("OAuth callback carried no login code");
+                    break;
+                case LoginCallbackKind.Code:
+                {
+                    // Its own budget: the user may have spent almost all of the callback's five minutes signing in.
+                    using var exchangeCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+                    (login, failure) = await ExchangeLoginCodeAsync(
+                        serverUrl, triage.Code!, codeVerifier, exchangeCts.Token);
+                    break;
+                }
             }
 
-            // Written after the exchange so the browser page shows the real outcome.
-            await WriteBrowserResponseAsync(context,
-                login is not null
-                    ? BuildLoginSuccessHtml(login.User.DisplayName)
-                    : BuildLoginErrorHtml(failure ?? "Login failed"),
-                success: login is not null);
+            try
+            {
+                // Written after the exchange so the browser page shows the real outcome.
+                await WriteBrowserResponseAsync(context,
+                    login is not null
+                        ? BuildLoginSuccessHtml(login.User.DisplayName)
+                        : BuildLoginErrorHtml(failure ?? "Login failed"),
+                    success: login is not null);
+            }
+            catch (Exception ex)
+            {
+                // A browser tab that is already gone must not cost the user a login that already succeeded.
+                _logger.LogWarning(ex, "Failed to write the OAuth browser response");
+            }
 
             if (login is null)
                 return (false, failure ?? "Login failed");
@@ -180,23 +192,57 @@ public class AuthService : IAuthService
         }
     }
 
-    // A request carrying neither a code, an error nor legacy tokens is noise on the port (a probe, a favicon
-    // fetch) and must not end the wait: the first request to arrive no longer gets to decide the login.
-    private static async Task<HttpListenerContext> WaitForLoginCallbackAsync(HttpListener listener, CancellationToken ct)
+    // A request without this login's state, or carrying neither a code, an error nor legacy tokens, is noise on
+    // the port (a probe, a favicon fetch) and must not end the wait: any local page could otherwise decide it.
+    internal static async Task<HttpListenerContext> WaitForLoginCallbackAsync(
+        HttpListener listener, string expectedState, CancellationToken ct)
     {
         while (true)
         {
             var context = await listener.GetContextAsync().WaitAsync(ct);
             var query = context.Request.QueryString;
-            if (!string.IsNullOrEmpty(query["code"])
-                || !string.IsNullOrEmpty(query["error"])
-                || !string.IsNullOrEmpty(query["access_token"]))
+            if (LoginCallbackStateMatches(expectedState, query["state"])
+                && (!string.IsNullOrEmpty(query["code"])
+                    || !string.IsNullOrEmpty(query["error"])
+                    || !string.IsNullOrEmpty(query["access_token"])))
                 return context;
 
             context.Response.StatusCode = 404;
             context.Response.KeepAlive = false;
             context.Response.Close();
         }
+    }
+
+    internal static string CreateLoginState() => Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(32));
+
+    internal static bool LoginCallbackStateMatches(string? expectedState, string? callbackState) =>
+        !string.IsNullOrEmpty(expectedState) && string.Equals(expectedState, callbackState, StringComparison.Ordinal);
+
+    internal enum LoginCallbackKind
+    {
+        ProviderError,
+        LegacyTokens,
+        MissingCode,
+        Code
+    }
+
+    internal readonly record struct LoginCallbackTriage(LoginCallbackKind Kind, string? Code, string? Failure);
+
+    internal static LoginCallbackTriage TriageLoginCallback(
+        string? error, string? errorMessage, string? accessToken, string? code)
+    {
+        if (!string.IsNullOrEmpty(error))
+            return new LoginCallbackTriage(LoginCallbackKind.ProviderError, null, errorMessage ?? "Login failed");
+
+        // Tokens in a query string are never taken: that a URL cannot log this client in is the point of the exchange.
+        if (!string.IsNullOrEmpty(accessToken))
+            return new LoginCallbackTriage(LoginCallbackKind.LegacyTokens, null,
+                "Login failed - the server does not support this client's login flow yet");
+
+        if (string.IsNullOrEmpty(code))
+            return new LoginCallbackTriage(LoginCallbackKind.MissingCode, null, "Login failed - no login code received");
+
+        return new LoginCallbackTriage(LoginCallbackKind.Code, code, null);
     }
 
     // Failures come back as a result, not an exception, so the browser still gets its error page.

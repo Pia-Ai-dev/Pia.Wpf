@@ -5,7 +5,7 @@ using System.Text;
 namespace Pia.Services;
 
 /// <summary>RFC 7636 S256 pair. The verifier never leaves this process except in the POST that redeems the login code.</summary>
-public static class PkceCodes
+internal static class PkceCodes
 {
     public static (string Verifier, string Challenge) Create()
     {
