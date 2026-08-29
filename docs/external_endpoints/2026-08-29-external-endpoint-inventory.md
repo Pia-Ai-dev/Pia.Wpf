@@ -43,6 +43,8 @@ Fetched once on first use and cached under `%LOCALAPPDATA%\Pia`. All GET-only, n
 | `github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/…` | First speaker attribution | none | `Models\` |
 | `github.com/snakers4/silero-vad/raw/master/…` | First VAD use | none | `Models\` |
 | `huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/…` ×3 | First embedding — vault recall | none | `Models\` |
+| `github.com/rhasspy/piper` releases | First use of text-to-speech — the Piper engine | none | `Piper\piper\` |
+| `huggingface.co/rhasspy/piper-voices` | Downloading a TTS voice | none | `Piper\models\<voice-key>\` |
 | `cdn.playwright.dev` | First meeting-attendee join on bundled Chromium | `ChromiumProvisioner.DownloadHostOverride` → `PLAYWRIGHT_DOWNLOAD_HOST`; currently null, i.e. Playwright's own version-matched default | `Browsers\` |
 
 **Every one of these redirects off the source host,** which is what an egress allowlist actually
@@ -53,6 +55,15 @@ needs:
 | `github.com/…/releases/download/…` | `release-assets.githubusercontent.com` |
 | `github.com/…/raw/master/…` | `raw.githubusercontent.com` |
 | `huggingface.co/…/resolve/main/…` | `us.aws.cdn.hf.co` (xet bridge) |
+
+The two Piper rows are the one place the repo does **not** own the URL. `TtsService` calls into the
+PiperSharp package, which holds `huggingface.co/rhasspy/piper-voices/raw/main/voices.json` and
+`github.com/rhasspy/piper` as its own constants — both hosts read out of the shipped assembly, so
+they are certain, but the exact release asset PiperSharp composes is not visible from our source.
+Treat those two rows as host-level, not URL-level. `cdn.playwright.dev` is the same shape for a
+different reason: it is Playwright's own default, deliberately not hard-coded here so the browser
+revision stays matched to the pinned package. Measured during a real install it serves
+`/builds/cft/<version>/win64/chrome-win64.zip` plus a headless shell, ffmpeg and winldd.
 
 Two spellings here are load-bearing and must not be tidied. The release tag
 `speaker-recongition-models` is misspelled upstream; the corrected spelling 404s. And sherpa
@@ -154,5 +165,30 @@ pwsh scripts/Test-ExternalEndpoints.ps1
 
 Follows redirects, reports final status and `Content-Length` per endpoint, and exits non-zero if any
 row is unhealthy. A provider host answering `401` counts as healthy — it proves the host is up, and
-the script deliberately sends no key. As of 2026-08-29: 22 of 23 healthy, the update feed being the
+the script deliberately sends no key. As of 2026-08-29: 25 of 26 healthy, the update feed being the
 one red row.
+
+## 9. Pre-fetching the downloads
+
+```powershell
+pwsh scripts/Save-RuntimeAssets.ps1              # default set, ~720 MB
+pwsh scripts/Save-RuntimeAssets.ps1 -All -ListOnly
+pwsh scripts/Save-RuntimeAssets.ps1 -DestinationRoot D:\pia-bundle -All
+```
+
+Fetches everything in §3 into the exact paths the app checks, so the app finds them and skips its own
+download. `-DestinationRoot` stages a bundle for an air-gapped machine — copy the resulting tree to
+that machine's `%LOCALAPPDATA%\Pia`. Note that `PiaPaths` deliberately keeps downloaded artifacts on
+the real profile and ignores `PIA_LOCAL_DATA_DIR`, so there is no environment variable that moves
+them; the parameter exists for staging, not for redirecting a running app.
+
+The reason it verifies rather than just downloading: the app's own presence checks are weak — a
+bundle directory holding any `.onnx`, or a VAD file of non-zero length — so an interrupted download
+leaves a cache the app will never re-fetch and never succeed with. Every file is written to a `.tmp`,
+checked against the server's `Content-Length`, and only then moved; an existing file of the wrong
+size is re-fetched, which repairs a cache poisoned by an earlier Ctrl-C.
+
+**TTS voices are not covered.** `TtsService` gates on "the voice directory holds an `.onnx`" while
+loading also needs PiperSharp's `model.json` beside it, so hand-placing the model would satisfy the
+gate and then fail to load, permanently, with no self-heal. Download voices from the app's own TTS
+settings instead.

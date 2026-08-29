@@ -62,6 +62,13 @@ $endpoints = @(
     @{ Group = 'Models'; Name = 'Embedding tokenizer'; Url = "$hf/tokenizer.json"; Ok = @(200) }
     @{ Group = 'Models'; Name = 'Embedding sentencepiece'; Url = "$hf/sentencepiece.bpe.model"; Ok = @(200) }
 
+    # Host-level only: PiperSharp owns the exact URLs, so these probe the surfaces it is known to use
+    # rather than the literal request it makes.
+    @{ Group = 'TTS'; Name = 'Piper voice catalogue'; Url = 'https://huggingface.co/rhasspy/piper-voices/raw/main/voices.json'; Ok = @(200) }
+    @{ Group = 'TTS'; Name = 'Piper voice file'; Url = 'https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx'; Ok = @(200)
+       Note = 'One curated voice, standing in for all nine' }
+    @{ Group = 'TTS'; Name = 'Piper engine release'; Url = 'https://github.com/rhasspy/piper/releases/latest'; Ok = @(200) }
+
     @{ Group = 'Providers'; Name = 'OpenRouter models'; Url = 'https://openrouter.ai/api/v1/models'; Ok = @(200)
        Note = 'Keyless on purpose - the context-window lookup runs before a key is entered' }
     @{ Group = 'Providers'; Name = 'OpenAI';       Url = 'https://api.openai.com/v1/models'; Ok = @(200, 401) }
