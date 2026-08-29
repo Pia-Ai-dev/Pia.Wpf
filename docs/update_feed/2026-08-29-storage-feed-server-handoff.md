@@ -43,6 +43,10 @@ The service exists only on branch `feature/storage-server`. Before anything else
 1. Merge it.
 2. **Create the DNS record for `storage.pia-ai.de`.** The Caddyfile warns that an ACME issuance Caddy can
    never complete is retried *for every site in the file* — a missing record degrades the whole host.
+   Measured 2026-08-29: the record already resolves, to the same host as `pia-ai.de`, so Caddy is in
+   that retry loop today. Port 443 answers with a TLS alert and no certificate while the other sites on
+   the host keep serving — see
+   [../external_endpoints/2026-08-29-external-endpoint-inventory.md](../external_endpoints/2026-08-29-external-endpoint-inventory.md) §5.1.
 3. Create `.env.prod.storage` on the host with `Storage__UploadSecret` set to base64 carrying **≥32
    decoded bytes**; the app refuses to boot otherwise, and it rejects the `CHANGE_ME` placeholder by name.
 4. Create `public/` and `tmp/` under `/mnt/hc-volume/storage`.

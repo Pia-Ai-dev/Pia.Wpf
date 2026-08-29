@@ -28,7 +28,7 @@ public static class LiveTranscriptionModels
         "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models";
 
     private const string SileroVadFileName = "silero_vad.onnx";
-    private const string SileroVadDownloadUrl =
+    internal const string SileroVadUrl =
         "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx";
 
     private const string SpeakerEmbeddingFileName =
@@ -57,7 +57,7 @@ public static class LiveTranscriptionModels
 
         logger.LogInformation("Downloading Silero VAD model to {Path}", path);
         var http = httpClientFactory.CreateClient();
-        using var resp = await http.GetAsync(SileroVadDownloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+        using var resp = await http.GetAsync(SileroVadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             .ConfigureAwait(false);
         resp.EnsureSuccessStatusCode();
 
@@ -90,7 +90,7 @@ public static class LiveTranscriptionModels
         var path = SpeakerEmbeddingModelPath;
         if (File.Exists(path) && new FileInfo(path).Length > 0) return path;
 
-        var url = $"{SherpaSpeakerReleasesBase}/{SpeakerEmbeddingFileName}";
+        var url = SpeakerEmbeddingUrl;
         logger.LogInformation("Downloading speaker-embedding model to {Path}", path);
 
         var tmp = path + ".tmp";
@@ -111,11 +111,9 @@ public static class LiveTranscriptionModels
         ILogger logger,
         CancellationToken cancellationToken = default)
     {
-        var sizeSlug = WhisperSherpaSlug(modelSize);
-        var bundleName = $"sherpa-onnx-whisper-{sizeSlug}";
-        var url = $"{SherpaReleasesBase}/{bundleName}.tar.bz2";
-        var targetDir = Path.Combine(ModelsDirectory, $"sherpa-whisper-{sizeSlug}");
-        return EnsureBundleAsync(url, targetDir, httpClientFactory, progress, logger, cancellationToken);
+        var targetDir = Path.Combine(ModelsDirectory, $"sherpa-whisper-{WhisperSherpaSlug(modelSize)}");
+        return EnsureBundleAsync(
+            WhisperBundleUrl(modelSize), targetDir, httpClientFactory, progress, logger, cancellationToken);
     }
 
     public static bool IsWhisperOnnxAvailable(WhisperModelSize modelSize)
@@ -140,10 +138,9 @@ public static class LiveTranscriptionModels
         ILogger logger,
         CancellationToken cancellationToken = default)
     {
-        const string bundleName = "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8";
-        var url = $"{SherpaReleasesBase}/{bundleName}.tar.bz2";
         var targetDir = Path.Combine(ModelsDirectory, "sherpa-parakeet-tdt-v3");
-        return EnsureBundleAsync(url, targetDir, httpClientFactory, progress, logger, cancellationToken);
+        return EnsureBundleAsync(
+            ParakeetBundleUrl, targetDir, httpClientFactory, progress, logger, cancellationToken);
     }
 
     private static async Task<string> EnsureBundleAsync(
@@ -259,13 +256,25 @@ public static class LiveTranscriptionModels
         }
     }
 
+    // The exact download URLs, in one place because ModelDownloadUrlTests pins them: a plausible
+    // "correction" to any of these spellings is a 404 nobody sees until a first-use download.
+    internal static string WhisperBundleUrl(WhisperModelSize size) =>
+        $"{SherpaReleasesBase}/sherpa-onnx-whisper-{WhisperSherpaSlug(size)}.tar.bz2";
+
+    internal static string ParakeetBundleUrl =>
+        $"{SherpaReleasesBase}/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2";
+
+    internal static string SpeakerEmbeddingUrl =>
+        $"{SherpaSpeakerReleasesBase}/{SpeakerEmbeddingFileName}";
+
     private static string WhisperSherpaSlug(WhisperModelSize size) => size switch
     {
         WhisperModelSize.Tiny => "tiny",
         WhisperModelSize.Base => "base",
         WhisperModelSize.Small => "small",
         WhisperModelSize.Medium => "medium",
-        WhisperModelSize.Large => "large-v3-turbo",
+        // sherpa publishes large-v3-turbo under the bare "turbo" name; "large-v3-turbo" 404s.
+        WhisperModelSize.Large => "turbo",
         _ => "base",
     };
 }

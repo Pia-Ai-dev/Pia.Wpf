@@ -15,9 +15,9 @@ public class EmbeddingService : IEmbeddingService, IDisposable
     private const string ModelFileName = "paraphrase-multilingual-MiniLM-L12-v2.onnx";
     private const string TokenizerFileName = "tokenizer.json";
     private const string SentencePieceFileName = "sentencepiece.bpe.model";
-    private const string ModelUrl = "https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/onnx/model.onnx";
-    private const string TokenizerUrl = "https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/tokenizer.json";
-    private const string SentencePieceUrl = "https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/sentencepiece.bpe.model";
+    internal const string ModelUrl = "https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/onnx/model.onnx";
+    internal const string TokenizerUrl = "https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/tokenizer.json";
+    internal const string SentencePieceUrl = "https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/sentencepiece.bpe.model";
     // Matches the tokenizer's own truncation (tokenizer.json truncation.max_length = 128), including the two
     // framing tokens (<s> … </s>). The model is paraphrase-multilingual-MiniLM-L12-v2, an XLM-RoBERTa
     // SentencePiece Unigram model — NOT BERT WordPiece.

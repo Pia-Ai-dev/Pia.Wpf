@@ -1,0 +1,158 @@
+# External endpoints Pia.Wpf dials at runtime
+
+**Status:** Current as of 2026-08-29; one endpoint open (§5) · **Owner:** Marco Altmann ·
+**Written:** 2026-08-29 · **Origin:** an audit asked for the full runtime egress list; nothing in the
+repo recorded it, and the sweep turned up a 404 that had been shipping unnoticed
+
+## 1. What this is for
+
+Three questions this answers that previously needed a grep: what a customer's firewall team has to
+allow, what leaves the machine and to whom, and whether any of it has rotted. That last one matters
+more than it sounds — every call below is lazy (first use) and wrapped in a catch-and-log, so a dead
+URL presents as "nothing happened", not as an error.
+
+**Scope.** Runtime egress from the shipped client. Build-time feeds (`api.nuget.org`) and the
+live-provider endpoints under `tests/` are excluded; a user's machine never dials those.
+
+**The list is exhaustive for what the repo hard-codes, not for what the process can dial.** Three
+categories are unbounded by design and cannot be enumerated from source: a user-configured provider
+endpoint, an MCP server a user adds, and every asset host the Teams web client pulls in once the
+meeting attendee drives a real browser. They are listed as categories in §4.
+
+`scripts/Test-ExternalEndpoints.ps1` re-runs the whole sweep. It is deliberately not part of
+`dotnet test` — the gate must stay offline.
+
+## 2. Pia-operated
+
+| Endpoint | Trigger | Override | What leaves | If down |
+|---|---|---|---|---|
+| `storage.pia-ai.de/f/wpf/` | Update check on startup, then every 4–6 h | `Update:FeedUrl` (`appsettings.json`) | Nothing but a GET | Silent — no updates, nothing surfaced. **Open, see §5.1** |
+| `github.com/Pia-Ai-dev/Pia.Wpf` → `api.github.com` | Update check when `FeedUrl` is blank | `Update:GitHubRepoUrl` (`Models/UpdateOptions.cs`) | Nothing but a GET | Same |
+| `cloud.pia-ai.de` | Login, sync, cloud chat, E2EE device management, policy, capabilities, assignments, plugin CABs + icons + trusted certs, AI feedback | `PIA_CLOUD_SERVER_URL`, else `AppSettings.ServerUrl`; default in `Bootstrapper.cs` | Bearer token; chat and prompt content (E2EE-wrapped on the sync path); device keys; assignment payloads | Hard fail for the cloud persona, sync and assignments |
+| `cloud.pia-ai.de/auth/{register,forgot-password}.html` | Button in account settings / first-run wizard | same | Opens the default browser | Cosmetic |
+| `127.0.0.1:{ephemeral}` | OAuth loopback redirect (`Services/AuthService.cs`) | none | Nothing — loopback | Login blocked |
+| `pia-ai.de`, `/impressum.html`, `/datenschutz.html`, `docs.pia-ai.de` | About-view links (`Models/PiaLinks.cs`) | none | Opens the default browser | Cosmetic. The two legal pages are the AI Act Art. 50 transparency documents |
+
+## 3. Model and browser downloads
+
+Fetched once on first use and cached under `%LOCALAPPDATA%\Pia`. All GET-only, no credentials.
+
+| Endpoint | Trigger | Override | Cached in |
+|---|---|---|---|
+| `github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/…` | First local transcription, per model | none | `Models\sherpa-whisper-*`, `Models\sherpa-parakeet-tdt-v3` |
+| `github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/…` | First speaker attribution | none | `Models\` |
+| `github.com/snakers4/silero-vad/raw/master/…` | First VAD use | none | `Models\` |
+| `huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/…` ×3 | First embedding — vault recall | none | `Models\` |
+| `cdn.playwright.dev` | First meeting-attendee join on bundled Chromium | `ChromiumProvisioner.DownloadHostOverride` → `PLAYWRIGHT_DOWNLOAD_HOST`; currently null, i.e. Playwright's own version-matched default | `Browsers\` |
+
+**Every one of these redirects off the source host,** which is what an egress allowlist actually
+needs:
+
+| Source host | Terminus |
+|---|---|
+| `github.com/…/releases/download/…` | `release-assets.githubusercontent.com` |
+| `github.com/…/raw/master/…` | `raw.githubusercontent.com` |
+| `huggingface.co/…/resolve/main/…` | `us.aws.cdn.hf.co` (xet bridge) |
+
+Two spellings here are load-bearing and must not be tidied. The release tag
+`speaker-recongition-models` is misspelled upstream; the corrected spelling 404s. And sherpa
+publishes large-v3-turbo as the bare asset `sherpa-onnx-whisper-turbo.tar.bz2` — see §5.2.
+`ModelDownloadUrlTests` pins both offline.
+
+## 4. User-configured — unbounded
+
+| Endpoint | Trigger | Default / preset | What leaves |
+|---|---|---|---|
+| `AiProvider.Endpoint` — chat and `/models` (`Services/ProviderService.cs`) | Every assistant turn; the model dropdown | Presets in `ViewModels/Models/ProviderEditModel.cs` and the first-run wizard: `api.openai.com/v1`, `openrouter.ai/api/v1`, `api.mistral.ai/v1`, `localhost:11434/v1` (Ollama), `localhost:8000/v1` (vLLM). An Azure endpoint is free-form | **The full prompt, tool results, and the API key** |
+| `openrouter.ai/api/v1/models` | Saving an OpenRouter provider; the context-window snapshot | fixed, keyless on purpose | Nothing but a GET |
+| `teams.microsoft.com` / `teams.live.com`, **plus every asset host the Teams web client loads** | Meeting-attendee join | user pastes the link; host allowlist in `Services/MeetingAttendee/TeamsMeetingUrl.cs` | A redirect-follow, then a real Chromium session. The asset hosts are not enumerable from this repo |
+| An MCP plugin's SSE `url` | Plugin activation (HEAD ping), then tool calls | plugin config JSON | Tool arguments and results |
+| An MCP stdio plugin's command | Plugin activation | plugin config JSON | Nothing directly, but an `npx`-based server fetches its package from `registry.npmjs.org` on first launch |
+| Any URL in a chat message or source chip | The user clicks it | — | Handed to the default browser |
+
+OpenRouter chat requests carry two fixed headers — `X-Title: Pia` and
+`HTTP-Referer: https://github.com/Pia-Ai-dev/Pia.Wpf`. That is attribution metadata on a request the
+user already initiated, not a separate call.
+
+## 5. Open
+
+### 5.1 The update feed serves no TLS certificate
+
+`appsettings.json` points `Update:FeedUrl` at `https://storage.pia-ai.de/f/wpf/`, and a non-blank
+`FeedUrl` wins over GitHub. That is the production update path, and it does not answer:
+
+- Port 80 responds — `Caddy`, `308 → https://…`. Port 443 aborts the handshake with
+  `tlsv1 alert internal error` (alert 80) and **presents no certificate at all**. Reproduced with
+  OpenSSL, with schannel/curl, and with .NET's own stack (which is what `HttpClient` uses), with and
+  without SNI, on TLS 1.2 and 1.3, on `/` as well as `/f/wpf/`.
+- **One site on a healthy host, not a host outage.** `pia-ai.de`, `cloud.pia-ai.de`, `docs.pia-ai.de`
+  and `storage.pia-ai.de` all resolve to the same address; the first three serve valid Let's Encrypt
+  certificates from that same Caddy. So this is per-site ACME issuance failing for the `storage`
+  hostname — the retry loop the Caddyfile warning in the handoff doc predicts once a DNS record
+  exists ahead of a working site block.
+
+This is the expected state, not a regression: the storage service is still unmerged, and
+[../update_feed/2026-08-29-storage-feed-server-handoff.md](../update_feed/2026-08-29-storage-feed-server-handoff.md)
+§3.1 lists deploying it as prerequisite work. The audit adds one fact to that handoff — the DNS
+record is already live and pointing at the shared Caddy host, so ACME is failing there *now*, ahead
+of the rollout.
+
+Reproduce:
+
+```bash
+openssl s_client -connect storage.pia-ai.de:443 -servername storage.pia-ai.de   # alert 80, no cert
+curl -sSI http://storage.pia-ai.de/f/wpf/                                       # 308, Server: Caddy
+```
+
+Probed from one network on 2026-08-29 — worth a second vantage point before anyone touches the server.
+
+**Worth deciding separately:** whether `UpdateService` should fall back to `GithubSource` when the
+feed itself is unreachable. Today a broken feed and "you are up to date" are indistinguishable from
+the UI, which is what let this sit. Note the constraint in the handoff §5: installed clients read the
+`appsettings.json` in their own `current\`, so GitHub must keep receiving the full feed either way.
+
+### 5.2 Fixed: Whisper Large 404'd on download
+
+`LiveTranscriptionModels` mapped `WhisperModelSize.Large` to the slug `large-v3-turbo`, building
+`…/asr-models/sherpa-onnx-whisper-large-v3-turbo.tar.bz2`. No such asset exists — sherpa publishes
+that model as `sherpa-onnx-whisper-turbo.tar.bz2` (563 MB). Large is offered in the settings dropdown
+and labelled "Whisper Large v3 Turbo", so picking it downloaded nothing and failed quietly.
+
+Fixed 2026-08-29 by changing the slug to `turbo`. The slug reaches only the asset name and the cache
+directory: `ExtractTarBz2` strips the archive's wrapping folder, and `WhisperSherpaEngine` locates
+the pieces by globbing `*encoder*.onnx` / `*decoder*.onnx` / `*tokens*.txt` rather than composing a
+prefix, so nothing else had to move. Confirmed against the archive listing rather than assumed: the
+bundle holds `turbo-encoder.int8.onnx`, `turbo-decoder.int8.onnx` and `turbo-tokens.txt`, one match
+per glob. Not yet run end-to-end through the recognizer.
+
+## 6. No telemetry
+
+A sweep of `src/` — the `.csproj` files included — for `sentry`, `applicationinsights`, `telemetry`,
+`analytics`, `crashreport`, `appcenter`, `posthog`, `mixpanel` and `datadog` returns one hit: an
+in-process observer list in `AgentTimelineService`, which never leaves the machine. There is no
+crash-reporting, analytics or usage-telemetry egress of any kind.
+
+## 7. Audited and excluded
+
+These look like endpoints in a grep but are not. Listed so a future audit does not re-investigate them.
+
+| String | Where | What it is |
+|---|---|---|
+| `pia-sync.example.com` | `Resources/Strings/ViewStrings` | Settings placeholder text |
+| `https://example.com` | `Services/AssistantPromptComposer.cs` | Prompt examples |
+| `https://…`, `https://url` | `Services/WebCitationExtractor.cs` | Format hints in a prompt |
+| `https://evil.com/?x=teams.microsoft.com` | `Services/MeetingAttendee/TeamsMeetingUrl.cs` | A comment naming an input the host check rejects |
+| `http://www.w3.org/2000/svg` | `Services/MarkdownExportService.cs` | XML namespace |
+| `schemas.microsoft.com`, `schemas.openxmlformats.org`, `schemas.lepo.co` | every XAML file | XAML namespace URIs, never fetched |
+| `api.nuget.org` | `NuGet.config` | Build-time only |
+
+## 8. Re-running the sweep
+
+```powershell
+pwsh scripts/Test-ExternalEndpoints.ps1
+```
+
+Follows redirects, reports final status and `Content-Length` per endpoint, and exits non-zero if any
+row is unhealthy. A provider host answering `401` counts as healthy — it proves the host is up, and
+the script deliberately sends no key. As of 2026-08-29: 22 of 23 healthy, the update feed being the
+one red row.
