@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Velopack;
@@ -21,13 +22,24 @@ public class UpdateService : IUpdateService
     {
         _logger = logger;
 
-        var opts = options.Value;
-        _updateManager = new UpdateManager(
-            new GithubSource(opts.GitHubRepoUrl, opts.AccessToken, opts.Prerelease));
+        _updateManager = new UpdateManager(CreateSource(options.Value, logger));
 
         CurrentVersion = _updateManager.IsInstalled
             ? _updateManager.CurrentVersion?.ToString()
             : null;
+    }
+
+    /// <summary>A blank <see cref="AutoUpdateOptions.FeedUrl"/> keeps GitHub, so a deployment moves feeds by setting one key.</summary>
+    public static IUpdateSource CreateSource(AutoUpdateOptions options, ILogger? logger = null)
+    {
+        if (!string.IsNullOrWhiteSpace(options.FeedUrl))
+        {
+            logger?.LogInformation("Checking for updates at {Url}", SafeUrl.Format(options.FeedUrl));
+            return new SimpleWebSource(options.FeedUrl);
+        }
+
+        logger?.LogInformation("Checking for updates at {Url}", SafeUrl.Format(options.GitHubRepoUrl));
+        return new GithubSource(options.GitHubRepoUrl, options.AccessToken, options.Prerelease);
     }
 
     public async Task<bool> CheckAndDownloadUpdateAsync()

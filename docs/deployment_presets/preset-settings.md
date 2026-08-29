@@ -219,6 +219,7 @@ sync/managed personas.
 ```json
 {
   "Update": {
+    "FeedUrl": "https://storage.pia-ai.de/f/wpf/",
     "GitHubRepoUrl": "https://github.com/Pia-Ai-dev/Pia.Wpf",
     "AccessToken": null,
     "Prerelease": false
@@ -229,9 +230,10 @@ sync/managed personas.
 
 | Key | Default | |
 |---|---|---|
+| `Update:FeedUrl` | the storage server | Base URL of a static-file feed. Set, it wins over `Update:GitHubRepoUrl`; blank falls back to GitHub |
 | `Update:GitHubRepoUrl` | the public repo | Point at a private/internal release feed |
 | `Update:AccessToken` | `null` | PAT for a private feed — plain text on disk |
-| `Update:Prerelease` | `false` | Opt a ring into pre-releases |
+| `Update:Prerelease` | `false` | Opt a ring into pre-releases. GitHub only — a static feed separates rings by channel |
 | `Plugins:SigningRequired` | `true` | `false` disables plugin CAB signature verification |
 
 PascalCase here (standard `IConfiguration` binding), unlike `policy.json`. `appsettings.Development.json`
