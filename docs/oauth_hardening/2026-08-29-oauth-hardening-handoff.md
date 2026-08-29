@@ -16,7 +16,7 @@ Zwei Repositories:
 - **Client:** `~/Documents/GitHub/Pia.Wpf` — WPF, `net10.0-windows`, Branch `feature/agent-run-spine`. (`feature/scheduled_teams` wird **nicht mehr verwendet**.)
 - **Server:** `~/Documents/GitHub/Pia` — ASP.NET Core, `net10.0`, Branch `feature/connector-abstraction-phase1`, Trunk ist `master`.
 
-**Falle:** `~/Documents/GitHub/Pia/lib/Pia.Wpf` ist ein **eigenständiger, veralteter Klon** des Clients (kein initialisiertes Submodul). **Dort nichts bearbeiten.** Der Client wird ausschließlich unter `~/Documents/GitHub/Pia.Wpf` geändert.
+**Falle:** `Pia/lib/Pia.Wpf` ist ein **initialisiertes Submodul** des Clients, kein eigenständiger Klon — `src/Pia.Server/Pia.Server.csproj` verweist per Projektreferenz auf dessen `Pia.Shared`, der Server kompiliert also gegen den dort gepinnten Client-Stand. (Eine frühere Fassung dieses Dokuments behauptete das Gegenteil; auf dem Mac des Autors war es tatsächlich nur ein Klon.) **Dort trotzdem nichts bearbeiten:** Der Client wird ausschließlich im Client-Repo geändert, das Submodul folgt nur per Pointer-Bump auf einen Client-Commit. Solange der Client-Branch unveröffentlicht ist, braucht der Bump vorher ein `git -C lib/Pia.Wpf fetch <lokaler Client-Pfad> feature/agent-run-spine` — sonst kennt das Submodul den Commit nicht.
 
 Befund aus der Analyse, gilt als gesichert:
 
@@ -84,7 +84,7 @@ Betroffen: `Pia.Wpf/src/Pia.Wpf/Services/AuthService.cs` (Client-Hälfte) sowie 
 
 **Weitere Regeln:** Beide Repos haben eine `CLAUDE.md` mit verbindlichen Vorgaben (Kommentardisziplin, Doku-Layout, Server-Routing über `docs/ai_context/`). Vor Änderungen lesen. Commit-Stil: imperativ, keine Conventional-Commit-Präfixe.
 
-**Nicht anfassen:** `~/Documents/GitHub/Pia/lib/Pia.Wpf`.
+**Nicht bearbeiten:** `Pia/lib/Pia.Wpf` — Submodul, siehe oben. Der Pointer-Bump ist die einzige erlaubte Änderung daran.
 
 ## Umsetzungsstand (2026-08-29)
 

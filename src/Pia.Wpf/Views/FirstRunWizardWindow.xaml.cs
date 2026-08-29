@@ -23,6 +23,13 @@ public partial class FirstRunWizardWindow : FluentWindow
         snackbarService.SetSnackbarPresenter(RootSnackbarPresenter);
 
         _viewModel.WizardCompleted += OnWizardCompleted;
+        Loaded += OnLoaded;
+    }
+
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        Loaded -= OnLoaded;
+        _ = _viewModel.InitializeAsync();
     }
 
     private void OnWizardCompleted()

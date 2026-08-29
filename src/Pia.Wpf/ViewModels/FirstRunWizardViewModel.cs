@@ -39,20 +39,13 @@ public partial class FirstRunWizardViewModel : ObservableObject
         ? _localizationService["Wizard_GetStarted"]
         : _localizationService["Wizard_Next"];
 
-    /// <summary>
-    /// Visible step count:
-    /// - 5 when logged in and E2EE is already set up on the account (E2EE step + Provider step both hidden).
-    /// - 6 in all other cases (one of E2EE step or Provider step is hidden).
-    /// </summary>
     public int VisibleStepCount => IsLoggedIn
-        ? (_cloudAccountHasE2EE || IsE2EEOnboardingRequired ? 5 : 6)
+        ? (IsE2EESetupVisible ? 6 : 5)
         : (IsProviderStepVisible ? 6 : 5);
 
-    /// <summary>
-    /// Show the E2EE setup step only when the user is signed in to cloud
-    /// and the cloud account does not yet have E2EE enabled.
-    /// </summary>
-    public bool IsE2EESetupVisible => IsLoggedIn && !IsE2EEOnboardingRequired && !_cloudAccountHasE2EE;
+    /// <summary>An account that still owes its declaration must not be offered E2EE — the server would 403.</summary>
+    public bool IsE2EESetupVisible =>
+        IsLoggedIn && !RequiresBusinessProfile && !IsE2EEOnboardingRequired && !_cloudAccountHasE2EE;
 
     /// <summary>
     /// The provider step is the one place outside settings that creates a provider, so the policy lock
@@ -86,6 +79,11 @@ public partial class FirstRunWizardViewModel : ObservableObject
     public IEnumerable<TargetLanguage> UiLanguages => Enum.GetValues<TargetLanguage>();
 
     partial void OnIsE2EEOnboardingRequiredChanged(bool value)
+    {
+        NextOrFinishCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnRequiresBusinessProfileChanged(bool value)
     {
         NextOrFinishCommand.NotifyCanExecuteChanged();
     }
@@ -124,6 +122,8 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
     /// <summary>Set after a sign-in the server considers incomplete — single sign-on never sees the form.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(VisibleStepCount))]
+    [NotifyPropertyChangedFor(nameof(IsE2EESetupVisible))]
     private bool _requiresBusinessProfile;
 
     [ObservableProperty]
@@ -342,14 +342,29 @@ public partial class FirstRunWizardViewModel : ObservableObject
         FetchModelsCommand = new AsyncRelayCommand(FetchModelsAsync);
     }
 
+    public async Task InitializeAsync()
+    {
+        try
+        {
+            // No IsLoggedIn guard: it can still be false while the stored token loads, and the
+            // service answers null without a token, which leaves the state alone.
+            if (await _authService.RequiresBusinessProfileAsync() is bool requires)
+                RequiresBusinessProfile = requires;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not read the business-profile state on wizard load");
+        }
+    }
+
     // --- Navigation ---
 
     private bool CanExecuteNextOrFinish()
     {
         if (IsCompleting) return false;
 
-        // Block Next on account step while E2EE onboarding is in progress
-        if (CurrentStep == 1 && IsE2EEOnboardingRequired) return false;
+        // Account step (step 1): E2EE onboarding and the trader declaration both have to finish here.
+        if (CurrentStep == 1 && (IsE2EEOnboardingRequired || RequiresBusinessProfile)) return false;
 
         // E2EE setup step (step 2): block Next while busy or while waiting for recovery-code confirmation
         if (CurrentStep == 2 && IsE2EESetupVisible)
@@ -545,37 +560,25 @@ public partial class FirstRunWizardViewModel : ObservableObject
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo($"{serverUrl}/{path}") { UseShellExecute = true });
     }
 
-    /// <summary>
-    /// Decide what to do after login:
-    /// - E2EE on account but UMK missing locally → show inline onboarding (existing flow).
-    /// - E2EE NOT on account → defer first sync until the E2EE setup step decides.
-    /// - E2EE already on and UMK available → start sync immediately.
-    /// </summary>
     private async Task SubmitBusinessProfileAsync()
     {
         BusinessProfileError = null;
 
-        if (string.IsNullOrWhiteSpace(CompanyNameInput))
-        {
-            BusinessProfileError = _localizationService["Sync_Cloud_BusinessProfile_CompanyRequired"];
-            return;
-        }
+        var (success, error) = await BusinessProfileSubmission.SubmitAsync(
+            _authService, _localizationService, CompanyNameInput);
 
-        var (success, error) = await _authService.SubmitBusinessProfileAsync(CompanyNameInput.Trim());
-        if (!success)
-        {
-            BusinessProfileError = error;
-            return;
-        }
+        BusinessProfileError = error;
+        if (!success) return;
 
         RequiresBusinessProfile = false;
         CompanyNameInput = "";
         await HandlePostLoginSyncAsync();
     }
 
+    /// <summary>The account's E2EE state decides between inline onboarding, deferring to the setup step, and syncing now.</summary>
     private async Task HandlePostLoginSyncAsync()
     {
-        RequiresBusinessProfile = await _authService.RequiresBusinessProfileAsync();
+        RequiresBusinessProfile = _authService.RequiresBusinessProfile;
         if (RequiresBusinessProfile)
         {
             // Probing E2EE or syncing would only collect 403s until the declaration is in.

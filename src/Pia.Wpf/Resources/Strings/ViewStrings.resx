@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:element name="root" msdata:IsDataSet="true">
@@ -593,6 +593,7 @@
   <data name="Sync_LocalAuth_ForgotPassword" xml:space="preserve"><value>Forgot Password?</value></data>
   <data name="Sync_LocalAuth_FieldsRequired" xml:space="preserve"><value>Email and password are required</value></data>
   <data name="Sync_LocalAuth_ServerUrlRequired" xml:space="preserve"><value>Server URL is not configured.</value></data>
+  <data name="Sync_LocalAuth_SignInRequired" xml:space="preserve"><value>You are not signed in.</value></data>
   <data name="Sync_LocalAuth_InvalidCredentials" xml:space="preserve"><value>Invalid email or password</value></data>
   <data name="Sync_LocalAuth_AccountLocked" xml:space="preserve"><value>Account is temporarily locked. Try again later.</value></data>
   <data name="Sync_LocalAuth_EmailNotVerified" xml:space="preserve"><value>Please verify your email before signing in</value></data>

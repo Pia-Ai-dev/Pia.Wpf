@@ -47,6 +47,7 @@ public class AuthService : IAuthService
     public string? UserDisplayName { get; private set; }
     public string? UserEmail { get; private set; }
     public string? Provider { get; private set; }
+    public bool RequiresBusinessProfile { get; private set; }
 
     public event EventHandler<bool>? LoginStateChanged;
 
@@ -309,6 +310,7 @@ public class AuthService : IAuthService
         UserDisplayName = login.User.DisplayName;
         UserEmail = login.User.Email;
         Provider = provider;
+        RequiresBusinessProfile = login.User.RequiresBusinessProfile;
         IsLoggedIn = true;
 
         settings.SyncEnabled = true;
@@ -368,16 +370,15 @@ public class AuthService : IAuthService
         }
     }
 
-    // The wire shapes are read inline rather than through Pia.Shared: only this client speaks them,
-    // and /auth/me carries far more than the one flag we care about.
-    public async Task<bool> RequiresBusinessProfileAsync()
+    // /auth/me is read inline rather than through Pia.Shared: it carries far more than the one flag.
+    public async Task<bool?> RequiresBusinessProfileAsync()
     {
         try
         {
             var serverUrl = (await _settingsService.GetSettingsAsync()).ServerUrl?.TrimEnd('/');
             var token = await GetAccessTokenAsync();
             if (string.IsNullOrEmpty(serverUrl) || string.IsNullOrEmpty(token))
-                return false;
+                return null;
 
             using var client = _httpClientFactory.CreateClient();
             using var request = new HttpRequestMessage(HttpMethod.Get, $"{serverUrl}/auth/me");
@@ -385,7 +386,7 @@ public class AuthService : IAuthService
 
             var response = await client.SendAsync(request);
             if (!response.IsSuccessStatusCode)
-                return false;
+                return null;
 
             var body = await response.Content.ReadFromJsonAsync<JsonElement>();
             return body.TryGetProperty("requiresBusinessProfile", out var flag)
@@ -393,9 +394,8 @@ public class AuthService : IAuthService
         }
         catch (Exception ex)
         {
-            // A probe failure must not block sign-in; the server still refuses the data endpoints.
             _logger.LogWarning(ex, "Could not read the business-profile state");
-            return false;
+            return null;
         }
     }
 
@@ -404,25 +404,33 @@ public class AuthService : IAuthService
         try
         {
             var serverUrl = (await _settingsService.GetSettingsAsync()).ServerUrl?.TrimEnd('/');
-            var token = await GetAccessTokenAsync();
-            if (string.IsNullOrEmpty(serverUrl) || string.IsNullOrEmpty(token))
+            if (string.IsNullOrEmpty(serverUrl))
                 return (false, _localizationService["Sync_LocalAuth_ServerUrlRequired"]);
+
+            var token = await GetAccessTokenAsync();
+            if (string.IsNullOrEmpty(token))
+                return (false, _localizationService["Sync_LocalAuth_SignInRequired"]);
 
             using var client = _httpClientFactory.CreateClient();
             using var request = new HttpRequestMessage(HttpMethod.Post, $"{serverUrl}/auth/business-profile")
             {
-                Content = JsonContent.Create(new { companyName, actingAsBusiness = true })
+                Content = JsonContent.Create(new BusinessProfileRequest
+                {
+                    CompanyName = companyName,
+                    ActingAsBusiness = true
+                })
             };
             request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
             var response = await client.SendAsync(request);
             if (response.IsSuccessStatusCode)
+            {
+                RequiresBusinessProfile = false;
                 return (true, null);
+            }
 
-            var error = await response.Content.ReadFromJsonAsync<JsonElement>();
-            return (false, error.TryGetProperty("message", out var msg)
-                ? msg.GetString()
-                : _localizationService["Sync_Cloud_BusinessProfile_Error"]);
+            return (false, await ReadErrorMessageAsync(response, CancellationToken.None)
+                ?? _localizationService["Sync_Cloud_BusinessProfile_Error"]);
         }
         catch (Exception ex)
         {
@@ -460,6 +468,7 @@ public class AuthService : IAuthService
             UserDisplayName = null;
             UserEmail = null;
             Provider = null;
+            RequiresBusinessProfile = false;
             IsLoggedIn = false;
 
             settings.SyncEnabled = false;

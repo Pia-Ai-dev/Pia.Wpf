@@ -109,6 +109,9 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             Post(() =>
             {
                 IsE2EEOnboardingRequired = false;
+                RequiresBusinessProfile = false;
+                CompanyNameInput = "";
+                BusinessProfileError = null;
                 _isLoading = true;
                 IsE2EEEnabled = false;
                 _isLoading = false;
@@ -317,6 +320,16 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             DeviceFingerprint = _deviceKeys.GetFingerprint();
 
         _isLoading = false;
+
+        // A restored session carries no answer, so ask — off the initialization path, which the UI waits on.
+        if (_authService.IsLoggedIn)
+            RefreshBusinessProfileStateAsync().SafeFireAndForget(_logger);
+    }
+
+    private async Task RefreshBusinessProfileStateAsync()
+    {
+        if (await _authService.RequiresBusinessProfileAsync() is bool requires)
+            RequiresBusinessProfile = requires;
     }
 
     // IsE2EEEnabled is hand-managed across onboarding and revocation, so it is not mirrored here.
@@ -480,18 +493,11 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     {
         BusinessProfileError = null;
 
-        if (string.IsNullOrWhiteSpace(CompanyNameInput))
-        {
-            BusinessProfileError = _localizationService["Sync_Cloud_BusinessProfile_CompanyRequired"];
-            return;
-        }
+        var (success, error) = await BusinessProfileSubmission.SubmitAsync(
+            _authService, _localizationService, CompanyNameInput);
 
-        var (success, error) = await _authService.SubmitBusinessProfileAsync(CompanyNameInput.Trim());
-        if (!success)
-        {
-            BusinessProfileError = error;
-            return;
-        }
+        BusinessProfileError = error;
+        if (!success) return;
 
         RequiresBusinessProfile = false;
         CompanyNameInput = "";
@@ -526,7 +532,7 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     {
         UpdateSyncState();
 
-        RequiresBusinessProfile = await _authService.RequiresBusinessProfileAsync();
+        RequiresBusinessProfile = _authService.RequiresBusinessProfile;
         if (RequiresBusinessProfile)
         {
             // Syncing would only collect 403s until the declaration is in.

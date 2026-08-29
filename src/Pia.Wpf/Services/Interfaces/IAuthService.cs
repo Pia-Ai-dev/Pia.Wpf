@@ -14,6 +14,12 @@ public interface IAuthService
     /// <summary>OAuth provider name (null if not logged in).</summary>
     string? Provider { get; }
 
+    /// <summary>
+    /// Whether the server still wants a trader declaration, as of the last login. False after a
+    /// restart, where the stored refresh token carries no answer — probe for it instead.
+    /// </summary>
+    bool RequiresBusinessProfile { get; }
+
     /// <summary>Initiates OAuth login via system browser. Returns success and optional error message.</summary>
     Task<(bool Success, string? ErrorMessage)> LoginAsync(string provider);
 
@@ -24,10 +30,10 @@ public interface IAuthService
     Task LogoutAsync();
 
     /// <summary>
-    /// Whether the server still wants a trader declaration for this account. True only where the
-    /// operator requires one — single sign-on skips the registration form that would have asked.
+    /// Asks the server whether it still wants a trader declaration. Null when the question could
+    /// not be answered, so callers keep whatever state they already have.
     /// </summary>
-    Task<bool> RequiresBusinessProfileAsync();
+    Task<bool?> RequiresBusinessProfileAsync();
 
     /// <summary>Submits the company and the trader declaration. Returns success and optional error message.</summary>
     Task<(bool Success, string? ErrorMessage)> SubmitBusinessProfileAsync(string companyName);
