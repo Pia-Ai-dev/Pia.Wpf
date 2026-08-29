@@ -145,15 +145,15 @@ public class MeetingAttendeeViewModelTests
         var (vm, _, _) = CreateSutFull(new AppSettings { SyncUserDisplayName = "Alex" });
         await vm.PrepareForDisplayAsync();
 
-        // The localization stub echoes keys, so the suffix shows up as its resource key.
-        Assert.Equal("Alex's assistant (MeetingAttendee_DisplayName_AiSuffix)", vm.EffectiveDisplayName);
+        Assert.Equal("Alex's assistant (AI notetaker)", vm.EffectiveDisplayName);
 
         vm.AssistantDisplayName = "Conference bot";
-        Assert.Equal("Conference bot (MeetingAttendee_DisplayName_AiSuffix)", vm.EffectiveDisplayName);
+        Assert.Equal("Conference bot (AI notetaker)", vm.EffectiveDisplayName);
         Assert.Contains("MeetingAttendee_DisplayName_Effective", vm.EffectiveDisplayNameHint, StringComparison.Ordinal);
+        Assert.Contains("Conference bot (AI notetaker)", vm.EffectiveDisplayNameHint, StringComparison.Ordinal);
 
         vm.AssistantDisplayName = "";
-        Assert.Equal("Alex's assistant (MeetingAttendee_DisplayName_AiSuffix)", vm.EffectiveDisplayName);
+        Assert.Equal("Alex's assistant (AI notetaker)", vm.EffectiveDisplayName);
     }
 
     [Theory]
@@ -1210,6 +1210,11 @@ public class MeetingAttendeeViewModelTests
 
         var loc = Substitute.For<ILocalizationService>();
         loc[Arg.Any<string>()].Returns(ci => ci.Arg<string>());
+        loc.Format(Arg.Any<string>(), Arg.Any<object[]>())
+            .Returns(ci => $"{ci.Arg<string>()} {string.Join(" ", ci.ArgAt<object[]>(1))}");
+        // Echoing this one key would hand the name builder a 36-char suffix, and the Teams cap would then
+        // truncate every name under test. The real resource is short, so the stub is too.
+        loc["MeetingAttendee_DisplayName_AiSuffix"].Returns("AI notetaker");
 
         var files = Substitute.For<IFileDialogService>();
         var dialog = Substitute.For<IDialogService>();

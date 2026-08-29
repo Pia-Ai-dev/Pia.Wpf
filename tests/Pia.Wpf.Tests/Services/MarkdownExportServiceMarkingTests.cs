@@ -18,10 +18,11 @@ public class MarkdownExportServiceMarkingTests
     {
         var html = Sut().ToHtml("# Hello\n\nbody", "Hello", "OpenAI · gpt-4o");
 
+        // The label is HTML-encoded, so its own "·" arrives as &#183; while the template's separators stay raw.
         Assert.Contains($"<meta name=\"generator\" content=\"{AppVersionInfo.Generator}\">", html, StringComparison.Ordinal);
         Assert.Contains("<meta name=\"ai-generated\" content=\"true\">", html, StringComparison.Ordinal);
-        Assert.Contains("<meta name=\"ai-model\" content=\"OpenAI · gpt-4o\">", html, StringComparison.Ordinal);
-        Assert.Contains($"AI-generated content · {AppVersionInfo.Generator} · OpenAI · gpt-4o", html, StringComparison.Ordinal);
+        Assert.Contains("<meta name=\"ai-model\" content=\"OpenAI &#183; gpt-4o\">", html, StringComparison.Ordinal);
+        Assert.Contains($"AI-generated content · {AppVersionInfo.Generator} · OpenAI &#183; gpt-4o", html, StringComparison.Ordinal);
     }
 
     [Fact]
