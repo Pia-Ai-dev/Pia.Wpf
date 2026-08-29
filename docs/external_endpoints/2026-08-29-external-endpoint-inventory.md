@@ -1,6 +1,7 @@
 # External endpoints Pia.Wpf dials at runtime
 
-**Status:** Current as of 2026-08-29; one endpoint open (§5) · **Owner:** Marco Altmann ·
+**Status:** Current as of 2026-08-29; one endpoint open (§5), and §3 gained a mirror hop that is
+unverified against the live host · **Owner:** Marco Altmann ·
 **Written:** 2026-08-29 · **Origin:** an audit asked for the full runtime egress list; nothing in the
 repo recorded it, and the sweep turned up a 404 that had been shipping unnoticed
 
@@ -34,6 +35,7 @@ meeting attendee drives a real browser. They are listed as categories in §4.
 | Endpoint | Trigger | Override | What leaves | If down |
 |---|---|---|---|---|
 | `storage.pia-ai.de/f/wpf/` | Update check on startup, then every 4–6 h | `Update:FeedUrl` (`appsettings.json`) | Nothing but a GET | Silent — no updates, nothing surfaced. **Open, see §5.1** |
+| `storage.pia-ai.de/f/assets/` | Before every §3 model download that has a mirror key | `Assets:MirrorBaseUrl` (`appsettings.json`); blank goes straight upstream | Nothing but a GET | Silent — falls back to the upstream host in §3, latched per process |
 | `github.com/Pia-Ai-dev/Pia.Wpf` → `api.github.com` | Update check when `FeedUrl` is blank | `Update:GitHubRepoUrl` (`Models/UpdateOptions.cs`) | Nothing but a GET | Same |
 | `cloud.pia-ai.de` | Login, sync, cloud chat, E2EE device management, policy, capabilities, assignments, plugin CABs + icons + trusted certs, AI feedback | `PIA_CLOUD_SERVER_URL`, else `AppSettings.ServerUrl`; default in `Bootstrapper.cs` | Bearer token; chat and prompt content (E2EE-wrapped on the sync path); device keys; assignment payloads | Hard fail for the cloud persona, sync and assignments |
 | `cloud.pia-ai.de/auth/{register,forgot-password}.html` | Button in account settings / first-run wizard | same | Opens the default browser | Cosmetic |
@@ -44,14 +46,26 @@ meeting attendee drives a real browser. They are listed as categories in §4.
 
 Fetched once on first use and cached under `%LOCALAPPDATA%\Pia`. All GET-only, no credentials.
 
+**`storage.pia-ai.de/f/assets/` is tried first for every row below that carries a mirror key.** One
+service — `Services/Assets/AssetDownloader.cs` — owns the order: our mirror, then the upstream host
+named here if that fails for any reason other than the caller cancelling. `Assets:MirrorBaseUrl` in
+`appsettings.json` moves it, and blank goes straight upstream, which is the switch for a deployment
+that runs no mirror of its own. The keys live in `Services/Assets/RuntimeAsset.cs` and are uploaded by
+`scripts/Publish-RuntimeAssets.ps1`; `RuntimeAssetCatalogTests` pins those two lists against each other.
+
+Because the fallback is silent, **every row here stays a live dependency** — the mirror is a control
+and latency path, not a replacement. And it is **unverified against the real host**: storage.pia-ai.de
+still answers no TLS handshake (§5.1), so today each asset pays one failed attempt, latched after the
+first, and then fetches upstream exactly as before.
+
 | Endpoint | Trigger | Override | Cached in |
 |---|---|---|---|
 | `github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/…` | First local transcription, per model | none | `Models\sherpa-whisper-*`, `Models\sherpa-parakeet-tdt-v3` |
 | `github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/…` | First speaker attribution | none | `Models\` |
 | `github.com/snakers4/silero-vad/raw/master/…` | First VAD use | none | `Models\` |
 | `huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/…` ×3 | First embedding — vault recall | none | `Models\` |
-| `github.com/rhasspy/piper` releases | First use of text-to-speech — the Piper engine | none | `Piper\piper\` |
-| `huggingface.co/rhasspy/piper-voices` | Downloading a TTS voice | none | `Piper\models\<voice-key>\` |
+| `github.com/rhasspy/piper` releases | First use of text-to-speech — the Piper engine | none — **no mirror key**, PiperSharp holds the URL | `Piper\piper\` |
+| `huggingface.co/rhasspy/piper-voices` | Downloading a TTS voice | none — **no mirror key**, same reason | `Piper\models\<voice-key>\` |
 | `cdn.playwright.dev` | First meeting-attendee join, then again whenever the pinned `Microsoft.Playwright` version changes; not reached at all when the release bundles the browser (`docs/meeting_browser_lifecycle/2026-08-29-chromium-lifecycle.md`) | `ChromiumProvisioner.DownloadHostOverride` → `PLAYWRIGHT_DOWNLOAD_HOST`; currently null, i.e. Playwright's own version-matched default | `Browsers\` |
 
 **Every one of these redirects off the source host,** which is what an egress allowlist actually
@@ -187,7 +201,9 @@ pwsh scripts/Save-RuntimeAssets.ps1 -DestinationRoot D:\pia-bundle -All
 ```
 
 Fetches everything in §3 into the exact paths the app checks, so the app finds them and skips its own
-download. `-DestinationRoot` stages a bundle for an air-gapped machine — copy the resulting tree to
+download, taking the same mirror-first order the app takes (`-MirrorBaseUrl ''` forces upstream). The
+asset list itself lives in `scripts/RuntimeAssetCatalogue.ps1`, shared with the publishing script
+below. `-DestinationRoot` stages a bundle for an air-gapped machine — copy the resulting tree to
 that machine's `%LOCALAPPDATA%\Pia`. Note that `PiaPaths` deliberately keeps downloaded artifacts on
 the real profile and ignores `PIA_LOCAL_DATA_DIR`, so there is no environment variable that moves
 them; the parameter exists for staging, not for redirecting a running app.
@@ -202,3 +218,31 @@ size is re-fetched, which repairs a cache poisoned by an earlier Ctrl-C.
 loading also needs PiperSharp's `model.json` beside it, so hand-placing the model would satisfy the
 gate and then fail to load, permanently, with no self-heal. Download voices from the app's own TTS
 settings instead.
+
+## 10. Filling the mirror
+
+```powershell
+$env:PIA_STORAGE_UPLOAD_SECRET = '<the storage write secret>'
+pwsh scripts/Publish-RuntimeAssets.ps1 -ListOnly     # plan: ~4.2 GB across 11 assets
+pwsh scripts/Publish-RuntimeAssets.ps1
+```
+
+Run by hand, not by CI — these assets change only when an upstream project cuts a release, and the
+credential grants write *and* delete on a public file service. Each asset is staged from its upstream
+host, verified against that host's `Content-Length`, `PUT` to `/upload/assets/<key>`, then read back
+through `/f/assets/<key>` exactly as the client will ask for it. Re-running is safe: identical bytes
+answer `204`.
+
+Three things about it are decisions, not defaults:
+
+- **Sherpa bundles are mirrored as the `.tar.bz2`,** not as the extracted tree, so the client's
+  extract step is identical whichever host answered.
+- **A `409` stops the run** rather than being forced past with `-Overwrite`. The served `ETag` is
+  mtime + length, so rewriting a published blob turns every in-flight resume into a full download —
+  the same trap the storage server's design doc records for the release feed.
+- **Writes are spaced.** `PUT /upload` and `/manage` share one 30-per-60-s window per IP and nothing
+  retries a `429`.
+
+Piper and Chromium are absent by design: PiperSharp holds its URLs internally with no override hook,
+and Playwright's browser revision is pinned to the package, so mirroring it means reproducing its CDN
+layout per revision. `ChromiumProvisioner.DownloadHostOverride` is the hook if that is ever wanted.

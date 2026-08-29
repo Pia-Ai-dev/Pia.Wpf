@@ -1,20 +1,20 @@
 using System.IO;
-using System.Net.Http;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using Microsoft.ML.Tokenizers;
 using Pia.Paths;
+using Pia.Services.Assets;
 using Pia.Services.Interfaces;
 
 namespace Pia.Services;
 
 public class EmbeddingService : IEmbeddingService, IDisposable
 {
-    private const string ModelFileName = "paraphrase-multilingual-MiniLM-L12-v2.onnx";
-    private const string TokenizerFileName = "tokenizer.json";
-    private const string SentencePieceFileName = "sentencepiece.bpe.model";
+    internal const string ModelFileName = "paraphrase-multilingual-MiniLM-L12-v2.onnx";
+    internal const string TokenizerFileName = "tokenizer.json";
+    internal const string SentencePieceFileName = "sentencepiece.bpe.model";
     internal const string ModelUrl = "https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/onnx/model.onnx";
     internal const string TokenizerUrl = "https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/tokenizer.json";
     internal const string SentencePieceUrl = "https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/sentencepiece.bpe.model";
@@ -31,7 +31,7 @@ public class EmbeddingService : IEmbeddingService, IDisposable
     private const int DefaultUnkId = 3; // <unk>
 
     private readonly ILogger<EmbeddingService> _logger;
-    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IAssetDownloader _downloader;
     private readonly string _modelDirectory;
     private InferenceSession? _session;
     // The SentencePiece model does the (normalization + Unigram Viterbi) segmentation; _vocabulary maps the
@@ -53,10 +53,10 @@ public class EmbeddingService : IEmbeddingService, IDisposable
     private string TokenizerPath => Path.Combine(_modelDirectory, TokenizerFileName);
     private string SentencePiecePath => Path.Combine(_modelDirectory, SentencePieceFileName);
 
-    public EmbeddingService(ILogger<EmbeddingService> logger, IHttpClientFactory httpClientFactory)
+    public EmbeddingService(ILogger<EmbeddingService> logger, IAssetDownloader downloader)
     {
         _logger = logger;
-        _httpClientFactory = httpClientFactory;
+        _downloader = downloader;
 
         _modelDirectory = Path.Combine(PiaPaths.ModelsDirectory, "Embeddings");
         Directory.CreateDirectory(_modelDirectory);
@@ -68,28 +68,25 @@ public class EmbeddingService : IEmbeddingService, IDisposable
     {
         try
         {
-            var httpClient = _httpClientFactory.CreateClient();
-            httpClient.Timeout = TimeSpan.FromMinutes(10);
-
             // Download model file
             if (!File.Exists(ModelPath))
             {
                 _logger.LogInformation("Downloading embedding model...");
-                await DownloadFileAsync(httpClient, ModelUrl, ModelPath, progress, cancellationToken);
+                await DownloadFileAsync(RuntimeAssetCatalog.EmbeddingModel, ModelPath, progress, cancellationToken);
             }
 
             // Download tokenizer (the id oracle: piece string -> model id)
             if (!File.Exists(TokenizerPath))
             {
                 _logger.LogInformation("Downloading tokenizer...");
-                await DownloadFileAsync(httpClient, TokenizerUrl, TokenizerPath, null, cancellationToken);
+                await DownloadFileAsync(RuntimeAssetCatalog.EmbeddingTokenizer, TokenizerPath, null, cancellationToken);
             }
 
             // Download the SentencePiece model (the segmenter)
             if (!File.Exists(SentencePiecePath))
             {
                 _logger.LogInformation("Downloading SentencePiece model...");
-                await DownloadFileAsync(httpClient, SentencePieceUrl, SentencePiecePath, null, cancellationToken);
+                await DownloadFileAsync(RuntimeAssetCatalog.EmbeddingSentencePiece, SentencePiecePath, null, cancellationToken);
             }
 
             _logger.LogInformation("Embedding model downloaded successfully");
@@ -301,38 +298,20 @@ public class EmbeddingService : IEmbeddingService, IDisposable
             vector[i] /= norm;
     }
 
+    // The shared downloader reports ModelDownloadProgress; this service's callers are on IProgress<float>,
+    // and unifying the two would ripple into the vault UI for nothing.
     private async Task DownloadFileAsync(
-        HttpClient httpClient,
-        string url,
+        RuntimeAsset asset,
         string destinationPath,
         IProgress<float>? progress,
         CancellationToken cancellationToken)
     {
-        using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        var adapter = progress is null
+            ? null
+            : new Progress<ModelDownloadProgress>(p => progress.Report(p.PercentComplete / 100f));
 
-        var totalBytes = response.Content.Headers.ContentLength ?? -1L;
         var tempPath = destinationPath + ".tmp";
-
-        await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        await using var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920);
-
-        var buffer = new byte[81920];
-        long totalRead = 0;
-        int bytesRead;
-
-        while ((bytesRead = await contentStream.ReadAsync(buffer, cancellationToken)) > 0)
-        {
-            await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
-            totalRead += bytesRead;
-
-            if (totalBytes > 0)
-            {
-                progress?.Report((float)totalRead / totalBytes);
-            }
-        }
-
-        fileStream.Close();
+        await _downloader.DownloadAsync(asset, tempPath, adapter, cancellationToken);
         File.Move(tempPath, destinationPath, overwrite: true);
     }
 

@@ -409,6 +409,9 @@ public static class Bootstrapper
         services.AddTransient<HttpLoggingHandler>();
         services.AddTransient<RateLimitRetryHandler>();
 
+        services.Configure<AssetMirrorOptions>(configuration.GetSection(AssetMirrorOptions.SectionName));
+        services.AddSingleton<IAssetDownloader, Services.Assets.AssetDownloader>();
+
         // HttpClient Factory for managed HTTP connections
         services.AddHttpClient();
         services.ConfigureHttpClientDefaults(builder =>
@@ -662,7 +665,7 @@ public static class Bootstrapper
                     provisionChromium: (_, _) => Task.FromResult(string.Empty),
                     createTranscription: Services.MeetingAttendee.MeetingAttendeeService.CreateProductionTranscriptionFactory(
                         sp.GetRequiredService<ISettingsService>(),
-                        sp.GetRequiredService<IHttpClientFactory>(),
+                        sp.GetRequiredService<IAssetDownloader>(),
                         sp.GetRequiredService<ILoggerFactory>()),
                     sessionFactory: _ => new Services.MeetingAttendee.DebugNoOpMeetingSession(debugRoster),
                     // Both vars set tees the replay itself, which is how the dump's round trip is
@@ -694,7 +697,7 @@ public static class Bootstrapper
                     loggerFactory,
                     provisionChromium: (progress, ct) => provisioner.EnsureChromiumAsync(progress, ct),
                     createTranscription: Services.MeetingAttendee.MeetingAttendeeService.CreateProductionTranscriptionFactory(
-                        settings, httpClientFactory, loggerFactory),
+                        settings, sp.GetRequiredService<IAssetDownloader>(), loggerFactory),
                     sessionFactory: spec => new Services.MeetingAttendee.TeamsMeetingSession(
                         spec, httpClientFactory,
                         loggerFactory.CreateLogger<Services.MeetingAttendee.TeamsMeetingSession>()),
@@ -752,7 +755,7 @@ public static class Bootstrapper
                     sp.GetRequiredService<Services.Consent.IConsentEvidenceStore>(),
                     createTranscription: Services.LiveTranscription.DirectTranscriptionService.CreateProductionTranscriptionFactory(
                         sp.GetRequiredService<ISettingsService>(),
-                        sp.GetRequiredService<IHttpClientFactory>(),
+                        sp.GetRequiredService<IAssetDownloader>(),
                         sp.GetRequiredService<ILoggerFactory>()),
                     micSourceFactory: () => DebugTee(
                         new Services.LiveTranscription.MicAudioCaptureService(
@@ -780,7 +783,7 @@ public static class Bootstrapper
                     sp.GetRequiredService<Services.Consent.IConsentEvidenceStore>(),
                     createTranscription: Services.LiveTranscription.DirectTranscriptionService.CreateProductionTranscriptionFactory(
                         sp.GetRequiredService<ISettingsService>(),
-                        sp.GetRequiredService<IHttpClientFactory>(),
+                        sp.GetRequiredService<IAssetDownloader>(),
                         loggerFactory),
                     // Two files, never one: the mic and the loopback are different speakers, and mixing
                     // them into a single WAV would make the dump unusable as a diarization fixture.

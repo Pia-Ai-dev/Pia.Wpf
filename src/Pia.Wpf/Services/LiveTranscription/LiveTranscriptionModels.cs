@@ -1,8 +1,8 @@
 using System.IO;
-using System.Net.Http;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
 using Pia.Paths;
+using Pia.Services.Assets;
 using Pia.Services.Interfaces;
 using SharpCompress.Common;
 using SharpCompress.Readers;
@@ -31,7 +31,7 @@ public static class LiveTranscriptionModels
     internal const string SileroVadUrl =
         "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx";
 
-    private const string SpeakerEmbeddingFileName =
+    internal const string SpeakerEmbeddingFileName =
         "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx";
 
     public static string ModelsDirectory => PiaPaths.ModelsDirectory;
@@ -47,7 +47,7 @@ public static class LiveTranscriptionModels
         File.Exists(SpeakerEmbeddingModelPath) && new FileInfo(SpeakerEmbeddingModelPath).Length > 0;
 
     public static async Task<string> EnsureSileroVadAsync(
-        IHttpClientFactory httpClientFactory,
+        IAssetDownloader downloader,
         ILogger logger,
         CancellationToken cancellationToken = default)
     {
@@ -56,17 +56,9 @@ public static class LiveTranscriptionModels
         if (File.Exists(path) && new FileInfo(path).Length > 0) return path;
 
         logger.LogInformation("Downloading Silero VAD model to {Path}", path);
-        var http = httpClientFactory.CreateClient();
-        using var resp = await http.GetAsync(SileroVadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-            .ConfigureAwait(false);
-        resp.EnsureSuccessStatusCode();
-
         var tmp = path + ".tmp";
-        await using (var dst = File.Create(tmp))
-        await using (var src = await resp.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-        {
-            await src.CopyToAsync(dst, cancellationToken).ConfigureAwait(false);
-        }
+        await downloader.DownloadAsync(RuntimeAssetCatalog.SileroVad, tmp, progress: null, cancellationToken)
+            .ConfigureAwait(false);
         File.Move(tmp, path, overwrite: true);
         return path;
     }
@@ -81,7 +73,7 @@ public static class LiveTranscriptionModels
     /// with no report at all.
     /// </summary>
     public static async Task<string> EnsureSpeakerEmbeddingAsync(
-        IHttpClientFactory httpClientFactory,
+        IAssetDownloader downloader,
         ILogger logger,
         CancellationToken cancellationToken = default,
         IProgress<ModelDownloadProgress>? progress = null)
@@ -90,11 +82,10 @@ public static class LiveTranscriptionModels
         var path = SpeakerEmbeddingModelPath;
         if (File.Exists(path) && new FileInfo(path).Length > 0) return path;
 
-        var url = SpeakerEmbeddingUrl;
         logger.LogInformation("Downloading speaker-embedding model to {Path}", path);
 
         var tmp = path + ".tmp";
-        await DownloadWithProgressAsync(url, tmp, httpClientFactory, progress, cancellationToken)
+        await downloader.DownloadAsync(RuntimeAssetCatalog.SpeakerEmbedding, tmp, progress, cancellationToken)
             .ConfigureAwait(false);
         File.Move(tmp, path, overwrite: true);
         return path;
@@ -106,14 +97,14 @@ public static class LiveTranscriptionModels
     /// </summary>
     public static Task<string> EnsureWhisperOnnxAsync(
         WhisperModelSize modelSize,
-        IHttpClientFactory httpClientFactory,
+        IAssetDownloader downloader,
         IProgress<ModelDownloadProgress>? progress,
         ILogger logger,
         CancellationToken cancellationToken = default)
     {
         var targetDir = Path.Combine(ModelsDirectory, $"sherpa-whisper-{WhisperSherpaSlug(modelSize)}");
         return EnsureBundleAsync(
-            WhisperBundleUrl(modelSize), targetDir, httpClientFactory, progress, logger, cancellationToken);
+            RuntimeAssetCatalog.Whisper(modelSize), targetDir, downloader, progress, logger, cancellationToken);
     }
 
     public static bool IsWhisperOnnxAvailable(WhisperModelSize modelSize)
@@ -133,20 +124,20 @@ public static class LiveTranscriptionModels
     /// into <c>%LOCALAPPDATA%\Pia\Models\sherpa-parakeet-tdt-v3\</c>. Returns the directory.
     /// </summary>
     public static Task<string> EnsureParakeetOnnxAsync(
-        IHttpClientFactory httpClientFactory,
+        IAssetDownloader downloader,
         IProgress<ModelDownloadProgress>? progress,
         ILogger logger,
         CancellationToken cancellationToken = default)
     {
         var targetDir = Path.Combine(ModelsDirectory, "sherpa-parakeet-tdt-v3");
         return EnsureBundleAsync(
-            ParakeetBundleUrl, targetDir, httpClientFactory, progress, logger, cancellationToken);
+            RuntimeAssetCatalog.Parakeet, targetDir, downloader, progress, logger, cancellationToken);
     }
 
     private static async Task<string> EnsureBundleAsync(
-        string url,
+        RuntimeAsset asset,
         string targetDir,
-        IHttpClientFactory httpClientFactory,
+        IAssetDownloader downloader,
         IProgress<ModelDownloadProgress>? progress,
         ILogger logger,
         CancellationToken cancellationToken)
@@ -163,8 +154,8 @@ public static class LiveTranscriptionModels
 
         try
         {
-            logger.LogInformation("Downloading sherpa-onnx bundle {Url}", url);
-            var archiveBytes = await DownloadWithProgressAsync(url, tmpArchive, httpClientFactory, progress, cancellationToken)
+            logger.LogInformation("Downloading sherpa-onnx bundle {Key}", asset.MirrorKey);
+            var archiveBytes = await downloader.DownloadAsync(asset, tmpArchive, progress, cancellationToken)
                 .ConfigureAwait(false);
 
             logger.LogInformation("Extracting sherpa-onnx bundle to {Dir}", tmpExtract);
@@ -189,45 +180,6 @@ public static class LiveTranscriptionModels
             try { if (File.Exists(tmpArchive)) File.Delete(tmpArchive); } catch { /* ignore */ }
             try { if (Directory.Exists(tmpExtract)) Directory.Delete(tmpExtract, recursive: true); } catch { /* ignore */ }
         }
-    }
-
-    private static async Task<long> DownloadWithProgressAsync(
-        string url,
-        string destinationPath,
-        IHttpClientFactory httpClientFactory,
-        IProgress<ModelDownloadProgress>? progress,
-        CancellationToken cancellationToken)
-    {
-        var http = httpClientFactory.CreateClient();
-        using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-            .ConfigureAwait(false);
-        resp.EnsureSuccessStatusCode();
-
-        var totalBytes = resp.Content.Headers.ContentLength ?? 0L;
-        // With a known length the percentage branch below fires the first Downloading report. Without one,
-        // it never fires, so the lazy-show dialog (SpeakerModelDownloadUi) is never created and the
-        // download runs invisibly — emit a single indeterminate report up front to open the dialog.
-        if (totalBytes == 0)
-            progress?.Report(new ModelDownloadProgress(0, 0, ModelDownloadPhase.Downloading));
-        var buffer = new byte[16 * 1024];
-        var bytesRead = 0L;
-
-        await using (var dst = File.Create(destinationPath))
-        await using (var src = await resp.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-        {
-            int read;
-            while ((read = await src.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
-            {
-                await dst.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
-                bytesRead += read;
-                if (totalBytes > 0)
-                {
-                    var pct = (int)(bytesRead * 100 / totalBytes);
-                    progress?.Report(new ModelDownloadProgress(pct, totalBytes));
-                }
-            }
-        }
-        return bytesRead;
     }
 
     private static void ExtractTarBz2(string archivePath, string targetDir)

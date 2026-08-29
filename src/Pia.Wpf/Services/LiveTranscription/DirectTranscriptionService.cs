@@ -107,7 +107,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
     /// <summary>Production constructor (used by DI). Wires default seams over the real dependencies.</summary>
     public DirectTranscriptionService(
         ISettingsService settingsService,
-        IHttpClientFactory httpClientFactory,
+        IAssetDownloader assetDownloader,
         ILoggerFactory loggerFactory,
         IConsentStateManager consentStateManager,
         INamedConsentClassifier consentClassifier,
@@ -120,7 +120,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
             consentClassifier,
             auditLog,
             evidenceStore,
-            createTranscription: CreateProductionTranscriptionFactory(settingsService, httpClientFactory, loggerFactory),
+            createTranscription: CreateProductionTranscriptionFactory(settingsService, assetDownloader, loggerFactory),
             micSourceFactory: () => new MicAudioCaptureService(loggerFactory.CreateLogger<MicAudioCaptureService>()),
             loopbackSourceFactory: () => new LoopbackAudioCaptureService(loggerFactory.CreateLogger<LoopbackAudioCaptureService>()),
             engineServiceFactory: CreateEngineServiceFactory(loggerFactory))
@@ -133,7 +133,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
     /// second, divergent copy.
     /// </summary>
     internal static Func<CancellationToken, Task<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService SpeakerId, string SttModelId)>> CreateProductionTranscriptionFactory(
-        ISettingsService settingsService, IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory)
+        ISettingsService settingsService, IAssetDownloader assetDownloader, ILoggerFactory loggerFactory)
     {
         return async ct =>
         {
@@ -141,15 +141,15 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
             var log = loggerFactory.CreateLogger<DirectTranscriptionService>();
 
             var sileroPath = await LiveTranscriptionModels
-                .EnsureSileroVadAsync(httpClientFactory, log, ct).ConfigureAwait(false);
+                .EnsureSileroVadAsync(assetDownloader, log, ct).ConfigureAwait(false);
             var engine = await TranscriptionEngineFactory
-                .CreateAsync(settings, httpClientFactory, downloadProgress: null, log, ct).ConfigureAwait(false);
+                .CreateAsync(settings, assetDownloader, downloadProgress: null, log, ct).ConfigureAwait(false);
 
             // Speaker-model failure is FATAL here (unlike the Teams attendee's degrade-to-null):
             // without diarization there is no per-speaker consent gate, so a consent-gated session
             // must not silently degrade to "one anonymous speaker". Let this throw.
             var speakerModelPath = await LiveTranscriptionModels
-                .EnsureSpeakerEmbeddingAsync(httpClientFactory, log, ct).ConfigureAwait(false);
+                .EnsureSpeakerEmbeddingAsync(assetDownloader, log, ct).ConfigureAwait(false);
 
             // Always the MANUAL diarizer, regardless of settings.MeetingSmartSpeakerDetection: the
             // adaptive diarizer retroactively reassigns labels, which is unsound under a consent

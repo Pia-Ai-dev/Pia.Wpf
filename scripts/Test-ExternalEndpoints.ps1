@@ -39,6 +39,8 @@ $hf = 'https://huggingface.co/sentence-transformers/paraphrase-multilingual-Mini
 $endpoints = @(
     @{ Group = 'Pia'; Name = 'Update feed';        Url = 'https://storage.pia-ai.de/f/wpf/releases.win.json'; Ok = @(200)
        Note = 'Known open: the storage service is not deployed yet - see docs/update_feed/2026-08-29-storage-feed-server-handoff.md' }
+    @{ Group = 'Pia'; Name = 'Asset mirror';       Url = 'https://storage.pia-ai.de/f/assets/models/silero_vad.onnx'; Ok = @(200)
+       Note = 'Known open: same host as the update feed, and nothing has been published to it yet - see docs/external_endpoints/2026-08-29-external-endpoint-inventory.md section 10' }
     @{ Group = 'Pia'; Name = 'Update feed (GitHub fallback)'; Url = 'https://api.github.com/repos/Pia-Ai-dev/Pia.Wpf/releases/latest'; Ok = @(200) }
     @{ Group = 'Pia'; Name = 'Cloud health';       Url = 'https://cloud.pia-ai.de/health'; Ok = @(200) }
     @{ Group = 'Pia'; Name = 'Cloud register';     Url = 'https://cloud.pia-ai.de/auth/register.html'; Ok = @(200) }

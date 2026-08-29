@@ -136,6 +136,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         ISettingsService settingsService,
         IBrowserProvisioner browserProvisioner,
         IHttpClientFactory httpClientFactory,
+        IAssetDownloader assetDownloader,
         IDefaultBrowserResolver defaultBrowserResolver,
         ILoggerFactory loggerFactory,
         ILocalizationService localizationService)
@@ -143,7 +144,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             settingsService,
             loggerFactory,
             provisionChromium: (progress, ct) => browserProvisioner.EnsureChromiumAsync(progress, ct),
-            createTranscription: CreateProductionTranscriptionFactory(settingsService, httpClientFactory, loggerFactory),
+            createTranscription: CreateProductionTranscriptionFactory(settingsService, assetDownloader, loggerFactory),
             sessionFactory: spec => new TeamsMeetingSession(
                 spec,
                 httpClientFactory,
@@ -161,7 +162,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     /// second, divergent copy.
     /// </summary>
     internal static Func<IProgress<ModelDownloadProgress>?, CancellationToken, Task<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService? SpeakerId)>> CreateProductionTranscriptionFactory(
-        ISettingsService settingsService, IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory)
+        ISettingsService settingsService, IAssetDownloader assetDownloader, ILoggerFactory loggerFactory)
     {
         return async (speakerProgress, ct) =>
         {
@@ -170,14 +171,14 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             // Silero VAD + the sherpa engine are REQUIRED for transcription: build them outside any
             // speaker try/catch so a failure here still propagates fatally (StartAsync → Error), as today.
             var sileroPath = await LiveTranscriptionModels
-                .EnsureSileroVadAsync(httpClientFactory, log, ct).ConfigureAwait(false);
+                .EnsureSileroVadAsync(assetDownloader, log, ct).ConfigureAwait(false);
             var engine = await TranscriptionEngineFactory
-                .CreateAsync(settings, httpClientFactory, downloadProgress: null, log, ct).ConfigureAwait(false);
+                .CreateAsync(settings, assetDownloader, downloadProgress: null, log, ct).ConfigureAwait(false);
             // Diarization is an OPTIONAL enhancement: a missing/corrupt/404 speaker model degrades to
             // null inside the helper (single-bubble behavior) and must NEVER fail meeting join. The
             // progress is threaded ONLY here (the optional speaker model), surfacing the download dialog.
             var speakerId = await TryCreateSpeakerIdentificationAsync(
-                httpClientFactory, loggerFactory, settings, log, ct, speakerProgress).ConfigureAwait(false);
+                assetDownloader, loggerFactory, settings, log, ct, speakerProgress).ConfigureAwait(false);
             return (sileroPath, engine, speakerId);
         };
     }
@@ -782,7 +783,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     /// numbering resets per meeting. Extracted as an internal static for unit-testing the catch.
     /// </summary>
     internal static async Task<ISpeakerIdentificationService?> TryCreateSpeakerIdentificationAsync(
-        IHttpClientFactory httpClientFactory,
+        IAssetDownloader assetDownloader,
         ILoggerFactory loggerFactory,
         AppSettings settings,
         ILogger logger,
@@ -794,7 +795,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         try
         {
             var speakerModelPath = await LiveTranscriptionModels
-                .EnsureSpeakerEmbeddingAsync(httpClientFactory, logger, cancellationToken, progress).ConfigureAwait(false);
+                .EnsureSpeakerEmbeddingAsync(assetDownloader, logger, cancellationToken, progress).ConfigureAwait(false);
             if (settings.MeetingSmartSpeakerDetection)
             {
                 return new AdaptiveSpeakerIdentificationService(

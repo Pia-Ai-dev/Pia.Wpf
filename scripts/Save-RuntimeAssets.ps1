@@ -9,8 +9,9 @@
   silently does nothing for ten minutes. This script fetches them up front, into the exact paths the
   app checks, so the app finds them and skips its own download.
 
-  URLs mirror docs/external_endpoints/2026-08-29-external-endpoint-inventory.md §3 and are pinned by
-  ModelDownloadUrlTests. Change one and change it in all three places.
+  The asset list lives in RuntimeAssetCatalogue.ps1, shared with Publish-RuntimeAssets.ps1. It mirrors
+  docs/external_endpoints/2026-08-29-external-endpoint-inventory.md §3 and is pinned by
+  ModelDownloadUrlTests and RuntimeAssetCatalogTests.
 
   **Truncation is the failure that matters.** The app's presence checks are weak — a bundle directory
   holding any .onnx, or a VAD file of non-zero length — so a download interrupted halfway leaves a
@@ -43,6 +44,10 @@
 .PARAMETER Force
   Re-fetch even when the asset is already present and the right size.
 
+.PARAMETER MirrorBaseUrl
+  Try this mirror before each asset's upstream host, exactly as the app does. Defaults to the same
+  base as appsettings.json's Assets:MirrorBaseUrl; pass an empty string to go straight upstream.
+
 .PARAMETER ListOnly
   Print the plan and the total download size, fetch nothing.
 
@@ -67,6 +72,7 @@ param(
 
     [switch]$All,
     [string]$DestinationRoot = (Join-Path $env:LOCALAPPDATA 'Pia'),
+    [string]$MirrorBaseUrl = 'https://storage.pia-ai.de/f/assets/',
     [switch]$Force,
     [switch]$ListOnly
 )
@@ -74,85 +80,10 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$sherpaAsr = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models'
-# The "recongition" misspelling is the real release tag; the corrected spelling 404s.
-$sherpaSpk = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models'
-$hf = 'https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main'
+. (Join-Path $PSScriptRoot 'RuntimeAssetCatalogue.ps1')
 
-$modelsDir = Join-Path $DestinationRoot 'Models'
-$embeddingsDir = Join-Path $modelsDir 'Embeddings'
-$browsersDir = Join-Path $DestinationRoot 'Browsers'
-
-# SizeHint is the Content-Length measured 2026-08-29, used only for the up-front total. The download
-# itself verifies against whatever the server reports now, so a republished asset is not a failure.
-$catalogue = [ordered]@{
-    Vad = @(
-        @{ Kind = 'File'; Name = 'Silero VAD'
-           Url = 'https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx'
-           Target = Join-Path $modelsDir 'silero_vad.onnx'; SizeHint = 2327524 }
-    )
-    Speaker = @(
-        @{ Kind = 'File'; Name = 'Speaker embedding (3D-Speaker CAM++)'
-           Url = "$sherpaSpk/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx"
-           Target = Join-Path $modelsDir '3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx'
-           SizeHint = 28281164 }
-    )
-    # The ONNX file is renamed on the way in: EmbeddingService looks for the model under the model's
-    # own name, not the "model.onnx" the URL ends in.
-    Embeddings = @(
-        @{ Kind = 'File'; Name = 'Text embedding model'; Url = "$hf/onnx/model.onnx"
-           Target = Join-Path $embeddingsDir 'paraphrase-multilingual-MiniLM-L12-v2.onnx'
-           SizeHint = 470301610 }
-        @{ Kind = 'File'; Name = 'Text embedding tokenizer'; Url = "$hf/tokenizer.json"
-           Target = Join-Path $embeddingsDir 'tokenizer.json'; SizeHint = 9081518 }
-        @{ Kind = 'File'; Name = 'Text embedding SentencePiece'; Url = "$hf/sentencepiece.bpe.model"
-           Target = Join-Path $embeddingsDir 'sentencepiece.bpe.model'; SizeHint = 5069051 }
-    )
-    WhisperTiny = @(
-        @{ Kind = 'Bundle'; Name = 'Whisper Tiny'; Url = "$sherpaAsr/sherpa-onnx-whisper-tiny.tar.bz2"
-           Target = Join-Path $modelsDir 'sherpa-whisper-tiny'; SizeHint = 116204861 }
-    )
-    WhisperBase = @(
-        @{ Kind = 'Bundle'; Name = 'Whisper Base'; Url = "$sherpaAsr/sherpa-onnx-whisper-base.tar.bz2"
-           Target = Join-Path $modelsDir 'sherpa-whisper-base'; SizeHint = 207557382 }
-    )
-    WhisperSmall = @(
-        @{ Kind = 'Bundle'; Name = 'Whisper Small'; Url = "$sherpaAsr/sherpa-onnx-whisper-small.tar.bz2"
-           Target = Join-Path $modelsDir 'sherpa-whisper-small'; SizeHint = 639387718 }
-    )
-    WhisperMedium = @(
-        @{ Kind = 'Bundle'; Name = 'Whisper Medium'; Url = "$sherpaAsr/sherpa-onnx-whisper-medium.tar.bz2"
-           Target = Join-Path $modelsDir 'sherpa-whisper-medium'; SizeHint = 1931372882 }
-    )
-    # sherpa publishes large-v3-turbo under the bare "turbo" name; the spelled-out form 404s.
-    WhisperLarge = @(
-        @{ Kind = 'Bundle'; Name = 'Whisper Large v3 Turbo'; Url = "$sherpaAsr/sherpa-onnx-whisper-turbo.tar.bz2"
-           Target = Join-Path $modelsDir 'sherpa-whisper-turbo'; SizeHint = 563790207 }
-    )
-    Parakeet = @(
-        @{ Kind = 'Bundle'; Name = 'Parakeet TDT v3'
-           Url = "$sherpaAsr/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2"
-           Target = Join-Path $modelsDir 'sherpa-parakeet-tdt-v3'; SizeHint = 487170055 }
-    )
-    # The installer also pulls the headless shell, ffmpeg and winldd alongside the browser, so the
-    # real transfer is roughly twice the Chromium zip on its own.
-    Chromium = @(
-        @{ Kind = 'Playwright'; Name = 'Chromium (meeting attendee)'; Target = $browsersDir; SizeHint = 315000000 }
-    )
-}
-
-if ($All) {
-    $Include = @($catalogue.Keys)
-}
-else {
-    $Include = @($Include | ForEach-Object { $_ -split '[,;]' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-    $known = @($catalogue.Keys)
-    $unknown = @($Include | Where-Object { $_ -notin $known })
-    if ($unknown.Count -gt 0) {
-        throw "Unknown asset group(s): $($unknown -join ', '). Valid: $($known -join ', ')."
-    }
-    $Include = @($known | Where-Object { $_ -in $Include })
-}
+$catalogue = Get-RuntimeAssetCatalogue -DestinationRoot $DestinationRoot
+$Include = Resolve-RuntimeAssetGroups -Catalogue $catalogue -Include $Include -All:$All
 
 function Format-Size([Nullable[long]]$bytes) {
     if ($null -eq $bytes) { return '?' }
@@ -197,13 +128,27 @@ function Test-AssetPresent($Asset, [Nullable[long]]$RemoteLength) {
     return $false
 }
 
-function Save-File($Asset, [Nullable[long]]$RemoteLength) {
+# Mirror-first, the same order the app takes. The probe doubles as the size the plan reports, so the
+# table can never name a host the download then does not use. Latched: against a mirror that is down
+# every remaining asset would otherwise re-pay the same handshake timeout.
+$script:MirrorDown = $false
+function Resolve-AssetSource($Asset) {
+    if (-not $script:MirrorDown -and $MirrorBaseUrl -and $Asset.Contains('MirrorKey')) {
+        $url = $MirrorBaseUrl.TrimEnd('/') + '/' + $Asset.MirrorKey
+        $len = Get-RemoteLength $url
+        if ($null -ne $len) { return @{ Url = $url; Length = $len; Source = 'mirror' } }
+        $script:MirrorDown = $true
+    }
+    return @{ Url = $Asset.Url; Length = (Get-RemoteLength $Asset.Url); Source = 'upstream' }
+}
+
+function Save-File($Asset, [string]$Url, [Nullable[long]]$RemoteLength) {
     $target = $Asset.Target
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
     $tmp = "$target.tmp"
     if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force }
 
-    Invoke-WebRequest -Uri $Asset.Url -OutFile $tmp -MaximumRedirection 10 -ErrorAction Stop
+    Invoke-WebRequest -Uri $Url -OutFile $tmp -MaximumRedirection 10 -ErrorAction Stop
 
     $got = (Get-Item -LiteralPath $tmp).Length
     if ($null -ne $RemoteLength -and $got -ne $RemoteLength) {
@@ -216,7 +161,7 @@ function Save-File($Asset, [Nullable[long]]$RemoteLength) {
     return $got
 }
 
-function Save-Bundle($Asset, [Nullable[long]]$RemoteLength) {
+function Save-Bundle($Asset, [string]$Url, [Nullable[long]]$RemoteLength) {
     $target = $Asset.Target
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
     $archive = "$target.tar.bz2.tmp"
@@ -224,7 +169,7 @@ function Save-Bundle($Asset, [Nullable[long]]$RemoteLength) {
 
     try {
         if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
-        Invoke-WebRequest -Uri $Asset.Url -OutFile $archive -MaximumRedirection 10 -ErrorAction Stop
+        Invoke-WebRequest -Uri $Url -OutFile $archive -MaximumRedirection 10 -ErrorAction Stop
 
         $got = (Get-Item -LiteralPath $archive).Length
         if ($null -ne $RemoteLength -and $got -ne $RemoteLength) {
@@ -297,19 +242,22 @@ Write-Host "Destination: $DestinationRoot"
 Write-Host ''
 
 $plan = foreach ($a in $assets) {
-    $remote = if ($a.Kind -eq 'Playwright') { $null } else { Get-RemoteLength $a.Url }
-    $present = Test-AssetPresent $a $remote
+    $source = if ($a.Kind -eq 'Playwright') { @{ Url = $null; Length = $null; Source = 'playwright' } }
+              else { Resolve-AssetSource $a }
+    $present = Test-AssetPresent $a $source.Length
     [pscustomobject]@{
         Name    = $a.Name
-        Size    = Format-Size ($remote ?? $a.SizeHint)
+        Size    = Format-Size ($source.Length ?? $a.SizeHint)
+        From    = $source.Source
         Action  = if ($present -and -not $Force) { 'skip (present)' } else { 'download' }
         Asset   = $a
-        Remote  = $remote
+        Url     = $source.Url
+        Remote  = $source.Length
         Fetch   = (-not $present) -or $Force
     }
 }
 
-$plan | Format-Table Name, Size, Action -AutoSize
+$plan | Format-Table Name, Size, From, Action -AutoSize
 
 $todo = @($plan | Where-Object Fetch)
 $total = ($todo | ForEach-Object { $_.Remote ?? $_.Asset.SizeHint } | Measure-Object -Sum).Sum
@@ -327,11 +275,11 @@ Write-Host ''
 $failed = @()
 foreach ($row in $todo) {
     $a = $row.Asset
-    Write-Host ("==> {0} ({1})" -f $a.Name, $row.Size)
+    Write-Host ("==> {0} ({1}, {2})" -f $a.Name, $row.Size, $row.From)
     try {
         switch ($a.Kind) {
-            'File'       { Save-File $a $row.Remote | Out-Null }
-            'Bundle'     { Save-Bundle $a $row.Remote | Out-Null }
+            'File'       { Save-File $a $row.Url $row.Remote | Out-Null }
+            'Bundle'     { Save-Bundle $a $row.Url $row.Remote | Out-Null }
             'Playwright' { Save-Chromium $a | Out-Null }
         }
         Write-Host "    done -> $($a.Target)"

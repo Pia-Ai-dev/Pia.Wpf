@@ -1,6 +1,6 @@
-using System.Net.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Services;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -10,8 +10,8 @@ public class EmbeddingServiceEnsureAvailableTests
     [Fact]
     public async Task EnsureAvailableAsync_ModelAlreadyAvailable_ReturnsTrueWithoutDownload()
     {
-        var factory = new SimpleHttpClientFactory();
-        var svc = new EmbeddingService(NullLogger<EmbeddingService>.Instance, factory);
+        var downloader = new StubAssetDownloader();
+        var svc = new EmbeddingService(NullLogger<EmbeddingService>.Instance, downloader);
 
         if (!svc.IsModelAvailable)
         {
@@ -21,14 +21,13 @@ public class EmbeddingServiceEnsureAvailableTests
 
         var ok = await svc.EnsureAvailableAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(ok);
-        Assert.Equal(0, factory.RequestCount);
+        Assert.Empty(downloader.Requested);
     }
 
     [Fact]
     public async Task EnsureAvailableAsync_DownloadFailure_ReturnsFalse()
     {
-        var factory = new FailingHttpClientFactory();
-        var svc = new EmbeddingService(NullLogger<EmbeddingService>.Instance, factory);
+        var svc = new EmbeddingService(NullLogger<EmbeddingService>.Instance, new StubAssetDownloader());
 
         if (svc.IsModelAvailable)
         {
@@ -43,8 +42,7 @@ public class EmbeddingServiceEnsureAvailableTests
     [Fact]
     public async Task GenerateEmbeddingAsync_CancelledToken_ThrowsOperationCanceled()
     {
-        var factory = new FailingHttpClientFactory();
-        var svc = new EmbeddingService(NullLogger<EmbeddingService>.Instance, factory);
+        var svc = new EmbeddingService(NullLogger<EmbeddingService>.Instance, new StubAssetDownloader());
 
         if (svc.IsModelAvailable)
         {
@@ -57,27 +55,5 @@ public class EmbeddingServiceEnsureAvailableTests
 
         await Assert.ThrowsAsync<OperationCanceledException>(() =>
             svc.GenerateEmbeddingAsync("test", cts.Token));
-    }
-
-    private class SimpleHttpClientFactory : IHttpClientFactory
-    {
-        public int RequestCount;
-        public HttpClient CreateClient(string name)
-        {
-            RequestCount++;
-            return new HttpClient();
-        }
-    }
-
-    private class FailingHttpClientFactory : IHttpClientFactory
-    {
-        public HttpClient CreateClient(string name) => new(new FailingHandler());
-    }
-
-    private class FailingHandler : HttpMessageHandler
-    {
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken) =>
-            throw new HttpRequestException("simulated failure");
     }
 }

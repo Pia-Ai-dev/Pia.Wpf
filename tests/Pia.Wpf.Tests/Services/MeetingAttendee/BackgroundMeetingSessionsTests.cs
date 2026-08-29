@@ -3,6 +3,7 @@ using NSubstitute;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.Services.MeetingAttendee;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services.MeetingAttendee;
@@ -32,6 +33,7 @@ public sealed class BackgroundMeetingSessionsTests
                     settings,
                     Substitute.For<IBrowserProvisioner>(),
                     Substitute.For<System.Net.Http.IHttpClientFactory>(),
+                    new StubAssetDownloader(),
                     Substitute.For<IDefaultBrowserResolver>(),
                     NullLoggerFactory.Instance,
                     Substitute.For<ILocalizationService>());
@@ -92,6 +94,7 @@ public sealed class BackgroundMeetingSessionsTests
                 settings,
                 Substitute.For<IBrowserProvisioner>(),
                 Substitute.For<System.Net.Http.IHttpClientFactory>(),
+                new StubAssetDownloader(),
                 Substitute.For<IDefaultBrowserResolver>(),
                 NullLoggerFactory.Instance,
                 Substitute.For<ILocalizationService>()),

@@ -12,16 +12,16 @@ namespace Pia.Services;
 public class TranscriptionService : ITranscriptionService
 {
     private readonly ISettingsService _settingsService;
-    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IAssetDownloader _downloader;
     private readonly ILogger<TranscriptionService> _logger;
 
     public TranscriptionService(
         ISettingsService settingsService,
-        IHttpClientFactory httpClientFactory,
+        IAssetDownloader downloader,
         ILogger<TranscriptionService> logger)
     {
         _settingsService = settingsService;
-        _httpClientFactory = httpClientFactory;
+        _downloader = downloader;
         _logger = logger;
         Directory.CreateDirectory(LiveTranscriptionModels.ModelsDirectory);
     }
@@ -33,7 +33,7 @@ public class TranscriptionService : ITranscriptionService
         var samples = await Task.Run(() => DecodeTo16kMonoFloat(audioFilePath), cancellationToken).ConfigureAwait(false);
 
         await using var engine = await TranscriptionEngineFactory
-            .CreateAsync(settings, _httpClientFactory, downloadProgress: null, _logger, cancellationToken)
+            .CreateAsync(settings, _downloader, downloadProgress: null, _logger, cancellationToken)
             .ConfigureAwait(false);
 
         // Chunk long audio so the engine isn't asked to process minutes of speech in one shot.
@@ -74,14 +74,14 @@ public class TranscriptionService : ITranscriptionService
     public async Task DownloadModelAsync(WhisperModelSize modelSize, IProgress<ModelDownloadProgress> progress, CancellationToken cancellationToken = default)
     {
         await LiveTranscriptionModels
-            .EnsureWhisperOnnxAsync(modelSize, _httpClientFactory, progress, _logger, cancellationToken)
+            .EnsureWhisperOnnxAsync(modelSize, _downloader, progress, _logger, cancellationToken)
             .ConfigureAwait(false);
     }
 
     public async Task DownloadParakeetModelAsync(IProgress<ModelDownloadProgress> progress, CancellationToken cancellationToken = default)
     {
         await LiveTranscriptionModels
-            .EnsureParakeetOnnxAsync(_httpClientFactory, progress, _logger, cancellationToken)
+            .EnsureParakeetOnnxAsync(_downloader, progress, _logger, cancellationToken)
             .ConfigureAwait(false);
     }
 

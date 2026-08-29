@@ -1,6 +1,6 @@
-using System.Net.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Services;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -10,7 +10,7 @@ public class EmbeddingServiceSemanticTests
 {
     private static EmbeddingService CreateOrSkip()
     {
-        var svc = new EmbeddingService(NullLogger<EmbeddingService>.Instance, new SimpleHttpClientFactory());
+        var svc = new EmbeddingService(NullLogger<EmbeddingService>.Instance, new StubAssetDownloader());
         if (!svc.IsModelAvailable)
             Assert.Skip("embedding model not downloaded on this machine");
         return svc;
@@ -96,10 +96,5 @@ public class EmbeddingServiceSemanticTests
         // The corruption outlived the racing calls — a later, uncontended call must also still work.
         var after = await svc.GenerateEmbeddingAsync("The cat sat on the mat.", TestContext.Current.CancellationToken);
         Assert.Equal(384, after.Length);
-    }
-
-    private sealed class SimpleHttpClientFactory : IHttpClientFactory
-    {
-        public HttpClient CreateClient(string name) => new();
     }
 }

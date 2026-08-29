@@ -440,19 +440,15 @@ public sealed class MeetingAttendeeServiceStateTests
     public async Task TryCreateSpeakerIdentificationAsync_WhenEnsureThrows_ReturnsNull_NotThrows()
     {
         // Closure-level guard for the actual try/catch: when EnableMeetingDiarization is true but the
-        // ensure path throws (here: CreateClient throws before any HTTP), the helper must DEGRADE to null,
+        // ensure path throws (here: the downloader refuses), the helper must DEGRADE to null,
         // not propagate. EnsureSpeakerEmbeddingAsync short-circuits if the ~27 MB model already exists on
         // disk (it would then construct a real service and CreateClient is never reached) — skip in that
         // case so the test deterministically exercises the catch only when the download is actually attempted.
         if (LiveTranscriptionModels.IsSpeakerEmbeddingAvailable())
             Assert.Skip("Speaker-embedding model is cached on disk; the ensure path short-circuits before the throw.");
 
-        var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        httpClientFactory.CreateClient(Arg.Any<string>())
-            .Returns(_ => throw new InvalidOperationException("no network"));
-
         var result = await MeetingAttendeeService.TryCreateSpeakerIdentificationAsync(
-            httpClientFactory,
+            new StubAssetDownloader(),
             NullLoggerFactory.Instance,
             new AppSettings { EnableMeetingDiarization = true },
             NullLogger.Instance,
@@ -465,18 +461,18 @@ public sealed class MeetingAttendeeServiceStateTests
     public async Task TryCreateSpeakerIdentificationAsync_WhenDiarizationDisabled_ReturnsNull_NoDownload()
     {
         // The gate lives inside the helper: with diarization off, it returns null without touching the
-        // IHttpClientFactory at all (no download attempt).
-        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        // downloader at all (no download attempt).
+        var downloader = new StubAssetDownloader();
 
         var result = await MeetingAttendeeService.TryCreateSpeakerIdentificationAsync(
-            httpClientFactory,
+            downloader,
             NullLoggerFactory.Instance,
             new AppSettings { EnableMeetingDiarization = false },
             NullLogger.Instance,
             TestContext.Current.CancellationToken);
 
         Assert.Null(result);
-        httpClientFactory.DidNotReceive().CreateClient(Arg.Any<string>());
+        Assert.Empty(downloader.Requested);
     }
 
     // ---- silent-capture decision (pure) ---------------------------------------------------------

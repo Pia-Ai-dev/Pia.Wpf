@@ -1,4 +1,3 @@
-using System.Net.Http;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
@@ -14,7 +13,7 @@ public static class TranscriptionEngineFactory
 {
     public static async Task<ITranscriptionEngine> CreateAsync(
         AppSettings settings,
-        IHttpClientFactory httpClientFactory,
+        IAssetDownloader downloader,
         IProgress<ModelDownloadProgress>? downloadProgress,
         ILogger logger,
         CancellationToken cancellationToken)
@@ -24,7 +23,7 @@ public static class TranscriptionEngineFactory
             case SttBackend.Parakeet:
             {
                 var dir = await LiveTranscriptionModels
-                    .EnsureParakeetOnnxAsync(httpClientFactory, downloadProgress, logger, cancellationToken)
+                    .EnsureParakeetOnnxAsync(downloader, downloadProgress, logger, cancellationToken)
                     .ConfigureAwait(false);
                 return new ParakeetSherpaEngine(dir, logger);
             }
@@ -32,7 +31,7 @@ public static class TranscriptionEngineFactory
             default:
             {
                 var dir = await LiveTranscriptionModels
-                    .EnsureWhisperOnnxAsync(settings.WhisperModel, httpClientFactory, downloadProgress, logger, cancellationToken)
+                    .EnsureWhisperOnnxAsync(settings.WhisperModel, downloader, downloadProgress, logger, cancellationToken)
                     .ConfigureAwait(false);
                 return new WhisperSherpaEngine(dir, LanguageCode(settings.TargetSpeechLanguage), logger);
             }
@@ -45,13 +44,13 @@ public static class TranscriptionEngineFactory
     /// </summary>
     public static Task<string> EnsureModelsAsync(
         AppSettings settings,
-        IHttpClientFactory httpClientFactory,
+        IAssetDownloader downloader,
         IProgress<ModelDownloadProgress>? downloadProgress,
         ILogger logger,
         CancellationToken cancellationToken)
         => settings.SttBackend == SttBackend.Parakeet
-            ? LiveTranscriptionModels.EnsureParakeetOnnxAsync(httpClientFactory, downloadProgress, logger, cancellationToken)
-            : LiveTranscriptionModels.EnsureWhisperOnnxAsync(settings.WhisperModel, httpClientFactory, downloadProgress, logger, cancellationToken);
+            ? LiveTranscriptionModels.EnsureParakeetOnnxAsync(downloader, downloadProgress, logger, cancellationToken)
+            : LiveTranscriptionModels.EnsureWhisperOnnxAsync(settings.WhisperModel, downloader, downloadProgress, logger, cancellationToken);
 
     private static string LanguageCode(TargetSpeechLanguage language) => language switch
     {
