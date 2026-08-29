@@ -43,6 +43,9 @@ public static class Bootstrapper
     // UI script can drive the real buttons without automating a native dialog. DEBUG builds only.
     public const string DebugChatImportFileEnvVar = "PIA_DEBUG_CHAT_IMPORT_FILE";
     public const string DebugChatExportFileEnvVar = "PIA_DEBUG_CHAT_EXPORT_FILE";
+    // Separate from the archive path above: the two exports write different formats, and a script that
+    // drives both would otherwise have them overwrite each other.
+    public const string DebugChatExportMarkdownFileEnvVar = "PIA_DEBUG_CHAT_EXPORT_MARKDOWN_FILE";
 
     public static string ProductionServerUrl =>
         Environment.GetEnvironmentVariable(ServerUrlEnvVar) is { Length: > 0 } envUrl

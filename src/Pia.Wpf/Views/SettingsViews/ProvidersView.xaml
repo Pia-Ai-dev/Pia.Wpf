@@ -4,6 +4,21 @@
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:controls="clr-namespace:Pia.Controls"
              xmlns:loc="clr-namespace:Pia.Localization">
+  <UserControl.Resources>
+    <!-- Both pickers list the same providers and can be on screen together, so the two ids stay disjoint.
+         The name is the provider's, not the item's ToString(), which is what a picker row reports by default. -->
+    <Style x:Key="OptimizeProviderItemStyle" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+      <Setter Property="AutomationProperties.AutomationId"
+              Value="{Binding Id, StringFormat='Settings_Providers_OptimizeItem_{0}'}"/>
+      <Setter Property="AutomationProperties.Name" Value="{Binding Name}"/>
+    </Style>
+    <Style x:Key="AssistantProviderItemStyle" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+      <Setter Property="AutomationProperties.AutomationId"
+              Value="{Binding Id, StringFormat='Settings_Providers_AssistantItem_{0}'}"/>
+      <Setter Property="AutomationProperties.Name" Value="{Binding Name}"/>
+    </Style>
+  </UserControl.Resources>
+
   <!-- Horizontal scroll disabled so the ColumnsPanel is measured at a finite width and can pick its column count. -->
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
     <StackPanel MaxWidth="1080" HorizontalAlignment="Left">
@@ -80,6 +95,7 @@
                         SelectedValue="{Binding OptimizeProviderId}"
                         SelectedValuePath="Id"
                         DisplayMemberPath="Name"
+                        ItemContainerStyle="{StaticResource OptimizeProviderItemStyle}"
                         AutomationProperties.AutomationId="Settings_Providers_OptimizeProvider"/>
             </StackPanel>
 
@@ -91,6 +107,7 @@
                         SelectedValue="{Binding AssistantProviderId}"
                         SelectedValuePath="Id"
                         DisplayMemberPath="Name"
+                        ItemContainerStyle="{StaticResource AssistantProviderItemStyle}"
                         AutomationProperties.AutomationId="Settings_Providers_AssistantProvider"/>
             </StackPanel>
           </Grid>

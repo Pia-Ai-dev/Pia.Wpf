@@ -491,18 +491,22 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
             ? $"{title}_{chat.UpdatedAt.ToLocalTime():yyyyMMdd_HHmmss}"
             : $"Chat_{chat.UpdatedAt.ToLocalTime():yyyyMMdd_HHmmss}";
 
-        var dialog = new SaveFileDialog
+        var filePath = DebugPresetPath(Bootstrapper.DebugChatExportMarkdownFileEnvVar);
+        if (filePath is null)
         {
-            Title = _localizationService["AssistantHistory_ExportMarkdown"],
-            FileName = defaultName,
-            Filter = "Markdown (*.md)|*.md",
-            DefaultExt = ".md",
-        };
+            var dialog = new SaveFileDialog
+            {
+                Title = _localizationService["AssistantHistory_ExportMarkdown"],
+                FileName = defaultName,
+                Filter = "Markdown (*.md)|*.md",
+                DefaultExt = ".md",
+            };
 
-        if (dialog.ShowDialog() != true)
-            return;
+            if (dialog.ShowDialog() != true)
+                return;
 
-        var filePath = dialog.FileName;
+            filePath = dialog.FileName;
+        }
         try
         {
             var markdown = BuildMarkdown(chat);
@@ -566,7 +570,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         if (Environment.GetEnvironmentVariable(environmentVariable) is not { Length: > 0 } path)
             return null;
 
-        _logger.LogWarning("Chat archive path preset by {EnvVar}; the file picker is bypassed", environmentVariable);
+        _logger.LogWarning("Chat export path preset by {EnvVar}; the file picker is bypassed", environmentVariable);
         return path;
 #else
         return null;

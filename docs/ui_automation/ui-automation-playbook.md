@@ -46,7 +46,7 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Settings inner tabs | `Settings_General_Tab_Application` / `_Hotkeys` / `_Speech` / `_Privacy`, `Settings_Assistant_Tab_General` / `_Personas` / `_ToolPermissions` / `_Meeting` / `_Agent` |
 | Settings → General | Application: `Settings_General_UiLanguage`, `_DefaultWindowMode`, `_LaunchAtStartup`, `_StartMinimized`, `_AutoCaptureSelectedText`, `_ExportDiagnostics`, `_ResetAppData`. Hotkeys: `_CaptureOptimizeHotkey` / `_ClearOptimizeHotkey`, `_CaptureFastPathHotkey` / `_ClearFastPathHotkey`, `_CaptureAssistantHotkey` / `_ClearAssistantHotkey`. Speech: `_SttEngine`, `_WhisperModel`, `_DownloadWhisperModel`, `_DownloadParakeetModel`, `_SttLanguage`, per-voice `_DownloadVoice_<voiceKey>` / `_SelectVoice_<voiceKey>`. Privacy: `_TokenizationEnabled`, `_NewKeywordInput`, `_NewKeywordCategory`, `_AddPiiKeyword`, per-row `_KeywordCategory_<keyword>` / `_RemoveKeyword_<keyword>` |
 | Settings → Assistant | General: `Settings_Assistant_GoToProvidersTab`, `_SuggestionsEnabled`, `_FilesFolder`, `_ChangeFilesFolder`, `_FileToolsEnabled`, `_GitToolsEnabled`, `_DefaultWorkingDirectory`, `_ChatHistoryEnabled`, `_ChatHistoryToolsEnabled`, `_ChatHistoryRetentionDays`, `_ChatAutoTitleEnabled`, `_DeleteAllChatHistory` — `Settings_Assistant_ChatHistory` is an ambiguous prefix across those three, so match the full id. Tool access: `_ToolPermissions_AutoApproveBuiltInWrites`, `_ToolCatalog`, per-tool `_ForgetSession_<toolName>` / `_Revoke_<toolName>` / `_AllowedForSession_<toolName>` / `_AllowedAlways_<toolName>`. Meeting: `_EnableMeetingDiarization`, `_MeetingSmartSpeakerDetection`, `_MeetingSuppressSpeakerLabels`, `_SpeakerEmbeddingThreshold`, `_MeetingMaxSpeakers`, `_MeetingMinSpeechSeconds`, `_MeetingBrowser`, `_MeetingAttendeeShowBrowserWindow`. Agent runs: `_AgentMaxSteps`, `_MaxToolRoundsPerStep`, `_AgentWallClockMinutes`, `_AgentMaxReplans`, `_AgentPlanReasoningTurnEnabled`, `_Agent_AutoApproveBuiltInWrites`, per-persona `_AgentRoster_<guid>`, `_ScheduledMaxSteps`, `_ScheduledWallClockMinutes`, `_ScheduledMaxReplans`, `_MaxParallelBackgroundRuns` |
-| Settings → Providers | `Settings_Providers_ManagedNotice` (the policy banner, org-managed only), `Settings_Providers_UseSameProviderForAllModes`, `_OptimizeProvider`, `_AssistantProvider`, `_AddProvider`, `_GoToCloudSync`, per-row `Provider_Test_<guid>` / `Provider_Edit_<guid>` / `Provider_Delete_<guid>` |
+| Settings → Providers | `Settings_Providers_ManagedNotice` (the policy banner, org-managed only), `Settings_Providers_UseSameProviderForAllModes`, `_OptimizeProvider`, `_AssistantProvider`, `_AddProvider`, `_GoToCloudSync`, per-row `Provider_Test_<guid>` / `Provider_Edit_<guid>` / `Provider_Delete_<guid>`. The two default-provider pickers name their rows after the provider (so `optionText` works) and id them per item — `Settings_Providers_OptimizeItem_<guid>` / `_AssistantItem_<guid>`, two prefixes because both pickers list the same providers side by side once "same for all modes" is off. Expand the picker before reaching a row: a closed `ComboBox` has no popup items in the tree |
 | Settings → Account | `Settings_Account_ServerUrl`, `_TrustSelfSignedCertificates`, `_LoginEmail`, `_LoginPassword`, `_LoginWithPassword`, `_OpenRegistrationPage`, `_OpenForgotPassword`, `_LoginWithGoogle`, `_LoginWithMicrosoft`, `_LoginWithEntraId`, `_SyncNow`, `_SyncLogout`, `_IsE2EEEnabled`, `_CheckForPendingDevices` |
 | Settings → Optimize | `Settings_Optimize_GoToProvidersTab`, `_OutputAction`, `_AutoTypeDelayMs`; the template list uses the `Templates_*` / `Template_*` ids above |
 | Routines list / actions | `Routines_JobList`, `Routines_Row_<id>` (the row container, whose UIA name is the routine's name), `Routines_NewJob`, `Routines_Edit`, `Routines_Toggle`, `Routines_RunNow`, `Routines_Delete`, `Routines_StatusMessage`, `Routines_Detail_NextRun`, `Routines_RunHistory`, and per past firing `Routines_OpenRunChat_<chatId>` (hidden when the firing produced no chat, so absence is the normal state for a failure) |
@@ -82,7 +82,7 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Todo header / search | `Todo_AddColumn`, `_Refresh`, `_SearchQuery` |
 | Todo kanban board (`TodoView`) | Add-todo bar: `Todo_NewTitle`, `_NewPriority`, `_NewDueDate` (no test lock, same `DatePicker` caveat as History), `_Record`, `_AddTodo`. Per-column (keyed on `KanbanColumnViewModel.Id`): `Todo_ColumnMenu_<id>` (the "..." button) plus its 3 context-menu items `Todo_ColumnMenu_SetDefault_<id>` / `_Rename_<id>` / `_Delete_<id>` (no test lock, same `MenuItem` caveat as `PiaAnswerToolbar`), and `Todo_ExpandColumn_<id>` (the closed-column chevron). Per-todo (keyed on `TodoItem.Id`): `Todo_Complete_<id>`, `Todo_Edit_<id>`, `Todo_Delete_<id>`. |
 | Todo panel (`TodoPanelControl`, embedded in `AssistantView`) | `TodoPanel_Close`, `_NewTitle`, `_Record`, `_Add`, `_OpenFullView`; per-todo (keyed on `TodoItem.Id`): `TodoPanel_Complete_<id>`. Prefixed `TodoPanel_`, not `Todo_`, so a script targeting one surface's fields never prefix-matches the other's. |
-| Assistant reply toolbar (`PiaAnswerToolbar`) | Per-reply, keyed by `AssistantMessage.Id`: `Answer_Copy_<id>`, `_Speak_<id>`, `_Regenerate_<id>`, `_RegenerateOptions_<id>`, `_Export_<id>`, `_RateUp_<id>`, `_RateDown_<id>`. Deliberately not prefixed `Assistant_` — that already means the user-bubble copy button (`Assistant_CopyMessage_<guid>`). The regenerate-style context menu's 3 items are literal and deliberately a *different* prefix, `Answer_RegenerateStyle_Shorten` / `_Detailed` / `_Exportable` — reusing `Answer_RegenerateOptions_` here would make `automationId*=Answer_RegenerateOptions_` match the chevron button plus all three menu items once opened, the same collision the `Assistant_`/`Answer_` split above exists to avoid. No test lock on the menu items. |
+| Assistant reply toolbar (`PiaAnswerToolbar`) | Per-reply, keyed by `AssistantMessage.Id`: `Answer_Copy_<id>`, `_Speak_<id>`, `_Regenerate_<id>`, `_RegenerateOptions_<id>`, `_Export_<id>`, `_RateUp_<id>`, `_RateDown_<id>`, plus the synthetic-speech marker `_AiVoiceBadge_<id>` — a `Text` peer, in the tree only while that answer is being read aloud, so it needs a loaded TTS voice and is gone again within a second of a short answer. Deliberately not prefixed `Assistant_` — that already means the user-bubble copy button (`Assistant_CopyMessage_<guid>`). The regenerate-style context menu's 3 items are literal and deliberately a *different* prefix, `Answer_RegenerateStyle_Shorten` / `_Detailed` / `_Exportable` — reusing `Answer_RegenerateOptions_` here would make `automationId*=Answer_RegenerateOptions_` match the chevron button plus all three menu items once opened, the same collision the `Assistant_`/`Answer_` split above exists to avoid. No test lock on the menu items. |
 | Markdown code block (`CodeBlockControl`) | `CodeBlock_Copy`, `CodeBlock_Content` — literal; a message with two+ code fences repeats these ids (see Known gaps) |
 | Reasoning trace toggle (`PiaReasoningView`) | Per-reply, keyed by `AssistantMessage.Id`: `Reasoning_Toggle_<id>`. Own prefix, not `Answer_` — a different affordance from the reply toolbar it sits beside. No `Expander` involved despite appearances; the collapse is hand-rolled. |
 | Chat quick switcher (`PiaChatQuickSwitcher`) | `QuickSwitcher_Query` (the search box). Its match list is a `ListBox`, not a walker-recognized type — no id needed or possible on individual matches. |
@@ -111,10 +111,26 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | First-run wizard shell (`FirstRunWizardWindow`) | `Wizard_TitleBar` (the close button lives in its `ControlTemplate` — reach it as a descendant, it has no id of its own), `Wizard_Skip` (hidden when E2EE setup is required), `Wizard_Back` (hidden on step 0), `Wizard_Next` (its label is bound and reads Next / Get Started / Finish, so always drive it by id). Keyboard equivalents: Enter = Next, Esc = Skip, Alt+Left/Right = Back/Next. The seven progress dots are bare `Ellipse`es with no automation peer — read the step from its content, not from the dots. No test lock (root is a `Window`), but `FirstRunWizardWindowParseTests` already builds it. |
 | First-run wizard steps (`WizardSteps/`) | Welcome: `WizardWelcome_Language` (set it first — it re-localizes the rest). Account: `WizardAccount_Email`, `_Password` (a plain `PasswordBox` pushed from code-behind — `ww_set_value`, there is no binding), `_SignInLocal`, `_CreateAccount`, `_ForgotPassword`, and, when policy offers them, `_SignInGoogle` (markup-disabled), `_SignInMicrosoft`, `_SignInEntraId`; with E2EE enabled this step also hosts `E2EEOnboardingView`. E2EE: `WizardE2EE_Enable` (a `ui:ToggleSwitch` — `ww_set_checked`, no InvokePattern), `_OptOutGoBack`, `_OptOutContinue`, `_CopyRecoveryCode`, `_ConfirmRecoveryCode`. Provider: `WizardProvider_Type` (pick it first — it collapses the panels the other fields live in), `_Endpoint`, `_ApiKey`, `_Model` (editable `ComboBox`), `_FetchModels`, `_AzureDeployment`, `_TestConnection`. Profile: `WizardProfile_Name` / `_Nickname` / `_Location` with their dictation buttons `WizardProfile_VoiceName` / `_VoiceNickname` / `_VoiceLocation`, plus `_ModePersonal` / `_ModeBusiness` (selection shows only as an accent border — assert the VM state, not the button). `ModesOverviewStep` and `ReadyStep` have no interactive control at all; advance them with `Wizard_Next`. |
 
-Import and Export open a native file picker, which is not reliably scriptable: `ww_dialog handle_file`
-returns `{"success": true}` without confirming the dialog, and re-invoking the button just stacks up
-more pickers. In a DEBUG build set `PIA_DEBUG_CHAT_IMPORT_FILE` / `PIA_DEBUG_CHAT_EXPORT_FILE` to a
-path and the picker is skipped entirely, so one `ww_invoke` runs the whole import/export.
+Import and Export open a native file picker, which is not scriptable at all — worse than the older
+"unreliable" note claimed. Measured 2026-08-29 on the Markdown export: `ww_dialog handle_file` fails with
+`Could not find the filename input (AutomationId 1148)`, the modern `IFileDialog` surfaces Save, Cancel and
+the filename box as bare `Pane`s with no pattern and no control ids, `EnumChildWindows` finds nothing to
+`BM_CLICK`, and `SetForegroundWindow` + SendKeys is refused outright because the call comes from a
+background process. `ww_list_windows` does not even show the dialog; enumerate the process's windows through
+user32 to see it. The only way out is `PostMessage(hwnd, WM_CLOSE)`, which cancels it.
+
+So use the DEBUG-only bypasses instead — set the variable to a path and the picker is skipped entirely, so
+one `ww_invoke` runs the whole thing:
+
+| Button | Variable |
+|---|---|
+| `AssistantHistory_ImportChats` | `PIA_DEBUG_CHAT_IMPORT_FILE` |
+| `AssistantHistory_ExportAll` / `_ExportArchive` (the `.json` archive) | `PIA_DEBUG_CHAT_EXPORT_FILE` |
+| `AssistantHistory_ExportMarkdown` (the `.md` transcript) | `PIA_DEBUG_CHAT_EXPORT_MARKDOWN_FILE` |
+
+Deliberately three variables, not two: the archive and the Markdown export write different formats, and one
+shared path would have them overwrite each other. `Answer_Export_<id>` (per-answer HTML) needs no bypass —
+it writes to `<working dir>/Exports/pia-answer-<stamp>.html` by itself and opens the file.
 
 Built-in personas expose only `Persona_Duplicate_<guid>`; edit/delete exist for user personas
 only. Use `automationId*=Persona_Edit_` to enumerate the editable ones.
@@ -234,6 +250,19 @@ Committed recordings, the settings fixture they start from and the replay harnes
   views, but not Plugins or the E2EE onboarding screen.
 
 ## Known gaps (don't burn time rediscovering these)
+
+- **A chat reopened from history reported no messages at all — FIXED 2026-08-29.** Both
+  `AssistantHistory_Resume` and `AssistantChat_Open_<id>` rendered the full transcript while every message id
+  resolved 0: `Answer_*`, `MarkdownViewer_<id>`, the footer `Text`, even the user bubbles'
+  `Assistant_CopyMessage_<id>`. It did not recover on navigate-away-and-back, on `ww_window activate`, or on
+  scrolling, and a message sent afterwards was the only addressable one in the list. Cause: the messages
+  arrive in one go while a UIA client is attached, so WPF materializes the item peers on the spot — inside
+  the collection change, before the panel has generated a single container — and each peer caches an empty
+  subtree that nothing ever invalidates. `Behaviors/AutomationPeerRefreshBehavior.cs` (attached on
+  `MessageItemsControl`) resets the subtree at `Loaded` priority after the containers appear; resetting it in
+  `StatusChanged` itself is too early, the containers exist there but their templates do not. Note this was
+  never automation-only: a screen reader read the same empty conversation. Locked by
+  `MessageListPeerRefreshTests`, whose second arm fails if WPF ever starts doing this itself.
 
 - **A full re-derivation of the id surface on 2026-08-28 found 19 gaps that were still open — all but
   one closed the same day.**

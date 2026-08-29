@@ -116,7 +116,9 @@
           </Style.Triggers>
         </Style>
       </ScrollViewer.Style>
-      <ItemsControl ItemsSource="{Binding Messages}"
+      <ItemsControl x:Name="MessageItemsControl"
+                    ItemsSource="{Binding Messages}"
+                    behaviors:AutomationPeerRefreshBehavior.RefreshOnContainersGenerated="True"
                     RequestBringIntoView="MessageItemsControl_RequestBringIntoView">
         <ItemsControl.ItemTemplate>
           <DataTemplate>
