@@ -7,6 +7,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
 using Pia.Logging;
+using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.Shared.Auth;
 
@@ -105,88 +106,66 @@ public class AuthService : IAuthService
                 return (false, "Server URL not configured");
             }
 
-            // Find an available loopback port for the redirect
             var port = GetRandomPort();
             var redirectUri = $"http://localhost:{port}/";
+            var (codeVerifier, codeChallenge) = PkceCodes.Create();
 
-            // Open system browser to server's OAuth login endpoint
-            var loginUrl = $"{serverUrl}/auth/login?provider={provider}&redirect_uri={Uri.EscapeDataString(redirectUri)}";
-            Process.Start(new ProcessStartInfo(loginUrl) { UseShellExecute = true });
-
-            // Start a loopback HTTP listener to receive the callback
+            // Listen before the browser opens, so the callback can never arrive at an unbound port.
             using var listener = new HttpListener();
             listener.Prefixes.Add(redirectUri);
             listener.Start();
             _logger.LogInformation("OAuth listener started on {Url}", SafeUrl.Format(redirectUri));
 
-            // Wait for the callback (timeout after 5 minutes)
+            // The server answers with a one-time code, never tokens; only this process holds the verifier.
+            var loginUrl = $"{serverUrl}/auth/login?provider={provider}"
+                + $"&redirect_uri={Uri.EscapeDataString(redirectUri)}"
+                + $"&code_challenge={codeChallenge}";
+            Process.Start(new ProcessStartInfo(loginUrl) { UseShellExecute = true });
+
             using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
-            var context = await listener.GetContextAsync().WaitAsync(cts.Token);
+            var context = await WaitForLoginCallbackAsync(listener, cts.Token);
             _logger.LogInformation("OAuth callback received");
 
-            // Parse the tokens from the callback URL query string
             var query = context.Request.QueryString;
             var error = query["error"];
             var errorMessage = query["message"];
-            var accessToken = query["access_token"];
-            var refreshToken = query["refresh_token"];
-            var email = query["email"];
-            var displayName = query["display_name"];
-            var userId = query["user_id"];
+            var code = query["code"];
 
-            // Send appropriate response to the browser. We must:
-            //  - Force Connection: close (KeepAlive=false) so the browser does not wait for more bytes.
-            //  - Flush + Close the OutputStream explicitly before tearing the listener down.
-            //  - Defer listener teardown to scope exit (via `using`) so any in-flight TCP segments
-            //    drain naturally — the browser sees the full response instead of an RST mid-body.
-            var browserHtml = string.IsNullOrEmpty(error)
-                ? BuildLoginSuccessHtml(displayName)
-                : BuildLoginErrorHtml(errorMessage ?? "Login failed");
-            var responseBytes = System.Text.Encoding.UTF8.GetBytes(browserHtml);
-            context.Response.StatusCode = string.IsNullOrEmpty(error) ? 200 : 400;
-            context.Response.ContentType = "text/html; charset=utf-8";
-            context.Response.ContentLength64 = responseBytes.Length;
-            context.Response.KeepAlive = false;
-            context.Response.Headers["Cache-Control"] = "no-store";
-            await context.Response.OutputStream.WriteAsync(responseBytes);
-            await context.Response.OutputStream.FlushAsync();
-            context.Response.OutputStream.Close();
-            context.Response.Close();
-            _logger.LogInformation("OAuth response written ({Bytes} bytes)", responseBytes.Length);
-
+            LocalLoginResponse? login = null;
+            string? failure = null;
             if (!string.IsNullOrEmpty(error))
             {
                 _logger.LogWarning("OAuth callback returned error: {Error} - {Message}", error, errorMessage);
-                return (false, errorMessage ?? "Login failed");
+                failure = errorMessage ?? "Login failed";
             }
-
-            if (string.IsNullOrEmpty(accessToken) || string.IsNullOrEmpty(refreshToken))
+            else if (!string.IsNullOrEmpty(query["access_token"]))
             {
-                _logger.LogWarning("OAuth callback missing tokens");
-                return (false, "Login failed - no tokens received");
+                // A server from before the exchange answered with tokens in the URL. They are never taken: the
+                // whole point of the exchange is that a query string cannot log this client in.
+                _logger.LogWarning("OAuth callback carried tokens in the URL; the server predates the code exchange");
+                failure = "Login failed - the server does not support this client's login flow yet";
+            }
+            else if (string.IsNullOrEmpty(code))
+            {
+                _logger.LogWarning("OAuth callback carried no login code");
+                failure = "Login failed - no login code received";
+            }
+            else
+            {
+                (login, failure) = await ExchangeLoginCodeAsync(serverUrl, code, codeVerifier, cts.Token);
             }
 
-            // Store tokens (encrypted in memory)
-            _encryptedAccessToken = _dpapiHelper.Encrypt(accessToken);
-            _encryptedRefreshToken = _dpapiHelper.Encrypt(refreshToken);
-            _accessTokenExpiry = DateTime.UtcNow.AddMinutes(14); // Slightly less than 15 min
-            UserDisplayName = displayName;
-            UserEmail = email;
-            Provider = provider;
-            IsLoggedIn = true;
+            // Written after the exchange so the browser page shows the real outcome.
+            await WriteBrowserResponseAsync(context,
+                login is not null
+                    ? BuildLoginSuccessHtml(login.User.DisplayName)
+                    : BuildLoginErrorHtml(failure ?? "Login failed"),
+                success: login is not null);
 
-            // Persist to settings
-            settings.SyncEnabled = true;
-            settings.EncryptedAccessToken = _encryptedAccessToken;
-            settings.EncryptedRefreshToken = _encryptedRefreshToken;
-            settings.SyncUserId = userId;
-            settings.SyncUserEmail = email;
-            settings.SyncUserDisplayName = displayName;
-            settings.SyncProvider = provider;
-            settings.SyncDeviceId ??= Guid.NewGuid().ToString();
-            await _settingsService.SaveSettingsAsync(settings);
+            if (login is null)
+                return (false, failure ?? "Login failed");
 
-            LoginStateChanged?.Invoke(this, true);
+            await ApplyLoginAsync(login, provider, settings);
             return (true, null);
         }
         catch (OperationCanceledException)
@@ -199,6 +178,115 @@ public class AuthService : IAuthService
             _logger.LogError(ex, "OAuth login failed");
             return (false, "Login failed");
         }
+    }
+
+    // A request carrying neither a code, an error nor legacy tokens is noise on the port (a probe, a favicon
+    // fetch) and must not end the wait: the first request to arrive no longer gets to decide the login.
+    private static async Task<HttpListenerContext> WaitForLoginCallbackAsync(HttpListener listener, CancellationToken ct)
+    {
+        while (true)
+        {
+            var context = await listener.GetContextAsync().WaitAsync(ct);
+            var query = context.Request.QueryString;
+            if (!string.IsNullOrEmpty(query["code"])
+                || !string.IsNullOrEmpty(query["error"])
+                || !string.IsNullOrEmpty(query["access_token"]))
+                return context;
+
+            context.Response.StatusCode = 404;
+            context.Response.KeepAlive = false;
+            context.Response.Close();
+        }
+    }
+
+    // Failures come back as a result, not an exception, so the browser still gets its error page.
+    private async Task<(LocalLoginResponse? Login, string? Error)> ExchangeLoginCodeAsync(
+        string serverUrl, string code, string codeVerifier, CancellationToken ct)
+    {
+        try
+        {
+            using var client = _httpClientFactory.CreateClient();
+            var response = await client.PostAsJsonAsync($"{serverUrl}/auth/token", new { code, codeVerifier }, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Login code exchange failed with status {Status}", response.StatusCode);
+                return (null, await ReadErrorMessageAsync(response, ct) ?? "Login failed");
+            }
+
+            var login = await response.Content.ReadFromJsonAsync<LocalLoginResponse>(ct);
+            return login is null ? (null, "Invalid server response") : (login, null);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Login code exchange failed");
+            return (null, "Login failed");
+        }
+    }
+
+    private static async Task<string?> ReadErrorMessageAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        try
+        {
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>(ct);
+            return body.ValueKind == JsonValueKind.Object && body.TryGetProperty("message", out var message)
+                ? message.GetString()
+                : null;
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
+        {
+            return null;
+        }
+    }
+
+    // Force Connection: close, flush and close the stream explicitly, and leave the listener's teardown to
+    // the caller's scope exit — otherwise the browser sees an RST mid-body instead of the whole page.
+    private async Task WriteBrowserResponseAsync(HttpListenerContext context, string html, bool success)
+    {
+        var bytes = System.Text.Encoding.UTF8.GetBytes(html);
+        context.Response.StatusCode = success ? 200 : 400;
+        context.Response.ContentType = "text/html; charset=utf-8";
+        context.Response.ContentLength64 = bytes.Length;
+        context.Response.KeepAlive = false;
+        context.Response.Headers["Cache-Control"] = "no-store";
+        await context.Response.OutputStream.WriteAsync(bytes);
+        await context.Response.OutputStream.FlushAsync();
+        context.Response.OutputStream.Close();
+        context.Response.Close();
+        _logger.LogInformation("OAuth response written ({Bytes} bytes)", bytes.Length);
+    }
+
+    private async Task ApplyLoginAsync(LocalLoginResponse login, string provider, AppSettings settings)
+    {
+        _encryptedAccessToken = _dpapiHelper.Encrypt(login.AccessToken);
+        _encryptedRefreshToken = _dpapiHelper.Encrypt(login.RefreshToken);
+        _accessTokenExpiry = AccessTokenExpiryFrom(login.ExpiresIn, DateTime.UtcNow);
+        UserDisplayName = login.User.DisplayName;
+        UserEmail = login.User.Email;
+        Provider = provider;
+        IsLoggedIn = true;
+
+        settings.SyncEnabled = true;
+        settings.EncryptedAccessToken = _encryptedAccessToken;
+        settings.EncryptedRefreshToken = _encryptedRefreshToken;
+        settings.SyncUserId = login.User.Id.ToString();
+        settings.SyncUserEmail = login.User.Email;
+        settings.SyncUserDisplayName = login.User.DisplayName;
+        settings.SyncProvider = provider;
+        settings.SyncDeviceId ??= Guid.NewGuid().ToString();
+        await _settingsService.SaveSettingsAsync(settings);
+
+        LoginStateChanged?.Invoke(this, true);
+    }
+
+    // The server states the lifetime; the fixed 14 minutes only covers a response that omits it.
+    internal static DateTime AccessTokenExpiryFrom(int expiresInSeconds, DateTime now)
+    {
+        if (expiresInSeconds <= 0)
+            return now.AddMinutes(14);
+
+        // Refresh a little early, so a token that passes the check here is not expired on arrival.
+        var margin = Math.Min(60, expiresInSeconds / 2);
+        return now.AddSeconds(expiresInSeconds - margin);
     }
 
     public async Task<(bool Success, string? ErrorMessage)> LoginWithPasswordAsync(string email, string password)
@@ -218,37 +306,13 @@ public class AuthService : IAuthService
                 new LocalLoginRequest { Email = email, Password = password });
 
             if (!response.IsSuccessStatusCode)
-            {
-                var errorJson = await response.Content.ReadFromJsonAsync<JsonElement>();
-                var errorMessage = errorJson.TryGetProperty("message", out var msg)
-                    ? msg.GetString()
-                    : "Login failed";
-                return (false, errorMessage);
-            }
+                return (false, await ReadErrorMessageAsync(response, CancellationToken.None) ?? "Login failed");
 
             var loginResponse = await response.Content.ReadFromJsonAsync<LocalLoginResponse>();
             if (loginResponse is null)
                 return (false, "Invalid server response");
 
-            _encryptedAccessToken = _dpapiHelper.Encrypt(loginResponse.AccessToken);
-            _encryptedRefreshToken = _dpapiHelper.Encrypt(loginResponse.RefreshToken);
-            _accessTokenExpiry = DateTime.UtcNow.AddMinutes(14);
-            UserDisplayName = loginResponse.User.DisplayName;
-            UserEmail = loginResponse.User.Email;
-            Provider = "local";
-            IsLoggedIn = true;
-
-            settings.SyncEnabled = true;
-            settings.EncryptedAccessToken = _encryptedAccessToken;
-            settings.EncryptedRefreshToken = _encryptedRefreshToken;
-            settings.SyncUserId = loginResponse.User.Id.ToString();
-            settings.SyncUserEmail = loginResponse.User.Email;
-            settings.SyncUserDisplayName = loginResponse.User.DisplayName;
-            settings.SyncProvider = "local";
-            settings.SyncDeviceId ??= Guid.NewGuid().ToString();
-            await _settingsService.SaveSettingsAsync(settings);
-
-            LoginStateChanged?.Invoke(this, true);
+            await ApplyLoginAsync(loginResponse, "local", settings);
             return (true, null);
         }
         catch (Exception ex)
@@ -454,7 +518,10 @@ public class AuthService : IAuthService
             var json = await response.Content.ReadFromJsonAsync<JsonElement>();
             var newAccessToken = json.GetProperty("accessToken").GetString();
             var newRefreshToken = json.GetProperty("refreshToken").GetString();
-            _accessTokenExpiry = DateTime.UtcNow.AddMinutes(14);
+            var expiresIn = json.TryGetProperty("expiresIn", out var lifetime) && lifetime.TryGetInt32(out var seconds)
+                ? seconds
+                : 0;
+            _accessTokenExpiry = AccessTokenExpiryFrom(expiresIn, DateTime.UtcNow);
 
             _encryptedAccessToken = string.IsNullOrEmpty(newAccessToken)
                 ? null : _dpapiHelper.Encrypt(newAccessToken);
