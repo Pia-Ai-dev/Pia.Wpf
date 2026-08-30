@@ -91,7 +91,7 @@ internal static class RoutineBlueprintCatalog
             Category: RoutineBlueprintCategories.Ready,
             Kind: ScheduledJobKind.Research,
             Recurrence: RecurrenceType.Daily,
-            DefaultTime: new TimeOnly(6, 30),
+            DefaultTime: new TimeOnly(8, 0),
             DefaultDayOfWeek: null,
             QueryTemplate:
                 "Search the web for the main news of the past day, focused on {focus}. At most six headlines, one "
@@ -120,7 +120,7 @@ internal static class RoutineBlueprintCatalog
             Category: RoutineBlueprintCategories.Ready,
             Kind: ScheduledJobKind.Research,
             Recurrence: RecurrenceType.Daily,
-            DefaultTime: new TimeOnly(7, 30),
+            DefaultTime: new TimeOnly(8, 30),
             DefaultDayOfWeek: null,
             QueryTemplate:
                 "Teach one word or short phrase in {language}. Give the word, its pronunciation written in plain "
@@ -148,7 +148,7 @@ internal static class RoutineBlueprintCatalog
             Category: RoutineBlueprintCategories.Ready,
             Kind: ScheduledJobKind.Research,
             Recurrence: RecurrenceType.Daily,
-            DefaultTime: new TimeOnly(8, 0),
+            DefaultTime: new TimeOnly(9, 0),
             DefaultDayOfWeek: null,
             QueryTemplate:
                 "Search the web for what is new on the topic of {topic} in the past day. "
@@ -179,7 +179,7 @@ internal static class RoutineBlueprintCatalog
             Category: RoutineBlueprintCategories.Ready,
             Kind: ScheduledJobKind.Research,
             Recurrence: RecurrenceType.Daily,
-            DefaultTime: new TimeOnly(8, 30),
+            DefaultTime: new TimeOnly(9, 30),
             DefaultDayOfWeek: null,
             QueryTemplate:
                 "Search the web for security advisories and patches published in the past day for {products}. One "
@@ -275,7 +275,7 @@ internal static class RoutineBlueprintCatalog
             Category: RoutineBlueprintCategories.Ready,
             Kind: ScheduledJobKind.Research,
             Recurrence: RecurrenceType.Weekly,
-            DefaultTime: new TimeOnly(7, 0),
+            DefaultTime: new TimeOnly(8, 0),
             DefaultDayOfWeek: DayOfWeek.Monday,
             QueryTemplate:
                 "Follow these teams: {teams}. If that list still names Bayern Munich and Real Madrid, open with "
@@ -307,7 +307,7 @@ internal static class RoutineBlueprintCatalog
             Category: RoutineBlueprintCategories.Ready,
             Kind: ScheduledJobKind.Research,
             Recurrence: RecurrenceType.Weekly,
-            DefaultTime: new TimeOnly(7, 30),
+            DefaultTime: new TimeOnly(8, 30),
             DefaultDayOfWeek: DayOfWeek.Monday,
             QueryTemplate:
                 "Watch these clients and partners: {accounts}. If that list still names Microsoft, SAP and "
@@ -340,7 +340,7 @@ internal static class RoutineBlueprintCatalog
             Category: RoutineBlueprintCategories.Ready,
             Kind: ScheduledJobKind.Research,
             Recurrence: RecurrenceType.Weekly,
-            DefaultTime: new TimeOnly(8, 0),
+            DefaultTime: new TimeOnly(9, 0),
             DefaultDayOfWeek: DayOfWeek.Monday,
             QueryTemplate:
                 "Watch these companies: {companies}. If no company is named there, start with recall and "
@@ -377,7 +377,7 @@ internal static class RoutineBlueprintCatalog
             Category: RoutineBlueprintCategories.Ready,
             Kind: ScheduledJobKind.Research,
             Recurrence: RecurrenceType.Weekly,
-            DefaultTime: new TimeOnly(8, 0),
+            DefaultTime: new TimeOnly(9, 0),
             DefaultDayOfWeek: DayOfWeek.Monday,
             QueryTemplate:
                 "Search the web for what moved in {industry} over the past week. At most six items; for each, one "
@@ -407,7 +407,7 @@ internal static class RoutineBlueprintCatalog
             Category: RoutineBlueprintCategories.Ready,
             Kind: ScheduledJobKind.Research,
             Recurrence: RecurrenceType.Weekly,
-            DefaultTime: new TimeOnly(9, 0),
+            DefaultTime: new TimeOnly(9, 30),
             DefaultDayOfWeek: DayOfWeek.Monday,
             QueryTemplate:
                 "Search the web for regulatory changes published in the past week covering {scope}. For each one "
@@ -529,7 +529,7 @@ internal static class RoutineBlueprintCatalog
             Category: RoutineBlueprintCategories.YourData,
             Kind: ScheduledJobKind.Research,
             Recurrence: RecurrenceType.Daily,
-            DefaultTime: new TimeOnly(7, 0),
+            DefaultTime: new TimeOnly(8, 0),
             DefaultDayOfWeek: null,
             QueryTemplate:
                 "Call query_todos with filter pending and query_reminders with filter active, then report today "

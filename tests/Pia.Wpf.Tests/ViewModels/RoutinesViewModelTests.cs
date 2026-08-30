@@ -668,7 +668,7 @@ public class RoutinesViewModelTests
         Assert.Equal(blueprint.DescriptionKey, card.Description);
         Assert.Equal($"Settings_ScheduledJobs_Kind_{blueprint.Kind}", card.KindLabel);
         Assert.Equal($"Settings_ScheduledJobs_Recurrence_{blueprint.Recurrence}", card.RecurrenceLabel);
-        Assert.Equal("08:00", card.TimeLabel);
+        Assert.Equal("09:00", card.TimeLabel);
         Assert.Equal("Routines_Blueprint_topic-digest", card.AutomationId);
     }
 
@@ -690,7 +690,7 @@ public class RoutinesViewModelTests
         Assert.DoesNotContain("{", sut.Vm.EditQuery);
         Assert.Equal(blueprint.Kind, sut.Vm.EditKind);
         Assert.Equal(blueprint.Recurrence, sut.Vm.EditRecurrence);
-        Assert.Equal("08:00", sut.Vm.EditTimeOfDay);
+        Assert.Equal("09:00", sut.Vm.EditTimeOfDay);
         Assert.Equal(
             blueprint.GrantedTools.OrderBy(t => t, StringComparer.Ordinal),
             TickedTools(sut.Vm).OrderBy(t => t, StringComparer.Ordinal));
@@ -735,7 +735,7 @@ public class RoutinesViewModelTests
         Assert.Null(sut.Vm.StatusMessage);
         await sut.Jobs.Received(1).CreateAsync(blueprint.TitleKey,
             RoutineBlueprintFill.ToCreateArgs(blueprint).Query!,
-            blueprint.Recurrence, new TimeOnly(8, 0), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(),
+            blueprint.Recurrence, new TimeOnly(9, 0), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(),
             Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(),
             Arg.Is<IReadOnlyCollection<string>>(g => g.Count == 0), blueprint.Kind, false,
             personaId: Arg.Any<Guid?>(), reasoningEffort: Arg.Any<ReasoningEffort?>(),
@@ -978,6 +978,29 @@ public class RoutinesViewModelTests
 
         sut.Vm.CancelEditCommand.Execute(null);
         AssertOnlyPane(sut.Vm, "catalog");
+    }
+
+    /// <summary>Home is a reset of the pane, not a navigation: every other state has to land back on the
+    /// placeholder, including the catalog, which no selection change would have closed.</summary>
+    [Fact]
+    public async Task GoHome_ReturnsToThePlaceholder_FromEveryOtherPane()
+    {
+        var sut = CreateSut(NewJob());
+        await sut.Vm.RefreshAsync();
+
+        sut.Vm.SelectedJob = Assert.Single(sut.Vm.Jobs);
+        sut.Vm.GoHomeCommand.Execute(null);
+        AssertOnlyPane(sut.Vm, "placeholder");
+
+        sut.Vm.BrowseBlueprintsCommand.Execute(null);
+        sut.Vm.GoHomeCommand.Execute(null);
+        AssertOnlyPane(sut.Vm, "placeholder");
+
+        sut.Vm.BrowseBlueprintsCommand.Execute(null);
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Vm.GoHomeCommand.Execute(null);
+        AssertOnlyPane(sut.Vm, "placeholder");
+        Assert.Null(sut.Vm.EditingJobId);
     }
 
     /// <summary>The exclusion is in the expression, not in the selection handler.</summary>

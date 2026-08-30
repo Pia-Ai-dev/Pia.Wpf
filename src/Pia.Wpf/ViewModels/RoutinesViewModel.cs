@@ -622,6 +622,15 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     [RelayCommand]
     private void CloseCatalog() => IsCatalogOpen = false;
 
+    // All three explicitly: clearing the selection only closes the catalog when the new value is non-null.
+    [RelayCommand]
+    private void GoHome()
+    {
+        CancelEdit();
+        IsCatalogOpen = false;
+        SelectedJob = null;
+    }
+
     /// <summary>Rebuilt rather than filtered in place: the query decides which groups exist at all.</summary>
     private void RebuildBlueprintGroups()
     {

@@ -1148,6 +1148,7 @@
   <data name="Assistant_OpenInCode_Tooltip" xml:space="preserve"><value>Ouvrir dans VS Code</value></data>
   <data name="Assistant_MoreChips_Tooltip" xml:space="preserve"><value>Afficher les entrées restantes</value></data>
   <data name="Routines_New" xml:space="preserve"><value>Nouvelle routine</value></data>
+  <data name="Routines_Home" xml:space="preserve"><value>Vue d'ensemble des routines</value></data>
   <data name="Settings_ScheduledJobs_Edit" xml:space="preserve"><value>Modifier</value></data>
   <data name="Settings_ScheduledJobs_Delete" xml:space="preserve"><value>Supprimer</value></data>
   <data name="Settings_ScheduledJobs_Enable" xml:space="preserve"><value>Activer</value></data>
