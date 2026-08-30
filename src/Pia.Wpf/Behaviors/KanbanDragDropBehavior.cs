@@ -1,7 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
 using System.Windows.Threading;
 using Pia.Helpers;
 
@@ -228,7 +227,7 @@ public static class KanbanDragDropBehavior
         {
             if (source is FrameworkElement fe && itemsControl.ItemContainerGenerator.IndexFromContainer(fe) >= 0)
                 return fe;
-            source = VisualTreeHelper.GetParent(source);
+            source = source.GetVisualOrLogicalParent();
         }
         return null;
     }

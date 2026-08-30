@@ -11,7 +11,7 @@ public static class VisualTreeExtensions
         while (obj is not null)
         {
             if (obj is T target) return target;
-            obj = GetParent(obj);
+            obj = obj.GetVisualOrLogicalParent();
         }
         return null;
     }
@@ -21,7 +21,7 @@ public static class VisualTreeExtensions
         while (obj is not null)
         {
             if (obj is T fe && fe.Name == name) return fe;
-            obj = GetParent(obj);
+            obj = obj.GetVisualOrLogicalParent();
         }
         return null;
     }
@@ -40,7 +40,7 @@ public static class VisualTreeExtensions
 
     // VisualTreeHelper.GetParent throws on ContentElement (Run, Hyperlink, etc.);
     // fall back to the logical tree until we re-enter the visual tree.
-    private static DependencyObject? GetParent(DependencyObject obj) =>
+    public static DependencyObject? GetVisualOrLogicalParent(this DependencyObject obj) =>
         obj is Visual or Visual3D
             ? VisualTreeHelper.GetParent(obj)
             : LogicalTreeHelper.GetParent(obj);
