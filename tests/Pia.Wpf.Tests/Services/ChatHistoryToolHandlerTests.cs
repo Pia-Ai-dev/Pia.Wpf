@@ -519,6 +519,36 @@ public sealed class ChatHistoryToolHandlerTests : IDisposable
     }
 
     [Fact]
+    public async Task SearchChats_that_matches_nothing_says_what_it_searched()
+    {
+        StubRanked();
+
+        var json = Json(await CallAsync(
+            "search_chats", new Dictionary<string, object?> { ["query"] = "NVDA AVGO stock movements" }));
+
+        Assert.Empty(json.GetProperty("chats").EnumerateArray());
+        var note = json.GetProperty("note").GetString()!;
+        // The snippet note is meaningless with no hits, and a miss is where a model retries this tool
+        // hoping it searches the web.
+        Assert.DoesNotContain("Snippets are excerpts", note, StringComparison.Ordinal);
+        Assert.Contains("not a web, file or vault search", note, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SearchChats_with_no_query_and_no_stored_chats_says_the_history_is_empty()
+    {
+        StubRecent();
+
+        var json = Json(await CallAsync("search_chats", new Dictionary<string, object?>()));
+
+        Assert.Empty(json.GetProperty("chats").EnumerateArray());
+        var note = json.GetProperty("note").GetString()!;
+        Assert.Contains("No past conversations are stored", note, StringComparison.Ordinal);
+        // Nothing to retry with different words here — the store is empty, not the match.
+        Assert.DoesNotContain("Retry with words", note, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Neither_tool_writes_to_the_store()
     {
         var id = Guid.NewGuid();

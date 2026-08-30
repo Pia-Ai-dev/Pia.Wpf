@@ -22,6 +22,16 @@ public class ChatHistoryToolHandler : IChatHistoryToolHandler
     private const string SearchNote =
         "Snippets are excerpts. Call read_chat(chat_id) for the actual conversation before relying on it.";
 
+    // A miss is where a model that wants some other kind of search retries this one; it has reached for
+    // this tool to look for news on the web. Spend the empty envelope saying what was searched.
+    private const string EmptySearchNote =
+        "Nothing matched. This searches only past conversations with this user — it is not a web, file or " +
+        "vault search. Retry with words you expect to appear in the conversation, or omit query to list " +
+        "the most recent chats.";
+
+    private const string NoStoredChatsNote =
+        "No past conversations are stored, so there is no history to search.";
+
     private const string CurrentChatRefusal =
         "That is the current conversation; it is already in front of you.";
 
@@ -137,7 +147,11 @@ public class ChatHistoryToolHandler : IChatHistoryToolHandler
 
         _logger.LogInformation("search_chats returned {Count} hit(s)", hits.Count);
         _logger.SensitiveDebug("search_chats query: {Query}", query);
-        return new SearchEnvelope(hits, SearchNote);
+
+        var note = hits.Count > 0
+            ? SearchNote
+            : string.IsNullOrWhiteSpace(query) ? NoStoredChatsNote : EmptySearchNote;
+        return new SearchEnvelope(hits, note);
     }
 
     private async Task<object?> HandleReadAsync(IDictionary<string, object?> args, CancellationToken ct)
