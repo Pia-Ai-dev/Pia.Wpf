@@ -53,6 +53,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IFilesToolHandler _filesToolHandler;
     private readonly IMarkdownExportService _markdownExportService;
     private readonly IDialogService _dialogService;
+    private readonly IFileDialogService? _fileDialogService;
     private readonly IAiFeedbackService? _aiFeedback;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly IVolatileWorkStore? _volatileWork;
@@ -224,7 +225,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IAsyncRelayCommand<AssistantMessage> PlayMessageCommand { get; }
     public IAsyncRelayCommand<AssistantMessage> RegenerateMessageCommand { get; }
     public IAsyncRelayCommand<RegenerateRequest> RegenerateStyledCommand { get; }
-    public IAsyncRelayCommand<AssistantMessage> ExportMessageHtmlCommand { get; }
+    public IAsyncRelayCommand<AssistantMessage> ExportMessageCommand { get; }
     public IAsyncRelayCommand<AnswerRatingRequest> RateMessageCommand { get; }
     public IAsyncRelayCommand EnterVoiceModeCommand { get; }
     public IRelayCommand<string> UseSuggestionCommand { get; }
@@ -301,7 +302,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // Trailing and defaulted, same discipline as the ones above; null ⇒ the empty state shows no chips.
         IStarterSuggestionService? starterSuggestions = null,
         // Trailing and defaulted, same discipline; null ⇒ thumbs on Pia Cloud answers do nothing.
-        IAiFeedbackService? aiFeedback = null)
+        IAiFeedbackService? aiFeedback = null,
+        // Trailing and defaulted, same discipline; null ⇒ the export dialog's External button has no picker,
+        // so it does nothing rather than writing somewhere the user did not choose.
+        IFileDialogService? fileDialogService = null)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -335,6 +339,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _filesToolHandler = filesToolHandler;
         _markdownExportService = markdownExportService;
         _dialogService = dialogService;
+        _fileDialogService = fileDialogService;
         _uiDispatcher = uiDispatcher;
         _permissions = permissions;
         _runSteering = runSteering;
@@ -357,7 +362,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         PlayMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecutePlayMessage, AsyncRelayCommandOptions.AllowConcurrentExecutions);
         RegenerateMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecuteRegenerateMessage);
         RegenerateStyledCommand = new AsyncRelayCommand<RegenerateRequest>(ExecuteRegenerateStyled);
-        ExportMessageHtmlCommand = new AsyncRelayCommand<AssistantMessage>(ExecuteExportMessageHtml);
+        ExportMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecuteExportMessage);
         RateMessageCommand = new AsyncRelayCommand<AnswerRatingRequest>(ExecuteRateMessage);
         EnterVoiceModeCommand = new AsyncRelayCommand(ExecuteEnterVoiceMode, CanEnterVoiceMode);
         UseSuggestionCommand = new RelayCommand<string>(ExecuteUseSuggestion);
@@ -1341,6 +1346,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         var prompt = prior.Content;
         var attachment = prior.Attachment;
+        // Captured before the removal below, which takes the answer a styled instruction has to quote.
+        var previousAnswer = message.Content;
         for (var i = Messages.Count - 1; i >= idx - 1; i--)
             Messages.RemoveAt(i);
 
@@ -1349,24 +1356,40 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var session = _chatSessionManager.ActiveSession
             ?? _chatSessionManager.GetOrCreateActiveForNewChat();
 
-        await _chatSessionManager.StartTurnAsync(session, prompt, attachment, RegenerateInstructions.For(style));
+        await _chatSessionManager.StartTurnAsync(session, prompt, attachment, RegenerateInstructions.For(style, previousAnswer));
     }
 
-    private async Task ExecuteExportMessageHtml(AssistantMessage? message)
+    /// <summary>
+    /// Asks where the answer should go before writing anything. "Store in vault" files it as Markdown under
+    /// the vault's Exports folder — where it is indexed for recall; "External" renders the HTML document and
+    /// writes it wherever the Save dialog lands.
+    /// </summary>
+    private async Task ExecuteExportMessage(AssistantMessage? message)
     {
         if (message is null || string.IsNullOrEmpty(message.Content))
             return;
 
+        var fallbackTitle = _localizationService["Msg_Assistant_ExportDefaultTitle"];
+        var edit = new AnswerExportEditModel(_markdownExportService.SuggestFileName(message.Content, fallbackTitle));
+
+        var destination = await _dialogService.ShowAnswerExportDialogAsync(edit);
+        if (destination == AnswerExportDestination.Cancel)
+            return;
+
         try
         {
-            var fallbackTitle = _localizationService["Msg_Assistant_ExportDefaultTitle"];
-            var path = await _markdownExportService.ExportAsync(
-                message.Content, title: null, fallbackTitle, _chatSessionManager.ActiveSession?.WorkingDirectory,
-                message.Stats?.ProvenanceLabel);
+            var path = destination == AnswerExportDestination.Vault
+                ? await _markdownExportService.ExportToVaultAsync(message.Content, edit.FileName, fallbackTitle)
+                : await ExportExternallyAsync(message, edit.FileName, fallbackTitle);
 
-            // Surface the generated file as an open-file/open-folder chip, and open it in the browser.
+            // Null only from a cancelled Save dialog — the user backed out, so say nothing.
+            if (path is null)
+                return;
+
+            // Surface the written file as an open-file/open-folder chip.
             message.AddOrUpgradeFileRef(new FileRef(path, FileRefKind.Exported));
-            ShellLauncher.OpenFile(path);
+            if (edit.OpenAfterStorage)
+                ShellLauncher.OpenFile(path);
 
             _snackbarService.Show(
                 _localizationService["Msg_Assistant_Exported"],
@@ -1375,12 +1398,42 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to export message to HTML");
+            _logger.LogError(ex, "Failed to export message ({Destination})", destination);
             _snackbarService.Show(
                 _localizationService["Msg_Error"],
                 _localizationService["Msg_Assistant_ExportFailed"],
                 Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(3));
         }
+    }
+
+    /// <summary>Save-As, then the HTML render. Returns null when the picker was cancelled.</summary>
+    private async Task<string?> ExportExternallyAsync(AssistantMessage message, string fileName, string fallbackTitle)
+    {
+        var path = DebugPresetPath("PIA_DEBUG_ANSWER_EXPORT_FILE")
+            ?? _fileDialogService?.PromptSaveFile(
+                title: _localizationService["AnswerExport_SaveDialogTitle"],
+                filter: _localizationService["AnswerExport_SaveDialogFilter"],
+                defaultFileName: fileName + ".html",
+                initialDirectory: null);
+        if (string.IsNullOrEmpty(path))
+            return null;
+
+        await _markdownExportService.ExportToPathAsync(
+            message.Content, path, fallbackTitle, message.Stats?.ProvenanceLabel);
+        return path;
+    }
+
+    /// <summary>
+    /// Dev-only: a preset path that stands in for the file picker, so a UI script can drive the real Export
+    /// button without automating a native dialog. Always null in release.
+    /// </summary>
+    private static string? DebugPresetPath(string environmentVariable)
+    {
+#if DEBUG
+        return Environment.GetEnvironmentVariable(environmentVariable) is { Length: > 0 } path ? path : null;
+#else
+        return null;
+#endif
     }
 
     /// <summary>

@@ -217,7 +217,7 @@
                     SpeakCommand="{Binding DataContext.PlayMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     RegenerateCommand="{Binding DataContext.RegenerateMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     RegenerateStyledCommand="{Binding DataContext.RegenerateStyledCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                    ExportCommand="{Binding DataContext.ExportMessageHtmlCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                    ExportCommand="{Binding DataContext.ExportMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     RateCommand="{Binding DataContext.RateMessageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     SuggestionCommand="{Binding DataContext.UseFollowupCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                     SwitchToAgentCommand="{Binding DataContext.SwitchToAgentCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"

@@ -13,6 +13,9 @@ public interface IDialogService
     Task<bool> ShowMeetingSaveDialogAsync(MeetingSaveEditModel meeting);
     /// <summary>True when the user chose Send; the report itself is built by <see cref="IAiFeedbackService"/>.</summary>
     Task<bool> ShowAiFeedbackDialogAsync(AiFeedbackEditModel feedback);
+
+    /// <summary>Asks for a filename and a destination; the edit model carries the name and the open-after flag back.</summary>
+    Task<AnswerExportDestination> ShowAnswerExportDialogAsync(AnswerExportEditModel export);
     Task<bool> ShowConfirmationDialogAsync(string title, string message);
 
     /// <summary>A confirmation that also carries back a "don't ask again" tick — where the suppression is
@@ -26,7 +29,7 @@ public interface IDialogService
     Task<KeyboardShortcut?> ShowHotkeyCaptureDialogAsync();
     Task<bool> ShowRecordingDialogAsync(CancellationToken cancellationToken);
     Task<bool> ShowTranscribingDialogAsync(CancellationToken cancellationToken);
-    Task<string?> ShowInputDialogAsync(string title, string prompt);
+    Task<string?> ShowInputDialogAsync(string title, string prompt, string? initialValue = null);
 
     /// <summary>True once the user affirmed the selection; the caller then awaits
     /// <see cref="AssignmentConsentViewModel.SendAsync"/> and surfaces its <c>ResultMessage</c>.</summary>

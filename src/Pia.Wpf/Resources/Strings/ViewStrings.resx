@@ -1145,6 +1145,15 @@
   <data name="Assistant_Regenerate_Exportable" xml:space="preserve"><value>Export-ready</value></data>
   <data name="Assistant_RegenerateOptions_Tooltip" xml:space="preserve"><value>Regenerate with options</value></data>
   <data name="Assistant_Export_Tooltip" xml:space="preserve"><value>Export</value></data>
+  <data name="AnswerExport_DialogTitle" xml:space="preserve"><value>Export answer</value></data>
+  <data name="AnswerExport_FileName_Label" xml:space="preserve"><value>File name</value></data>
+  <data name="AnswerExport_FileName_Placeholder" xml:space="preserve"><value>Name for the exported file</value></data>
+  <data name="AnswerExport_OpenAfterStorage" xml:space="preserve"><value>Open after storage</value></data>
+  <data name="AnswerExport_StoreInVault" xml:space="preserve"><value>Store in vault</value></data>
+  <data name="AnswerExport_External" xml:space="preserve"><value>External</value></data>
+  <data name="AnswerExport_Destinations_Hint" xml:space="preserve"><value>Store in vault files a Markdown note under Vault\sources\Exports, where Pia ingests it into your knowledge base. External saves a standalone HTML document to a folder you pick.</value></data>
+  <data name="AnswerExport_SaveDialogTitle" xml:space="preserve"><value>Save exported answer</value></data>
+  <data name="AnswerExport_SaveDialogFilter" xml:space="preserve"><value>HTML document (*.html)|*.html|All files (*.*)|*.*</value></data>
   <data name="Assistant_OpenFolder_Tooltip" xml:space="preserve"><value>Open containing folder</value></data>
   <data name="Assistant_OpenInCode_Tooltip" xml:space="preserve"><value>Open in VS Code</value></data>
   <data name="Assistant_MoreChips_Tooltip" xml:space="preserve"><value>Show the remaining entries</value></data>

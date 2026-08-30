@@ -127,10 +127,14 @@ one `ww_invoke` runs the whole thing:
 | `AssistantHistory_ImportChats` | `PIA_DEBUG_CHAT_IMPORT_FILE` |
 | `AssistantHistory_ExportAll` / `_ExportArchive` (the `.json` archive) | `PIA_DEBUG_CHAT_EXPORT_FILE` |
 | `AssistantHistory_ExportMarkdown` (the `.md` transcript) | `PIA_DEBUG_CHAT_EXPORT_MARKDOWN_FILE` |
+| `Answer_Export_<id>` → **External** (the standalone `.html`) | `PIA_DEBUG_ANSWER_EXPORT_FILE` |
 
-Deliberately three variables, not two: the archive and the Markdown export write different formats, and one
-shared path would have them overwrite each other. `Answer_Export_<id>` (per-answer HTML) needs no bypass —
-it writes to `<working dir>/Exports/pia-answer-<stamp>.html` by itself and opens the file.
+Deliberately separate variables: each of these writes a different format, and one shared path would have
+them overwrite each other.
+
+`Answer_Export_<id>` opens the export dialog first (`AnswerExport_FileName`, `AnswerExport_OpenAfterStorage`,
+and the three `ContentDialog` buttons Store in vault / External / Cancel). **Store in vault** needs no bypass —
+it writes `<vault>/sources/Exports/<name>.md` by itself. Only **External** reaches the native picker.
 
 Built-in personas expose only `Persona_Duplicate_<guid>`; edit/delete exist for user personas
 only. Use `automationId*=Persona_Edit_` to enumerate the editable ones.

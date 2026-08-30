@@ -54,6 +54,43 @@ public sealed class MarkdownExportService : IMarkdownExportService
         return path;
     }
 
+    /// <summary>
+    /// Markdown, not HTML: the file lands in the vault's <c>sources/</c> RAW layer, where auto-ingest picks
+    /// it up and compiles it into the topic pages. The answer is written verbatim.
+    /// </summary>
+    public async Task<string> ExportToVaultAsync(
+        string markdown, string fileName, string fallbackTitle, CancellationToken ct = default)
+    {
+        var folder = await ResolveVaultExportsFolderAsync();
+        Directory.CreateDirectory(folder);
+
+        var stem = SanitizeStem(StripExtension(fileName, MarkdownExtension), fallbackTitle);
+        var path = NextAvailableNamedPath(folder, stem, MarkdownExtension);
+        await File.WriteAllTextAsync(path, markdown, Encoding.UTF8, ct);
+
+        _logger.LogInformation("Exported assistant answer to the vault ({Chars} chars)", markdown.Length);
+        _logger.SensitiveDebug("Vault export path: {Path}", path);
+        return path;
+    }
+
+    /// <summary>Writes the HTML render to the exact path the user picked — no renaming, no collision suffix.</summary>
+    public async Task ExportToPathAsync(
+        string markdown, string absolutePath, string fallbackTitle, string? aiModelLabel = null,
+        CancellationToken ct = default)
+    {
+        var html = ToHtml(markdown, DeriveTitle(markdown) ?? fallbackTitle, aiModelLabel);
+
+        var folder = Path.GetDirectoryName(absolutePath);
+        if (!string.IsNullOrEmpty(folder)) Directory.CreateDirectory(folder);
+        await File.WriteAllTextAsync(absolutePath, html, Encoding.UTF8, ct);
+
+        _logger.LogInformation("Exported assistant answer to a chosen path ({Chars} chars)", markdown.Length);
+        _logger.SensitiveDebug("External export path: {Path}", absolutePath);
+    }
+
+    public string SuggestFileName(string markdown, string fallbackTitle) =>
+        SanitizeStem(DeriveTitle(markdown), fallbackTitle);
+
     public string ToHtml(string markdown, string title, string? aiModelLabel = null)
     {
         var htmlBody = Markdig.Markdown.ToHtml(markdown, _pipeline);
@@ -378,6 +415,26 @@ public sealed class MarkdownExportService : IMarkdownExportService
         return Path.Combine(baseRoot, ExportsSubfolder);
     }
 
+    private async Task<string> ResolveVaultExportsFolderAsync()
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        return VaultExportsFolderFor(settings.AssistantFilesFolder);
+    }
+
+    /// <summary>
+    /// Vault export folder for a configured files folder: under the <c>sources/</c> RAW layer, which is what
+    /// auto-ingest watches — outside it the file is only chunk-indexed, never compiled into a topic page. A
+    /// blank setting is the default install, and it still has to land inside the vault, not beside it.
+    /// </summary>
+    internal static string VaultExportsFolderFor(string? configuredFilesFolder)
+    {
+        var root = string.IsNullOrWhiteSpace(configuredFilesFolder)
+            ? AssistantWorkspace.DefaultRoot
+            : Path.GetFullPath(configuredFilesFolder);
+
+        return Path.Combine(AssistantWorkspace.VaultRootFor(root), SourcesSubfolder, ExportsSubfolder);
+    }
+
     private static string NextAvailablePath(string folder)
     {
         var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
@@ -390,4 +447,54 @@ public sealed class MarkdownExportService : IMarkdownExportService
             if (!File.Exists(candidate)) return candidate;
         }
     }
+
+    private static string NextAvailableNamedPath(string folder, string stem, string extension)
+    {
+        var candidate = Path.Combine(folder, $"{stem}{extension}");
+        for (var i = 2; File.Exists(candidate); i++)
+            candidate = Path.Combine(folder, $"{stem}-{i}{extension}");
+        return candidate;
+    }
+
+    /// <summary>Drops the extension the writer is about to add, so a typed "notes.md" cannot become "notes.md.md".</summary>
+    private static string StripExtension(string fileName, string extension)
+    {
+        var typed = fileName.Trim();
+        return typed.EndsWith(extension, StringComparison.OrdinalIgnoreCase)
+            ? typed[..^extension.Length]
+            : typed;
+    }
+
+    /// <summary>
+    /// Turns user-typed text into a bare filename. Every invalid char — including the separators and
+    /// the drive colon — becomes '_', so the result cannot walk out of the Exports folder.
+    /// </summary>
+    private static string SanitizeStem(string? name, string fallback)
+    {
+        var cleaned = Clean(name);
+        if (cleaned.Length > 0) return cleaned;
+
+        cleaned = Clean(fallback);
+        return cleaned.Length > 0 ? cleaned : "pia-answer";
+
+        static string Clean(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+
+            var invalid = Path.GetInvalidFileNameChars();
+            var sb = new StringBuilder(value.Length);
+            foreach (var ch in value)
+                sb.Append(Array.IndexOf(invalid, ch) >= 0 ? '_' : ch);
+
+            // Windows silently drops a trailing dot or space, which would turn "x." into a second "x".
+            var trimmed = sb.ToString().Trim().TrimEnd('.', ' ');
+            return trimmed.Length > MaxStemLength ? trimmed[..MaxStemLength].TrimEnd('.', ' ') : trimmed;
+        }
+    }
+
+    private const int MaxStemLength = 100;
+    private const string MarkdownExtension = ".md";
+
+    /// <summary>The vault's RAW ingest layer.</summary>
+    private const string SourcesSubfolder = "sources";
 }

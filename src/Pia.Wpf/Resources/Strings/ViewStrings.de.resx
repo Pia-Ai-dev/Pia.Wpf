@@ -1135,6 +1135,15 @@
   <data name="Assistant_Regenerate_Exportable" xml:space="preserve"><value>Export-fertig</value></data>
   <data name="Assistant_RegenerateOptions_Tooltip" xml:space="preserve"><value>Mit Optionen neu generieren</value></data>
   <data name="Assistant_Export_Tooltip" xml:space="preserve"><value>Exportieren</value></data>
+  <data name="AnswerExport_DialogTitle" xml:space="preserve"><value>Antwort exportieren</value></data>
+  <data name="AnswerExport_FileName_Label" xml:space="preserve"><value>Dateiname</value></data>
+  <data name="AnswerExport_FileName_Placeholder" xml:space="preserve"><value>Name für die exportierte Datei</value></data>
+  <data name="AnswerExport_OpenAfterStorage" xml:space="preserve"><value>Nach dem Speichern öffnen</value></data>
+  <data name="AnswerExport_StoreInVault" xml:space="preserve"><value>Im Vault speichern</value></data>
+  <data name="AnswerExport_External" xml:space="preserve"><value>Extern</value></data>
+  <data name="AnswerExport_Destinations_Hint" xml:space="preserve"><value>Im Vault speichern legt eine Markdown-Notiz unter Vault\sources\Exports ab, die Pia in Ihre Wissensbasis aufnimmt. Extern speichert ein eigenständiges HTML-Dokument in einem Ordner Ihrer Wahl.</value></data>
+  <data name="AnswerExport_SaveDialogTitle" xml:space="preserve"><value>Exportierte Antwort speichern</value></data>
+  <data name="AnswerExport_SaveDialogFilter" xml:space="preserve"><value>HTML-Dokument (*.html)|*.html|Alle Dateien (*.*)|*.*</value></data>
   <data name="Assistant_OpenFolder_Tooltip" xml:space="preserve"><value>Enthaltenden Ordner öffnen</value></data>
   <data name="Assistant_OpenInCode_Tooltip" xml:space="preserve"><value>In VS Code öffnen</value></data>
   <data name="Assistant_MoreChips_Tooltip" xml:space="preserve"><value>Restliche Einträge anzeigen</value></data>

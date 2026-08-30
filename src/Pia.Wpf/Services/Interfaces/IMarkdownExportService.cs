@@ -28,4 +28,24 @@ public interface IMarkdownExportService
     Task<string> ExportAsync(
         string markdown, string? title, string fallbackTitle, string? workingSubpath, string? aiModelLabel = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Writes <paramref name="markdown"/> verbatim as a <c>.md</c> file named <paramref name="fileName"/>
+    /// under the vault's <c>sources/Exports</c> folder — the RAW layer auto-ingest watches, so the answer
+    /// is compiled into the topic pages. The name is sanitized and contained; a collision gets a numeric
+    /// suffix rather than overwriting. Returns the absolute path.
+    /// </summary>
+    Task<string> ExportToVaultAsync(
+        string markdown, string fileName, string fallbackTitle, CancellationToken ct = default);
+
+    /// <summary>
+    /// Renders <paramref name="markdown"/> to HTML and writes it to <paramref name="absolutePath"/> exactly
+    /// as given — the user already picked the path in a Save dialog that handled overwriting.
+    /// </summary>
+    Task ExportToPathAsync(
+        string markdown, string absolutePath, string fallbackTitle, string? aiModelLabel = null,
+        CancellationToken ct = default);
+
+    /// <summary>Filename to offer the user in the export dialog, derived from the answer.</summary>
+    string SuggestFileName(string markdown, string fallbackTitle);
 }

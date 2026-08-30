@@ -87,6 +87,20 @@ public class DialogService : IDialogService
         return result == ContentDialogResult.Primary;
     }
 
+    public async Task<AnswerExportDestination> ShowAnswerExportDialogAsync(AnswerExportEditModel export)
+    {
+        var dialogHost = _contentDialogService.GetDialogHostEx()
+            ?? throw new InvalidOperationException("No dialog host available");
+        var dialog = new AnswerExportContentDialog(dialogHost, export);
+
+        return await dialog.ShowAsync() switch
+        {
+            ContentDialogResult.Primary => AnswerExportDestination.Vault,
+            ContentDialogResult.Secondary => AnswerExportDestination.External,
+            _ => AnswerExportDestination.Cancel,
+        };
+    }
+
     public async Task<bool> ShowAssignmentConsentDialogAsync(ViewModels.AssignmentConsentViewModel viewModel)
     {
         var dialogHost = _contentDialogService.GetDialogHostEx()
@@ -244,12 +258,16 @@ public class DialogService : IDialogService
         return cancellationToken.IsCancellationRequested;
     }
 
-    public async Task<string?> ShowInputDialogAsync(string title, string prompt)
+    public async Task<string?> ShowInputDialogAsync(string title, string prompt, string? initialValue = null)
     {
         var textBox = new System.Windows.Controls.TextBox
         {
-            Margin = new System.Windows.Thickness(0, 8, 0, 0)
+            Margin = new System.Windows.Thickness(0, 8, 0, 0),
+            Text = initialValue ?? string.Empty
         };
+        // Selecting only lands once the box is in the tree, and a prefill the user has to clear by hand is worse
+        // than no prefill at all.
+        textBox.Loaded += (_, _) => { textBox.Focus(); textBox.SelectAll(); };
         AutomationProperties.SetAutomationId(textBox, "InputDialog_Value");
 
         var stackPanel = new System.Windows.Controls.StackPanel();
