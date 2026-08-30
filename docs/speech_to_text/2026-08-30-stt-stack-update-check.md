@@ -42,7 +42,10 @@ Each model URL is pinned in four places — the constant, `scripts/RuntimeAssetC
 `ModelDownloadUrlTests`, and the mirror-key comparison in `RuntimeAssetCatalogTests`. Any change touches
 all four **and** requires a re-publish to `storage.pia-ai.de`.
 
-## Health of the current pins
+## Health of the pins
+
+Measured 2026-08-30, before the package bump. Endpoints do not depend on the library versions, so the
+result still stands and was not re-run after it.
 
 `pwsh scripts/Test-ExternalEndpoints.ps1` → **all 27 endpoints healthy**. Every model bundle returns 200
 with a `Content-Length` matching its `SizeHint` exactly, so no asset has been silently republished.

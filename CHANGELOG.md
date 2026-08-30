@@ -9,18 +9,17 @@ All notable changes to Pia are documented here.
   finished entry pre-selected when the user clicks "Show". Previously the
   handler dropped the entry id and dropped the user on an empty Research view.
 
-- Speech-to-text models now load for accounts whose Windows user name is not
-  plain ASCII. The speech engine reached its model files through narrow-character
-  Windows file APIs, and the models live under a path containing the account
-  name, so a name with umlauts or non-Latin characters could fail at model load.
-  Comes from moving sherpa-onnx to 1.13.5 (with ONNX Runtime to 1.27.1, which it
-  is built against).
+- Whisper transcripts can differ slightly from previous releases for identical
+  audio. The speech engine moved to sherpa-onnx 1.13.5 (with ONNX Runtime to
+  1.27.1, which it is built against), and that changes Whisper decoding: measured
+  better on the smallest model, and worse on one clip with the medium model.
+  Parakeet, the default backend, decodes identically, as does speaker
+  attribution.
 
-  Note for upgraders: the same engine change also alters how Whisper decodes.
-  Transcripts of identical audio can differ slightly from previous releases —
-  measured better on the smallest model and worse on one clip with the medium
-  model. Parakeet, the default backend, is unaffected and decodes identically,
-  as does speaker attribution.
+  The same engine change makes the speech models reach their files through
+  wide-character Windows APIs, which removes a failure mode for accounts whose
+  Windows user name is not plain ASCII — the model cache lives under a path
+  containing that name. Taken from the upstream fix; not reproduced here.
 
 ### Features
 
