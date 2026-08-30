@@ -153,12 +153,29 @@ jobs:
           Expand-Archive git-cliff.zip -DestinationPath git-cliff-bin
           echo "$PWD\git-cliff-bin\git-cliff-$version" | Out-File -Append $env:GITHUB_PATH
 
+      # A hand-written note beats a dump of every commit subject, so docs/release_notes/RELEASE.md
+      # wins when it is there. It has to NAME the version being built: without that check, a file
+      # nobody refreshed would silently republish the previous release's notes as this one's.
       - name: Generate release notes
         shell: bash
+        env:
+          TAG: ${{ steps.info.outputs.tag }}
+          VERSION: ${{ steps.info.outputs.version }}
         run: |
-          PREV_TAG=$(git describe --tags --abbrev=0)
-          git cliff "${PREV_TAG}..HEAD" --tag "${{ steps.info.outputs.tag }}" --strip header -o release-notes.md
-          printf "\n---\n**Full Changelog:** [CHANGELOG.md](https://github.com/Pia-Ai-dev/Pia.Wpf/blob/main/CHANGELOG.md)\n" >> release-notes.md
+          NOTES=docs/release_notes/RELEASE.md
+          if [ -f "$NOTES" ] && head -1 "$NOTES" | grep -qF "$VERSION"; then
+            cp "$NOTES" release-notes.md
+            echo "release notes taken from $NOTES"
+          else
+            if [ -f "$NOTES" ]; then
+              echo "::warning::$NOTES does not name $VERSION on its first line - falling back to git-cliff"
+            fi
+            PREV_TAG=$(git describe --tags --abbrev=0)
+            git cliff "${PREV_TAG}..HEAD" --tag "$TAG" --strip header -o release-notes.md
+          fi
+          # Appended to BOTH branches, so it is read as raw text on storage.pia-ai.de as often as
+          # it is rendered on GitHub. Hence a bare URL rather than a Markdown link.
+          printf "\nFull changelog: https://github.com/Pia-Ai-dev/Pia.Wpf/blob/main/CHANGELOG.md\n" >> release-notes.md
 
       - name: Create GitHub Release
         shell: bash
