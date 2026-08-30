@@ -1,4 +1,4 @@
-# Pia 1.4.0
+# Pia 1.4.5
 
 Successor to 1.3.389, covering roughly six weeks of work.
 
@@ -6,6 +6,22 @@ The headline is that Pia now carries out work on its own. Give it a goal and it
 writes a plan, works through it step by step, and checks its own result before
 handing it back. Routines put that on a schedule, and meetings can be joined,
 recorded and filed with nobody at the keyboard.
+
+## Since 1.4.0
+
+- Dragging a card by its text works again. On the todo board and in the
+  reorderable lists, grabbing a card on the words rather than the space around
+  them did nothing at all.
+- Routines has a Home button in its header that returns the pane to where it
+  started, from anywhere — including the blueprint catalog, which nothing else
+  closed.
+- No ready-made routine blueprint starts before 08:00 any more. Several
+  defaulted to a time before you are likely to be at the machine.
+- The window title is "Pia AI Assistant" without the mode name after it, which
+  read as a second, unrelated product sitting next to the assistant.
+- On the live transcription start screen, the consent sentence participants
+  have to speak now leads the screen instead of sitting below the fine print,
+  large enough to read off the host's display.
 
 ## Agent runs
 
