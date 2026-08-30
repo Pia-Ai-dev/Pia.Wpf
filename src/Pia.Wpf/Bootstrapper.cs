@@ -382,9 +382,9 @@ public static class Bootstrapper
             };
 
             // T2-18: registered by hand rather than through NReco's AddFile extension, because the provider is
-            // WRAPPED TWICE. NReco has no scope support whatsoever (no ISupportExternalScope, no
-            // IExternalScopeProvider, and FormatLogEntry cannot reach one), so ILogger.BeginScope(runId) would
-            // compile and be discarded before it reached the file a user attaches to a support request —
+            // WRAPPED TWICE. NReco's own scope support (optional, 1.4.0+) reaches only a provider MEL itself
+            // registered, never one constructed here, so ILogger.BeginScope(runId) would compile and be
+            // discarded before it reached the file a user attaches to a support request —
             // ScopeRenderingLoggerProvider is what makes the run/step scope visible there. LogMessageCapLoggerProvider
             // is the release-only length backstop (defence in depth; the load-bearing mechanism is still the
             // compile-time erasure of the Sensitive* family — 17-trust-model.md §4).

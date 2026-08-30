@@ -48,7 +48,7 @@ public sealed class OpenAiProviderHandler : IAiProviderHandler
 #pragma warning disable OPENAI001
         var client = new ResponsesClient(
             credential: new ApiKeyCredential(string.IsNullOrEmpty(apiKey) ? "unused" : apiKey),
-            options: new OpenAIClientOptions
+            options: new ResponsesClientOptions
             {
                 Endpoint = new Uri(provider.Endpoint),
                 Transport = new HttpClientPipelineTransport(http),

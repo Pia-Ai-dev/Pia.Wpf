@@ -6,12 +6,12 @@ namespace Pia.Logging;
 /// T2-18 — makes <see cref="ILogger.BeginScope{TState}"/> VISIBLE in the support log, by prefixing every line a
 /// wrapped provider writes with the scopes open on the writing async flow.
 /// <para>
-/// WHY THIS TYPE HAS TO EXIST: the file sink is <c>NReco.Logging.File</c>, and it has no scope support at all —
-/// its assembly contains zero references to <c>ISupportExternalScope</c> or <c>IExternalScopeProvider</c>, and
-/// its <c>FormatLogEntry</c> delegate is handed (category, timestamp, level, eventId, message, exception) with no
-/// way to reach a scope. So <c>BeginScope(runId)</c> compiles, costs an allocation, and is DISCARDED before it
-/// reaches <c>pia-*.log</c> — the one file a user attaches to a support request. Correlation that only exists in
-/// a debugger is not correlation.
+/// WHY THIS TYPE HAS TO EXIST: the file sink is <c>NReco.Logging.File</c>, whose optional scope support (1.4.0+)
+/// arrives only through <c>ISupportExternalScope</c> on a provider MEL registered itself — and its
+/// <c>FormatLogEntry</c> delegate is handed (category, timestamp, level, eventId, message, exception) with no
+/// way to reach a scope. The sink is constructed and wrapped by hand here, so <c>BeginScope(runId)</c> compiles,
+/// costs an allocation, and is DISCARDED before it reaches <c>pia-*.log</c> — the one file a user attaches to a
+/// support request. Correlation that only exists in a debugger is not correlation.
 /// </para>
 /// <para>
 /// WHY IT MATTERS NOW: T1-1 made the run pool a user setting and T1-2 made a wide pool safe, so two or more

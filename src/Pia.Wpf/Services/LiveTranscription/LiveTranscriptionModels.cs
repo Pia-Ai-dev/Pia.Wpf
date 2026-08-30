@@ -185,7 +185,7 @@ public static class LiveTranscriptionModels
         }
     }
 
-    private static void ExtractTarBz2(string archivePath, string targetDir)
+    internal static void ExtractTarBz2(string archivePath, string targetDir)
     {
         using var fileStream = File.OpenRead(archivePath);
         using var reader = ReaderFactory.OpenReader(fileStream);
