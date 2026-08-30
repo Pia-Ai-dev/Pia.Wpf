@@ -1,10 +1,12 @@
 # sherpa-onnx / Parakeet / Whisper — update check
 
-**Status:** Findings only, nothing changed. Five follow-ups proposed, none started.
+**Status:** Acted on. Silero re-pinned and the endpoint drift corrected (both 2026-08-30, `e67f7cef`);
+the package bump landed the same day on the owner's decision, **without** the WER pass this doc asked
+for — see **Suggested order** for what that leaves owing.
 **Owner:** Marco Altmann
 **Written:** 2026-08-30
 **Origin:** Ask to "check our sherpa / parakeet / whisper setup for updates". Supersedes rows 12–14 of
-[../plans/2026-08-16-nuget-update-audit.md](../plans/2026-08-16-nuget-update-audit.md), which named the
+[../dependency_audit/2026-08-16-nuget-update-audit.md](../dependency_audit/2026-08-16-nuget-update-audit.md), which named the
 same two package bumps but called them "verifiable only in a live transcription run" — they are now measured.
 
 ## Verdict
@@ -12,24 +14,29 @@ same two package bumps but called them "verifiable only in a live transcription 
 Nothing is broken and nothing is urgent. Every pinned URL still resolves, and the model bundles are
 byte-for-byte the sizes recorded on 2026-08-29.
 
-One bump is worth taking — `org.k2fsa.sherpa.onnx` 1.12.40 → 1.13.5, with `Microsoft.ML.OnnxRuntime`
-1.24.4 → 1.27.1 in lockstep. It compiles clean, and Parakeet plus speaker embeddings are bit-identical
-across it. It is **not** free: Whisper decoding changed, measurably, in both directions on the one clip
-tested. That needs a WER pass over the bench fixtures before it lands.
+One bump was worth taking and **has now landed**: `org.k2fsa.sherpa.onnx` 1.12.40 → 1.13.5, with
+`Microsoft.ML.OnnxRuntime` 1.24.4 → 1.27.1 in lockstep. It compiles clean, and Parakeet plus speaker
+embeddings are bit-identical across it.
+
+It was **not** free, and the cost was accepted rather than eliminated: Whisper decoding changed,
+measurably, in both directions on the one clip tested. This doc originally made a WER pass over the bench
+fixtures a precondition. The owner decided to land the bump without it, so that pass is now an
+outstanding check on shipped behaviour rather than a gate — the risk is real, known, and carried
+deliberately.
 
 No newer Whisper exists. No newer *multilingual* Parakeet exists. The one genuinely new model worth
 wanting is `nemotron-3.5-asr-streaming-0.6b`, and it is a feature, not a bump.
 
-## What is pinned today
+## What is pinned now
 
 | Thing | Pinned | Where |
 |---|---|---|
-| `org.k2fsa.sherpa.onnx` | 1.12.40 (2026-04-24) | `src/Pia.Wpf/Pia.Wpf.csproj:44` |
-| `Microsoft.ML.OnnxRuntime` | 1.24.4 | `src/Pia.Wpf/Pia.Wpf.csproj:52` |
+| `org.k2fsa.sherpa.onnx` | **1.13.5** (was 1.12.40) | `src/Pia.Wpf/Pia.Wpf.csproj:44` |
+| `Microsoft.ML.OnnxRuntime` | **1.27.1** (was 1.24.4) | `src/Pia.Wpf/Pia.Wpf.csproj:54` |
 | Whisper tiny/base/small/medium/large | `sherpa-onnx-whisper-{tiny,base,small,medium,turbo}.tar.bz2` | `LiveTranscriptionModels.WhisperBundleUrl` |
 | Parakeet | `sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2` | `LiveTranscriptionModels.ParakeetBundleUrl` |
 | Speaker embedding | `3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx` | `LiveTranscriptionModels.SpeakerEmbeddingUrl` |
-| Silero VAD | `snakers4/silero-vad` @ **`raw/master`** | `LiveTranscriptionModels.SileroVadUrl` |
+| Silero VAD | `snakers4/silero-vad` @ **`v6.2.1`** (was `raw/master`) | `LiveTranscriptionModels.SileroVadUrl` |
 
 Each model URL is pinned in four places — the constant, `scripts/RuntimeAssetCatalogue.ps1`,
 `ModelDownloadUrlTests`, and the mirror-key comparison in `RuntimeAssetCatalogTests`. Any change touches
@@ -40,12 +47,11 @@ all four **and** requires a re-publish to `storage.pia-ai.de`.
 `pwsh scripts/Test-ExternalEndpoints.ps1` → **all 27 endpoints healthy**. Every model bundle returns 200
 with a `Content-Length` matching its `SizeHint` exactly, so no asset has been silently republished.
 
-Two `Note` strings are now stale and should be dropped: the update feed
-(`storage.pia-ai.de/f/wpf/releases.win.json`) answers 200 with 736 bytes, and the asset mirror
-(`.../f/assets/models/silero_vad.onnx`) answers 200 with 2 327 524 bytes. Both still say "not deployed
-yet / nothing published to it yet". They live in `scripts/Test-ExternalEndpoints.ps1` and
-[../external_endpoints/2026-08-29-external-endpoint-inventory.md](../external_endpoints/2026-08-29-external-endpoint-inventory.md)
-section 10, and both files already carry uncommitted edits — left alone here.
+Two `Note` strings claimed the update feed and the asset mirror were undeployed. Both were serving:
+`storage.pia-ai.de/f/wpf/releases.win.json` answers 200 with 736 bytes, and all 11 mirror keys answer 200
+with upstream-matching lengths. **Corrected 2026-08-30** in `scripts/Test-ExternalEndpoints.ps1` and in
+[../external_endpoints/2026-08-29-external-endpoint-inventory.md](../external_endpoints/2026-08-29-external-endpoint-inventory.md),
+whose §5.1 turned out to be resolved rather than open — Let's Encrypt issued the certificate that morning.
 
 ## The package bump
 
@@ -69,12 +75,13 @@ did. That is the observation, not a resolution rule — two of the three rows ar
 could equally be package-name ordering or `PackageReference` order rather than anything about versions.
 Do not rely on it surviving a csproj reshuffle. The consequence, however, holds regardless of mechanism:
 
-- The current 1.24.4 pin is not arbitrary — it is exactly the ORT that sherpa 1.12.40 bundles. The pair
-  is deliberately aligned.
+- The old 1.24.4 pin was not arbitrary — it was exactly the ORT that sherpa 1.12.40 bundled. The pair was
+  deliberately aligned, and the new pair is aligned the same way.
 - Bumping sherpa alone silently raises the *native* ORT to 1.27.1 while `EmbeddingService` and
   `SileroVadDetector` keep loading the 1.24.4 *managed* assembly. That combination does work (ORT keeps
-  ABI back-compatibility) but it is not a combination Microsoft ships or tests. Bump both to 1.27.1, not
-  to 1.29.0 — 1.27.1 is what sherpa 1.13.5 was built against.
+  ABI back-compatibility) but it is not a combination Microsoft ships or tests. Hence both moved to 1.27.1
+  rather than to 1.29.0 — 1.27.1 is what sherpa 1.13.5 was built against. Verified after landing: the
+  `onnxruntime.dll` in both `bin/Debug` and `bin/Release` reports 1.27.1 (15 383 864 B).
 
 ### What it costs to compile: nothing
 
@@ -83,8 +90,9 @@ The whole sherpa API surface the client uses is four types — `OfflineRecognize
 `ParakeetSherpaEngine`, `WhisperSherpaEngine`, `SherpaEmbeddingExtractor` and
 `SpeakerIdentificationService`. No config field any of them sets was renamed.
 
-`dotnet build src/Pia.Wpf/Pia.Wpf.csproj -t:Rebuild` at 1.13.5 / 1.27.1: **0 Warning(s), 0 Error(s) in
-both Debug and Release**. Reverted afterwards; the working tree and `bin/` are back on 1.12.40 / 1.24.4.
+`dotnet build -t:Rebuild` at 1.13.5 / 1.27.1: **0 Warning(s), 0 Error(s) in both Debug and Release**,
+solution-wide. Test suite after landing: **5611 total, 0 failed** (the +6 against the pre-bump 5605 is
+`fc144d16` and `3b4774d6`, not this change — a package bump adds no tests).
 
 ### What it costs at model load: measured, on real models
 
@@ -109,7 +117,7 @@ the managed ORT left at **1.24.4** (so the native DLL is sherpa's 1.27.1). Its W
 to the 1.13.5 / 1.27.1 column, on both tiny and medium. Two different managed ORT versions agreeing with
 each other and disagreeing with 1.12.40 attributes the change to **sherpa 1.13.5, not to ONNX Runtime**.
 
-### The one real blocker: Whisper output changed
+### The one real cost: Whisper output changed
 
 Reproduced in both run orders.
 
@@ -200,12 +208,20 @@ Value: `High` user-visible or a real risk closed · `Med` worthwhile, not headli
    `storage.pia-ai.de` got its Let's Encrypt certificate that morning, so §5.1 of the endpoint inventory
    ("the update feed serves no TLS certificate") was resolved, not open. Corrected there too.
 2. ~~**Pin Silero to `v6.2.1`.**~~ **Done 2026-08-30** — four files, proven byte-identical by SHA256.
-3. **WER pass on sherpa 1.13.5 / ORT 1.27.1.** *Deps:* — · *Effort:* S · *Value:* High. Decide the bump
-   on the `artifacts/wav/` fixtures rather than on one clip. Parakeet and speaker embeddings are already
-   proven bit-identical, so the pass only has to cover Whisper.
-4. **Bump both packages, together, to 1.13.5 / 1.27.1** if step 3 holds. *Deps:* 3 · *Effort:* XS ·
-   *Value:* High. Buys the Windows wide-char path fix and the transcript-whitespace fixes. Needs a human
-   smoke test of a real meeting — a green build proves nothing about model load, which is why step 3's
-   probe exists.
-5. **Evaluate `nemotron-3.5-asr-streaming-0.6b`.** *Deps:* 4 · *Effort:* M · *Value:* High, speculative.
-   A streaming engine on `OnlineRecognizer` would change live transcription from chunked to continuous.
+3. ~~**Bump both packages, together, to 1.13.5 / 1.27.1.**~~ **Done 2026-08-30.** Landed ahead of the WER
+   pass below, on the owner's call. Verified: both configurations rebuild 0/0, suite 5611 / 0 failed, and
+   the probe re-run against the real models in `%LOCALAPPDATA%PiaModels` loads all five and returns
+   Parakeet and CAM++ output identical to the pre-bump baseline. What it buys is narrower than the version
+   gap suggests — see **What the bump actually buys**; the transcript-whitespace fixes turned out to be
+   moot for the models we ship.
+4. **WER pass on Whisper, now post-hoc.** *Deps:* 3 · *Effort:* S · *Value:* High. **Outstanding.** This
+   was written as the gate for step 3 and step 3 went first, so it is now a check on behaviour that is
+   already in the tree. Sample many windows across all five `artifacts/wav/` fixtures on both versions and
+   establish which direction Whisper moved. Parakeet and speaker embeddings are proven bit-identical, so it
+   only has to cover Whisper. If the answer is "worse", the revert is two version strings.
+5. **Human smoke test of a real meeting.** *Deps:* 3 · *Effort:* XS · *Value:* High. **Outstanding.** A
+   green build and a probe prove model load, not live capture through VAD, speaker attribution and the
+   transcript UI.
+6. **Evaluate `nemotron-3.5-asr-streaming-0.6b`.** *Deps:* 3 · *Effort:* M · *Value:* High, speculative.
+   Now unblocked — 1.13.5 is the version that can load it. See
+   [2026-08-30-nemotron-streaming-plan.md](2026-08-30-nemotron-streaming-plan.md).

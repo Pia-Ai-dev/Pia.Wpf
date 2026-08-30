@@ -1,6 +1,7 @@
 # Nemotron-3.5 streaming ASR — update path
 
-**Status:** Plan, not started. Gated on two decisions (see **Decision gates**); nothing below is approved.
+**Status:** Plan, not started. **G0 cleared 2026-08-30** — the package prerequisite landed, so this is now
+blocked only on someone choosing to do it. G1 and G2 are still open.
 **Owner:** Marco Altmann
 **Written:** 2026-08-30
 **Origin:** The "one candidate worth wanting" in
@@ -8,9 +9,8 @@
 Whisper and no newer *multilingual* Parakeet, leaving `nemotron-3.5-asr-streaming-0.6b` as the only
 upstream model that would change what the client can do rather than just which version it runs.
 
-No checklist file yet, deliberately: step 0 is a gate that can cancel everything below it, and a tracking
-surface for work that may not happen is noise. Create
-`2026-08-30-nemotron-streaming-checklist.md` when the gates clear.
+Still no checklist file: G0 cleared, but G1 and G2 remain, and G2 can still cancel everything from step 5
+down. Create `2026-08-30-nemotron-streaming-checklist.md` when someone actually schedules this.
 
 ## Why bother
 
@@ -59,15 +59,16 @@ Verified by reflecting over `sherpa-onnx.dll` 1.13.5 and reading `sherpa-onnx/cs
 
 ## Hard prerequisites
 
-1. **sherpa-onnx ≥ 1.13.5.** Support for these models landed in 1.13.3 (#3671), and 1.13.5 carries both
+1. ~~**sherpa-onnx ≥ 1.13.5.**~~ **Done — 1.13.5 is pinned as of 2026-08-30.** Support for these models
+   landed in 1.13.3 (#3671), and 1.13.5 carries both
    the ONNX re-export (#3732, #3734) and the greedy-search fix for NeMo streaming transducers (#3785).
-   Support landed after 1.12.40, which is what is pinned today, so 1.12.40 is not expected to load these
-   bundles — **untested**, no attempt was made to load one on the old version.
-2. **`Microsoft.ML.OnnxRuntime` bumped in lockstep to 1.27.1.** Both packages ship
-   `runtimes/win-x64/native/onnxruntime.dll`; see the update-check report for why they are one pin.
-3. Which means this plan inherits that bump's own gate: **sherpa 1.13.5 changes Whisper decoding.** On one
-   German clip, tiny improved and medium dropped a clause. That needs a WER pass over `artifacts/wav/`
-   before the bump lands, and this work cannot start until it does.
+   Support landed after 1.12.40, the version previously pinned, so that version was not expected to load
+   these bundles — **untested**, no attempt was made to load one on it.
+2. ~~**`Microsoft.ML.OnnxRuntime` bumped in lockstep to 1.27.1.**~~ **Done — same change.** Both packages
+   ship `runtimes/win-x64/native/onnxruntime.dll`; see the update-check report for why they are one pin.
+3. The bump's own open item is now **inherited rather than blocking**: sherpa 1.13.5 changes Whisper
+   decoding — on one German clip tiny improved and medium dropped a clause — and it landed without the
+   WER pass that was meant to gate it. That pass is outstanding, but it constrains Whisper, not this work.
 
 Parakeet and CAM++ speaker embeddings are already proven bit-identical across the bump, so the WER pass
 only has to cover Whisper.
@@ -130,7 +131,7 @@ entries, five mirror keys and 2.2 GiB of mirror traffic. Shipping one fixed vari
 
 | Gate | Question it answers | Cancels |
 |---|---|---|
-| **G0** | Does sherpa 1.13.5 hold up on the Whisper WER pass, and does the bump land? | Everything. Nemotron cannot load on 1.12.40. |
+| ~~**G0**~~ | ~~Does the package bump land?~~ **Cleared 2026-08-30** — 1.13.5 / 1.27.1 are pinned, so nothing here is blocked on it any more. | — |
 | **G1** | Fixed chunk size, or user-selectable? | If fixed: the settings work, the chunk-size combo, four catalogue entries and 1.8 GiB of mirror traffic. |
 | **G2** | Does nemotron beat Parakeet TDT v3 on German, measured on `artifacts/wav/`? | If not, stop after step 3 — keep it as an option, do not make it the default or replace Parakeet. |
 
@@ -144,10 +145,11 @@ Effort: `XS` under a day, no new types · `S` 1–2 days · `M` 3–5 days, new 
 Value: `High` user-visible or a real risk closed · `Med` worthwhile, not headline · `Enabler` little
 standalone value, unblocks a High.
 
-- [ ] **1. Land the package bump.** sherpa 1.13.5 + ORT 1.27.1, after the Whisper WER pass.
-      *Deps:* G0 · *Effort:* XS · *Value:* Enabler
+- [x] **1. Land the package bump.** sherpa 1.13.5 + ORT 1.27.1. **Done 2026-08-30**, ahead of the Whisper
+      WER pass rather than after it. *Deps:* — · *Effort:* XS · *Value:* Enabler
 - [ ] **2. Mirror one nemotron bundle.** Add the 560 ms int8 asset to the catalogue in all four places and
-      publish it to `storage.pia-ai.de`. *Deps:* 1, G1 · *Effort:* XS · *Value:* Enabler
+      publish it to `storage.pia-ai.de`. This is the first step now that 1 is done. *Deps:* G1 ·
+      *Effort:* XS · *Value:* Enabler
 - [ ] **3. Offline-shaped engine first.** `NemotronSherpaEngine : ITranscriptionEngine` over
       `OnlineRecognizer` — feed the segment, drain, return final text, with
       `SetOption("language", …)` wired to `TargetSpeechLanguage`. Proves model load, language selection
@@ -165,7 +167,7 @@ standalone value, unblocks a High.
 
 ## Suggested order
 
-Cheapest decisive work first: 1 → 2 → 3 → **4 (stop and look)** → 5 → 6 → 7.
+Cheapest decisive work first: ~~1~~ → 2 → 3 → **4 (stop and look)** → 5 → 6 → 7. Step 1 is already done.
 
 Step 4 is the decision point. Steps 1–4 are ~2–3 days and answer "is this model actually better on German
 than what we ship". If it is not, stop there: the engine exists, nothing is exposed to users, and no UI or
