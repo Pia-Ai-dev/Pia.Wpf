@@ -26,7 +26,7 @@ Schlagzeile · `Enabler` wenig eigener Wert, entsperrt ein High.
 - [x] **3. HTML-Export markieren** — `generator`/`ai-generated`/`ai-model` Meta und sichtbare Fußzeile; Aufrufer geben die Antwort-Herkunft mit. *Deps:* 2 · *Effort:* XS · *Value:* High
 - [x] **4. Markdown-Chat-Export markieren** — Frontmatter plus `*AI-generated · Anbieter · Modell*` unter jeder Antwort. *Deps:* 2 · *Effort:* XS · *Value:* Med
 - [x] **5. Vault-Dateien markieren** — `AiContentMarking.YamlLines()` in `pia-meeting/v1`, `pia-direct-transcript/v1`, `VaultFrontmatter.Build/BuildPreserving`; Goldens angepasst. *Deps:* — · *Effort:* XS · *Value:* Med
-- [x] **6. Fenstertitel** — `Pia AI Assistant - {Mode} (v…)`. *Deps:* — · *Effort:* XS · *Value:* Med
+- [x] **6. Fenstertitel** — `Pia AI Assistant (v…)`. *Deps:* — · *Effort:* XS · *Value:* Med
 - [x] **7. Info/About-Seite** — Version, Herausgeber, KI-Hinweis, Links Impressum/Datenschutz/Doku/Website; `SettingsTab.About`, AutomationIds, Playbook-Zeile. *Deps:* — · *Effort:* S · *Value:* High
 - [x] **8. Hinweis auf synthetische Stimme** — Voice-Overlay und Antwort-Badge während der Wiedergabe. *Deps:* — · *Effort:* XS · *Value:* Med
 - [ ] **9. Test-Gate auf Windows** — `dotnet test` mit `failed: 0`; der Mac kompiliert nur (Rebuild Debug und Release bei `0 Warnung(en)` ist erbracht). *Deps:* 1–8 · *Effort:* XS · *Value:* High

@@ -31,7 +31,6 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
     private static readonly JsonSerializerOptions TourDumpJson = new() { WriteIndented = true };
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(WindowTitle))]
     private WindowMode _mode;
 
     [ObservableProperty]
@@ -82,7 +81,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
 
     public bool ShowE2EEOnboardingBar => IsE2EEOnboardingRequired;
 
-    public string WindowTitle => $"Pia AI Assistant - {Mode} (v{AppVersion})";
+    public string WindowTitle => $"Pia AI Assistant (v{AppVersion})";
 
     public string AppVersion { get; }
 
