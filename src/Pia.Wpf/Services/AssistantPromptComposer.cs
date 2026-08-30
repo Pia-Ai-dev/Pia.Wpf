@@ -133,13 +133,17 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         var tokenSection = tokenizationEnabled
             ? "\n## Privacy Tokens\n\nWhen memory or contact data is returned, personal details (names, emails, phones, addresses, dates) are replaced with privacy tokens like [Person_1], [Email_1], etc. Use these tokens naturally in your responses — they will be resolved back to real values before the user sees your message. Never explain or call attention to the tokens. Treat [Person_1] as if it were the person's actual name.\n"
             : string.Empty;
-        var webSearchSection = webSearchActive
-            ? "\n## Web Search Citations\n\nWhen citing web sources, use only standard markdown links of the form [Title](https://example.com). Never use reference-style brackets like [text][url]. Keep citations sparse — one link per distinct source.\n"
-            : string.Empty;
+        var webSearchSection = BuildWebSearchSection(webSearchActive);
+
+        // Named for the model, which cannot see the tool list's absences: without it a web question sends
+        // the model hunting through search_chats/recall/search_files for a search it already has.
+        var webSearchBranch = webSearchActive
+            ? "Web search is already enabled for this conversation — see the Web Search section. It needs no tool call, so do not reach for search_chats, recall or search_files instead."
+            : "You cannot browse. Say so plainly, then answer from what you know while flagging that it may be out of date.";
 
         var toolSelectionSection = skipToolSelectionTree
             ? string.Empty
-            : """
+            : $"""
               ## Tool Selection
 
               Follow this decision tree strictly:
@@ -161,6 +165,10 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
                  - YES → Use the chat-history tools: search_chats to find the conversation (omit query to
                    list recent ones), then read_chat(chat_id) to read it. NOT chat history: "remember that I
                    like coffee" (a fact to store = memory).
+                 - NO → Continue to step 6.
+              6. Does the request need CURRENT information from the web (news, prices, "what is new",
+                 anything past your training cutoff)?
+                 - YES → {webSearchBranch}
                  - NO → Respond conversationally without tools.
 
               """;
@@ -306,11 +314,19 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
     private static string EscapeAttr(string value) =>
         value.Replace("&", "&amp;").Replace("\"", "&quot;").Replace("<", "&lt;");
 
+    /// <summary>
+    /// How web search reaches the model differs per provider — injected into this prompt (OpenRouter's
+    /// plugin), a built-in tool the provider adds (OpenAI's web_search_preview), or server-side (Pia
+    /// Cloud) — so this says where results arrive from without naming a mechanism.
+    /// </summary>
+    private static string BuildWebSearchSection(bool webSearchActive) =>
+        webSearchActive
+            ? "\n## Web Search\n\nWeb search is enabled for this conversation. Results reach you either already present in this prompt or through a built-in search tool your provider adds. There is no web-search tool in your tool list, so do not go looking for one, and never substitute chat-history, vault or file search for it. If no results reached you, say that plainly instead of answering from memory.\n\nWhen citing web sources, use only standard markdown links of the form [Title](https://example.com). Never use reference-style brackets like [text][url]. Keep citations sparse — one link per distinct source.\n"
+            : string.Empty;
+
     private string BuildSystemPromptNoTools(Persona activePersona, bool webSearchActive = false)
     {
-        var webSearchSection = webSearchActive
-            ? "\n## Web Search Citations\n\nWhen citing web sources, use only standard markdown links of the form [Title](https://example.com). Never use reference-style brackets like [text][url]. Keep citations sparse — one link per distinct source.\n"
-            : string.Empty;
+        var webSearchSection = BuildWebSearchSection(webSearchActive);
         return $"""
             ## Identity
 
