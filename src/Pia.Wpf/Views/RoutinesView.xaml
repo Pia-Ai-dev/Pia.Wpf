@@ -98,6 +98,16 @@
       </Setter>
     </Style>
 
+    <!-- WPF-UI buttons keep the arrow cursor; Arrow again when disabled so Run now does not read as live. -->
+    <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+      <Setter Property="Cursor" Value="Hand"/>
+      <Style.Triggers>
+        <Trigger Property="IsEnabled" Value="False">
+          <Setter Property="Cursor" Value="Arrow"/>
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+
   </UserControl.Resources>
 
   <Grid Background="Transparent">
@@ -497,6 +507,7 @@
                                    FontWeight="SemiBold"/>
                         <!-- A failed firing produced no chat, so the link is hidden rather than dead. -->
                         <ui:HyperlinkButton Content="{loc:Str Routines_Detail_OpenChat}"
+                                            Cursor="Hand"
                                             Padding="0"
                                             Margin="10,0,0,0"
                                             FontSize="11"
