@@ -36,6 +36,7 @@ public class AutoIngestServiceTests : IDisposable
         Directory.CreateDirectory(_sourcesDir);
         _state = new IngestStateStore($"Data Source={Path.Combine(_tmpDir, "history.db")}");
         _paths = new VaultPathProvider(_vaultRoot);
+        _ingest.VaultRoot = _vaultRoot;
     }
 
     public void Dispose()
@@ -122,6 +123,36 @@ public class AutoIngestServiceTests : IDisposable
         Assert.Equal(3, _ingest.IngestCalls.Count); // only a.txt re-ran
         Assert.Equal(refA, _ingest.IngestCalls[^1]);
         _ = refB;
+    }
+
+    [Fact]
+    public async Task Reconcile_reingests_when_a_recorded_page_was_deleted_behind_our_back()
+    {
+        var sourceRef = Seed("a.txt", "v1");
+        using var svc = Build();
+        await svc.ReconcileAsync(TestContext.Current.CancellationToken);
+        var page = Assert.Single((await _state.GetAsync(sourceRef))!.TouchedPages);
+
+        // The source is untouched, so the hash still matches — only the page is gone.
+        File.Delete(Path.Combine(_vaultRoot, page.Replace('/', Path.DirectorySeparatorChar)));
+        await svc.ReconcileAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, _ingest.IngestCalls.Count);
+        Assert.True(File.Exists(Path.Combine(_vaultRoot, page.Replace('/', Path.DirectorySeparatorChar))));
+    }
+
+    [Fact]
+    public async Task Reconcile_keeps_skipping_a_source_that_produced_no_pages()
+    {
+        var sourceRef = Seed("a.txt", "v1");
+        _ingest.ResultFor = _ => new IngestResult(sourceRef, [], IngestOutcome.NoEntities);
+        using var svc = Build();
+        await svc.ReconcileAsync(TestContext.Current.CancellationToken);
+
+        // An empty touched-set has no page to miss; re-running it every launch would be a standing LLM bill.
+        await svc.ReconcileAsync(TestContext.Current.CancellationToken);
+
+        Assert.Single(_ingest.IngestCalls);
     }
 
     [Fact]
@@ -309,6 +340,9 @@ public class AutoIngestServiceTests : IDisposable
         public List<string> IngestCalls { get; } = [];
         public List<(string Source, IReadOnlyList<string> Pages)> RemoveCalls { get; } = [];
 
+        /// <summary>Set by the fixture so touched pages land on disk, as the real ingest writes them.</summary>
+        public string VaultRoot { get; set; } = "";
+
         /// <summary>Result factory; defaults to Success touching <c>memory/topics/&lt;name&gt;.md</c>.</summary>
         public Func<string, IngestResult>? ResultFor { get; set; }
 
@@ -323,6 +357,19 @@ public class AutoIngestServiceTests : IDisposable
             var result = ResultFor?.Invoke(sourceRelativePath) ?? new IngestResult(
                 sourceRelativePath,
                 [$"memory/topics/{Path.GetFileNameWithoutExtension(sourceRelativePath)}.md"]);
+
+            // The scheduler's gate re-checks that recorded pages still exist, so a stub that only
+            // reports page names would look like a vault whose pages were deleted.
+            if (result.Outcome == IngestOutcome.Success)
+            {
+                foreach (var page in result.TouchedPages)
+                {
+                    var full = Path.Combine(VaultRoot, page.Replace('/', Path.DirectorySeparatorChar));
+                    Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+                    File.WriteAllText(full, $"# {Path.GetFileNameWithoutExtension(page)}\n");
+                }
+            }
+
             return Task.FromResult(result);
         }
 

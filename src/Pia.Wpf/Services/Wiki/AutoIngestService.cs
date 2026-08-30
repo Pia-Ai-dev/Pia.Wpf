@@ -250,8 +250,7 @@ public sealed class AutoIngestService : IIngestScheduler, IDisposable
                 return; // vanished mid-flight; the Deleted event / next reconcile cleans up
             }
 
-            var state = await _state.GetAsync(sourceRef);
-            if (string.Equals(state?.ContentHash, hash, StringComparison.Ordinal))
+            if (await IsStillIngestedAsync(await _state.GetAsync(sourceRef), hash))
             {
                 return; // unchanged — never re-spend the LLM calls
             }
@@ -284,7 +283,7 @@ public sealed class AutoIngestService : IIngestScheduler, IDisposable
                 }
 
                 var recorded = await _state.GetAsync(sourceRef);
-                if (string.Equals(recorded?.ContentHash, gate, StringComparison.Ordinal))
+                if (await IsStillIngestedAsync(recorded, gate))
                 {
                     // Deliberate: the finally still raises IngestCompleted for this no-op — a
                     // spurious sources-overview reload is cheap and keeps the event contract simple.
@@ -380,6 +379,32 @@ public sealed class AutoIngestService : IIngestScheduler, IDisposable
             // A throwing subscriber must not mask the queue item's own result (this runs in finally).
             _logger.LogWarning(ex, "IngestCompleted subscriber threw");
         }
+    }
+
+    /// <summary>
+    /// The hash gate, shared by the early-out and <see cref="ExecuteAsync"/>'s under-lock re-check so a
+    /// source cannot clear one and be bounced by the other. The recorded pages must still exist: pages
+    /// deleted behind our back leave the hash unchanged, so nothing would ever rebuild them. An empty
+    /// touched-set (NoEntities) has nothing to verify and stays a free no-op.
+    /// </summary>
+    private async Task<bool> IsStillIngestedAsync(IngestStateEntry? recorded, string hash)
+    {
+        if (recorded is null || !string.Equals(recorded.ContentHash, hash, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        foreach (var page in recorded.TouchedPages)
+        {
+            if (await _store.ReadAsync(page) is null)
+            {
+                _logger.LogInformation("Ingest record names a topic page that is gone; re-ingesting the source");
+                _logger.SensitiveDebug("Missing page {Page} for {Source}; re-ingesting", page, recorded.SourceRef);
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>Fallback when the state row is missing: find pages via their sources: frontmatter.</summary>
