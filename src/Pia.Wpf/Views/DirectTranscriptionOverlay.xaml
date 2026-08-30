@@ -94,6 +94,36 @@
                      FontWeight="SemiBold"
                      TextAlignment="Center"
                      Margin="0,0,0,8" />
+
+          <!-- Above the prose because it is the one thing the room has to act on. All three languages,
+               because the classifier is trilingual and the host reads this out to a mixed room. -->
+          <Border Background="{DynamicResource ControlFillColorSecondaryBrush}"
+                  BorderBrush="{DynamicResource SystemAccentColorPrimaryBrush}"
+                  BorderThickness="1"
+                  CornerRadius="8"
+                  Padding="18,14"
+                  Margin="0,0,0,18">
+            <StackPanel>
+              <TextBlock Text="{loc:Str DirectTrans_Disclaimer_ConsentSentence_Heading}"
+                         FontSize="13"
+                         FontWeight="SemiBold"
+                         TextWrapping="Wrap"
+                         TextAlignment="Center"
+                         Margin="0,0,0,10" />
+              <TextBlock Text="{loc:Str DirectTrans_Disclaimer_ConsentSentence_En}"
+                         FontSize="16"
+                         TextWrapping="Wrap"
+                         Margin="0,0,0,6" />
+              <TextBlock Text="{loc:Str DirectTrans_Disclaimer_ConsentSentence_De}"
+                         FontSize="16"
+                         TextWrapping="Wrap"
+                         Margin="0,0,0,6" />
+              <TextBlock Text="{loc:Str DirectTrans_Disclaimer_ConsentSentence_Fr}"
+                         FontSize="16"
+                         TextWrapping="Wrap" />
+            </StackPanel>
+          </Border>
+
           <TextBlock Text="{loc:Str DirectTrans_Disclaimer_Body}"
                      FontSize="13"
                      TextWrapping="Wrap"
@@ -118,37 +148,6 @@
                      TextAlignment="Center"
                      Foreground="{DynamicResource TextPlaceholderColorBrush}"
                      Margin="0,0,0,16" />
-
-          <!-- The consent sentence a participant can say, shown in all three supported languages so the
-               host can read it aloud or share it (design §3.9). -->
-          <Border Background="{DynamicResource ControlFillColorSecondaryBrush}"
-                  BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                  BorderThickness="1"
-                  CornerRadius="8"
-                  Padding="14,10"
-                  Margin="0,0,0,16">
-            <StackPanel>
-              <TextBlock Text="{loc:Str DirectTrans_Disclaimer_ConsentSentence_Heading}"
-                         FontSize="11"
-                         FontWeight="SemiBold"
-                         Margin="0,0,0,6"
-                         Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-              <TextBlock Text="{loc:Str DirectTrans_Disclaimer_ConsentSentence_En}"
-                         FontSize="12"
-                         TextWrapping="Wrap"
-                         FontStyle="Italic"
-                         Margin="0,0,0,4" />
-              <TextBlock Text="{loc:Str DirectTrans_Disclaimer_ConsentSentence_De}"
-                         FontSize="12"
-                         TextWrapping="Wrap"
-                         FontStyle="Italic"
-                         Margin="0,0,0,4" />
-              <TextBlock Text="{loc:Str DirectTrans_Disclaimer_ConsentSentence_Fr}"
-                         FontSize="12"
-                         TextWrapping="Wrap"
-                         FontStyle="Italic" />
-            </StackPanel>
-          </Border>
 
           <ui:ToggleSwitch Content="{loc:Str DirectTrans_Disclaimer_Accept}"
                            AutomationProperties.AutomationId="DirectTrans_DisclaimerAccept"
