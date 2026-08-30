@@ -172,3 +172,32 @@ jobs:
             Releases/*.nupkg \
             Releases/RELEASES \
             Releases/releases.*.json
+
+      # The mirror on pia-ai.de is published from the private Pia repo, which owns that step because the
+      # Hetzner SSH key must not sit in a public repo. Triggering it is deliberately manual, so the notes
+      # get a last read before they reach the website — this step only puts the link to press into the
+      # run summary instead of relying on anyone remembering it. Setting PIA_DISPATCH_TOKEN (fine-grained,
+      # Pia only, Contents: read and write) turns the same step into an automatic dispatch.
+      - name: Link the pia-ai.de publish step
+        shell: bash
+        env:
+          TAG: ${{ steps.info.outputs.tag }}
+          GH_TOKEN: ${{ secrets.PIA_DISPATCH_TOKEN }}
+          RELEASE_URL: https://github.com/Pia-Ai-dev/Pia.Wpf/releases/tag
+          WORKFLOW_URL: https://github.com/Pia-Ai-dev/Pia/actions/workflows/publish-wpf-download.yml
+        run: |
+          set -euo pipefail
+          if [ -n "${GH_TOKEN:-}" ]; then
+            printf '{"event_type":"wpf-release","client_payload":{"tag":"%s"}}' "$TAG" > dispatch.json
+            gh api repos/Pia-Ai-dev/Pia/dispatches --input dispatch.json
+            echo "### pia-ai.de publish requested for $TAG" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "### Next step: publish $TAG to pia-ai.de"
+            echo
+            echo "1. Read over the [release notes]($RELEASE_URL/$TAG) and edit them if needed."
+            echo "2. Run [Publish WPF Download]($WORKFLOW_URL) in Pia-Ai-dev/Pia, tag left blank."
+            echo
+            echo "The installers and version shown on pia-ai.de do not change until that runs."
+          } >> "$GITHUB_STEP_SUMMARY"

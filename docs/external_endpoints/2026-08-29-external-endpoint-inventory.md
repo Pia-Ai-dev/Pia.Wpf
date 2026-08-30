@@ -34,7 +34,7 @@ meeting attendee drives a real browser. They are listed as categories in §4.
 
 | Endpoint | Trigger | Override | What leaves | If down |
 |---|---|---|---|---|
-| `storage.pia-ai.de/f/wpf/` | Update check on startup, then every 4–6 h | `Update:FeedUrl` (`appsettings.json`) | Nothing but a GET | Silent — no updates, nothing surfaced. **Open, see §5.1** |
+| `storage.pia-ai.de/f/wpf/` | Update check on startup, then every 4–6 h | `Update:FeedUrl` (`appsettings.json`) | Nothing but a GET | Silent — no updates, nothing surfaced. Serving since 2026-08-30, see §5.1 |
 | `storage.pia-ai.de/f/assets/` | Before every §3 model download that has a mirror key | `Assets:MirrorBaseUrl` (`appsettings.json`); blank goes straight upstream | Nothing but a GET | Silent — falls back to the upstream host in §3, latched per process |
 | `github.com/Pia-Ai-dev/Pia.Wpf` → `api.github.com` | Update check when `FeedUrl` is blank | `Update:GitHubRepoUrl` (`Models/UpdateOptions.cs`) | Nothing but a GET | Same |
 | `cloud.pia-ai.de` | Login, sync, cloud chat, E2EE device management, policy, capabilities, assignments, plugin CABs + icons + trusted certs, AI feedback | `PIA_CLOUD_SERVER_URL`, else `AppSettings.ServerUrl`; default in `Bootstrapper.cs` | Bearer token; chat and prompt content (E2EE-wrapped on the sync path); device keys; assignment payloads | Hard fail for the cloud persona, sync and assignments |
@@ -54,15 +54,15 @@ that runs no mirror of its own. The keys live in `Services/Assets/RuntimeAsset.c
 `scripts/Publish-RuntimeAssets.ps1`; `RuntimeAssetCatalogTests` pins those two lists against each other.
 
 Because the fallback is silent, **every row here stays a live dependency** — the mirror is a control
-and latency path, not a replacement. And it is **unverified against the real host**: storage.pia-ai.de
-still answers no TLS handshake (§5.1), so today each asset pays one failed attempt, latched after the
-first, and then fetches upstream exactly as before.
+and latency path, not a replacement. Verified against the real host on 2026-08-30: all 11 mirror keys
+answer `200` and every `Content-Length` matches its upstream byte for byte, so the mirror is now the
+path that actually serves (§5.1 closed the TLS failure that had made it unreachable).
 
 | Endpoint | Trigger | Override | Cached in |
 |---|---|---|---|
 | `github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/…` | First local transcription, per model | none | `Models\sherpa-whisper-*`, `Models\sherpa-parakeet-tdt-v3` |
 | `github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/…` | First speaker attribution | none | `Models\` |
-| `github.com/snakers4/silero-vad/raw/master/…` | First VAD use | none | `Models\` |
+| `github.com/snakers4/silero-vad/raw/v6.2.1/…` | First VAD use | none | `Models\` |
 | `huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/…` ×3 | First embedding — vault recall | none | `Models\` |
 | `github.com/rhasspy/piper` releases | First use of text-to-speech — the Piper engine | none — **no mirror key**, PiperSharp holds the URL | `Piper\piper\` |
 | `huggingface.co/rhasspy/piper-voices` | Downloading a TTS voice | none — **no mirror key**, same reason | `Piper\models\<voice-key>\` |
@@ -74,7 +74,7 @@ needs:
 | Source host | Terminus |
 |---|---|
 | `github.com/…/releases/download/…` | `release-assets.githubusercontent.com` |
-| `github.com/…/raw/master/…` | `raw.githubusercontent.com` |
+| `github.com/…/raw/<tag>/…` | `raw.githubusercontent.com` |
 | `huggingface.co/…/resolve/main/…` | `us.aws.cdn.hf.co` (xet bridge) |
 
 The two Piper rows are the one place the repo does **not** own the URL. `TtsService` calls into the
@@ -108,7 +108,21 @@ user already initiated, not a separate call.
 
 ## 5. Open
 
-### 5.1 The update feed serves no TLS certificate
+Both entries below are now **closed** — 5.1 on 2026-08-30, 5.2 earlier. What remains genuinely open is
+one design question 5.1 raised and its fix did not answer: a broken update feed and "you are up to date"
+are still indistinguishable in the UI, so `UpdateService` falling back to `GithubSource` on an
+*unreachable* feed is undecided.
+
+### 5.1 Fixed: the update feed served no TLS certificate
+
+**Resolved 2026-08-30.** ACME succeeded for the `storage` hostname — Let's Encrypt issued
+`CN=storage.pia-ai.de` at 07:58 UTC that day (valid to 2026-11-28), the storage service is deployed, and
+the mirror is filled. `https://storage.pia-ai.de/f/wpf/releases.win.json` answers `200`, and all 11 asset
+keys were verified against their upstream `Content-Length`. Everything below is the 2026-08-29 diagnosis,
+kept because it records what the failure looked like and how it was probed.
+
+The one thing it leaves open is the design question at the end of this section: a broken feed and "you
+are up to date" are still indistinguishable in the UI.
 
 `appsettings.json` points `Update:FeedUrl` at `https://storage.pia-ai.de/f/wpf/`, and a non-blank
 `FeedUrl` wins over GitHub. That is the production update path, and it does not answer:
@@ -123,11 +137,13 @@ user already initiated, not a separate call.
   hostname — the retry loop the Caddyfile warning in the handoff doc predicts once a DNS record
   exists ahead of a working site block.
 
-This is the expected state, not a regression: the storage service is still unmerged, and
-[../update_feed/2026-08-29-storage-feed-server-handoff.md](../update_feed/2026-08-29-storage-feed-server-handoff.md)
-§3.1 lists deploying it as prerequisite work. The audit adds one fact to that handoff — the DNS
-record is already live and pointing at the shared Caddy host, so ACME is failing there *now*, ahead
-of the rollout.
+This is the expected state, not a regression: the storage service is still unmerged, and §3.1 of
+`Pia/docs/storage_service/2026-08-29-storage-feed-server-handoff.md` lists deploying it as prerequisite
+work. That handoff lives in the private Pia repo, beside the workflow and the service it describes, and
+is the single copy — the duplicate that used to sit in this repo under `docs/update_feed/` was removed
+2026-08-29 after drifting. This audit is what supplied its prerequisite 2: the DNS record is already
+live and pointing at the shared Caddy host, so ACME is failing there *now*, ahead of the rollout, and
+what is missing is the certificate rather than the record.
 
 Reproduce:
 
@@ -189,8 +205,9 @@ pwsh scripts/Test-ExternalEndpoints.ps1
 
 Follows redirects, reports final status and `Content-Length` per endpoint, and exits non-zero if any
 row is unhealthy. A provider host answering `401` counts as healthy — it proves the host is up, and
-the script deliberately sends no key. As of 2026-08-29: 25 of 27 healthy. Both red rows are the same
-host — the update feed and the asset mirror added in §10 — and the same cause, §5.1.
+the script deliberately sends no key. As of **2026-08-30: 27 of 27 healthy.** The two rows that were red
+on 2026-08-29 were the update feed and the asset mirror, both on `storage.pia-ai.de` and both from the
+same cause; §5.1 records the fix.
 
 ## 9. Pre-fetching the downloads
 
@@ -220,6 +237,9 @@ gate and then fail to load, permanently, with no self-heal. Download voices from
 settings instead.
 
 ## 10. Filling the mirror
+
+**Done 2026-08-30** — all 11 keys are published and each was re-verified against its upstream
+`Content-Length` on that date. The recipe below is what to re-run when an upstream project cuts a release.
 
 ```powershell
 $env:PIA_STORAGE_UPLOAD_SECRET = '<the storage write secret>'

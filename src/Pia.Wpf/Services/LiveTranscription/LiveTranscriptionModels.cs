@@ -28,8 +28,11 @@ public static class LiveTranscriptionModels
         "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models";
 
     private const string SileroVadFileName = "silero_vad.onnx";
+
+    // Pinned to a tag, not to master: this is the only asset served off a branch, so upstream could
+    // otherwise swap the model under us without any URL changing.
     internal const string SileroVadUrl =
-        "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx";
+        "https://github.com/snakers4/silero-vad/raw/v6.2.1/src/silero_vad/data/silero_vad.onnx";
 
     internal const string SpeakerEmbeddingFileName =
         "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx";

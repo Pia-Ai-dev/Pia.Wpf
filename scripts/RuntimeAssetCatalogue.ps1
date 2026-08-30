@@ -35,7 +35,7 @@ function Get-RuntimeAssetCatalogue {
     [ordered]@{
         Vad = @(
             @{ Kind = 'File'; Name = 'Silero VAD'
-               Url = 'https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx'
+               Url = 'https://github.com/snakers4/silero-vad/raw/v6.2.1/src/silero_vad/data/silero_vad.onnx'
                MirrorKey = 'models/silero_vad.onnx'
                Target = Join-Path $modelsDir 'silero_vad.onnx'; SizeHint = 2327524 }
         )

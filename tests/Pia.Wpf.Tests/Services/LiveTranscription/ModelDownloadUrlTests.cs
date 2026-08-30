@@ -50,8 +50,14 @@ public class ModelDownloadUrlTests
     public void SileroVadUrl_is_pinned()
     {
         Assert.Equal(
-            "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx",
+            "https://github.com/snakers4/silero-vad/raw/v6.2.1/src/silero_vad/data/silero_vad.onnx",
             LiveTranscriptionModels.SileroVadUrl);
+    }
+
+    [Fact]
+    public void SileroVadUrl_names_a_tag_not_a_branch()
+    {
+        Assert.DoesNotContain("/raw/master/", LiveTranscriptionModels.SileroVadUrl);
     }
 
     [Theory]
