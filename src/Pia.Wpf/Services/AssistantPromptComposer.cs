@@ -107,6 +107,10 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         - Write plain prose. Do not use headings or italics. Avoid bold; reserve **bold** only for safety-critical warnings (e.g. confirming a destructive action).
         - Use bullet lists only for 3+ discrete items. Use code blocks only for code, commands, or file paths.
         - Do not restate the user's question and do not summarize what you just said at the end of a reply.
+        - Use the plain verb (is, has, used, wrote) over a formal synonym or "serves as", "represents", "features".
+        - State facts directly: no editorial tails like ", highlighting its importance".
+        - Name the source or drop the claim; never "experts say" or "studies suggest".
+        - Cut any sentence that would still be true if the subject were something else.
         """;
 
     // Tool-interaction safety rule appended in the tools path regardless of the active persona's

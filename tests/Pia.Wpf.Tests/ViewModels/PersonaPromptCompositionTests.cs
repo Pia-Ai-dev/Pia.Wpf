@@ -99,6 +99,29 @@ public class PersonaPromptCompositionTests
         Assert.All(BuiltInPersonas.All, p => Assert.False(string.IsNullOrWhiteSpace(p.OutputFormat)));
     }
 
+    [Fact]
+    public void EveryBuiltInPersona_CarriesTheHumanVoiceRule()
+    {
+        // Marketing Writer keeps the triads the other personas drop, so this one line is the only
+        // part of the anti-"AI voice" block shared verbatim by all seven.
+        const string rule = "- Cut any sentence that would still be true if the subject were something else.";
+
+        Assert.All(BuiltInPersonas.All, p => Assert.Contains(rule, p.OutputFormat));
+        Assert.Contains(rule, AssistantPromptComposer.DefaultOutputFormat);
+    }
+
+    [Fact]
+    public void BuiltInOutputFormats_AreFlatBulletLists()
+    {
+        // The shared voice rules are spliced in as a raw-string hole, which inserts the value verbatim
+        // rather than re-indenting it — an indented line here means a hole sits at the wrong column.
+        Assert.All(
+            BuiltInPersonas.All,
+            p => Assert.All(
+                p.OutputFormat!.Split('\n'),
+                line => Assert.StartsWith("- ", line.TrimEnd('\r'))));
+    }
+
     [Theory]
     [InlineData(true, PersonaToolScope.Full, true)]
     [InlineData(true, PersonaToolScope.ReadOnly, true)] // ReadOnly is treated as Full in v1.
