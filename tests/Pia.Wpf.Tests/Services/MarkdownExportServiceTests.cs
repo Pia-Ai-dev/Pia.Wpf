@@ -251,8 +251,12 @@ public class MarkdownExportServiceTests
         }
     }
 
+    /// <summary>
+    /// Every file under sources/ is its own source document, so a suffixed re-export would have ingest
+    /// compile the same answer twice.
+    /// </summary>
     [Fact]
-    public async Task ExportToVaultAsync_SameName_DoesNotOverwrite()
+    public async Task ExportToVaultAsync_SameName_ReplacesTheEarlierExport()
     {
         var dir = NewTempDir();
         try
@@ -262,10 +266,10 @@ public class MarkdownExportServiceTests
             var first = await svc.ExportToVaultAsync("# One", "notes", "Pia answer", TestContext.Current.CancellationToken);
             var second = await svc.ExportToVaultAsync("# Two", "notes", "Pia answer", TestContext.Current.CancellationToken);
 
-            Assert.Equal("notes.md", Path.GetFileName(first));
-            Assert.Equal("notes-2.md", Path.GetFileName(second));
-            Assert.Contains("One", await File.ReadAllTextAsync(first, TestContext.Current.CancellationToken));
-            Assert.Contains("Two", await File.ReadAllTextAsync(second, TestContext.Current.CancellationToken));
+            Assert.Equal(first, second);
+            Assert.Equal("notes.md", Path.GetFileName(second));
+            Assert.Single(Directory.GetFiles(Path.GetDirectoryName(second)!, "*.md"));
+            Assert.Equal("# Two", await File.ReadAllTextAsync(second, TestContext.Current.CancellationToken));
         }
         finally
         {

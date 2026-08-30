@@ -32,8 +32,8 @@ public interface IMarkdownExportService
     /// <summary>
     /// Writes <paramref name="markdown"/> verbatim as a <c>.md</c> file named <paramref name="fileName"/>
     /// under the vault's <c>sources/Exports</c> folder — the RAW layer auto-ingest watches, so the answer
-    /// is compiled into the topic pages. The name is sanitized and contained; a collision gets a numeric
-    /// suffix rather than overwriting. Returns the absolute path.
+    /// is compiled into the topic pages. The name is sanitized and contained, and a same-named export is
+    /// replaced so one answer stays one source document. Returns the absolute path.
     /// </summary>
     Task<string> ExportToVaultAsync(
         string markdown, string fileName, string fallbackTitle, CancellationToken ct = default);

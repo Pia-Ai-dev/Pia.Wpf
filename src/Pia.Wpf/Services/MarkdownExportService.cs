@@ -64,8 +64,10 @@ public sealed class MarkdownExportService : IMarkdownExportService
         var folder = await ResolveVaultExportsFolderAsync();
         Directory.CreateDirectory(folder);
 
+        // Replaces a same-named export rather than minting "notes-2.md": under sources/ every file is its own
+        // source document, so a suffix would have ingest compile the same answer twice.
         var stem = SanitizeStem(StripExtension(fileName, MarkdownExtension), fallbackTitle);
-        var path = NextAvailableNamedPath(folder, stem, MarkdownExtension);
+        var path = Path.Combine(folder, stem + MarkdownExtension);
         await File.WriteAllTextAsync(path, markdown, Encoding.UTF8, ct);
 
         _logger.LogInformation("Exported assistant answer to the vault ({Chars} chars)", markdown.Length);
@@ -446,14 +448,6 @@ public sealed class MarkdownExportService : IMarkdownExportService
             candidate = Path.Combine(folder, $"pia-answer-{stamp}-{i}.html");
             if (!File.Exists(candidate)) return candidate;
         }
-    }
-
-    private static string NextAvailableNamedPath(string folder, string stem, string extension)
-    {
-        var candidate = Path.Combine(folder, $"{stem}{extension}");
-        for (var i = 2; File.Exists(candidate); i++)
-            candidate = Path.Combine(folder, $"{stem}-{i}{extension}");
-        return candidate;
     }
 
     /// <summary>Drops the extension the writer is about to add, so a typed "notes.md" cannot become "notes.md.md".</summary>
