@@ -442,7 +442,8 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // Batch 08 D4: the ONLY place a user steering note may ride — composed here (this method has ctx),
         // never inside RunExchangeStepAsync, which keeps taking a plain string and never sees ctx at all.
         return await RunExchangeStepAsync(
-                ctx.AppendNudge(BuildInstruction(step.Ordinal, step.Intent ?? string.Empty, step.ExpectedArtifact)),
+                ctx.AppendNudge(AgentStepInstruction.Compose(step.Ordinal, step.Intent ?? string.Empty,
+                    step.ExpectedArtifact, _workspaceRoot, setup.TurnSetup.Tools)),
                 persistInterim: true, ct, TimelineScope(step.Id), setup,
                 // hermes #9: this is the ONE entry point whose result reaches RecordStepResultAsync as
                 // Done/Failed, so it is the one that offers emit_step_result. The R10 degrade turn below
@@ -1147,12 +1148,4 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         claim is null ? AgentStepTools.EmptyResponseFailure
         : string.IsNullOrWhiteSpace(claim.Summary) ? AgentStepTools.UndetailedFailure
         : claim.Summary;
-
-    private static string BuildInstruction(int ordinal, string intent, string? expectedArtifact)
-    {
-        var instruction = $"Execute step {ordinal + 1}: {intent}.";
-        if (!string.IsNullOrEmpty(expectedArtifact))
-            instruction += $" Expected: {expectedArtifact}";
-        return instruction + " " + AgentToolCarryover.ReReadHint + " " + RunScratchFolder.StepHint;
-    }
 }

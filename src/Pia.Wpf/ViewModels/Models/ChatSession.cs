@@ -980,10 +980,8 @@ public sealed class ChatSession : IDisposable
         }
         else
         {
-            instruction = $"Execute step {spec.Ordinal + 1}: {spec.Intent}.";
-            if (!string.IsNullOrEmpty(spec.ExpectedArtifact))
-                instruction += $" Expected: {spec.ExpectedArtifact}";
-            instruction += " " + AgentToolCarryover.ReReadHint + " " + RunScratchFolder.StepHint;
+            instruction = AgentStepInstruction.Compose(spec.Ordinal, spec.Intent, spec.ExpectedArtifact,
+                spec.WorkspaceRoot, spec.Tools);
         }
 
         // The ONLY place a user steering note may ride — a ChatRole.User message, never System.

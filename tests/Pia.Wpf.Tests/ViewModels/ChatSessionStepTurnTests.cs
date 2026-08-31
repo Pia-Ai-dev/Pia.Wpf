@@ -31,7 +31,8 @@ public sealed class ChatSessionStepTurnTests
         _tokenMap, _ai, _plugins, _cards, _permissions, _loc, _log, _ => true);
 
     private static StepTurnSpec Spec(
-        bool tokenizationEnabled, AiProvider? provider = null, bool supportsTools = false) => new(
+        bool tokenizationEnabled, AiProvider? provider = null, bool supportsTools = false,
+        string? workspaceRoot = null, string? extraToolName = null) => new(
         RunId: Guid.NewGuid(),
         Ordinal: 0,
         Intent: "do the thing",
@@ -40,10 +41,22 @@ public sealed class ChatSessionStepTurnTests
         Persona: new PersonaAttribution(Guid.NewGuid(), "Pia", "🤖"),
         Provider: provider
             ?? new AiProvider { Name = "Test", Endpoint = "http://localhost", ProviderType = AiProviderType.OpenAI },
-        Tools: supportsTools ? new List<AITool> { AIFunctionFactory.Create(() => string.Empty, "noop") } : null,
+        Tools: StepTools(supportsTools, extraToolName),
         SupportsTools: supportsTools,
         WebSearchActive: false,
-        TokenizationEnabled: tokenizationEnabled);
+        TokenizationEnabled: tokenizationEnabled,
+        WorkspaceRoot: workspaceRoot);
+
+    private static IList<AITool>? StepTools(bool supportsTools, string? extraToolName)
+    {
+        if (!supportsTools)
+            return null;
+
+        var tools = new List<AITool> { AIFunctionFactory.Create(() => string.Empty, "noop") };
+        if (extraToolName is not null)
+            tools.Add(AIFunctionFactory.Create(() => string.Empty, extraToolName));
+        return tools;
+    }
 
     private void ReturnsStream(Func<IAsyncEnumerable<ChatStreamItem>> factory)
     {
@@ -121,7 +134,7 @@ public sealed class ChatSessionStepTurnTests
         Assert.DoesNotContain(session.Messages, m => (m.Content ?? string.Empty).Contains("SKU-1001"));
     }
 
-    /// <summary>Parity with HeadlessTurnExecutor.BuildInstruction: both twins say what a cleared result means.</summary>
+    /// <summary>Parity with AgentStepInstruction.Compose: both twins say what a cleared result means.</summary>
     [Fact]
     public async Task TheLiveStepInstruction_CarriesTheReReadHint()
     {
@@ -143,6 +156,47 @@ public sealed class ChatSessionStepTurnTests
         await session.RunStepTurnAsync(Spec(tokenizationEnabled: false), new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
 
         Assert.Contains(captured[0], m => m.Role == ChatRole.User && m.Text.Contains(AgentToolCarryover.ReReadHint));
+    }
+
+    /// <summary>Parity with AgentStepInstruction.Compose's headless caller: the live step must gate the vault
+    /// hint on the same two halves, or only one of the two run paths is hinted.</summary>
+    [Fact]
+    public async Task TheLiveStepInstruction_CarriesTheVaultTargetHint_OnlyInAWorkspace()
+    {
+        var withBoth = await LiveStepInstructionAsync(@"C:\ws", VaultTargetPolicy.CreateSourceToolName);
+        var noWorkspace = await LiveStepInstructionAsync(null, VaultTargetPolicy.CreateSourceToolName);
+        var noMemoryTool = await LiveStepInstructionAsync(@"C:\ws", null);
+
+        Assert.Contains(VaultTargetPolicy.StepHint, withBoth, StringComparison.Ordinal);
+        Assert.DoesNotContain(VaultTargetPolicy.StepHint, noWorkspace, StringComparison.Ordinal);
+        Assert.DoesNotContain(VaultTargetPolicy.StepHint, noMemoryTool, StringComparison.Ordinal);
+
+        foreach (var instruction in new[] { withBoth, noWorkspace, noMemoryTool })
+            Assert.Contains(AgentToolCarryover.ReReadHint, instruction, StringComparison.Ordinal);
+    }
+
+    private async Task<string> LiveStepInstructionAsync(string? workspaceRoot, string? extraToolName)
+    {
+        var captured = new List<List<ChatMessage>>();
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                captured.Add([.. (IList<ChatMessage>)ci[0]]);
+                return Stream(new TextDelta("done"), new Finished(null, "m"));
+            });
+
+        var session = CreateSession();
+        session.Messages.Add(new AssistantMessage(ChatRole.User, "goal"));
+        TaskAmbient.Current = null;
+        TokenMapAmbient.Current = null;
+
+        await session.RunStepTurnAsync(
+            Spec(tokenizationEnabled: false, supportsTools: true, workspaceRoot: workspaceRoot, extraToolName: extraToolName),
+            new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
+
+        return Assert.Single(captured[0], m => m.Role == ChatRole.User && m.Text.Contains("Execute step 1")).Text;
     }
 
     [Fact]

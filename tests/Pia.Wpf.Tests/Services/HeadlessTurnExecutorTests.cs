@@ -1707,6 +1707,69 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Contains(captured[0], m => m.Role == ChatRole.User && m.Text.Contains(AgentToolCarryover.ReReadHint));
     }
 
+    /// <summary>Both halves are gated: the workspace is where the vault write is refused, and the tool list is
+    /// what proves the run actually has the tool the hint names.</summary>
+    [Fact]
+    public async Task TheStepInstruction_CarriesTheVaultTargetHint_OnlyInAWorkspace()
+    {
+        var inWorkspace = await StepInstructionAsync(withWorkspace: true, "noop", VaultTargetPolicy.CreateSourceToolName);
+        var noWorkspace = await StepInstructionAsync(withWorkspace: false, "noop", VaultTargetPolicy.CreateSourceToolName);
+        var noMemoryTool = await StepInstructionAsync(withWorkspace: true, "noop");
+
+        Assert.Contains(VaultTargetPolicy.StepHint, inWorkspace, StringComparison.Ordinal);
+        Assert.DoesNotContain(VaultTargetPolicy.StepHint, noWorkspace, StringComparison.Ordinal);
+        Assert.DoesNotContain(VaultTargetPolicy.StepHint, noMemoryTool, StringComparison.Ordinal);
+
+        foreach (var instruction in new[] { inWorkspace, noWorkspace, noMemoryTool })
+            Assert.Contains(AgentToolCarryover.ReReadHint, instruction, StringComparison.Ordinal);
+    }
+
+    /// <summary>The composed user message of one step's first turn, on a turn offering exactly
+    /// <paramref name="toolNames"/>.</summary>
+    private static async Task<string> StepInstructionAsync(bool withWorkspace, params string[] toolNames)
+    {
+        using var h = new DurabilityHarness();
+        var run = await h.NewRunAsync("file the report");
+        var ct = TestContext.Current.CancellationToken;
+
+        h.Composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
+                Arg.Any<bool>(), Arg.Any<bool>())
+            .Returns(_ => new AssistantTurnSetup(
+                "system",
+                [.. toolNames.Select(n => (AITool)AIFunctionFactory.Create(() => string.Empty, n))],
+                SupportsTools: true, WebSearchActive: false));
+
+        var captured = new List<List<ChatMessage>>();
+        h.Ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
+            .Returns(ci =>
+            {
+                captured.Add([.. (IList<ChatMessage>)ci[0]]);
+                return DriveText("done");
+            });
+
+        var workspaceRoot = withWorkspace ? Path.Combine(Path.GetTempPath(), "PiaWs_" + Guid.NewGuid().ToString("N")) : null;
+        if (workspaceRoot is not null)
+            Directory.CreateDirectory(workspaceRoot);
+        try
+        {
+            var ctx = new RunContext("file the report", RunProfile.Interactive);
+            var executor = h.NewExecutor();
+            executor.Initialize(workspaceRoot, ["write_file"], h.Provider);
+            await executor.BeginRunAsync(run, ctx, ct);
+            await executor.ExecuteStepAsync(run, CarryStep(0), ctx, ct);
+        }
+        finally
+        {
+            if (workspaceRoot is not null)
+                Directory.Delete(workspaceRoot, recursive: true);
+        }
+
+        return Assert.Single(captured[0], m => m.Role == ChatRole.User && m.Text.Contains("Execute step 1")).Text;
+    }
+
     // ---- the durable twin: a resume gets back the exchanges the abandoned attempt produced ----
 
     private static AgentToolExchangeStore ExchangeStore(DurabilityHarness h) =>

@@ -1397,7 +1397,7 @@ public sealed class AgentRunOrchestrator
 
     /// <summary>
     /// A child run's GOAL, from the sibling step the parent is delegating. Mirrors
-    /// <c>HeadlessTurnExecutor.BuildInstruction</c>'s shape minus its "Execute step N" framing — the child is
+    /// <c>AgentStepInstruction.Build</c>'s shape minus its "Execute step N" framing — the child is
     /// planning its own decomposition of this work, not executing one step of the parent's plan.
     /// SENSITIVE (user/model content): it is never logged, only handed to the launcher.
     /// </summary>

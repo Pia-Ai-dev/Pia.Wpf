@@ -1113,7 +1113,7 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
                 //
                 // Batch 08 F7: INTENT FALLS BACK TO THE TITLE, it is not separately validated. The validated
                 // field was Title, but Intent is the only field either executor sends — ChatSession builds
-                // `Execute step {n}: {Intent}.` and HeadlessTurnExecutor's BuildInstruction takes
+                // `Execute step {n}: {Intent}.` and AgentStepInstruction.Build takes
                 // `step.Intent ?? ""`; neither ever reads Title. AgentPlanner drops a planner step whose Intent
                 // is blank, so this method was the FIRST writer in the codebase able to persist a Pending step
                 // with a null Intent — and the panel's "Insert step below" minted exactly that, so an inserted
