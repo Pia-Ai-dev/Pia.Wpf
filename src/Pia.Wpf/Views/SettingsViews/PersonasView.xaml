@@ -142,9 +142,13 @@
               Style="{StaticResource PiaCardStyle}"
               Padding="16">
         <Grid>
+          <!-- Centred, unlike the list empty state above: this one owns a whole pane rather than sitting
+               under a header. -->
           <shared:PiaEmptyState Symbol="Person24"
                                 Title="{loc:Str Personas_Placeholder}"
                                 Hint="{loc:Str Personas_PlaceholderHint}"
+                                VerticalAlignment="Center"
+                                Margin="0"
                                 Visibility="{Binding ShowsPlaceholder, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
           <ScrollViewer VerticalScrollBarVisibility="Auto"
