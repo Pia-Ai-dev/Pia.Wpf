@@ -139,6 +139,10 @@ A resume re-seeds `_messages` from the persisted chat, which holds role + conten
 structure. That is acceptable: the post-resume state equals the post-clearing state, which the model is
 already told how to handle.
 
+**Superseded** by [../agent_run_approval_park/2026-08-31-approval-park-implementation-plan.md](../agent_run_approval_park/2026-08-31-approval-park-implementation-plan.md)
+group C: a run's tool exchanges are now persisted to `AgentToolExchanges` and re-seeded on resume, so the
+post-resume state is the pre-park state, not the post-clearing one.
+
 ### 6. Telling the model
 
 One sentence, appended to the per-step instruction in `HeadlessTurnExecutor.BuildInstruction` and its
@@ -171,6 +175,7 @@ and write in that one step. Fewer boundaries beats a better boundary crossing.
 - It does not summarize. Clearing is the whole eviction policy; the existing compactor is the only
   summarizer, and it runs after.
 - It does not persist tool exchanges. They live for the run (headless) or the session (live) and never
-  reach `history.db`.
+  reach `history.db`. **Superseded** by the same plan's group C: the headless path now writes them to
+  `AgentToolExchanges` in `history.db`, device-local and purged with the run.
 - It does not remove the reason a model writes scratch files. That is Finding 6's `.scratch/`
   convention, sequenced after this.

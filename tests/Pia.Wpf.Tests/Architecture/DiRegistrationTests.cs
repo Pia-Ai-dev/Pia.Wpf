@@ -91,4 +91,16 @@ public class DiRegistrationTests
         Assert.True(unregistered.Count == 0,
             $"all service interfaces must be registered in DI, but these are missing: {string.Join(", ", unregistered)}");
     }
+
+    /// <summary>The sweep above only proves a descriptor exists. A TRANSIENT exchange store would hand every
+    /// consumer its own SQLite connection and its own per-run sequence allocator.</summary>
+    [Fact]
+    public void TheToolExchangeStore_IsRegisteredAsASingleton()
+    {
+        var services = BuildServiceCollection();
+
+        var store = Assert.Single(services, d => d.ServiceType == typeof(Pia.Services.Interfaces.IAgentToolExchangeStore));
+        Assert.Equal(ServiceLifetime.Singleton, store.Lifetime);
+        Assert.Equal(typeof(Pia.Services.AgentToolExchangeStore), store.ImplementationType);
+    }
 }

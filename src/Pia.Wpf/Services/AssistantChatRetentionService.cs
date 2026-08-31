@@ -13,6 +13,7 @@ public class AssistantChatRetentionService : BackgroundService
     private readonly ISettingsService _settingsService;
     private readonly AssistantChatSyncService _syncService;
     private readonly IAgentTimelineService _timelineService;
+    private readonly IAgentToolExchangeStore _exchangeStore;
     private readonly ILogger<AssistantChatRetentionService> _logger;
 
     public AssistantChatRetentionService(
@@ -20,12 +21,14 @@ public class AssistantChatRetentionService : BackgroundService
         ISettingsService settingsService,
         AssistantChatSyncService syncService,
         IAgentTimelineService timelineService,
+        IAgentToolExchangeStore exchangeStore,
         ILogger<AssistantChatRetentionService> logger)
     {
         _chatService = chatService;
         _settingsService = settingsService;
         _syncService = syncService;
         _timelineService = timelineService;
+        _exchangeStore = exchangeStore;
         _logger = logger;
     }
 
@@ -121,6 +124,16 @@ public class AssistantChatRetentionService : BackgroundService
             _logger.LogInformation(
                 "Assistant chat retention pruned {Count} run timeline events older than {Days} days",
                 prunedEvents, days);
+        }
+
+        // The payload-bearing exchange rows sweep on the SAME cutoff, from here rather than a second call
+        // site, so the history-disabled one-day floor above reaches them too.
+        var prunedExchanges = await _exchangeStore.PruneAsync(cutoff, ct);
+        if (prunedExchanges > 0)
+        {
+            _logger.LogInformation(
+                "Assistant chat retention pruned {Count} run tool-exchange rows older than {Days} days",
+                prunedExchanges, days);
         }
     }
 }

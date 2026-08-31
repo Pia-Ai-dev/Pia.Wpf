@@ -120,6 +120,45 @@ public class SqliteContextTests : IDisposable
         Assert.Equal(expected.OrderBy(c => c, StringComparer.Ordinal), actual.OrderBy(c => c, StringComparer.Ordinal));
     }
 
+    [Fact]
+    public void AgentToolExchanges_HasExactlyTheseColumns()
+    {
+        // This table's contract is the INVERSE of AgentTimelineEvents' metadata-only one: it is
+        // payload-bearing on purpose, device-local, and purged with the run. Do not align the two.
+        string[] expected =
+        [
+            "Id", "SchemaVersion", "RunId", "StepId", "MessageSeq", "Seq", "Round", "Role", "Kind", "CallId",
+            "ToolName", "PluginId", "ArgumentsJson", "ArgsOmitted", "DisplayArgs", "ResultKind", "ResultText",
+            "Chars", "AnchorMessageId", "CreatedAt", "ReplayedAt", "SupersededAt",
+        ];
+
+        using var cmd = _ctx.GetConnection().CreateCommand();
+        cmd.CommandText = "PRAGMA table_info(AgentToolExchanges)";
+        var actual = new List<string>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+            actual.Add(reader.GetString(1));
+
+        Assert.Equal(expected.OrderBy(c => c, StringComparer.Ordinal), actual.OrderBy(c => c, StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void EnsureSchema_AddsAgentToolExchanges_ToAPreBatchDatabase()
+    {
+        var conn = _ctx.GetConnection();
+        using (var drop = conn.CreateCommand())
+        {
+            drop.CommandText = "DROP TABLE AgentToolExchanges";
+            drop.ExecuteNonQuery();
+        }
+
+        using var upgraded = new SqliteContext(_dbPath);
+        var upgradedConn = upgraded.GetConnection();
+        Assert.True(TableExists(upgradedConn, "AgentToolExchanges"));
+        Assert.True(IndexExists(upgradedConn, "IX_AgentToolExchanges_RunId"));
+        Assert.True(IndexExists(upgradedConn, "IX_AgentToolExchanges_CreatedAt"));
+    }
+
     /// <summary>Only this covers the ALTER path; the column-list test above covers the fresh CREATE TABLE.</summary>
     [Fact]
     public void EnsureSchema_AddsTheCorrelationColumns_ToAPreT214Database()

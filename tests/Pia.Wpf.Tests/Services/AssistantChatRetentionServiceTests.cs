@@ -14,6 +14,7 @@ public sealed class AssistantChatRetentionServiceTests
     private readonly IAssistantChatService _chats = Substitute.For<IAssistantChatService>();
     private readonly ISettingsService _settings = Substitute.For<ISettingsService>();
     private readonly IAgentTimelineService _timeline = Substitute.For<IAgentTimelineService>();
+    private readonly IAgentToolExchangeStore _exchanges = Substitute.For<IAgentToolExchangeStore>();
 
     [Fact]
     public async Task RetentionCleanup_PrunesTheTimelineWithTheSameCutoff()
@@ -82,5 +83,6 @@ public sealed class AssistantChatRetentionServiceTests
             Substitute.For<ISyncClientService>(),
             NullLogger<AssistantChatSyncService>.Instance),
         _timeline,
+        _exchanges,
         NullLogger<AssistantChatRetentionService>.Instance);
 }

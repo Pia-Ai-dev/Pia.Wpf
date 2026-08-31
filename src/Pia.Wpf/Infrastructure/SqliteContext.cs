@@ -580,6 +580,57 @@ public class SqliteContext : IDisposable
 
             CREATE INDEX IF NOT EXISTS IX_AgentTimelineEvents_RunId     ON AgentTimelineEvents(RunId, Seq);
             CREATE INDEX IF NOT EXISTS IX_AgentTimelineEvents_CreatedAt ON AgentTimelineEvents(CreatedAt);
+
+            CREATE TABLE IF NOT EXISTS AgentToolExchanges (
+                Id              TEXT PRIMARY KEY,
+                SchemaVersion   INTEGER NOT NULL DEFAULT 1,
+                RunId           TEXT    NOT NULL,
+                -- Not a foreign key, for AgentTimelineEvents.StepId's reason: ReplaceStepsAsync re-inserts every
+                -- AgentSteps row on each replan, so a cascade would wipe the payload of steps that already ran.
+                StepId          TEXT    NULL,
+                -- Per RUN, over captured MESSAGES: rows sharing it rebuild into ONE ChatMessage, so two parallel
+                -- calls in one assistant message come back in one message.
+                MessageSeq      INTEGER NOT NULL,
+                -- Per RUN, over CONTENT rows, and the only ordering. Allocated from MAX(Seq) inside the write
+                -- transaction, so a run parked in one process and resumed in another continues its sequence.
+                Seq             INTEGER NOT NULL,
+                -- 1-based, the number every log line in the tool loop prints.
+                Round           INTEGER NULL,
+                Role            TEXT    NOT NULL,
+                -- TWO WRITERS: 1 Call / 2 Result is what the MODEL saw (tokenized when tokenization is on), 3 ParkedCall
+                -- / 4 WithheldCall is what the GATE saw (detokenized, replayable, can hold real PII). Append-only.
+                Kind            INTEGER NOT NULL,
+                -- FunctionCallContent.CallId verbatim, EMPTY STRING when the provider gave none (the same case
+                -- AgentTimelineEvents.ToolCallId records as NULL); the replay synthesizes one when it rebuilds the call.
+                CallId          TEXT    NOT NULL,
+                ToolName        TEXT    NULL,
+                PluginId        TEXT    NULL,
+                -- PAYLOAD-BEARING, the inverse of AgentTimelineEvents' metadata-only contract beside it. Local-only,
+                -- purged with the run, never logged outside SensitiveDebug, never copied into SyncAssistantChatMessage.
+                ArgumentsJson   TEXT    NULL,
+                -- The args exceeded MaxRowChars and were dropped: context only, never replayable. Kind 1 only - a
+                -- Kind 3/4 row is refused whole rather than stubbed, because half a payload is unreplayable.
+                ArgsOmitted     INTEGER NOT NULL DEFAULT 0,
+                -- Today's 120/400-capped display line, for the approval surfaces. Kind 3/4 only.
+                DisplayArgs     TEXT    NULL,
+                ResultKind      INTEGER NOT NULL DEFAULT 0,
+                ResultText      TEXT    NULL,
+                -- ArgumentsJson.Length + ResultText.Length, so the per-run byte cap is SUM(Chars) rather than a
+                -- length() scan over 512 K blobs.
+                Chars           INTEGER NOT NULL DEFAULT 0,
+                -- The AssistantChatMessages row this group precedes on the re-seed. Not a foreign key: every chat save
+                -- re-INSERTs the message rows in one transaction, which an FK would cascade through or reject.
+                AnchorMessageId TEXT    NULL,
+                CreatedAt       TEXT    NOT NULL,
+                -- Stamped BEFORE the replay executes, so at-most-once survives a crash between mark and call.
+                ReplayedAt      TEXT    NULL,
+                -- A later park recording the same tool made this row's arguments stale.
+                SupersededAt    TEXT    NULL,
+                FOREIGN KEY (RunId) REFERENCES AgentRuns(Id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS IX_AgentToolExchanges_RunId     ON AgentToolExchanges(RunId, Seq);
+            CREATE INDEX IF NOT EXISTS IX_AgentToolExchanges_CreatedAt ON AgentToolExchanges(CreatedAt);
             """;
         command.ExecuteNonQuery();
 

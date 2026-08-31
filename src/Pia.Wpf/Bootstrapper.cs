@@ -565,6 +565,9 @@ public static class Bootstrapper
         // dedicated SQLite connection and a per-run Seq allocator, and a second instance would allocate
         // colliding sequence numbers for the same run.
         services.AddSingleton<IAgentTimelineService, AgentTimelineService>();
+        // The per-run tool-exchange store. Singleton for AgentTimelineService's reason: it owns a
+        // dedicated SQLite connection.
+        services.AddSingleton<IAgentToolExchangeStore, AgentToolExchangeStore>();
         // The run panel live-updates its tool-activity section through this broker (T2-G1's first consumer).
         // Further observers (OTel exporter, file trace) still register ADDITIVELY right here; never TryAdd,
         // which would let the first registration silently exclude the second.
