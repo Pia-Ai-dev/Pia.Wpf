@@ -981,7 +981,7 @@ public sealed class ChatSession : IDisposable
         else
         {
             instruction = AgentStepInstruction.Compose(spec.Ordinal, spec.Intent, spec.ExpectedArtifact,
-                spec.WorkspaceRoot, spec.Tools);
+                spec.WorkspaceRoot, spec.Tools, ctx);
         }
 
         // The ONLY place a user steering note may ride — a ChatRole.User message, never System.

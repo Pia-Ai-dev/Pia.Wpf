@@ -175,7 +175,25 @@ public sealed class ChatSessionStepTurnTests
             Assert.Contains(AgentToolCarryover.ReReadHint, instruction, StringComparison.Ordinal);
     }
 
-    private async Task<string> LiveStepInstructionAsync(string? workspaceRoot, string? extraToolName)
+    /// <summary>The live half of E1's parity: this call site hands the composer its RunContext too, so a
+    /// run's produced and reserved deliverables reach both paths.</summary>
+    [Fact]
+    public async Task TheLiveStepInstruction_CarriesBothSeededBlocks()
+    {
+        var ctx = new RunContext("goal", RunProfile.Interactive);
+        ctx.RecordStep(
+            new AgentStep { Ordinal = 0, Title = "earlier", Intent = "earlier", ExpectedArtifact = "done.md" },
+            new StepTurnResult(true, false, null, "text", null, Guid.NewGuid(), Guid.NewGuid()));
+        ctx.SetPlannedArtifacts([new PlannedStepArtifact(1, "later.md")]);
+
+        var instruction = await LiveStepInstructionAsync(workspaceRoot: null, extraToolName: null, ctx);
+
+        Assert.Contains(AgentStepInstruction.ProducedHeader + " done.md.", instruction, StringComparison.Ordinal);
+        Assert.Contains(AgentStepInstruction.ReservedHeader + " later.md.", instruction, StringComparison.Ordinal);
+        Assert.Contains(AgentStepInstruction.OwnDeliverableRule, instruction, StringComparison.Ordinal);
+    }
+
+    private async Task<string> LiveStepInstructionAsync(string? workspaceRoot, string? extraToolName, RunContext? ctx = null)
     {
         var captured = new List<List<ChatMessage>>();
         _ai.GetChatCompletionWithToolsAsync(
@@ -194,7 +212,7 @@ public sealed class ChatSessionStepTurnTests
 
         await session.RunStepTurnAsync(
             Spec(tokenizationEnabled: false, supportsTools: true, workspaceRoot: workspaceRoot, extraToolName: extraToolName),
-            new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
+            ctx ?? new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
 
         return Assert.Single(captured[0], m => m.Role == ChatRole.User && m.Text.Contains("Execute step 1")).Text;
     }

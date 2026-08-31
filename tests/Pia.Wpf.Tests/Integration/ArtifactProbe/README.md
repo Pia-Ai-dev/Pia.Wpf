@@ -11,6 +11,7 @@ outcome arm each candidate path prints. Plan:
 | `DeclarationCorpus.cs` | The corpus: 20 declarations, each with the outcome text the probe prints after the arrow, written out by hand rather than computed. |
 | `DeclarationCorpusReplayTests.cs` | Replays the corpus through `AgentVerifier.VerifyAsync` and reads the fact block off the System prompt. Also pins flattening, truncation, the 3-candidate cap, the probe budget and the report cap. |
 | `DeclarationClassifierParityTests.cs` | Replays `../../../../scripts/artifact-declaration-cases.json` through the same verifier, so the PowerShell reimplementation of the file-shapedness rule cannot drift from it unnoticed. |
+| `NearDuplicateDeliverableTests.cs` | The near-duplicate deliverable hint: the observed real pair fires it, and one theory row per conjunct proves what never does. |
 
 ## What this measures
 
@@ -24,13 +25,14 @@ what makes the fact block parseable or not.
   the outstanding measurement of what real runs declare.
 - Every corpus row runs against an empty throwaway folder, so a probed candidate always reads `NOT FOUND`.
   The `found` arm is pinned once, as a rendering check.
-- Nothing here touches the artifact a step reports about *itself*. That is a different channel, and it is
-  not probed at all.
+- The artifact a step reports about *itself* is now probed too — it renders as the `reported:` half of the
+  same fact line — but no corpus row exercises it. That channel is pinned in
+  `../../Services/AgentVerifierTests.cs` and in `NearDuplicateDeliverableTests.cs`.
 
 ## Outcome arms and who pins them
 
-Eight outcome sites, seven distinct strings — the two probe-budget arms share their text — plus the tally
-line for declarations past the report cap.
+Nine outcome sites, eight distinct strings — the two probe-budget arms share their text — plus the tally
+line for declarations past the report cap and the two lines the near-duplicate hint adds.
 
 | Arm | Pinned by |
 |---|---|
@@ -42,7 +44,10 @@ line for declarations past the report cap.
 | `not probed (probe budget reached)`, per candidate | `DeclarationCorpusReplayTests.ProbeBudget_Exhausted_…` |
 | `not probed (probe budget reached)`, per declaration (prints bare) | `DeclarationCorpusReplayTests.ProbeBudget_Exhausted_…` |
 | `not probed (could not be inspected)` | **nothing pins this.** It needs a stat call to throw, which is not portably forceable — a known hole, not a faked one. |
+| `names a vault reference — outside the working folder, not probed` | `../../Services/AgentVerifierTests.cs` — `VerifyAsync_ReportedVaultReference_IsNotReportedAsMissing` |
 | `- (<n> further declared artifact(s) not probed — probe budget reached)` | `DeclarationCorpusReplayTests.ReportCap_KeepsTwentyFactLines_AndTalliesTheRest` |
+| `reported: <ref> → <arm>`, the second half of a step line | `../../Services/AgentVerifierTests.cs` — `VerifyAsync_DeclaredAndReportedDiffer_RenderOnOneLineDeclaredFirst` |
+| `- possible duplicate deliverable: …` and its HINT sentence | `NearDuplicateDeliverableTests` |
 
 Three corpus rows overlap assertions that already live in `../../Services/AgentVerifierTests.cs` (`12.5`,
 `v1.0` and a bare `.md` as prose, plus the sandbox-escape arm). They are kept here for arm completeness,

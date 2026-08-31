@@ -410,6 +410,10 @@ public sealed class AgentRunOrchestrator
                     await SafeSetStepStatus(step.Id, AgentStepStatus.Running, cts.Token).ConfigureAwait(false);
                     inflightStepId = step.Id; // D1: what the catch(OCE) arm has to restore (see the hoist above)
 
+                    // Read per step, not once per dispatch: TryReplanAfterFailureAsync rewrites the whole
+                    // pending tail from inside this loop, so a dispatch-level read would go stale mid-drain.
+                    ctx.SetPlannedArtifacts(await SafePlannedArtifactsAsync(run.Id, cts.Token).ConfigureAwait(false));
+
                     // Nested inside the run scope, so a step turn's lines read "[run … step N]". The
                     // ORDINAL, not the step id: it is what the plan, the panel and the audit table all show, and
                     // so it is what a person matches a log line against.
@@ -1836,6 +1840,28 @@ public sealed class AgentRunOrchestrator
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Run bookkeeping (reading the skipped steps of {RunId}) failed", runId);
+            return [];
+        }
+    }
+
+    /// <summary>the artifacts this run's still-<c>Pending</c> steps have declared, or an empty list on any
+    /// fault — the block it feeds is a prompt improvement, never a reason to fail a run.</summary>
+    private async Task<IReadOnlyList<PlannedStepArtifact>> SafePlannedArtifactsAsync(Guid runId, CancellationToken ct)
+    {
+        try
+        {
+            var current = await _runService.GetAsync(runId, ct).ConfigureAwait(false);
+            return current is null
+                ? []
+                : current.Plan
+                    .Where(s => s.Status == AgentStepStatus.Pending && !string.IsNullOrWhiteSpace(s.ExpectedArtifact))
+                    .OrderBy(s => s.Ordinal)
+                    .Select(s => new PlannedStepArtifact(s.Ordinal, s.ExpectedArtifact!))
+                    .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run bookkeeping (reading the planned artifacts of {RunId}) failed", runId);
             return [];
         }
     }

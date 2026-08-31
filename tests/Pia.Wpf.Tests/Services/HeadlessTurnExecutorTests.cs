@@ -1724,9 +1724,31 @@ public sealed class HeadlessTurnExecutorTests
             Assert.Contains(AgentToolCarryover.ReReadHint, instruction, StringComparison.Ordinal);
     }
 
+    /// <summary>The headless half of E1's parity: the seeded blocks reach the model because this call site
+    /// hands the composer its RunContext.</summary>
+    [Fact]
+    public async Task TheHeadlessStepInstruction_CarriesBothSeededBlocks()
+    {
+        var instruction = await StepInstructionAsync(withWorkspace: false, SeedTwoArtifacts, ["noop"]);
+
+        Assert.Contains(AgentStepInstruction.ProducedHeader + " done.md.", instruction, StringComparison.Ordinal);
+        Assert.Contains(AgentStepInstruction.ReservedHeader + " later.md.", instruction, StringComparison.Ordinal);
+    }
+
+    private static void SeedTwoArtifacts(RunContext ctx)
+    {
+        ctx.RecordStep(
+            new AgentStep { Ordinal = 0, Title = "earlier", Intent = "earlier", ExpectedArtifact = "done.md" },
+            new StepTurnResult(true, false, null, "text", null, Guid.NewGuid(), Guid.NewGuid()));
+        ctx.SetPlannedArtifacts([new PlannedStepArtifact(1, "later.md")]);
+    }
+
     /// <summary>The composed user message of one step's first turn, on a turn offering exactly
     /// <paramref name="toolNames"/>.</summary>
-    private static async Task<string> StepInstructionAsync(bool withWorkspace, params string[] toolNames)
+    private static Task<string> StepInstructionAsync(bool withWorkspace, params string[] toolNames) =>
+        StepInstructionAsync(withWorkspace, seed: null, toolNames);
+
+    private static async Task<string> StepInstructionAsync(bool withWorkspace, Action<RunContext>? seed, string[] toolNames)
     {
         using var h = new DurabilityHarness();
         var run = await h.NewRunAsync("file the report");
@@ -1756,6 +1778,7 @@ public sealed class HeadlessTurnExecutorTests
         try
         {
             var ctx = new RunContext("file the report", RunProfile.Interactive);
+            seed?.Invoke(ctx);
             var executor = h.NewExecutor();
             executor.Initialize(workspaceRoot, ["write_file"], h.Provider);
             await executor.BeginRunAsync(run, ctx, ct);

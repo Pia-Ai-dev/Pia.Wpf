@@ -196,6 +196,12 @@ public sealed class RunContext
     /// persisted plan, so accumulating would keep listing rows a later mutation dropped.</summary>
     public void SetSkippedTitles(IReadOnlyList<string> titles) => SkippedTitles = titles;
 
+    public IReadOnlyList<PlannedStepArtifact> PlannedArtifacts { get; private set; } = [];
+
+    /// <summary>Replaces (never appends to) <see cref="PlannedArtifacts"/> — each seed is a fresh read of the
+    /// persisted plan, so accumulating would keep listing steps a later mutation dropped.</summary>
+    public void SetPlannedArtifacts(IReadOnlyList<PlannedStepArtifact> artifacts) => PlannedArtifacts = artifacts;
+
     /// <summary>What the user answered when this run parked and asked, oldest-first. Not folded into <see cref="Goal"/> (would rewrite the user's own text) or <see cref="Nudge"/> (never persisted, so a repeat park would lose it).</summary>
     public IReadOnlyList<string> Clarifications { get; private set; } = [];
 
@@ -221,3 +227,5 @@ public sealed class RunContext
         return sb.ToString();
     }
 }
+
+public readonly record struct PlannedStepArtifact(int Ordinal, string Artifact);

@@ -443,7 +443,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // never inside RunExchangeStepAsync, which keeps taking a plain string and never sees ctx at all.
         return await RunExchangeStepAsync(
                 ctx.AppendNudge(AgentStepInstruction.Compose(step.Ordinal, step.Intent ?? string.Empty,
-                    step.ExpectedArtifact, _workspaceRoot, setup.TurnSetup.Tools)),
+                    step.ExpectedArtifact, _workspaceRoot, setup.TurnSetup.Tools, ctx)),
                 persistInterim: true, ct, TimelineScope(step.Id), setup,
                 // hermes #9: this is the ONE entry point whose result reaches RecordStepResultAsync as
                 // Done/Failed, so it is the one that offers emit_step_result. The R10 degrade turn below

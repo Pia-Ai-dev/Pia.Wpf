@@ -20,8 +20,9 @@ namespace Pia.Services;
 /// text (reason/missing) is SENSITIVE — logged only via <see cref="LoggingExtensions.SensitiveDebug"/>.
 /// <para>
 /// H1: the verdict is anchored in MECHANICAL evidence, not only the model's self-summaries — each
-/// completed step's declared <c>ExpectedArtifact</c> is probed against the run's effective file root
-/// and the found/not-found facts are fed to the critic as a distinct block. The probe is bounded and
+/// completed step's declared <c>ExpectedArtifact</c> and its own reported artifact are probed against the
+/// run's effective file root and the found/not-found facts are fed to the critic as a distinct block.
+/// Two found artifacts of the same type, size band and name shape are flagged as a hint. The probe is bounded and
 /// failure-isolated (any fault/timeout omits the block and verify proceeds) and it can never itself
 /// fail a verdict: the LLM still renders it.
 /// </para>
@@ -236,8 +237,11 @@ public sealed class AgentVerifier : IAgentVerifier
     // Hard bounds so a long plan can never stall the verify turn (the probe is pure metadata: no file
     // contents are read). A 48-step plan therefore costs at most MaxProbedPaths stat calls.
     private const int MaxProbedPaths = 12;
-    private const int MaxReportedDeclarations = 20;
+    private const int MaxReportedSteps = 20;
     private const int MaxCandidatesPerDeclaration = 3;
+    private const int MaxDuplicatePairs = 3;
+    private const double MinSizeRatio = 0.5;
+    private const int MinSharedTokenChars = 4;
 
     /// <summary>Cap for BOTH interpolated free-text fields of a fact line (declaration and step title).</summary>
     private const int MaxDeclarationChars = 200;
@@ -264,9 +268,11 @@ public sealed class AgentVerifier : IAgentVerifier
         Task<(string? Facts, ArtifactProbeTally Tally, bool SubpathFallback)>? probe = null;
         try
         {
-            var declared = ctx.CompletedSteps.Where(c => !string.IsNullOrWhiteSpace(c.ExpectedArtifact)).ToList();
-            if (declared.Count == 0)
-                return null; // nothing was ever declared — no facts to add
+            var targets = ctx.CompletedSteps.Select(BuildTarget)
+                .Where(t => t.Declared is not null || t.Reported is not null)
+                .ToList();
+            if (targets.Count == 0)
+                return null; // neither channel named an artifact — no facts to add
 
             // Only the settings read happens here (a local DB read, not a filesystem walk). Everything that
             // TOUCHES the filesystem — including resolving the root — runs inside the time-boxed task below.
@@ -277,7 +283,7 @@ public sealed class AgentVerifier : IAgentVerifier
             var configured = ambientRoot ?? (await _settings.GetSettingsAsync().ConfigureAwait(false)).AssistantFilesFolder;
             if (string.IsNullOrWhiteSpace(configured))
             {
-                _logger.LogInformation("Artifact probe skipped for {Count} declaration(s): no usable files folder.", declared.Count);
+                _logger.LogInformation("Artifact probe skipped for {Count} step(s) with a declared or reported artifact: no usable files folder.", targets.Count);
                 return null;
             }
 
@@ -293,13 +299,13 @@ public sealed class AgentVerifier : IAgentVerifier
                 var root = ResolveProbeRoot(configured, workingSubpath, out var fallback);
                 if (root is null)
                     return (null, default, fallback);
-                var result = ProbeDeclarations(root, declared);
+                var result = ProbeDeclarations(root, targets);
                 return (result.Facts, result.Tally, fallback);
             }, CancellationToken.None);
             var (facts, tally, subpathFallback) = await probe.WaitAsync(ProbeBudget, ct).ConfigureAwait(false);
             if (facts is null)
             {
-                _logger.LogInformation("Artifact probe skipped for {Count} declaration(s): files folder does not exist.", declared.Count);
+                _logger.LogInformation("Artifact probe skipped for {Count} step(s) with a declared or reported artifact: files folder does not exist.", targets.Count);
                 return null;
             }
 
@@ -307,9 +313,10 @@ public sealed class AgentVerifier : IAgentVerifier
                 _logger.SensitiveDebug("Working subpath did not resolve to an existing folder under the sandbox: {Subpath}", workingSubpath);
 
             _logger.LogInformation(
-                "Artifact probe: declared={Declared} fileShaped={FileShaped} notFileShaped={NotFileShaped} overReportCap={OverReportCap} probed={Probed} found={Found} notFound={NotFound} folder={Folder} unresolvable={Unresolvable} uninspectable={Uninspectable} overPathCap={OverPathCap}",
-                tally.Declared, tally.FileShaped, tally.NotFileShaped, tally.OverReportCap, tally.Probed,
-                tally.Found, tally.NotFound, tally.Folder, tally.Unresolvable, tally.Uninspectable, tally.OverPathCap);
+                "Artifact probe: declared={Declared} reported={Reported} reportedSame={ReportedSame} fileShaped={FileShaped} notFileShaped={NotFileShaped} overReportCap={OverReportCap} probed={Probed} found={Found} notFound={NotFound} folder={Folder} unresolvable={Unresolvable} uninspectable={Uninspectable} vaultRef={VaultRef} overPathCap={OverPathCap} dupPairs={DupPairs}",
+                tally.Declared, tally.Reported, tally.ReportedSame, tally.FileShaped, tally.NotFileShaped,
+                tally.OverReportCap, tally.Probed, tally.Found, tally.NotFound, tally.Folder, tally.Unresolvable,
+                tally.Uninspectable, tally.VaultRef, tally.OverPathCap, tally.DupPairs);
             _logger.SensitiveDebug("Artifact probe facts:\n{Facts}", facts);
             return facts;
         }
@@ -366,98 +373,163 @@ public sealed class AgentVerifier : IAgentVerifier
         return root;
     }
 
-    private enum ProbeOutcome { Found, NotFound, Folder, Unresolvable, Uninspectable }
+    private enum ProbeOutcome { Found, NotFound, Folder, Unresolvable, Uninspectable, VaultReference }
 
     /// <summary>Counts only — unlike the fact lines, this is safe in a release log.</summary>
     private readonly record struct ArtifactProbeTally(
-        int Declared, int FileShaped, int NotFileShaped, int OverReportCap,
+        int Declared, int Reported, int ReportedSame, int FileShaped, int NotFileShaped, int OverReportCap,
         int Probed, int Found, int NotFound, int Folder, int Unresolvable,
-        int Uninspectable, int OverPathCap);
+        int Uninspectable, int VaultRef, int OverPathCap, int DupPairs);
+
+    /// <summary>One step's two artifact channels: what the planner declared, and what the step said it produced.</summary>
+    private readonly record struct ProbeTarget(
+        int Ordinal, string Title, string? Declared, string? Reported, bool ReportedSameAsDeclared);
+
+    private readonly record struct FoundArtifact(int Ordinal, string Candidate, string Resolved, long Size);
+
+    /// <summary>Mutable, so one probe body can serve both channels across two passes.</summary>
+    private sealed class ProbeCounters
+    {
+        internal int Probed;
+        internal int FileShaped;
+        internal int NotFileShaped;
+        internal int Found;
+        internal int NotFound;
+        internal int Folder;
+        internal int Unresolvable;
+        internal int Uninspectable;
+        internal int VaultRef;
+        internal int OverPathCap;
+    }
+
+    /// <summary>One step's targets. Every interpolated field is model text and is sanitized here: a newline in
+    /// a title or a declaration could otherwise forge a second "- step N … → found" fact line.</summary>
+    private static ProbeTarget BuildTarget(CompletedStepSummary c)
+    {
+        var declared = string.IsNullOrWhiteSpace(c.ExpectedArtifact) ? null : c.ExpectedArtifact.Trim();
+        var reported = string.IsNullOrWhiteSpace(c.Outcome?.ArtifactRef) ? null : c.Outcome.ArtifactRef.Trim();
+        var same = declared is not null && string.Equals(declared, reported, StringComparison.OrdinalIgnoreCase);
+        return new ProbeTarget(
+            c.Ordinal,
+            Truncate(Flatten(c.Title)),
+            declared is null ? null : Truncate(Flatten(declared)),
+            same || reported is null ? null : Truncate(Flatten(reported)),
+            same);
+    }
 
     /// <summary>
-    /// Probes the declared artifacts against <paramref name="root"/>, emitting one fact line per
-    /// declaration. Static + no logger on purpose: artifact names are user content, so this code cannot
-    /// log them even by accident. Runs on a pool thread; bounded by the caps above.
+    /// Probes both artifact channels against <paramref name="root"/>, emitting one fact line per step.
+    /// Static + no logger on purpose: artifact names are user content, so this code cannot log them even
+    /// by accident. Runs on a pool thread; bounded by the caps above.
     /// </summary>
-    private static (string Facts, ArtifactProbeTally Tally) ProbeDeclarations(string root, List<CompletedStepSummary> declared)
+    private static (string Facts, ArtifactProbeTally Tally) ProbeDeclarations(string root, List<ProbeTarget> targets)
     {
-        var sb = new StringBuilder();
-        var probed = 0;
-        var reported = 0;
+        var reportable = new List<ProbeTarget>(Math.Min(targets.Count, MaxReportedSteps));
         var skipped = 0;
-        var fileShaped = 0;
-        var notFileShaped = 0;
-        var found = 0;
-        var notFound = 0;
-        var folder = 0;
-        var unresolvable = 0;
-        var uninspectable = 0;
-        var overPathCap = 0;
-
-        foreach (var c in declared)
+        foreach (var t in targets)
         {
-            if (reported >= MaxReportedDeclarations) { skipped++; continue; }
-            reported++;
-
-            var declaration = Truncate(Flatten(c.ExpectedArtifact!.Trim()));
-            var candidates = FileCandidates(declaration);
-            if (candidates.Count == 0) notFileShaped++; else fileShaped++;
-
-            string outcome;
-            if (candidates.Count == 0)
-            {
-                outcome = "not a file reference";
-            }
-            else if (probed >= MaxProbedPaths)
-            {
-                overPathCap += candidates.Count;
-                outcome = "not probed (probe budget reached)";
-            }
+            if (reportable.Count >= MaxReportedSteps)
+                skipped += (t.Declared is null ? 0 : 1) + (t.Reported is null ? 0 : 1);
             else
-            {
-                var parts = new List<string>(candidates.Count);
-                foreach (var candidate in candidates)
-                {
-                    if (probed >= MaxProbedPaths)
-                    {
-                        overPathCap++;
-                        parts.Add($"{candidate}: not probed (probe budget reached)");
-                        continue;
-                    }
-                    probed++;
-                    var (text, kind) = Probe(root, candidate);
-                    switch (kind)
-                    {
-                        case ProbeOutcome.Found: found++; break;
-                        case ProbeOutcome.NotFound: notFound++; break;
-                        case ProbeOutcome.Folder: folder++; break;
-                        case ProbeOutcome.Unresolvable: unresolvable++; break;
-                        case ProbeOutcome.Uninspectable: uninspectable++; break;
-                    }
-                    // Don't echo the token when it IS the whole declaration — "report.md → found" reads
-                    // better than "report.md → report.md: found".
-                    parts.Add(candidates.Count == 1 && string.Equals(candidate, declaration, StringComparison.Ordinal)
-                        ? text
-                        : $"{candidate}: {text}");
-                }
-                outcome = string.Join("; ", parts);
-            }
+                reportable.Add(t);
+        }
 
-            // BOTH interpolated fields are model text and BOTH are sanitized: the step title is planner
-            // free text (AgentPlanner only trims it), so an embedded newline in it could otherwise forge a
-            // second "- step N … → found" line inside a block the prompt introduces as mechanical
-            // app-gathered facts. Truncate also bounds an over-long title.
-            sb.AppendLine($"- step {c.Ordinal + 1} \"{Truncate(Flatten(c.Title))}\" declared: {declaration} → {outcome}");
+        var counters = new ProbeCounters();
+        var found = new List<FoundArtifact>();
+        var declaredOutcomes = new string?[reportable.Count];
+        var reportedOutcomes = new string?[reportable.Count];
+
+        // Two passes rather than both halves per step: the probe budget must go to the planner declarations
+        // first, or adding the reported channel would push a later step's declaration past the cap.
+        for (var i = 0; i < reportable.Count; i++)
+        {
+            if (reportable[i].Declared is { } declaration)
+                declaredOutcomes[i] = ProbeOneDeclaration(root, declaration, counters, found, reportable[i].Ordinal);
+        }
+        for (var i = 0; i < reportable.Count; i++)
+        {
+            if (reportable[i].Reported is { } declaration)
+                reportedOutcomes[i] = ProbeOneDeclaration(root, declaration, counters, found, reportable[i].Ordinal);
+        }
+
+        var sb = new StringBuilder();
+        for (var i = 0; i < reportable.Count; i++)
+        {
+            var t = reportable[i];
+            var halves = new List<string>(2);
+            if (declaredOutcomes[i] is { } declaredOutcome)
+                halves.Add($"declared: {t.Declared} → {declaredOutcome}");
+            if (reportedOutcomes[i] is { } reportedOutcome)
+                halves.Add($"reported: {t.Reported} → {reportedOutcome}");
+            sb.AppendLine($"- step {t.Ordinal + 1} \"{t.Title}\" {string.Join("; ", halves)}");
         }
 
         if (skipped > 0)
             sb.AppendLine($"- ({skipped} further declared artifact(s) not probed — probe budget reached)");
 
+        var duplicates = DuplicateFactLines(root, found);
+        foreach (var line in duplicates)
+            sb.AppendLine(line);
+        if (duplicates.Count > 0)
+            sb.AppendLine(DuplicateHint);
+
         return (sb.ToString(), new ArtifactProbeTally(
-            Declared: declared.Count, FileShaped: fileShaped, NotFileShaped: notFileShaped,
-            OverReportCap: skipped, Probed: probed, Found: found, NotFound: notFound,
-            Folder: folder, Unresolvable: unresolvable, Uninspectable: uninspectable,
-            OverPathCap: overPathCap));
+            Declared: targets.Count(t => t.Declared is not null),
+            Reported: targets.Count(t => t.Reported is not null),
+            ReportedSame: targets.Count(t => t.ReportedSameAsDeclared),
+            FileShaped: counters.FileShaped, NotFileShaped: counters.NotFileShaped,
+            OverReportCap: skipped, Probed: counters.Probed, Found: counters.Found, NotFound: counters.NotFound,
+            Folder: counters.Folder, Unresolvable: counters.Unresolvable, Uninspectable: counters.Uninspectable,
+            VaultRef: counters.VaultRef, OverPathCap: counters.OverPathCap, DupPairs: duplicates.Count));
+    }
+
+    /// <summary>The outcome text for ONE declaration, shared by both channels.</summary>
+    private static string ProbeOneDeclaration(
+        string root, string declaration, ProbeCounters counters, List<FoundArtifact> found, int ordinal)
+    {
+        var candidates = FileCandidates(declaration);
+        if (candidates.Count == 0)
+        {
+            counters.NotFileShaped++;
+            return "not a file reference";
+        }
+
+        counters.FileShaped++;
+        if (counters.Probed >= MaxProbedPaths)
+        {
+            counters.OverPathCap += candidates.Count;
+            return "not probed (probe budget reached)";
+        }
+
+        var parts = new List<string>(candidates.Count);
+        foreach (var candidate in candidates)
+        {
+            if (counters.Probed >= MaxProbedPaths)
+            {
+                counters.OverPathCap++;
+                parts.Add($"{candidate}: not probed (probe budget reached)");
+                continue;
+            }
+            counters.Probed++;
+            var (text, kind, resolved, size) = Probe(root, candidate);
+            switch (kind)
+            {
+                case ProbeOutcome.Found: counters.Found++; break;
+                case ProbeOutcome.NotFound: counters.NotFound++; break;
+                case ProbeOutcome.Folder: counters.Folder++; break;
+                case ProbeOutcome.Unresolvable: counters.Unresolvable++; break;
+                case ProbeOutcome.Uninspectable: counters.Uninspectable++; break;
+                case ProbeOutcome.VaultReference: counters.VaultRef++; break;
+            }
+            if (kind == ProbeOutcome.Found && resolved is not null)
+                found.Add(new FoundArtifact(ordinal, candidate, resolved, size));
+            // Don't echo the token when it IS the whole declaration — "report.md → found" reads
+            // better than "report.md → report.md: found".
+            parts.Add(candidates.Count == 1 && string.Equals(candidate, declaration, StringComparison.Ordinal)
+                ? text
+                : $"{candidate}: {text}");
+        }
+        return string.Join("; ", parts);
     }
 
     /// <summary>
@@ -466,24 +538,106 @@ public sealed class AgentVerifier : IAgentVerifier
     /// rejects junction/symlink escapes), so the probe can never stat a path outside the folder and never
     /// follows a path escape. Metadata only — no file contents are read.
     /// </summary>
-    private static (string Text, ProbeOutcome Kind) Probe(string root, string candidate)
+    private static (string Text, ProbeOutcome Kind, string? Resolved, long Size) Probe(string root, string candidate)
     {
         if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, candidate, out var resolved))
-            return ("not a resolvable path inside the assistant files folder (not probed)", ProbeOutcome.Unresolvable);
+            return ("not a resolvable path inside the assistant files folder (not probed)", ProbeOutcome.Unresolvable, null, 0);
 
         try
         {
             var file = new FileInfo(resolved);
             if (file.Exists)
-                return ($"found ({FormatSize(file.Length)}, modified {file.LastWriteTimeUtc.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}Z)", ProbeOutcome.Found);
+                return ($"found ({FormatSize(file.Length)}, modified {file.LastWriteTimeUtc.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}Z)", ProbeOutcome.Found, resolved, file.Length);
             if (Directory.Exists(resolved))
-                return ("found, but it is a folder, not a file", ProbeOutcome.Folder);
-            return ("NOT FOUND", ProbeOutcome.NotFound);
+                return ("found, but it is a folder, not a file", ProbeOutcome.Folder, null, 0);
+            // A step that obeyed the vault hint delivers to the vault, which is not part of the working
+            // folder: calling that NOT FOUND would be a confident false fact about a correct run.
+            if (IsVaultReference(candidate))
+                return (VaultReferenceArm, ProbeOutcome.VaultReference, null, 0);
+            return ("NOT FOUND", ProbeOutcome.NotFound, null, 0);
         }
         catch (Exception)
         {
-            return ("not probed (could not be inspected)", ProbeOutcome.Uninspectable);
+            return ("not probed (could not be inspected)", ProbeOutcome.Uninspectable, null, 0);
         }
+    }
+
+    internal const string VaultReferenceArm = "names a vault reference — outside the working folder, not probed";
+
+    private static bool IsVaultReference(string candidate) =>
+        candidate.Replace('\\', '/').TrimStart('/')
+            .StartsWith(VaultTargetPolicy.SourcesPrefix, StringComparison.OrdinalIgnoreCase);
+
+    internal const string DuplicateHint =
+        "A \"possible duplicate deliverable\" line is a HINT, not a finding: two steps each produced a similarly named and similarly sized file of the same type. Decide from the step results whether the plan called for both, or whether one step re-produced another step's deliverable under a new name.";
+
+    /// <summary>
+    /// Metadata-only near-duplicate hint over the artifacts that were actually found. Deliberately biased to
+    /// MISS rather than to flag: a false duplicate on a correct run costs the critic a wrong sentence.
+    /// </summary>
+    private static List<string> DuplicateFactLines(string root, List<FoundArtifact> found)
+    {
+        var lines = new List<string>();
+        for (var i = 0; i < found.Count && lines.Count < MaxDuplicatePairs; i++)
+        {
+            for (var j = i + 1; j < found.Count && lines.Count < MaxDuplicatePairs; j++)
+            {
+                var a = found[i];
+                var b = found[j];
+                if (a.Ordinal == b.Ordinal)
+                    continue; // one step may legitimately produce several files
+                if (string.Equals(a.Resolved, b.Resolved, StringComparison.OrdinalIgnoreCase))
+                    continue; // two spellings of one file is one file
+                if (!string.Equals(Path.GetExtension(a.Candidate), Path.GetExtension(b.Candidate), StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var max = Math.Max(a.Size, b.Size);
+                if (max == 0 || Math.Min(a.Size, b.Size) / (double)max < MinSizeRatio)
+                    continue;
+                if (!NameTokens(a.Candidate).Overlaps(NameTokens(b.Candidate)))
+                    continue;
+                if (IsScratch(root, a) || IsScratch(root, b))
+                    continue; // working notes are not deliverables
+
+                // Lower step first: the two channels are probed in separate passes, so list order is not step order.
+                var (first, second) = a.Ordinal < b.Ordinal ? (a, b) : (b, a);
+                lines.Add(
+                    $"- possible duplicate deliverable: step {first.Ordinal + 1} \"{Truncate(Flatten(first.Candidate))}\" "
+                    + $"({first.Size.ToString(CultureInfo.InvariantCulture)} B) and step {second.Ordinal + 1} "
+                    + $"\"{Truncate(Flatten(second.Candidate))}\" ({second.Size.ToString(CultureInfo.InvariantCulture)} B) "
+                    + "— same file type, similar size, overlapping names");
+            }
+        }
+        return lines;
+    }
+
+    /// <summary>Name tokens long enough to mean something; a purely numeric run (a shared year) is not one.</summary>
+    private static HashSet<string> NameTokens(string candidate)
+    {
+        var tokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var name = Path.GetFileNameWithoutExtension(candidate);
+        var start = 0;
+        for (var i = 0; i <= name.Length; i++)
+        {
+            if (i < name.Length && char.IsLetterOrDigit(name[i]))
+                continue;
+            if (i - start >= MinSharedTokenChars)
+            {
+                var token = name[start..i];
+                if (token.Any(char.IsLetter))
+                    tokens.Add(token);
+            }
+            start = i + 1;
+        }
+        return tokens;
+    }
+
+    /// <summary>The relative path is what <see cref="RunScratchFolder"/> takes — an absolute one silently no-ops.</summary>
+    private static bool IsScratch(string root, FoundArtifact artifact)
+    {
+        string relative;
+        try { relative = Path.GetRelativePath(root, artifact.Resolved); }
+        catch (Exception) { relative = string.Empty; }
+        return RunScratchFolder.Contains(relative);
     }
 
     /// <summary>

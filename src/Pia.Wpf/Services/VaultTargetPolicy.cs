@@ -13,7 +13,7 @@ internal static class VaultTargetPolicy
     internal const string CreateSourceToolName = "create_source";
     internal const string UpdateSourceToolName = "update_source";
 
-    private const string SourcesPrefix = "sources/";
+    internal const string SourcesPrefix = "sources/";
     private const string GenericReference = SourcesPrefix + "<name>.md";
 
     /// <summary>What the per-step instruction tells the model. Model-facing, so deliberately unlocalized.</summary>

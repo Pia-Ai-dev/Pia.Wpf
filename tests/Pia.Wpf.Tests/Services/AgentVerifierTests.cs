@@ -56,6 +56,20 @@ public sealed class AgentVerifierTests : IDisposable
         return c;
     }
 
+    /// <summary>A run context whose steps declare and/or report artifacts (index = ordinal).</summary>
+    private static RunContext CtxReporting(params (string? Declared, string? Reported)[] steps)
+    {
+        var c = new RunContext("build a thing", RunProfile.Interactive);
+        for (var i = 0; i < steps.Length; i++)
+        {
+            c.RecordStep(
+                new AgentStep { Ordinal = i, Title = "S" + i, Intent = "do " + i, ExpectedArtifact = steps[i].Declared },
+                new StepTurnResult(true, false, null, "did it", null, Guid.NewGuid(), Guid.NewGuid(),
+                    Outcome: steps[i].Reported is null ? null : new StepOutcomeClaim(true, "done", steps[i].Reported)));
+        }
+        return c;
+    }
+
     private AgentVerifier BuildVerifier() => new(_ai, _settingsService, _log);
 
     /// <summary>The system prompt of the LAST verify attempt (the probe block lives there).</summary>
@@ -265,8 +279,8 @@ public sealed class AgentVerifierTests : IDisposable
         await BuildVerifier().VerifyAsync(ctx, Persona(), Provider(), TestContext.Current.CancellationToken);
 
         Assert.Equal(
-            "Artifact probe: declared=4 fileShaped=3 notFileShaped=1 overReportCap=0 probed=3 found=2 "
-            + "notFound=1 folder=0 unresolvable=0 uninspectable=0 overPathCap=0",
+            "Artifact probe: declared=4 reported=0 reportedSame=0 fileShaped=3 notFileShaped=1 overReportCap=0 "
+            + "probed=3 found=2 notFound=1 folder=0 unresolvable=0 uninspectable=0 vaultRef=0 overPathCap=0 dupPairs=0",
             ProbeLine);
         // This line survives Release, so no declaration may reach it.
         Assert.DoesNotContain("report.md", ProbeLine);
@@ -316,6 +330,139 @@ public sealed class AgentVerifierTests : IDisposable
             counts["declared"]);
         Assert.Equal(
             counts["found"] + counts["notFound"] + counts["folder"] + counts["unresolvable"] + counts["uninspectable"],
+            counts["probed"]);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_ReportedArtifact_IsProbed_EvenWithNoPlannerDeclaration()
+    {
+        // The step's own artifact_ref is a second channel; before it was probed, a step that named its
+        // deliverable there and had no planner declaration produced no facts at all.
+        WriteFile(Path.Combine("out", "x.md"), 32);
+        _settings.AssistantFilesFolder = _dir;
+        ReturnsVerdict(V(true, "ok"));
+
+        await BuildVerifier().VerifyAsync(
+            CtxReporting((null, "out/x.md")), Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        Assert.Contains("- step 1 \"S0\" reported: out/x.md → found (32 B, modified ", LastPrompt);
+        Assert.Equal(1, ProbeCounts(ProbeLine)["reported"]);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_ResumedRun_ReportedArtifactOfASeededStep_IsProbed()
+    {
+        WriteFile("early.md", 128);
+        _settings.AssistantFilesFolder = _dir;
+        ReturnsVerdict(V(true, "ok"));
+
+        var ctx = new RunContext("build a thing", RunProfile.Interactive);
+        ctx.SeedCompletedSteps(new[]
+        {
+            new CompletedStepSummary(0, "Early", "ran before the pause", Succeeded: true, VisibleText: string.Empty,
+                FromEarlierSegment: true, Outcome: new StepOutcomeClaim(true, string.Empty, "early.md")),
+        });
+
+        await BuildVerifier().VerifyAsync(ctx, Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        Assert.Contains("- step 1 \"Early\" reported: early.md → found (128 B, modified ", LastPrompt);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_ReportedArtifactEqualToTheDeclaredOne_IsProbedOnce()
+    {
+        WriteFile("report.md", 16);
+        _settings.AssistantFilesFolder = _dir;
+        ReturnsVerdict(V(true, "ok"));
+
+        await BuildVerifier().VerifyAsync(
+            CtxReporting(("report.md", "report.md")), Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        var counts = ProbeCounts(ProbeLine);
+        Assert.Equal(1, counts["probed"]);
+        Assert.Equal(1, counts["reportedSame"]);
+        Assert.Equal(0, counts["reported"]);
+        Assert.DoesNotContain("reported: report.md", LastPrompt);
+        Assert.Equal(1, CountOccurrences(LastPrompt, "- step 1 \"S0\" declared: report.md → found"));
+    }
+
+    [Fact]
+    public async Task VerifyAsync_DeclaredAndReportedDiffer_RenderOnOneLineDeclaredFirst()
+    {
+        WriteFile("declared.md", 8);
+        WriteFile("reported.md", 9);
+        _settings.AssistantFilesFolder = _dir;
+        ReturnsVerdict(V(true, "ok"));
+
+        await BuildVerifier().VerifyAsync(
+            CtxReporting(("declared.md", "reported.md")), Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        var line = Assert.Single(LastPrompt.Split('\n'), l => l.StartsWith("- step 1 \"S0\"", StringComparison.Ordinal));
+        Assert.Contains("declared: declared.md → found (8 B, modified ", line);
+        Assert.Contains("; reported: reported.md → found (9 B, modified ", line);
+        Assert.True(
+            line.IndexOf("declared:", StringComparison.Ordinal) < line.IndexOf("reported:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task VerifyAsync_ReportedVaultReference_IsNotReportedAsMissing()
+    {
+        // A step that obeys the vault hint delivers outside the working folder, so NOT FOUND against that
+        // folder would be a confident false fact about a correct run.
+        _settings.AssistantFilesFolder = _dir;
+        ReturnsVerdict(V(true, "ok"));
+
+        await BuildVerifier().VerifyAsync(
+            CtxReporting((null, "sources/urlaub/2026.md")), Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        Assert.Contains("reported: sources/urlaub/2026.md → " + AgentVerifier.VaultReferenceArm, LastPrompt);
+        Assert.DoesNotContain("→ NOT FOUND", LastPrompt);
+        Assert.Equal(1, ProbeCounts(ProbeLine)["vaultRef"]);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_TheProbeBudget_GoesToDeclarationsBeforeReportedArtifacts()
+    {
+        // Both halves of one step probed together would spend the budget on steps 1-6 and leave step 7's
+        // declaration — probed today — unprobed.
+        _settings.AssistantFilesFolder = _dir;
+        ReturnsVerdict(V(true, "ok"));
+        var steps = Enumerable.Range(0, 12)
+            .Select(i => ((string?)$"declared{i}.md", (string?)$"reported{i}.md"))
+            .ToArray();
+
+        await BuildVerifier().VerifyAsync(CtxReporting(steps), Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(12, CountOccurrences(LastPrompt, "→ NOT FOUND"));
+        Assert.Contains("declared: declared11.md → NOT FOUND", LastPrompt);
+        Assert.Equal(12, CountOccurrences(LastPrompt, "not probed (probe budget reached)"));
+    }
+
+    [Fact]
+    public async Task VerifyAsync_ProbeLine_KeepsTheTargetInvariant_AcrossBothChannels()
+    {
+        WriteFile("a.md", 8);
+        _settings.AssistantFilesFolder = _dir;
+        ReturnsVerdict(V(true, "ok"));
+
+        var ctx = CtxReporting(
+            ("a.md", "b.md"),
+            (null, "c.md"),
+            ("prose only", null),
+            ("d.md", "d.md"));
+
+        await BuildVerifier().VerifyAsync(ctx, Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        var counts = ProbeCounts(ProbeLine);
+        Assert.Equal(3, counts["declared"]);
+        Assert.Equal(2, counts["reported"]);
+        Assert.Equal(1, counts["reportedSame"]);
+        Assert.Equal(
+            counts["fileShaped"] + counts["notFileShaped"] + counts["overReportCap"],
+            counts["declared"] + counts["reported"]);
+        Assert.Equal(
+            counts["found"] + counts["notFound"] + counts["folder"] + counts["unresolvable"]
+            + counts["uninspectable"] + counts["vaultRef"],
             counts["probed"]);
     }
 
