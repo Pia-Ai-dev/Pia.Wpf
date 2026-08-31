@@ -114,9 +114,9 @@ Two facts found while settling them, which override the wording of the steps bel
 
 ## G — Show the full approval text
 
-- [ ] **G1 — Carry an untruncated approval description.** Per gate Q1; if the answer is no, raise the
+- [x] **G1 — Carry an untruncated approval description.** Per gate Q1; if the answer is no, raise the
   120/400 caps to a stated, justified figure instead. *Deps:* Q1, B1 · *Effort:* S · *Value:* Med
-- [ ] **G2 — Expand the run panel's approval line.** An expander over `ApprovalTargetLine`, with an
+- [x] **G2 — Expand the run panel's approval line.** An expander over `ApprovalTargetLine`, with an
   `AutomationProperties.AutomationId` and its `[InlineData]` row in `ViewAutomationIdTests.cs` in the
   same change. *Deps:* G1 · *Effort:* S · *Value:* Med
 - [x] **G3 — Let the Flow card body be readable.** A bounded multi-line body plus a tooltip in place of
