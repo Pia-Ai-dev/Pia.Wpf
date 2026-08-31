@@ -567,4 +567,71 @@
     </Setter>
   </Style>
 
+  <!-- Pill badge. WPF-UI's own template, split into a fill layer and the label, so the tint can be
+       dialled back without fading the text with it. The appearance triggers address the fill by name. -->
+  <Style TargetType="ui:Badge">
+    <Setter Property="Foreground"            Value="{DynamicResource BadgeForeground}"/>
+    <Setter Property="Background"            Value="{DynamicResource BadgeBackground}"/>
+    <Setter Property="BorderBrush"           Value="#00FFFFFF"/>
+    <Setter Property="Padding"               Value="4"/>
+    <Setter Property="Focusable"             Value="False"/>
+    <Setter Property="SnapsToDevicePixels"   Value="True"/>
+    <Setter Property="OverridesDefaultStyle" Value="True"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ui:Badge">
+          <Grid>
+            <Border x:Name="Border"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Opacity="0.7"/>
+            <!-- Brushless: it only reproduces the fill layer's inset so the pill measures unchanged. -->
+            <Border BorderThickness="1" Padding="{TemplateBinding Padding}">
+              <ContentPresenter Content="{TemplateBinding Content}"
+                                ContentTemplate="{TemplateBinding ContentTemplate}"
+                                ContentStringFormat="{TemplateBinding ContentStringFormat}"/>
+            </Border>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="Appearance" Value="Primary">
+              <Setter Property="Foreground" Value="{DynamicResource BadgeForeground}"/>
+            </Trigger>
+            <Trigger Property="Appearance" Value="Transparent">
+              <Setter Property="BorderBrush" Value="{DynamicResource ControlElevationBorderBrush}"/>
+              <Setter TargetName="Border" Property="Background" Value="#00FFFFFF"/>
+            </Trigger>
+            <Trigger Property="Appearance" Value="Secondary">
+              <Setter Property="BorderBrush" Value="{DynamicResource ControlElevationBorderBrush}"/>
+              <Setter TargetName="Border" Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}"/>
+            </Trigger>
+            <Trigger Property="Appearance" Value="Info">
+              <Setter TargetName="Border" Property="Background" Value="{DynamicResource PaletteLightBlueBrush}"/>
+            </Trigger>
+            <Trigger Property="Appearance" Value="Caution">
+              <Setter TargetName="Border" Property="Background" Value="{DynamicResource PaletteOrangeBrush}"/>
+            </Trigger>
+            <Trigger Property="Appearance" Value="Danger">
+              <Setter TargetName="Border" Property="Background" Value="{DynamicResource PaletteRedBrush}"/>
+            </Trigger>
+            <Trigger Property="Appearance" Value="Success">
+              <Setter TargetName="Border" Property="Background" Value="{DynamicResource PaletteGreenBrush}"/>
+            </Trigger>
+            <Trigger Property="Appearance" Value="Dark">
+              <Setter TargetName="Border" Property="Background" Value="{DynamicResource ControlStrongFillColorDarkBrush}"/>
+              <Setter Property="Foreground" Value="{DynamicResource TextFillColorLightPrimaryBrush}"/>
+              <Setter Property="BorderBrush" Value="{DynamicResource ControlElevationBorderBrush}"/>
+            </Trigger>
+            <Trigger Property="Appearance" Value="Light">
+              <Setter TargetName="Border" Property="Background" Value="{DynamicResource ControlStrongFillColorLightBrush}"/>
+              <Setter Property="Foreground" Value="{DynamicResource TextFillColorDarkPrimaryBrush}"/>
+              <Setter Property="BorderBrush" Value="{DynamicResource ControlElevationBorderBrush}"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
 </ResourceDictionary>
