@@ -21,12 +21,11 @@ Successor to 1.3.389, covering roughly six weeks of work.
   Selecting a persona shows its system prompt, guardrails, output format,
   expertise, provider and reasoning effort without opening the editor at all,
   and Edit, Duplicate and Delete sit on that card. Editing happens in the same
-  pane, the way Routines already worked.
-- New no longer throws away an open editor. In both Personas and Routines, the
-  button that starts a fresh one silently discarded whatever you had typed; it
-  is now refused until the editor is closed.
-- The emoji and colour pickers stay put while you scroll instead of closing
-  under you.
+  pane, the way Routines already worked, and the emoji and accent-colour
+  pickers stay with their field as that pane scrolls.
+- "New routine" no longer throws away an open editor. It discarded whatever you
+  had typed on its way to the blueprint catalog; it is now refused while an
+  editor is open.
 - Scroll bars fade out while nothing is scrolling, and come back on a scroll or
   when the pointer reaches the thumb. The thin bar had been reading as part of
   the layout in the denser views.
