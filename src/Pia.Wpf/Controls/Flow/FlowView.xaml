@@ -166,7 +166,21 @@
                        Foreground="{DynamicResource TextMutedBrush}"
                        Text="{Binding Body}"
                        AutomationProperties.AutomationId="{Binding Item.Id, StringFormat='Flow_Body_{0}'}"
-                       TextTrimming="CharacterEllipsis" />
+                       TextWrapping="Wrap"
+                       LineHeight="16"
+                       LineStackingStrategy="BlockLineHeight"
+                       MaxHeight="48"
+                       TextTrimming="CharacterEllipsis"
+                       ToolTipService.ShowDuration="30000">
+              <!-- Explicit, not a string tooltip: a string is one unwrapped line off the screen edge. It
+                   lives in a popup outside this tree, so the item reaches it only via PlacementTarget. -->
+              <TextBlock.ToolTip>
+                <ToolTip MaxWidth="420"
+                         DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                  <TextBlock Text="{Binding Body}" TextWrapping="Wrap" />
+                </ToolTip>
+              </TextBlock.ToolTip>
+            </TextBlock>
             <ui:Button x:Name="ActionLink"
                        Margin="0,6,0,0"
                        Padding="0"

@@ -48,4 +48,26 @@ public class FilesPluginPromptScaffoldingTests
         Assert.Contains("inside the configured folder", config);
         Assert.DoesNotContain("must not contain absolute paths", config);
     }
+
+    // The two halves of the two-stores disambiguation are asserted together on purpose: deleting either
+    // one leaves the model with no way to tell the sandbox folder from the vault.
+    [Fact]
+    public void FilesPlugin_ConfigJson_SaysTheFolderIsNotTheVault()
+    {
+        var config = FilesSystemPromptAddition();
+
+        Assert.Contains("NOT the user's memory vault", config);
+        Assert.Contains("create_source", config);
+        Assert.Contains("update_source", config);
+        Assert.Contains("sources/", config);
+    }
+
+    [Fact]
+    public void MemoryPlugin_ConfigJson_StillForbidsWriteFileForAVaultSource()
+    {
+        var config = BuiltInPluginDefaults.Defaults[BuiltInPluginDefaults.MemoryPluginId].ConfigJson;
+
+        Assert.Contains("Do not use write_file for a vault source", config);
+        Assert.Contains("create_source", config);
+    }
 }
