@@ -468,6 +468,71 @@ public class TokenizingAiClientServiceTests
         }
     }
 
+    /// <summary>A dropped <c>Stop</c> would leave the tool loop running past a park for tokenization-enabled
+    /// installs only, and no tokenization-off test could see it.</summary>
+    [Fact]
+    public async Task RelaysTheStopSignalToTheInnerHandler()
+    {
+        ToolCallHandler? capturedHandler = null;
+        var inner = Substitute.For<IAiClientService>();
+        inner.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                capturedHandler = ci.ArgAt<ToolCallHandler?>(3);
+                return Stream(new Finished(null, "gpt-5"));
+            });
+
+        var tokenMap = Substitute.For<ITokenMapService>();
+        tokenMap.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings());
+        var serviceProvider = Substitute.For<IServiceProvider>();
+        serviceProvider.GetService(typeof(IServiceScopeFactory)).Returns(Substitute.For<IServiceScopeFactory>());
+
+        var sut = new TokenizingAiClientService(
+            inner, serviceProvider, settings, NullLogger<TokenizingAiClientService>.Instance);
+
+        TokenMapAmbient.Current = tokenMap;
+        try
+        {
+            ToolDispatchContext? seen = null;
+            ToolCallHandler handler = (_, ctx) =>
+            {
+                seen = ctx;
+                return Task.FromResult<object?>("done");
+            };
+
+            await foreach (var _ in sut.GetChatCompletionWithToolsAsync(
+                new List<ChatMessage> { new(ChatRole.User, "hi") },
+                new AiProvider { Name = "t", Endpoint = "http://localhost", ProviderType = AiProviderType.OpenAI },
+                tools: null, toolHandler: handler, cancellationToken: TestContext.Current.CancellationToken))
+            {
+            }
+
+            var signal = new ToolLoopStopSignal();
+            Assert.NotNull(capturedHandler);
+            await capturedHandler!(
+                new FunctionCallContent("id", "write_file", new Dictionary<string, object?>()),
+                new ToolDispatchContext(7, signal));
+
+            Assert.NotNull(seen);
+            Assert.Equal(7, seen!.Value.Round);
+            // The SAME instance, so a stop raised inside the gate is what the loop reads back.
+            Assert.Same(signal, seen.Value.Stop);
+            Assert.False(signal.IsStopRequested);
+            seen.Value.Stop!.RequestStop();
+            Assert.True(signal.IsStopRequested);
+        }
+        finally
+        {
+            TokenMapAmbient.Current = null;
+        }
+    }
+
     private static async IAsyncEnumerable<ChatStreamItem> Stream(params ChatStreamItem[] items)
     {
         foreach (var item in items)

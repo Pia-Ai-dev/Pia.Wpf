@@ -395,12 +395,21 @@ public class AiClientService : IAiClientService
                 // consumers know a fresh model turn is coming even if the dispatch itself fails.
                 yield return new ToolRoundCompleted();
                 var appendedFrom = workingMessages.Count;
-                await DispatchToolCallsAsync(toolCalls, response, workingMessages, toolHandler, round);
+                var stopRequested = await DispatchToolCallsAsync(
+                    toolCalls, response, workingMessages, toolHandler, round);
                 // Materialized, not deferred: the next iteration's compaction REASSIGNS workingMessages, so
                 // a lazy Skip() would enumerate a list this round never appended to. Capped here because a
                 // step executor carries this slice into the NEXT step and pays for it for the rest of the run.
                 yield return new ToolRoundExchange(
                     round + 1, AgentToolCarryover.Capture(workingMessages.Skip(appendedFrom)));
+                if (stopRequested)
+                {
+                    // No wrap-up round: that one is for round exhaustion, and spending a provider round-trip
+                    // on a turn a gate already stopped is the delay this arm exists to remove.
+                    _logger.LogInformation("Round {Round}: a tool handler stopped the loop; finishing the exchange", round + 1);
+                    yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput, protectedRoute, lastModelId);
+                    yield break;
+                }
                 // Continue the loop to get the AI's response after tool execution
                 continue;
             }
@@ -569,7 +578,7 @@ public class AiClientService : IAiClientService
     /// stops every background run on that provider. The next round re-queues from the top of the loop, which is
     /// correct: it is a new round-trip.
     /// </remarks>
-    private async Task DispatchToolCallsAsync(
+    private async Task<bool> DispatchToolCallsAsync(
         IReadOnlyList<FunctionCallContent> toolCalls,
         ChatResponse response,
         List<Microsoft.Extensions.AI.ChatMessage> workingMessages,
@@ -595,6 +604,13 @@ public class AiClientService : IAiClientService
             workingMessages.Add(msg);
         }
 
+        // The ONE construction site of a ToolDispatchContext. `round + 1` so the number a gate
+        // persists is the same one every log line in this loop prints — `round` is 0-based only as
+        // a `for` counter, and an audit row that said "round 0" while the log said "round 1/10"
+        // would cost whoever correlates them a wrong conclusion before an off-by-one.
+        var stop = new ToolLoopStopSignal();
+        var dispatch = new ToolDispatchContext(round + 1, stop);
+
         foreach (var toolCall in toolCalls)
         {
             // Arguments that didn't parse leave every parameter missing, so dispatching makes the tool
@@ -618,11 +634,9 @@ public class AiClientService : IAiClientService
             // is still available in DEBUG on the SensitiveDebug line a few lines up, which logs it
             // alongside the args for the same call.
             _logger.LogDebug("Invoking tool handler for {ToolName}", toolCall.Name);
-            // The ONE construction site of a ToolDispatchContext. `round + 1` so the number a gate
-            // persists is the same one every log line in this loop prints — `round` is 0-based only as
-            // a `for` counter, and an audit row that said "round 0" while the log said "round 1/10"
-            // would cost whoever correlates them a wrong conclusion before an off-by-one.
-            var result = await toolHandler(toolCall, new ToolDispatchContext(round + 1));
+            // Never broken out of on a stop: the round's remaining calls must still be answered, or the
+            // captured slice carries a FunctionCallContent with no matching result.
+            var result = await toolHandler(toolCall, dispatch);
             var resultPreview = result?.ToString() ?? "<null>";
             _logger.SensitiveDebug("Tool {ToolName} handler result ({Length} chars): {Preview}",
                 toolCall.Name, resultPreview.Length, Truncate(resultPreview, 500));
@@ -634,6 +648,8 @@ public class AiClientService : IAiClientService
 
         _logger.LogDebug("Round {Round} complete, continuing with {MessageCount} working messages",
             round + 1, workingMessages.Count);
+
+        return stop.IsStopRequested;
     }
 
     /// <summary>

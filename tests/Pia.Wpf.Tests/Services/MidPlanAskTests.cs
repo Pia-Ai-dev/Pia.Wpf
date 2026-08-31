@@ -176,6 +176,46 @@ public sealed class MidPlanAskTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
+    /// <summary>An ask stops the tool loop where it stands: the run does not sit through the rounds the model
+    /// still has left before anyone sees the question.</summary>
+    [Fact]
+    public async Task AskAlone_RaisesTheLoopStopSignal()
+    {
+        var probe = new AskProbe();
+        var launcher = Build(probe);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("ship it", AgentRunTrigger.Schedule, GrantedWrites: []),
+            TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+
+        // The ask is the only call the turn makes, so the flag can only have come from its own arm.
+        Assert.True(probe.StopRequested);
+        Assert.Equal(AgentRunState.WaitingForInput, (await GetRunAsync(handle.RunId)).State);
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>A granted write arriving in the SAME round as the ask — the only round that can still reach the
+    /// withheld arm now the ask stops the loop — is answered but never executed.</summary>
+    [Fact]
+    public async Task PendingWriteAfterAnAsk_RaisesTheLoopStopSignal()
+    {
+        var probe = new AskProbe { FollowUpTool = "write_file" };
+        var launcher = Build(probe);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("ship it", AgentRunTrigger.Schedule, GrantedWrites: ["write_file"]),
+            TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+
+        Assert.True(probe.StopRequested);
+        // The withheld arm's own facts: it answered the call, and nothing ran.
+        Assert.Contains("stopping to ask", probe.FollowUpResult ?? string.Empty, StringComparison.Ordinal);
+        Assert.Empty(probe.ExecutedNames);
+        Assert.Equal(AgentRunState.WaitingForInput, (await GetRunAsync(handle.RunId)).State);
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
     /// <summary>A second ask in the same step does not move the question — first wins, since the later call happens after the run was already told it is parking.</summary>
     [Fact]
     public async Task ASecondAskInTheSameStep_DoesNotMoveTheQuestion()
@@ -424,6 +464,12 @@ public sealed class MidPlanAskTests : IDisposable
 
         /// <summary>Every name that actually reached <c>Execute()</c>.</summary>
         public List<string> ExecutedNames { get; } = [];
+
+        /// <summary>What the withheld arm handed back for <see cref="FollowUpTool"/>.</summary>
+        public string? FollowUpResult { get; set; }
+
+        /// <summary>Whether the round's stop flag was raised by the time the turn's tool calls were done.</summary>
+        public bool StopRequested { get; set; }
     }
 
     /// <summary>Plans exactly one real step; not offered either step tool until a run reaches the drain loop.</summary>
@@ -515,12 +561,15 @@ public sealed class MidPlanAskTests : IDisposable
         await Task.Yield();
         if (handler is not null)
         {
+            // ONE signal, ONE round, as the real loop builds it. Every call below is same-round by
+            // construction: the ask stops the loop, so a later round never happens.
+            var stop = new ToolLoopStopSignal();
             if (probe.Ask)
             {
                 probe.AskResults.Add(await handler(
                     new FunctionCallContent("call-1", AgentStepTools.RequestUserInputToolName,
                         new Dictionary<string, object?> { ["question"] = probe.NextQuestion }),
-                    new ToolDispatchContext(1)) as string);
+                    new ToolDispatchContext(1, stop)) as string);
             }
 
             // Round-tripped through the same handler, since that is the only way first-wins is observable.
@@ -529,14 +578,14 @@ public sealed class MidPlanAskTests : IDisposable
                 probe.AskResults.Add(await handler(
                     new FunctionCallContent("call-2", AgentStepTools.RequestUserInputToolName,
                         new Dictionary<string, object?> { ["question"] = probe.SecondQuestion }),
-                    new ToolDispatchContext(1)) as string);
+                    new ToolDispatchContext(1, stop)) as string);
             }
 
             if (probe.FollowUpTool is not null)
             {
-                await handler(
+                probe.FollowUpResult = await handler(
                     new FunctionCallContent("call-3", probe.FollowUpTool, new Dictionary<string, object?>()),
-                    new ToolDispatchContext(2));
+                    new ToolDispatchContext(1, stop)) as string;
             }
 
             if (probe.DeclareFailureAfterAsk is not null)
@@ -548,8 +597,10 @@ public sealed class MidPlanAskTests : IDisposable
                             ["succeeded"] = false,
                             ["summary"] = probe.DeclareFailureAfterAsk,
                         }),
-                    new ToolDispatchContext(3));
+                    new ToolDispatchContext(1, stop));
             }
+
+            probe.StopRequested = stop.IsStopRequested;
         }
 
         // Thrown out of the enumeration itself, so it lands in HeadlessTurnExecutor's catch like a dropped connection.

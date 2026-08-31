@@ -99,6 +99,44 @@ public class AiClientServiceToolLoopArmTests
         Assert.True(Assert.Single(items.OfType<Finished>()).ToolRoundsExhausted);
     }
 
+    /// <summary>A gate that stops the loop ends the exchange on the round it stopped in — no further provider
+    /// round-trip, and no tool-free wrap-up.</summary>
+    [Fact]
+    public async Task ToolHandler_RequestsStop_FinishesTheExchangeAfterOneRound()
+    {
+        // A tool call on EVERY round, so an unstopped loop would run to MaxToolRounds and spend a wrap-up.
+        var harness = new Harness
+        {
+            SupportsStreaming = true,
+            MaxToolRounds = 3,
+            OnDispatch = ctx => ctx.Stop?.RequestStop(),
+        };
+        harness.ChatClient.GetStreamingResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ToolCallRound());
+        harness.ChatClient.GetResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult(Answer("best effort")));
+
+        var items = await harness.RunAsync(WithTools());
+
+        harness.ChatClient.Received(1).GetStreamingResponseAsync(
+            Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>());
+        await harness.ChatClient.DidNotReceive().GetResponseAsync(
+            Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>());
+        Assert.Equal("read_file", Assert.Single(harness.Dispatched));
+
+        // The stopped round is still handed over intact: an unpaired call would be re-seeded into the next
+        // provider request, which many providers reject outright.
+        var exchange = Assert.Single(items.OfType<ToolRoundExchange>());
+        Assert.Equal(1, exchange.Round);
+        var contents = exchange.Messages.SelectMany(m => m.Contents).ToList();
+        Assert.Equal("call-1", Assert.Single(contents.OfType<FunctionCallContent>()).CallId);
+        Assert.Equal("call-1", Assert.Single(contents.OfType<FunctionResultContent>()).CallId);
+
+        Assert.False(Assert.Single(items.OfType<Finished>()).ToolRoundsExhausted);
+    }
+
     private static List<AITool> WithTools() => [AIFunctionFactory.Create(() => "ok", "read_file", "reads a file")];
 
     private static HttpRequestException BadRequest() =>
@@ -144,6 +182,9 @@ public class AiClientServiceToolLoopArmTests
 
         public List<List<ChatMessage>> Sent { get; } = [];
 
+        /// <summary>Runs inside the tool handler, which otherwise discards the dispatch context.</summary>
+        public Action<ToolDispatchContext>? OnDispatch { get; init; }
+
         public async Task<List<ChatStreamItem>> RunAsync(IList<AITool>? tools)
         {
             var handler = Substitute.For<IAiProviderHandler>();
@@ -187,9 +228,10 @@ public class AiClientServiceToolLoopArmTests
                 [new ChatMessage(ChatRole.User, "go")],
                 provider,
                 tools,
-                toolHandler: (call, _) =>
+                toolHandler: (call, ctx) =>
                 {
                     Dispatched.Add(call.Name);
+                    OnDispatch?.Invoke(ctx);
                     return Task.FromResult<object?>("tool output");
                 },
                 mode: null,

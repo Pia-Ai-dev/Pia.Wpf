@@ -439,6 +439,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         if (userInput is not null
             && string.Equals(toolCall.Name, AgentStepTools.RequestUserInputToolName, StringComparison.Ordinal))
         {
+            dispatch.Stop?.RequestStop();
             return userInput.Record(toolCall.Arguments);
         }
 
@@ -471,13 +472,14 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         if (pending is not null)
         {
             // A park STOPS the exchange rather than merely advising it. The Park arm's answer is only a string,
-            // and AiClientService walks the round's REMAINING calls and then continues to the next round — so
-            // without this guard a granted, side-effecting call made after the run decided to park still
-            // executed, and the step then re-ran from the top on resume and did it a SECOND time.
+            // and AiClientService still walks the round's REMAINING calls — so without this guard a granted,
+            // side-effecting call made after the run decided to park still executed, and the step then re-ran
+            // from the top on resume and did it a SECOND time.
             // The attempt is recorded but never executed; Park returns false here by construction, so no second
             // audit row is written and the panel never shows a queue of decisions that does not exist.
             if (approvals?.PendingToolName is { } parkedFor)
             {
+                dispatch.Stop?.RequestStop();
                 approvals.Park(pending.ToolName, ToolApprovalArguments.Describe(toolCall));
                 _logger.LogInformation(
                     "Background turn withheld {ToolName}: the run is already parked on {ParkedToolName}",
@@ -488,11 +490,12 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                        + "once someone answers.";
             }
 
-            // An ask stops the exchange too, for the same at-most-once reason as the park above: a step that
-            // asked is abandoned and re-runs from the top on resume, so a later side-effecting call in the same
-            // round would otherwise execute twice for one planned step.
+            // An ask stops the exchange too, for the park's at-most-once reason: the step is abandoned and
+            // re-runs from the top on resume. The ask itself already stopped the loop, so only a call from the
+            // SAME round can still arrive here — and it would otherwise execute twice for one planned step.
             if (userInput?.Question is not null)
             {
+                dispatch.Stop?.RequestStop();
                 _logger.LogInformation(
                     "Background turn withheld {ToolName}: the run is stopping to ask the user", pending.ToolName);
                 return $"Not run: this run is stopping to ask the person your question, so '{pending.ToolName}' "
@@ -607,6 +610,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             // the executor, which abandons the step, and the orchestrator parks the run naming it. The model is
             // told because it is still mid-exchange — a plain "stop" beats letting it improvise a workaround.
             case ToolGateOutcome.Park:
+                dispatch.Stop?.RequestStop();
                 // The arguments ride along so the Continue card can name what it is about to allow. NOT logged
                 // anywhere on this path — a path is user content, and the count is what the audit row carries.
                 var parked = approvals is not null

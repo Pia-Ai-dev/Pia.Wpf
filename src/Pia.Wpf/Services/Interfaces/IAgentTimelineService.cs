@@ -57,7 +57,7 @@ public interface IAgentTimelineService
 /// This is how the run and step ids reach a gate, and the alternatives were rejected for concrete reasons.
 /// <c>TaskAmbient.TaskContext.TaskId</c> is the CHAT id for interactive turns and the RUN id for agent steps —
 /// one field, two meanings, no discriminator, and never a step id. The single tool-dispatch line
-/// (<c>AiClientService</c>'s <c>await toolHandler(toolCall, new ToolDispatchContext(round + 1))</c>) has no
+/// (<c>AiClientService</c>'s <c>await toolHandler(toolCall, dispatch)</c>) has no
 /// decision and no ids in scope, and
 /// emitting there would file the planner's and verifier's <c>emit_plan</c>/<c>emit_verdict</c> capture
 /// closures as tool calls. A mutable "current step" slot on the orchestrator would be cross-thread mutable

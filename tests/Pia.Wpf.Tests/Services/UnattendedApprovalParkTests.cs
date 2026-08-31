@@ -87,6 +87,29 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
+    /// <summary>The park raises the tool loop's stop flag, so the exchange ends on the round it parked in instead
+    /// of spending every remaining round on a provider round-trip the person is waiting through.</summary>
+    [Fact]
+    public async Task ParkingACall_RaisesTheLoopStopSignal_AndStillReachesWaitingForInput()
+    {
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []),
+            TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+
+        Assert.True(probe.StopAfterFirstCall);
+
+        // The stop must not cost the park itself: the run still parks, naming the tool.
+        var run = await GetRunAsync(handle.RunId);
+        Assert.Equal(AgentRunState.WaitingForInput, run.State);
+        Assert.Equal("write_file", PauseMember(run, "tool"));
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
     /// <summary>A park outlives the process but a deferred action's delegate does not, so what a resume applies is the
     /// capability; the evidence it reached the call is that the same tool then runs.</summary>
     [Fact]
@@ -882,6 +905,9 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         /// <summary>Every string the gate handed back, in call order.</summary>
         public List<string?> Results { get; } = [];
 
+        /// <summary>Whether the round's stop flag was raised once the first call came back.</summary>
+        public bool StopAfterFirstCall { get; set; }
+
         public bool Executed => ExecutedNames.Count > 0;
 
         /// <summary>The first call's gate result.</summary>
@@ -1008,17 +1034,25 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await Task.Yield();
         if (handler is not null)
         {
-            probe.Record(await handler(new FunctionCallContent("call-1", probe.ToolName, PathArgs(firstPath)), new ToolDispatchContext(1)));
+            // ONE signal for the round, as the real loop builds it: both calls below are the same round.
+            var stop = new ToolLoopStopSignal();
+            probe.Record(await handler(
+                new FunctionCallContent("call-1", probe.ToolName, PathArgs(firstPath)),
+                new ToolDispatchContext(1, stop)));
+            probe.StopAfterFirstCall = stop.IsStopRequested;
 
-            // The exchange dies on a LATER round than the one that parked. Thrown from inside the stream
-            // because that is where a real transport error, a timeout and a truncation all surface.
+            // The exchange dies after the park. Thrown from inside the stream because that is where a real
+            // transport error, a timeout and a truncation all surface.
             if (faultAfterFirstCall)
                 throw new InvalidOperationException("provider faulted after the park");
 
             // A model that keeps going after being told the run is parking. Round-tripped through the SAME
             // handler, because that is the only way the store's first-wins rule is observable.
+            // Unconditional on the stop: the production loop answers the round's remaining calls too.
             if (secondToolName is not null)
-                probe.Record(await handler(new FunctionCallContent("call-2", secondToolName, PathArgs(secondPath)), new ToolDispatchContext(1)));
+                probe.Record(await handler(
+                    new FunctionCallContent("call-2", secondToolName, PathArgs(secondPath)),
+                    new ToolDispatchContext(1, stop)));
         }
 
         // TEXT STILL FLOWS. Every park fact in this file therefore discriminates on the RUN's state, never on

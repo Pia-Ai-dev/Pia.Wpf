@@ -3,10 +3,19 @@ using Pia.Models;
 
 namespace Pia.Services.Interfaces;
 
+/// <summary>A CLASS because <see cref="ToolDispatchContext"/> is by-value: a flag set on the handler's copy
+/// could never reach the loop, and <c>readonly</c> forbids a setter outright.</summary>
+public sealed class ToolLoopStopSignal
+{
+    public bool IsStopRequested { get; private set; }
+
+    public void RequestStop() => IsStopRequested = true;
+}
+
 /// <summary>
 /// What the tool LOOP knows about a dispatch that the handler cannot work out for itself. Today: the round.
 /// <para>
-/// A record STRUCT with one field rather than a bare <c>int</c> parameter, so the next thing the loop needs to
+/// A record STRUCT rather than a bare <c>int</c> parameter, so the next thing the loop needs to
 /// tell a gate costs no further churn across the ~140 references to
 /// <see cref="ToolCallHandler"/>. Named <c>ToolDispatchContext</c>, not <c>ToolCallContext</c>, to stay clear
 /// of the ambient <c>TaskAmbient.TaskContext</c> that <c>IAgentTimelineService</c>'s remarks explicitly reject
@@ -21,7 +30,8 @@ namespace Pia.Services.Interfaces;
 /// <param name="Round">The provider tool-loop round this call is being dispatched in, <b>1-based</b> — the
 /// same number every log line inside that loop prints (<c>round + 1</c>), so an audit row and a log line agree
 /// without an off-by-one caveat.</param>
-public readonly record struct ToolDispatchContext(int Round);
+/// <param name="Stop">The loop's stop flag, or null when the caller runs no loop that could stop.</param>
+public readonly record struct ToolDispatchContext(int Round, ToolLoopStopSignal? Stop = null);
 
 /// <summary>
 /// The tool-dispatch callback the tool loop invokes for one <c>FunctionCallContent</c>. A NAMED delegate
