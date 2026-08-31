@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Threading;
 
@@ -25,15 +26,35 @@ public partial class PersonasView : UserControl
         }), DispatcherPriority.Input);
     }
 
-    // A Popup does not follow its PlacementTarget once it is open, so scrolling the editor would leave both
-    // pickers floating over unrelated fields.
     private void EditorScroller_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
         if (e.VerticalChange == 0 && e.HorizontalChange == 0) return;
 
-        EmojiPopup.IsOpen = false;
-        ColorPopup.IsOpen = false;
+        Track(EmojiPopup, EmojiToggle);
+        Track(ColorPopup, ColorToggle);
     }
+
+    // A Popup does not follow its PlacementTarget once open. Nudging the offset is what forces WPF to
+    // re-place it; only a target scrolled clear out of the pane closes, because closing on every scroll
+    // would also lose the popup to the bring-into-view the opening click itself can trigger.
+    private void Track(Popup popup, FrameworkElement target)
+    {
+        if (!popup.IsOpen) return;
+
+        if (!target.IsDescendantOf(EditorScroller) || !IsInViewport(target))
+        {
+            popup.IsOpen = false;
+            return;
+        }
+
+        var offset = popup.HorizontalOffset;
+        popup.HorizontalOffset = offset + 1;
+        popup.HorizontalOffset = offset;
+    }
+
+    private bool IsInViewport(FrameworkElement target) =>
+        new Rect(EditorScroller.RenderSize).IntersectsWith(
+            target.TransformToAncestor(EditorScroller).TransformBounds(new Rect(target.RenderSize)));
 
     // Picking a swatch inside a popup fires the bound command (which sets the value) and bubbles
     // here so the popup closes — StaysOpen=False only dismisses on clicks *outside* the popup.

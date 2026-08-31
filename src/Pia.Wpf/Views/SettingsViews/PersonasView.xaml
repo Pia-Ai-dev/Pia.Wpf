@@ -298,7 +298,7 @@
               <Border Style="{StaticResource PiaRequiredHintStyle}"
                       Visibility="{Binding CanSave, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
                 <TextBlock Text="{loc:Str Dialog_Edit_RequiredHint}"
-                           AutomationProperties.AutomationId="Dialog_RequiredHint"
+                           AutomationProperties.AutomationId="Personas_RequiredHint"
                            TextWrapping="Wrap"/>
               </Border>
 

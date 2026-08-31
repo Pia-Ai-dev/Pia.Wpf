@@ -170,7 +170,9 @@ public partial class PersonaSettingsViewModel : UiThreadViewModel, IDisposable
         if (!CanManagePersonas)
             return;
 
-        var editModel = new PersonaEditModel(_textOptimizationService);
+        // Minted here, not left to the service: Save re-selects the saved row by this id, and a caller
+        // that assigns its own would leave the user on the placeholder.
+        var editModel = new PersonaEditModel(_textOptimizationService) { Id = Guid.NewGuid() };
         await PopulateProvidersAsync(editModel, null);
 
         SelectedPersona = null;

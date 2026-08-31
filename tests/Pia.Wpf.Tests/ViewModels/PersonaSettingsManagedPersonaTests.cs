@@ -155,6 +155,30 @@ public class PersonaSettingsManagedPersonaTests
         Assert.False(added.IsReadOnly);
     }
 
+    /// <summary>The master-detail shape's own guarantee: a save has to land on the row it just wrote, or the
+    /// user is dropped back on the placeholder. The id has to come from the edit model, since the substitute
+    /// (unlike the real service) never assigns one.</summary>
+    [Fact]
+    public async Task Saving_a_new_persona_selects_it()
+    {
+        var written = new List<Persona>();
+        var h = Create();
+        h.Personas.GetPersonasAsync().Returns(_ => Task.FromResult<IReadOnlyList<Persona>>([.. written]));
+        await h.Personas.AddPersonaAsync(Arg.Do<Persona>(written.Add));
+        await h.Sut.InitializeAsync();
+
+        await h.Sut.AddPersonaCommand.ExecuteAsync(null);
+        h.Sut.Editor!.Name = "Fresh";
+        h.Sut.Editor.SystemPrompt = "prompt";
+        await h.Sut.SaveCommand.ExecuteAsync(null);
+
+        var saved = Assert.Single(written);
+        Assert.NotEqual(Guid.Empty, saved.Id);
+        Assert.False(h.Sut.IsEditorOpen);
+        Assert.Equal(saved.Id, h.Sut.SelectedPersona?.Id);
+        Assert.True(h.Sut.ShowsDetail);
+    }
+
     [Fact]
     public async Task CancelEdit_closes_the_editor_and_writes_nothing()
     {
