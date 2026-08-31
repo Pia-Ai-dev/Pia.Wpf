@@ -1044,6 +1044,9 @@
   <data name="Run_Activity_ResumeInterrupted" xml:space="preserve"><value>La reprise n'a pas démarré — relancez-la quand vous le souhaitez</value></data>
   <data name="Run_Activity_WaitingForToolApproval" xml:space="preserve"><value>En attente de votre autorisation pour utiliser {0}</value></data>
   <data name="Run_ToolApprovalTarget" xml:space="preserve"><value>Concerne {0}</value></data>
+  <data name="Run_ToolApproval_ShowFullCall" xml:space="preserve"><value>Afficher l'appel complet</value></data>
+  <data name="Run_ToolApproval_HideFullCall" xml:space="preserve"><value>Masquer l'appel complet</value></data>
+  <data name="Run_ToolApproval_DetailShortened" xml:space="preserve"><value>Abrégé pour l'affichage – l'exécution a conservé l'appel complet.</value></data>
   <data name="Run_Activity_NeedsGoal" xml:space="preserve"><value>En attente que vous précisiez l'objectif dans le chat</value></data>
   <data name="Run_Activity_NeedsInput" xml:space="preserve"><value>En attente de votre réponse dans le chat</value></data>
   <data name="Run_Activity_PlanApproval" xml:space="preserve"><value>En attente de votre approbation du plan</value></data>

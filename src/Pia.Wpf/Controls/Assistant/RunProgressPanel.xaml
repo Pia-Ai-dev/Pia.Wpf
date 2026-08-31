@@ -333,6 +333,52 @@
                   Background="{DynamicResource SurfaceMutedBrush}" />
         </StackPanel>
 
+        <!-- A Button and not a ToggleButton or an Expander: both carry a ToggleButton, which the section-header
+             count reads as one more section, and an Expander folds its content out of the logical tree. -->
+        <Button Style="{StaticResource RunFoldRowStyle}" Margin="14,10,14,0"
+                Command="{Binding ToggleApprovalDetailCommand}"
+                AutomationProperties.AutomationId="Run_ApprovalDetailToggle"
+                Visibility="{Binding HasApprovalDetail, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon FontSize="12" Width="16" Margin="0,0,9,0" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextSubtleBrush}">
+              <ui:SymbolIcon.Style>
+                <Style TargetType="ui:SymbolIcon">
+                  <Setter Property="Symbol" Value="ChevronDown24" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsApprovalDetailExpanded}" Value="True">
+                      <Setter Property="Symbol" Value="ChevronUp24" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </ui:SymbolIcon.Style>
+            </ui:SymbolIcon>
+            <TextBlock Text="{Binding ApprovalDetailToggleLabel}" VerticalAlignment="Center"
+                       FontSize="{StaticResource RunMetaSize}"
+                       Foreground="{DynamicResource TextMutedBrush}" />
+          </StackPanel>
+        </Button>
+
+        <!-- SENSITIVE (user content): bound only, never logged. The ScrollViewer is what keeps 8000 chars of
+             arguments from adding ~2600 px to a card that lives inside the transcript. -->
+        <Border Margin="14,6,14,0" Padding="10,8" CornerRadius="6" BorderThickness="1"
+                Background="{DynamicResource SurfaceSunkBrush}"
+                BorderBrush="{DynamicResource BorderBrush_}"
+                Visibility="{Binding ShowApprovalDetail, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <StackPanel>
+            <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+              <TextBlock Text="{Binding ApprovalDetailText}" TextWrapping="Wrap"
+                         FontSize="{StaticResource RunMetaSize}"
+                         FontFamily="{DynamicResource PiaMonoFont}"
+                         Foreground="{DynamicResource TextMutedBrush}" />
+            </ScrollViewer>
+            <TextBlock Style="{StaticResource RunTraceNoteStyle}" Margin="0,6,0,0"
+                       Text="{loc:Str Run_ToolApproval_DetailShortened}"
+                       Visibility="{Binding IsApprovalDetailShortened, Converter={StaticResource BooleanToVisibilityConverter}}" />
+          </StackPanel>
+        </Border>
+
         <!-- ==================== Region D · steering note ==================== -->
         <!-- Batch 08 D4. Offered only while a resume is available, and never on a plan-approval park — see
              ShowNudgeBox. SENSITIVE (user content): bound only, never logged; Continue() carries it to the
