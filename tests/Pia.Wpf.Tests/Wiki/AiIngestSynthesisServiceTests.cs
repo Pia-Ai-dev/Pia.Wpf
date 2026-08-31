@@ -46,7 +46,7 @@ public class AiIngestSynthesisServiceTests
             NullLogger<AiIngestSynthesisService>.Instance);
 
         var page = await svc.SynthesizeAsync(
-            "Pia", "product", "charter",
+            "Pia", "product", "charter", template: "",
             [("sources/a.md", "some raw text")], [], TestContext.Current.CancellationToken);
 
         Assert.Equal(string.Empty, page.Body);
@@ -74,7 +74,7 @@ public class AiIngestSynthesisServiceTests
             NullLogger<AiIngestSynthesisService>.Instance);
 
         await svc.SynthesizeAsync(
-            "Pia", "product", "charter",
+            "Pia", "product", "charter", template: "",
             [("sources/a.md", "some raw text")], [], TestContext.Current.CancellationToken);
 
         await ai.Received().SendRequestAsync(
@@ -110,7 +110,7 @@ public class AiIngestSynthesisServiceTests
             NullLogger<AiIngestSynthesisService>.Instance);
 
         var page = await svc.SynthesizeAsync(
-            "Alice", "person", "charter",
+            "Alice", "person", "charter", template: "",
             [("sources/a.md", "Alice Anderson leads the project.")], [], TestContext.Current.CancellationToken);
 
         Assert.Equal("About Alice Anderson.", page.Summary);
@@ -130,7 +130,7 @@ public class AiIngestSynthesisServiceTests
             NullLogger<AiIngestSynthesisService>.Instance);
 
         var page = await svc.SynthesizeAsync(
-            "Alice", "person", "charter",
+            "Alice", "person", "charter", template: "",
             [("sources/a.md", "Alice Anderson leads the project.")], [], TestContext.Current.CancellationToken);
 
         Assert.Equal("Plain body about Alice Anderson.", page.Body);
@@ -148,7 +148,7 @@ public class AiIngestSynthesisServiceTests
             NewSettings(tokenizationEnabled: true),
             NullLogger<AiIngestSynthesisService>.Instance);
 
-        await svc.SynthesizeAsync("Acme", "organization", "charter",
+        await svc.SynthesizeAsync("Acme", "organization", "charter", template: "",
             [("sources/a.md", "raw")], [], TestContext.Current.CancellationToken);
 
         Assert.Equal(nameof(WindowMode.Assistant), aiClient.LastMode);
@@ -163,7 +163,7 @@ public class AiIngestSynthesisServiceTests
             NewSettings(tokenizationEnabled: false),
             NullLogger<AiIngestSynthesisService>.Instance);
 
-        await svc.SynthesizeAsync("Acme", "organization", "charter",
+        await svc.SynthesizeAsync("Acme", "organization", "charter", template: "",
             [("sources/a.md", "raw")], ["acme-corp", "globex-inc"], TestContext.Current.CancellationToken);
 
         // The exact slugs are embedded and the model is told to link ONLY to them.
@@ -182,7 +182,7 @@ public class AiIngestSynthesisServiceTests
             NewSettings(tokenizationEnabled: false),
             NullLogger<AiIngestSynthesisService>.Instance);
 
-        await svc.SynthesizeAsync("Acme", "organization", "charter",
+        await svc.SynthesizeAsync("Acme", "organization", "charter", template: "",
             [("sources/a.md", "raw")], [], TestContext.Current.CancellationToken);
 
         Assert.Contains("Do NOT output any [[...]]", aiClient.LastPrompt!);
@@ -200,13 +200,59 @@ public class AiIngestSynthesisServiceTests
             NewSettings(tokenizationEnabled: true),
             NullLogger<AiIngestSynthesisService>.Instance);
 
-        await svc.SynthesizeAsync("Acme", "organization", "charter",
+        await svc.SynthesizeAsync("Acme", "organization", "charter", template: "",
             [("sources/a.md", "raw")], ["aylin-demir", "marco-altmann"], TestContext.Current.CancellationToken);
 
         Assert.DoesNotContain("aylin-demir", aiClient.LastPrompt!);
         Assert.DoesNotContain("marco-altmann", aiClient.LastPrompt!);
         Assert.DoesNotContain("Known topic slugs", aiClient.LastPrompt!);
         Assert.Contains("lowercase-hyphen form", aiClient.LastPrompt!); // generic instruction instead
+    }
+
+    [Fact]
+    public async Task SynthesizeAsync_keeps_the_free_form_shape_when_there_is_no_template()
+    {
+        // Regression guard: an empty template must leave the prompt exactly as it was before page
+        // templates existed, so a vault that never edited templates.md sees no behaviour change.
+        var aiClient = new StubAiClient("SUMMARY: s.\n\nbody");
+        var svc = new AiIngestSynthesisService(
+            aiClient, new SingleProviderService(), NewEmptyTokenMap,
+            NewSettings(tokenizationEnabled: false),
+            NullLogger<AiIngestSynthesisService>.Instance);
+
+        await svc.SynthesizeAsync("Acme", "organization", "charter", template: "",
+            [("sources/a.md", "raw")], [], TestContext.Current.CancellationToken);
+
+        Assert.Contains(
+            "Start with a one-sentence definition, then short prose or bullets.", aiClient.LastPrompt!);
+        Assert.DoesNotContain("PAGE TEMPLATE", aiClient.LastPrompt!);
+    }
+
+    [Fact]
+    public async Task SynthesizeAsync_binds_the_page_to_the_template_when_one_is_set()
+    {
+        var aiClient = new StubAiClient("SUMMARY: s.\n\nbody");
+        var svc = new AiIngestSynthesisService(
+            aiClient, new SingleProviderService(), NewEmptyTokenMap,
+            NewSettings(tokenizationEnabled: false),
+            NullLogger<AiIngestSynthesisService>.Instance);
+
+        await svc.SynthesizeAsync("Alice", "person", "charter",
+            template: "- personnel number: <value>\n- date of birth: <YYYY-MM-DD>",
+            [("sources/a.md", "raw")], [], TestContext.Current.CancellationToken);
+
+        // The template is quoted verbatim as its own labelled block…
+        Assert.Contains("--- PAGE TEMPLATE ---", aiClient.LastPrompt!);
+        Assert.Contains("- personnel number: <value>", aiClient.LastPrompt!);
+
+        // …and the free-form sentence is REPLACED, not merely supplemented.
+        Assert.DoesNotContain(
+            "Start with a one-sentence definition, then short prose or bullets.", aiClient.LastPrompt!);
+
+        // The three drift symptoms each get an explicit rule.
+        Assert.Contains("in that order", aiClient.LastPrompt!);
+        Assert.Contains("verbatim", aiClient.LastPrompt!);
+        Assert.Contains("'unknown'", aiClient.LastPrompt!);
     }
 
     [Fact]

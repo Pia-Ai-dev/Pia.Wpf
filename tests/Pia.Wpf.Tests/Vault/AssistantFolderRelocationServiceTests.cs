@@ -93,6 +93,12 @@ public class AssistantFolderRelocationServiceTests : IDisposable
         public Task RemoveContributionsAsync(
             string sourceRef, IReadOnlyList<string> pages, CancellationToken ct = default)
             => Task.CompletedTask;
+
+        public Task<bool> RebuildPageAsync(string pagePath, CancellationToken ct = default)
+            => Task.FromResult(false);
+
+        public Task<IReadOnlyList<string>> ListTopicPagesAsync()
+            => Task.FromResult<IReadOnlyList<string>>([]);
     }
 
     [Fact]

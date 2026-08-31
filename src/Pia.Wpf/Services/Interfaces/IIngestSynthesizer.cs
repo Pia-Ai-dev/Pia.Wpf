@@ -18,9 +18,11 @@ public interface IIngestSynthesizer
     /// <paramref name="sources"/> (each a (ref, rawText) pair). Empty body ⇒ caller skips the page.
     /// <paramref name="knownSlugs"/> is the set of topic-page slugs that exist (or will exist by the end of
     /// this run); the model is instructed to link ONLY to those, so it stops inventing dead links. This is
-    /// best-effort grounding — <c>WikiLinkReconciler</c> is the deterministic guarantee.</summary>
+    /// best-effort grounding — <c>WikiLinkReconciler</c> is the deterministic guarantee.
+    /// <paramref name="template"/> is the category's field contract from <c>memory/templates.md</c>; when
+    /// empty the page is written free-form.</summary>
     Task<SynthesizedPage> SynthesizeAsync(
-        string title, string category, string charter,
+        string title, string category, string charter, string template,
         IReadOnlyList<(string Ref, string Text)> sources,
         IReadOnlyCollection<string> knownSlugs, CancellationToken ct = default);
 }

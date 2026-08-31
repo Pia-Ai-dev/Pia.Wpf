@@ -47,4 +47,16 @@ public interface IIngestService
     /// journal line when any pages were targeted, noting the stale-page count when applicable.
     /// </summary>
     Task RemoveContributionsAsync(string sourceRef, IReadOnlyList<string> pages, CancellationToken ct = default);
+
+    /// <summary>
+    /// Re-synthesize one existing topic page from the sources it already records — how a changed
+    /// <c>memory/templates.md</c> or <c>memory/charter.md</c> reaches a page that is already on disk.
+    /// The manual preamble above the sentinel survives, as does page identity. Returns <c>false</c> and
+    /// leaves the page byte-identical when it does not exist, records no sources, or synthesis comes back
+    /// empty (no provider / model error).
+    /// </summary>
+    Task<bool> RebuildPageAsync(string pagePath, CancellationToken ct = default);
+
+    /// <summary>Every topic page currently on disk, vault-relative, for a bulk rebuild.</summary>
+    Task<IReadOnlyList<string>> ListTopicPagesAsync();
 }

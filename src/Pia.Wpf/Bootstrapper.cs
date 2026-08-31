@@ -503,6 +503,7 @@ public static class Bootstrapper
         services.AddSingleton<Pia.Services.Wiki.VaultLogService>();
         services.AddSingleton<Pia.Services.Wiki.VaultSchemaService>();
         services.AddSingleton<Pia.Services.Wiki.VaultCharterService>();
+        services.AddSingleton<Pia.Services.Wiki.VaultTemplateService>();
         services.AddSingleton<IIngestExtractor, Pia.Services.Wiki.AiIngestExtractionService>();
         services.AddSingleton<IIngestSynthesizer, Pia.Services.Wiki.AiIngestSynthesisService>();
         services.AddSingleton<IIngestService, Pia.Services.Wiki.IngestService>();

@@ -140,6 +140,16 @@
   <data name="Msg_Memory_DeleteFailed" xml:space="preserve"><value>Löschen der Erinnerung fehlgeschlagen: {0}</value></data>
   <data name="Msg_Memory_DeleteTitle" xml:space="preserve"><value>Erinnerung löschen</value></data>
   <data name="Msg_Memory_Deleted" xml:space="preserve"><value>Gelöscht</value></data>
+  <data name="Msg_Memory_RebuildTitle" xml:space="preserve"><value>Seite neu erzeugen</value></data>
+  <data name="Msg_Memory_RebuildConfirm" xml:space="preserve"><value>„{0}" aus den Quellen neu erzeugen? Der generierte Text wird ersetzt; alles, was du oberhalb der Verwaltungsmarkierung geschrieben hast, bleibt erhalten.</value></data>
+  <data name="Msg_Memory_RebuildAllConfirm" xml:space="preserve"><value>Alle {0} Themenseiten neu erzeugen? Jede wird aus ihren Quellen neu synthetisiert – das kostet eine KI-Anfrage pro Seite. Text oberhalb der Verwaltungsmarkierung bleibt erhalten.</value></data>
+  <data name="Msg_Memory_RebuildFailed" xml:space="preserve"><value>Neu erzeugen der Seite fehlgeschlagen: {0}</value></data>
+  <data name="Msg_Memory_RebuildNoPages" xml:space="preserve"><value>Es gibt keine Themenseiten zum Neuerzeugen.</value></data>
+  <data name="Msg_Memory_RebuildSkippedTitle" xml:space="preserve"><value>Nichts neu erzeugt</value></data>
+  <data name="Msg_Memory_RebuildSkipped" xml:space="preserve"><value>Die Seite blieb unverändert – sie verweist auf keine Quellen, oder kein KI-Anbieter hat geantwortet.</value></data>
+  <data name="Msg_Memory_Rebuilt" xml:space="preserve"><value>Neu erzeugt</value></data>
+  <data name="Msg_Memory_RebuiltDetail" xml:space="preserve"><value>„{0}" wurde aus den Quellen neu synthetisiert.</value></data>
+  <data name="Msg_Memory_RebuiltAllDetail" xml:space="preserve"><value>{0} Seite(n) neu erzeugt, {1} unverändert.</value></data>
   <data name="Msg_Reminders_DismissedTitle" xml:space="preserve"><value>Verworfen</value></data>
   <data name="Msg_Reminders_DismissedSingle" xml:space="preserve"><value>Erinnerung verworfen. Wiederkehrende Erinnerungen werden auf den nächsten Termin verschoben.</value></data>
   <data name="Msg_Reminders_DismissedCount" xml:space="preserve"><value>{0} Erinnerungen verworfen.</value></data>

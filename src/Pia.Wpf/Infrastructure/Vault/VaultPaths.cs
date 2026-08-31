@@ -3,7 +3,8 @@ namespace Pia.Infrastructure.Vault;
 /// <summary>
 /// Path predicates over the vault tree. A <em>record file</em> is a user-facing memory document — the
 /// source of truth for the assistant's recall and the Vault view — as opposed to Pia's housekeeping
-/// documents (<c>AGENTS.md</c>, <c>index.md</c>, <c>log.md</c>), the recoverable <c>.archive/</c>
+/// documents (<c>AGENTS.md</c>, <c>index.md</c>, <c>log.md</c>,
+/// <c>templates.md</c>), the recoverable <c>.archive/</c>
 /// snapshots, or the <c>sources/</c> RAW layer (read-only except for a corrective <c>update_source</c>).
 ///
 /// <para><see cref="VaultStore.EnumerateAsync"/> is NOT a real glob — <c>"memory/*.md"</c> walks the
@@ -20,6 +21,7 @@ public static class VaultPaths
         "memory/AGENTS.md",
         "memory/index.md",
         "memory/log.md",
+        "memory/templates.md",
     };
 
     /// <summary>
@@ -53,7 +55,8 @@ public static class VaultPaths
     /// <summary>
     /// True iff <paramref name="relativePath"/> is a <c>.md</c> file whose content should surface in
     /// recall (the <c>Chunks</c>/<c>ChunksFts</c> index): everything EXCEPT Pia's housekeeping documents
-    /// (<c>AGENTS.md</c>, <c>index.md</c>, <c>log.md</c>), the <c>sources/</c> RAW layer, and anything with
+    /// (<c>AGENTS.md</c>, <c>index.md</c>, <c>log.md</c>,
+    /// <c>templates.md</c>), the <c>sources/</c> RAW layer, and anything with
     /// a dot-prefixed path segment — Pia's own <c>.archive/</c> snapshots, folders other tools drop into the
     /// vault (Obsidian's <c>.obsidian/</c> config and <c>.trash/</c> deleted notes, a stray <c>.git/</c>,
     /// Syncthing's <c>.stversions/</c>), and dot-prefixed files such as <c>memory/.draft.md</c>. Unlike

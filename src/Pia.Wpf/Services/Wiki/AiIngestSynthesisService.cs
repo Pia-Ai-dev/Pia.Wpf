@@ -46,7 +46,7 @@ public sealed class AiIngestSynthesisService : IIngestSynthesizer
     }
 
     public async Task<SynthesizedPage> SynthesizeAsync(
-        string title, string category, string charter,
+        string title, string category, string charter, string template,
         IReadOnlyList<(string Ref, string Text)> sources,
         IReadOnlyCollection<string> knownSlugs, CancellationToken ct = default)
     {
@@ -66,13 +66,14 @@ public sealed class AiIngestSynthesisService : IIngestSynthesizer
             "coherent explanation across ALL the sources below — merge overlapping facts, reconcile them, and " +
             "note contradictions explicitly. If the sources name this topic by multiple aliases, abbreviations, " +
             "or expanded forms, treat them as the SAME entity and describe it once under its canonical name — " +
-            "do NOT restate it as if it were several distinct things. Start with a one-sentence definition, then " +
-            "short prose or bullets. " +
+            "do NOT restate it as if it were several distinct things. " +
+            BuildShapeInstruction(template) +
             BuildLinkInstruction(knownSlugs, tokenizationEnabled) +
             "Preserve any bracketed placeholder tokens (e.g. " +
             "[Person_1], [Email_2]) EXACTLY as written — never lowercase, translate, rephrase, or invent them. " +
             "Do NOT include a title heading or frontmatter. First output a line 'SUMMARY: <one sentence>' then a " +
             "blank line then the page body.\n\n" +
+            BuildTemplateBlock(template) +
             string.Join("\n\n", sources.Select(s => $"--- SOURCE: {s.Ref} ---\n{Truncate(s.Text)}"));
 
         var result = await SendWithReidentificationAsync(provider, prompt, tokenizationEnabled, ct);
@@ -148,6 +149,27 @@ public sealed class AiIngestSynthesisService : IIngestSynthesizer
         var firstNonEmpty = lines.FirstOrDefault(l => !string.IsNullOrWhiteSpace(l))?.Trim() ?? string.Empty;
         return new SynthesizedPage(text, firstNonEmpty);
     }
+
+    // Shape instruction. Without a template the page is free-form, exactly as before templates existed.
+    // With one the wording is deliberately absolute: reproducing the field list in order kills layout
+    // drift, "verbatim keys" kills naming drift, and "write unknown" kills silent omission — the three
+    // ways pages of one category otherwise diverge.
+    internal static string BuildShapeInstruction(string template)
+    {
+        if (string.IsNullOrWhiteSpace(template))
+        {
+            return "Start with a one-sentence definition, then short prose or bullets. ";
+        }
+
+        return "The body MUST follow the PAGE TEMPLATE below EXACTLY: reproduce every one of its lines, in " +
+            "that order, keeping each field key verbatim — never translate, rename, reorder or drop a key. " +
+            "Fill in only the values. When no source states a field, write its value as 'unknown' rather " +
+            "than omitting the line. Add no fields the template does not list. ";
+    }
+
+    // The template itself, as a labelled block ahead of the sources so the model reads the contract first.
+    internal static string BuildTemplateBlock(string template) =>
+        string.IsNullOrWhiteSpace(template) ? string.Empty : $"--- PAGE TEMPLATE ---\n{template.Trim()}\n\n";
 
     // Grounded link instruction: the model may link ONLY to topic pages that exist (or will by the end of
     // this run), using the exact slug. This curbs invented dead links at generation time; WikiLinkReconciler

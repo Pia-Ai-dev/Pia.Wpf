@@ -315,6 +315,9 @@
   <data name="Memory_EmptyStateHint" xml:space="preserve"><value>Discutez avec Pia pour commencer à construire la mémoire</value></data>
   <data name="Memory_Edit" xml:space="preserve"><value>Modifier</value></data>
   <data name="Memory_Delete" xml:space="preserve"><value>Supprimer</value></data>
+  <data name="Memory_Rebuild" xml:space="preserve"><value>Régénérer depuis les sources</value></data>
+  <data name="Memory_RebuildAll" xml:space="preserve"><value>Régénérer toutes les pages</value></data>
+  <data name="Memory_Rebuild_Progress" xml:space="preserve"><value>Régénération {0} sur {1}…</value></data>
   <data name="Memory_SelectPrompt" xml:space="preserve"><value>Sélectionnez une mémoire pour voir les détails</value></data>
   <data name="Memory_TypeLabel" xml:space="preserve"><value>Type :</value></data>
   <data name="Memory_CreatedLabel" xml:space="preserve"><value>  |  Créé :</value></data>

@@ -139,6 +139,16 @@
   <data name="Msg_Memory_DeleteFailed" xml:space="preserve"><value>Échec de la suppression de la mémoire : {0}</value></data>
   <data name="Msg_Memory_DeleteTitle" xml:space="preserve"><value>Supprimer la mémoire</value></data>
   <data name="Msg_Memory_Deleted" xml:space="preserve"><value>Supprimé</value></data>
+  <data name="Msg_Memory_RebuildTitle" xml:space="preserve"><value>Régénérer la page</value></data>
+  <data name="Msg_Memory_RebuildConfirm" xml:space="preserve"><value>Régénérer « {0} » à partir de ses sources ? Le corps généré est remplacé ; ce que vous avez écrit au-dessus du marqueur géré est conservé.</value></data>
+  <data name="Msg_Memory_RebuildAllConfirm" xml:space="preserve"><value>Régénérer les {0} pages thématiques ? Chacune est resynthétisée depuis ses sources, ce qui coûte une requête IA par page. Le texte au-dessus du marqueur géré est conservé.</value></data>
+  <data name="Msg_Memory_RebuildFailed" xml:space="preserve"><value>Échec de la régénération de la page : {0}</value></data>
+  <data name="Msg_Memory_RebuildNoPages" xml:space="preserve"><value>Il n'y a aucune page thématique à régénérer.</value></data>
+  <data name="Msg_Memory_RebuildSkippedTitle" xml:space="preserve"><value>Rien de régénéré</value></data>
+  <data name="Msg_Memory_RebuildSkipped" xml:space="preserve"><value>La page est restée inchangée — elle ne référence aucune source, ou aucun fournisseur IA n'a répondu.</value></data>
+  <data name="Msg_Memory_Rebuilt" xml:space="preserve"><value>Régénéré</value></data>
+  <data name="Msg_Memory_RebuiltDetail" xml:space="preserve"><value>« {0} » a été resynthétisé depuis ses sources.</value></data>
+  <data name="Msg_Memory_RebuiltAllDetail" xml:space="preserve"><value>{0} page(s) régénérée(s), {1} inchangée(s).</value></data>
   <data name="Msg_Reminders_DismissedTitle" xml:space="preserve"><value>Ignoré</value></data>
   <data name="Msg_Reminders_DismissedSingle" xml:space="preserve"><value>Rappel ignoré. Les rappels récurrents sont reprogrammés à leur prochaine occurrence.</value></data>
   <data name="Msg_Reminders_DismissedCount" xml:space="preserve"><value>{0} rappels ignorés.</value></data>

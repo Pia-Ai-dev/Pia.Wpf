@@ -35,6 +35,7 @@ public class IngestServiceTests : IDisposable
     private readonly VaultIndexService _index;
     private readonly VaultLogService _log;
     private readonly VaultCharterService _charter;
+    private readonly VaultTemplateService _templates;
 
     public IngestServiceTests()
     {
@@ -46,6 +47,7 @@ public class IngestServiceTests : IDisposable
         _index = new VaultIndexService(_store, NullLogger<VaultIndexService>.Instance);
         _log = new VaultLogService(_store, NullLogger<VaultLogService>.Instance);
         _charter = new VaultCharterService(_store, NullLogger<VaultCharterService>.Instance);
+        _templates = new VaultTemplateService(_store, NullLogger<VaultTemplateService>.Instance);
 
         // Seed an immutable source under sources/.
         var sourcesDir = Path.Combine(_vaultRoot, "sources");
@@ -81,7 +83,7 @@ public class IngestServiceTests : IDisposable
         IIngestSynthesizer synth,
         Func<ITokenMapService>? tokenMapFactory = null,
         ISettingsService? settings = null)
-        => new(extractor, _store, _index, _log, synth, _charter,
+        => new(extractor, _store, _index, _log, synth, _charter, _templates,
             tokenMapFactory ?? (() => throw new InvalidOperationException(
                 "token map factory must not be invoked when tokenization is disabled")),
             settings ?? Settings(tokenizationEnabled: false),
@@ -135,6 +137,11 @@ public class IngestServiceTests : IDisposable
 
         public Task RemoveAsync(string sourceRef, CancellationToken ct = default)
             => Task.CompletedTask;
+
+        public Task<bool> RebuildPageAsync(string pagePath, CancellationToken ct = default)
+            => inner.RebuildPageAsync(pagePath, ct);
+
+        public Task<IReadOnlyList<string>> ListTopicPagesAsync() => inner.ListTopicPagesAsync();
     }
 
     // Fixed topics — no API key required. Ignores content (returns the same topics for any source).
@@ -163,17 +170,27 @@ public class IngestServiceTests : IDisposable
         // Per-call known-slug set, so tests can assert the pre-pass union reached the synthesizer.
         public List<IReadOnlyCollection<string>> CallKnownSlugs { get; } = new();
 
+        // Per-call (category, template) pair, so tests can assert the right template was resolved.
+        public List<(string Category, string Template)> CallTemplates { get; } = new();
+
         // Optional per-title body overrides — lets a test drive a specific wikilink body through the
         // pipeline. When a title is absent, the default source-count body is used.
         public Dictionary<string, string> Bodies { get; } = new(StringComparer.Ordinal);
 
         public Task<SynthesizedPage> SynthesizeAsync(string title, string category, string charter,
-            IReadOnlyList<(string Ref, string Text)> sources,
+            string template, IReadOnlyList<(string Ref, string Text)> sources,
             IReadOnlyCollection<string> knownSlugs, CancellationToken ct = default)
         {
-            Calls.Add((title, sources.Count));
-            CallRefs.Add(sources.Select(s => s.Ref).ToList());
-            CallKnownSlugs.Add(knownSlugs.ToList()); // snapshot: the caller mutates the live set between calls
+            // Ingest synthesizes up to MaxConcurrentSynthesis pages at once, so the recording lists are
+            // written from several threads — without this lock an entry is silently dropped.
+            lock (Calls)
+            {
+                Calls.Add((title, sources.Count));
+                CallRefs.Add(sources.Select(s => s.Ref).ToList());
+                CallKnownSlugs.Add(knownSlugs.ToList()); // snapshot: the caller mutates the live set between calls
+                CallTemplates.Add((category, template));
+            }
+
             if (_emptyTitles.Contains(title))
             {
                 return Task.FromResult(new SynthesizedPage(string.Empty, string.Empty));
@@ -209,7 +226,7 @@ public class IngestServiceTests : IDisposable
         public bool WasCalled { get; private set; }
 
         public Task<SynthesizedPage> SynthesizeAsync(string title, string category, string charter,
-            IReadOnlyList<(string Ref, string Text)> sources,
+            string template, IReadOnlyList<(string Ref, string Text)> sources,
             IReadOnlyCollection<string> knownSlugs, CancellationToken ct = default)
         {
             AmbientDuringCall = TokenMapAmbient.Current;
@@ -291,6 +308,164 @@ public class IngestServiceTests : IDisposable
         var idx = acme.RawText.IndexOf(ManagedMarker, StringComparison.Ordinal);
         Assert.Contains("Acme Corp is a synthesized topic", acme.RawText[idx..]);
         Assert.DoesNotContain("Old body.", acme.RawText);
+    }
+
+    // ---- page templates ----
+
+    private Task SeedTemplatesAsync(string body)
+        => _store.WriteAtomicAsync(
+            VaultTemplateService.TemplatesPath,
+            VaultFrontmatter.Build("note", "Page templates") + "\n" + body);
+
+    [Fact]
+    public async Task Ingest_passes_the_category_template_to_the_synthesizer()
+    {
+        await SeedTemplatesAsync("## person\n- personnel number: <value>\n\n## organization\n- industry: <value>\n");
+        var synth = new FakeSynthesizer();
+        var ingest = BuildIngest(
+            new FakeExtractor(
+                new ExtractedTopic("John Smith", "person"),
+                new ExtractedTopic("Acme Corp", "organization")),
+            synth);
+
+        await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+
+        // Each page gets ITS OWN category's contract, not the first one in the file.
+        Assert.Contains(synth.CallTemplates, c => c.Category == "person" && c.Template.Contains("personnel number"));
+        Assert.Contains(synth.CallTemplates, c => c.Category == "organization" && c.Template.Contains("industry"));
+        Assert.DoesNotContain(synth.CallTemplates, c => c.Category == "person" && c.Template.Contains("industry"));
+    }
+
+    [Fact]
+    public async Task Ingest_passes_an_empty_template_when_templates_file_is_absent()
+    {
+        var synth = new FakeSynthesizer();
+        var ingest = BuildIngest(new FakeExtractor(new ExtractedTopic("John Smith", "person")), synth);
+
+        await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+
+        // Free-form stays the default: a vault with no templates.md behaves exactly as before.
+        Assert.All(synth.CallTemplates, c => Assert.Equal(string.Empty, c.Template));
+    }
+
+    // ---- rebuild ----
+
+    [Fact]
+    public async Task Rebuild_resynthesizes_from_the_recorded_sources_and_keeps_the_preamble()
+    {
+        var synth = new FakeSynthesizer();
+        var ingest = BuildIngest(new FakeExtractor(new ExtractedTopic("Acme Corp", "organization")), synth);
+        await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+
+        // Hand-write a preamble above the sentinel, the way a user would.
+        const string path = "memory/topics/acme-corp.md";
+        var before = await _store.ReadAsync(path);
+        Assert.NotNull(before);
+        var marker = before!.RawText.IndexOf(ManagedMarker, StringComparison.Ordinal);
+        await _store.WriteAtomicAsync(
+            path, before.RawText[..marker] + "Manually remembered fact.\n\n" + before.RawText[marker..]);
+
+        // Now give the category a contract and rebuild.
+        await SeedTemplatesAsync("## organization\n- industry: <value>\n");
+        Assert.True(await ingest.RebuildPageAsync(path, TestContext.Current.CancellationToken));
+
+        var after = await _store.ReadAsync(path);
+        Assert.NotNull(after);
+        Assert.Contains("Manually remembered fact.", after!.RawText);
+        Assert.Equal(before.Frontmatter["id"], after.Frontmatter["id"]);         // identity is stable
+        Assert.Equal(before.Frontmatter["created"], after.Frontmatter["created"]);
+        Assert.Contains("sources/sample.txt", after.RawText);                    // provenance survives
+
+        // The rebuild resolved the NEW template and merged the same source set as the ingest did.
+        Assert.Contains(synth.CallTemplates, c => c.Template.Contains("industry"));
+        Assert.Equal(["sources/sample.txt"], synth.CallRefs[^1]);
+    }
+
+    [Fact]
+    public async Task Rebuild_grounds_the_synthesizer_in_the_known_slugs()
+    {
+        // Regression: rebuilding without the slug set makes BuildLinkInstruction forbid links
+        // outright, which would silently strip every wikilink off the rebuilt page.
+        var synth = new FakeSynthesizer();
+        var ingest = BuildIngest(
+            new FakeExtractor(
+                new ExtractedTopic("Acme Corp", "organization"),
+                new ExtractedTopic("GDPR", "regulation")),
+            synth);
+        await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+
+        await ingest.RebuildPageAsync("memory/topics/acme-corp.md", TestContext.Current.CancellationToken);
+
+        Assert.Contains("gdpr", synth.CallKnownSlugs[^1]);
+        Assert.Contains("acme-corp", synth.CallKnownSlugs[^1]);
+    }
+
+    [Fact]
+    public async Task Rebuild_is_a_noop_for_a_page_with_no_recorded_sources()
+    {
+        const string path = "memory/topics/hand-written.md";
+        var seeded = VaultFrontmatter.Build("topic", "Hand written", "concept") + "\nJust my own notes.\n";
+        await _store.WriteAtomicAsync(path, seeded);
+
+        var ingest = BuildIngest(new FakeExtractor(), new FakeSynthesizer());
+
+        Assert.False(await ingest.RebuildPageAsync(path, TestContext.Current.CancellationToken));
+        var after = await _store.ReadAsync(path);
+        Assert.Equal(seeded, after!.RawText); // byte-identical
+    }
+
+    [Fact]
+    public async Task Rebuild_leaves_the_page_untouched_when_synthesis_comes_back_empty()
+    {
+        var ingest = BuildIngest(new FakeExtractor(new ExtractedTopic("Acme Corp", "organization")),
+            new FakeSynthesizer());
+        await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+
+        const string path = "memory/topics/acme-corp.md";
+        var before = (await _store.ReadAsync(path))!.RawText;
+
+        // A synthesizer that returns nothing models a dead provider mid-rebuild.
+        var failing = BuildIngest(new FakeExtractor(), new FakeSynthesizer("Acme Corp"));
+
+        Assert.False(await failing.RebuildPageAsync(path, TestContext.Current.CancellationToken));
+        Assert.Equal(before, (await _store.ReadAsync(path))!.RawText);
+    }
+
+    [Fact]
+    public async Task Rebuild_is_false_for_a_missing_page()
+    {
+        var ingest = BuildIngest(new FakeExtractor(), new FakeSynthesizer());
+
+        Assert.False(await ingest.RebuildPageAsync(
+            "memory/topics/nope.md", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ListTopicPages_returns_topic_pages_only()
+    {
+        var ingest = BuildIngest(
+            new FakeExtractor(
+                new ExtractedTopic("Acme Corp", "organization"),
+                new ExtractedTopic("GDPR", "regulation")),
+            new FakeSynthesizer());
+        await ingest.IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8),
+            TestContext.Current.CancellationToken);
+
+        // Scaffolding and a user note outside topics/ must not come back as rebuild targets.
+        await SeedTemplatesAsync("## person\n- role: <value>\n");
+        await _store.WriteAtomicAsync("memory/notes/mine.md",
+            VaultFrontmatter.Build("note", "Mine") + "\nA note.\n");
+
+        var pages = await ingest.ListTopicPagesAsync();
+
+        Assert.Equal(
+            ["memory/topics/acme-corp.md", "memory/topics/gdpr.md"],
+            pages);
     }
 
     [Fact]

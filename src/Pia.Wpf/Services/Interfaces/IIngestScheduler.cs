@@ -15,6 +15,17 @@ public interface IIngestScheduler
     Task RemoveAsync(string sourceRef, CancellationToken ct = default);
 
     /// <summary>
+    /// Queue a re-synthesis of one existing topic page from the sources it already records — how an
+    /// edited <c>memory/templates.md</c> reaches pages already on disk. On the same serial queue as
+    /// ingest, so a rebuild can never interleave with a compile touching the same page. <c>false</c>
+    /// when the page was left untouched (missing, no sources, or synthesis came back empty).
+    /// </summary>
+    Task<bool> RebuildPageAsync(string pagePath, CancellationToken ct = default);
+
+    /// <summary>Every topic page currently on disk, vault-relative — the target list for a bulk rebuild.</summary>
+    Task<IReadOnlyList<string>> ListTopicPagesAsync();
+
+    /// <summary>
     /// The source ref currently being compiled, or <c>null</c> when the queue is idle. The scheduler
     /// owns this truth so a view opened mid-ingest (e.g. during the startup reconcile) can show the
     /// running indicator without having observed the <see cref="IngestStarted"/> event. Set before the
