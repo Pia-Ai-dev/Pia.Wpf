@@ -67,6 +67,25 @@
                  HorizontalAlignment="Center"
                  Foreground="{DynamicResource TextPlaceholderColorBrush}" />
 
+      <!-- The folder this chat's file tools work in. Reads the title-chip VM, which every
+           re-point already funnels through. -->
+      <StackPanel Orientation="Horizontal"
+                  HorizontalAlignment="Center"
+                  Margin="0,6,0,0">
+        <ui:SymbolIcon Symbol="Folder24"
+                       FontSize="12"
+                       Margin="0,0,5,0"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+        <TextBlock Text="{Binding ChatTitleChip.WorkingDirectoryDisplay}"
+                   FontSize="12"
+                   MaxWidth="360"
+                   TextTrimming="CharacterEllipsis"
+                   VerticalAlignment="Center"
+                   ToolTip="{Binding ChatTitleChip.WorkingDirectoryDisplay}"
+                   Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+      </StackPanel>
+
       <!-- Drawn per visit from the capability groups the profile actually has data for, so the id is
            per-item: a literal here would make every chip report the same one. -->
       <ItemsControl ItemsSource="{Binding Suggestions}"
@@ -334,15 +353,41 @@
             </Grid.ColumnDefinitions>
 
             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-              <!-- Clear button -->
-              <ui:Button Command="{Binding ClearConversationCommand}"
+              <!-- New chat: additive, so a turn in flight keeps streaming in the chat it belongs to. -->
+              <ui:Button Command="{Binding NewChatCommand}"
                          Appearance="Transparent"
                          Padding="6,4"
                          Margin="0,0,2,0"
-                         AutomationProperties.Name="{loc:Str Assistant_ClearConversation_Tooltip}"
-                         AutomationProperties.AutomationId="Assistant_ClearConversation"
-                         ToolTip="{loc:Str Assistant_ClearConversation_Tooltip}">
-                <ui:SymbolIcon Symbol="Eraser24" FontSize="16" />
+                         AutomationProperties.Name="{loc:Str Assistant_NewChat_Tooltip}"
+                         AutomationProperties.AutomationId="Assistant_NewChat"
+                         ToolTip="{loc:Str Assistant_NewChat_Tooltip}">
+                <ui:SymbolIcon Symbol="Add24" FontSize="16" />
+              </ui:Button>
+
+              <!-- Delete the open chat. Dead on an empty chat, so the tooltip has to survive
+                   the disabled state. -->
+              <ui:Button Command="{Binding DeleteCurrentChatCommand}"
+                         Appearance="Transparent"
+                         Padding="6,4"
+                         Margin="0,0,2,0"
+                         ToolTipService.ShowOnDisabled="True"
+                         AutomationProperties.Name="{loc:Str Assistant_DeleteChat_Tooltip}"
+                         AutomationProperties.AutomationId="Assistant_DeleteChat"
+                         ToolTip="{loc:Str Assistant_DeleteChat_Tooltip}">
+                <ui:SymbolIcon Symbol="Delete24" FontSize="16"
+                               Foreground="{DynamicResource PiaDangerBrush}">
+                  <ui:SymbolIcon.Style>
+                    <Style TargetType="ui:SymbolIcon">
+                      <Style.Triggers>
+                        <!-- The local Foreground above outranks the template's disabled brush, so a
+                             disabled trash can would still read as fully live red. -->
+                        <DataTrigger Binding="{Binding IsEnabled, RelativeSource={RelativeSource AncestorType=ui:Button}}" Value="False">
+                          <Setter Property="Opacity" Value="0.4" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </ui:SymbolIcon.Style>
+                </ui:SymbolIcon>
               </ui:Button>
 
               <!-- Cancel button (visible during streaming) -->

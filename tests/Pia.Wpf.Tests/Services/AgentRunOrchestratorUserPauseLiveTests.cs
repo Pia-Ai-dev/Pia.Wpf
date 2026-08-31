@@ -546,6 +546,33 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
         store.ReleaseDispatch(runId, sink);
     }
 
+    /// <summary>The composer's "+" is additive — the old chat's turn keeps running — so unlike Clear
+    /// conversation it must leave that turn's pending pause alone.</summary>
+    [Fact]
+    public void NewChat_LeavesAPendingPauseAlone()
+    {
+        var runId = Guid.NewGuid();
+        var store = new RunSteeringStore();
+
+        var session = CreateSession();
+        session.BeginTurn();
+        session.SetActiveRun(runId);
+        var sink = RegisterSessionSink(store, runId, session);
+        Assert.True(store.RecordPauseRequest(runId));
+
+        var manager = Substitute.For<IChatSessionManager>();
+        manager.ActiveSession.Returns(session);
+        manager.GetOrCreateActiveForNewChat().Returns(_ => CreateSession()); // the fresh chat the command opens
+        var vm = CreateAssistantViewModel(manager, store);
+
+        vm.NewChatCommand.Execute(null);
+
+        Assert.True(store.TryConsumePauseRequest(runId),
+            "opening a new chat must not revoke a pause aimed at the turn it left running");
+
+        store.ReleaseDispatch(runId, sink);
+    }
+
     /// <summary>The production <see cref="AssistantViewModel"/> with everything but the two collaborators these
     /// facts steer through substituted.</summary>
     private AssistantViewModel CreateAssistantViewModel(IChatSessionManager manager, IRunSteeringStore steering)

@@ -220,6 +220,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IAsyncRelayCommand ToggleRecordingCommand { get; }
     public IRelayCommand CancelStreamingCommand { get; }
     public IRelayCommand ClearConversationCommand { get; }
+    public IRelayCommand NewChatCommand { get; }
+    public IAsyncRelayCommand DeleteCurrentChatCommand { get; }
     public IAsyncRelayCommand<AssistantMessage> CopyMessageCommand { get; }
     public IRelayCommand ToggleTtsCommand { get; }
     public IAsyncRelayCommand<AssistantMessage> PlayMessageCommand { get; }
@@ -357,6 +359,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
         CancelStreamingCommand = new RelayCommand(ExecuteCancelStreaming);
         ClearConversationCommand = new RelayCommand(ExecuteClearConversation);
+        NewChatCommand = new RelayCommand(ExecuteNewChat);
+        DeleteCurrentChatCommand = new AsyncRelayCommand(ExecuteDeleteCurrentChat, CanDeleteCurrentChat);
         CopyMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecuteCopyMessage);
         ToggleTtsCommand = new RelayCommand(ExecuteToggleTts);
         PlayMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecutePlayMessage, AsyncRelayCommandOptions.AllowConcurrentExecutions);
@@ -560,6 +564,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // Mirror the active state onto the chip badge (single sink — both the attach
     // path and live transitions set ActiveState, so this stays in sync).
     partial void OnActiveStateChanged(ChatState value) => ChatTitleChip.SetState(value);
+
+    partial void OnHasMessagesChanged(bool value) => DeleteCurrentChatCommand.NotifyCanExecuteChanged();
 
     // Sync-void fire-and-forget: followups + TTS for the active session only.
     private void OnActiveSessionTurnCompleted(object? sender, TurnCompletedEventArgs e)
@@ -1202,9 +1208,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// </summary>
     private void NewChat(string? workingDirectory) => StartFreshChat(workingDirectory);
 
-    /// <summary>Opens a new, empty active chat and resets the composer. Shared by the
-    /// additive "New chat" (pinned to the folder shown on the pill) and the destructive
-    /// "Clear conversation" entry point (which inherits the cleared chat's folder).</summary>
+    /// <summary>The composer's "+" — same additive contract as <see cref="NewChat"/>, opening in the
+    /// folder this chat works in.</summary>
+    private void ExecuteNewChat() => NewChat(_chatSessionManager.ActiveSession?.WorkingDirectory);
+
+    /// <summary>Opens a new, empty active chat and resets the composer. Shared by the additive
+    /// "New chat" (the chip's pinned folder, or the composer's "+" inheriting this chat's) and the
+    /// destructive "Clear conversation" entry point (which inherits the cleared chat's folder).</summary>
     /// <param name="workingDirectory">Relative working dir to pin (forward slashes;
     /// null/empty = sandbox root).</param>
     private void StartFreshChat(string? workingDirectory = null)
@@ -1233,7 +1243,18 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         await _chatSessionManager.ActivateAsync(chatId);
     }
 
-    /// <summary>Quick-delete from the title-chip flyout; deleting the open chat moves to a fresh one.</summary>
+    /// <summary>Deletes the chat the composer is on, then opens a fresh one.</summary>
+    private async Task ExecuteDeleteCurrentChat()
+    {
+        if (_chatSessionManager.ActiveSession?.Id is not { } chatId) return;
+        await DeleteChatFromChipAsync(chatId);
+    }
+
+    /// <summary>Nothing to delete while the chat is still empty — a fresh one is what deleting would leave.</summary>
+    private bool CanDeleteCurrentChat() => HasMessages;
+
+    /// <summary>Quick-delete of one chat (title-chip flyout or the composer's delete button);
+    /// deleting the open chat moves to a fresh one.</summary>
     private async Task DeleteChatFromChipAsync(Guid chatId)
     {
         var confirmed = await _dialogService.ShowConfirmationDialogAsync(
@@ -1246,7 +1267,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var inheritedDir = deletesOpenChat ? _chatSessionManager.ActiveSession?.WorkingDirectory : null;
 
         await _chatService.DeleteAsync(chatId);
-        _logger.LogInformation("Deleted assistant chat {ChatId} from title-chip flyout", chatId);
+        _logger.LogInformation("Deleted assistant chat {ChatId}", chatId);
 
         if (!deletesOpenChat) return;
 

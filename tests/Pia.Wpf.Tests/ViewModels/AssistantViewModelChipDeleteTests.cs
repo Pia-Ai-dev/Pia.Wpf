@@ -130,6 +130,41 @@ public class AssistantViewModelChipDeleteTests
     }
 
     [Fact]
+    public async Task DeletingFromTheComposer_DeletesTheOpenChatAndStartsAFresh()
+    {
+        var chatId = Guid.NewGuid();
+        var openSession = NewSession();
+        openSession.SetIdentity(chatId, DateTime.UtcNow, null, null, false);
+        openSession.SetWorkingDirectory("notes");
+        _manager.ActiveSession.Returns(openSession);
+        var vm = CreateSut();
+
+        await vm.DeleteCurrentChatCommand.ExecuteAsync(null);
+
+        await _chatService.Received(1).DeleteAsync(chatId, Arg.Any<CancellationToken>());
+        _manager.Received(1).GetOrCreateActiveForNewChat();
+        Assert.Equal("notes", _freshSession.WorkingDirectory);
+    }
+
+    [Fact]
+    public void TheComposerDeleteButton_TracksWhetherTheChatHasAnythingToDelete()
+    {
+        var openSession = NewSession();
+        openSession.SetIdentity(Guid.NewGuid(), DateTime.UtcNow, null, null, false);
+        _manager.ActiveSession.Returns(openSession);
+        var vm = CreateSut();
+        var refreshes = 0;
+        vm.DeleteCurrentChatCommand.CanExecuteChanged += (_, _) => refreshes++;
+
+        Assert.False(vm.DeleteCurrentChatCommand.CanExecute(null));
+
+        vm.HasMessages = true;
+
+        Assert.True(vm.DeleteCurrentChatCommand.CanExecute(null));
+        Assert.True(refreshes > 0, "the button must re-enable itself when the chat gains its first message");
+    }
+
+    [Fact]
     public async Task DeletingABackgroundChat_KeepsTheOpenChat()
     {
         var chatId = Guid.NewGuid();
