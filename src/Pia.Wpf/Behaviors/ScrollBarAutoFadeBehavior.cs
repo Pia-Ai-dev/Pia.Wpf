@@ -11,8 +11,8 @@ using System.Windows.Threading;
 namespace Pia.Behaviors;
 
 /// <summary>
-/// Holds every scroll bar at a translucent hint until it is used, lights it up while the user scrolls, hovers
-/// or drags it, and fades it back after a short hold.
+/// Holds every scroll bar at a thin translucent hint until it is used, lights it up while the user scrolls,
+/// hovers or drags it, and fades it back after a short hold.
 /// </summary>
 public static class ScrollBarAutoFadeBehavior
 {
@@ -41,6 +41,24 @@ public static class ScrollBarAutoFadeBehavior
 
     public static void SetIdleOpacity(DependencyObject obj, double value) => obj.SetValue(IdleOpacityProperty, value);
 
+    /// <summary>What the bar comes up to in use. Just short of 1, so even the active bar stays a shade soft.</summary>
+    public static readonly DependencyProperty ActiveOpacityProperty =
+        DependencyProperty.RegisterAttached("ActiveOpacity", typeof(double), typeof(ScrollBarAutoFadeBehavior),
+            new FrameworkPropertyMetadata(0.9, FrameworkPropertyMetadataOptions.Inherits));
+
+    public static double GetActiveOpacity(DependencyObject obj) => (double)obj.GetValue(ActiveOpacityProperty);
+
+    public static void SetActiveOpacity(DependencyObject obj, double value) => obj.SetValue(ActiveOpacityProperty, value);
+
+    /// <summary>Fraction of the thumb's drawn thickness kept while idle. 1 leaves the template's width alone.</summary>
+    public static readonly DependencyProperty IdleThicknessProperty =
+        DependencyProperty.RegisterAttached("IdleThickness", typeof(double), typeof(ScrollBarAutoFadeBehavior),
+            new FrameworkPropertyMetadata(0.5, FrameworkPropertyMetadataOptions.Inherits));
+
+    public static double GetIdleThickness(DependencyObject obj) => (double)obj.GetValue(IdleThicknessProperty);
+
+    public static void SetIdleThickness(DependencyObject obj, double value) => obj.SetValue(IdleThicknessProperty, value);
+
     private static readonly DependencyProperty VerticalBarProperty =
         DependencyProperty.RegisterAttached("VerticalBar", typeof(ScrollBar), typeof(ScrollBarAutoFadeBehavior),
             new PropertyMetadata(null));
@@ -59,6 +77,11 @@ public static class ScrollBarAutoFadeBehavior
 
     private static readonly DependencyProperty IsLitProperty =
         DependencyProperty.RegisterAttached("IsLit", typeof(bool), typeof(ScrollBarAutoFadeBehavior),
+            new PropertyMetadata(false));
+
+    // Tracked rather than read back off IsMouseOver, so the state is the one the events actually reported.
+    private static readonly DependencyProperty IsHoveredProperty =
+        DependencyProperty.RegisterAttached("IsHovered", typeof(bool), typeof(ScrollBarAutoFadeBehavior),
             new PropertyMetadata(false));
 
     private static readonly DependencyProperty LastActivityProperty =
@@ -82,10 +105,18 @@ public static class ScrollBarAutoFadeBehavior
         // is where the initial fade comes from.
         EventManager.RegisterClassHandler(typeof(ScrollViewer), ScrollViewer.ScrollChangedEvent,
             new ScrollChangedEventHandler(OnScrollChanged));
+
         // The thumb, not the bar: the bar spans the whole viewport, so hovering the empty stretch of track
         // below a short thumb would light it up without anyone reaching for it.
         EventManager.RegisterClassHandler(typeof(Thumb), UIElement.MouseEnterEvent,
             new MouseEventHandler(OnThumbEntered));
+
+        // Approaching the bar restores the thumb's full width but deliberately not its opacity: an idle thumb
+        // is only a few pixels wide, so it has to widen before the pointer is exactly on it.
+        EventManager.RegisterClassHandler(typeof(ScrollBar), UIElement.MouseEnterEvent,
+            new MouseEventHandler(OnBarHoverChanged));
+        EventManager.RegisterClassHandler(typeof(ScrollBar), UIElement.MouseLeaveEvent,
+            new MouseEventHandler(OnBarHoverChanged));
     }
 
     private static void OnScrollChanged(object sender, ScrollChangedEventArgs e)
@@ -110,6 +141,15 @@ public static class ScrollBarAutoFadeBehavior
         Poke(bar);
     }
 
+    private static void OnBarHoverChanged(object sender, MouseEventArgs e)
+    {
+        if (sender is not ScrollBar bar || !(bool)bar.GetValue(IsManagedProperty)) return;
+
+        var entering = e.RoutedEvent == UIElement.MouseEnterEvent;
+        bar.SetValue(IsHoveredProperty, entering);
+        ApplyThickness(bar, entering ? ShowDuration : FadeDuration);
+    }
+
     private static ScrollBar? OwningBar(Thumb thumb)
     {
         for (DependencyObject? node = thumb; node is not null; node = VisualTreeHelper.GetParent(node))
@@ -132,7 +172,13 @@ public static class ScrollBarAutoFadeBehavior
     private static ScrollBar? BarOf(ScrollViewer viewer, Orientation orientation)
     {
         var slot = orientation == Orientation.Vertical ? VerticalBarProperty : HorizontalBarProperty;
-        if (viewer.GetValue(slot) is ScrollBar known) return known;
+        if (viewer.GetValue(slot) is ScrollBar known)
+        {
+            // A Collapsed bar is never measured, so the template holding its thumb may not exist until a later
+            // pass makes the bar visible — keep reaching for it until it does.
+            if (known.GetValue(ThumbProperty) is null) ApplyThickness(known, TimeSpan.Zero);
+            return known;
+        }
 
         viewer.ApplyTemplate();
         var part = orientation == Orientation.Vertical ? "PART_VerticalScrollBar" : "PART_HorizontalScrollBar";
@@ -140,7 +186,7 @@ public static class ScrollBarAutoFadeBehavior
 
         viewer.SetValue(slot, bar);
         bar.SetValue(IsManagedProperty, true);
-        if (GetIsEnabled(bar)) Animate(bar, GetIdleOpacity(bar), TimeSpan.Zero);
+        Apply(bar, TimeSpan.Zero);
         return bar;
     }
 
@@ -148,15 +194,12 @@ public static class ScrollBarAutoFadeBehavior
     {
         if (!GetIsEnabled(bar)) return;
 
-        // Resolved here so the sweep below can read it without re-walking the template every tick.
-        ThumbOf(bar);
-
         bar.SetValue(LastActivityProperty, Environment.TickCount64);
         if ((bool)bar.GetValue(IsLitProperty)) return;
 
         bar.SetValue(IsLitProperty, true);
         Lit.Add(new WeakReference<ScrollBar>(bar));
-        Animate(bar, 1.0, ShowDuration);
+        Apply(bar, ShowDuration);
 
         _sweep ??= new DispatcherTimer(SweepInterval, DispatcherPriority.Background, OnSweep, bar.Dispatcher);
         _sweep.Start();
@@ -186,13 +229,47 @@ public static class ScrollBarAutoFadeBehavior
 
             bar.SetValue(IsLitProperty, false);
             Lit.RemoveAt(i);
-            if (GetIsEnabled(bar)) Animate(bar, GetIdleOpacity(bar), FadeDuration);
+            Apply(bar, FadeDuration);
         }
 
         if (Lit.Count == 0) _sweep?.Stop();
     }
 
-    private static void Animate(ScrollBar bar, double to, Duration duration) =>
+    private static void Apply(ScrollBar bar, Duration duration)
+    {
+        if (!GetIsEnabled(bar)) return;
+
+        var lit = (bool)bar.GetValue(IsLitProperty);
         bar.BeginAnimation(UIElement.OpacityProperty,
-            new DoubleAnimation(to, duration) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } });
+            Tween(lit ? GetActiveOpacity(bar) : GetIdleOpacity(bar), duration));
+        ApplyThickness(bar, duration);
+    }
+
+    private static void ApplyThickness(ScrollBar bar, Duration duration)
+    {
+        if (!GetIsEnabled(bar) || ThumbOf(bar) is not { } thumb) return;
+
+        var full = (bool)bar.GetValue(IsLitProperty) || (bool)bar.GetValue(IsHoveredProperty);
+
+        // Scaled rather than resized: the Track positions the thumb from its measured size, and relaying that
+        // out on every frame of the fade buys nothing a render transform does not.
+        var axis = bar.Orientation == Orientation.Vertical
+            ? ScaleTransform.ScaleXProperty
+            : ScaleTransform.ScaleYProperty;
+
+        ScaleOf(thumb).BeginAnimation(axis, Tween(full ? 1.0 : GetIdleThickness(bar), duration));
+    }
+
+    private static ScaleTransform ScaleOf(Thumb thumb)
+    {
+        if (thumb.ReadLocalValue(UIElement.RenderTransformProperty) is ScaleTransform existing) return existing;
+
+        var scale = new ScaleTransform();
+        thumb.RenderTransformOrigin = new Point(0.5, 0.5);
+        thumb.RenderTransform = scale;
+        return scale;
+    }
+
+    private static DoubleAnimation Tween(double to, Duration duration) =>
+        new(to, duration) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } };
 }
