@@ -338,7 +338,10 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         UserInputRequestStore? userInput = null,
         // The run's envelope denial list (a tool-approval park's Deny, persisted on resume). Null — the
         // single-turn path and every pre-denial caller — resolves HasNamedDenial: false at the gate.
-        HashSet<string>? deniedWrites = null)
+        HashSet<string>? deniedWrites = null,
+        // Non-null ONLY when the caller wants the rounds persisted. Written per ROUND rather than per turn:
+        // a park returns above the caller's own transcript append, so a per-turn write records nothing.
+        AgentToolExchangeScope? exchanges = null)
     {
         var textBuffer = new StringBuilder();
         int? tokens = null;
@@ -375,6 +378,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                     break;
                 case ToolRoundExchange round:
                     toolExchanges.AddRange(round.Messages);
+                    if (exchanges is not null)
+                        await exchanges.RecordAsync(round.Round, round.Messages).ConfigureAwait(false);
                     break;
                 case Finished finished:
                     if (finished.Usage is { } u)

@@ -102,6 +102,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// </summary>
     private readonly ISessionToolGrantStore? _sessionGrants;
 
+    /// <summary>The run's durable tool context, or null (⇒ record nothing, re-seed nothing).</summary>
+    private readonly IAgentToolExchangeStore? _exchangeStore;
+
     public HeadlessTurnExecutor(
         BackgroundAssistantTurnRunner engine,
         IAssistantChatService chatService,
@@ -120,7 +123,10 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // hermes #15, trailing and defaulted for the same reason — and null is the RESTRICTIVE answer here
         // (no session tier at all, i.e. the pre-#15 gate), so a test or a caller that omits it never widens a
         // run. The container resolves the registered singleton.
-        ISessionToolGrantStore? sessionGrants = null)
+        ISessionToolGrantStore? sessionGrants = null,
+        // Trailing and defaulted for the same reason, and null is again the conservative answer: no rows are
+        // written and a resume seeds prose alone, which is the pre-store behaviour.
+        IAgentToolExchangeStore? exchangeStore = null)
     {
         _engine = engine;
         _chatService = chatService;
@@ -134,6 +140,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         _timelineService = timelineService;
         _stepPersonas = stepPersonas;
         _sessionGrants = sessionGrants;
+        _exchangeStore = exchangeStore;
     }
 
     /// <summary>
@@ -292,6 +299,18 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // nulled by a resumed run's saves.
         _existingTitle = chat?.Title;
         _existingWorkingDirectory = chat?.WorkingDirectory;
+
+        // The prose transcript alone told a resumed step nothing about the files an abandoned attempt had
+        // already read or written, so it asked the user for data it had.
+        var carried = await ReadCarriedAsync(run.Id, chat, ct).ConfigureAwait(false);
+        void SeedRow(SyncAssistantChatMessage m)
+        {
+            if (carried.Anchored.TryGetValue(m.Id, out var groups))
+                _messages.AddRange(groups);
+            _messages.Add(new ChatMessage(ParseRole(m.Role), m.Content));
+            _persisted.Add(m);
+        }
+
         // Checks that the FIRST message is a user row, not just any — a parked run's chat can open with the
         // assistant's clarification question instead of the goal.
         if (chat is { Messages.Count: > 0 }
@@ -300,10 +319,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             // Resume: seed from the persisted transcript so the terminal full-replace PRESERVES prior
             // rows. No synthetic goal (it is already in the transcript).
             foreach (var m in chat.Messages)
-            {
-                _messages.Add(new ChatMessage(ParseRole(m.Role), m.Content));
-                _persisted.Add(m);
-            }
+                SeedRow(m);
         }
         else
         {
@@ -322,12 +338,73 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             if (chat is { Messages.Count: > 0 })
             {
                 foreach (var m in chat.Messages)
-                {
-                    _messages.Add(new ChatMessage(ParseRole(m.Role), m.Content));
-                    _persisted.Add(m);
-                }
+                    SeedRow(m);
             }
         }
+
+        // The abandoned attempt's rows: no assistant reply to anchor to, because a park discards the step's
+        // prose. The tail is also what keeps them inside ClearOldResults' newest-by-position window.
+        _messages.AddRange(carried.Trailing);
+    }
+
+    /// <summary>
+    /// The run's carried tool exchanges, split into the groups that precede a surviving chat row and the ones
+    /// that belong at the tail. Returned VERBATIM — the rows already are what the model saw, so detokenizing
+    /// them here would send the provider something the pre-park rounds never sent.
+    /// </summary>
+    private async Task<CarriedToolExchanges> ReadCarriedAsync(Guid runId, SyncAssistantChat? chat, CancellationToken ct)
+    {
+        if (_exchangeStore is null)
+            return CarriedToolExchanges.Empty;
+
+        try
+        {
+            var rows = await _exchangeStore.ReadCarriedAsync(runId, ct).ConfigureAwait(false);
+            if (rows.Count == 0)
+                return CarriedToolExchanges.Empty;
+
+            var chatIds = new HashSet<Guid>();
+            if (chat?.Messages is { Count: > 0 } chatRows)
+                foreach (var m in chatRows)
+                    chatIds.Add(m.Id);
+
+            var anchored = new Dictionary<Guid, List<ChatMessage>>();
+            var trailing = new List<ChatMessage>();
+            // A stale anchor falls into the tail rather than being dropped, so the split is total.
+            foreach (var bucket in rows.GroupBy(r =>
+                r.AnchorMessageId is { } id && chatIds.Contains(id) ? id : (Guid?)null))
+            {
+                var messages = AgentToolExchangeSerializer.ToMessages(bucket);
+                if (bucket.Key is { } anchor)
+                {
+                    if (!anchored.TryGetValue(anchor, out var group))
+                        anchored[anchor] = group = new List<ChatMessage>();
+                    group.AddRange(messages);
+                }
+                else
+                {
+                    trailing.AddRange(messages);
+                }
+            }
+
+            _logger.LogInformation(
+                "Headless run {RunId} re-seeded {RowCount} carried tool-exchange row(s): {AnchoredGroups} anchored group(s), {TrailingMessages} trailing message(s)",
+                runId, rows.Count, anchored.Count, trailing.Count);
+            return new CarriedToolExchanges(anchored, trailing);
+        }
+        catch (Exception ex)
+        {
+            // A corrupt or unreachable store degrades the resume to prose-only instead of failing every resume.
+            _logger.LogWarning(ex, "Failed to read carried tool exchanges for headless run {RunId}", runId);
+            return CarriedToolExchanges.Empty;
+        }
+    }
+
+    private sealed record CarriedToolExchanges(
+        IReadOnlyDictionary<Guid, List<ChatMessage>> Anchored,
+        IReadOnlyList<ChatMessage> Trailing)
+    {
+        public static CarriedToolExchanges Empty { get; } = new(new Dictionary<Guid, List<ChatMessage>>(), []);
     }
 
     private static ChatRole ParseRole(string role) => role switch
@@ -356,7 +433,8 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
                 // Done/Failed, so it is the one that offers emit_step_result. The R10 degrade turn below
                 // deliberately does not (no AgentStep row, no step status to decide) — the live executor
                 // draws the same line at the same place.
-                offerStepResultTool: true)
+                offerStepResultTool: true,
+                exchanges: ExchangeScope(step.Id))
             .ConfigureAwait(false);
     }
 
@@ -366,7 +444,8 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     // No step persona either, for the same reason: the R10 degrade turn belongs to the RUN, so it runs on the
     // run persona's prompt and provider (the trailing argument is left at its default).
     public Task<StepTurnResult> RunSingleTurnFallbackAsync(AgentRun run, RunContext ctx, CancellationToken ct) =>
-        RunExchangeStepAsync(ctx.Goal, persistInterim: false, ct, TimelineScope(stepId: null));
+        RunExchangeStepAsync(ctx.Goal, persistInterim: false, ct, TimelineScope(stepId: null),
+            exchanges: ExchangeScope(stepId: null));
 
     /// <summary>
     /// T2-18 — the grace turn. One TOOL-FREE round through the same exchange engine, so the parked run's chat
@@ -379,6 +458,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// like the R10 degrade turn.
     /// </para>
     /// </summary>
+    // No exchange scope: toolFree strips the tool list, so this turn cannot produce a round to record.
     public async Task<StepTurnResult?> RunGraceTurnAsync(AgentRun run, RunContext ctx, CancellationToken ct) =>
         await RunExchangeStepAsync(GraceTurnInstruction, persistInterim: true, ct,
                 TimelineScope(stepId: null), persona: null, offerStepResultTool: false, toolFree: true)
@@ -400,15 +480,23 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     private AgentTimelineScope? TimelineScope(Guid? stepId) =>
         _timelineService is null ? null : new AgentTimelineScope(_timelineService, _runId, stepId);
 
+    /// <summary>The per-step payload sink, or null when no store was injected (⇒ record nothing).</summary>
+    private AgentToolExchangeScope? ExchangeScope(Guid? stepId) =>
+        _exchangeStore is null ? null : new AgentToolExchangeScope(_exchangeStore, _runId, stepId);
+
     /// <param name="persona">The step's resolved triple (Batch 07 G6), or null for the RUN's — which is what
     /// the R10 degrade turn passes and what an executor built without a resolver always uses.</param>
     /// <param name="offerStepResultTool">hermes #9: offer <c>emit_step_result</c> on this turn. True only for
     /// <see cref="ExecuteStepAsync"/>; the R10 degrade turn leaves it false.</param>
     /// <param name="toolFree">T2-18: send NO tools at all. Only <see cref="RunGraceTurnAsync"/> passes true —
     /// that turn happens after the budget is spent, so it must not be able to act.</param>
+    /// <param name="exchanges">The payload sink. A separate parameter rather than derived from
+    /// <paramref name="timeline"/>: the timeline is optional and absent in most suites, and deriving one
+    /// optional collaborator from another would make the store silently inert wherever no timeline is injected.</param>
     private async Task<StepTurnResult> RunExchangeStepAsync(
         string instruction, bool persistInterim, CancellationToken ct, AgentTimelineScope? timeline = null,
-        StepPersonaSetup? persona = null, bool offerStepResultTool = false, bool toolFree = false)
+        StepPersonaSetup? persona = null, bool offerStepResultTool = false, bool toolFree = false,
+        AgentToolExchangeScope? exchanges = null)
     {
         var p = persona ?? _runDefault;
 
@@ -519,7 +607,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             exchange = await _engine.RunExchangeAsync(request, p.Provider, turnSetup, _grantedWrites, ct,
                     onUsage: null, contextBudget: contextBudget, policy: _policy, timeline: timeline,
                     outcomeStore: outcomeStore, approvals: approvals, userInput: userInput,
-                    deniedWrites: _deniedWrites)
+                    deniedWrites: _deniedWrites, exchanges: exchanges)
                 .ConfigureAwait(false);
         }
         // The token guard keeps a transport cancellation (an HTTP timeout escaped conversion) off this
@@ -675,6 +763,12 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             Persona = new SyncMessagePersona { Id = p.Persona.Id, Name = p.Persona.Name, Emoji = p.Persona.Emoji },
         });
 
+        // Unconditional even when this attempt recorded nothing: a previous, PARKED attempt's rows for the
+        // same step are still unanchored, and this is the write that finally anchors them. CancellationToken.None
+        // for PersistChatAsync's reason — a settle-time write must not be cancelled out from under the row it anchors.
+        if (exchanges is not null)
+            await exchanges.SealAsync(assistantMsgId).ConfigureAwait(false);
+
         // E2: this step's reply becomes DURABLE now. Until per-step persistence, EndRunAsync was the ONLY
         // chat write a headless run ever did — so a budget pause (which deliberately skips EndRunAsync and
         // calls the non-terminal OnPausedAsync instead) or a crash mid-run lost every step reply, and the
@@ -712,6 +806,12 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             title = DeriveTitleFromGoal(ctx.Goal);
 
         await PersistChatAsync(title, interim: false, ct).ConfigureAwait(false);
+
+        // A settled run has no reader — nothing claims a Completed/Failed/Cancelled run — and the parked rows
+        // hold the user's own file contents detokenized, so they must not outlive it. Never on a park or a pause:
+        // SafeEndRun is only called on a terminal path.
+        if (_exchangeStore is not null)
+            await _exchangeStore.PurgeRunAsync(run.Id, CancellationToken.None).ConfigureAwait(false);
         // Ambients are set + restored per step (RunExchangeStepAsync); nothing to restore here.
     }
 

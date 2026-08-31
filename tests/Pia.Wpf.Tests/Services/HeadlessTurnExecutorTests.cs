@@ -3,6 +3,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
@@ -526,11 +527,20 @@ public sealed class HeadlessTurnExecutorTests
         public readonly ISettingsService SettingsService = Substitute.For<ISettingsService>();
         public readonly AppSettings Settings = new();
 
+        // Hoisted for the same reason, plus one of its own: only a seeded route returns a pending action, and
+        // without one no fixture can drive the gate to a real approval park.
+        public readonly IPluginService Plugins = Substitute.For<IPluginService>();
+        public readonly IToolPermissionService Permissions = Substitute.For<IToolPermissionService>();
+
         /// <summary>
         /// The per-step resolver handed to every executor this harness builds; null puts every step on the run
         /// persona. Set it before the first NewExecutor call.
         /// </summary>
         public StepPersonaResolver? StepPersonas;
+
+        /// <summary>The durable tool context every executor this harness builds shares, or null for the
+        /// pre-store behaviour. Set it before the first NewExecutor call.</summary>
+        public IAgentToolExchangeStore? Exchanges;
 
         /// <summary>Whether the composed turn offers tools. A step only ever produces tool exchanges when it
         /// had tools, and a turn that sends none drops the carried pairs — so a carry fixture must set this.</summary>
@@ -583,18 +593,17 @@ public sealed class HeadlessTurnExecutorTests
         /// </summary>
         public HeadlessTurnExecutor NewExecutor()
         {
-            var plugins = Substitute.For<IPluginService>();
             var titles = Substitute.For<IChatTitleService>();
             titles.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((string?)null);
             ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();
 
             var engine = new BackgroundAssistantTurnRunner(
-                Ai, plugins, Substitute.For<IToolPermissionService>(), Composer, Personas, Chats,
+                Ai, Plugins, Permissions, Composer, Personas, Chats,
                 titles, SettingsService, TokenMapFactory, Runs,
                 new ExecutingRunStore(), NullLogger<BackgroundAssistantTurnRunner>.Instance);
             return new HeadlessTurnExecutor(
                 engine, Chats, SettingsService, Personas, Providers, Composer, titles, TokenMapFactory,
-                ExecutorLog, timelineService: null, StepPersonas);
+                ExecutorLog, timelineService: null, StepPersonas, exchangeStore: Exchanges);
         }
 
         public async Task<AgentRun> NewRunAsync(string goal)
@@ -1698,4 +1707,430 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Contains(captured[0], m => m.Role == ChatRole.User && m.Text.Contains(AgentToolCarryover.ReReadHint));
     }
 
+    // ---- the durable twin: a resume gets back the exchanges the abandoned attempt produced ----
+
+    private static AgentToolExchangeStore ExchangeStore(DurabilityHarness h) =>
+        new(h.Ctx, NullLogger<AgentToolExchangeStore>.Instance);
+
+    /// <summary>Runs step 0, then RESUMES with a FRESH executor — the launcher's new DI scope, sharing the
+    /// harness's store — and runs step 1. Deliberately not driven through the orchestrator: a terminal settle
+    /// purges the run's rows, which is the very thing a resume fixture needs to survive.</summary>
+    private static async Task<List<List<ChatMessage>>> RunThenResumeAsync(
+        DurabilityHarness h, AgentRun run, params ChatMessage[][] firstStepRounds)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        h.SupportsTools = true;
+        var captured = new List<List<ChatMessage>>();
+        h.Ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
+            .Returns(ci =>
+            {
+                captured.Add([.. (IList<ChatMessage>)ci[0]]);
+                return ++h.Turns == 1 ? DriveToolRounds("reply 1", firstStepRounds) : DriveText("reply 2");
+            });
+
+        var ctx = new RunContext(run.Goal ?? "goal", RunProfile.Interactive);
+        var launch = h.NewExecutor();
+        launch.Initialize(workspaceRoot: null, ["write_file"], h.Provider);
+        await launch.BeginRunAsync(run, ctx, ct);
+        await launch.ExecuteStepAsync(run, CarryStep(0), ctx, ct);
+
+        var resumed = h.NewExecutor();
+        resumed.Initialize(workspaceRoot: null, ["write_file"], h.Provider);
+        await resumed.BeginRunAsync(run, ctx, ct);
+        await resumed.ExecuteStepAsync(run, CarryStep(1), ctx, ct);
+        return captured;
+    }
+
+    private static int IndexOfResult(List<ChatMessage> request, string body) =>
+        request.FindIndex(m => m.Contents.OfType<FunctionResultContent>().Any(r => (r.Result as string) == body));
+
+    private static int IndexOfProse(List<ChatMessage> request, string text) =>
+        request.FindIndex(m => m.Role == ChatRole.Assistant && m.Text.Contains(text));
+
+    /// <summary>The reported amnesia: a park discarded every call and result taken before it, so the resumed
+    /// step had neither the file it wrote nor the data it read, and asked the user for both.</summary>
+    [Fact]
+    public async Task AResumeSeedsCarriedExchangesBeforeTheReplyTheyBelongTo()
+    {
+        using var h = new DurabilityHarness();
+        using var store = ExchangeStore(h);
+        h.Exchanges = store;
+        var run = await h.NewRunAsync("inventory report");
+
+        var captured = await RunThenResumeAsync(h, run,
+            [ToolCall("c1", "read_file", "inventory.csv"), ToolResult("c1", "SKU-1001,Blue Widget,4,10,3.50")]);
+
+        var resumed = captured[1];
+        Assert.Contains("SKU-1001,Blue Widget,4,10,3.50", ResultBodies(resumed));
+        Assert.Contains(resumed.SelectMany(m => m.Contents).OfType<FunctionCallContent>(), c => c.Name == "read_file");
+
+        var pair = IndexOfResult(resumed, "SKU-1001,Blue Widget,4,10,3.50");
+        var prose = IndexOfProse(resumed, "reply 1");
+        Assert.True(prose >= 0, "the resumed request lost the step-0 reply");
+        Assert.True(pair >= 0 && pair < prose,
+            $"the re-seeded pair sat at {pair} and the reply it belongs to at {prose}");
+    }
+
+    /// <summary>The re-seed is a one-way arrow INTO the model context: the cloud-synced chat must not grow a
+    /// tool row or a result body because a resume replayed one.</summary>
+    [Fact]
+    public async Task AReSeededExchange_DoesNotReachThePersistedChat()
+    {
+        using var h = new DurabilityHarness();
+        using var store = ExchangeStore(h);
+        h.Exchanges = store;
+        var run = await h.NewRunAsync("inventory report");
+
+        var captured = await RunThenResumeAsync(h, run,
+            [ToolCall("c1", "read_file", "inventory.csv"), ToolResult("c1", "SKU-1001,Blue Widget,4,10,3.50")]);
+        Assert.Contains("SKU-1001,Blue Widget,4,10,3.50", ResultBodies(captured[1]));
+
+        var chat = await h.Chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
+        Assert.DoesNotContain(chat!.Messages, m => m.Role == "tool");
+        Assert.DoesNotContain(chat.Messages, m => (m.Content ?? string.Empty).Contains("SKU-1001"));
+    }
+
+    /// <summary>A corrupt or unreachable store degrades ONE resume to prose-only — today's behaviour — instead
+    /// of failing every resume from the second await BeginRunAsync now makes.</summary>
+    [Fact]
+    public async Task AStoreFaultOnResume_DegradesToProseOnly_AndDoesNotFailTheRun()
+    {
+        using var h = new DurabilityHarness();
+        var faulting = Substitute.For<IAgentToolExchangeStore>();
+        faulting.ReadCarriedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Throws(new InvalidOperationException("read boom"));
+        h.Exchanges = faulting;
+        var run = await h.NewRunAsync("inventory report");
+
+        var captured = await RunThenResumeAsync(h, run,
+            [ToolCall("c1", "read_file", "inventory.csv"), ToolResult("c1", "SKU-1001")]);
+
+        var resumed = captured[1];
+        Assert.DoesNotContain(resumed.SelectMany(m => m.Contents), c => c is FunctionCallContent or FunctionResultContent);
+        Assert.True(IndexOfProse(resumed, "reply 1") >= 0, "the prose transcript was lost too");
+        Assert.Contains(h.ExecutorLog.Entries,
+            e => e.Level == LogLevel.Warning && e.Message.Contains("carried tool exchanges"));
+    }
+
+    private static string Shape(IEnumerable<List<ChatMessage>> requests) =>
+        string.Join("\n--\n", requests.Select(r => string.Join("\n", r.Select(Describe))));
+
+    private static string Describe(ChatMessage m) =>
+        m.Role + ": " + string.Join("|", m.Contents.Select(c => c switch
+        {
+            FunctionCallContent call => "call " + call.CallId + " " + call.Name,
+            FunctionResultContent result => "result " + result.CallId + " " + result.Result,
+            TextContent text => "text " + text.Text,
+            _ => c.GetType().Name,
+        }));
+
+    /// <summary>Wiring a store changes nothing on a path that never parks, so every existing carry fact keeps
+    /// meaning what it meant.</summary>
+    [Fact]
+    public async Task ANullExchangeStore_LeavesEveryExistingPathByteForByteUnchanged()
+    {
+        using var baseline = new DurabilityHarness();
+        var baseRun = await baseline.NewRunAsync("inventory report");
+        var withoutStore = await RunTwoStepsAsync(baseline, baseRun,
+            [ToolCall("c1", "read_file", "inventory.csv"), ToolResult("c1", "the csv rows")]);
+
+        using var h = new DurabilityHarness();
+        var inert = Substitute.For<IAgentToolExchangeStore>();
+        inert.ReadCarriedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<AgentToolExchangeRow>>([]));
+        h.Exchanges = inert;
+        var run = await h.NewRunAsync("inventory report");
+        var withStore = await RunTwoStepsAsync(h, run,
+            [ToolCall("c1", "read_file", "inventory.csv"), ToolResult("c1", "the csv rows")]);
+
+        Assert.Equal(Shape(withoutStore), Shape(withStore));
+    }
+
+    /// <summary>The compaction seam is downstream of the re-seed, so a tool-free turn still drops the pairs.</summary>
+    [Fact]
+    public async Task AToolFreeTurnAfterAResume_IsStillNotHandedTheReSeededExchanges()
+    {
+        using var h = new DurabilityHarness();
+        using var store = ExchangeStore(h);
+        h.Exchanges = store;
+        var run = await h.NewRunAsync("inventory report");
+        var ct = TestContext.Current.CancellationToken;
+
+        var captured = await RunThenResumeAsync(h, run,
+            [ToolCall("c1", "read_file", "inventory.csv"), ToolResult("c1", "the csv rows")]);
+        // The premise: the resumed step DID get the pair, so the grace turn's emptiness is the strip.
+        Assert.Contains("the csv rows", ResultBodies(captured[1]));
+
+        var ctx = new RunContext("inventory report", RunProfile.Interactive);
+        var grace = h.NewExecutor();
+        grace.Initialize(workspaceRoot: null, ["write_file"], h.Provider);
+        await grace.BeginRunAsync(run, ctx, ct);
+        await grace.RunGraceTurnAsync(run, ctx, ct);
+
+        Assert.DoesNotContain(captured[2].SelectMany(m => m.Contents), c => c is FunctionCallContent or FunctionResultContent);
+    }
+
+    /// <summary>Clearing still runs downstream of the re-seed, so the post-resume context budget is the
+    /// pre-park one — re-seeding full bodies does not defeat it.</summary>
+    [Fact]
+    public async Task PastTheKeptCount_AResumedRunStillClearsTheOldestResult()
+    {
+        using var h = new DurabilityHarness();
+        using var store = ExchangeStore(h);
+        h.Exchanges = store;
+        var run = await h.NewRunAsync("inventory report");
+
+        var rounds = Enumerable.Range(0, AgentToolCarryover.KeptResults + 1)
+            .Select(i => new[] { ToolCall("c" + i, "read_file", "f" + i + ".csv"), ToolResult("c" + i, "body " + i) })
+            .ToArray();
+
+        var captured = await RunThenResumeAsync(h, run, rounds);
+        var resumed = captured[1];
+
+        Assert.Contains("[result cleared; call read_file on f0.csv again if you need it]", ResultBodies(resumed));
+        Assert.DoesNotContain("body 0", ResultBodies(resumed));
+        Assert.Contains("body " + AgentToolCarryover.KeptResults, ResultBodies(resumed));
+    }
+
+    /// <summary>The detokenized rows must not outlive the run — and a park is not terminal, so it keeps them.</summary>
+    [Fact]
+    public async Task ATerminalSettle_PurgesTheRunsExchanges_ButAParkDoesNot()
+    {
+        using var h = new DurabilityHarness();
+        using var store = ExchangeStore(h);
+        h.Exchanges = store;
+        var run = await h.NewRunAsync("inventory report");
+        var ct = TestContext.Current.CancellationToken;
+        h.SupportsTools = true;
+        h.Ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
+            .Returns(_ => ++h.Turns == 1
+                ? DriveToolRounds("reply 1",
+                    [ToolCall("c1", "read_file", "inventory.csv"), ToolResult("c1", "the csv rows")])
+                : DriveText("reply 2"));
+
+        var ctx = new RunContext("inventory report", RunProfile.Interactive);
+        var executor = h.NewExecutor();
+        executor.Initialize(workspaceRoot: null, ["write_file"], h.Provider);
+        await executor.BeginRunAsync(run, ctx, ct);
+        await executor.ExecuteStepAsync(run, CarryStep(0), ctx, ct);
+
+        // A park never reaches EndRunAsync, which is exactly why the rows have to survive one.
+        Assert.NotEmpty(await store.ReadCarriedAsync(run.Id, ct));
+
+        await executor.EndRunAsync(run, ctx, cancelled: false, failed: false, ct);
+        Assert.Empty(await store.ReadCarriedAsync(run.Id, ct));
+    }
+
+    /// <summary>A stale anchor must not be able to silently drop a group: the split is total, so it lands at
+    /// the tail with the unanchored ones.</summary>
+    [Fact]
+    public async Task AnOrphanedAnchor_StillReachesTheModelContextAtTheTail()
+    {
+        using var h = new DurabilityHarness();
+        using var store = ExchangeStore(h);
+        h.Exchanges = store;
+        var run = await h.NewRunAsync("inventory report");
+        var ct = TestContext.Current.CancellationToken;
+
+        var orphanStep = Guid.NewGuid();
+        await store.RecordAsync(run.Id, orphanStep, 1,
+            [ToolCall("c9", "read_file", "orphan.csv"), ToolResult("c9", "the orphan rows")], ct);
+        await store.SealStepAsync(run.Id, orphanStep, Guid.NewGuid(), ct);
+
+        var captured = await RunThenResumeAsync(h, run,
+            [ToolCall("c1", "read_file", "inventory.csv"), ToolResult("c1", "the csv rows")]);
+        var resumed = captured[1];
+
+        Assert.Contains("the orphan rows", ResultBodies(resumed));
+        Assert.True(IndexOfResult(resumed, "the orphan rows") > IndexOfProse(resumed, "reply 1"),
+            "an orphaned group belongs at the tail, after every chat row");
+    }
+
+    // ---- the reported amnesia, reproduced through the REAL gate: park mid-step, resume, read the request ----
+
+    /// <summary>Routes <paramref name="toolName"/> as a DEFERRED write — the only shape that reaches the gate —
+    /// and every other call as a read, which short-circuits above it.</summary>
+    private static void ArmApprovalPark(DurabilityHarness h, string toolName)
+    {
+        // Explicit rather than left to the substitute default: an External class is refused instead of parked.
+        h.Plugins.IsMcpTool(Arg.Any<string>()).Returns(false);
+        h.Plugins.RouteToolCallAsync(Arg.Any<FunctionCallContent>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var call = ci.Arg<FunctionCallContent>();
+                if (!string.Equals(call.Name, toolName, StringComparison.Ordinal))
+                    return ((object? Result, PluginToolCall? PendingAction)?)(ReadRows(call), null);
+
+                return ((object? Result, PluginToolCall? PendingAction)?)(null, new PluginToolCall(
+                    call.Name, Guid.NewGuid(), "files", "write a file", null,
+                    () => Task.FromResult<object?>("written")));
+            });
+    }
+
+    private static string ReadRows(FunctionCallContent call) => "rows of " + call.Arguments?["path"];
+
+    /// <summary>One round put to the REAL gate, returning the call/result pair the production loop would have
+    /// captured — including a park, whose advisory comes back as the result.</summary>
+    private static async Task<ChatMessage[]> GateRoundAsync(
+        ToolCallHandler handler, ToolLoopStopSignal stop, int round, string callId, string tool, string path)
+    {
+        var call = new FunctionCallContent(callId, tool, new Dictionary<string, object?> { ["path"] = path });
+        var result = await handler(call, new ToolDispatchContext(round, stop));
+        return
+        [
+            new ChatMessage(ChatRole.Assistant, [call]),
+            new ChatMessage(ChatRole.Tool, [new FunctionResultContent(callId, result)]),
+        ];
+    }
+
+    /// <summary>One signal per round, and the round is yielded BEFORE the loop ends — that yield is the only
+    /// source of a pre-park exchange. The visible text still flows past a park.</summary>
+    private static async IAsyncEnumerable<ChatStreamItem> DriveGatedRounds(
+        ToolCallHandler handler, string answer, params (string CallId, string Tool, string Path)[] rounds)
+    {
+        await Task.Yield();
+        for (var i = 0; i < rounds.Length; i++)
+        {
+            var (callId, tool, path) = rounds[i];
+            var stop = new ToolLoopStopSignal();
+            yield return new ToolRoundCompleted();
+            yield return new ToolRoundExchange(i + 1, await GateRoundAsync(handler, stop, i + 1, callId, tool, path));
+            if (stop.IsStopRequested)
+                break;
+        }
+
+        yield return new TextDelta(answer);
+        yield return new Finished(null, "test-model");
+    }
+
+    /// <summary>Step 0 reads and completes; step 1 reads and then parks on an ungranted write; a FRESH executor
+    /// resumes it. The launch's result rides out so a fixture that stopped parking fails loudly.</summary>
+    private static async Task<(List<List<ChatMessage>> Requests, StepTurnResult Parked)> ParkThenResumeAsync(
+        DurabilityHarness h, AgentRun run)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        h.SupportsTools = true;
+        ArmApprovalPark(h, "write_file");
+        var captured = new List<List<ChatMessage>>();
+        h.Ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
+            .Returns(ci =>
+            {
+                captured.Add([.. (IList<ChatMessage>)ci[0]]);
+                var handler = ci.ArgAt<ToolCallHandler>(3);
+                return ++h.Turns switch
+                {
+                    1 => DriveGatedRounds(handler, "reply 1", ("c0", "read_file", "inventory.csv")),
+                    2 => DriveGatedRounds(handler, "reply 2",
+                        ("c1", "read_file", "orders.csv"), ("c2", "write_file", "report.md")),
+                    _ => DriveText("reply 3"),
+                };
+            });
+
+        var ctx = new RunContext(run.Goal ?? "goal", RunProfile.Interactive);
+        var step1 = CarryStep(1);
+        var launch = h.NewExecutor();
+        // grantedWrites EMPTY on purpose: nothing above the park arm in ToolAutonomy.Resolve may authorize it.
+        launch.Initialize(workspaceRoot: null, [], h.Provider, policy: null, canPark: true);
+        await launch.BeginRunAsync(run, ctx, ct);
+        await launch.ExecuteStepAsync(run, CarryStep(0), ctx, ct);
+        var parked = await launch.ExecuteStepAsync(run, step1, ctx, ct);
+
+        var resumed = h.NewExecutor();
+        resumed.Initialize(workspaceRoot: null, [], h.Provider, policy: null, canPark: true);
+        await resumed.BeginRunAsync(run, ctx, ct);
+        await resumed.ExecuteStepAsync(run, step1, ctx, ct);
+        // Both facts below index the RESUMED request, and one of them asserts an absence.
+        Assert.Equal(3, captured.Count);
+        return (captured, parked);
+    }
+
+    private static int IndexOfStepInstruction(List<ChatMessage> request) =>
+        request.FindIndex(m => m.Role == ChatRole.User && m.Text.StartsWith("Execute step ", StringComparison.Ordinal));
+
+    /// <summary>Pinned where the amnesia actually bit: the abandoned attempt's exchanges must reach the REBUILT
+    /// REQUEST, not merely the store — a row nobody sends is a row the model still does not have.</summary>
+    [Fact]
+    public async Task ParkedMidStep_TheResumedStepsRequestCarriesThePreParkToolExchange()
+    {
+        using var h = new DurabilityHarness();
+        using var store = ExchangeStore(h);
+        h.Exchanges = store;
+        var run = await h.NewRunAsync("inventory report");
+
+        var (requests, parked) = await ParkThenResumeAsync(h, run);
+
+        Assert.Equal("write_file", parked.ApprovalRequiredTool);
+        var resumed = requests[2];
+        Assert.Contains("rows of inventory.csv", ResultBodies(resumed));
+        Assert.Contains("rows of orders.csv", ResultBodies(resumed));
+        Assert.Equal(2, resumed.SelectMany(m => m.Contents).OfType<FunctionCallContent>().Count(c => c.Name == "read_file"));
+    }
+
+    /// <summary>The negative control, and what makes the fact above a regression test: without the store the
+    /// resumed step meets the prose alone, exactly as the reported run did.</summary>
+    [Fact]
+    public async Task ParkedMidStep_WithNoExchangeStore_TheResumedStepSeesProseAlone()
+    {
+        using var h = new DurabilityHarness();
+        var run = await h.NewRunAsync("inventory report");
+
+        var (requests, parked) = await ParkThenResumeAsync(h, run);
+
+        Assert.Equal("write_file", parked.ApprovalRequiredTool);
+        var resumed = requests[2];
+        Assert.DoesNotContain(resumed.SelectMany(m => m.Contents), c => c is FunctionCallContent or FunctionResultContent);
+        Assert.True(IndexOfProse(resumed, "reply 1") >= 0, "the prose transcript was lost too");
+    }
+
+    /// <summary>Order is the whole value: the completed step's pair sits before the reply it belongs to, and the
+    /// abandoned attempt's at the tail, where ClearOldResults' newest-by-position window keeps it verbatim.</summary>
+    [Fact]
+    public async Task ParkedMidStep_TheReSeededExchangesReadInTheOrderTheyHappened()
+    {
+        using var h = new DurabilityHarness();
+        using var store = ExchangeStore(h);
+        h.Exchanges = store;
+        var run = await h.NewRunAsync("inventory report");
+
+        var (requests, _) = await ParkThenResumeAsync(h, run);
+        var resumed = requests[2];
+
+        var stepZero = IndexOfResult(resumed, "rows of inventory.csv");
+        var prose = IndexOfProse(resumed, "reply 1");
+        var prePark = IndexOfResult(resumed, "rows of orders.csv");
+        var instruction = IndexOfStepInstruction(resumed);
+        Assert.True(stepZero >= 0 && prose > stepZero && prePark > prose && instruction > prePark,
+            $"step 0 at {stepZero}, reply at {prose}, pre-park at {prePark}, instruction at {instruction}");
+    }
+
+    /// <summary>The park/resume extension of CarriedToolExchanges_DoNotReachThePersistedChat: the payload is
+    /// model context only, and the chat that syncs to the cloud must not grow a tool row because a run parked.</summary>
+    [Fact]
+    public async Task ParkedMidStep_ThePayloadNeverReachesTheCloudSyncedChat()
+    {
+        using var h = new DurabilityHarness();
+        using var store = ExchangeStore(h);
+        h.Exchanges = store;
+        var run = await h.NewRunAsync("inventory report");
+
+        var (requests, _) = await ParkThenResumeAsync(h, run);
+        // The premise: the request DID carry both bodies, so the chat's emptiness is the guardrail holding.
+        Assert.Contains("rows of inventory.csv", ResultBodies(requests[2]));
+        Assert.Contains("rows of orders.csv", ResultBodies(requests[2]));
+
+        var chat = await h.Chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
+        // The resume settled and rewrote the chat, so the absences below are about a chat that was written.
+        Assert.Contains(chat!.Messages, m => (m.Content ?? string.Empty).Contains("reply 3"));
+        Assert.DoesNotContain(chat.Messages, m => m.Role == "tool");
+        Assert.DoesNotContain(chat.Messages, m => (m.Content ?? string.Empty).Contains("rows of "));
+    }
 }
