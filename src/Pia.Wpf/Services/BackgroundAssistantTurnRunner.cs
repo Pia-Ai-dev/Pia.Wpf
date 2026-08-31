@@ -238,6 +238,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                         Tokens = tokens,
                         ModelName = model,
                         ProviderName = providerName,
+                        IsProtectedRoute = exchange.Protected,
                         Persona = new SyncMessagePersona { Id = persona.Id, Name = persona.Name, Emoji = persona.Emoji },
                     },
                 ],
@@ -343,6 +344,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         int? tokens = null;
         string? model = null;
         string? providerLabel = null;
+        var protectedRoute = false;
         UsageDetails? usage = null;
         // A tool round just completed; the next TextDelta starts a fresh model turn built on the
         // tool result, not a continuation of whatever is already in textBuffer.
@@ -385,6 +387,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                     }
                     model = finished.Model;
                     providerLabel = finished.Provider;
+                    protectedRoute = finished.Protected;
                     break;
             }
         }
@@ -396,7 +399,9 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             visible = cleaned;
         }
 
-        return new ExchangeResult(visible, string.IsNullOrEmpty(thinking) ? null : thinking, usage, model, providerLabel, tokens, toolExchanges);
+        return new ExchangeResult(
+            visible, string.IsNullOrEmpty(thinking) ? null : thinking, usage, model, providerLabel, tokens,
+            toolExchanges, protectedRoute);
     }
 
     /// <summary>The post-processed output of one <see cref="RunExchangeAsync"/> call.</summary>
@@ -404,7 +409,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
     /// carries them into the next step. Already tokenized — they are what the model saw.</param>
     public sealed record ExchangeResult(
         string Visible, string? Thinking, UsageDetails? Usage, string? Model, string? Provider, int? Tokens,
-        IReadOnlyList<ChatMessage> ToolExchanges);
+        IReadOnlyList<ChatMessage> ToolExchanges, bool Protected = false);
 
     /// <summary>
     /// Headless tool dispatch: reads (tools that return an immediate result) always run; writes (tools that

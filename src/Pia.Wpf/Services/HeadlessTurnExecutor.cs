@@ -671,6 +671,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             Tokens = exchange.Tokens,
             ModelName = exchange.Model,
             ProviderName = exchange.Provider,
+            IsProtectedRoute = exchange.Protected,
             Persona = new SyncMessagePersona { Id = p.Persona.Id, Name = p.Persona.Name, Emoji = p.Persona.Emoji },
         });
 

@@ -76,6 +76,9 @@ public class SyncAssistantChatMessage
     /// <summary>Provider of <see cref="ModelName"/> (e.g. "OpenAI"); null for Pia Cloud and for messages saved before it was recorded.</summary>
     public string? ProviderName { get; set; }
 
+    /// <summary>The server routed this answer to the protected model (guardrail hit).</summary>
+    public bool IsProtectedRoute { get; set; }
+
     /// <summary>
     /// Persona that produced this (assistant) message; null for user messages and for
     /// messages saved before persona attribution existed. Old clients round-trip this

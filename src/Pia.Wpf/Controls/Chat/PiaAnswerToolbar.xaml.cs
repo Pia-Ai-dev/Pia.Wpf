@@ -30,6 +30,9 @@ public partial class PiaAnswerToolbar : UserControl
         DependencyProperty.Register(nameof(PersonaName), typeof(string), typeof(PiaAnswerToolbar),
             new PropertyMetadata(null, OnPersonaNameChanged));
 
+    public static readonly DependencyProperty IsProtectedRouteProperty =
+        DependencyProperty.Register(nameof(IsProtectedRoute), typeof(bool), typeof(PiaAnswerToolbar));
+
     private static readonly DependencyPropertyKey FooterSummaryKey =
         DependencyProperty.RegisterReadOnly(nameof(FooterSummary), typeof(string), typeof(PiaAnswerToolbar),
             new PropertyMetadata(string.Empty));
@@ -87,6 +90,12 @@ public partial class PiaAnswerToolbar : UserControl
     {
         get => (string?)GetValue(PersonaNameProperty);
         set => SetValue(PersonaNameProperty, value);
+    }
+
+    public bool IsProtectedRoute
+    {
+        get => (bool)GetValue(IsProtectedRouteProperty);
+        set => SetValue(IsProtectedRouteProperty, value);
     }
 
     public string FooterSummary => (string)GetValue(FooterSummaryProperty);

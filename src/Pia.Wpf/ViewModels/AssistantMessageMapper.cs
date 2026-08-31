@@ -21,6 +21,7 @@ internal static class AssistantMessageMapper
         Tokens = m.Stats?.Tokens,
         ModelName = m.Stats?.Model,
         ProviderName = m.Stats?.Provider,
+        IsProtectedRoute = m.IsProtectedRoute,
         Persona = m.Persona is { } p
             ? new SyncMessagePersona { Id = p.Id, Name = p.Name, Emoji = p.Emoji }
             : null,
@@ -36,6 +37,7 @@ internal static class AssistantMessageMapper
             message.Stats = new AnswerStats(dto.Tokens, dto.ModelName, dto.ProviderName);
         if (dto.Persona is { } p)
             message.Persona = new PersonaAttribution(p.Id, p.Name, p.Emoji);
+        message.IsProtectedRoute = dto.IsProtectedRoute;
         return message;
     }
 }

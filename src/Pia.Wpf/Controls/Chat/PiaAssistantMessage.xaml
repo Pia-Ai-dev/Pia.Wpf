@@ -1,10 +1,8 @@
 <UserControl x:Class="Pia.Controls.Chat.PiaAssistantMessage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:controls="clr-namespace:Pia.Controls"
              xmlns:chat="clr-namespace:Pia.Controls.Chat"
-             xmlns:loc="clr-namespace:Pia.Localization"
              x:Name="Root">
   <StackPanel>
 
@@ -64,31 +62,6 @@
       </StackPanel>
     </Border>
 
-    <!-- Protected-route indicator: neutral shield shown when the server routed this answer to the
-         protected/private model (guardrail HIT/ERROR). No outcome or model detail is exposed. Placed as a
-         sibling of the bubble (not inside the toolbar) so its visibility depends only on IsProtectedRoute,
-         never on the toolbar's own collapse rules (hidden while streaming / when the answer is empty). -->
-    <Border CornerRadius="9"
-            Padding="6,2"
-            Margin="0,8,0,0"
-            HorizontalAlignment="Left"
-            Background="{DynamicResource SurfaceBrush}"
-            ToolTip="{loc:Str Assistant_ProtectedRoute_Tooltip}"
-            Visibility="{Binding IsProtectedRoute, Converter={StaticResource BooleanToVisibilityConverter}}">
-      <StackPanel Orientation="Horizontal">
-        <ui:SymbolIcon Symbol="ShieldKeyhole24"
-                       FontSize="11"
-                       VerticalAlignment="Center"
-                       Foreground="{DynamicResource TextSubtleBrush}" />
-        <TextBlock Text="{loc:Str Assistant_ProtectedRoute_Label}"
-                   FontSize="10"
-                   FontWeight="SemiBold"
-                   Margin="4,0,0,0"
-                   VerticalAlignment="Center"
-                   Foreground="{DynamicResource TextSubtleBrush}" />
-      </StackPanel>
-    </Border>
-
     <!-- Sources — first three inline, the rest behind the "+N" dropdown -->
     <chat:PiaChipOverflowPanel ItemsSource="{Binding Sources}" Margin="0,10,0,0"
                                GroupName="Sources"
@@ -131,7 +104,8 @@
                            RateCommand="{Binding RateCommand, ElementName=Root}"
                            CommandParameter="{Binding}"
                            Stats="{Binding Stats}"
-                           PersonaName="{Binding Persona.Name}">
+                           PersonaName="{Binding Persona.Name}"
+                           IsProtectedRoute="{Binding IsProtectedRoute}">
       <chat:PiaAnswerToolbar.Style>
         <Style TargetType="chat:PiaAnswerToolbar">
           <Setter Property="Visibility" Value="Visible" />

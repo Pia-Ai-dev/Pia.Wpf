@@ -447,6 +447,7 @@ public class SqliteContext : IDisposable
                 PersonaName     TEXT,
                 PersonaEmoji    TEXT,
                 ProviderName    TEXT,
+                IsProtectedRoute INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (ChatId) REFERENCES AssistantChats(Id) ON DELETE CASCADE
             );
 
@@ -814,6 +815,7 @@ public class SqliteContext : IDisposable
         var hasPersonaName = false;
         var hasPersonaEmoji = false;
         var hasProviderName = false;
+        var hasIsProtectedRoute = false;
         using (var p = _connection!.CreateCommand())
         {
             p.CommandText = "PRAGMA table_info(AssistantChatMessages)";
@@ -825,6 +827,7 @@ public class SqliteContext : IDisposable
                 else if (col == "PersonaName") hasPersonaName = true;
                 else if (col == "PersonaEmoji") hasPersonaEmoji = true;
                 else if (col == "ProviderName") hasProviderName = true;
+                else if (col == "IsProtectedRoute") hasIsProtectedRoute = true;
             }
         }
         if (!hasPersonaId)
@@ -849,6 +852,13 @@ public class SqliteContext : IDisposable
         {
             using var addCol = _connection.CreateCommand();
             addCol.CommandText = "ALTER TABLE AssistantChatMessages ADD COLUMN ProviderName TEXT";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasIsProtectedRoute)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText =
+                "ALTER TABLE AssistantChatMessages ADD COLUMN IsProtectedRoute INTEGER NOT NULL DEFAULT 0";
             addCol.ExecuteNonQuery();
         }
 

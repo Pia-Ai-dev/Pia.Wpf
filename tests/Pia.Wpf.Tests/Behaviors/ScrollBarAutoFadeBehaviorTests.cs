@@ -19,9 +19,9 @@ namespace Pia.Tests.Behaviors;
 [Collection("WpfApplicationStatic")]
 public class ScrollBarAutoFadeBehaviorTests
 {
-    private const double Idle = 0.28;
+    private const double Idle = 0.2;
     private const double IdleThickness = 0.5;
-    private const double Active = 0.9;
+    private const double Active = 0.8;
     private static readonly TimeSpan SettleTimeout = TimeSpan.FromSeconds(6);
     private static readonly TimeSpan ShortWait = TimeSpan.FromMilliseconds(700);
 

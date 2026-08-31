@@ -251,9 +251,9 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             insertMessage.Transaction = transaction;
             insertMessage.CommandText = """
                 INSERT INTO AssistantChatMessages
-                    (Id, ChatId, Ordinal, Role, Content, ThinkingContent, Timestamp, Tokens, ModelName, PersonaId, PersonaName, PersonaEmoji, ProviderName)
+                    (Id, ChatId, Ordinal, Role, Content, ThinkingContent, Timestamp, Tokens, ModelName, PersonaId, PersonaName, PersonaEmoji, ProviderName, IsProtectedRoute)
                 VALUES
-                    (@Id, @ChatId, @Ordinal, @Role, @Content, @ThinkingContent, @Timestamp, @Tokens, @ModelName, @PersonaId, @PersonaName, @PersonaEmoji, @ProviderName)
+                    (@Id, @ChatId, @Ordinal, @Role, @Content, @ThinkingContent, @Timestamp, @Tokens, @ModelName, @PersonaId, @PersonaName, @PersonaEmoji, @ProviderName, @IsProtectedRoute)
                 """;
             insertMessage.Parameters.AddWithValue("@Id", msg.Id.ToString());
             insertMessage.Parameters.AddWithValue("@ChatId", chat.Id.ToString());
@@ -268,6 +268,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             insertMessage.Parameters.AddWithValue("@PersonaName", (object?)msg.Persona?.Name ?? DBNull.Value);
             insertMessage.Parameters.AddWithValue("@PersonaEmoji", (object?)msg.Persona?.Emoji ?? DBNull.Value);
             insertMessage.Parameters.AddWithValue("@ProviderName", (object?)msg.ProviderName ?? DBNull.Value);
+            insertMessage.Parameters.AddWithValue("@IsProtectedRoute", msg.IsProtectedRoute ? 1 : 0);
             await insertMessage.ExecuteNonQueryAsync(ct);
         }
 
@@ -871,7 +872,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, Role, Content, ThinkingContent, Timestamp, Tokens, ModelName, PersonaId, PersonaName, PersonaEmoji, ProviderName
+            SELECT Id, Role, Content, ThinkingContent, Timestamp, Tokens, ModelName, PersonaId, PersonaName, PersonaEmoji, ProviderName, IsProtectedRoute
             FROM AssistantChatMessages
             WHERE ChatId = @ChatId
             ORDER BY Ordinal ASC
@@ -901,6 +902,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
                 Tokens = reader.IsDBNull(5) ? null : reader.GetInt32(5),
                 ModelName = reader.IsDBNull(6) ? null : reader.GetString(6),
                 ProviderName = reader.IsDBNull(10) ? null : reader.GetString(10),
+                IsProtectedRoute = !reader.IsDBNull(11) && reader.GetInt32(11) != 0,
                 Persona = reader.IsDBNull(7)
                     ? null
                     : new SyncMessagePersona

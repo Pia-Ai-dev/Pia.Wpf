@@ -345,13 +345,37 @@
       </StackPanel>
     </StackPanel>
 
-    <TextBlock Grid.Column="1"
-               HorizontalAlignment="Right"
-               VerticalAlignment="Center"
-               Margin="8,0,4,0"
-               FontSize="11"
-               Foreground="{DynamicResource TextSubtleBrush}"
-               behaviors:EmojiTextBehavior.Text="{Binding FooterSummary, ElementName=Root}" />
+    <StackPanel Grid.Column="1"
+                Orientation="Horizontal"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Center">
+      <!-- Shown when the server routed this answer to the protected model (guardrail hit). -->
+      <Border CornerRadius="9"
+              Padding="6,2"
+              VerticalAlignment="Center"
+              Background="{DynamicResource SurfaceBrush}"
+              ToolTip="{loc:Str Assistant_ProtectedRoute_Tooltip}"
+              Visibility="{Binding IsProtectedRoute, ElementName=Root, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="ShieldKeyhole24"
+                         FontSize="11"
+                         VerticalAlignment="Center"
+                         Foreground="{DynamicResource TextSubtleBrush}" />
+          <TextBlock Text="{loc:Str Assistant_ProtectedRoute_Label}"
+                     FontSize="10"
+                     FontWeight="SemiBold"
+                     Margin="4,0,0,0"
+                     VerticalAlignment="Center"
+                     Foreground="{DynamicResource TextSubtleBrush}" />
+        </StackPanel>
+      </Border>
+
+      <TextBlock VerticalAlignment="Center"
+                 Margin="8,0,4,0"
+                 FontSize="11"
+                 Foreground="{DynamicResource TextSubtleBrush}"
+                 behaviors:EmojiTextBehavior.Text="{Binding FooterSummary, ElementName=Root}" />
+    </StackPanel>
   </Grid>
   </Border>
 </UserControl>
