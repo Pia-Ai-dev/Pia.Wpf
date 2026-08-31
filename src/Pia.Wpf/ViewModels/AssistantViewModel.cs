@@ -54,6 +54,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IMarkdownExportService _markdownExportService;
     private readonly IDialogService _dialogService;
     private readonly IFileDialogService? _fileDialogService;
+    private readonly IAgentToolExchangeStore? _toolCalls;
     private readonly IAiFeedbackService? _aiFeedback;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly IVolatileWorkStore? _volatileWork;
@@ -306,7 +307,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IAiFeedbackService? aiFeedback = null,
         // Trailing and defaulted, same discipline; null ⇒ the export dialog's External button has no picker,
         // so it does nothing rather than writing somewhere the user did not choose.
-        IFileDialogService? fileDialogService = null)
+        IFileDialogService? fileDialogService = null,
+        // Handed on to the run panel VM only, so a parked run can show the whole call it asked to make.
+        // Trailing and defaulted, same discipline; null ⇒ the panel offers no detail.
+        IAgentToolExchangeStore? toolCalls = null)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -341,6 +345,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _markdownExportService = markdownExportService;
         _dialogService = dialogService;
         _fileDialogService = fileDialogService;
+        _toolCalls = toolCalls;
         _uiDispatcher = uiDispatcher;
         _permissions = permissions;
         _runSteering = runSteering;
@@ -519,7 +524,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _runProgress = runId is { } id
             ? new RunProgressViewModel(_agentRunService, id, _localizationService, _resumeService, _logger,
                 _agentTimelineService, _runWorkspaces, _personaService, _steering, _themeService, _timelineWatcher,
-                _navigationService)
+                _navigationService, _toolCalls)
             : null;
         if (_runProgress is not null)
             _runProgress.RunSettled += OnRunProgressSettled;

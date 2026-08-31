@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Microsoft.Extensions.AI;
 
 namespace Pia.Services;
@@ -39,6 +39,68 @@ internal static class ToolApprovalArguments
     /// <summary>Every parked call's description as one envelope-sized line, or null when there is nothing to show.</summary>
     internal static string? Join(IReadOnlyList<string> descriptions) =>
         descriptions.Count == 0 ? null : Cap(string.Join(", ", descriptions), MaxTotalChars);
+
+    internal const int MaxDetailValueChars = 4000;
+    internal const int MaxDetailTotalChars = 8000;
+
+    /// <summary>The rendered call, and whether the display caps cut anything the store still holds.</summary>
+    internal readonly record struct Detail(string Text, bool Shortened);
+
+    /// <summary>
+    /// The persisted arguments object rendered one <c>key=value</c> per line for the disclosure surface, or null
+    /// when there is nothing to show. Malformed or non-object input is swallowed, as the envelope readers do.
+    /// </summary>
+    internal static Detail? DescribeDetail(string? argumentsJson)
+    {
+        if (string.IsNullOrWhiteSpace(argumentsJson))
+            return null;
+
+        JsonDocument doc;
+        try
+        {
+            doc = JsonDocument.Parse(argumentsJson);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        using (doc)
+        {
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return null;
+
+            var lines = new List<string>();
+            var budget = MaxDetailTotalChars;
+            var shortened = false;
+
+            foreach (var member in doc.RootElement.EnumerateObject())
+            {
+                // Non-string values are rendered rather than dropped, or a call with a numeric or array
+                // argument would read as partial here exactly as it does on the collapsed line.
+                var raw = member.Value.ValueKind == JsonValueKind.String
+                    ? member.Value.GetString() ?? string.Empty
+                    : member.Value.GetRawText();
+                // The RAW length: Cap returns max+1 chars, so a raw of exactly max+1 would read as un-shortened.
+                shortened |= raw.Length > MaxDetailValueChars;
+
+                var line = $"{member.Name}={Cap(raw, MaxDetailValueChars)}";
+                if (line.Length > budget)
+                {
+                    // Naming the argument costs nothing against the budget, so no argument is ever silently
+                    // dropped and a short decisive one after a huge one still renders in full.
+                    lines.Add($"{member.Name}=…");
+                    shortened = true;
+                    continue;
+                }
+
+                lines.Add(line);
+                budget -= line.Length;
+            }
+
+            return lines.Count == 0 ? null : new Detail(string.Join('\n', lines), shortened);
+        }
+    }
 
     private static string Cap(string value, int max) =>
         value.Length <= max ? value : value[..max] + "…";

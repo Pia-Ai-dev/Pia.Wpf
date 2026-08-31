@@ -1,4 +1,4 @@
-using System.Collections.Immutable;
+﻿using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -74,6 +74,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private readonly IAgentRunSteeringService? _steering;
     private readonly IThemeService? _themeService;
     private readonly ITimelineWatcher? _timelineWatcher;
+    private readonly IAgentToolExchangeStore? _toolCalls;
     private readonly ILogger _logger;
     private bool _disposed;
 
@@ -167,6 +168,36 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         : null;
 
     public bool HasApprovalTarget => ApprovalToolArguments is not null;
+
+    /// <summary>The parked call, one argument per line and capped for DISPLAY only — the store keeps the whole
+    /// payload. USER CONTENT: shown here, never logged.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasApprovalDetail))]
+    [NotifyPropertyChangedFor(nameof(ShowApprovalDetail))]
+    private string? _approvalDetailText;
+
+    /// <summary>The display caps cut something, so the panel can say the run still has the whole call.</summary>
+    [ObservableProperty]
+    private bool _isApprovalDetailShortened;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowApprovalDetail))]
+    [NotifyPropertyChangedFor(nameof(ApprovalDetailToggleLabel))]
+    private bool _isApprovalDetailExpanded;
+
+    public bool HasApprovalDetail => ApprovalDetailText is not null;
+
+    public bool ShowApprovalDetail => IsApprovalDetailExpanded && HasApprovalDetail;
+
+    public string ApprovalDetailToggleLabel =>
+        _localization[IsApprovalDetailExpanded ? "Run_ToolApproval_HideFullCall" : "Run_ToolApproval_ShowFullCall"];
+
+    [RelayCommand]
+    private void ToggleApprovalDetail() => IsApprovalDetailExpanded = !IsApprovalDetailExpanded;
+
+    /// <summary>The detail read, awaited by the facts rather than raced through <see cref="_uiContext"/>.</summary>
+    internal Task? ApprovalDetailLoadTask { get; private set; }
+
 
     /// <summary>True while the run is parked asking the user to approve its plan before any step runs.</summary>
     [ObservableProperty]
@@ -499,6 +530,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// </summary>
     private bool _settledTraceRead;
 
+    /// <summary>Latched on a ROW, never on an attempt — the park row may not be committed yet when the first
+    /// projection runs. Cleared with the park, so a second park reads again.</summary>
+    private bool _approvalDetailRead;
+
     /// <summary>
     /// G4 / plan a settled run whose isolated workspace still holds files nobody promoted —
     /// usually a FAILED or CANCELLED run, because a clean one promotes automatically before it is marked
@@ -677,8 +712,12 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         ITimelineWatcher? timelineWatcher = null,
         // Recovery actions — LAST again, same discipline. Null ⇒ no navigation, so the action button never
         // renders and the panel is byte-identical to one that only names the layer.
-        INavigationService? navigation = null)
+        INavigationService? navigation = null,
+        // The parked call's stored payload, for the approval disclosure — LAST again, same discipline.
+        // Null ⇒ no detail ever loads, i.e. the panel is byte-identical to one without the store.
+        IAgentToolExchangeStore? toolCalls = null)
     {
+        _toolCalls = toolCalls;
         _navigation = navigation;
         _themeService = themeService;
         _timelineWatcher = timelineWatcher;
@@ -781,6 +820,14 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         }
 
         _uiContext.Post(_ => Project(run, children), null); // marshal the mutation to the UI thread (G3)
+
+        // The stored call behind the park, read once per park and only while parked. Not folded into Project:
+        // it is a store read, and the panel is correct without it.
+        if (_toolCalls is not null && !_approvalDetailRead && ApprovalParkTool(run) is { } parkedTool
+            && ApprovalDetailLoadTask is not { IsCompleted: false })
+        {
+            ApprovalDetailLoadTask = LoadApprovalDetailAsync(parkedTool);
+        }
 
         // The workspace outcome is read in its OWN terminal-only branch, deliberately not folded
         // into Project above. DescribeAsync does a file read plus a directory enumeration, and RunChanged
@@ -1004,13 +1051,18 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
         // The deny beside Continue exists only for a tool-approval park — the one pause whose question a
         // person can answer "no". Read here, not in the XAML, so the button and the activity line agree.
-        var approvalTool = run.State == AgentRunState.WaitingForInput
-            && RunPauseEnvelope.ReadReason(run) == AgentRunOrchestrator.ToolApprovalReason
-            ? RunPauseEnvelope.ReadApprovalTool(run)
-            : null;
+        var approvalTool = ApprovalParkTool(run);
         IsToolApprovalPause = approvalTool is not null;
         ApprovalToolName = approvalTool;
         ApprovalToolArguments = approvalTool is null ? null : RunPauseEnvelope.ReadApprovalArgs(run);
+        if (approvalTool is null)
+        {
+            // Both resume claims clear the envelope, so a cleared park is the reliable end-of-park signal.
+            ApprovalDetailText = null;
+            IsApprovalDetailShortened = false;
+            IsApprovalDetailExpanded = false;
+            _approvalDetailRead = false;
+        }
         RefreshApprovalDerivation();
 
         IsPlanApprovalPause = run.State == AgentRunState.WaitingForInput
@@ -1697,6 +1749,51 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         PlanMutationOutcome.TooLong => "Run_Plan_Error_TooLong",
         _ => "Run_Plan_Error_WriteFailed", // WriteFailed, and any future member — never a silent success read
     };
+
+    /// <summary>The tool a run is parked on right now, or null. One reader, so the projection and the load
+    /// kick can never disagree about whether the run is parked.</summary>
+    private static string? ApprovalParkTool(AgentRun run) =>
+        run.State == AgentRunState.WaitingForInput
+        && RunPauseEnvelope.ReadReason(run) == AgentRunOrchestrator.ToolApprovalReason
+            ? RunPauseEnvelope.ReadApprovalTool(run)
+            : null;
+
+    /// <summary>Off the dispatcher, as <see cref="LoadTimelineAsync"/> is: the store takes its connection lock
+    /// and the row can carry half a megabyte.</summary>
+    private async Task LoadApprovalDetailAsync(string toolName)
+    {
+        AgentToolExchangeRow? row;
+        try
+        {
+            row = await Task.Run(() => _toolCalls!.GetParkedCallAsync(_runId, toolName));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run {RunId} parked call could not be read", _runId);
+            return;
+        }
+
+        if (row is null)
+            return;
+
+        _approvalDetailRead = true;
+        ApplyApprovalDetail(ToolApprovalArguments.DescribeDetail(row.ArgumentsJson), toolName);
+    }
+
+    /// <summary>The ONE place the detail's bound state is set, always on the UI thread.</summary>
+    private void ApplyApprovalDetail(ToolApprovalArguments.Detail? detail, string toolName)
+    {
+        _uiContext.Post(_ =>
+        {
+            // A resume that landed mid-read posts Project — which clears — ahead of this, so without the
+            // re-check the box would reappear on a run that is no longer asking.
+            if (!IsToolApprovalPause || !string.Equals(ApprovalToolName, toolName, StringComparison.Ordinal))
+                return;
+
+            ApprovalDetailText = detail?.Text;
+            IsApprovalDetailShortened = detail?.Shortened ?? false;
+        }, null);
+    }
 
     /// <summary>
     /// Read the run's tool-decision trace and project it. <c>internal</c> so the facts can await it directly

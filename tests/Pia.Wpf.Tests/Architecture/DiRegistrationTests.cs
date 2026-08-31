@@ -103,4 +103,18 @@ public class DiRegistrationTests
         Assert.Equal(ServiceLifetime.Singleton, store.Lifetime);
         Assert.Equal(typeof(Pia.Services.AgentToolExchangeStore), store.ImplementationType);
     }
+
+    /// <summary>A registered store nobody takes is invisible: the approval disclosure is DI-resolved and
+    /// binds to a default null, so dropping the parameter would hide the whole surface with nothing failing.</summary>
+    [Fact]
+    public void TheAssistantViewModel_StillTakesTheToolExchangeStore()
+    {
+        var ctor = typeof(Pia.ViewModels.AssistantViewModel)
+            .GetConstructors(BindingFlags.Public | BindingFlags.Instance)
+            .OrderByDescending(c => c.GetParameters().Length)
+            .First();
+
+        Assert.Contains(ctor.GetParameters(),
+            p => p.ParameterType == typeof(Pia.Services.Interfaces.IAgentToolExchangeStore));
+    }
 }
