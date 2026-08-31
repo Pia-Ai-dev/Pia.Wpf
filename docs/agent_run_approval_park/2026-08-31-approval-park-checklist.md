@@ -61,12 +61,12 @@ Two facts found while settling them, which override the wording of the steps bel
 
 ## B — Make a park hold the actual call
 
-- [ ] **B1 — Persist the parked call verbatim.** Name, arguments and call id, alongside today's display
+- [x] **B1 — Persist the parked call verbatim.** Name, arguments and call id, alongside today's display
   string, in whichever store gate Q1 settles on. *Deps:* Q1 · *Effort:* M · *Value:* Enabler
-- [ ] **B2 — Honour it on grant.** Either replay the granted call before the step re-runs, or seed the
+- [x] **B2 — Honour it on grant.** Either replay the granted call before the step re-runs, or seed the
   resumed step with it so the model reissues it verbatim — per gate Q2.
   *Deps:* B1, Q2 · *Effort:* M · *Value:* High
-- [ ] **B3 — Extend both to withheld calls.** The second and later calls in a parked exchange (the
+- [x] **B3 — Extend both to withheld calls.** The second and later calls in a parked exchange (the
   `create_source` in the reported run) must survive the same way, not just the one that parked.
   *Deps:* B2 · *Effort:* S · *Value:* High
 
