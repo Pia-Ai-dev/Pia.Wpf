@@ -123,7 +123,8 @@ public partial class PersonaEditModel : ObservableValidator
         "#FDD835", "#FFB300", "#FB8C00", "#FF6D00", "#8D6E63", "#607D8B",
     ];
 
-    public IReadOnlyList<ReasoningEffortChoice> ReasoningEffortOptions { get; } =
+    /// <summary>Shared with the persona detail pane, which renders the same label for a stored effort.</summary>
+    public static readonly IReadOnlyList<ReasoningEffortChoice> EffortChoices =
     [
         new(null, "(Provider default)"),
         new(ReasoningEffort.None, "None"),
@@ -133,6 +134,8 @@ public partial class PersonaEditModel : ObservableValidator
         new(ReasoningEffort.High, "High"),
         new(ReasoningEffort.XHigh, "X-High"),
     ];
+
+    public IReadOnlyList<ReasoningEffortChoice> ReasoningEffortOptions => EffortChoices;
 
     public bool CanSave => !string.IsNullOrWhiteSpace(Name) && !string.IsNullOrWhiteSpace(SystemPrompt);
 

@@ -63,7 +63,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
 
         OptimizeVm = new OptimizeSettingsViewModel(ProvidersVm, logger, templateService, settingsService, textOptimizationService, dialogService, snackbarService, localizationService, policyService, authService);
 
-        PersonasVm = new PersonaSettingsViewModel(logger, personaService, providerService, textOptimizationService, dialogService, snackbarService, localizationService, authService, settingsService, policyService);
+        PersonasVm = new PersonaSettingsViewModel(logger, personaService, providerService, textOptimizationService, snackbarService, localizationService, authService, settingsService, policyService);
 
         var toolPermissionsVm = new ToolPermissionsSettingsViewModel(toolPermissionService, pluginService, logger);
         var meetingVm = new MeetingSettingsViewModel(logger, settingsService, localizationService, policyService);

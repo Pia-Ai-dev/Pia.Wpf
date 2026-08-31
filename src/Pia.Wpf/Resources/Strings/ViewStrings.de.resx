@@ -728,6 +728,11 @@
   <data name="Personas_BuiltIn" xml:space="preserve"><value>Integriert</value></data>
   <data name="Personas_Managed" xml:space="preserve"><value>Verwaltet</value></data>
   <data name="Personas_ManagedTooltip" xml:space="preserve"><value>Von Ihrer Administration veröffentlicht. Duplizieren Sie sie, um eine bearbeitbare Kopie zu erstellen.</value></data>
+  <data name="Personas_Empty" xml:space="preserve"><value>Noch keine Personas.</value></data>
+  <data name="Personas_EmptyHint" xml:space="preserve"><value>Füge eine hinzu, um dem Assistenten eine eigene Identität, Stimme und Fachkenntnis zu geben.</value></data>
+  <data name="Personas_Placeholder" xml:space="preserve"><value>Wähle eine Persona, um zu sehen, was sie tut.</value></data>
+  <data name="Personas_PlaceholderHint" xml:space="preserve"><value>Oder füge eine neue hinzu, um die Antworten des Assistenten zu prägen.</value></data>
+  <data name="Personas_Detail_SystemPrompt" xml:space="preserve"><value>System-Prompt</value></data>
   <data name="Dialog_ModelDownload_Title" xml:space="preserve"><value>Modell wird vorbereitet</value></data>
   <data name="Dialog_ModelDownload_Message" xml:space="preserve"><value>Whisper-Modell wird heruntergeladen...</value></data>
   <data name="Dialog_ModelDownload_Downloading" xml:space="preserve"><value>{0} wird heruntergeladen...</value></data>

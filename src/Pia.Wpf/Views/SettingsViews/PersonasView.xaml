@@ -3,155 +3,624 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:controls="clr-namespace:Pia.Controls"
+             xmlns:shared="clr-namespace:Pia.Controls.Shared"
              xmlns:loc="clr-namespace:Pia.Localization">
-  <!-- Horizontal scroll disabled so the ColumnsPanel is measured at a finite width and can pick its column count. -->
-  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-    <StackPanel MaxWidth="1080" HorizontalAlignment="Left">
+  <UserControl.Resources>
+    <Style TargetType="ui:Button" BasedOn="{StaticResource PiaHandCursorButtonStyle}"/>
+  </UserControl.Resources>
 
-      <!-- Personas section header -->
-      <Grid Margin="0,0,0,8">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*"/>
-          <ColumnDefinition Width="Auto"/>
-        </Grid.ColumnDefinitions>
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+    </Grid.RowDefinitions>
+
+    <Grid Grid.Row="0" Margin="0,0,0,12">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+      <StackPanel Grid.Column="0">
         <TextBlock Text="{loc:Str Settings_Tab_Personas}"
                    FontSize="14"
                    FontWeight="SemiBold"
-                   Foreground="{DynamicResource TextDefaultBrush}"
-                   VerticalAlignment="Center"/>
-        <ui:Button Grid.Column="1"
-                   Appearance="Secondary"
-                   AutomationProperties.AutomationId="Personas_AddButton"
-                   AutomationProperties.Name="{loc:Str Personas_AddPersona}"
-                   Visibility="{Binding CanManagePersonas, Converter={StaticResource BooleanToVisibilityConverter}}"
-                   Command="{Binding AddPersonaCommand}">
-          <StackPanel Orientation="Horizontal">
-            <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,6,0"/>
-            <TextBlock Text="{loc:Str Personas_AddPersona}"/>
-          </StackPanel>
-        </ui:Button>
-        <TextBlock Grid.Column="1"
-                   Text="{loc:Str Settings_ManagedByOrganization}"
-                   AutomationProperties.AutomationId="Personas_ManagedNotice"
+                   Foreground="{DynamicResource TextDefaultBrush}"/>
+        <TextBlock Text="{loc:Str Personas_Subtitle}"
                    FontSize="12"
-                   VerticalAlignment="Center"
                    Foreground="{DynamicResource TextMutedBrush}"
-                   Visibility="{Binding CanManagePersonas, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
-      </Grid>
-
-      <TextBlock Text="{loc:Str Personas_Subtitle}"
+                   TextWrapping="Wrap"
+                   Margin="0,2,0,0"/>
+      </StackPanel>
+      <ui:Button Grid.Column="1"
+                 Appearance="Secondary"
+                 VerticalAlignment="Top"
+                 AutomationProperties.AutomationId="Personas_AddButton"
+                 AutomationProperties.Name="{loc:Str Personas_AddPersona}"
+                 Visibility="{Binding CanManagePersonas, Converter={StaticResource BooleanToVisibilityConverter}}"
+                 Command="{Binding AddPersonaCommand}">
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,6,0"/>
+          <TextBlock Text="{loc:Str Personas_AddPersona}"/>
+        </StackPanel>
+      </ui:Button>
+      <TextBlock Grid.Column="1"
+                 Text="{loc:Str Settings_ManagedByOrganization}"
+                 AutomationProperties.AutomationId="Personas_ManagedNotice"
                  FontSize="12"
+                 VerticalAlignment="Center"
                  Foreground="{DynamicResource TextMutedBrush}"
-                 TextWrapping="Wrap"
-                 Margin="0,0,0,12"/>
+                 Visibility="{Binding CanManagePersonas, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+    </Grid>
 
-      <ItemsControl ItemsSource="{Binding Personas}">
-        <ItemsControl.ItemsPanel>
-          <ItemsPanelTemplate>
-            <controls:ColumnsPanel MaxColumns="3" MinColumnWidth="260" ColumnSpacing="10" RowSpacing="10" UniformRowHeight="True" />
-          </ItemsPanelTemplate>
-        </ItemsControl.ItemsPanel>
-        <ItemsControl.ItemTemplate>
-          <DataTemplate>
-            <Border Style="{StaticResource PiaSettingsCardStyle}"
-                    Padding="14,12">
-              <DockPanel LastChildFill="False">
-                <StackPanel DockPanel.Dock="Top">
-                <StackPanel Orientation="Horizontal">
-                  <controls:PersonaGlyph PersonaId="{Binding Id}"
-                                         Emoji="{Binding Emoji}"
-                                         GlyphSize="16"
-                                         VerticalAlignment="Center"
-                                         Margin="0,0,8,0"/>
-                  <TextBlock FontSize="14"
-                             FontWeight="SemiBold"
+    <Grid Grid.Row="1">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="340"/>
+        <ColumnDefinition Width="14"/>
+        <ColumnDefinition Width="*"/>
+      </Grid.ColumnDefinitions>
+
+      <Grid Grid.Column="0">
+        <shared:PiaEmptyState Symbol="Person24"
+                              Title="{loc:Str Personas_Empty}"
+                              Hint="{loc:Str Personas_EmptyHint}"
+                              Visibility="{Binding HasPersonas, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+
+        <ListBox ItemsSource="{Binding Personas}"
+                 SelectedItem="{Binding SelectedPersona, Mode=TwoWay}"
+                 BorderThickness="0"
+                 Background="Transparent"
+                 Padding="0,0,4,0"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 AutomationProperties.AutomationId="Personas_List"
+                 Visibility="{Binding HasPersonas, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <ListBox.ItemContainerStyle>
+            <!-- Named and identified on the CONTAINER, which is the node UIA offers for a row: without these
+                 every row reports the view-model's ToString() and can only be reached by index. -->
+            <Style TargetType="ListBoxItem" BasedOn="{StaticResource PiaMemoryRowItemStyle}">
+              <Setter Property="AutomationProperties.AutomationId" Value="{Binding Id, StringFormat='Personas_Row_{0}'}"/>
+              <Setter Property="AutomationProperties.Name" Value="{Binding Name}"/>
+            </Style>
+          </ListBox.ItemContainerStyle>
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <Border Style="{StaticResource PiaMasterRowCardStyle}">
+                <StackPanel>
+                  <StackPanel Orientation="Horizontal">
+                    <controls:PersonaGlyph PersonaId="{Binding Id}"
+                                           Emoji="{Binding Emoji}"
+                                           GlyphSize="16"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,8,0"/>
+                    <TextBlock Text="{Binding Name}"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource TextDefaultBrush}"/>
+                    <!-- Accent colour swatch (hidden when the persona has no accent set). -->
+                    <Ellipse Width="10"
+                             Height="10"
+                             Margin="8,0,0,0"
                              VerticalAlignment="Center"
-                             Foreground="{DynamicResource TextDefaultBrush}"
-                             Text="{Binding Name}"/>
-                  <!-- Accent colour swatch (hidden when the persona has no accent set). -->
-                  <Ellipse Width="10"
-                           Height="10"
-                           Margin="8,0,0,0"
-                           VerticalAlignment="Center"
-                           Fill="{Binding AccentColor, Converter={StaticResource HexToBrushConverter}}"
-                           Stroke="{DynamicResource BorderBrush_}"
-                           StrokeThickness="1"
-                           Visibility="{Binding AccentColor, Converter={StaticResource NullToVisibilityConverter}}"
-                           ToolTip="{Binding AccentColor}"/>
-                </StackPanel>
-                <TextBlock Text="{Binding Tagline}"
-                           FontSize="12"
-                           Foreground="{DynamicResource TextMutedBrush}"
-                           Margin="0,2,0,0"
-                           TextWrapping="Wrap"/>
-                </StackPanel>
-                <DockPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
-                  <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                    <ui:Button Command="{Binding DataContext.DuplicatePersonaCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                               CommandParameter="{Binding}"
-                               Appearance="Secondary"
-                               Height="30"
-                               Padding="8,0"
-                               FontSize="12"
-                               Margin="0,0,4,0"
-                               AutomationProperties.Name="{loc:Str Personas_Duplicate}"
-                               AutomationProperties.AutomationId="{Binding Id, StringFormat='Persona_Duplicate_{0}'}">
-                      <StackPanel Orientation="Horizontal">
-                        <ui:SymbolIcon Symbol="Copy24" FontSize="14" Margin="0,0,4,0"/>
-                        <TextBlock Text="{loc:Str Personas_Duplicate}" FontSize="12"/>
-                      </StackPanel>
-                    </ui:Button>
-                    <ui:Button Command="{Binding DataContext.EditPersonaCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                               CommandParameter="{Binding}"
-                               Appearance="Secondary"
-                               Width="30"
-                               Height="30"
-                               Padding="0"
-                               Margin="0,0,4,0"
-                               AutomationProperties.Name="{loc:Str Common_Edit}"
-                               AutomationProperties.AutomationId="{Binding Id, StringFormat='Persona_Edit_{0}'}"
-                               Visibility="{Binding IsReadOnly, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-                      <ui:SymbolIcon Symbol="Edit24" FontSize="14"/>
-                      <ui:Button.ToolTip>
-                        <ToolTip Content="{loc:Str Common_Edit}"/>
-                      </ui:Button.ToolTip>
-                    </ui:Button>
-                    <ui:Button Command="{Binding DataContext.DeletePersonaCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                               CommandParameter="{Binding}"
-                               Appearance="Secondary"
-                               Width="30"
-                               Height="30"
-                               Padding="0"
-                               AutomationProperties.Name="{loc:Str Common_Delete}"
-                               AutomationProperties.AutomationId="{Binding Id, StringFormat='Persona_Delete_{0}'}"
-                               Visibility="{Binding IsReadOnly, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-                      <ui:SymbolIcon Symbol="Delete24" FontSize="14"
-                                     Foreground="{DynamicResource PiaDangerBrush}"/>
-                      <ui:Button.ToolTip>
-                        <ToolTip Content="{loc:Str Common_Delete}"/>
-                      </ui:Button.ToolTip>
-                    </ui:Button>
+                             Fill="{Binding AccentColor, Converter={StaticResource HexToBrushConverter}}"
+                             Stroke="{DynamicResource BorderBrush_}"
+                             StrokeThickness="1"
+                             Visibility="{Binding AccentColor, Converter={StaticResource NullToVisibilityConverter}}"
+                             ToolTip="{Binding AccentColor}"/>
                   </StackPanel>
-                  <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+
+                  <TextBlock Text="{Binding Tagline}"
+                             Margin="0,8,0,0"
+                             FontSize="12"
+                             TextTrimming="CharacterEllipsis"
+                             Foreground="{DynamicResource TextSubtleBrush}"
+                             Visibility="{Binding Tagline, Converter={StaticResource NullToVisibilityConverter}}"/>
+
+                  <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <TextBlock Text="{Binding Archetype}" Style="{StaticResource PiaMetaTextStyle}"/>
                     <ui:Badge Content="{loc:Str Personas_BuiltIn}"
                               Visibility="{Binding IsBuiltIn, Converter={StaticResource BooleanToVisibilityConverter}}"
                               Appearance="Caution"
-                              Margin="0,0,8,0"/>
+                              Margin="8,0,0,0"/>
                     <!-- Managed = admin-published. Info rather than the built-in badge's Caution, so the
-                         two read as different kinds of read-only at a glance. The tooltip is where the
-                         escape hatch (Duplicate, still visible above) is spelled out. -->
+                         two read as different kinds of read-only at a glance. -->
                     <ui:Badge Content="{loc:Str Personas_Managed}"
                               Visibility="{Binding IsManaged, Converter={StaticResource BooleanToVisibilityConverter}}"
                               Appearance="Info"
-                              Margin="0,0,8,0"
+                              Margin="8,0,0,0"
                               ToolTip="{loc:Str Personas_ManagedTooltip}"/>
                   </StackPanel>
-                </DockPanel>
-              </DockPanel>
-            </Border>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-    </StackPanel>
-  </ScrollViewer>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
+
+      <!-- Right pane, three states: the editor, the selected persona, or the placeholder. -->
+      <Border Grid.Column="2"
+              Style="{StaticResource PiaCardStyle}"
+              Padding="16">
+        <Grid>
+          <shared:PiaEmptyState Symbol="Person24"
+                                Title="{loc:Str Personas_Placeholder}"
+                                Hint="{loc:Str Personas_PlaceholderHint}"
+                                Visibility="{Binding ShowsPlaceholder, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
+          <ScrollViewer VerticalScrollBarVisibility="Auto"
+                        Visibility="{Binding ShowsDetail, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <StackPanel Margin="0,0,10,0">
+              <StackPanel Orientation="Horizontal">
+                <controls:PersonaGlyph PersonaId="{Binding SelectedPersona.Id}"
+                                       Emoji="{Binding SelectedPersona.Emoji}"
+                                       GlyphSize="22"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,10,0"/>
+                <TextBlock Text="{Binding SelectedPersona.Name}"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextDefaultBrush}"/>
+                <Ellipse Width="12"
+                         Height="12"
+                         Margin="10,0,0,0"
+                         VerticalAlignment="Center"
+                         Fill="{Binding SelectedPersona.AccentColor, Converter={StaticResource HexToBrushConverter}}"
+                         Stroke="{DynamicResource BorderBrush_}"
+                         StrokeThickness="1"
+                         Visibility="{Binding SelectedPersona.AccentColor, Converter={StaticResource NullToVisibilityConverter}}"
+                         ToolTip="{Binding SelectedPersona.AccentColor}"/>
+                <ui:Badge Content="{loc:Str Personas_BuiltIn}"
+                          Visibility="{Binding SelectedPersona.IsBuiltIn, Converter={StaticResource BooleanToVisibilityConverter}}"
+                          Appearance="Caution"
+                          VerticalAlignment="Center"
+                          Margin="10,0,0,0"/>
+                <ui:Badge Content="{loc:Str Personas_Managed}"
+                          Visibility="{Binding SelectedPersona.IsManaged, Converter={StaticResource BooleanToVisibilityConverter}}"
+                          Appearance="Info"
+                          VerticalAlignment="Center"
+                          Margin="10,0,0,0"
+                          ToolTip="{loc:Str Personas_ManagedTooltip}"/>
+              </StackPanel>
+
+              <TextBlock Text="{Binding SelectedPersona.Tagline}"
+                         Style="{StaticResource PiaDetailValueStyle}"
+                         Margin="0,8,0,0"
+                         Visibility="{Binding SelectedPersona.Tagline, Converter={StaticResource NullToVisibilityConverter}}"/>
+
+              <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                <TextBlock Text="{Binding SelectedPersona.Archetype}" Style="{StaticResource PiaMetaTextStyle}"/>
+                <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"/>
+                <TextBlock Text="{Binding SelectedPersona.ModelType}" Style="{StaticResource PiaMetaTextStyle}"/>
+                <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"/>
+                <TextBlock Text="{Binding SelectedPersona.ToolScope}" Style="{StaticResource PiaMetaTextStyle}"/>
+              </StackPanel>
+
+              <Border Style="{StaticResource PiaRequiredHintStyle}"
+                      Margin="0,14,0,0"
+                      Visibility="{Binding SelectedPersona.IsManaged, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <TextBlock Text="{loc:Str Personas_ManagedTooltip}"
+                           AutomationProperties.AutomationId="Personas_Detail_ManagedNotice"
+                           TextWrapping="Wrap"/>
+              </Border>
+
+              <TextBlock Text="{loc:Str Personas_Detail_SystemPrompt}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"/>
+              <TextBlock Text="{Binding SelectedPersona.SystemPrompt}"
+                         Style="{StaticResource PiaDetailValueStyle}"
+                         TextWrapping="Wrap"
+                         AutomationProperties.AutomationId="Personas_Detail_SystemPrompt"/>
+
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_Guardrails}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"
+                         Visibility="{Binding SelectedPersona.Guardrails, Converter={StaticResource NullToVisibilityConverter}}"/>
+              <TextBlock Text="{Binding SelectedPersona.Guardrails}"
+                         Style="{StaticResource PiaDetailValueStyle}"
+                         TextWrapping="Wrap"
+                         Visibility="{Binding SelectedPersona.Guardrails, Converter={StaticResource NullToVisibilityConverter}}"/>
+
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_OutputFormat}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"
+                         Visibility="{Binding SelectedPersona.OutputFormat, Converter={StaticResource NullToVisibilityConverter}}"/>
+              <TextBlock Text="{Binding SelectedPersona.OutputFormat}"
+                         Style="{StaticResource PiaDetailValueStyle}"
+                         TextWrapping="Wrap"
+                         Visibility="{Binding SelectedPersona.OutputFormat, Converter={StaticResource NullToVisibilityConverter}}"/>
+
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_Expertise}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"
+                         Visibility="{Binding SelectedExpertise, Converter={StaticResource NullToVisibilityConverter}}"/>
+              <TextBlock Text="{Binding SelectedExpertise}"
+                         Style="{StaticResource PiaDetailValueStyle}"
+                         TextWrapping="Wrap"
+                         Visibility="{Binding SelectedExpertise, Converter={StaticResource NullToVisibilityConverter}}"/>
+
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_Provider}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"
+                         Visibility="{Binding SelectedProviderName, Converter={StaticResource NullToVisibilityConverter}}"/>
+              <TextBlock Text="{Binding SelectedProviderName}"
+                         Style="{StaticResource PiaDetailValueStyle}"
+                         Visibility="{Binding SelectedProviderName, Converter={StaticResource NullToVisibilityConverter}}"/>
+
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_ReasoningEffort}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"
+                         Visibility="{Binding SelectedEffortLabel, Converter={StaticResource NullToVisibilityConverter}}"/>
+              <TextBlock Text="{Binding SelectedEffortLabel}"
+                         Style="{StaticResource PiaDetailValueStyle}"
+                         Visibility="{Binding SelectedEffortLabel, Converter={StaticResource NullToVisibilityConverter}}"/>
+
+              <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
+                <ui:Button Content="{loc:Str Common_Edit}"
+                           Icon="{ui:SymbolIcon Edit24}"
+                           Appearance="Secondary"
+                           Margin="0,0,8,0"
+                           AutomationProperties.AutomationId="Personas_Detail_Edit"
+                           Visibility="{Binding SelectedPersona.IsReadOnly, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
+                           Command="{Binding EditSelectedCommand}"/>
+                <!-- Always offered: on a built-in or managed persona this is the only way to get an editable copy. -->
+                <ui:Button Content="{loc:Str Personas_Duplicate}"
+                           Icon="{ui:SymbolIcon Copy24}"
+                           Appearance="Secondary"
+                           Margin="0,0,8,0"
+                           AutomationProperties.AutomationId="Personas_Detail_Duplicate"
+                           Command="{Binding DuplicateSelectedCommand}"/>
+                <ui:Button Content="{loc:Str Common_Delete}"
+                           Icon="{ui:SymbolIcon Delete24}"
+                           Appearance="Secondary"
+                           Foreground="{DynamicResource PiaDangerBrush}"
+                           AutomationProperties.AutomationId="Personas_Detail_Delete"
+                           Visibility="{Binding SelectedPersona.IsReadOnly, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
+                           Command="{Binding DeleteSelectedCommand}"/>
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+
+          <ScrollViewer x:Name="EditorScroller"
+                        VerticalScrollBarVisibility="Auto"
+                        ScrollChanged="EditorScroller_ScrollChanged"
+                        IsVisibleChanged="EditorPane_IsVisibleChanged"
+                        Visibility="{Binding IsEditorOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <StackPanel Margin="0,0,10,0" DataContext="{Binding Editor}">
+
+              <!-- The Save button is bound to CanSave rather than disabled by CanExecute, so the reason has to
+                   live here. A Border/TextBlock rather than ui:InfoBar, which renders but exposes no automation peer. -->
+              <Border Style="{StaticResource PiaRequiredHintStyle}"
+                      Visibility="{Binding CanSave, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                <TextBlock Text="{loc:Str Dialog_Edit_RequiredHint}"
+                           AutomationProperties.AutomationId="Dialog_RequiredHint"
+                           TextWrapping="Wrap"/>
+              </Border>
+
+              <!-- AI-assist: draft from a description -->
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_Describe}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_DescribeHint}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"
+                         Margin="0,2,0,4"/>
+              <ui:TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"
+                          TextWrapping="Wrap"
+                          AcceptsReturn="True"
+                          MinHeight="60"
+                          IsReadOnly="{Binding IsGenerating}"
+                          AutomationProperties.AutomationId="PersonaEdit_Description"
+                          Margin="0,0,0,8"/>
+              <ui:Button Command="{Binding GenerateDraftCommand}"
+                         IsEnabled="{Binding IsGenerating, Converter={StaticResource InverseBooleanConverter}}"
+                         AutomationProperties.AutomationId="PersonaEdit_GenerateDraft"
+                         HorizontalAlignment="Left"
+                         Margin="0,0,0,16">
+                <Grid>
+                  <StackPanel Orientation="Horizontal"
+                              Visibility="{Binding IsGenerating, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                    <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,8,0"/>
+                    <TextBlock Text="{loc:Str Dialog_PersonaEdit_Draft}"/>
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal"
+                              Visibility="{Binding IsGenerating, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16" Margin="0,0,8,0"/>
+                    <TextBlock Text="{loc:Str Dialog_PersonaEdit_Drafting}"/>
+                  </StackPanel>
+                </Grid>
+              </ui:Button>
+
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_Name}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <ui:TextBox x:Name="EditorNameBox"
+                          Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                          AutomationProperties.AutomationId="PersonaEdit_Name"
+                          Margin="0,2,0,8"/>
+
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_Tagline}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <ui:TextBox Text="{Binding Tagline, UpdateSourceTrigger=PropertyChanged}"
+                          AutomationProperties.AutomationId="PersonaEdit_Tagline"
+                          Margin="0,2,0,8"/>
+
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_SystemPrompt}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_SystemPromptHint}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"
+                         Margin="0,2,0,4"/>
+              <ui:TextBox Text="{Binding SystemPrompt, UpdateSourceTrigger=PropertyChanged}"
+                          TextWrapping="Wrap"
+                          AcceptsReturn="True"
+                          MinHeight="120"
+                          IsReadOnly="{Binding IsGenerating}"
+                          AutomationProperties.AutomationId="PersonaEdit_SystemPrompt"
+                          Margin="0,0,0,8"/>
+
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_Guardrails}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_GuardrailsHint}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"
+                         Margin="0,2,0,4"/>
+              <ui:TextBox Text="{Binding Guardrails, UpdateSourceTrigger=PropertyChanged}"
+                          TextWrapping="Wrap"
+                          AcceptsReturn="True"
+                          MinHeight="60"
+                          AutomationProperties.AutomationId="PersonaEdit_Guardrails"
+                          Margin="0,0,0,8"/>
+
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_OutputFormat}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_OutputFormatHint}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"
+                         Margin="0,2,0,4"/>
+              <ui:TextBox Text="{Binding OutputFormat, UpdateSourceTrigger=PropertyChanged}"
+                          TextWrapping="Wrap"
+                          AcceptsReturn="True"
+                          MinHeight="96"
+                          IsReadOnly="{Binding IsGenerating}"
+                          AutomationProperties.AutomationId="PersonaEdit_OutputFormat"
+                          Margin="0,0,0,8"/>
+
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_Archetype}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <ComboBox ItemsSource="{Binding ArchetypeOptions}"
+                        SelectedItem="{Binding Archetype}"
+                        HorizontalAlignment="Left" Width="240"
+                        AutomationProperties.AutomationId="PersonaEdit_Archetype"
+                        AutomationProperties.Name="{loc:Str Dialog_PersonaEdit_Archetype}"
+                        Margin="0,2,0,8"/>
+
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_ModelType}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <ComboBox ItemsSource="{Binding ModelTypeOptions}"
+                        Text="{Binding ModelType, UpdateSourceTrigger=PropertyChanged}"
+                        IsEditable="True"
+                        HorizontalAlignment="Left" Width="240"
+                        AutomationProperties.AutomationId="PersonaEdit_ModelType"
+                        AutomationProperties.Name="{loc:Str Dialog_PersonaEdit_ModelType}"
+                        Margin="0,2,0,8"/>
+
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_ToolScope}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <ComboBox ItemsSource="{Binding ToolScopeOptions}"
+                        SelectedItem="{Binding ToolScope}"
+                        HorizontalAlignment="Left" Width="240"
+                        AutomationProperties.AutomationId="PersonaEdit_ToolScope"
+                        AutomationProperties.Name="{loc:Str Dialog_PersonaEdit_ToolScope}"
+                        Margin="0,2,0,8"/>
+
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_Expertise}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_ExpertiseHint}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"
+                         Margin="0,2,0,4"/>
+              <ui:TextBox Text="{Binding Expertise, UpdateSourceTrigger=PropertyChanged}"
+                          AutomationProperties.AutomationId="PersonaEdit_Expertise"
+                          Margin="0,0,0,8"/>
+
+              <!-- Emoji + accent colour (each opens a popup picker) -->
+              <Grid Margin="0,0,0,8" HorizontalAlignment="Left" Width="496">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="240"/>
+                  <ColumnDefinition Width="16"/>
+                  <ColumnDefinition Width="240"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0">
+                  <TextBlock Text="{loc:Str Dialog_PersonaEdit_Emoji}"
+                             Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                  <ToggleButton x:Name="EmojiToggle"
+                                Style="{StaticResource PiaPickerToggleStyle}"
+                                AutomationProperties.AutomationId="PersonaEdit_EmojiPicker"
+                                AutomationProperties.Name="{loc:Str Dialog_PersonaEdit_Emoji}"
+                                Margin="0,2,0,0">
+                    <Grid>
+                      <controls:EmojiPresenter Emoji="{Binding Emoji}"
+                                               GlyphSize="16"
+                                               Visibility="{Binding Emoji, Converter={StaticResource NullToVisibilityConverter}}"/>
+                      <controls:EmojiPresenter Emoji="🙂"
+                                               GlyphSize="16"
+                                               Opacity="0.4"
+                                               Visibility="{Binding Emoji, Converter={StaticResource InverseNullToVisibilityConverter}}"/>
+                    </Grid>
+                  </ToggleButton>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2">
+                  <TextBlock Text="{loc:Str Dialog_PersonaEdit_AccentColor}"
+                             Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                  <ToggleButton x:Name="ColorToggle"
+                                Style="{StaticResource PiaPickerToggleStyle}"
+                                AutomationProperties.AutomationId="PersonaEdit_ColorPicker"
+                                AutomationProperties.Name="{loc:Str Dialog_PersonaEdit_AccentColor}"
+                                Margin="0,2,0,0">
+                    <StackPanel Orientation="Horizontal">
+                      <Ellipse Width="16" Height="16"
+                               Margin="0,0,8,0"
+                               StrokeThickness="1"
+                               Stroke="{DynamicResource BorderBrush_}"
+                               Fill="{Binding AccentColor, Converter={StaticResource HexToBrushConverter}}"/>
+                      <Grid VerticalAlignment="Center">
+                        <TextBlock Text="{Binding AccentColor}"
+                                   Visibility="{Binding AccentColor, Converter={StaticResource NullToVisibilityConverter}}"/>
+                        <TextBlock Text="#RRGGBB"
+                                   Opacity="0.4"
+                                   Visibility="{Binding AccentColor, Converter={StaticResource InverseNullToVisibilityConverter}}"/>
+                      </Grid>
+                    </StackPanel>
+                  </ToggleButton>
+                </StackPanel>
+              </Grid>
+
+              <!-- Emoji picker popup: custom-entry field + quick-pick grid -->
+              <Popup x:Name="EmojiPopup"
+                     PlacementTarget="{Binding ElementName=EmojiToggle}"
+                     Placement="Bottom"
+                     StaysOpen="False"
+                     AllowsTransparency="True"
+                     PopupAnimation="Fade"
+                     IsOpen="{Binding IsChecked, ElementName=EmojiToggle, Mode=TwoWay}">
+                <Border Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{DynamicResource BorderBrush_}"
+                        BorderThickness="1"
+                        CornerRadius="10"
+                        Margin="0,6,0,0"
+                        Padding="10"
+                        Width="280">
+                  <Border.Effect>
+                    <DropShadowEffect Color="#0F1729" Opacity="0.25" BlurRadius="16" ShadowDepth="3"/>
+                  </Border.Effect>
+                  <StackPanel>
+                    <ui:TextBox Text="{Binding Emoji, UpdateSourceTrigger=PropertyChanged}"
+                                FontFamily="{StaticResource EmojiCapableFontFamily}"
+                                MaxLength="8"
+                                PlaceholderText="🙂"
+                                AutomationProperties.AutomationId="PersonaEdit_EmojiText"
+                                Margin="0,0,0,8"/>
+                    <ItemsControl ItemsSource="{Binding EmojiChoices}"
+                                  ButtonBase.Click="OnEmojiPicked">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <WrapPanel/>
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <Button Style="{StaticResource PiaEmojiSwatchButtonStyle}"
+                                  Command="{Binding DataContext.PickEmojiCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                  CommandParameter="{Binding}"
+                                  AutomationProperties.AutomationId="{Binding StringFormat='PersonaEdit_EmojiSwatch_{0}'}">
+                            <controls:EmojiPresenter Emoji="{Binding}" GlyphSize="20"/>
+                            <Button.Tag>
+                              <MultiBinding Converter="{StaticResource MultiStringEqualsBoolConverter}">
+                                <Binding/>
+                                <Binding Path="DataContext.Emoji" RelativeSource="{RelativeSource AncestorType=ItemsControl}"/>
+                              </MultiBinding>
+                            </Button.Tag>
+                          </Button>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </Border>
+              </Popup>
+
+              <!-- Accent-colour picker popup: swatch grid + custom hex field -->
+              <Popup x:Name="ColorPopup"
+                     PlacementTarget="{Binding ElementName=ColorToggle}"
+                     Placement="Bottom"
+                     StaysOpen="False"
+                     AllowsTransparency="True"
+                     PopupAnimation="Fade"
+                     IsOpen="{Binding IsChecked, ElementName=ColorToggle, Mode=TwoWay}">
+                <Border Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{DynamicResource BorderBrush_}"
+                        BorderThickness="1"
+                        CornerRadius="10"
+                        Margin="0,6,0,0"
+                        Padding="10"
+                        Width="232">
+                  <Border.Effect>
+                    <DropShadowEffect Color="#0F1729" Opacity="0.25" BlurRadius="16" ShadowDepth="3"/>
+                  </Border.Effect>
+                  <StackPanel>
+                    <ItemsControl ItemsSource="{Binding AccentSwatches}"
+                                  ButtonBase.Click="OnAccentPicked">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <WrapPanel/>
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <Button Style="{StaticResource PiaColorSwatchButtonStyle}"
+                                  Background="{Binding Converter={StaticResource HexToBrushConverter}}"
+                                  Command="{Binding DataContext.PickAccentColorCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                  CommandParameter="{Binding}"
+                                  ToolTip="{Binding}"
+                                  AutomationProperties.AutomationId="{Binding StringFormat='PersonaEdit_ColorSwatch_{0}'}">
+                            <Button.Tag>
+                              <MultiBinding Converter="{StaticResource MultiStringEqualsBoolConverter}">
+                                <Binding/>
+                                <Binding Path="DataContext.AccentColor" RelativeSource="{RelativeSource AncestorType=ItemsControl}"/>
+                              </MultiBinding>
+                            </Button.Tag>
+                          </Button>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <ui:TextBox Text="{Binding AccentColor, UpdateSourceTrigger=PropertyChanged}"
+                                MaxLength="7"
+                                PlaceholderText="#RRGGBB"
+                                AutomationProperties.AutomationId="PersonaEdit_AccentColor"
+                                Margin="0,8,0,0"/>
+                  </StackPanel>
+                </Border>
+              </Popup>
+
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_Provider}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <ComboBox ItemsSource="{Binding ProviderChoices}"
+                        SelectedItem="{Binding SelectedProvider}"
+                        DisplayMemberPath="Name"
+                        HorizontalAlignment="Left" Width="240"
+                        AutomationProperties.AutomationId="PersonaEdit_PreferredProvider"
+                        AutomationProperties.Name="{loc:Str Dialog_PersonaEdit_Provider}"
+                        Margin="0,2,0,8"/>
+
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_ReasoningEffort}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <ComboBox ItemsSource="{Binding ReasoningEffortOptions}"
+                        SelectedItem="{Binding SelectedReasoningEffort}"
+                        DisplayMemberPath="Display"
+                        HorizontalAlignment="Left" Width="240"
+                        AutomationProperties.AutomationId="PersonaEdit_ReasoningEffort"
+                        AutomationProperties.Name="{loc:Str Dialog_PersonaEdit_ReasoningEffort}"
+                        Margin="0,2,0,8"/>
+
+              <!-- Both bind past the Editor re-root: the commands live on the view model that owns it. -->
+              <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                <ui:Button Content="{loc:Str Common_Save}"
+                           Icon="{ui:SymbolIcon Save24}"
+                           Appearance="Primary"
+                           Margin="0,0,8,0"
+                           IsEnabled="{Binding CanSave}"
+                           AutomationProperties.AutomationId="Personas_Save"
+                           Command="{Binding DataContext.SaveCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                <ui:Button Content="{loc:Str Common_Cancel}"
+                           Appearance="Secondary"
+                           AutomationProperties.AutomationId="Personas_Cancel"
+                           Command="{Binding DataContext.CancelEditCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
 </UserControl>

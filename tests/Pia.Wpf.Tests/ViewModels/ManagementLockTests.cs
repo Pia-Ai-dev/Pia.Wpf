@@ -40,7 +40,7 @@ public class ManagementLockTests
 
         return new PersonaSettingsViewModel(
             NullLogger<SettingsViewModel>.Instance, personaService, providerService,
-            Substitute.For<ITextOptimizationService>(), Substitute.For<IDialogService>(),
+            Substitute.For<ITextOptimizationService>(),
             Substitute.For<global::Wpf.Ui.ISnackbarService>(), Substitute.For<ILocalizationService>(),
             Substitute.For<IAuthService>(), settingsService, Substitute.For<IPolicyService>());
     }
@@ -114,7 +114,7 @@ public class ManagementLockTests
     }
 
     [Fact]
-    public async Task Personas_LockedByPolicy_AddDoesNotReachTheService()
+    public async Task Personas_LockedByPolicy_AddOpensNoEditorAndReachesNoService()
     {
         var stored = new AppSettings { AllowPersonaManagement = false };
         var settingsService = Substitute.For<ISettingsService>();
@@ -123,12 +123,12 @@ public class ManagementLockTests
         var personaService = Substitute.For<IPersonaService>();
         personaService.GetPersonasAsync().Returns(_ => Task.FromResult<IReadOnlyList<Persona>>([]));
 
-        var dialogs = Substitute.For<IDialogService>();
-        dialogs.ShowPersonaEditDialogAsync(Arg.Any<PersonaEditModel>()).Returns(true);
+        var providerService = Substitute.For<IProviderService>();
+        providerService.GetProvidersAsync().Returns(_ => Task.FromResult<IReadOnlyList<AiProvider>>([]));
 
         var sut = new PersonaSettingsViewModel(
-            NullLogger<SettingsViewModel>.Instance, personaService, Substitute.For<IProviderService>(),
-            Substitute.For<ITextOptimizationService>(), dialogs,
+            NullLogger<SettingsViewModel>.Instance, personaService, providerService,
+            Substitute.For<ITextOptimizationService>(),
             Substitute.For<global::Wpf.Ui.ISnackbarService>(), Substitute.For<ILocalizationService>(),
             Substitute.For<IAuthService>(), settingsService, Substitute.For<IPolicyService>());
 
@@ -136,7 +136,41 @@ public class ManagementLockTests
         await sut.AddPersonaCommand.ExecuteAsync(null);
 
         await personaService.DidNotReceive().AddPersonaAsync(Arg.Any<Persona>());
-        await dialogs.DidNotReceive().ShowPersonaEditDialogAsync(Arg.Any<PersonaEditModel>());
+        Assert.False(sut.IsEditorOpen);
+        Assert.Null(sut.Editor);
+    }
+
+    /// <summary>The lock arrives on a policy pull, which can land while the editor is already open — the
+    /// only thing standing between that and a write is Save's own re-check.</summary>
+    [Fact]
+    public async Task Personas_LockedWhileTheEditorIsOpen_SaveDoesNotReachTheService()
+    {
+        var stored = new AppSettings { AllowPersonaManagement = true };
+        var settingsService = Substitute.For<ISettingsService>();
+        settingsService.GetSettingsAsync().Returns(_ => Task.FromResult(stored));
+
+        var personaService = Substitute.For<IPersonaService>();
+        personaService.GetPersonasAsync().Returns(_ => Task.FromResult<IReadOnlyList<Persona>>([]));
+
+        var providerService = Substitute.For<IProviderService>();
+        providerService.GetProvidersAsync().Returns(_ => Task.FromResult<IReadOnlyList<AiProvider>>([]));
+
+        var sut = new PersonaSettingsViewModel(
+            NullLogger<SettingsViewModel>.Instance, personaService, providerService,
+            Substitute.For<ITextOptimizationService>(),
+            Substitute.For<global::Wpf.Ui.ISnackbarService>(), Substitute.For<ILocalizationService>(),
+            Substitute.For<IAuthService>(), settingsService, Substitute.For<IPolicyService>());
+
+        await sut.InitializeAsync();
+        await sut.AddPersonaCommand.ExecuteAsync(null);
+        sut.Editor!.Name = "Drafted";
+        sut.Editor.SystemPrompt = "prompt";
+        Assert.True(sut.Editor.CanSave, "non-vacuity: the save must be blocked by the lock, not by validation");
+
+        sut.CanManagePersonas = false;
+        await sut.SaveCommand.ExecuteAsync(null);
+
+        await personaService.DidNotReceive().AddPersonaAsync(Arg.Any<Persona>());
     }
 
     [Fact]
@@ -178,7 +212,7 @@ public class ManagementLockTests
 
         var sut = new PersonaSettingsViewModel(
             NullLogger<SettingsViewModel>.Instance, personaService, Substitute.For<IProviderService>(),
-            Substitute.For<ITextOptimizationService>(), Substitute.For<IDialogService>(),
+            Substitute.For<ITextOptimizationService>(),
             Substitute.For<global::Wpf.Ui.ISnackbarService>(), Substitute.For<ILocalizationService>(),
             Substitute.For<IAuthService>(), settingsService, Substitute.For<IPolicyService>());
 

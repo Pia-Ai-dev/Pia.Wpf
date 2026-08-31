@@ -120,7 +120,7 @@ public class SettingsPolicyReloadTests : IDisposable
 
         var persona = new PersonaSettingsViewModel(
             logger, Substitute.For<IPersonaService>(), Substitute.For<IProviderService>(),
-            Substitute.For<ITextOptimizationService>(), dialogs, snackbar, localization,
+            Substitute.For<ITextOptimizationService>(), snackbar, localization,
             Substitute.For<IAuthService>(), settings, policy);
 
         var meeting = new MeetingSettingsViewModel(logger, settings, localization, policy);

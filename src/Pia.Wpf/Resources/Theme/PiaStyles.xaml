@@ -505,6 +505,36 @@
     </Setter>
   </Style>
 
+  <!-- Row card for a master-detail list (Routines, Personas). Cursor belongs here on the template
+       Border, not on the container: set on a ListBoxItem it inherits into the content and cannot be
+       taken back. Pairs with PiaMemoryRowItemStyle on the ItemContainerStyle. -->
+  <Style x:Key="PiaMasterRowCardStyle" TargetType="Border" BasedOn="{StaticResource PiaCardStyle}">
+    <Setter Property="Padding" Value="14,12"/>
+    <Setter Property="Margin"  Value="0,0,0,10"/>
+    <Setter Property="Cursor"  Value="Hand"/>
+    <Style.Triggers>
+      <Trigger Property="IsMouseOver" Value="True">
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}"/>
+      </Trigger>
+      <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}"
+                   Value="True">
+        <Setter Property="Background"  Value="{DynamicResource PiaAccentSoftBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource PiaAccentBrush}"/>
+      </DataTrigger>
+    </Style.Triggers>
+  </Style>
+
+  <!-- WPF-UI buttons keep the arrow cursor; Arrow again when disabled so a disabled action does not
+       read as live. Re-declare implicitly per view (BasedOn this) rather than app-wide. -->
+  <Style x:Key="PiaHandCursorButtonStyle" TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+    <Setter Property="Cursor" Value="Hand"/>
+    <Style.Triggers>
+      <Trigger Property="IsEnabled" Value="False">
+        <Setter Property="Cursor" Value="Arrow"/>
+      </Trigger>
+    </Style.Triggers>
+  </Style>
+
   <!-- Memory row container: strips ListBoxItem chrome, draws the 3-px
        accent bar when selected (matches chat sidebar selection vocabulary). -->
   <Style x:Key="PiaMemoryRowItemStyle" TargetType="ListBoxItem">

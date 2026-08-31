@@ -39,7 +39,7 @@ public class AssistantSettingsRunPoolTests
         var personasVm = new PersonaSettingsViewModel(
             NullLogger<SettingsViewModel>.Instance, Substitute.For<IPersonaService>(),
             Substitute.For<IProviderService>(), Substitute.For<ITextOptimizationService>(),
-            dialogService, Substitute.For<global::Wpf.Ui.ISnackbarService>(), localization,
+            Substitute.For<global::Wpf.Ui.ISnackbarService>(), localization,
             Substitute.For<IAuthService>(), settingsService, Substitute.For<IPolicyService>());
 
         var toolPermissionsVm = new ToolPermissionsSettingsViewModel(

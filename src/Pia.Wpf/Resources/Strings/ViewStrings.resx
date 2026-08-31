@@ -694,6 +694,11 @@
   <data name="Personas_BuiltIn" xml:space="preserve"><value>Built-in</value></data>
   <data name="Personas_Managed" xml:space="preserve"><value>Managed</value></data>
   <data name="Personas_ManagedTooltip" xml:space="preserve"><value>Published by your administrator. Duplicate it to make an editable copy.</value></data>
+  <data name="Personas_Empty" xml:space="preserve"><value>No personas yet.</value></data>
+  <data name="Personas_EmptyHint" xml:space="preserve"><value>Add one to give the assistant its own identity, voice and expertise.</value></data>
+  <data name="Personas_Placeholder" xml:space="preserve"><value>Select a persona to see what it does.</value></data>
+  <data name="Personas_PlaceholderHint" xml:space="preserve"><value>Or add a new one to shape how the assistant answers.</value></data>
+  <data name="Personas_Detail_SystemPrompt" xml:space="preserve"><value>System prompt</value></data>
   <data name="Dialog_ModelDownload_Title" xml:space="preserve"><value>Preparing Model</value></data>
   <data name="Dialog_ModelDownload_Message" xml:space="preserve"><value>Downloading Whisper Model...</value></data>
   <data name="Dialog_ModelDownload_Downloading" xml:space="preserve"><value>Downloading {0}...</value></data>

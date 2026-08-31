@@ -15,7 +15,6 @@ public class PersonaSettingsManagedPersonaTests
     private sealed record Harness(
         PersonaSettingsViewModel Sut,
         IPersonaService Personas,
-        IDialogService Dialogs,
         global::Wpf.Ui.ISnackbarService Snackbar);
 
     private static Persona Managed(string name = "Brandvoice") => new()
@@ -49,11 +48,6 @@ public class PersonaSettingsManagedPersonaTests
         var providers = Substitute.For<IProviderService>();
         providers.GetProvidersAsync().Returns(_ => Task.FromResult<IReadOnlyList<AiProvider>>([]));
 
-        var dialogs = Substitute.For<IDialogService>();
-        // Default to "the user pressed Save", so a test that reaches the dialog reaches the service too —
-        // any DidNotReceive below therefore means the guard fired, not that the dialog was cancelled.
-        dialogs.ShowPersonaEditDialogAsync(Arg.Any<PersonaEditModel>()).Returns(true);
-
         var snackbar = Substitute.For<global::Wpf.Ui.ISnackbarService>();
 
         // Each key resolves to itself, so ShownMessages() can assert on the resource key rather than on
@@ -66,10 +60,10 @@ public class PersonaSettingsManagedPersonaTests
 
         var sut = new PersonaSettingsViewModel(
             NullLogger<SettingsViewModel>.Instance, personas, providers,
-            Substitute.For<ITextOptimizationService>(), dialogs, snackbar, localization,
+            Substitute.For<ITextOptimizationService>(), snackbar, localization,
             Substitute.For<IAuthService>(), settingsService, Substitute.For<IPolicyService>());
 
-        return new Harness(sut, personas, dialogs, snackbar);
+        return new Harness(sut, personas, snackbar);
     }
 
     /// <summary>Read positionally off <c>ReceivedCalls()</c>, so it survives WPF-UI reshuffling <c>Show</c>'s optional parameters.</summary>
@@ -92,7 +86,8 @@ public class PersonaSettingsManagedPersonaTests
         await h.Sut.EditPersonaCommand.ExecuteAsync(managed);
 
         await h.Personas.DidNotReceive().UpdatePersonaAsync(Arg.Any<Persona>());
-        await h.Dialogs.DidNotReceive().ShowPersonaEditDialogAsync(Arg.Any<PersonaEditModel>());
+        Assert.False(h.Sut.IsEditorOpen);
+        Assert.Null(h.Sut.Editor);
         Assert.Contains("Msg_Settings_CannotEditManagedPersona", ShownMessages(h.Snackbar));
     }
 
@@ -107,7 +102,8 @@ public class PersonaSettingsManagedPersonaTests
         await h.Sut.EditPersonaCommand.ExecuteAsync(builtIn);
 
         await h.Personas.DidNotReceive().UpdatePersonaAsync(Arg.Any<Persona>());
-        await h.Dialogs.DidNotReceive().ShowPersonaEditDialogAsync(Arg.Any<PersonaEditModel>());
+        Assert.False(h.Sut.IsEditorOpen);
+        Assert.Null(h.Sut.Editor);
         Assert.Empty(ShownMessages(h.Snackbar));
     }
 
@@ -139,7 +135,10 @@ public class PersonaSettingsManagedPersonaTests
         var managed = Managed();
         var h = Create(managed);
 
+        // Duplicate only seeds the inline editor now; the write is Save's.
         await h.Sut.DuplicatePersonaCommand.ExecuteAsync(managed);
+        Assert.True(h.Sut.IsEditorOpen);
+        await h.Sut.SaveCommand.ExecuteAsync(null);
 
         // Read the argument off the call log rather than an Arg.Do capture, so nothing depends on when
         // NSubstitute runs a capture callback. Single() is asserted before Received(1) for the same reason.
@@ -154,5 +153,44 @@ public class PersonaSettingsManagedPersonaTests
         Assert.False(added.IsManaged);
         Assert.False(added.IsBuiltIn);
         Assert.False(added.IsReadOnly);
+    }
+
+    [Fact]
+    public async Task CancelEdit_closes_the_editor_and_writes_nothing()
+    {
+        var h = Create(UserOwned());
+        await h.Sut.InitializeAsync();
+
+        await h.Sut.EditPersonaCommand.ExecuteAsync(h.Sut.Personas.Single());
+        h.Sut.Editor!.Name = "Renamed";
+        h.Sut.CancelEditCommand.Execute(null);
+
+        Assert.False(h.Sut.IsEditorOpen);
+        Assert.Null(h.Sut.Editor);
+        Assert.Null(h.Sut.EditingPersonaId);
+        await h.Personas.DidNotReceive().UpdatePersonaAsync(Arg.Any<Persona>());
+    }
+
+    /// <summary>A sync pull refreshes the roster on its own thread; losing half-typed edits to it would be
+    /// the inline editor's one regression the modal dialog could not have.</summary>
+    [Fact]
+    public async Task A_roster_refresh_while_the_editor_is_open_leaves_it_open()
+    {
+        var mine = UserOwned();
+        var h = Create(mine);
+        // A real service materialises a fresh row per call, so the substitute must too — otherwise a
+        // reference-equality selection guard would pass this vacuously.
+        h.Personas.GetPersonasAsync().Returns(_ => Task.FromResult<IReadOnlyList<Persona>>(
+            [new Persona { Id = mine.Id, Name = mine.Name, SystemPrompt = mine.SystemPrompt }]));
+        await h.Sut.InitializeAsync();
+
+        await h.Sut.EditPersonaCommand.ExecuteAsync(h.Sut.Personas.Single());
+        h.Sut.Editor!.Name = "Half typed";
+
+        await h.Sut.InitializeAsync();
+
+        Assert.True(h.Sut.IsEditorOpen);
+        Assert.Equal("Half typed", h.Sut.Editor!.Name);
+        Assert.Equal(mine.Id, h.Sut.SelectedPersona?.Id);
     }
 }

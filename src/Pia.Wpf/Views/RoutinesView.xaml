@@ -46,24 +46,6 @@
       </Style.Triggers>
     </Style>
 
-    <!-- Cursor belongs on the template Border, not the container: set on a ListBoxItem it inherits
-         into the content and cannot be taken back. -->
-    <Style x:Key="RoutineRowStyle" TargetType="Border" BasedOn="{StaticResource PiaCardStyle}">
-      <Setter Property="Padding" Value="14,12"/>
-      <Setter Property="Margin" Value="0,0,0,10"/>
-      <Setter Property="Cursor" Value="Hand"/>
-      <Style.Triggers>
-        <Trigger Property="IsMouseOver" Value="True">
-          <Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}"/>
-        </Trigger>
-        <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}"
-                     Value="True">
-          <Setter Property="Background" Value="{DynamicResource PiaAccentSoftBrush}"/>
-          <Setter Property="BorderBrush" Value="{DynamicResource PiaAccentBrush}"/>
-        </DataTrigger>
-      </Style.Triggers>
-    </Style>
-
     <Style x:Key="RoutineBlueprintCardStyle" TargetType="Button">
       <Setter Property="Cursor" Value="Hand"/>
       <Setter Property="Margin" Value="0,0,0,10"/>
@@ -98,15 +80,7 @@
       </Setter>
     </Style>
 
-    <!-- WPF-UI buttons keep the arrow cursor; Arrow again when disabled so Run now does not read as live. -->
-    <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
-      <Setter Property="Cursor" Value="Hand"/>
-      <Style.Triggers>
-        <Trigger Property="IsEnabled" Value="False">
-          <Setter Property="Cursor" Value="Arrow"/>
-        </Trigger>
-      </Style.Triggers>
-    </Style>
+    <Style TargetType="ui:Button" BasedOn="{StaticResource PiaHandCursorButtonStyle}"/>
 
   </UserControl.Resources>
 
@@ -198,7 +172,7 @@
           </ListBox.ItemContainerStyle>
           <ListBox.ItemTemplate>
             <DataTemplate>
-              <Border Style="{StaticResource RoutineRowStyle}">
+              <Border Style="{StaticResource PiaMasterRowCardStyle}">
                 <StackPanel>
                   <StackPanel Orientation="Horizontal">
                     <Border Style="{StaticResource RoutineStatusPillStyle}" Margin="0,0,8,0">

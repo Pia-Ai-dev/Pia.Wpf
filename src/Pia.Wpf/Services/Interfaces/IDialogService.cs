@@ -8,7 +8,6 @@ public interface IDialogService
 {
     Task<bool> ShowProviderEditDialogAsync(ProviderEditModel provider, IProviderService providerService);
     Task<bool> ShowTemplateEditDialogAsync(TemplateEditModel template);
-    Task<bool> ShowPersonaEditDialogAsync(PersonaEditModel persona);
     Task<bool> ShowTodoEditDialogAsync(TodoEditModel todo);
     Task<bool> ShowMeetingSaveDialogAsync(MeetingSaveEditModel meeting);
     /// <summary>True when the user chose Send; the report itself is built by <see cref="IAiFeedbackService"/>.</summary>
