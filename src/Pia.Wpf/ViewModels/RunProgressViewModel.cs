@@ -607,6 +607,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private bool _timelineReloadRunning;
     private bool _timelineReloadDirty;
     private bool _liveTracePrimed;
+    // UI-thread only, the same contract Timeline and DecisionPills live under: every writer and reader runs
+    // inside a _uiContext.Post body or inside Project, which is only ever called from one.
+    private IReadOnlyList<AgentTimelineEvent> _timelineEvents = [];
+    private Guid? _liveParkRowId;
 
     private void OnTimelineAppended(Guid runId)
     {
@@ -1007,6 +1011,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         IsToolApprovalPause = approvalTool is not null;
         ApprovalToolName = approvalTool;
         ApprovalToolArguments = approvalTool is null ? null : RunPauseEnvelope.ReadApprovalArgs(run);
+        RefreshApprovalDerivation();
 
         IsPlanApprovalPause = run.State == AgentRunState.WaitingForInput
             && RunPauseEnvelope.ReadReason(run) == AgentRunOrchestrator.PlanApprovalReason;
@@ -1738,8 +1743,6 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         {
             try
             {
-                Timeline.Clear();
-                DecisionPills.Clear();
                 IsTimelineTruncated = false;
                 TimelineNote = null;
                 HasTimelineReadError = readFailed;
@@ -1752,25 +1755,13 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                     TimelineNote = _localization.Format("Run_Timeline_Truncated", AgentTimelineService.MaxEventsPerRun);
                 }
 
-                // EXCEPTIONS FIRST, then everything else — each half newest-first. The store hands rows back in
-                // (RunId, Seq) order, i.e. oldest first, so one Reverse gives both halves their order at once.
-                // This is what turns the trace from a log dump into an audit: the two rows that need a person
-                // are at the top whether they happened first or five hundred calls ago.
-                var events = (rows ?? [])
+                _timelineEvents = (rows ?? [])
                     .Where(r => r.Kind != AgentTimelineEventKind.TraceTruncated)
                     .Reverse()
                     .ToList();
-                var exceptions = events.Where(e => Severity(e.Decision) != RunDecisionSeverity.Routine).ToList();
-                var routine = events.Where(e => Severity(e.Decision) == RunDecisionSeverity.Routine).ToList();
-
-                for (var i = 0; i < exceptions.Count; i++)
-                    Timeline.Add(Project(exceptions[i], showGroupSeparator: false));
-                for (var i = 0; i < routine.Count; i++)
-                    // The rule under the exception block, drawn by the FIRST row below it so the table needs no
-                    // separate separator item (which would be a row the reflection guard has to allow for).
-                    Timeline.Add(Project(routine[i], showGroupSeparator: i == 0 && exceptions.Count > 0));
-
-                ApplyDecisionSummary(events);
+                _liveParkRowId = LiveParkRowId(_timelineEvents, IsToolApprovalPause ? ApprovalToolName : null);
+                RenderTimelineRows();
+                ApplyDecisionSummary(_timelineEvents);
                 HasNoTimeline = !readFailed && Timeline.Count == 0;
             }
             finally
@@ -1782,6 +1773,24 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         return done.Task;
     }
 
+    // EXCEPTIONS FIRST, then everything else — each half newest-first. The store hands rows back in
+    // (RunId, Seq) order, i.e. oldest first, so one Reverse gives both halves their order at once.
+    // This is what turns the trace from a log dump into an audit: the two rows that need a person
+    // are at the top whether they happened first or five hundred calls ago.
+    private void RenderTimelineRows()
+    {
+        Timeline.Clear();
+        var exceptions = _timelineEvents.Where(e => SeverityForKey(RowLabelKey(e)) != RunDecisionSeverity.Routine).ToList();
+        var routine = _timelineEvents.Where(e => SeverityForKey(RowLabelKey(e)) == RunDecisionSeverity.Routine).ToList();
+
+        for (var i = 0; i < exceptions.Count; i++)
+            Timeline.Add(Project(exceptions[i], showGroupSeparator: false));
+        for (var i = 0; i < routine.Count; i++)
+            // The rule under the exception block, drawn by the FIRST row below it so the table needs no
+            // separate separator item (which would be a row the reflection guard has to allow for).
+            Timeline.Add(Project(routine[i], showGroupSeparator: i == 0 && exceptions.Count > 0));
+    }
+
     /// <summary>
     /// The collapsed header's call count and exception badge, plus one pill per non-empty decision category.
     /// Zero-count categories are omitted rather than shown as "0 denied": a category that did not happen is not
@@ -1789,24 +1798,13 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// </summary>
     private void ApplyDecisionSummary(IReadOnlyList<AgentTimelineEvent> events)
     {
-        // Exceptions first, in the order a reader has to act on them. Written as an explicit list, not driven off
-        // the decision enum, because the ORDER is the point and enum order is not it.
-        var categories = new (string LabelKey, string PillKey, RunDecisionSeverity Severity)[]
-        {
-            ("Run_Timeline_Decision_AwaitingApproval", "Run_Timeline_Pill_AwaitingApproval", RunDecisionSeverity.Awaiting),
-            ("Run_Timeline_Decision_Denied", "Run_Timeline_Pill_Denied", RunDecisionSeverity.Refused),
-            ("Run_Timeline_Decision_Blocked", "Run_Timeline_Pill_Blocked", RunDecisionSeverity.Refused),
-            ("Run_Timeline_Decision_Approved", "Run_Timeline_Pill_Approved", RunDecisionSeverity.Routine),
-            ("Run_Timeline_Decision_AutoApproved", "Run_Timeline_Pill_AutoApproved", RunDecisionSeverity.Routine),
-            ("Run_Timeline_Decision_Unknown", "Run_Timeline_Pill_Unknown", RunDecisionSeverity.Routine),
-        };
-
+        DecisionPills.Clear();
         TimelineExceptionBadge = null;
         TimelineExceptionSeverity = RunDecisionSeverity.Routine;
 
-        foreach (var (labelKey, pillKey, severity) in categories)
+        foreach (var (labelKey, pillKey, severity) in DecisionCategories)
         {
-            var count = events.Count(e => DecisionLabelKey(e.Decision) == labelKey);
+            var count = events.Count(e => RowLabelKey(e) == labelKey);
             if (count == 0) continue;
 
             var text = _localization.Format(pillKey, count);
@@ -1823,31 +1821,65 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// The render severity of one decision, derived from <see cref="DecisionLabelKey"/> rather than from a second
+    /// The trace load and the run projection each learn half of the awaiting fact, in either order, and neither
+    /// re-reads the other's source — so both re-derive. The identity guard keeps a run's ~500 RunChanged emits
+    /// off the row rebuild: the answer changes at most twice per park.
+    /// </summary>
+    private void RefreshApprovalDerivation()
+    {
+        var parkRowId = LiveParkRowId(_timelineEvents, IsToolApprovalPause ? ApprovalToolName : null);
+        if (parkRowId == _liveParkRowId) return;
+
+        _liveParkRowId = parkRowId;
+        RenderTimelineRows();
+        ApplyDecisionSummary(_timelineEvents);
+    }
+
+    /// <summary>
+    /// Exceptions first, in the order a reader has to act on them. Written as an explicit list, not driven off
+    /// the decision enum, because the ORDER is the point and enum order is not it.
+    /// </summary>
+    internal static readonly IReadOnlyList<(string LabelKey, string PillKey, RunDecisionSeverity Severity)> DecisionCategories =
+    [
+        ("Run_Timeline_Decision_AwaitingApproval", "Run_Timeline_Pill_AwaitingApproval", RunDecisionSeverity.Awaiting),
+        ("Run_Timeline_Decision_Denied", "Run_Timeline_Pill_Denied", RunDecisionSeverity.Refused),
+        ("Run_Timeline_Decision_Blocked", "Run_Timeline_Pill_Blocked", RunDecisionSeverity.Refused),
+        ("Run_Timeline_Decision_NotExecuted", "Run_Timeline_Pill_NotExecuted", RunDecisionSeverity.Routine),
+        ("Run_Timeline_Decision_Approved", "Run_Timeline_Pill_Approved", RunDecisionSeverity.Routine),
+        ("Run_Timeline_Decision_AutoApproved", "Run_Timeline_Pill_AutoApproved", RunDecisionSeverity.Routine),
+        ("Run_Timeline_Decision_Unknown", "Run_Timeline_Pill_Unknown", RunDecisionSeverity.Routine),
+    ];
+
+    /// <summary>
+    /// The render severity of one row, derived from the label key it already resolved to rather than from a second
     /// switch over <see cref="ToolGateDecision"/>: two mappings over the same eleven ordinals is how a decision
     /// ends up labelled "Denied" and painted in the routine grey.
     /// </summary>
-    internal static RunDecisionSeverity Severity(ToolGateDecision decision) => DecisionLabelKey(decision) switch
+    internal static RunDecisionSeverity SeverityForKey(string labelKey) => labelKey switch
     {
         "Run_Timeline_Decision_AwaitingApproval" => RunDecisionSeverity.Awaiting,
         "Run_Timeline_Decision_Denied" or "Run_Timeline_Decision_Blocked" => RunDecisionSeverity.Refused,
         _ => RunDecisionSeverity.Routine,
     };
 
-    private TimelineRowViewModel Project(AgentTimelineEvent row, bool showGroupSeparator) => new()
+    private TimelineRowViewModel Project(AgentTimelineEvent row, bool showGroupSeparator)
     {
-        ToolName = row.ToolName,
-        DecisionLabel = _localization[DecisionLabelKey(row.Decision)],
-        OutcomeSuffix = row.Outcome == AgentTimelineOutcome.Error
-            ? _localization["Run_Timeline_Outcome_Failed"]
-            : null,
-        StepLabel = row.StepId is { } stepId && Steps.Any(s => s.StepId == stepId)
-            ? _localization.Format("Run_Timeline_Step", Steps.IndexOf(Steps.First(s => s.StepId == stepId)) + 1)
-            : null,
-        TimeLabel = row.CreatedAt.ToLocalTime().ToString("t"),
-        Severity = Severity(row.Decision),
-        ShowGroupSeparator = showGroupSeparator,
-    };
+        var labelKey = RowLabelKey(row);
+        return new()
+        {
+            ToolName = row.ToolName,
+            DecisionLabel = _localization[labelKey],
+            OutcomeSuffix = row.Outcome == AgentTimelineOutcome.Error
+                ? _localization["Run_Timeline_Outcome_Failed"]
+                : null,
+            StepLabel = row.StepId is { } stepId && Steps.Any(s => s.StepId == stepId)
+                ? _localization.Format("Run_Timeline_Step", Steps.IndexOf(Steps.First(s => s.StepId == stepId)) + 1)
+                : null,
+            TimeLabel = row.CreatedAt.ToLocalTime().ToString("t"),
+            Severity = SeverityForKey(labelKey),
+            ShowGroupSeparator = showGroupSeparator,
+        };
+    }
 
     /// <summary>
     /// Eleven persisted decision ordinals collapse to five user-facing categories — the DB stays precise, the
@@ -1879,6 +1911,35 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         ToolGateDecision.ParkedForApproval => "Run_Timeline_Decision_AwaitingApproval",
         _ => "Run_Timeline_Decision_Unknown",
     };
+
+    /// <summary>A wrapper over <see cref="DecisionLabelKey"/>, never a second switch: a park row the run is no
+    /// longer stopped on is history, not a pending question.</summary>
+    private string RowLabelKey(AgentTimelineEvent row) =>
+        row.Decision == ToolGateDecision.ParkedForApproval && row.Id != _liveParkRowId
+            ? "Run_Timeline_Decision_NotExecuted"
+            : DecisionLabelKey(row.Decision);
+
+    /// <summary>
+    /// THE park row a parked run is stopped on: the highest-Seq park row whose tool matches the pause envelope.
+    /// Selected by Seq, not by list position — the caller's list is reversed, newest first.
+    /// </summary>
+    private static Guid? LiveParkRowId(IReadOnlyList<AgentTimelineEvent> events, string? approvalTool)
+    {
+        if (string.IsNullOrEmpty(approvalTool)) return null;
+
+        Guid? id = null;
+        var seq = long.MinValue;
+        foreach (var e in events)
+        {
+            if (e.Decision != ToolGateDecision.ParkedForApproval) continue;
+            if (!string.Equals(e.ToolName, approvalTool, StringComparison.OrdinalIgnoreCase)) continue;
+            if (id is not null && e.Seq <= seq) continue;
+            seq = e.Seq;
+            id = e.Id;
+        }
+
+        return id;
+    }
 
     // Truncated-Completed marker lives in ExtraJson as {truncated:true,reason} (IAgentRunService.CompleteAsync).
     // Both halves are read in one parse: the flag drives the state, the reason drives the chip copy.
@@ -2088,8 +2149,8 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                     .Where(e => e.Kind != AgentTimelineEventKind.TraceTruncated)
                     .Reverse()
                     .ToList();
-                var exceptions = events.Where(e => Severity(e.Decision) != RunDecisionSeverity.Routine).ToList();
-                var routine = events.Where(e => Severity(e.Decision) == RunDecisionSeverity.Routine).ToList();
+                var exceptions = events.Where(e => SeverityForKey(RowLabelKey(e)) != RunDecisionSeverity.Routine).ToList();
+                var routine = events.Where(e => SeverityForKey(RowLabelKey(e)) == RunDecisionSeverity.Routine).ToList();
 
                 // Same exception-first ordering as the parent's trace: a child that parked for approval is
                 // exactly as easy to miss at the bottom of a child's list as at the bottom of the parent's.

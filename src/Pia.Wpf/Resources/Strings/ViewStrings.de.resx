@@ -1094,6 +1094,7 @@
   <data name="Run_Timeline_Decision_Denied" xml:space="preserve"><value>Abgelehnt</value></data>
   <data name="Run_Timeline_Decision_Blocked" xml:space="preserve"><value>Blockiert</value></data>
   <data name="Run_Timeline_Decision_AwaitingApproval" xml:space="preserve"><value>Wartet auf Freigabe</value></data>
+  <data name="Run_Timeline_Decision_NotExecuted" xml:space="preserve"><value>Nicht ausgeführt</value></data>
   <data name="Run_Timeline_Decision_Unknown" xml:space="preserve"><value>Unbekannt</value></data>
   <data name="Run_Timeline_Outcome_Failed" xml:space="preserve"><value>fehlgeschlagen</value></data>
   <data name="Run_Sub_Step" xml:space="preserve"><value>Schritt {0} von {1}</value></data>
@@ -1114,6 +1115,7 @@
   <data name="Run_Timeline_Pill_AwaitingApproval" xml:space="preserve"><value>{0} Freigabe(n) ausstehend</value></data>
   <data name="Run_Timeline_Pill_Denied" xml:space="preserve"><value>{0} abgelehnt</value></data>
   <data name="Run_Timeline_Pill_Blocked" xml:space="preserve"><value>{0} blockiert</value></data>
+  <data name="Run_Timeline_Pill_NotExecuted" xml:space="preserve"><value>{0} nicht ausgeführt</value></data>
   <data name="Run_Timeline_Pill_Approved" xml:space="preserve"><value>{0} freigegeben</value></data>
   <data name="Run_Timeline_Pill_AutoApproved" xml:space="preserve"><value>{0} automatisch freigegeben</value></data>
   <data name="Run_Timeline_Pill_Unknown" xml:space="preserve"><value>{0} unbekannt</value></data>

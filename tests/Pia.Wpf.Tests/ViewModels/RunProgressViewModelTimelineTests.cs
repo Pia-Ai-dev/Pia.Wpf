@@ -59,7 +59,8 @@ public sealed class RunProgressViewModelTimelineTests
         Assert.False(vm.HasNoTimeline);
     }
 
-    /// <summary>A parked or refused call five hundred rows deep in a chronological list is a call nobody sees.</summary>
+    /// <summary>A parked or refused call five hundred rows deep in a chronological list is a call nobody sees.
+    /// This run is not parked, so its park row is history and the only exception left is the blocked call.</summary>
     [Fact]
     public async Task TheTraceSortsExceptionsFirst_ThenTheRestNewestFirst()
     {
@@ -75,39 +76,220 @@ public sealed class RunProgressViewModelTimelineTests
         await vm.LoadTimelineAsync();
 
         Assert.Collection(vm.Timeline,
-            // Exceptions, newest first: seq 4 above seq 2.
+            // The exception block is one row now, so seq 4 stands alone.
             first =>
             {
                 Assert.Equal("Run_Timeline_Decision_Blocked", first.DecisionLabel);
                 Assert.Equal(RunDecisionSeverity.Refused, first.Severity);
                 Assert.False(first.ShowGroupSeparator);
             },
+            // …then the rule on the first routine row, and that block newest first (seq 3, 2, 1).
             second =>
             {
-                Assert.Equal("Run_Timeline_Decision_AwaitingApproval", second.DecisionLabel);
-                Assert.Equal(RunDecisionSeverity.Awaiting, second.Severity);
-                Assert.False(second.ShowGroupSeparator);
+                Assert.Equal("Run_Timeline_Decision_AutoApproved", second.DecisionLabel);
+                Assert.Equal(RunDecisionSeverity.Routine, second.Severity);
+                Assert.True(second.ShowGroupSeparator);
             },
-            // …then the rule on the first routine row, and that block newest first (seq 3, seq 1).
             third =>
             {
-                Assert.Equal("Run_Timeline_Decision_AutoApproved", third.DecisionLabel);
+                Assert.Equal("Run_Timeline_Decision_NotExecuted", third.DecisionLabel);
                 Assert.Equal(RunDecisionSeverity.Routine, third.Severity);
-                Assert.True(third.ShowGroupSeparator);
+                Assert.False(third.ShowGroupSeparator);
             },
             fourth =>
             {
                 Assert.Equal("Run_Timeline_Decision_AutoApproved", fourth.DecisionLabel);
+                Assert.Equal(RunDecisionSeverity.Routine, fourth.Severity);
                 Assert.False(fourth.ShowGroupSeparator);
             });
 
-        // The badge is the first exception category: awaiting outranks refused, being the one still answerable.
+        // The badge is the first exception category with a count, and on a run nobody is parked on there is no
+        // awaiting category to outrank the blocked one.
         Assert.Collection(vm.DecisionPills,
-            first => Assert.Equal("Run_Timeline_Pill_AwaitingApproval", first.Text),
-            second => Assert.Equal("Run_Timeline_Pill_Blocked", second.Text),
+            first => Assert.Equal("Run_Timeline_Pill_Blocked", first.Text),
+            second => Assert.Equal("Run_Timeline_Pill_NotExecuted", second.Text),
             third => Assert.Equal("Run_Timeline_Pill_AutoApproved", third.Text));
+        Assert.Equal("Run_Timeline_Pill_Blocked", vm.TimelineExceptionBadge);
+        Assert.Equal(RunDecisionSeverity.Refused, vm.TimelineExceptionSeverity);
+    }
+
+    /// <summary>
+    /// The gate writes the park row seconds before the run reaches WaitingForInput, so the load that first sees
+    /// that row runs with IsToolApprovalPause false, and the projection that sets it true reads no trace. A pill
+    /// derived on either path alone would never appear.
+    /// </summary>
+    [Fact]
+    public async Task AParkThatLandsAfterTheTraceRead_StillLightsTheAwaitingPill_WithNoSecondStoreRead()
+    {
+        _timeline.GetForRunAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new List<AgentTimelineEvent>
+        {
+            Row(1, AgentTimelineEventKind.ToolCall, ToolGateDecision.AutoApprovedPolicy),
+            Row(2, AgentTimelineEventKind.ToolCall, ToolGateDecision.ParkedForApproval),
+        });
+        StubRun(AgentRunState.Running);
+
+        var vm = CreateVm();
+        await vm.TimelineLoadTask!; // the live run's priming read
+
+        // The 41-second window between the audit row and the pause.
+        Assert.DoesNotContain(vm.DecisionPills, p => p.Text == "Run_Timeline_Pill_AwaitingApproval");
+        Assert.Single(vm.Timeline, r => r.DecisionLabel == "Run_Timeline_Decision_NotExecuted");
+
+        StubRun(AgentRunState.WaitingForInput, ToolApprovalEnvelope("write_file"));
+        await vm.RefreshAsync();
+
+        Assert.True(vm.IsToolApprovalPause);
+        // Equality, not "at most one": an absent pill is the defect this test exists for.
+        Assert.Single(vm.DecisionPills, p => p.Text == "Run_Timeline_Pill_AwaitingApproval");
         Assert.Equal("Run_Timeline_Pill_AwaitingApproval", vm.TimelineExceptionBadge);
         Assert.Equal(RunDecisionSeverity.Awaiting, vm.TimelineExceptionSeverity);
+        Assert.Equal("Run_Timeline_Decision_AwaitingApproval", vm.Timeline[0].DecisionLabel);
+        // One read total, so the pill came from the cached snapshot rather than a re-read.
+        await _timeline.Received(1).GetForRunAsync(_runId, Arg.Any<CancellationToken>());
+        vm.Dispose();
+    }
+
+    /// <summary>Without the identity guard a refactor silently reintroduces one row rebuild per RunChanged, and
+    /// a run emits roughly five hundred of them.</summary>
+    [Fact]
+    public async Task ANonParkProjection_DoesNotRebuildTheTraceRows()
+    {
+        _timeline.GetForRunAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new List<AgentTimelineEvent>
+        {
+            Row(1, AgentTimelineEventKind.ToolCall, ToolGateDecision.ApprovedOnce),
+            Row(2, AgentTimelineEventKind.ToolCall, ToolGateDecision.AutoApprovedPolicy),
+        });
+        StubRun(AgentRunState.Running);
+
+        var vm = CreateVm();
+        await vm.TimelineLoadTask!;
+        var row = vm.Timeline[0];
+        var pill = vm.DecisionPills[0];
+
+        for (var i = 0; i < 5; i++)
+            _runs.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(_runId, AgentRunState.Running, null));
+
+        Assert.Same(row, vm.Timeline[0]);
+        Assert.Same(pill, vm.DecisionPills[0]);
+        await _timeline.Received(1).GetForRunAsync(_runId, Arg.Any<CancellationToken>());
+        vm.Dispose();
+    }
+
+    /// <summary>The store is per-step and first-call-wins, so a run re-parked on the same tool is stopped on the
+    /// newer call only — the older park row already had its answer.</summary>
+    [Fact]
+    public async Task ASecondParkOnTheSameTool_LeavesOnlyTheNewerRowAwaiting()
+    {
+        var older = new DateTime(2026, 8, 31, 12, 5, 0, DateTimeKind.Utc);
+        var newer = new DateTime(2026, 8, 31, 12, 47, 0, DateTimeKind.Utc);
+        _timeline.GetForRunAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new List<AgentTimelineEvent>
+        {
+            Row(1, AgentTimelineEventKind.ToolCall, ToolGateDecision.ParkedForApproval, createdAt: older),
+            Row(2, AgentTimelineEventKind.ToolCall, ToolGateDecision.AutoApprovedPolicy),
+            Row(3, AgentTimelineEventKind.ToolCall, ToolGateDecision.ParkedForApproval, createdAt: newer),
+        });
+        StubRun(AgentRunState.WaitingForInput, ToolApprovalEnvelope("write_file"));
+
+        var vm = CreateVm();
+        await vm.TimelineLoadTask!;
+
+        var awaiting = Assert.Single(vm.Timeline, r => r.DecisionLabel == "Run_Timeline_Decision_AwaitingApproval");
+        Assert.Equal(newer.ToLocalTime().ToString("t"), awaiting.TimeLabel);
+        Assert.Equal(RunDecisionSeverity.Awaiting, awaiting.Severity);
+
+        var superseded = Assert.Single(vm.Timeline, r => r.DecisionLabel == "Run_Timeline_Decision_NotExecuted");
+        Assert.Equal(older.ToLocalTime().ToString("t"), superseded.TimeLabel);
+        Assert.Equal(RunDecisionSeverity.Routine, superseded.Severity);
+
+        Assert.Single(vm.DecisionPills, p => p.Text == "Run_Timeline_Pill_AwaitingApproval");
+        vm.Dispose();
+    }
+
+    /// <summary>Non-vacuity for the tool-name term: without it every park row on a parked run would read awaiting.</summary>
+    [Fact]
+    public async Task AParkRowOnARunParkedOnADifferentTool_ReadsNotExecuted()
+    {
+        _timeline.GetForRunAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new List<AgentTimelineEvent>
+        {
+            Row(1, AgentTimelineEventKind.ToolCall, ToolGateDecision.ParkedForApproval),
+            Row(2, AgentTimelineEventKind.ToolCall, ToolGateDecision.ParkedForApproval, toolName: "remember"),
+        });
+        StubRun(AgentRunState.WaitingForInput, ToolApprovalEnvelope("remember"));
+
+        var vm = CreateVm();
+        await vm.TimelineLoadTask!;
+
+        // Located by tool name, never by index: the table is not chronological.
+        var awaiting = Assert.Single(vm.Timeline, r => r.ToolName == "remember");
+        Assert.Equal("Run_Timeline_Decision_AwaitingApproval", awaiting.DecisionLabel);
+        Assert.Equal(RunDecisionSeverity.Awaiting, awaiting.Severity);
+
+        var superseded = Assert.Single(vm.Timeline, r => r.ToolName == "write_file");
+        Assert.Equal("Run_Timeline_Decision_NotExecuted", superseded.DecisionLabel);
+        Assert.Equal(RunDecisionSeverity.Routine, superseded.Severity);
+        vm.Dispose();
+    }
+
+    /// <summary>The reported defect: a finished run claiming approvals are still outstanding. WaitingForInput is
+    /// disjoint from the terminal set, so the count is zero by construction rather than by a clamp.</summary>
+    [Theory]
+    [InlineData(AgentRunState.Completed)]
+    [InlineData(AgentRunState.Failed)]
+    [InlineData(AgentRunState.Cancelled)]
+    public async Task ATerminalRunShowsNoAwaitingPill_AndItsParkRowsReadNotExecuted(AgentRunState state)
+    {
+        _timeline.GetForRunAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new List<AgentTimelineEvent>
+        {
+            Row(1, AgentTimelineEventKind.ToolCall, ToolGateDecision.ParkedForApproval),
+            Row(2, AgentTimelineEventKind.ToolCall, ToolGateDecision.AutoApprovedPolicy),
+            Row(3, AgentTimelineEventKind.ToolCall, ToolGateDecision.AutoApprovedPolicy),
+            Row(4, AgentTimelineEventKind.ToolCall, ToolGateDecision.ParkedForApproval, toolName: "remember"),
+            Row(5, AgentTimelineEventKind.ToolCall, ToolGateDecision.AutoApprovedPolicy),
+            Row(6, AgentTimelineEventKind.ToolCall, ToolGateDecision.AutoApprovedPolicy),
+        });
+        StubRun(state);
+
+        var vm = CreateVm();
+        await vm.TimelineLoadTask!;
+
+        Assert.False(vm.IsToolApprovalPause);
+        Assert.DoesNotContain(vm.DecisionPills, p => p.Text == "Run_Timeline_Pill_AwaitingApproval");
+        Assert.Null(vm.TimelineExceptionBadge);
+        Assert.False(vm.HasTimelineExceptionBadge);
+        Assert.Equal(RunDecisionSeverity.Routine, vm.TimelineExceptionSeverity);
+        Assert.All(vm.Timeline, r => Assert.False(r.IsException));
+
+        // The fact is kept, only the copy and the palette change.
+        var notExecuted = vm.Timeline.Where(r => r.DecisionLabel == "Run_Timeline_Decision_NotExecuted").ToList();
+        Assert.Equal(2, notExecuted.Count);
+        Assert.Single(vm.DecisionPills, p => p.Text == "Run_Timeline_Pill_NotExecuted");
+        vm.Dispose();
+    }
+
+    /// <summary>Same VM, park then settle. A terminal RefreshAsync does latch one extra trace read through
+    /// _settledTraceRead, which is why the no-re-read fact lives in the projection test and not here.</summary>
+    [Fact]
+    public async Task AParkedRunThatSettles_DropsTheAwaitingPillWithoutASecondStoreRead()
+    {
+        _timeline.GetForRunAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new List<AgentTimelineEvent>
+        {
+            Row(1, AgentTimelineEventKind.ToolCall, ToolGateDecision.AutoApprovedPolicy),
+            Row(2, AgentTimelineEventKind.ToolCall, ToolGateDecision.ParkedForApproval),
+        });
+        StubRun(AgentRunState.WaitingForInput, ToolApprovalEnvelope("write_file"));
+
+        var vm = CreateVm();
+        await vm.TimelineLoadTask!;
+        Assert.Single(vm.DecisionPills, p => p.Text == "Run_Timeline_Pill_AwaitingApproval");
+
+        StubRun(AgentRunState.Completed);
+        await vm.RefreshAsync();
+
+        Assert.False(vm.IsToolApprovalPause);
+        Assert.DoesNotContain(vm.DecisionPills, p => p.Text == "Run_Timeline_Pill_AwaitingApproval");
+        Assert.Null(vm.TimelineExceptionBadge);
+        Assert.Single(vm.Timeline, r => r.DecisionLabel == "Run_Timeline_Decision_NotExecuted");
+        vm.Dispose();
     }
 
     /// <summary>The reload is driven by the timeline's own append stream, not by run projections.</summary>
@@ -374,6 +556,18 @@ public sealed class RunProgressViewModelTimelineTests
         Assert.Empty(vm.Timeline);
     }
 
+    private void StubRun(AgentRunState state, string? extraJson = null) =>
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = _runId,
+            State = state,
+            Plan = [],
+            ExtraJson = extraJson,
+        });
+
+    private static string ToolApprovalEnvelope(string tool) =>
+        $"{{\"paused\":true,\"reason\":\"tool-approval\",\"tool\":\"{tool}\"}}";
+
     private RunProgressViewModel CreateVm(ITimelineWatcher? watcher = null)
     {
         SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
@@ -383,7 +577,8 @@ public sealed class RunProgressViewModelTimelineTests
 
     private AgentTimelineEvent Row(
         long seq, AgentTimelineEventKind kind, ToolGateDecision decision,
-        AgentTimelineOutcome outcome = AgentTimelineOutcome.Ok, Guid? stepId = null) => new(
+        AgentTimelineOutcome outcome = AgentTimelineOutcome.Ok, Guid? stepId = null,
+        string? toolName = null, DateTime? createdAt = null) => new(
         Id: Guid.NewGuid(),
         RunId: _runId,
         StepId: stepId,
@@ -392,12 +587,12 @@ public sealed class RunProgressViewModelTimelineTests
         Surface: ToolGateSurface.Interactive,
         Decision: decision,
         Outcome: outcome,
-        ToolName: kind == AgentTimelineEventKind.TraceTruncated ? string.Empty : "write_file",
+        ToolName: kind == AgentTimelineEventKind.TraceTruncated ? string.Empty : toolName ?? "write_file",
         ToolClass: ToolClass.Files,
         PluginId: null,
         ArgsChars: 12,
         ResultChars: 20,
         DurationMs: 5,
-        CreatedAt: DateTime.UtcNow,
+        CreatedAt: createdAt ?? DateTime.UtcNow,
         ToolCallId: null, Round: null, StepOrdinal: null, RequestedAt: null, DecidedAt: null);
 }

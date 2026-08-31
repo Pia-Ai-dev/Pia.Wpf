@@ -1070,6 +1070,7 @@
   <data name="Run_Timeline_Decision_Denied" xml:space="preserve"><value>Denied</value></data>
   <data name="Run_Timeline_Decision_Blocked" xml:space="preserve"><value>Blocked</value></data>
   <data name="Run_Timeline_Decision_AwaitingApproval" xml:space="preserve"><value>Awaiting approval</value></data>
+  <data name="Run_Timeline_Decision_NotExecuted" xml:space="preserve"><value>Not executed</value></data>
   <data name="Run_Timeline_Decision_Unknown" xml:space="preserve"><value>Unknown</value></data>
   <data name="Run_Timeline_Outcome_Failed" xml:space="preserve"><value>failed</value></data>
   <data name="Run_Sub_Step" xml:space="preserve"><value>step {0} of {1}</value></data>
@@ -1090,6 +1091,7 @@
   <data name="Run_Timeline_Pill_AwaitingApproval" xml:space="preserve"><value>{0} awaiting approval</value></data>
   <data name="Run_Timeline_Pill_Denied" xml:space="preserve"><value>{0} denied</value></data>
   <data name="Run_Timeline_Pill_Blocked" xml:space="preserve"><value>{0} blocked</value></data>
+  <data name="Run_Timeline_Pill_NotExecuted" xml:space="preserve"><value>{0} not executed</value></data>
   <data name="Run_Timeline_Pill_Approved" xml:space="preserve"><value>{0} approved</value></data>
   <data name="Run_Timeline_Pill_AutoApproved" xml:space="preserve"><value>{0} auto-approved</value></data>
   <data name="Run_Timeline_Pill_Unknown" xml:space="preserve"><value>{0} unknown</value></data>

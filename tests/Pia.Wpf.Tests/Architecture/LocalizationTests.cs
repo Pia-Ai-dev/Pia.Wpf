@@ -213,37 +213,33 @@ public class LocalizationTests
             $"every plan-mutation error key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
     }
 
-    /// <summary>The pills format their key from a table, so the literal never follows <c>_localization.Format(</c> and no regex here can see it.</summary>
+    /// <summary>The pills format their key from a table, so the literal never follows <c>_localization.Format(</c>
+    /// and no regex here can see it. The decision LABEL keys are literals inside a switch, so they are invisible to
+    /// the regexes too — both halves are resolved here.</summary>
     [Fact]
     public void EveryDecisionPillKeyResolvesInAllThreeLocales()
     {
-        string[] keys =
-        [
-            "Run_Timeline_Pill_AwaitingApproval",
-            "Run_Timeline_Pill_Denied",
-            "Run_Timeline_Pill_Blocked",
-            "Run_Timeline_Pill_Approved",
-            "Run_Timeline_Pill_AutoApproved",
-            "Run_Timeline_Pill_Unknown",
-        ];
+        var pillKeys = RunProgressViewModel.DecisionCategories.Select(c => c.PillKey).ToArray();
+        var labelKeys = RunProgressViewModel.DecisionCategories.Select(c => c.LabelKey).ToArray();
+
+        Assert.Equal(7, pillKeys.Length); // non-vacuity
 
         var missing = new List<string>();
         foreach (var culture in new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") })
         {
             var available = GetResourceKeysForCulture(ViewStrings.ResourceManager, culture);
-            foreach (var key in keys.Where(k => !available.Contains(k)))
+            foreach (var key in pillKeys.Concat(labelKeys).Where(k => !available.Contains(k)))
                 missing.Add($"{culture.Name}: {key}");
         }
 
         Assert.True(missing.Count == 0,
-            $"every decision-pill key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
+            $"every decision pill and label key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
 
-        // One pill per decision category, so a new category cannot quietly render with no pill.
-        var categories = Enum.GetValues<ToolGateDecision>()
-            .Select(RunProgressViewModel.DecisionLabelKey)
-            .Distinct()
-            .Count();
-        Assert.Equal(categories, keys.Length);
+        // Coverage, not a count: a category is derived from a row rather than from an ordinal, so the two sets
+        // are not the same size.
+        foreach (var mapped in Enum.GetValues<ToolGateDecision>().Select(RunProgressViewModel.DecisionLabelKey).Distinct())
+            Assert.Contains(mapped, labelKeys);
+        Assert.Contains("Run_Timeline_Decision_NotExecuted", labelKeys);
     }
 
     /// <summary>The keys sit in a static table, so this file's literal-key regexes cannot see them and a
