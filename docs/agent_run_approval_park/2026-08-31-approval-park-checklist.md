@@ -83,14 +83,14 @@ Two facts found while settling them, which override the wording of the steps bel
 
 ## D — Vault vs. sandbox targeting
 
-- [ ] **D1 — Refuse a `Vault/` write inside a run workspace.** `PrepareWriteFile` rejects a path
+- [x] **D1 — Refuse a `Vault/` write inside a run workspace.** `PrepareWriteFile` rejects a path
   resolving into the vault and names `create_source` / `update_source`, because the workspace copy-in
   deliberately excludes the vault. The method is shared with the interactive path, so scope the guard
   to a non-null `TaskAmbient.Current?.WorkspaceRoot`. *Deps:* Q4 · *Effort:* S · *Value:* High
 - [x] **D2 — Disambiguate the two stores in the plugin prompts.** The files addition states the sandbox
   root is not the vault; the memory addition states `create_source` is how a document reaches it.
   *Deps:* — · *Effort:* XS · *Value:* Med
-- [ ] **D3 — Require an explicit vault subfolder or an ask.** A goal naming the vault without a target
+- [x] **D3 — Require an explicit vault subfolder or an ask.** A goal naming the vault without a target
   folder must resolve to `sources/<subfolder>` or a `request_user_input` question, not a guess.
   *Deps:* D2 · *Effort:* S · *Value:* Med
 
