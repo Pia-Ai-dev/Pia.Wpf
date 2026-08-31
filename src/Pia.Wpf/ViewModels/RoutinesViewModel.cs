@@ -141,6 +141,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     // ---- editor state -------------------------------------------------------------------------------
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(BrowseBlueprintsCommand))]
     private bool _isEditorOpen;
 
     partial void OnIsEditorOpenChanged(bool value)
@@ -573,6 +574,10 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
 
     private bool CanWork() => !IsBusy;
 
+    /// <summary>New routine is refused, not just greyed, while the editor is open: the alternative is
+    /// discarding whatever the user has typed into it.</summary>
+    private bool CanStartNew() => !IsBusy && !IsEditorOpen;
+
     private bool CanActOnSelection() => !IsBusy && SelectedJob is not null;
 
     [RelayCommand(CanExecute = nameof(CanWork))]
@@ -602,10 +607,12 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     }
 
     /// <summary>What "New routine" opens: the catalog, not a blank editor.</summary>
-    [RelayCommand(CanExecute = nameof(CanWork))]
+    [RelayCommand(CanExecute = nameof(CanStartNew))]
     private void BrowseBlueprints()
     {
-        CancelEdit();
+        if (!CanStartNew())
+            return;
+
         SelectedJob = null;
         OpenCatalog();
     }

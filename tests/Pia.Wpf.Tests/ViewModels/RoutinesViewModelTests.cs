@@ -817,6 +817,38 @@ public class RoutinesViewModelTests
         Assert.False(sut.Vm.ShowsPlaceholder);
     }
 
+    /// <summary>The button used to reopen the catalog over an open editor, silently discarding it.</summary>
+    [Fact]
+    public async Task NewRoutine_IsRefusedWhileTheEditorIsOpen()
+    {
+        var sut = CreateSut(NewJob());
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = Assert.Single(sut.Vm.Jobs);
+        sut.Vm.StartEditCommand.Execute(null);
+        sut.Vm.EditName = "Half typed";
+
+        Assert.False(sut.Vm.BrowseBlueprintsCommand.CanExecute(null));
+        // Execute ignores CanExecute, so the body has to refuse too — a UI script can reach it either way.
+        sut.Vm.BrowseBlueprintsCommand.Execute(null);
+
+        Assert.True(sut.Vm.IsEditorOpen);
+        Assert.Equal("Half typed", sut.Vm.EditName);
+        Assert.False(sut.Vm.ShowsCatalog);
+    }
+
+    [Fact]
+    public async Task NewRoutine_IsOfferedAgainOnceTheEditorCloses()
+    {
+        var sut = CreateSut(NewJob());
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = Assert.Single(sut.Vm.Jobs);
+        sut.Vm.StartEditCommand.Execute(null);
+
+        sut.Vm.CancelEditCommand.Execute(null);
+
+        Assert.True(sut.Vm.BrowseBlueprintsCommand.CanExecute(null));
+    }
+
     [Fact]
     public async Task StartFromBlank_StillOpensAnEmptyEditor()
     {

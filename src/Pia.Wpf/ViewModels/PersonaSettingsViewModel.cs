@@ -69,6 +69,7 @@ public partial class PersonaSettingsViewModel : UiThreadViewModel, IDisposable
     }
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(AddPersonaCommand))]
     private bool _isEditorOpen;
 
     partial void OnIsEditorOpenChanged(bool value)
@@ -162,12 +163,16 @@ public partial class PersonaSettingsViewModel : UiThreadViewModel, IDisposable
         await RefreshPersonasAsync();
     }
 
-    [RelayCommand(CanExecute = nameof(CanManagePersonas))]
+    /// <summary>Refused, not just greyed, while the editor is open: the alternative is discarding whatever
+    /// the user has typed into it.</summary>
+    private bool CanAddPersona() => CanManagePersonas && !IsEditorOpen;
+
+    [RelayCommand(CanExecute = nameof(CanAddPersona))]
     private async Task AddPersonaAsync()
     {
         // CanExecute only greys the button out; ExecuteAsync does not consult it, so every command the
         // lock covers re-checks here.
-        if (!CanManagePersonas)
+        if (!CanAddPersona())
             return;
 
         // Minted here, not left to the service: Save re-selects the saved row by this id, and a caller

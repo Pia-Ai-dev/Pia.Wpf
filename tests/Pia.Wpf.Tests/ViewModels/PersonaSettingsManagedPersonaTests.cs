@@ -179,6 +179,29 @@ public class PersonaSettingsManagedPersonaTests
         Assert.True(h.Sut.ShowsDetail);
     }
 
+    /// <summary>Add used to replace the open editor with a blank one, silently discarding it.</summary>
+    [Fact]
+    public async Task AddPersona_is_refused_while_the_editor_is_open()
+    {
+        var h = Create(UserOwned());
+        await h.Sut.InitializeAsync();
+
+        await h.Sut.EditPersonaCommand.ExecuteAsync(h.Sut.Personas.Single());
+        h.Sut.Editor!.Name = "Half typed";
+        var editingId = h.Sut.EditingPersonaId;
+
+        Assert.False(h.Sut.AddPersonaCommand.CanExecute(null));
+        // Execute ignores CanExecute, so the body has to refuse too — a UI script can reach it either way.
+        await h.Sut.AddPersonaCommand.ExecuteAsync(null);
+
+        Assert.True(h.Sut.IsEditorOpen);
+        Assert.Equal("Half typed", h.Sut.Editor!.Name);
+        Assert.Equal(editingId, h.Sut.EditingPersonaId);
+
+        h.Sut.CancelEditCommand.Execute(null);
+        Assert.True(h.Sut.AddPersonaCommand.CanExecute(null));
+    }
+
     [Fact]
     public async Task CancelEdit_closes_the_editor_and_writes_nothing()
     {
