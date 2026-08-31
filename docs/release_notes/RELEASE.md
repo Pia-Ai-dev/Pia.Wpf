@@ -2,11 +2,6 @@
 
 Successor to 1.3.389, covering roughly six weeks of work.
 
-The headline is that Pia now carries out work on its own. Give it a goal and it
-writes a plan, works through it step by step, and checks its own result before
-handing it back. Routines put that on a schedule, and meetings can be joined,
-recorded and filed with nobody at the keyboard.
-
 ## Since 1.4.0
 
 - Dragging a card by its text works again. On the todo board and in the
@@ -22,6 +17,21 @@ recorded and filed with nobody at the keyboard.
 - On the live transcription start screen, the consent sentence participants
   have to speak now leads the screen instead of sitting below the fine print,
   large enough to read off the host's display.
+- The Personas tab is a list beside a detail card instead of a modal dialog.
+  Selecting a persona shows its system prompt, guardrails, output format,
+  expertise, provider and reasoning effort without opening the editor at all,
+  and Edit, Duplicate and Delete sit on that card. Editing happens in the same
+  pane, the way Routines already worked.
+- New no longer throws away an open editor. In both Personas and Routines, the
+  button that starts a fresh one silently discarded whatever you had typed; it
+  is now refused until the editor is closed.
+- The emoji and colour pickers stay put while you scroll instead of closing
+  under you.
+- Scroll bars fade out while nothing is scrolling, and come back on a scroll or
+  when the pointer reaches the thumb. The thin bar had been reading as part of
+  the layout in the denser views.
+- Status badges are a shade quieter: the pill's tint is dialled back without
+  fading the text on it.
 
 ## Agent runs
 
