@@ -609,7 +609,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private bool _liveTracePrimed;
     // UI-thread only, the same contract Timeline and DecisionPills live under: every writer and reader runs
     // inside a _uiContext.Post body or inside Project, which is only ever called from one.
-    private IReadOnlyList<AgentTimelineEvent> _timelineEvents = [];
+    private readonly List<AgentTimelineEvent> _timelineEvents = [];
     private Guid? _liveParkRowId;
 
     private void OnTimelineAppended(Guid runId)
@@ -1755,10 +1755,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                     TimelineNote = _localization.Format("Run_Timeline_Truncated", AgentTimelineService.MaxEventsPerRun);
                 }
 
-                _timelineEvents = (rows ?? [])
+                _timelineEvents.Clear();
+                _timelineEvents.AddRange((rows ?? [])
                     .Where(r => r.Kind != AgentTimelineEventKind.TraceTruncated)
-                    .Reverse()
-                    .ToList();
+                    .Reverse());
                 _liveParkRowId = LiveParkRowId(_timelineEvents, IsToolApprovalPause ? ApprovalToolName : null);
                 RenderTimelineRows();
                 ApplyDecisionSummary(_timelineEvents);
