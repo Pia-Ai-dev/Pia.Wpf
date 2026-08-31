@@ -48,14 +48,14 @@ Two facts found while settling them, which override the wording of the steps bel
 
 ## A — Stop the tool loop when a run parks
 
-- [ ] **A1 — Add a stop signal to the tool-dispatch contract.** Give `ToolDispatchContext` a settable
+- [x] **A1 — Add a stop signal to the tool-dispatch contract.** Give `ToolDispatchContext` a settable
   stop flag and have `AiClientService`'s round loop finish the exchange instead of `continue`-ing when
   a handler sets it; the context is built inside the per-call `foreach` today, so hoist it out or
   return the stop decision from `DispatchToolCallsAsync`. *Deps:* — · *Effort:* S · *Value:* Enabler
-- [ ] **A2 — Set the flag on every park and withhold arm.** `BackgroundAssistantTurnRunner` raises it in
+- [x] **A2 — Set the flag on every park and withhold arm.** `BackgroundAssistantTurnRunner` raises it in
   `Park`, withheld-because-parked and withheld-because-asking; the advisory strings stay.
   *Deps:* A1 · *Effort:* XS · *Value:* High
-- [ ] **A3 — Pin the short-circuit.** A fake handler that parks in round 1 must produce exactly one
+- [x] **A3 — Pin the short-circuit.** A fake handler that parks in round 1 must produce exactly one
   provider round-trip, and the run must reach `WaitingForInput` with no further rounds; the interactive
   path must be unchanged. *Deps:* A2 · *Effort:* XS · *Value:* High
 
@@ -87,7 +87,7 @@ Two facts found while settling them, which override the wording of the steps bel
   resolving into the vault and names `create_source` / `update_source`, because the workspace copy-in
   deliberately excludes the vault. The method is shared with the interactive path, so scope the guard
   to a non-null `TaskAmbient.Current?.WorkspaceRoot`. *Deps:* Q4 · *Effort:* S · *Value:* High
-- [ ] **D2 — Disambiguate the two stores in the plugin prompts.** The files addition states the sandbox
+- [x] **D2 — Disambiguate the two stores in the plugin prompts.** The files addition states the sandbox
   root is not the vault; the memory addition states `create_source` is how a document reaches it.
   *Deps:* — · *Effort:* XS · *Value:* Med
 - [ ] **D3 — Require an explicit vault subfolder or an ask.** A goal naming the vault without a target
@@ -104,12 +104,12 @@ Two facts found while settling them, which override the wording of the steps bel
 
 ## F — Approval counter
 
-- [ ] **F1 — Derive the Awaiting pill from run state, not history.** It shows only while the run is
+- [x] **F1 — Derive the Awaiting pill from run state, not history.** It shows only while the run is
   parked on a tool approval and never on a terminal run; no schema or store change, the timeline stays
   INSERT-only. *Deps:* — · *Effort:* S · *Value:* High
-- [ ] **F2 — Relabel superseded park rows.** A `ParkedForApproval` row the run has moved past renders as
+- [x] **F2 — Relabel superseded park rows.** A `ParkedForApproval` row the run has moved past renders as
   "nicht ausgeführt" instead of "Wartet auf Freigabe". *Deps:* F1 · *Effort:* XS · *Value:* Med
-- [ ] **F3 — Pin the two invariants.** Awaiting ≤ 1 while parked (the store is first-call-wins), and 0
+- [x] **F3 — Pin the two invariants.** Awaiting ≤ 1 while parked (the store is first-call-wins), and 0
   once the run is Completed, Failed or Cancelled. *Deps:* F2 · *Effort:* XS · *Value:* High
 
 ## G — Show the full approval text
@@ -119,9 +119,16 @@ Two facts found while settling them, which override the wording of the steps bel
 - [ ] **G2 — Expand the run panel's approval line.** An expander over `ApprovalTargetLine`, with an
   `AutomationProperties.AutomationId` and its `[InlineData]` row in `ViewAutomationIdTests.cs` in the
   same change. *Deps:* G1 · *Effort:* S · *Value:* Med
-- [ ] **G3 — Let the Flow card body be readable.** A bounded multi-line body plus a tooltip in place of
+- [x] **G3 — Let the Flow card body be readable.** A bounded multi-line body plus a tooltip in place of
   the single-line `TextTrimming="CharacterEllipsis"`; if it gains an interactive control, the
   AutomationId and its test row land with it. *Deps:* G1 · *Effort:* S · *Value:* Med
+
+## Landed beyond the checklist
+
+- [x] **Interactive ask parity.** `ChatSession`'s `request_user_input` pre-route and its withheld-write arm
+  raise the loop stop signal too, so the interactive step path stops on an ask exactly as the unattended
+  one does. Owner decision, 2026-08-31; not a checklist step because the checklist scoped issue 1 to the
+  run panel. *Deps:* A2 · *Effort:* XS · *Value:* Med
 
 ---
 
