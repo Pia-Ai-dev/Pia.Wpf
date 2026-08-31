@@ -72,13 +72,13 @@ Two facts found while settling them, which override the wording of the steps bel
 
 ## C — Carry tool exchanges across park/resume
 
-- [ ] **C1 — Persist pre-park tool exchanges to a resume-readable store.** Local-only and run-scoped;
+- [x] **C1 — Persist pre-park tool exchanges to a resume-readable store.** Local-only and run-scoped;
   must not reach `SyncAssistantChatMessage`, which is cloud-synced and guardrail-separated from
   `_messages`. *Deps:* Q3 · *Effort:* M · *Value:* Enabler
-- [ ] **C2 — Re-seed them in `BeginRunAsync`.** They flow through the existing
+- [x] **C2 — Re-seed them in `BeginRunAsync`.** They flow through the existing
   `AgentToolCarryover.ClearOldResults` + `AgentContextCompactor` seam unchanged, so the context budget
   still holds. *Deps:* C1 · *Effort:* S · *Value:* High
-- [ ] **C3 — Pin the resume.** Park mid-step, resume, and assert the rebuilt step request contains the
+- [x] **C3 — Pin the resume.** Park mid-step, resume, and assert the rebuilt step request contains the
   pre-park tool exchange rather than prose alone. *Deps:* C2 · *Effort:* S · *Value:* High
 
 ## D — Vault vs. sandbox targeting
