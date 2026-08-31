@@ -35,7 +35,7 @@ public static class ScrollBarAutoFadeBehavior
     /// <summary>What the bar fades back to. 0 hides it outright.</summary>
     public static readonly DependencyProperty IdleOpacityProperty =
         DependencyProperty.RegisterAttached("IdleOpacity", typeof(double), typeof(ScrollBarAutoFadeBehavior),
-            new FrameworkPropertyMetadata(0.28, FrameworkPropertyMetadataOptions.Inherits));
+            new FrameworkPropertyMetadata(0.2, FrameworkPropertyMetadataOptions.Inherits));
 
     public static double GetIdleOpacity(DependencyObject obj) => (double)obj.GetValue(IdleOpacityProperty);
 
@@ -44,7 +44,7 @@ public static class ScrollBarAutoFadeBehavior
     /// <summary>What the bar comes up to in use. Just short of 1, so even the active bar stays a shade soft.</summary>
     public static readonly DependencyProperty ActiveOpacityProperty =
         DependencyProperty.RegisterAttached("ActiveOpacity", typeof(double), typeof(ScrollBarAutoFadeBehavior),
-            new FrameworkPropertyMetadata(0.9, FrameworkPropertyMetadataOptions.Inherits));
+            new FrameworkPropertyMetadata(0.8, FrameworkPropertyMetadataOptions.Inherits));
 
     public static double GetActiveOpacity(DependencyObject obj) => (double)obj.GetValue(ActiveOpacityProperty);
 
