@@ -28,4 +28,18 @@ public class AssistantWorkspaceTests
     {
         Assert.Equal(Path.Combine(@"C:\x\y", "Vault"), AssistantWorkspace.VaultRootFor(@"C:\x\y"));
     }
+
+    [Theory]
+    [InlineData(@"C:\x\Vault", true)]
+    [InlineData(@"C:\x\Vault\sources\a.md", true)]
+    [InlineData(@"C:\x\vault\a.md", true)]
+    [InlineData(@"C:\x\Vault Backups\a.md", false)]
+    [InlineData(@"C:\x\docs\Vault\a.md", false)]
+    [InlineData(@"C:\x\VaultNotes.md", false)]
+    [InlineData(@"C:\x\a.md", false)]
+    [InlineData(@"C:\x", false)]
+    public void IsAtOrInsideVaultOf_Theory(string candidate, bool expected)
+    {
+        Assert.Equal(expected, AssistantWorkspace.IsAtOrInsideVaultOf(@"C:\x", candidate));
+    }
 }

@@ -986,6 +986,15 @@ public class FilesToolHandler : IFilesToolHandler
             return WriteFailure($"Error: Refusing to write here — {blockReason}.");
         }
 
+        // The vault is never provisioned into a run workspace, and the promote walk drops anything under it.
+        var vaultAnchor = TaskAmbient.Current?.WorkspaceRoot is null ? null : root;
+        if (vaultAnchor is not null && AssistantWorkspace.IsAtOrInsideVaultOf(vaultAnchor, safePath))
+        {
+            _logger.LogWarning("write_file rejected: the run workspace has no memory vault");
+            _logger.SensitiveDebug("write_file vault-target path: {Path}", safePath);
+            return WriteFailure(VaultTargetPolicy.WriteRefusal(vaultAnchor, safePath));
+        }
+
         if (content.Length > MaxWriteChars)
             return WriteFailure($"Error: Content is too large ({content.Length} chars, max {MaxWriteChars}).");
 
@@ -1026,7 +1035,7 @@ public class FilesToolHandler : IFilesToolHandler
             Description: desc,
             Details: $"{content.Length} character(s) will be written.",
             TargetPath: rel,
-            Execute: () => ExecuteWriteAsync(root, requested, rel, content, oldContent, exists, previewMtime, taskId, touch),
+            Execute: () => ExecuteWriteAsync(root, requested, rel, content, oldContent, exists, previewMtime, taskId, vaultAnchor, touch),
             DiffPreview: diff));
     }
 
@@ -1039,7 +1048,8 @@ public class FilesToolHandler : IFilesToolHandler
 
     private Task<object?> ExecuteWriteAsync(
         string root, string requested, string rel, string content, string? oldContent,
-        bool existedAtPrepare, DateTime? previewMtime, Guid taskId, Action<FileTouch>? touch = null)
+        bool existedAtPrepare, DateTime? previewMtime, Guid taskId, string? vaultAnchor,
+        Action<FileTouch>? touch = null)
     {
         // Re-validate inside the deferred execution path — the sandbox root might have changed
         // between preparation and confirmation. Re-check the sensitive blocklist for the same reason.
@@ -1047,6 +1057,8 @@ public class FilesToolHandler : IFilesToolHandler
             return Task.FromResult<object?>(WriteResult.Failed("Error: Path is outside the assistant files folder."));
         if (SensitivePathGuard.IsBlocked(finalPath, out var blockReason))
             return Task.FromResult<object?>(WriteResult.Failed($"Error: Refusing to write here — {blockReason}."));
+        if (vaultAnchor is not null && AssistantWorkspace.IsAtOrInsideVaultOf(vaultAnchor, finalPath))
+            return Task.FromResult<object?>(WriteResult.Failed(VaultTargetPolicy.WriteRefusal(vaultAnchor, finalPath)));
 
         try
         {

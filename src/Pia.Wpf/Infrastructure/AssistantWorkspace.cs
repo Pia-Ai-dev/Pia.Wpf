@@ -37,6 +37,14 @@ public static class AssistantWorkspace
     public static string VaultRootFor(string filesFolder) =>
         Path.Combine(filesFolder, VaultSubfolderName);
 
+    /// <summary>True for the vault under <paramref name="filesFolder"/> and anything inside it.</summary>
+    public static bool IsAtOrInsideVaultOf(string filesFolder, string candidateFullPath)
+    {
+        var vaultRoot = VaultRootFor(filesFolder);
+        return candidateFullPath.Equals(vaultRoot, StringComparison.OrdinalIgnoreCase)
+            || candidateFullPath.StartsWith(SafeFolderPath.WithTrailingSeparator(vaultRoot), StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// Base directory for every per-run agent workspace: <c>%LOCALAPPDATA%\Pia\runs</c>. Lives here, beside
     /// <see cref="LegacyWorkdir"/>, because it is the SECOND island <see cref="SensitivePathGuard"/> has to
