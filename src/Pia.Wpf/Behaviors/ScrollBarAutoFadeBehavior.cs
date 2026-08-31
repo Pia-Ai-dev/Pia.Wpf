@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 
@@ -48,6 +49,10 @@ public static class ScrollBarAutoFadeBehavior
         DependencyProperty.RegisterAttached("HorizontalBar", typeof(ScrollBar), typeof(ScrollBarAutoFadeBehavior),
             new PropertyMetadata(null));
 
+    private static readonly DependencyProperty ThumbProperty =
+        DependencyProperty.RegisterAttached("Thumb", typeof(Thumb), typeof(ScrollBarAutoFadeBehavior),
+            new PropertyMetadata(null));
+
     private static readonly DependencyProperty IsManagedProperty =
         DependencyProperty.RegisterAttached("IsManaged", typeof(bool), typeof(ScrollBarAutoFadeBehavior),
             new PropertyMetadata(false));
@@ -77,8 +82,10 @@ public static class ScrollBarAutoFadeBehavior
         // is where the initial fade comes from.
         EventManager.RegisterClassHandler(typeof(ScrollViewer), ScrollViewer.ScrollChangedEvent,
             new ScrollChangedEventHandler(OnScrollChanged));
-        EventManager.RegisterClassHandler(typeof(ScrollBar), UIElement.MouseEnterEvent,
-            new MouseEventHandler(OnBarEntered));
+        // The thumb, not the bar: the bar spans the whole viewport, so hovering the empty stretch of track
+        // below a short thumb would light it up without anyone reaching for it.
+        EventManager.RegisterClassHandler(typeof(Thumb), UIElement.MouseEnterEvent,
+            new MouseEventHandler(OnThumbEntered));
     }
 
     private static void OnScrollChanged(object sender, ScrollChangedEventArgs e)
@@ -93,9 +100,33 @@ public static class ScrollBarAutoFadeBehavior
             Poke(horizontal);
     }
 
-    private static void OnBarEntered(object sender, MouseEventArgs e)
+    private static void OnThumbEntered(object sender, MouseEventArgs e)
     {
-        if (sender is ScrollBar bar && (bool)bar.GetValue(IsManagedProperty)) Poke(bar);
+        // Sliders own thumbs too, so this walks up rather than assuming a scroll bar.
+        if (sender is not Thumb thumb || OwningBar(thumb) is not { } bar) return;
+        if (!(bool)bar.GetValue(IsManagedProperty)) return;
+
+        bar.SetValue(ThumbProperty, thumb);
+        Poke(bar);
+    }
+
+    private static ScrollBar? OwningBar(Thumb thumb)
+    {
+        for (DependencyObject? node = thumb; node is not null; node = VisualTreeHelper.GetParent(node))
+            if (node is ScrollBar bar) return bar;
+
+        return null;
+    }
+
+    private static Thumb? ThumbOf(ScrollBar bar)
+    {
+        if (bar.GetValue(ThumbProperty) is Thumb known) return known;
+
+        bar.ApplyTemplate();
+        if ((bar.Template?.FindName("PART_Track", bar) as Track)?.Thumb is not { } thumb) return null;
+
+        bar.SetValue(ThumbProperty, thumb);
+        return thumb;
     }
 
     private static ScrollBar? BarOf(ScrollViewer viewer, Orientation orientation)
@@ -116,6 +147,9 @@ public static class ScrollBarAutoFadeBehavior
     private static void Poke(ScrollBar bar)
     {
         if (!GetIsEnabled(bar)) return;
+
+        // Resolved here so the sweep below can read it without re-walking the template every tick.
+        ThumbOf(bar);
 
         bar.SetValue(LastActivityProperty, Environment.TickCount64);
         if ((bool)bar.GetValue(IsLitProperty)) return;
@@ -140,8 +174,9 @@ public static class ScrollBarAutoFadeBehavior
                 continue;
             }
 
-            // A thumb held still raises no scroll, so the capture is what keeps a stalled drag lit.
-            if (bar.IsMouseOver || bar.IsMouseCaptureWithin)
+            // The thumb's own hover, not the bar's, for the same reason the reveal is on the thumb. A thumb
+            // held still raises no scroll, so the capture is what keeps a stalled drag lit.
+            if (bar.GetValue(ThumbProperty) is Thumb { IsMouseOver: true } || bar.IsMouseCaptureWithin)
             {
                 bar.SetValue(LastActivityProperty, now);
                 continue;

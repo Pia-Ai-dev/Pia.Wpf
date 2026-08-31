@@ -88,7 +88,7 @@ public class ScrollBarAutoFadeBehaviorTests
     }
 
     [Fact]
-    public void HoveringTheBar_LightsItUp()
+    public void HoveringTheThumb_LightsTheBarUp()
     {
         var rig = Host();
 
@@ -96,19 +96,31 @@ public class ScrollBarAutoFadeBehaviorTests
         {
             Assert.True(WaitForOpacity(rig.Bar, Idle), "the bar did not settle before the hover");
 
-            // Synthetic, because nothing can move a real pointer onto an unshown window. It proves the class
-            // handler is registered and reached — the one thing the Loaded hook silently failed to do.
-            WpfStaHost.Run(() =>
-            {
-                rig.Bar.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0)
-                {
-                    RoutedEvent = UIElement.MouseEnterEvent,
-                });
-                return 0;
-            });
+            Enter(ThumbOf(rig));
 
             Assert.True(WaitForOpacity(rig.Bar, 1.0),
-                $"a hover should light the bar, but it is at {Opacity(rig.Bar)}");
+                $"a hover on the thumb should light the bar, but it is at {Opacity(rig.Bar)}");
+        }
+        finally
+        {
+            Dispose(rig);
+        }
+    }
+
+    [Fact]
+    public void HoveringTheEmptyTrack_LeavesTheBarFaded()
+    {
+        var rig = Host();
+
+        try
+        {
+            Assert.True(WaitForOpacity(rig.Bar, Idle), "the bar did not settle before the hover");
+
+            // The bar spans the whole viewport, so most of what the pointer can reach is track, not thumb.
+            Enter(rig.Bar);
+
+            Assert.False(WaitForOpacity(rig.Bar, 1.0, ShortWait),
+                "hovering the empty stretch of track lit the bar up");
         }
         finally
         {
@@ -162,6 +174,20 @@ public class ScrollBarAutoFadeBehaviorTests
     private static void Dispose(Rig rig) => WpfStaHost.Run(() =>
     {
         rig.Source.Dispose();
+        return 0;
+    });
+
+    private static Thumb ThumbOf(Rig rig) => WpfStaHost.Run(() =>
+        ((Track)rig.Bar.Template.FindName("PART_Track", rig.Bar)).Thumb);
+
+    /// <summary>Synthetic, because nothing can move a real pointer onto an unshown window. It proves the class
+    /// handler is registered and reached — the one thing the Loaded hook silently failed to do.</summary>
+    private static void Enter(UIElement element) => WpfStaHost.Run(() =>
+    {
+        element.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0)
+        {
+            RoutedEvent = UIElement.MouseEnterEvent,
+        });
         return 0;
     });
 
