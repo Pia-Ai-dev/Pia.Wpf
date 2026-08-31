@@ -509,10 +509,10 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
 #pragma warning restore CS0162
     }
 
-    /// <summary>Clearing the conversation abandons the chat and cancels its turn, so it must revoke for the same
-    /// reason Stop does; asserted on the store because the conversation being abandoned is the point.</summary>
+    /// <summary>Deleting the open chat abandons it and cancels its turn, so it must revoke for the same reason
+    /// Stop does; asserted on the store because the conversation being abandoned is the point.</summary>
     [Fact]
-    public void ClearConversation_RevokesAPendingPause()
+    public async Task DeleteCurrentChat_RevokesAPendingPause()
     {
         var runId = Guid.NewGuid();
         var store = new RunSteeringStore();
@@ -528,9 +528,9 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
         manager.GetOrCreateActiveForNewChat().Returns(_ => CreateSession()); // the fresh chat the command opens
         var vm = CreateAssistantViewModel(manager, store);
 
-        vm.ClearConversationCommand.Execute(null);
+        await vm.DeleteCurrentChatCommand.ExecuteAsync(null);
 
-        Assert.False(store.TryConsumePauseRequest(runId), "clearing the conversation must not leave a pause behind");
+        Assert.False(store.TryConsumePauseRequest(runId), "deleting the open chat must not leave a pause behind");
 
         Assert.False(store.RecordPauseRequest(runId),
             "terminal intent is sticky for the dispatch it was aimed at: a pause pressed while the cancel " +
@@ -582,6 +582,10 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
 
         var settings = Substitute.For<ISettingsService>();
         settings.GetSettingsAsync().Returns(new AppSettings());
+
+        // Confirmed by default: the delete fact below would otherwise abort before it revokes.
+        var dialog = Substitute.For<IDialogService>();
+        dialog.ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
 
         var meeting = new MeetingAttendeeViewModel(
             Substitute.For<IMeetingAttendeeService>(),
@@ -637,7 +641,7 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
             Substitute.For<IWorkingDirectoryService>(),
             Substitute.For<IFilesToolHandler>(),
             Substitute.For<IMarkdownExportService>(),
-            Substitute.For<IDialogService>(),
+            dialog,
             new InlineUiDispatcher(),
             _permissions,
             agentTimelineService: null,

@@ -630,7 +630,8 @@ transition is the loop's, via the CAS.
 
 1. `AssistantViewModel.ExecuteCancelStreaming` (`:738`–`:741`) — the Stop button. Revoke for
    `ActiveSession?.ActiveRunId` (`ChatSession.cs:141`).
-2. `AssistantViewModel.ExecuteClearConversation` (`:750`–`:759`) — destructive; same revoke.
+2. `AssistantViewModel.DeleteChatFromChipAsync` — destructive (the open chat is deleted); same revoke.
+   Was `ExecuteClearConversation`, removed when the composer gained separate New chat / Delete chat buttons.
 3. `HeadlessRunLauncher.CancelThenTearDownWorkspaceAsync` (`:807`–`:811`), reached only from
    `OnChatsChanged` — chat delete must never become a pause.
 4. `AgentRunOrchestrator.SafeCancelStaleChildrenAsync`, before `launcher.CancelAsync(old.Id)` (`:811`) — a
@@ -834,7 +835,7 @@ facts. Nothing user-reachable yet.
 | `UserPause_ReleasesAStepBlockedOnAnActionCard` | a step parked at `ChatState.WaitingForTool` on an uncancellable TCS (`ActionCardInfo.cs:226`) is released by the pause, and the run reaches `Paused`. **This is the fact candidate (a) could not have passed** — assert the card's `State == Declined` and that no tool executed |
 | `UserPause_DoesNotSettleTheLiveSessionCompleted` | `SafeOnPaused` → `OnPausedAsync` (`LiveTurnExecutor.cs:177`–`:189`) drops the session to `Idle` with no `TurnCompleted` and no `ChatState.Completed`; `IsStreaming` clears so Send/RunInBackground re-enable while the run sits paused (guardrail 5) |
 | `StopButton_RevokesAPendingPause_AndTheRunSettlesCancelled` | revocation 1: Stop always wins over an unconsumed pause |
-| `ClearConversation_RevokesAPendingPause` | revocation 2 |
+| `DeleteCurrentChat_RevokesAPendingPause` | revocation 2 |
 | `ChatDelete_RevokesAPendingPause` | revocation 3, headless side |
 | `Shutdown_DoesNotRevoke_SoAPendingPauseYieldsAResumableRun` | the deliberate asymmetry (§5.3), asserted rather than commented |
 

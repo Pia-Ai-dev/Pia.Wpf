@@ -147,6 +147,21 @@ public class AssistantViewModelChipDeleteTests
     }
 
     [Fact]
+    public async Task DeletingAnUnsavedChatFromTheComposer_DiscardsItWithoutAStoreDelete()
+    {
+        var openSession = NewSession(); // no SetIdentity: the id is assigned by the first persist
+        openSession.SetWorkingDirectory("notes");
+        _manager.ActiveSession.Returns(openSession);
+        var vm = CreateSut();
+
+        await vm.DeleteCurrentChatCommand.ExecuteAsync(null);
+
+        await _chatService.DidNotReceive().DeleteAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        _manager.Received(1).GetOrCreateActiveForNewChat();
+        Assert.Equal("notes", _freshSession.WorkingDirectory);
+    }
+
+    [Fact]
     public void TheComposerDeleteButton_TracksWhetherTheChatHasAnythingToDelete()
     {
         var openSession = NewSession();

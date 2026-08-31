@@ -219,7 +219,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IAsyncRelayCommand RunInBackgroundCommand { get; }
     public IAsyncRelayCommand ToggleRecordingCommand { get; }
     public IRelayCommand CancelStreamingCommand { get; }
-    public IRelayCommand ClearConversationCommand { get; }
     public IRelayCommand NewChatCommand { get; }
     public IAsyncRelayCommand DeleteCurrentChatCommand { get; }
     public IAsyncRelayCommand<AssistantMessage> CopyMessageCommand { get; }
@@ -358,7 +357,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         RunInBackgroundCommand = new AsyncRelayCommand(ExecuteRunInBackground, CanExecuteRunInBackground);
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
         CancelStreamingCommand = new RelayCommand(ExecuteCancelStreaming);
-        ClearConversationCommand = new RelayCommand(ExecuteClearConversation);
         NewChatCommand = new RelayCommand(ExecuteNewChat);
         DeleteCurrentChatCommand = new AsyncRelayCommand(ExecuteDeleteCurrentChat, CanDeleteCurrentChat);
         CopyMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecuteCopyMessage);
@@ -1160,13 +1158,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     }
 
     /// <summary>
-    /// Batch 08 D1, revocation sites 1 and 2. Both callers below cancel the active session with TERMINAL
-    /// intent, and <c>ChatSession.Cancel()</c> is also the sink a user PAUSE fires — so an unconsumed pause
-    /// request sitting behind this cancel would be read by the run's loop as "the user asked to pause", and a
-    /// run the user pressed Stop on would come back <c>Paused</c> and resumable instead of settling
-    /// <c>Cancelled</c>. Revoke FIRST, always: after the cancel the step may already have unwound and consumed
-    /// it. The direction matters — a lost pause is recoverable (press Pause again), a Stop read as a pause is
-    /// not what the user asked for.
+    /// Both callers cancel the active session with TERMINAL intent, and <c>ChatSession.Cancel()</c> is also
+    /// the sink a user PAUSE fires — so an unconsumed pause request sitting behind this cancel would be read
+    /// by the run's loop as "the user asked to pause", and a run the user pressed Stop on would come back
+    /// <c>Paused</c> and resumable instead of settling <c>Cancelled</c>. Revoke FIRST, always: after the
+    /// cancel the step may already have unwound and consumed it. The direction matters — a lost pause is
+    /// recoverable (press Pause again), a Stop read as a pause is not what the user asked for.
     /// <para>
     /// No-op when the session carries no run (an ordinary chat turn) or when no request is pending, and it
     /// deliberately does NOT touch the sink registration: the dispatch owns that and releases it itself.
@@ -1176,27 +1173,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         if (_chatSessionManager.ActiveSession?.ActiveRunId is { } runId)
             _runSteering?.RevokePauseRequest(runId);
-    }
-
-    /// <summary>
-    /// "Clear conversation" (destructive): abandon the CURRENT conversation by cancelling
-    /// its in-flight turn + pending action cards, then open a fresh chat. No-op cancel when
-    /// nothing is running. The dedicated Stop button (<see cref="ExecuteCancelStreaming"/>)
-    /// is the other place a turn is intentionally cancelled. Contrast <see cref="NewChat"/>,
-    /// which is additive and leaves the running turn alive in the background.
-    /// </summary>
-    private void ExecuteClearConversation()
-    {
-        // Inherit the cleared chat's working dir so clearing keeps you in the same folder
-        // (capture before the swap, since GetOrCreateActiveForNewChat re-points ActiveSession).
-        var inheritedDir = _chatSessionManager.ActiveSession?.WorkingDirectory;
-        // Destructive: cancel this conversation's in-flight turn + pending cards. Other
-        // live sessions are untouched (the manager owns their lifetime).
-        // Batch 08 revocation 2: abandoning the conversation is terminal intent, so a pending pause must not
-        // survive it — see RevokeAnyPendingPause.
-        RevokeAnyPendingPause();
-        _chatSessionManager.ActiveSession?.Cancel();
-        StartFreshChat(inheritedDir);
     }
 
     /// <summary>
@@ -1212,9 +1188,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// folder this chat works in.</summary>
     private void ExecuteNewChat() => NewChat(_chatSessionManager.ActiveSession?.WorkingDirectory);
 
-    /// <summary>Opens a new, empty active chat and resets the composer. Shared by the additive
-    /// "New chat" (the chip's pinned folder, or the composer's "+" inheriting this chat's) and the
-    /// destructive "Clear conversation" entry point (which inherits the cleared chat's folder).</summary>
+    /// <summary>Opens a new, empty active chat and resets the composer. Shared by the chip's
+    /// "+ New Chat" (its pinned folder), the composer's "+" (this chat's folder) and the delete
+    /// path (the deleted chat's folder).</summary>
     /// <param name="workingDirectory">Relative working dir to pin (forward slashes;
     /// null/empty = sandbox root).</param>
     private void StartFreshChat(string? workingDirectory = null)
@@ -1246,8 +1222,17 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// <summary>Deletes the chat the composer is on, then opens a fresh one.</summary>
     private async Task ExecuteDeleteCurrentChat()
     {
-        if (_chatSessionManager.ActiveSession?.Id is not { } chatId) return;
-        await DeleteChatFromChipAsync(chatId);
+        var session = _chatSessionManager.ActiveSession;
+        if (session?.Id is { } chatId)
+        {
+            await DeleteChatFromChipAsync(chatId);
+            return;
+        }
+
+        // No row to delete: the id is assigned by the first persist, which a chat mid-first-turn has not
+        // reached yet. Discarding it locally is the whole of "delete" for such a chat.
+        if (!await ConfirmChatDeleteAsync()) return;
+        AbandonActiveChat(session?.WorkingDirectory);
     }
 
     /// <summary>Nothing to delete while the chat is still empty — a fresh one is what deleting would leave.</summary>
@@ -1257,10 +1242,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// deleting the open chat moves to a fresh one.</summary>
     private async Task DeleteChatFromChipAsync(Guid chatId)
     {
-        var confirmed = await _dialogService.ShowConfirmationDialogAsync(
-            _localizationService["Msg_History_ConfirmDeleteTitle"],
-            _localizationService["Msg_History_ConfirmDeleteMessage"]);
-        if (!confirmed) return;
+        if (!await ConfirmChatDeleteAsync()) return;
 
         // Capture before the swap: StartFreshChat re-points ActiveSession.
         var deletesOpenChat = _chatSessionManager.ActiveSession?.Id == chatId;
@@ -1270,8 +1252,17 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _logger.LogInformation("Deleted assistant chat {ChatId}", chatId);
 
         if (!deletesOpenChat) return;
+        AbandonActiveChat(inheritedDir);
+    }
 
-        // Cancel the deleted chat's turn: its terminal persist would resurrect the deleted row.
+    private Task<bool> ConfirmChatDeleteAsync() => _dialogService.ShowConfirmationDialogAsync(
+        _localizationService["Msg_History_ConfirmDeleteTitle"],
+        _localizationService["Msg_History_ConfirmDeleteMessage"]);
+
+    /// <summary>Drops the open chat and swaps a fresh one in its folder. The cancel is not optional: the
+    /// abandoned turn's terminal persist would resurrect the row that was just deleted.</summary>
+    private void AbandonActiveChat(string? inheritedDir)
+    {
         RevokeAnyPendingPause();
         _chatSessionManager.ActiveSession?.Cancel();
         StartFreshChat(inheritedDir);

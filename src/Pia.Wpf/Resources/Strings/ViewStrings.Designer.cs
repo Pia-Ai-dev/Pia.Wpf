@@ -187,15 +187,6 @@ namespace Pia.Resources.Strings {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Clear conversation.
-        /// </summary>
-        public static string Assistant_ClearConversation_Tooltip {
-            get {
-                return ResourceManager.GetString("Assistant_ClearConversation_Tooltip", resourceCulture);
-            }
-        }
-        
-        /// <summary>
         ///   Looks up a localized string similar to Copy.
         /// </summary>
         public static string Assistant_Copy_Tooltip {
