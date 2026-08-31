@@ -1,6 +1,6 @@
 # Approval-park defects — checklist
 
-**Status:** open · **Owner:** Marco Altmann · **Written:** 2026-08-31
+**Status:** complete — all 20 steps landed 2026-09-01 · **Owner:** Marco Altmann · **Written:** 2026-08-31
 **Origin:** [2026-08-31-approval-park-defects.md](2026-08-31-approval-park-defects.md), which root-causes
 the four problems reported in `artifacts/Agent_Run/agent_run_issues.md`.
 
@@ -96,9 +96,9 @@ Two facts found while settling them, which override the wording of the steps bel
 
 ## E — Cross-step artifact de-duplication
 
-- [ ] **E1 — Seed each step with the artifacts already declared.** The step instruction forbids
+- [x] **E1 — Seed each step with the artifacts already declared.** The step instruction forbids
   re-creating an existing deliverable under a new name. *Deps:* C3 · *Effort:* S · *Value:* Med
-- [ ] **E2 — Probe every declared artifact in the verifier.** Resolve the `declared=1`-against-three-Done-steps
+- [x] **E2 — Probe every declared artifact in the verifier.** Resolve the `declared=1`-against-three-Done-steps
   open question and flag near-duplicate deliverables in the verdict. *Deps:* E1 · *Effort:* S ·
   *Value:* Med
 
@@ -129,6 +129,26 @@ Two facts found while settling them, which override the wording of the steps bel
   raise the loop stop signal too, so the interactive step path stops on an ask exactly as the unattended
   one does. Owner decision, 2026-08-31; not a checklist step because the checklist scoped issue 1 to the
   run panel. *Deps:* A2 · *Effort:* XS · *Value:* Med
+
+## Outcome
+
+All 20 steps landed on `feature/agent_issues` between 2026-08-31 and 2026-09-01, in six batches.
+Full unfiltered `dotnet test`: **5855 total, 0 failed, 5797 passed, 58 skipped** (the `Explicit`
+live-provider tests). `dotnet build -t:Rebuild` reports `0 Warnung(en) / 0 Fehler` in Debug and Release.
+
+Known open, carried rather than closed:
+
+- **Risk 3 is mitigated, not closed.** On a vault-routed run the DECLARED half still probes against the
+  workspace root and reads NOT FOUND; it is the REPORTED channel that is now probed, so the verdict no
+  longer under-reports. Closing it fully means teaching the declared probe about vault references.
+- **Withheld rows can outlive several park/resume cycles**, holding up to 512 K chars that was never
+  executed. Bounded by the per-park and per-run caps and the terminal purge. The cheap tightening
+  (supersede every unreplayed row on each park) is rejected on purpose — it would drop the surviving
+  `create_source` that group B exists to keep.
+- **The end-to-end re-run of the original goal has not been done.** It needs a throwaway profile that
+  also patches `assistantFilesFolder`; `PIA_DATA_DIR` alone does not redirect the vault.
+- **A stale-latch window in the approval detail.** If a park clears while a store read is in flight, the
+  late read can set the latch against the new state. Non-blocking; the next `RunChanged` corrects it.
 
 ---
 
