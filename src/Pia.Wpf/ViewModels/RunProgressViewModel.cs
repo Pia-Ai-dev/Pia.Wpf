@@ -1889,7 +1889,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// </summary>
     internal static string DecisionLabelKey(ToolGateDecision decision) => decision switch
     {
-        // 's AutoApprovedSessionGrant folds in with the other standing authorities: from the
+        // AutoApprovedSessionGrant folds in with the other standing authorities: from the
         // panel's point of view the call ran without anyone being asked, which is what this category says.
         ToolGateDecision.AutoApprovedStandingGrant or ToolGateDecision.AutoApprovedPolicy
             or ToolGateDecision.GrantedByName or ToolGateDecision.AutoApprovedAllowlist

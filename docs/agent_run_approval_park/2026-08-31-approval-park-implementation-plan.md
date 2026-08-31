@@ -2962,6 +2962,28 @@ Slice 13's seven new bindings is not PUBLIC on `RunProgressViewModel`.
 
 ---
 
+## 6a. Corrections found while building slices 1-3
+
+Errors in THIS plan, found by the implementers against the real code. Later slices must not re-inherit
+them.
+
+| # | The plan said | The code says | Bearing |
+|---|---|---|---|
+| 1 | Slice 3 bounds `FlowView.xaml`'s body with `MaxLines="3"`, and argues for it over `MaxHeight`. | **WPF's `TextBlock` has no `MaxLines`** — that is a UWP/WinUI property; WPF has it only on `TextBox`. The plan's markup would not have compiled. | Shipped as `LineHeight="16"` + `LineStackingStrategy="BlockLineHeight"` + `MaxHeight="48"`, pinned by `FlowCardBodyBoundsTests` against the font's natural line height. **Slice 13 (G2) must not reach for `MaxLines` either.** |
+| 2 | Section 6 claims the interactive gate and the voice handler "can never see a non-null `Stop`". | `AiClientService` constructs a signal on **every** round, so `ChatSession.HandleToolCall` and `AssistantViewModel.HandleVoiceModeToolCall` DO receive a non-null `Stop`. | Behaviour is still unchanged, because neither calls `RequestStop()`. Only the plan's *justification* was wrong. Do not "fix" it by special-casing a null. |
+| 3 | Slice 1 inverts an existing `AskAlone_DoesNotRaiseTheLoopStopSignal`, and adds a sibling of `RelaysTheDispatchContextToTheInnerHandler`. | Neither test existed. The first was itself part of Slice 1's new work; the second is a mis-naming of the test at those line numbers. | Written directly rather than renamed. A named-test reference in a later slice is a hypothesis, not a fact — grep before trusting it. |
+| 4 | Slice 1's reworked `MidPlanAskTests.Drive` has four contexts at rounds 1/1/2/3 sharing one signal. | A round-3 context sharing a round-1 signal is a shape **production cannot produce** — the loop builds one signal per round. | All four moved to round 1. Once the ask stops the loop there is no later round for either double. |
+
+### Arm attribution — do not over-read a green suite
+
+Under four arms, arms 2 (withheld-because-parked) and 3 (withheld-because-asking) are
+**redundant-by-construction**: the loop has already been told to stop by arm 1 or arm 4. With one signal
+per round, no test can attribute the raised flag to arms 2 or 3. They are pinned through their own
+observables instead — the advisory string that came back, and an empty executed-tool list. Arm 1 is
+attributed by a snapshot taken between a round's two calls, arm 4 by an ask being the turn's only call.
+
+---
+
 ## 7. Open risks
 
 Carried forward, in rough order of how likely each is to need an owner decision.

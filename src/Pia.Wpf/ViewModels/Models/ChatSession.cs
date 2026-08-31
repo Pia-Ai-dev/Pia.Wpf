@@ -1098,6 +1098,7 @@ public sealed class ChatSession : IDisposable
         if (_userInputRequest is { } userInputStore
             && string.Equals(toolCall.Name, AgentStepTools.RequestUserInputToolName, StringComparison.Ordinal))
         {
+            dispatch.Stop?.RequestStop();
             return userInputStore.Record(toolCall.Arguments);
         }
 
@@ -1149,8 +1150,10 @@ public sealed class ChatSession : IDisposable
         if (pendingAction is not null)
         {
             // An ask stops the exchange: otherwise a write called after the park would raise a card whose approval would re-execute once the step re-runs.
+            // Only a same-round call can reach here now — the ask itself already stopped the loop.
             if (_userInputRequest?.Question is not null)
             {
+                dispatch.Stop?.RequestStop();
                 _logger.LogInformation(
                     "Withheld tool {ToolName}: the run is stopping to ask the user", loggedName);
                 return $"Not run: this run is stopping to ask the person your question, so '{pendingAction.ToolName}' "

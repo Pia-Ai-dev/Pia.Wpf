@@ -163,6 +163,25 @@ public sealed class ChatSessionMidPlanAskTests
             Arg.Any<CancellationToken>());
     }
 
+    /// <summary>The ask stops the tool loop here exactly as it does on the unattended path, so the question reaches the person without the turn spending its remaining rounds first.</summary>
+    [Fact]
+    public async Task AnAsk_RaisesTheLoopStopSignal()
+    {
+        var stop = new ToolLoopStopSignal();
+
+        ArrangeExchange(async handler =>
+        {
+            await handler!(Ask(TheQuestion), new ToolDispatchContext(1, stop));
+            return "text";
+        });
+
+        var result = await CreateSession().RunStepTurnAsync(
+            Spec(), new RunContext("goal", RunProfile.Interactive), TestContext.Current.CancellationToken);
+
+        Assert.True(stop.IsStopRequested);
+        Assert.Equal(TheQuestion, result.UserInputQuestion);
+    }
+
     /// <summary>A write requested after the ask must not reach the approval gate — approving it would let the resumed step execute the side effect a second time.</summary>
     [Fact]
     public async Task AWriteRequestedAfterTheAsk_NeverReachesTheGate()
@@ -176,12 +195,15 @@ public sealed class ChatSessionMidPlanAskTests
                     () => { _executed.Add(name); return Task.FromResult<object?>("did it"); }));
             });
 
+        // Same round as the ask: the ask now stops the loop, so a later round is a shape production cannot reach.
+        var stop = new ToolLoopStopSignal();
+
         ArrangeExchange(async handler =>
         {
-            await handler!(Ask(TheQuestion), new ToolDispatchContext(1));
+            await handler!(Ask(TheQuestion), new ToolDispatchContext(1, stop));
             await handler(
                 new FunctionCallContent("call-write", "write_file", new Dictionary<string, object?>()),
-                new ToolDispatchContext(2));
+                new ToolDispatchContext(1, stop));
             return "text";
         });
 
@@ -190,6 +212,7 @@ public sealed class ChatSessionMidPlanAskTests
 
         Assert.Equal(TheQuestion, result.UserInputQuestion);
         Assert.Empty(_executed);
+        Assert.True(stop.IsStopRequested);
         // Matches all four parameters (incl. the two optional ones) — the production call passes toolClass,
         // so a two-argument match would pass vacuously.
         _cards.DidNotReceive().Build(
