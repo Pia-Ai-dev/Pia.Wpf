@@ -282,6 +282,145 @@ public sealed class AgentToolExchangeStoreTests : IDisposable
         Assert.All(rows.Where(r => r.StepId is null), r => Assert.Equal(runLevelAnchor, r.AnchorMessageId));
     }
 
+    /// <summary>A half payload is unreplayable, so the per-park bound refuses records whole.</summary>
+    [Fact]
+    public async Task ThePerParkCap_DropsWholeRecordsRatherThanTruncatingThem()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await MakeRunAsync();
+        var content = new string('c', 200_000);
+
+        var approvals = new ToolApprovalStore(canPark: true);
+        for (var i = 0; i < 12; i++)
+        {
+            approvals.Record(new ToolApprovalStore.ParkedCall(
+                "write_file", "call-" + i, 1, Guid.NewGuid(),
+                AgentToolExchangeSerializer.SerializeArguments(
+                    new Dictionary<string, object?> { ["path"] = "f" + i + ".md", ["content"] = content }),
+                "path=f" + i + ".md", Withheld: i > 0));
+        }
+
+        Assert.Equal(ToolApprovalStore.MaxRecordedCalls, approvals.RecordedCalls.Count);
+        Assert.Equal(4, approvals.DroppedRecords);
+
+        await _store.AppendParkedAsync(
+            approvals.RecordedCalls.Select(c => RowFor(run.Id, c)).ToList(), ct);
+
+        var rows = await _store.GetReplayableAsync(run.Id, "write_file", ct);
+        Assert.Equal(ToolApprovalStore.MaxRecordedCalls, rows.Count);
+        Assert.All(rows, r =>
+        {
+            var arguments = AgentToolExchangeSerializer.DeserializeArguments(r.ArgumentsJson);
+            Assert.NotNull(arguments);
+            Assert.Equal(content, ((System.Text.Json.JsonElement)arguments!["content"]!).GetString());
+        });
+    }
+
+    /// <summary>Per row instead of per pass, a four-file delete approval would leave only the last file
+    /// replayable and silently drop three.</summary>
+    [Fact]
+    public async Task SupersedeRunsOncePerPass_SoSiblingCallsOfOneToolDoNotCancelEachOther()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await MakeRunAsync();
+        string[] tools = ["delete_file"];
+
+        await _store.SupersedeUnreplayedAsync(run.Id, tools, ct);
+        await _store.AppendParkedAsync(
+            [.. Enumerable.Range(0, 4).Select(i => ParkedRow(run.Id, "delete_file", $"{{\"path\":\"f{i}.md\"}}"))],
+            ct);
+
+        var first = await _store.GetReplayableAsync(run.Id, "delete_file", ct);
+        Assert.Equal(4, first.Count);
+        Assert.All(first, r => Assert.Null(r.SupersededAt));
+        Assert.Equal(first.Select(r => r.Seq).Order().ToArray(), first.Select(r => r.Seq).ToArray());
+
+        // The second pass is what supersede exists for: the earlier pass's rows go stale, this pass's do not.
+        await _store.SupersedeUnreplayedAsync(run.Id, tools, ct);
+        await _store.AppendParkedAsync(
+            [.. Enumerable.Range(4, 2).Select(i => ParkedRow(run.Id, "delete_file", $"{{\"path\":\"f{i}.md\"}}"))],
+            ct);
+
+        var second = await _store.GetReplayableAsync(run.Id, "delete_file", ct);
+        Assert.Equal(2, second.Count);
+        Assert.Empty(second.Select(r => r.Id).Intersect(first.Select(r => r.Id)));
+    }
+
+    /// <summary>Superseding every unreplayed row of the run would be cheaper, and would drop the withheld call
+    /// of another tool — the document body the reported run had to compose twice.</summary>
+    [Fact]
+    public async Task SupersedeIsScopedToThePassesOwnTools_SoAnotherToolsWithheldCallSurvives()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await MakeRunAsync();
+        await _store.AppendParkedAsync(
+            [ParkedRow(run.Id, "write_file", "{\"path\":\"report.md\"}"),
+             ParkedRow(run.Id, "create_source", "{\"path\":\"sources/panel.md\"}",
+                 AgentToolExchangeKind.WithheldCall)],
+            ct);
+
+        // Two under the broad rule, and the count is the only place the two rules differ observably.
+        Assert.Equal(1, await _store.SupersedeUnreplayedAsync(run.Id, ["write_file"], ct));
+
+        Assert.Empty(await _store.GetReplayableAsync(run.Id, "write_file", ct));
+        var survivor = Assert.Single(await _store.GetReplayableAsync(run.Id, "create_source", ct));
+        Assert.Null(survivor.SupersededAt);
+        Assert.Null(survivor.ReplayedAt);
+    }
+
+    /// <summary>The per-run cap is Kind 1/2's alone: dropping the row a human's Continue press replays would
+    /// disable an approval they just gave, with nothing failing.</summary>
+    [Fact]
+    public async Task AParkedRowIsNeverDroppedByThePerRunCap()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await MakeRunAsync();
+
+        // One batch: RecordAsync refuses a batch that would CROSS the cap, so the fill has to land at it exactly.
+        var pairs = Enumerable.Range(0, AgentToolExchangeStore.MaxRowsPerRun / 2).SelectMany(i => Round(i)).ToList();
+        await _store.RecordAsync(run.Id, null, 1, pairs, ct);
+        Assert.Equal(AgentToolExchangeStore.MaxRowsPerRun, CountRows(run.Id));
+
+        // Non-vacuity: the run really is at the cap, so a Kind 1/2 round would now be refused.
+        await _store.RecordAsync(run.Id, null, 2, Round(999), ct);
+        Assert.Equal(AgentToolExchangeStore.MaxRowsPerRun, CountRows(run.Id));
+
+        await _store.AppendParkedAsync([ParkedRow(run.Id, "write_file", "{\"path\":\"late.md\"}")], ct);
+
+        Assert.Equal(AgentToolExchangeStore.MaxRowsPerRun + 1, CountRows(run.Id));
+        Assert.Single(await _store.GetReplayableAsync(run.Id, "write_file", ct));
+    }
+
+    /// <summary>The structural half of at-most-once. An unconditional UPDATE returns true to both callers, so two
+    /// resume dispatches would each execute the same approved call.</summary>
+    [Fact]
+    public async Task MarkingReplayedIsConditional_SoOnlyOneCallerEverExecutes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await MakeRunAsync();
+        await _store.AppendParkedAsync(
+            [ParkedRow(run.Id, "write_file", "{\"path\":\"a.md\"}"),
+             ParkedRow(run.Id, "write_file", "{\"path\":\"b.md\"}")],
+            ct);
+
+        var rows = await _store.GetReplayableAsync(run.Id, "write_file", ct);
+        Assert.Equal(2, rows.Count);
+
+        Assert.True(await _store.TryMarkReplayedAsync(rows[0].Id, DateTime.UtcNow, ct));
+        Assert.False(await _store.TryMarkReplayedAsync(rows[0].Id, DateTime.UtcNow, ct));
+
+        // Off the calling thread on both sides: the store does its work synchronously under its own lock, so
+        // awaiting the two calls in sequence would exercise no contention at all.
+        var now = DateTime.UtcNow;
+        var contended = await Task.WhenAll(
+            Task.Run(() => _store.TryMarkReplayedAsync(rows[1].Id, now, ct), ct),
+            Task.Run(() => _store.TryMarkReplayedAsync(rows[1].Id, now, ct), ct));
+        Assert.Equal(1, contended.Count(won => won));
+
+        // A claimed row leaves the set the replay iterates, so it is never offered again.
+        Assert.Empty(await _store.GetReplayableAsync(run.Id, "write_file", ct));
+    }
+
     [Fact]
     public void TheStoresPublicSurface_NamesNoSyncAssistantChatType()
     {
@@ -327,7 +466,33 @@ public sealed class AgentToolExchangeStoreTests : IDisposable
         new(ChatRole.Tool, [new FunctionResultContent("c" + index, new string('b', bodyChars))]),
     ];
 
-    private static AgentToolExchangeRow ParkedRow(Guid runId, string toolName, string argumentsJson) => new(
+    /// <summary>Mirrors the executor's own mapping, which is private to it.</summary>
+    private static AgentToolExchangeRow RowFor(Guid runId, ToolApprovalStore.ParkedCall call) => new(
+        Id: Guid.NewGuid(),
+        RunId: runId,
+        StepId: null,
+        MessageSeq: 0,
+        Seq: 0,
+        Round: call.Round,
+        Role: "assistant",
+        Kind: call.Withheld ? AgentToolExchangeKind.WithheldCall : AgentToolExchangeKind.ParkedCall,
+        CallId: call.CallId ?? string.Empty,
+        ToolName: call.ToolName,
+        PluginId: call.PluginId,
+        ArgumentsJson: call.ArgumentsJson,
+        ArgsOmitted: false,
+        DisplayArgs: call.DisplayArgs,
+        ResultKind: AgentToolExchangeResult.None,
+        ResultText: null,
+        Chars: call.ArgumentsJson?.Length ?? 0,
+        AnchorMessageId: null,
+        CreatedAt: DateTime.UtcNow,
+        ReplayedAt: null,
+        SupersededAt: null);
+
+    private static AgentToolExchangeRow ParkedRow(
+        Guid runId, string toolName, string argumentsJson,
+        AgentToolExchangeKind kind = AgentToolExchangeKind.ParkedCall) => new(
         Id: Guid.NewGuid(),
         RunId: runId,
         StepId: null,
@@ -335,7 +500,7 @@ public sealed class AgentToolExchangeStoreTests : IDisposable
         Seq: 0,
         Round: 3,
         Role: "assistant",
-        Kind: AgentToolExchangeKind.ParkedCall,
+        Kind: kind,
         CallId: "park-" + Guid.NewGuid().ToString("N")[..8],
         ToolName: toolName,
         PluginId: null,

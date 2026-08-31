@@ -152,8 +152,7 @@ public sealed record StepTurnResult(
     /// is merely waiting.
     /// </para>
     /// <para>
-    /// The pending call itself cannot survive a park — a park outlives the process — so what the human
-    /// approves is the capability, and the resumed step re-issues the call. What it acted on rides along
+    /// The approved call is replayed once on the resume, before the step re-runs. What it acted on rides along
     /// separately in <see cref="ApprovalRequiredArguments"/>, so the approval is not blind.
     /// </para>
     /// </summary>

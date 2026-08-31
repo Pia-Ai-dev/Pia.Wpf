@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -26,6 +27,9 @@ public sealed class UnattendedApprovalParkTests : IDisposable
     private readonly ExecutingRunStore _executing = new();
     private readonly RecordingTimelineService _timeline = new();
 
+    /// <summary>The run's payload store, built by <see cref="Build"/> so a fact can read the parked rows back.</summary>
+    private AgentToolExchangeStore? _exchanges;
+
     public UnattendedApprovalParkTests()
     {
         _dir = Path.Combine(Path.GetTempPath(), "PiaApprovalPark_" + Guid.NewGuid().ToString("N"));
@@ -39,6 +43,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
 
     public void Dispose()
     {
+        _exchanges?.Dispose();
         _runs.Dispose();
         _ctx.Dispose();
         try { Directory.Delete(_dir, true); } catch { /* best effort */ }
@@ -204,6 +209,402 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         Assert.Contains("fragments/0004-scroll.md", args);
 
         Assert.False(probe.Executed);
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>What Continue replays is the call, not the card: the arguments are persisted at their full
+    /// length beside today's capped display line. The envelope stays capped — this adds a channel.</summary>
+    [Fact]
+    public async Task AParkPersistsTheCallVerbatim_NotJustTheDisplayString()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var content = new string('c', 200_000);
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, firstPath: "report.md", firstContent: content);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+
+        Assert.Equal(1, CountExchangeRows(handle.RunId));
+        var row = Assert.Single(await _exchanges!.GetReplayableAsync(handle.RunId, "write_file", ct));
+
+        Assert.Equal(AgentToolExchangeKind.ParkedCall, row.Kind);
+        Assert.Equal("write_file", row.ToolName);
+        Assert.Equal("call-1", row.CallId);
+        Assert.Equal(1, row.Round);
+        Assert.Null(row.ResultText);
+        Assert.Null(row.ReplayedAt);
+        Assert.Null(row.SupersededAt);
+
+        // The property that makes a replay possible at all: the body is there whole, not capped for display.
+        var arguments = AgentToolExchangeSerializer.DeserializeArguments(row.ArgumentsJson);
+        Assert.NotNull(arguments);
+        Assert.Equal(content, ((JsonElement)arguments!["content"]!).GetString());
+
+        Assert.NotNull(row.DisplayArgs);
+        Assert.NotEqual(row.ArgumentsJson, row.DisplayArgs);
+        Assert.DoesNotContain(content, row.DisplayArgs!, StringComparison.Ordinal);
+
+        // The control: the pause envelope still carries the capped line and nothing more.
+        var envelope = PauseMember(await GetRunAsync(handle.RunId), "args");
+        Assert.NotNull(envelope);
+        Assert.True(envelope!.Length < 1000, "the envelope must stay a display line: " + envelope.Length);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>The other half of the reported loss: the run's only real vault write was the SECOND call in the
+    /// parked exchange, discarded with the same envelope. It survives as its own replayable row.</summary>
+    [Fact]
+    public async Task TheSecondCallInAParkedExchange_IsPersistedAsAWithheldRow()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, secondToolName: "create_source",
+            firstPath: "report.md", secondPath: "sources/agent-panel.md");
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+
+        var parked = Assert.Single(await _exchanges!.GetReplayableAsync(handle.RunId, "write_file", ct));
+        Assert.Equal(AgentToolExchangeKind.ParkedCall, parked.Kind);
+
+        var withheld = Assert.Single(await _exchanges.GetReplayableAsync(handle.RunId, "create_source", ct));
+        Assert.Equal(AgentToolExchangeKind.WithheldCall, withheld.Kind);
+        Assert.Equal("call-2", withheld.CallId);
+        Assert.Contains("sources/agent-panel.md", withheld.ArgumentsJson!, StringComparison.Ordinal);
+        Assert.True(withheld.Seq > parked.Seq, "the withheld call comes after the one that parked");
+
+        // Withheld means withheld: neither call ran, and only the one that parked is in the envelope.
+        Assert.False(probe.Executed);
+        Assert.Equal("write_file", PauseMember(await GetRunAsync(handle.RunId), "tool"));
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>Continue means the call itself runs, not merely that the capability is granted — and it runs
+    /// BEFORE the step's first provider round-trip, so the model's first view already contains its result.</summary>
+    [Fact]
+    public async Task ContinuingAPark_ExecutesTheParkedCallOnce_BeforeTheStepReruns()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var content = new string('c', 200_000);
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, firstPath: "report.md", firstContent: content);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        Assert.False(probe.Executed); // the premise: it parked rather than ran
+
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
+        await AwaitSettledAsync(handle.RunId);
+
+        // The park's dispatch, then the re-run's. Both snapshots predate the terminal purge.
+        Assert.Equal(2, probe.Dispatches.Count);
+        Assert.Equal(0, probe.Dispatches[0].ExecutedCount);
+        var resumed = probe.Dispatches[1];
+
+        // ONCE, and before the request went out — which is what "before the step re-runs" means. Whatever the
+        // re-run then does is the model's own call, made with the result already in front of it.
+        Assert.Equal(1, resumed.ExecutedCount);
+        Assert.Equal("report.md", probe.ExecutedPaths[0]);
+
+        var row = Assert.Single(resumed.Rows, r => r.Kind == AgentToolExchangeKind.ParkedCall);
+        Assert.NotNull(row.ReplayedAt);
+        Assert.Equal(ExecuteResult, row.ResultText);
+
+        var seeded = Assert.Single(
+            resumed.Request.SelectMany(m => m.Contents).OfType<FunctionCallContent>(),
+            c => c.Name == "write_file");
+        Assert.Contains(resumed.Request.SelectMany(m => m.Contents).OfType<FunctionResultContent>(),
+            r => r.CallId == seeded.CallId && (r.Result as string) == ExecuteResult);
+
+        // Capped for the model, verbatim in the row: the tool got the real body, the context does not pay for it.
+        var seededContent = ArgumentText(seeded, "content");
+        Assert.NotNull(seededContent);
+        Assert.True(seededContent!.Length <= AgentToolExchangeSerializer.MaxSeedValueChars + 1,
+            "the seeded content must be capped, not the persisted 200 000 chars: " + seededContent.Length);
+        Assert.Contains(content, row.ArgumentsJson!, StringComparison.Ordinal);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>The seeded pair bypasses the tokenizing decorator entirely, so both halves have to be tokenized
+    /// here — otherwise real user content the gate detokenized reaches the provider raw on the next round.</summary>
+    [Fact]
+    public async Task AReplayedCallIsSeededInItsTokenizedForm()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        const string raw = "+49 170 1234567";
+        const string masked = "[Phone_1]";
+        var map = Substitute.For<ITokenMapService>();
+        map.TokenizeStructuredResult(Arg.Any<string>())
+            .Returns(ci => ((string)ci[0]).Replace(raw, masked, StringComparison.Ordinal));
+
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, appSettings: new AppSettings { Privacy = new PrivacySettings { TokenizationEnabled = true } },
+            firstPath: "report.md", firstContent: "call me on " + raw,
+            executeResult: "wrote report.md for " + raw, tokenMap: map);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
+        await AwaitSettledAsync(handle.RunId);
+
+        var resumed = probe.Dispatches[1];
+        var contents = resumed.Request.SelectMany(m => m.Contents).ToList();
+
+        // The CALL half: a build that tokenizes only the result fails right here.
+        var call = Assert.Single(contents.OfType<FunctionCallContent>(), c => c.Name == "write_file");
+        var seededContent = ArgumentText(call, "content");
+        Assert.Contains(masked, seededContent!, StringComparison.Ordinal);
+
+        // The RESULT half.
+        var result = Assert.Single(contents.OfType<FunctionResultContent>(), r => r.CallId == call.CallId);
+        Assert.Contains(masked, (string)result.Result!, StringComparison.Ordinal);
+
+        // And nowhere in the request at all — including any prose the run wrote around it.
+        Assert.DoesNotContain(raw, Flatten(resumed.Request), StringComparison.Ordinal);
+
+        // The row keeps the detokenized truth: it is what the GATE saw, and what a further replay would run.
+        var row = Assert.Single(resumed.Rows, r => r.Kind == AgentToolExchangeKind.ParkedCall);
+        var persisted = AgentToolExchangeSerializer.DeserializeArguments(row.ArgumentsJson);
+        Assert.Contains(raw, ((JsonElement)persisted!["content"]!).GetString()!, StringComparison.Ordinal);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>A replay is a best-effort seed, never a verdict on the step: it runs outside the step's own
+    /// try/catch, and the row was claimed before the call, so a failure is consumed rather than retried.</summary>
+    [Fact]
+    public async Task AReplayThatFaults_SeedsTheStepWithTheFailure_AndIsNeverRetried()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, firstPath: "report.md", faultOnExecute: true);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
+        await AwaitSettledAsync(handle.RunId);
+
+        // The step is not failed by a replay that threw.
+        Assert.Equal(AgentRunState.Completed, (await GetRunAsync(handle.RunId)).State);
+
+        var resumed = probe.Dispatches[1];
+        Assert.Equal(1, resumed.ExecutedCount);
+
+        // Consumed, not retried: ReplayedAt was stamped before the call, so no later resume offers it again.
+        var row = Assert.Single(resumed.Rows, r => r.Kind == AgentToolExchangeKind.ParkedCall);
+        Assert.NotNull(row.ReplayedAt);
+        Assert.Contains(ExecuteFailure, row.ResultText!, StringComparison.Ordinal);
+
+        // The step sees an ordinary tool exchange whose result happens to be an error.
+        var call = Assert.Single(
+            resumed.Request.SelectMany(m => m.Contents).OfType<FunctionCallContent>(),
+            c => c.Name == "write_file");
+        var seeded = Assert.Single(
+            resumed.Request.SelectMany(m => m.Contents).OfType<FunctionResultContent>(),
+            r => r.CallId == call.CallId);
+        Assert.Contains(ExecuteFailure, (string)seeded.Result!, StringComparison.Ordinal);
+
+        Assert.Contains(_timeline.Rows,
+            r => r.ToolName == "write_file" && r.Outcome == AgentTimelineOutcome.Error);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>A refusal is an answer about the payload too: the declined tool's rows go, and ONLY its rows —
+    /// a run-wide delete would take another tool's surviving withheld call with them.</summary>
+    [Fact]
+    public async Task DecliningAPark_PurgesTheParkedCall_AndReplaysNothing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, secondToolName: "update_todo",
+            firstPath: "report.md", secondPath: "todo.md");
+
+        // The second tool is granted, so the declined resume can still finish the step.
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: ["update_todo"]), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        Assert.Equal(2, CountExchangeRows(handle.RunId)); // the premise: both calls were persisted
+
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct, declineToolApproval: true));
+        await AwaitSettledAsync(handle.RunId);
+
+        var resumed = probe.Dispatches[1];
+        Assert.DoesNotContain(resumed.Rows, r => r.ToolName == "write_file");
+        // Scoped to the declined tool alone: this is the row a later grant still replays.
+        Assert.Contains(resumed.Rows, r => r.ToolName == "update_todo" && r.Kind == AgentToolExchangeKind.WithheldCall);
+
+        // Nothing was replayed before the re-run, and the declined tool never ran at all.
+        Assert.Equal(0, resumed.ExecutedCount);
+        Assert.DoesNotContain("write_file", probe.ExecutedNames);
+
+        Assert.Contains(probe.Results, r => r?.Contains("Denied", StringComparison.Ordinal) == true);
+        Assert.Contains(_timeline.Rows,
+            r => r.ToolName == "write_file" && r.Decision == ToolGateDecision.DeniedForRun);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>What a person approved is the tool and everything it was about to do with it, so a four-file
+    /// approval replays four calls — in the order they were made, not newest-first and not the first alone.</summary>
+    [Fact]
+    public async Task AMultiCallPark_ReplaysEveryCallInCallOrder()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, secondToolName: "write_file",
+            firstPath: "first.md", secondPath: "second.md");
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        Assert.Equal(2, CountExchangeRows(handle.RunId));
+
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
+        await AwaitSettledAsync(handle.RunId);
+
+        var resumed = probe.Dispatches[1];
+        Assert.Equal(2, resumed.ExecutedCount);
+        // The persisted Seq order, not a set: a newest-first read would report second.md then first.md.
+        Assert.Equal(["first.md", "second.md"], probe.ExecutedPaths.Take(2));
+
+        var rows = resumed.Rows.Where(r => r.ToolName == "write_file").ToList();
+        Assert.Equal(2, rows.Count);
+        Assert.All(rows, r => Assert.NotNull(r.ReplayedAt));
+        // The withheld sibling is replayed too — it is part of what the person said yes to.
+        Assert.Contains(rows, r => r.Kind == AgentToolExchangeKind.WithheldCall);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>The exact loss from the reported run: the run parked on <c>write_file</c> and the
+    /// <c>create_source</c> holding the document body was discarded with it. One Continue grants ONE tool, so
+    /// that call is not replayed here — but it survives whole, and a later park on it is what replays it.</summary>
+    [Fact]
+    public async Task AWithheldUngrantedCall_SurvivesTheGrantOfTheParkedTool_WithItsArgumentsIntact()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var body = new string('s', 50_000);
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, dispatchScript:
+        [
+            [new ScriptedCall("write_file", "report.md"),
+             new ScriptedCall("create_source", "sources/agent-panel.md", body)],
+            [new ScriptedCall("write_file", "report.md")],
+        ]);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
+        await AwaitSettledAsync(handle.RunId);
+
+        // Off the re-run's snapshot: the terminal purge takes the rows before the test could read them.
+        var resumed = probe.Dispatches[1];
+        Assert.NotNull(Assert.Single(resumed.Rows, r => r.ToolName == "write_file").ReplayedAt);
+
+        var withheld = Assert.Single(resumed.Rows, r => r.ToolName == "create_source");
+        Assert.Equal(AgentToolExchangeKind.WithheldCall, withheld.Kind);
+        Assert.Null(withheld.ReplayedAt);
+        Assert.Null(withheld.SupersededAt);
+
+        // The whole body, which is what the run had to compose a second time before the store existed.
+        var arguments = AgentToolExchangeSerializer.DeserializeArguments(withheld.ArgumentsJson);
+        Assert.NotNull(arguments);
+        Assert.Equal(body, ((JsonElement)arguments!["content"]!).GetString());
+
+        // Nobody was asked about create_source, so granting write_file must not have run it.
+        Assert.DoesNotContain("create_source", probe.ExecutedNames);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>A call withheld by the park that the run ALREADY held a grant for is not the approved tool, so
+    /// it stays unreplayed and the re-run performs it — once across the park's whole life. A predicate that
+    /// drifted to the grant set instead of the approved tool runs it twice.</summary>
+    [Fact]
+    public async Task AWithheldCallOfAnAlreadyGrantedTool_IsNotReplayed_AndStillRunsExactlyOnce()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, secondToolName: "update_todo",
+            firstPath: "report.md", secondPath: "todo.md");
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: ["update_todo"]), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        Assert.False(probe.Executed); // the premise: the park withheld the granted call too
+
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
+        await AwaitSettledAsync(handle.RunId);
+
+        var resumed = probe.Dispatches[1];
+        // Snapshotted after the replay and before the re-run: nothing claimed the granted tool's row.
+        var withheld = Assert.Single(resumed.Rows, r => r.ToolName == "update_todo");
+        Assert.Equal(AgentToolExchangeKind.WithheldCall, withheld.Kind);
+        Assert.Null(withheld.ReplayedAt);
+
+        // One execution before the re-run's request went out, and it is the approved tool's.
+        Assert.Equal(1, resumed.ExecutedCount);
+        Assert.Equal("write_file", probe.ExecutedNames[0]);
+
+        // The re-run is the only time it happens, which is what the withheld row bought.
+        Assert.Equal(1, probe.ExecutedNames.Count(n => n == "update_todo"));
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>Two parks on one tool leave two replayable rows carrying different arguments, and one Continue
+    /// would write both. The later park is the model's current intent, so it stales the earlier row.</summary>
+    [Fact]
+    public async Task ASecondParkOnTheSameTool_SupersedesTheStaleWithheldRow_SoTheGrantWritesOnce()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, dispatchScript:
+        [
+            [new ScriptedCall("write_file", "report.md"), new ScriptedCall("create_source", "sources/first.md")],
+            [new ScriptedCall("create_source", "sources/second.md")],
+            [],
+        ]);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
+        await AwaitParkedAsync(handle.RunId);
+        // The second park is on the tool the first one withheld, which is what makes the rows collide.
+        Assert.Equal("create_source", PauseMember(await GetRunAsync(handle.RunId), "tool"));
+
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
+        await AwaitSettledAsync(handle.RunId);
+
+        var rows = probe.Dispatches[2].Rows.Where(r => r.ToolName == "create_source").ToList();
+        Assert.Equal(2, rows.Count);
+
+        var stale = Assert.Single(rows, r => r.Kind == AgentToolExchangeKind.WithheldCall);
+        Assert.NotNull(stale.SupersededAt);
+        Assert.Null(stale.ReplayedAt);
+        Assert.Contains("sources/first.md", stale.ArgumentsJson!, StringComparison.Ordinal);
+
+        var current = Assert.Single(rows, r => r.Kind == AgentToolExchangeKind.ParkedCall);
+        Assert.NotNull(current.ReplayedAt);
+
+        // Once, with the newest arguments: without the supersede both rows replay and the source is created twice.
+        Assert.Equal(1, probe.ExecutedNames.Count(n => n == "create_source"));
+        Assert.Equal("sources/second.md", probe.ExecutedPaths[probe.ExecutedNames.IndexOf("create_source")]);
+
         await launcher.StopAsync(CancellationToken.None);
     }
 
@@ -772,6 +1173,71 @@ public sealed class UnattendedApprovalParkTests : IDisposable
     private async Task<AgentRun> GetRunAsync(Guid runId)
         => (await _runs.GetAsync(runId, TestContext.Current.CancellationToken))!;
 
+    /// <summary>The route's result on a successful execution.</summary>
+    private const string ExecuteResult = "did it";
+
+    /// <summary>What a route configured to fault throws.</summary>
+    private const string ExecuteFailure = "the write failed";
+
+    /// <summary>Every exchange row as it stands right now, on its OWN connection: this runs on the dispatch
+    /// thread, and the shared context connection belongs to the test thread.</summary>
+    private List<ExchangeRowSnapshot> ReadExchangeRows()
+    {
+        using var connection = new SqliteConnection(_ctx.ConnectionString);
+        connection.Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT Kind, ToolName, ArgumentsJson, ResultText, ReplayedAt, SupersededAt "
+            + "FROM AgentToolExchanges ORDER BY Seq;";
+        using var reader = cmd.ExecuteReader();
+
+        var rows = new List<ExchangeRowSnapshot>();
+        while (reader.Read())
+        {
+            rows.Add(new ExchangeRowSnapshot(
+                (AgentToolExchangeKind)reader.GetInt32(0),
+                reader.IsDBNull(1) ? null : reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetString(3),
+                reader.IsDBNull(4) ? null : reader.GetString(4),
+                reader.IsDBNull(5) ? null : reader.GetString(5)));
+        }
+
+        return rows;
+    }
+
+    /// <summary>A string argument as the gate saw it — a replayed call carries <c>JsonElement</c> values.</summary>
+    private static string? ArgumentText(FunctionCallContent call, string name)
+    {
+        if (call.Arguments is null || !call.Arguments.TryGetValue(name, out var value))
+            return null;
+
+        return value switch
+        {
+            string s => s,
+            JsonElement { ValueKind: JsonValueKind.String } el => el.GetString(),
+            _ => null,
+        };
+    }
+
+    /// <summary>Every tool call, tool result and text of a captured request, flattened for a "nowhere" assertion.</summary>
+    private static string Flatten(IEnumerable<ChatMessage> request) =>
+        string.Join("\n", request.Select(m => m.Text + "\n" + string.Join("\n", m.Contents.Select(c => c switch
+        {
+            // The argument VALUES, not their JSON: a serializer escape would hide a raw value from a
+            // "nowhere in the request" assertion.
+            FunctionCallContent call => string.Join(" ", call.Arguments?.Values.Select(v => v?.ToString()) ?? []),
+            FunctionResultContent result => result.Result as string ?? string.Empty,
+            _ => string.Empty,
+        }))));
+
+    private int CountExchangeRows(Guid runId)
+    {
+        using var cmd = _ctx.GetConnection().CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM AgentToolExchanges WHERE RunId = @RunId";
+        cmd.Parameters.AddWithValue("@RunId", runId.ToString());
+        return Convert.ToInt32(cmd.ExecuteScalar());
+    }
+
     /// <summary>Polls to a terminal state; an approval park is not terminal, so this also proves non-parking.</summary>
     private async Task AwaitSettledAsync(Guid runId)
     {
@@ -902,6 +1368,12 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         /// <summary>Every name that actually reached <c>Execute()</c>, in order.</summary>
         public List<string> ExecutedNames { get; } = [];
 
+        /// <summary>The <c>path</c> argument of each of those executions, in the same order.</summary>
+        public List<string?> ExecutedPaths { get; } = [];
+
+        /// <summary>One entry per provider dispatch, taken as the request is handed over.</summary>
+        public List<DispatchSnapshot> Dispatches { get; } = [];
+
         /// <summary>Every string the gate handed back, in call order.</summary>
         public List<string?> Results { get; } = [];
 
@@ -913,9 +1385,26 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         /// <summary>The first call's gate result.</summary>
         public string? GateResult => Results.Count > 0 ? Results[0] : null;
 
-        public void MarkExecuted(string name) => ExecutedNames.Add(name);
+        public void MarkExecuted(string name, string? path)
+        {
+            ExecutedNames.Add(name);
+            ExecutedPaths.Add(path);
+        }
+
         public void Record(object? gateResult) => Results.Add(gateResult as string);
     }
+
+    /// <summary>What one provider dispatch was handed, plus the state a settled run no longer has: the exchange
+    /// rows, and how many tool executions had already happened when the request went out.</summary>
+    private sealed record DispatchSnapshot(
+        List<ChatMessage> Request, List<ExchangeRowSnapshot> Rows, int ExecutedCount);
+
+    private sealed record ExchangeRowSnapshot(
+        AgentToolExchangeKind Kind, string? ToolName, string? ArgumentsJson, string? ResultText,
+        string? ReplayedAt, string? SupersededAt);
+
+    /// <summary>One tool call a scripted dispatch makes.</summary>
+    private sealed record ScriptedCall(string ToolName, string? Path = null, string? Content = null);
 
     /// <summary>Not <see cref="PlanResult.Fallback"/>: the single-turn degrade creates no AgentStep row, so it is never offered
     /// the park at all.</summary>
@@ -941,13 +1430,26 @@ public sealed class UnattendedApprovalParkTests : IDisposable
     /// it has to route the same owner twice, while the default mints a fresh id per call.</param>
     /// <param name="permissions">Omitted ⇒ an all-false substitute, i.e. no standing grants. Registered either
     /// way, unlike <paramref name="sessionGrants"/>: the runner reads this tier on every call.</param>
+    /// <param name="faultOnExecute">The route throws on its FIRST execution — which, on a parked tool, is the
+    /// replay: nothing ran before the park.</param>
+    /// <param name="executeResult">What a successful route hands back, so a fact about tokenization can put a
+    /// masked value in the result half as well as the argument half.</param>
+    /// <param name="tokenMap">Omitted ⇒ a pass-through map, i.e. tokenization that changes nothing.</param>
+    /// <param name="dispatchScript">One entry per provider dispatch, so a two-park scenario is expressible; a
+    /// dispatch past its end makes no call. Omitted ⇒ every dispatch drives the same two calls as before.</param>
     private (HeadlessRunLauncher Launcher, OneStepPlanner Planner) Build(
         ToolProbe probe, bool routed = true, bool isMcpTool = false, AppSettings? appSettings = null,
         string? secondToolName = null, bool faultAfterFirstCall = false,
         ISessionToolGrantStore? sessionGrants = null, Guid? pluginId = null,
         IToolPermissionService? permissions = null,
-        string? firstPath = null, string? secondPath = null)
+        string? firstPath = null, string? secondPath = null, string? firstContent = null,
+        bool faultOnExecute = false, string executeResult = ExecuteResult, ITokenMapService? tokenMap = null,
+        IReadOnlyList<IReadOnlyList<ScriptedCall>>? dispatchScript = null)
     {
+        List<ScriptedCall> everyDispatch = [new(probe.ToolName, firstPath, firstContent)];
+        if (secondToolName is not null)
+            everyDispatch.Add(new ScriptedCall(secondToolName, secondPath));
+
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         var persona = new Persona { Name = "Pia", SystemPrompt = "sys" };
         var planner = new OneStepPlanner();
@@ -957,9 +1459,19 @@ public sealed class UnattendedApprovalParkTests : IDisposable
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
                 Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(),
                 cancellationToken: Arg.Any<CancellationToken>())
-            .Returns(ci => DriveWithToolCall(
-                ci.ArgAt<ToolCallHandler?>(3), probe, secondToolName,
-                faultAfterFirstCall, firstPath, secondPath));
+            .Returns(ci =>
+            {
+                // Snapshotted per dispatch: the terminal EndRunAsync purges the rows, so a settled run has none
+                // left to read, and the request captured HERE is the one the replay had to land ahead of.
+                probe.Dispatches.Add(new DispatchSnapshot(
+                    [.. ci.ArgAt<IList<ChatMessage>>(0)], ReadExchangeRows(), probe.ExecutedNames.Count));
+                // Resolved here rather than inside the iterator, so the dispatch number is the one that was
+                // just counted and not whatever it is when the stream is first pulled.
+                var calls = dispatchScript is null
+                    ? everyDispatch
+                    : dispatchScript.ElementAtOrDefault(probe.Dispatches.Count - 1) ?? [];
+                return DriveWithToolCall(ci.ArgAt<ToolCallHandler?>(3), probe, calls, faultAfterFirstCall);
+            });
 
         var plugins = Substitute.For<IPluginService>();
         plugins.IsMcpTool(Arg.Any<string>()).Returns(isMcpTool);
@@ -967,12 +1479,19 @@ public sealed class UnattendedApprovalParkTests : IDisposable
             // Echoes the incoming name, not the probe's, so a two-call turn presents two tools to the gate.
             .Returns(ci =>
             {
-                var name = ci.Arg<FunctionCallContent>().Name;
+                var call = ci.Arg<FunctionCallContent>();
+                var name = call.Name;
                 return routed
                     // A deferred write is the only shape that reaches the gate; a read short-circuits above it.
                     ? ((object? Result, PluginToolCall? PendingAction)?)(null, new PluginToolCall(
                         name, pluginId ?? Guid.NewGuid(), isMcpTool ? "some-mcp-server" : "files", "desc", null,
-                        () => { probe.MarkExecuted(name); return Task.FromResult<object?>("did it"); }))
+                        () =>
+                        {
+                            probe.MarkExecuted(name, ArgumentText(call, "path"));
+                            if (faultOnExecute && probe.ExecutedNames.Count == 1)
+                                throw new InvalidOperationException(ExecuteFailure);
+                            return Task.FromResult<object?>(executeResult);
+                        }))
                     // NULL, not a tuple of nulls: `route is null` is what the handler tests for, and a
                     // (null, null) tuple would fall out at "Tool call handled." instead — a different path.
                     : null;
@@ -1003,7 +1522,10 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         services.AddSingleton<IAssistantChatService>(_chats);
         services.AddSingleton<IAgentPlanner>(planner);
         services.AddSingleton<IAgentVerifier>(new FakeVerifier());
-        services.AddSingleton<Func<ITokenMapService>>(_ => () => Substitute.For<ITokenMapService>());
+        // ONE instance, and a pass-through by default: the executor resolves the factory once, and a bare
+        // substitute would answer every tokenize call with an empty string.
+        var map = tokenMap ?? PassThroughTokenMap();
+        services.AddSingleton<Func<ITokenMapService>>(_ => () => map);
         services.AddSingleton<IExecutingRunStore>(_executing);
         // The audit sink is REAL wiring here (the launcher suite omits it): the park's own timeline row is
         // one of the facts, and a decision nobody records is a decision nobody can be shown.
@@ -1013,6 +1535,10 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         if (sessionGrants is not null)
             services.AddSingleton(sessionGrants);
         services.AddSingleton(permissions ?? Substitute.For<IToolPermissionService>());
+        // Real wiring, like the audit sink above: what a park leaves behind for a Continue press to replay is
+        // one of the facts, and the executor resolves this off the container.
+        _exchanges = new AgentToolExchangeStore(_ctx, NullLogger<AgentToolExchangeStore>.Instance);
+        services.AddSingleton<IAgentToolExchangeStore>(_exchanges);
         services.AddTransient<BackgroundAssistantTurnRunner>();
         services.AddTransient<HeadlessTurnExecutor>();
         services.AddTransient<AgentRunOrchestrator>();
@@ -1020,39 +1546,55 @@ public sealed class UnattendedApprovalParkTests : IDisposable
 
         var launcher = new HeadlessRunLauncher(
             sp.GetRequiredService<IServiceScopeFactory>(), _chats, _runs, settings, providers, personas,
-            _executing, NullLogger<HeadlessRunLauncher>.Instance, runsBaseDirOverride: _runsBase);
+            _executing, NullLogger<HeadlessRunLauncher>.Instance, runsBaseDirOverride: _runsBase,
+            exchangeStore: _exchanges);
         return (launcher, planner);
     }
 
-    private static Dictionary<string, object?> PathArgs(string? path) =>
-        path is null ? new Dictionary<string, object?>() : new Dictionary<string, object?> { ["path"] = path };
+    private static ITokenMapService PassThroughTokenMap()
+    {
+        var map = Substitute.For<ITokenMapService>();
+        map.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        return map;
+    }
+
+    private static Dictionary<string, object?> PathArgs(string? path, string? content = null)
+    {
+        var arguments = new Dictionary<string, object?>();
+        if (path is not null) arguments["path"] = path;
+        if (content is not null) arguments["content"] = content;
+        return arguments;
+    }
 
     private static async IAsyncEnumerable<ChatStreamItem> DriveWithToolCall(
-        ToolCallHandler? handler, ToolProbe probe, string? secondToolName = null,
-        bool faultAfterFirstCall = false, string? firstPath = null, string? secondPath = null)
+        ToolCallHandler? handler, ToolProbe probe, IReadOnlyList<ScriptedCall> calls,
+        bool faultAfterFirstCall = false)
     {
         await Task.Yield();
         if (handler is not null)
         {
-            // ONE signal for the round, as the real loop builds it: both calls below are the same round.
+            // ONE signal for the round, as the real loop builds it: every call below is the same round.
             var stop = new ToolLoopStopSignal();
-            probe.Record(await handler(
-                new FunctionCallContent("call-1", probe.ToolName, PathArgs(firstPath)),
-                new ToolDispatchContext(1, stop)));
-            probe.StopAfterFirstCall = stop.IsStopRequested;
-
-            // The exchange dies after the park. Thrown from inside the stream because that is where a real
-            // transport error, a timeout and a truncation all surface.
-            if (faultAfterFirstCall)
-                throw new InvalidOperationException("provider faulted after the park");
-
-            // A model that keeps going after being told the run is parking. Round-tripped through the SAME
-            // handler, because that is the only way the store's first-wins rule is observable.
-            // Unconditional on the stop: the production loop answers the round's remaining calls too.
-            if (secondToolName is not null)
+            for (var i = 0; i < calls.Count; i++)
+            {
+                // Every call after the first is a model that keeps going after being told the run is parking.
+                // Round-tripped through the SAME handler, because that is the only way the store's
+                // first-wins rule is observable, and unconditional on the stop: the production loop answers
+                // the round's remaining calls too.
                 probe.Record(await handler(
-                    new FunctionCallContent("call-2", secondToolName, PathArgs(secondPath)),
+                    new FunctionCallContent($"call-{i + 1}", calls[i].ToolName,
+                        PathArgs(calls[i].Path, calls[i].Content)),
                     new ToolDispatchContext(1, stop)));
+
+                if (i > 0) continue;
+
+                probe.StopAfterFirstCall = stop.IsStopRequested;
+
+                // The exchange dies after the park. Thrown from inside the stream because that is where a real
+                // transport error, a timeout and a truncation all surface.
+                if (faultAfterFirstCall)
+                    throw new InvalidOperationException("provider faulted after the park");
+            }
         }
 
         // TEXT STILL FLOWS. Every park fact in this file therefore discriminates on the RUN's state, never on

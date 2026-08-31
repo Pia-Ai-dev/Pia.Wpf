@@ -15,9 +15,9 @@ namespace Pia.Services;
 /// to default-deny without the gate needing to know what a child is.
 /// </para>
 /// <para>
-/// A parked call is recorded but NOT executed. The step is abandoned, its text discarded and its row put back
-/// to <c>Pending</c>, so nothing here is durable — the only thing that survives is the tool NAME, which the
-/// orchestrator writes into the run's pause envelope.
+/// A parked call is recorded but NOT executed: the step is abandoned, its text discarded and its row put back
+/// to <c>Pending</c>. What outlives the step is what the executor drains out of here — the tool name into the
+/// run's pause envelope, and <see cref="RecordedCalls"/> into the replayable exchange rows.
 /// </para>
 /// </summary>
 public sealed class ToolApprovalStore
@@ -124,6 +124,52 @@ public sealed class ToolApprovalStore
             }
 
             return first;
+        }
+    }
+
+    /// <summary>Parked and withheld calls per step, past which a record is dropped whole.</summary>
+    public const int MaxRecordedCalls = 8;
+
+    /// <summary>Serialized argument chars per record, past which it is dropped whole.</summary>
+    public const int MaxRecordedArgumentChars = 1_048_576;
+
+    /// <summary>One gate-side call, DETOKENIZED (the gate sits below <c>TokenizingAiClientService</c>'s wrapper):
+    /// <c>ArgumentsJson</c> is verbatim and replayable, <c>DisplayArgs</c> the capped line the surfaces render.</summary>
+    /// <param name="Withheld">Withheld behind an earlier park rather than the call that parked the run.</param>
+    public sealed record ParkedCall(
+        string ToolName,
+        string? CallId,
+        int Round,
+        Guid? PluginId,
+        string? ArgumentsJson,
+        string? DisplayArgs,
+        bool Withheld);
+
+    /// <summary>Every parked and withheld call of this step, in call order — the rows a Continue press replays.
+    /// User content: persist it, never log it.</summary>
+    public IReadOnlyList<ParkedCall> RecordedCalls => _recordedCalls;
+
+    /// <summary>Records refused by a cap. Scalar, safe to log.</summary>
+    public int DroppedRecords { get; private set; }
+
+    private readonly List<ParkedCall> _recordedCalls = new();
+
+    /// <summary>
+    /// Keep a parked or withheld call for the replay. Over either cap the record is dropped WHOLE rather than
+    /// truncated: half a payload is unreplayable.
+    /// </summary>
+    public void Record(ParkedCall call)
+    {
+        lock (_lock)
+        {
+            if (_recordedCalls.Count >= MaxRecordedCalls
+                || call.ArgumentsJson?.Length > MaxRecordedArgumentChars)
+            {
+                DroppedRecords++;
+                return;
+            }
+
+            _recordedCalls.Add(call);
         }
     }
 }

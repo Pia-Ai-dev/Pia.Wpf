@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
@@ -105,6 +106,12 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// <summary>The run's durable tool context, or null (⇒ record nothing, re-seed nothing).</summary>
     private readonly IAgentToolExchangeStore? _exchangeStore;
 
+    /// <summary>The tool a person approved on THIS resume, or null. The whole replay predicate — never the grant
+    /// set, which also holds tools whose withheld calls the re-run will make itself.</summary>
+    private string? _approvedTool;
+
+    private bool _replayAttempted;
+
     public HeadlessTurnExecutor(
         BackgroundAssistantTurnRunner engine,
         IAssistantChatService chatService,
@@ -175,6 +182,8 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// gate refuses them with "adapt" instead of re-parking. Null/empty = no denials.</param>
     /// <param name="personaOverride">The launcher's resolved run persona; null ⇒ resolve the per-mode one here.
     /// Replaces the RUN DEFAULT only — a step naming its own persona still gets that one.</param>
+    /// <param name="approvedTool">The tool a person just approved on this resume; its persisted calls are
+    /// replayed once before the step re-runs. Null on a fresh launch and on a decline.</param>
     public void Initialize(
         string? workspaceRoot,
         IReadOnlyCollection<string> grantedWrites,
@@ -182,13 +191,15 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         RunAutonomyPolicy? policy = null,
         bool canPark = false,
         IReadOnlyCollection<string>? deniedWrites = null,
-        Persona? personaOverride = null)
+        Persona? personaOverride = null,
+        string? approvedTool = null)
     {
         _workspaceRoot = workspaceRoot;
         _providerOverride = providerOverride;
         _personaOverride = personaOverride;
         _policy = policy;
         _canPark = canPark;
+        _approvedTool = approvedTool;
         _grantedWrites.Clear();
         foreach (var w in grantedWrites)
             _grantedWrites.Add(w);
@@ -424,6 +435,10 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             : await _stepPersonas.ResolveAsync(step.AssignedPersonaId, _runDefault, _tokenizationEnabled, ct)
                 .ConfigureAwait(false);
 
+        // Before the step's first provider round-trip, and inside the run's own ambient: a replayed write must
+        // land in the workspace this step writes into.
+        await ReplayApprovedParkedCallsAsync(step.Id, TimelineScope(step.Id), ct).ConfigureAwait(false);
+
         // Batch 08 D4: the ONLY place a user steering note may ride — composed here (this method has ctx),
         // never inside RunExchangeStepAsync, which keeps taking a plain string and never sees ctx at all.
         return await RunExchangeStepAsync(
@@ -483,6 +498,148 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// <summary>The per-step payload sink, or null when no store was injected (⇒ record nothing).</summary>
     private AgentToolExchangeScope? ExchangeScope(Guid? stepId) =>
         _exchangeStore is null ? null : new AgentToolExchangeScope(_exchangeStore, _runId, stepId);
+
+    /// <summary>Two callers, so the replay's sandbox and audit attribution cannot drift from the step's.</summary>
+    private TaskContext StepAmbient() =>
+        new(_runId, WorkingSubpath: null, OnFileTouched: null, WorkspaceRoot: _workspaceRoot, ChatId: _chatId,
+            UnattendedGranter: _grantedBy);
+
+    /// <summary>
+    /// Run the calls a person just approved, once each, then seed them so the model can see they ran. MUST NEVER
+    /// THROW: it sits outside <see cref="RunExchangeStepAsync"/>'s try/catch, and a best-effort seed may not fail a run.
+    /// </summary>
+    private async Task ReplayApprovedParkedCallsAsync(Guid stepId, AgentTimelineScope? timeline, CancellationToken ct)
+    {
+        if (_exchangeStore is null || _approvedTool is not { } approvedTool || _replayAttempted)
+            return;
+
+        // One shot per dispatch, beside each row's own marker, and it saves a query on every later step.
+        _replayAttempted = true;
+
+        var previousAmbient = TokenMapAmbient.Current;
+        var previousTask = TaskAmbient.Current;
+        var replayed = new List<string>();
+        try
+        {
+            var rows = await _exchangeStore.GetReplayableAsync(_runId, approvedTool, ct).ConfigureAwait(false);
+            if (rows.Count == 0)
+                return;
+
+            _logger.LogInformation(
+                "Headless run {RunId} replaying {RowCount} approved call(s) of {ToolName} before step {StepId}",
+                _runId, rows.Count, approvedTool, stepId);
+
+            if (_tokenizationEnabled)
+                TokenMapAmbient.Current = _tokenMap;
+            TaskAmbient.Current = StepAmbient();
+
+            foreach (var row in rows)
+            {
+                if (row.ToolName is not { Length: > 0 } toolName)
+                    continue;
+
+                // Stamped BEFORE the call, and a lost or failed claim skips the row entirely: at-most-once has
+                // to survive two concurrent dispatches and a crash between the mark and the effect.
+                if (!await _exchangeStore.TryMarkReplayedAsync(row.Id, DateTime.UtcNow, ct).ConfigureAwait(false))
+                    continue;
+
+                // Synthesized only here: a provider that gave no id still has to produce a pairable seed, and
+                // the recorded row must keep agreeing with the audit row for the same call.
+                var call = new FunctionCallContent(
+                    row.CallId is { Length: > 0 } id ? id : Guid.NewGuid().ToString("N"),
+                    toolName,
+                    AgentToolExchangeSerializer.DeserializeArguments(row.ArgumentsJson));
+
+                var resultText = await ExecuteReplayAsync(call, timeline).ConfigureAwait(false);
+                _logger.SensitiveDebug("Replayed {ToolName} result: {Result}", toolName, resultText);
+                await _exchangeStore.SetResultAsync(row.Id, resultText, ct).ConfigureAwait(false);
+                SeedReplayedCall(call, resultText);
+                replayed.Add(toolName);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Replaying the approved call(s) of {ToolName} for run {RunId} failed",
+                approvedTool, _runId);
+        }
+        finally
+        {
+            TokenMapAmbient.Current = previousAmbient;
+            TaskAmbient.Current = previousTask;
+        }
+
+        if (replayed.Count > 0)
+            _messages.Add(new ChatMessage(ChatRole.User, ReplayedCallNote(replayed)));
+    }
+
+    /// <summary>
+    /// The gate's own answer, or the failure as ordinary result text — the step sees a call that failed, exactly
+    /// as if it had made it itself, and the row is consumed either way.
+    /// </summary>
+    private async Task<string> ExecuteReplayAsync(FunctionCallContent call, AgentTimelineScope? timeline)
+    {
+        try
+        {
+            // CanPark false makes the park arm unreachable (no replay may re-park) and disarms the session tier
+            // that rides on it; IsTopLevelUserRun stays honest so the call resolves on the inputs it was judged on.
+            var approvals = new ToolApprovalStore(
+                canPark: false, _sessionGrants, isTopLevelUserRun: _isTopLevelUserRun);
+            // Round 1: the replay stands in for the call the model would otherwise make on the step's first round.
+            var result = await _engine
+                .ReplayToolCallAsync(call, _grantedWrites, round: 1, _policy, timeline, approvals, _deniedWrites)
+                .ConfigureAwait(false);
+            var (_, text) = AgentToolExchangeSerializer.SerializeResult(result);
+            return text ?? string.Empty;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Replay of the approved tool {ToolName} for run {RunId} faulted", call.Name, _runId);
+            return $"Not run: the approved '{call.Name}' was executed on your behalf and failed: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// The pair the re-run's first view must contain, or the model reissues the call and the side effect happens
+    /// twice. It bypasses <c>TokenizingAiClientService</c> entirely, so BOTH halves are tokenized here.
+    /// </summary>
+    private void SeedReplayedCall(FunctionCallContent call, string resultText)
+    {
+        _messages.Add(new ChatMessage(ChatRole.Assistant,
+            [new FunctionCallContent(call.CallId, call.Name, SeedArguments(call.Arguments))]));
+        _messages.Add(new ChatMessage(ChatRole.Tool,
+            [new FunctionResultContent(call.CallId, Tokenize(resultText))]));
+    }
+
+    private IDictionary<string, object?>? SeedArguments(IDictionary<string, object?>? arguments)
+    {
+        if (arguments is null)
+            return null;
+
+        var seeded = AgentToolExchangeSerializer.CapForSeed(arguments);
+        foreach (var key in seeded.Keys.ToList())
+        {
+            if (SeedText(seeded[key]) is { } text)
+                seeded[key] = Tokenize(text);
+        }
+
+        return seeded;
+    }
+
+    private static string? SeedText(object? value) => value switch
+    {
+        string s => s,
+        JsonElement { ValueKind: JsonValueKind.String } el => el.GetString(),
+        _ => null,
+    };
+
+    private string Tokenize(string text) =>
+        _tokenizationEnabled && _tokenMap is not null ? _tokenMap.TokenizeStructuredResult(text) : text;
+
+    /// <summary>Model-facing and deliberately unlocalized, like <see cref="GraceTurnInstruction"/>.</summary>
+    private static string ReplayedCallNote(IEnumerable<string> tools) =>
+        "The approval you were waiting for was given, and the call(s) you had asked about were executed on your "
+        + "behalf just now: " + string.Join(", ", tools.Distinct(StringComparer.OrdinalIgnoreCase))
+        + ". The call and its result are above. Do not issue that call again — carry on from its result.";
 
     /// <param name="persona">The step's resolved triple (Batch 07 G6), or null for the RUN's — which is what
     /// the R10 degrade turn passes and what an executor built without a resolver always uses.</param>
@@ -595,8 +752,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         var previousTask = TaskAmbient.Current;
         if (_tokenizationEnabled)
             TokenMapAmbient.Current = _tokenMap;
-        TaskAmbient.Current = new TaskContext(_runId, WorkingSubpath: null, OnFileTouched: null, WorkspaceRoot: _workspaceRoot, ChatId: _chatId,
-            UnattendedGranter: _grantedBy);
+        TaskAmbient.Current = StepAmbient();
 
         BackgroundAssistantTurnRunner.ExchangeResult exchange;
         try
@@ -640,6 +796,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
                 _logger.LogInformation(
                     "Headless run {RunId} step faulted after parking for approval of {ToolName}; keeping the park",
                     _runId, parkedBeforeFault);
+                await PersistParkedCallsAsync(approvals, exchanges?.StepId).ConfigureAwait(false);
                 return new StepTurnResult(
                     Succeeded: false, Cancelled: false, Error: null, VisibleText: string.Empty,
                     Usage: null, FirstMessageId: Guid.Empty, LastMessageId: Guid.Empty,
@@ -682,6 +839,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             _logger.LogInformation(
                 "Headless run {RunId} parked step for approval of {ToolName} ({ParkedCalls} parked call(s))",
                 _runId, parkedTool, approvals.ParkedCalls);
+            await PersistParkedCallsAsync(approvals, exchanges?.StepId).ConfigureAwait(false);
             return new StepTurnResult(
                 Succeeded: false, Cancelled: false, Error: null, VisibleText: string.Empty,
                 Usage: exchange.Usage, FirstMessageId: Guid.Empty, LastMessageId: Guid.Empty,
@@ -787,6 +945,64 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             FirstMessageId: assistantMsgId,
             LastMessageId: assistantMsgId,
             Outcome: claim);
+    }
+
+    /// <summary>Awaited before a park result returns: the run flips to WaitingForInput only afterwards, and the
+    /// first approval projection reads these rows.</summary>
+    private async Task PersistParkedCallsAsync(ToolApprovalStore approvals, Guid? stepId)
+    {
+        if (_exchangeStore is null || approvals.RecordedCalls.Count == 0)
+            return;
+
+        var records = approvals.RecordedCalls;
+        try
+        {
+            // ONCE per pass, ahead of the append: per row, siblings of one tool would cancel each other, and
+            // afterwards it would stale the rows just written.
+            var toolNames = records.Select(r => r.ToolName).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            await _exchangeStore.SupersedeUnreplayedAsync(_runId, toolNames, CancellationToken.None)
+                .ConfigureAwait(false);
+
+            var now = DateTime.UtcNow;
+            // In RecordedCalls order: the store assigns Seq by list position, and Seq is the replay order.
+            var rows = records.Select(r => new AgentToolExchangeRow(
+                Id: Guid.NewGuid(),
+                RunId: _runId,
+                StepId: stepId,
+                MessageSeq: 0,
+                Seq: 0,
+                Round: r.Round,
+                Role: "assistant",
+                Kind: r.Withheld ? AgentToolExchangeKind.WithheldCall : AgentToolExchangeKind.ParkedCall,
+                CallId: string.IsNullOrWhiteSpace(r.CallId) ? string.Empty : r.CallId,
+                ToolName: r.ToolName,
+                PluginId: r.PluginId,
+                ArgumentsJson: r.ArgumentsJson,
+                ArgsOmitted: false,
+                DisplayArgs: r.DisplayArgs,
+                ResultKind: AgentToolExchangeResult.None,
+                ResultText: null,
+                Chars: r.ArgumentsJson?.Length ?? 0,
+                AnchorMessageId: null,
+                CreatedAt: now,
+                ReplayedAt: null,
+                SupersededAt: null)).ToList();
+
+            await _exchangeStore.AppendParkedAsync(rows, CancellationToken.None).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "Headless run {RunId} persisted {RowCount} parked/withheld call(s) for step {StepId} "
+                + "({Dropped} dropped, {Chars} arg chars)",
+                _runId, rows.Count, stepId, approvals.DroppedRecords, rows.Sum(r => r.Chars));
+            _logger.SensitiveDebug("Parked call arguments for run {RunId}: {Calls}", _runId,
+                string.Join(" | ", rows.Select(r => r.ToolName + "=" + r.ArgumentsJson)));
+        }
+        catch (Exception ex)
+        {
+            // Failure-isolated: the park still happens, and the resume degrades to the pre-store behaviour.
+            _logger.LogWarning(ex, "Failed to persist {RowCount} parked call(s) for headless run {RunId}",
+                records.Count, _runId);
+        }
     }
 
     public async Task EndRunAsync(AgentRun run, RunContext ctx, bool cancelled, bool failed, CancellationToken ct)

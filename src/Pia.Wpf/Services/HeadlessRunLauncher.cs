@@ -195,6 +195,9 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// </summary>
     private readonly IRunSteeringStore? _steering;
 
+    /// <summary>The replayable park rows; null ⇒ a decline purges nothing, i.e. the pre-store behaviour.</summary>
+    private readonly IAgentToolExchangeStore? _exchangeStore;
+
     private bool _disposed;
 
     public HeadlessRunLauncher(
@@ -208,7 +211,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         ILogger<HeadlessRunLauncher> logger,
         string? runsBaseDirOverride = null,
         IRunWorkspaceService? workspaces = null,
-        IRunSteeringStore? steering = null)
+        IRunSteeringStore? steering = null,
+        IAgentToolExchangeStore? exchangeStore = null)
     {
         _scopeFactory = scopeFactory;
         _chatService = chatService;
@@ -223,6 +227,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         _runsBaseDir = runsBaseDirOverride ?? AssistantWorkspace.RunsRoot;
         _workspaces = workspaces;
         _steering = steering;
+        _exchangeStore = exchangeStore;
 
         // Decision c: delete a run's workspace when its chat (and, by FK cascade, its run) is deleted.
         _chatService.ChatsChanged += OnChatsChanged;
@@ -747,8 +752,11 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             // did not take a ticket would jump the queue, being the one dispatch whose wait is not ordered
             // against anything. The PARENT pool's chain, matching the pool the wait below uses.
             var ticket = _slots.TakeTicket();
+            // The ternary is load-bearing: claim.ApprovedTool names the QUESTION, so it is non-null on the
+            // decline path too, and replaying there would run the very call the person refused.
             var plan = new ResumeDispatchPlan(
-                run, persona, provider, budget, grants, policy, denied, runRoot, nudge, parkReason);
+                run, persona, provider, budget, grants, policy, denied, runRoot, nudge, parkReason,
+                declineToolApproval ? null : approvedTool);
             var completion = Task.Run(
                 () => RunResumedDispatchAsync(plan, runCts, ticket, steerCancel), CancellationToken.None);
 
@@ -781,7 +789,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         IReadOnlyList<string> Denied,
         string? RunRoot,
         string? Nudge,
-        string? ParkReason);
+        string? ParkReason,
+        string? ApprovedTool = null);
 
     /// <summary>
     /// Atomic claim FIRST: a panel+Flow race or double-click → only one winner. On the lost path
@@ -855,10 +864,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// just pressed, so pressing it grants that one named tool for this run and nothing else.
     /// </summary>
     /// <remarks>
-    /// The pending CALL cannot be replayed — a park outlives the process, and the deferred action's Execute()
-    /// delegate does not — so what is applied is the CAPABILITY. The step's row went back to Pending when the run
-    /// parked, the drain loop re-runs it from the top, and the same tool call now resolves GrantedByName instead
-    /// of parking.
+    /// The deferred action's Execute() delegate does not survive the park; its arguments now do, so the approved
+    /// call is replayed once before the step re-runs.
     /// PERSISTED, not merely handed to this dispatch. Two tools, two parks: without persistence the second resume
     /// would restore the launch envelope and forget the first approval, so the run would park on tool A, be
     /// granted A, park on B, be granted B but lose A, park on A again — a livelock paced by a human clicking
@@ -890,6 +897,22 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Could not persist the denied tool for run {RunId}", run.Id);
+                }
+            }
+
+            // The person said no to up to 512 K chars of their own content, and it should not outlive the
+            // decision. Scoped to the declined tool: a run-wide delete would destroy another tool's surviving
+            // withheld call and the context seed this very resume needs.
+            if (_exchangeStore is not null)
+            {
+                try
+                {
+                    await _exchangeStore.DeleteReplayableAsync(run.Id, approvedTool, ct).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Could not drop the declined call(s) of {ToolName} for run {RunId}",
+                        approvedTool, run.Id);
                 }
             }
 
@@ -1004,7 +1027,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             // before, so each has its own regression fact.
             executor.Initialize(workspaceRoot: plan.RunRoot, plan.Grants, plan.Provider, plan.Policy,
                 canPark: CanParkForApproval(run.ParentRunId), deniedWrites: plan.Denied,
-                personaOverride: plan.Persona);
+                personaOverride: plan.Persona, approvedTool: plan.ApprovedTool);
             started = true;
             // Same bracket, same reasoning as the launch path — after the slot wait, before the
             // executor can write. TryBeginResumeAsync already raised RunChanged(Running) at the CAS,

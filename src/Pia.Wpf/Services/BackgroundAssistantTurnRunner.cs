@@ -417,6 +417,17 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         IReadOnlyList<ChatMessage> ToolExchanges, bool Protected = false);
 
     /// <summary>
+    /// Route and run one persisted call a person approved, outside any tool loop — same gate, same audit rows.
+    /// No stop signal: there is no loop to stop.
+    /// </summary>
+    public Task<object?> ReplayToolCallAsync(
+        FunctionCallContent call, HashSet<string> grantedWrites, int round,
+        RunAutonomyPolicy? policy = null, AgentTimelineScope? timeline = null,
+        ToolApprovalStore? approvals = null, HashSet<string>? deniedWrites = null) =>
+        HandleToolCallAsync(call, grantedWrites, new ToolDispatchContext(round), policy, timeline,
+            outcomeStore: null, approvals, userInput: null, deniedWrites);
+
+    /// <summary>
     /// Headless tool dispatch: reads (tools that return an immediate result) always run; writes (tools that
     /// return a pending action) run only if explicitly granted to this job.
     /// </summary>
@@ -486,6 +497,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             {
                 dispatch.Stop?.RequestStop();
                 approvals.Park(pending.ToolName, ToolApprovalArguments.Describe(toolCall));
+                approvals.Record(BuildParkedCall(pending, toolCall, dispatch, withheld: true));
                 _logger.LogInformation(
                     "Background turn withheld {ToolName}: the run is already parked on {ParkedToolName}",
                     pending.ToolName, parkedFor);
@@ -620,6 +632,9 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 // anywhere on this path — a path is user content, and the count is what the audit row carries.
                 var parked = approvals is not null
                     && approvals.Park(pending.ToolName, ToolApprovalArguments.Describe(toolCall));
+                // Outside the audit guard below: a second parked call of the same tool writes no second
+                // timeline row but must still be replayable — that is the delete-four-files case.
+                approvals?.Record(BuildParkedCall(pending, toolCall, dispatch, withheld: false));
                 _logger.LogInformation(
                     "Background turn parked {ToolName} for human approval (first={First})", pending.ToolName, parked);
                 // Audited only for the call that actually parked the run. A second parked call in the
@@ -670,6 +685,20 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                        + "Do not retry; finish the step without it and say what was left undone.";
         }
     }
+
+    /// <summary>
+    /// The gate-side record of a call it did not run. <c>pending.ToolName</c>, never <c>toolCall.Name</c>: that
+    /// is the one spelling the pause envelope, the grant list and the re-route all key on.
+    /// </summary>
+    private static ToolApprovalStore.ParkedCall BuildParkedCall(
+        PluginToolCall pending, FunctionCallContent toolCall, ToolDispatchContext dispatch, bool withheld) =>
+        new(pending.ToolName,
+            toolCall.CallId,
+            dispatch.Round,
+            pending.PluginId,
+            AgentToolExchangeSerializer.SerializeArguments(toolCall.Arguments),
+            ToolApprovalArguments.Describe(toolCall),
+            withheld);
 
     /// <summary>
     /// Is this an external/MCP tool? Re-derived from the plugin SERVICE at the gate — the same source the
