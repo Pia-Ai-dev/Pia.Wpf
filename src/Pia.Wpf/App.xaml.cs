@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Pia.Behaviors;
 using Pia.Helpers;
 using Pia.Models;
 using Pia.Paths;
@@ -83,6 +84,10 @@ public partial class App : Application
         base.OnStartup(e);
 
         SetCurrentProcessExplicitAppUserModelID("Pia.App");
+
+        // A class handler, not a style: the resource lookup for an implicit ScrollBar style would have to
+        // beat WPF-UI's, and ThemeService already swaps entries in Application.Resources.MergedDictionaries.
+        ScrollBarAutoFadeBehavior.Install();
 
         // Set shutdown mode to explicit (don't exit when window closes)
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
