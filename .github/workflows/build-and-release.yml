@@ -19,6 +19,13 @@ permissions:
   contents: write
   id-token: write
 
+# Every push to main cuts a release. Two pushes close together used to race: gh release
+# create had no --target, so a slow-finishing run tagged whatever main's tip had become by
+# the time it published rather than the commit it built. Queue instead of racing.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-and-release:
     runs-on: windows-latest
@@ -154,24 +161,29 @@ jobs:
           echo "$PWD\git-cliff-bin\git-cliff-$version" | Out-File -Append $env:GITHUB_PATH
 
       # A hand-written note beats a dump of every commit subject, so docs/release_notes/RELEASE.md
-      # wins when it is there. It has to NAME the version being built: without that check, a file
-      # nobody refreshed would silently republish the previous release's notes as this one's.
+      # wins when its body actually changed since the last release tag. The build stamps the
+      # version header itself - the old check made a human predict a git-height-derived version
+      # number before it existed, which is why it silently fell back to git-cliff twice in a row.
       - name: Generate release notes
+        id: notes
         shell: bash
         env:
           TAG: ${{ steps.info.outputs.tag }}
           VERSION: ${{ steps.info.outputs.version }}
         run: |
           NOTES=docs/release_notes/RELEASE.md
-          if [ -f "$NOTES" ] && head -1 "$NOTES" | grep -qF "$VERSION"; then
-            cp "$NOTES" release-notes.md
-            echo "release notes taken from $NOTES"
+          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          DIFF_BASE=${PREV_TAG:-4b825dc642cb6eb9a060e54bf8d69288fbee4904}
+          if [ -s "$NOTES" ] && ! git diff --quiet "$DIFF_BASE" HEAD -- "$NOTES"; then
+            { printf '# Pia %s\n' "$VERSION"; tail -n +2 "$NOTES"; } > release-notes.md
+            echo "release notes taken from $NOTES (stamped $VERSION)"
+            echo "source=curated" >> "$GITHUB_OUTPUT"
           else
             if [ -f "$NOTES" ]; then
-              echo "::warning::$NOTES does not name $VERSION on its first line - falling back to git-cliff"
+              echo "::warning::$NOTES has no unreleased changes since ${PREV_TAG:-repo start} - falling back to git-cliff"
             fi
-            PREV_TAG=$(git describe --tags --abbrev=0)
-            git cliff "${PREV_TAG}..HEAD" --tag "$TAG" --strip header -o release-notes.md
+            git cliff "${DIFF_BASE}..HEAD" --tag "$TAG" --strip header -o release-notes.md
+            echo "source=cliff" >> "$GITHUB_OUTPUT"
           fi
           # Appended to BOTH branches, so it is read as raw text on storage.pia-ai.de as often as
           # it is rendered on GitHub. Hence a bare URL rather than a Markdown link.
@@ -183,12 +195,30 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ steps.info.outputs.tag }}" \
+            --target "${{ github.sha }}" \
             --title "${{ steps.info.outputs.title }}" \
             --notes-file release-notes.md \
             Releases/*.msi \
             Releases/*.nupkg \
             Releases/RELEASES \
             Releases/releases.*.json
+
+      # docs/release_notes/README.md documents archiving RELEASE.md and emptying it after each
+      # release; this is that step. [skip ci] keeps the bot commit from triggering its own build.
+      - name: Archive release notes
+        if: steps.notes.outputs.source == 'curated'
+        shell: bash
+        env:
+          VERSION: ${{ steps.info.outputs.version }}
+        run: |
+          ARCHIVE="docs/release_notes/$(date +%Y-%m-%d)-${VERSION}.md"
+          cp docs/release_notes/RELEASE.md "$ARCHIVE"
+          : > docs/release_notes/RELEASE.md
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$ARCHIVE" docs/release_notes/RELEASE.md
+          git commit -m "docs: archive $VERSION release notes [skip ci]"
+          git push
 
       # The mirror on pia-ai.de is published from the private Pia repo, which owns that step because the
       # Hetzner SSH key must not sit in a public repo. Triggering it is deliberately manual, so the notes
