@@ -82,15 +82,15 @@
                      TextWrapping="Wrap">
             <Run Text="{loc:Str Memory_Meta_Created}" Foreground="{DynamicResource TextMutedBrush}"/>
             <Run Text=" "/>
-            <Run Text="{Binding CreatedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm}', Mode=OneWay}" Foreground="{DynamicResource TextDefaultBrush}"/>
+            <Run Text="{Binding CreatedAt, Converter={StaticResource UtcToLocalDateTimeConverter}, StringFormat='{}{0:yyyy-MM-dd HH:mm}', Mode=OneWay}" Foreground="{DynamicResource TextDefaultBrush}"/>
             <Run Text="   ·   " Foreground="{DynamicResource TextSubtleBrush}"/>
             <Run Text="{loc:Str Memory_Meta_Updated}" Foreground="{DynamicResource TextMutedBrush}"/>
             <Run Text=" "/>
-            <Run Text="{Binding UpdatedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm}', Mode=OneWay}" Foreground="{DynamicResource TextDefaultBrush}"/>
+            <Run Text="{Binding UpdatedAt, Converter={StaticResource UtcToLocalDateTimeConverter}, StringFormat='{}{0:yyyy-MM-dd HH:mm}', Mode=OneWay}" Foreground="{DynamicResource TextDefaultBrush}"/>
             <Run Text="   ·   " Foreground="{DynamicResource TextSubtleBrush}"/>
             <Run Text="{loc:Str Memory_Meta_Accessed}" Foreground="{DynamicResource TextMutedBrush}"/>
             <Run Text=" "/>
-            <Run Text="{Binding LastAccessedAt, StringFormat='{}{0:yyyy-MM-dd HH:mm}', Mode=OneWay}" Foreground="{DynamicResource TextDefaultBrush}"/>
+            <Run Text="{Binding LastAccessedAt, Converter={StaticResource UtcToLocalDateTimeConverter}, StringFormat='{}{0:yyyy-MM-dd HH:mm}', Mode=OneWay}" Foreground="{DynamicResource TextDefaultBrush}"/>
           </TextBlock>
         </Grid>
       </Border>

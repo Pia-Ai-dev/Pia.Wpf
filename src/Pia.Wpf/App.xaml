@@ -75,6 +75,7 @@
       <converters:MultiplyConverter x:Key="MultiplyConverter" />
       <converters:SpeakerToDisplayNameConverter x:Key="SpeakerToDisplayNameConverter" />
       <converters:DateTimeOffsetToShortTimeConverter x:Key="DateTimeOffsetToShortTimeConverter" />
+      <converters:UtcToLocalDateTimeConverter x:Key="UtcToLocalDateTimeConverter" />
       <converters:BoolToAngleConverter x:Key="BoolToAngleConverter" />
       <converters:SingleLineConverter x:Key="SingleLineConverter" />
       <converters:WikiLinkConverter x:Key="WikiLinkConverter" />
