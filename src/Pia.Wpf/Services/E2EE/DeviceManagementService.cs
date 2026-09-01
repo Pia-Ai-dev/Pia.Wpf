@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging;
+using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.Shared.E2EE;
 
@@ -252,8 +253,7 @@ public class DeviceManagementService : IDeviceManagementService
             AgreementPublicKey = agreementPubKey,
             SigningPublicKey = signingPubKey,
             OsVersion = Environment.OSVersion.ToString(),
-            AppVersion = typeof(DeviceManagementService).Assembly
-                .GetName().Version?.ToString() ?? "1.0.0"
+            AppVersion = AppVersionInfo.FileVersion
         };
 
         using var client = await CreateAuthorizedClientAsync();

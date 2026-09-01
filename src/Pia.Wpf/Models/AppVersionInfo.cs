@@ -6,6 +6,9 @@ public static class AppVersionInfo
     /// <summary>Nerdbank.GitVersioning's informational version without the "+commit" suffix, e.g. "1.3.1000".</summary>
     public static string Version { get; } = Strip(ThisAssembly.AssemblyInformationalVersion);
 
+    /// <summary>Four-part file version, e.g. "1.4.21.50989" — AssemblyVersion is pinned to Major.Minor.0.0.</summary>
+    public static string FileVersion { get; } = ThisAssembly.AssemblyFileVersion;
+
     public static string Generator => $"Pia {Version}";
 
     private static string Strip(string informational)

@@ -479,6 +479,10 @@ public class AppSettings
     public string? LastChatPullETag { get; set; }
     public string? SyncDeviceId { get; set; }
 
+    // App+OS version last accepted by the server, so the token requests that carry them stay bare
+    // once the pair is current. Cleared value = report on the next token request.
+    public string? ReportedDeviceMetadata { get; set; }
+
     // One-time gate for the assistant-chat startup backfill. Chats predating
     // cloud sign-in never raised ChatsChanged, so without a backfill they'd
     // never reach the cloud. Set once the full push completes; cleared on logout

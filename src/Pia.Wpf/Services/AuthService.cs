@@ -109,6 +109,7 @@ public class AuthService : IAuthService
                 return (false, "Server URL not configured");
             }
 
+            var reportMetadata = ShouldReportDeviceMetadata(settings);
             var port = GetRandomPort();
             var redirectUri = $"http://localhost:{port}/";
             var (codeVerifier, codeChallenge) = PkceCodes.Create();
@@ -155,7 +156,7 @@ public class AuthService : IAuthService
                     // Its own budget: the user may have spent almost all of the callback's five minutes signing in.
                     using var exchangeCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
                     (login, failure) = await ExchangeLoginCodeAsync(
-                        serverUrl, triage.Code!, codeVerifier, exchangeCts.Token);
+                        serverUrl, triage.Code!, codeVerifier, settings, reportMetadata, exchangeCts.Token);
                     break;
                 }
             }
@@ -164,7 +165,7 @@ public class AuthService : IAuthService
             {
                 try
                 {
-                    await ApplyLoginAsync(login, provider, settings);
+                    await ApplyLoginAsync(login, provider, settings, reportMetadata);
                 }
                 catch (Exception ex)
                 {
@@ -258,11 +259,15 @@ public class AuthService : IAuthService
 
     // Failures come back as a result, not an exception, so the browser still gets its error page.
     private async Task<(LocalLoginResponse? Login, string? Error)> ExchangeLoginCodeAsync(
-        string serverUrl, string code, string codeVerifier, CancellationToken ct)
+        string serverUrl, string code, string codeVerifier, AppSettings settings, bool reportMetadata,
+        CancellationToken ct)
     {
         try
         {
             using var client = _httpClientFactory.CreateClient();
+            if (reportMetadata)
+                AttachDeviceMetadata(client, settings);
+
             var response = await client.PostAsJsonAsync($"{serverUrl}/auth/token", new { code, codeVerifier }, ct);
             if (!response.IsSuccessStatusCode)
             {
@@ -319,7 +324,8 @@ public class AuthService : IAuthService
         _logger.LogInformation("OAuth response written ({Bytes} bytes)", bytes.Length);
     }
 
-    private async Task ApplyLoginAsync(LocalLoginResponse login, string provider, AppSettings settings)
+    private async Task ApplyLoginAsync(
+        LocalLoginResponse login, string provider, AppSettings settings, bool reportedMetadata)
     {
         _encryptedAccessToken = _dpapiHelper.Encrypt(login.AccessToken);
         _encryptedRefreshToken = _dpapiHelper.Encrypt(login.RefreshToken);
@@ -338,9 +344,32 @@ public class AuthService : IAuthService
         settings.SyncUserDisplayName = login.User.DisplayName;
         settings.SyncProvider = provider;
         settings.SyncDeviceId ??= Guid.NewGuid().ToString();
+        if (reportedMetadata)
+            settings.ReportedDeviceMetadata = DeviceMetadataFingerprint();
         await _settingsService.SaveSettingsAsync(settings);
 
         LoginStateChanged?.Invoke(this, true);
+    }
+
+    internal const string DeviceIdHeader = "X-Pia-Device-Id";
+    internal const string AppVersionHeader = "X-Pia-App-Version";
+    internal const string OsVersionHeader = "X-Pia-OS-Version";
+
+    internal static string DeviceMetadataFingerprint() =>
+        $"{AppVersionInfo.FileVersion}|{Environment.OSVersion}";
+
+    // The server only ever learns a device's app/OS version at E2EE registration, so it goes stale the
+    // moment the client updates. Token requests carry it instead — but only while it differs from what
+    // the server last accepted, so the steady-state refresh stays byte-for-byte what it was.
+    internal static bool ShouldReportDeviceMetadata(AppSettings settings) =>
+        !string.IsNullOrWhiteSpace(settings.SyncDeviceId)
+        && !string.Equals(settings.ReportedDeviceMetadata, DeviceMetadataFingerprint(), StringComparison.Ordinal);
+
+    private static void AttachDeviceMetadata(HttpClient client, AppSettings settings)
+    {
+        client.DefaultRequestHeaders.Add(DeviceIdHeader, settings.SyncDeviceId);
+        client.DefaultRequestHeaders.Add(AppVersionHeader, AppVersionInfo.FileVersion);
+        client.DefaultRequestHeaders.Add(OsVersionHeader, Environment.OSVersion.ToString());
     }
 
     // The server states the lifetime; the fixed 14 minutes only covers a response that omits it.
@@ -366,7 +395,11 @@ public class AuthService : IAuthService
                 return (false, "Server URL not configured");
             }
 
+            var reportMetadata = ShouldReportDeviceMetadata(settings);
             using var client = _httpClientFactory.CreateClient();
+            if (reportMetadata)
+                AttachDeviceMetadata(client, settings);
+
             var response = await client.PostAsJsonAsync($"{serverUrl}/auth/login/local",
                 new LocalLoginRequest { Email = email, Password = password });
 
@@ -377,7 +410,7 @@ public class AuthService : IAuthService
             if (loginResponse is null)
                 return (false, "Invalid server response");
 
-            await ApplyLoginAsync(loginResponse, "local", settings);
+            await ApplyLoginAsync(loginResponse, "local", settings, reportMetadata);
             return (true, null);
         }
         catch (Exception ex)
@@ -581,7 +614,11 @@ public class AuthService : IAuthService
             if (string.IsNullOrEmpty(serverUrl))
                 return null;
 
+            var reportMetadata = ShouldReportDeviceMetadata(settings);
             using var client = _httpClientFactory.CreateClient();
+            if (reportMetadata)
+                AttachDeviceMetadata(client, settings);
+
             var response = await client.PostAsJsonAsync($"{serverUrl}/auth/refresh",
                 new { refreshToken });
 
@@ -611,6 +648,8 @@ public class AuthService : IAuthService
             // Persist new tokens
             settings.EncryptedAccessToken = _encryptedAccessToken;
             settings.EncryptedRefreshToken = _encryptedRefreshToken;
+            if (reportMetadata)
+                settings.ReportedDeviceMetadata = DeviceMetadataFingerprint();
             await _settingsService.SaveSettingsAsync(settings);
 
             return newAccessToken;
