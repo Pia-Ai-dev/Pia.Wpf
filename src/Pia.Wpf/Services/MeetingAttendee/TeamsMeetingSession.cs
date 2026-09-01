@@ -745,6 +745,11 @@ public sealed class TeamsMeetingSession : IMeetingSession
         var deadline = Environment.TickCount64 + (long)totalTimeoutMs;
         do
         {
+            // Without this a closed page fails every candidate silently and surfaces as a selector
+            // timeout, blaming the selectors for a dead browser.
+            if (page.IsClosed)
+                throw new InvalidOperationException("The meeting page closed while waiting for the prejoin controls.");
+
             foreach (var selector in selectors)
             {
                 try

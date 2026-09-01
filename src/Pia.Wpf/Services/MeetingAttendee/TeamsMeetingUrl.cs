@@ -42,8 +42,8 @@ public static class TeamsMeetingUrl
     /// while preserving every other query parameter (the meeting context lives in those params).
     ///
     /// Note: the blueprint also adds <c>enableMobilePage=true</c>; we deliberately omit it because
-    /// the desktop web-join selectors used here (<c>joinOnWeb</c>, "Type your name", "Join now",
-    /// <c>hangup-button</c>) target the desktop DOM, which the mobile page changes.
+    /// the web-join selectors in <see cref="TeamsMeetingSession"/> target the desktop DOM, which the
+    /// mobile page changes.
     /// </summary>
     /// <param name="resolvedUrl">The final URL after following the meeting-URL redirect(s).</param>
     /// <returns>The rewritten absolute URL to navigate to.</returns>
