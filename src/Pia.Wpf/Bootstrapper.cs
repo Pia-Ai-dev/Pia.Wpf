@@ -277,6 +277,18 @@ public static class Bootstrapper
             bootstrapLogger.LogWarning(ex, "Ingest synthesis migration failed; topic pages may retain the old format until re-ingested");
         }
 
+        // Repair pages whose frontmatter no longer parses, BEFORE reconcile: the fix is to re-ingest
+        // them, and reconcile is what does that. Guarded so a repair failure never blocks startup.
+        try
+        {
+            await _serviceProvider.GetRequiredService<Pia.Services.Wiki.VaultRepairService>()
+                .RepairUnparseableTopicPagesAsync();
+        }
+        catch (Exception ex)
+        {
+            bootstrapLogger.LogWarning(ex, "Vault repair failed; unparseable topic pages remain until re-ingested");
+        }
+
         // Auto-ingest starts AFTER the vault watcher: recall indexing of Pia's own page writes happens
         // only via the live watcher, so ingest-written topic pages must land while it is running. The
         // reconcile scan runs on the service's own background queue — startup is never blocked on LLM work.
@@ -512,6 +524,7 @@ public static class Bootstrapper
         services.AddSingleton<IIngestService, Pia.Services.Wiki.IngestService>();
         services.AddSingleton(sp => new Pia.Services.Wiki.IngestStateStore(
             sp.GetRequiredService<SqliteContext>().ConnectionString));
+        services.AddSingleton<Pia.Services.Wiki.VaultRepairService>();
         services.AddSingleton<Pia.Services.Wiki.AutoIngestService>();
         services.AddSingleton<IIngestScheduler>(sp => sp.GetRequiredService<Pia.Services.Wiki.AutoIngestService>());
         services.AddSingleton<IVaultSourcesService, Pia.Services.Wiki.VaultSourcesService>();

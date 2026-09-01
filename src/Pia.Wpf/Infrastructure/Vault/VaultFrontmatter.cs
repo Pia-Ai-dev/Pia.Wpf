@@ -24,12 +24,14 @@ public static class VaultFrontmatter
     {
         var id = Guid.NewGuid().ToString("D").ToLowerInvariant();
         var now = DateTime.UtcNow.ToString(TimestampFormat, CultureInfo.InvariantCulture);
-        var categoryLine = category is null ? string.Empty : $"category: {category}\n";
+        var categoryLine = category is null
+            ? string.Empty
+            : $"category: {VaultYaml.EncodeScalar(category)}\n";
         return "---\n" +
                "pia: managed\n" +
                $"id: {id}\n" +
                $"type: {type}\n" +
-               $"title: {title}\n" +
+               $"title: {VaultYaml.EncodeScalar(title)}\n" +
                categoryLine +
                $"created: {now}\n" +
                $"updated: {now}\n" +
@@ -63,8 +65,8 @@ public static class VaultFrontmatter
                "pia: managed\n" +
                $"id: {id}\n" +
                "type: topic\n" +
-               $"title: {title}\n" +
-               $"category: {category}\n" +
+               $"title: {VaultYaml.EncodeScalar(title)}\n" +
+               $"category: {VaultYaml.EncodeScalar(category)}\n" +
                $"created: {created}\n" +
                $"updated: {now}\n" +
                AiContentMarking.YamlLines() +

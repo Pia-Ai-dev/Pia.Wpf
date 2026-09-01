@@ -78,7 +78,7 @@ public sealed class VaultSchemaService
                "pia: managed\n" +
                $"id: {id}\n" +
                "type: note\n" +
-               $"title: {title}\n" +
+               $"title: {VaultYaml.EncodeScalar(title)}\n" +
                $"created: {now}\n" +
                $"updated: {now}\n" +
                "schemaVersion: 1\n" +

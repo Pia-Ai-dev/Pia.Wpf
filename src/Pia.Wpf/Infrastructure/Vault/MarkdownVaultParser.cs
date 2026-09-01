@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Pia.Models.Vault;
+using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 
 namespace Pia.Infrastructure.Vault;
@@ -105,7 +106,20 @@ public sealed class MarkdownVaultParser
             return;
         }
 
-        var map = YamlDeserializer.Deserialize<Dictionary<string, object?>>(block);
+        // A malformed block yields NO frontmatter rather than throwing. The body still parses, so a
+        // page whose frontmatter got corrupted stays readable — and therefore rewritable. Throwing
+        // here reached every IVaultStore.ReadAsync caller and made such a page unrepairable: ingest
+        // reads the target page before rewriting it, so the write that would have fixed it never ran.
+        Dictionary<string, object?>? map;
+        try
+        {
+            map = YamlDeserializer.Deserialize<Dictionary<string, object?>>(block);
+        }
+        catch (YamlException)
+        {
+            return;
+        }
+
         if (map is null)
         {
             return;

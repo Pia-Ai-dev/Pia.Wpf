@@ -45,4 +45,28 @@ public class MarkdownVaultParserTests
         Assert.Equal("cafe-work-2", doc.Sections[1].Slug);
         Assert.Equal("cafe-work-2-2", doc.Sections[2].Slug);
     }
+
+    // A page whose frontmatter got corrupted must stay READABLE, or it can never be rewritten:
+    // ingest reads the target page before overwriting it, so a throw here left the page stuck.
+    [Theory]
+    [InlineData("pia: managed\ntitle: {\"subject\": \"Ilka Brenner\", \"category\": \"person\"},")]
+    [InlineData("- a sequence\n- not a mapping")]
+    [InlineData("just a bare scalar")]
+    [InlineData("title: [unclosed")]
+    public void Malformed_frontmatter_yields_no_keys_instead_of_throwing(string block)
+    {
+        var doc = _parser.Parse($"---\n{block}\n---\n## Body\ntext\n");
+
+        Assert.Empty(doc.Frontmatter);
+        Assert.Equal("Body", doc.Sections[0].Heading);
+    }
+
+    // Odd-but-legal blocks must keep parsing normally — the guard above is for invalid YAML only.
+    [Theory]
+    [InlineData("dup: 1\ndup: 2")]
+    [InlineData("\ttab indented: 1")]
+    public void Unusual_but_valid_frontmatter_still_parses(string block)
+    {
+        Assert.NotEmpty(_parser.Parse($"---\n{block}\n---\n## Body\ntext\n").Frontmatter);
+    }
 }

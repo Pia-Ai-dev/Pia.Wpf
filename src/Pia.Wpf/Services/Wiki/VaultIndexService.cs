@@ -350,7 +350,9 @@ public sealed class VaultIndexService
             {
                 if (!OwnedKeys.Contains(key) && !value.Contains('\n'))
                 {
-                    sb.Append(key).Append(": ").Append(value).Append('\n');
+                    // Re-encoded, not echoed: the parser hands back the UNQUOTED value, so a value
+                    // that needed quoting on the way in would break the block on the way out.
+                    sb.Append(key).Append(": ").Append(VaultYaml.EncodeScalar(value)).Append('\n');
                 }
             }
         }
