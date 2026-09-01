@@ -34,6 +34,9 @@ public static class PiaPaths
     /// </summary>
     public static string DiagnosticsDirectory => Path.Combine(LocalDataDirectory, "Diagnostics");
 
+    /// <summary>Where a virtual-file drop (a mail dragged out of Outlook) writes the file it had to materialise.</summary>
+    public static string DropCacheDirectory => Path.Combine(LocalDataDirectory, "DropCache");
+
     /// <summary>True when either data root came from the environment rather than the real user profile.</summary>
     public static bool IsOverridden =>
         HasOverride(RoamingDataDirectoryEnvVar) || HasOverride(LocalDataDirectoryEnvVar);

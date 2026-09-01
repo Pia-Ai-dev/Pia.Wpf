@@ -101,6 +101,7 @@ public partial class OptimizeViewModel : UiThreadViewModel, INavigationAware, ID
     public IRelayCommand ClearInputCommand { get; }
     public IRelayCommand<string> SendToModeCommand { get; }
     public IAsyncRelayCommand<IReadOnlyList<string>> HandleFilesDroppedCommand { get; }
+    public IRelayCommand<string> HandleDropFailedCommand { get; }
 
     public Task ReadyAsync => _isInitialized ? Task.CompletedTask : _readyTcs.Task;
 
@@ -147,6 +148,7 @@ public partial class OptimizeViewModel : UiThreadViewModel, INavigationAware, ID
         ClearInputCommand = new RelayCommand(ExecuteClearInput);
         SendToModeCommand = new RelayCommand<string>(ExecuteSendToMode);
         HandleFilesDroppedCommand = new AsyncRelayCommand<IReadOnlyList<string>>(ExecuteHandleFilesDropped);
+        HandleDropFailedCommand = new RelayCommand<string>(ExecuteHandleDropFailed);
 
         _settingsService.SettingsChanged += OnSettingsChanged;
         _templateService.TemplatesChanged += OnTemplatesChanged;
@@ -678,6 +680,22 @@ public partial class OptimizeViewModel : UiThreadViewModel, INavigationAware, ID
             },
             Wpf.Ui.Controls.ControlAppearance.Caution,
             TimeSpan.FromSeconds(8));
+    }
+
+    /// <summary>An item the source app offered but would not hand over. A null name means it offered no file
+    /// at all — new Outlook drags mailbox row keys, not a message.</summary>
+    private void ExecuteHandleDropFailed(string? fileName)
+    {
+        _logger.LogWarning("A dragged item could not be taken from its source app (named={Named})",
+            !string.IsNullOrWhiteSpace(fileName));
+
+        var message = string.IsNullOrWhiteSpace(fileName)
+            ? _localizationService["Msg_File_DropNoFile"]
+            : _localizationService.Format("Msg_File_DropFailed", fileName);
+
+        _snackbarService.Show(
+            _localizationService["Msg_Warning"], message,
+            Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(6));
     }
 
     private async Task ExecuteHandleFilesDropped(IReadOnlyList<string>? paths)

@@ -568,6 +568,8 @@ public class LocalizationTests
     [InlineData("Msg_File_Empty", 1)]
     [InlineData("Msg_File_Truncated", 1)]
     [InlineData("Msg_File_OneImageOnly", 1)]
+    [InlineData("Msg_File_DropFailed", 1)]
+    [InlineData("Msg_File_DropNoFile", 0)]
     public void AFileDropMessageKeyCarriesTheSamePlaceholdersInEveryLocale(string key, int expected)
     {
         var placeholder = new Regex(@"\{(\d+)");

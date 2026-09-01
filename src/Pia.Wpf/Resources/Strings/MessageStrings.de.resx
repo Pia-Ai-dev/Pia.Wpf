@@ -61,6 +61,8 @@
   <data name="Msg_File_TooLargeAttachment" xml:space="preserve"><value>„{0}“ ist zu groß zum Anhängen.</value></data>
   <data name="Msg_File_AttachBudget" xml:space="preserve"><value>Die angehängten Dateien füllen diese Nachricht bereits – „{0}“ wurde übersprungen.</value></data>
   <data name="Msg_File_OneImageOnly" xml:space="preserve"><value>Es kann nur ein Bild angehängt werden – „{0}“ wurde übernommen.</value></data>
+  <data name="Msg_File_DropFailed" xml:space="preserve"><value>„{0}“ konnte nicht aus der Quell-App übernommen werden. Speichern Sie das Element als Datei und ziehen Sie diese herüber.</value></data>
+  <data name="Msg_File_DropNoFile" xml:space="preserve"><value>Diese App gibt keine Datei heraus, sondern nur ihren eigenen internen Verweis. Speichern Sie das Element zuerst als Datei und ziehen Sie diese herüber.</value></data>
 
   <data name="Msg_Tts_NoVoiceLoaded" xml:space="preserve"><value>Kein Sprachmodell geladen. Wähle in den Einstellungen eine Stimme aus, um Vorlesen zu nutzen.</value></data>
   <data name="Msg_Tts_NoVoiceLoaded_OpenSettings" xml:space="preserve"><value>Einstellungen öffnen</value></data>

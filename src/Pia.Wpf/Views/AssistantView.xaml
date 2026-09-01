@@ -19,7 +19,8 @@
         Background="Transparent"
         behaviors:FileDropBehavior.IsEnabled="True"
         behaviors:FileDropBehavior.AcceptedExtensions=".txt,.md,.json,.xml,.yaml,.yml,.csv,.log,.ini,.cs,.js,.ts,.py,.html,.htm,.css,.sql,.sh,.ps1,.bat,.cmd,.toml,.docx,.xlsx,.xlsm,.eml,.msg,.png,.jpg,.jpeg,.gif,.bmp,.webp"
-        behaviors:FileDropBehavior.FilesDroppedCommand="{Binding HandleFilesDroppedCommand}">
+        behaviors:FileDropBehavior.FilesDroppedCommand="{Binding HandleFilesDroppedCommand}"
+        behaviors:FileDropBehavior.DropFailedCommand="{Binding HandleDropFailedCommand}">
     <!-- Main content + panel overlay -->
     <Grid x:Name="MainContent">
       <Grid.Style>
@@ -375,6 +376,14 @@
                      TextWrapping="Wrap"
                      Foreground="{DynamicResource TextSubtleBrush}"
                      Visibility="{Binding PendingFilesBlockRunHintVisible, Converter={StaticResource BooleanToVisibilityConverter}}" />
+          <!-- A drop that produced no chip. Here rather than only in the corner toast: a drop leaves the source
+               app in front, so a toast can land behind the window the user just dragged from. -->
+          <TextBlock Text="{Binding DropFailureMessage}"
+                     Margin="2,0,0,6"
+                     FontSize="12"
+                     TextWrapping="Wrap"
+                     Foreground="{DynamicResource WarningBrush}"
+                     Visibility="{Binding DropFailureMessage, Converter={StaticResource NullToVisibilityConverter}}" />
           <Grid>
             <ui:TextBox x:Name="InputTextBox"
                         AutomationProperties.AutomationId="InputTextBox"

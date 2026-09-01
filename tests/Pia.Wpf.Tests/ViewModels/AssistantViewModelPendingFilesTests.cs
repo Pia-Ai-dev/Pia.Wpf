@@ -502,4 +502,60 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
             "Msg_File_OneImageOnly",
             Arg.Is<object[]>(args => args.Length == 1 && (string)args[0] == "a.png"));
     }
+
+    /// <summary>A drop that produced no chip has to say so where the user is looking. The corner snackbar is
+    /// not enough on its own: a drop leaves the source app in the foreground, so the toast can render behind
+    /// the window the mail was dragged from.</summary>
+    [Fact]
+    public void AFailedDrop_PutsItsReasonInTheComposer()
+    {
+        var vm = CreateSut();
+        _localization["Msg_File_DropNoFile"].Returns("no file to take");
+
+        vm.HandleDropFailedCommand.Execute(null);
+
+        Assert.Equal("no file to take", vm.DropFailureMessage);
+    }
+
+    /// <summary>A source that named the item it would not hand over gets the named wording instead.</summary>
+    [Fact]
+    public void AFailedDropWithAName_NamesTheItem()
+    {
+        var vm = CreateSut();
+        _localization.Format("Msg_File_DropFailed", Arg.Any<object[]>()).Returns("could not take Angebot.msg");
+
+        vm.HandleDropFailedCommand.Execute("Angebot.msg");
+
+        Assert.Equal("could not take Angebot.msg", vm.DropFailureMessage);
+        _localization.Received(1).Format(
+            "Msg_File_DropFailed",
+            Arg.Is<object[]>(args => args.Length == 1 && (string)args[0] == "Angebot.msg"));
+        _localization.DidNotReceive()["Msg_File_DropNoFile"].ToString();
+    }
+
+    [Fact]
+    public void TypingClearsAFailedDropNotice()
+    {
+        var vm = CreateSut();
+        _localization["Msg_File_DropNoFile"].Returns("no file to take");
+        vm.HandleDropFailedCommand.Execute(null);
+
+        vm.InputText = "what was in that mail?";
+
+        Assert.Null(vm.DropFailureMessage);
+    }
+
+    /// <summary>A drop that works after one that did not must not leave the stale reason on screen.</summary>
+    [Fact]
+    public async Task ASuccessfulDropClearsAFailedDropNotice()
+    {
+        var vm = CreateSut();
+        _localization["Msg_File_DropNoFile"].Returns("no file to take");
+        vm.HandleDropFailedCommand.Execute(null);
+
+        await vm.HandleFilesDroppedCommand.ExecuteAsync(new[] { Write("notes.txt", "hello") });
+
+        Assert.Single(vm.PendingFiles);
+        Assert.Null(vm.DropFailureMessage);
+    }
 }

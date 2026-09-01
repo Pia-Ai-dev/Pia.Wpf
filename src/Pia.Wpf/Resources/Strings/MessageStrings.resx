@@ -64,6 +64,8 @@
   <data name="Msg_File_TooLargeAttachment" xml:space="preserve"><value>"{0}" is too large to attach.</value></data>
   <data name="Msg_File_AttachBudget" xml:space="preserve"><value>The attached files already fill this message — "{0}" was skipped.</value></data>
   <data name="Msg_File_OneImageOnly" xml:space="preserve"><value>Only one image can be attached — kept "{0}".</value></data>
+  <data name="Msg_File_DropFailed" xml:space="preserve"><value>Couldn't take "{0}" from the app you dragged it from. Save it as a file and drag that instead.</value></data>
+  <data name="Msg_File_DropNoFile" xml:space="preserve"><value>That app hands over no file to drag — only its own internal reference. Save the item as a file first, then drag that.</value></data>
 
   <!-- Assistant messages -->
   <data name="Msg_Assistant_Copied" xml:space="preserve"><value>Copied</value></data>

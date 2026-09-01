@@ -83,7 +83,8 @@
         Background="Transparent"
         behaviors:FileDropBehavior.IsEnabled="True"
         behaviors:FileDropBehavior.AcceptedExtensions=".txt,.md,.json,.xml,.yaml,.yml,.csv,.log,.ini,.cs,.js,.ts,.py,.html,.htm,.css,.sql,.sh,.ps1,.bat,.cmd,.toml,.docx,.xlsx,.xlsm,.eml,.msg"
-        behaviors:FileDropBehavior.FilesDroppedCommand="{Binding HandleFilesDroppedCommand}">
+        behaviors:FileDropBehavior.FilesDroppedCommand="{Binding HandleFilesDroppedCommand}"
+        behaviors:FileDropBehavior.DropFailedCommand="{Binding HandleDropFailedCommand}">
     <!-- Main content + panel overlay -->
     <Grid x:Name="MainContent">
       <Grid.Style>

@@ -137,6 +137,13 @@ never reaches `FileDropBehavior`. Set it in `ww_launch`'s `env` map — a runnin
 changed from outside — then click `Assistant_AttachFile` whenever the script wants those files staged. The
 Assistant's Attach-file button is the only reader; Optimize still opens the real picker.
 
+That bypass hands over a **path list**, so it exercises everything downstream of a path and nothing upstream
+of one. It cannot reach the virtual-file materialiser that a mail dragged out of Outlook classic goes through
+(`FileGroupDescriptorW`/`FileContents` → `ShellFileContentsMaterializer`), because there is no path until that
+code has run. Verify that path by hand against a Debug build and read the log; the format enumeration it needs
+is permanent but `[Conditional("DEBUG")]`. See
+[../file_drop_attachments/2026-09-01-outlook-virtual-file-drop.md](../file_drop_attachments/2026-09-01-outlook-virtual-file-drop.md) §7.
+
 Deliberately separate variables: each of these writes a different format, and one shared path would have
 them overwrite each other.
 

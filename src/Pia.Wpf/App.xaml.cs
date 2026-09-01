@@ -92,6 +92,9 @@ public partial class App : Application
         // Set shutdown mode to explicit (don't exit when window closes)
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
+        // Nothing a virtual-file drop wrote outlives the run that read it.
+        Helpers.ShellDropCache.Clear();
+
         // Initialize DI container
         await Bootstrapper.InitializeAsync();
 

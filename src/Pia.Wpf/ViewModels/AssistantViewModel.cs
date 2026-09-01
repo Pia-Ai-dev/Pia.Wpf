@@ -144,6 +144,14 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     [ObservableProperty]
     private bool _pendingFilesBlockRunHintVisible;
 
+    /// <summary>
+    /// Why a drop produced no chip, shown in the composer rather than only as a snackbar. A drop leaves the
+    /// source app in the foreground, so a corner toast can land behind the window the user just dragged from —
+    /// the one place they are certainly looking is where the chip would have been.
+    /// </summary>
+    [ObservableProperty]
+    private string? _dropFailureMessage;
+
     [ObservableProperty]
     private bool _hasMessages;
 
@@ -243,6 +251,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IRelayCommand<string> UseFollowupCommand { get; }
     public IAsyncRelayCommand<PiiKeywordRequest> AddPiiKeywordCommand { get; }
     public IAsyncRelayCommand<IReadOnlyList<string>> HandleFilesDroppedCommand { get; }
+    public IRelayCommand<string> HandleDropFailedCommand { get; }
     public IAsyncRelayCommand<string> HandleImageAttachedCommand { get; }
     public IAsyncRelayCommand<BitmapSource> HandleImagePastedCommand { get; }
     public IRelayCommand RemoveAttachmentCommand { get; }
@@ -383,6 +392,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         UseFollowupCommand = new RelayCommand<string>(ExecuteUseFollowup);
         AddPiiKeywordCommand = new AsyncRelayCommand<PiiKeywordRequest>(ExecuteAddPiiKeyword);
         HandleFilesDroppedCommand = new AsyncRelayCommand<IReadOnlyList<string>>(ExecuteHandleFilesDropped);
+        HandleDropFailedCommand = new RelayCommand<string>(ExecuteHandleDropFailed);
         HandleImageAttachedCommand = new AsyncRelayCommand<string>(ExecuteHandleImageAttached);
         HandleImagePastedCommand = new AsyncRelayCommand<BitmapSource>(ExecuteHandleImagePasted);
         RemoveAttachmentCommand = new RelayCommand(() => PendingAttachment = null);
@@ -882,10 +892,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         SendMessageCommand.NotifyCanExecuteChanged();
         RunInBackgroundCommand.NotifyCanExecuteChanged();
         RefreshPendingFilesHint();
+        DropFailureMessage = null;
     }
 
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        if (e.PropertyName is nameof(InputText)) DropFailureMessage = null;
+
         if (e.PropertyName is nameof(InputText) or nameof(IsStreaming) or nameof(PendingAttachment)
             or nameof(ForeignRunActive) or nameof(PlanApprovalParkActive))
         {
@@ -1777,6 +1790,25 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         if (result.ImagePaths.Count > 0)
             await AttachFirstImageAsync(result.ImagePaths);
+    }
+
+    /// <summary>An item the source app offered but would not hand over. A null name means it offered no file
+    /// at all — new Outlook drags mailbox row keys, not a message.</summary>
+    private void ExecuteHandleDropFailed(string? fileName)
+    {
+        _logger.LogWarning("A dragged item could not be taken from its source app (named={Named})",
+            !string.IsNullOrWhiteSpace(fileName));
+        _logger.SensitiveDebug("Drag materialization failed for {FileName}", fileName);
+
+        var message = string.IsNullOrWhiteSpace(fileName)
+            ? _localizationService["Msg_File_DropNoFile"]
+            : _localizationService.Format("Msg_File_DropFailed", fileName);
+
+        DropFailureMessage = message;
+
+        _snackbarService.Show(
+            _localizationService["Msg_Warning"], message,
+            Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(6));
     }
 
     private async Task AttachFirstImageAsync(IReadOnlyList<string> imagePaths)

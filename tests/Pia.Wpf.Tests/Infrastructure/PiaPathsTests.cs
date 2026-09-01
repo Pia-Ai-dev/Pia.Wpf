@@ -128,6 +128,7 @@ public sealed class PiaPathsTests
     [InlineData(VaultRootMember)]
     [InlineData(LogsDirectoryMember)]
     [InlineData(DiagnosticsDirectoryMember)]
+    [InlineData(DropCacheDirectoryMember)]
     public void RoutedMember_ObservesAnOverrideAppliedAfterItsTypeIsLoaded(string member)
     {
         var read = ReaderFor(member);
@@ -158,6 +159,7 @@ public sealed class PiaPathsTests
 
     private const string LogsDirectoryMember = "PiaPaths.LogsDirectory";
     private const string DiagnosticsDirectoryMember = "PiaPaths.DiagnosticsDirectory";
+    private const string DropCacheDirectoryMember = "PiaPaths.DropCacheDirectory";
     private const string SettingsDirectoryMember = "JsonPersistenceService.SettingsDirectory";
     private const string LegacyWorkdirMember = "AssistantWorkspace.LegacyWorkdir";
     private const string RunsRootMember = "AssistantWorkspace.RunsRoot";
@@ -173,6 +175,7 @@ public sealed class PiaPathsTests
         VaultRootMember => () => new VaultPathProvider().VaultRoot,
         LogsDirectoryMember => () => PiaPaths.LogsDirectory,
         DiagnosticsDirectoryMember => () => PiaPaths.DiagnosticsDirectory,
+        DropCacheDirectoryMember => () => PiaPaths.DropCacheDirectory,
         _ => throw new ArgumentOutOfRangeException(nameof(member), member, "no reader for this member"),
     };
 
