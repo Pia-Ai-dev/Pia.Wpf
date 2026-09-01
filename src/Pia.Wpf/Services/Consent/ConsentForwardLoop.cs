@@ -2,6 +2,7 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Pia.Logging;
 using Pia.Models;
+using Pia.Services.LiveTranscription;
 
 namespace Pia.Services.Consent;
 
@@ -38,13 +39,24 @@ public enum ConsentGateOutcome
 
     /// <summary>Loopback speech from a speaker whose consent was withdrawn.</summary>
     DropRevoked,
+
+    /// <summary>Microphone speech that was the far end coming back in off the local loudspeakers.</summary>
+    DropEcho,
+
+    /// <summary>Microphone speech parked until the far end's overlapping text has been recognised.</summary>
+    HoldMic,
 }
 
 /// <summary>
 /// THE privacy boundary of direct transcription. Sole reader of the per-session raw utterance channel;
 /// decides, utterance by utterance, whether transcribed text may ever reach the public channel (and
 /// therefore the UI, the saved transcript, or any log). Everything that is not explicitly emitted here
-/// is dropped and never observed again — there is no buffer, no replay, and no bypass.
+/// is dropped and never observed again — there is no replay and no bypass.
+///
+/// <para>Two in-memory holdings exist, both owned by the echo detector and neither ever emitted, logged
+/// or stored from here: a rolling 30 s window of the far end's recognised tokens (including speakers who
+/// have not consented — an echo of exactly those is what must not survive), and microphone utterances
+/// parked for at most the hold window while the far-end text that would explain them is recognised.</para>
 ///
 /// <para>Single-threaded by construction: <see cref="RunAsync"/> is the sole reader of the raw channel
 /// for the lifetime of one run, so there is no gate/grant race to reason about.</para>
@@ -55,7 +67,11 @@ public sealed class ConsentForwardLoop
     private readonly INamedConsentClassifier _classifier;
     private readonly IConsentAuditLog _auditLog;
     private readonly IConsentEvidenceStore _evidenceStore;
+    private readonly EchoDetector? _echo;
     private readonly ILogger<ConsentForwardLoop> _logger;
+
+    /// <summary>How often a held microphone utterance is reconsidered while the raw channel is quiet.</summary>
+    private static readonly TimeSpan HeldFlushInterval = TimeSpan.FromMilliseconds(250);
 
     private readonly object _samplesLock = new();
     private readonly List<VoiceSample> _voiceSamples = new();
@@ -63,19 +79,22 @@ public sealed class ConsentForwardLoop
     private int _droppedUnlabeledCount;
     private int _droppedUnconsentedCount;
     private int _droppedRevokedCount;
+    private int _droppedEchoCount;
 
     public ConsentForwardLoop(
         IConsentStateManager consentStateManager,
         INamedConsentClassifier classifier,
         IConsentAuditLog auditLog,
         IConsentEvidenceStore evidenceStore,
-        ILogger<ConsentForwardLoop> logger)
+        ILogger<ConsentForwardLoop> logger,
+        EchoDetector? echoDetector = null)
     {
         _consent = consentStateManager;
         _classifier = classifier;
         _auditLog = auditLog;
         _evidenceStore = evidenceStore;
         _logger = logger;
+        _echo = echoDetector;
     }
 
     /// <summary>
@@ -93,6 +112,9 @@ public sealed class ConsentForwardLoop
 
     /// <summary>Batched count of loopback utterances dropped because their speaker's consent was revoked.</summary>
     public int DroppedRevokedCount => Volatile.Read(ref _droppedRevokedCount);
+
+    /// <summary>Batched count of microphone utterances dropped as loudspeaker echo of the far end.</summary>
+    public int DroppedEchoCount => Volatile.Read(ref _droppedEchoCount);
 
     /// <summary>Snapshot of every measured sample recorded on an emit path so far this session.</summary>
     public IReadOnlyList<VoiceSample> VoiceSamples
@@ -120,16 +142,35 @@ public sealed class ConsentForwardLoop
     {
         try
         {
-            await foreach (var utterance in raw.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+            Task<bool>? pendingRead = null;
+            while (true)
             {
-                try
+                pendingRead ??= raw.WaitToReadAsync(cancellationToken).AsTask();
+
+                // Bounded wait, not ReadAllAsync: a held microphone utterance has to be reconsidered even
+                // while the channel is quiet, or it would sit there until the next person speaks.
+                var winner = await Task.WhenAny(pendingRead, Task.Delay(HeldFlushInterval)).ConfigureAwait(false);
+                if (ReferenceEquals(winner, pendingRead))
                 {
-                    await ProcessAsync(context, utterance, sink, renameSpeaker, cancellationToken).ConfigureAwait(false);
+                    var more = await pendingRead.ConfigureAwait(false);
+                    pendingRead = null;
+                    if (!more) break;
+
+                    while (raw.TryRead(out var utterance))
+                    {
+                        try
+                        {
+                            await ProcessAsync(context, utterance, sink, renameSpeaker, cancellationToken)
+                                .ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Consent forward loop: processing one utterance threw; continuing");
+                        }
+                    }
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Consent forward loop: processing one utterance threw; continuing");
-                }
+
+                await ReleaseHeldAsync(sink, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -140,6 +181,45 @@ public sealed class ConsentForwardLoop
         {
             _logger.LogError(ex, "Consent forward loop failed");
         }
+        finally
+        {
+            // Whatever is still parked is the local user's own last words until proven otherwise; losing
+            // them to a shutdown race would be worse than emitting an echo nobody will read.
+            foreach (var stranded in _echo?.DrainHeld() ?? Array.Empty<TranscriptUtterance>())
+            {
+                await WriteAsync(sink, stranded, CancellationToken.None).ConfigureAwait(false);
+                RecordSample(stranded);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Emits or discards every parked microphone utterance the detector can now decide. Deliberately
+    /// non-blocking: this loop is the sole reader of the raw channel, so waiting here for the far end's
+    /// text would block the very utterance being waited for.
+    /// </summary>
+    private async Task ReleaseHeldAsync(ChannelWriter<TranscriptUtterance> sink, CancellationToken cancellationToken)
+    {
+        if (_echo is null) return;
+
+        foreach (var decision in _echo.TakeDecided(DateTimeOffset.UtcNow))
+        {
+            if (decision.Dropped)
+            {
+                CountEchoDrop(decision.Utterance);
+                continue;
+            }
+
+            await WriteAsync(sink, decision.Utterance, cancellationToken).ConfigureAwait(false);
+            RecordSample(decision.Utterance);
+        }
+    }
+
+    private void CountEchoDrop(TranscriptUtterance utterance)
+    {
+        Interlocked.Increment(ref _droppedEchoCount);
+        _logger.LogInformation("Dropped a microphone utterance that re-recorded the far end");
+        _logger.SensitiveDebug("Dropped echoed mic utterance text: '{Text}'", utterance.Text);
     }
 
     /// <summary>
@@ -160,10 +240,26 @@ public sealed class ConsentForwardLoop
     {
         if (utterance.Speaker == TranscriptSpeaker.You)
         {
+            switch (_echo?.Inspect(utterance, DateTimeOffset.UtcNow) ?? EchoVerdict.Emit)
+            {
+                case EchoVerdict.Drop:
+                    CountEchoDrop(utterance);
+                    return ConsentGateOutcome.DropEcho;
+
+                case EchoVerdict.Hold:
+                    _echo!.Hold(utterance, DateTimeOffset.UtcNow);
+                    return ConsentGateOutcome.HoldMic;
+            }
+
             await WriteAsync(sink, utterance, cancellationToken).ConfigureAwait(false);
             RecordSample(utterance);
             return ConsentGateOutcome.EmitMic;
         }
+
+        // Recorded before the gate and for every loopback utterance, consented or not: an echo of a
+        // speaker who never consented is exactly the one that must not survive. The text stays in memory
+        // for the comparison window and is never emitted, logged or stored from here.
+        _echo?.NoteRemoteUtterance(utterance);
 
         // D1 fix: unconditional, regardless of why the label is missing.
         if (string.IsNullOrWhiteSpace(utterance.SpeakerLabel))

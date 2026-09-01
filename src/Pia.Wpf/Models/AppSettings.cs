@@ -160,6 +160,12 @@ public class AppSettings
     // Local-only (no SyncSettings mirror).
     public bool MeetingSmartSpeakerDetection { get; set; } = true;
 
+    // Routes the microphone through the Windows voice-capture DSP so the far end coming out of the
+    // loudspeakers is subtracted before it can be transcribed as local speech. The DSP also applies
+    // noise suppression and gain control, which is the reason to be able to turn it off. Falls back to
+    // the plain microphone on its own when unavailable. Local-only (no SyncSettings mirror).
+    public bool MicEchoCancellation { get; set; } = true;
+
     // The escape hatch for a meeting where attribution is visibly wrong: a confidently mislabelled
     // transcript is worse than an unlabelled one. Local-only (no SyncSettings mirror).
     public bool MeetingSuppressSpeakerLabels { get; set; } = false;

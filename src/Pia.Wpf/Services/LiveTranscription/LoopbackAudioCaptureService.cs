@@ -28,10 +28,12 @@ public sealed class LoopbackAudioCaptureService : IAudioCaptureSource
     private long _hopCount;
     private float _maxRmsInBatch;
     private bool _firstFrameLogged;
+    private DateTimeOffset? _startedAt;
 
     public int SampleRate => TargetSampleRate;
     public bool IsRunning => _capture is not null;
     public ChannelReader<float[]> Reader => _channel.Reader;
+    public DateTimeOffset? StartedAt => _startedAt;
 
     public LoopbackAudioCaptureService(ILogger<LoopbackAudioCaptureService> logger)
     {
@@ -118,6 +120,9 @@ public sealed class LoopbackAudioCaptureService : IAudioCaptureSource
 
             var hop = new float[read];
             Array.Copy(_readBuffer, hop, read);
+
+            // Same reasoning as the mic source: date the epoch off the first published hop.
+            _startedAt ??= DateTimeOffset.Now.AddSeconds(-read / (double)TargetSampleRate);
 
             var rms = ComputeRms(hop);
             if (rms > _maxRmsInBatch) _maxRmsInBatch = rms;

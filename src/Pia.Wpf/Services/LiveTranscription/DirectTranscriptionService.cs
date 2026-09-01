@@ -81,6 +81,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
     private ITranscriptionEngine? _transcriptionEngine;
     private ISpeakerIdentificationService? _speakerId;
     private ConsentForwardLoop? _forwardLoop;
+    private EchoDetector? _echoDetector;
 
     // ---- Run-scoped (fresh every StartAsync, torn down every StopAsync) ----------------------------
     private Channel<TranscriptUtterance>? _rawChannel;
@@ -121,11 +122,23 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
             auditLog,
             evidenceStore,
             createTranscription: CreateProductionTranscriptionFactory(settingsService, assetDownloader, loggerFactory),
-            micSourceFactory: () => new MicAudioCaptureService(loggerFactory.CreateLogger<MicAudioCaptureService>()),
+            micSourceFactory: () => CreateMicSource(settingsService, loggerFactory),
             loopbackSourceFactory: () => new LoopbackAudioCaptureService(loggerFactory.CreateLogger<LoopbackAudioCaptureService>()),
             engineServiceFactory: CreateEngineServiceFactory(loggerFactory))
     {
     }
+
+    /// <summary>
+    /// The production microphone: Windows' echo canceller where it works, the plain capture otherwise.
+    /// Shared with the DEBUG audio-dump composition in <c>Bootstrapper</c> so a dumped session records
+    /// the same mic signal the real one does.
+    /// </summary>
+    internal static IAudioCaptureSource CreateMicSource(ISettingsService settingsService, ILoggerFactory loggerFactory)
+        => new EchoCancellingMicCaptureService(
+            () => new WindowsAecMicCaptureService(loggerFactory.CreateLogger<WindowsAecMicCaptureService>()),
+            () => new MicAudioCaptureService(loggerFactory.CreateLogger<MicAudioCaptureService>()),
+            settingsService,
+            loggerFactory.CreateLogger<EchoCancellingMicCaptureService>());
 
     /// <summary>
     /// Builds the real model/engine bootstrapper. Extracted so the DEBUG-only file-audio composition
@@ -290,12 +303,17 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
                 _consentStateManager.ResetSession();
                 RaiseConsentSessionReset();
 
+                // Per session, like the diarizer: it remembers the far end's recent speech, and carrying
+                // that across sessions would let one meeting's audio explain away the next one's.
+                _echoDetector = new EchoDetector();
+
                 _forwardLoop = new ConsentForwardLoop(
                     _consentStateManager,
                     _consentClassifier,
                     _auditLog,
                     _evidenceStore,
-                    _loggerFactory.CreateLogger<ConsentForwardLoop>());
+                    _loggerFactory.CreateLogger<ConsentForwardLoop>(),
+                    _echoDetector);
                 _forwardLoop.SpeakerConsentChanged += OnForwardLoopSpeakerConsentChanged;
 
                 _auditLog.Append(new AuditEvent(
@@ -486,6 +504,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
                 {
                     ["droppedUnlabeledLoopback"] = _forwardLoop?.DroppedUnlabeledCount ?? 0,
                     ["droppedUnconsented"] = _forwardLoop?.DroppedUnconsentedCount ?? 0,
+                    ["droppedMicEcho"] = _forwardLoop?.DroppedEchoCount ?? 0,
                 }));
 
             TransitionState(DirectTranscriptionState.Prepared);
@@ -777,10 +796,17 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
 
     private void WireSpeakingChanged(IAsyncDisposable engine, TranscriptSpeaker speaker)
     {
-        if (engine is LiveTranscriptionEngineService concrete)
+        if (engine is not LiveTranscriptionEngineService concrete) return;
+
+        concrete.IsSpeakingChanged += (_, isSpeaking) =>
         {
-            concrete.IsSpeakingChanged += (_, isSpeaking) => RaiseSpeakingChanged(speaker, isSpeaking);
-        }
+            // The far end's voice activity is known here, long before its text is recognised — which is
+            // what lets the detector spot a suspect microphone segment without delaying every caption.
+            if (speaker == TranscriptSpeaker.Them)
+                _echoDetector?.NoteRemoteSpeaking(isSpeaking, DateTimeOffset.UtcNow);
+
+            RaiseSpeakingChanged(speaker, isSpeaking);
+        };
     }
 
     private void RaiseSpeakingChanged(TranscriptSpeaker speaker, bool isSpeaking)
@@ -902,6 +928,8 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
             _forwardLoop.SpeakerConsentChanged -= OnForwardLoopSpeakerConsentChanged;
             _forwardLoop = null;
         }
+
+        _echoDetector = null;
 
         _vadModelPath = null;
     }

@@ -6,6 +6,7 @@ using NSubstitute.ClearExtensions;
 using NSubstitute.ExceptionExtensions;
 using Pia.Models;
 using Pia.Services.Consent;
+using Pia.Services.LiveTranscription;
 using Xunit;
 
 namespace Pia.Tests.Consent;
@@ -46,7 +47,7 @@ public sealed class ConsentForwardLoopTests
         public List<ConsentStateChangedEventArgs> ConsentChangedEvents { get; } = new();
         public ConsentForwardLoop Loop { get; }
 
-        public Fixture()
+        public Fixture(EchoDetector? echoDetector = null)
         {
             AuditLog.When(a => a.Append(Arg.Any<AuditEvent>())).Do(ci => AuditEvents.Add(ci.Arg<AuditEvent>()));
             EvidenceStore
@@ -54,7 +55,8 @@ public sealed class ConsentForwardLoopTests
                 .Returns(Task.CompletedTask);
 
             Loop = new ConsentForwardLoop(
-                Consent, Classifier, AuditLog, EvidenceStore, NullLogger<ConsentForwardLoop>.Instance);
+                Consent, Classifier, AuditLog, EvidenceStore, NullLogger<ConsentForwardLoop>.Instance,
+                echoDetector);
             Loop.SpeakerConsentChanged += (_, e) => ConsentChangedEvents.Add(e);
         }
 
@@ -423,5 +425,144 @@ public sealed class ConsentForwardLoopTests
         Assert.Single(samples);
         Assert.Equal(TranscriptSpeaker.You, samples[0].Speaker);
         Assert.Equal(2.0, samples[0].DurationSeconds);
+    }
+
+    // ---- Loudspeaker echo -------------------------------------------------------------------------
+    //
+    // The microphone side is attributed by device, never by voice, so the far end coming back in off the
+    // speakers lands under "you" - past this gate, and under a null label revoke can never reach.
+
+    private static readonly DateTimeOffset EchoT0 = new(2026, 9, 1, 9, 15, 0, TimeSpan.Zero);
+
+    private const string ConsentSentence =
+        "Mein Name ist Ilkin Kotsch und ich bin damit einverstanden, dass Pia aufzeichnet.";
+
+    private static TranscriptUtterance DatedMic(string text, double atSecond, double lengthSeconds)
+        => new(
+            TranscriptSpeaker.You, text, EchoT0.AddSeconds(atSecond + lengthSeconds),
+            DurationSeconds: lengthSeconds,
+            SpeechStart: EchoT0.AddSeconds(atSecond),
+            SpeechEnd: EchoT0.AddSeconds(atSecond + lengthSeconds));
+
+    private static TranscriptUtterance DatedLoopback(string label, string text, double atSecond, double lengthSeconds)
+        => new(
+            TranscriptSpeaker.Them, text, EchoT0.AddSeconds(atSecond + lengthSeconds),
+            SpeakerLabel: label,
+            SegmentId: 1,
+            DurationSeconds: lengthSeconds,
+            SpeechStart: EchoT0.AddSeconds(atSecond),
+            SpeechEnd: EchoT0.AddSeconds(atSecond + lengthSeconds));
+
+    /// <summary>Marks the far end as having talked across a stretch, the way the loopback VAD would.</summary>
+    private static EchoDetector SuppressorHearing(double fromSecond, double toSecond, TimeSpan? holdFor = null)
+    {
+        var suppressor = new EchoDetector(holdFor: holdFor);
+        suppressor.NoteRemoteSpeaking(true, EchoT0.AddSeconds(fromSecond));
+        suppressor.NoteRemoteSpeaking(false, EchoT0.AddSeconds(toSecond));
+        return suppressor;
+    }
+
+    [Fact]
+    public async Task EchoedMicUtterance_IsDroppedInsteadOfEmittedAsLocalSpeech()
+    {
+        var suppressor = SuppressorHearing(5, 11);
+        var fx = new Fixture(suppressor);
+        suppressor.NoteRemoteUtterance(DatedLoopback("Ilkin Kotsch", ConsentSentence, 5, 6));
+
+        var outcome = await fx.ProcessAsync(DatedMic(ConsentSentence, 5, 6));
+
+        Assert.Equal(ConsentGateOutcome.DropEcho, outcome);
+        Assert.False(fx.TryReadEmitted(out _));
+        Assert.Equal(1, fx.Loop.DroppedEchoCount);
+        // A dropped echo must not inflate the local speaker's share of the meeting either.
+        Assert.Empty(fx.Loop.VoiceSamples);
+    }
+
+    [Fact]
+    public async Task LocalSpeechOverTheFarEnd_StillReachesTheTranscript()
+    {
+        var suppressor = SuppressorHearing(5, 11);
+        var fx = new Fixture(suppressor);
+        suppressor.NoteRemoteUtterance(DatedLoopback("Ilkin Kotsch", ConsentSentence, 5, 6));
+
+        var bargeIn = DatedMic("Warte kurz, das habe ich nicht verstanden.", 6, 3);
+        var outcome = await fx.ProcessAsync(bargeIn);
+
+        Assert.Equal(ConsentGateOutcome.EmitMic, outcome);
+        Assert.True(fx.TryReadEmitted(out var emitted));
+        Assert.Equal(bargeIn, emitted);
+    }
+
+    [Fact]
+    public async Task RunLoop_ResolvesAHeldEchoOnceTheLoopbackTextArrives_WithoutDeadlocking()
+    {
+        // The mic decode wins the race, so the echo reaches the gate before the text that explains it.
+        // The loop is the only reader of this channel: waiting inline would block the very utterance
+        // being waited for, so this is the case that pins "park, do not await".
+        var suppressor = SuppressorHearing(5, 11, holdFor: TimeSpan.FromSeconds(30));
+        var fx = new Fixture(suppressor);
+        var raw = Channel.CreateUnbounded<TranscriptUtterance>();
+
+        fx.Classifier.Classify(ConsentSentence, TargetSpeechLanguage.DE)
+            .Returns(new NamedConsentResult(true, "Ilkin Kotsch", "de", NamedConsentClassifier.CrispConfidence));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var loop = fx.Loop.RunAsync(
+            Context(TargetSpeechLanguage.DE), raw.Reader, fx.Sink.Writer, fx.RenameViaConsentManager, cts.Token);
+
+        await raw.Writer.WriteAsync(DatedMic(ConsentSentence, 5, 6), cts.Token);
+        await raw.Writer.WriteAsync(DatedLoopback("Speaker 1", ConsentSentence, 5, 6), cts.Token);
+        raw.Writer.Complete();
+        await loop;
+
+        var emitted = new List<TranscriptUtterance>();
+        while (fx.TryReadEmitted(out var utterance)) emitted.Add(utterance);
+
+        Assert.Equal([TranscriptSpeaker.Them], emitted.Select(u => u.Speaker));
+        Assert.Equal(1, fx.Loop.DroppedEchoCount);
+    }
+
+    [Fact]
+    public async Task RunLoop_ReleasesAHeldMicUtteranceWhenNoLoopbackTextEverExplainsIt()
+    {
+        var suppressor = SuppressorHearing(5, 11, holdFor: TimeSpan.FromMilliseconds(200));
+        var fx = new Fixture(suppressor);
+        var raw = Channel.CreateUnbounded<TranscriptUtterance>();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var loop = fx.Loop.RunAsync(
+            Context(), raw.Reader, fx.Sink.Writer, fx.RenameViaConsentManager, cts.Token);
+
+        var spoken = DatedMic("Da muss irgendwie eine Pause sein zwischen.", 5, 6);
+        await raw.Writer.WriteAsync(spoken, cts.Token);
+
+        // Nothing else is ever written: only the loop's own timed flush can release this.
+        var emitted = await fx.Sink.Reader.ReadAsync(cts.Token);
+
+        raw.Writer.Complete();
+        await loop;
+
+        Assert.Equal(spoken, emitted);
+        Assert.Equal(0, fx.Loop.DroppedEchoCount);
+    }
+
+    [Fact]
+    public async Task RunLoop_EmitsStillHeldMicSpeechWhenTheSessionStops()
+    {
+        var suppressor = SuppressorHearing(5, 11, holdFor: TimeSpan.FromMinutes(5));
+        var fx = new Fixture(suppressor);
+        var raw = Channel.CreateUnbounded<TranscriptUtterance>();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var loop = fx.Loop.RunAsync(
+            Context(), raw.Reader, fx.Sink.Writer, fx.RenameViaConsentManager, cts.Token);
+
+        var spoken = DatedMic("Okay, das hat mir schon mal geholfen.", 5, 6);
+        await raw.Writer.WriteAsync(spoken, cts.Token);
+        raw.Writer.Complete();
+        await loop;
+
+        Assert.True(fx.TryReadEmitted(out var emitted));
+        Assert.Equal(spoken, emitted);
     }
 }

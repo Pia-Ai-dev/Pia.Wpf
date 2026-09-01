@@ -93,6 +93,9 @@ internal sealed class PushableAudioSource : IAudioCaptureSource
     public bool IsRunning => true;
     public ChannelReader<float[]> Reader => _channel.Reader;
 
+    /// <summary>Settable so a test can date sample 0 and check what the engine makes of a segment offset.</summary>
+    public DateTimeOffset? StartedAt { get; set; }
+
     public void Push(float[] frame) => _channel.Writer.TryWrite(frame);
     public void Complete() => _channel.Writer.TryComplete();
 

@@ -52,12 +52,51 @@ public sealed class TeamsMeetingSession : IMeetingSession
     /// </summary>
     public const string MeetingRedirectHttpClientName = "meeting-redirect";
 
+    /// <summary>
+    /// Teams picks the prejoin language server-side from Accept-Language — the join is anonymous, so
+    /// there is no profile to read — and forcing it keeps one DOM for every OS locale.
+    /// </summary>
+    private const string BrowserLocale = "en-US";
+
     // ---- Centralized selectors / page text (ported from join-procedure.ts) ------------------
     private const string ContinueOnWebSelector = "button[data-tid=\"joinOnWeb\"]";
-    private const string NameInputSelector = "input[placeholder=\"Type your name\"]";
-    private const string JoinNowSelector = "button:has-text(\"Join now\")";
     private const string HangupButtonSelector = "button[id=\"hangup-button\"]";
+    /// <summary>Only matches while <see cref="BrowserLocale"/> holds the client in English.</summary>
     private const string LobbyText = "Someone will let you in shortly";
+
+    /// <summary>
+    /// Prejoin name box, tried in this order. The placeholder is a localized string and only matches
+    /// under <see cref="BrowserLocale"/>, so the attribute forms lead.
+    /// </summary>
+    internal static readonly string[] NameInputSelectors =
+    [
+        "input[data-tid=\"prejoin-display-name-input\"]",
+        "#prejoin-display-name-input",
+        "input[placeholder=\"Type your name\"]",
+    ];
+
+    /// <summary>Prejoin join button, tried in this order. See <see cref="NameInputSelectors"/>.</summary>
+    internal static readonly string[] JoinNowSelectors =
+    [
+        "button[data-tid=\"prejoin-join-button\"]",
+        "#prejoin-join-button",
+        "button:has-text(\"Join now\")",
+    ];
+
+    /// <summary>Reads back the locale Teams actually served, so a failed override is visible in the log.</summary>
+    private const string LocaleProbeScript = """
+        () => { try {
+          return JSON.parse(decodeURIComponent(document.head?.getAttribute('data-config') || '')).localeCode || '';
+        } catch { return ''; } }
+        """;
+
+    /// <summary>Prejoin markup, dumped once (DEBUG) when only a text selector matched, to pin the real ids.</summary>
+    private const string PrejoinDomScript = """
+        () => {
+          const el = document.querySelector('[data-tid="prejoin-dialog"], [class*="prejoin" i]') || document.body;
+          return el ? el.outerHTML : '';
+        }
+        """;
     /// <summary>Fluent UI (Northstar) modal backdrop that can layer over the prejoin screen.</summary>
     private const string DialogOverlaySelector = ".ui-dialog__overlay";
     /// <summary>
@@ -72,10 +111,8 @@ public sealed class TeamsMeetingSession : IMeetingSession
 
     // ---- Roster (participant list) ----------------------------------------------------------------
     /// <summary>
-    /// Candidate selectors for the toggle that opens the "People" roster panel. Joined with commas so
-    /// Playwright matches the first that exists; the Teams web client has renamed this control across
-    /// versions (legacy <c>#roster-button</c>, newer aria-labelled buttons). UNVERIFIED in this
-    /// environment — refined from the DEBUG roster-DOM sample logged on the first read.
+    /// Toggle that opens the "People" roster panel. The aria-label entries are localized and only match
+    /// under <see cref="BrowserLocale"/>; a comma list resolves in DOM order, not in the order written.
     /// </summary>
     private const string RosterButtonSelector =
         "#roster-button, button[data-tid=\"roster-button\"], " +
@@ -283,6 +320,9 @@ public sealed class TeamsMeetingSession : IMeetingSession
     // ---- Timeouts (ms) ----------------------------------------------------------------------
     private const float ContinueOnWebTimeoutMs = 30_000;
     private const float NameInputTimeoutMs = 15_000;
+    private const float JoinNowWaitTimeoutMs = 30_000;
+    /// <summary>Pause between candidate-selector rounds in <see cref="WaitForFirstAsync"/>.</summary>
+    private const int SelectorRetryDelayMs = 250;
     /// <summary>How long, in total, we wait to be admitted after clicking "Join now".</summary>
     private const int AdmissionTimeoutMs = 120_000;
     /// <summary>Poll cadence while waiting in the lobby / waiting for the meeting to end.</summary>
@@ -315,6 +355,7 @@ public sealed class TeamsMeetingSession : IMeetingSession
     private int? _browserProcessId;
     private bool _enteredLobbyRaised;
     private bool _rosterDomLogged;
+    private bool _prejoinDomLogged;
     private bool _audioBindingExposed;
 
     // Serializes all page access that can run concurrently once the meeting is live: WaitForEndAsync's
@@ -385,6 +426,8 @@ public sealed class TeamsMeetingSession : IMeetingSession
         await page.GotoAsync(launcherUrl, new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded })
             .ConfigureAwait(false);
 
+        await LogServedLocaleAsync(page).ConfigureAwait(false);
+
         await page.WaitForSelectorAsync(
             ContinueOnWebSelector,
             new PageWaitForSelectorOptions { Timeout = ContinueOnWebTimeoutMs }).ConfigureAwait(false);
@@ -394,17 +437,20 @@ public sealed class TeamsMeetingSession : IMeetingSession
         cancellationToken.ThrowIfCancellationRequested();
 
         // Step 2: enter the display name and join.
-        await page.WaitForSelectorAsync(
-            NameInputSelector,
-            new PageWaitForSelectorOptions { Timeout = NameInputTimeoutMs }).ConfigureAwait(false);
-        await page.FillAsync(NameInputSelector, displayName).ConfigureAwait(false);
-        await page.WaitForSelectorAsync(JoinNowSelector).ConfigureAwait(false);
+        var (nameInput, nameSelector) = await WaitForFirstAsync(page, NameInputSelectors, NameInputTimeoutMs)
+            .ConfigureAwait(false);
+        await nameInput.FillAsync(displayName).ConfigureAwait(false);
+
+        var (joinNow, joinSelector) = await WaitForFirstAsync(page, JoinNowSelectors, JoinNowWaitTimeoutMs)
+            .ConfigureAwait(false);
+
+        await LogPrejoinDomAsync(page, nameSelector, joinSelector).ConfigureAwait(false);
 
         // The new Teams web prejoin can layer a modal over the screen that swallows the click on
         // "Join now". Best-effort dismiss it, then click — falling back to a synthetic DOM click if
         // an overlay still intercepts the real pointer event.
         await DismissBlockingDialogAsync(page).ConfigureAwait(false);
-        await ClickJoinNowAsync(page).ConfigureAwait(false);
+        await ClickJoinNowAsync(joinNow).ConfigureAwait(false);
         _logger.LogDebug("Clicked 'Join now'; awaiting admission");
 
         // Step 3: wait for admission. The bot may sit in the lobby ("Someone will let you in
@@ -689,6 +735,93 @@ public sealed class TeamsMeetingSession : IMeetingSession
         }
     }
 
+    /// <summary>
+    /// First visible match for <paramref name="selectors"/> in array order, plus the selector that hit.
+    /// A comma-joined selector cannot express priority — it resolves in DOM order.
+    /// </summary>
+    private static async Task<(ILocator Locator, string Selector)> WaitForFirstAsync(
+        IPage page, string[] selectors, float totalTimeoutMs)
+    {
+        var deadline = Environment.TickCount64 + (long)totalTimeoutMs;
+        do
+        {
+            // Without this a closed page fails every candidate silently and surfaces as a selector
+            // timeout, blaming the selectors for a dead browser.
+            if (page.IsClosed)
+                throw new InvalidOperationException("The meeting page closed while waiting for the prejoin controls.");
+
+            foreach (var selector in selectors)
+            {
+                try
+                {
+                    var locator = page.Locator(selector).First;
+                    if (await locator.IsVisibleAsync(new LocatorIsVisibleOptions { Timeout = ProbeTimeoutMs })
+                            .ConfigureAwait(false))
+                    {
+                        return (locator, selector);
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // Not in the DOM yet, or unsupported on this Teams build: fall through to the next.
+                }
+            }
+
+            await Task.Delay(SelectorRetryDelayMs).ConfigureAwait(false);
+        }
+        while (Environment.TickCount64 < deadline);
+
+        throw new TimeoutException(
+            $"No candidate selector became visible within {totalTimeoutMs} ms: {string.Join(" | ", selectors)}");
+    }
+
+    /// <summary>True for the localized text nets, which only match while the forced locale holds.</summary>
+    private static bool IsTextSelector(string selector)
+        => selector.Contains("placeholder=", StringComparison.Ordinal)
+            || selector.Contains(":has-text(", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Logs the locale Teams served. A value other than <see cref="BrowserLocale"/> means the override
+    /// did not reach the server and the localized selectors are the ones carrying the join.
+    /// </summary>
+    private async Task LogServedLocaleAsync(IPage page)
+    {
+        try
+        {
+            var locale = await page.EvaluateAsync<string?>(LocaleProbeScript).ConfigureAwait(false);
+            _logger.LogInformation("Teams web client locale: {LocaleCode}", locale ?? "(unknown)");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Could not read the Teams client locale");
+        }
+    }
+
+    /// <summary>
+    /// Dumps the prejoin markup once when only a localized text selector matched — the one case where
+    /// the real element ids are still unknown. Silent when an attribute selector carried the join.
+    /// </summary>
+    private async Task LogPrejoinDomAsync(IPage page, string nameSelector, string joinSelector)
+    {
+        if (_prejoinDomLogged || (!IsTextSelector(nameSelector) && !IsTextSelector(joinSelector))) return;
+
+        _prejoinDomLogged = true;
+        _logger.LogDebug(
+            "Prejoin matched on a localized selector (name: {NameSelector}, join: {JoinSelector}); dumping the DOM",
+            nameSelector, joinSelector);
+        try
+        {
+            // The prejoin DOM carries the display name and meeting context ⇒ DEBUG-only.
+            var dom = await page.EvaluateAsync<string?>(PrejoinDomScript).ConfigureAwait(false);
+            if (!string.IsNullOrEmpty(dom))
+                _logger.SensitiveDebug("Meeting prejoin DOM sample: {PrejoinDom}", Truncate(dom, 4_000));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Prejoin DOM sample capture failed");
+        }
+    }
+
     private static string Truncate(string value, int max)
         => value.Length <= max ? value : value[..max];
 
@@ -742,6 +875,9 @@ public sealed class TeamsMeetingSession : IMeetingSession
             "--disable-backgrounding-occluded-windows",
             "--disable-renderer-backgrounding",
             "--disable-background-timer-throttling",
+            // Chromium's own UI language and its default Accept-Language; the context Locale below is
+            // what Teams actually reads, but a system Chrome/Edge should not disagree with it.
+            $"--lang={BrowserLocale}",
         };
         if (!_launchSpec.ShowWindow)
         {
@@ -780,9 +916,12 @@ public sealed class TeamsMeetingSession : IMeetingSession
         // Microphone/camera are intentionally NOT granted: the bot joins muted with no hanging OS
         // prompt. We do not fake the input device either (deny-by-default is enough for the first
         // shot; --use-fake-device-for-media-stream remains an option if a fake mic is later needed).
+        // Locale drives Accept-Language and navigator.language through CDP, so it lands the same way on
+        // the bundled Chromium and on a system Chrome/Edge channel — whatever language that install is.
         _context = await _browser.NewContextAsync(new BrowserNewContextOptions
         {
             Permissions = [],
+            Locale = BrowserLocale,
         }).ConfigureAwait(false);
 
         // Hidden ⇒ silent path: arm the RTCPeerConnection track-collection hook BEFORE the first
@@ -1032,9 +1171,8 @@ public sealed class TeamsMeetingSession : IMeetingSession
     /// the button's page coordinates, so an intercepting overlay swallows it; <c>DispatchEvent</c>
     /// dispatches the click straight to the button element and skips hit-testing.
     /// </summary>
-    private async Task ClickJoinNowAsync(IPage page)
+    private async Task ClickJoinNowAsync(ILocator joinNow)
     {
-        var joinNow = page.Locator(JoinNowSelector).First;
         try
         {
             await joinNow.ClickAsync(new LocatorClickOptions { Timeout = JoinNowClickTimeoutMs })

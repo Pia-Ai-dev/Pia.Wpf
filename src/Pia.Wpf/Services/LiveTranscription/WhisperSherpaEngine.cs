@@ -5,13 +5,14 @@ using SherpaOnnx;
 namespace Pia.Services.LiveTranscription;
 
 /// <summary>
-/// sherpa-onnx OfflineRecognizer wrapper for Whisper ONNX models.
-/// Thread-safe: a single recognizer can decode many streams concurrently.
+/// sherpa-onnx OfflineRecognizer wrapper for Whisper ONNX models. Decodes are serialized — see
+/// <see cref="TranscribeAsync"/>.
 /// </summary>
 public sealed class WhisperSherpaEngine : ITranscriptionEngine
 {
     private readonly OfflineRecognizer _recognizer;
     private readonly ILogger _logger;
+    private readonly SemaphoreSlim _decodeGate = new(1, 1);
 
     public WhisperSherpaEngine(string modelDirectory, string languageCode, ILogger logger)
     {
@@ -41,16 +42,28 @@ public sealed class WhisperSherpaEngine : ITranscriptionEngine
         _recognizer = new OfflineRecognizer(config);
     }
 
-    public Task<string> TranscribeAsync(float[] samples16kMono, CancellationToken cancellationToken)
+    public async Task<string> TranscribeAsync(float[] samples16kMono, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.Run(() =>
+
+        // One recognizer is shared by the mic and loopback engines, which decode on their own threads.
+        // sherpa-onnx offers DecodeMultipleOfflineStreams for the concurrent case, so a bare Decode on
+        // one recognizer is not a documented-safe overlap — serialize instead of assuming.
+        await _decodeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            using var stream = _recognizer.CreateStream();
-            stream.AcceptWaveform(16000, samples16kMono);
-            _recognizer.Decode(stream);
-            return stream.Result.Text?.Trim() ?? string.Empty;
-        }, cancellationToken);
+            return await Task.Run(() =>
+            {
+                using var stream = _recognizer.CreateStream();
+                stream.AcceptWaveform(16000, samples16kMono);
+                _recognizer.Decode(stream);
+                return stream.Result.Text?.Trim() ?? string.Empty;
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _decodeGate.Release();
+        }
     }
 
     private static string ResolveModelFile(string dir, string role)
@@ -85,6 +98,7 @@ public sealed class WhisperSherpaEngine : ITranscriptionEngine
     public ValueTask DisposeAsync()
     {
         _recognizer.Dispose();
+        _decodeGate.Dispose();
         return ValueTask.CompletedTask;
     }
 }

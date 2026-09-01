@@ -36,10 +36,12 @@ public sealed class MicAudioCaptureService : IAudioCaptureSource
     private long _frameCount;
     private float _maxRmsInBatch;
     private bool _firstFrameLogged;
+    private DateTimeOffset? _startedAt;
 
     public int SampleRate => TargetSampleRate;
     public bool IsRunning => _waveIn is not null;
     public ChannelReader<float[]> Reader => _channel.Reader;
+    public DateTimeOffset? StartedAt => _startedAt;
 
     public MicAudioCaptureService(ILogger<MicAudioCaptureService> logger)
     {
@@ -100,6 +102,10 @@ public sealed class MicAudioCaptureService : IAudioCaptureSource
     {
         if (e.BytesRecorded < 2) return;
         var samples = PcmConversion.Pcm16LeToFloat(e.Buffer.AsSpan(0, e.BytesRecorded));
+
+        // Dated off the first delivered frame, not StartRecording: the device takes an unknown moment
+        // to actually open, and sample 0 is whatever the VAD sees first.
+        _startedAt ??= DateTimeOffset.Now.AddSeconds(-samples.Length / (double)TargetSampleRate);
 
         var rms = ComputeRms(samples);
         _frameCount++;

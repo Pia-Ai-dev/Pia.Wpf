@@ -13,6 +13,12 @@ public interface IAudioCaptureSource : IAsyncDisposable
     bool IsRunning { get; }
     ChannelReader<float[]> Reader { get; }
 
+    /// <summary>
+    /// Wall clock at which sample 0 was captured, so a segment's sample offset can be turned back into
+    /// speech time. Null when the source does not track it — callers must fall back to arrival time.
+    /// </summary>
+    DateTimeOffset? StartedAt => null;
+
     Task StartAsync(CancellationToken cancellationToken = default);
     Task StopAsync(CancellationToken cancellationToken = default);
 }

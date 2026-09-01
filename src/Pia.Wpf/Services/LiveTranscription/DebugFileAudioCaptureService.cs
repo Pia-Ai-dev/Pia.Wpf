@@ -24,10 +24,12 @@ public sealed class DebugFileAudioCaptureService : IAudioCaptureSource
     private CancellationTokenSource? _cts;
     private Task? _playbackTask;
     private volatile bool _isRunning;
+    private DateTimeOffset? _startedAt;
 
     public int SampleRate => AudioHopResampler.TargetSampleRate;
     public bool IsRunning => _isRunning;
     public ChannelReader<float[]> Reader => _channel.Reader;
+    public DateTimeOffset? StartedAt => _startedAt;
 
     public DebugFileAudioCaptureService(string filePath, ILogger<DebugFileAudioCaptureService> logger)
     {
@@ -74,6 +76,7 @@ public sealed class DebugFileAudioCaptureService : IAudioCaptureSource
                 foreach (var hop in resampler.ProcessAvailable(buffer, bytesRead))
                 {
                     if (token.IsCancellationRequested) return;
+                    _startedAt ??= DateTimeOffset.Now.AddSeconds(-hop.Length / (double)AudioHopResampler.TargetSampleRate);
                     if (!_channel.Writer.TryWrite(hop))
                         _logger.LogWarning("Debug file audio source dropped a hop (channel full)");
 
