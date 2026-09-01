@@ -146,8 +146,13 @@ Known open, carried rather than closed:
   executed. Bounded by the per-park and per-run caps and the terminal purge. The cheap tightening
   (supersede every unreplayed row on each park) is rejected on purpose — it would drop the surviving
   `create_source` that group B exists to keep.
-- **The end-to-end re-run of the original goal has not been done.** It needs a throwaway profile that
-  also patches `assistantFilesFolder`; `PIA_DATA_DIR` alone does not redirect the vault.
+- ~~**The end-to-end re-run of the original goal has not been done.**~~ **DONE 2026-09-01** — three runs
+  through the real UI, all four issues confirmed fixed:
+  [2026-09-01-approval-park-e2e-results.md](2026-09-01-approval-park-e2e-results.md), plan beside it.
+  Four parks, **zero** model rounds between each park and `WaitingForInput` (14–26 ms, against 41.6 s
+  reported), the parked call replayed once per grant **across an app restart**, one deliverable in the
+  vault, and no awaiting pill on either terminal state. The one thing the runs could not reach is a
+  withheld (`Kind=4`) row — the loop now stops before a second call in a parked exchange can be made.
 - **A stale-latch window in the approval detail.** If a park clears while a store read is in flight, the
   late read can set the latch against the new state. Non-blocking; the next `RunChanged` corrects it.
 

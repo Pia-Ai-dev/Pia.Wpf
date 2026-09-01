@@ -194,6 +194,15 @@ public class AppSettings
     // JSON-only (no settings UI), like MeetingAttendeeRosterSnapshotMinutes.
     public bool AutoIngestSources { get; set; } = true;
 
+    // Ceiling on the topic pages one source may yield. Nothing else bounds the count — a news article
+    // naming a dozen companies produced a page each — and every topic costs its own synthesis call.
+    // Clamped on read via GetMaxTopicsPerSource. JSON-only (no settings UI), like AutoIngestSources.
+    public int MaxTopicsPerSource { get; set; } = 8;
+
+    /// <summary>The per-source topic ceiling, clamped on READ so a hand-edited 0 cannot silently
+    /// disable ingest entirely.</summary>
+    public int GetMaxTopicsPerSource() => Math.Clamp(MaxTopicsPerSource, 1, 50);
+
     // Schema version for the ingest pipeline. Bumped when the on-disk topic-page format changes OR when
     // topic content must be rebuilt, so a one-time startup migration can wipe stale pages + ingest state
     // and force a fresh re-synthesis. JSON-only (no settings UI), like AutoIngestSources.

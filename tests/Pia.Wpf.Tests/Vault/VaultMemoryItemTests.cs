@@ -63,4 +63,52 @@ public class VaultMemoryItemTests
 
         Assert.Equal(expected, item.IsRebuildable);
     }
+
+    [Fact]
+    public void Gist_returns_the_opening_prose_of_a_free_form_page()
+    {
+        var item = WithBody("<!-- pia:managed -->\nAcme Corp is a logistics customer since 2024.\n\nMore.");
+
+        Assert.Equal("Acme Corp is a logistics customer since 2024.", item.Gist);
+    }
+
+    // A templated page opens with its field list, and a field value is neither a summary nor
+    // something to put in a map the model reads wholesale.
+    [Fact]
+    public void Gist_skips_field_bullets_and_headings()
+    {
+        var item = WithBody(string.Join(
+            "\n",
+            "<!-- pia:managed -->",
+            "# Ilka Brenner",
+            "- personnel number: 4711",
+            "- full name: Ilka Brenner",
+            "- role: unknown",
+            "",
+            "Joined the logistics team in 2024 and owns the Acme account."));
+
+        Assert.Equal("Joined the logistics team in 2024 and owns the Acme account.", item.Gist);
+    }
+
+    [Fact]
+    public void Gist_is_empty_when_the_page_is_only_fields()
+    {
+        Assert.Empty(WithBody("<!-- pia:managed -->\n- full name: Ilka Brenner\n").Gist);
+    }
+
+    [Fact]
+    public void Gist_truncates_a_long_opening_line()
+    {
+        var gist = WithBody(new string('x', 400)).Gist;
+
+        Assert.EndsWith("…", gist, StringComparison.Ordinal);
+        Assert.Equal(161, gist.Length);
+    }
+
+    // A dash that is not a field bullet is prose, and must survive.
+    [Fact]
+    public void Gist_keeps_a_plain_bullet_that_is_not_a_field()
+    {
+        Assert.Equal("- a plain bullet of prose", WithBody("- a plain bullet of prose").Gist);
+    }
 }

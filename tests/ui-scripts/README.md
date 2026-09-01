@@ -193,7 +193,29 @@ node tests/ui-scripts/agent-run-e2e/setup-profile.mjs $env:TEMP\pia-e2e verify
 ```
 
 The throwaway root is the first argument to all three and defaults to `%TEMP%\pia-e2e`. `probe`
-takes `runs` (the default), `msgs`, `files` or `all` as its second.
+takes `runs` (the default), `msgs`, `files`, `exchanges`, `vault`, `park` or `all` as its second.
+
+### The approval-park variant
+
+`setup-profile.mjs <root> park <providerName>` seeds the same profile plus the preconditions the
+approval-park e2e needs — plan and results in
+[`docs/agent_run_approval_park/`](../../docs/agent_run_approval_park/):
+
+- `agentRunAutoApproveBuiltInWrites:false` and `alwaysAllowedTools:[]`, or the run never parks and
+  every assertion downstream of the park is void rather than green. The plain `seed` mode sets
+  auto-approve **on**, and a persisted Always grant rides in from the copied real profile.
+- Both mode defaults pinned to the named provider. Pinning `Assistant` alone is not enough: with
+  `useSameProviderForAllModes` on (the usual real value) the resolver reads the **Optimize** default
+  for every mode, so the run silently goes to Pia Cloud and fails `Authentication required` under
+  `syncEnabled:false`.
+- `assistantDefaultWorkingDirectory:'Absence'`, the new fixture folder. The working-directory flyout
+  is `StaysOpen="False"` and one stray query closes it, so the default is the reliable way in.
+
+The three probe modes that go with it: `exchanges` dumps `AgentToolExchanges` (what the model saw as
+`Kind` 1/2 beside what the gate saw as 3/4, with the `ReplayedAt` / `SupersededAt` flags), `vault`
+walks the redirected `files\Vault`, and `park` reads the log for each park's
+**round count** between the park line and `WaitingForInput` — zero is the pass, and that, not the
+wall-clock delta, is the discriminator.
 
 ### How this profile differs from the fixture one
 

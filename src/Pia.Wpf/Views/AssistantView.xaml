@@ -73,11 +73,20 @@
       <StackPanel Orientation="Horizontal"
                   HorizontalAlignment="Center"
                   Margin="0,6,0,0">
-        <ui:SymbolIcon Symbol="Folder24"
-                       FontSize="12"
-                       Margin="0,0,5,0"
-                       VerticalAlignment="Center"
-                       Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+        <ui:Button Command="{Binding ChatTitleChip.OpenWorkingDirectoryCommand}"
+                   Appearance="Transparent"
+                   BorderThickness="0"
+                   Padding="2"
+                   Margin="0,0,3,0"
+                   Cursor="Hand"
+                   VerticalAlignment="Center"
+                   AutomationProperties.Name="{loc:Str Assistant_OpenWorkingDirectory_Tooltip}"
+                   AutomationProperties.AutomationId="Assistant_OpenWorkingDirectory"
+                   ToolTip="{loc:Str Assistant_OpenWorkingDirectory_Tooltip}">
+          <ui:SymbolIcon Symbol="Folder24"
+                         FontSize="12"
+                         Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+        </ui:Button>
         <TextBlock Text="{Binding ChatTitleChip.WorkingDirectoryDisplay}"
                    FontSize="12"
                    MaxWidth="360"

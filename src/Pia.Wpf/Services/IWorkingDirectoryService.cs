@@ -29,4 +29,11 @@ public interface IWorkingDirectoryService
     /// </list>
     /// </summary>
     string? EnsureSubfolder(string? relativePath);
+
+    /// <summary>
+    /// Absolute path of an existing sandbox-contained working directory (null/empty =&gt; the sandbox
+    /// root), or <c>null</c> when it escapes containment, is blocked, is missing, or the sandbox is
+    /// unconfigured. Creates nothing, unlike <see cref="EnsureSubfolder"/>.
+    /// </summary>
+    string? ResolveAbsolutePath(string? relativePath);
 }

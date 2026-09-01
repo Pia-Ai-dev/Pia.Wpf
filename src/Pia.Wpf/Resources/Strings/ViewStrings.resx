@@ -32,6 +32,15 @@
   <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <!-- Navigation -->
+  <data name="Memory_Charter" xml:space="preserve"><value>What this knowledge base is about</value></data>
+  <data name="Memory_CharterDraft" xml:space="preserve"><value>Draft one for me</value></data>
+  <data name="Memory_CharterDrafting" xml:space="preserve"><value>Reading your sources…</value></data>
+  <data name="Memory_CharterEdit" xml:space="preserve"><value>Edit</value></data>
+  <data name="Memory_CharterEmpty" xml:space="preserve"><value>Not set. Without it, ingest has no basis for judging which topics deserve a page — so it tends to create one for every name it sees.</value></data>
+  <data name="Memory_CharterHint" xml:space="preserve"><value>Applies to documents ingested from now on.</value></data>
+  <data name="Memory_CleanUp" xml:space="preserve"><value>Clean up</value></data>
+  <data name="Memory_CleanUp_Applying" xml:space="preserve"><value>Cleaning up…</value></data>
+  <data name="Memory_CleanUp_Scanning" xml:space="preserve"><value>Looking for duplicates…</value></data>
   <data name="Nav_Optimize" xml:space="preserve"><value>Optimize</value></data>
   <data name="Nav_Assistant" xml:space="preserve"><value>Assistant</value></data>
   <data name="Nav_Routines" xml:space="preserve"><value>Routines</value></data>
@@ -63,6 +72,7 @@
   <data name="Optimize_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Toggle todo panel</value></data>
   <!-- Assistant View -->
   <data name="Assistant_EmptyState" xml:space="preserve"><value>Start a conversation with Pia</value></data>
+  <data name="Assistant_OpenWorkingDirectory_Tooltip" xml:space="preserve"><value>Open this folder in Explorer</value></data>
   <data name="Assistant_ProtectedRoute_Label" xml:space="preserve"><value>Protected</value></data>
   <data name="Assistant_ProtectedRoute_Tooltip" xml:space="preserve"><value>This answer was handled by a protected model.</value></data>
   <data name="Assistant_Suggestion_Memory_Start1" xml:space="preserve"><value>Remember that I'm allergic to peanuts</value></data>

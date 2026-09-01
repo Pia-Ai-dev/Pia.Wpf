@@ -398,6 +398,9 @@ public class AutoIngestServiceTests : IDisposable
 
         public Task<IReadOnlyList<string>> ListTopicPagesAsync()
             => Task.FromResult<IReadOnlyList<string>>([]);
+
+        public Task<bool> MergeTopicPagesAsync(string keeperPath, string loserPath, CancellationToken ct = default)
+            => Task.FromResult(false);
     }
 
     /// <summary>Only <see cref="GetDefaultProviderAsync"/> matters to the scheduler.</summary>

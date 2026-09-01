@@ -19,10 +19,11 @@ public record RecallHit(string FilePath, string Heading, string Snippet, float S
         FilePath.StartsWith("memory/topics/", StringComparison.OrdinalIgnoreCase) ? "topic" : "record";
 }
 
-/// <summary>One topic/record in the <c>browse_index</c> orientation map: a display <see cref="Title"/>
-/// plus the vault-relative <see cref="Ref"/> handle (e.g. <c>memory/topics/foo.md</c>) that chains
-/// straight into <c>read_topic</c>.</summary>
-public record BrowseEntry(string Title, string Ref);
+/// <summary>One topic/record in the <c>browse_index</c> orientation map: a display <see cref="Title"/>,
+/// a one-line <see cref="Summary"/> so the map can be triaged without opening every page, and the
+/// vault-relative <see cref="Ref"/> handle (e.g. <c>memory/topics/foo.md</c>) that chains straight
+/// into <c>read_topic</c>.</summary>
+public record BrowseEntry(string Title, string Ref, string Summary);
 
 /// <summary>A category group in the <c>browse_index</c> map (a §8 canonical type, or a topic category
 /// such as <c>person</c>), with its display heading and its entries.</summary>

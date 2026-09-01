@@ -213,6 +213,65 @@ public class MemoryToolIntegrationTests : IDisposable
         Assert.Single(widgetEntries);
     }
 
+    // Without a summary the model has to read_topic every entry to find out what it says — which is the
+    // whole cost of a large vault. The map has to be triageable on its own.
+    [Fact]
+    public async Task BrowseIndex_EntriesCarryAOneLineSummary()
+    {
+        SeedFile("memory/topics/widget.md",
+            "---\ntype: topic\ncategory: product\ntitle: Widget\n---\n<!-- pia:managed -->\n"
+            + "A Widget is the unit Acme ships.\n\nMore detail follows.\n");
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, _) = await handler.HandleToolCallAsync(
+            NavCall("browse_index"), TestContext.Current.CancellationToken);
+
+        var entry = Assert.Single(
+            Assert.IsType<BrowseIndexResult>(result).Categories.SelectMany(c => c.Entries),
+            e => e.Ref == "memory/topics/widget.md");
+        Assert.Equal("A Widget is the unit Acme ships.", entry.Summary);
+    }
+
+    // A page with ## headings is split into one item per section and its preamble is dropped, so the
+    // summary can only come from the first section. Topic templates steer to bullets over headings for
+    // exactly this reason; pinned so the weaker fallback is a known cost, not a surprise.
+    [Fact]
+    public async Task BrowseIndex_SummaryOfASubheadedTopicComesFromItsFirstSection()
+    {
+        SeedFile("memory/topics/gadget.md",
+            "---\ntype: topic\ncategory: product\ntitle: Gadget\n---\n<!-- pia:managed -->\n"
+            + "Intro prose that the section split discards.\n\n## History\nShipped in 2024.\n");
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, _) = await handler.HandleToolCallAsync(
+            NavCall("browse_index"), TestContext.Current.CancellationToken);
+
+        var entry = Assert.Single(
+            Assert.IsType<BrowseIndexResult>(result).Categories.SelectMany(c => c.Entries),
+            e => e.Ref == "memory/topics/gadget.md");
+        Assert.Equal("Shipped in 2024.", entry.Summary);
+    }
+
+    // A person page opens with its template's field list; surfacing a personnel number as the summary
+    // would be both useless and a needless disclosure in a map the model reads wholesale.
+    [Fact]
+    public async Task BrowseIndex_SummarySkipsTemplateFieldBullets()
+    {
+        SeedFile("memory/topics/ilka-brenner.md",
+            "---\ntype: topic\ncategory: person\ntitle: Ilka Brenner\n---\n<!-- pia:managed -->\n"
+            + "- personnel number: 4711\n- role: unknown\n\nOwns the Acme account.\n");
+        var handler = BuildHandler(BuildMemoryService());
+
+        var (result, _) = await handler.HandleToolCallAsync(
+            NavCall("browse_index"), TestContext.Current.CancellationToken);
+
+        var entry = Assert.Single(
+            Assert.IsType<BrowseIndexResult>(result).Categories.SelectMany(c => c.Entries),
+            e => e.Ref == "memory/topics/ilka-brenner.md");
+        Assert.Equal("Owns the Acme account.", entry.Summary);
+        Assert.DoesNotContain("4711", entry.Summary, StringComparison.Ordinal);
+    }
+
     // read_topic (read rung) returns the FULL body (frontmatter + managed sentinel stripped) and surfaces
     // the source refs the page cites — the handles read_source consumes.
     [Fact]

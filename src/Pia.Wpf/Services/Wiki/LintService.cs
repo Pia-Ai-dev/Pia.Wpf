@@ -56,13 +56,14 @@ public sealed class LintService : ILintService
     // Housekeeping files that are never wiki entities/orphan candidates.
     private static readonly HashSet<string> Housekeeping = new(StringComparer.Ordinal)
     {
-        "index", "log", "AGENTS",
+        "index", "log", "AGENTS", "charter", "templates",
     };
 
     private readonly IVaultStore _store;
     private readonly SqliteContext _context;
     private readonly IEmbeddingService _embeddings;
     private readonly VaultLogService _log;
+    private readonly IIngestService _ingest;
     private readonly ILogger<LintService> _logger;
 
     public LintService(
@@ -70,16 +71,18 @@ public sealed class LintService : ILintService
         SqliteContext context,
         IEmbeddingService embeddings,
         VaultLogService log,
+        IIngestService ingest,
         ILogger<LintService> logger)
     {
         _store = store;
         _context = context;
         _embeddings = embeddings;
         _log = log;
+        _ingest = ingest;
         _logger = logger;
     }
 
-    public async Task<LintReport> RunAsync(DateOnly date, CancellationToken ct = default)
+    public async Task<LintReport> RunAsync(DateOnly date, bool applyFixes = true, CancellationToken ct = default)
     {
         // Load every memory page once (excluding the housekeeping files). Auto-fix checks rewrite the
         // store and re-read the affected pages as needed.
@@ -89,9 +92,9 @@ public sealed class LintService : ILintService
         findings.AddRange(CheckContradictions(pages));
         findings.AddRange(CheckStale(pages));
         findings.AddRange(CheckOrphans(pages));
-        findings.AddRange(await CheckMissingXrefsAsync(pages, ct));
+        findings.AddRange(await CheckMissingXrefsAsync(pages, applyFixes, ct));
         findings.AddRange(CheckGapPages(pages));
-        findings.AddRange(await CheckDuplicatesAsync(pages, ct));
+        findings.AddRange(await CheckDuplicatesAsync(pages, applyFixes, ct));
 
         // Journal each finding (sensitive: path/value detail never goes to a plain log line).
         foreach (var finding in findings)
@@ -270,7 +273,8 @@ public sealed class LintService : ILintService
 
     // ---- 4. MissingXref (AUTO-FIX) ----
 
-    private async Task<IEnumerable<LintFinding>> CheckMissingXrefsAsync(List<Page> pages, CancellationToken ct)
+    private async Task<IEnumerable<LintFinding>> CheckMissingXrefsAsync(
+        List<Page> pages, bool applyFixes, CancellationToken ct)
     {
         var findings = new List<LintFinding>();
 
@@ -326,8 +330,13 @@ public sealed class LintService : ILintService
                 sb.Append("See also: [[").Append(target).Append("]]\n");
                 findings.Add(new LintFinding(
                     LintKind.MissingXref,
-                    $"{page.Path} mentions '{entity}' — inserted [[{target}]]",
-                    AutoFixed: true));
+                    $"{page.Path} mentions '{entity}' — {(applyFixes ? "inserted" : "would insert")} [[{target}]]",
+                    AutoFixed: applyFixes));
+            }
+
+            if (!applyFixes)
+            {
+                continue;
             }
 
             var rewritten = sb.ToString();
@@ -383,7 +392,8 @@ public sealed class LintService : ILintService
 
     // ---- 6. Duplicates (AUTO-FIX / merge) ----
 
-    private async Task<IEnumerable<LintFinding>> CheckDuplicatesAsync(List<Page> pages, CancellationToken ct)
+    private async Task<IEnumerable<LintFinding>> CheckDuplicatesAsync(
+        List<Page> pages, bool applyFixes, CancellationToken ct)
     {
         var findings = new List<LintFinding>();
 
@@ -419,16 +429,27 @@ public sealed class LintService : ILintService
                     continue;
                 }
 
-                // Merge: keep the first (i), archive the second (j) — move it to memory/.archive/.
+                // Merge: keep the first (i), fold the second (j) into it. A real merge, not just an
+                // archive — the loser's sources: move across, or the next ingest of one of them mints
+                // the page again and the pass undoes itself.
                 var loser = vectors[j].Page;
                 var keeper = vectors[i].Page;
-                var moved = await ArchiveAsync(loser, ct);
-                if (moved)
+                if (!applyFixes)
+                {
+                    archived.Add(loser.Path); // keep the dry run's pairing identical to the real one
+                    findings.Add(new LintFinding(
+                        LintKind.Duplicate,
+                        $"{loser.Path} duplicates {keeper.Path} (cosine {score:F2}) — would merge into {keeper.Path}",
+                        AutoFixed: false));
+                    continue;
+                }
+
+                if (await _ingest.MergeTopicPagesAsync(keeper.Path, loser.Path, ct))
                 {
                     archived.Add(loser.Path);
                     findings.Add(new LintFinding(
                         LintKind.Duplicate,
-                        $"{loser.Path} duplicates {keeper.Path} (cosine {score:F2}) — archived to {ArchiveDir}/",
+                        $"{loser.Path} duplicates {keeper.Path} (cosine {score:F2}) — merged into {keeper.Path}",
                         AutoFixed: true));
                 }
             }

@@ -79,6 +79,17 @@ Main: `main`. Features: `feature/<name>`.
 
 Before treating a feature branch as done, clear the **Zero-Warning Policy** above.
 
+## Release Notes
+
+`docs/release_notes/RELEASE.md` is the curated, cumulative changelog for the **next** release —
+rewrite it in place as work lands; it ships as the GitHub release body and, verbatim, as
+`storage.pia-ai.de/f/wpf/RELEASE-NOTES.md`. The build stamps the version header itself and falls
+back to a raw `git-cliff` commit dump only when the file has no changes since the last release
+tag — so an unedited file is safe, but the bar for "curated" is that the body actually changed,
+not that anyone remembered a version number. Read `docs/release_notes/README.md` for the format
+rules (hard-wrap 80, one bullet level, no tables) before editing it. After a release ships, CI
+archives and empties the file automatically — don't hand-roll that step.
+
 ## Privacy-First Logging
 
 Users may attach `%LOCALAPPDATA%\Pia\Logs\pia-*.log` when contacting support, so anything that ends up there must be safe in release. Log level is **not** a sufficient gate (it is runtime-configurable) — use the helpers below.

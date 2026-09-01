@@ -24,16 +24,46 @@ public static class VaultFrontmatter
     {
         var id = Guid.NewGuid().ToString("D").ToLowerInvariant();
         var now = DateTime.UtcNow.ToString(TimestampFormat, CultureInfo.InvariantCulture);
-        var categoryLine = category is null ? string.Empty : $"category: {category}\n";
+        var categoryLine = category is null
+            ? string.Empty
+            : $"category: {VaultYaml.EncodeScalar(category)}\n";
         return "---\n" +
                "pia: managed\n" +
                $"id: {id}\n" +
                $"type: {type}\n" +
-               $"title: {title}\n" +
+               $"title: {VaultYaml.EncodeScalar(title)}\n" +
                categoryLine +
                $"created: {now}\n" +
                $"updated: {now}\n" +
                AiContentMarking.YamlLines() +
+               "schemaVersion: 1\n" +
+               "---\n";
+    }
+
+    /// <summary>
+    /// Frontmatter for a Pia-written <c>note</c> that is rewritten in place (the charter), keeping
+    /// <c>id</c>/<c>created</c> stable across saves so sync does not see a new record each time.
+    /// </summary>
+    public static string BuildPreservingNote(VaultDocument? existing, string title)
+    {
+        var id = existing is not null && existing.Frontmatter.TryGetValue("id", out var existingId)
+                 && !string.IsNullOrWhiteSpace(existingId)
+            ? existingId
+            : Guid.NewGuid().ToString("D").ToLowerInvariant();
+
+        var now = DateTime.UtcNow.ToString(TimestampFormat, CultureInfo.InvariantCulture);
+        var created = existing is not null && existing.Frontmatter.TryGetValue("created", out var existingCreated)
+                      && !string.IsNullOrWhiteSpace(existingCreated)
+            ? existingCreated
+            : now;
+
+        return "---\n" +
+               "pia: managed\n" +
+               $"id: {id}\n" +
+               "type: note\n" +
+               $"title: {VaultYaml.EncodeScalar(title)}\n" +
+               $"created: {created}\n" +
+               $"updated: {now}\n" +
                "schemaVersion: 1\n" +
                "---\n";
     }
@@ -63,8 +93,8 @@ public static class VaultFrontmatter
                "pia: managed\n" +
                $"id: {id}\n" +
                "type: topic\n" +
-               $"title: {title}\n" +
-               $"category: {category}\n" +
+               $"title: {VaultYaml.EncodeScalar(title)}\n" +
+               $"category: {VaultYaml.EncodeScalar(category)}\n" +
                $"created: {created}\n" +
                $"updated: {now}\n" +
                AiContentMarking.YamlLines() +

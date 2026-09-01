@@ -588,6 +588,10 @@ public class MemoryService : IMemoryService
         return new BrowseIndexResult(categories);
     }
 
+    // Summary caveat: a page split into ## sections has no item carrying its preamble, so its summary
+    // comes from the first SECTION. Topic templates steer to bullets over headings, so that is the
+    // exception rather than the norm.
+    //
     // One BrowseEntry per meaningful unit: a topic PAGE collapses to a single entry (a synthesized topic
     // with ## subheadings otherwise splits into one section-item per heading — cluttering the orient map and
     // hiding the topic title), while structured records (contacts/preferences) keep one entry per section so
@@ -615,11 +619,11 @@ public class MemoryService : IMemoryService
                 var title = pageItemCount[item.FilePath] == 1
                     ? item.Title
                     : PrettifySlug(Path.GetFileNameWithoutExtension(item.FilePath));
-                entries.Add(new BrowseEntry(title, item.FilePath));
+                entries.Add(new BrowseEntry(title, item.FilePath, item.Gist));
             }
             else
             {
-                entries.Add(new BrowseEntry(item.Title, item.FilePath));
+                entries.Add(new BrowseEntry(item.Title, item.FilePath, item.Gist));
             }
         }
 

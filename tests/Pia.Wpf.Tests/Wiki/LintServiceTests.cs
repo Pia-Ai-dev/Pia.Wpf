@@ -5,8 +5,10 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using Pia.Infrastructure;
 using Pia.Infrastructure.Vault;
+using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.Services.Wiki;
 using Pia.Tests.TestInfrastructure;
@@ -59,8 +61,46 @@ public class LintServiceTests : IDisposable
         }
     }
 
+    // A REAL IngestService (only the two LLM-bound collaborators are fakes), so the duplicate check
+    // exercises the actual merge — provenance union, archive, index removal, link retarget — rather
+    // than a stub that only mimics its file moves.
     private LintService BuildLint()
-        => new(_store, _ctx, _embeddings, _log, NullLogger<LintService>.Instance);
+        => new(_store, _ctx, _embeddings, _log, BuildIngest(), NullLogger<LintService>.Instance);
+
+    private IIngestService BuildIngest()
+    {
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings());
+        var index = new VaultIndexService(_store, NullLogger<VaultIndexService>.Instance);
+        return new IngestService(
+            new NoTopicsExtractor(),
+            _store,
+            index,
+            _log,
+            new EchoSynthesizer(),
+            new VaultCharterService(_store, NullLogger<VaultCharterService>.Instance),
+            new VaultTemplateService(_store, NullLogger<VaultTemplateService>.Instance),
+            () => throw new InvalidOperationException("tokenization is off in these tests"),
+            settings,
+            NullLogger<IngestService>.Instance);
+    }
+
+    private sealed class NoTopicsExtractor : IIngestExtractor
+    {
+        public Task<IReadOnlyList<ExtractedTopic>> DiscoverTopicsAsync(
+            string content, string charter, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<ExtractedTopic>>([]);
+    }
+
+    private sealed class EchoSynthesizer : IIngestSynthesizer
+    {
+        public Task<SynthesizedPage> SynthesizeAsync(
+            string title, string category, string charter, string template,
+            IReadOnlyList<(string Ref, string Text)> sources,
+            IReadOnlyCollection<string> knownSlugs, CancellationToken ct = default)
+            => Task.FromResult(new SynthesizedPage(
+                $"{title} merged across {sources.Count} source(s).", $"{title} summary"));
+    }
 
     private void SeedPage(string relativePath, string title, string body)
     {
@@ -104,7 +144,7 @@ public class LintServiceTests : IDisposable
         SeedPage("memory/topics/acme-corp.md", "Acme Corp", "- tier: enterprise\n");
         SeedPage("memory/topics/acme-deal.md", "Acme Corp", "- tier: starter\n");
 
-        var report = await BuildLint().RunAsync(_date, TestContext.Current.CancellationToken);
+        var report = await BuildLint().RunAsync(_date, true, TestContext.Current.CancellationToken);
 
         Assert.Contains(report.Findings, f => f.Kind == LintKind.Contradiction);
     }
@@ -116,7 +156,7 @@ public class LintServiceTests : IDisposable
         SeedPageWithSources(
             "memory/topics/ghost.md", "Ghost", "[sources/never-existed.txt]", "- note: x\n");
 
-        var report = await BuildLint().RunAsync(_date, TestContext.Current.CancellationToken);
+        var report = await BuildLint().RunAsync(_date, true, TestContext.Current.CancellationToken);
 
         Assert.Contains(report.Findings, f => f.Kind == LintKind.Stale);
     }
@@ -129,7 +169,7 @@ public class LintServiceTests : IDisposable
         SeedPage("memory/topics/hub.md", "Hub", "Links to [[topics/other]] but not lonely.\n");
         SeedPage("memory/topics/other.md", "Other", "- note: linked by hub\n");
 
-        var report = await BuildLint().RunAsync(_date, TestContext.Current.CancellationToken);
+        var report = await BuildLint().RunAsync(_date, true, TestContext.Current.CancellationToken);
 
         Assert.Contains(
             report.Findings,
@@ -143,7 +183,7 @@ public class LintServiceTests : IDisposable
         SeedPage("memory/topics/berlin.md", "Berlin", "- country: Germany\n");
         SeedPage("memory/topics/trip.md", "Trip", "We flew to Berlin in spring.\n");
 
-        var report = await BuildLint().RunAsync(_date, TestContext.Current.CancellationToken);
+        var report = await BuildLint().RunAsync(_date, true, TestContext.Current.CancellationToken);
 
         Assert.Contains(report.Findings, f => f.Kind == LintKind.MissingXref && f.AutoFixed);
 
@@ -159,7 +199,7 @@ public class LintServiceTests : IDisposable
         SeedPage("memory/topics/dup-a.md", "Dup A", "- fact: identical body content here\n");
         SeedPage("memory/topics/dup-b.md", "Dup B", "- fact: identical body content here\n");
 
-        var report = await BuildLint().RunAsync(_date, TestContext.Current.CancellationToken);
+        var report = await BuildLint().RunAsync(_date, true, TestContext.Current.CancellationToken);
 
         Assert.Contains(report.Findings, f => f.Kind == LintKind.Duplicate && f.AutoFixed);
 
@@ -173,13 +213,36 @@ public class LintServiceTests : IDisposable
         Assert.NotEmpty(archived);
     }
 
+    // The cleanup action shows this report before asking for confirmation, so a dry run must report
+    // exactly what a real run would do and change nothing at all.
+    [Fact]
+    public async Task RunAsync_dry_run_reports_the_merge_without_performing_it()
+    {
+        SeedPage("memory/topics/dup-a.md", "Dup A", "- fact: identical body content here\n");
+        SeedPage("memory/topics/dup-b.md", "Dup B", "- fact: identical body content here\n");
+        SeedPage("memory/topics/berlin.md", "Berlin", "- country: Germany\n");
+        SeedPage("memory/topics/trip.md", "Trip", "We flew to Berlin in spring.\n");
+        var beforeTrip = await _store.ReadAsync("memory/topics/trip.md");
+
+        var report = await BuildLint().RunAsync(_date, false, TestContext.Current.CancellationToken);
+
+        Assert.Contains(report.Findings, f => f.Kind == LintKind.Duplicate);
+        Assert.Contains(report.Findings, f => f.Kind == LintKind.MissingXref);
+        Assert.DoesNotContain(report.Findings, f => f.AutoFixed);
+
+        Assert.NotNull(await _store.ReadAsync("memory/topics/dup-a.md"));
+        Assert.NotNull(await _store.ReadAsync("memory/topics/dup-b.md"));
+        Assert.Empty(await _store.EnumerateAsync("memory/.archive/*.md"));
+        Assert.Equal(beforeTrip!.RawText, (await _store.ReadAsync("memory/topics/trip.md"))!.RawText);
+    }
+
     [Fact]
     public async Task RunAsync_flags_a_gap_page_for_a_wikilink_with_no_target_file()
     {
         // The link target topics/missing.md does not exist.
         SeedPage("memory/topics/source.md", "Source", "See [[topics/missing]] for more.\n");
 
-        var report = await BuildLint().RunAsync(_date, TestContext.Current.CancellationToken);
+        var report = await BuildLint().RunAsync(_date, true, TestContext.Current.CancellationToken);
 
         Assert.Contains(
             report.Findings,
@@ -192,7 +255,7 @@ public class LintServiceTests : IDisposable
         SeedPageWithSources(
             "memory/topics/ghost.md", "Ghost", "[sources/never-existed.txt]", "- note: x\n");
 
-        var report = await BuildLint().RunAsync(_date, TestContext.Current.CancellationToken);
+        var report = await BuildLint().RunAsync(_date, true, TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(report.Findings);
 

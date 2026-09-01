@@ -59,4 +59,13 @@ public interface IIngestService
 
     /// <summary>Every topic page currently on disk, vault-relative, for a bulk rebuild.</summary>
     Task<IReadOnlyList<string>> ListTopicPagesAsync();
+
+    /// <summary>
+    /// Fold <paramref name="loserPath"/> into <paramref name="keeperPath"/>: union their <c>sources:</c>,
+    /// archive and delete the loser, drop its index entry, retarget every wikilink that pointed at it, and
+    /// re-synthesize the keeper over the widened union. Carrying the provenance is the part that makes the
+    /// merge stick — without it the next ingest of the loser's sources simply mints the page again.
+    /// Returns false when either page is missing or the two are the same page.
+    /// </summary>
+    Task<bool> MergeTopicPagesAsync(string keeperPath, string loserPath, CancellationToken ct = default);
 }

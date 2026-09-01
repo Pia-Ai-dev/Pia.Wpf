@@ -24,6 +24,7 @@ namespace Pia.Services.Wiki;
 public sealed class AiIngestSynthesisService : IIngestSynthesizer
 {
     private const int MaxSourceChars = 12000;
+    private const int MaxListedSlugs = 200;
 
     private readonly IAiClientService _aiClient;
     private readonly IProviderService _providers;
@@ -193,10 +194,16 @@ public sealed class AiIngestSynthesisService : IIngestSynthesizer
                 "form of the topic name, but ONLY for topics that plausibly have their own page. ";
         }
 
+        // Sorted and capped: the set has no order of its own, and an uncapped list put every slug in
+        // the vault into every synthesis prompt. Truncating only costs some link recall —
+        // WikiLinkReconciler still strips whatever does not resolve.
+        var listed = knownSlugs.Order(StringComparer.Ordinal).Take(MaxListedSlugs);
+        var truncated = knownSlugs.Count > MaxListedSlugs ? " (partial list)" : string.Empty;
+
         return "Link related topics inline ONLY when the topic's slug appears in the list below, using that " +
             "EXACT slug: [[topics/<slug>]] (optionally [[topics/<slug>|display text]]). NEVER invent a link " +
-            "to a topic whose slug is not in the list. Known topic slugs: " +
-            string.Join(", ", knownSlugs) + ". ";
+            $"to a topic whose slug is not in the list. Known topic slugs{truncated}: " +
+            string.Join(", ", listed) + ". ";
     }
 
     private static string Truncate(string content) =>

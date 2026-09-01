@@ -32,6 +32,9 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
     private readonly IIngestScheduler _ingestScheduler;
     private readonly ISettingsService _settingsService;
     private readonly IObsidianService _obsidianService;
+    private readonly ILintService _lintService;
+    private readonly ICharterDrafter _charterDrafter;
+    private readonly IVaultCharterService _charterService;
     private CancellationTokenSource? _debounceCts;
     private CancellationTokenSource? _rebuildCts;
     private bool _disposed;
@@ -107,6 +110,23 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
     [ObservableProperty]
     private int _embeddingDim = 384;
 
+    // The charter decides which topics earn a page and is the one ingest lever with no UI. Empty
+    // until the user writes or accepts one — a placeholder would become the model's grounding.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasCharter))]
+    private string _charterText = string.Empty;
+
+    [ObservableProperty]
+    private string _charterDraft = string.Empty;
+
+    [ObservableProperty]
+    private bool _isEditingCharter;
+
+    [ObservableProperty]
+    private bool _isDraftingCharter;
+
+    public bool HasCharter => !string.IsNullOrWhiteSpace(CharterText);
+
     // Right-pane state machine: overview when nothing is selected and the vault has content — memories
     // OR staged source documents (a sources-only vault still has something worth showing); the plain
     // "select a memory" placeholder only when the vault is genuinely empty. All three inputs notify
@@ -138,6 +158,14 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
     public IAsyncRelayCommand<IReadOnlyList<string>> AddSourceFilesCommand { get; }
     public IAsyncRelayCommand<VaultMemoryItem> RebuildPageCommand { get; }
     public IAsyncRelayCommand RebuildAllPagesCommand { get; }
+
+    /// <summary>Dry-run the coherence pass, show what it would change, apply only on confirm.</summary>
+    public IAsyncRelayCommand CleanUpVaultCommand { get; }
+
+    public IAsyncRelayCommand DraftCharterCommand { get; }
+    public IAsyncRelayCommand SaveCharterCommand { get; }
+    public IRelayCommand EditCharterCommand { get; }
+    public IRelayCommand CancelCharterEditCommand { get; }
     public IRelayCommand CancelRebuildCommand { get; }
 
     public VaultViewModel(
@@ -151,7 +179,10 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         IVaultSourcesService vaultSourcesService,
         IIngestScheduler ingestScheduler,
         ISettingsService settingsService,
-        IObsidianService obsidianService)
+        IObsidianService obsidianService,
+        ILintService lintService,
+        ICharterDrafter charterDrafter,
+        IVaultCharterService charterService)
     {
         _logger = logger;
         _memoryService = memoryService;
@@ -164,6 +195,9 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         _ingestScheduler = ingestScheduler;
         _settingsService = settingsService;
         _obsidianService = obsidianService;
+        _lintService = lintService;
+        _charterDrafter = charterDrafter;
+        _charterService = charterService;
 
         RefreshCommand = new AsyncRelayCommand(LoadMemoriesAsync);
         DeleteMemoryCommand = new AsyncRelayCommand<VaultMemoryItem>(ExecuteDeleteMemory);
@@ -185,6 +219,11 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         RebuildPageCommand = new AsyncRelayCommand<VaultMemoryItem>(ExecuteRebuildPage);
         RebuildAllPagesCommand = new AsyncRelayCommand(ExecuteRebuildAllPages);
         CancelRebuildCommand = new RelayCommand(() => _rebuildCts?.Cancel());
+        CleanUpVaultCommand = new AsyncRelayCommand(ExecuteCleanUpVault);
+        DraftCharterCommand = new AsyncRelayCommand(ExecuteDraftCharter);
+        SaveCharterCommand = new AsyncRelayCommand(ExecuteSaveCharter);
+        EditCharterCommand = new RelayCommand(() => IsEditingCharter = true);
+        CancelCharterEditCommand = new RelayCommand(ExecuteCancelCharterEdit);
 
         PropertyChanged += OnPropertyChanged;
         _ingestScheduler.IngestStarted += OnIngestStarted;
@@ -361,6 +400,13 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         try
         {
             IsLoading = true;
+
+            // Not while the user is mid-edit — a background refresh would overwrite their draft.
+            if (!IsEditingCharter)
+            {
+                CharterText = await _charterService.GetCharterAsync();
+                CharterDraft = CharterText;
+            }
 
             // One enumeration of the vault yields both the items and the storage size.
             var snapshot = await _memoryService.ListMemoriesAsync();
@@ -805,6 +851,135 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         {
             EndRebuild();
         }
+    }
+
+    // The draft is never written — it lands in the editor for the user to accept, edit or discard.
+    private async Task ExecuteDraftCharter()
+    {
+        if (IsDraftingCharter) return;
+
+        IsDraftingCharter = true;
+        try
+        {
+            var draft = await _charterDrafter.DraftAsync();
+            if (string.IsNullOrWhiteSpace(draft))
+            {
+                _snackbarService.Show(
+                    _localizationService["Memory_Charter"],
+                    _localizationService["Msg_Memory_CharterDraftEmpty"],
+                    Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+                return;
+            }
+
+            CharterDraft = draft;
+            IsEditingCharter = true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Charter draft failed");
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"],
+                _localizationService.Format("Msg_Memory_CharterDraftFailed", ex.Message));
+        }
+        finally
+        {
+            IsDraftingCharter = false;
+        }
+    }
+
+    private async Task ExecuteSaveCharter()
+    {
+        try
+        {
+            await _charterService.SaveCharterAsync(CharterDraft);
+            CharterText = CharterDraft.Trim();
+            IsEditingCharter = false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Saving the vault charter failed");
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"],
+                _localizationService.Format("Msg_Memory_CharterSaveFailed", ex.Message));
+        }
+    }
+
+    private void ExecuteCancelCharterEdit()
+    {
+        CharterDraft = CharterText;
+        IsEditingCharter = false;
+    }
+
+    // Dry run first, always. The pass merges pages and rewrites bodies, so the user sees the exact
+    // list before anything moves — and a merge costs a synthesis call per merged page.
+    private async Task ExecuteCleanUpVault()
+    {
+        if (IsRebuilding) return;
+
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        LintReport preview;
+        IsRebuilding = true;
+        RebuildStatusText = _localizationService["Memory_CleanUp_Scanning"];
+        try
+        {
+            preview = await _lintService.RunAsync(today, applyFixes: false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Vault clean-up dry run failed");
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"],
+                _localizationService.Format("Msg_Memory_CleanUpFailed", ex.Message));
+            return;
+        }
+        finally
+        {
+            EndRebuild();
+        }
+
+        var fixable = preview.Findings
+            .Where(f => f.Kind is LintKind.Duplicate or LintKind.MissingXref)
+            .ToList();
+        if (fixable.Count == 0)
+        {
+            _snackbarService.Show(
+                _localizationService["Memory_CleanUp"],
+                _localizationService["Msg_Memory_CleanUpNothingToDo"],
+                Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
+            return;
+        }
+
+        var merges = fixable.Count(f => f.Kind == LintKind.Duplicate);
+        var links = fixable.Count - merges;
+        var confirmed = await _dialogService.ShowConfirmationDialogAsync(
+            _localizationService["Memory_CleanUp"],
+            _localizationService.Format("Msg_Memory_CleanUpConfirm", merges, links));
+        if (!confirmed) return;
+
+        IsRebuilding = true;
+        RebuildStatusText = _localizationService["Memory_CleanUp_Applying"];
+        try
+        {
+            var applied = await _lintService.RunAsync(today, applyFixes: true);
+            var done = applied.Findings.Count(f => f.AutoFixed);
+            _snackbarService.Show(
+                _localizationService["Memory_CleanUp"],
+                _localizationService.Format("Msg_Memory_CleanUpDone", done),
+                Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(4));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Vault clean-up failed");
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"],
+                _localizationService.Format("Msg_Memory_CleanUpFailed", ex.Message));
+        }
+        finally
+        {
+            EndRebuild();
+        }
+
+        await LoadMemoriesAsync();
     }
 
     private async Task ExecuteRebuildAllPages()

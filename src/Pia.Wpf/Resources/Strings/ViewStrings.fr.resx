@@ -32,6 +32,15 @@
   <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <!-- Navigation -->
+  <data name="Memory_Charter" xml:space="preserve"><value>Le sujet de cette base de connaissances</value></data>
+  <data name="Memory_CharterDraft" xml:space="preserve"><value>Rédiger une proposition</value></data>
+  <data name="Memory_CharterDrafting" xml:space="preserve"><value>Lecture de vos sources…</value></data>
+  <data name="Memory_CharterEdit" xml:space="preserve"><value>Modifier</value></data>
+  <data name="Memory_CharterEmpty" xml:space="preserve"><value>Non défini. Sans cela, l'ingestion n'a aucune base pour juger quels sujets méritent une page — elle en crée donc une pour presque chaque nom rencontré.</value></data>
+  <data name="Memory_CharterHint" xml:space="preserve"><value>S’applique aux documents ingérés à partir de maintenant.</value></data>
+  <data name="Memory_CleanUp" xml:space="preserve"><value>Nettoyer</value></data>
+  <data name="Memory_CleanUp_Applying" xml:space="preserve"><value>Nettoyage en cours…</value></data>
+  <data name="Memory_CleanUp_Scanning" xml:space="preserve"><value>Recherche de doublons…</value></data>
   <data name="Nav_Optimize" xml:space="preserve"><value>Optimiser</value></data>
   <data name="Nav_Assistant" xml:space="preserve"><value>Assistant</value></data>
   <data name="Nav_Routines" xml:space="preserve"><value>Routines</value></data>
@@ -63,6 +72,7 @@
   <data name="Optimize_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Afficher/masquer le panneau des tâches</value></data>
   <!-- Assistant View -->
   <data name="Assistant_EmptyState" xml:space="preserve"><value>Commencez une conversation avec Pia</value></data>
+  <data name="Assistant_OpenWorkingDirectory_Tooltip" xml:space="preserve"><value>Ouvrir ce dossier dans l'Explorateur</value></data>
   <data name="Assistant_ProtectedRoute_Label" xml:space="preserve"><value>Protégé</value></data>
   <data name="Assistant_ProtectedRoute_Tooltip" xml:space="preserve"><value>Cette réponse a été traitée par un modèle protégé.</value></data>
   <data name="Assistant_Suggestion_Memory_Start1" xml:space="preserve"><value>Retiens que je suis allergique aux arachides</value></data>

@@ -8,7 +8,9 @@ using NSubstitute;
 using Pia.Helpers;
 using Pia.Models;
 using Pia.Models.Vault;
+using Pia.Infrastructure.Vault;
 using Pia.Services.Interfaces;
+using Pia.Services.Wiki;
 using Pia.ViewModels;
 using Xunit;
 
@@ -42,7 +44,10 @@ public class VaultViewModelTests
             vaultSources,
             Substitute.For<IIngestScheduler>(),
             Substitute.For<ISettingsService>(),
-            Substitute.For<IObsidianService>());
+            Substitute.For<IObsidianService>(),
+            Substitute.For<ILintService>(),
+            Substitute.For<ICharterDrafter>(),
+            NoCharter());
         return (vm, memory, dialog);
     }
 
@@ -72,9 +77,17 @@ public class VaultViewModelTests
             vaultSources,
             Substitute.For<IIngestScheduler>(),
             Substitute.For<ISettingsService>(),
-            Substitute.For<IObsidianService>());
+            Substitute.For<IObsidianService>(),
+            Substitute.For<ILintService>(),
+            Substitute.For<ICharterDrafter>(),
+            NoCharter());
         return (vm, memory, snackbar);
     }
+
+    // A charter service over an empty store: GetCharterAsync yields "", which is the state these
+    // tests care about — the card is not what any of them exercise.
+    private static IVaultCharterService NoCharter()
+        => new VaultCharterService(Substitute.For<IVaultStore>(), NullLogger<VaultCharterService>.Instance);
 
     private static VaultSourceItem Source(string name, long bytes = 10, bool isText = true, int pages = 0)
         => new($"sources/{name}", name, bytes, DateTime.MinValue, isText, pages);
@@ -120,7 +133,10 @@ public class VaultViewModelTests
                 vaultSources,
                 scheduler,
                 Substitute.For<ISettingsService>(),
-                Substitute.For<IObsidianService>());
+                Substitute.For<IObsidianService>(),
+                Substitute.For<ILintService>(),
+                Substitute.For<ICharterDrafter>(),
+                NoCharter());
 
             await vm.AddSourceFilesCommand.ExecuteAsync(new[] { textFile, binaryFile });
 
@@ -177,7 +193,10 @@ public class VaultViewModelTests
                 vaultSources,
                 scheduler,
                 Substitute.For<ISettingsService>(),
-                Substitute.For<IObsidianService>());
+                Substitute.For<IObsidianService>(),
+                Substitute.For<ILintService>(),
+                Substitute.For<ICharterDrafter>(),
+                NoCharter());
 
             await vm.AddSourceFilesCommand.ExecuteAsync(new[] { dropped });
 
@@ -219,7 +238,10 @@ public class VaultViewModelTests
             vaultSources,
             scheduler,
             Substitute.For<ISettingsService>(),
-            Substitute.For<IObsidianService>());
+            Substitute.For<IObsidianService>(),
+            Substitute.For<ILintService>(),
+            Substitute.For<ICharterDrafter>(),
+            NoCharter());
 
         await vm.RefreshCommand.ExecuteAsync(null);
 
@@ -784,7 +806,10 @@ public class VaultViewModelTests
             vaultSources,
             Substitute.For<IIngestScheduler>(),
             settingsService,
-            obsidian);
+            obsidian,
+            Substitute.For<ILintService>(),
+            Substitute.For<ICharterDrafter>(),
+            NoCharter());
         return (vm, obsidian, dialog, clipboard, settings);
     }
 

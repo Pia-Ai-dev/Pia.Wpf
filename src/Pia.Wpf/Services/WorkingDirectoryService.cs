@@ -105,6 +105,22 @@ public sealed class WorkingDirectoryService : IWorkingDirectoryService
         return string.IsNullOrEmpty(relative) ? string.Empty : relative;
     }
 
+    public string? ResolveAbsolutePath(string? relativePath)
+    {
+        var root = GetSandboxRoot();
+        if (root is null) return null;
+
+        if (string.IsNullOrWhiteSpace(relativePath))
+            return root;
+
+        if (!SafeFolderPath.TryResolveInside(root, relativePath, out var resolved))
+            return null;
+        if (SensitivePathGuard.IsBlocked(resolved, out _))
+            return null;
+
+        return Directory.Exists(resolved) ? resolved : null;
+    }
+
     private string? GetSandboxRoot()
     {
         try

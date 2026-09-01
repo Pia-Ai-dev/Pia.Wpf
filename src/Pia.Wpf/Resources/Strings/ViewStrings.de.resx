@@ -32,6 +32,15 @@
   <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <!-- Navigation -->
+  <data name="Memory_Charter" xml:space="preserve"><value>Worum es in dieser Wissensbasis geht</value></data>
+  <data name="Memory_CharterDraft" xml:space="preserve"><value>Entwurf erstellen</value></data>
+  <data name="Memory_CharterDrafting" xml:space="preserve"><value>Quellen werden gelesen…</value></data>
+  <data name="Memory_CharterEdit" xml:space="preserve"><value>Bearbeiten</value></data>
+  <data name="Memory_CharterEmpty" xml:space="preserve"><value>Nicht gesetzt. Ohne diese Angabe fehlt dem Ingest die Grundlage dafür, welche Themen eine Seite verdienen — es legt dann für nahezu jeden Namen eine an.</value></data>
+  <data name="Memory_CharterHint" xml:space="preserve"><value>Gilt für Dokumente, die ab jetzt eingelesen werden.</value></data>
+  <data name="Memory_CleanUp" xml:space="preserve"><value>Aufräumen</value></data>
+  <data name="Memory_CleanUp_Applying" xml:space="preserve"><value>Wird aufgeräumt…</value></data>
+  <data name="Memory_CleanUp_Scanning" xml:space="preserve"><value>Suche nach Duplikaten…</value></data>
   <data name="Nav_Optimize" xml:space="preserve"><value>Optimieren</value></data>
   <data name="Nav_Assistant" xml:space="preserve"><value>Assistent</value></data>
   <data name="Nav_Routines" xml:space="preserve"><value>Routinen</value></data>
@@ -63,6 +72,7 @@
   <data name="Optimize_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Aufgabenleiste ein-/ausblenden</value></data>
   <!-- Assistant View -->
   <data name="Assistant_EmptyState" xml:space="preserve"><value>Starte eine Unterhaltung mit Pia</value></data>
+  <data name="Assistant_OpenWorkingDirectory_Tooltip" xml:space="preserve"><value>Diesen Ordner im Explorer öffnen</value></data>
   <data name="Assistant_ProtectedRoute_Label" xml:space="preserve"><value>Geschützt</value></data>
   <data name="Assistant_ProtectedRoute_Tooltip" xml:space="preserve"><value>Diese Antwort wurde von einem geschützten Modell verarbeitet.</value></data>
   <data name="Assistant_Suggestion_Memory_Start1" xml:space="preserve"><value>Merk dir, dass ich eine Erdnussallergie habe</value></data>

@@ -282,6 +282,146 @@ public class IngestServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Ingest_collapses_an_alias_onto_the_existing_page()
+    {
+        await BuildIngest(new FakeExtractor(new ExtractedTopic("Meta", "organization")), new FakeSynthesizer())
+            .IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8), TestContext.Current.CancellationToken);
+
+        SeedSource("second.txt", "Meta Platforms reported earnings.");
+        var result = await BuildIngest(
+                new FakeExtractor(new ExtractedTopic("Meta Platforms", "organization")), new FakeSynthesizer())
+            .IngestAsync("sources/second.txt", new DateOnly(2026, 7, 9), TestContext.Current.CancellationToken);
+
+        Assert.Equal(["memory/topics/meta.md"], result.TouchedPages);
+        Assert.Null(await _store.ReadAsync("memory/topics/meta-platforms.md"));
+    }
+
+    // Two subjects that resolve to one page previously produced two concurrent writers on that file.
+    [Fact]
+    public async Task Ingest_writes_one_page_when_two_discovered_topics_are_aliases()
+    {
+        var synth = new FakeSynthesizer();
+        var result = await BuildIngest(
+                new FakeExtractor(
+                    new ExtractedTopic("DAX", "concept"),
+                    new ExtractedTopic("DAX 40", "concept")),
+                synth)
+            .IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8), TestContext.Current.CancellationToken);
+
+        Assert.Equal(["memory/topics/dax.md"], result.TouchedPages);
+        Assert.Single(synth.Calls);
+    }
+
+    [Fact]
+    public async Task Ingest_keeps_distinct_topics_on_distinct_pages()
+    {
+        var result = await BuildIngest(
+                new FakeExtractor(
+                    new ExtractedTopic("Microsoft", "organization"),
+                    new ExtractedTopic("Microsoft Copilot", "product")),
+                new FakeSynthesizer())
+            .IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8), TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, result.TouchedPages.Count);
+    }
+
+    // The defect the old archive-only "merge" had: the loser's sources: did not move, so the next
+    // ingest of one of them found no page and minted the duplicate all over again.
+    [Fact]
+    public async Task Merge_carries_the_loser_sources_so_the_page_does_not_come_back()
+    {
+        SeedSource("second.txt", "Meta Platforms reported earnings.");
+        await BuildIngest(new FakeExtractor(new ExtractedTopic("Meta", "organization")), new FakeSynthesizer())
+            .IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8), TestContext.Current.CancellationToken);
+        await BuildIngest(new FakeExtractor(new ExtractedTopic("Meta Platforms Inc", "organization")),
+                new FakeSynthesizer())
+            .IngestAsync("sources/second.txt", new DateOnly(2026, 7, 8), TestContext.Current.CancellationToken);
+
+        // Force the split the collapse would normally prevent, so there is a real pair to merge.
+        await _store.WriteAtomicAsync("memory/topics/meta-platforms.md",
+            VaultFrontmatter.BuildPreserving(null, "Meta Platforms", "organization")
+            + "\n<!-- pia:managed -->\nBody.\nsources: [sources/second.txt]\n");
+
+        var ingest = BuildIngest(new FakeExtractor(), new FakeSynthesizer());
+        var merged = await ingest.MergeTopicPagesAsync(
+            "memory/topics/meta.md", "memory/topics/meta-platforms.md", TestContext.Current.CancellationToken);
+
+        Assert.True(merged);
+        Assert.Null(await _store.ReadAsync("memory/topics/meta-platforms.md"));
+        Assert.NotNull(await _store.ReadAsync("memory/.archive/meta-platforms.md"));
+
+        var keeper = await _store.ReadAsync("memory/topics/meta.md");
+        var refs = SourcesProvenance.ReadSourceRefs(keeper!.RawText);
+        Assert.Contains("sources/sample.txt", refs);
+        Assert.Contains("sources/second.txt", refs);
+    }
+
+    [Fact]
+    public async Task Merge_retargets_links_that_pointed_at_the_loser()
+    {
+        await BuildIngest(
+                new FakeExtractor(
+                    new ExtractedTopic("Meta", "organization"),
+                    new ExtractedTopic("Acme Corp", "organization")),
+                new FakeSynthesizer())
+            .IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8), TestContext.Current.CancellationToken);
+
+        await _store.WriteAtomicAsync("memory/topics/meta-platforms.md",
+            VaultFrontmatter.BuildPreserving(null, "Meta Platforms", "organization")
+            + "\n<!-- pia:managed -->\nBody.\nsources: [sources/sample.txt]\n");
+        await _store.WriteAtomicAsync("memory/topics/acme-corp.md",
+            VaultFrontmatter.BuildPreserving(null, "Acme Corp", "organization")
+            + "\n<!-- pia:managed -->\nSee [[topics/meta-platforms]].\nsources: [sources/sample.txt]\n");
+
+        await BuildIngest(new FakeExtractor(), new FakeSynthesizer()).MergeTopicPagesAsync(
+            "memory/topics/meta.md", "memory/topics/meta-platforms.md", TestContext.Current.CancellationToken);
+
+        var linker = await _store.ReadAsync("memory/topics/acme-corp.md");
+        Assert.Contains("[[topics/meta]]", linker!.RawText);
+        Assert.DoesNotContain("topics/meta-platforms", linker.RawText);
+    }
+
+    // The dangerous direction: the loser slug is a PREFIX of another page's slug. A bare substring
+    // replace turned a healthy [[topics/dax-40]] into [[topics/dax-index-40]] — a dangling link
+    // invented out of a good one, which the reconciler then strips to plain text.
+    [Fact]
+    public async Task Merge_does_not_rewrite_a_link_whose_slug_merely_starts_with_the_loser()
+    {
+        await BuildIngest(new FakeExtractor(new ExtractedTopic("Acme Corp", "organization")), new FakeSynthesizer())
+            .IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8), TestContext.Current.CancellationToken);
+
+        foreach (var (slug, title) in new[] { ("dax", "DAX"), ("dax-index", "DAX Index"), ("dax-40", "DAX 40") })
+        {
+            await _store.WriteAtomicAsync($"memory/topics/{slug}.md",
+                VaultFrontmatter.BuildPreserving(null, title, "concept")
+                + "\n<!-- pia:managed -->\nBody.\nsources: [sources/sample.txt]\n");
+        }
+
+        await _store.WriteAtomicAsync("memory/topics/acme-corp.md",
+            VaultFrontmatter.BuildPreserving(null, "Acme Corp", "organization")
+            + "\n<!-- pia:managed -->\nSee [[topics/dax]] and [[topics/dax-40]].\nsources: [sources/sample.txt]\n");
+
+        await BuildIngest(new FakeExtractor(), new FakeSynthesizer()).MergeTopicPagesAsync(
+            "memory/topics/dax-index.md", "memory/topics/dax.md", TestContext.Current.CancellationToken);
+
+        var linker = await _store.ReadAsync("memory/topics/acme-corp.md");
+        Assert.Contains("[[topics/dax-index]]", linker!.RawText);
+        Assert.Contains("[[topics/dax-40]]", linker.RawText);
+        Assert.DoesNotContain("dax-index-40", linker.RawText);
+    }
+
+    [Fact]
+    public async Task Merge_refuses_a_page_onto_itself()
+    {
+        await BuildIngest(new FakeExtractor(new ExtractedTopic("Meta", "organization")), new FakeSynthesizer())
+            .IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8), TestContext.Current.CancellationToken);
+
+        Assert.False(await BuildIngest(new FakeExtractor(), new FakeSynthesizer()).MergeTopicPagesAsync(
+            "memory/topics/meta.md", "memory/topics/meta.md", TestContext.Current.CancellationToken));
+        Assert.NotNull(await _store.ReadAsync("memory/topics/meta.md"));
+    }
+
+    [Fact]
     public async Task Ingest_preserves_manual_preamble()
     {
         var ingest = BuildIngest(new FakeExtractor(new ExtractedTopic("Acme Corp", "organization")),

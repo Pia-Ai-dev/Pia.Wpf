@@ -29,6 +29,7 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
     private readonly Func<Guid, ChatState> _resolveState;
     private readonly Action<string?> _setActiveWorkingDirectory;
     private readonly Func<string?> _getActiveWorkingDirectory;
+    private readonly IWorkingDirectoryService _workingDirectoryService;
     private CancellationTokenSource? _debounceCts;
     private CancellationTokenSource? _quickSwitcherCts;
     private List<SyncAssistantChat> _quickSwitcherCandidates = [];
@@ -89,6 +90,7 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
     public IRelayCommand CloseQuickSwitcherCommand { get; }
     public IAsyncRelayCommand ConfirmSelectionCommand { get; }
     public IRelayCommand<int> MoveSelectionCommand { get; }
+    public IRelayCommand OpenWorkingDirectoryCommand { get; }
 
     public ChatTitleChipViewModel(
         IAssistantChatService chatService,
@@ -114,6 +116,7 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
         _resolveState = resolveState;
         _setActiveWorkingDirectory = setActiveWorkingDirectory;
         _getActiveWorkingDirectory = getActiveWorkingDirectory;
+        _workingDirectoryService = workingDirectoryService;
 
         WorkingDirectoryPicker = new WorkingDirectoryPickerViewModel(workingDirectoryService);
         WorkingDirectoryPicker.WorkingDirectoryChosen += OnWorkingDirectoryChosen;
@@ -128,6 +131,7 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
         CloseQuickSwitcherCommand = new RelayCommand(ExecuteCloseQuickSwitcher);
         ConfirmSelectionCommand = new AsyncRelayCommand(ExecuteConfirmSelection);
         MoveSelectionCommand = new RelayCommand<int>(ExecuteMoveSelection);
+        OpenWorkingDirectoryCommand = new RelayCommand(ExecuteOpenWorkingDirectory);
 
         PropertyChanged += OnPropertyChanged;
         _chatService.ChatsChanged += OnChatsChanged;
@@ -139,6 +143,12 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
             : title;
 
     public void SetState(ChatState state) => ActiveState = state;
+
+    /// <summary>Opens the pill folder in Explorer. Resolves the same relative path the pill displays, so the
+    /// icon can never open a folder other than the one being read; a folder deleted since the chat was created
+    /// resolves to null and the click does nothing.</summary>
+    private void ExecuteOpenWorkingDirectory() =>
+        ShellLauncher.RevealInExplorer(_workingDirectoryService.ResolveAbsolutePath(_pendingNewChatDirectory));
 
     /// <summary>Refresh a quick-switcher match's live state in place (called on SessionStateChanged).</summary>
     public void RefreshMatchState(Guid chatId, ChatState state)

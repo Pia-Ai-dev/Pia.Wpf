@@ -19,6 +19,7 @@ public static class VaultPaths
     private static readonly HashSet<string> Housekeeping = new(StringComparer.OrdinalIgnoreCase)
     {
         "memory/AGENTS.md",
+        "memory/charter.md",
         "memory/index.md",
         "memory/log.md",
         "memory/templates.md",

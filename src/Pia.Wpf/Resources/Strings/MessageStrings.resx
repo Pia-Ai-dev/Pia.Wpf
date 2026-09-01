@@ -33,6 +33,13 @@
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
 
   <!-- Shared snackbar titles -->
+  <data name="Msg_Memory_CharterDraftEmpty" xml:space="preserve"><value>Could not draft a charter — there are no readable source documents, or no AI provider is configured.</value></data>
+  <data name="Msg_Memory_CharterDraftFailed" xml:space="preserve"><value>Could not draft the charter: {0}</value></data>
+  <data name="Msg_Memory_CharterSaveFailed" xml:space="preserve"><value>Could not save the charter: {0}</value></data>
+  <data name="Msg_Memory_CleanUpConfirm" xml:space="preserve"><value>Merge {0} duplicate topic page(s) and add {1} missing link(s)? Each merge re-synthesizes the kept page from the combined sources, which costs one AI request. The merged-away page is moved to memory/.archive, not deleted. The vault is re-checked when you confirm, so the final count can differ slightly.</value></data>
+  <data name="Msg_Memory_CleanUpDone" xml:space="preserve"><value>Cleaned up {0} item(s).</value></data>
+  <data name="Msg_Memory_CleanUpFailed" xml:space="preserve"><value>Clean-up failed: {0}</value></data>
+  <data name="Msg_Memory_CleanUpNothingToDo" xml:space="preserve"><value>No duplicate pages or missing links were found.</value></data>
   <data name="Snackbar_Success" xml:space="preserve"><value>Success</value></data>
   <data name="Snackbar_Error" xml:space="preserve"><value>Error</value></data>
   <data name="Snackbar_Warning" xml:space="preserve"><value>Warning</value></data>

@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure.Vault;
 using Pia.Logging;
@@ -49,6 +50,9 @@ public sealed class IngestService : IIngestService
     /// <summary>Mandatory sentinel splitting the (optional) manual preamble from the synthesized body.</summary>
     private const string ManagedMarker = "<!-- pia:managed -->";
     private const int MaxConcurrentSynthesis = 4;
+
+    /// <summary>Where a merged-away page is kept. Same folder LintService archives to.</summary>
+    private const string ArchiveDir = "memory/.archive";
 
     private readonly IIngestExtractor _extractor;
     private readonly IVaultStore _store;
@@ -156,8 +160,11 @@ public sealed class IngestService : IIngestService
         // Pre-pass: re-identify + slugify EVERY subject up front so the known-slug set is complete before
         // any page is synthesized. That makes a within-run forward reference safe — topic A's page (written
         // first) may link to topic B's page (written later in the loop), and B's slug is already known.
+        var (identityMap, knownSlugs) = await BuildTopicIndexAsync();
+        var claimedSlugs = new HashSet<string>(StringComparer.Ordinal);
         var prepared = new List<(ExtractedTopic Topic, string Subject, string Slug)>();
         var reidentifiedSubjects = 0;
+        var collapsedAliases = 0;
         foreach (var topic in topics)
         {
             // Re-identify the subject BEFORE it becomes a slug/title. The extraction model may have
@@ -176,7 +183,32 @@ public sealed class IngestService : IIngestService
                 continue;
             }
 
-            prepared.Add((topic, subject, VaultSlug.Slugify(subject)));
+            // Reuse the page an existing alias already owns; otherwise this subject defines the
+            // identity for the rest of the run, so later aliases in the same batch collapse onto it
+            // too. Registering it here also closes a same-path race: two subjects that slugify
+            // identically previously produced two concurrent writers on one file.
+            var identity = TopicIdentity.Canonicalize(subject);
+            if (!identityMap.TryGetValue(identity, out var slug))
+            {
+                slug = VaultSlug.Slugify(subject);
+                identityMap[identity] = slug;
+            }
+            else if (!string.Equals(slug, VaultSlug.Slugify(subject), StringComparison.Ordinal))
+            {
+                collapsedAliases++;
+                _logger.SensitiveDebug("Ingest collapsed {Subject} onto existing topic {Slug}", subject, slug);
+            }
+
+            if (claimedSlugs.Add(slug))
+            {
+                prepared.Add((topic, subject, slug));
+            }
+        }
+
+        if (collapsedAliases > 0)
+        {
+            _logger.LogInformation(
+                "Ingest collapsed {Count} discovered topic(s) onto an existing page", collapsedAliases);
         }
 
         if (reidentifiedSubjects > 0)
@@ -189,8 +221,8 @@ public sealed class IngestService : IIngestService
         }
 
         // The link vocabulary for BOTH grounding (synthesizer prompt) and reconciliation (deterministic
-        // backstop): slugs already on disk ∪ slugs this run will create.
-        var knownSlugs = await BuildKnownTopicSlugsAsync();
+        // backstop): slugs already on disk ∪ slugs this run will create. The on-disk half came out of
+        // the same walk that built the identity map.
         foreach (var p in prepared)
         {
             knownSlugs.Add(p.Slug);
@@ -455,6 +487,112 @@ public sealed class IngestService : IIngestService
     }
 
     /// <inheritdoc />
+    public async Task<bool> MergeTopicPagesAsync(string keeperPath, string loserPath, CancellationToken ct = default)
+    {
+        keeperPath = keeperPath.Replace('\\', '/');
+        loserPath = loserPath.Replace('\\', '/');
+        if (string.Equals(keeperPath, loserPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var keeper = await _store.ReadAsync(keeperPath);
+        var loser = await _store.ReadAsync(loserPath);
+        if (keeper is null || loser is null)
+        {
+            return false;
+        }
+
+        // Provenance first. Archiving the loser without carrying its sources across would only postpone
+        // the duplicate: the next ingest of one of those sources would find no page and mint it again.
+        var sourceRefs = ReadPageSources(keeper);
+        foreach (var r in ReadPageSources(loser))
+        {
+            if (!sourceRefs.Contains(r, StringComparer.OrdinalIgnoreCase))
+            {
+                sourceRefs.Add(r);
+            }
+        }
+
+        await _store.WriteAtomicAsync(
+            $"{ArchiveDir}/{Path.GetFileName(loserPath)}", loser.RawText);
+        await _store.DeleteAsync(loserPath);
+        await _index.RemoveEntryAsync(loserPath);
+
+        var loserSlug = VaultSlug.Slugify(Path.GetFileNameWithoutExtension(loserPath));
+        var keeperSlug = VaultSlug.Slugify(Path.GetFileNameWithoutExtension(keeperPath));
+        await RetargetLinksAsync(loserSlug, keeperSlug, ct);
+
+        // Re-synthesize over the widened union so the kept page actually says what both said.
+        var title = keeper.Frontmatter.GetValueOrDefault("title") is { Length: > 0 } t
+            ? t
+            : Path.GetFileNameWithoutExtension(keeperPath);
+        var category = keeper.Frontmatter.GetValueOrDefault("category") is { Length: > 0 } c ? c : "concept";
+        var knownSlugs = await BuildKnownTopicSlugsAsync();
+
+        var summary = await SynthesizePageAsync(
+            keeperPath, title, category, sourceRefs, await _charter.GetCharterAsync(), knownSlugs, ct);
+        if (summary is null)
+        {
+            // Synthesis is best-effort here: the merge itself already landed, and the page keeps its old
+            // body until the next rebuild. Still record the widened provenance, or the loser comes back.
+            await WritePageSourcesAsync(keeperPath, sourceRefs);
+        }
+        else
+        {
+            await _index.UpsertEntryAsync(keeperPath, summary);
+        }
+
+        await _log.AppendAsync(
+            "merge", $"{loserSlug} -> {keeperSlug}", DateOnly.FromDateTime(DateTime.Now));
+        // Slug only via SensitiveDebug: a topic slug is derived from the page title, which is very
+        // often a person's name, and this log is what a user attaches to a support request.
+        _logger.LogInformation("Merged one topic page into another");
+        _logger.SensitiveDebug("Merged topic page {Loser} into {Keeper}", loserSlug, keeperSlug);
+        return true;
+    }
+
+    // Point every [[topics/<loser>]] link at the keeper. Without this the merged-away slug survives in
+    // other pages' bodies and WikiLinkReconciler strips it to plain text on their next rewrite — the link
+    // is lost rather than followed.
+    //
+    // The match is anchored on the opening brackets AND the link terminator, never a bare substring:
+    // merging "dax" into "dax-index" would otherwise rewrite a neighbouring [[topics/dax-40]] into
+    // [[topics/dax-index-40]], inventing a dangling link out of a healthy one.
+    private async Task RetargetLinksAsync(string loserSlug, string keeperSlug, CancellationToken ct)
+    {
+        var pattern = @"\[\[topics/" + Regex.Escape(loserSlug) + @"(?=[\]|#])";
+        var replacement = "[[topics/" + keeperSlug;
+
+        foreach (var path in await _store.EnumerateAsync("memory/topics/*.md"))
+        {
+            ct.ThrowIfCancellationRequested();
+            var relative = path.Replace('\\', '/');
+            var doc = await _store.ReadAsync(relative);
+            if (doc is null)
+            {
+                continue;
+            }
+
+            var rewritten = Regex.Replace(doc.RawText, pattern, replacement, RegexOptions.IgnoreCase);
+            if (!string.Equals(rewritten, doc.RawText, StringComparison.Ordinal))
+            {
+                await _store.WriteAtomicAsync(relative, rewritten);
+            }
+        }
+    }
+
+    // Rewrite only the `sources:` line of an existing page, leaving its body alone.
+    private async Task WritePageSourcesAsync(string path, IReadOnlyList<string> sourceRefs)
+    {
+        var doc = await _store.ReadAsync(path);
+        if (doc is not null)
+        {
+            await _store.WriteAtomicAsync(path, WriteSourcesLine(doc.RawText, sourceRefs));
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<string>> ListTopicPagesAsync()
     {
         // Scoped to memory/topics/ on purpose: EnumerateAsync is not a real glob, so "memory/*.md" would
@@ -536,6 +674,60 @@ public sealed class IngestService : IIngestService
         }
 
         return slugs;
+    }
+
+    // Existing pages keyed by TopicIdentity, so a newly discovered alias ("Meta Platforms") resolves
+    // onto the page its canonical twin already owns ("meta") instead of minting a second one. The
+    // winner per key is fixed here rather than at the call site: EnumerateAsync promises no ordering,
+    // so an unspecified rule would send the same subject to different pages on different runs.
+    // Precedence: oldest `created`, then the smallest slug.
+    //
+    // Returns the slug set alongside it: reading a page's frontmatter is the expensive half, and the
+    // caller needs both, so one walk serves both rather than enumerating and parsing the tree twice.
+    private async Task<(Dictionary<string, string> Identities, HashSet<string> Slugs)>
+        BuildTopicIndexAsync()
+    {
+        var candidates = new Dictionary<string, (string Slug, string Created)>(StringComparer.Ordinal);
+        var slugs = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var path in await _store.EnumerateAsync("memory/topics/*.md"))
+        {
+            var relative = path.Replace('\\', '/');
+            var name = Path.GetFileNameWithoutExtension(relative);
+            if (string.IsNullOrEmpty(name))
+            {
+                continue;
+            }
+
+            var slug = VaultSlug.Slugify(name);
+            slugs.Add(slug);
+
+            var doc = await _store.ReadAsync(relative);
+            var title = doc?.Frontmatter.GetValueOrDefault("title");
+            var created = doc?.Frontmatter.GetValueOrDefault("created") ?? string.Empty;
+            var key = TopicIdentity.Canonicalize(string.IsNullOrWhiteSpace(title) ? name : title);
+
+            if (!candidates.TryGetValue(key, out var winner) || Beats(created, slug, winner))
+            {
+                candidates[key] = (slug, created);
+            }
+        }
+
+        return (candidates.ToDictionary(e => e.Key, e => e.Value.Slug, StringComparer.Ordinal), slugs);
+    }
+
+    // Oldest `created` wins; a page that carries one always beats a page that does not; ties go to the
+    // smaller slug so the winner is reproducible across runs.
+    private static bool Beats(string created, string slug, (string Slug, string Created) incumbent)
+    {
+        var mineMissing = created.Length == 0;
+        var theirsMissing = incumbent.Created.Length == 0;
+        if (mineMissing != theirsMissing)
+        {
+            return theirsMissing;
+        }
+
+        var byCreated = mineMissing ? 0 : string.CompareOrdinal(created, incumbent.Created);
+        return byCreated != 0 ? byCreated < 0 : string.CompareOrdinal(slug, incumbent.Slug) < 0;
     }
 
     // Resolve a vault-relative source ref to an absolute path under the vault root, or null if it
