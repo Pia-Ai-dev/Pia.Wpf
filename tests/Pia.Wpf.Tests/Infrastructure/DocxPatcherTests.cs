@@ -4,6 +4,7 @@ using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 using Pia.Helpers;
 using Pia.Infrastructure;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Infrastructure;
@@ -21,7 +22,7 @@ public class DocxPatcherTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, recursive: true); } catch { /* best effort */ }
+        TempPath.Remove(_dir);
     }
 
     private string NewPath(string name) => Path.Combine(_dir, name);

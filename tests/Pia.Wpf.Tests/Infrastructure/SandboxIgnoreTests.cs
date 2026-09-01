@@ -1,5 +1,6 @@
 using System.IO;
 using Pia.Infrastructure;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Infrastructure;
@@ -21,7 +22,7 @@ public sealed class SandboxIgnoreTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
+        TempPath.Remove(_root);
     }
 
     [Fact]

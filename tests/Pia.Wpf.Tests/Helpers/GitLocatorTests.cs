@@ -1,5 +1,6 @@
 using System.IO;
 using Pia.Helpers;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Helpers;
@@ -24,7 +25,7 @@ public sealed class GitLocatorTests : IDisposable
     public void Dispose()
     {
         GitLocator.ResetForTests();
-        try { Directory.Delete(_dir, recursive: true); } catch { }
+        TempPath.Remove(_dir);
     }
 
     private string Touch(string name)

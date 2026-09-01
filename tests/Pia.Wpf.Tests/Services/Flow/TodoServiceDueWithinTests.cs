@@ -5,6 +5,7 @@ using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services.Flow;
@@ -54,16 +55,7 @@ public sealed class TodoServiceDueWithinTests : IDisposable
     public void Dispose()
     {
         _context.Dispose();
-        try
-        {
-            if (File.Exists(_dbPath))
-                File.Delete(_dbPath);
-            if (Directory.Exists(_trackerDir))
-                Directory.Delete(_trackerDir, recursive: true);
-        }
-        catch (IOException)
-        {
-            // best-effort temp cleanup
-        }
+        TempPath.RemoveFile(_dbPath);
+        TempPath.Remove(_trackerDir);
     }
 }

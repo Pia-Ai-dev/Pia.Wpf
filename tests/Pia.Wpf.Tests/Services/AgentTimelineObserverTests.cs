@@ -280,9 +280,10 @@ public sealed class AgentTimelineObserverTests : IDisposable
     {
         foreach (var svc in _services) svc.Dispose();
         _runs.Dispose();
+        _chats.Dispose();
         _ctx.Dispose();
         SqlitePool.ClearFor(_ctx.ConnectionString);
-        try { Directory.Delete(_tmpDir, recursive: true); } catch { /* best effort */ }
+        TempPath.Remove(_tmpDir);
     }
 
     // ---- observer doubles ----

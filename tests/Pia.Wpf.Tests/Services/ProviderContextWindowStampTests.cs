@@ -7,6 +7,7 @@ using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -27,7 +28,7 @@ public sealed class ProviderContextWindowStampTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, recursive: true); } catch { /* best effort */ }
+        TempPath.Remove(_dir);
     }
 
     /// <summary>Redirects the store off the real profile — the base exposes DirectoryPath for exactly this.</summary>

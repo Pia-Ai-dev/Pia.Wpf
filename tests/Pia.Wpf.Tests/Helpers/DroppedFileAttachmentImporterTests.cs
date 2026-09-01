@@ -6,6 +6,7 @@ using Pia.Models;
 using Pia.Services.Interfaces;
 using Wpf.Ui;
 using Wpf.Ui.Controls;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Helpers;
@@ -30,7 +31,7 @@ public sealed class DroppedFileAttachmentImporterTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, recursive: true); } catch { }
+        TempPath.Remove(_dir);
     }
 
     private string Write(string name, string content)

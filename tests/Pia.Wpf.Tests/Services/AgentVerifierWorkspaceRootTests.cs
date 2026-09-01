@@ -5,6 +5,7 @@ using NSubstitute;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -30,8 +31,8 @@ public sealed class AgentVerifierWorkspaceRootTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_settingsDir, true); } catch { /* best effort */ }
-        try { Directory.Delete(_workspaceDir, true); } catch { /* best effort */ }
+        TempPath.Remove(_settingsDir);
+        TempPath.Remove(_workspaceDir);
     }
 
     private static AiProvider Provider() => new() { Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };

@@ -5,6 +5,7 @@ using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -41,7 +42,7 @@ public sealed class ManagedPersonaAgentSeamTests : IDisposable
     public void Dispose()
     {
         _ctx.Dispose();
-        try { Directory.Delete(_tmpDir, recursive: true); } catch (IOException) { /* best effort */ }
+        TempPath.Remove(_tmpDir);
     }
 
     private StepPersonaResolver BuildResolver() => new(

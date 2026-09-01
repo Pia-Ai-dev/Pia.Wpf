@@ -39,8 +39,9 @@ public sealed class RunProgressPublishTests : IDisposable
     public void Dispose()
     {
         _runs.Dispose();
+        _chats.Dispose();
         _ctx.Dispose();
-        try { Directory.Delete(_tmpDir, recursive: true); } catch { /* best effort */ }
+        TempPath.Remove(_tmpDir);
     }
 
     private async Task<AgentRun> NewRunAsync(AgentRunState state)

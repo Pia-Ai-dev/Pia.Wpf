@@ -6,6 +6,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Services.Providers;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -291,7 +292,7 @@ public sealed class AgentPlannerGroundingTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_tmpDir, recursive: true); } catch { /* temp dir */ }
+        TempPath.Remove(_tmpDir);
         GC.SuppressFinalize(this);
     }
 }

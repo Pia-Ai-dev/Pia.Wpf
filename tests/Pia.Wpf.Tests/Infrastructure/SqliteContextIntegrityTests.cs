@@ -157,7 +157,7 @@ public class SqliteContextIntegrityTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_tmpDir, recursive: true); } catch { /* temp dir */ }
+        TempPath.Remove(_tmpDir);
         GC.SuppressFinalize(this);
     }
 }

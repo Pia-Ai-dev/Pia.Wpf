@@ -18,14 +18,25 @@ using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Pia.Shared.Sync;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Sync;
 
 /// <summary>Pinned against raw JSON: the absent-key-vs-present-and-empty distinction is a serialization property, so
 /// constructing objects would test nothing.</summary>
-public class SyncClientManagedPersonaTests
+public class SyncClientManagedPersonaTests : IDisposable
 {
+    private readonly List<string> _trackerDirs = [];
+
+    public void Dispose()
+    {
+        foreach (var dir in _trackerDirs)
+        {
+            TempPath.Remove(dir);
+        }
+    }
+
     /// <summary><c>PullPageAsync</c> deserializes with no options, so anything but Web defaults would test a serializer the client never runs.</summary>
     private static readonly JsonSerializerOptions WireOptions = new(JsonSerializerDefaults.Web);
 
@@ -216,6 +227,8 @@ public class SyncClientManagedPersonaTests
         var mapper = new SyncMapper(dpapiHelper);
         var trackerDir = Path.Combine(Path.GetTempPath(), "pia-managed-persona-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(trackerDir);
+
+        _trackerDirs.Add(trackerDir);
         var deleteTracker = new SyncDeleteTrackerService(trackerDir, NullLogger<SyncDeleteTrackerService>.Instance);
 
         _templateService.GetTemplatesAsync().Returns(Array.Empty<OptimizationTemplate>());

@@ -101,9 +101,10 @@ public sealed class LiveTurnExecutorPlannedRunTests : IClassFixture<RedirectedPr
 
         public void Dispose()
         {
+            Chats.Dispose();
             Runs.Dispose();
             Ctx.Dispose();
-            try { Directory.Delete(_dir, true); } catch { /* best effort */ }
+            TempPath.Remove(_dir);
         }
     }
 
@@ -600,7 +601,7 @@ public sealed class LiveTurnExecutorPlannedRunTests : IClassFixture<RedirectedPr
 
         public void Dispose()
         {
-            try { Directory.Delete(_dir, recursive: true); } catch { /* best effort */ }
+            TempPath.Remove(_dir);
             foreach (var runId in _runIds)
             {
                 try { Directory.Delete(Path.Combine(AssistantWorkspace.RunsRoot, runId.ToString()), recursive: true); }

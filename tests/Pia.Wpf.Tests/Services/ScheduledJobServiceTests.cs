@@ -7,6 +7,7 @@ using Pia.Services;
 using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 using Pia.Services.Scheduling;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -806,6 +807,6 @@ public class ScheduledJobServiceTests : IDisposable
         cmd.CommandText = "DELETE FROM ScheduledJobs WHERE Name LIKE 'TEST_%'";
         cmd.ExecuteNonQuery();
         _ctx.Dispose();
-        try { Directory.Delete(_tmpDir, recursive: true); } catch { /* best effort */ }
+        TempPath.Remove(_tmpDir);
     }
 }

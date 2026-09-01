@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Pia.Models;
 using Pia.Services.Assets;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services.Assets;
@@ -27,7 +28,7 @@ public class AssetDownloaderTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, recursive: true); } catch (IOException) { }
+        TempPath.Remove(_dir);
         GC.SuppressFinalize(this);
     }
 

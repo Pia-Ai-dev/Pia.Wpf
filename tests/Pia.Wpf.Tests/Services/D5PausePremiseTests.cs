@@ -8,6 +8,7 @@ using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 using ReasoningEffort = Pia.Models.ReasoningEffort;
 using Pia.Services.MeetingAttendee;
@@ -41,8 +42,9 @@ public sealed class D5PausePremiseTests : IDisposable
     public void Dispose()
     {
         _runs.Dispose();
+        _chats.Dispose();
         _ctx.Dispose();
-        try { Directory.Delete(_dir, true); } catch { /* best effort */ }
+        TempPath.Remove(_dir);
     }
 
     /// <summary>

@@ -7,6 +7,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -206,7 +207,12 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
         }
         finally
         {
-            try { Directory.Delete(tmpDir, recursive: true); } catch { /* best effort */ }
+            // Explicit, and in this order: the `using var`s above run after this block, so the file would still be
+            // open when the directory is deleted.
+            chats.Dispose();
+            runs.Dispose();
+            ctx.Dispose();
+            TempPath.Remove(tmpDir);
         }
     }
 
@@ -238,7 +244,12 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
         }
         finally
         {
-            try { Directory.Delete(tmpDir, recursive: true); } catch { /* best effort */ }
+            // Explicit, and in this order: the `using var`s above run after this block, so the file would still be
+            // open when the directory is deleted.
+            chats.Dispose();
+            runs.Dispose();
+            ctx.Dispose();
+            TempPath.Remove(tmpDir);
         }
     }
 
@@ -266,7 +277,12 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
         }
         finally
         {
-            try { Directory.Delete(tmpDir, recursive: true); } catch { /* best effort */ }
+            // Explicit, and in this order: the `using var`s above run after this block, so the file would still be
+            // open when the directory is deleted.
+            chats.Dispose();
+            runs.Dispose();
+            ctx.Dispose();
+            TempPath.Remove(tmpDir);
         }
     }
 

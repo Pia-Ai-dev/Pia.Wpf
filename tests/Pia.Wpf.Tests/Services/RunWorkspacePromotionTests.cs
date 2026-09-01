@@ -45,7 +45,7 @@ public sealed class RunWorkspacePromotionTests : IClassFixture<RedirectedProfile
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, recursive: true); } catch { /* best effort */ }
+        TempPath.Remove(_dir);
         if (_realShapeRunId is { } runId)
         {
             try { Directory.Delete(Path.Combine(AssistantWorkspace.RunsRoot, runId.ToString()), recursive: true); }

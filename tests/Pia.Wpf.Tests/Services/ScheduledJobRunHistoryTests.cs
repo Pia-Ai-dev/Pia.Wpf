@@ -5,6 +5,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -163,8 +164,9 @@ public sealed class ScheduledJobRunHistoryTests : IDisposable
     public void Dispose()
     {
         _runs.Dispose();
+        _chats.Dispose();
         _ctx.Dispose();
-        try { Directory.Delete(_dir, recursive: true); } catch { /* temp dir */ }
+        TempPath.Remove(_dir);
         GC.SuppressFinalize(this);
     }
 }

@@ -39,7 +39,7 @@ public sealed class FilesToolHandlerRunsDirGuardTests : IClassFixture<Redirected
     public void Dispose()
     {
         TaskAmbient.Current = null;
-        try { Directory.Delete(_runDir, recursive: true); } catch { /* best effort */ }
+        TempPath.Remove(_runDir);
     }
 
     private static T Prop<T>(object obj, string name)

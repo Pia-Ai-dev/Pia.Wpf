@@ -7,6 +7,7 @@ using Pia.Services.Interfaces;
 using Pia.Services.Operators;
 using Pia.Services.Plugins;
 using Pia.Shared.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -25,7 +26,7 @@ public sealed class PluginServiceToolCatalogTests : IDisposable
     public void Dispose()
     {
         _sqlite?.Dispose();
-        try { File.Delete(_dbPath); } catch { /* best effort */ }
+        TempPath.RemoveFile(_dbPath);
     }
 
     private PluginService CreateService()

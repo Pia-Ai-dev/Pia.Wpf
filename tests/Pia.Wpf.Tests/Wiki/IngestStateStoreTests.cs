@@ -3,6 +3,7 @@ using System.IO;
 using System.Threading.Tasks;
 using Pia.Services.Interfaces;
 using Pia.Services.Wiki;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Wiki;
@@ -21,7 +22,7 @@ public class IngestStateStoreTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_tmpDir, recursive: true); } catch { }
+        TempPath.Remove(_tmpDir);
     }
 
     [Fact]

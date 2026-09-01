@@ -6,6 +6,7 @@ using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -38,7 +39,7 @@ public sealed class FilesToolHandlerVaultTargetTests : IDisposable
     {
         TaskAmbient.Current = null;
         foreach (var d in new[] { _runRoot, _interactiveRoot })
-            try { Directory.Delete(d, recursive: true); } catch { /* best effort */ }
+            TempPath.Remove(d);
     }
 
     /// <summary>FilesToolHandler's result records are private, so members are read by their wire names (<c>success</c>, <c>error</c>).</summary>

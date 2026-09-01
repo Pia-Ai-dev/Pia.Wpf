@@ -2,6 +2,7 @@ using System.IO;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Infrastructure.Vault;
 using Pia.Services.Wiki;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Wiki;
@@ -26,7 +27,7 @@ public class VaultCharterServiceSaveTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_tmpDir, recursive: true); } catch { /* best effort */ }
+        TempPath.Remove(_tmpDir);
     }
 
     [Fact]

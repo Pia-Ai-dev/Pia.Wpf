@@ -1655,7 +1655,7 @@ public class ChatSessionManagerTests
         }
         finally
         {
-            try { Directory.Delete(runsBase, recursive: true); } catch { /* best effort */ }
+            TempPath.Remove(runsBase);
         }
     }
 
@@ -1690,7 +1690,7 @@ public class ChatSessionManagerTests
         }
         finally
         {
-            try { Directory.Delete(runsBase, recursive: true); } catch { /* best effort */ }
+            TempPath.Remove(runsBase);
         }
     }
 

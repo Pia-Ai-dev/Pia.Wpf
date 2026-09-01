@@ -2,6 +2,7 @@ using System.IO;
 using Microsoft.Extensions.Logging;
 using NReco.Logging.File;
 using Pia.Logging;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Logging;
@@ -111,7 +112,7 @@ public sealed class LogSinkCompositionTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, recursive: true); } catch { /* temp dir */ }
+        TempPath.Remove(_dir);
         GC.SuppressFinalize(this);
     }
 }

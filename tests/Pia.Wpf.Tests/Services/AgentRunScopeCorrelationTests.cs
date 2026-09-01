@@ -6,6 +6,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -151,7 +152,7 @@ public sealed class AgentRunScopeCorrelationTests
         }
         finally
         {
-            try { Directory.Delete(dir, recursive: true); } catch { /* temp dir */ }
+            TempPath.Remove(dir);
         }
     }
 }

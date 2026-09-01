@@ -5,6 +5,7 @@ using NSubstitute;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -29,7 +30,7 @@ public class FilesToolHandlerWorkingDirectoryTests : IDisposable
     public void Dispose()
     {
         TaskAmbient.Current = null;
-        try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
+        TempPath.Remove(_root);
     }
 
     [Fact]
@@ -108,7 +109,7 @@ public class FilesToolHandlerWorkingDirectoryTests : IDisposable
         finally
         {
             TaskAmbient.Current = null;
-            try { Directory.Delete(runRoot, recursive: true); } catch { /* best effort */ }
+            TempPath.Remove(runRoot);
         }
     }
 

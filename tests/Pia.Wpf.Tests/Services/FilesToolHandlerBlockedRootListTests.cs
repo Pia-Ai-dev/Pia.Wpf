@@ -50,7 +50,7 @@ public sealed class FilesToolHandlerBlockedRootListTests : IClassFixture<Redirec
         }
         finally
         {
-            try { Directory.Delete(blockedRoot, recursive: true); } catch { /* best effort */ }
+            TempPath.Remove(blockedRoot);
         }
     }
 }

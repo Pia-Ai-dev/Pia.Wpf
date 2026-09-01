@@ -37,7 +37,7 @@ public class FilesToolHandlerReadTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
+        TempPath.Remove(_root);
     }
 
     private async Task<object?> ReadAsync(string path, int? offset = null, int? limit = null)
@@ -525,7 +525,7 @@ public sealed class FilesToolHandlerReadMissBlockedPathTests : IClassFixture<Red
         }
         finally
         {
-            try { Directory.Delete(blockedRoot, recursive: true); } catch { /* best effort */ }
+            TempPath.Remove(blockedRoot);
         }
     }
 }

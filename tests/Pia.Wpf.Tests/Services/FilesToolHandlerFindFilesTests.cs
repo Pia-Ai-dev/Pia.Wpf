@@ -30,7 +30,7 @@ public class FilesToolHandlerFindFilesTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
+        TempPath.Remove(_root);
     }
 
     private async Task<string> FindAsync(string pattern, string? path = null, int? limit = null)
@@ -303,7 +303,7 @@ public sealed class FilesToolHandlerFindFilesSensitivePathTests : IClassFixture<
         }
         finally
         {
-            try { Directory.Delete(blockedRoot, recursive: true); } catch { /* best effort */ }
+            TempPath.Remove(blockedRoot);
         }
     }
 }

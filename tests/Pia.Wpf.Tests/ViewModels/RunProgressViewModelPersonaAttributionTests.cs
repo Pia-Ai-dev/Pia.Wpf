@@ -217,7 +217,8 @@ public sealed class RunProgressViewModelPersonaAttributionTests : IDisposable
     public void Dispose()
     {
         _runs.Dispose();
+        _chats.Dispose();
         _ctx.Dispose();
-        try { Directory.Delete(_tmpDir, true); } catch { /* best effort cleanup */ }
+        TempPath.Remove(_tmpDir);
     }
 }

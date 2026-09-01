@@ -12,6 +12,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 using ReasoningEffort = Pia.Models.ReasoningEffort;
 
@@ -109,8 +110,9 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     public void Dispose()
     {
         _runs.Dispose();
+        _chats.Dispose();
         _ctx.Dispose();
-        try { Directory.Delete(_dir, true); } catch { /* best effort */ }
+        TempPath.Remove(_dir);
     }
 
     /// <summary>Drives one tool call through the executor's unattended grant gate and records the outcome, so a
@@ -550,7 +552,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var settled = await _runs.GetAsync(handle.RunId, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.Completed, settled!.State);
 
-        try { Directory.Delete(runRoot, true); } catch { }
+        TempPath.Remove(runRoot);
     }
 
     /// <summary>The launch and resume call sites are separate literals, so each gets its own fact; this one reads
@@ -573,7 +575,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.NotNull(planner.PlanContext);
         Assert.Equal(expected, planner.PlanContext!.WorkspaceRoot);
 
-        try { Directory.Delete(expected, true); } catch { }
+        TempPath.Remove(expected);
     }
 
     /// <summary>A resume does not re-plan, so the planner never sees the context and the terminal verify pass is
@@ -597,7 +599,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         // This run parked on `step-cap`, not `needs-goal`, so the resume must not re-plan.
         Assert.Null(planner.PlanContext);
 
-        try { Directory.Delete(expected, true); } catch { }
+        TempPath.Remove(expected);
     }
 
     /// <summary>Every other resume fact here covers the <c>WaitingForInput</c> arm; this is the only cover for the
@@ -624,7 +626,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         // finished run paused.
         Assert.Null(RunPauseEnvelope.ReadReason(final));
 
-        try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, parked.Id.ToString()));
     }
 
     /// <summary>A provisioner that cannot isolate the run returns null and the run proceeds: an unattended run
@@ -695,7 +697,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.True(planner.MaxConcurrent <= 2);
 
         foreach (var h in new[] { h1, h2, h3 })
-            try { Directory.Delete(Path.Combine(_runsBase, h.RunId.ToString()), true); } catch { }
+            TempPath.Remove(Path.Combine(_runsBase, h.RunId.ToString()));
     }
 
     /// <summary>A substitute cannot raise <c>SettingsChanged</c> without a reflection helper, and a four-member
@@ -758,7 +760,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.True(planner.MaxConcurrent <= 3, $"MaxConcurrent was {planner.MaxConcurrent}");
 
         foreach (var h in handles)
-            try { Directory.Delete(Path.Combine(_runsBase, h.RunId.ToString()), true); } catch { }
+            TempPath.Remove(Path.Combine(_runsBase, h.RunId.ToString()));
     }
 
     [Fact]
@@ -793,7 +795,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             .WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
 
         foreach (var h in handles)
-            try { Directory.Delete(Path.Combine(_runsBase, h.RunId.ToString()), true); } catch { }
+            TempPath.Remove(Path.Combine(_runsBase, h.RunId.ToString()));
     }
 
     /// <summary>Reflection rather than an internal accessor: this fails loudly if the field is renamed, which is
@@ -853,7 +855,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         await b.Completion.WaitAsync(TimeSpan.FromSeconds(20), ct);
 
         foreach (var h in new[] { a, b })
-            try { Directory.Delete(Path.Combine(_runsBase, h.RunId.ToString()), true); } catch { }
+            TempPath.Remove(Path.Combine(_runsBase, h.RunId.ToString()));
     }
 
     [Fact]
@@ -877,7 +879,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.NotEqual(AgentRunState.Running, run!.State);
         Assert.NotEqual(AgentRunState.Planning, run.State);
 
-        try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, handle.RunId.ToString()));
     }
 
     [Fact]
@@ -913,7 +915,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.False(Directory.Exists(orphan));
         Assert.True(Directory.Exists(keep));
 
-        try { Directory.Delete(keep, true); } catch { }
+        TempPath.Remove(keep);
     }
 
     [Fact]
@@ -933,7 +935,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Equal(new[] { "write_file" }, restored);
         Assert.DoesNotContain("delete_file", run.PolicyJson);
 
-        try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, handle.RunId.ToString()));
     }
 
     [Fact]
@@ -959,7 +961,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.True(writeProbe.Executed);
 
         foreach (var h in new[] { deleteHandle, writeHandle })
-            try { Directory.Delete(Path.Combine(_runsBase, h.RunId.ToString()), true); } catch { }
+            TempPath.Remove(Path.Combine(_runsBase, h.RunId.ToString()));
     }
 
     [Fact]
@@ -979,7 +981,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var run = await _runs.GetAsync(handle.RunId, TestContext.Current.CancellationToken);
         Assert.Equal(new[] { "write_file", "delete_file" }, HeadlessRunLauncher.TryRestoreGrantEnvelope(run!.PolicyJson));
 
-        try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, handle.RunId.ToString()));
     }
 
     [Fact]
@@ -1020,7 +1022,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.True(grantProbe.Executed); // exactly what the launch granted still runs
 
         foreach (var id in new[] { parked.Id, parked2.Id, parked3.Id })
-            try { Directory.Delete(Path.Combine(_runsBase, id.ToString()), true); } catch { }
+            TempPath.Remove(Path.Combine(_runsBase, id.ToString()));
     }
 
     // The pins the LAUNCH resolved have to survive the park, because the resume has no job store to re-read
@@ -1077,7 +1079,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             await resumer.StopAsync(CancellationToken.None);
         }
 
-        try { Directory.Delete(Path.Combine(_runsBase, runId.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, runId.ToString()));
     }
 
     // A job that pinned an EXPLICIT provider has to get it back on Continue. The resume launcher's own mode
@@ -1136,7 +1138,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             await resumer.StopAsync(CancellationToken.None);
         }
 
-        try { Directory.Delete(Path.Combine(_runsBase, runId.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, runId.ToString()));
     }
 
     // The pinned provider was deleted during the park. The ladder still has to answer, or a park would become
@@ -1174,7 +1176,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             await resumer.StopAsync(CancellationToken.None);
         }
 
-        try { Directory.Delete(Path.Combine(_runsBase, run.Id.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, run.Id.ToString()));
     }
 
     // The other half of E9's freeze, and the direction it originally left open. The launch resolved NO effort;
@@ -1241,7 +1243,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             await resumer.StopAsync(CancellationToken.None);
         }
 
-        try { Directory.Delete(Path.Combine(_runsBase, runId.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, runId.ToString()));
     }
 
     // A row written before the marker existed cannot say whether its null effort was resolved, so it has to keep
@@ -1269,7 +1271,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             await resumer.StopAsync(CancellationToken.None);
         }
 
-        try { Directory.Delete(Path.Combine(_runsBase, run.Id.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, run.Id.ToString()));
     }
 
     [Theory]
@@ -1330,7 +1332,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.True(writeProbe.Executed);
 
         foreach (var id in new[] { parked.Id, parked2.Id })
-            try { Directory.Delete(Path.Combine(_runsBase, id.ToString()), true); } catch { }
+            TempPath.Remove(Path.Combine(_runsBase, id.ToString()));
     }
 
     [Fact]
@@ -1354,7 +1356,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         // The grant list is untouched by the policy.
         Assert.Equal(new[] { "write_file" }, HeadlessRunLauncher.TryRestoreGrantEnvelope(run.PolicyJson));
 
-        try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, handle.RunId.ToString()));
     }
 
     [Fact]
@@ -1373,7 +1375,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
         Assert.True(probe.Executed);
 
-        try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, handle.RunId.ToString()));
     }
 
     [Fact]
@@ -1397,7 +1399,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.False(probe.Executed);
         Assert.Contains("approval", probe.GateResult ?? string.Empty);
 
-        try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, parked.Id.ToString()));
     }
 
     [Fact]
@@ -1417,7 +1419,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
         Assert.True(probe.Executed);
 
-        try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, parked.Id.ToString()));
     }
 
     [Fact]
@@ -1438,7 +1440,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.False(probe.Executed);
         Assert.Contains("needs a person's approval", probe.GateResult ?? string.Empty);
 
-        try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, parked.Id.ToString()));
     }
 
     /// <summary>The raise sits after <c>_slots.Release</c> so bookkeeping cannot strand the shared slot; the slot
@@ -1465,7 +1467,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Equal(parked.ChatId, only.ChatId);
         Assert.Null(bracketedChatAtRaise);
 
-        try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, parked.Id.ToString()));
     }
 
     /// <summary>
@@ -1491,7 +1493,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
         Assert.Equal(1, Volatile.Read(ref raised));
 
-        try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, parked.Id.ToString()));
     }
 
     /// <summary>The launcher cannot distinguish "re-parked before starting" from "ran, then parked again", so it
@@ -1519,7 +1521,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         // run that quietly completed instead.
         Assert.Equal(AgentRunState.WaitingForInput, (await _runs.GetAsync(parked.Id, ct))!.State);
 
-        try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, parked.Id.ToString()));
     }
 
     [Fact]
@@ -1556,7 +1558,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var after = await _runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.WaitingForInput, after!.State); // re-parked, still resumable
 
-        try { Directory.Delete(Path.Combine(_runsBase, run.Id.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, run.Id.ToString()));
     }
 
     /// <summary>Exercises the real <c>ResumeAsync</c> wire (unlike <c>AgentRunClarificationResumeTests</c>, which calls <c>RunAsync(parkReason:)</c> directly) — the pause reason must be read before the claim nulls the pause envelope, or a needs-goal resume would silently stop re-planning.</summary>
@@ -1581,7 +1583,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Equal("g", final.Goal);                                                 // never rewritten
         Assert.Equal(new[] { answer }, RunClarifications.Read(final.ClarificationsJson)); // durable beside it
 
-        try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, parked.Id.ToString()));
     }
 
     /// <summary>A resume that claims the row and then dies before dispatch must re-park with the reason the next resume needs — <c>needs-goal</c>/<c>needs-input</c>/<c>plan-approval</c> preserve their own token (losing it would silently drop re-planning, answer persistence, or the approval card), other reasons get the generic <c>resume-interrupted</c> diagnostic.</summary>
@@ -1603,7 +1605,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Equal(AgentRunState.WaitingForInput, after!.State); // re-parked, still resumable
         Assert.Equal(expectedAfterRePark, ReadPauseReason(after));
 
-        try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, parked.Id.ToString()));
     }
 
     /// <summary>The claim arm: the two CAS sources are disjoint BY STATE, so a run that is in neither parked
@@ -1690,7 +1692,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.NotNull(grants);
         Assert.Equal(["delete_file"], grants!);
 
-        try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, parked.Id.ToString()));
     }
 
     /// <summary>The workspace arm is idempotent in both directions: with no provisioner it RE-CREATES the run's
@@ -1703,7 +1705,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var (launcher, _) = BuildLauncher(verifier: verifier);
         var parked = await ParkRunWithPendingStepAsync(policyJson: null);
         var expected = Path.Combine(_runsBase, parked.Id.ToString());
-        try { Directory.Delete(expected, true); } catch { }
+        TempPath.Remove(expected);
         Assert.False(Directory.Exists(expected));
 
         Assert.True(await launcher.ResumeAsync(parked.Id, ct: ct));
@@ -1713,7 +1715,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Single(verifier.SeenWorkspaceRoots); // non-vacuity: the resume really drained a step
         Assert.Equal(SafeFolderPath.Canonicalize(expected), verifier.SeenWorkspaceRoots[0]);
 
-        try { Directory.Delete(expected, true); } catch { }
+        TempPath.Remove(expected);
     }
 
     [Fact]
@@ -1744,7 +1746,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.False(_executing.IsExecuting(handle.ChatId), "a finished run must not leave the composer gated");
         Assert.Null(_executing.GetChatId(handle.RunId));
 
-        try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, handle.RunId.ToString()));
     }
 
     /// <summary>A child has no workspace of its own and writes the parent's directory: exactly one promotion is
@@ -1939,7 +1941,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             .WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
 
         foreach (var h in new[] { p1, p2 })
-            try { Directory.Delete(Path.Combine(_runsBase, h.RunId.ToString()), true); } catch { }
+            TempPath.Remove(Path.Combine(_runsBase, h.RunId.ToString()));
     }
 
     /// <summary><c>CancelAsync</c> is a silent no-op for a run this process is not running, which is why the
@@ -1972,7 +1974,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var run = await _runs.GetAsync(handle.RunId, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.Cancelled, run!.State);
 
-        try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, handle.RunId.ToString()));
     }
 
     /// <summary>Teardown is keyed on workspace ownership, not run id: deleting a child's stub chat would otherwise
@@ -2308,7 +2310,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Equal(0, store.ConsumedTrue);
         Assert.Null(await _runs.GetAsync(handle.RunId, ct)); // the chat took its run with it (FK cascade)
 
-        try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, handle.RunId.ToString()));
     }
 
     /// <summary>Shutdown deliberately does not revoke, so an unconsumed pause is honoured; the pause is recorded
@@ -2343,7 +2345,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var next = await _runs.NextPendingStepAsync(handle.RunId, ct);
         Assert.Equal("S0", next!.Title);                                                     // …and is drainable
 
-        try { Directory.Delete(Path.Combine(_runsBase, handle.RunId.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, handle.RunId.ToString()));
     }
 
     /// <summary>Holds a dispatch in the resume ramp-up: <c>Register</c> is the last statement before
@@ -2415,7 +2417,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Equal("S1", (await _runs.NextPendingStepAsync(parked.Id, ct))!.Title);
         Assert.True(await _runs.TryResumeFromPauseAsync(parked.Id, ct));                     // claimable again
 
-        try { Directory.Delete(Path.Combine(_runsBase, parked.Id.ToString()), true); } catch { }
+        TempPath.Remove(Path.Combine(_runsBase, parked.Id.ToString()));
     }
 
     /// <summary>Signals that a step is in flight, then holds it there until its own token is cancelled.</summary>

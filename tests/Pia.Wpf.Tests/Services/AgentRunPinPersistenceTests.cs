@@ -38,9 +38,10 @@ public sealed class AgentRunPinPersistenceTests : IDisposable
     public void Dispose()
     {
         _runs.Dispose();
+        _chats.Dispose();
         _ctx.Dispose();
         SqlitePool.ClearFor($"Data Source={_dbPath}");
-        try { Directory.Delete(_dir, true); } catch { /* best effort */ }
+        TempPath.Remove(_dir);
     }
 
     [Fact]
@@ -213,7 +214,7 @@ public sealed class AgentRunPinPersistenceTests : IDisposable
         finally
         {
             SqlitePool.ClearFor($"Data Source={dbPath}");
-            try { Directory.Delete(dir, true); } catch { /* best effort */ }
+            TempPath.Remove(dir);
         }
     }
 

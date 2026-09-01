@@ -784,7 +784,8 @@ public sealed class RunProgressViewModelTests : IDisposable
     public void Dispose()
     {
         _runs.Dispose();
+        _chats.Dispose();
         _ctx.Dispose();
-        try { Directory.Delete(_tmpDir, true); } catch { /* best effort */ }
+        TempPath.Remove(_tmpDir);
     }
 }

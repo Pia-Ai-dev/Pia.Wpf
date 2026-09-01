@@ -6,6 +6,7 @@ using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Services.Plugins;
 using Pia.Shared.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -28,7 +29,7 @@ public sealed class GitPluginRegistrationTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, recursive: true); } catch { }
+        TempPath.Remove(_root);
     }
 
     private static SyncPlugin GitConfig() =>

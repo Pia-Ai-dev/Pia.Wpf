@@ -1,5 +1,6 @@
 using System.IO;
 using Pia.Infrastructure;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Infrastructure;
@@ -52,7 +53,7 @@ public sealed class SensitivePathGuardRunsCarveOutTests
         }
         finally
         {
-            try { Directory.Delete(existingTemp, recursive: true); } catch { /* best effort */ }
+            TempPath.Remove(existingTemp);
         }
     }
 }

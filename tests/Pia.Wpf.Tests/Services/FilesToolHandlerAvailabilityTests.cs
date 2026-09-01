@@ -4,6 +4,7 @@ using NSubstitute;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -26,7 +27,7 @@ public class FilesToolHandlerAvailabilityTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, recursive: true); } catch { }
+        TempPath.Remove(_root);
     }
 
     private FilesToolHandler Handler(bool enabled)

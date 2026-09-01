@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text;
 using Pia.Services.LiveTranscription;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services.LiveTranscription;
@@ -29,7 +30,7 @@ public sealed class BundleExtractionTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_tmpDir, recursive: true); } catch { /* best-effort cleanup */ }
+        TempPath.Remove(_tmpDir);
     }
 
     private string ExtractFixture()

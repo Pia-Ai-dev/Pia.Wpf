@@ -12,6 +12,7 @@ using Pia.Services.MeetingAttendee;
 using Pia.Tests.Services;
 using Pia.ViewModels;
 using Pia.ViewModels.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.ViewModels;
@@ -35,7 +36,7 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, recursive: true); } catch { }
+        TempPath.Remove(_dir);
     }
 
     private AssistantViewModel CreateSut(bool withAttachedFileStore = false)

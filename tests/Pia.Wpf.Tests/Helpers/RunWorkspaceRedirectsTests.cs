@@ -48,7 +48,7 @@ public sealed class RunWorkspaceRedirectsTests : IClassFixture<RedirectedProfile
     {
         foreach (var dir in _dirs)
         {
-            try { Directory.Delete(dir, recursive: true); } catch { /* best effort */ }
+            TempPath.Remove(dir);
         }
     }
 

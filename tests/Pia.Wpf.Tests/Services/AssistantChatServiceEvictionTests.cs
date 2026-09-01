@@ -5,6 +5,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -48,6 +49,11 @@ public sealed class AssistantChatServiceEvictionTests
         Assert.Null(await chats.GetAsync(plainId, TestContext.Current.CancellationToken));
         Assert.NotNull(await chats.GetAsync(plannedChatId, TestContext.Current.CancellationToken));
 
-        try { Directory.Delete(dir, true); } catch { /* best effort */ }
+        // Explicit, and in this order: the `using var`s above run after this line, so the file would still be open
+        // when the directory is deleted.
+        chats.Dispose();
+        runs.Dispose();
+        ctx.Dispose();
+        TempPath.Remove(dir);
     }
 }

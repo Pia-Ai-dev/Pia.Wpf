@@ -8,6 +8,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -416,8 +417,9 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
     public void Dispose()
     {
         _service.Dispose();
+        _chats.Dispose();
         _ctx.Dispose();
-        try { Directory.Delete(_tmpDir, true); } catch { /* best effort */ }
+        TempPath.Remove(_tmpDir);
     }
 
     // ---- fixture ----

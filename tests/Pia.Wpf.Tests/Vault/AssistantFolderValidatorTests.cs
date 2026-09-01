@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using Pia.Infrastructure.Vault;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Vault;
@@ -19,7 +20,7 @@ public class AssistantFolderValidatorTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_temp, true); } catch { }
+        TempPath.Remove(_temp);
     }
 
     [Fact]

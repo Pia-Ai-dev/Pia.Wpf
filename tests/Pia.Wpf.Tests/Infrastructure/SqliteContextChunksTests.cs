@@ -1,6 +1,7 @@
 using System.IO;
 using Microsoft.Data.Sqlite;
 using Pia.Infrastructure;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Infrastructure;
@@ -76,14 +77,6 @@ public class SqliteContextChunksTests : IDisposable
     public void Dispose()
     {
         _ctx.Dispose();
-        try
-        {
-            if (Directory.Exists(_tmpDir))
-                Directory.Delete(_tmpDir, recursive: true);
-        }
-        catch
-        {
-            // Best-effort cleanup of the temp dir.
-        }
+        TempPath.Remove(_tmpDir);
     }
 }

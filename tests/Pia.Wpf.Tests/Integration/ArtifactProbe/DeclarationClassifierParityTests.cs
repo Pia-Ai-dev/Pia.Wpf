@@ -6,6 +6,7 @@ using NSubstitute;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Integration.ArtifactProbe;
@@ -39,7 +40,7 @@ public sealed class DeclarationClassifierParityTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, true); } catch { /* best effort */ }
+        TempPath.Remove(_dir);
     }
 
     private sealed record ParityTable(List<ParityCase>? Cases);

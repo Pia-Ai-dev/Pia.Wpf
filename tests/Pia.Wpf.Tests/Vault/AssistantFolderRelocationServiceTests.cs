@@ -11,6 +11,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Services.Wiki;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Vault;
@@ -69,7 +70,7 @@ public class AssistantFolderRelocationServiceTests : IDisposable
     {
         _autoIngest.Dispose();
         _watcher.Dispose();
-        try { Directory.Delete(_baseDir, true); } catch { }
+        TempPath.Remove(_baseDir);
     }
 
     /// <summary>Records ingest calls; always succeeds touching one topic page.</summary>

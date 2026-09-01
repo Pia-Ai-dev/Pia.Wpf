@@ -8,6 +8,7 @@ using Pia.Infrastructure.Vault;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.Services.Wiki;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Wiki;
@@ -41,17 +42,7 @@ public class AutoIngestServiceTests : IDisposable
 
     public void Dispose()
     {
-        try
-        {
-            if (Directory.Exists(_tmpDir))
-            {
-                Directory.Delete(_tmpDir, recursive: true);
-            }
-        }
-        catch
-        {
-            // Best-effort cleanup of the temp dir (SQLite pooling may still hold history.db).
-        }
+        TempPath.Remove(_tmpDir);
     }
 
     private AutoIngestService Build() => new(

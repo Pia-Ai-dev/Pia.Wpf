@@ -5,6 +5,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -479,7 +480,7 @@ public class PersonaServiceTests : IDisposable
             catch { /* best-effort cleanup of this instance's temp database */ }
         }
         _ctx.Dispose();
-        try { Directory.Delete(_tmpDir, recursive: true); } catch { /* ignore */ }
+        TempPath.Remove(_tmpDir);
         GC.SuppressFinalize(this);
     }
 

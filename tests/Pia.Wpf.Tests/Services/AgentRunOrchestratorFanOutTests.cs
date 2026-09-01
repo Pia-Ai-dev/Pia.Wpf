@@ -7,6 +7,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -297,9 +298,10 @@ public sealed class AgentRunOrchestratorFanOutTests
 
         public void Dispose()
         {
+            Chats.Dispose();
             Runs.Dispose();
             Ctx.Dispose();
-            try { Directory.Delete(_dir, true); } catch { /* best effort */ }
+            TempPath.Remove(_dir);
         }
     }
 

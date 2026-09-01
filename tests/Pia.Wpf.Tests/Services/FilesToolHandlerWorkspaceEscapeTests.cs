@@ -55,7 +55,7 @@ public class FilesToolHandlerWorkspaceEscapeTests : IClassFixture<RedirectedProf
     {
         TaskAmbient.Current = null;
         foreach (var d in new[] { _interactiveRoot, _runRoot, _outside })
-            try { Directory.Delete(d, recursive: true); } catch { /* best effort */ }
+            TempPath.Remove(d);
     }
 
     /// <summary>Non-vacuity control: every escape assertion below would pass against a run root the handler cannot write to at all.</summary>

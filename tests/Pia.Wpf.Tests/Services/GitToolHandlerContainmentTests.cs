@@ -5,6 +5,7 @@ using NSubstitute;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -27,7 +28,7 @@ public sealed class GitToolHandlerContainmentTests : IDisposable
     public void Dispose()
     {
         foreach (var d in _tempDirs)
-            try { Directory.Delete(d, recursive: true); } catch { }
+            TempPath.Remove(d);
     }
 
     private string NewTempDir(string prefix)

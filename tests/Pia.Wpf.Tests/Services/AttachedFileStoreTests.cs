@@ -5,6 +5,7 @@ using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -35,8 +36,8 @@ public class AttachedFileStoreTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
-        try { Directory.Delete(_outside, recursive: true); } catch { /* best effort */ }
+        TempPath.Remove(_root);
+        TempPath.Remove(_outside);
     }
 
     private string SourceFile(string name = "notes.txt", string content = "hello")

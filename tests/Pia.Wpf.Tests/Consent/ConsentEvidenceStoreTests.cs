@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Infrastructure;
 using Pia.Services.Consent;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Consent;
@@ -19,7 +20,7 @@ public sealed class ConsentEvidenceStoreTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_tmpDir, recursive: true); } catch { /* best-effort cleanup */ }
+        TempPath.Remove(_tmpDir);
     }
 
     private static DpapiHelper SubstituteDpapi() =>

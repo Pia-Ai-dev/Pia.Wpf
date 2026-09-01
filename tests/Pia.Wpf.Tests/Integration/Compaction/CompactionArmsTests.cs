@@ -1,5 +1,6 @@
 using System.IO;
 using Microsoft.Extensions.AI;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Integration.Compaction;
@@ -303,6 +304,6 @@ public class CompactionArmsTests
                 CompactionArms.GoldAnswersPresent(armD, bank));
         }
 
-        try { Directory.Delete(cache, recursive: true); } catch (IOException) { }
+        TempPath.Remove(cache);
     }
 }

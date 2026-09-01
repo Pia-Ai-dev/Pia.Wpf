@@ -3,6 +3,7 @@ using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using Pia.Helpers;
 using Pia.Infrastructure;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 using SS = DocumentFormat.OpenXml.Spreadsheet;
 
@@ -21,7 +22,7 @@ public class XlsxPatcherTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, recursive: true); } catch { /* best effort */ }
+        TempPath.Remove(_dir);
     }
 
     private string NewPath(string name) => Path.Combine(_dir, name);

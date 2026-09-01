@@ -8,6 +8,7 @@ using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Services.Plugins;
 using Pia.Shared.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -23,7 +24,7 @@ public sealed class PluginServiceFileToolRoutingTests : IDisposable
     {
         TaskAmbient.Current = null;
         if (_runRoot is not null)
-            try { Directory.Delete(_runRoot, recursive: true); } catch { /* best effort */ }
+            TempPath.Remove(_runRoot);
     }
 
     private static FilesToolHandler NoFolderHandler()

@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Services.Consent;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Consent;
@@ -19,7 +20,7 @@ public sealed class JsonlConsentAuditLogTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_tmpDir, recursive: true); } catch { /* best-effort cleanup */ }
+        TempPath.Remove(_tmpDir);
     }
 
     [Fact]

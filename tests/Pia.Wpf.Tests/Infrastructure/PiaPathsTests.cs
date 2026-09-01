@@ -1,9 +1,12 @@
+using System;
+using System.Collections.Generic;
 using System.IO;
 using Pia.Infrastructure;
 using Pia.Infrastructure.Vault;
 using Pia.Paths;
 using Pia.Services;
 using Pia.Services.LiveTranscription;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Infrastructure;
@@ -13,16 +16,30 @@ namespace Pia.Tests.Infrastructure;
 /// applied after a consumer's type is already loaded must still reach it.
 /// </summary>
 [Collection("PiaPathsStatic")]
-public sealed class PiaPathsTests
+public sealed class PiaPathsTests : IDisposable
 {
+    private readonly List<string> _tempRoots = [];
+
     private static readonly string RealRoaming = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Pia");
 
     private static readonly string RealLocal = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Pia");
 
-    private static string TempRoot(string suffix) =>
-        Path.Combine(Path.GetTempPath(), $"pia-paths-{suffix}-{Guid.NewGuid():N}");
+    private string TempRoot(string suffix)
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"pia-paths-{suffix}-{Guid.NewGuid():N}");
+        _tempRoots.Add(root);
+        return root;
+    }
+
+    public void Dispose()
+    {
+        foreach (var root in _tempRoots)
+        {
+            TempPath.Remove(root);
+        }
+    }
 
     [Fact]
     public void DataRoots_WithNoOverride_AreTheRealProfileDirectories()

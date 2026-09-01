@@ -9,6 +9,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -44,8 +45,9 @@ public sealed class MidPlanAskTests : IDisposable
     public void Dispose()
     {
         _runs.Dispose();
+        _chats.Dispose();
         _ctx.Dispose();
-        try { Directory.Delete(_dir, true); } catch { /* best effort */ }
+        TempPath.Remove(_dir);
     }
 
     /// <summary>A step calling <c>request_user_input</c> parks the run <c>WaitingForInput</c> with the step back at <c>Pending</c> (not Failed) so a resume doesn't burn a replan on a step that only waited.</summary>

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Infrastructure;
 using Pia.Services;
 using Pia.Shared.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -127,6 +128,6 @@ public class AssistantChatProtectedRouteTests : IDisposable
     public void Dispose()
     {
         CloseStack();
-        try { Directory.Delete(_tmpDir, recursive: true); } catch { /* best effort */ }
+        TempPath.Remove(_tmpDir);
     }
 }

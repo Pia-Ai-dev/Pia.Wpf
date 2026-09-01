@@ -7,6 +7,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.ViewModels.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.ViewModels;
@@ -50,7 +51,7 @@ public sealed class ChatSessionWorkspaceIsolationTests : IDisposable
     public void Dispose()
     {
         TaskAmbient.Current = null;
-        try { Directory.Delete(_dir, recursive: true); } catch { /* best effort */ }
+        TempPath.Remove(_dir);
     }
 
     private ChatSession CreateSession()

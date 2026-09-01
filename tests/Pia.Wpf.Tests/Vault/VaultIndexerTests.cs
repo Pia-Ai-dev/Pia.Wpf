@@ -6,6 +6,7 @@ using Pia.Infrastructure;
 using Pia.Infrastructure.Vault;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Vault;
@@ -31,17 +32,7 @@ public class VaultIndexerTests : IDisposable
     public void Dispose()
     {
         _ctx.Dispose();
-        try
-        {
-            if (Directory.Exists(_tmpDir))
-            {
-                Directory.Delete(_tmpDir, recursive: true);
-            }
-        }
-        catch
-        {
-            // Best-effort cleanup of the temp dir.
-        }
+        TempPath.Remove(_tmpDir);
     }
 
     // A deterministic embedding service used where we only care about row state (not call counts).

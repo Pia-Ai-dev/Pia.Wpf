@@ -30,7 +30,7 @@ public class AssistantChatMessagesAttachedFilesMigrationTests : IDisposable
     public void Dispose()
     {
         SqlitePool.ClearFor($"Data Source={_dbPath}");
-        try { Directory.Delete(_tmpDir, recursive: true); } catch { /* best effort */ }
+        TempPath.Remove(_tmpDir);
     }
 
     private void SeedOldSchema(Guid chatId, Guid messageId)

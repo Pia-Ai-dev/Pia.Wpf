@@ -35,6 +35,6 @@ public sealed class RedirectedProfileFixture : IDisposable
         // Override first: a test's own teardown may still resolve a Pia path, and it must resolve to the
         // directory about to be deleted rather than to the real profile.
         _override.Dispose();
-        try { Directory.Delete(Root, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        TempPath.Remove(Root);
     }
 }

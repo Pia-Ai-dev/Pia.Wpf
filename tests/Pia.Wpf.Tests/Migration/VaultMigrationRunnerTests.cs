@@ -48,17 +48,7 @@ public class VaultMigrationRunnerTests : IDisposable
     public void Dispose()
     {
         _ctx.Dispose();
-        try
-        {
-            if (Directory.Exists(_tmpDir))
-            {
-                Directory.Delete(_tmpDir, recursive: true);
-            }
-        }
-        catch
-        {
-            // Best-effort cleanup of the temp dir.
-        }
+        TempPath.Remove(_tmpDir);
     }
 
     private VaultMigrationRunner BuildRunner()

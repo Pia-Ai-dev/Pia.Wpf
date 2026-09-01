@@ -9,6 +9,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -134,7 +135,12 @@ public sealed class HeadlessTurnExecutorTests
         Assert.NotNull(finalRun.FirstMessageId);
         Assert.NotNull(finalRun.LastMessageId);
 
-        try { Directory.Delete(dir, true); } catch { /* best effort */ }
+        // Explicit, and in this order: the `using var`s above run after this line, so the file would still be
+        // open when the directory is deleted.
+        chats.Dispose();
+        runs.Dispose();
+        ctx.Dispose();
+        TempPath.Remove(dir);
     }
 
     // ---- consent + MCP disable + provider override ----
@@ -242,7 +248,12 @@ public sealed class HeadlessTurnExecutorTests
         // Granted write executed.
         Assert.True(executed);
 
-        try { Directory.Delete(dir, true); } catch { /* best effort */ }
+        // Explicit, and in this order: the `using var`s above run after this line, so the file would still be
+        // open when the directory is deleted.
+        chats.Dispose();
+        runs.Dispose();
+        ctx.Dispose();
+        TempPath.Remove(dir);
     }
 
     [Fact]
@@ -314,7 +325,12 @@ public sealed class HeadlessTurnExecutorTests
 
         Assert.False(executed);
 
-        try { Directory.Delete(dir, true); } catch { /* best effort */ }
+        // Explicit, and in this order: the `using var`s above run after this line, so the file would still be
+        // open when the directory is deleted.
+        chats.Dispose();
+        runs.Dispose();
+        ctx.Dispose();
+        TempPath.Remove(dir);
     }
 
     [Fact]
@@ -397,7 +413,12 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Equal(ToolGateDecision.GrantedByName, rows[0].Decision);
         Assert.Equal(ToolGateDecision.DeniedNotGranted, rows[1].Decision);
 
-        try { Directory.Delete(dir, true); } catch { /* best effort */ }
+        // Explicit, and in this order: the `using var`s above run after this line, so the file would still be
+        // open when the directory is deleted.
+        chats.Dispose();
+        runs.Dispose();
+        ctx.Dispose();
+        TempPath.Remove(dir);
     }
 
     private static async IAsyncEnumerable<ChatStreamItem> DriveWithTool(
@@ -509,6 +530,7 @@ public sealed class HeadlessTurnExecutorTests
     private sealed class DurabilityHarness : IDisposable
     {
         private readonly string _dir;
+        private readonly AssistantChatService _innerChats;
         public readonly SqliteContext Ctx;
         public readonly AgentRunService Runs;
         public readonly CountingChatService Chats;
@@ -560,7 +582,8 @@ public sealed class HeadlessTurnExecutorTests
             Directory.CreateDirectory(_dir);
             Ctx = new SqliteContext(Path.Combine(_dir, "history.db"));
             Runs = new AgentRunService(Ctx, NullLogger<AgentRunService>.Instance);
-            Chats = new CountingChatService(new AssistantChatService(Ctx, Runs));
+            _innerChats = new AssistantChatService(Ctx, Runs);
+            Chats = new CountingChatService(_innerChats);
 
             // A prompt that NAMES the persona it was composed from, so a fixture can tell whose system message a
             // given step actually sent; a single-persona fixture still sees a constant string.
@@ -626,9 +649,10 @@ public sealed class HeadlessTurnExecutorTests
 
         public void Dispose()
         {
+            _innerChats.Dispose();
             Runs.Dispose();
             Ctx.Dispose();
-            try { Directory.Delete(_dir, true); } catch { /* best effort */ }
+            TempPath.Remove(_dir);
         }
     }
 
@@ -1006,7 +1030,7 @@ public sealed class HeadlessTurnExecutorTests
         }
         finally
         {
-            try { Directory.Delete(folder, true); } catch { /* best effort */ }
+            TempPath.Remove(folder);
         }
     }
 

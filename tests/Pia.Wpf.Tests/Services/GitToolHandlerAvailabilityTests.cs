@@ -4,6 +4,7 @@ using NSubstitute;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -25,7 +26,7 @@ public sealed class GitToolHandlerAvailabilityTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, recursive: true); } catch { }
+        TempPath.Remove(_root);
     }
 
     private GitToolHandler Handler(bool gitInstalled, bool enabled, string? folder)

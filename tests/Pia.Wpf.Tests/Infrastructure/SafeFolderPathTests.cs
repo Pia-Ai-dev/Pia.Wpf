@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using Pia.Infrastructure;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Infrastructure;
@@ -20,7 +21,7 @@ public sealed class SafeFolderPathTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_temp, recursive: true); } catch { /* best effort */ }
+        TempPath.Remove(_temp);
     }
 
     [Fact]

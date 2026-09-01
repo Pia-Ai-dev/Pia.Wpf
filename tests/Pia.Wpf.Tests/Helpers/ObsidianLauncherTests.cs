@@ -1,5 +1,6 @@
 using System.IO;
 using Pia.Helpers;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Helpers;
@@ -307,7 +308,7 @@ public sealed class ObsidianLauncherTests
         public void Dispose()
         {
             _override.Dispose();
-            try { Directory.Delete(_dir, recursive: true); } catch { /* best effort */ }
+            TempPath.Remove(_dir);
         }
     }
 

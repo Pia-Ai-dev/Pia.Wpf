@@ -5,6 +5,7 @@ using Pia.Infrastructure;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -19,6 +20,7 @@ public sealed class ChatArchiveServiceTests : IDisposable
 
     private readonly string _dir;
     private readonly SqliteContext _ctx;
+    private readonly AgentRunService _runs;
     private readonly AssistantChatService _chats;
     private readonly ChatArchiveService _sut;
 
@@ -27,7 +29,8 @@ public sealed class ChatArchiveServiceTests : IDisposable
         _dir = Path.Combine(Path.GetTempPath(), "PiaChatArchive_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_dir);
         _ctx = new SqliteContext(Path.Combine(_dir, "history.db"));
-        _chats = new AssistantChatService(_ctx, new AgentRunService(_ctx, NullLogger<AgentRunService>.Instance));
+        _runs = new AgentRunService(_ctx, NullLogger<AgentRunService>.Instance);
+        _chats = new AssistantChatService(_ctx, _runs);
         _sut = new ChatArchiveService(_chats, NullLogger<ChatArchiveService>.Instance);
     }
 
@@ -380,14 +383,8 @@ public sealed class ChatArchiveServiceTests : IDisposable
     public void Dispose()
     {
         _chats.Dispose();
+        _runs.Dispose();
         _ctx.Dispose();
-        try
-        {
-            Directory.Delete(_dir, recursive: true);
-        }
-        catch (IOException)
-        {
-            // A held SQLite handle on the CI agent is not worth failing a green test over.
-        }
+        TempPath.Remove(_dir);
     }
 }

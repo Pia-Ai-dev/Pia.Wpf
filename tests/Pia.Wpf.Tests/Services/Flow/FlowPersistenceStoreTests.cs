@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Infrastructure;
 using Pia.Models.Flow;
 using Pia.Services.Flow;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services.Flow;
@@ -236,14 +237,6 @@ public sealed class FlowPersistenceStoreTests : IDisposable
             service.Dispose();
         _store?.Dispose();
         _context.Dispose();
-        try
-        {
-            if (File.Exists(_dbPath))
-                File.Delete(_dbPath);
-        }
-        catch (IOException)
-        {
-            // best-effort temp cleanup
-        }
+        TempPath.RemoveFile(_dbPath);
     }
 }

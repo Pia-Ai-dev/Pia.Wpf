@@ -5,6 +5,7 @@ using Pia.Infrastructure;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -611,6 +612,6 @@ public class AssistantChatServiceTests : IDisposable
         _service.Dispose();
         _runs.Dispose();
         _ctx.Dispose();
-        try { Directory.Delete(_tmpDir, recursive: true); } catch { /* best effort */ }
+        TempPath.Remove(_tmpDir);
     }
 }

@@ -8,6 +8,7 @@ using NSubstitute;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 using DW = DocumentFormat.OpenXml.Wordprocessing;
 using SS = DocumentFormat.OpenXml.Spreadsheet;
@@ -36,7 +37,7 @@ public class FilesToolHandlerDocxXlsxWriteTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
+        TempPath.Remove(_root);
     }
 
     private static void CreateDocx(string path, params string[] paragraphs)

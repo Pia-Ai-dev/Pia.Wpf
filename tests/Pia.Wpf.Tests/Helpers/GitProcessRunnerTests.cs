@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using Pia.Helpers;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Helpers;
@@ -103,7 +104,7 @@ public sealed class GitProcessRunnerTests
         }
         finally
         {
-            try { Directory.Delete(dir, recursive: true); } catch { }
+            TempPath.Remove(dir);
         }
     }
 

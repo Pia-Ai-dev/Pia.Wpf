@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Logging.Abstractions;
 using NAudio.Wave;
 using Pia.Services.LiveTranscription;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services.LiveTranscription;
@@ -20,7 +21,7 @@ public class DebugWavTeeAudioCaptureServiceTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_dir, recursive: true); } catch { /* best effort */ }
+        TempPath.Remove(_dir);
         GC.SuppressFinalize(this);
     }
 
