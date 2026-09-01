@@ -204,7 +204,7 @@ public class ChatSessionManagerTests
         _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
-        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
             .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
 
         AgentRunCreateRequest? captured = null;
@@ -609,7 +609,7 @@ public class ChatSessionManagerTests
         _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
         _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
             .Returns(new Persona { Name = "Pia", SystemPrompt = "sys" });
-        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
             .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
         var runId = Guid.NewGuid();
         _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
@@ -638,7 +638,7 @@ public class ChatSessionManagerTests
         _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
         _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
             .Returns(new Persona { Name = "Pia", SystemPrompt = "sys" });
-        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
             .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
         var runId = Guid.NewGuid();
         _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
@@ -667,7 +667,7 @@ public class ChatSessionManagerTests
         _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
         _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
             .Returns(new Persona { Name = "Pia", SystemPrompt = "sys" });
-        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
             .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
         var runId = Guid.NewGuid();
         _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
@@ -708,7 +708,7 @@ public class ChatSessionManagerTests
         _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
         _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
             .Returns(new Persona { Name = "Pia", SystemPrompt = "sys" });
-        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
             .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
         var runId = Guid.NewGuid();
         _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
@@ -1303,7 +1303,7 @@ public class ChatSessionManagerTests
 
         _composer.Received().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-            Arg.Any<bool>(), suggestAgentModeEligible: true);
+            Arg.Any<bool>(), suggestAgentModeEligible: true, environmentRoot: Arg.Any<string?>());
     }
 
     [Fact]
@@ -1325,7 +1325,7 @@ public class ChatSessionManagerTests
 
         _composer.Received().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-            Arg.Any<bool>(), suggestAgentModeEligible: false);
+            Arg.Any<bool>(), suggestAgentModeEligible: false, environmentRoot: Arg.Any<string?>());
     }
 
     [Fact]
@@ -1350,7 +1350,59 @@ public class ChatSessionManagerTests
 
         _composer.Received().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-            Arg.Any<bool>(), suggestAgentModeEligible: false);
+            Arg.Any<bool>(), suggestAgentModeEligible: false, environmentRoot: Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_HandsTheComposerTheFileToolsEffectiveRoot()
+    {
+        // The model cannot see where its file tools are rooted unless the turn's prompt names the folder.
+        const string root = @"C:\sandbox\workspace\notes";
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        session.SetWorkingDirectory("notes");
+
+        var persona = new Persona { Name = "Tester", SystemPrompt = "be helpful", ToolScope = PersonaToolScope.Full };
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
+        _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant)
+            .Returns(new AiProvider { Name = "Test", Endpoint = "https://example.test", SupportsToolCalling = true });
+        _files.DescribeEffectiveRoot("notes").Returns(root);
+        _composer.PrepareTurn(default!, default!, default!, default)
+            .ReturnsForAnyArgs(new AssistantTurnSetup("system", null, true, false));
+
+        await sut.StartTurnAsync(session, "what is in my notes", null, planned: false);
+
+        _files.Received().DescribeEffectiveRoot("notes");
+        _composer.Received().PrepareTurn(
+            Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
+            Arg.Any<bool>(), Arg.Any<bool>(), environmentRoot: root);
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_PlannedTurn_NamesNoWorkingFolder()
+    {
+        // A Planned run's steps are rooted in an isolated workspace provisioned after this compose, so
+        // naming the chat's own folder would point every step at a tree its tools reject.
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        session.SetWorkingDirectory("notes");
+
+        var persona = new Persona { Name = "Tester", SystemPrompt = "be helpful", ToolScope = PersonaToolScope.Full };
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
+        _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant)
+            .Returns(new AiProvider { Name = "Test", Endpoint = "https://example.test", SupportsToolCalling = true });
+        _files.DescribeEffectiveRoot(Arg.Any<string?>()).Returns(@"C:\sandbox\workspace\notes");
+        _composer.PrepareTurn(default!, default!, default!, default)
+            .ReturnsForAnyArgs(new AssistantTurnSetup("system", null, true, false));
+        _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ci => new AgentRun { Id = Guid.NewGuid(), ChatId = session.Id ?? Guid.Empty, RunShape = RunShape.Planned });
+
+        await sut.StartTurnAsync(session, "plan my week", null, planned: true);
+
+        _files.DidNotReceive().DescribeEffectiveRoot(Arg.Any<string?>());
+        _composer.Received().PrepareTurn(
+            Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
+            Arg.Any<bool>(), Arg.Any<bool>(), environmentRoot: null);
     }
 
     [Fact]

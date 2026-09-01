@@ -313,7 +313,7 @@ public sealed class AgentRunGraceTurnTests
             IList<AITool> tools = [AIFunctionFactory.Create(() => "ok", "some_tool", "a tool")];
             _composer = Substitute.For<IAssistantPromptComposer>();
             _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-                    Arg.Any<bool>(), Arg.Any<bool>())
+                    Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
                 .Returns(new AssistantTurnSetup("system", tools, SupportsTools: true, WebSearchActive: false));
 
             _personas = Substitute.For<IPersonaService>();

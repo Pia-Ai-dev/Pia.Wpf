@@ -6,9 +6,12 @@ using DocumentFormat.OpenXml.Wordprocessing;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using Pia.Infrastructure;
 using Pia.Models;
+using Pia.Paths;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 using DW = DocumentFormat.OpenXml.Wordprocessing;
 using SS = DocumentFormat.OpenXml.Spreadsheet;
@@ -358,6 +361,98 @@ public class FilesToolHandlerReadTests : IDisposable
         Assert.Equal(huge, capped);
     }
 
+    [Theory]
+    [InlineData("/c/docs/readme.md", "C:/docs/readme.md")]
+    [InlineData("/C:/docs/readme.md", "C:/docs/readme.md")]
+    [InlineData("/mnt/d/docs/readme.md", "D:/docs/readme.md")]
+    [InlineData("/cygdrive/e/docs/readme.md", "E:/docs/readme.md")]
+    [InlineData("/c", "C:/")]
+    public void NormalizePathArg_RewritesPosixDriveSpellings(string input, string expected)
+        => Assert.Equal(expected, FilesToolHandler.NormalizePathArg(input));
+
+    [Theory]
+    [InlineData("docs/readme.md")]
+    [InlineData("C:/x")]
+    [InlineData("/docs/x")]      // the lookahead stops "/d" matching here
+    [InlineData("/config/x")]
+    [InlineData("")]
+    [InlineData(@"\\server\share\x.md")]
+    public void NormalizePathArg_LeavesEverythingElseUntouched(string input)
+        => Assert.Equal(input, FilesToolHandler.NormalizePathArg(input));
+
+    [Fact]
+    public async Task Read_PosixSpellingOfAbsoluteSandboxPath_Resolves()
+    {
+        WriteFile("posix.txt", "hello\n");
+        var windows = Path.Combine(_root, "posix.txt");
+        var posix = "/" + char.ToLowerInvariant(windows[0]) + windows.Replace('\\', '/')[2..];
+
+        var result = (string)(await ReadAsync(posix))!;
+
+        Assert.Contains("hello", result);
+        Assert.DoesNotContain("not found", result);
+    }
+
+    [Fact]
+    public async Task Read_NotFound_SuggestsASimilarSibling()
+    {
+        WriteFile("readme.md", "hi");
+
+        var result = (string)(await ReadAsync("readme"))!;
+
+        Assert.Contains("Error: File 'readme' not found.", result);
+        Assert.Contains("Did you mean: readme.md?", result);
+    }
+
+    [Fact]
+    public async Task Read_NotFound_SuggestionsAreCappedAtThree()
+    {
+        for (int i = 1; i <= 5; i++) WriteFile($"note{i}.txt", "x");
+
+        var result = (string)(await ReadAsync("note"))!;
+
+        var list = result[(result.IndexOf("Did you mean: ", StringComparison.Ordinal) + 14)..].TrimEnd('?');
+        Assert.Equal(3, list.Split(", ").Length);
+    }
+
+    [Fact]
+    public async Task Read_NotFound_NeverSuggestsAnIgnoredSibling()
+    {
+        WriteFile(".piaignore", "hidden-notes.txt\n");
+        WriteFile("hidden-notes.txt", "x");
+        WriteFile("shown-notes.txt", "x");
+
+        var result = (string)(await ReadAsync("notes.txt"))!;
+
+        Assert.Contains("shown-notes.txt", result);
+        Assert.DoesNotContain("hidden-notes.txt", result);
+    }
+
+    [Fact]
+    public async Task Read_NotFound_SuggestsInsideAnOrdinaryFolder()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "open"));
+        WriteFile(Path.Combine("open", "passwords.txt"), "x");
+
+        var result = (string)(await ReadAsync("open/password"))!;
+
+        Assert.Contains("Did you mean: open/passwords.txt?", result);
+    }
+
+    [Fact]
+    public async Task Read_NotFound_DirectoryOnlyIgnoreRule_DoesNotLeakNamesInside()
+    {
+        WriteFile(".piaignore", "secret/\n");
+        Directory.CreateDirectory(Path.Combine(_root, "secret"));
+        WriteFile(Path.Combine("secret", "passwords.txt"), "x");
+
+        var result = (string)(await ReadAsync("secret/password"))!;
+
+        Assert.Contains("not found", result);
+        Assert.DoesNotContain("Did you mean", result);
+        Assert.DoesNotContain("passwords.txt", result);
+    }
+
     private static void CreateDocx(string path, string[] paragraphs)
     {
         using var doc = WordprocessingDocument.Create(path, DocumentFormat.OpenXml.WordprocessingDocumentType.Document);
@@ -395,4 +490,42 @@ public class FilesToolHandlerReadTests : IDisposable
             DataType = CellValues.String,
             CellValue = new SS.CellValue(value),
         };
+}
+
+/// <summary>
+/// The one read-miss fact that needs a sandbox inside a root the live <c>SensitivePathGuard</c> blocks, which is
+/// why it sits in its own class: it needs the redirected profile, and the redirect has to be serialized against
+/// every other test that resolves a Pia path.
+/// </summary>
+[Collection("PiaPathsStatic")]
+public sealed class FilesToolHandlerReadMissBlockedPathTests : IClassFixture<RedirectedProfileFixture>
+{
+    public FilesToolHandlerReadMissBlockedPathTests(RedirectedProfileFixture profile) => _ = profile;
+
+    [Fact]
+    public async Task Read_MissInsideABlockedRoot_NeverNamesASibling()
+    {
+        var blockedRoot = Path.Combine(PiaPaths.LocalDataDirectory, "pia-suggest-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(blockedRoot);
+        try
+        {
+            // Non-vacuity: the guard has to be the thing that hides the name, so assert it says so first.
+            Assert.True(SensitivePathGuard.IsBlocked(Path.Combine(blockedRoot, "credentials.txt"), out _));
+            File.WriteAllText(Path.Combine(blockedRoot, "credentials.txt"), "x");
+
+            var settings = Substitute.For<ISettingsService>();
+            settings.GetSettingsAsync().Returns(new AppSettings { AssistantFilesFolder = blockedRoot });
+            var handler = new FilesToolHandler(settings, new FileStalenessStore(), NullLogger<FilesToolHandler>.Instance);
+
+            var call = new FunctionCallContent("c1", "read_file",
+                new Dictionary<string, object?> { ["path"] = "credentials" });
+            var (result, _) = await handler.HandleToolCallAsync(call, TestContext.Current.CancellationToken);
+
+            Assert.DoesNotContain("credentials.txt", (string)result!);
+        }
+        finally
+        {
+            try { Directory.Delete(blockedRoot, recursive: true); } catch { /* best effort */ }
+        }
+    }
 }

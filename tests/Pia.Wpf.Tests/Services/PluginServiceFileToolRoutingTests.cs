@@ -15,7 +15,7 @@ namespace Pia.Tests.Services;
 public sealed class PluginServiceFileToolRoutingTests : IDisposable
 {
     private static readonly string[] FileTools =
-        { "list_files", "read_file", "write_file", "delete_file", "search_files" };
+        { "list_files", "find_files", "read_file", "write_file", "delete_file", "search_files" };
 
     private string? _runRoot;
 
@@ -41,7 +41,7 @@ public sealed class PluginServiceFileToolRoutingTests : IDisposable
         BuiltInPluginDefaults.Defaults[BuiltInPluginDefaults.FilesPluginId];
 
     [Fact]
-    public void FilesAdapter_ExposesAllFiveTools_WithNoInteractiveFolder()
+    public void FilesAdapter_ExposesEveryFileTool_WithNoInteractiveFolder()
     {
         var handler = NoFolderHandler();
         Assert.True(handler.IsAvailable);

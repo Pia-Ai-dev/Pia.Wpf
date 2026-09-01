@@ -33,7 +33,7 @@ public sealed class ManagedPersonaAgentSeamTests : IDisposable
         _personas = new PersonaService(_ctx, NullLogger<PersonaService>.Instance, _deleteTracker, _settings);
 
         _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-                Arg.Any<bool>(), Arg.Any<bool>())
+                Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
             .Returns(ci => new AssistantTurnSetup($"system for {ci.ArgAt<Persona>(0).Name}", null, true, false));
         _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(Provider("mode-default"));
     }

@@ -44,10 +44,15 @@ public interface IAssistantPromptComposer
     /// injected so the model can offer to switch the user to Agent mode (R7). Only honoured inside the
     /// tools path with no @-commands; false everywhere by default (headless + voice-mode + Planned turns).
     /// </param>
+    /// <param name="environmentRoot">
+    /// Absolute folder the file tools resolve paths against, rendered as an <c>## Environment</c> block on
+    /// the tools path. Null (the default) renders nothing and leaves the prompt unchanged.
+    /// </param>
     AssistantTurnSetup PrepareTurn(
         Persona persona,
         AiProvider provider,
         IReadOnlyList<AtCommand> atCommands,
         bool tokenizationEnabled,
-        bool suggestAgentModeEligible = false);
+        bool suggestAgentModeEligible = false,
+        string? environmentRoot = null);
 }

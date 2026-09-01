@@ -18,6 +18,7 @@ public class FilesPluginPromptScaffoldingTests
         var config = FilesSystemPromptAddition();
 
         Assert.Contains("search_files", config);
+        Assert.Contains("find_files", config);
         Assert.Contains("list_files", config);
         Assert.Contains("read_file", config);
         Assert.Contains("write_file", config);

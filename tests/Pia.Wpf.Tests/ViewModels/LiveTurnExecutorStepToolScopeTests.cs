@@ -134,7 +134,7 @@ public sealed class LiveTurnExecutorStepToolScopeTests
 
         var composer = Substitute.For<IAssistantPromptComposer>();
         composer.PrepareTurn(Arg.Is<Persona>(p => p.Id == specialist.Id), Arg.Any<AiProvider>(),
-                Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
+                Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
             .Returns(new AssistantTurnSetup(
                 "specialist system",
                 [AIFunctionFactory.Create(() => "ok", "specialist_only_tool", "only the specialist has this")],

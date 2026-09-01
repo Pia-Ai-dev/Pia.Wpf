@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
+using Pia.Infrastructure;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
@@ -255,9 +256,19 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         }
         _provider = provider;
 
+        // No working subpath on either branch: a headless run's steps never narrow — ctx.WorkingSubpath above.
+        // Nothing to name once the user switches the file tools off — the run is offered none.
+        var environmentRoot = !settings.AssistantFileToolsEnabled
+            ? null
+            : _workspaceRoot is not null
+                ? SafeFolderPath.NormalizeWorkspaceRoot(_workspaceRoot)
+                : SafeFolderPath.IsConfiguredAndExists(settings.AssistantFilesFolder)
+                    ? SafeFolderPath.NormalizeWorkspaceRoot(settings.AssistantFilesFolder!)
+                    : null;
+
         // Headless path — no user to click the chip (R7) → never eligible.
         _setup = _promptComposer.PrepareTurn(_persona, _provider, [], _tokenizationEnabled,
-            suggestAgentModeEligible: false);
+            suggestAgentModeEligible: false, environmentRoot: environmentRoot);
 
         // Batch 07 G6: the resolution above is now the run DEFAULT rather than the only answer. Deliberately
         // still done here and still cached — see _runDefault's own comment for the three consumers that need a

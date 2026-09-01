@@ -306,7 +306,7 @@ public sealed class HeadlessStepOutcomeSignalTests
             RunTools = [AIFunctionFactory.Create(() => "ok", "unrelated_tool", "not the step-result tool")];
             _composer = Substitute.For<IAssistantPromptComposer>();
             _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-                    Arg.Any<bool>(), Arg.Any<bool>())
+                    Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
                 .Returns(new AssistantTurnSetup("system", RunTools, SupportsTools: true, WebSearchActive: false));
 
             Persona = new Persona { Name = "Pia", SystemPrompt = "sys" };
@@ -377,7 +377,7 @@ public sealed class HeadlessStepOutcomeSignalTests
             Personas.GetPersonasAsync().Returns([specialist]);
             Personas.GetPersonaAsync(specialist.Id).Returns(specialist);
             _composer.PrepareTurn(Arg.Is<Persona>(p => p.Id == specialist.Id), Arg.Any<AiProvider>(),
-                    Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
+                    Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
                 .Returns(new AssistantTurnSetup(
                     "specialist system",
                     [AIFunctionFactory.Create(() => "ok", "specialist_only_tool", "only the specialist has this")],
