@@ -212,7 +212,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             "forget" or "delete_todo" or "delete_reminder" or "delete_file"
                 or "delete_scheduled_research" => "ActionCard_Action_Delete",
             "complete_todo" => "ActionCard_Action_Complete",
-            "write_file" => "ActionCard_Action_Write",
+            "write_file" or "edit_file" => "ActionCard_Action_Write",
             "git_init" => "ActionCard_Action_Initialize",
             "git_add" => "ActionCard_Action_Stage",
             "git_commit" => "ActionCard_Action_Commit",

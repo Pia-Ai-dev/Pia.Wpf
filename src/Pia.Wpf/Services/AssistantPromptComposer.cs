@@ -211,7 +211,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         Pia.Models.AtCommandDomain.Files => (
             "file",
             "read_file",
-            (IReadOnlyList<string>)["list_files", "read_file", "write_file", "delete_file", "search_files"]),
+            (IReadOnlyList<string>)["list_files", "read_file", "write_file", "edit_file", "delete_file", "search_files"]),
         Pia.Models.AtCommandDomain.Assignment => (
             "background assignment",
             "query_assignments",

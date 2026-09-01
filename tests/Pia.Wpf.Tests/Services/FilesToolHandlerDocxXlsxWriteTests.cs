@@ -269,4 +269,115 @@ public class FilesToolHandlerDocxXlsxWriteTests : IDisposable
         Assert.Empty(Directory.GetFiles(_root, "*.tmp"));
         Assert.Equal(["After"], BodyParagraphTexts(full));
     }
+
+    // A one-word edit means re-emitting the whole document with every "N|" prefix stripped by hand.
+    // The observed failure was three of ~560 prefixes coming back as paragraphs of their own.
+    [Fact]
+    public async Task Docx_LeakedLineNumbers_AreRejected_AtPrepareTime_NoActionCard()
+    {
+        var full = Path.Combine(_root, "landscape.docx");
+        CreateDocx(full,
+            "Version: 1.0",
+            "Overview",
+            "Main Features: a very long feature list that runs on",
+            "Reference: example.com",
+            "Scope: everything",
+            "Reference: other.com");
+
+        var (result, pending) = await Prepare("landscape.docx",
+            "Version: DRAFT\nOverview\nMain Features: a very long feature list that runs on\n4\n" +
+            "Reference: example.com\nScope: everything\n6\nReference: other.com");
+
+        Assert.Null(pending);
+        Assert.False(Prop<bool>(result!, "success"));
+        var error = Prop<string?>(result!, "error")!;
+        Assert.Contains("line number", error, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("2 line(s)", error, StringComparison.Ordinal);
+
+        // The intended edit is rejected along with the leak — the model resubmits the whole content.
+        Assert.Equal("Version: 1.0", BodyParagraphTexts(full)[0]);
+        Assert.Equal(6, BodyParagraphTexts(full).Count);
+    }
+
+    // A leak can OVERWRITE the line it prefixed instead of preceding it — observed live, on a document
+    // already carrying artifacts from an earlier leak: each stray line's text was replaced with its own
+    // current line number.
+    [Fact]
+    public async Task Docx_LeakThatOverwritesTheLine_IsRejected()
+    {
+        var full = Path.Combine(_root, "again.docx");
+        CreateDocx(full,
+            "Version: DRAFT",
+            "Overview",
+            "Main Features: a long feature sentence",
+            "329",                        // artifact from an earlier leak, at read-line 4
+            "Reference: example.com");
+
+        // The model re-emits and "corrects" the artifact to its current line number.
+        var (result, pending) = await Prepare("again.docx",
+            "Version: 0.9\nOverview\nMain Features: a long feature sentence\n4\nReference: example.com");
+
+        Assert.Null(pending);
+        Assert.False(Prop<bool>(result!, "success"));
+        Assert.Contains("line number", Prop<string?>(result!, "error")!, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("329", BodyParagraphTexts(full)[3]);
+    }
+
+    // The earlier guard exempted a hit whose anchor was itself a bare integer, which turned it off on
+    // exactly the files a leak had already damaged. This is that inversion, pinned.
+    [Fact]
+    public async Task Docx_AlreadyDamagedFile_StillCatchesANewLeak()
+    {
+        var full = Path.Combine(_root, "damaged.docx");
+        CreateDocx(full, "Title", "185", "Body text", "Reference: example.com", "Tail");
+
+        var (result, pending) = await Prepare("damaged.docx",
+            "Title\n185\nBody text\n4\nReference: example.com\nTail");
+
+        Assert.Null(pending);
+        Assert.False(Prop<bool>(result!, "success"));
+        Assert.Contains("line number", Prop<string?>(result!, "error")!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Docx_ContentIdenticalToTheFile_IsRejected_SoNoOneCanClaimAChange()
+    {
+        var full = Path.Combine(_root, "same.docx");
+        CreateDocx(full, "Alpha", "Beta", "Gamma");
+
+        var (result, pending) = await Prepare("same.docx", "Alpha\nBeta\nGamma");
+
+        Assert.Null(pending);
+        Assert.False(Prop<bool>(result!, "success"));
+        Assert.Contains("nothing was written", Prop<string?>(result!, "error")!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // The guard resolves "old line N" in the EXTRACTED text, which skips blank paragraphs — a paragraph
+    // index would put the range and the anchors somewhere else entirely.
+    [Fact]
+    public async Task Docx_LeakedLineNumber_IsFoundByReadLineNumber_NotParagraphIndex()
+    {
+        var full = Path.Combine(_root, "blanks.docx");
+        CreateDocx(full, "alpha", "", "beta", "Reference: x", "gamma");
+
+        // "Reference: x" is paragraph 4 but read-line 3; a paragraph-index guard would miss this.
+        var (result, pending) = await Prepare("blanks.docx", "alpha\nbeta\n3\nReference: x\ngamma");
+
+        Assert.Null(pending);
+        Assert.False(Prop<bool>(result!, "success"));
+        Assert.Contains("line number", Prop<string?>(result!, "error")!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Xlsx_LeakedLineNumber_IsRejected_AtPrepareTime_NoActionCard()
+    {
+        var full = Path.Combine(_root, "book.xlsx");
+        CreateXlsx(full, "Data", ("A1", "one"), ("B1", "two"));
+
+        var (result, pending) = await Prepare("book.xlsx", "## Sheet: Data\n2\none\ttwo");
+
+        Assert.Null(pending);
+        Assert.False(Prop<bool>(result!, "success"));
+        Assert.Contains("line number", Prop<string?>(result!, "error")!, StringComparison.OrdinalIgnoreCase);
+    }
 }

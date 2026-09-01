@@ -96,6 +96,15 @@ public sealed class ChatSession : IDisposable
     /// </summary>
     private readonly Dictionary<Guid, List<ChatMessage>> _stepToolExchanges = new();
 
+    /// <summary>
+    /// The interactive counterpart: one summary LINE per tool call, keyed the same way. Interactive replies
+    /// replay through <see cref="AssistantMessage.ToChatMessage()"/>, which carries no tool content, so a
+    /// later turn otherwise has no record that a call happened and the model answers about it from nothing.
+    /// Session-scoped like <see cref="AssistantMessage.ActionCards"/>, which is neither persisted nor rendered
+    /// back after a reopen.
+    /// </summary>
+    private readonly Dictionary<Guid, List<string>> _chatToolSummaries = new();
+
     /// <summary>Raised on every real state transition (no-op on unchanged value).</summary>
     public event EventHandler<ChatStateChangedEventArgs>? StateChanged;
 
@@ -321,6 +330,10 @@ public sealed class ChatSession : IDisposable
         ProviderId = provider.Id;
         SetState(ChatState.Running);
 
+        // A regenerate re-runs an existing reply, so start its call record over rather than appending
+        // this attempt's calls to the previous one's.
+        _chatToolSummaries.Remove(assistantMessage.Id);
+
         // Make THIS session's token map the ambient map for the decorator for the
         // duration of this logical turn. AsyncLocal flows down each await continuation
         // and is isolated across interleaved turns, so two background turns never
@@ -389,6 +402,13 @@ public sealed class ChatSession : IDisposable
                     // ToChatMessage(overrideText) preserves an image attachment — the prior text-only
                     // ChatMessage construction here silently dropped it.
                     chatMessages.Add(msg.ToChatMessage(visible));
+                }
+                else if (_chatToolSummaries.TryGetValue(msg.Id, out var toolCalls))
+                {
+                    // Rides the reply itself rather than a message of its own — the override overload exists
+                    // for exactly this (model sees it, the displayed bubble does not), and a mid-conversation
+                    // System message is the thing this codebase deliberately never adds.
+                    chatMessages.Add(msg.ToChatMessage(ChatToolSummary.Append(msg.Content, toolCalls)));
                 }
                 else
                     chatMessages.Add(msg.ToChatMessage());
@@ -1019,9 +1039,33 @@ public sealed class ChatSession : IDisposable
         message.ToolCallCount++;
         message.ToolCallCountLabel = _localizationService.Format("Assistant_ToolCallCount", message.ToolCallCount);
         message.StatusText = _actionCardBuilder.ResolveStatusText(toolCall.Name);
+
+        // ActionCards is only ever .Add'd, so anything past this mark belongs to the call below and
+        // carries its resolved path and diff tallies.
+        var cardsBefore = message.ActionCards.Count;
         var result = await HandleToolCall(toolCall, message, tokenizationEnabled, dispatch, policy, timeline);
+        RecordToolSummary(message, toolCall, cardsBefore);
+
         message.StatusText = _localizationService["Msg_Assistant_StatusThinking"];
         return result;
+    }
+
+    /// <summary>
+    /// Records what this call was, for replay on a later turn. The name goes through the same sanitizer the
+    /// dispatch logs use — a model-authored name that no route recognizes reaches here too.
+    /// </summary>
+    private void RecordToolSummary(AssistantMessage message, FunctionCallContent toolCall, int cardsBefore)
+    {
+        var card = message.ActionCards.Count > cardsBefore ? message.ActionCards[^1] : null;
+        var line = ChatToolSummary.FormatCall(
+            AgentTimelineScope.SanitizeUnroutedToolName(toolCall.Name), toolCall.Arguments, card);
+
+        if (!_chatToolSummaries.TryGetValue(message.Id, out var lines))
+        {
+            lines = [];
+            _chatToolSummaries[message.Id] = lines;
+        }
+        lines.Add(line);
     }
 
     /// <summary>Reads a string tool-call argument, tolerating both a raw string and a <see cref="JsonElement"/>.</summary>

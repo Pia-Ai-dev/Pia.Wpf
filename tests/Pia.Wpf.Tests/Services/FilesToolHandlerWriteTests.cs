@@ -190,14 +190,27 @@ public class FilesToolHandlerWriteTests : IDisposable
     [Fact]
     public async Task Write_PreExistingJsonError_IsNotBlamed()
     {
-        // File is already broken; writing keeps it broken the SAME way → not surfaced.
+        // File is already broken; the write changes it but keeps it broken the SAME way → not surfaced.
+        // (The content has to differ at all: an identical-content write is now refused before the lint.)
         File.WriteAllText(Path.Combine(_root, "broken.json"), "{ broken");
 
-        var pending = await PrepareWrite("broken.json", "{ broken");
+        var pending = await PrepareWrite("broken.json", "{ broken further");
         var result = await pending.Execute();
 
         Assert.True(Prop<bool>(result!, "success"));
         Assert.Null(Prop<string?>(result!, "lint"));
+    }
+
+    [Fact]
+    public async Task Write_ContentIdenticalToTheFile_IsRejected()
+    {
+        var full = Path.Combine(_root, "same.txt");
+        File.WriteAllText(full, "alpha\nbeta\n");
+
+        var result = await WriteRejection("same.txt", "alpha\nbeta\n");
+
+        Assert.False(Prop<bool>(result!, "success"));
+        Assert.Contains("nothing was written", Prop<string?>(result!, "error")!, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -435,5 +448,59 @@ public class FilesToolHandlerWriteTests : IDisposable
             {
             }
         }
+    }
+
+    // ---- leaked read_file line-number prefixes ----
+
+    [Fact]
+    public async Task Write_RejectsALeakedLineNumber_BeforeTheLineItPrefixed()
+    {
+        var full = Path.Combine(_root, "notes.txt");
+        File.WriteAllText(full, "alpha\nbeta\ngamma\n");
+
+        var result = await WriteRejection("notes.txt", "alpha\nbeta\n3\ngamma");
+
+        Assert.False(Prop<bool>(result!, "success"));
+        var error = Prop<string?>(result!, "error")!;
+        Assert.Contains("line number", error, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("line 3", error, StringComparison.Ordinal);
+        Assert.Equal("alpha\nbeta\ngamma\n", File.ReadAllText(full));
+    }
+
+    [Fact]
+    public async Task Write_AllowsABareNumber_ThatDoesNotSitOnItsOwnIndex()
+    {
+        var full = Path.Combine(_root, "notes.txt");
+        File.WriteAllText(full, "alpha\nbeta\ngamma\n");
+
+        // "3" is in range, but the line after it is old line 2 — not old line 3 — so it is content.
+        var pending = await PrepareWrite("notes.txt", "alpha\n3\nbeta\ngamma");
+        var result = await pending.Execute();
+
+        Assert.True(Prop<bool>(result!, "success"), Prop<string?>(result!, "error"));
+        Assert.Contains("\n3\n", File.ReadAllText(full), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Write_AllowsAnInsertIntoANumericSequenceFile()
+    {
+        var full = Path.Combine(_root, "ids.txt");
+        File.WriteAllText(full, "1\n2\n3\n4\n");
+
+        // Every line is its own index here; only the non-numeric-follower test keeps this writable.
+        var pending = await PrepareWrite("ids.txt", "1\n2\n3\n3\n4");
+        var result = await pending.Execute();
+
+        Assert.True(Prop<bool>(result!, "success"), Prop<string?>(result!, "error"));
+    }
+
+    [Fact]
+    public async Task Write_NewFile_SkipsTheLeakGuard()
+    {
+        var pending = await PrepareWrite("fresh.txt", "2\nalpha\nbeta");
+        var result = await pending.Execute();
+
+        Assert.True(Prop<bool>(result!, "success"), Prop<string?>(result!, "error"));
+        Assert.Equal(["2", "alpha", "beta"], File.ReadAllLines(Path.Combine(_root, "fresh.txt")));
     }
 }

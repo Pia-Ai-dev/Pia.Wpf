@@ -35,6 +35,17 @@ public class FilesPluginPromptScaffoldingTests
         Assert.Contains("diff", config);
     }
 
+    // Naming the LINE|CONTENT shape without saying the prefix is not file content is what let a
+    // full-content rewrite carry read_file's line numbers back into the document.
+    [Fact]
+    public void FilesPlugin_ConfigJson_SaysToStripTheLineNumberPrefix()
+    {
+        var config = FilesSystemPromptAddition();
+
+        Assert.Contains("display only", config);
+        Assert.Contains("strip them", config);
+    }
+
     [Fact]
     public void FilesPlugin_ConfigJson_KeepsSandboxGuardrails()
     {

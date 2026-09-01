@@ -149,11 +149,20 @@ public class FilesToolHandler : IFilesToolHandler
 
             AIFunctionFactory.Create(WriteFileSchema, "write_file",
                 "Create or overwrite a text file inside the assistant files folder. Used for both creating new files and updating existing ones. " +
-                "For .docx/.xlsx, pass the FULL updated text in the exact shape read_file returned, with only the parts you're changing edited — " +
+                "'content' is raw file text: read_file's 'N|' line-number prefixes and its 'total_lines=' header are display only — strip them. " +
+                "For .docx/.xlsx, pass the FULL updated text, same lines in the same order read_file returned them, with only the parts you're changing edited — " +
                 "only the paragraphs/cells whose text differs from the current file are touched, so everything else (styles, formulas, images, " +
                 "other sheets) survives untouched. Editing a paragraph's text collapses its internal formatting to a single run. New xlsx rows " +
                 "can only be appended at a sheet's end (no mid-sheet insert or row deletion); a sheet you omit from the new content is left " +
                 "untouched, not deleted. Macro-enabled/template files (.docm/.xlsm/.dotm/.xltm/.dotx/.xltx) can't be written."),
+
+            AIFunctionFactory.Create(EditFileSchema, "edit_file",
+                "Replace an exact piece of text in an existing file — the preferred way to change part of a file. " +
+                "Prefer this over write_file for any edit to an existing file: write_file needs the WHOLE file back, " +
+                "and re-typing a long document risks corrupting the parts you did not mean to change. " +
+                "'old_string' must match the current file exactly (as read_file shows it, without the 'N|' prefix) and " +
+                "must be unique unless 'replace_all' is true. Works for .docx/.xlsx too — only the paragraphs/cells " +
+                "whose text actually changes are touched. Shows the user the same diff preview and needs their approval."),
 
             AIFunctionFactory.Create(DeleteFileSchema, "delete_file",
                 "Delete a file inside the assistant files folder."),
@@ -195,6 +204,7 @@ public class FilesToolHandler : IFilesToolHandler
             "list_files" => (HandleListFiles(root, args), null),
             "read_file"  => (await HandleReadFileAsync(root, args, cancellationToken), null),
             "write_file" => await PrepareWriteFileAsync(root, args, cancellationToken),
+            "edit_file" => await PrepareEditFileAsync(root, args, cancellationToken),
             "delete_file" => PrepareDeleteFile(root, args),
             "search_files" => (HandleSearchFiles(root, args), null),
             _ => ((object?)$"Unknown tool: {toolCall.Name}", (FilesToolCall?)null)
@@ -981,8 +991,75 @@ public class FilesToolHandler : IFilesToolHandler
     /// <c>(Result, null)</c> — no action card. Only a viable write returns a <c>(null, pending)</c>
     /// action card carrying the diff for the user to approve.
     /// </summary>
-    private async Task<(object? Result, FilesToolCall? Pending)> PrepareWriteFileAsync(
+    /// <summary>
+    /// Resolves an exact-string edit into the full new content, then hands it to
+    /// <see cref="PrepareWriteFileAsync"/> — so the diff, the patch-engine dry run, the approval card,
+    /// the atomic write and the round-trip validation are the same code, not a second copy. The point of
+    /// the tool is that the model never re-types the file: it cannot mistranscribe what it does not send.
+    /// </summary>
+    private async Task<(object? Result, FilesToolCall? Pending)> PrepareEditFileAsync(
         string root, IDictionary<string, object?> args, CancellationToken cancellationToken)
+    {
+        var requested = GetStringArg(args, "path");
+
+        if (!TryGetRequiredStringArg(args, "old_string", out var oldString, out var oldArgError))
+            return WriteFailure(oldArgError);
+        if (!TryGetRequiredStringArg(args, "new_string", out var newString, out var newArgError))
+            return WriteFailure(newArgError);
+
+        if (oldString.Length == 0)
+            return WriteFailure("Error: 'old_string' is empty. Give the exact text to replace, or use write_file to create a file.");
+        if (string.Equals(oldString, newString, StringComparison.Ordinal))
+            return WriteFailure("Error: 'old_string' and 'new_string' are identical — nothing to change.");
+
+        if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, requested, out var safePath))
+            return WriteFailure("Error: Path is outside the assistant files folder.");
+        if (SensitivePathGuard.IsBlocked(safePath, out var blockReason))
+        {
+            _logger.LogWarning("edit_file rejected: sensitive path");
+            _logger.SensitiveDebug("edit_file blocked path: {Path}", safePath);
+            return WriteFailure($"Error: Refusing to write here — {blockReason}.");
+        }
+
+        if (!File.Exists(safePath))
+            return WriteFailure($"Error: '{SafeRelative(root, safePath)}' does not exist. Use write_file to create a new file.");
+
+        var (current, readError) = await ReadFileTextAsync(safePath, requested, cancellationToken);
+        if (readError is not null) return WriteFailure(readError);
+
+        var occurrences = CountOccurrences(current!, oldString);
+        if (occurrences == 0)
+            return WriteFailure(
+                "Error: 'old_string' was not found in the file. Re-read the file and copy the text exactly, " +
+                "without read_file's 'N|' prefixes and with the same whitespace.");
+
+        var replaceAll = GetBoolArg(args, "replace_all");
+        if (occurrences > 1 && !replaceAll)
+            return WriteFailure(
+                $"Error: 'old_string' matches {occurrences} places in the file. Include enough surrounding text " +
+                "to make it unique, or pass replace_all=true to change all of them.");
+
+        var updated = current!.Replace(oldString, newString, StringComparison.Ordinal);
+
+        // Everything downstream is keyed off 'content', so the edit rejoins the one write pipeline here.
+        var writeArgs = new Dictionary<string, object?>(args) { ["content"] = updated };
+        return await PrepareWriteFileAsync(root, writeArgs, cancellationToken, toolName: "edit_file");
+    }
+
+    private static int CountOccurrences(string haystack, string needle)
+    {
+        int count = 0, i = 0;
+        while ((i = haystack.IndexOf(needle, i, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            i += needle.Length;
+        }
+        return count;
+    }
+
+    private async Task<(object? Result, FilesToolCall? Pending)> PrepareWriteFileAsync(
+        string root, IDictionary<string, object?> args, CancellationToken cancellationToken,
+        string toolName = "write_file")
     {
         var requested = GetStringArg(args, "path");
 
@@ -1075,7 +1152,25 @@ public class FilesToolHandler : IFilesToolHandler
             }
             catch { oldContent = null; previewMtime = null; }
         }
+
         var diff = LineDiff.Compute(oldContent, content);
+
+        if (oldContent is not null && !diff.Any(d => d.Kind is DiffLineKind.Added or DiffLineKind.Removed))
+            return WriteFailure(
+                "No change: 'content' is byte-identical to the current file, so nothing was written. " +
+                "If you meant to change something, the edit did not survive into 'content' — check it and resubmit.");
+
+        // LEAKED-PREFIX GUARD: LooksLikeReadFileEcho cannot see a sparse slip — a leaked line is a bare
+        // number with no pipe, so it never counts toward that majority.
+        if (oldContent is not null &&
+            FindLeakedLineNumbers(diff, content, oldContent, strict: isDocx || isXlsx) is { Count: > 0 } leaked)
+        {
+            var cited = string.Join("; ", leaked.Take(5).Select(l => $"line {l.LineNumber} is \"{l.Text}\""));
+            return WriteFailure(
+                $"Error: 'content' has {leaked.Count} line(s) that are a read_file line number rather than file content " +
+                $"({cited}{(leaked.Count > 5 ? "; …" : "")}). read_file's 'N|' prefixes are display only — drop them. " +
+                "For a small change prefer edit_file, which does not require resubmitting the whole file.");
+        }
 
         // Validate the patch plan (dry run, no mutation) against the file as it stands right now —
         // this is a deterministic prepare-time rejection (ambiguous anchor, formula overwrite,
@@ -1120,7 +1215,7 @@ public class FilesToolHandler : IFilesToolHandler
         var touch = TaskAmbient.Current?.OnFileTouched;
 
         return (null, new FilesToolCall(
-            ToolName: "write_file",
+            ToolName: toolName,
             Description: desc,
             Details: $"{content.Length} character(s) will be written.",
             TargetPath: rel,
@@ -1400,6 +1495,88 @@ public class FilesToolHandler : IFilesToolHandler
     }
 
     /// <summary>
+    /// Finds NEW lines that are a read_file line number rather than content. A leak takes more than one
+    /// shape — it can be inserted before the line it prefixed, or overwrite that line outright — so the
+    /// only reliable common factor is "this line is new and it is a bare line number of this file".
+    /// <paramref name="strict"/> accepts exactly that; plain text additionally requires the insert shape,
+    /// because a bare number is ordinary content there far more often than in a document.
+    /// </summary>
+    /// <remarks>
+    /// An earlier version exempted a hit whose anchor was itself a bare integer, to keep a numeric-data
+    /// file writable. That inverted the guard: once a file had been damaged by a leak, every later leak at
+    /// the same place was exempt. The whole-file density test below does that job without the inversion.
+    /// </remarks>
+    private static List<(int LineNumber, string Text)> FindLeakedLineNumbers(
+        IReadOnlyList<DiffLine> diff, string content, string oldContent, bool strict)
+    {
+        var hits = new List<(int LineNumber, string Text)>();
+        var lines = SplitLinesForCompare(content);
+        var oldLines = SplitLinesForCompare(oldContent);
+
+        if (IsMostlyBareNumbers(oldLines)) return hits;
+
+        var addedLineNumbers = new HashSet<int>();
+        foreach (var d in diff)
+            if (d.Kind == DiffLineKind.Added && d.NewLineNumber is { } n)
+                addedLineNumbers.Add(n);
+
+        for (int k = 0; k < lines.Length; k++)
+        {
+            if (!addedLineNumbers.Contains(k + 1)) continue;
+            if (!IsBareLineNumber(lines[k], out var value) || value > oldLines.Length) continue;
+
+            if (!strict)
+            {
+                // The insert shape: the line it was the prefix of follows it verbatim.
+                var followed = oldLines[value - 1];
+                if (followed.Length == 0 || k + 1 >= lines.Length ||
+                    !string.Equals(lines[k + 1], followed, StringComparison.Ordinal))
+                    continue;
+            }
+
+            hits.Add((k + 1, lines[k]));
+        }
+
+        return hits;
+    }
+
+    /// <summary>
+    /// A file that IS a column of numbers, where a bare-integer line is the content. The bar is
+    /// deliberately high (60%): being too lenient here is what a missed leak costs, and real documents
+    /// measure near zero — the .docx and .xlsx this was built from are 0.5% and 0%.
+    /// </summary>
+    private static bool IsMostlyBareNumbers(string[] lines)
+    {
+        int nonEmpty = 0, numeric = 0;
+        foreach (var line in lines)
+        {
+            if (line.Length == 0) continue;
+            nonEmpty++;
+            if (IsBareLineNumber(line, out _)) numeric++;
+        }
+        return nonEmpty > 0 && numeric * 5 >= nonEmpty * 3;
+    }
+
+    /// <summary>An unsigned, unpadded decimal — the exact shape <see cref="FormatWindow"/> emits.</summary>
+    private static bool IsBareLineNumber(string line, out int value)
+    {
+        value = 0;
+        if (line.Length is 0 or > 9 || line[0] == '0') return false;
+        foreach (var c in line)
+            if (c is < '0' or > '9') return false;
+        return int.TryParse(line, out value);
+    }
+
+    /// <summary>Splits the way <see cref="FormatWindow"/> does, so a comparison sees the same lines the model read.</summary>
+    private static string[] SplitLinesForCompare(string text)
+    {
+        var lines = text.Split('\n');
+        for (int i = 0; i < lines.Length; i++)
+            if (lines[i].EndsWith('\r')) lines[i] = lines[i][..^1];
+        return lines;
+    }
+
+    /// <summary>
     /// Structured write_file return. <c>FilesToolCall.Execute</c> is <c>Func&lt;Task&lt;object?&gt;&gt;</c>
     /// and the tool loop hands the object straight to <c>FunctionResultContent</c>, which JSON-serializes
     /// it for the provider — so an object return is wire-compatible. snake_case names match the prompt
@@ -1500,7 +1677,14 @@ public class FilesToolHandler : IFilesToolHandler
     [Description("Create or overwrite a text file (also .docx/.xlsx — only the changed paragraphs/cells are touched) in the assistant files folder")]
     private static string WriteFileSchema(
         [Description("Relative path to the file. Must stay inside the assistant files folder.")] string path,
-        [Description("Full new contents of the file.")] string content) => "";
+        [Description("Full new contents of the file. Raw content only: no 'N|' line-number prefixes, no 'total_lines=' header.")] string content) => "";
+
+    [Description("Replace an exact piece of text in an existing file (also .docx/.xlsx). Preferred over write_file for editing an existing file — it does not require resubmitting the whole file.")]
+    private static string EditFileSchema(
+        [Description("Relative path to the file. Must stay inside the assistant files folder.")] string path,
+        [Description("Exact text to replace, as read_file shows it without the 'N|' prefix. Must be unique in the file unless replace_all is true. Use \\n for a line break.")] string old_string,
+        [Description("Text to put in its place. Empty string deletes the matched text.")] string new_string,
+        [Description("Replace every occurrence instead of requiring exactly one (default false).")] bool replace_all = false) => "";
 
     [Description("Delete a file from the assistant files folder")]
     private static string DeleteFileSchema(
@@ -1606,5 +1790,24 @@ public class FilesToolHandler : IFilesToolHandler
         if (value is int i) return i;
         if (value is long l) return (int)l;
         return int.TryParse(value.ToString(), out var fallback) ? fallback : defaultValue;
+    }
+
+    /// <summary>Tolerates a real bool, a JSON bool and the string forms models sometimes emit.</summary>
+    private static bool GetBoolArg(IDictionary<string, object?> args, string key)
+    {
+        if (!args.TryGetValue(key, out var value) || value is null) return false;
+
+        if (value is JsonElement element)
+        {
+            return element.ValueKind switch
+            {
+                JsonValueKind.True => true,
+                JsonValueKind.String => bool.TryParse(element.GetString(), out var s) && s,
+                _ => false,
+            };
+        }
+
+        if (value is bool b) return b;
+        return bool.TryParse(value.ToString(), out var parsed) && parsed;
     }
 }
