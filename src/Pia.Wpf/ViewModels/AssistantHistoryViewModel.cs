@@ -181,9 +181,11 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
 
             if (!_initialized)
             {
+                // No default end date: an upper bound seeded once from DateTime.Today freezes for
+                // the process lifetime (this VM is cached) and silently filters out every chat
+                // created after that day. Null means unbounded, which is also the cleared state.
                 _suppressReload = true;
                 FilterStartDate = DateTime.Today.AddDays(-30);
-                FilterEndDate = DateTime.Today;
                 _suppressReload = false;
                 _initialized = true;
             }

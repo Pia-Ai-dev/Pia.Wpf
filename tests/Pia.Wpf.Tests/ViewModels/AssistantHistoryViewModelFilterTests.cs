@@ -43,6 +43,11 @@ public class AssistantHistoryViewModelFilterTests
         // A synchronously-completed Task makes RefreshCommand → LoadChatsAsync run inline.
         _chatService.SearchAsync().ReturnsForAnyArgs(
             Task.FromResult<IReadOnlyList<SyncAssistantChat>>(chats));
+        // OnNavigatedToAsync swallows exceptions into a log, so an auto-stubbed null provider list
+        // would skip the load entirely and let a test pass without ever reaching the query.
+        _chatService.CountAsync().ReturnsForAnyArgs(Task.FromResult(chats.Count));
+        _providers.GetProvidersAsync().Returns(
+            Task.FromResult<IReadOnlyList<AiProvider>>(Array.Empty<AiProvider>()));
 
         return new AssistantHistoryViewModel(
             NullLogger<AssistantHistoryViewModel>.Instance,
@@ -55,6 +60,28 @@ public class AssistantHistoryViewModelFilterTests
         var id = Guid.NewGuid();
         _states[id] = state;
         return new SyncAssistantChat { Id = id, Title = title, UpdatedAt = DateTime.UtcNow };
+    }
+
+    [Fact]
+    public async Task OnNavigatedToAsync_SeedsNoEndDate_SoLaterChatsAreNotFilteredOut()
+    {
+        // The end date used to be seeded from DateTime.Today once per app run. Because this VM is
+        // cached for the process lifetime, that bound went stale at the next midnight and the SQL
+        // filter dropped every newer chat — refresh could not help, only a restart.
+        var sut = CreateSut(new List<SyncAssistantChat>());
+
+        await sut.OnNavigatedToAsync(null);
+
+        // The argument is what reaches SQL; asserting the property alone would not prove the query.
+        await _chatService.Received().SearchAsync(
+            searchText: Arg.Any<string?>(),
+            fromDate: Arg.Any<DateTime?>(),
+            toDate: null,
+            providerId: Arg.Any<Guid?>(),
+            offset: Arg.Any<int>(),
+            limit: Arg.Any<int>(),
+            ct: Arg.Any<CancellationToken>());
+        Assert.Null(sut.FilterEndDate);
     }
 
     [Fact]
