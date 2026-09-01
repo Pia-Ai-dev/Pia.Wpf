@@ -477,6 +477,50 @@ public class AssistantChatServiceTests : IDisposable
         Assert.Null(await _service.GetProviderIdAsync(Guid.NewGuid(), ct));
     }
 
+    /// <summary>The to-date is a local calendar day, so it must cover exactly
+    /// [local midnight, next local midnight) no matter what that is in UTC. Both cases pass at UTC+0
+    /// and at least one goes red at every other offset, which is precisely where the bug lived.</summary>
+    [Theory]
+    [InlineData(-30, true)]   // 23:30 local on the end day — inside the window
+    [InlineData(30, false)]   // 00:30 local the next day — outside it
+    public async Task SearchAsync_ToDate_CoversTheLocalDay(int minutesFromMidnight, bool expectedFound)
+    {
+        // The bound used to be a local wall-clock value formatted without a 'Z' and string-compared
+        // against UTC rows: east of Greenwich the window ran hours into the next day, west of it an
+        // evening chat sorted past its own day and vanished.
+        var localInstant = DateTime.Today.AddDays(1).AddMinutes(minutesFromMidnight);
+        var chat = MakeChat(title: "Boundary", body: "boundary body");
+        chat.UpdatedAt = DateTime.SpecifyKind(localInstant, DateTimeKind.Local).ToUniversalTime();
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
+        _createdIds.Add(chat.Id);
+
+        var found = await _service.SearchAsync(
+            toDate: DateTime.Today,
+            ct: TestContext.Current.CancellationToken);
+
+        Assert.Equal(expectedFound, found.Any(c => c.Id == chat.Id));
+        Assert.Equal(
+            expectedFound ? 1 : 0,
+            await _service.CountAsync(toDate: DateTime.Today, ct: TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task SearchAsync_FromDate_IncludesAChatAtLocalMidnight()
+    {
+        // The lower bound has the same local/UTC gap; at a positive offset local midnight is the
+        // previous UTC day, so the first chat of the day must not fall out of its own window.
+        var chat = MakeChat(title: "Midnight", body: "midnight body");
+        chat.UpdatedAt = DateTime.SpecifyKind(DateTime.Today, DateTimeKind.Local).ToUniversalTime();
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
+        _createdIds.Add(chat.Id);
+
+        var found = await _service.SearchAsync(
+            fromDate: DateTime.Today,
+            ct: TestContext.Current.CancellationToken);
+
+        Assert.Contains(chat.Id, found.Select(c => c.Id));
+    }
+
     private static SyncAssistantChat MakeChat(string title, string body)
     {
         var now = DateTime.UtcNow;

@@ -186,19 +186,23 @@ public class HistoryService : IHistoryService
         if (fromDate.HasValue)
         {
             conditions.Add("CreatedAt >= @FromDate");
-            command.Parameters.AddWithValue("@FromDate", fromDate.Value.ToString("O"));
+            command.Parameters.AddWithValue("@FromDate", ToUtcBound(fromDate.Value.Date));
         }
 
         if (toDate.HasValue)
         {
-            // Include the entire end day by using end-of-day
-            var endOfDay = toDate.Value.Date.AddDays(1).AddTicks(-1);
-            conditions.Add("CreatedAt <= @ToDate");
-            command.Parameters.AddWithValue("@ToDate", endOfDay.ToString("O"));
+            // Exclusive next-local-midnight, so the whole end day is included.
+            conditions.Add("CreatedAt < @ToDate");
+            command.Parameters.AddWithValue("@ToDate", ToUtcBound(toDate.Value.Date.AddDays(1)));
         }
 
         return conditions.Count > 0 ? $"WHERE {string.Join(" AND ", conditions)}" : "";
     }
+
+    /// <summary>The pickers yield local midnight; rows store UTC, so a window bound has to cross into
+    /// UTC before the string comparison can mean anything.</summary>
+    private static string ToUtcBound(DateTime localDate) =>
+        DateTime.SpecifyKind(localDate, DateTimeKind.Local).ToUniversalTime().ToString("O");
 
     private static OptimizationSession MapSession(SqliteDataReader reader)
     {

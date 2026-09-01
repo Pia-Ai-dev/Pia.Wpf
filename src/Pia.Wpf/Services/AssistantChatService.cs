@@ -429,15 +429,14 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             if (fromDate.HasValue)
             {
                 conditions.Add("AssistantChats.UpdatedAt >= @FromDate");
-                command.Parameters.AddWithValue("@FromDate", fromDate.Value.ToString("O"));
+                command.Parameters.AddWithValue("@FromDate", ToUtcBound(fromDate.Value.Date));
             }
             if (toDate.HasValue)
             {
-                // Same end-of-day expansion as BuildSearchWhere: a to-date that meant one thing on the
-                // recency path and another here would silently change the answer with the query.
-                var endOfDay = toDate.Value.Date.AddDays(1).AddTicks(-1);
-                conditions.Add("AssistantChats.UpdatedAt <= @ToDate");
-                command.Parameters.AddWithValue("@ToDate", endOfDay.ToString("O"));
+                // Same bound as BuildSearchWhere: a to-date that meant one thing on the recency path
+                // and another here would silently change the answer with the query.
+                conditions.Add("AssistantChats.UpdatedAt < @ToDate");
+                command.Parameters.AddWithValue("@ToDate", ToUtcBound(toDate.Value.Date.AddDays(1)));
             }
             if (providerId.HasValue)
             {
@@ -508,6 +507,11 @@ public class AssistantChatService : IAssistantChatService, IDisposable
     private const string HasMessagesClause =
         "EXISTS (SELECT 1 FROM AssistantChatMessages WHERE AssistantChatMessages.ChatId = AssistantChats.Id)";
 
+    /// <summary>The pickers yield local midnight; rows store UTC, so a window bound has to cross into
+    /// UTC before the string comparison can mean anything.</summary>
+    private static string ToUtcBound(DateTime localDate) =>
+        DateTime.SpecifyKind(localDate, DateTimeKind.Local).ToUniversalTime().ToString("O");
+
     /// <summary>
     /// Binds the shared history filter onto <paramref name="command"/> and returns its WHERE clause, so a
     /// page query and its total count cannot drift apart.
@@ -530,13 +534,13 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         if (fromDate.HasValue)
         {
             conditions.Add("UpdatedAt >= @FromDate");
-            command.Parameters.AddWithValue("@FromDate", fromDate.Value.ToString("O"));
+            command.Parameters.AddWithValue("@FromDate", ToUtcBound(fromDate.Value.Date));
         }
         if (toDate.HasValue)
         {
-            var endOfDay = toDate.Value.Date.AddDays(1).AddTicks(-1);
-            conditions.Add("UpdatedAt <= @ToDate");
-            command.Parameters.AddWithValue("@ToDate", endOfDay.ToString("O"));
+            // Exclusive next-local-midnight, so the whole end day is included.
+            conditions.Add("UpdatedAt < @ToDate");
+            command.Parameters.AddWithValue("@ToDate", ToUtcBound(toDate.Value.Date.AddDays(1)));
         }
         if (providerId.HasValue)
         {
