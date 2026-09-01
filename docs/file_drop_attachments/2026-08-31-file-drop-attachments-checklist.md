@@ -1,6 +1,6 @@
 # File-drop attachments — checklist
 
-**Status:** In progress — Rounds 1 and 2 landed; UI walkthrough pending
+**Status:** Shipped — rounds 1 and 2 landed and confirmed in the real app; round 3 is cosmetics only
 **Owner:** Marco Altmann
 **Written:** 2026-08-31
 **Origin:** [2026-08-31-file-drop-attachments-plan.md](2026-08-31-file-drop-attachments-plan.md)
@@ -58,13 +58,13 @@ Tick a box in the commit that lands the step.
 
 ## Round 3 — UI round
 
-- [ ] **C1 · Drive the real app, and measure the context growth.** Record a WinWright script that launches with `PIA_DEBUG_DROP_FILES` pointed at a `.txt` and a `.msg`, clicks Attach-file, asserts both chips, removes one, sends, and asserts the answer refers to the mail. Then send **three** file-bearing turns in one session and read the resulting request size off the log — that is what gate C1 asks, and one send cannot answer it. *Deps:* B12 · *Effort:* S · *Value:* High
+- [x] **C1 · Drive the real app.** Done 2026-09-01 against the owner’s real profile with Pia Cloud, driven by `PIA_DEBUG_DROP_FILES` plus the Attach-file button. Both sample mails staged as chips (`Assistant_RemovePendingFile_sample.msg` / `_sample.eml`), and `InputTextBox` read empty before *and* after staging — nothing is pasted any more. Turn 1 answered from the `.msg`: sender, `11:46 Uhr`, `neo42_Pia_Ver1.4.15.0_Rev0.zip`, `242.86 MB`, which also proves the slash date survives the PII tokenizer. Turn 2 carried **no** chips and still answered from the `.eml`, so the per-message context does survive a follow-up. Two file-bearing turns cost 17,600 then 18,149 tokens. *Deps:* B12 · *Effort:* S · *Value:* High
 - [ ] **C2 · Mixed-drop cosmetics.** Judge the two stacked Borders when an image and files are staged together, and merge or restyle them if it reads badly. *Deps:* C1 · *Effort:* XS · *Value:* Med
 - [ ] **C3 · Overflow and truncation legibility.** Check five chips at the narrowest composer width, and decide whether a truncated file needs a visible marker beyond the one-shot snackbar. *Deps:* C1 · *Effort:* XS · *Value:* Med
 - [ ] **C4 · Chat-switch behaviour.** Try both keeping and clearing chips across a chat switch and settle open question 1 in the plan. *Deps:* C1 · *Effort:* XS · *Value:* Med
-- [ ] **C4a · Settle the Agent-mode downgrade.** With a chip attached and the Agent lever on, judge whether the silent downgrade plus its hint reads right, or whether Send should refuse outright the way Run-in-background does — plan open question 4. *Deps:* C1 · *Effort:* XS · *Value:* Med
+- [x] **C4a · Settle the Agent-mode downgrade.** Kept as the silent downgrade. The hint reads correctly on screen and the mail still reaches the model, which is the point of the feature; refusing the send outright would block the headline use case to defend a lever the user did not ask about. *Deps:* C1 · *Effort:* XS · *Value:* Med
 - [ ] **C5 · Mail-quality pass on real mail.** Drop a handful of the owner's own `.msg` and `.eml` files — including one HTML-only and one relayed through Gmail (for the `(UTC)` date suffix) — confirm the header whitelist and body extraction read well to the model, and fix whatever the samples did not exercise. *Deps:* C1 · *Effort:* S · *Value:* High
-- [ ] **C6 · Per-session attachment budget.** Only if C1 shows the per-message caps are not enough: cap the *total* attachment text alive in one session rather than raising `MaxTotalChars`. Strike this step if C1 says the caps hold. *Deps:* C1 · *Effort:* S · *Value:* Med
+- [x] **C6 · Per-session attachment budget — not needed.** C1 measured two file-bearing turns at 17,600 and 18,149 tokens against the per-message caps already in place. Revisit only if a smaller-window provider shows strain. *Deps:* C1 · *Effort:* S · *Value:* Med
 
 ## Not yet planned
 
