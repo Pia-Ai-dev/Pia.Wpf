@@ -22,6 +22,7 @@ public partial class HistoryViewModel : UiThreadViewModel, IDisposable, INavigat
     private readonly ILocalizationService _localizationService;
     private CancellationTokenSource? _debounceCts;
     private int _currentOffset;
+    private bool _initialized;
 
     [ObservableProperty]
     private ObservableCollection<OptimizationSession> _sessions = new();
@@ -107,21 +108,30 @@ public partial class HistoryViewModel : UiThreadViewModel, IDisposable, INavigat
     {
         try
         {
-            // Only load data if not already loaded
-            if (_templates.Count > 0)
-                return;
+            // Only the reference data and the filter seed are one-time; the session list has to
+            // reload on every navigation or the page keeps showing whatever it saw first.
+            if (_templates.Count == 0)
+            {
+                var templates = await _templateService.GetTemplatesAsync();
+                foreach (var template in templates)
+                    _templates.Add(template);
+            }
 
-            var templates = await _templateService.GetTemplatesAsync();
-            foreach (var template in templates)
-                _templates.Add(template);
+            if (_providers.Count == 0)
+            {
+                var providers = await _providerService.GetProvidersAsync();
+                foreach (var provider in providers)
+                    _providers.Add(provider);
+            }
 
-            var providers = await _providerService.GetProvidersAsync();
-            foreach (var provider in providers)
-                _providers.Add(provider);
-
-            // Default to last 30 days
-            FilterStartDate = DateTime.Today.AddDays(-30);
-            FilterEndDate = DateTime.Today;
+            if (!_initialized)
+            {
+                // No default end date: an upper bound seeded once from DateTime.Today freezes for
+                // the process lifetime and silently filters out every session created after that
+                // day. Null means unbounded, which is also the cleared state.
+                FilterStartDate = DateTime.Today.AddDays(-30);
+                _initialized = true;
+            }
 
             await LoadSessionsAsync(0, 50);
         }
