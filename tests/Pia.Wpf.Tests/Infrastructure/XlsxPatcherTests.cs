@@ -269,6 +269,65 @@ public class XlsxPatcherTests : IDisposable
     }
 
     [Fact]
+    public void NewSheet_WithNoRows_IsStillCreated()
+    {
+        var path = NewPath("a.xlsx");
+        CreateXlsx(path, "Data", ("A1", "one"));
+
+        // A trailing sheet block with zero rows must still produce the sheet — it must not be
+        // silently dropped just because it generated no append ops.
+        var result = Patch(path, "## Sheet: Data\none\n\n## Sheet: Empty");
+
+        Assert.True(result.Success, result.Error);
+        Assert.Contains("## Sheet: Empty", ReadText(path));
+    }
+
+    [Fact]
+    public void EditCell_ToDecimalLookingValue_PreservesExactSubmittedText()
+    {
+        // A re-formatted double (e.g. "5.0" -> "5") would round-trip differently than submitted,
+        // which used to make FilesToolHandler's post-patch validator false-fail a good write.
+        var path = NewPath("a.xlsx");
+        CreateXlsx(path, "Data", ("A1", "one"));
+
+        var result = Patch(path, "## Sheet: Data\n5.0");
+
+        Assert.True(result.Success, result.Error);
+        Assert.Contains("5.0", ReadText(path));
+    }
+
+    [Theory]
+    [InlineData("", "empty")]
+    [InlineData("ThisSheetNameIsWayTooLongForExcelToAccept", "too long")]
+    [InlineData("Bad:Name", "character")]
+    [InlineData("Bad/Name", "character")]
+    [InlineData("'Quoted'", "apostrophe")]
+    public void ValidateSheetNames_RejectsInvalidNames(string name, string expectedReason)
+    {
+        var error = XlsxPatcher.ValidateSheetNames($"## Sheet: {name}\nvalue");
+
+        Assert.NotNull(error);
+        Assert.Contains(expectedReason, error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ValidateSheetNames_RejectsDuplicates()
+    {
+        var error = XlsxPatcher.ValidateSheetNames("## Sheet: Data\none\n\n## Sheet: Data\ntwo");
+
+        Assert.NotNull(error);
+        Assert.Contains("more than once", error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ValidateSheetNames_AcceptsValidNames()
+    {
+        var error = XlsxPatcher.ValidateSheetNames("## Sheet: Data\none\n\n## Sheet: Other Sheet\ntwo");
+
+        Assert.Null(error);
+    }
+
+    [Fact]
     public void ReorderedSheets_AreMatchedByNameNotPosition()
     {
         var path = NewPath("c.xlsx");

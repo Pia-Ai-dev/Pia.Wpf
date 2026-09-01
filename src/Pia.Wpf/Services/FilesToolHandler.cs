@@ -144,8 +144,8 @@ public class FilesToolHandler : IFilesToolHandler
 
             AIFunctionFactory.Create(ReadFileSchema, "read_file",
                 "Read the contents of a text file inside the assistant files folder. Use this before summarizing or updating a file. " +
-                "Also reads .docx (one line per paragraph) and .xlsx (each sheet as a '## Sheet: name' header followed by tab-separated rows) " +
-                "as plain text — .docm/.xlsm and other macro-enabled or template variants are not supported."),
+                "Also reads .docx (one line per paragraph) and .xlsx/.xlsm (each sheet as a '## Sheet: name' header followed by " +
+                "tab-separated rows) as plain text — .docm and other macro-enabled Word/template variants are not supported."),
 
             AIFunctionFactory.Create(WriteFileSchema, "write_file",
                 "Create or overwrite a text file inside the assistant files folder. Used for both creating new files and updating existing ones. " +
@@ -1033,6 +1033,16 @@ public class FilesToolHandler : IFilesToolHandler
         bool isDocx = string.Equals(ext, ".docx", StringComparison.OrdinalIgnoreCase);
         bool isXlsx = string.Equals(ext, ".xlsx", StringComparison.OrdinalIgnoreCase);
 
+        // Excel's own sheet-name rules (length/forbidden characters/uniqueness/non-empty) aren't
+        // enforced by the OpenXml SDK, so an invalid name would otherwise silently produce a file
+        // Excel repair-prompts on open — covers both a brand-new workbook (CreateFresh has no
+        // return channel of its own) and a new sheet introduced mid-edit.
+        if (isXlsx)
+        {
+            var sheetNameError = XlsxPatcher.ValidateSheetNames(content);
+            if (sheetNameError is not null) return WriteFailure($"Error: {sheetNameError}");
+        }
+
         // TRUE LINE-LEVEL DIFF: compute old→new at prepare time (shown to the user as the approval
         // card's preview, and — for docx — fed to DocxPatcher as the edit script). For a new file
         // the whole content is "added".
@@ -1073,15 +1083,29 @@ public class FilesToolHandler : IFilesToolHandler
         // edit never reaches an approval card.
         if (exists && isDocx)
         {
-            using var validateDoc = WordprocessingDocument.Open(safePath, isEditable: false);
-            var check = DocxPatcher.Apply(validateDoc, diff, apply: false, DocxPatchLimits);
-            if (!check.Success) return WriteFailure($"Error: {check.Error}");
+            try
+            {
+                using var validateDoc = WordprocessingDocument.Open(safePath, isEditable: false);
+                var check = DocxPatcher.Apply(validateDoc, diff, apply: false, DocxPatchLimits);
+                if (!check.Success) return WriteFailure($"Error: {check.Error}");
+            }
+            catch (Exception ex)
+            {
+                return WriteFailure($"Error: Could not open the current document to prepare this edit ({ex.Message}). It may be open in another application.");
+            }
         }
         else if (exists && isXlsx)
         {
-            using var validateDoc = SpreadsheetDocument.Open(safePath, isEditable: false);
-            var check = XlsxPatcher.Apply(validateDoc, content, apply: false, XlsxPatchLimits);
-            if (!check.Success) return WriteFailure($"Error: {check.Error}");
+            try
+            {
+                using var validateDoc = SpreadsheetDocument.Open(safePath, isEditable: false);
+                var check = XlsxPatcher.Apply(validateDoc, content, apply: false, XlsxPatchLimits);
+                if (!check.Success) return WriteFailure($"Error: {check.Error}");
+            }
+            catch (Exception ex)
+            {
+                return WriteFailure($"Error: Could not open the current document to prepare this edit ({ex.Message}). It may be open in another application.");
+            }
         }
 
         // STALENESS GUARD: capture the staleness key (session Id) and baseline at PREPARE time;

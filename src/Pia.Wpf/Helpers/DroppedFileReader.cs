@@ -166,6 +166,7 @@ public static class DroppedFileReader
                 if (workbookPart is null) return ReadResult.Success(string.Empty);
 
                 var walk = WalkXlsxWorkbook(workbookPart, ct);
+                if (walk.Truncated) return ReadResult.TooLarge;
                 if (walk.Lines.Count == 0) return ReadResult.Success(string.Empty);
 
                 var sb = new StringBuilder();
@@ -195,19 +196,28 @@ public static class DroppedFileReader
 
     internal readonly record struct XlsxWorkbookWalk(
         IReadOnlyList<XlsxWalkLine> Lines,
-        IReadOnlyDictionary<string, WorksheetPart> SheetsByName);
+        IReadOnlyDictionary<string, WorksheetPart> SheetsByName,
+        bool Truncated);
 
+    /// <summary>Walks every sheet's rows into the same shape <see cref="ReadXlsxAsync"/> emits.
+    /// Aborts early (setting <see cref="XlsxWorkbookWalk.Truncated"/>) once the accumulated line
+    /// text would exceed <see cref="MaxTextBytes"/>, so a huge workbook doesn't fully materialize
+    /// in memory before the caller's size check rejects it — callers besides <see cref="ReadXlsxAsync"/>
+    /// (i.e. the write path's patch engines) only ever run on a workbook whose baseline text already
+    /// passed that check, so they should treat <c>Truncated</c> as "reject, don't patch."</summary>
     internal static XlsxWorkbookWalk WalkXlsxWorkbook(WorkbookPart workbookPart, CancellationToken ct = default)
     {
         var sheets = workbookPart.Workbook?.Sheets?.Elements<SS.Sheet>().ToList();
         var sheetsByName = new Dictionary<string, WorksheetPart>(StringComparer.OrdinalIgnoreCase);
         if (sheets is null || sheets.Count == 0)
-            return new XlsxWorkbookWalk([], sheetsByName);
+            return new XlsxWorkbookWalk([], sheetsByName, Truncated: false);
 
         var sst = workbookPart.SharedStringTablePart?.SharedStringTable;
         var lines = new List<XlsxWalkLine>();
+        long runningChars = 0;
+        bool truncated = false;
 
-        for (int s = 0; s < sheets.Count; s++)
+        for (int s = 0; s < sheets.Count && !truncated; s++)
         {
             var sheet = sheets[s];
             if (sheet.Id?.Value is not { } relId) continue;
@@ -229,10 +239,13 @@ public static class DroppedFileReader
 
                 var lineText = string.Join('\t', cells);
                 lines.Add(new XlsxWalkLine(XlsxLineKind.Row, lineText, sheetName, row));
+
+                runningChars += lineText.Length + 1;
+                if (runningChars > MaxTextBytes) { truncated = true; break; }
             }
         }
 
-        return new XlsxWorkbookWalk(lines, sheetsByName);
+        return new XlsxWorkbookWalk(lines, sheetsByName, truncated);
     }
 
     /// <summary>Column-indexed, trailing-empty-trimmed cell text for one row — the exact fields a

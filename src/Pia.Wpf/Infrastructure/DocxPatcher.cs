@@ -151,9 +151,16 @@ public static class DocxPatcher
             if (op.Kind == DocxOpKind.InsertBefore)
                 walk.AllParagraphs[op.Ordinal!.Value].InsertBeforeSelf(NewParagraph(op.Text));
 
+        // A body's sectPr (page/section setup), when present, MUST be its last child per the
+        // schema — nearly every real Word document has one. Appending after it produces a
+        // schema-invalid package that Word repairs on open, so a trailing append goes before it.
+        var sectPr = body.GetFirstChild<SectionProperties>();
         foreach (var op in ops)
             if (op.Kind == DocxOpKind.Append)
-                body.AppendChild(NewParagraph(op.Text));
+            {
+                if (sectPr is not null) sectPr.InsertBeforeSelf(NewParagraph(op.Text));
+                else body.AppendChild(NewParagraph(op.Text));
+            }
 
         foreach (var op in ops)
             if (op.Kind == DocxOpKind.Delete)

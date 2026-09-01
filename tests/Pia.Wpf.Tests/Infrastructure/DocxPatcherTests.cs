@@ -168,6 +168,31 @@ public class DocxPatcherTests : IDisposable
     }
 
     [Fact]
+    public void Append_WithTrailingSectionProperties_InsertsBeforeIt_NotAfter()
+    {
+        // Nearly every real Word document ends its body with a w:sectPr, which per the schema
+        // MUST be the body's last child — appending after it produces a schema-invalid package.
+        var path = NewPath("a.docx");
+        using (var doc = WordprocessingDocument.Create(path, WordprocessingDocumentType.Document))
+        {
+            var main = doc.AddMainDocumentPart();
+            var body = new Body();
+            main.Document = new Document(body);
+            body.Append(new Paragraph(new Run(new Text("Para 1"))));
+            body.Append(new SectionProperties(new PageSize { Width = 12240, Height = 15840 }));
+            main.Document.Save();
+        }
+
+        var result = Patch(path, "Para 1\nPara 2");
+
+        Assert.True(result.Success, result.Error);
+        using var check = WordprocessingDocument.Open(path, isEditable: false);
+        var body2 = check.MainDocumentPart!.Document!.Body!;
+        Assert.IsType<SectionProperties>(body2.LastChild);
+        Assert.Equal(["Para 1", "Para 2"], BodyParagraphTexts(path));
+    }
+
+    [Fact]
     public void Delete_RemovesParagraph()
     {
         var path = NewPath("a.docx");

@@ -163,6 +163,35 @@ public class FilesToolHandlerDocxXlsxWriteTests : IDisposable
     }
 
     [Fact]
+    public async Task Xlsx_InvalidSheetName_IsRejected_AtPrepareTime_NoActionCard()
+    {
+        var (result, pending) = await Prepare("new.xlsx", "## Sheet: Bad:Name\nvalue");
+
+        Assert.Null(pending);
+        Assert.False(Prop<bool>(result!, "success"));
+        Assert.Contains("character", Prop<string?>(result!, "error")!, StringComparison.OrdinalIgnoreCase);
+        Assert.False(File.Exists(Path.Combine(_root, "new.xlsx")));
+    }
+
+    [Fact]
+    public async Task Docx_LockedFile_PrepareReturnsCleanError_DoesNotThrow()
+    {
+        // A locked file can be rejected either by the baseline read (DroppedFileReader's own
+        // try/catch) or by the separate validate-open — whichever fires, HandleToolCallAsync must
+        // return a clean WriteFailure, never throw.
+        var full = Path.Combine(_root, "locked.docx");
+        CreateDocx(full, "Original");
+
+        using var lockStream = new FileStream(full, FileMode.Open, FileAccess.Read, FileShare.None);
+
+        var (result, pending) = await Prepare("locked.docx", "Edited");
+
+        Assert.Null(pending);
+        Assert.False(Prop<bool>(result!, "success"));
+        Assert.False(string.IsNullOrEmpty(Prop<string?>(result!, "error")));
+    }
+
+    [Fact]
     public async Task Docx_CorruptBaseline_IsHardRejected_NotTreatedAsNewFile()
     {
         var full = Path.Combine(_root, "corrupt.docx");

@@ -41,6 +41,8 @@ public static class XlsxPatcher
         if (workbookPart is null) return PatchResult.Fail("Workbook has no workbook part.");
 
         var walk = DroppedFileReader.WalkXlsxWorkbook(workbookPart);
+        if (walk.Truncated)
+            return PatchResult.Fail("The current workbook is too large to safely prepare this edit.");
 
         var baselineBySheet = new Dictionary<string, (List<string> Texts, List<SS.Row> Rows)>(StringComparer.OrdinalIgnoreCase);
         foreach (var line in walk.Lines)
@@ -59,6 +61,9 @@ public static class XlsxPatcher
         var appendOps = new List<AppendRowOp>();
         int touchedCount = 0;
         var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // A brand-new sheet with zero submitted rows would otherwise never appear in appendOps and
+        // so never get created — tracked separately so an empty new sheet still materializes.
+        var newSheetNames = new List<string>();
 
         foreach (var (sheetName, rowTexts) in ParseSheetBlocksText(newContent))
         {
@@ -76,6 +81,7 @@ public static class XlsxPatcher
             else
             {
                 // Brand-new sheet: every submitted row is a fresh append, in submitted order.
+                newSheetNames.Add(sheetName);
                 foreach (var text in rowTexts)
                 {
                     var fields = text.Length == 0 ? [] : text.Split('\t');
@@ -98,11 +104,17 @@ public static class XlsxPatcher
                 SetCellValue(GetOrCreateCell(op.Row, edit.Column, rowNumber), edit.Value);
         }
 
+        // Every brand-new sheet name must exist afterward, even one with zero submitted rows — an
+        // empty "## Sheet: X" block would otherwise never appear in appendOps and so never get
+        // created. Track newly-created parts locally (walk.SheetsByName reflects disk, not this call).
+        var allSheets = new Dictionary<string, WorksheetPart>(walk.SheetsByName, StringComparer.OrdinalIgnoreCase);
+        foreach (var name in newSheetNames)
+            if (!allSheets.ContainsKey(name))
+                allSheets[name] = CreateNewWorksheet(workbookPart, name);
+
         foreach (var group in appendOps.GroupBy(o => o.SheetName, StringComparer.OrdinalIgnoreCase))
         {
-            var wsPart = walk.SheetsByName.TryGetValue(group.Key, out var existing)
-                ? existing
-                : CreateNewWorksheet(workbookPart, group.Key);
+            var wsPart = allSheets[group.Key];
             var sheetData = wsPart.Worksheet!.GetFirstChild<SS.SheetData>() ?? wsPart.Worksheet.AppendChild(new SS.SheetData());
             var nextRowIndex = MaxRowIndex(wsPart.Worksheet) + 1;
 
@@ -259,6 +271,36 @@ public static class XlsxPatcher
         workbookPart.Workbook.Save();
     }
 
+    private static readonly char[] InvalidSheetNameChars = ['\\', '/', '?', '*', '[', ']', ':'];
+
+    /// <summary>Validates the sheet names implied by submitted content against Excel's own rules —
+    /// length, forbidden characters, non-empty, uniqueness — none of which the OpenXml SDK itself
+    /// enforces, so an invalid name would otherwise silently produce a file Excel repair-prompts on
+    /// open. Called for BOTH a brand-new file (<see cref="CreateFresh"/> has no return channel of
+    /// its own to report through) and an update (a new sheet introduced mid-edit via <see cref="Apply"/>).
+    /// Returns null when every name is valid.</summary>
+    public static string? ValidateSheetNames(string content)
+    {
+        var blocks = ParseSheetBlocksText(content);
+        if (blocks.Count == 0) return "The content has no sheets.";
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, _) in blocks)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                return "A sheet name cannot be empty.";
+            if (name.Length > 31)
+                return $"Sheet name '{name}' is too long (Excel allows at most 31 characters).";
+            if (name.IndexOfAny(InvalidSheetNameChars) >= 0)
+                return $"Sheet name '{name}' contains a character Excel doesn't allow (: \\ / ? * [ ]).";
+            if (name.StartsWith('\'') || name.EndsWith('\''))
+                return $"Sheet name '{name}' cannot start or end with an apostrophe.";
+            if (!seen.Add(name))
+                return $"Sheet '{name}' appears more than once in the submitted content.";
+        }
+        return null;
+    }
+
     /// <summary>Splits sheet-blocked TSV text (the shape <see cref="DroppedFileReader.ReadXlsxAsync"/>
     /// emits) into (sheet name, ordered row texts) blocks. No header at all defaults to "Sheet1".
     /// Shared by <see cref="Apply"/> (diffed against the current workbook) and <see cref="CreateFresh"/>
@@ -336,10 +378,14 @@ public static class XlsxPatcher
         cell.RemoveAllChildren<SS.CellValue>();
         cell.RemoveAllChildren<SS.InlineString>();
 
-        if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var num))
+        if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out _))
         {
+            // Store the submitted text verbatim (not a re-formatted double) — CellToString's
+            // Number branch returns the raw stored string unchanged, so reformatting here (e.g.
+            // "5.0" -> "5") would make the round-trip validator see a mismatch against what the
+            // model actually submitted and hard-fail a perfectly good write.
             cell.DataType = SS.CellValues.Number;
-            cell.CellValue = new SS.CellValue(num.ToString("R", CultureInfo.InvariantCulture));
+            cell.CellValue = new SS.CellValue(value);
         }
         else if (value is "TRUE" or "FALSE")
         {
