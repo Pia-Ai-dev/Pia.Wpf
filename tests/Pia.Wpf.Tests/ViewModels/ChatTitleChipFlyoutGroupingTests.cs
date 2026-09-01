@@ -14,6 +14,7 @@ public class ChatTitleChipFlyoutGroupingTests
     private readonly IAssistantChatService _chatService = Substitute.For<IAssistantChatService>();
     private readonly ILocalizationService _loc = Substitute.For<ILocalizationService>();
     private readonly Dictionary<Guid, ChatState> _states = new();
+    private readonly IWorkingDirectoryService _workingDir = Substitute.For<IWorkingDirectoryService>();
 
     // Captured chip callbacks: the dir the next "+ New Chat" was pinned to, the dir offered to
     // the active chat re-point, and the (test-controlled) active chat's working dir.
@@ -46,7 +47,7 @@ public class ChatTitleChipFlyoutGroupingTests
             dir => _capturedNewChatDir = dir,
             () => { },
             id => _states.TryGetValue(id, out var s) ? s : ChatState.Idle,
-            Substitute.For<IWorkingDirectoryService>(),
+            _workingDir,
             dir => _capturedSetActiveDir = dir,
             () => _activeWorkingDir);
     }
@@ -116,6 +117,32 @@ public class ChatTitleChipFlyoutGroupingTests
 
         Assert.Equal("\\src\\app", sut.WorkingDirectoryDisplay);
         Assert.False(sut.IsWorkingDirectoryRoot);
+    }
+
+    [Fact]
+    public void OpenWorkingDirectory_ResolvesTheRelativePathThePillShows()
+    {
+        // The pill displays a backslash, -prefixed form; handing that to the resolver would read as
+        // rooted and fail containment, so the command must pass the stored relative path instead.
+        _activeWorkingDir = "src/app";
+        var sut = CreateSut([]);
+        sut.IsFlyoutOpen = true;
+
+        sut.OpenWorkingDirectoryCommand.Execute(null);
+
+        _workingDir.Received(1).ResolveAbsolutePath("src/app");
+    }
+
+    [Fact]
+    public void OpenWorkingDirectory_AtRoot_ResolvesTheSandboxRoot()
+    {
+        _activeWorkingDir = null;
+        var sut = CreateSut([]);
+        sut.IsFlyoutOpen = true;
+
+        sut.OpenWorkingDirectoryCommand.Execute(null);
+
+        _workingDir.Received(1).ResolveAbsolutePath("");
     }
 
     [Fact]

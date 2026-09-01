@@ -136,6 +136,49 @@ public class WorkingDirectoryServiceTests : IDisposable
     }
 
     [Fact]
+    public void ResolveAbsolutePath_ExistingSubfolder_ReturnsAbsolutePath()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "projects", "app"));
+
+        var result = _service.ResolveAbsolutePath("projects/app");
+
+        Assert.Equal(Path.Combine(_root, "projects", "app"), result, ignoreCase: true);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void ResolveAbsolutePath_EmptyInput_ReturnsSandboxRoot(string? input)
+    {
+        Assert.Equal(_root, _service.ResolveAbsolutePath(input), ignoreCase: true);
+    }
+
+    [Fact]
+    public void ResolveAbsolutePath_MissingFolder_ReturnsNull_AndCreatesNothing()
+    {
+        Assert.Null(_service.ResolveAbsolutePath("nope"));
+        Assert.False(Directory.Exists(Path.Combine(_root, "nope")));
+    }
+
+    [Fact]
+    public void ResolveAbsolutePath_EscapingOrRootedPath_ReturnsNull()
+    {
+        Assert.Null(_service.ResolveAbsolutePath(@"....escape"));
+        Assert.Null(_service.ResolveAbsolutePath(@"C:Windows"));
+    }
+
+    [Fact]
+    public void ResolveAbsolutePath_NoSandboxConfigured_ReturnsNull()
+    {
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings { AssistantFilesFolder = null });
+        var service = new WorkingDirectoryService(settings);
+
+        Assert.Null(service.ResolveAbsolutePath(""));
+    }
+
+    [Fact]
     public void EnsureSubfolder_NoSandboxConfigured_ReturnsNull()
     {
         var settings = Substitute.For<ISettingsService>();

@@ -63,6 +63,7 @@
   <data name="Optimize_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Toggle todo panel</value></data>
   <!-- Assistant View -->
   <data name="Assistant_EmptyState" xml:space="preserve"><value>Start a conversation with Pia</value></data>
+  <data name="Assistant_OpenWorkingDirectory_Tooltip" xml:space="preserve"><value>Open this folder in Explorer</value></data>
   <data name="Assistant_ProtectedRoute_Label" xml:space="preserve"><value>Protected</value></data>
   <data name="Assistant_ProtectedRoute_Tooltip" xml:space="preserve"><value>This answer was handled by a protected model.</value></data>
   <data name="Assistant_Suggestion_Memory_Start1" xml:space="preserve"><value>Remember that I'm allergic to peanuts</value></data>

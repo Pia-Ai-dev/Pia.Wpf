@@ -63,6 +63,7 @@
   <data name="Optimize_ToggleTodoPanel_Tooltip" xml:space="preserve"><value>Afficher/masquer le panneau des tâches</value></data>
   <!-- Assistant View -->
   <data name="Assistant_EmptyState" xml:space="preserve"><value>Commencez une conversation avec Pia</value></data>
+  <data name="Assistant_OpenWorkingDirectory_Tooltip" xml:space="preserve"><value>Ouvrir ce dossier dans l'Explorateur</value></data>
   <data name="Assistant_ProtectedRoute_Label" xml:space="preserve"><value>Protégé</value></data>
   <data name="Assistant_ProtectedRoute_Tooltip" xml:space="preserve"><value>Cette réponse a été traitée par un modèle protégé.</value></data>
   <data name="Assistant_Suggestion_Memory_Start1" xml:space="preserve"><value>Retiens que je suis allergique aux arachides</value></data>
