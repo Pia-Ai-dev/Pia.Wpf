@@ -477,6 +477,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// <summary>Re-points Messages + proxies and moves the session-event subscriptions to <paramref name="session"/>.</summary>
     private void AttachToActiveSession(ChatSession session)
     {
+        // Only a real move between chats, so the first attach and a re-select of the open chat leave the
+        // composer alone.
+        var switchedChat = _subscribedSession is not null && !ReferenceEquals(_subscribedSession, session);
+
         if (_subscribedSession is { } prev)
         {
             prev.StateChanged -= OnActiveSessionStateChanged;
@@ -499,6 +503,14 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         SyncRunProgress(session.ActiveRunId); // embed the panel if this session already has a run
         ForeignRunActive = session.ForeignRunActive; // late attach: read the flag the manager already seeded
         PlanApprovalParkActive = session.PlanApprovalParkActive;
+
+        // An attachment was staged for the chat the user was in, so it does not follow them to another one —
+        // sending it into the wrong conversation is the worse failure, and it is a file they can re-drop.
+        if (switchedChat)
+        {
+            PendingAttachment = null;
+            PendingFiles.Clear();
+        }
 
         Messages = session.Messages;            // re-points the ItemsControl (OnMessagesChanged swaps CollectionChanged)
         HasMessages = session.Messages.Count > 0;

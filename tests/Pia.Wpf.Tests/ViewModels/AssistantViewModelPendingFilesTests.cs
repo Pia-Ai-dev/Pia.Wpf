@@ -368,6 +368,63 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
     }
 
     [Fact]
+    public void SwitchingChat_ClearsTheChipsAndTheImage()
+    {
+        var vm = CreateSut();
+        vm.PendingFiles.Add(Chip());
+        vm.PendingAttachment = Attachment();
+
+        Activate(Session());
+        Activate(Session());
+
+        // Staged for the chat the user left; carrying it over would send it into the wrong conversation.
+        Assert.Empty(vm.PendingFiles);
+        Assert.Null(vm.PendingAttachment);
+    }
+
+    [Fact]
+    public void ReselectingTheOpenChat_LeavesTheComposerAlone()
+    {
+        var vm = CreateSut();
+        var session = Session();
+        Activate(session);
+
+        vm.PendingFiles.Add(Chip());
+        vm.PendingAttachment = Attachment();
+        Activate(session);
+
+        Assert.Single(vm.PendingFiles);
+        Assert.NotNull(vm.PendingAttachment);
+    }
+
+    private void Activate(ChatSession session) =>
+        _manager.ActiveChanged += Raise.Event<EventHandler<ChatSession?>>(_manager, session);
+
+    private static ChatSession Session() => new(
+        Substitute.For<ITokenMapService>(),
+        Substitute.For<IAiClientService>(),
+        Substitute.For<IPluginService>(),
+        Substitute.For<IActionCardBuilder>(),
+        Substitute.For<IToolPermissionService>(),
+        Substitute.For<ILocalizationService>(),
+        NullLogger.Instance,
+        _ => false);
+
+    private static ImageAttachment Attachment()
+    {
+        var bitmap = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+        bitmap.Freeze();
+        return new ImageAttachment
+        {
+            JpegBytes = [1, 2, 3],
+            MimeType = "image/jpeg",
+            Width = 1,
+            Height = 1,
+            Thumbnail = bitmap,
+        };
+    }
+
+    [Fact]
     public void RemovePendingFileCommand_RemovesOnlyThatFile()
     {
         var vm = CreateSut();
