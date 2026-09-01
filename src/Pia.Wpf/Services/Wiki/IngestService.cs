@@ -156,8 +156,11 @@ public sealed class IngestService : IIngestService
         // Pre-pass: re-identify + slugify EVERY subject up front so the known-slug set is complete before
         // any page is synthesized. That makes a within-run forward reference safe — topic A's page (written
         // first) may link to topic B's page (written later in the loop), and B's slug is already known.
+        var identityMap = await BuildTopicIdentityMapAsync();
+        var claimedSlugs = new HashSet<string>(StringComparer.Ordinal);
         var prepared = new List<(ExtractedTopic Topic, string Subject, string Slug)>();
         var reidentifiedSubjects = 0;
+        var collapsedAliases = 0;
         foreach (var topic in topics)
         {
             // Re-identify the subject BEFORE it becomes a slug/title. The extraction model may have
@@ -176,7 +179,32 @@ public sealed class IngestService : IIngestService
                 continue;
             }
 
-            prepared.Add((topic, subject, VaultSlug.Slugify(subject)));
+            // Reuse the page an existing alias already owns; otherwise this subject defines the
+            // identity for the rest of the run, so later aliases in the same batch collapse onto it
+            // too. Registering it here also closes a same-path race: two subjects that slugify
+            // identically previously produced two concurrent writers on one file.
+            var identity = TopicIdentity.Canonicalize(subject);
+            if (!identityMap.TryGetValue(identity, out var slug))
+            {
+                slug = VaultSlug.Slugify(subject);
+                identityMap[identity] = slug;
+            }
+            else if (!string.Equals(slug, VaultSlug.Slugify(subject), StringComparison.Ordinal))
+            {
+                collapsedAliases++;
+                _logger.SensitiveDebug("Ingest collapsed {Subject} onto existing topic {Slug}", subject, slug);
+            }
+
+            if (claimedSlugs.Add(slug))
+            {
+                prepared.Add((topic, subject, slug));
+            }
+        }
+
+        if (collapsedAliases > 0)
+        {
+            _logger.LogInformation(
+                "Ingest collapsed {Count} discovered topic(s) onto an existing page", collapsedAliases);
         }
 
         if (reidentifiedSubjects > 0)
@@ -536,6 +564,47 @@ public sealed class IngestService : IIngestService
         }
 
         return slugs;
+    }
+
+    // Existing pages keyed by TopicIdentity, so a newly discovered alias ("Meta Platforms") resolves
+    // onto the page its canonical twin already owns ("meta") instead of minting a second one. The
+    // winner per key is fixed here rather than at the call site: EnumerateAsync promises no ordering,
+    // so an unspecified rule would send the same subject to different pages on different runs.
+    // Precedence: oldest `created`, then the smallest slug.
+    private async Task<Dictionary<string, string>> BuildTopicIdentityMapAsync()
+    {
+        var candidates = new Dictionary<string, (string Slug, string Created)>(StringComparer.Ordinal);
+        foreach (var path in await _store.EnumerateAsync("memory/topics/*.md"))
+        {
+            var relative = path.Replace('\\', '/');
+            var name = Path.GetFileNameWithoutExtension(relative);
+            if (string.IsNullOrEmpty(name))
+            {
+                continue;
+            }
+
+            var slug = VaultSlug.Slugify(name);
+            var doc = await _store.ReadAsync(relative);
+            var title = doc?.Frontmatter.GetValueOrDefault("title");
+            var created = doc?.Frontmatter.GetValueOrDefault("created") ?? string.Empty;
+            var key = TopicIdentity.Canonicalize(string.IsNullOrWhiteSpace(title) ? name : title);
+
+            if (!candidates.TryGetValue(key, out var winner) || Beats(created, slug, winner))
+            {
+                candidates[key] = (slug, created);
+            }
+        }
+
+        return candidates.ToDictionary(e => e.Key, e => e.Value.Slug, StringComparer.Ordinal);
+    }
+
+    // An empty `created` sorts last so a page that carries one always wins over one that does not.
+    private static bool Beats(string created, string slug, (string Slug, string Created) incumbent)
+    {
+        var mine = created.Length == 0 ? "￿" : created;
+        var theirs = incumbent.Created.Length == 0 ? "￿" : incumbent.Created;
+        var byCreated = string.CompareOrdinal(mine, theirs);
+        return byCreated != 0 ? byCreated < 0 : string.CompareOrdinal(slug, incumbent.Slug) < 0;
     }
 
     // Resolve a vault-relative source ref to an absolute path under the vault root, or null if it

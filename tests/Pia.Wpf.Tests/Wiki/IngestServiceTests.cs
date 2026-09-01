@@ -282,6 +282,50 @@ public class IngestServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Ingest_collapses_an_alias_onto_the_existing_page()
+    {
+        await BuildIngest(new FakeExtractor(new ExtractedTopic("Meta", "organization")), new FakeSynthesizer())
+            .IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8), TestContext.Current.CancellationToken);
+
+        SeedSource("second.txt", "Meta Platforms reported earnings.");
+        var result = await BuildIngest(
+                new FakeExtractor(new ExtractedTopic("Meta Platforms", "organization")), new FakeSynthesizer())
+            .IngestAsync("sources/second.txt", new DateOnly(2026, 7, 9), TestContext.Current.CancellationToken);
+
+        Assert.Equal(["memory/topics/meta.md"], result.TouchedPages);
+        Assert.Null(await _store.ReadAsync("memory/topics/meta-platforms.md"));
+    }
+
+    // Two subjects that resolve to one page previously produced two concurrent writers on that file.
+    [Fact]
+    public async Task Ingest_writes_one_page_when_two_discovered_topics_are_aliases()
+    {
+        var synth = new FakeSynthesizer();
+        var result = await BuildIngest(
+                new FakeExtractor(
+                    new ExtractedTopic("DAX", "concept"),
+                    new ExtractedTopic("DAX 40", "concept")),
+                synth)
+            .IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8), TestContext.Current.CancellationToken);
+
+        Assert.Equal(["memory/topics/dax.md"], result.TouchedPages);
+        Assert.Single(synth.Calls);
+    }
+
+    [Fact]
+    public async Task Ingest_keeps_distinct_topics_on_distinct_pages()
+    {
+        var result = await BuildIngest(
+                new FakeExtractor(
+                    new ExtractedTopic("Microsoft", "organization"),
+                    new ExtractedTopic("Microsoft Copilot", "product")),
+                new FakeSynthesizer())
+            .IngestAsync("sources/sample.txt", new DateOnly(2026, 7, 8), TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, result.TouchedPages.Count);
+    }
+
+    [Fact]
     public async Task Ingest_preserves_manual_preamble()
     {
         var ingest = BuildIngest(new FakeExtractor(new ExtractedTopic("Acme Corp", "organization")),
