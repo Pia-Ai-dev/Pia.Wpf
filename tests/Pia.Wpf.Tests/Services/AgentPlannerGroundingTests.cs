@@ -81,7 +81,7 @@ public sealed class AgentPlannerGroundingTests : IDisposable
     {
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<string?>(),
                 cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
@@ -272,7 +272,7 @@ public sealed class AgentPlannerGroundingTests : IDisposable
         // No emit_plan call at all ⇒ the planner retries firmly, then degrades.
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<string?>(),
                 cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {

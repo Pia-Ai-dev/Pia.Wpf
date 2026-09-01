@@ -110,7 +110,7 @@ public sealed class LiveTurnExecutorPlannedRunTests : IClassFixture<RedirectedPr
     private void ReturnsStream(Func<CancellationToken, IAsyncEnumerable<ChatStreamItem>> factory) =>
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<string?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci => factory((CancellationToken)ci[7]));
 
     private static async IAsyncEnumerable<ChatStreamItem> Stream(params ChatStreamItem[] items)
@@ -291,7 +291,7 @@ public sealed class LiveTurnExecutorPlannedRunTests : IClassFixture<RedirectedPr
 
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<string?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci => StreamWithToolCall(ci.ArgAt<ToolCallHandler?>(3), "write_file"));
 
         var live = BuildLiveExecutor(
@@ -757,7 +757,7 @@ public sealed class LiveTurnExecutorPlannedRunTests : IClassFixture<RedirectedPr
         var captured = new List<(string, SynchronizationContext?)>();
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<string?>(), cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 var messages = ci.ArgAt<IList<ChatMessage>>(0);
@@ -883,7 +883,7 @@ public sealed class LiveTurnExecutorPlannedRunTests : IClassFixture<RedirectedPr
     {
         _ai.GetChatCompletionWithToolsAsync(
                 Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
-                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<string?>(),
                 cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {

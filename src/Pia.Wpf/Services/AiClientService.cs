@@ -753,6 +753,7 @@ public class AiClientService : IAiClientService
             IList<AITool>? tools = null,
             string? mode = null,
             Guid? managedPersonaId = null,
+            string? personaModelType = null,
             CancellationToken cancellationToken = default)
     {
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
@@ -767,7 +768,7 @@ public class AiClientService : IAiClientService
             var handler = _handlers.Get(provider.ProviderType);
             var httpClient = CreateAiHttpClient();
             var chatClient = await handler.CreateChatClientAsync(
-                provider, apiKey, httpClient, mode, managedPersonaId, personaModelType: null, linkedCts.Token);
+                provider, apiKey, httpClient, mode, managedPersonaId, personaModelType, linkedCts.Token);
 
             var useTools = provider.SupportsToolCalling && tools is { Count: > 0 };
             var options = handler.CreateChatOptions(provider, hasTools: useTools);

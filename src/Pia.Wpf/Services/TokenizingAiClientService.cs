@@ -117,14 +117,16 @@ public class TokenizingAiClientService : IAiClientService
         IList<AITool>? tools = null,
         string? mode = null,
         Guid? managedPersonaId = null,
+        string? personaModelType = null,
         CancellationToken cancellationToken = default)
     {
         if (!await IsEnabledAsync())
-            return await _inner.GetChatResponseAsync(messages, provider, tools, mode, managedPersonaId, cancellationToken);
+            return await _inner.GetChatResponseAsync(
+                messages, provider, tools, mode, managedPersonaId, personaModelType, cancellationToken);
 
         var tokenizedMessages = TokenizeMessages(messages);
         var response = await _inner.GetChatResponseAsync(
-            tokenizedMessages, provider, tools, mode, managedPersonaId, cancellationToken);
+            tokenizedMessages, provider, tools, mode, managedPersonaId, personaModelType, cancellationToken);
 
         // Detokenize text in response messages
         foreach (var msg in response.Messages)

@@ -117,7 +117,8 @@ public sealed class AgentVerifier : IAgentVerifier
 
         UsageDetails? usage = null;
         await foreach (var item in _ai.GetChatCompletionWithToolsAsync(
-            messages, provider, [EmitVerdictTool], toolHandler, mode: null, cancellationToken: ct).ConfigureAwait(false))
+            messages, provider, [EmitVerdictTool], toolHandler, mode: AgentTurnRouting.Mode,
+            personaModelType: AgentTurnRouting.ModelType, cancellationToken: ct).ConfigureAwait(false))
         {
             if (item is Finished { Usage: { } u })
                 usage = AgentTurnUsage.Sum(usage, u); // capture usage from the yielded stream

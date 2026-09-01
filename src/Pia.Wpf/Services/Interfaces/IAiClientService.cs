@@ -60,12 +60,17 @@ public interface IAiClientService
     /// The persona driving this turn, relayed to the Pia Cloud transport as <c>X-Pia-Persona</c>.
     /// See <see cref="GetChatCompletionWithToolsAsync"/>.
     /// </param>
+    /// <param name="personaModelType">
+    /// The model-routing hint, relayed as <c>metadata.pia_persona_type</c>.
+    /// See <see cref="GetChatCompletionWithToolsAsync"/>.
+    /// </param>
     Task<ChatResponse> GetChatResponseAsync(
         IList<ChatMessage> messages,
         AiProvider provider,
         IList<AITool>? tools = null,
         string? mode = null,
         Guid? managedPersonaId = null,
+        string? personaModelType = null,
         CancellationToken cancellationToken = default);
 
     /// <param name="managedPersonaId">

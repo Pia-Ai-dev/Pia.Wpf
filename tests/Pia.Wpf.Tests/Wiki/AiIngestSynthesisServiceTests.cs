@@ -351,7 +351,7 @@ public class AiIngestSynthesisServiceTests
         public IAsyncEnumerable<string> StreamChatCompletionAsync(IList<ChatMessage> messages, AiProvider provider, string? mode = null, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
 
-        public Task<ChatResponse> GetChatResponseAsync(IList<ChatMessage> messages, AiProvider provider, IList<AITool>? tools = null, string? mode = null, Guid? managedPersonaId = null, CancellationToken cancellationToken = default)
+        public Task<ChatResponse> GetChatResponseAsync(IList<ChatMessage> messages, AiProvider provider, IList<AITool>? tools = null, string? mode = null, Guid? managedPersonaId = null, string? personaModelType = null, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
 
         public IAsyncEnumerable<ChatStreamItem> GetChatCompletionWithToolsAsync(IList<ChatMessage> messages, AiProvider provider, IList<AITool>? tools = null, ToolCallHandler? toolHandler = null, string? mode = null, Guid? managedPersonaId = null, string? personaModelType = null, CancellationToken cancellationToken = default, AgentContextBudget? contextBudget = null)
@@ -374,7 +374,7 @@ public class AiIngestSynthesisServiceTests
         public IAsyncEnumerable<string> StreamChatCompletionAsync(IList<ChatMessage> messages, AiProvider provider, string? mode = null, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
 
-        public Task<ChatResponse> GetChatResponseAsync(IList<ChatMessage> messages, AiProvider provider, IList<AITool>? tools = null, string? mode = null, Guid? managedPersonaId = null, CancellationToken cancellationToken = default)
+        public Task<ChatResponse> GetChatResponseAsync(IList<ChatMessage> messages, AiProvider provider, IList<AITool>? tools = null, string? mode = null, Guid? managedPersonaId = null, string? personaModelType = null, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
 
         public IAsyncEnumerable<ChatStreamItem> GetChatCompletionWithToolsAsync(IList<ChatMessage> messages, AiProvider provider, IList<AITool>? tools = null, ToolCallHandler? toolHandler = null, string? mode = null, Guid? managedPersonaId = null, string? personaModelType = null, CancellationToken cancellationToken = default, AgentContextBudget? contextBudget = null)
