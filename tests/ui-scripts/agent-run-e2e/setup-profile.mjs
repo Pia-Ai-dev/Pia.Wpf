@@ -1,6 +1,8 @@
 // Seeds a throwaway Pia profile for the agent-run e2e walkthrough, and proves the real one was
 // never written. Usage:
-//   node setup-profile.mjs [root] [seed|verify]     root defaults to %TEMP%\pia-e2e
+//   node setup-profile.mjs [root] [seed|park|verify] [provider]   root defaults to %TEMP%\pia-e2e
+// 'park' is 'seed' plus the approval-park preconditions: no auto-approved writes, no persisted Always
+// grant, and the named BYOK provider pinned as the Assistant default (Pia Cloud cannot run with sync off).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -21,6 +23,31 @@ const GUARDED = {
 };
 const guardPath = path.join(ROOT, 'real-profile-baseline.json');
 
+// The real vault follows assistantFilesFolder, never %LOCALAPPDATA% — Bootstrapper calls
+// paths.SetRoot(VaultRootFor(settings.AssistantFilesFolder)), which is also what makes redirecting it work.
+const readJson = (p) => {
+  try { return JSON.parse(fs.readFileSync(p, 'utf8').replace(/^\uFEFF/, '')); } catch { return null; }
+};
+const realVaultRoot = () => {
+  const folder = readJson(path.join(realRoaming, 'settings.json'))?.assistantFilesFolder;
+  return folder ? path.join(folder, 'Vault') : null;
+};
+// Sorted relative path + size, not content: this has to stay cheap over a real vault, and a size change is
+// what a stray create_source would show up as.
+const vaultInventory = (root) => {
+  if (!root || !fs.existsSync(root)) return 'ABSENT';
+  const out = [];
+  const walk = (d, rel) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1)) {
+      const full = path.join(d, e.name);
+      if (e.isDirectory()) walk(full, rel + e.name + '/');
+      else out.push(rel + e.name + '|' + fs.statSync(full).size);
+    }
+  };
+  try { walk(root, ''); } catch (ex) { return 'UNREADABLE ' + ex.message; }
+  return out.length + ' files ' + crypto.createHash('sha256').update(out.join('\n')).digest('hex');
+};
+
 const hash = (p) => fs.existsSync(p)
   ? crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex')
   : 'MISSING';
@@ -32,16 +59,23 @@ if (MODE === 'verify') {
   }
   const before = JSON.parse(fs.readFileSync(guardPath, 'utf8'));
   const leaked = Object.keys(GUARDED).filter((k) => before[k] !== hash(GUARDED[k]));
+  const vaultNow = vaultInventory(realVaultRoot());
+  if (before['vault'] !== undefined && before['vault'] !== vaultNow) leaked.push('vault');
   for (const k of leaked) console.log('LEAK ' + k);
-  if (leaked.length > 0) process.exit(1);
-  console.log('real profile untouched');
+  if (leaked.length > 0) {
+    if (leaked.includes('vault')) console.log('  vault was ' + before['vault'] + '\n  vault  is ' + vaultNow);
+    process.exit(1);
+  }
+  console.log('real profile untouched (incl. vault: ' + vaultNow + ')');
   process.exit(0);
 }
 
-if (MODE !== 'seed') {
-  console.error(`unknown mode '${MODE}' — expected seed or verify`);
+if (MODE !== 'seed' && MODE !== 'park') {
+  console.error(`unknown mode '${MODE}' — expected seed, park or verify`);
   process.exit(2);
 }
+const PARK = MODE === 'park';
+const PROVIDER_NAME = process.argv[4] || null;
 
 const roaming = path.join(ROOT, 'roaming');
 const local = path.join(ROOT, 'local');
@@ -79,6 +113,29 @@ Object.assign(s, {
   windowLeft: 60,
   windowTop: 40,
 });
+if (PARK) {
+  // Precondition 1 of the approval-park e2e: without BOTH of these the run never parks and every
+  // downstream assertion is void. alwaysAllowedTools rides in from the COPIED real profile.
+  s.agentRunAutoApproveBuiltInWrites = false;
+  s.alwaysAllowedTools = [];
+  // Every park scenario works the same folder, and the working-directory flyout is StaysOpen=False —
+  // one stray query closes it, so the default is the reliable way to put a run in Absence.
+  s.assistantDefaultWorkingDirectory = 'Absence';
+  if (PROVIDER_NAME) {
+    const providers = readJson(path.join(roaming, 'providers.json'));
+    const list = Array.isArray(providers) ? providers : (providers?.providers ?? []);
+    const hit = list.find((p) => String(p.name ?? p.Name ?? '').toLowerCase() === PROVIDER_NAME.toLowerCase());
+    if (!hit) {
+      console.error(`no provider named '${PROVIDER_NAME}' — have: ` + list.map((p) => p.name ?? p.Name).join(', '));
+      process.exit(2);
+    }
+    // BOTH modes: with useSameProviderForAllModes on (the real profile's value) the resolver reads the
+    // Optimize default for every mode, so pinning Assistant alone leaves the run on Pia Cloud.
+    const pid = hit.id ?? hit.Id;
+    s.modeProviderDefaults = { ...(s.modeProviderDefaults ?? {}), Assistant: pid, Optimize: pid };
+    console.log(`provider  ${hit.name ?? hit.Name} (${hit.modelName ?? hit.ModelName})`);
+  }
+}
 fs.writeFileSync(sPath, JSON.stringify(s, null, 2), 'utf8');
 
 // --- fixtures ---
@@ -256,9 +313,50 @@ W('Config/staging.env', [
   '# TODO: REGION is unset on purpose for now',
 ].join('\n') + '\n');
 
+/* ============ Absence: 8 employees, 22 rows, one cancelled holiday ============ */
+// The approval-park e2e's fixture: the reported run's shape (read a workbook, summarize per employee
+// into the vault) with an answer that can be checked. The trap is Wierzbicki's 'storniert' row.
+W('Absence/Fehlzeitenübersicht-2026.csv', [
+  'mitarbeiter,abteilung,typ,von,bis,tage,notiz',
+  'Ilka Brenner,Fertigung,Urlaub,2026-01-07,2026-01-16,8,',
+  'Ilka Brenner,Fertigung,Krank,2026-02-03,2026-02-05,3,',
+  'Ilka Brenner,Fertigung,Urlaub,2026-07-06,2026-07-24,15,',
+  'Tomasz Wierzbicki,Logistik,Urlaub,2026-03-09,2026-03-13,5,',
+  'Tomasz Wierzbicki,Logistik,Urlaub,2026-08-10,2026-08-14,5,storniert',
+  'Tomasz Wierzbicki,Logistik,Fortbildung,2026-05-11,2026-05-12,2,',
+  'Nadeschda Orlow,Einkauf,Urlaub,2026-02-16,2026-02-20,5,',
+  'Nadeschda Orlow,Einkauf,Urlaub,2026-06-01,2026-06-19,14,',
+  'Nadeschda Orlow,Einkauf,Krank,2026-09-14,2026-09-15,2,',
+  'Ruben Castellanos,Vertrieb,Urlaub,2026-04-07,2026-04-10,4,',
+  'Ruben Castellanos,Vertrieb,Urlaub,2026-10-05,2026-10-23,15,',
+  'Ruben Castellanos,Vertrieb,Urlaub,2026-12-28,2026-12-30,3,',
+  'Yannick Dubois-Peil,Fertigung,Urlaub,2026-05-18,2026-05-29,10,',
+  'Yannick Dubois-Peil,Fertigung,Fortbildung,2026-11-02,2026-11-06,5,',
+  'Halima Ceesay,Qualität,Urlaub,2026-01-26,2026-01-30,5,',
+  'Halima Ceesay,Qualität,Urlaub,2026-08-17,2026-09-04,15,',
+  'Halima Ceesay,Qualität,Urlaub,2026-11-23,2026-11-25,3,',
+  'Gero Pflüger,IT,Krank,2026-03-02,2026-03-20,15,',
+  'Gero Pflüger,IT,Urlaub,2026-09-21,2026-09-25,5,',
+  'Marlis Ostrowski,Einkauf,Urlaub,2026-02-09,2026-02-13,5,',
+  'Marlis Ostrowski,Einkauf,Urlaub,2026-06-22,2026-07-03,10,',
+  'Marlis Ostrowski,Einkauf,Urlaub,2026-10-12,2026-10-16,5,',
+].join('\n') + '\n');
+
+W('Absence/urlaubsregeln.md', [
+  '# Urlaubsregeln 2026',
+  '',
+  "Als Urlaub zählen ausschließlich Zeilen mit `typ=Urlaub`. Zeilen mit `typ=Krank` oder",
+  "`typ=Fortbildung` zählen **nicht**.",
+  '',
+  "Eine Zeile, deren `notiz` **storniert** lautet, ist zurückgenommen und wird nicht mitgezählt.",
+  '',
+  "Die Urlaubstage eines Mitarbeiters sind die Summe der `tage` der verbleibenden Zeilen.",
+].join('\n') + '\n');
+
 // --- baseline hashes of the REAL profile, to prove it is untouched ---
 const guard = {};
 for (const [key, p] of Object.entries(GUARDED)) guard[key] = hash(p);
+guard['vault'] = vaultInventory(realVaultRoot());
 fs.writeFileSync(guardPath, JSON.stringify(guard, null, 2));
 
 console.log('ROOT      ' + ROOT);
@@ -267,3 +365,5 @@ console.log('local     ' + local);
 console.log('files     ' + files);
 console.log('folders   ' + fs.readdirSync(files).join(', '));
 console.log('guard     ' + guardPath);
+console.log('realvault ' + (realVaultRoot() ?? '(none)') + '  ' + guard['vault']);
+if (PARK) console.log('park      auto-approve OFF, alwaysAllowedTools cleared');
