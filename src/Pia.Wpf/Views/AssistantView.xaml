@@ -314,7 +314,7 @@
                                  Margin="4,0,0,0"
                                  VerticalAlignment="Center"
                                  AutomationProperties.Name="{loc:Str Assistant_RemovePendingFile_Tooltip}"
-                                 AutomationProperties.AutomationId="{Binding FileName, StringFormat='Assistant_RemovePendingFile_{0}'}"
+                                 AutomationProperties.AutomationId="{Binding FullPath, StringFormat='Assistant_RemovePendingFile_{0}'}"
                                  ToolTip="{loc:Str Assistant_RemovePendingFile_Tooltip}">
                         <ui:SymbolIcon Symbol="Dismiss16" FontSize="12" />
                       </ui:Button>
