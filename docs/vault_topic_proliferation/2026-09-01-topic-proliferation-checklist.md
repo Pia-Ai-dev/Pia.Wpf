@@ -1,6 +1,6 @@
 # Topic proliferation — checklist
 
-**Status:** All 6 steps landed; measured 85 → 13 topic pages on real sources
+**Status:** All 6 steps landed; measured 85 → 13 topic pages (19 with a charter) on real sources
 **Owner:** Marco Altmann
 **Written:** 2026-09-01
 **Origin:** [2026-09-01-topic-proliferation-plan.md](2026-09-01-topic-proliferation-plan.md)
@@ -44,7 +44,8 @@ little standalone value, unblocks a High.
 | Live re-measure after 1+2 | Did the count actually drop? | **Answered 2026-09-01: 85 → 13 pages on 6 real sources.** The substance bar did nearly all of it |
 | `MaxTopicsPerSource` default | Is 8 meaningful here? | **Answered: it never bound.** Highest per-source yield after the change was 7 — insurance, not the mechanism |
 | Charter authoring | Will a user write one? | **Answered: only if Pia drafts it**, which is what step 4 now does |
-| Substance bar too strict? | Three of six sources now discover ZERO topics, including a 35 KB meeting transcript | **OPEN.** Plausible for how-to docs, unclear for transcripts. Needs a human read before the bar is called tuned |
+| Substance bar too strict? | Three of six sources discovered ZERO topics without a charter | **PARTLY ANSWERED.** A charter brings back the 35 KB transcript (0 to 6) and the skill doc (0 to 3). Two SHORT transcripts stay at zero in both runs — still needs a human read |
+| Does the charter pay off? | Is step 4 worth its effort? | **Answered: yes.** Same six sources, 13 to 20 topics with a charter, and it is what rescues the silent sources |
 
 ## Not yet planned
 

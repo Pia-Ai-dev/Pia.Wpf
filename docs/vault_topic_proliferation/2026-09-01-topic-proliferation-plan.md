@@ -1,6 +1,6 @@
 # Curbing vault topic proliferation
 
-**Status:** All six steps implemented; measured 85 → 13 topic pages on real sources
+**Status:** All six steps implemented; measured 85 → 13 topic pages (19 with a charter) on real sources
 **Owner:** Marco Altmann
 **Written:** 2026-09-01
 **Origin:** A user report that ingest creates far more topic pages than expected on live systems —
@@ -30,12 +30,12 @@ Not inferred — run on 2026-09-01 against a throwaway profile seeded with copie
 6 `sources/` files, DeepSeek (`deepseek/deepseek-v4-flash`) as the Assistant provider, on the
 pre-change build (`32b9edc4`):
 
-| | before (`32b9edc4`) | after (steps 0–3, 5) |
-|---|---|---|
-| topic pages on disk | **85** | **13** |
-| topics discovered | 89 | 13 |
-| pages with an unparseable `title:` | **11** | **0** |
-| sources ingested | 5 ok, 2 transient failures | 6 ok, 0 failures |
+| | before (`32b9edc4`) | after, no charter | after, with a charter |
+|---|---|---|---|
+| topic pages on disk | **85** | **13** | **19** |
+| topics discovered | 89 | 13 | 20 |
+| pages with an unparseable `title:` | **11** | **0** | **0** |
+| sources ingested | 5 ok, 2 transient failures | 6 ok | 6 ok |
 
 The 11 are the poisoned-frontmatter bug reproducing on its own — filenames like
 `subject-alexander-freund-category-person.md`, i.e. a whole JSON object slugified into a page name.
@@ -44,14 +44,14 @@ page for essentially every product, person and technology named anywhere in the 
 
 Per source (topics discovered):
 
-| source | before | after |
-|---|---|---|
-| `business plan.md` (30 KB) | 32 | 7 |
-| `meeting-20260825-0930…` (35 KB) | 20 | **0** |
-| `meeting-20260825-0900…` (8 KB) | 13 | 5 |
-| `dotnet_planning_skill.txt` | 11 | **0** |
-| `brainstorming-system-prompts.md` | 7 | 1 |
-| `meeting-20260822-1529…` (5 KB) | 6 | **0** |
+| source | before | no charter | with a charter |
+|---|---|---|---|
+| `business plan.md` (30 KB) | 32 | 7 | 8 |
+| `meeting-20260825-0930…` (35 KB) | 20 | **0** | **6** |
+| `meeting-20260825-0900…` (8 KB) | 13 | 5 | **0** |
+| `dotnet_planning_skill.txt` | 11 | **0** | **3** |
+| `brainstorming-system-prompts.md` | 7 | 1 | 3 |
+| `meeting-20260822-1529…` (5 KB) | 6 | **0** | **0** |
 
 **Which change did the work — don't read 85 → 13 as one number:**
 
@@ -64,17 +64,41 @@ Per source (topics discovered):
 - **Alias collapse never fired** — zero collapses, because the surviving topic set is small and
   non-overlapping. It remains insurance for the six pairs seen on the other machine.
 
-**Open question the numbers raise.** Three of six sources now discover **zero** topics, including
-the largest meeting transcript (20 → 0). For the how-to documents that is plausibly correct; for a
-35 KB transcript it may mean the substance bar is too strict on conversational sources. Needs a
-human read of one of those transcripts before the bar is considered tuned — the lever is the
-"merely mentioned" wording in `AiIngestExtractionService`, and `MaxTopicsPerSource` cannot loosen
-it.
+**Does the charter earn its keep? Yes — measured.** The third column re-runs the same six sources
+with a hand-written charter naming the people, customer organizations, products, regulations and
+engineering practices that matter to this vault. It lifts discovery 13 → 20 and, importantly,
+brings back the two sources that had gone silent: the 35 KB transcript 0 → 6 and the planning-skill
+document 0 → 3. That is the case for step 4 in one number.
 
-Reproduce with `scripts` in the session scratchpad (`setup-measure.mjs` + `run-measure.ps1`): copy
-`providers.json`/`settings.json`, repoint `assistantFilesFolder` at a throwaway workdir, seed
-`Vault/sources/`, launch with `PIA_DATA_DIR`/`PIA_LOCAL_DATA_DIR`. Note both env vars name the Pia
-directory itself — pointing them at a parent silently boots the app on the real profile.
+**Read the per-source column with care — these are single runs.** The 8 KB meeting went the other
+way (5 → 0) with a *better*-grounded prompt, which can only be model variance. Per-source deltas of
+a few topics are inside the noise; only the aggregate 85 → 13/20 is a large enough effect to lean
+on. Repeating each condition three times would be the way to make the per-source numbers mean
+something, and has not been done.
+
+**Still open.** The two smaller meeting transcripts discover zero in *both* after-runs. That is the
+consistent signal, and a charter does not rescue them. It may be right (short status meetings that
+genuinely name nothing notable) or it may be the substance bar being strict on conversational text.
+The lever is the "merely mentioned" wording in `AiIngestExtractionService`; `MaxTopicsPerSource`
+cannot loosen it. A human read of one of those transcripts settles it.
+
+**The charter is not a noise filter either** — the charter run still produced `4-9.md` and
+`setup-cfg.md`, which are a version number and a filename rather than topics.
+
+Reproduce with `scripts/Measure-TopicYield.ps1`, which builds the isolated profile, seeds the
+sources (and optionally a charter), runs the app and prints the counts above:
+
+```powershell
+./scripts/Measure-TopicYield.ps1 -Label after `
+  -SourcesPath "$HOMEDocumentsPia AssistantVaultsources" `
+  -Exe .srcPia.WpfinDebug
+et10.0-windows10.0.17763.0Pia.Wpf.exe `
+  -ProviderId <a provider guid from providers.json>
+```
+
+Point `-Exe` at a worktree build to measure an older commit. One trap the script encodes: `PIA_DATA_DIR`
+and `PIA_LOCAL_DATA_DIR` name the Pia directory ITSELF, not a parent containing one — point them at a
+parent and the app silently boots on the real profile and ingests into the real vault.
 
 ## What shipped
 

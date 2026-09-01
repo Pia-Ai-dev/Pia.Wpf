@@ -545,7 +545,10 @@ public sealed class IngestService : IIngestService
 
         await _log.AppendAsync(
             "merge", $"{loserSlug} -> {keeperSlug}", DateOnly.FromDateTime(DateTime.Now));
-        _logger.LogInformation("Merged topic page {Loser} into {Keeper}", loserSlug, keeperSlug);
+        // Slug only via SensitiveDebug: a topic slug is derived from the page title, which is very
+        // often a person's name, and this log is what a user attaches to a support request.
+        _logger.LogInformation("Merged one topic page into another");
+        _logger.SensitiveDebug("Merged topic page {Loser} into {Keeper}", loserSlug, keeperSlug);
         return true;
     }
 
