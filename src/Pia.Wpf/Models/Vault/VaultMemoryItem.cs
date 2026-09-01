@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace Pia.Models.Vault;
 
 /// <summary>
@@ -15,10 +17,13 @@ namespace Pia.Models.Vault;
 /// The frontmatter <c>category</c> for a topic page (e.g. <c>person</c>/<c>organization</c>), used to
 /// group topics in the Vault view; <c>null</c> for non-topic records that carry no category.
 /// </param>
-public sealed record VaultMemoryItem(
+public sealed partial record VaultMemoryItem(
     string Reference, string FilePath, string Type, string Title, string Body, DateTime? Updated,
     string? Category = null)
 {
+    [GeneratedRegex(@"^[-*]\s+[^:]{1,40}:")]
+    private static partial Regex FieldBullet();
+
     // Mirrors the writer's sentinel in IngestService (a Models-layer type must not depend on a service,
     // so it is duplicated rather than shared — the round-trip test keeps both spellings honest).
     private const string ManagedMarker = "<!-- pia:managed -->";
@@ -49,6 +54,35 @@ public sealed record VaultMemoryItem(
                 .Split('\n')
                 .Where(line => line.Trim() != ManagedMarker);
             return string.Join('\n', kept);
+        }
+    }
+
+    /// <summary>
+    /// One-line gist for the <c>browse_index</c> map. Like <see cref="Preview"/> but also skips
+    /// headings and <c>- key: value</c> field bullets: a templated page opens with its field list, and
+    /// a field value (a personnel number, say) is neither a summary nor something to put in a map the
+    /// model reads wholesale. Empty when the page carries no prose at all.
+    /// </summary>
+    public string Gist
+    {
+        get
+        {
+            foreach (var line in Body.Split('\n'))
+            {
+                var trimmed = line.Trim();
+                if (trimmed.Length == 0
+                    || trimmed == "---"
+                    || trimmed.StartsWith("<!--", StringComparison.Ordinal)
+                    || trimmed.StartsWith('#')
+                    || FieldBullet().IsMatch(trimmed))
+                {
+                    continue;
+                }
+
+                return trimmed.Length > 160 ? trimmed[..160] + "…" : trimmed;
+            }
+
+            return string.Empty;
         }
     }
 

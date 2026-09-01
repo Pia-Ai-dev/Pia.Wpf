@@ -47,9 +47,10 @@ public class MemoryToolHandler : IMemoryToolHandler
                 "and browse_index to see the whole map when a search misses."),
 
             AIFunctionFactory.Create(BrowseIndexSchema, "browse_index",
-                "Orient in the memory vault: returns its category → topic/record map (titles plus a ref for " +
-                "each), built from the vault's own index. Use it when recall misses or you need to see what " +
-                "topics exist. Each entry's ref feeds read_topic."),
+                "Orient in the memory vault: returns its category → topic/record map, each entry a title, a " +
+                "one-line summary and a ref. Use it when recall misses or you need to see what topics exist. " +
+                "Pick from the summaries and call read_topic only on the entries you actually need — do not " +
+                "read every page to find out what it says."),
 
             AIFunctionFactory.Create(ReadTopicSchema, "read_topic",
                 "Read a whole memory page. Given a ref from recall (a hit's FilePath) or browse_index " +
