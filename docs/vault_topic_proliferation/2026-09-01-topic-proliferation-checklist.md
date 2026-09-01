@@ -27,12 +27,15 @@ little standalone value, unblocks a High.
 - [x] **3 — Triageable `browse_index`.** A one-line summary per entry, skipping template field
   bullets; plus a cap on the known-slug list inlined into every synthesis prompt.
   *Deps:* — · *Effort:* S · *Value:* High
-- [ ] **4 — Surface `memory/charter.md`.** An editable card on the Vault Overview, so the only lever
-  over which topics earn a page stops being invisible.
-  *Deps:* — · *Effort:* M · *Value:* High
-- [ ] **6 — On-demand cleanup.** Make `LintService`'s archive-only duplicate handling a real merge,
-  then put it behind a Vault Overview button with a dry-run report.
+- [x] **6 — On-demand cleanup.** `IngestService.MergeTopicPagesAsync` makes the merge real (sources
+  unioned, loser archived, index entry dropped, links retargeted, keeper re-synthesized);
+  `LintService` delegates to it and gained a dry-run mode; a "Clean up" button on the Vault Overview
+  previews then applies on confirm.
   *Deps:* 2 · *Effort:* M · *Value:* High
+- [ ] **4 — Draft `memory/charter.md`, don't just surface it.** Owner decision 2026-09-01: an empty
+  box would not get filled in, so the card must offer "draft one from my sources" and let the user
+  edit the result before it is saved.
+  *Deps:* — · *Effort:* M · *Value:* High
 
 ## Decision gates
 

@@ -32,6 +32,7 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
     private readonly IIngestScheduler _ingestScheduler;
     private readonly ISettingsService _settingsService;
     private readonly IObsidianService _obsidianService;
+    private readonly ILintService _lintService;
     private CancellationTokenSource? _debounceCts;
     private CancellationTokenSource? _rebuildCts;
     private bool _disposed;
@@ -138,6 +139,9 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
     public IAsyncRelayCommand<IReadOnlyList<string>> AddSourceFilesCommand { get; }
     public IAsyncRelayCommand<VaultMemoryItem> RebuildPageCommand { get; }
     public IAsyncRelayCommand RebuildAllPagesCommand { get; }
+
+    /// <summary>Dry-run the coherence pass, show what it would change, apply only on confirm.</summary>
+    public IAsyncRelayCommand CleanUpVaultCommand { get; }
     public IRelayCommand CancelRebuildCommand { get; }
 
     public VaultViewModel(
@@ -151,7 +155,8 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         IVaultSourcesService vaultSourcesService,
         IIngestScheduler ingestScheduler,
         ISettingsService settingsService,
-        IObsidianService obsidianService)
+        IObsidianService obsidianService,
+        ILintService lintService)
     {
         _logger = logger;
         _memoryService = memoryService;
@@ -164,6 +169,7 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         _ingestScheduler = ingestScheduler;
         _settingsService = settingsService;
         _obsidianService = obsidianService;
+        _lintService = lintService;
 
         RefreshCommand = new AsyncRelayCommand(LoadMemoriesAsync);
         DeleteMemoryCommand = new AsyncRelayCommand<VaultMemoryItem>(ExecuteDeleteMemory);
@@ -185,6 +191,7 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         RebuildPageCommand = new AsyncRelayCommand<VaultMemoryItem>(ExecuteRebuildPage);
         RebuildAllPagesCommand = new AsyncRelayCommand(ExecuteRebuildAllPages);
         CancelRebuildCommand = new RelayCommand(() => _rebuildCts?.Cancel());
+        CleanUpVaultCommand = new AsyncRelayCommand(ExecuteCleanUpVault);
 
         PropertyChanged += OnPropertyChanged;
         _ingestScheduler.IngestStarted += OnIngestStarted;
@@ -805,6 +812,78 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         {
             EndRebuild();
         }
+    }
+
+    // Dry run first, always. The pass merges pages and rewrites bodies, so the user sees the exact
+    // list before anything moves — and a merge costs a synthesis call per merged page.
+    private async Task ExecuteCleanUpVault()
+    {
+        if (IsRebuilding) return;
+
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        LintReport preview;
+        IsRebuilding = true;
+        RebuildStatusText = _localizationService["Memory_CleanUp_Scanning"];
+        try
+        {
+            preview = await _lintService.RunAsync(today, applyFixes: false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Vault clean-up dry run failed");
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"],
+                _localizationService.Format("Msg_Memory_CleanUpFailed", ex.Message));
+            return;
+        }
+        finally
+        {
+            EndRebuild();
+        }
+
+        var fixable = preview.Findings
+            .Where(f => f.Kind is LintKind.Duplicate or LintKind.MissingXref)
+            .ToList();
+        if (fixable.Count == 0)
+        {
+            _snackbarService.Show(
+                _localizationService["Memory_CleanUp"],
+                _localizationService["Msg_Memory_CleanUpNothingToDo"],
+                Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
+            return;
+        }
+
+        var merges = fixable.Count(f => f.Kind == LintKind.Duplicate);
+        var links = fixable.Count - merges;
+        var confirmed = await _dialogService.ShowConfirmationDialogAsync(
+            _localizationService["Memory_CleanUp"],
+            _localizationService.Format("Msg_Memory_CleanUpConfirm", merges, links));
+        if (!confirmed) return;
+
+        IsRebuilding = true;
+        RebuildStatusText = _localizationService["Memory_CleanUp_Applying"];
+        try
+        {
+            var applied = await _lintService.RunAsync(today, applyFixes: true);
+            var done = applied.Findings.Count(f => f.AutoFixed);
+            _snackbarService.Show(
+                _localizationService["Memory_CleanUp"],
+                _localizationService.Format("Msg_Memory_CleanUpDone", done),
+                Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(4));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Vault clean-up failed");
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"],
+                _localizationService.Format("Msg_Memory_CleanUpFailed", ex.Message));
+        }
+        finally
+        {
+            EndRebuild();
+        }
+
+        await LoadMemoriesAsync();
     }
 
     private async Task ExecuteRebuildAllPages()

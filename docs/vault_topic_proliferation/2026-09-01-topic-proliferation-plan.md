@@ -24,6 +24,58 @@ A real vault's `memory/topics/` held 45 pages, and their names name the causes:
 Retrieval was a separate cost: `BrowseEntry` was `(Title, Ref)` with no summary, so the model had
 to `read_topic` its way through the map.
 
+### Measured baseline
+
+Not inferred — run on 2026-09-01 against a throwaway profile seeded with copies of a live vault's
+6 `sources/` files, DeepSeek (`deepseek/deepseek-v4-flash`) as the Assistant provider, on the
+pre-change build (`32b9edc4`):
+
+| | before (`32b9edc4`) | after (steps 0–3, 5) |
+|---|---|---|
+| topic pages on disk | **85** | **13** |
+| topics discovered | 89 | 13 |
+| pages with an unparseable `title:` | **11** | **0** |
+| sources ingested | 5 ok, 2 transient failures | 6 ok, 0 failures |
+
+Per source (topics discovered):
+
+| source | before | after |
+|---|---|---|
+| `business plan.md` (30 KB) | 32 | 7 |
+| `meeting-20260825-0930…` (35 KB) | 20 | **0** |
+| `meeting-20260825-0900…` (8 KB) | 13 | 5 |
+| `dotnet_planning_skill.txt` | 11 | **0** |
+| `brainstorming-system-prompts.md` | 7 | 1 |
+| `meeting-20260822-1529…` (5 KB) | 6 | **0** |
+
+**Which change did the work — don't read 85 → 13 as one number:**
+
+- **Step 0 removed the 11 poisoned pages outright** (13% of the before count) plus the rest of the
+  parse debris on that run — `c.md`, `net.md`, `section.md`, `v4.md`, `psd1.md`, `alf.md`.
+- **Step 1's substance bar did nearly all the remaining reduction**: 89 → 13 discovered over the
+  same 6 calls.
+- **The cap never bound** — zero `keeping the first N` lines. `MaxTopicsPerSource` contributed
+  nothing here and is insurance, not the mechanism.
+- **Alias collapse never fired** — zero collapses, because the surviving topic set is small and
+  non-overlapping. It remains insurance for the six pairs seen on the other machine.
+
+**Open question the numbers raise.** Three of six sources now discover **zero** topics, including
+the largest meeting transcript (20 → 0). For the how-to documents that is plausibly correct; for a
+35 KB transcript it may mean the substance bar is too strict on conversational sources. Needs a
+human read of one of those transcripts before the bar is considered tuned — the lever is the
+"merely mentioned" wording in `AiIngestExtractionService`, and `MaxTopicsPerSource` cannot loosen
+it.
+
+The 11 are the poisoned-frontmatter bug reproducing on its own — filenames like
+`subject-alexander-freund-category-person.md`, i.e. a whole JSON object slugified into a page name.
+Also present: `c.md`, `net.md`, `section.md`, `v4.md` from the same class of parse debris, and a
+page for essentially every product, person and technology named anywhere in the six documents.
+
+Reproduce with `scripts` in the session scratchpad (`setup-measure.mjs` + `run-measure.ps1`): copy
+`providers.json`/`settings.json`, repoint `assistantFilesFolder` at a throwaway workdir, seed
+`Vault/sources/`, launch with `PIA_DATA_DIR`/`PIA_LOCAL_DATA_DIR`. Note both env vars name the Pia
+directory itself — pointing them at a parent silently boots the app on the real profile.
+
 ## What shipped
 
 ### Step 0 + 5 — the frontmatter bug (`d2bfdf5c`)
@@ -104,9 +156,15 @@ every slug in the vault into every synthesis prompt.
 
 ## Still open
 
-### Step 4 — surface `memory/charter.md` in the Vault view
+### Step 4 — have Pia DRAFT `memory/charter.md`
 
 *Effort:* M · *Value:* High
+
+**Owner decision, 2026-09-01:** an empty box would not get filled in — the card is only worth
+building if Pia drafts the charter and the user edits it. So the shape is: read a sample of
+`sources/`, ask the Assistant provider for a short "this knowledge base is about…" statement, show
+it in an editable box, and write `memory/charter.md` only when the user saves. The rest of the
+guidance below still holds.
 
 An editable "What is this knowledge base about?" card on the Vault Overview, writing
 `memory/charter.md` through `IVaultStore`, with an empty-state prompt explaining that it decides
@@ -122,19 +180,25 @@ which topics earn a page.
 - New `AutomationProperties.AutomationId`s, with the `ViewAutomationIdTests` `[InlineData]` row in
   the same change.
 
-### Step 6 — on-demand cleanup
+### Step 6 — on-demand cleanup (done)
 
-*Effort:* M · *Value:* High · *Deps:* step 2's matcher
+`LintService`'s duplicate handling was archive-only: it did not union the loser's `sources:` into
+the keeper (so the next re-ingest recreated the page), did not remove the index entry, and did not
+retarget links. `RunAsync` also had no caller at all.
 
-`LintService` already does duplicate detection (body-embedding cosine ≥ `DuplicateThreshold`),
-orphan, stale-source and missing-xref checks — and `RunAsync` has no caller.
-
-Its "merge" is **archive-only** and is not safe to expose as-is: it does not union the loser's
-`sources:` into the keeper (so the next re-ingest recreates the page), does not call
-`VaultIndexService.RemoveEntryAsync`, does not retarget `[[topics/<loser>]]` links, and does not
-update `IngestStateStore`'s touched set. Make it a real merge first — union `sources:` →
-`RebuildPageAsync` the keeper → remove the loser's index entry → run `WikiLinkReconciler` — then
-surface it as a Vault Overview button that shows a dry-run report and applies only on confirm.
+- `IngestService.MergeTopicPagesAsync` is the real merge — union `sources:`, archive the loser to
+  `memory/.archive/`, drop its index entry, retarget links, re-synthesize the keeper over the
+  widened union. It lives in `IngestService` because that is what owns provenance, the `sources:`
+  line and re-synthesis.
+- Link retargeting is anchored on `[[topics/<slug>` **and** the terminator (`]]`, `|`, `#`). A bare
+  substring replace turned `[[topics/dax-40]]` into `[[topics/dax-index-40]]` when merging `dax`
+  into `dax-index` — inventing a dangling link out of a healthy one. Both merge directions are now
+  covered by tests; only the safe one was, at first.
+- `ILintService.RunAsync` gained `applyFixes`. The Vault Overview "Clean up" button dry-runs,
+  reports how many merges and links it would make, and applies on confirm.
+- **Honest limit:** preview and apply are two independent passes, so the applied set is re-derived
+  rather than replayed from the preview. The confirm text says so. Passing the previewed pair list
+  into the apply run would close it.
 
 ## Verifying on a live vault
 

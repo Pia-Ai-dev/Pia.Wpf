@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure.Vault;
 using Pia.Logging;
@@ -49,6 +50,9 @@ public sealed class IngestService : IIngestService
     /// <summary>Mandatory sentinel splitting the (optional) manual preamble from the synthesized body.</summary>
     private const string ManagedMarker = "<!-- pia:managed -->";
     private const int MaxConcurrentSynthesis = 4;
+
+    /// <summary>Where a merged-away page is kept. Same folder LintService archives to.</summary>
+    private const string ArchiveDir = "memory/.archive";
 
     private readonly IIngestExtractor _extractor;
     private readonly IVaultStore _store;
@@ -483,6 +487,109 @@ public sealed class IngestService : IIngestService
     }
 
     /// <inheritdoc />
+    public async Task<bool> MergeTopicPagesAsync(string keeperPath, string loserPath, CancellationToken ct = default)
+    {
+        keeperPath = keeperPath.Replace('\\', '/');
+        loserPath = loserPath.Replace('\\', '/');
+        if (string.Equals(keeperPath, loserPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var keeper = await _store.ReadAsync(keeperPath);
+        var loser = await _store.ReadAsync(loserPath);
+        if (keeper is null || loser is null)
+        {
+            return false;
+        }
+
+        // Provenance first. Archiving the loser without carrying its sources across would only postpone
+        // the duplicate: the next ingest of one of those sources would find no page and mint it again.
+        var sourceRefs = ReadPageSources(keeper);
+        foreach (var r in ReadPageSources(loser))
+        {
+            if (!sourceRefs.Contains(r, StringComparer.OrdinalIgnoreCase))
+            {
+                sourceRefs.Add(r);
+            }
+        }
+
+        await _store.WriteAtomicAsync(
+            $"{ArchiveDir}/{Path.GetFileName(loserPath)}", loser.RawText);
+        await _store.DeleteAsync(loserPath);
+        await _index.RemoveEntryAsync(loserPath);
+
+        var loserSlug = VaultSlug.Slugify(Path.GetFileNameWithoutExtension(loserPath));
+        var keeperSlug = VaultSlug.Slugify(Path.GetFileNameWithoutExtension(keeperPath));
+        await RetargetLinksAsync(loserSlug, keeperSlug, ct);
+
+        // Re-synthesize over the widened union so the kept page actually says what both said.
+        var title = keeper.Frontmatter.GetValueOrDefault("title") is { Length: > 0 } t
+            ? t
+            : Path.GetFileNameWithoutExtension(keeperPath);
+        var category = keeper.Frontmatter.GetValueOrDefault("category") is { Length: > 0 } c ? c : "concept";
+        var knownSlugs = await BuildKnownTopicSlugsAsync();
+
+        var summary = await SynthesizePageAsync(
+            keeperPath, title, category, sourceRefs, await _charter.GetCharterAsync(), knownSlugs, ct);
+        if (summary is null)
+        {
+            // Synthesis is best-effort here: the merge itself already landed, and the page keeps its old
+            // body until the next rebuild. Still record the widened provenance, or the loser comes back.
+            await WritePageSourcesAsync(keeperPath, sourceRefs);
+        }
+        else
+        {
+            await _index.UpsertEntryAsync(keeperPath, summary);
+        }
+
+        await _log.AppendAsync(
+            "merge", $"{loserSlug} -> {keeperSlug}", DateOnly.FromDateTime(DateTime.Now));
+        _logger.LogInformation("Merged topic page {Loser} into {Keeper}", loserSlug, keeperSlug);
+        return true;
+    }
+
+    // Point every [[topics/<loser>]] link at the keeper. Without this the merged-away slug survives in
+    // other pages' bodies and WikiLinkReconciler strips it to plain text on their next rewrite — the link
+    // is lost rather than followed.
+    //
+    // The match is anchored on the opening brackets AND the link terminator, never a bare substring:
+    // merging "dax" into "dax-index" would otherwise rewrite a neighbouring [[topics/dax-40]] into
+    // [[topics/dax-index-40]], inventing a dangling link out of a healthy one.
+    private async Task RetargetLinksAsync(string loserSlug, string keeperSlug, CancellationToken ct)
+    {
+        var pattern = @"\[\[topics/" + Regex.Escape(loserSlug) + @"(?=[\]|#])";
+        var replacement = "[[topics/" + keeperSlug;
+
+        foreach (var path in await _store.EnumerateAsync("memory/topics/*.md"))
+        {
+            ct.ThrowIfCancellationRequested();
+            var relative = path.Replace('\\', '/');
+            var doc = await _store.ReadAsync(relative);
+            if (doc is null)
+            {
+                continue;
+            }
+
+            var rewritten = Regex.Replace(doc.RawText, pattern, replacement, RegexOptions.IgnoreCase);
+            if (!string.Equals(rewritten, doc.RawText, StringComparison.Ordinal))
+            {
+                await _store.WriteAtomicAsync(relative, rewritten);
+            }
+        }
+    }
+
+    // Rewrite only the `sources:` line of an existing page, leaving its body alone.
+    private async Task WritePageSourcesAsync(string path, IReadOnlyList<string> sourceRefs)
+    {
+        var doc = await _store.ReadAsync(path);
+        if (doc is not null)
+        {
+            await _store.WriteAtomicAsync(path, WriteSourcesLine(doc.RawText, sourceRefs));
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<string>> ListTopicPagesAsync()
     {
         // Scoped to memory/topics/ on purpose: EnumerateAsync is not a real glob, so "memory/*.md" would
@@ -605,12 +712,18 @@ public sealed class IngestService : IIngestService
         return (candidates.ToDictionary(e => e.Key, e => e.Value.Slug, StringComparer.Ordinal), slugs);
     }
 
-    // An empty `created` sorts last so a page that carries one always wins over one that does not.
+    // Oldest `created` wins; a page that carries one always beats a page that does not; ties go to the
+    // smaller slug so the winner is reproducible across runs.
     private static bool Beats(string created, string slug, (string Slug, string Created) incumbent)
     {
-        var mine = created.Length == 0 ? "￿" : created;
-        var theirs = incumbent.Created.Length == 0 ? "￿" : incumbent.Created;
-        var byCreated = string.CompareOrdinal(mine, theirs);
+        var mineMissing = created.Length == 0;
+        var theirsMissing = incumbent.Created.Length == 0;
+        if (mineMissing != theirsMissing)
+        {
+            return theirsMissing;
+        }
+
+        var byCreated = mineMissing ? 0 : string.CompareOrdinal(created, incumbent.Created);
         return byCreated != 0 ? byCreated < 0 : string.CompareOrdinal(slug, incumbent.Slug) < 0;
     }
 

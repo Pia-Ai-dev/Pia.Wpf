@@ -42,7 +42,8 @@ public class VaultViewModelTests
             vaultSources,
             Substitute.For<IIngestScheduler>(),
             Substitute.For<ISettingsService>(),
-            Substitute.For<IObsidianService>());
+            Substitute.For<IObsidianService>(),
+            Substitute.For<ILintService>());
         return (vm, memory, dialog);
     }
 
@@ -72,7 +73,8 @@ public class VaultViewModelTests
             vaultSources,
             Substitute.For<IIngestScheduler>(),
             Substitute.For<ISettingsService>(),
-            Substitute.For<IObsidianService>());
+            Substitute.For<IObsidianService>(),
+            Substitute.For<ILintService>());
         return (vm, memory, snackbar);
     }
 
@@ -120,7 +122,8 @@ public class VaultViewModelTests
                 vaultSources,
                 scheduler,
                 Substitute.For<ISettingsService>(),
-                Substitute.For<IObsidianService>());
+                Substitute.For<IObsidianService>(),
+                Substitute.For<ILintService>());
 
             await vm.AddSourceFilesCommand.ExecuteAsync(new[] { textFile, binaryFile });
 
@@ -177,7 +180,8 @@ public class VaultViewModelTests
                 vaultSources,
                 scheduler,
                 Substitute.For<ISettingsService>(),
-                Substitute.For<IObsidianService>());
+                Substitute.For<IObsidianService>(),
+                Substitute.For<ILintService>());
 
             await vm.AddSourceFilesCommand.ExecuteAsync(new[] { dropped });
 
@@ -219,7 +223,8 @@ public class VaultViewModelTests
             vaultSources,
             scheduler,
             Substitute.For<ISettingsService>(),
-            Substitute.For<IObsidianService>());
+            Substitute.For<IObsidianService>(),
+            Substitute.For<ILintService>());
 
         await vm.RefreshCommand.ExecuteAsync(null);
 
@@ -784,7 +789,8 @@ public class VaultViewModelTests
             vaultSources,
             Substitute.For<IIngestScheduler>(),
             settingsService,
-            obsidian);
+            obsidian,
+            Substitute.For<ILintService>());
         return (vm, obsidian, dialog, clipboard, settings);
     }
 

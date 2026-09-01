@@ -99,6 +99,9 @@ public class AssistantFolderRelocationServiceTests : IDisposable
 
         public Task<IReadOnlyList<string>> ListTopicPagesAsync()
             => Task.FromResult<IReadOnlyList<string>>([]);
+
+        public Task<bool> MergeTopicPagesAsync(string keeperPath, string loserPath, CancellationToken ct = default)
+            => Task.FromResult(false);
     }
 
     [Fact]

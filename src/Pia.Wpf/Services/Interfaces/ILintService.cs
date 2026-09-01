@@ -45,5 +45,10 @@ public record LintReport(IReadOnlyList<LintFinding> Findings);
 /// </summary>
 public interface ILintService
 {
-    Task<LintReport> RunAsync(DateOnly date, CancellationToken ct = default);
+    /// <param name="applyFixes">
+    /// <c>false</c> reports what the pass WOULD change without touching the vault — the dry run the
+    /// cleanup action shows before asking for confirmation. Findings then carry
+    /// <c>AutoFixed: false</c>.
+    /// </param>
+    Task<LintReport> RunAsync(DateOnly date, bool applyFixes = true, CancellationToken ct = default);
 }

@@ -32,6 +32,10 @@
   <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <!-- Shared -->
+  <data name="Msg_Memory_CleanUpConfirm" xml:space="preserve"><value>{0} doppelte Themenseite(n) zusammenführen und {1} fehlende Verknüpfung(en) ergänzen? Bei jeder Zusammenführung wird die verbleibende Seite aus den gemeinsamen Quellen neu erzeugt, was jeweils eine KI-Anfrage kostet. Die zusammengeführte Seite wird nach memory/.archive verschoben, nicht gelöscht. Beim Bestätigen wird der Vault erneut geprüft, die endgültige Anzahl kann daher leicht abweichen.</value></data>
+  <data name="Msg_Memory_CleanUpDone" xml:space="preserve"><value>{0} Eintrag/Einträge aufgeräumt.</value></data>
+  <data name="Msg_Memory_CleanUpFailed" xml:space="preserve"><value>Aufräumen fehlgeschlagen: {0}</value></data>
+  <data name="Msg_Memory_CleanUpNothingToDo" xml:space="preserve"><value>Es wurden keine doppelten Seiten oder fehlenden Verknüpfungen gefunden.</value></data>
   <data name="Snackbar_Success" xml:space="preserve"><value>Erfolg</value></data>
   <data name="Snackbar_Error" xml:space="preserve"><value>Fehler</value></data>
   <data name="Snackbar_Warning" xml:space="preserve"><value>Warnung</value></data>
