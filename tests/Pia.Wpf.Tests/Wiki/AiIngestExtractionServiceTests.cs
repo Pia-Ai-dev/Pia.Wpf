@@ -13,6 +13,27 @@ namespace Pia.Tests.Wiki;
 /// </summary>
 public class AiIngestExtractionServiceTests
 {
+    private static ISettingsService Settings(int maxTopicsPerSource = 8)
+    {
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings { MaxTopicsPerSource = maxTopicsPerSource });
+        return settings;
+    }
+
+    private static AiIngestExtractionService Build(string modelOutput, int maxTopicsPerSource = 8)
+    {
+        var providers = Substitute.For<IProviderService>();
+        providers.GetDefaultProviderForModeAsync(WindowMode.Assistant)
+            .Returns(new AiProvider { Name = "P", Endpoint = "http://p" });
+
+        var ai = Substitute.For<IAiClientService>();
+        ai.SendRequestAsync(Arg.Any<AiProvider>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<string>())
+            .Returns(new AiCompletionResult(modelOutput, 0));
+
+        return new AiIngestExtractionService(
+            ai, providers, Settings(maxTopicsPerSource), NullLogger<AiIngestExtractionService>.Instance);
+    }
+
     [Fact]
     public void ParseTopics_reads_subject_and_category_json()
     {
@@ -97,6 +118,51 @@ public class AiIngestExtractionServiceTests
         Assert.Equal("Pia", topics[0].Subject);
     }
 
+    // The prompt asks for at most N; the clamp is what makes it a limit.
+    [Fact]
+    public async Task DiscoverTopicsAsync_clamps_to_the_configured_ceiling()
+    {
+        var subjects = Enumerable.Range(1, 12).Select(i => $$"""{"subject":"T{{i}}"}""");
+        var svc = Build("[" + string.Join(',', subjects) + "]", maxTopicsPerSource: 3);
+
+        var topics = await svc.DiscoverTopicsAsync("raw", "charter", TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, topics.Count);
+        Assert.Equal(["T1", "T2", "T3"], topics.Select(t => t.Subject));
+    }
+
+    [Fact]
+    public async Task DiscoverTopicsAsync_puts_the_ceiling_in_the_prompt()
+    {
+        var providers = Substitute.For<IProviderService>();
+        providers.GetDefaultProviderForModeAsync(WindowMode.Assistant)
+            .Returns(new AiProvider { Name = "P", Endpoint = "http://p" });
+        var ai = Substitute.For<IAiClientService>();
+        ai.SendRequestAsync(Arg.Any<AiProvider>(), Arg.Any<string>(), Arg.Any<CancellationToken>(), Arg.Any<string>())
+            .Returns(new AiCompletionResult("[]", 0));
+
+        var svc = new AiIngestExtractionService(
+            ai, providers, Settings(5), NullLogger<AiIngestExtractionService>.Instance);
+        await svc.DiscoverTopicsAsync("raw", "charter", TestContext.Current.CancellationToken);
+
+        await ai.Received(1).SendRequestAsync(
+            Arg.Any<AiProvider>(),
+            Arg.Is<string>(p => p.Contains("AT MOST 5 topics", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>(),
+            Arg.Any<string>());
+    }
+
+    // A hand-edited 0 must not silently disable ingest.
+    [Fact]
+    public async Task DiscoverTopicsAsync_clamps_a_zero_ceiling_up_to_one()
+    {
+        var svc = Build("""[{"subject":"Pia"},{"subject":"Acme"}]""", maxTopicsPerSource: 0);
+
+        var topics = await svc.DiscoverTopicsAsync("raw", "charter", TestContext.Current.CancellationToken);
+
+        Assert.Single(topics);
+    }
+
     [Fact]
     public async Task DiscoverTopicsAsync_asks_the_assistant_mode_provider_not_the_first_in_the_list()
     {
@@ -111,7 +177,7 @@ public class AiIngestExtractionServiceTests
             .Returns(new AiCompletionResult("[]", 0));
 
         var svc = new AiIngestExtractionService(
-            ai, providers, NullLogger<AiIngestExtractionService>.Instance);
+            ai, providers, Settings(), NullLogger<AiIngestExtractionService>.Instance);
 
         await svc.DiscoverTopicsAsync("some raw text", "charter", TestContext.Current.CancellationToken);
 

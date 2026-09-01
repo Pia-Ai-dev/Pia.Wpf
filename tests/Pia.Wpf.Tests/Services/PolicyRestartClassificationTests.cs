@@ -34,6 +34,7 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.MaxParallelBackgroundRuns),
         nameof(AppSettings.MaxParallelRequestsPerProvider),
         nameof(AppSettings.MaxToolRoundsPerStep),
+        nameof(AppSettings.MaxTopicsPerSource),
         nameof(AppSettings.MeetingAttendeeDisplayName),
         nameof(AppSettings.MeetingAttendeeRosterSnapshotMinutes),
         nameof(AppSettings.MeetingAttendeeShowBrowserWindow),
@@ -178,7 +179,7 @@ public class PolicyRestartClassificationTests
     public void ANewSettingForcesAnExplicitClassification()
     {
         Assert.True(
-            LiveAlready.Length == 45 && LiveWithWork.Length == 23
+            LiveAlready.Length == 46 && LiveWithWork.Length == 23
                 && RestartRequired.Length == 12 && NoRuntimeEffect.Length == 28,
             "the four sets are written out in full, found "
                 + $"{LiveAlready.Length}/{LiveWithWork.Length}/{RestartRequired.Length}/{NoRuntimeEffect.Length}");

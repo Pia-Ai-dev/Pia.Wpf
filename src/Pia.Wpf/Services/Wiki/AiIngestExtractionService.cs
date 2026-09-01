@@ -32,15 +32,18 @@ public sealed class AiIngestExtractionService : IIngestExtractor
 
     private readonly IAiClientService _aiClient;
     private readonly IProviderService _providers;
+    private readonly ISettingsService _settings;
     private readonly ILogger<AiIngestExtractionService> _logger;
 
     public AiIngestExtractionService(
         IAiClientService aiClient,
         IProviderService providers,
+        ISettingsService settings,
         ILogger<AiIngestExtractionService> logger)
     {
         _aiClient = aiClient;
         _providers = providers;
+        _settings = settings;
         _logger = logger;
     }
 
@@ -58,22 +61,39 @@ public sealed class AiIngestExtractionService : IIngestExtractor
             ? ""
             : "This knowledge base is about:\n" + charter + "\n\n";
 
+        var maxTopics = (await _settings.GetSettingsAsync()).GetMaxTopicsPerSource();
+
         var prompt =
             charterBlock +
             "List the NOTABLE topics in the document below that deserve their own wiki page — real people, " +
             "organizations, products, named concepts, technologies, or regulations that carry meaning for this " +
-            "knowledge base. DO NOT include generic dictionary/legal-boilerplate terms (e.g. \"Use\", " +
-            "\"Software\", \"Documentation\", \"Agreement\", \"Scope\"), generic verbs, or section labels. " +
+            "knowledge base. A topic earns a page ONLY if this document says something SUBSTANTIVE about it. " +
+            "An entity that is merely mentioned, listed, quoted, or named in passing does NOT earn a page, " +
+            "however well known it is — a market report naming twenty companies is about the market, not about " +
+            "each company. DO NOT include generic dictionary, business, financial or legal terms IN ANY " +
+            "LANGUAGE (e.g. \"Use\", \"Software\", \"Documentation\", \"Agreement\", \"Scope\", " +
+            "\"Marktkapitalisierung\", \"Kurs-Gewinn-Verhältnis\"), generic verbs, or section labels. " +
             "Emit exactly ONE topic per real-world entity: merge aliases, abbreviations, and expanded forms of " +
             "the same thing into a single entry, and use its canonical common short name as the subject (e.g. " +
             "\"Pia\", not \"Pia (Personal Intelligent Assistant)\" and not a separate \"Personal Intelligent " +
             "Assistant\" entry). Do NOT put parenthetical aliases, expansions, or descriptions in the subject. " +
+            $"Return AT MOST {maxTopics} topics, ordered most central first; returning fewer — or none — is " +
+            "correct when the document warrants it. " +
             "Respond with a JSON array of objects, each {\"subject\": name, \"category\": one of " +
             "person|organization|product|concept|regulation|technology|other}. JSON only.\n\n" +
             Truncate(content);
 
         var result = await _aiClient.SendRequestAsync(provider, prompt, ct, mode: nameof(WindowMode.Assistant));
         var topics = ParseTopics(result.Text);
+
+        // The prompt is a request, not a limit: enforce the ceiling on the model's own ordering.
+        if (topics.Count > maxTopics)
+        {
+            _logger.LogInformation(
+                "Ingest discovery returned {Count} topics; keeping the first {Max}", topics.Count, maxTopics);
+            topics = topics.Take(maxTopics).ToList();
+        }
+
         _logger.SensitiveDebug("Ingest discovered {Count} topics from model output", topics.Count);
         return topics;
     }
