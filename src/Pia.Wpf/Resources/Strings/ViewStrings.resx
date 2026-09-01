@@ -32,6 +32,12 @@
   <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <!-- Navigation -->
+  <data name="Memory_Charter" xml:space="preserve"><value>What this knowledge base is about</value></data>
+  <data name="Memory_CharterDraft" xml:space="preserve"><value>Draft one for me</value></data>
+  <data name="Memory_CharterDrafting" xml:space="preserve"><value>Reading your sources…</value></data>
+  <data name="Memory_CharterEdit" xml:space="preserve"><value>Edit</value></data>
+  <data name="Memory_CharterEmpty" xml:space="preserve"><value>Not set. Without it, ingest has no basis for judging which topics deserve a page — so it tends to create one for every name it sees.</value></data>
+  <data name="Memory_CharterHint" xml:space="preserve"><value>Applies to documents ingested from now on.</value></data>
   <data name="Memory_CleanUp" xml:space="preserve"><value>Clean up</value></data>
   <data name="Memory_CleanUp_Applying" xml:space="preserve"><value>Cleaning up…</value></data>
   <data name="Memory_CleanUp_Scanning" xml:space="preserve"><value>Looking for duplicates…</value></data>

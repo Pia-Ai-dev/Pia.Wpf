@@ -32,6 +32,9 @@
   <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <!-- Shared -->
+  <data name="Msg_Memory_CharterDraftEmpty" xml:space="preserve"><value>Es konnte kein Entwurf erstellt werden — es gibt keine lesbaren Quelldokumente oder es ist kein KI-Anbieter konfiguriert.</value></data>
+  <data name="Msg_Memory_CharterDraftFailed" xml:space="preserve"><value>Der Entwurf konnte nicht erstellt werden: {0}</value></data>
+  <data name="Msg_Memory_CharterSaveFailed" xml:space="preserve"><value>Die Angabe konnte nicht gespeichert werden: {0}</value></data>
   <data name="Msg_Memory_CleanUpConfirm" xml:space="preserve"><value>{0} doppelte Themenseite(n) zusammenführen und {1} fehlende Verknüpfung(en) ergänzen? Bei jeder Zusammenführung wird die verbleibende Seite aus den gemeinsamen Quellen neu erzeugt, was jeweils eine KI-Anfrage kostet. Die zusammengeführte Seite wird nach memory/.archive verschoben, nicht gelöscht. Beim Bestätigen wird der Vault erneut geprüft, die endgültige Anzahl kann daher leicht abweichen.</value></data>
   <data name="Msg_Memory_CleanUpDone" xml:space="preserve"><value>{0} Eintrag/Einträge aufgeräumt.</value></data>
   <data name="Msg_Memory_CleanUpFailed" xml:space="preserve"><value>Aufräumen fehlgeschlagen: {0}</value></data>

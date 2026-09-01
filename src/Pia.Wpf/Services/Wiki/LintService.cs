@@ -56,7 +56,7 @@ public sealed class LintService : ILintService
     // Housekeeping files that are never wiki entities/orphan candidates.
     private static readonly HashSet<string> Housekeeping = new(StringComparer.Ordinal)
     {
-        "index", "log", "AGENTS",
+        "index", "log", "AGENTS", "charter", "templates",
     };
 
     private readonly IVaultStore _store;

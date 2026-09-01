@@ -518,6 +518,8 @@ public static class Bootstrapper
         services.AddSingleton<Pia.Services.Wiki.VaultLogService>();
         services.AddSingleton<Pia.Services.Wiki.VaultSchemaService>();
         services.AddSingleton<Pia.Services.Wiki.VaultCharterService>();
+        services.AddSingleton<IVaultCharterService>(sp => sp.GetRequiredService<Pia.Services.Wiki.VaultCharterService>());
+        services.AddSingleton<ICharterDrafter, Pia.Services.Wiki.AiCharterDraftService>();
         services.AddSingleton<Pia.Services.Wiki.VaultTemplateService>();
         services.AddSingleton<IIngestExtractor, Pia.Services.Wiki.AiIngestExtractionService>();
         services.AddSingleton<IIngestSynthesizer, Pia.Services.Wiki.AiIngestSynthesisService>();

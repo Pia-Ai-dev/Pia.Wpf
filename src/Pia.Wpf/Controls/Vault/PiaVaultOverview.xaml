@@ -38,6 +38,89 @@
                    FontWeight="SemiBold"
                    Foreground="{DynamicResource TextDefaultBrush}"/>
 
+        <!-- The charter: the one lever over WHICH topics get a page, and the only one with no other
+             surface. Pia drafts it from the sources rather than offering an empty box — nothing is
+             written until the user saves, because a placeholder would become the model's grounding. -->
+        <Border Margin="0,12,0,4"
+                Padding="12,10"
+                CornerRadius="6"
+                Background="{DynamicResource SurfaceSunkBrush}">
+          <StackPanel>
+            <TextBlock Text="{loc:Str Memory_Charter}"
+                       FontSize="12"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextDefaultBrush}"/>
+
+            <!-- Read mode -->
+            <StackPanel Visibility="{Binding IsEditingCharter, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+              <TextBlock Text="{Binding CharterText}"
+                         Margin="0,6,0,0"
+                         TextWrapping="Wrap"
+                         FontSize="12"
+                         Foreground="{DynamicResource TextDefaultBrush}"
+                         Visibility="{Binding HasCharter, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+              <TextBlock Text="{loc:Str Memory_CharterEmpty}"
+                         Margin="0,6,0,0"
+                         TextWrapping="Wrap"
+                         FontSize="12"
+                         Foreground="{DynamicResource TextMutedBrush}"
+                         Visibility="{Binding HasCharter, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+              <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                <ui:Button Appearance="Secondary"
+                           AutomationProperties.AutomationId="MemoryOverview_CharterDraft"
+                           IsEnabled="{Binding IsDraftingCharter, Converter={StaticResource InverseBooleanConverter}}"
+                           Command="{Binding DraftCharterCommand}">
+                  <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="Sparkle24" FontSize="14" Margin="0,0,6,0"/>
+                    <TextBlock Text="{loc:Str Memory_CharterDraft}"/>
+                  </StackPanel>
+                </ui:Button>
+                <ui:Button Appearance="Transparent"
+                           Margin="8,0,0,0"
+                           AutomationProperties.AutomationId="MemoryOverview_CharterEdit"
+                           Command="{Binding EditCharterCommand}">
+                  <TextBlock Text="{loc:Str Memory_CharterEdit}"/>
+                </ui:Button>
+                <TextBlock Text="{loc:Str Memory_CharterDrafting}"
+                           Margin="10,0,0,0"
+                           VerticalAlignment="Center"
+                           FontSize="11"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           Visibility="{Binding IsDraftingCharter, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+              </StackPanel>
+            </StackPanel>
+
+            <!-- Edit mode: the draft is the user's to accept, change or discard. -->
+            <StackPanel Visibility="{Binding IsEditingCharter, Converter={StaticResource BooleanToVisibilityConverter}}">
+              <TextBox Text="{Binding CharterDraft, UpdateSourceTrigger=PropertyChanged}"
+                       Margin="0,6,0,0"
+                       MinHeight="90"
+                       AcceptsReturn="True"
+                       TextWrapping="Wrap"
+                       VerticalScrollBarVisibility="Auto"
+                       FontSize="12"
+                       AutomationProperties.AutomationId="MemoryOverview_CharterText"/>
+              <TextBlock Text="{loc:Str Memory_CharterHint}"
+                         Margin="0,6,0,0"
+                         FontSize="11"
+                         Foreground="{DynamicResource TextMutedBrush}"/>
+              <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                <ui:Button Appearance="Primary"
+                           AutomationProperties.AutomationId="MemoryOverview_CharterSave"
+                           Command="{Binding SaveCharterCommand}">
+                  <TextBlock Text="{loc:Str Memory_Save}"/>
+                </ui:Button>
+                <ui:Button Appearance="Transparent"
+                           Margin="8,0,0,0"
+                           AutomationProperties.AutomationId="MemoryOverview_CharterCancel"
+                           Command="{Binding CancelCharterEditCommand}">
+                  <TextBlock Text="{loc:Str Memory_Cancel}"/>
+                </ui:Button>
+              </StackPanel>
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
         <!-- Composition by category — hidden entirely for a sources-only vault (no displayable
              memories), where an empty bar strip would just read as a rendering bug. -->
         <StackPanel Visibility="{Binding VaultComposition.Count, Converter={StaticResource IntToVisibilityConverter}}">

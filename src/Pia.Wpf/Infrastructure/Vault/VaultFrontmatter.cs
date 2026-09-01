@@ -41,6 +41,34 @@ public static class VaultFrontmatter
     }
 
     /// <summary>
+    /// Frontmatter for a Pia-written <c>note</c> that is rewritten in place (the charter), keeping
+    /// <c>id</c>/<c>created</c> stable across saves so sync does not see a new record each time.
+    /// </summary>
+    public static string BuildPreservingNote(VaultDocument? existing, string title)
+    {
+        var id = existing is not null && existing.Frontmatter.TryGetValue("id", out var existingId)
+                 && !string.IsNullOrWhiteSpace(existingId)
+            ? existingId
+            : Guid.NewGuid().ToString("D").ToLowerInvariant();
+
+        var now = DateTime.UtcNow.ToString(TimestampFormat, CultureInfo.InvariantCulture);
+        var created = existing is not null && existing.Frontmatter.TryGetValue("created", out var existingCreated)
+                      && !string.IsNullOrWhiteSpace(existingCreated)
+            ? existingCreated
+            : now;
+
+        return "---\n" +
+               "pia: managed\n" +
+               $"id: {id}\n" +
+               "type: note\n" +
+               $"title: {VaultYaml.EncodeScalar(title)}\n" +
+               $"created: {created}\n" +
+               $"updated: {now}\n" +
+               "schemaVersion: 1\n" +
+               "---\n";
+    }
+
+    /// <summary>
     /// Rebuild a topic page's frontmatter while preserving its identity. Always writes
     /// <c>type: topic</c> and the given <paramref name="category"/>; reuses the existing document's
     /// <c>id</c> and <c>created</c> when present (else mints fresh, mirroring

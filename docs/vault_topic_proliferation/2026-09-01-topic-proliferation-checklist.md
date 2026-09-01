@@ -1,6 +1,6 @@
 # Topic proliferation — checklist
 
-**Status:** 4 of 6 steps landed
+**Status:** All 6 steps landed; measured 85 → 13 topic pages on real sources
 **Owner:** Marco Altmann
 **Written:** 2026-09-01
 **Origin:** [2026-09-01-topic-proliferation-plan.md](2026-09-01-topic-proliferation-plan.md)
@@ -32,18 +32,19 @@ little standalone value, unblocks a High.
   `LintService` delegates to it and gained a dry-run mode; a "Clean up" button on the Vault Overview
   previews then applies on confirm.
   *Deps:* 2 · *Effort:* M · *Value:* High
-- [ ] **4 — Draft `memory/charter.md`, don't just surface it.** Owner decision 2026-09-01: an empty
-  box would not get filled in, so the card must offer "draft one from my sources" and let the user
-  edit the result before it is saved.
+- [x] **4 — Pia drafts `memory/charter.md`.** Owner decision 2026-09-01: an empty box would not
+  get filled in, so the card offers "Draft one for me", reads the sources, and saves only what the
+  user approves.
   *Deps:* — · *Effort:* M · *Value:* High
 
 ## Decision gates
 
-| Gate | Question it answers | Blocks |
+| Gate | Question it answers | Status |
 |---|---|---|
-| Live re-measure after 1+2 | Did the count actually drop, and by how much? If a source still yields 8 near-identical pages, the clamp belongs after dedup in `IngestService`, not in the extractor | Whether 4 and 6 are still worth their effort |
-| `MaxTopicsPerSource` default | Is 8 meaningful for this vault? `(Get-ChildItem "<vault>\sources\*").Count` decides — with 4 sources the cap barely binds and the substance bar is carrying step 1 alone | Tuning only |
-| Charter authoring | Will a user actually write one? If not, step 4 is a card nobody fills in and the effort belongs in 6 instead | Step 4 |
+| Live re-measure after 1+2 | Did the count actually drop? | **Answered 2026-09-01: 85 → 13 pages on 6 real sources.** The substance bar did nearly all of it |
+| `MaxTopicsPerSource` default | Is 8 meaningful here? | **Answered: it never bound.** Highest per-source yield after the change was 7 — insurance, not the mechanism |
+| Charter authoring | Will a user write one? | **Answered: only if Pia drafts it**, which is what step 4 now does |
+| Substance bar too strict? | Three of six sources now discover ZERO topics, including a 35 KB meeting transcript | **OPEN.** Plausible for how-to docs, unclear for transcripts. Needs a human read before the bar is called tuned |
 
 ## Not yet planned
 

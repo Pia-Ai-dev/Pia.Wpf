@@ -1,6 +1,6 @@
 # Curbing vault topic proliferation
 
-**Status:** Steps 0–3 and 5 implemented; steps 4 and 6 open
+**Status:** All six steps implemented; measured 85 → 13 topic pages on real sources
 **Owner:** Marco Altmann
 **Written:** 2026-09-01
 **Origin:** A user report that ingest creates far more topic pages than expected on live systems —
@@ -37,6 +37,11 @@ pre-change build (`32b9edc4`):
 | pages with an unparseable `title:` | **11** | **0** |
 | sources ingested | 5 ok, 2 transient failures | 6 ok, 0 failures |
 
+The 11 are the poisoned-frontmatter bug reproducing on its own — filenames like
+`subject-alexander-freund-category-person.md`, i.e. a whole JSON object slugified into a page name.
+Also present: `c.md`, `net.md`, `section.md`, `v4.md` from the same class of parse debris, and a
+page for essentially every product, person and technology named anywhere in the six documents.
+
 Per source (topics discovered):
 
 | source | before | after |
@@ -65,11 +70,6 @@ the largest meeting transcript (20 → 0). For the how-to documents that is plau
 human read of one of those transcripts before the bar is considered tuned — the lever is the
 "merely mentioned" wording in `AiIngestExtractionService`, and `MaxTopicsPerSource` cannot loosen
 it.
-
-The 11 are the poisoned-frontmatter bug reproducing on its own — filenames like
-`subject-alexander-freund-category-person.md`, i.e. a whole JSON object slugified into a page name.
-Also present: `c.md`, `net.md`, `section.md`, `v4.md` from the same class of parse debris, and a
-page for essentially every product, person and technology named anywhere in the six documents.
 
 Reproduce with `scripts` in the session scratchpad (`setup-measure.mjs` + `run-measure.ps1`): copy
 `providers.json`/`settings.json`, repoint `assistantFilesFolder` at a throwaway workdir, seed
@@ -156,29 +156,36 @@ every slug in the vault into every synthesis prompt.
 
 ## Still open
 
-### Step 4 — have Pia DRAFT `memory/charter.md`
+### Step 4 — Pia drafts `memory/charter.md` (done)
 
-*Effort:* M · *Value:* High
+**Owner decision, 2026-09-01:** an empty box would not get filled in, so the card only pays off if
+Pia proposes the text. `ICharterDrafter` / `AiCharterDraftService` reads up to 12 text sources
+(2 000 chars each — breadth beats depth for a charter), asks the Assistant provider for a 3–6
+sentence statement in the documents own language, and returns it. Nothing is written:
+`VaultCharterService.SaveCharterAsync` persists only what the user saves, and clearing the box
+deletes the page, because an empty charter has to mean "no grounding" rather than a page whose body
+is whitespace.
 
-**Owner decision, 2026-09-01:** an empty box would not get filled in — the card is only worth
-building if Pia drafts the charter and the user edits it. So the shape is: read a sample of
-`sources/`, ask the Assistant provider for a short "this knowledge base is about…" statement, show
-it in an editable box, and write `memory/charter.md` only when the user saves. The rest of the
-guidance below still holds.
+The Vault Overview card shows the charter, an empty state explaining what it is for, a "Draft one
+for me" button, and an editor with save/cancel.
 
-An editable "What is this knowledge base about?" card on the Vault Overview, writing
-`memory/charter.md` through `IVaultStore`, with an empty-state prompt explaining that it decides
-which topics earn a page.
-
-- **Do not auto-seed charter content.** `GetCharterAsync` returns the body verbatim into the prompt,
-  so filler text becomes filler grounding.
-- **Do not offer "Rebuild all pages" on save.** `RebuildPageAsync` re-synthesizes from a page's
-  recorded `sources:` and never calls `DiscoverTopicsAsync`, so rebuild-all would spend one LLM call
-  per page and change the topic count by zero. Either say plainly that the charter applies to
-  sources ingested from now on (recommended), or add a distinct "re-ingest all sources" action —
-  which must clear `IngestStateStore` for those refs first, or the hash gate no-ops every one.
-- New `AutomationProperties.AutomationId`s, with the `ViewAutomationIdTests` `[InlineData]` row in
-  the same change.
+- **No auto-seeded content.** `GetCharterAsync` returns the body verbatim into the extraction
+  prompt, so filler text would become filler grounding.
+- **No "Rebuild all pages" on save.** `RebuildPageAsync` re-synthesizes from a page recorded
+  `sources:` and never calls `DiscoverTopicsAsync`, so rebuild-all would spend one LLM call per
+  page and change the topic count by zero. The card says instead that the charter applies to
+  documents ingested from now on. A "re-ingest all sources" action is the follow-up if the wait
+  proves annoying — it must clear `IngestStateStore` for those refs first, or the hash gate no-ops
+  every one.
+- Drafted text is model output and can easily open with `Scope:` or a quote. Covered by a
+  round-trip test, and safe because of step 0's scalar encoder.
+- The drafter publishes its own `TokenMapAmbient` around the call and re-identifies loosely,
+  exactly as `AiIngestSynthesisService` does. It runs off no chat turn, its excerpts are meeting
+  transcripts, and the model rewrites them — without a published map a mangled placeholder would
+  be persisted to a synced page.
+- `memory/charter.md` is registered in `VaultPaths.Housekeeping` and `LintService.Housekeeping`, so
+  the charter does not itself surface as a memory record, get recall-indexed, or be reported as an
+  orphan by the cleanup pass — the treatment `templates.md` needed when this branch added it.
 
 ### Step 6 — on-demand cleanup (done)
 
