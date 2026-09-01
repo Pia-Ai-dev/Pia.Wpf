@@ -1,8 +1,10 @@
 using System.Collections.Frozen;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
+using Pia.Helpers.Email;
 using SS = DocumentFormat.OpenXml.Spreadsheet;
 
 namespace Pia.Helpers;
@@ -16,6 +18,7 @@ public enum FileKind
     Pdf,
     Image,
     Audio,
+    Email,
 }
 
 public static class DroppedFileReader
@@ -46,6 +49,8 @@ public static class DroppedFileReader
             [".xlsx"] = FileKind.Xlsx,
             [".xlsm"] = FileKind.Xlsx,
             [".pdf"] = FileKind.Pdf,
+            [".msg"] = FileKind.Email,
+            [".eml"] = FileKind.Email,
         }
         .Concat(ImageExtensions.Select(e => new KeyValuePair<string, FileKind>(e, FileKind.Image)))
         .Concat(AudioExtensions.Select(e => new KeyValuePair<string, FileKind>(e, FileKind.Audio)))
@@ -187,6 +192,62 @@ public static class DroppedFileReader
                 return ReadResult.Fail(ex.Message);
             }
         }, ct);
+    }
+
+    public static Task<ReadResult> ReadEmailAsync(string path, CancellationToken ct)
+    {
+        // Both mail readers are synchronous and hold the whole file in memory, hence the container
+        // ceiling; the rendered text is gated too, because attachment bytes inflate the file past it.
+        return Task.Run(() =>
+        {
+            try
+            {
+                var info = new FileInfo(path);
+                if (info.Length > MaxTextBytes * 8) return ReadResult.TooLarge;
+
+                var mail = Path.GetExtension(path).Equals(".eml", StringComparison.OrdinalIgnoreCase)
+                    ? EmlReader.Read(path)
+                    : MsgReader.Read(path);
+
+                var text = RenderEmail(mail);
+                return text.Length > MaxTextBytes ? ReadResult.TooLarge : ReadResult.Success(text);
+            }
+            catch (Exception ex)
+            {
+                // Not ex.Message: an IO or parse message routinely embeds the full user path.
+                return ReadResult.Fail(ex.GetType().Name);
+            }
+        }, ct);
+    }
+
+    // Slashes, not hyphens: the PII detector reads a hyphenated date as a phone number, so the model
+    // would receive "Date: [Phone_1]:46 +00:00".
+    private const string MailDateFormat = "yyyy/MM/dd HH:mm zzz";
+
+    // The rule ends the header block with a character the PII detector's phone pattern cannot cross.
+    private const string BodyRule = "===\n\n";
+
+    private static string RenderEmail(EmailMessage mail)
+    {
+        var sb = new StringBuilder();
+        AppendField(sb, "Subject", mail.Subject);
+        AppendField(sb, "From", mail.From);
+        AppendField(sb, "To", string.Join(", ", mail.To));
+        AppendField(sb, "Cc", string.Join(", ", mail.Cc));
+        AppendField(sb, "Date", mail.Date?.ToString(MailDateFormat, CultureInfo.InvariantCulture));
+        AppendField(sb, "Attachments", string.Join(", ", mail.AttachmentNames));
+
+        if (mail.Body.Length == 0) return sb.ToString();
+        if (sb.Length > 0) sb.Append(BodyRule);
+        return sb.Append(mail.Body).ToString();
+    }
+
+    // An empty "From: " invites the model to invent a sender, so a valueless field gets no line.
+    private static void AppendField(StringBuilder sb, string label, string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return;
+
+        sb.Append(label).Append(": ").Append(value).Append('\n');
     }
 
     // Date cells surface as OLE Automation date numbers (e.g. 45678). Resolving them to

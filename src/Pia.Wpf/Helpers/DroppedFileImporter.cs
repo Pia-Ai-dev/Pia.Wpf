@@ -42,6 +42,9 @@ public static class DroppedFileImporter
                 case FileKind.Xlsx:
                     result = await DroppedFileReader.ReadXlsxAsync(path, ct);
                     break;
+                case FileKind.Email:
+                    result = await DroppedFileReader.ReadEmailAsync(path, ct);
+                    break;
                 default:
                     // Image / Pdf / Audio / Unsupported — Stage 2 will replace Image and Pdf
                     // with vision attachments. Stage 1: surface a snackbar so the user gets

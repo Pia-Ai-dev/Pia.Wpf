@@ -16,7 +16,7 @@ sample proved matters:
 | `__substg1.0_0E04001F` (PR_DISPLAY_TO) | Has a **trailing NUL**; `PR_SUBJECT` in the same file does not. Trailing NULs are inconsistent in real mail and must be trimmed. |
 | `__substg1.0_0E03001F` (PR_DISPLAY_CC) | Present but **zero-length** — not the same as absent. |
 | `__nameid_version1.0/__substg1.0_10130102` | The **flat-scan trap**. Its content is the literal `FLAT-SCAN-BUG-SENTINEL`. There is no `PR_HTML` at root, so a reader that scans the directory flat instead of walking the red-black tree will surface this sentinel as the message body. A test asserts the sentinel never appears in parser output. |
-| `__recip_version1.0_#00000000/…` | A recipient sub-storage, whose `__properties_version1.0` uses a **24-byte** header where the root's uses 32. |
+| `__recip_version1.0_#00000000/…` | A recipient sub-storage, whose `__properties_version1.0` uses an **8-byte** header where the root's uses 32. |
 | `__properties_version1.0` (root) | Holds `PR_CLIENT_SUBMIT_TIME` (`0x0039`, PT_SYSTIME) as a FILETIME. |
 
 Expected values are asserted in `tests/Pia.Wpf.Tests/Helpers/MsgReaderTests.cs`.

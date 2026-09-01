@@ -199,7 +199,7 @@ Behaviour, in order, per path:
 9. Truncate: per-file to `MaxFileChars`; then, against the running total including `alreadyPending`, to whatever is left of `MaxTotalChars`. If nothing is left, the same two-argument `Msg_File_AttachLimit` call as step 5, and continue. Record `Truncated` and `OriginalCharCount`.
 10. Truncation happened → `Msg_File_Truncated` caution snackbar (one per file).
 
-`Msg_File_TooLarge` for `FileKind.Email` never fires from the 1 MB `FileInfo.Length` guard — `ReadEmailAsync` applies `MaxTextBytes` to the **extracted text**, not the file size, because a `.msg` with a 30 MB attachment can have a 500-byte body (§7.4).
+`Msg_File_TooLarge` for `FileKind.Email` fires from either of two gates inside `ReadEmailAsync`, never from the shared 1 MB `FileInfo.Length` guard: the container ceiling of `MaxTextBytes * 8`, and `MaxTextBytes` on the **rendered text**. The rendered-text gate is the one that matters, because a `.msg` with a 30 MB attachment can have a 500-byte body; the container ceiling only keeps a pathological file out of memory, since both readers are synchronous and hold the whole file (§7.4).
 
 ### 4.4 `src/Pia.Wpf/Services/AssistantPromptComposer.cs` — new static method
 
@@ -294,6 +294,7 @@ Subject: neo42 Service Portal - Individualpaketierung abgeschlossen
 From: neo42 Service Portal <no-reply@neo42.de>
 To: Marco Altmann <marco.altmann@neo42.de>
 Date: 2026/08/31 11:46 +00:00
+===
 
 neo42 GmbH
 
@@ -310,17 +311,20 @@ Uploader: holger.sundermann@neo42.de
 `DroppedFileReader.ReadEmailAsync` returns this as its `ReadResult.Text` — the wrapper does not know it is looking at mail beyond the `type` attribute.
 
 ```
-Subject: <Subject>
-From: <From>
-To: <To joined by ", ">
-Cc: <Cc joined by ", ">              <- whole line omitted when empty
+Subject: <Subject>                    <- whole line omitted when empty
+From: <From>                          <- whole line omitted when empty
+To: <To joined by ", ">               <- whole line omitted when empty
+Cc: <Cc joined by ", ">               <- whole line omitted when empty
 Date: <Date, "yyyy/MM/dd HH:mm zzz">  <- whole line omitted when null
 Attachments: <names joined by ", ">   <- whole line omitted when empty
+===                                   <- present only when there is both a header line and a body
 
 <Body>
 ```
 
 Only these fields are emitted. Everything else in the source — `Received`, `DKIM-Signature`, `ARC-*`, `Authentication-Results`, `X-*`, `Message-ID`, `Return-Path`, `List-*`, `Reply-To` — is dropped. §7.5 has the numbers behind that.
+
+**The `===` rule is what separates the header block from the body**, not a blank line. `StructuredPiiDetector.PhoneRegex` accepts whitespace inside a run of digits, newlines included, so a blank line lets one match start in a `Date:` and swallow the opening digits of the body; `=` is outside its character class and stops it dead.
 
 **Slashes in the date are load-bearing, not a style choice** (D21). Format with `CultureInfo.InvariantCulture` so a de/fr user does not get a locale-shifted month order — `LocalizationService.SetLanguage` sets `CultureInfo.DefaultThreadCurrentCulture`.
 
@@ -494,7 +498,7 @@ Apply the decoder to `From`/`To`/`Cc` and to attachment filenames too. A malform
 
 - Add `Email` to the `FileKind` enum (`:10-19`).
 - Add `[".msg"] = FileKind.Email, [".eml"] = FileKind.Email` to the `KindByExtension` seed dictionary (`:42-53`).
-- Add `public static Task<ReadResult> ReadEmailAsync(string path, CancellationToken ct)` — `Task.Run` the parse (both readers are synchronous), dispatch on extension, render §6.4, and return `ReadResult.TooLarge` when the **rendered text** exceeds `MaxTextBytes`. Never test `FileInfo.Length`: a `.msg` with a 30 MB attachment can carry a 500-byte body.
+- Add `public static Task<ReadResult> ReadEmailAsync(string path, CancellationToken ct)` — `Task.Run` the parse (both readers are synchronous), dispatch on extension, render §6.4, and return `ReadResult.TooLarge` when the **rendered text** exceeds `MaxTextBytes`. Do not gate on `FileInfo.Length` at `MaxTextBytes`: a `.msg` with a 30 MB attachment can carry a 500-byte body. Gate the file length only at the far looser `MaxTextBytes * 8`, which stops a pathological file being read whole into memory before the render can measure it.
 - Any parse exception → `ReadResult.Fail(ex.GetType().Name)`. See §12: `ex.Message` from IO routinely embeds the full user path.
 
 `src/Pia.Wpf/Helpers/DroppedFileImporter.cs:34-55` gains a case, per D14 (this file is **LF** in the working tree — the odd one out):
