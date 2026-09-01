@@ -108,6 +108,25 @@ closed and relaunched, and the grant given in the *new* process still re-seeded 
 the parked `create_source` correctly. That is the durability claim behind Q1/Q3 demonstrated rather
 than argued.
 
+Those log lines prove the rows were read and rebuilt into messages, not that the messages reached the
+provider — which is what C3 actually asks. The step's **first-round input token count**, on the same
+step with the same instruction either side of the park, closes that:
+
+| Run | step 0, round 1, before the park | after the resume | Δ |
+|---|---|---|---|
+| R1 | 11 298 | 13 149 | **+1 851** |
+| R2 | 11 264 | 13 397 | **+2 133** |
+
+The delta is one-sided evidence — a flat number would have falsified the claim, and part of the growth
+is the replayed call plus its `ReplayedCallNote` (together ~1 500 chars). But the carried exchanges
+alone are ~2 150 chars, and both runs grew by roughly the sum, so the re-seeded rows are in the request
+rather than merely in memory.
+
+**Re-reading after a resume is the design, not amnesia.** Gate Q2 settled on *replay once, then re-run
+the step from the top*, so a resumed step legitimately re-issues its reads. The defect was never the
+re-read; it was a step that had no data, could not get any, and asked the user instead. That did not
+recur.
+
 ### Issue 3 — the vault, and only once
 
 The run wrote **one** file, in the vault: `Vault/sources/hr/urlaubstage-2026-zusammenfassung.md`.
@@ -187,8 +206,11 @@ Three things this exercise turned up that are **not** approval-park defects.
    ```
 
    `VaultWatcher` logs `While parsing a block mapping, did not find expected key` for each such page
-   (`MarkdownVaultParser.ParseFrontmatter` → `VaultStore.ReadAsync`). Ten pages were written this way by
-   one `create_source`. It does not fail the run, and the source document itself is fine.
+   (`MarkdownVaultParser.ParseFrontmatter` → `VaultStore.ReadAsync`). **Ten pages from one
+   `create_source`**, and nothing about it is fixture-specific — any `create_source` whose content
+   yields entities writes the same shape into a real vault, where the pages then stay unindexed. The run
+   itself does not fail and the source document is fine. Not fixed here; it belongs to the ingest
+   synthesis path, not to the approval park.
 
 3. **A new chat opened after a completed chat inherits an empty working directory**, i.e. the sandbox
    root, rather than `assistantDefaultWorkingDirectory`. The second run therefore saw 32 files instead

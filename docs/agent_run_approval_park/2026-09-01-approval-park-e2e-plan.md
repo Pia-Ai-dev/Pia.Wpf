@@ -117,13 +117,26 @@ Expected: `write_file` is refused **before the gate** (`PrepareWriteFile` return
 `HandleToolCallAsync` short-circuits ahead of the approval gate, so there is no park row), with the
 refusal naming `create_source` / `update_source`; the model then reaches the vault through `create_source`.
 
-### S3 — deny the park (issue 4's terminal invariant)
+### S3 — the foreground entry path, and a deny (issue 4's terminal invariant)
 
 Working directory `Absence`, Agent mode, **foreground** — the second entry path, and the one the report
 came from. Same goal as S1. At the park, click **Deny** instead of allowing.
 
 Expected: the run reaches a terminal state, the timeline's park row relabels to **Not executed**, and the
 awaiting pill is gone.
+
+> **What actually ran, 2026-09-01.** The two halves of S3 were split across the runs, because S2 parked a
+> second time and offered the deny for free. The **deny** landed on S2's `update_source` park (background
+> path); S3 was spent on the **foreground** half instead, with a different, smaller goal so the run would
+> stay under the ≥3-step plan gate and remain on `ChatSession` rather than being handed to the headless
+> executor:
+>
+> > Lies `Fehlzeitenübersicht-2026.csv` und schreibe die Gesamtsumme der Urlaubstage als Datei
+> > `urlaub-summe.txt` in den Arbeitsordner.
+>
+> It parks on `write_file` — the only run of the three to park on a files tool — and was granted with
+> **Allow once**. Both terminal states are therefore covered (S2 `Failed` after the deny, S3 `Completed`),
+> which is what the invariant needs.
 
 ## Assertions
 

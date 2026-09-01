@@ -129,21 +129,31 @@ if (mode === 'park' || mode === 'all') {
       const m = line.match(/(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[.,]\d+)/);
       return m ? Date.parse(m[1].replace(' ', 'T').replace(',', '.')) : NaN;
     };
-    let park = null, rounds = 0;
+    // Keyed on the run id in the [run <guid> …] scope prefix, not on line order: maxParallelBackgroundRuns
+    // is 2, so two runs can be parking at once and the next WaitingForInput may belong to the other one.
+    const runOf = (line) => line.match(/\[run ([0-9a-f-]{36})/)?.[1] ?? null;
+    const open = new Map();   // runId -> { line, rounds }
     for (const line of lines) {
-      if (line.includes('parked') && line.includes('for human approval')) { park = line; rounds = 0; continue; }
-      if (park && /Round \d+: \d+ tool call\(s\) detected/.test(line)) { rounds++; continue; }
-      if (park && line.includes('WaitingForInput (paused)')) {
-        const ms = at(line) - at(park);
-        const verdict = rounds === 0 ? 'PASS' : 'FAIL';
+      const runId = runOf(line);
+      if (line.includes('parked') && line.includes('for human approval')) {
+        open.set(runId, { line, rounds: 0 });
+        continue;
+      }
+      const pending = open.get(runId);
+      if (!pending) continue;
+      if (/Round \d+: \d+ tool call\(s\) detected/.test(line)) { pending.rounds++; continue; }
+      if (line.includes('WaitingForInput (paused)')) {
+        const ms = at(line) - at(pending.line);
+        const verdict = pending.rounds === 0 ? 'PASS' : 'FAIL';
         console.log(`  park -> WaitingForInput: ${Number.isFinite(ms) ? ms + 'ms' : '?'}` +
-          `  rounds in between = ${rounds}  ${verdict}`);
-        console.log('    ' + park.trim().slice(0, 150));
+          `  rounds in between = ${pending.rounds}  ${verdict}`);
+        console.log('    ' + pending.line.trim().slice(0, 150));
         console.log('    ' + line.trim().slice(0, 150));
-        park = null;
+        open.delete(runId);
       }
     }
-    if (park) console.log('  a park never reached WaitingForInput: ' + park.trim().slice(0, 150));
+    for (const { line } of open.values())
+      console.log('  a park never reached WaitingForInput: ' + line.trim().slice(0, 150));
     for (const marker of ['re-seeded', 'replaying', 'parked/withheld call(s)', 'parked step for approval']) {
       const hits = lines.filter((l) => l.includes(marker));
       console.log(`  "${marker}": ${hits.length} line(s)`);
