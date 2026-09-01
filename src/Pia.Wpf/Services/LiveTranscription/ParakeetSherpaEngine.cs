@@ -13,6 +13,7 @@ public sealed class ParakeetSherpaEngine : ITranscriptionEngine
 {
     private readonly OfflineRecognizer _recognizer;
     private readonly ILogger _logger;
+    private readonly SemaphoreSlim _decodeGate = new(1, 1);
 
     public ParakeetSherpaEngine(string modelDirectory, ILogger logger)
     {
@@ -43,16 +44,28 @@ public sealed class ParakeetSherpaEngine : ITranscriptionEngine
         _recognizer = new OfflineRecognizer(config);
     }
 
-    public Task<string> TranscribeAsync(float[] samples16kMono, CancellationToken cancellationToken)
+    public async Task<string> TranscribeAsync(float[] samples16kMono, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.Run(() =>
+
+        // One recognizer is shared by the mic and loopback engines, which decode on their own threads.
+        // sherpa-onnx offers DecodeMultipleOfflineStreams for the concurrent case, so a bare Decode on
+        // one recognizer is not a documented-safe overlap — serialize instead of assuming.
+        await _decodeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            using var stream = _recognizer.CreateStream();
-            stream.AcceptWaveform(16000, samples16kMono);
-            _recognizer.Decode(stream);
-            return stream.Result.Text?.Trim() ?? string.Empty;
-        }, cancellationToken);
+            return await Task.Run(() =>
+            {
+                using var stream = _recognizer.CreateStream();
+                stream.AcceptWaveform(16000, samples16kMono);
+                _recognizer.Decode(stream);
+                return stream.Result.Text?.Trim() ?? string.Empty;
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _decodeGate.Release();
+        }
     }
 
     private static string ResolveTransducerFile(string dir, string role)
@@ -71,6 +84,7 @@ public sealed class ParakeetSherpaEngine : ITranscriptionEngine
     public ValueTask DisposeAsync()
     {
         _recognizer.Dispose();
+        _decodeGate.Dispose();
         return ValueTask.CompletedTask;
     }
 }

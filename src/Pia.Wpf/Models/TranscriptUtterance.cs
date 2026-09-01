@@ -21,10 +21,17 @@ public enum TranscriptSpeaker
 /// Length of the audio the text was transcribed from, in seconds, or <c>null</c> when the producer did
 /// not measure it. Feeds the per-speaker voice statistics; never used for ordering or merging.
 /// </param>
+/// <param name="SpeechStart">
+/// When the audio was spoken, as opposed to <paramref name="Timestamp"/>, which is when the recognizer
+/// returned. Null when the source could not date its samples. Only cross-channel overlap uses it.
+/// </param>
+/// <param name="SpeechEnd">End of the spoken audio; null whenever <paramref name="SpeechStart"/> is.</param>
 public sealed record TranscriptUtterance(
     TranscriptSpeaker Speaker,
     string Text,
     DateTimeOffset Timestamp,
     string? SpeakerLabel = null,
     long? SegmentId = null,
-    double? DurationSeconds = null);
+    double? DurationSeconds = null,
+    DateTimeOffset? SpeechStart = null,
+    DateTimeOffset? SpeechEnd = null);

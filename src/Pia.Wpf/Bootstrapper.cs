@@ -765,8 +765,8 @@ public static class Bootstrapper
                         sp.GetRequiredService<IAssetDownloader>(),
                         sp.GetRequiredService<ILoggerFactory>()),
                     micSourceFactory: () => DebugTee(
-                        new Services.LiveTranscription.MicAudioCaptureService(
-                            sp.GetRequiredService<ILoggerFactory>().CreateLogger<Services.LiveTranscription.MicAudioCaptureService>()),
+                        Services.LiveTranscription.DirectTranscriptionService.CreateMicSource(
+                            sp.GetRequiredService<ISettingsService>(), sp.GetRequiredService<ILoggerFactory>()),
                         DebugDirectTranscriptionAudioDumpEnvVar, "mic", sp.GetRequiredService<ILoggerFactory>()),
                     loopbackSourceFactory: () => DebugTee(
                         new Services.LiveTranscription.DebugFileAudioCaptureService(
@@ -795,8 +795,8 @@ public static class Bootstrapper
                     // Two files, never one: the mic and the loopback are different speakers, and mixing
                     // them into a single WAV would make the dump unusable as a diarization fixture.
                     micSourceFactory: () => DebugTee(
-                        new Services.LiveTranscription.MicAudioCaptureService(
-                            loggerFactory.CreateLogger<Services.LiveTranscription.MicAudioCaptureService>()),
+                        Services.LiveTranscription.DirectTranscriptionService.CreateMicSource(
+                            sp.GetRequiredService<ISettingsService>(), loggerFactory),
                         DebugDirectTranscriptionAudioDumpEnvVar, "mic", loggerFactory),
                     loopbackSourceFactory: () => DebugTee(
                         new Services.LiveTranscription.LoopbackAudioCaptureService(

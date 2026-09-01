@@ -58,10 +58,12 @@ public sealed class ProcessLoopbackAudioCaptureService : IAudioCaptureSource
     private long _droppedFrames;
     private long _hopCount;
     private bool _firstFrameLogged;
+    private DateTimeOffset? _startedAt;
 
     public int SampleRate => TargetSampleRate;
     public bool IsRunning => _captureThread is not null;
     public ChannelReader<float[]> Reader => _channel.Reader;
+    public DateTimeOffset? StartedAt => _startedAt;
 
     public ProcessLoopbackAudioCaptureService(int targetProcessId, ILogger<ProcessLoopbackAudioCaptureService> logger)
     {
@@ -245,6 +247,7 @@ public sealed class ProcessLoopbackAudioCaptureService : IAudioCaptureSource
     private void PublishHop(float[] hop)
     {
         _hopCount++;
+        _startedAt ??= DateTimeOffset.Now.AddSeconds(-hop.Length / (double)TargetSampleRate);
         if (!_channel.Writer.TryWrite(hop))
         {
             _droppedFrames++;

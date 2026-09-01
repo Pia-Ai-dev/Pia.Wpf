@@ -35,6 +35,7 @@ public sealed class DebugWavTeeAudioCaptureService : IAudioCaptureSource
 
     public int SampleRate => _inner.SampleRate;
     public bool IsRunning => _inner.IsRunning;
+    public DateTimeOffset? StartedAt => _inner.StartedAt;
     public ChannelReader<float[]> Reader => _channel.Reader;
 
     public DebugWavTeeAudioCaptureService(IAudioCaptureSource inner, string path, ILogger logger)

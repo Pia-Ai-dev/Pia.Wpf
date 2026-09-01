@@ -43,6 +43,7 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.MeetingSmartSpeakerDetection),
         nameof(AppSettings.MeetingSuppressSpeakerLabels),
         nameof(AppSettings.MeetingTranscriptFolder),
+        nameof(AppSettings.MicEchoCancellation),
         nameof(AppSettings.ModePersonaDefaults),
         nameof(AppSettings.ModeProviderDefaults),
         nameof(AppSettings.ObsidianVaultRegistrationConfirmSuppressed),
@@ -177,7 +178,7 @@ public class PolicyRestartClassificationTests
     public void ANewSettingForcesAnExplicitClassification()
     {
         Assert.True(
-            LiveAlready.Length == 44 && LiveWithWork.Length == 23
+            LiveAlready.Length == 45 && LiveWithWork.Length == 23
                 && RestartRequired.Length == 12 && NoRuntimeEffect.Length == 28,
             "the four sets are written out in full, found "
                 + $"{LiveAlready.Length}/{LiveWithWork.Length}/{RestartRequired.Length}/{NoRuntimeEffect.Length}");
