@@ -1,6 +1,6 @@
 # Dragging a mail straight out of Outlook: the virtual-file drop
 
-**Status:** Implemented — classic Outlook confirmed in the real app 2026-09-01; new Outlook measured and ruled out
+**Status:** Shipped — confirmed end to end in the real app 2026-09-01 (§9); new Outlook measured and ruled out
 **Owner:** Marco Altmann
 **Written:** 2026-09-01
 **Origin:** Open question 5 of [2026-08-31-file-drop-attachments-plan.md](2026-08-31-file-drop-attachments-plan.md) ("Does the Outlook drag have to work before this ships?"), answered *yes* by the owner. §16 of that plan sketched this branch and priced it `L`; gate **G0** had closed it out of scope for round 1.
@@ -158,7 +158,8 @@ not activate the target window, so after dragging out of Outlook the source app 
 that corner while the user is watching the composer. The owner reported "nothing happens" twice against a
 build that was raising the snackbar correctly every time — confirmed in the log, and confirmed rendering by
 capturing the window at 400 ms intervals while triggering an unrelated snackbar through
-`PIA_DEBUG_DROP_FILES`. Feedback about a drop belongs where the drop landed.
+`PIA_DEBUG_DROP_FILES`. Feedback about a drop belongs where the drop landed. The composer line was then
+confirmed on screen against a real new-Outlook drag.
 
 ## 6. Files
 
@@ -201,3 +202,21 @@ the thing that separates "we rejected it" from "it never got here".
   — a synthetic fixture cannot validate a struct layout it was generated from.
 - **More than 20 items in one drag.** Past that we would be writing an unbounded amount of another process's
   data to disk on the UI thread. The extras are reported through `DropFailedCommand`, not dropped silently.
+
+## 9. Confirmed in the app, 2026-09-01
+
+Driven by hand against the owner's real profile, because UIA cannot synthesize a `DoDragDrop` transfer (§8).
+Each line is a log-backed observation, not an inference.
+
+| Leg | Evidence |
+|---|---|
+| One mail out of Outlook classic | `wrote item 0 from a storage` → `materialised 1 of 1` → `Drop verdict=Descriptor accepted=1` → a chip named `Wöchentlicher Aktivitätsbericht für Mandy.msg`, umlauts intact, composer untouched |
+| **Two** mails in one drag | `wrote item 0` / `wrote item 1` → `materialised 2 of 2` → two chips, different names, 2,942 and 3,085 extracted characters — so `lindex` reaches Outlook |
+| Repeat drags | Four further drops over twenty minutes, each staging correctly; one drop cache directory per drop, real `.msg` files of 185,344 and 103,936 bytes |
+| The startup clear | `DropCache` absent after each relaunch |
+| Explorer, unchanged | Staged with no `materialised` line at all, i.e. it took the CF_HDROP branch |
+| **A question about a dragged mail** | Answered from the mail's own content, so the wrapper reaches the model through the materialised path as it does through the picker |
+| New Outlook | `Drop: the source refused CF_HDROP (0x80040064)` at hover and at drop, `Drop verdict=Paths accepted=0`, and the composer line explaining it |
+
+Still owed, and unrelated to the materialiser: checklist **C5**, the mail-quality pass over a wider spread of
+real mail — an HTML-only message and one relayed through Gmail for the `(UTC)` date suffix.
