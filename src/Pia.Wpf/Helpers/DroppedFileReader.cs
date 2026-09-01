@@ -106,14 +106,10 @@ public static class DroppedFileReader
                 var body = doc.MainDocumentPart?.Document?.Body;
                 if (body is null) return ReadResult.Success(string.Empty);
 
+                var walk = WalkDocxParagraphs(body, ct);
+
                 var sb = new StringBuilder();
-                foreach (var paragraph in body.Descendants<Paragraph>())
-                {
-                    ct.ThrowIfCancellationRequested();
-                    var text = string.Concat(paragraph.Descendants<Text>().Select(t => t.Text));
-                    if (text.Length > 0)
-                        sb.AppendLine(text);
-                }
+                foreach (var line in walk.Lines) sb.AppendLine(line);
 
                 if (sb.Length > MaxTextBytes)
                     return ReadResult.TooLarge;
@@ -125,6 +121,34 @@ public static class DroppedFileReader
                 return ReadResult.Fail(ex.Message);
             }
         }, ct);
+    }
+
+    /// <summary>One entry per paragraph whose concatenated text is non-empty — exactly the paragraphs
+    /// that make it into <see cref="ReadDocxAsync"/>'s emitted text, in the same order. Shared by the
+    /// read path and by the write-side patch engine (<c>DocxPatcher</c>) so "line N of the extracted
+    /// text" always resolves to the same real paragraph both places — a paragraph the reader skips
+    /// (blank) never appears here either, and is therefore never a diff/patch target.</summary>
+    internal readonly record struct DocxParagraphWalk(
+        IReadOnlyList<Paragraph> AllParagraphs,
+        IReadOnlyList<string> Lines,
+        IReadOnlyList<int> Ordinals);
+
+    internal static DocxParagraphWalk WalkDocxParagraphs(Body body, CancellationToken ct = default)
+    {
+        var all = body.Descendants<Paragraph>().ToList();
+        var lines = new List<string>();
+        var ordinals = new List<int>();
+        for (int i = 0; i < all.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            var text = string.Concat(all[i].Descendants<Text>().Select(t => t.Text));
+            if (text.Length > 0)
+            {
+                lines.Add(text);
+                ordinals.Add(i);
+            }
+        }
+        return new DocxParagraphWalk(all, lines, ordinals);
     }
 
     public static Task<ReadResult> ReadXlsxAsync(string path, CancellationToken ct)
@@ -139,49 +163,16 @@ public static class DroppedFileReader
 
                 using var doc = SpreadsheetDocument.Open(path, isEditable: false);
                 var workbookPart = doc.WorkbookPart;
-                var sheets = workbookPart?.Workbook?.Sheets?.Elements<SS.Sheet>().ToList();
-                if (workbookPart is null || sheets is null || sheets.Count == 0)
-                    return ReadResult.Success(string.Empty);
+                if (workbookPart is null) return ReadResult.Success(string.Empty);
 
-                var sst = workbookPart.SharedStringTablePart?.SharedStringTable;
+                var walk = WalkXlsxWorkbook(workbookPart, ct);
+                if (walk.Lines.Count == 0) return ReadResult.Success(string.Empty);
+
                 var sb = new StringBuilder();
-
-                for (int s = 0; s < sheets.Count; s++)
+                foreach (var line in walk.Lines)
                 {
-                    var sheet = sheets[s];
-                    if (sheet.Id?.Value is not { } relId) continue;
-                    if (workbookPart.GetPartById(relId) is not WorksheetPart wsPart) continue;
-                    if (wsPart.Worksheet is not { } worksheet) continue;
-
-                    if (s > 0) sb.AppendLine();
-                    sb.Append("## Sheet: ").AppendLine(sheet.Name?.Value ?? $"Sheet{s + 1}");
-
-                    foreach (var row in worksheet.Descendants<SS.Row>())
-                    {
-                        ct.ThrowIfCancellationRequested();
-
-                        // Collect cells into column-indexed slots so gaps render as empty TSV cells.
-                        var cells = new List<string>();
-                        var anyNonEmpty = false;
-                        foreach (var cell in row.Elements<SS.Cell>())
-                        {
-                            var colIdx = ColumnIndex(cell.CellReference?.Value);
-                            while (cells.Count < colIdx) cells.Add(string.Empty);
-
-                            var value = CellToString(cell, sst);
-                            cells.Add(value);
-                            if (!string.IsNullOrWhiteSpace(value)) anyNonEmpty = true;
-                        }
-                        if (!anyNonEmpty) continue;
-
-                        // Trim trailing empty cells.
-                        int lastNonEmpty = cells.Count - 1;
-                        while (lastNonEmpty >= 0 && string.IsNullOrEmpty(cells[lastNonEmpty])) lastNonEmpty--;
-
-                        sb.AppendLine(string.Join('\t', cells.Take(lastNonEmpty + 1)));
-
-                        if (sb.Length > MaxTextBytes) return ReadResult.TooLarge;
-                    }
+                    if (line.Kind == XlsxLineKind.Separator) sb.AppendLine();
+                    else sb.AppendLine(line.Text);
                 }
 
                 if (sb.Length > MaxTextBytes) return ReadResult.TooLarge;
@@ -192,6 +183,81 @@ public static class DroppedFileReader
                 return ReadResult.Fail(ex.Message);
             }
         }, ct);
+    }
+
+    internal enum XlsxLineKind { Separator, Header, Row }
+
+    /// <summary>One entry per line <see cref="ReadXlsxAsync"/> emits (including the blank separator
+    /// between sheets), so that a diff computed against the emitted text always indexes into this
+    /// array 1:1. <see cref="RowNode"/> is the real backing row for a <see cref="XlsxLineKind.Row"/>
+    /// line; null for a separator/header line, which are never a patch target.</summary>
+    internal sealed record XlsxWalkLine(XlsxLineKind Kind, string Text, string SheetName, SS.Row? RowNode);
+
+    internal readonly record struct XlsxWorkbookWalk(
+        IReadOnlyList<XlsxWalkLine> Lines,
+        IReadOnlyDictionary<string, WorksheetPart> SheetsByName);
+
+    internal static XlsxWorkbookWalk WalkXlsxWorkbook(WorkbookPart workbookPart, CancellationToken ct = default)
+    {
+        var sheets = workbookPart.Workbook?.Sheets?.Elements<SS.Sheet>().ToList();
+        var sheetsByName = new Dictionary<string, WorksheetPart>(StringComparer.OrdinalIgnoreCase);
+        if (sheets is null || sheets.Count == 0)
+            return new XlsxWorkbookWalk([], sheetsByName);
+
+        var sst = workbookPart.SharedStringTablePart?.SharedStringTable;
+        var lines = new List<XlsxWalkLine>();
+
+        for (int s = 0; s < sheets.Count; s++)
+        {
+            var sheet = sheets[s];
+            if (sheet.Id?.Value is not { } relId) continue;
+            if (workbookPart.GetPartById(relId) is not WorksheetPart wsPart) continue;
+            if (wsPart.Worksheet is not { } worksheet) continue;
+
+            var sheetName = sheet.Name?.Value ?? $"Sheet{s + 1}";
+            sheetsByName[sheetName] = wsPart;
+
+            if (s > 0) lines.Add(new XlsxWalkLine(XlsxLineKind.Separator, "", "", null));
+            lines.Add(new XlsxWalkLine(XlsxLineKind.Header, "## Sheet: " + sheetName, sheetName, null));
+
+            foreach (var row in worksheet.Descendants<SS.Row>())
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var cells = GetCellsByColumn(row, sst);
+                if (cells.Count == 0) continue;
+
+                var lineText = string.Join('\t', cells);
+                lines.Add(new XlsxWalkLine(XlsxLineKind.Row, lineText, sheetName, row));
+            }
+        }
+
+        return new XlsxWorkbookWalk(lines, sheetsByName);
+    }
+
+    /// <summary>Column-indexed, trailing-empty-trimmed cell text for one row — the exact fields a
+    /// TSV line renders. Shared by the read path and by <c>XlsxPatcher</c>, which re-derives this
+    /// fresh at both prepare (validate) and execute (apply) time rather than caching it, so a
+    /// same-row field-by-field diff always compares against the row's current real values.</summary>
+    internal static List<string> GetCellsByColumn(SS.Row row, SS.SharedStringTable? sst)
+    {
+        var cells = new List<string>();
+        var anyNonEmpty = false;
+        foreach (var cell in row.Elements<SS.Cell>())
+        {
+            var colIdx = ColumnIndex(cell.CellReference?.Value);
+            while (cells.Count < colIdx) cells.Add(string.Empty);
+
+            var value = CellToString(cell, sst);
+            cells.Add(value);
+            if (!string.IsNullOrWhiteSpace(value)) anyNonEmpty = true;
+        }
+        if (!anyNonEmpty) return [];
+
+        int lastNonEmpty = cells.Count - 1;
+        while (lastNonEmpty >= 0 && string.IsNullOrEmpty(cells[lastNonEmpty])) lastNonEmpty--;
+
+        return cells.Take(lastNonEmpty + 1).ToList();
     }
 
     public static Task<ReadResult> ReadEmailAsync(string path, CancellationToken ct)
@@ -282,7 +348,8 @@ public static class DroppedFileReader
         return raw;
     }
 
-    private static int ColumnIndex(string? cellRef)
+    // internal: also used by XlsxPatcher to locate a cell by column at patch time.
+    internal static int ColumnIndex(string? cellRef)
     {
         if (string.IsNullOrEmpty(cellRef)) return 0;
         int idx = 0;

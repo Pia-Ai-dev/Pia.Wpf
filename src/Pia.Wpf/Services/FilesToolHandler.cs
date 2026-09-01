@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using DocumentFormat.OpenXml.Packaging;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
@@ -37,6 +38,19 @@ public class FilesToolHandler : IFilesToolHandler
     private const int DefaultReadLimit = 500;             // default window line count
     private const int MaxReadLimit = 2000;                // hard cap on window line count
     private const int MaxFormattedWindowChars = 100 * 1024; // ~100K-char cap on formatted output
+
+    // docx/xlsx patch-in-place caps: bound how much of a single write_file call's OpenXml mutation
+    // work can cost, and guard against a write built from a partial (windowed) read of the document.
+    private static readonly DocxPatcher.PatchLimits DocxPatchLimits = new(MaxTouchedNodes: 2000, MaxRemovedAbsolute: 50, MaxRemovedFraction: 0.4);
+    private static readonly XlsxPatcher.PatchLimits XlsxPatchLimits = new(MaxTouchedCells: 5000);
+
+    // Macro-enabled/template OOXML variants are read-only: regenerating any part of a macro-bearing
+    // package risks losing or mishandling the macro project, and a template's own semantics (.dotx
+    // opens as a new untitled document) don't map onto "edit this exact file."
+    private static readonly HashSet<string> MacroOrTemplateWriteExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".docm", ".dotm", ".dotx", ".xlsm", ".xltm", ".xltx",
+    };
 
     private readonly ISettingsService _settingsService;
     private readonly IFileStalenessStore _stalenessStore;
@@ -129,10 +143,17 @@ public class FilesToolHandler : IFilesToolHandler
                 "List text files inside the user's assistant files folder. Returns relative paths the other file tools accept. Ignored paths (built-in defaults such as .git/bin/obj/node_modules, plus any .gitignore/.piaignore entries in the folder) are omitted."),
 
             AIFunctionFactory.Create(ReadFileSchema, "read_file",
-                "Read the contents of a text file inside the assistant files folder. Use this before summarizing or updating a file."),
+                "Read the contents of a text file inside the assistant files folder. Use this before summarizing or updating a file. " +
+                "Also reads .docx (one line per paragraph) and .xlsx (each sheet as a '## Sheet: name' header followed by tab-separated rows) " +
+                "as plain text — .docm/.xlsm and other macro-enabled or template variants are not supported."),
 
             AIFunctionFactory.Create(WriteFileSchema, "write_file",
-                "Create or overwrite a text file inside the assistant files folder. Used for both creating new files and updating existing ones."),
+                "Create or overwrite a text file inside the assistant files folder. Used for both creating new files and updating existing ones. " +
+                "For .docx/.xlsx, pass the FULL updated text in the exact shape read_file returned, with only the parts you're changing edited — " +
+                "only the paragraphs/cells whose text differs from the current file are touched, so everything else (styles, formulas, images, " +
+                "other sheets) survives untouched. Editing a paragraph's text collapses its internal formatting to a single run. New xlsx rows " +
+                "can only be appended at a sheet's end (no mid-sheet insert or row deletion); a sheet you omit from the new content is left " +
+                "untouched, not deleted. Macro-enabled/template files (.docm/.xlsm/.dotm/.xltm/.dotx/.xltx) can't be written."),
 
             AIFunctionFactory.Create(DeleteFileSchema, "delete_file",
                 "Delete a file inside the assistant files folder."),
@@ -173,7 +194,7 @@ public class FilesToolHandler : IFilesToolHandler
         {
             "list_files" => (HandleListFiles(root, args), null),
             "read_file"  => (await HandleReadFileAsync(root, args, cancellationToken), null),
-            "write_file" => PrepareWriteFile(root, args),
+            "write_file" => await PrepareWriteFileAsync(root, args, cancellationToken),
             "delete_file" => PrepareDeleteFile(root, args),
             "search_files" => (HandleSearchFiles(root, args), null),
             _ => ((object?)$"Unknown tool: {toolCall.Name}", (FilesToolCall?)null)
@@ -960,7 +981,8 @@ public class FilesToolHandler : IFilesToolHandler
     /// <c>(Result, null)</c> — no action card. Only a viable write returns a <c>(null, pending)</c>
     /// action card carrying the diff for the user to approve.
     /// </summary>
-    private (object? Result, FilesToolCall? Pending) PrepareWriteFile(string root, IDictionary<string, object?> args)
+    private async Task<(object? Result, FilesToolCall? Pending)> PrepareWriteFileAsync(
+        string root, IDictionary<string, object?> args, CancellationToken cancellationToken)
     {
         var requested = GetStringArg(args, "path");
 
@@ -998,17 +1020,43 @@ public class FilesToolHandler : IFilesToolHandler
         if (content.Length > MaxWriteChars)
             return WriteFailure($"Error: Content is too large ({content.Length} chars, max {MaxWriteChars}).");
 
+        var ext = Path.GetExtension(safePath);
+        if (MacroOrTemplateWriteExtensions.Contains(ext))
+            return WriteFailure(
+                $"Error: '{ext}' files can't be edited by write_file — macro-enabled and template Office " +
+                "formats are read-only here (regenerating any part of the package risks losing the macro " +
+                "project). Save a .docx/.xlsx copy and edit that instead.");
+
         var exists = File.Exists(safePath);
         var rel = SafeRelative(root, safePath);
         var desc = exists ? $"Update file '{rel}'" : $"Create file '{rel}'";
+        bool isDocx = string.Equals(ext, ".docx", StringComparison.OrdinalIgnoreCase);
+        bool isXlsx = string.Equals(ext, ".xlsx", StringComparison.OrdinalIgnoreCase);
 
-        // TRUE LINE-LEVEL DIFF: compute old→new at prepare time. For a new file the whole
-        // content is "added". Read failures fall back to an empty (all-added) baseline.
-        // Capture the baseline's mtime alongside its content so the post-approval guard in
-        // ExecuteWriteAsync can detect an out-of-band change to the exact bytes the user previewed.
+        // TRUE LINE-LEVEL DIFF: compute old→new at prepare time (shown to the user as the approval
+        // card's preview, and — for docx — fed to DocxPatcher as the edit script). For a new file
+        // the whole content is "added".
+        //
+        // A plain-text baseline read failure tolerantly falls back to an empty (all-added) baseline
+        // — a transient text-read glitch degrading to "treat as new file" is an acceptable fallback.
+        // For docx/xlsx it is NOT: silently doing that would turn "patch one paragraph/cell" into a
+        // full-document regenerate, exactly the destructive behavior patch-in-place exists to avoid.
+        // So a failed/oversized/corrupt structured-document baseline is a hard prepare-time rejection.
         string? oldContent = null;
         DateTime? previewMtime = null;
-        if (exists)
+        if (exists && (isDocx || isXlsx))
+        {
+            var structured = isDocx
+                ? await DroppedFileReader.ReadDocxAsync(safePath, cancellationToken)
+                : await DroppedFileReader.ReadXlsxAsync(safePath, cancellationToken);
+            if (structured.Status == DroppedFileReader.ReadStatus.TooLarge)
+                return WriteFailure("Error: The current document is too large to safely prepare this edit.");
+            if (structured.Status == DroppedFileReader.ReadStatus.Failed)
+                return WriteFailure($"Error: Could not read the current document to prepare this edit ({structured.Error}).");
+            oldContent = structured.Text ?? string.Empty;
+            previewMtime = File.GetLastWriteTimeUtc(safePath);
+        }
+        else if (exists)
         {
             try
             {
@@ -1018,6 +1066,23 @@ public class FilesToolHandler : IFilesToolHandler
             catch { oldContent = null; previewMtime = null; }
         }
         var diff = LineDiff.Compute(oldContent, content);
+
+        // Validate the patch plan (dry run, no mutation) against the file as it stands right now —
+        // this is a deterministic prepare-time rejection (ambiguous anchor, formula overwrite,
+        // mid-sheet insert, missing sheet, deletion-guard threshold, touched-node cap), so a doomed
+        // edit never reaches an approval card.
+        if (exists && isDocx)
+        {
+            using var validateDoc = WordprocessingDocument.Open(safePath, isEditable: false);
+            var check = DocxPatcher.Apply(validateDoc, diff, apply: false, DocxPatchLimits);
+            if (!check.Success) return WriteFailure($"Error: {check.Error}");
+        }
+        else if (exists && isXlsx)
+        {
+            using var validateDoc = SpreadsheetDocument.Open(safePath, isEditable: false);
+            var check = XlsxPatcher.Apply(validateDoc, content, apply: false, XlsxPatchLimits);
+            if (!check.Success) return WriteFailure($"Error: {check.Error}");
+        }
 
         // STALENESS GUARD: capture the staleness key (session Id) and baseline at PREPARE time;
         // the recorded read may have happened in an earlier turn, but the ambient carries the
@@ -1035,7 +1100,7 @@ public class FilesToolHandler : IFilesToolHandler
             Description: desc,
             Details: $"{content.Length} character(s) will be written.",
             TargetPath: rel,
-            Execute: () => ExecuteWriteAsync(root, requested, rel, content, oldContent, exists, previewMtime, taskId, vaultAnchor, touch),
+            Execute: () => ExecuteWriteAsync(root, requested, rel, content, oldContent, diff, exists, previewMtime, taskId, vaultAnchor, touch),
             DiffPreview: diff));
     }
 
@@ -1046,19 +1111,19 @@ public class FilesToolHandler : IFilesToolHandler
     private static (object? Result, FilesToolCall? Pending) WriteFailure(string message)
         => (WriteResult.Failed(message), null);
 
-    private Task<object?> ExecuteWriteAsync(
-        string root, string requested, string rel, string content, string? oldContent,
+    private async Task<object?> ExecuteWriteAsync(
+        string root, string requested, string rel, string content, string? oldContent, IReadOnlyList<DiffLine> diff,
         bool existedAtPrepare, DateTime? previewMtime, Guid taskId, string? vaultAnchor,
         Action<FileTouch>? touch = null)
     {
         // Re-validate inside the deferred execution path — the sandbox root might have changed
         // between preparation and confirmation. Re-check the sensitive blocklist for the same reason.
         if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, requested, out var finalPath))
-            return Task.FromResult<object?>(WriteResult.Failed("Error: Path is outside the assistant files folder."));
+            return WriteResult.Failed("Error: Path is outside the assistant files folder.");
         if (SensitivePathGuard.IsBlocked(finalPath, out var blockReason))
-            return Task.FromResult<object?>(WriteResult.Failed($"Error: Refusing to write here — {blockReason}."));
+            return WriteResult.Failed($"Error: Refusing to write here — {blockReason}.");
         if (vaultAnchor is not null && AssistantWorkspace.IsAtOrInsideVaultOf(vaultAnchor, finalPath))
-            return Task.FromResult<object?>(WriteResult.Failed(VaultTargetPolicy.WriteRefusal(vaultAnchor, finalPath)));
+            return WriteResult.Failed(VaultTargetPolicy.WriteRefusal(vaultAnchor, finalPath));
 
         try
         {
@@ -1077,9 +1142,9 @@ public class FilesToolHandler : IFilesToolHandler
             if (existsNow && !existedAtPrepare)
             {
                 _logger.LogInformation("write_file blocked: a file appeared since the create was previewed");
-                return Task.FromResult<object?>(WriteResult.Failed(
+                return WriteResult.Failed(
                     "Error: A file now exists at this path that was not present when the create was previewed. " +
-                    "Re-read the file and submit the write again so it is based on current content."));
+                    "Re-read the file and submit the write again so it is based on current content.");
             }
 
             DateTime currentMtime = default;
@@ -1089,9 +1154,9 @@ public class FilesToolHandler : IFilesToolHandler
             if (existsNow && previewMtime.HasValue && currentMtime != previewMtime.Value)
             {
                 _logger.LogInformation("write_file blocked: file changed on disk since it was previewed");
-                return Task.FromResult<object?>(WriteResult.Failed(
+                return WriteResult.Failed(
                     "Error: The file changed on disk after this edit was previewed, so the approved diff no longer matches. " +
-                    "Re-read the file and submit the write again so it is based on current content."));
+                    "Re-read the file and submit the write again so it is based on current content.");
             }
 
             // STALENESS (ADVISORY): the model may have read this file in an earlier turn. Warn
@@ -1100,6 +1165,19 @@ public class FilesToolHandler : IFilesToolHandler
             string? warning = null;
             if (existsNow && _stalenessStore.CheckStaleness(taskId, finalPath, currentMtime))
                 warning = "The file changed on disk after it was last read; this write may overwrite unseen changes.";
+
+            var ext = Path.GetExtension(finalPath);
+            if (string.Equals(ext, ".docx", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(ext, ".xlsx", StringComparison.OrdinalIgnoreCase))
+            {
+                var structuredResult = await ExecuteStructuredWriteAsync(ext, finalPath, rel, content, diff, existsNow);
+                if (structuredResult is WriteResult { success: true } ok)
+                {
+                    touch?.Invoke(new FileTouch(finalPath, existsNow ? FileTouchKind.Updated : FileTouchKind.Created));
+                    return ClampResult(ok with { _warning = warning ?? ok._warning });
+                }
+                return structuredResult;
+            }
 
             // DELTA-FILTERED LINT (only NEW errors surface).
             var lint = WriteLintHelper.Lint(finalPath, oldContent, content);
@@ -1117,14 +1195,112 @@ public class FilesToolHandler : IFilesToolHandler
             touch?.Invoke(new FileTouch(finalPath, existsNow ? FileTouchKind.Updated : FileTouchKind.Created));
 
             var result = WriteResult.Ok(rel, write.BytesWritten, lineCount, lint, warning, !existsNow);
-            return Task.FromResult<object?>(ClampResult(result));
+            return ClampResult(result);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "write_file failed");
-            return Task.FromResult<object?>(WriteResult.Failed($"Error: Could not write file ({ex.Message})."));
+            return WriteResult.Failed($"Error: Could not write file ({ex.Message}).");
         }
     }
+
+    /// <summary>
+    /// Builds a docx/xlsx write into a same-directory temp file (a fresh minimal package when
+    /// <paramref name="existedAtExecute"/> is false, otherwise a patch of the original via
+    /// <see cref="DocxPatcher"/>/<see cref="XlsxPatcher"/>, re-validated against the SAME diff/content
+    /// already approved by the user — deterministic, since the caller's mtime check just proved the
+    /// file is byte-identical to what was validated at prepare time), round-trip-validates the result
+    /// by re-extracting and comparing against <paramref name="content"/>, and only then commits.
+    /// A validation or patch failure leaves the original file untouched and deletes the temp file.
+    /// </summary>
+    private async Task<object?> ExecuteStructuredWriteAsync(
+        string ext, string finalPath, string rel, string content, IReadOnlyList<DiffLine> diff, bool existedAtExecute)
+    {
+        bool isDocx = string.Equals(ext, ".docx", StringComparison.OrdinalIgnoreCase);
+        var tempPath = AtomicBinaryWriter.CreateTempPath(finalPath);
+
+        try
+        {
+            if (!existedAtExecute)
+            {
+                if (isDocx) DocxPatcher.CreateFresh(tempPath, content);
+                else XlsxPatcher.CreateFresh(tempPath, content);
+            }
+            else
+            {
+                File.Copy(finalPath, tempPath, overwrite: false);
+                if (isDocx)
+                {
+                    using var doc = WordprocessingDocument.Open(tempPath, isEditable: true);
+                    var patch = DocxPatcher.Apply(doc, diff, apply: true, DocxPatchLimits);
+                    if (!patch.Success)
+                    {
+                        AtomicBinaryWriter.DiscardTempFile(tempPath);
+                        return WriteResult.Failed($"Error: {patch.Error}");
+                    }
+                    doc.MainDocumentPart!.Document!.Save();
+                }
+                else
+                {
+                    using var doc = SpreadsheetDocument.Open(tempPath, isEditable: true);
+                    var patch = XlsxPatcher.Apply(doc, content, apply: true, XlsxPatchLimits);
+                    if (!patch.Success)
+                    {
+                        AtomicBinaryWriter.DiscardTempFile(tempPath);
+                        return WriteResult.Failed($"Error: {patch.Error}");
+                    }
+                    doc.WorkbookPart!.Workbook!.Save();
+                }
+            }
+
+            var roundTripError = await ValidateRoundTripAsync(isDocx, tempPath, content);
+            if (roundTripError is not null)
+            {
+                AtomicBinaryWriter.DiscardTempFile(tempPath);
+                _logger.LogError("write_file round-trip validation failed for {Ext}", ext);
+                return WriteResult.Failed($"Error: {roundTripError}");
+            }
+
+            var bytesWritten = new FileInfo(tempPath).Length;
+            AtomicBinaryWriter.CommitTempFile(tempPath, finalPath);
+
+            _logger.LogInformation("write_file succeeded ({Bytes} bytes, structured {Ext})", bytesWritten, ext);
+            _logger.SensitiveDebug("write_file path: {Path}", rel);
+
+            return WriteResult.Ok(rel, bytesWritten, CountLines(content), null, null, !existedAtExecute);
+        }
+        catch (Exception ex)
+        {
+            AtomicBinaryWriter.DiscardTempFile(tempPath);
+            _logger.LogError(ex, "write_file failed (structured {Ext})", ext);
+            return WriteResult.Failed($"Error: Could not write file ({ex.Message}).");
+        }
+    }
+
+    /// <summary>Re-extracts the just-built/patched temp file and compares it against the content the
+    /// user approved — a stronger guarantee than "does the package open," since a patch-logic bug
+    /// could produce a well-formed but wrong document. Blank lines are excluded from the comparison
+    /// on both sides: neither reader ever emits one (a paragraph/row that's genuinely blank is never
+    /// visible in the first place), so a model-submitted blank line can't literally round-trip.
+    /// Returns null on success, else a message describing the mismatch.</summary>
+    private static async Task<string?> ValidateRoundTripAsync(bool isDocx, string tempPath, string submittedContent)
+    {
+        var reread = isDocx
+            ? await DroppedFileReader.ReadDocxAsync(tempPath, CancellationToken.None)
+            : await DroppedFileReader.ReadXlsxAsync(tempPath, CancellationToken.None);
+
+        if (reread.Status != DroppedFileReader.ReadStatus.Ok)
+            return "internal validation error — the patched document could not be re-read.";
+
+        var expected = NonEmptyLines(submittedContent);
+        var actual = NonEmptyLines(reread.Text ?? string.Empty);
+        return expected.SequenceEqual(actual, StringComparer.Ordinal)
+            ? null
+            : "internal validation error — the patched document doesn't match the submitted content.";
+    }
+
+    private static string[] NonEmptyLines(string text)
+        => text.Replace("\r\n", "\n").Split('\n').Where(l => l.Length > 0).ToArray();
 
     /// <summary>Counts logical lines (LF-delimited, trailing newline not counted as an extra line).</summary>
     private static int CountLines(string content)
@@ -1291,13 +1467,13 @@ public class FilesToolHandler : IFilesToolHandler
     private static string ListFilesSchema(
         [Description("Optional file-name glob, e.g. '*.md' or 'notes*' (matched against file names at any depth). Must not contain a path separator. Defaults to all files.")] string? pattern = null) => "";
 
-    [Description("Read the contents of a text file in the assistant files folder. Output is line-numbered as LINE|CONTENT (1-indexed), windowed by offset/limit, and prefixed with total_lines.")]
+    [Description("Read the contents of a text file (also .docx/.xlsx, extracted as text) in the assistant files folder. Output is line-numbered as LINE|CONTENT (1-indexed), windowed by offset/limit, and prefixed with total_lines.")]
     private static string ReadFileSchema(
         [Description("Relative path to the file. Must stay inside the assistant files folder.")] string path,
         [Description("1-indexed line to start reading from (default 1, minimum 1).")] int offset = 1,
         [Description("Maximum number of lines to return (default 500, maximum 2000).")] int limit = 500) => "";
 
-    [Description("Create or overwrite a text file in the assistant files folder")]
+    [Description("Create or overwrite a text file (also .docx/.xlsx — only the changed paragraphs/cells are touched) in the assistant files folder")]
     private static string WriteFileSchema(
         [Description("Relative path to the file. Must stay inside the assistant files folder.")] string path,
         [Description("Full new contents of the file.")] string content) => "";

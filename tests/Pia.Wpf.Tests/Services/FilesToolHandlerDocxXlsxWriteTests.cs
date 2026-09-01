@@ -1,0 +1,243 @@
+using System.IO;
+using DocumentFormat.OpenXml;
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Wordprocessing;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+using Pia.Models;
+using Pia.Services;
+using Pia.Services.Interfaces;
+using Xunit;
+using DW = DocumentFormat.OpenXml.Wordprocessing;
+using SS = DocumentFormat.OpenXml.Spreadsheet;
+
+namespace Pia.Tests.Services;
+
+/// <summary>End-to-end write_file coverage for .docx/.xlsx, through the full
+/// HandleToolCallAsync -> approval card -> Execute pipeline (patch-engine internals are covered
+/// directly in Infrastructure/DocxPatcherTests.cs and XlsxPatcherTests.cs).</summary>
+public class FilesToolHandlerDocxXlsxWriteTests : IDisposable
+{
+    private readonly string _root;
+    private readonly FilesToolHandler _handler;
+    private readonly IFileStalenessStore _staleness = new FileStalenessStore();
+
+    public FilesToolHandlerDocxXlsxWriteTests()
+    {
+        _root = Path.Combine(Path.GetTempPath(), "pia-docxlsx-write-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_root);
+
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings { AssistantFilesFolder = _root });
+
+        _handler = new FilesToolHandler(settings, _staleness, NullLogger<FilesToolHandler>.Instance);
+    }
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
+    }
+
+    private static void CreateDocx(string path, params string[] paragraphs)
+    {
+        using var doc = WordprocessingDocument.Create(path, WordprocessingDocumentType.Document);
+        var main = doc.AddMainDocumentPart();
+        main.Document = new Document();
+        var body = new Body();
+        main.Document.Append(body);
+        foreach (var p in paragraphs)
+            body.Append(new Paragraph(new DW.Run(new DW.Text(p))));
+        main.Document.Save();
+    }
+
+    private static void CreateXlsx(string path, string sheetName, params (string Ref, string Value)[] cells)
+    {
+        using var doc = SpreadsheetDocument.Create(path, SpreadsheetDocumentType.Workbook);
+        var wbPart = doc.AddWorkbookPart();
+        wbPart.Workbook = new SS.Workbook();
+        var wsPart = wbPart.AddNewPart<WorksheetPart>();
+
+        var row = new SS.Row { RowIndex = 1 };
+        foreach (var (r, v) in cells)
+            row.Append(new SS.Cell { CellReference = r, DataType = SS.CellValues.String, CellValue = new SS.CellValue(v) });
+        wsPart.Worksheet = new SS.Worksheet(new SS.SheetData(row));
+
+        var sheets = wbPart.Workbook.AppendChild(new SS.Sheets());
+        sheets.Append(new SS.Sheet { Id = wbPart.GetIdOfPart(wsPart), SheetId = 1, Name = sheetName });
+        wbPart.Workbook.Save();
+    }
+
+    private async Task<(object? Result, FilesToolCall? Pending)> Prepare(string path, string content)
+    {
+        var args = new Dictionary<string, object?> { ["path"] = path, ["content"] = content };
+        var call = new FunctionCallContent("c1", "write_file", args);
+        return await _handler.HandleToolCallAsync(call);
+    }
+
+    private static T Prop<T>(object obj, string name)
+    {
+        var p = obj.GetType().GetProperty(name);
+        Assert.NotNull(p);
+        return (T)p!.GetValue(obj)!;
+    }
+
+    private static List<string> BodyParagraphTexts(string path)
+    {
+        using var doc = WordprocessingDocument.Open(path, isEditable: false);
+        return doc.MainDocumentPart!.Document!.Body!.Descendants<Paragraph>()
+            .Select(p => string.Concat(p.Descendants<DW.Text>().Select(t => t.Text)))
+            .ToList();
+    }
+
+    [Fact]
+    public async Task Docx_RoundTrip_EditsOnlyTheChangedParagraph()
+    {
+        var full = Path.Combine(_root, "doc.docx");
+        CreateDocx(full, "Para 1", "Para 2", "Para 3");
+
+        var (_, pending) = await Prepare("doc.docx", "Para 1\nPara 2 EDITED\nPara 3");
+        Assert.NotNull(pending);
+        var result = await pending!.Execute();
+
+        Assert.True(Prop<bool>(result!, "success"), Prop<string?>(result!, "error"));
+        Assert.Equal(["Para 1", "Para 2 EDITED", "Para 3"], BodyParagraphTexts(full));
+    }
+
+    [Fact]
+    public async Task Xlsx_RoundTrip_EditsOnlyTheChangedCell()
+    {
+        var full = Path.Combine(_root, "book.xlsx");
+        CreateXlsx(full, "Data", ("A1", "one"), ("B1", "two"));
+
+        var (_, pending) = await Prepare("book.xlsx", "## Sheet: Data\none\tTWO EDITED");
+        Assert.NotNull(pending);
+        var result = await pending!.Execute();
+
+        Assert.True(Prop<bool>(result!, "success"), Prop<string?>(result!, "error"));
+        using var doc = SpreadsheetDocument.Open(full, isEditable: false);
+        var cells = doc.WorkbookPart!.WorksheetParts.First().Worksheet!.Descendants<SS.Cell>().ToList();
+        Assert.Contains(cells, c => c.CellReference == "A1");
+    }
+
+    [Fact]
+    public async Task Docx_CreateNew_NoBaseline()
+    {
+        var (_, pending) = await Prepare("new.docx", "Hello\nWorld");
+        Assert.NotNull(pending);
+        var result = await pending!.Execute();
+
+        Assert.True(Prop<bool>(result!, "success"), Prop<string?>(result!, "error"));
+        Assert.Equal(["Hello", "World"], BodyParagraphTexts(Path.Combine(_root, "new.docx")));
+    }
+
+    [Fact]
+    public async Task Xlsx_CreateNew_NoBaseline()
+    {
+        var (_, pending) = await Prepare("new.xlsx", "## Sheet: Sheet1\na1\tb1");
+        Assert.NotNull(pending);
+        var result = await pending!.Execute();
+
+        Assert.True(Prop<bool>(result!, "success"), Prop<string?>(result!, "error"));
+        Assert.True(File.Exists(Path.Combine(_root, "new.xlsx")));
+    }
+
+    [Fact]
+    public async Task Docm_IsRejected_AtPrepareTime_NoActionCard()
+    {
+        var (result, pending) = await Prepare("macro.docm", "content");
+
+        Assert.Null(pending);
+        Assert.False(Prop<bool>(result!, "success"));
+        Assert.Contains("macro", Prop<string?>(result!, "error")!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Xlsm_IsRejected_AtPrepareTime_NoActionCard()
+    {
+        var (result, pending) = await Prepare("macro.xlsm", "## Sheet: Data\nvalue");
+
+        Assert.Null(pending);
+        Assert.False(Prop<bool>(result!, "success"));
+        Assert.Contains("macro", Prop<string?>(result!, "error")!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Docx_CorruptBaseline_IsHardRejected_NotTreatedAsNewFile()
+    {
+        var full = Path.Combine(_root, "corrupt.docx");
+        File.WriteAllText(full, "this is not a real docx file");
+
+        var (result, pending) = await Prepare("corrupt.docx", "Replacement text");
+
+        Assert.Null(pending);
+        Assert.False(Prop<bool>(result!, "success"));
+        Assert.Contains("could not read", Prop<string?>(result!, "error")!, StringComparison.OrdinalIgnoreCase);
+        // The corrupt file was never touched (no regenerate-as-new-file fallback).
+        Assert.Equal("this is not a real docx file", File.ReadAllText(full));
+    }
+
+    [Fact]
+    public async Task Docx_FileChangedSincePreview_IsBlocked_NoClobber()
+    {
+        var full = Path.Combine(_root, "concurrent.docx");
+        CreateDocx(full, "Original");
+
+        var (_, pending) = await Prepare("concurrent.docx", "Edited");
+        Assert.NotNull(pending);
+
+        // Out-of-band change after preview, before execute.
+        CreateDocx(full, "Someone else's edit");
+        File.SetLastWriteTimeUtc(full, DateTime.UtcNow.AddMinutes(5));
+
+        var result = await pending!.Execute();
+
+        Assert.False(Prop<bool>(result!, "success"));
+        Assert.Contains("changed on disk", Prop<string?>(result!, "error")!, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(["Someone else's edit"], BodyParagraphTexts(full));
+    }
+
+    [Fact]
+    public async Task Xlsx_MidSheetInsert_RejectedAtPrepareTime_OriginalUntouched_NoTempFile()
+    {
+        var full = Path.Combine(_root, "book.xlsx");
+        using (var doc = SpreadsheetDocument.Create(full, SpreadsheetDocumentType.Workbook))
+        {
+            var wbPart = doc.AddWorkbookPart();
+            wbPart.Workbook = new SS.Workbook();
+            var wsPart = wbPart.AddNewPart<WorksheetPart>();
+            var sheetData = new SS.SheetData();
+            var row1 = new SS.Row { RowIndex = 1 };
+            row1.Append(new SS.Cell { CellReference = "A1", DataType = SS.CellValues.String, CellValue = new SS.CellValue("one") });
+            var row2 = new SS.Row { RowIndex = 2 };
+            row2.Append(new SS.Cell { CellReference = "A2", DataType = SS.CellValues.String, CellValue = new SS.CellValue("two") });
+            sheetData.Append(row1, row2);
+            wsPart.Worksheet = new SS.Worksheet(sheetData);
+            var sheets = wbPart.Workbook.AppendChild(new SS.Sheets());
+            sheets.Append(new SS.Sheet { Id = wbPart.GetIdOfPart(wsPart), SheetId = 1, Name = "Data" });
+            wbPart.Workbook.Save();
+        }
+        var originalBytes = File.ReadAllBytes(full);
+
+        var (result, pending) = await Prepare("book.xlsx", "## Sheet: Data\none\nnew middle row\ntwo");
+
+        Assert.Null(pending); // rejected at prepare time, no approval card
+        Assert.False(Prop<bool>(result!, "success"));
+        Assert.Contains("middle", Prop<string?>(result!, "error")!, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(originalBytes, File.ReadAllBytes(full));
+        Assert.Empty(Directory.GetFiles(_root, "*.tmp"));
+    }
+
+    [Fact]
+    public async Task Docx_AtomicReplace_LeavesNoTempFiles()
+    {
+        var full = Path.Combine(_root, "atomic.docx");
+        CreateDocx(full, "Before");
+
+        var (_, pending) = await Prepare("atomic.docx", "After");
+        await pending!.Execute();
+
+        Assert.Empty(Directory.GetFiles(_root, "*.tmp"));
+        Assert.Equal(["After"], BodyParagraphTexts(full));
+    }
+}
