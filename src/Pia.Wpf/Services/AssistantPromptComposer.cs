@@ -26,7 +26,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         _pluginService = pluginService;
     }
 
-    public AssistantTurnSetup PrepareTurn(Persona persona, AiProvider provider, IReadOnlyList<AtCommand> atCommands, bool tokenizationEnabled, bool suggestAgentModeEligible = false)
+    public AssistantTurnSetup PrepareTurn(Persona persona, AiProvider provider, IReadOnlyList<AtCommand> atCommands, bool tokenizationEnabled, bool suggestAgentModeEligible = false, string? environmentRoot = null)
     {
         // Tool gating (contract §5) — see ShouldUseTools.
         var supportsTools = ShouldUseTools(provider.SupportsToolCalling, persona.ToolScope);
@@ -38,7 +38,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         if (supportsTools)
         {
             var hasAtCommands = atCommands.Count > 0;
-            fullSystemPrompt = BuildSystemPrompt(persona, tokenizationEnabled, skipToolSelectionTree: hasAtCommands, webSearchActive: webSearchActive)
+            fullSystemPrompt = BuildSystemPrompt(persona, tokenizationEnabled, skipToolSelectionTree: hasAtCommands, webSearchActive: webSearchActive, environmentRoot: environmentRoot)
                 + BuildAtCommandHint(atCommands);
 
             var allTools = _pluginService.GetAllTools();
@@ -118,13 +118,18 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
     private const string DeclinedActionRule =
         "- When a user declines a proposed action, do NOT retry the same operation. Instead, acknowledge the decline and ask the user what they would like to do differently or if they want to adjust the details.";
 
+    // Round-trips, never parallelism: the runtime answers every call in a round but dispatches them serially.
+    // Sits beside the declined-action rule because "## Tool Selection" is skipped on @-command turns.
+    private const string ToolBatchingRule =
+        "- When you need several independent lookups (file reads, searches, listings, recall), issue all of those tool calls together in one reply instead of one per turn — you get every result back in a single round-trip. Do not re-issue a search or read that has already returned its result.";
+
     // The body of the "## Output Format" section: the persona's own guidance, or the substrate default.
     public static string ResolveOutputFormat(Persona activePersona) =>
         string.IsNullOrWhiteSpace(activePersona.OutputFormat)
             ? DefaultOutputFormat
             : activePersona.OutputFormat.Trim();
 
-    private string BuildSystemPrompt(Persona activePersona, bool tokenizationEnabled, bool skipToolSelectionTree = false, bool webSearchActive = false)
+    private string BuildSystemPrompt(Persona activePersona, bool tokenizationEnabled, bool skipToolSelectionTree = false, bool webSearchActive = false, string? environmentRoot = null)
     {
         var pluginPrompts = _pluginService.GetCombinedSystemPromptAdditions();
         var pluginSection = string.IsNullOrWhiteSpace(pluginPrompts)
@@ -134,6 +139,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
             ? "\n## Privacy Tokens\n\nWhen memory or contact data is returned, personal details (names, emails, phones, addresses, dates) are replaced with privacy tokens like [Person_1], [Email_1], etc. Use these tokens naturally in your responses — they will be resolved back to real values before the user sees your message. Never explain or call attention to the tokens. Treat [Person_1] as if it were the person's actual name.\n"
             : string.Empty;
         var webSearchSection = BuildWebSearchSection(webSearchActive);
+        var environmentSection = BuildEnvironmentSection(environmentRoot);
 
         // Named for the model, which cannot see the tool list's absences: without it a web question sends
         // the model hunting through search_chats/recall/search_files for a search it already has.
@@ -158,7 +164,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
                  - YES → Use Memory tools. To store/update, call remember(type, subject, content) — it automatically finds-or-creates the right record (you do NOT need to recall first); use forget to remove one. To look something up, run the knowledge loop rather than answering from the recall snippet alone: recall to find relevant pages → read_topic(reference) on a topic hit (tier=topic) for its full synthesis and the sources it cites → read_source(reference) for the primary text when the topic's summary is insufficient → browse_index to orient when recall misses. NOT a memory: "Remind me at 3 PM to call Bob" (has time = reminder). NOT a memory: "what did we decide in that chat last week" (a past conversation = step 5).
                  - NO → Continue to step 4.
               4. Does the request involve reading, searching, or editing CODE or FILES in the configured folder?
-                 - YES → Use the file tools: search_files to locate files or text, read_file to inspect content (request a windowed slice with offset/limit for large files), and write_file to apply edits (the user approves a diff before any change is written).
+                 - YES → Use the file tools: find_files to locate files by name or path glob, search_files to find text inside files, read_file to inspect content (request a windowed slice with offset/limit for large files), and write_file to apply edits (the user approves a diff before any change is written).
                  - NO → Continue to step 5.
               5. Does the request refer to something from an EARLIER conversation ("we talked about",
                  "what did I tell you about X", "that chat where we…")?
@@ -186,7 +192,8 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
 
             {ResolveOutputFormat(activePersona)}
             {DeclinedActionRule}
-            {tokenSection}{webSearchSection}
+            {ToolBatchingRule}
+            {tokenSection}{webSearchSection}{environmentSection}
             """;
     }
 
@@ -211,7 +218,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         Pia.Models.AtCommandDomain.Files => (
             "file",
             "read_file",
-            (IReadOnlyList<string>)["list_files", "read_file", "write_file", "edit_file", "delete_file", "search_files"]),
+            (IReadOnlyList<string>)["list_files", "find_files", "read_file", "write_file", "edit_file", "delete_file", "search_files"]),
         Pia.Models.AtCommandDomain.Assignment => (
             "background assignment",
             "query_assignments",
@@ -350,6 +357,11 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         webSearchActive
             ? "\n## Web Search\n\nWeb search is enabled for this conversation. Results reach you either already present in this prompt or through a built-in search tool your provider adds. There is no web-search tool in your tool list, so do not go looking for one, and never substitute chat-history, vault or file search for it. If no results reached you, say that plainly instead of answering from memory.\n\nWhen citing web sources, use only standard markdown links of the form [Title](https://example.com). Never use reference-style brackets like [text][url]. Keep citations sparse — one link per distinct source.\n"
             : string.Empty;
+
+    private static string BuildEnvironmentSection(string? environmentRoot) =>
+        string.IsNullOrWhiteSpace(environmentRoot)
+            ? string.Empty
+            : $"\n## Environment\n\nHere is useful information about the environment you are running in:\n<env>\nWorking folder: {environmentRoot}\nPlatform: Windows\n</env>\nPaths passed to file tools are resolved relative to this working folder; use forward slashes. Absolute paths are accepted only when they stay inside it.\n";
 
     private string BuildSystemPromptNoTools(Persona activePersona, bool webSearchActive = false)
     {

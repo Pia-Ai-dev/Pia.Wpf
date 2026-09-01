@@ -30,6 +30,10 @@ public class FilesToolHandler : IFilesToolHandler
     private const int MaxMatches = 500;          // hard stop on collected matches
     private const int MaxFilesScanned = 20_000;  // hard stop on files visited during the walk
 
+    // find_files result window.
+    private const int DefaultFindLimit = 100;
+    private const int MaxFindLimit = 500;
+
     // read_file windowing / cap regime.
     // Input ceiling: raw file bytes loaded into memory. Reconciled with DroppedFileReader
     // (1 MB extracted text for structured docs, 8 MB raw container) — we adopt the same
@@ -142,8 +146,12 @@ public class FilesToolHandler : IFilesToolHandler
             AIFunctionFactory.Create(ListFilesSchema, "list_files",
                 "List text files inside the user's assistant files folder. Returns relative paths the other file tools accept. Ignored paths (built-in defaults such as .git/bin/obj/node_modules, plus any .gitignore/.piaignore entries in the folder) are omitted."),
 
+            AIFunctionFactory.Create(FindFilesSchema, "find_files",
+                "Locate files by name or path glob inside the assistant files folder, e.g. '*.md' or 'docs/**/*.md'. Read-only; returns relative paths the other file tools accept. Use this for a filename lookup — search_files scans file CONTENT and is the wrong tool for finding a file by name."),
+
             AIFunctionFactory.Create(ReadFileSchema, "read_file",
                 "Read the contents of a text file inside the assistant files folder. Use this before summarizing or updating a file. " +
+                "Locate the file with find_files first if you do not already know its path. " +
                 "Also reads .docx (one line per paragraph) and .xlsx/.xlsm (each sheet as a '## Sheet: name' header followed by " +
                 "tab-separated rows) as plain text — .docm and other macro-enabled Word/template variants are not supported."),
 
@@ -168,7 +176,7 @@ public class FilesToolHandler : IFilesToolHandler
                 "Delete a file inside the assistant files folder."),
 
             AIFunctionFactory.Create(SearchFilesSchema, "search_files",
-                "Search text files inside the assistant files folder for a regular-expression pattern. Read-only; returns matching lines, matching file paths, or a count.")
+                "Scan the CONTENT of text files inside the assistant files folder for a regular-expression pattern. Read-only; returns matching lines, matching file paths, or a count. Narrow it with 'include' to a file glob. To find a file by its name or path instead, use find_files.")
         ];
     }
 
@@ -202,6 +210,7 @@ public class FilesToolHandler : IFilesToolHandler
         return toolCall.Name switch
         {
             "list_files" => (HandleListFiles(root, args), null),
+            "find_files" => (HandleFindFiles(root, args), null),
             "read_file"  => (await HandleReadFileAsync(root, args, cancellationToken), null),
             "write_file" => await PrepareWriteFileAsync(root, args, cancellationToken),
             "edit_file" => await PrepareEditFileAsync(root, args, cancellationToken),
@@ -232,6 +241,19 @@ public class FilesToolHandler : IFilesToolHandler
 
         _logger.SensitiveDebug("Working subpath did not resolve to an existing folder under the sandbox: {Subpath}", workingSubpath);
         return baseRoot;
+    }
+
+    public string? DescribeEffectiveRoot(string? workingSubpath)
+    {
+        // Nothing to describe once the user switches the tools off — GetTools() is empty too.
+        if (!IsAvailable) return null;
+
+        // Deliberately the configured folder, not the ambient workspace root: a caller that has an
+        // ambient root describes that root itself.
+        var baseRoot = _currentFolder;
+        if (baseRoot is null || !Directory.Exists(baseRoot)) return null;
+
+        return ResolveEffectiveRoot(baseRoot, workingSubpath);
     }
 
     public async Task<object?> ExecutePendingActionAsync(FilesToolCall pendingAction)
@@ -382,6 +404,158 @@ public class FilesToolHandler : IFilesToolHandler
     private static string NormalizeSeparators(string relativePath)
         => relativePath.Replace('\\', '/');
 
+    // The lookahead is what keeps "/c" from matching inside "/config/x".
+    private static readonly Regex[] PosixDrivePrefixes =
+    [
+        new(@"^/(?:cygdrive|mnt)/([a-zA-Z])(?=/|$)", RegexOptions.Compiled | RegexOptions.CultureInvariant),
+        new(@"^/([a-zA-Z]):(?=/|$)", RegexOptions.Compiled | RegexOptions.CultureInvariant),
+        new(@"^/([a-zA-Z])(?=/|$)", RegexOptions.Compiled | RegexOptions.CultureInvariant)
+    ];
+
+    /// <summary>Rewrites the POSIX drive spellings a model trained on Unix shells emits as <c>C:/x</c>.</summary>
+    internal static string NormalizePathArg(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return path;
+
+        foreach (var prefix in PosixDrivePrefixes)
+        {
+            var match = prefix.Match(path);
+            if (!match.Success) continue;
+            var drive = char.ToUpperInvariant(match.Groups[1].Value[0]);
+            return $"{drive}:/{path[match.Length..].TrimStart('/')}";
+        }
+        return path;
+    }
+
+    /// <summary>
+    /// Its own walk rather than <see cref="CollectRelativeFiles"/>, whose per-directory name filter
+    /// cannot express a path-bearing pattern.
+    /// </summary>
+    private object HandleFindFiles(string root, IDictionary<string, object?> args)
+    {
+        var pattern = GetStringArg(args, "pattern");
+        if (string.IsNullOrEmpty(pattern))
+            return "Error: A 'pattern' (file glob) is required.";
+
+        var limit = Math.Clamp(GetOptionalIntArg(args, "limit", DefaultFindLimit), 1, MaxFindLimit);
+        var ignore = SandboxIgnore.ForRoot(root);
+
+        var requestedPath = GetOptionalStringArg(args, "path") is { } posixPath ? NormalizePathArg(posixPath) : null;
+        string searchRoot;
+        if (string.IsNullOrWhiteSpace(requestedPath) || requestedPath == ".")
+        {
+            searchRoot = root;
+        }
+        else if (SafeFolderPath.TryResolveInsideAllowingAbsolute(root, requestedPath, out var resolvedDir)
+                 && Directory.Exists(resolvedDir))
+        {
+            searchRoot = resolvedDir;
+        }
+        else
+        {
+            _logger.LogInformation("find_files path not found under sandbox");
+            _logger.SensitiveDebug("find_files unresolved path: {Path}", requestedPath);
+            var suggestions = SuggestSimilarDirectories(root, requestedPath!, ignore);
+            var msg = $"Error: Path '{requestedPath}' was not found inside the assistant files folder.";
+            return suggestions.Count > 0
+                ? msg + " Did you mean: " + string.Join(", ", suggestions) + "?"
+                : msg;
+        }
+
+        Regex glob;
+        try
+        {
+            glob = GlobPattern.Compile(pattern);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogInformation("find_files rejected invalid pattern");
+            _logger.SensitiveDebug("find_files invalid pattern {Pattern}: {Error}", pattern, ex.Message);
+            return $"Error: Invalid glob pattern: {ex.Message}";
+        }
+
+        var canonRootWithSep = SafeFolderPath.WithTrailingSeparator(root);
+        var hits = new List<string>();
+        int filesScanned = 0;
+        bool scanTruncated = false;
+
+        var stack = new Stack<string>();
+        stack.Push(searchRoot);
+
+        // The carve-out: a search the caller pointed AT .scratch keeps seeing it. searchRoot is pushed
+        // directly and never meets the prune, so this only has to cover its subdirectories.
+        var searchingInsideScratch = RunScratchFolder.Contains(NormalizeSeparators(SafeRelative(root, searchRoot)));
+
+        try
+        {
+            while (stack.Count > 0)
+            {
+                var dir = stack.Pop();
+
+                IEnumerable<string> subDirs;
+                try { subDirs = Directory.EnumerateDirectories(dir); }
+                catch { subDirs = []; }
+                foreach (var sub in subDirs)
+                {
+                    var relDir = NormalizeSeparators(SafeRelative(root, sub));
+                    if (ignore.IsIgnored(relDir, isDirectory: true)) continue;
+                    if (!searchingInsideScratch && RunScratchFolder.Contains(relDir)) continue;
+                    if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, sub, out _)) continue;
+                    stack.Push(sub);
+                }
+
+                IEnumerable<string> files;
+                try { files = Directory.EnumerateFiles(dir); }
+                catch { files = []; }
+
+                foreach (var full in files)
+                {
+                    if (filesScanned >= MaxFilesScanned) { scanTruncated = true; break; }
+                    filesScanned++;
+
+                    if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, full, out var canon)) continue;
+                    if (!canon.StartsWith(canonRootWithSep, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (SensitivePathGuard.IsBlocked(canon, out _)) continue;
+
+                    var rel = NormalizeSeparators(SafeRelative(root, full));
+                    if (ignore.IsIgnored(rel, isDirectory: false)) continue;
+                    if (!glob.IsMatch(NormalizeSeparators(SafeRelative(searchRoot, full)))) continue;
+
+                    hits.Add(rel);
+                }
+
+                if (scanTruncated) break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "find_files walk failed");
+            return $"Error: Search failed ({ex.Message}).";
+        }
+
+        _logger.LogInformation("find_files scanned {Files} file(s), {Matches} match(es)", filesScanned, hits.Count);
+        _logger.SensitiveDebug("find_files pattern {Pattern} under {Path}", pattern, requestedPath ?? "(root)");
+
+        var sb = new StringBuilder();
+        if (scanTruncated)
+            sb.Append($"Warning: stopped after scanning {MaxFilesScanned} files; results may be incomplete. Narrow the search with a 'path'.\n\n");
+
+        if (hits.Count == 0)
+        {
+            sb.Append("No files found.");
+            return sb.ToString();
+        }
+
+        hits.Sort(StringComparer.OrdinalIgnoreCase);
+
+        var shown = Math.Min(limit, hits.Count);
+        for (int i = 0; i < shown; i++) sb.Append(hits[i]).Append('\n');
+        if (hits.Count > shown)
+            sb.Append($"(Results are truncated: showing first {shown} results. Consider using a more specific path or pattern.)\n");
+
+        return sb.ToString().TrimEnd('\n');
+    }
+
     private static readonly TimeSpan SearchRegexTimeout = TimeSpan.FromSeconds(1);
 
     /// <summary>
@@ -408,7 +582,7 @@ public class FilesToolHandler : IFilesToolHandler
 
         // Resolve the search root. A missing/empty/"." path means the whole sandbox; the
         // permissive resolver rejects the root itself, so special-case it rather than route it.
-        var requestedPath = GetOptionalStringArg(args, "path");
+        var requestedPath = GetOptionalStringArg(args, "path") is { } posixPath ? NormalizePathArg(posixPath) : null;
         string searchRoot;
         if (string.IsNullOrWhiteSpace(requestedPath) || requestedPath == ".")
         {
@@ -442,6 +616,19 @@ public class FilesToolHandler : IFilesToolHandler
             _logger.LogInformation("search_files rejected invalid regex");
             _logger.SensitiveDebug("search_files invalid pattern {Pattern}: {Error}", pattern, ex.Message);
             return $"Error: Invalid regular expression: {ex.Message}";
+        }
+
+        var include = GetOptionalStringArg(args, "include");
+        Regex? includeGlob = null;
+        if (!string.IsNullOrWhiteSpace(include))
+        {
+            try { includeGlob = GlobPattern.Compile(include!); }
+            catch (ArgumentException ex)
+            {
+                _logger.LogInformation("search_files rejected invalid include glob");
+                _logger.SensitiveDebug("search_files invalid include {Include}: {Error}", include, ex.Message);
+                return $"Error: Invalid 'include' glob: {ex.Message}";
+            }
         }
 
         var diagnostics = new List<string>();
@@ -509,6 +696,10 @@ public class FilesToolHandler : IFilesToolHandler
                     // scanned and its contents are not surfaced). Directory-level pruning above only
                     // skips ignored trees; a file-granular rule must be applied here too.
                     if (ignore.IsIgnored(NormalizeSeparators(SafeRelative(root, full)), isDirectory: false)) continue;
+                    // Before any IO, so an excluded file costs nothing. Matched against the SEARCHED
+                    // folder so the glob reads naturally against the folder the caller pointed at.
+                    if (includeGlob is not null &&
+                        !includeGlob.IsMatch(NormalizeSeparators(SafeRelative(searchRoot, full)))) continue;
 
                     string[] lines;
                     try
@@ -701,10 +892,60 @@ public class FilesToolHandler : IFilesToolHandler
         return hits;
     }
 
+    /// <summary>
+    /// Best-effort similar-name suggestions for a read_file miss: up to three sibling files whose
+    /// name shares a substring with the requested one, emitted root-relative with forward slashes.
+    /// </summary>
+    private static List<string> SuggestSimilarFiles(string root, string requestedFullPath, GitignoreMatcher ignore)
+    {
+        var hits = new List<string>();
+        try
+        {
+            var parent = Path.GetDirectoryName(requestedFullPath);
+            var leaf = Path.GetFileName(requestedFullPath);
+            if (string.IsNullOrEmpty(parent) || string.IsNullOrEmpty(leaf) || !Directory.Exists(parent))
+                return hits;
+
+            // This enumerates the parent directly instead of walking down to it, so a directory-only
+            // rule like "secret/" never got its chance to prune — re-check every ancestor or the names
+            // inside an ignored folder leak.
+            if (IsUnderIgnoredDirectory(root, parent, ignore)) return hits;
+
+            foreach (var full in Directory.EnumerateFiles(parent))
+            {
+                var name = Path.GetFileName(full);
+                if (!name.Contains(leaf, StringComparison.OrdinalIgnoreCase) &&
+                    !leaf.Contains(name, StringComparison.OrdinalIgnoreCase)) continue;
+                if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, full, out var canon)) continue;
+                if (SensitivePathGuard.IsBlocked(canon, out _)) continue;
+
+                var rel = NormalizeSeparators(SafeRelative(root, full));
+                if (ignore.IsIgnored(rel, isDirectory: false)) continue;
+
+                hits.Add(rel);
+                if (hits.Count >= 3) break;
+            }
+        }
+        catch { /* best effort */ }
+        return hits;
+    }
+
+    private static bool IsUnderIgnoredDirectory(string root, string directory, GitignoreMatcher ignore)
+    {
+        var rootWithSep = SafeFolderPath.WithTrailingSeparator(root);
+        var dir = directory;
+        while (!string.IsNullOrEmpty(dir) && dir.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase))
+        {
+            if (ignore.IsIgnored(NormalizeSeparators(SafeRelative(root, dir)), isDirectory: true)) return true;
+            dir = Path.GetDirectoryName(dir);
+        }
+        return false;
+    }
+
     private async Task<object> HandleReadFileAsync(
         string root, IDictionary<string, object?> args, CancellationToken cancellationToken)
     {
-        var requested = GetStringArg(args, "path");
+        var requested = NormalizePathArg(GetStringArg(args, "path"));
         if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, requested, out var safePath))
         {
             _logger.LogWarning("read_file rejected path outside sandbox");
@@ -722,7 +963,14 @@ public class FilesToolHandler : IFilesToolHandler
             return $"Error: Refusing to read here — {blockReason}.";
         }
 
-        if (!File.Exists(safePath)) return $"Error: File '{requested}' not found.";
+        if (!File.Exists(safePath))
+        {
+            var suggestions = SuggestSimilarFiles(root, safePath, SandboxIgnore.ForRoot(root));
+            var notFound = $"Error: File '{requested}' not found.";
+            return suggestions.Count > 0
+                ? notFound + " Did you mean: " + string.Join(", ", suggestions) + "?"
+                : notFound;
+        }
 
         // offset is 1-indexed (default 1, min 1); limit defaults to 500, clamped to [1, 2000].
         var offset = Math.Max(1, GetOptionalIntArg(args, "offset", 1));
@@ -1061,7 +1309,7 @@ public class FilesToolHandler : IFilesToolHandler
         string root, IDictionary<string, object?> args, CancellationToken cancellationToken,
         string toolName = "write_file")
     {
-        var requested = GetStringArg(args, "path");
+        var requested = NormalizePathArg(GetStringArg(args, "path"));
 
         // ARG HARDENING: distinguish a missing 'content' key from a present-but-empty one.
         // GetStringArg returns "" for a missing key, which would silently write an empty file.
@@ -1607,7 +1855,7 @@ public class FilesToolHandler : IFilesToolHandler
     /// </summary>
     private (object? Result, FilesToolCall? Pending) PrepareDeleteFile(string root, IDictionary<string, object?> args)
     {
-        var requested = GetStringArg(args, "path");
+        var requested = NormalizePathArg(GetStringArg(args, "path"));
 
         if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, requested, out var safePath))
             return ("Error: Path is outside the assistant files folder.", null);
@@ -1690,10 +1938,17 @@ public class FilesToolHandler : IFilesToolHandler
     private static string DeleteFileSchema(
         [Description("Relative path to the file. Must stay inside the assistant files folder.")] string path) => "";
 
+    [Description("Find files by name or path glob in the assistant files folder. Read-only. Ignored paths (built-in defaults such as .git/bin/obj/node_modules, plus any .gitignore/.piaignore in the folder) are skipped.")]
+    private static string FindFilesSchema(
+        [Description("Glob pattern matched against the file path relative to the searched folder — e.g. '*.md' or 'docs/**/*.md'.")] string pattern,
+        [Description("Optional subdirectory (relative to the assistant files folder) to scope the search. Defaults to the whole folder.")] string? path = null,
+        [Description("Maximum number of results to return (default 100, maximum 500).")] int limit = 100) => "";
+
     [Description("Search text files in the assistant files folder for a regular-expression pattern. Read-only. Ignored paths (built-in defaults such as .git/bin/obj/node_modules, plus any .gitignore/.piaignore in the folder) are skipped.")]
     private static string SearchFilesSchema(
         [Description("Regular expression to search for, applied per line.")] string pattern,
         [Description("Optional subdirectory (relative to the assistant files folder) to scope the search. Defaults to the whole folder.")] string? path = null,
+        [Description("Optional file glob restricting which files are searched, matched against the path relative to the searched folder — e.g. '*.cs' or 'docs/**/*.md'.")] string? include = null,
         [Description("Output mode: 'content' (matching lines, default), 'files' (matching file paths only), or 'count' (number of matches per file).")] string? mode = null,
         [Description("1-indexed result to start from (default 1, minimum 1).")] int offset = 1,
         [Description("Maximum number of results to return (default 100, maximum 500).")] int limit = 100) => "";

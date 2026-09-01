@@ -156,7 +156,7 @@ public sealed class TaskContextChatIdTests : IDisposable
             .Returns(new Persona { Name = "Pia", SystemPrompt = "sys" });
         personas.GetPersonasAsync().Returns(Task.FromResult<IReadOnlyList<Persona>>([]));
         var composer = Substitute.For<IAssistantPromptComposer>();
-        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>())
+        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
             .Returns(new AssistantTurnSetup("system", new List<AITool>(), SupportsTools: true, WebSearchActive: false));
         var titles = Substitute.For<IChatTitleService>();
         titles.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((string?)null);
@@ -209,7 +209,7 @@ public sealed class TaskContextChatIdTests : IDisposable
         providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
         var composer = Substitute.For<IAssistantPromptComposer>();
         composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-                Arg.Any<bool>(), Arg.Any<bool>())
+                Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
             .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
         var titles = Substitute.For<IChatTitleService>();
         titles.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((string?)null);

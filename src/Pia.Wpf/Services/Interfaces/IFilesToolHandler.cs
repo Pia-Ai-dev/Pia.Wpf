@@ -74,4 +74,10 @@ public interface IFilesToolHandler
     /// </summary>
     Task<FilePromptPreview> ReadPromptPreviewAsync(
         string relativePath, string? workingSubpath, int maxLines, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The absolute folder the file tools resolve paths against for <paramref name="workingSubpath"/>,
+    /// or null when the tools are switched off or no usable folder is configured.
+    /// </summary>
+    string? DescribeEffectiveRoot(string? workingSubpath);
 }

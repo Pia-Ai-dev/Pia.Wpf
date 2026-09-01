@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Pia.Infrastructure;
@@ -103,7 +102,7 @@ public sealed class GitignoreMatcher
 
         if (line.Length == 0) return null;
 
-        var body = TranslateGlob(line);
+        var body = GlobPattern.TranslateGlob(line);
 
         // Anchored patterns match the full relative path from the root; unanchored ones match a
         // trailing path segment at any depth (so "bin" matches "bin" and "src/bin" but never the
@@ -111,114 +110,5 @@ public sealed class GitignoreMatcher
         var pattern = anchored ? $"^{body}$" : $"^(?:.*/)?{body}$";
         var regex = new Regex(pattern, Options);
         return new Rule(regex, negation, dirOnly);
-    }
-
-    /// <summary>
-    /// Translates a gitignore glob fragment into a regex body:
-    /// <list type="bullet">
-    ///   <item><c>*</c> → any run of non-separator chars; <c>?</c> → one non-separator char.</item>
-    ///   <item><c>**</c> is separator-crossing only when slash-delimited (<c>**/</c>, <c>/**</c>,
-    ///   <c>/**/</c>); a bare interior <c>a**b</c> degrades to a single <c>*</c>, matching git.</item>
-    ///   <item><c>[...]</c> / <c>[!...]</c> character classes are preserved (negated classes also
-    ///   exclude <c>/</c>).</item>
-    ///   <item>everything else is escaped as a literal.</item>
-    /// </list>
-    /// </summary>
-    private static string TranslateGlob(string glob)
-    {
-        var sb = new StringBuilder(glob.Length * 2);
-        int i = 0;
-        while (i < glob.Length)
-        {
-            char c = glob[i];
-            if (c == '*')
-            {
-                int start = i;
-                while (i < glob.Length && glob[i] == '*') i++; // consume the run of '*'
-                int runLen = i - start;
-                bool precededBySlashOrStart = start == 0 || glob[start - 1] == '/';
-                bool followedBySlashOrEnd = i >= glob.Length || glob[i] == '/';
-
-                if (runLen >= 2 && precededBySlashOrStart && followedBySlashOrEnd)
-                {
-                    if (i < glob.Length && glob[i] == '/')
-                    {
-                        sb.Append("(?:.*/)?"); // "**/" — zero or more directories
-                        i++;                    // consume the '/'
-                    }
-                    else
-                    {
-                        sb.Append(".*");        // trailing "**" — anything, including separators
-                    }
-                }
-                else
-                {
-                    sb.Append("[^/]*");         // "*" (or a non-slash-delimited "**") — one segment
-                }
-            }
-            else if (c == '?')
-            {
-                sb.Append("[^/]");
-                i++;
-            }
-            else if (c == '[')
-            {
-                int close = FindClassEnd(glob, i);
-                if (close < 0)
-                {
-                    sb.Append(Regex.Escape("[")); // unterminated class → literal '['
-                    i++;
-                }
-                else
-                {
-                    AppendClass(sb, glob, i, close);
-                    i = close + 1;
-                }
-            }
-            else
-            {
-                sb.Append(Regex.Escape(c.ToString()));
-                i++;
-            }
-        }
-        return sb.ToString();
-    }
-
-    /// <summary>
-    /// Finds the index of the <c>]</c> closing the class opened at <paramref name="open"/>, honoring
-    /// the fnmatch rule that a <c>]</c> immediately after <c>[</c> (or <c>[!</c>) is a literal member.
-    /// Returns -1 for an unterminated class.
-    /// </summary>
-    private static int FindClassEnd(string s, int open)
-    {
-        int k = open + 1;
-        if (k < s.Length && s[k] == '!') k++;
-        if (k < s.Length && s[k] == ']') k++; // leading ']' is a literal member, not the terminator
-        while (k < s.Length && s[k] != ']') k++;
-        return k < s.Length ? k : -1;
-    }
-
-    private static void AppendClass(StringBuilder sb, string s, int open, int close)
-    {
-        var inner = s.Substring(open + 1, close - (open + 1));
-        bool negated = inner.StartsWith('!') || inner.StartsWith('^');
-        if (negated) inner = inner[1..];
-
-        if (inner.Length == 0)
-        {
-            // "[]" / "[!]" — no members; emit the raw text as a literal rather than an invalid class.
-            sb.Append(Regex.Escape(s.Substring(open, close - open + 1)));
-            return;
-        }
-
-        // Escape the class-structural characters so a member like ']' or '\' can't break out of the
-        // class; a range hyphen is preserved. A negated class must also exclude the path separator,
-        // otherwise "[!a]" would match "/" and let the pattern span directories.
-        var body = inner.Replace("\\", "\\\\").Replace("]", "\\]").Replace("[", "\\[");
-        sb.Append('[');
-        if (negated) sb.Append('^');
-        sb.Append(body);
-        if (negated) sb.Append('/');
-        sb.Append(']');
     }
 }

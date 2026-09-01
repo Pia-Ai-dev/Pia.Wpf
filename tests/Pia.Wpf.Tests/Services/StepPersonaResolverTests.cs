@@ -63,7 +63,7 @@ public sealed class StepPersonaResolverTests
     // The composed prompt names the persona, so a test can tell whose prompt came back.
     private void ComposerEchoesThePersona() =>
         _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-                Arg.Any<bool>(), Arg.Any<bool>())
+                Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
             .Returns(ci => new AssistantTurnSetup($"system for {ci.ArgAt<Persona>(0).Name}", null, true, false));
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -103,7 +103,7 @@ public sealed class StepPersonaResolverTests
         Assert.NotEqual(runDefault.TurnSetup.SystemPrompt, resolved.TurnSetup.SystemPrompt);
         Assert.True(resolved.TurnSetup.SupportsTools);  // the tool list comes from the persona's setup too
         _composer.Received(1).PrepareTurn(analyst, Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-            Arg.Any<bool>(), Arg.Any<bool>());
+            Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>());
 
         // The persona comes from the roster list already in hand, not a second per-id store round-trip: that
         // lookup does raw SQLite I/O outside any executor try/catch, so a busy connection failed the whole run.
@@ -160,7 +160,7 @@ public sealed class StepPersonaResolverTests
 
         Assert.Same(runDefault, resolved);
         _composer.DidNotReceive().PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(),
-            Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>());
+            Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>());
     }
 
     [Fact]
@@ -227,7 +227,7 @@ public sealed class StepPersonaResolverTests
         Roster(analyst);
         _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(Provider());
         _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-            Arg.Any<bool>(), Arg.Any<bool>()).Throws(new InvalidOperationException("bad persona prompt"));
+            Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>()).Throws(new InvalidOperationException("bad persona prompt"));
         var runDefault = RunDefault();
 
         // Defence in depth: one bad persona prompt must not fail every step of a run.
@@ -267,9 +267,9 @@ public sealed class StepPersonaResolverTests
         await Build().ResolveAsync(analyst.Id, RunDefault(), tokenizationEnabled: true, Ct);
 
         _composer.DidNotReceive().PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(),
-            Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), suggestAgentModeEligible: true);
+            Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), suggestAgentModeEligible: true, environmentRoot: Arg.Any<string?>());
         _composer.Received(1).PrepareTurn(analyst, Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-            tokenizationEnabled: true, suggestAgentModeEligible: false);
+            tokenizationEnabled: true, suggestAgentModeEligible: false, environmentRoot: Arg.Any<string?>());
     }
 
     [Fact]

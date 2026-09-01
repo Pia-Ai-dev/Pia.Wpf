@@ -2175,7 +2175,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         // Voice mode has no chip-render surface and no Planned concept (F1) → never eligible.
         var turnSetup = _promptComposer.PrepareTurn(persona, provider, Array.Empty<AtCommand>(), _tokenizationEnabled,
-            suggestAgentModeEligible: false);
+            suggestAgentModeEligible: false,
+            // Un-narrowed on purpose: a voice turn establishes no TaskContext, so its tool calls resolve
+            // at the sandbox root no matter which chat is on screen.
+            environmentRoot: _filesToolHandler.DescribeEffectiveRoot(null));
         var supportsTools = turnSetup.SupportsTools;
         var fullSystemPrompt = turnSetup.SystemPrompt;
         var tools = turnSetup.Tools;

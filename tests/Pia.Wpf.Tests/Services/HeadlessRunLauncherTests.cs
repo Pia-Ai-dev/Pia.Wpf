@@ -183,7 +183,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         }
 
         var composer = Substitute.For<IAssistantPromptComposer>();
-        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>())
+        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
             .Returns(new AssistantTurnSetup("system", probe is null ? null : new List<AITool>(),
                 SupportsTools: probe is not null, WebSearchActive: false));
         var personas = Substitute.For<IPersonaService>();

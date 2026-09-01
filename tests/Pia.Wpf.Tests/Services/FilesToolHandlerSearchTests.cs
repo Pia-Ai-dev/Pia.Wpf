@@ -32,10 +32,12 @@ public class FilesToolHandlerSearchTests : IDisposable
     }
 
     private async Task<string> SearchAsync(
-        string pattern, string? path = null, string? mode = null, int? offset = null, int? limit = null)
+        string pattern, string? path = null, string? mode = null, int? offset = null, int? limit = null,
+        string? include = null)
     {
         var args = new Dictionary<string, object?> { ["pattern"] = pattern };
         if (path is not null) args["path"] = path;
+        if (include is not null) args["include"] = include;
         if (mode is not null) args["mode"] = mode;
         if (offset is not null) args["offset"] = offset.Value;
         if (limit is not null) args["limit"] = limit.Value;
@@ -265,5 +267,69 @@ public class FilesToolHandlerSearchTests : IDisposable
         var readText = (string)readResult!;
         Assert.Contains("SCOPED hit", readText);
         Assert.DoesNotContain("not found", readText);
+    }
+
+    [Fact]
+    public async Task Search_Include_NarrowsToMatchingFiles()
+    {
+        Write("a.cs", "TARGET in code");
+        Write("b.md", "TARGET in prose");
+
+        var result = await SearchAsync("TARGET", mode: "files", include: "*.cs");
+
+        Assert.Contains("a.cs", result);
+        Assert.DoesNotContain("b.md", result);
+        Assert.Contains("matches=1", result);
+    }
+
+    [Fact]
+    public async Task Search_IncludeBareName_MatchesNestedFiles()
+    {
+        Write("deep/nested/x.cs", "TARGET nested");
+        Write("y.md", "TARGET shallow");
+
+        var result = await SearchAsync("TARGET", mode: "files", include: "*.cs");
+
+        Assert.Contains("x.cs", result);
+        Assert.DoesNotContain("y.md", result);
+    }
+
+    [Fact]
+    public async Task Search_IncludeWithSlash_IsAnchored()
+    {
+        Write("docs/a.md", "TARGET in docs");
+        Write("other/a.md", "TARGET elsewhere");
+
+        var result = await SearchAsync("TARGET", mode: "files", include: "docs/**/*.md");
+
+        Assert.Contains("docs" + Path.DirectorySeparatorChar + "a.md", result);
+        Assert.DoesNotContain("other", result);
+    }
+
+    [Fact]
+    public async Task Search_IncludeIsRelativeToThePathBeingSearched()
+    {
+        Write("docs/sub/a.md", "TARGET deep");
+        Write("docs/other.md", "TARGET shallow");
+
+        // Anchored against the SEARCHED folder: relative to the sandbox root this file is
+        // "docs/sub/a.md", so a root-anchored "sub/*.md" would find nothing.
+        var result = await SearchAsync("TARGET", path: "docs", mode: "files", include: "sub/*.md");
+
+        Assert.Contains("sub" + Path.DirectorySeparatorChar + "a.md", result);
+        Assert.DoesNotContain("other.md", result);
+    }
+
+    [Fact]
+    public async Task Search_IncludeCannotResurfaceAnIgnoredFile()
+    {
+        Write(".piaignore", "secret.cs\n");
+        Write("secret.cs", "TARGET hidden");
+        Write("keep.cs", "TARGET visible");
+
+        var result = await SearchAsync("TARGET", mode: "files", include: "*.cs");
+
+        Assert.Contains("keep.cs", result);
+        Assert.DoesNotContain("secret.cs", result);
     }
 }

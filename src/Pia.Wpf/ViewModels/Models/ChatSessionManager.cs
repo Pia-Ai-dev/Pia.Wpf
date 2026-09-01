@@ -816,7 +816,10 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                     == PlanningCapability.Capable;
 
             var turnSetup = _promptComposer.PrepareTurn(persona, provider, atCommands, tokenizationEnabled,
-                suggestAgentModeEligible: !planned && providerToolCapable);
+                suggestAgentModeEligible: !planned && providerToolCapable,
+                // No folder named for a Planned dispatch: its steps run against an isolated workspace
+                // that is not provisioned until below, so naming this one would point them outside it.
+                environmentRoot: planned ? null : _filesToolHandler.DescribeEffectiveRoot(session.WorkingDirectory));
             // Provider name is a user-named item (CLAUDE.md) — keep it out of the
             // release-surviving log; surface IDs/counts at Info, the name only in DEBUG.
             _logger.LogInformation("SendMessage: provider={ProviderId}, supportsTools={SupportsTools}, toolCount={ToolCount}, atCommandCount={AtCommandCount}",

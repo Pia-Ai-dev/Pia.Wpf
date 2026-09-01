@@ -61,7 +61,7 @@ public class BackgroundAssistantTurnRunnerTests
             Settings.GetSettingsAsync().Returns(new AppSettings()); // TokenizationEnabled defaults off
             Personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(ModePersona);
             Personas.GetPersonasAsync().Returns(Task.FromResult<IReadOnlyList<Persona>>(AvailablePersonas));
-            Composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>())
+            Composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
                 .Returns(ci =>
                 {
                     ComposedPersona = ci.ArgAt<Persona>(0);
