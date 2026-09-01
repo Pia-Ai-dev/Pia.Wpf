@@ -24,6 +24,7 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
     private readonly ISettingsService _settings = Substitute.For<ISettingsService>();
     private readonly IProviderService _providers = Substitute.For<IProviderService>();
     private readonly ILocalizationService _localization = Substitute.For<ILocalizationService>();
+    private readonly IAttachedFileStore _attachedFiles = Substitute.For<IAttachedFileStore>();
     private readonly string _dir;
 
     public AssistantViewModelPendingFilesTests()
@@ -37,7 +38,7 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
         try { Directory.Delete(_dir, recursive: true); } catch { }
     }
 
-    private AssistantViewModel CreateSut()
+    private AssistantViewModel CreateSut(bool withAttachedFileStore = false)
     {
         // ChatTitleChipViewModel (built in the ctor) requires a captured SynchronizationContext.
         if (SynchronizationContext.Current is null)
@@ -45,11 +46,11 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
 
         _settings.GetSettingsAsync().Returns(new AppSettings());
 
-        // Five Arg.Any<> would leave the sixth parameter at its default, miss the call and hand the
-        // awaited send a null Task.
+        // One Arg.Any<> short would leave the trailing parameter at its default, miss the call and hand
+        // the awaited send a null Task.
         _manager.StartTurnAsync(
             Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(),
-            Arg.Any<bool>(), Arg.Any<string?>()).Returns(true);
+            Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>()).Returns(true);
 
         // StartFreshChat calls SetWorkingDirectory on whatever this returns.
         _manager.GetOrCreateActiveForNewChat().Returns(_ => new ChatSession(
@@ -118,7 +119,8 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
             Substitute.For<IMarkdownExportService>(),
             Substitute.For<IDialogService>(),
             new InlineUiDispatcher(),
-            Substitute.For<IToolPermissionService>());
+            Substitute.For<IToolPermissionService>(),
+            attachedFileStore: withAttachedFileStore ? _attachedFiles : null);
     }
 
     private static PendingFileAttachment Chip(string fileName = "notes.txt") => new()
@@ -322,7 +324,8 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
             Arg.Any<ChatSession>(), "summarize the attached report for the team",
             Arg.Any<ImageAttachment?>(), Arg.Any<string?>(),
             planned: false,
-            attachedFileContext: Arg.Is<string?>(s => s != null && s.Contains("notes.txt")));
+            attachedFileContext: Arg.Is<string?>(s => s != null && s.Contains("notes.txt")),
+            attachedFiles: Arg.Any<IReadOnlyList<AttachedFileRef>?>());
         // The downgrade is per-turn: the lever stays where the user put it.
         Assert.True(vm.AgentModeEnabled);
     }
@@ -345,7 +348,7 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
         var vm = CreateSut();
         _manager.StartTurnAsync(
             Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(),
-            Arg.Any<bool>(), Arg.Any<string?>()).Returns(false);
+            Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>()).Returns(false);
         var chip = Chip();
         vm.InputText = "summarize this";
         vm.PendingFiles.Add(chip);
@@ -557,5 +560,111 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
 
         Assert.Single(vm.PendingFiles);
         Assert.Null(vm.DropFailureMessage);
+    }
+
+    // ---- Saving into the working directory -------------------------------------------------------
+
+    [Fact]
+    public void SavePendingFile_MarksTheChipSaved()
+    {
+        var vm = CreateSut(withAttachedFileStore: true);
+        var chip = Chip();
+        vm.PendingFiles.Add(chip);
+        _attachedFiles.SaveIntoWorkingDirectory(chip.FullPath, Arg.Any<string?>())
+            .Returns("Playground/notes.txt");
+
+        vm.SavePendingFileCommand.Execute(chip);
+
+        Assert.True(chip.IsSaved);
+        Assert.Equal("Playground/notes.txt", chip.SavedRelativePath);
+    }
+
+    [Fact]
+    public void SavePendingFile_WhenTheStoreRefuses_LeavesTheChipUnsaved()
+    {
+        var vm = CreateSut(withAttachedFileStore: true);
+        var chip = Chip();
+        vm.PendingFiles.Add(chip);
+        _attachedFiles.SaveIntoWorkingDirectory(Arg.Any<string>(), Arg.Any<string?>()).Returns((string?)null);
+
+        vm.SavePendingFileCommand.Execute(chip);
+
+        Assert.False(chip.IsSaved);
+    }
+
+    [Fact]
+    public void SavePendingFile_AlreadySaved_DoesNotCopyAgain()
+    {
+        var vm = CreateSut(withAttachedFileStore: true);
+        var chip = Chip();
+        chip.SavedRelativePath = "Playground/notes.txt";
+        vm.PendingFiles.Add(chip);
+
+        vm.SavePendingFileCommand.Execute(chip);
+
+        _attachedFiles.DidNotReceive().SaveIntoWorkingDirectory(Arg.Any<string>(), Arg.Any<string?>());
+    }
+
+    [Fact]
+    public void WithoutAStore_TheComposerDoesNotOfferToSave()
+    {
+        Assert.False(CreateSut().CanSavePendingFiles);
+        Assert.True(CreateSut(withAttachedFileStore: true).CanSavePendingFiles);
+    }
+
+    // ---- The names survive the send --------------------------------------------------------------
+
+    [Fact]
+    public async Task Send_CarriesTheFileNamesOntoTheUserMessage()
+    {
+        var vm = CreateSut();
+        var saved = Chip("report.docx");
+        saved.SavedRelativePath = "Playground/report.docx";
+        vm.PendingFiles.Add(saved);
+        vm.PendingFiles.Add(Chip("scratch.txt"));
+        vm.InputText = "summarise these";
+
+        await vm.SendMessageCommand.ExecuteAsync(null);
+
+        var files = (IReadOnlyList<AttachedFileRef>?)_manager.ReceivedCalls()
+            .Single(c => c.GetMethodInfo().Name == nameof(IChatSessionManager.StartTurnAsync))
+            .GetArguments()[6];
+
+        Assert.NotNull(files);
+        Assert.Equal(["report.docx", "scratch.txt"], files.Select(f => f.FileName));
+        Assert.Equal("Playground/report.docx", files[0].SavedRelativePath);
+        // Never saved, so nothing to reopen — the chip stays a name.
+        Assert.Null(files[1].SavedRelativePath);
+    }
+
+    [Fact]
+    public async Task Send_WithNoFiles_PassesNoChips()
+    {
+        var vm = CreateSut();
+        vm.InputText = "just a question";
+
+        await vm.SendMessageCommand.ExecuteAsync(null);
+
+        Assert.Null(_manager.ReceivedCalls()
+            .Single(c => c.GetMethodInfo().Name == nameof(IChatSessionManager.StartTurnAsync))
+            .GetArguments()[6]);
+    }
+
+    [Fact]
+    public async Task ARefusedSend_RestoresTheChipsWithTheirSavedState()
+    {
+        var vm = CreateSut();
+        _manager.StartTurnAsync(
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(),
+            Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>()).Returns(false);
+        var chip = Chip();
+        chip.SavedRelativePath = "Playground/notes.txt";
+        vm.PendingFiles.Add(chip);
+        vm.InputText = "summarise this";
+
+        await vm.SendMessageCommand.ExecuteAsync(null);
+
+        Assert.Same(chip, Assert.Single(vm.PendingFiles));
+        Assert.True(vm.PendingFiles[0].IsSaved);
     }
 }

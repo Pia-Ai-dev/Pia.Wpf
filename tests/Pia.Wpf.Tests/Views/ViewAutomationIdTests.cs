@@ -46,7 +46,7 @@ public class ViewAutomationIdTests
     // AccountView declares no DataTemplate, so it is the one view with no per-item floor to hold.
     [InlineData(typeof(Pia.Views.SettingsViews.AccountView), 14, 0, "E2EEOnboardingView")]
     [InlineData(typeof(Pia.Views.SettingsViews.OptimizeView), 6, 4, "")]
-    [InlineData(typeof(Pia.Views.AssistantView), 21, 3,
+    [InlineData(typeof(Pia.Views.AssistantView), 24, 6,
         "AutocompletePopup,DirectTranscriptionOverlay,MeetingAttendeeOverlay,PersonaGlyph,PiaAssistantMessage," +
         "PiaChatQuickSwitcher,PiaChatTitleChip,PiaPersonaAvatar,RunProgressPanel,TodoPanelControl,VoiceModeOverlay")]
     [InlineData(typeof(Pia.Views.AssistantHistoryView), 10, 1,
@@ -80,6 +80,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Controls.Chat.PiaReasoningView), 1, 1, "")]
     [InlineData(typeof(Pia.Controls.Assistant.RunProgressPanel), 23, 10, "PiaPersonaAvatar")]
     [InlineData(typeof(Pia.Controls.Chat.PiaFileChip), 3, 3, "")]
+    [InlineData(typeof(Pia.Controls.Chat.PiaAttachedFileChip), 2, 2, "")]
     [InlineData(typeof(Pia.Controls.Chat.PiaSourceChip), 1, 1, "")]
     [InlineData(typeof(Pia.Controls.Chat.PiaChipOverflowPanel), 1, 1, "")]
     [InlineData(typeof(Pia.Views.AssignmentsView), 4, 2, "PiaEmptyState,PiaHelpHint")]
@@ -97,7 +98,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Controls.History.PiaHistoryInspector), 6, 0, "PiaHistoryInspectorHeader")]
     [InlineData(typeof(Pia.Controls.History.PiaHistoryInspectorHeader), 1, 0, "")]
     [InlineData(typeof(Pia.Controls.History.PiaHistoryStatusBar), 1, 0, "")]
-    [InlineData(typeof(Pia.Controls.AssistantHistory.PiaAssistantChatInspector), 4, 0,
+    [InlineData(typeof(Pia.Controls.AssistantHistory.PiaAssistantChatInspector), 6, 2,
         "PiaAssistantMessage,PiaPersonaAvatar")]
     // Pia.Views.OptimizeView is the Optimize hotkey window, not the same-named settings view above.
     [InlineData(typeof(Pia.Views.OptimizeView), 12, 0, "TodoPanelControl")]

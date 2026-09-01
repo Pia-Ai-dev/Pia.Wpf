@@ -1163,6 +1163,9 @@
   <data name="AnswerExport_SaveDialogTitle" xml:space="preserve"><value>Enregistrer la réponse exportée</value></data>
   <data name="AnswerExport_SaveDialogFilter" xml:space="preserve"><value>Document HTML (*.html)|*.html|Tous les fichiers (*.*)|*.*</value></data>
   <data name="Assistant_OpenFolder_Tooltip" xml:space="preserve"><value>Ouvrir le dossier contenant</value></data>
+  <data name="Assistant_SavePendingFile_Tooltip" xml:space="preserve"><value>Enregistrer dans le répertoire de travail</value></data>
+  <data name="Assistant_PendingFileSaved_Tooltip" xml:space="preserve"><value>Enregistré dans le répertoire de travail</value></data>
+  <data name="Assistant_AttachedFile_NotSaved_Tooltip" xml:space="preserve"><value>Ce fichier n'a pas été enregistré dans le répertoire de travail : seul son nom a été conservé.</value></data>
   <data name="Assistant_OpenInCode_Tooltip" xml:space="preserve"><value>Ouvrir dans VS Code</value></data>
   <data name="Assistant_MoreChips_Tooltip" xml:space="preserve"><value>Afficher les entrées restantes</value></data>
   <data name="Routines_New" xml:space="preserve"><value>Nouvelle routine</value></data>

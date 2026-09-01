@@ -548,6 +548,7 @@ public static class Bootstrapper
         services.AddSingleton<IGitToolHandler, GitToolHandler>();
         services.AddSingleton<IChatHistoryToolHandler, ChatHistoryToolHandler>();
         services.AddSingleton<IWorkingDirectoryService, WorkingDirectoryService>();
+        services.AddSingleton<IAttachedFileStore, AttachedFileStore>();
         services.AddSingleton<Pia.Services.Plugins.TrustedCertificateCacheService>();
         services.AddSingleton<Pia.Services.Plugins.CabManagerService>();
         services.AddSingleton<IPluginIconLoader, Pia.Services.Plugins.PluginIconLoaderService>();

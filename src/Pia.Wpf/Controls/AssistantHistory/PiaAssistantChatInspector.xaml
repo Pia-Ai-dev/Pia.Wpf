@@ -119,6 +119,29 @@
                     <TextBlock behaviors:AtCommandHighlightBehavior.Text="{Binding Content}"
                                Style="{StaticResource UserBubbleTextStyle}"/>
                   </Border>
+                  <!-- What the user attached. Saved files reopen; the rest kept only their name. -->
+                  <ItemsControl ItemsSource="{Binding AttachedFiles}"
+                                Margin="0,6,0,0"
+                                HorizontalAlignment="Left"
+                                Visibility="{Binding HasAttachedFiles, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal"/>
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <chat:PiaAttachedFileChip FileName="{Binding FileName}"
+                                                  SavedRelativePath="{Binding SavedRelativePath}"
+                                                  CommandParameter="{Binding}"
+                                                  Margin="0,0,6,4"
+                                                  OpenCommand="{Binding DataContext.OpenAttachedFileCommand,
+                                                                        RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"
+                                                  RevealCommand="{Binding DataContext.RevealAttachedFileCommand,
+                                                                          RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"/>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
                 </StackPanel>
 
                 <Grid HorizontalAlignment="Stretch">

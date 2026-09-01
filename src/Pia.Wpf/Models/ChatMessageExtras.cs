@@ -60,6 +60,16 @@ public enum FileRefKind
 }
 
 /// <summary>
+/// A file the user attached to their own message. <see cref="SavedRelativePath"/> is set only when the
+/// file was copied into the assistant-files sandbox; without it the chip is an inert name pill, because
+/// the file's original location is deliberately never persisted.
+/// </summary>
+public sealed record AttachedFileRef(string FileName, string? SavedRelativePath)
+{
+    public bool IsSaved => SavedRelativePath is not null;
+}
+
+/// <summary>
 /// A model-offered "switch to Agent mode" chip (R8). Distinct from the string-based
 /// <see cref="AssistantMessage.Suggestions"/> (whose click merely pastes text): clicking this
 /// re-dispatches <see cref="Goal"/> as a Planned run. <see cref="Reason"/> is model content — never logged.

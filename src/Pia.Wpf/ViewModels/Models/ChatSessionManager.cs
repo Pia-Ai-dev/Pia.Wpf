@@ -700,7 +700,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
     public async Task<bool> StartTurnAsync(
         ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction = null,
-        bool planned = false, string? attachedFileContext = null)
+        bool planned = false, string? attachedFileContext = null,
+        IReadOnlyList<AttachedFileRef>? attachedFiles = null)
     {
         // One read for both guards below, so a send never queries the same row twice. Live-read rather than
         // ChatSession.PlanApprovalParkActive, so a just-landed Reject is seen at once.
@@ -734,6 +735,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             Attachment = attachment,
             AttachedFileContext = attachedFileContext,
         };
+        if (attachedFiles is not null)
+            foreach (var file in attachedFiles) userMessage.AttachedFiles.Add(file);
         session.Messages.Add(userMessage);
 
         var assistantMessage = new AssistantMessage(ChatRole.Assistant) { IsStreaming = true };

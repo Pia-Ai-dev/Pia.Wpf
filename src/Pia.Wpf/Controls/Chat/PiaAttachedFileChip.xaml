@@ -1,0 +1,91 @@
+<UserControl x:Class="Pia.Controls.Chat.PiaAttachedFileChip"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization"
+             x:Name="Root">
+  <UserControl.Resources>
+    <Style x:Key="AttachedChipRegionStyle" TargetType="Button">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Focusable" Value="False" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+              <ContentPresenter VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </UserControl.Resources>
+  <Border MinHeight="30"
+          CornerRadius="{StaticResource BubbleRadius}"
+          Background="{DynamicResource SurfaceBrush}"
+          BorderBrush="{DynamicResource BorderBrush_}"
+          BorderThickness="1"
+          Padding="2"
+          SnapsToDevicePixels="True">
+    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+      <!-- Saved into the assistant files folder: the name opens it. -->
+      <Button Style="{StaticResource AttachedChipRegionStyle}"
+              Padding="6,2"
+              Command="{Binding OpenCommand, ElementName=Root}"
+              CommandParameter="{Binding CommandParameter, ElementName=Root}"
+              Visibility="{Binding SavedRelativePath, ElementName=Root, Converter={StaticResource NullToVisibilityConverter}}"
+              AutomationProperties.AutomationId="{Binding FileName, ElementName=Root, StringFormat='AttachedFileChip_Open_{0}'}"
+              ToolTip="{Binding SavedRelativePath, ElementName=Root}">
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+          <ui:SymbolIcon Symbol="Attach24" FontSize="13"
+                         Margin="0,0,6,0"
+                         VerticalAlignment="Center"
+                         Foreground="{DynamicResource PiaAccentBrush}" />
+          <TextBlock Text="{Binding FileName, ElementName=Root}"
+                     MaxWidth="200"
+                     TextTrimming="CharacterEllipsis"
+                     VerticalAlignment="Center"
+                     FontSize="12"
+                     Foreground="{DynamicResource TextDefaultBrush}" />
+        </StackPanel>
+      </Button>
+      <!-- Never saved: the name is all that survived the send, so nothing here is clickable. -->
+      <StackPanel Orientation="Horizontal"
+                  Margin="6,2"
+                  VerticalAlignment="Center"
+                  ToolTip="{loc:Str Assistant_AttachedFile_NotSaved_Tooltip}"
+                  Visibility="{Binding SavedRelativePath, ElementName=Root, Converter={StaticResource InverseNullToVisibilityConverter}}">
+        <ui:SymbolIcon Symbol="Attach24" FontSize="13"
+                       Margin="0,0,6,0"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextMutedBrush}" />
+        <TextBlock Text="{Binding FileName, ElementName=Root}"
+                   MaxWidth="200"
+                   TextTrimming="CharacterEllipsis"
+                   VerticalAlignment="Center"
+                   FontSize="12"
+                   Foreground="{DynamicResource TextMutedBrush}" />
+      </StackPanel>
+      <Button Style="{StaticResource AttachedChipRegionStyle}"
+              Padding="6,2"
+              Margin="2,0,0,0"
+              Command="{Binding RevealCommand, ElementName=Root}"
+              CommandParameter="{Binding CommandParameter, ElementName=Root}"
+              Visibility="{Binding SavedRelativePath, ElementName=Root, Converter={StaticResource NullToVisibilityConverter}}"
+              AutomationProperties.AutomationId="{Binding FileName, ElementName=Root, StringFormat='AttachedFileChip_Reveal_{0}'}"
+              ToolTip="{loc:Str Assistant_OpenFolder_Tooltip}">
+        <ui:SymbolIcon Symbol="FolderOpen24"
+                       FontSize="13"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextMutedBrush}" />
+      </Button>
+    </StackPanel>
+  </Border>
+</UserControl>

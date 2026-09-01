@@ -47,6 +47,35 @@ public class AssistantMessageMapperTests
     }
 
     [Fact]
+    public void RoundTrip_PreservesAttachedFiles()
+    {
+        var src = new AssistantMessage(ChatRole.User, "summarise these");
+        src.AttachedFiles.Add(new AttachedFileRef("report.docx", "Playground/report.docx"));
+        src.AttachedFiles.Add(new AttachedFileRef("scratch.txt", null));
+
+        var dto = AssistantMessageMapper.ToDto(src);
+        Assert.Equal(2, dto.AttachedFiles!.Count);
+        Assert.Equal("Playground/report.docx", dto.AttachedFiles[0].RelativePath);
+        Assert.Null(dto.AttachedFiles[1].RelativePath);
+
+        var back = AssistantMessageMapper.FromDto(dto);
+        Assert.True(back.HasAttachedFiles);
+        Assert.Equal(["report.docx", "scratch.txt"], back.AttachedFiles.Select(f => f.FileName));
+        Assert.True(back.AttachedFiles[0].IsSaved);
+        Assert.False(back.AttachedFiles[1].IsSaved);
+    }
+
+    [Fact]
+    public void ToDto_LeavesAttachedFilesNullWhenThereAreNone()
+    {
+        var dto = AssistantMessageMapper.ToDto(new AssistantMessage(ChatRole.User, "hi"));
+
+        // Null rather than an empty list: the column stays NULL and the row keeps the size it had.
+        Assert.Null(dto.AttachedFiles);
+        Assert.False(AssistantMessageMapper.FromDto(dto).HasAttachedFiles);
+    }
+
+    [Fact]
     public void ToDto_DoesNotMapPendingConfirmation()
     {
         var src = new AssistantMessage(ChatRole.Assistant, "answer");

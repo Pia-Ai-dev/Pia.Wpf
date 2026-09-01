@@ -521,6 +521,62 @@ public class AssistantChatServiceTests : IDisposable
         Assert.Contains(chat.Id, found.Select(c => c.Id));
     }
 
+    [Fact]
+    public async Task SaveAsync_RoundTripsAttachedFiles()
+    {
+        var chat = MakeChat(title: "with attachments", body: "summarise these");
+        chat.Messages[0].AttachedFiles =
+        [
+            new SyncMessageAttachedFile { FileName = "report.docx", RelativePath = "Playground/report.docx" },
+            new SyncMessageAttachedFile { FileName = "scratch.txt", RelativePath = null },
+        ];
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
+        _createdIds.Add(chat.Id);
+
+        var back = await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken);
+
+        var files = back!.Messages[0].AttachedFiles;
+        Assert.Equal(2, files!.Count);
+        Assert.Equal("report.docx", files[0].FileName);
+        Assert.Equal("Playground/report.docx", files[0].RelativePath);
+        Assert.Null(files[1].RelativePath);
+    }
+
+    [Fact]
+    public async Task GetAsync_MessageWithNoAttachments_ReadsBackNull()
+    {
+        // The column is NULL for every message written before this existed, and for every message
+        // without an attachment since.
+        var chat = MakeChat(title: "plain", body: "no files here");
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
+        _createdIds.Add(chat.Id);
+
+        var back = await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken);
+
+        Assert.Null(back!.Messages[0].AttachedFiles);
+    }
+
+    [Fact]
+    public async Task GetAsync_CorruptedAttachedFilesColumn_LosesTheChipsNotTheMessage()
+    {
+        var chat = MakeChat(title: "corrupt", body: "still readable");
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
+        _createdIds.Add(chat.Id);
+
+        var conn = _ctx.GetConnection();
+        using (var poison = conn.CreateCommand())
+        {
+            poison.CommandText = "UPDATE AssistantChatMessages SET AttachedFiles = 'not json' WHERE ChatId = @Id";
+            poison.Parameters.AddWithValue("@Id", chat.Id.ToString());
+            await poison.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        var back = await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal("still readable", back!.Messages[0].Content);
+        Assert.Null(back.Messages[0].AttachedFiles);
+    }
+
     private static SyncAssistantChat MakeChat(string title, string body)
     {
         var now = DateTime.UtcNow;

@@ -25,6 +25,13 @@ internal static class AssistantMessageMapper
         Persona = m.Persona is { } p
             ? new SyncMessagePersona { Id = p.Id, Name = p.Name, Emoji = p.Emoji }
             : null,
+        AttachedFiles = m.AttachedFiles.Count == 0
+            ? null
+            : [.. m.AttachedFiles.Select(f => new SyncMessageAttachedFile
+            {
+                FileName = f.FileName,
+                RelativePath = f.SavedRelativePath,
+            })],
     };
 
     public static AssistantMessage FromDto(SyncAssistantChatMessage dto)
@@ -38,6 +45,9 @@ internal static class AssistantMessageMapper
         if (dto.Persona is { } p)
             message.Persona = new PersonaAttribution(p.Id, p.Name, p.Emoji);
         message.IsProtectedRoute = dto.IsProtectedRoute;
+        if (dto.AttachedFiles is { Count: > 0 } files)
+            foreach (var f in files)
+                message.AttachedFiles.Add(new AttachedFileRef(f.FileName, f.RelativePath));
         return message;
     }
 }

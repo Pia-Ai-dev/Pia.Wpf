@@ -43,6 +43,8 @@ public interface IChatSessionManager
     /// <paramref name="regenerationInstruction"/> (optional) is injected AI-side for a styled
     /// regeneration (e.g. "make it shorter") without changing the displayed user bubble, and
     /// <paramref name="attachedFileContext"/> (optional) the same way for attached file text.
+    /// <paramref name="attachedFiles"/> (optional) is the displayable counterpart of that text — the
+    /// names shown as chips under the user bubble, and the only part of an attachment that persists.
     /// <para>
     /// If <paramref name="session"/>'s attached run is parked asking the user a question (<c>needs-goal</c> /
     /// <c>needs-input</c>), this posts <paramref name="userText"/> as the answer and resumes that run instead
@@ -54,7 +56,8 @@ public interface IChatSessionManager
     /// is true.</returns>
     Task<bool> StartTurnAsync(
         ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction = null,
-        bool planned = false, string? attachedFileContext = null);
+        bool planned = false, string? attachedFileContext = null,
+        IReadOnlyList<AttachedFileRef>? attachedFiles = null);
 
     /// <summary>
     /// Detach the goal as an unattended headless Planned run (no live session). Additive to

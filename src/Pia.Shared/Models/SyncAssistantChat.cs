@@ -86,8 +86,24 @@ public class SyncAssistantChatMessage
     /// </summary>
     public SyncMessagePersona? Persona { get; set; }
 
+    /// <summary>
+    /// Files the user attached to this message. Metadata only: the display name plus, when the file was
+    /// copied into the assistant-files sandbox, its path RELATIVE to that root. Never file content and
+    /// never the file's original absolute path, which would leak the sender's local folder layout.
+    /// </summary>
+    public List<SyncMessageAttachedFile>? AttachedFiles { get; set; }
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
+
+/// <summary>One file attached to a user message (see AttachedFileRef client-side).</summary>
+public sealed class SyncMessageAttachedFile
+{
+    public string FileName { get; set; } = string.Empty;
+
+    /// <summary>Relative to the assistant-files sandbox root; null when the file was never saved there.</summary>
+    public string? RelativePath { get; set; }
 }
 
 /// <summary>Snapshot of the persona that produced an assistant message (see PersonaAttribution client-side).</summary>

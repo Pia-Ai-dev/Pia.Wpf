@@ -179,6 +179,29 @@
                                Style="{StaticResource UserBubbleTextStyle}" />
                   </StackPanel>
                 </Border>
+                <!-- What the user attached. Saved files reopen; the rest kept only their name. -->
+                <ItemsControl ItemsSource="{Binding AttachedFiles}"
+                              Margin="0,6,0,0"
+                              HorizontalAlignment="Left"
+                              Visibility="{Binding HasAttachedFiles, Converter={StaticResource BooleanToVisibilityConverter}}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <WrapPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <chat:PiaAttachedFileChip FileName="{Binding FileName}"
+                                                SavedRelativePath="{Binding SavedRelativePath}"
+                                                CommandParameter="{Binding}"
+                                                Margin="0,0,6,4"
+                                                OpenCommand="{Binding DataContext.OpenAttachedFileCommand,
+                                                                      RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                RevealCommand="{Binding DataContext.RevealAttachedFileCommand,
+                                                                        RelativeSource={RelativeSource AncestorType=UserControl}}" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
                 <!-- User message actions -->
                 <StackPanel Orientation="Horizontal"
                             HorizontalAlignment="Left"
@@ -306,6 +329,41 @@
                                  MaxWidth="180"
                                  TextTrimming="CharacterEllipsis"
                                  VerticalAlignment="Center" />
+                      <ui:Button Command="{Binding DataContext.SavePendingFileCommand,
+                                                   RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                 CommandParameter="{Binding}"
+                                 Appearance="Transparent"
+                                 Padding="4"
+                                 Margin="4,0,0,0"
+                                 VerticalAlignment="Center"
+                                 AutomationProperties.Name="{loc:Str Assistant_SavePendingFile_Tooltip}"
+                                 AutomationProperties.AutomationId="{Binding FullPath, StringFormat='Assistant_SavePendingFile_{0}'}"
+                                 ToolTip="{loc:Str Assistant_SavePendingFile_Tooltip}">
+                        <ui:Button.Style>
+                          <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                            <Setter Property="Visibility" Value="Visible" />
+                            <Style.Triggers>
+                              <!-- Saved, or nothing to save into: the tick below takes over. -->
+                              <DataTrigger Binding="{Binding IsSaved}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                              </DataTrigger>
+                              <DataTrigger Binding="{Binding DataContext.CanSavePendingFiles,
+                                                             RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                           Value="False">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                              </DataTrigger>
+                            </Style.Triggers>
+                          </Style>
+                        </ui:Button.Style>
+                        <ui:SymbolIcon Symbol="Save16" FontSize="12" />
+                      </ui:Button>
+                      <ui:SymbolIcon Symbol="CheckmarkCircle16"
+                                     FontSize="14"
+                                     Margin="6,0,0,0"
+                                     VerticalAlignment="Center"
+                                     Foreground="{DynamicResource PiaAccentBrush}"
+                                     ToolTip="{loc:Str Assistant_PendingFileSaved_Tooltip}"
+                                     Visibility="{Binding IsSaved, Converter={StaticResource BooleanToVisibilityConverter}}" />
                       <ui:Button Command="{Binding DataContext.RemovePendingFileCommand,
                                                    RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                  CommandParameter="{Binding}"

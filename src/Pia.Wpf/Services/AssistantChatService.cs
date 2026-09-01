@@ -251,9 +251,9 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             insertMessage.Transaction = transaction;
             insertMessage.CommandText = """
                 INSERT INTO AssistantChatMessages
-                    (Id, ChatId, Ordinal, Role, Content, ThinkingContent, Timestamp, Tokens, ModelName, PersonaId, PersonaName, PersonaEmoji, ProviderName, IsProtectedRoute)
+                    (Id, ChatId, Ordinal, Role, Content, ThinkingContent, Timestamp, Tokens, ModelName, PersonaId, PersonaName, PersonaEmoji, ProviderName, IsProtectedRoute, AttachedFiles)
                 VALUES
-                    (@Id, @ChatId, @Ordinal, @Role, @Content, @ThinkingContent, @Timestamp, @Tokens, @ModelName, @PersonaId, @PersonaName, @PersonaEmoji, @ProviderName, @IsProtectedRoute)
+                    (@Id, @ChatId, @Ordinal, @Role, @Content, @ThinkingContent, @Timestamp, @Tokens, @ModelName, @PersonaId, @PersonaName, @PersonaEmoji, @ProviderName, @IsProtectedRoute, @AttachedFiles)
                 """;
             insertMessage.Parameters.AddWithValue("@Id", msg.Id.ToString());
             insertMessage.Parameters.AddWithValue("@ChatId", chat.Id.ToString());
@@ -269,6 +269,8 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             insertMessage.Parameters.AddWithValue("@PersonaEmoji", (object?)msg.Persona?.Emoji ?? DBNull.Value);
             insertMessage.Parameters.AddWithValue("@ProviderName", (object?)msg.ProviderName ?? DBNull.Value);
             insertMessage.Parameters.AddWithValue("@IsProtectedRoute", msg.IsProtectedRoute ? 1 : 0);
+            insertMessage.Parameters.AddWithValue(
+                "@AttachedFiles", (object?)SerializeAttachedFiles(msg.AttachedFiles) ?? DBNull.Value);
             await insertMessage.ExecuteNonQueryAsync(ct);
         }
 
@@ -876,7 +878,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, Role, Content, ThinkingContent, Timestamp, Tokens, ModelName, PersonaId, PersonaName, PersonaEmoji, ProviderName, IsProtectedRoute
+            SELECT Id, Role, Content, ThinkingContent, Timestamp, Tokens, ModelName, PersonaId, PersonaName, PersonaEmoji, ProviderName, IsProtectedRoute, AttachedFiles
             FROM AssistantChatMessages
             WHERE ChatId = @ChatId
             ORDER BY Ordinal ASC
@@ -907,6 +909,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
                 ModelName = reader.IsDBNull(6) ? null : reader.GetString(6),
                 ProviderName = reader.IsDBNull(10) ? null : reader.GetString(10),
                 IsProtectedRoute = !reader.IsDBNull(11) && reader.GetInt32(11) != 0,
+                AttachedFiles = reader.IsDBNull(12) ? null : DeserializeAttachedFiles(reader.GetString(12)),
                 Persona = reader.IsDBNull(7)
                     ? null
                     : new SyncMessagePersona
@@ -999,6 +1002,27 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             WorkingDirectory = reader.IsDBNull(8) ? null : reader.GetString(8),
             ExtensionData = reader.IsDBNull(9) ? null : DeserializeExtensionData(reader.GetString(9)),
         };
+    }
+
+    private static string? SerializeAttachedFiles(List<SyncMessageAttachedFile>? files)
+    {
+        if (files is null || files.Count == 0) return null;
+        return JsonSerializer.Serialize(files);
+    }
+
+    private static List<SyncMessageAttachedFile>? DeserializeAttachedFiles(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            var files = JsonSerializer.Deserialize<List<SyncMessageAttachedFile>>(json);
+            return files is { Count: > 0 } ? files : null;
+        }
+        catch (JsonException)
+        {
+            // Corrupted column — lose the chips rather than the message.
+            return null;
+        }
     }
 
     private static string? SerializeExtensionData(Dictionary<string, JsonElement>? data)

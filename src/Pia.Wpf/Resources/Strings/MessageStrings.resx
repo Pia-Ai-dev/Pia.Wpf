@@ -60,6 +60,8 @@
   <data name="Msg_File_DuplicateAttachment" xml:space="preserve"><value>"{0}" is already attached.</value></data>
   <data name="Msg_File_Empty" xml:space="preserve"><value>"{0}" contains no readable text.</value></data>
   <data name="Msg_File_Truncated" xml:space="preserve"><value>"{0}" was shortened to fit the message.</value></data>
+  <data name="Msg_File_Saved" xml:space="preserve"><value>"{0}" was saved to the working directory ({1}).</value></data>
+  <data name="Msg_File_SaveFailed" xml:space="preserve"><value>"{0}" could not be saved to the working directory.</value></data>
   <data name="Msg_File_AttachLimit" xml:space="preserve"><value>At most {0} files can be attached to one message — "{1}" was skipped.</value></data>
   <data name="Msg_File_TooLargeAttachment" xml:space="preserve"><value>"{0}" is too large to attach.</value></data>
   <data name="Msg_File_AttachBudget" xml:space="preserve"><value>The attached files already fill this message — "{0}" was skipped.</value></data>

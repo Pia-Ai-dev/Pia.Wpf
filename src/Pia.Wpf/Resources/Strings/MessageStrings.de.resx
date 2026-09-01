@@ -57,6 +57,8 @@
   <data name="Msg_File_DuplicateAttachment" xml:space="preserve"><value>„{0}“ ist bereits angehängt.</value></data>
   <data name="Msg_File_Empty" xml:space="preserve"><value>„{0}“ enthält keinen lesbaren Text.</value></data>
   <data name="Msg_File_Truncated" xml:space="preserve"><value>„{0}“ wurde gekürzt, damit es in die Nachricht passt.</value></data>
+  <data name="Msg_File_Saved" xml:space="preserve"><value>„{0}“ wurde im Arbeitsverzeichnis gespeichert ({1}).</value></data>
+  <data name="Msg_File_SaveFailed" xml:space="preserve"><value>„{0}“ konnte nicht im Arbeitsverzeichnis gespeichert werden.</value></data>
   <data name="Msg_File_AttachLimit" xml:space="preserve"><value>Es können höchstens {0} Dateien an eine Nachricht angehängt werden – „{1}“ wurde übersprungen.</value></data>
   <data name="Msg_File_TooLargeAttachment" xml:space="preserve"><value>„{0}“ ist zu groß zum Anhängen.</value></data>
   <data name="Msg_File_AttachBudget" xml:space="preserve"><value>Die angehängten Dateien füllen diese Nachricht bereits – „{0}“ wurde übersprungen.</value></data>

@@ -44,6 +44,10 @@ public partial class AssistantMessage : ObservableObject
     /// open-file/open-folder chips (PiaFileChip). In-memory only — not persisted (see Sources).</summary>
     public ObservableCollection<FileRef> FileRefs { get; } = [];
 
+    /// <summary>Files the user attached to this (user) message. Name-only unless the file was copied
+    /// into the assistant-files sandbox, in which case the chip can reopen it.</summary>
+    public ObservableCollection<AttachedFileRef> AttachedFiles { get; } = [];
+
     public ObservableCollection<string> Suggestions { get; } = [];
 
     /// <summary>Typed "switch to Agent mode" chips (R8) — net-new, not the string <see cref="Suggestions"/>.
@@ -101,6 +105,8 @@ public partial class AssistantMessage : ObservableObject
     public bool HasSources => Sources.Count > 0;
 
     public bool HasFileRefs => FileRefs.Count > 0;
+
+    public bool HasAttachedFiles => AttachedFiles.Count > 0;
 
     public bool HasSuggestions => Suggestions.Count > 0;
 
@@ -192,6 +198,7 @@ public partial class AssistantMessage : ObservableObject
         ActionCards.CollectionChanged += OnActionCardsChanged;
         Sources.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSources));
         FileRefs.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasFileRefs));
+        AttachedFiles.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasAttachedFiles));
         Suggestions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSuggestions));
         AgentModeSuggestions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasAgentModeSuggestion));
     }

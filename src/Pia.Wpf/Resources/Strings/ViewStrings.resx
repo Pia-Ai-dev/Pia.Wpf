@@ -1173,6 +1173,9 @@
   <data name="AnswerExport_SaveDialogTitle" xml:space="preserve"><value>Save exported answer</value></data>
   <data name="AnswerExport_SaveDialogFilter" xml:space="preserve"><value>HTML document (*.html)|*.html|All files (*.*)|*.*</value></data>
   <data name="Assistant_OpenFolder_Tooltip" xml:space="preserve"><value>Open containing folder</value></data>
+  <data name="Assistant_SavePendingFile_Tooltip" xml:space="preserve"><value>Save to the working directory</value></data>
+  <data name="Assistant_PendingFileSaved_Tooltip" xml:space="preserve"><value>Saved to the working directory</value></data>
+  <data name="Assistant_AttachedFile_NotSaved_Tooltip" xml:space="preserve"><value>This file was not saved to the working directory, so only its name was kept.</value></data>
   <data name="Assistant_OpenInCode_Tooltip" xml:space="preserve"><value>Open in VS Code</value></data>
   <data name="Assistant_MoreChips_Tooltip" xml:space="preserve"><value>Show the remaining entries</value></data>
   <data name="Routines_New" xml:space="preserve"><value>New routine</value></data>

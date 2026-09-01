@@ -50,6 +50,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IAgentRunResumeService _resumeService;
     private readonly IChatSessionManager _chatSessionManager;
     private readonly IWorkingDirectoryService _workingDirectoryService;
+    private readonly IAttachedFileStore? _attachedFileStore;
     private readonly IFilesToolHandler _filesToolHandler;
     private readonly IMarkdownExportService _markdownExportService;
     private readonly IDialogService _dialogService;
@@ -98,6 +99,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public ObservableCollection<PendingFileAttachment> PendingFiles { get; } = new();
 
     public bool HasPendingFiles => PendingFiles.Count > 0;
+
+    /// <summary>Whether the composer can offer "save to working directory" at all — false leaves the
+    /// chip with only its remove button rather than a button that cannot work.</summary>
+    public bool CanSavePendingFiles => _attachedFileStore is not null;
 
     [ObservableProperty]
     private bool _isStreaming;
@@ -256,6 +261,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IAsyncRelayCommand<BitmapSource> HandleImagePastedCommand { get; }
     public IRelayCommand RemoveAttachmentCommand { get; }
     public IRelayCommand<PendingFileAttachment> RemovePendingFileCommand { get; }
+    public IRelayCommand<PendingFileAttachment> SavePendingFileCommand { get; }
+    public IRelayCommand<AttachedFileRef> OpenAttachedFileCommand { get; }
+    public IRelayCommand<AttachedFileRef> RevealAttachedFileCommand { get; }
     public IAsyncRelayCommand ToggleMeetingAttendeeCommand { get; }
     public IAsyncRelayCommand ToggleDirectTranscriptionCommand { get; }
 
@@ -329,7 +337,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IFileDialogService? fileDialogService = null,
         // Handed on to the run panel VM only, so a parked run can show the whole call it asked to make.
         // Trailing and defaulted, same discipline; null ⇒ the panel offers no detail.
-        IAgentToolExchangeStore? toolCalls = null)
+        IAgentToolExchangeStore? toolCalls = null,
+        // Trailing and defaulted, same discipline; null => the composer offers no save-to-working-directory
+        // button and an attachment chip stays name-only.
+        IAttachedFileStore? attachedFileStore = null)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -360,6 +371,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _resumeService = resumeService;
         _chatSessionManager = chatSessionManager;
         _workingDirectoryService = workingDirectoryService;
+        _attachedFileStore = attachedFileStore;
         _filesToolHandler = filesToolHandler;
         _markdownExportService = markdownExportService;
         _dialogService = dialogService;
@@ -403,6 +415,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         {
             if (file is not null) PendingFiles.Remove(file);
         });
+        SavePendingFileCommand = new RelayCommand<PendingFileAttachment>(ExecuteSavePendingFile);
+        OpenAttachedFileCommand = new RelayCommand<AttachedFileRef>(
+            file => AttachedFileOpener.Open(file, _attachedFileStore));
+        RevealAttachedFileCommand = new RelayCommand<AttachedFileRef>(
+            file => AttachedFileOpener.Reveal(file, _attachedFileStore));
         ToggleMeetingAttendeeCommand = new AsyncRelayCommand(ExecuteToggleMeetingAttendee);
         ToggleDirectTranscriptionCommand = new AsyncRelayCommand(ExecuteToggleDirectTranscription);
 
@@ -1122,6 +1139,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var attachedFileContext = files.Length > 0
             ? AssistantPromptComposer.BuildAttachedFileBlock(files)
             : null;
+        // Names (and the sandbox path of the ones that were saved) outlive the send as chips under the
+        // bubble; the extracted text above does not, so a resumed chat shows what was attached but no
+        // longer feeds it to the model.
+        var attachedFiles = files.Length == 0
+            ? null
+            : files.Select(f => new AttachedFileRef(f.FileName, f.SavedRelativePath)).ToArray();
         PendingFiles.Clear();
 
         var session = _chatSessionManager.ActiveSession
@@ -1135,7 +1158,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // Awaited so the AsyncRelayCommand's running-state blocks re-entry; StartTurnAsync
         // returns once the turn is fire-and-forgotten (Step 4-compatible).
         var accepted = await _chatSessionManager.StartTurnAsync(
-            session, userText, attachment, planned: planned, attachedFileContext: attachedFileContext);
+            session, userText, attachment, planned: planned, attachedFileContext: attachedFileContext,
+            attachedFiles: attachedFiles);
 
         // A refused send consumed nothing, so put the composer back rather than dropping what was typed —
         // reachable in the window between a plan-approval park releasing the session and the flag landing.
@@ -1786,6 +1810,32 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         if (result.ImagePaths.Count > 0)
             await AttachFirstImageAsync(result.ImagePaths);
+    }
+
+    /// <summary>Copies a staged file into the chat's working directory so it survives the send and stays
+    /// openable from history. Idempotent — an already-saved chip hides the button.</summary>
+    private void ExecuteSavePendingFile(PendingFileAttachment? file)
+    {
+        if (file is null || file.IsSaved) return;
+
+        var saved = _attachedFileStore?.SaveIntoWorkingDirectory(
+            file.FullPath, _chatSessionManager.ActiveSession?.WorkingDirectory);
+
+        if (saved is null)
+        {
+            _logger.LogWarning("Could not save a pending attachment into the working directory");
+            _snackbarService.Show(
+                _localizationService["Msg_Warning"],
+                _localizationService.Format("Msg_File_SaveFailed", file.FileName),
+                Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+            return;
+        }
+
+        file.SavedRelativePath = saved;
+        _snackbarService.Show(
+            _localizationService["Msg_Success"],
+            _localizationService.Format("Msg_File_Saved", file.FileName, saved),
+            Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(4));
     }
 
     /// <summary>An item the source app offered but would not hand over. A null name means it offered no file

@@ -11,6 +11,7 @@ using Pia.Helpers;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Navigation;
+using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Pia.ViewModels.Models;
@@ -33,6 +34,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
     private readonly IChatSessionManager _chatSessionManager;
     private readonly IMarkdownExportService _markdownExportService;
     private readonly IChatArchiveService _chatArchiveService;
+    private readonly IAttachedFileStore? _attachedFileStore;
     private CancellationTokenSource? _debounceCts;
     private bool _disposed;
     private bool _initialized;
@@ -119,6 +121,8 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
     public IAsyncRelayCommand ExportAllChatsCommand { get; }
     public IAsyncRelayCommand ImportChatsCommand { get; }
     public IAsyncRelayCommand LoadMoreChatsCommand { get; }
+    public IRelayCommand<AttachedFileRef> OpenAttachedFileCommand { get; }
+    public IRelayCommand<AttachedFileRef> RevealAttachedFileCommand { get; }
 
     public AssistantHistoryViewModel(
         ILogger<AssistantHistoryViewModel> logger,
@@ -130,7 +134,10 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         Wpf.Ui.ISnackbarService snackbarService,
         IChatSessionManager chatSessionManager,
         IMarkdownExportService markdownExportService,
-        IChatArchiveService chatArchiveService)
+        IChatArchiveService chatArchiveService,
+        // Trailing and defaulted so the existing test constructions keep compiling; null leaves an
+        // attachment chip name-only, which is also what an unsaved attachment looks like.
+        IAttachedFileStore? attachedFileStore = null)
         : base(requireUiThread: true)
     {
         _logger = logger;
@@ -143,6 +150,11 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         _chatSessionManager = chatSessionManager;
         _markdownExportService = markdownExportService;
         _chatArchiveService = chatArchiveService;
+        _attachedFileStore = attachedFileStore;
+        OpenAttachedFileCommand = new RelayCommand<AttachedFileRef>(
+            file => AttachedFileOpener.Open(file, _attachedFileStore));
+        RevealAttachedFileCommand = new RelayCommand<AttachedFileRef>(
+            file => AttachedFileOpener.Reveal(file, _attachedFileStore));
 
         StateFilterOptions = BuildStateFilterOptions(localizationService);
         _selectedStateOption = StateFilterOptions[0];
