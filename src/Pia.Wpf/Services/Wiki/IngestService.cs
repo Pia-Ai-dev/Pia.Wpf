@@ -156,7 +156,7 @@ public sealed class IngestService : IIngestService
         // Pre-pass: re-identify + slugify EVERY subject up front so the known-slug set is complete before
         // any page is synthesized. That makes a within-run forward reference safe — topic A's page (written
         // first) may link to topic B's page (written later in the loop), and B's slug is already known.
-        var identityMap = await BuildTopicIdentityMapAsync();
+        var (identityMap, knownSlugs) = await BuildTopicIndexAsync();
         var claimedSlugs = new HashSet<string>(StringComparer.Ordinal);
         var prepared = new List<(ExtractedTopic Topic, string Subject, string Slug)>();
         var reidentifiedSubjects = 0;
@@ -217,8 +217,8 @@ public sealed class IngestService : IIngestService
         }
 
         // The link vocabulary for BOTH grounding (synthesizer prompt) and reconciliation (deterministic
-        // backstop): slugs already on disk ∪ slugs this run will create.
-        var knownSlugs = await BuildKnownTopicSlugsAsync();
+        // backstop): slugs already on disk ∪ slugs this run will create. The on-disk half came out of
+        // the same walk that built the identity map.
         foreach (var p in prepared)
         {
             knownSlugs.Add(p.Slug);
@@ -571,9 +571,14 @@ public sealed class IngestService : IIngestService
     // winner per key is fixed here rather than at the call site: EnumerateAsync promises no ordering,
     // so an unspecified rule would send the same subject to different pages on different runs.
     // Precedence: oldest `created`, then the smallest slug.
-    private async Task<Dictionary<string, string>> BuildTopicIdentityMapAsync()
+    //
+    // Returns the slug set alongside it: reading a page's frontmatter is the expensive half, and the
+    // caller needs both, so one walk serves both rather than enumerating and parsing the tree twice.
+    private async Task<(Dictionary<string, string> Identities, HashSet<string> Slugs)>
+        BuildTopicIndexAsync()
     {
         var candidates = new Dictionary<string, (string Slug, string Created)>(StringComparer.Ordinal);
+        var slugs = new HashSet<string>(StringComparer.Ordinal);
         foreach (var path in await _store.EnumerateAsync("memory/topics/*.md"))
         {
             var relative = path.Replace('\\', '/');
@@ -584,6 +589,8 @@ public sealed class IngestService : IIngestService
             }
 
             var slug = VaultSlug.Slugify(name);
+            slugs.Add(slug);
+
             var doc = await _store.ReadAsync(relative);
             var title = doc?.Frontmatter.GetValueOrDefault("title");
             var created = doc?.Frontmatter.GetValueOrDefault("created") ?? string.Empty;
@@ -595,7 +602,7 @@ public sealed class IngestService : IIngestService
             }
         }
 
-        return candidates.ToDictionary(e => e.Key, e => e.Value.Slug, StringComparer.Ordinal);
+        return (candidates.ToDictionary(e => e.Key, e => e.Value.Slug, StringComparer.Ordinal), slugs);
     }
 
     // An empty `created` sorts last so a page that carries one always wins over one that does not.
