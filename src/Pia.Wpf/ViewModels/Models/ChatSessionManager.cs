@@ -695,11 +695,12 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     /// is reachable only programmatically (tests / debug); the user-facing Chat/Agent lever is 1.3.
     /// </summary>
     internal Task<bool> StartPlannedTurnAsync(ChatSession session, string goal) =>
-        StartTurnAsync(session, goal, attachment: null, regenerationInstruction: null, planned: true);
+        StartTurnAsync(session, goal, attachment: null, regenerationInstruction: null, planned: true,
+            attachedFileContext: null);
 
     public async Task<bool> StartTurnAsync(
         ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction = null,
-        bool planned = false)
+        bool planned = false, string? attachedFileContext = null)
     {
         // One read for both guards below, so a send never queries the same row twice. Live-read rather than
         // ChatSession.PlanApprovalParkActive, so a just-landed Reject is seen at once.
@@ -717,7 +718,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
         // Must run before anything below mutates the session: if the attached run is parked asking the user
         // a question, this send is that answer, not a new turn.
-        if (await TryAnswerParkedRunAsync(session, userText, attachment, regenerationInstruction, parkReason))
+        if (await TryAnswerParkedRunAsync(
+                session, userText, attachment, regenerationInstruction, attachedFileContext, parkReason))
             return true;
 
         // Captured before the Id-assignment block below: a brand-new chat has no Id yet,
@@ -730,6 +732,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         var userMessage = new AssistantMessage(ChatRole.User, userText)
         {
             Attachment = attachment,
+            AttachedFileContext = attachedFileContext,
         };
         session.Messages.Add(userMessage);
 
@@ -1017,16 +1020,18 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     /// When the attached run is parked waiting on a question it asked the user, treats this send as the answer
     /// (appended to the transcript, handed to the run's resume) instead of starting a new turn.
     /// <para>
-    /// A regeneration, an attachment, or a blank send are never treated as an answer: a regeneration re-runs an
-    /// existing reply, and a resume carries only a text nudge so an attachment would be silently dropped.
+    /// A regeneration, an attachment, an attached file, or a blank send are never treated as an answer: a
+    /// regeneration re-runs an existing reply, and a resume carries only a text nudge so anything riding
+    /// beside the text would be silently dropped.
     /// </para>
     /// </summary>
     private async Task<bool> TryAnswerParkedRunAsync(
         ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction,
-        string? parkReason)
+        string? attachedFileContext, string? parkReason)
     {
         if (_resumeService is null || session.ActiveRunId is not { } runId
             || regenerationInstruction is not null || attachment is not null
+            || attachedFileContext is not null
             || string.IsNullOrWhiteSpace(userText))
         {
             return false;

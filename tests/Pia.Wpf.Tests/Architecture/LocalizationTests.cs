@@ -94,6 +94,10 @@ public class LocalizationTests
             new Regex(@"_localization\[""(\w+)""\]", RegexOptions.Compiled),
             new Regex(@"_localization\.Format\(""(\w+)""", RegexOptions.Compiled),
             new Regex(@"LocalizationSource\.Instance\[""(\w+)""\]", RegexOptions.Compiled),
+            // The file importers take the service as a PARAMETER, so their call sites carry no underscore
+            // and the five patterns above cannot see them; \b stops these re-reporting the field form.
+            new Regex(@"\blocalizationService\[""(\w+)""\]", RegexOptions.Compiled),
+            new Regex(@"\blocalizationService\.Format\(""(\w+)""", RegexOptions.Compiled),
         };
 
         var missing = new List<string>();
@@ -538,6 +542,33 @@ public class LocalizationTests
     [Theory]
     [InlineData("Msg_Settings_DiagnosticsExported_Body", 1)]
     public void ADiagnosticsMessageKeyCarriesTheSamePlaceholdersInEveryLocale(string key, int expected)
+    {
+        var placeholder = new Regex(@"\{(\d+)");
+        var cultures = new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") };
+
+        foreach (var culture in cultures)
+        {
+            var value = MessageStrings.ResourceManager.GetString(key, culture);
+            Assert.False(string.IsNullOrWhiteSpace(value), $"{key} is missing for {culture.Name}");
+            var indexes = placeholder.Matches(value!).Select(m => m.Groups[1].Value).Order().ToArray();
+            Assert.Equal(Enumerable.Range(0, expected).Select(i => i.ToString(CultureInfo.InvariantCulture)),
+                indexes);
+        }
+    }
+
+    /// <summary>The file-drop snackbars are formatted with a fixed argument count each, so a locale that
+    /// drops or invents a placeholder throws at render time instead of reading wrong.</summary>
+    [Theory]
+    [InlineData("Msg_File_AttachLimit", 2)]
+    [InlineData("Msg_File_ReadFailed", 2)]
+    [InlineData("Msg_File_AttachBudget", 1)]
+    [InlineData("Msg_File_TooLargeAttachment", 1)]
+    [InlineData("Msg_File_UnsupportedAttachment", 1)]
+    [InlineData("Msg_File_DuplicateAttachment", 1)]
+    [InlineData("Msg_File_Empty", 1)]
+    [InlineData("Msg_File_Truncated", 1)]
+    [InlineData("Msg_File_OneImageOnly", 1)]
+    public void AFileDropMessageKeyCarriesTheSamePlaceholdersInEveryLocale(string key, int expected)
     {
         var placeholder = new Regex(@"\{(\d+)");
         var cultures = new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") };

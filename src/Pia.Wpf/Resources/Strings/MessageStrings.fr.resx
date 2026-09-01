@@ -52,6 +52,15 @@
   <data name="Msg_Assistant_ProviderNoVision" xml:space="preserve"><value>Le fournisseur d'IA actuel ne prend pas en charge les images. Retirez la pièce jointe ou changez de fournisseur.</value></data>
   <data name="Msg_File_Inserted" xml:space="preserve"><value>Contenu de {0} inséré.</value></data>
   <data name="FileDrop_Overlay_Hint" xml:space="preserve"><value>Déposez un fichier pour insérer son contenu</value></data>
+  <data name="FileDrop_Overlay_Hint_Assistant" xml:space="preserve"><value>Déposez des fichiers pour les joindre</value></data>
+  <data name="Msg_File_UnsupportedAttachment" xml:space="preserve"><value>« {0} » ne peut pas être joint – type de fichier non pris en charge.</value></data>
+  <data name="Msg_File_DuplicateAttachment" xml:space="preserve"><value>« {0} » est déjà joint.</value></data>
+  <data name="Msg_File_Empty" xml:space="preserve"><value>« {0} » ne contient aucun texte lisible.</value></data>
+  <data name="Msg_File_Truncated" xml:space="preserve"><value>« {0} » a été raccourci pour tenir dans le message.</value></data>
+  <data name="Msg_File_AttachLimit" xml:space="preserve"><value>Au maximum {0} fichiers peuvent être joints à un message – « {1} » a été ignoré.</value></data>
+  <data name="Msg_File_TooLargeAttachment" xml:space="preserve"><value>« {0} » est trop volumineux pour être joint.</value></data>
+  <data name="Msg_File_AttachBudget" xml:space="preserve"><value>Les fichiers joints remplissent déjà ce message – « {0} » a été ignoré.</value></data>
+  <data name="Msg_File_OneImageOnly" xml:space="preserve"><value>Une seule image peut être jointe – « {0} » a été conservée.</value></data>
 
   <data name="Msg_Tts_NoVoiceLoaded" xml:space="preserve"><value>Aucun modèle vocal chargé. Choisissez une voix dans les paramètres pour utiliser Lire à voix haute.</value></data>
   <data name="Msg_Tts_NoVoiceLoaded_OpenSettings" xml:space="preserve"><value>Ouvrir les paramètres</value></data>

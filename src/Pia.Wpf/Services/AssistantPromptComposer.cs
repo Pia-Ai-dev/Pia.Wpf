@@ -311,6 +311,33 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         return sb.ToString();
     }
 
+    /// <summary>
+    /// No "read the rest" note on a truncated file: a dropped file has no path the model could re-open.
+    /// </summary>
+    public static string BuildAttachedFileBlock(IReadOnlyList<PendingFileAttachment> files)
+    {
+        if (files.Count == 0) return string.Empty;
+
+        var sb = new StringBuilder();
+        sb.Append("The user attached the following file(s) to this message. Use them as context for the request.");
+
+        foreach (var f in files)
+        {
+            sb.Append("\n\n");
+            sb.Append($"<attached_file name=\"{EscapeAttr(f.FileName)}\" type=\"{f.Kind.ToString().ToLowerInvariant()}\"");
+            if (f.Truncated)
+            {
+                var note = $"Showing the first {f.Text.Length} of {f.OriginalCharCount} characters.";
+                sb.Append($" truncated=\"true\" note=\"{EscapeAttr(note)}\"");
+            }
+            sb.Append(">\n");
+            sb.Append(f.Text);
+            sb.Append("\n</attached_file>");
+        }
+
+        return sb.ToString();
+    }
+
     private static string EscapeAttr(string value) =>
         value.Replace("&", "&amp;").Replace("\"", "&quot;").Replace("<", "&lt;");
 

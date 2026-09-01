@@ -55,6 +55,15 @@
   <data name="Msg_Assistant_ProviderNoVision" xml:space="preserve"><value>The current AI provider does not support images. Remove the attachment or switch providers.</value></data>
   <data name="Msg_File_Inserted" xml:space="preserve"><value>Inserted contents of {0}.</value></data>
   <data name="FileDrop_Overlay_Hint" xml:space="preserve"><value>Drop file to insert its contents</value></data>
+  <data name="FileDrop_Overlay_Hint_Assistant" xml:space="preserve"><value>Drop files to attach them</value></data>
+  <data name="Msg_File_UnsupportedAttachment" xml:space="preserve"><value>"{0}" can't be attached — file type isn't supported.</value></data>
+  <data name="Msg_File_DuplicateAttachment" xml:space="preserve"><value>"{0}" is already attached.</value></data>
+  <data name="Msg_File_Empty" xml:space="preserve"><value>"{0}" contains no readable text.</value></data>
+  <data name="Msg_File_Truncated" xml:space="preserve"><value>"{0}" was shortened to fit the message.</value></data>
+  <data name="Msg_File_AttachLimit" xml:space="preserve"><value>At most {0} files can be attached to one message — "{1}" was skipped.</value></data>
+  <data name="Msg_File_TooLargeAttachment" xml:space="preserve"><value>"{0}" is too large to attach.</value></data>
+  <data name="Msg_File_AttachBudget" xml:space="preserve"><value>The attached files already fill this message — "{0}" was skipped.</value></data>
+  <data name="Msg_File_OneImageOnly" xml:space="preserve"><value>Only one image can be attached — kept "{0}".</value></data>
 
   <!-- Assistant messages -->
   <data name="Msg_Assistant_Copied" xml:space="preserve"><value>Copied</value></data>

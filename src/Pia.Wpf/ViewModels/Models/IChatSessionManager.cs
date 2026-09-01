@@ -41,7 +41,8 @@ public interface IChatSessionManager
     /// Prepare and start a turn for <paramref name="session"/> with the given user input.
     /// Resolves persona/provider/prompt, adds the user + assistant messages, and runs the loop.
     /// <paramref name="regenerationInstruction"/> (optional) is injected AI-side for a styled
-    /// regeneration (e.g. "make it shorter") without changing the displayed user bubble.
+    /// regeneration (e.g. "make it shorter") without changing the displayed user bubble, and
+    /// <paramref name="attachedFileContext"/> (optional) the same way for attached file text.
     /// <para>
     /// If <paramref name="session"/>'s attached run is parked asking the user a question (<c>needs-goal</c> /
     /// <c>needs-input</c>), this posts <paramref name="userText"/> as the answer and resumes that run instead
@@ -53,7 +54,7 @@ public interface IChatSessionManager
     /// is true.</returns>
     Task<bool> StartTurnAsync(
         ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction = null,
-        bool planned = false);
+        bool planned = false, string? attachedFileContext = null);
 
     /// <summary>
     /// Detach the goal as an unattended headless Planned run (no live session). Additive to

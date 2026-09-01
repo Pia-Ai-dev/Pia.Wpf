@@ -52,6 +52,15 @@
   <data name="Msg_Assistant_ProviderNoVision" xml:space="preserve"><value>Der aktive KI-Anbieter unterstützt keine Bilder. Anhang entfernen oder Anbieter wechseln.</value></data>
   <data name="Msg_File_Inserted" xml:space="preserve"><value>Inhalt von {0} eingefügt.</value></data>
   <data name="FileDrop_Overlay_Hint" xml:space="preserve"><value>Datei hier ablegen, um Inhalt einzufügen</value></data>
+  <data name="FileDrop_Overlay_Hint_Assistant" xml:space="preserve"><value>Dateien hier ablegen, um sie anzuhängen</value></data>
+  <data name="Msg_File_UnsupportedAttachment" xml:space="preserve"><value>„{0}“ kann nicht angehängt werden – Dateityp wird nicht unterstützt.</value></data>
+  <data name="Msg_File_DuplicateAttachment" xml:space="preserve"><value>„{0}“ ist bereits angehängt.</value></data>
+  <data name="Msg_File_Empty" xml:space="preserve"><value>„{0}“ enthält keinen lesbaren Text.</value></data>
+  <data name="Msg_File_Truncated" xml:space="preserve"><value>„{0}“ wurde gekürzt, damit es in die Nachricht passt.</value></data>
+  <data name="Msg_File_AttachLimit" xml:space="preserve"><value>Es können höchstens {0} Dateien an eine Nachricht angehängt werden – „{1}“ wurde übersprungen.</value></data>
+  <data name="Msg_File_TooLargeAttachment" xml:space="preserve"><value>„{0}“ ist zu groß zum Anhängen.</value></data>
+  <data name="Msg_File_AttachBudget" xml:space="preserve"><value>Die angehängten Dateien füllen diese Nachricht bereits – „{0}“ wurde übersprungen.</value></data>
+  <data name="Msg_File_OneImageOnly" xml:space="preserve"><value>Es kann nur ein Bild angehängt werden – „{0}“ wurde übernommen.</value></data>
 
   <data name="Msg_Tts_NoVoiceLoaded" xml:space="preserve"><value>Kein Sprachmodell geladen. Wähle in den Einstellungen eine Stimme aus, um Vorlesen zu nutzen.</value></data>
   <data name="Msg_Tts_NoVoiceLoaded_OpenSettings" xml:space="preserve"><value>Einstellungen öffnen</value></data>

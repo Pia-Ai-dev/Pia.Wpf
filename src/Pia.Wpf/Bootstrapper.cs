@@ -46,6 +46,9 @@ public static class Bootstrapper
     // Separate from the archive path above: the two exports write different formats, and a script that
     // drives both would otherwise have them overwrite each other.
     public const string DebugChatExportMarkdownFileEnvVar = "PIA_DEBUG_CHAT_EXPORT_MARKDOWN_FILE";
+    // Semicolon-separated paths the Attach-file button uses instead of the picker: UIA cannot synthesize a
+    // shell drag-drop, so this is the only way a script can stage file attachments. DEBUG builds only.
+    public const string DebugDropFilesEnvVar = "PIA_DEBUG_DROP_FILES";
 
     public static string ProductionServerUrl =>
         Environment.GetEnvironmentVariable(ServerUrlEnvVar) is { Length: > 0 } envUrl

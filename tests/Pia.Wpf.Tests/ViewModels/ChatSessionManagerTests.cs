@@ -2018,6 +2018,61 @@ public class ChatSessionManagerTests
             Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
+    /// <summary>An attached file is never read as the answer to a parked question: a resume carries only a text nudge, so the file text would be dropped without a trace.</summary>
+    [Fact]
+    public async Task StartTurnAsync_RunParkedForClarification_WithAnAttachedFile_StartsAnOrdinaryTurn()
+    {
+        var sut = CreateResumingSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        AttachParkedRun(session, "needs-goal");
+
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
+            .Returns(new Persona { Name = "Tester", SystemPrompt = "be helpful" });
+        _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant)
+            .Returns(new AiProvider { Name = "Test", Endpoint = "https://example.test" });
+        _composer.PrepareTurn(default!, default!, default!, default)
+            .ReturnsForAnyArgs(new AssistantTurnSetup("system", null, false, false));
+
+        await sut.StartTurnAsync(
+            session, "the printed catalogue", null, attachedFileContext: AttachedFileBlock);
+
+        await _resumeService.DidNotReceive().ResumeAsync(
+            Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        // Non-vacuity: an ordinary turn really did start (setup resolved, placeholder added).
+        await _personas.Received(1).ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>());
+        Assert.Equal(2, session.Messages.Count);
+        Assert.False(session.Messages[1].IsUser);
+    }
+
+    /// <summary>The minted user message carries the file text, which is the whole feature: without it the send compiles, runs and tells the model nothing.</summary>
+    [Fact]
+    public async Task StartTurnAsync_SetsAttachedFileContextOnTheUserMessage()
+    {
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
+            .Returns(new Persona { Name = "Tester", SystemPrompt = "be helpful" });
+        _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant)
+            .Returns(new AiProvider { Name = "Test", Endpoint = "https://example.test" });
+        _composer.PrepareTurn(default!, default!, default!, default)
+            .ReturnsForAnyArgs(new AssistantTurnSetup("system", null, false, false));
+
+        await sut.StartTurnAsync(
+            session, "summarize this", null, attachedFileContext: AttachedFileBlock);
+
+        Assert.Equal(2, session.Messages.Count);
+        Assert.True(session.Messages[0].IsUser);
+        Assert.Equal(AttachedFileBlock, session.Messages[0].AttachedFileContext);
+        // The displayed bubble is untouched; only the AI-visible projection grows.
+        Assert.Equal("summarize this", session.Messages[0].Content);
+        Assert.Contains(AttachedFileBlock, session.Messages[0].ToChatMessage().Text);
+    }
+
+    private const string AttachedFileBlock =
+        "The user attached the following file(s) to this message. Use them as context for the request.\n\n" +
+        "<attached_file name=\"notes.txt\" type=\"text\">\nthe quarterly numbers\n</attached_file>";
+
     /// <summary>Guardrail 1: a throwing (or false-returning) resume must not fail the send; it surfaces as a still-parked run instead.</summary>
     [Fact]
     public async Task StartTurnAsync_ResumeThrows_DoesNotFailTheSend_AndKeepsTheAnswerInTheTranscript()

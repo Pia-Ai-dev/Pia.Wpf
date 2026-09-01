@@ -194,12 +194,12 @@ Behaviour, in order, per path:
 4. Duplicate — `alreadyPending` (plus what this call has staged) already holds this `FullPath`, `OrdinalIgnoreCase` — → `Msg_File_DuplicateAttachment` caution snackbar, continue.
 5. Count ceiling — `alreadyPending.Count + staged.Count >= MaxPendingFiles` → `localizationService.Format("Msg_File_AttachLimit", MaxPendingFiles, fileName)` as a caution snackbar, continue (do **not** break: the user should hear about every skipped file). **Two placeholders**, like `Msg_File_ReadFailed` below and unlike every other key in this list — `At most {0} files can be attached to one message — "{1}" was skipped.`
 6. Read: `Text` → `DroppedFileReader.ReadTextAsync`; `Docx` → `ReadDocxAsync`; `Xlsx` → `ReadXlsxAsync`; `Email` → `DroppedFileReader.ReadEmailAsync`.
-7. `ReadStatus.TooLarge` → `localizationService.Format("Msg_File_TooLarge", fileName)`; `ReadStatus.Failed` → `localizationService.Format("Msg_File_ReadFailed", fileName, result.Error ?? string.Empty)`. **`Msg_File_ReadFailed` takes two placeholders** — `Couldn't read "{0}": {1}` (`src/Pia.Wpf/Resources/Strings/MessageStrings.resx:52`, DE `:49`, FR `:49`) — and `LocalizationService.Format` is a plain `string.Format` (`src/Pia.Wpf/Services/LocalizationService.cs:24-28`), so copying the one-arg shape of its neighbours throws `FormatException` on the first locked file. The existing correct call site is `DroppedFileImporter.cs:74`. For `FileKind.Email`, `{1}` is the exception **type** name, not `ex.Message` (§7.4) — a deliberate, user-visible consequence of the privacy rule in §12. See §12 for the log line.
+7. `ReadStatus.TooLarge` → `localizationService.Format("Msg_File_TooLargeAttachment", fileName)` — its own key, because Optimize's `Msg_File_TooLarge` says "too large to insert" and this path never inserts; `ReadStatus.Failed` → `localizationService.Format("Msg_File_ReadFailed", fileName, result.Error ?? string.Empty)`. **`Msg_File_ReadFailed` takes two placeholders** — `Couldn't read "{0}": {1}` (`src/Pia.Wpf/Resources/Strings/MessageStrings.resx:52`, DE `:49`, FR `:49`) — and `LocalizationService.Format` is a plain `string.Format` (`src/Pia.Wpf/Services/LocalizationService.cs:24-28`), so copying the one-arg shape of its neighbours throws `FormatException` on the first locked file. The existing correct call site is `DroppedFileImporter.cs:74`. For `FileKind.Email`, `{1}` is the exception **type** name, not `ex.Message` (§7.4) — a deliberate, user-visible consequence of the privacy rule in §12. See §12 for the log line.
 8. Text is empty or whitespace-only → `Msg_File_Empty` caution snackbar, continue. Covers the 0-byte file and the mail with no readable body.
-9. Truncate: per-file to `MaxFileChars`; then, against the running total including `alreadyPending`, to whatever is left of `MaxTotalChars`. If nothing is left, the same two-argument `Msg_File_AttachLimit` call as step 5, and continue. Record `Truncated` and `OriginalCharCount`.
+9. Truncate: per-file to `MaxFileChars`; then, against the running total including `alreadyPending`, to whatever is left of `MaxTotalChars`. If nothing is left, `localizationService.Format("Msg_File_AttachBudget", fileName)` — **one** placeholder, and a sentence about the message being full rather than step 5's file count, which two 20,000-char files have not come close to — and continue. Record `Truncated` and `OriginalCharCount`.
 10. Truncation happened → `Msg_File_Truncated` caution snackbar (one per file).
 
-`Msg_File_TooLarge` for `FileKind.Email` fires from either of two gates inside `ReadEmailAsync`, never from the shared 1 MB `FileInfo.Length` guard: the container ceiling of `MaxTextBytes * 8`, and `MaxTextBytes` on the **rendered text**. The rendered-text gate is the one that matters, because a `.msg` with a 30 MB attachment can have a 500-byte body; the container ceiling only keeps a pathological file out of memory, since both readers are synchronous and hold the whole file (§7.4).
+`Msg_File_TooLargeAttachment` for `FileKind.Email` fires from either of two gates inside `ReadEmailAsync`, never from the shared 1 MB `FileInfo.Length` guard: the container ceiling of `MaxTextBytes * 8`, and `MaxTextBytes` on the **rendered text**. The rendered-text gate is the one that matters, because a `.msg` with a 30 MB attachment can have a 500-byte body; the container ceiling only keeps a pathological file out of memory, since both readers are synchronous and hold the whole file (§7.4).
 
 ### 4.4 `src/Pia.Wpf/Services/AssistantPromptComposer.cs` — new static method
 
@@ -729,7 +729,7 @@ D17 and D20 are two halves of one rule, so they share **one** loc key and one co
     private bool _pendingFilesBlockRunHintVisible;
 
     private bool PendingFilesBlockRunHolds() =>
-        PendingFiles.Count > 0 && !IsStreaming && (AgentModeEnabled || HasCandidateGoalText());
+        PendingFiles.Count > 0 && !IsStreaming && AgentModeEnabled;
 
     private void RefreshPendingFilesHint()
     {
@@ -741,10 +741,12 @@ D17 and D20 are two halves of one rule, so they share **one** loc key and one co
     }
 ```
 
+**Agent mode is the whole condition.** Both clauses of the sentence are Agent-mode claims: the Run-in-background button is `Visibility="{Binding AgentModeEnabled}"` (`AssistantView.xaml:660`), and `planned` in §8.4.2 already requires the lever. In Chat the button is not on screen and no turn was ever going to be planned, so a hint there would describe two restrictions that do not exist — and Chat with a chip and typed text is the *default* path for this feature. No `HasCandidateGoalText()` disjunct.
+
 **Where it is recomputed.** Two places, and both are needed:
 
 - `OnPendingFilesChanged` (§8.4) — the collection path, which nothing else covers.
-- the hint arm of the name filter at `:851-854`, immediately after the existing `RefreshGoalTooShortHint();`. That arm already watches `InputText`, `IsStreaming` and `AgentModeEnabled`, which is exactly the input set of `PendingFilesBlockRunHolds()`. **Do not** widen the arm with `nameof(HasPendingFiles)` instead — the manual `OnPropertyChanged(nameof(HasPendingFiles))` raise makes that work, but it hides the real dependency behind a notification the collection handler happens to emit.
+- the hint arm of the name filter at `:851-854`, immediately after the existing `RefreshGoalTooShortHint();`. That arm already watches `IsStreaming` and `AgentModeEnabled`, which is the input set of `PendingFilesBlockRunHolds()` (it watches `InputText` too, for the goal hint that shares the arm). **Do not** widen the arm with `nameof(HasPendingFiles)` instead — the manual `OnPropertyChanged(nameof(HasPendingFiles))` raise makes that work, but it hides the real dependency behind a notification the collection handler happens to emit.
 
 **No debounce.** `RefreshGoalTooShortHint` runs a 1-second `GoalTooShortHintDebounce` (`:1022-1029`) so a hint never pops mid-typing. Attaching a chip is a discrete click, not a keystroke; borrowing that path would put a second of dead-button silence in front of the explanation. `RefreshPendingFilesHint` assigns straight through.
 
@@ -853,8 +855,8 @@ That covers `ExecuteClearConversation` (`:1199`), `NewChat` (`:1209`), `ExecuteN
 
     private async Task AttachFirstImageAsync(IReadOnlyList<string> imagePaths)
     {
-        await ExecuteHandleImageAttached(imagePaths[0]);
-        if (imagePaths.Count == 1) return;
+        var attached = await ExecuteHandleImageAttached(imagePaths[0]);
+        if (!attached || imagePaths.Count == 1) return;
 
         _snackbarService.Show(
             _localizationService["Msg_Warning"],
@@ -865,7 +867,9 @@ That covers `ExecuteClearConversation` (`:1199`), `NewChat` (`:1209`), `ExecuteN
 
 **`ExecuteHandleImageAttached` (`:1709-1713`) gains the `IsStreaming` guard** its two siblings already have (`:1695`, `:1718`) — one rule for all three staging paths.
 
-`PrepareImageAttachmentAsync` (`:1727-1750`) and its PiaCloud gate (`:1730`) are **untouched**. Text and mail never enter this method (D8).
+**The attach path reports whether it attached.** `ExecuteHandleImageAttached` and `PrepareImageAttachmentAsync` both return `Task<bool>`: `false` from each guard and from both refusal arms below, `true` only after `PendingAttachment` is set. `Msg_File_OneImageOnly` says an image was *kept*, and two of `PrepareImageAttachmentAsync`'s exits keep nothing — a non-PiaCloud provider and an image still too large after re-encoding — so ungated it announces a file the user never got. Method-group conversion keeps `new AsyncRelayCommand<string>(ExecuteHandleImageAttached)` compiling unchanged, and `ExecuteHandleImagePasted` simply discards the result.
+
+`PrepareImageAttachmentAsync` (`:1727-1750`) keeps its PiaCloud gate (`:1730`) and its behaviour otherwise. Text and mail never enter this method (D8).
 
 `InsertOrPromptInsertAnyway` (`:1752-1773`) survives — `OptimizeViewModel` is unaffected and the Assistant no longer calls it from the drop path. If nothing else calls it, delete it and let the build tell you.
 
@@ -988,13 +992,15 @@ All three files are CRLF in the working tree.
 | `Msg_File_Empty` | `"{0}" contains no readable text.` | `„{0}“ enthält keinen lesbaren Text.` | `« {0} » ne contient aucun texte lisible.` |
 | `Msg_File_Truncated` | `"{0}" was shortened to fit the message.` | `„{0}“ wurde gekürzt, damit es in die Nachricht passt.` | `« {0} » a été raccourci pour tenir dans le message.` |
 | `Msg_File_AttachLimit` | `At most {0} files can be attached to one message — "{1}" was skipped.` | `Es können höchstens {0} Dateien an eine Nachricht angehängt werden – „{1}“ wurde übersprungen.` | `Au maximum {0} fichiers peuvent être joints à un message – « {1} » a été ignoré.` |
+| `Msg_File_TooLargeAttachment` | `"{0}" is too large to attach.` | `„{0}“ ist zu groß zum Anhängen.` | `« {0} » est trop volumineux pour être joint.` |
+| `Msg_File_AttachBudget` | `The attached files already fill this message — "{0}" was skipped.` | `Die angehängten Dateien füllen diese Nachricht bereits – „{0}“ wurde übersprungen.` | `Les fichiers joints remplissent déjà ce message – « {0} » a été ignoré.` |
 | `Msg_File_OneImageOnly` | `Only one image can be attached — kept "{0}".` | `Es kann nur ein Bild angehängt werden – „{0}“ wurde übernommen.` | `Une seule image peut être jointe – « {0} » a été conservée.` |
 
 `Msg_File_Empty` covers both the 0-byte file and the mail with no readable body — one message, no extra key.
 
 German quotes: the new rows close with `“`, not an ASCII `"`. `MessageStrings.de.resx` is the one file in the family that gets this wrong (33 `„` against 2 `“`, measured); `ViewStrings.de.resx` (35/33) and `CommonStrings.de.resx` (5/5) are correct. New rows follow the correct form; the 31 existing ones are not this plan's business.
 
-`FileDrop_Overlay_Hint`, `Msg_File_Unsupported`, `Msg_File_TooLarge`, `Msg_File_ReadFailed`, `Msg_File_ImageTooLarge`, `Msg_File_ImageProviderUnsupported` are **unchanged** and still used (the first three by Optimize). `Msg_File_ReadFailed` is the two-placeholder one — see §4.3 step 7.
+`FileDrop_Overlay_Hint`, `Msg_File_Unsupported`, `Msg_File_TooLarge`, `Msg_File_ReadFailed`, `Msg_File_ImageTooLarge`, `Msg_File_ImageProviderUnsupported` are **unchanged** and still used — the first three by Optimize, and `Msg_File_Unsupported` / `Msg_File_TooLarge` now *only* there, since both are worded around inserting. `Msg_File_ReadFailed` is the two-placeholder one — see §4.3 step 7.
 
 ### 10.2 `ViewStrings.resx` / `.de.resx` / `.fr.resx` — next to `Assistant_RemoveAttachment_Tooltip` (`:108`)
 
@@ -1003,14 +1009,14 @@ German quotes: the new rows close with `“`, not an ASCII `"`. `MessageStrings.
 | `Assistant_RemovePendingFile_Tooltip` | `Remove file` | `Datei entfernen` | `Retirer le fichier` |
 | `Assistant_PendingFilesBlockRun_Hint` | `An attached file can only ride a chat message. Run in background is off, and this turn won't be planned as an agent run.` | `Eine angehängte Datei kann nur mit einer Chatnachricht mitgehen. Die Hintergrundausführung ist deaktiviert, und diese Runde wird nicht als Agentenlauf geplant.` | `Un fichier joint ne peut accompagner qu'un message de chat. L'exécution en arrière-plan est désactivée, et ce tour ne sera pas planifié comme exécution d'agent.` |
 
-**No imperative in that sentence, on purpose.** The hint shows whenever `PendingFilesBlockRunHolds()` is true (§8.4.3), which covers two different states: Agent lever on, and Agent lever off with typed text. "Remove the files to plan it as an agent run" would be actively wrong in the second — nothing was going to be planned, and removing the chips would not change that. Both clauses above are true in both states.
+**Agent mode only, and no imperative.** The hint shows exactly when `PendingFilesBlockRunHolds()` is true (§8.4.3), i.e. the Agent lever is on with a chip attached — the one state where both clauses are true and both are caused by the file. It stays declarative because the same sentence covers a composer with typed text and one with only a chip; "remove the files to plan it as an agent run" would over-promise in the second, where there is no goal to plan yet.
 
 Terminology, checked against the shipped strings: German is **`Hintergrundausführung`** (`ViewStrings.de.resx:116`, `:118`; the button at `:112` is `Im Hintergrund ausführen`) — *Hintergrundlauf* appears nowhere in the product and reads as a calque. The register is informal *du*, matching `:115` / `:117`. French keeps *vous* (`ViewStrings.fr.resx:115`, `:117`) and takes `de` after a negation, never `un`.
 
 ### 10.3 Test rows this forces
 
-- `tests/Pia.Wpf.Tests/Architecture/LocalizationTests.cs:537-553` — `Msg_File_AttachLimit` takes two placeholders, so add `[InlineData("Msg_File_AttachLimit", 2)]` to `ADiagnosticsMessageKeyCarriesTheSamePlaceholdersInEveryLocale`.
-- `AllTranslations_MustBeComplete` (`:124-165`) asserts the key sets are equal in **both** directions — an orphan translation fails too. All **nine** new keys — seven in the `MessageStrings` family (§10.1), two in `ViewStrings` (§10.2) — land in all three files of their family in the same commit.
+- `tests/Pia.Wpf.Tests/Architecture/LocalizationTests.cs` — the placeholder count per key. `ADiagnosticsMessageKeyCarriesTheSamePlaceholdersInEveryLocale` is scoped to the diagnostics keys by name, so these get their own `AFileDropMessageKeyCarriesTheSamePlaceholdersInEveryLocale`, with a row per file-drop key: `Msg_File_AttachLimit` and `Msg_File_ReadFailed` take **two**, the rest one. Nothing else pins an argument count, because the substitute in the importer tests returns the key whatever it is handed.
+- `AllTranslations_MustBeComplete` (`:124-165`) asserts the key sets are equal in **both** directions — an orphan translation fails too. All **eleven** new keys — nine in the `MessageStrings` family (§10.1), two in `ViewStrings` (§10.2) — land in all three files of their family in the same commit.
 - `AllXamlLocalizationKeys_MustExistInResources` (`:58-81`) covers `FileDrop_Overlay_Hint_Assistant`, `Assistant_RemovePendingFile_Tooltip` and `Assistant_PendingFilesBlockRun_Hint` automatically, because those three are reached from XAML as `{loc:Str …}`.
 - **`AllCodeLocalizationKeys_MustExistInResources` (`:83-122`) does *not* cover the new importer, and must be widened.** All five of its regexes require the underscore-prefixed field name (`_localizationService\["…"\]`, `_localizationService\.Format\("…"`, `_localization…`, `LocalizationSource\.Instance…`) at `:89-96`. `DroppedFileAttachmentImporter.TryStageAsync` takes `ILocalizationService localizationService` as a **parameter** (§4.3), so its calls read `localizationService.Format("Msg_File_Empty", …)` and match none of them — exactly as `DroppedFileImporter.cs:52` already goes unchecked today. Five of the seven new `MessageStrings` keys (`Msg_File_UnsupportedAttachment`, `_DuplicateAttachment`, `_Empty`, `_Truncated`, `_AttachLimit`) live only in that file, so a typo would ship green. Add two patterns in the same step as the keys, which retroactively covers the existing importer too:
   ```csharp
@@ -1126,9 +1132,9 @@ Add the row to the playbook's DEBUG-bypass table (`docs/ui_automation/ui-automat
 |---|---|
 | **Mail dragged straight out of Outlook** | Nothing happens — no overlay, no snackbar. Outlook's message list offers `FileGroupDescriptorW` + `FileContents`, not `CF_HDROP`, and `FileDropBehavior` gates on `DataFormats.FileDrop` in both `TryAcceptDrag` (`:127-130`) and `OnDrop` (`:105-125`). The user must save the mail to disk first, or use Attach-file. Stated in §1; gate **G0** decides whether that stands. |
 | **Unreadable file** (locked, denied, corrupt `.msg`) | `Format("Msg_File_ReadFailed", fileName, result.Error ?? string.Empty)` — **two** placeholders (§4.3 step 7) — as a danger snackbar; no chip. Log the exception **type** plainly, the message via `SensitiveDebug`. |
-| **Oversize file** (`> MaxTextBytes` before extraction) | `Msg_File_TooLarge` caution snackbar; no chip. |
+| **Oversize file** (`> MaxTextBytes` before extraction) | `Msg_File_TooLargeAttachment` caution snackbar; no chip. Optimize keeps the insert-worded `Msg_File_TooLarge`. |
 | **Text over `MaxFileChars`** | Chip appears with `Truncated = true`; `Msg_File_Truncated` caution snackbar; the wrapper carries `truncated="true"` + the `note` attribute. |
-| **Message total over `MaxTotalChars`** | The file that crosses the line is truncated to whatever is left; when nothing is left, `Format("Msg_File_AttachLimit", MaxPendingFiles, fileName)` — **two** placeholders (§4.3 step 5) — and no chip. |
+| **Message total over `MaxTotalChars`** | The file that crosses the line is truncated to whatever is left; when nothing is left, `Format("Msg_File_AttachBudget", fileName)` — **one** placeholder, describing the exhausted character budget rather than the file count — and no chip. |
 | **More than `MaxPendingFiles`** | The same two-argument `Msg_File_AttachLimit` per skipped file — do not stop at the first. |
 | **Unsupported type in a mixed drop** | Per-file `Msg_File_UnsupportedAttachment`; the supported files in the same drop still attach. Note `FileDropBehavior.FilterAccepted` already discards anything outside `AcceptedExtensions`, so this fires only for the picker's typed-path route and for `.pdf`-class kinds. |
 | **`.pdf`** | Classified `FileKind.Pdf`, no reader exists, absent from `AcceptedExtensions` — rejected at drag-over, as today. Not in scope. |
@@ -1139,7 +1145,7 @@ Add the row to the playbook's DEBUG-bypass table (`docs/ui_automation/ui-automat
 | **`.msg` whose only body is RTF** | `10090102` is not decompressed (§7.2), so the render is headers-only and the importer keeps it if the headers are non-empty. The one shape the PR_HTML fallback does not cover; accepted. |
 | **Send in Agent mode with files attached** | The turn is forced to Chat shape (`planned: false`, D17/§8.4.2) and the hint says so. The Agent lever is **not** flipped — the next send with an empty chip strip plans normally. |
 | **`Date:` with an RFC 5322 comment**, e.g. `… +0000 (UTC)` | Comment stripped before parsing (§7.3); the line still renders. Without the strip the whole `Date:` line silently disappears. |
-| **Two images in one drop** | First wins; `Msg_File_OneImageOnly` caution snackbar (D16). |
+| **Two images in one drop** | First wins; `Msg_File_OneImageOnly` caution snackbar (D16) — but only if the first image actually attached. Refused by the vision-provider or size gate, nothing was kept and only that gate's own caution shows. |
 | **Image + text in one drop** | Image → `PendingAttachment` (subject to the PiaCloud gate, which may reject it), text → `PendingFiles`. The two are independent: a rejected image must not prevent the text chips (D10, D8). |
 | **Attach while streaming** | All three staging paths refuse (`IsStreaming` guard), including `ExecuteHandleImageAttached`, which lacks one today. |
 | **Run-in-background with files attached** | The button is disabled and the hint says why (§8.4.1). A detached run cannot carry the payload, and launching one anyway would drop the mail silently. |
@@ -1268,7 +1274,9 @@ Add `[InlineData(".msg", FileKind.Email)]`, `[InlineData(".eml", FileKind.Email)
 
 ### 15.6 `tests/Pia.Wpf.Tests/Helpers/DroppedFileAttachmentImporterTests.cs` (new)
 
-`TryStageAsync_StagesATextFile` · `TryStageAsync_SeparatesImagePathsFromStagedFiles` · `TryStageAsync_SkipsADuplicatePath` · `TryStageAsync_StopsAtMaxPendingFiles` · `TryStageAsync_TruncatesAFileOverMaxFileChars` · `TryStageAsync_TruncatesAgainstTheRunningTotal` · `TryStageAsync_SkipsAnEmptyFile` · `TryStageAsync_SkipsAnUnsupportedFileButKeepsTheRest` · `TryStageAsync_CountsAlreadyPendingFilesTowardBothCaps`
+`TryStageAsync_StagesATextFile` · `TryStageAsync_SeparatesImagePathsFromStagedFiles` · `TryStageAsync_SkipsADuplicatePath` · `TryStageAsync_StopsAtMaxPendingFiles` · `TryStageAsync_TruncatesAFileOverMaxFileChars` · `TryStageAsync_TruncatesAgainstTheRunningTotal` · `TryStageAsync_SkipsAnEmptyFile` · `TryStageAsync_SkipsAnUnsupportedFileButKeepsTheRest` · `TryStageAsync_CountsAlreadyPendingFilesTowardBothCaps` · `TryStageAsync_OverTheReadCeiling_SaysTooLargeToAttach` · `TryStageAsync_WithTheCharacterBudgetSpent_NamesTheBudgetNotTheFileCount` · `TryStageAsync_ThreeFilesInOneDrop_RefuseTheThirdOnTheBudget`
+
+The last three are about *wording*, and each needs its negative: the budget arm must not reach for `Msg_File_AttachLimit` and the read ceiling must not reach for Optimize's `Msg_File_TooLarge`. Assert the argument list too (`Arg.Is<object[]>(args => args.Length == 1 …)`), because `string.Format` drops a surplus argument in silence and the substitute here returns the key whatever it is handed.
 
 ### 15.7 `tests/Pia.Wpf.Tests/Services/AssistantPromptComposerAttachedFileTests.cs` (new)
 
@@ -1303,6 +1311,7 @@ B2 ships two named behaviours that nothing else would notice being dropped, and 
 - `AddingAPendingFile_ShowsTheBlockRunHint` — the §8.4.3 wiring. This is the one that fails if the hint is routed through `RefreshGoalTooShortHint`: assert the hint is visible **immediately after the collection change**, with no keystroke and no `Task.Delay` in the test.
 - `RemovingTheLastPendingFile_HidesTheBlockRunHint`
 - `GoalTooShortHint_WinsOverTheBlockRunHint` — short refused goal + a chip; only `GoalTooShortHintVisible` is true.
+- `ChatModeWithTypedText_ShowsNoBlockRunHint` — the Agent-only condition in §8.4.3. Chat lever, real typed text, a chip: no hint. This is the headline path, and a `HasCandidateGoalText()` disjunct makes it fire there.
 - `AddingAPendingFile_RaisesHasPendingFiles`
 - `AgentModeSendWithAPendingFile_IsNotPlanned` — the D17 gate (§8.4.2): Agent lever on, a chip attached, and `StartTurnAsync` is received with `planned: false`. Assert the lever is **still on** afterwards.
 - `Send_ClearsPendingFiles`
@@ -1311,6 +1320,8 @@ B2 ships two named behaviours that nothing else would notice being dropped, and 
 - `RemovePendingFileCommand_RemovesOnlyThatFile`
 - `HandleFilesDropped_WhileStreaming_StagesNothing`
 - `HandleFilesDropped_RoutesImagesAndTextSeparately`
+- `TwoImagesRefusedByTheProvider_DoNotClaimOneWasKept` — two real PNGs, no vision provider: the provider caution shows and `Msg_File_OneImageOnly` never formats.
+- `TwoImagesKeptByAVisionProvider_NameTheOneThatWasKept` — the same drop with a PiaCloud provider, so the suppression above cannot become a blanket one.
 
 Any `StartTurnAsync` stub in this file needs a **sixth** `Arg.Any<string?>()` — see §8.3 for why five silently returns a null `Task`.
 
@@ -1324,6 +1335,12 @@ The pattern in this file is unambiguous — **one method per composer hint**: `C
 
 - `ComposerHint_Parses_AndTracksPendingFilesBlockRunHintVisible` — otherwise the hint that never fires never gets parse-tested either.
 - `ChipStrip_Parses_AndTracksHasPendingFiles` — the new `Border`'s `Visibility` binding.
+
+### 15.12 `tests/Pia.Wpf.Tests/Views/FileDropAcceptedExtensionsTests.cs` (new)
+
+The guard §9.1 has no other way to keep. Each view's `AcceptedExtensions` is a hand-maintained copy of what its importer can read, and `FileDropBehavior.FilterAccepted` drops a path before any handler runs — so a kind added to `DroppedFileReader` reaches the user only if both XAML lists are widened too, and nothing said so out loud.
+
+Read the attribute out of the XAML as text and reflect `DroppedFileReader`'s private `KindByExtension` table, then assert **both** directions per view: every extension of a kind the view's importer handles is declared, and every declared extension classifies to one of those kinds. Handled kinds are `Text, Docx, Xlsx, Email` for both, plus `Image` for the Assistant, whose ViewModel keeps images for the vision path. Pin a floor on the reflected table (`>= 40`) so a renamed field fails loudly instead of passing vacuously. `.env`, `.gitignore` and `.editorconfig` are excluded by name: they are whole file names rather than extensions, and neither list has ever offered one.
 
 ---
 

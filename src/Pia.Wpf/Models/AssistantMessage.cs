@@ -86,6 +86,11 @@ public partial class AssistantMessage : ObservableObject
     [ObservableProperty]
     private ImageAttachment? _attachment;
 
+    /// <summary>Rendered text of the files attached to this message, appended to the AI-visible
+    /// message but never displayed. In-memory only — not persisted (see AssistantMessageMapper).</summary>
+    [ObservableProperty]
+    private string? _attachedFileContext;
+
     public bool HasActionCards => ActionCards.Count > 0;
 
     /// <summary>True while any inline action card is still awaiting a user decision.
@@ -275,33 +280,29 @@ public partial class AssistantMessage : ObservableObject
             OnPropertyChanged(nameof(HasPendingConfirmation));
     }
 
-    public ChatMessage ToChatMessage()
-    {
-        if (Attachment is null) return new ChatMessage(Role, Content);
-
-        var contents = new List<AIContent>();
-        if (HasContent)
-        {
-            contents.Add(new TextContent(Content));
-        }
-        contents.Add(new DataContent(Attachment.JpegBytes, Attachment.MimeType));
-        return new ChatMessage(Role, contents);
-    }
+    public ChatMessage ToChatMessage() => BuildChatMessage(Content);
 
     /// <summary>
     /// Builds the AI-visible message with <paramref name="overrideText"/> instead of <see cref="Content"/>
-    /// (used to inject @Files context / regeneration instructions without changing the displayed bubble),
-    /// while preserving any image attachment. The image-encoding branch mirrors <see cref="ToChatMessage()"/>
-    /// exactly — without this overload the prior text-only injection silently dropped the attachment.
+    /// (used to inject @Files context / regeneration instructions without changing the displayed bubble).
     /// </summary>
-    public ChatMessage ToChatMessage(string overrideText)
+    public ChatMessage ToChatMessage(string overrideText) => BuildChatMessage(overrideText);
+
+    // One builder for both overloads: attached file text has to ride the no-image path too, and an
+    // image attachment has to survive an override.
+    private ChatMessage BuildChatMessage(string text)
     {
-        if (Attachment is null) return new ChatMessage(Role, overrideText);
+        var context = AttachedFileContext;
+        var visible = string.IsNullOrEmpty(context)
+            ? text
+            : string.IsNullOrEmpty(text) ? context : $"{text}\n\n{context}";
+
+        if (Attachment is null) return new ChatMessage(Role, visible);
 
         var contents = new List<AIContent>();
-        if (!string.IsNullOrEmpty(overrideText))
+        if (!string.IsNullOrEmpty(visible))
         {
-            contents.Add(new TextContent(overrideText));
+            contents.Add(new TextContent(visible));
         }
         contents.Add(new DataContent(Attachment.JpegBytes, Attachment.MimeType));
         return new ChatMessage(Role, contents);
