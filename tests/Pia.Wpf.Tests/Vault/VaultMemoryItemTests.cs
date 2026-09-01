@@ -49,4 +49,18 @@ public class VaultMemoryItemTests
 
         Assert.Equal(body, item.DisplayBody);
     }
+
+    // Rebuild re-synthesizes from a page's recorded sources, so it only means anything for the
+    // compiled topic pages — offering it on a hand-written note would be a no-op button.
+    [Theory]
+    [InlineData("memory/topics/acme.md", true)]
+    [InlineData(@"memory\topics\acme.md", true)]
+    [InlineData("memory/notes/mine.md", false)]
+    [InlineData("memory/contacts.md", false)]
+    public void IsRebuildable_is_true_only_for_topic_pages(string filePath, bool expected)
+    {
+        var item = new VaultMemoryItem(filePath, filePath, "topic", "X", "body", null);
+
+        Assert.Equal(expected, item.IsRebuildable);
+    }
 }

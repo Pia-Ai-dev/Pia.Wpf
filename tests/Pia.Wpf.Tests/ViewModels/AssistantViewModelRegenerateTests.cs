@@ -37,7 +37,7 @@ public class AssistantViewModelRegenerateTests
         _manager.ActiveSession.Returns(_session);
         _manager.StartTurnAsync(
             Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(),
-            Arg.Any<string?>(), Arg.Any<bool>()).Returns(true);
+            Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<string?>()).Returns(true);
 
         var meeting = new MeetingAttendeeViewModel(
             Substitute.For<IMeetingAttendeeService>(),

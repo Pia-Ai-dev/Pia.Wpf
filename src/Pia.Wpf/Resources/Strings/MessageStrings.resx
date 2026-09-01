@@ -55,6 +55,17 @@
   <data name="Msg_Assistant_ProviderNoVision" xml:space="preserve"><value>The current AI provider does not support images. Remove the attachment or switch providers.</value></data>
   <data name="Msg_File_Inserted" xml:space="preserve"><value>Inserted contents of {0}.</value></data>
   <data name="FileDrop_Overlay_Hint" xml:space="preserve"><value>Drop file to insert its contents</value></data>
+  <data name="FileDrop_Overlay_Hint_Assistant" xml:space="preserve"><value>Drop files to attach them</value></data>
+  <data name="Msg_File_UnsupportedAttachment" xml:space="preserve"><value>"{0}" can't be attached — file type isn't supported.</value></data>
+  <data name="Msg_File_DuplicateAttachment" xml:space="preserve"><value>"{0}" is already attached.</value></data>
+  <data name="Msg_File_Empty" xml:space="preserve"><value>"{0}" contains no readable text.</value></data>
+  <data name="Msg_File_Truncated" xml:space="preserve"><value>"{0}" was shortened to fit the message.</value></data>
+  <data name="Msg_File_AttachLimit" xml:space="preserve"><value>At most {0} files can be attached to one message — "{1}" was skipped.</value></data>
+  <data name="Msg_File_TooLargeAttachment" xml:space="preserve"><value>"{0}" is too large to attach.</value></data>
+  <data name="Msg_File_AttachBudget" xml:space="preserve"><value>The attached files already fill this message — "{0}" was skipped.</value></data>
+  <data name="Msg_File_OneImageOnly" xml:space="preserve"><value>Only one image can be attached — kept "{0}".</value></data>
+  <data name="Msg_File_DropFailed" xml:space="preserve"><value>Couldn't take "{0}" from the app you dragged it from. Save it as a file and drag that instead.</value></data>
+  <data name="Msg_File_DropNoFile" xml:space="preserve"><value>That app hands over no file to drag — only its own internal reference. Save the item as a file first, then drag that.</value></data>
 
   <!-- Assistant messages -->
   <data name="Msg_Assistant_Copied" xml:space="preserve"><value>Copied</value></data>
@@ -142,6 +153,16 @@
   <data name="Msg_Memory_DeleteFailed" xml:space="preserve"><value>Failed to delete memory: {0}</value></data>
   <data name="Msg_Memory_DeleteTitle" xml:space="preserve"><value>Delete Memory</value></data>
   <data name="Msg_Memory_Deleted" xml:space="preserve"><value>Deleted</value></data>
+  <data name="Msg_Memory_RebuildTitle" xml:space="preserve"><value>Rebuild page</value></data>
+  <data name="Msg_Memory_RebuildConfirm" xml:space="preserve"><value>Rebuild "{0}" from its sources? The generated body is replaced; anything you wrote above the managed marker is kept.</value></data>
+  <data name="Msg_Memory_RebuildAllConfirm" xml:space="preserve"><value>Rebuild all {0} topic pages? Each one is re-synthesized from its sources, which costs one AI request per page. Text above the managed marker is kept.</value></data>
+  <data name="Msg_Memory_RebuildFailed" xml:space="preserve"><value>Failed to rebuild the page: {0}</value></data>
+  <data name="Msg_Memory_RebuildNoPages" xml:space="preserve"><value>There are no topic pages to rebuild.</value></data>
+  <data name="Msg_Memory_RebuildSkippedTitle" xml:space="preserve"><value>Nothing rebuilt</value></data>
+  <data name="Msg_Memory_RebuildSkipped" xml:space="preserve"><value>The page was left unchanged — it records no sources, or no AI provider answered.</value></data>
+  <data name="Msg_Memory_Rebuilt" xml:space="preserve"><value>Rebuilt</value></data>
+  <data name="Msg_Memory_RebuiltDetail" xml:space="preserve"><value>"{0}" was re-synthesized from its sources.</value></data>
+  <data name="Msg_Memory_RebuiltAllDetail" xml:space="preserve"><value>{0} page(s) rebuilt, {1} left unchanged.</value></data>
   <data name="Msg_Reminders_DismissedTitle" xml:space="preserve"><value>Dismissed</value></data>
   <data name="Msg_Reminders_DismissedSingle" xml:space="preserve"><value>Reminder dismissed. Recurring reminders are rescheduled to their next occurrence.</value></data>
   <data name="Msg_Reminders_DismissedCount" xml:space="preserve"><value>{0} reminders dismissed.</value></data>

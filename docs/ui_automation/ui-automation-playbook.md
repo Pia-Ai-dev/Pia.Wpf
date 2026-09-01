@@ -37,7 +37,7 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Sidebar items | `NavItem_AssistantChat`, `NavItem_AssistantHistory`, `NavItem_Memory`, `NavItem_Reminders`, `NavItem_Routines`, `NavItem_Todo`, `NavItem_Settings`, `NavItem_NewWindow`, `NavItem_ThemeToggle` |
 | Sidebar items, conditional | `NavItem_Optimize` / `NavItem_History` (Optimize-mode windows only), `NavItem_Assignments` (only when the server offers the surface) |
 | Chat input / scroller | `InputTextBox`, `MessageScrollViewer`, `MarkdownViewer_<messageId>` (assistant bubble text, via `PiaAssistantMessage` → `MarkdownMessageControl`) — per-message since 2026-08-28; match the `MarkdownViewer_` prefix, then narrow by the reply's `Answer_*_<messageId>` toolbar |
-| Chat composer toolbar | per-group `Assistant_Suggestion_<Group>` (empty-state chips; 3 of `Memory`, `Recall`, `Todo`, `Reminder`, `Routine`, `Plan`, `Chats` are drawn per visit, so match on the prefix rather than one id), `Assistant_NewChat`, `Assistant_DeleteChat`, `Assistant_CancelStreaming`, `Assistant_ToggleRecording`, `Assistant_AttachFile`, `Assistant_RemoveAttachment`, `Assistant_ToggleMeetingAttendee`, `Assistant_ToggleDirectTranscription`, `Assistant_RunAssignment`, `Assistant_PersonaPicker`, `Assistant_Mode_Chat` / `_Agent`, `Assistant_RunInBackground`, `Assistant_Send`, `Assistant_WeakProvider_Continue` / `_ChooseProvider` / `_StayInChat`, per-message `Assistant_CopyMessage_<guid>` (user bubble, keyed by message `Id`) |
+| Chat composer toolbar | per-group `Assistant_Suggestion_<Group>` (empty-state chips; 3 of `Memory`, `Recall`, `Todo`, `Reminder`, `Routine`, `Plan`, `Chats` are drawn per visit, so match on the prefix rather than one id), `Assistant_NewChat`, `Assistant_DeleteChat`, `Assistant_CancelStreaming`, `Assistant_ToggleRecording`, `Assistant_AttachFile`, `Assistant_RemoveAttachment` (the image preview), per-file `Assistant_RemovePendingFile_<fileName>` (the attachment chips — match that full prefix, not a bare `Assistant_Remove`), `Assistant_ToggleMeetingAttendee`, `Assistant_ToggleDirectTranscription`, `Assistant_RunAssignment`, `Assistant_PersonaPicker`, `Assistant_Mode_Chat` / `_Agent`, `Assistant_RunInBackground`, `Assistant_Send`, `Assistant_WeakProvider_Continue` / `_ChooseProvider` / `_StayInChat`, per-message `Assistant_CopyMessage_<guid>` (user bubble, keyed by message `Id`) |
 | Tool-approval decisions | `ToolApproval_Decline`, `ToolApproval_AllowOnce`, `ToolApproval_AllowSession`, `ToolApproval_AlwaysAllow` |
 | Personas list / actions | `Personas_AddButton`, `Personas_ManagedNotice` (the policy banner, present only when the org manages personas), `Personas_List`, `Personas_Row_<guid>` (the row container, whose UIA name is the persona name). The row itself carries no buttons any more — select it, then act on the detail pane: `Personas_Detail_Edit` / `_Duplicate` / `_Delete`, of which only Duplicate is present for a built-in or managed persona. `Personas_Detail_SystemPrompt` reads the prompt back without opening the editor, `Personas_Detail_ManagedNotice` is the admin-published banner |
 | Templates grid | `Templates_AddButton`, per-item `Template_Edit_<guid>` / `Template_Delete_<guid>` / `Template_ViewPrompt_<guid>` / `Template_SetDefault_<guid>` |
@@ -129,6 +129,20 @@ one `ww_invoke` runs the whole thing:
 | `AssistantHistory_ExportAll` / `_ExportArchive` (the `.json` archive) | `PIA_DEBUG_CHAT_EXPORT_FILE` |
 | `AssistantHistory_ExportMarkdown` (the `.md` transcript) | `PIA_DEBUG_CHAT_EXPORT_MARKDOWN_FILE` |
 | `Answer_Export_<id>` → **External** (the standalone `.html`) | `PIA_DEBUG_ANSWER_EXPORT_FILE` |
+| `Assistant_AttachFile` (a semicolon-separated **list**, so one click stages several files) | `PIA_DEBUG_DROP_FILES` |
+
+`PIA_DEBUG_DROP_FILES` is the only way to exercise file attachments at all: a shell drag-drop is a Win32
+`DoDragDrop` transfer carrying `CF_HDROP` between two processes, which UIA cannot synthesize, so `ww_drag_drop`
+never reaches `FileDropBehavior`. Set it in `ww_launch`'s `env` map — a running process's environment cannot be
+changed from outside — then click `Assistant_AttachFile` whenever the script wants those files staged. The
+Assistant's Attach-file button is the only reader; Optimize still opens the real picker.
+
+That bypass hands over a **path list**, so it exercises everything downstream of a path and nothing upstream
+of one. It cannot reach the virtual-file materialiser that a mail dragged out of Outlook classic goes through
+(`FileGroupDescriptorW`/`FileContents` → `ShellFileContentsMaterializer`), because there is no path until that
+code has run. Verify that path by hand against a Debug build and read the log; the format enumeration it needs
+is permanent but `[Conditional("DEBUG")]`. See
+[../file_drop_attachments/2026-09-01-outlook-virtual-file-drop.md](../file_drop_attachments/2026-09-01-outlook-virtual-file-drop.md) §7.
 
 Deliberately separate variables: each of these writes a different format, and one shared path would have
 them overwrite each other.

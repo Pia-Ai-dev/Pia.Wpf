@@ -44,6 +44,11 @@ public class AssistantViewParseTests
         "In agent mode your request becomes a goal: Pia plans it, then works through the steps with tools. " +
         "Send it here, or detach it with Run in background.";
 
+    /// <summary>Composer hint shown while a file is attached (Assistant_PendingFilesBlockRun_Hint).</summary>
+    private const string PendingFilesBlockRunHintText =
+        "An attached file can only ride a chat message. Run in background is off, and this turn won't be " +
+        "planned as an agent run.";
+
     [Fact]
     public void ComposerHint_Parses_AndTracksForeignRunActive()
     {
@@ -244,6 +249,118 @@ public class AssistantViewParseTests
         Assert.True(found,
             $"No TextBlock in the parsed AssistantView renders '{AgentModeHintText}'. Either the view failed " +
             "to parse, or the loc:Str key Assistant_AgentMode_Hint no longer resolves.");
+        Assert.Equal(Visibility.Collapsed, before);
+        Assert.Equal(Visibility.Visible, after);
+    }
+
+    // Same seam again: the property the XAML binds to, never the PendingFiles collection, whose own
+    // wiring is covered ViewModel-side.
+    [Fact]
+    public void ComposerHint_Parses_AndTracksPendingFilesBlockRunHintVisible()
+    {
+        AssistantViewModel? vm = null;
+        AssistantView? view = null;
+        TextBlock? hint = null;
+        bool found;
+        Visibility? before, after;
+        try
+        {
+            WpfStaHost.Run(() =>
+            {
+                vm = CreateAssistantViewModel();
+                view = new AssistantView { DataContext = vm };
+                return 0;
+            });
+            WpfStaHost.Pump();
+
+            (found, before) = WpfStaHost.Run(() =>
+            {
+                hint = FindTextBlocks(view!).FirstOrDefault(tb => tb.Text == PendingFilesBlockRunHintText);
+                return (hint is not null, hint?.Visibility);
+            });
+
+            WpfStaHost.Run(() =>
+            {
+                vm!.PendingFilesBlockRunHintVisible = true;
+                return 0;
+            });
+            WpfStaHost.Pump();
+
+            after = WpfStaHost.Run(() => hint?.Visibility);
+        }
+        finally
+        {
+            WpfStaHost.Run(() =>
+            {
+                vm?.Dispose();
+                return 0;
+            });
+        }
+
+        Assert.True(found,
+            $"No TextBlock in the parsed AssistantView renders '{PendingFilesBlockRunHintText}'. Either the " +
+            "view failed to parse, or the loc:Str key Assistant_PendingFilesBlockRun_Hint no longer resolves.");
+        Assert.Equal(Visibility.Collapsed, before);
+        Assert.Equal(Visibility.Visible, after);
+    }
+
+    // The chip strip is a Border, not a TextBlock, so it is located by the path it binds Visibility to
+    // rather than by rendered text — and driven through the real collection, which is what raises
+    // HasPendingFiles.
+    [Fact]
+    public void ChipStrip_Parses_AndTracksHasPendingFiles()
+    {
+        AssistantViewModel? vm = null;
+        AssistantView? view = null;
+        Border? strip = null;
+        bool found;
+        Visibility? before, after;
+        try
+        {
+            WpfStaHost.Run(() =>
+            {
+                vm = CreateAssistantViewModel();
+                view = new AssistantView { DataContext = vm };
+                return 0;
+            });
+            WpfStaHost.Pump();
+
+            (found, before) = WpfStaHost.Run(() =>
+            {
+                strip = BindingPathWalker.FindLogical<Border>(view!).FirstOrDefault(
+                    b => BindingPathWalker.PathOf(b, UIElement.VisibilityProperty) == "HasPendingFiles");
+                return (strip is not null, strip?.Visibility);
+            });
+
+            WpfStaHost.Run(() =>
+            {
+                vm!.PendingFiles.Add(new PendingFileAttachment
+                {
+                    FullPath = @"C:\work\notes.txt",
+                    FileName = "notes.txt",
+                    Kind = PendingFileKind.Text,
+                    Text = "the quarterly numbers",
+                    Truncated = false,
+                    OriginalCharCount = 21,
+                });
+                return 0;
+            });
+            WpfStaHost.Pump();
+
+            after = WpfStaHost.Run(() => strip?.Visibility);
+        }
+        finally
+        {
+            WpfStaHost.Run(() =>
+            {
+                vm?.Dispose();
+                return 0;
+            });
+        }
+
+        Assert.True(found,
+            "No Border in the parsed AssistantView binds Visibility to HasPendingFiles. Either the view " +
+            "failed to parse, or the chip strip's Visibility binding was renamed.");
         Assert.Equal(Visibility.Collapsed, before);
         Assert.Equal(Visibility.Visible, after);
     }

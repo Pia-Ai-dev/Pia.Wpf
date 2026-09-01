@@ -33,6 +33,7 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
     private readonly ISettingsService _settingsService;
     private readonly IObsidianService _obsidianService;
     private CancellationTokenSource? _debounceCts;
+    private CancellationTokenSource? _rebuildCts;
     private bool _disposed;
 
     // Browser-style back history of visited page references (most-recent last), capped at MaxHistory.
@@ -98,6 +99,12 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
     private bool _isEditing;
 
     [ObservableProperty]
+    private bool _isRebuilding;
+
+    [ObservableProperty]
+    private string _rebuildStatusText = string.Empty;
+
+    [ObservableProperty]
     private int _embeddingDim = 384;
 
     // Right-pane state machine: overview when nothing is selected and the vault has content — memories
@@ -129,6 +136,9 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
     public IAsyncRelayCommand OpenVaultInObsidianCommand { get; }
     public IAsyncRelayCommand<VaultMemoryItem> OpenNoteInObsidianCommand { get; }
     public IAsyncRelayCommand<IReadOnlyList<string>> AddSourceFilesCommand { get; }
+    public IAsyncRelayCommand<VaultMemoryItem> RebuildPageCommand { get; }
+    public IAsyncRelayCommand RebuildAllPagesCommand { get; }
+    public IRelayCommand CancelRebuildCommand { get; }
 
     public VaultViewModel(
         ILogger<VaultViewModel> logger,
@@ -172,6 +182,9 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         OpenVaultInObsidianCommand = new AsyncRelayCommand(ExecuteOpenVaultInObsidian);
         OpenNoteInObsidianCommand = new AsyncRelayCommand<VaultMemoryItem>(ExecuteOpenNoteInObsidian);
         AddSourceFilesCommand = new AsyncRelayCommand<IReadOnlyList<string>>(ExecuteAddSourceFiles);
+        RebuildPageCommand = new AsyncRelayCommand<VaultMemoryItem>(ExecuteRebuildPage);
+        RebuildAllPagesCommand = new AsyncRelayCommand(ExecuteRebuildAllPages);
+        CancelRebuildCommand = new RelayCommand(() => _rebuildCts?.Cancel());
 
         PropertyChanged += OnPropertyChanged;
         _ingestScheduler.IngestStarted += OnIngestStarted;
@@ -742,6 +755,164 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         }
     }
 
+    private async Task ExecuteRebuildPage(VaultMemoryItem? memory)
+    {
+        if (memory is null || !memory.IsRebuildable || IsRebuilding) return;
+
+        var confirmed = await _dialogService.ShowConfirmationDialogAsync(
+            _localizationService["Msg_Memory_RebuildTitle"],
+            _localizationService.Format("Msg_Memory_RebuildConfirm", memory.Title));
+
+        if (!confirmed) return;
+
+        _rebuildCts = new CancellationTokenSource();
+        IsRebuilding = true;
+        RebuildStatusText = _localizationService.Format("Memory_Rebuild_Progress", 1, 1);
+        try
+        {
+            var rebuilt = await _ingestScheduler.RebuildPageAsync(memory.FilePath, _rebuildCts.Token);
+            await LoadMemoriesAsync();
+            ReselectByReference(memory.Reference);
+
+            if (rebuilt)
+            {
+                _snackbarService.Show(
+                    _localizationService["Msg_Memory_Rebuilt"],
+                    _localizationService.Format("Msg_Memory_RebuiltDetail", memory.Title),
+                    Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
+            }
+            else
+            {
+                // No sources recorded, or synthesis came back empty — the page is untouched, not broken.
+                _snackbarService.Show(
+                    _localizationService["Msg_Memory_RebuildSkippedTitle"],
+                    _localizationService["Msg_Memory_RebuildSkipped"],
+                    Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(5));
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancelled by the user — nothing to report.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to rebuild a topic page");
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"],
+                _localizationService.Format("Msg_Memory_RebuildFailed", ex.Message));
+        }
+        finally
+        {
+            EndRebuild();
+        }
+    }
+
+    private async Task ExecuteRebuildAllPages()
+    {
+        if (IsRebuilding) return;
+
+        IReadOnlyList<string> pages;
+        try
+        {
+            pages = await _ingestScheduler.ListTopicPagesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to list topic pages for a bulk rebuild");
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"],
+                _localizationService.Format("Msg_Memory_RebuildFailed", ex.Message));
+            return;
+        }
+
+        if (pages.Count == 0)
+        {
+            _snackbarService.Show(
+                _localizationService["Msg_Memory_RebuildSkippedTitle"],
+                _localizationService["Msg_Memory_RebuildNoPages"],
+                Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(3));
+            return;
+        }
+
+        var confirmed = await _dialogService.ShowConfirmationDialogAsync(
+            _localizationService["Msg_Memory_RebuildTitle"],
+            _localizationService.Format("Msg_Memory_RebuildAllConfirm", pages.Count));
+
+        if (!confirmed) return;
+
+        _rebuildCts = new CancellationTokenSource();
+        IsRebuilding = true;
+        var rebuilt = 0;
+        var skipped = 0;
+        var failed = false;
+        try
+        {
+            for (var i = 0; i < pages.Count; i++)
+            {
+                _rebuildCts.Token.ThrowIfCancellationRequested();
+                RebuildStatusText = _localizationService.Format("Memory_Rebuild_Progress", i + 1, pages.Count);
+
+                if (await _ingestScheduler.RebuildPageAsync(pages[i], _rebuildCts.Token))
+                {
+                    rebuilt++;
+                }
+                else
+                {
+                    skipped++;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancelled mid-run: pages already rebuilt keep their new body, the rest are untouched.
+        }
+        catch (Exception ex)
+        {
+            failed = true;
+            _logger.LogError(ex, "Bulk rebuild of topic pages failed");
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"],
+                _localizationService.Format("Msg_Memory_RebuildFailed", ex.Message));
+        }
+        finally
+        {
+            EndRebuild();
+        }
+
+        // Pages rebuilt before a cancel or a failure are already on disk, so reload either way — but
+        // don't follow an error dialog with a success toast.
+        await LoadMemoriesAsync();
+        if (!failed)
+        {
+            _snackbarService.Show(
+                _localizationService["Msg_Memory_Rebuilt"],
+                _localizationService.Format("Msg_Memory_RebuiltAllDetail", rebuilt, skipped),
+                Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(5));
+        }
+    }
+
+    private void EndRebuild()
+    {
+        IsRebuilding = false;
+        RebuildStatusText = string.Empty;
+        _rebuildCts?.Dispose();
+        _rebuildCts = null;
+    }
+
+    // Re-select a page by reference after a reload replaced every item instance.
+    private void ReselectByReference(string reference)
+    {
+        foreach (var group in MemoryGroups)
+        {
+            var match = group.Items.FirstOrDefault(m => m.Reference == reference);
+            if (match is not null)
+            {
+                SelectedMemory = match;
+                return;
+            }
+        }
+    }
+
     private Task ExecuteEditMemory(VaultMemoryItem? memory)
     {
         if (memory is null) return Task.CompletedTask;
@@ -770,15 +941,7 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
             await LoadMemoriesAsync();
 
             // Re-select the saved memory by reference so the inspector keeps focus on it.
-            foreach (var group in MemoryGroups)
-            {
-                var match = group.Items.FirstOrDefault(m => m.Reference == reference);
-                if (match is not null)
-                {
-                    SelectedMemory = match;
-                    break;
-                }
-            }
+            ReselectByReference(reference);
 
             _snackbarService.Show(_localizationService["Msg_Memory_Saved"], _localizationService["Msg_Memory_MemoryUpdated"],
                 Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
@@ -1071,6 +1234,8 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
 
         _debounceCts?.Cancel();
         _debounceCts?.Dispose();
+        _rebuildCts?.Cancel();
+        _rebuildCts?.Dispose();
         PropertyChanged -= OnPropertyChanged;
         _ingestScheduler.IngestStarted -= OnIngestStarted;
         _ingestScheduler.IngestCompleted -= OnIngestCompleted;

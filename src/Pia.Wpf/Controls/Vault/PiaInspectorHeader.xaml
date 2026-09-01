@@ -37,6 +37,16 @@
                    AutomationProperties.AutomationId="MemoryNote_Edit"
                    Command="{Binding DataContext.EditMemoryCommand, RelativeSource={RelativeSource AncestorType=views:VaultView}}"
                    CommandParameter="{Binding}"/>
+        <!-- Only a synthesized topic page has a managed body to re-synthesize (IsRebuildable). -->
+        <ui:Button Icon="{ui:SymbolIcon Symbol=ArrowSync20}"
+                   Appearance="Transparent"
+                   ToolTip="{loc:Str Memory_Rebuild}"
+                   AutomationProperties.Name="{loc:Str Memory_Rebuild}"
+                   AutomationProperties.AutomationId="MemoryNote_Rebuild"
+                   Visibility="{Binding IsRebuildable, Converter={StaticResource BooleanToVisibilityConverter}}"
+                   IsEnabled="{Binding DataContext.IsRebuilding, RelativeSource={RelativeSource AncestorType=views:VaultView}, Converter={StaticResource InverseBooleanConverter}}"
+                   Command="{Binding DataContext.RebuildPageCommand, RelativeSource={RelativeSource AncestorType=views:VaultView}}"
+                   CommandParameter="{Binding}"/>
         <ui:Button Icon="{ui:SymbolIcon Symbol=Copy20}"
                    Appearance="Transparent"
                    ToolTip="{loc:Str Common_Copy}"

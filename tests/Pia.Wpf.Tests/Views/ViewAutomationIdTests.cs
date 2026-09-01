@@ -46,7 +46,7 @@ public class ViewAutomationIdTests
     // AccountView declares no DataTemplate, so it is the one view with no per-item floor to hold.
     [InlineData(typeof(Pia.Views.SettingsViews.AccountView), 14, 0, "E2EEOnboardingView")]
     [InlineData(typeof(Pia.Views.SettingsViews.OptimizeView), 6, 4, "")]
-    [InlineData(typeof(Pia.Views.AssistantView), 19, 2,
+    [InlineData(typeof(Pia.Views.AssistantView), 21, 3,
         "AutocompletePopup,DirectTranscriptionOverlay,MeetingAttendeeOverlay,PersonaGlyph,PiaAssistantMessage," +
         "PiaChatQuickSwitcher,PiaChatTitleChip,PiaPersonaAvatar,RunProgressPanel,TodoPanelControl,VoiceModeOverlay")]
     [InlineData(typeof(Pia.Views.AssistantHistoryView), 10, 1,
@@ -57,7 +57,8 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Controls.Cards.CardDecisionBar), 1, 1, "")]
     [InlineData(typeof(Pia.Controls.Vault.PiaVaultHeader), 5, 0, "PiaHelpHint")]
     [InlineData(typeof(Pia.Controls.Vault.PiaVaultSearchBar), 1, 0, "")]
-    [InlineData(typeof(Pia.Controls.Vault.PiaInspectorHeader), 4, 0, "PiaTypeChip")]
+    [InlineData(typeof(Pia.Controls.Vault.PiaInspectorHeader), 5, 0, "PiaTypeChip")]
+    [InlineData(typeof(Pia.Controls.Vault.PiaVaultOverview), 2, 0, "")]
     [InlineData(typeof(Pia.Controls.Reminders.PiaRemindersHeader), 4, 0, "PiaHelpHint")]
     [InlineData(typeof(Pia.Controls.Reminders.PiaRemindersFilterBar), 5, 0, "")]
     [InlineData(typeof(Pia.Controls.History.PiaHistoryHeader), 2, 0, "PiaHelpHint")]

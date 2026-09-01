@@ -26,6 +26,10 @@ public sealed record VaultMemoryItem(
     /// <summary>The enum kind for the type chip (maps the §7 <c>type</c> string to <see cref="MemoryType"/>).</summary>
     public MemoryType TypeKind => MemoryObjectTypes.ToKind(Type);
 
+    /// <summary>Only a synthesized topic page has a managed body that ingest can rebuild.</summary>
+    public bool IsRebuildable =>
+        FilePath.Replace('\\', '/').StartsWith("memory/topics/", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     /// The body as rendered in the inspector: the internal <c>&lt;!-- pia:managed --&gt;</c> sentinel line
     /// (which opens every synthesized topic page) is dropped so it never shows as literal text, mirroring

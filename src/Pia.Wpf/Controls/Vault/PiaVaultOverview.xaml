@@ -219,6 +219,34 @@
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
+
+        <!-- Re-synthesize every topic page from its sources — how an edited memory/templates.md reaches
+             pages already on disk. Hidden with no sources, since there is then nothing to rebuild from. -->
+        <StackPanel Orientation="Horizontal"
+                    Margin="0,16,0,0"
+                    Visibility="{Binding SourceFiles.Count, Converter={StaticResource IntToVisibilityConverter}}">
+          <ui:Button Appearance="Secondary"
+                     AutomationProperties.AutomationId="MemoryOverview_RebuildAll"
+                     IsEnabled="{Binding IsRebuilding, Converter={StaticResource InverseBooleanConverter}}"
+                     Command="{Binding RebuildAllPagesCommand}">
+            <StackPanel Orientation="Horizontal">
+              <ui:SymbolIcon Symbol="ArrowSync24" FontSize="16" Margin="0,0,6,0"/>
+              <TextBlock Text="{loc:Str Memory_RebuildAll}"/>
+            </StackPanel>
+          </ui:Button>
+          <ui:Button Appearance="Transparent"
+                     Margin="8,0,0,0"
+                     AutomationProperties.AutomationId="MemoryOverview_RebuildCancel"
+                     Visibility="{Binding IsRebuilding, Converter={StaticResource BooleanToVisibilityConverter}}"
+                     Command="{Binding CancelRebuildCommand}">
+            <TextBlock Text="{loc:Str Memory_Cancel}"/>
+          </ui:Button>
+          <TextBlock Text="{Binding RebuildStatusText}"
+                     FontSize="12"
+                     Margin="12,0,0,0"
+                     VerticalAlignment="Center"
+                     Foreground="{DynamicResource TextMutedBrush}"/>
+        </StackPanel>
       </StackPanel>
     </ScrollViewer>
     </Border>

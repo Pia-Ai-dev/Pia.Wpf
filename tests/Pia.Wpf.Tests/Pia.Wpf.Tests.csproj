@@ -19,6 +19,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="TestData\*.msg">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Pia.Wpf\Pia.Wpf.csproj" />
     <ProjectReference Include="..\..\src\Pia.Shared\Pia.Shared.csproj" />
   </ItemGroup>

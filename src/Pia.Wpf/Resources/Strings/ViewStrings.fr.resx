@@ -106,6 +106,8 @@
   <data name="Assistant_Attach_Tooltip" xml:space="preserve"><value>Joindre un fichier</value></data>
   <data name="Assistant_RunAssignment_Tooltip" xml:space="preserve"><value>Confier ceci à votre serveur Pia comme mission en arrière-plan</value></data>
   <data name="Assistant_RemoveAttachment_Tooltip" xml:space="preserve"><value>Retirer la pièce jointe</value></data>
+  <data name="Assistant_RemovePendingFile_Tooltip" xml:space="preserve"><value>Retirer le fichier</value></data>
+  <data name="Assistant_PendingFilesBlockRun_Hint" xml:space="preserve"><value>Un fichier joint ne peut accompagner qu'un message de chat. L'exécution en arrière-plan est désactivée, et ce tour ne sera pas planifié comme exécution d'agent.</value></data>
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Conversation vocale</value></data>
   <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Envoyer (Entrée)</value></data>
   <data name="Assistant_Working_Tooltip" xml:space="preserve"><value>Traitement du dernier message…</value></data>
@@ -315,6 +317,9 @@
   <data name="Memory_EmptyStateHint" xml:space="preserve"><value>Discutez avec Pia pour commencer à construire la mémoire</value></data>
   <data name="Memory_Edit" xml:space="preserve"><value>Modifier</value></data>
   <data name="Memory_Delete" xml:space="preserve"><value>Supprimer</value></data>
+  <data name="Memory_Rebuild" xml:space="preserve"><value>Régénérer depuis les sources</value></data>
+  <data name="Memory_RebuildAll" xml:space="preserve"><value>Régénérer toutes les pages</value></data>
+  <data name="Memory_Rebuild_Progress" xml:space="preserve"><value>Régénération {0} sur {1}…</value></data>
   <data name="Memory_SelectPrompt" xml:space="preserve"><value>Sélectionnez une mémoire pour voir les détails</value></data>
   <data name="Memory_TypeLabel" xml:space="preserve"><value>Type :</value></data>
   <data name="Memory_CreatedLabel" xml:space="preserve"><value>  |  Créé :</value></data>

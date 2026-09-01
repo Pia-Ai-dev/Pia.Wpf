@@ -231,18 +231,25 @@ public partial class AssistantView : UserControl
 
     private void AttachFileButton_Click(object sender, RoutedEventArgs e)
     {
-        var accepted = FileDropBehavior.GetAcceptedExtensions(RootGrid);
-        var files = FilePicker.PickFiles(accepted);
+        var files = DebugDroppedPaths() ?? FilePicker.PickFiles(FileDropBehavior.GetAcceptedExtensions(RootGrid));
         if (files.Count == 0) return;
-
-        if (files.Count == 1 && DroppedFileReader.Classify(files[0]) == FileKind.Image)
-        {
-            if (ViewModel?.HandleImageAttachedCommand.CanExecute(files[0]) == true)
-                ViewModel.HandleImageAttachedCommand.Execute(files[0]);
-            return;
-        }
 
         if (ViewModel?.HandleFilesDroppedCommand.CanExecute(files) == true)
             ViewModel.HandleFilesDroppedCommand.Execute(files);
+    }
+
+    /// <summary>Dev-only: a preset path list that stands in for the file picker, so a UI script can drive the
+    /// real Attach-file button without automating a native dialog. Always null in release.</summary>
+    private static IReadOnlyList<string>? DebugDroppedPaths()
+    {
+#if DEBUG
+        if (Environment.GetEnvironmentVariable(Bootstrapper.DebugDropFilesEnvVar) is not { Length: > 0 } value)
+            return null;
+
+        var paths = value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return paths.Length == 0 ? null : paths;
+#else
+        return null;
+#endif
     }
 }

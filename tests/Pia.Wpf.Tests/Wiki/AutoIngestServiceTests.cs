@@ -383,6 +383,21 @@ public class AutoIngestServiceTests : IDisposable
 
             return Task.CompletedTask;
         }
+
+        public List<string> RebuildCalls { get; } = [];
+
+        public Task<bool> RebuildPageAsync(string pagePath, CancellationToken ct = default)
+        {
+            lock (RebuildCalls)
+            {
+                RebuildCalls.Add(pagePath);
+            }
+
+            return Task.FromResult(true);
+        }
+
+        public Task<IReadOnlyList<string>> ListTopicPagesAsync()
+            => Task.FromResult<IReadOnlyList<string>>([]);
     }
 
     /// <summary>Only <see cref="GetDefaultProviderAsync"/> matters to the scheduler.</summary>

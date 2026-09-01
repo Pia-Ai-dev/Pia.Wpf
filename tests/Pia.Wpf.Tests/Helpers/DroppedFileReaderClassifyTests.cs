@@ -22,8 +22,11 @@ public sealed class DroppedFileReaderClassifyTests
     [InlineData("C:\\drop\\notes.md", FileKind.Text)]
     [InlineData("C:\\drop\\Program.cs", FileKind.Text)]
     [InlineData("C:\\drop\\.gitignore", FileKind.Text)]
+    [InlineData("C:\\drop\\thread.msg", FileKind.Email)]
+    [InlineData("C:\\drop\\thread.eml", FileKind.Email)]
     [InlineData("relative/path/DATA.CSV", FileKind.Text)] // case-insensitive extension match
     [InlineData("C:\\drop\\REPORT.DOCX", FileKind.Docx)]
+    [InlineData("C:\\mail\\Report.MSG", FileKind.Email)]
     public void Classify_MapsKnownExtensions(string path, FileKind expected)
         => Assert.Equal(expected, DroppedFileReader.Classify(path));
 

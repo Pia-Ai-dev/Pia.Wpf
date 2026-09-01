@@ -180,6 +180,22 @@ public sealed class AutoIngestService : IIngestScheduler, IDisposable
         }
     }
 
+    public async Task<bool> RebuildPageAsync(string pagePath, CancellationToken ct = default)
+    {
+        await _serial.WaitAsync(ct);
+        try
+        {
+            return await _ingest.RebuildPageAsync(pagePath, ct);
+        }
+        finally
+        {
+            _serial.Release();
+            RaiseIngestCompleted();
+        }
+    }
+
+    public Task<IReadOnlyList<string>> ListTopicPagesAsync() => _ingest.ListTopicPagesAsync();
+
     // ---- reconcile (public for tests; called by StartAsync on the background queue) ----
 
     public async Task ReconcileAsync(CancellationToken ct = default)

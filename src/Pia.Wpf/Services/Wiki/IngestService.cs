@@ -22,7 +22,9 @@ namespace Pia.Services.Wiki;
 ///     re-synthesize the whole managed body across ALL of them (<see cref="IIngestSynthesizer"/>).
 ///     A manual preamble above the <see cref="ManagedMarker"/> sentinel is preserved verbatim;
 ///     page identity (<c>id</c>/<c>created</c>) is kept stable via
-///     <see cref="VaultFrontmatter.BuildPreserving"/>.</item>
+///     <see cref="VaultFrontmatter.BuildPreserving"/>. The page's category template
+///     (<see cref="VaultTemplateService"/>) is passed to the synthesizer so every page of a category
+///     carries the same fields.</item>
 ///   <item>Upsert an index entry per touched page.</item>
 ///   <item>Append one <c>ingest</c> log line naming the source and touched pages.</item>
 /// </list>
@@ -54,6 +56,7 @@ public sealed class IngestService : IIngestService
     private readonly VaultLogService _log;
     private readonly IIngestSynthesizer _synth;
     private readonly VaultCharterService _charter;
+    private readonly VaultTemplateService _templates;
     private readonly Func<ITokenMapService> _tokenMapFactory;
     private readonly ISettingsService _settings;
     private readonly ILogger<IngestService> _logger;
@@ -65,6 +68,7 @@ public sealed class IngestService : IIngestService
         VaultLogService log,
         IIngestSynthesizer synth,
         VaultCharterService charter,
+        VaultTemplateService templates,
         Func<ITokenMapService> tokenMapFactory,
         ISettingsService settings,
         ILogger<IngestService> logger)
@@ -75,6 +79,7 @@ public sealed class IngestService : IIngestService
         _log = log;
         _synth = synth;
         _charter = charter;
+        _templates = templates;
         _tokenMapFactory = tokenMapFactory;
         _settings = settings;
         _logger = logger;
@@ -410,6 +415,54 @@ public sealed class IngestService : IIngestService
         return tokenMap.DetokenizeBare(tokenMap.DetokenizeLoose(subject));
     }
 
+    /// <inheritdoc />
+    public async Task<bool> RebuildPageAsync(string pagePath, CancellationToken ct = default)
+    {
+        pagePath = pagePath.Replace('\\', '/'); // separator-tolerant, matching IngestAsync
+
+        var doc = await _store.ReadAsync(pagePath);
+        if (doc is null)
+        {
+            return false;
+        }
+
+        // The FULL recorded list — unlike RemoveContributionsAsync, a rebuild prunes nothing.
+        var sourceRefs = ReadPageSources(doc);
+        if (sourceRefs.Count == 0)
+        {
+            _logger.SensitiveDebug("Rebuild skipped for {Path}: the page records no sources", pagePath);
+            return false;
+        }
+
+        var title = doc.Frontmatter.GetValueOrDefault("title") ?? Path.GetFileNameWithoutExtension(pagePath);
+        var category = doc.Frontmatter.GetValueOrDefault("category") ?? "concept";
+
+        // Not optional: with an empty set BuildLinkInstruction forbids wikilinks outright, so a rebuild
+        // would silently strip every link off the page.
+        var knownSlugs = await BuildKnownTopicSlugsAsync();
+
+        var summary = await SynthesizePageAsync(
+            pagePath, title, category, sourceRefs, await _charter.GetCharterAsync(), knownSlugs, ct);
+        if (summary is null)
+        {
+            return false;
+        }
+
+        await _index.UpsertEntryAsync(pagePath, summary);
+        await _log.AppendAsync(
+            "rebuild", string.Join(", ", TouchedTargets([pagePath])), DateOnly.FromDateTime(DateTime.Now));
+        return true;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<string>> ListTopicPagesAsync()
+    {
+        // Scoped to memory/topics/ on purpose: EnumerateAsync is not a real glob, so "memory/*.md" would
+        // walk the whole subtree and hand back AGENTS.md, index.md, log.md and templates.md.
+        var pages = await _store.EnumerateAsync("memory/topics/*.md");
+        return pages.Select(p => p.Replace('\\', '/')).OrderBy(p => p, StringComparer.Ordinal).ToList();
+    }
+
     // ---- shared synthesis writer ----
 
     // Returns the index one-liner, or null when synthesis produced nothing (page left untouched).
@@ -433,7 +486,8 @@ public sealed class IngestService : IIngestService
         }
 
         var existing = await _store.ReadAsync(path);
-        var page = await _synth.SynthesizeAsync(title, category, charter, sources, knownSlugs, ct);
+        var template = await _templates.GetTemplateAsync(category);
+        var page = await _synth.SynthesizeAsync(title, category, charter, template, sources, knownSlugs, ct);
         if (string.IsNullOrWhiteSpace(page.Body))
         {
             return null;

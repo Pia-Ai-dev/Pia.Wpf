@@ -79,4 +79,52 @@ public class VaultSchemaServiceTests : IDisposable
         var after = await File.ReadAllTextAsync(agentsPath, TestContext.Current.CancellationToken);
         Assert.Equal(custom, after);
     }
+
+    [Fact]
+    public async Task First_run_creates_templates_with_a_person_contract_and_empty_siblings()
+    {
+        await NewSchema().EnsureScaffoldingAsync();
+
+        var doc = await new VaultStore(_root, _parser).ReadAsync(VaultTemplateService.TemplatesPath);
+        Assert.NotNull(doc);
+        Assert.Equal("managed", doc!.Frontmatter["pia"]);
+
+        var templates = new VaultTemplateService(
+            new VaultStore(_root, _parser), NullLogger<VaultTemplateService>.Instance);
+
+        Assert.Contains("personnel number", await templates.GetTemplateAsync("person"));
+
+        // Every other category ships empty, i.e. free-form, so nobody is forced into a contract.
+        Assert.Equal(string.Empty, await templates.GetTemplateAsync("organization"));
+        Assert.Equal(string.Empty, await templates.GetTemplateAsync("concept"));
+    }
+
+    [Fact]
+    public async Task Existing_templates_file_is_preserved_byte_identical()
+    {
+        var custom = VaultFrontmatter.Build("note", "Page templates") + "\n## person\n- mine: <value>\n";
+        Directory.CreateDirectory(Path.Combine(_root, "memory"));
+        var path = Path.Combine(_root, "memory", "templates.md");
+        await File.WriteAllTextAsync(path, custom, TestContext.Current.CancellationToken);
+
+        await NewSchema().EnsureScaffoldingAsync();
+
+        Assert.Equal(custom, await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task An_existing_AGENTS_does_not_suppress_the_templates_seed()
+    {
+        // Regression: the two documents are seeded independently, so a vault that predates
+        // templates.md — every existing install — still gets one.
+        Directory.CreateDirectory(Path.Combine(_root, "memory"));
+        await File.WriteAllTextAsync(
+            Path.Combine(_root, "memory", "AGENTS.md"),
+            VaultFrontmatter.Build("note", "Conventions (AGENTS)") + "\nMine.\n",
+            TestContext.Current.CancellationToken);
+
+        await NewSchema().EnsureScaffoldingAsync();
+
+        Assert.True(File.Exists(Path.Combine(_root, "memory", "templates.md")));
+    }
 }

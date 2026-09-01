@@ -52,6 +52,17 @@
   <data name="Msg_Assistant_ProviderNoVision" xml:space="preserve"><value>Le fournisseur d'IA actuel ne prend pas en charge les images. Retirez la pièce jointe ou changez de fournisseur.</value></data>
   <data name="Msg_File_Inserted" xml:space="preserve"><value>Contenu de {0} inséré.</value></data>
   <data name="FileDrop_Overlay_Hint" xml:space="preserve"><value>Déposez un fichier pour insérer son contenu</value></data>
+  <data name="FileDrop_Overlay_Hint_Assistant" xml:space="preserve"><value>Déposez des fichiers pour les joindre</value></data>
+  <data name="Msg_File_UnsupportedAttachment" xml:space="preserve"><value>« {0} » ne peut pas être joint – type de fichier non pris en charge.</value></data>
+  <data name="Msg_File_DuplicateAttachment" xml:space="preserve"><value>« {0} » est déjà joint.</value></data>
+  <data name="Msg_File_Empty" xml:space="preserve"><value>« {0} » ne contient aucun texte lisible.</value></data>
+  <data name="Msg_File_Truncated" xml:space="preserve"><value>« {0} » a été raccourci pour tenir dans le message.</value></data>
+  <data name="Msg_File_AttachLimit" xml:space="preserve"><value>Au maximum {0} fichiers peuvent être joints à un message – « {1} » a été ignoré.</value></data>
+  <data name="Msg_File_TooLargeAttachment" xml:space="preserve"><value>« {0} » est trop volumineux pour être joint.</value></data>
+  <data name="Msg_File_AttachBudget" xml:space="preserve"><value>Les fichiers joints remplissent déjà ce message – « {0} » a été ignoré.</value></data>
+  <data name="Msg_File_OneImageOnly" xml:space="preserve"><value>Une seule image peut être jointe – « {0} » a été conservée.</value></data>
+  <data name="Msg_File_DropFailed" xml:space="preserve"><value>Impossible de récupérer « {0} » depuis l'application source. Enregistrez l'élément dans un fichier et faites glisser celui-ci.</value></data>
+  <data name="Msg_File_DropNoFile" xml:space="preserve"><value>Cette application ne fournit aucun fichier, seulement sa référence interne. Enregistrez d'abord l'élément dans un fichier, puis faites glisser celui-ci.</value></data>
 
   <data name="Msg_Tts_NoVoiceLoaded" xml:space="preserve"><value>Aucun modèle vocal chargé. Choisissez une voix dans les paramètres pour utiliser Lire à voix haute.</value></data>
   <data name="Msg_Tts_NoVoiceLoaded_OpenSettings" xml:space="preserve"><value>Ouvrir les paramètres</value></data>
@@ -139,6 +150,16 @@
   <data name="Msg_Memory_DeleteFailed" xml:space="preserve"><value>Échec de la suppression de la mémoire : {0}</value></data>
   <data name="Msg_Memory_DeleteTitle" xml:space="preserve"><value>Supprimer la mémoire</value></data>
   <data name="Msg_Memory_Deleted" xml:space="preserve"><value>Supprimé</value></data>
+  <data name="Msg_Memory_RebuildTitle" xml:space="preserve"><value>Régénérer la page</value></data>
+  <data name="Msg_Memory_RebuildConfirm" xml:space="preserve"><value>Régénérer « {0} » à partir de ses sources ? Le corps généré est remplacé ; ce que vous avez écrit au-dessus du marqueur géré est conservé.</value></data>
+  <data name="Msg_Memory_RebuildAllConfirm" xml:space="preserve"><value>Régénérer les {0} pages thématiques ? Chacune est resynthétisée depuis ses sources, ce qui coûte une requête IA par page. Le texte au-dessus du marqueur géré est conservé.</value></data>
+  <data name="Msg_Memory_RebuildFailed" xml:space="preserve"><value>Échec de la régénération de la page : {0}</value></data>
+  <data name="Msg_Memory_RebuildNoPages" xml:space="preserve"><value>Il n'y a aucune page thématique à régénérer.</value></data>
+  <data name="Msg_Memory_RebuildSkippedTitle" xml:space="preserve"><value>Rien de régénéré</value></data>
+  <data name="Msg_Memory_RebuildSkipped" xml:space="preserve"><value>La page est restée inchangée — elle ne référence aucune source, ou aucun fournisseur IA n'a répondu.</value></data>
+  <data name="Msg_Memory_Rebuilt" xml:space="preserve"><value>Régénéré</value></data>
+  <data name="Msg_Memory_RebuiltDetail" xml:space="preserve"><value>« {0} » a été resynthétisé depuis ses sources.</value></data>
+  <data name="Msg_Memory_RebuiltAllDetail" xml:space="preserve"><value>{0} page(s) régénérée(s), {1} inchangée(s).</value></data>
   <data name="Msg_Reminders_DismissedTitle" xml:space="preserve"><value>Ignoré</value></data>
   <data name="Msg_Reminders_DismissedSingle" xml:space="preserve"><value>Rappel ignoré. Les rappels récurrents sont reprogrammés à leur prochaine occurrence.</value></data>
   <data name="Msg_Reminders_DismissedCount" xml:space="preserve"><value>{0} rappels ignorés.</value></data>
