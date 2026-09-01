@@ -211,7 +211,8 @@ public sealed class AgentVerifierTests : IDisposable
 
         await BuildVerifier().VerifyAsync(ctx, Persona(), Provider(), TestContext.Current.CancellationToken);
 
-        Assert.DoesNotContain("found", LastPrompt); // nothing outside the sandbox was ever inspected
+        // The fact-line form, not the bare word: the block's standing guidance quotes the arms in prose.
+        Assert.Equal(0, CountOccurrences(LastPrompt, "→ found")); // nothing outside the sandbox was ever inspected
         Assert.Contains("not a resolvable path inside the assistant files folder", LastPrompt);
     }
 
@@ -274,16 +275,19 @@ public sealed class AgentVerifierTests : IDisposable
             "report.md",
             "missing.md",
             "a summary of the Q3 numbers",
-            "write the digest to notes/summary.md");
+            "write the digest to notes/summary.md",
+            "sources/hr/urlaub-2026.md");
 
         await BuildVerifier().VerifyAsync(ctx, Persona(), Provider(), TestContext.Current.CancellationToken);
 
         Assert.Equal(
-            "Artifact probe: declared=4 reported=0 reportedSame=0 fileShaped=3 notFileShaped=1 overReportCap=0 "
-            + "probed=3 found=2 notFound=1 folder=0 unresolvable=0 uninspectable=0 vaultRef=0 overPathCap=0 dupPairs=0",
+            "Artifact probe: declared=5 reported=0 reportedSame=0 fileShaped=4 notFileShaped=1 overReportCap=0 "
+            + "probed=4 found=2 notFound=1 folder=0 unresolvable=0 uninspectable=0 vaultRef=1 vaultFound=0 "
+            + "vaultMissing=0 overPathCap=0 dupPairs=0",
             ProbeLine);
-        // This line survives Release, so no declaration may reach it.
+        // This line survives Release, so no declaration may reach it — a vault file name least of all.
         Assert.DoesNotContain("report.md", ProbeLine);
+        Assert.DoesNotContain("urlaub-2026.md", ProbeLine);
     }
 
     [Fact]
@@ -405,10 +409,10 @@ public sealed class AgentVerifierTests : IDisposable
     }
 
     [Fact]
-    public async Task VerifyAsync_ReportedVaultReference_IsNotReportedAsMissing()
+    public async Task VerifyAsync_ReportedVaultReference_WithNoVaultOnDisk_KeepsTheNeutralArm()
     {
-        // A step that obeys the vault hint delivers outside the working folder, so NOT FOUND against that
-        // folder would be a confident false fact about a correct run.
+        // Nothing to stat on a fresh install, and the step's deliverable is outside the working folder either
+        // way — so this arm stays neutral rather than claiming the vault was checked.
         _settings.AssistantFilesFolder = _dir;
         ReturnsVerdict(V(true, "ok"));
 
@@ -416,8 +420,55 @@ public sealed class AgentVerifierTests : IDisposable
             CtxReporting((null, "sources/urlaub/2026.md")), Persona(), Provider(), TestContext.Current.CancellationToken);
 
         Assert.Contains("reported: sources/urlaub/2026.md → " + AgentVerifier.VaultReferenceArm, LastPrompt);
-        Assert.DoesNotContain("→ NOT FOUND", LastPrompt);
-        Assert.Equal(1, ProbeCounts(ProbeLine)["vaultRef"]);
+        Assert.DoesNotContain(AgentVerifier.VaultMissingArm, LastPrompt); // an unprobed vault is not a miss
+        var counts = ProbeCounts(ProbeLine);
+        Assert.Equal(1, counts["vaultRef"]);
+        Assert.Equal(0, counts["vaultMissing"]);
+        Assert.Equal(1, counts["probed"]); // no vault root, so no second stat to charge
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task VerifyAsync_VaultRoutedStep_ProbesTheVaultAndKeepsTheWorkingFolderMiss(bool delivered)
+    {
+        // The vault folder exists in both rows: what a parked or invented create_source leaves behind is a
+        // MISSING FILE in a real vault, and that has to read differently from a delivered one.
+        Directory.CreateDirectory(Path.Combine(_dir, "Vault"));
+        if (delivered)
+            WriteFile(Path.Combine("Vault", "sources", "hr", "urlaub-2026.md"), 24);
+        _settings.AssistantFilesFolder = _dir;
+        ReturnsVerdict(V(true, "ok"));
+
+        await BuildVerifier().VerifyAsync(
+            CtxReporting(("urlaub-2026.md", "sources/hr/urlaub-2026.md")),
+            Persona(), Provider(), TestContext.Current.CancellationToken);
+
+        var line = Assert.Single(LastPrompt.Split('\n'), l => l.StartsWith("- step 1 \"S0\"", StringComparison.Ordinal));
+        // The declared half is left alone: it is a true fact about the working folder, and the critic gets
+        // both halves of the pair on this one line.
+        Assert.Contains("declared: urlaub-2026.md → NOT FOUND", line);
+
+        var counts = ProbeCounts(ProbeLine);
+        if (delivered)
+        {
+            Assert.Contains("reported: sources/hr/urlaub-2026.md → found in the vault (24 B, modified ", line);
+            Assert.Equal(1, counts["vaultFound"]);
+            Assert.Equal(0, counts["vaultMissing"]);
+        }
+        else
+        {
+            Assert.Contains("reported: sources/hr/urlaub-2026.md → " + AgentVerifier.VaultMissingArm, line);
+            Assert.Equal(1, counts["vaultMissing"]);
+            Assert.Equal(0, counts["vaultFound"]);
+        }
+
+        // A vault mtime is only weighable against a reference time, and nothing else in the verify prompt
+        // carries one — the persona prompt ships raw, without the identity block's date.
+        Assert.Matches(@"This run started \d{4}-\d{2}-\d{2} \d{2}:\d{2}Z\.", LastPrompt);
+        Assert.Equal(0, counts["vaultRef"]); // the vault was there to probe, so nothing fell to the neutral arm
+        Assert.Equal(3, counts["probed"]);   // two working-folder stats plus the vault stat
+        Assert.DoesNotContain("urlaub-2026.md", ProbeLine);
     }
 
     [Fact]
@@ -460,9 +511,10 @@ public sealed class AgentVerifierTests : IDisposable
         Assert.Equal(
             counts["fileShaped"] + counts["notFileShaped"] + counts["overReportCap"],
             counts["declared"] + counts["reported"]);
+        // A vault find/miss costs two stats — working folder, then vault — and both are charged.
         Assert.Equal(
             counts["found"] + counts["notFound"] + counts["folder"] + counts["unresolvable"]
-            + counts["uninspectable"] + counts["vaultRef"],
+            + counts["uninspectable"] + counts["vaultRef"] + (2 * (counts["vaultFound"] + counts["vaultMissing"])),
             counts["probed"]);
     }
 

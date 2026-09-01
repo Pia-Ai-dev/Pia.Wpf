@@ -31,7 +31,7 @@ what makes the fact block parseable or not.
 
 ## Outcome arms and who pins them
 
-Nine outcome sites, eight distinct strings — the two probe-budget arms share their text — plus the tally
+Eleven outcome sites, ten distinct strings — the two probe-budget arms share their text — plus the tally
 line for declarations past the report cap and the two lines the near-duplicate hint adds.
 
 | Arm | Pinned by |
@@ -44,7 +44,9 @@ line for declarations past the report cap and the two lines the near-duplicate h
 | `not probed (probe budget reached)`, per candidate | `DeclarationCorpusReplayTests.ProbeBudget_Exhausted_…` |
 | `not probed (probe budget reached)`, per declaration (prints bare) | `DeclarationCorpusReplayTests.ProbeBudget_Exhausted_…` |
 | `not probed (could not be inspected)` | **nothing pins this.** It needs a stat call to throw, which is not portably forceable — a known hole, not a faked one. |
-| `names a vault reference — outside the working folder, not probed` | `../../Services/AgentVerifierTests.cs` — `VerifyAsync_ReportedVaultReference_IsNotReportedAsMissing` |
+| `names a vault reference — outside the working folder, not probed` (no vault root on disk) | `../../Services/AgentVerifierTests.cs` — `VerifyAsync_ReportedVaultReference_WithNoVaultOnDisk_KeepsTheNeutralArm` |
+| `found in the vault (<size>, modified <utc>Z)` | `../../Services/AgentVerifierTests.cs` — `VerifyAsync_VaultRoutedStep_ProbesTheVaultAndKeepsTheWorkingFolderMiss` |
+| `names a vault reference — the vault has no such file` | `../../Services/AgentVerifierTests.cs` — `VerifyAsync_VaultRoutedStep_ProbesTheVaultAndKeepsTheWorkingFolderMiss` |
 | `- (<n> further declared artifact(s) not probed — probe budget reached)` | `DeclarationCorpusReplayTests.ReportCap_KeepsTwentyFactLines_AndTalliesTheRest` |
 | `reported: <ref> → <arm>`, the second half of a step line | `../../Services/AgentVerifierTests.cs` — `VerifyAsync_DeclaredAndReportedDiffer_RenderOnOneLineDeclaredFirst` |
 | `- possible duplicate deliverable: …` and its HINT sentence | `NearDuplicateDeliverableTests` |

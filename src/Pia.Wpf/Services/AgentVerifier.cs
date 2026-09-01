@@ -6,6 +6,7 @@ using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
+using Pia.Infrastructure.Vault;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
@@ -137,7 +138,11 @@ public sealed class AgentVerifier : IAgentVerifier
             sb.AppendLine();
             sb.AppendLine(ArtifactBlockHeader);
             sb.Append(artifactFacts); // already newline-terminated per line
+            // The run's only clock is a stopwatch, so the start is derived rather than stored.
+            var runStart = (DateTime.UtcNow - ctx.Elapsed).ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+            sb.AppendLine($"This run started {runStart}Z. A \"modified\" stamp earlier than that is a file the run did not write.");
             sb.AppendLine("A declared artifact reported NOT FOUND is a verify-relevant FACT: the step promised it and it is not on disk. Weigh it against the step results above — it is NOT an automatic failure (a step may legitimately declare a non-file outcome, and \"not a file reference\" carries no signal either way).");
+            sb.AppendLine("When a step's declared artifact is NOT FOUND but the SAME step's reported artifact was found in the vault with a \"modified\" stamp at or after that start, the deliverable was routed to the user's memory vault instead of the working folder, and that pair is a correct outcome. A vault find stamped BEFORE the start is a pre-existing file that corroborates nothing — decide that from the stamp, never from the step's own claim.");
         }
         if (firm)
             sb.AppendLine("You did not call emit_verdict. You MUST respond by calling the emit_verdict tool now — do not write prose.");
@@ -234,8 +239,8 @@ public sealed class AgentVerifier : IAgentVerifier
     internal const string ArtifactBlockHeader =
         "Declared-artifact probe — mechanical filesystem facts gathered by the app, NOT the assistant's claims:";
 
-    // Hard bounds so a long plan can never stall the verify turn (the probe is pure metadata: no file
-    // contents are read). A 48-step plan therefore costs at most MaxProbedPaths stat calls.
+    // Hard bounds so a long plan can never stall the verify turn (pure metadata: no file contents are
+    // read). A vault-shaped candidate is stat'd twice — working folder, then vault — on the same budget.
     private const int MaxProbedPaths = 12;
     private const int MaxReportedSteps = 20;
     private const int MaxCandidatesPerDeclaration = 3;
@@ -280,12 +285,19 @@ public sealed class AgentVerifier : IAgentVerifier
             // restored (Batch 06 B3). The ambient read is kept as the second choice for any caller that DOES
             // verify inside a step flow; the settings folder stays the last resort.
             var ambientRoot = ctx.WorkspaceRoot ?? TaskAmbient.Current?.WorkspaceRoot;
-            var configured = ambientRoot ?? (await _settings.GetSettingsAsync().ConfigureAwait(false)).AssistantFilesFolder;
+            var settings = await _settings.GetSettingsAsync().ConfigureAwait(false);
+            var configured = ambientRoot ?? settings.AssistantFilesFolder;
             if (string.IsNullOrWhiteSpace(configured))
             {
                 _logger.LogInformation("Artifact probe skipped for {Count} step(s) with a declared or reported artifact: no usable files folder.", targets.Count);
                 return null;
             }
+
+            // The vault is never inside an isolated workspace, so it hangs off the settings folder even when
+            // the run's own root is elsewhere — a vault deliverable of a workspace run is otherwise invisible.
+            var configuredVault = string.IsNullOrWhiteSpace(settings.AssistantFilesFolder)
+                ? null
+                : AssistantWorkspace.VaultRootFor(settings.AssistantFilesFolder);
 
             var workingSubpath = ctx.WorkingSubpath;
 
@@ -299,7 +311,7 @@ public sealed class AgentVerifier : IAgentVerifier
                 var root = ResolveProbeRoot(configured, workingSubpath, out var fallback);
                 if (root is null)
                     return (null, default, fallback);
-                var result = ProbeDeclarations(root, targets);
+                var result = ProbeDeclarations(root, ResolveVaultRoot(configuredVault), targets);
                 return (result.Facts, result.Tally, fallback);
             }, CancellationToken.None);
             var (facts, tally, subpathFallback) = await probe.WaitAsync(ProbeBudget, ct).ConfigureAwait(false);
@@ -313,10 +325,11 @@ public sealed class AgentVerifier : IAgentVerifier
                 _logger.SensitiveDebug("Working subpath did not resolve to an existing folder under the sandbox: {Subpath}", workingSubpath);
 
             _logger.LogInformation(
-                "Artifact probe: declared={Declared} reported={Reported} reportedSame={ReportedSame} fileShaped={FileShaped} notFileShaped={NotFileShaped} overReportCap={OverReportCap} probed={Probed} found={Found} notFound={NotFound} folder={Folder} unresolvable={Unresolvable} uninspectable={Uninspectable} vaultRef={VaultRef} overPathCap={OverPathCap} dupPairs={DupPairs}",
+                "Artifact probe: declared={Declared} reported={Reported} reportedSame={ReportedSame} fileShaped={FileShaped} notFileShaped={NotFileShaped} overReportCap={OverReportCap} probed={Probed} found={Found} notFound={NotFound} folder={Folder} unresolvable={Unresolvable} uninspectable={Uninspectable} vaultRef={VaultRef} vaultFound={VaultFound} vaultMissing={VaultMissing} overPathCap={OverPathCap} dupPairs={DupPairs}",
                 tally.Declared, tally.Reported, tally.ReportedSame, tally.FileShaped, tally.NotFileShaped,
                 tally.OverReportCap, tally.Probed, tally.Found, tally.NotFound, tally.Folder, tally.Unresolvable,
-                tally.Uninspectable, tally.VaultRef, tally.OverPathCap, tally.DupPairs);
+                tally.Uninspectable, tally.VaultRef, tally.VaultFound, tally.VaultMissing, tally.OverPathCap,
+                tally.DupPairs);
             _logger.SensitiveDebug("Artifact probe facts:\n{Facts}", facts);
             return facts;
         }
@@ -373,13 +386,33 @@ public sealed class AgentVerifier : IAgentVerifier
         return root;
     }
 
-    private enum ProbeOutcome { Found, NotFound, Folder, Unresolvable, Uninspectable, VaultReference }
+    /// <summary>The vault root, canonicalized, or null when unset or not on disk — which keeps a fresh
+    /// install on the neutral arm. Blocking — call it inside the probe's time box.</summary>
+    private static string? ResolveVaultRoot(string? configuredVault)
+    {
+        if (string.IsNullOrWhiteSpace(configuredVault))
+            return null;
+        try
+        {
+            var full = Path.GetFullPath(configuredVault);
+            return Directory.Exists(full) ? SafeFolderPath.Canonicalize(full) : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private enum ProbeOutcome
+    {
+        Found, NotFound, Folder, Unresolvable, Uninspectable, VaultReference, VaultFound, VaultMissing,
+    }
 
     /// <summary>Counts only — unlike the fact lines, this is safe in a release log.</summary>
     private readonly record struct ArtifactProbeTally(
         int Declared, int Reported, int ReportedSame, int FileShaped, int NotFileShaped, int OverReportCap,
         int Probed, int Found, int NotFound, int Folder, int Unresolvable,
-        int Uninspectable, int VaultRef, int OverPathCap, int DupPairs);
+        int Uninspectable, int VaultRef, int VaultFound, int VaultMissing, int OverPathCap, int DupPairs);
 
     /// <summary>One step's two artifact channels: what the planner declared, and what the step said it produced.</summary>
     private readonly record struct ProbeTarget(
@@ -399,6 +432,8 @@ public sealed class AgentVerifier : IAgentVerifier
         internal int Unresolvable;
         internal int Uninspectable;
         internal int VaultRef;
+        internal int VaultFound;
+        internal int VaultMissing;
         internal int OverPathCap;
     }
 
@@ -422,7 +457,8 @@ public sealed class AgentVerifier : IAgentVerifier
     /// Static + no logger on purpose: artifact names are user content, so this code cannot log them even
     /// by accident. Runs on a pool thread; bounded by the caps above.
     /// </summary>
-    private static (string Facts, ArtifactProbeTally Tally) ProbeDeclarations(string root, List<ProbeTarget> targets)
+    private static (string Facts, ArtifactProbeTally Tally) ProbeDeclarations(
+        string root, string? vaultRoot, List<ProbeTarget> targets)
     {
         var reportable = new List<ProbeTarget>(Math.Min(targets.Count, MaxReportedSteps));
         var skipped = 0;
@@ -444,12 +480,12 @@ public sealed class AgentVerifier : IAgentVerifier
         for (var i = 0; i < reportable.Count; i++)
         {
             if (reportable[i].Declared is { } declaration)
-                declaredOutcomes[i] = ProbeOneDeclaration(root, declaration, counters, found, reportable[i].Ordinal);
+                declaredOutcomes[i] = ProbeOneDeclaration(root, vaultRoot, declaration, counters, found, reportable[i].Ordinal);
         }
         for (var i = 0; i < reportable.Count; i++)
         {
             if (reportable[i].Reported is { } declaration)
-                reportedOutcomes[i] = ProbeOneDeclaration(root, declaration, counters, found, reportable[i].Ordinal);
+                reportedOutcomes[i] = ProbeOneDeclaration(root, vaultRoot, declaration, counters, found, reportable[i].Ordinal);
         }
 
         var sb = new StringBuilder();
@@ -480,12 +516,13 @@ public sealed class AgentVerifier : IAgentVerifier
             FileShaped: counters.FileShaped, NotFileShaped: counters.NotFileShaped,
             OverReportCap: skipped, Probed: counters.Probed, Found: counters.Found, NotFound: counters.NotFound,
             Folder: counters.Folder, Unresolvable: counters.Unresolvable, Uninspectable: counters.Uninspectable,
-            VaultRef: counters.VaultRef, OverPathCap: counters.OverPathCap, DupPairs: duplicates.Count));
+            VaultRef: counters.VaultRef, VaultFound: counters.VaultFound, VaultMissing: counters.VaultMissing,
+            OverPathCap: counters.OverPathCap, DupPairs: duplicates.Count));
     }
 
     /// <summary>The outcome text for ONE declaration, shared by both channels.</summary>
     private static string ProbeOneDeclaration(
-        string root, string declaration, ProbeCounters counters, List<FoundArtifact> found, int ordinal)
+        string root, string? vaultRoot, string declaration, ProbeCounters counters, List<FoundArtifact> found, int ordinal)
     {
         var candidates = FileCandidates(declaration);
         if (candidates.Count == 0)
@@ -511,7 +548,7 @@ public sealed class AgentVerifier : IAgentVerifier
                 continue;
             }
             counters.Probed++;
-            var (text, kind, resolved, size) = Probe(root, candidate);
+            var (text, kind, resolved, size) = Probe(root, vaultRoot, candidate);
             switch (kind)
             {
                 case ProbeOutcome.Found: counters.Found++; break;
@@ -520,7 +557,11 @@ public sealed class AgentVerifier : IAgentVerifier
                 case ProbeOutcome.Unresolvable: counters.Unresolvable++; break;
                 case ProbeOutcome.Uninspectable: counters.Uninspectable++; break;
                 case ProbeOutcome.VaultReference: counters.VaultRef++; break;
+                case ProbeOutcome.VaultFound: counters.VaultFound++; break;
+                case ProbeOutcome.VaultMissing: counters.VaultMissing++; break;
             }
+            if (kind is ProbeOutcome.VaultFound or ProbeOutcome.VaultMissing)
+                counters.Probed++; // the vault stat is a second stat call and shares the one budget
             if (kind == ProbeOutcome.Found && resolved is not null)
                 found.Add(new FoundArtifact(ordinal, candidate, resolved, size));
             // Don't echo the token when it IS the whole declaration — "report.md → found" reads
@@ -538,7 +579,8 @@ public sealed class AgentVerifier : IAgentVerifier
     /// rejects junction/symlink escapes), so the probe can never stat a path outside the folder and never
     /// follows a path escape. Metadata only — no file contents are read.
     /// </summary>
-    private static (string Text, ProbeOutcome Kind, string? Resolved, long Size) Probe(string root, string candidate)
+    private static (string Text, ProbeOutcome Kind, string? Resolved, long Size) Probe(
+        string root, string? vaultRoot, string candidate)
     {
         if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, candidate, out var resolved))
             return ("not a resolvable path inside the assistant files folder (not probed)", ProbeOutcome.Unresolvable, null, 0);
@@ -552,8 +594,8 @@ public sealed class AgentVerifier : IAgentVerifier
                 return ("found, but it is a folder, not a file", ProbeOutcome.Folder, null, 0);
             // A step that obeyed the vault hint delivers to the vault, which is not part of the working
             // folder: calling that NOT FOUND would be a confident false fact about a correct run.
-            if (IsVaultReference(candidate))
-                return (VaultReferenceArm, ProbeOutcome.VaultReference, null, 0);
+            if (TryVaultProbe(vaultRoot, candidate) is { } vault)
+                return (vault.Text, vault.Kind, null, 0);
             return ("NOT FOUND", ProbeOutcome.NotFound, null, 0);
         }
         catch (Exception)
@@ -562,11 +604,43 @@ public sealed class AgentVerifier : IAgentVerifier
         }
     }
 
+    /// <summary>Stats a vault-shaped reference; null when the vault would never hold it. The order mirrors
+    /// <c>create_source</c>: a pre-resolve prefix match misses the <c>Vault/sources/x.md</c> spelling.</summary>
+    private static (string Text, ProbeOutcome Kind)? TryVaultProbe(string? vaultRoot, string candidate)
+    {
+        var normalized = VaultReference.NormalizePath(candidate);
+        if (vaultRoot is null)
+        {
+            return normalized.StartsWith(VaultTargetPolicy.SourcesPrefix, StringComparison.OrdinalIgnoreCase)
+                ? (VaultReferenceArm, ProbeOutcome.VaultReference)
+                : null;
+        }
+
+        if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(vaultRoot, normalized, out var resolved))
+            return null;
+
+        try
+        {
+            var relative = Path.GetRelativePath(vaultRoot, resolved).Replace('\\', '/');
+            if (!relative.StartsWith(VaultTargetPolicy.SourcesPrefix, StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            var file = new FileInfo(resolved);
+            return file.Exists
+                ? ($"found in the vault ({FormatSize(file.Length)}, modified {file.LastWriteTimeUtc.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}Z)",
+                    ProbeOutcome.VaultFound)
+                : (VaultMissingArm, ProbeOutcome.VaultMissing);
+        }
+        catch (Exception)
+        {
+            return null; // a throwing vault stat must not launder the working folder's true NOT FOUND
+        }
+    }
+
     internal const string VaultReferenceArm = "names a vault reference — outside the working folder, not probed";
 
-    private static bool IsVaultReference(string candidate) =>
-        candidate.Replace('\\', '/').TrimStart('/')
-            .StartsWith(VaultTargetPolicy.SourcesPrefix, StringComparison.OrdinalIgnoreCase);
+    /// <summary>Neutral on purpose: a missing vault file can also mean the user never approved the write.</summary>
+    internal const string VaultMissingArm = "names a vault reference — the vault has no such file";
 
     internal const string DuplicateHint =
         "A \"possible duplicate deliverable\" line is a HINT, not a finding: two steps each produced a similarly named and similarly sized file of the same type. Decide from the step results whether the plan called for both, or whether one step re-produced another step's deliverable under a new name.";

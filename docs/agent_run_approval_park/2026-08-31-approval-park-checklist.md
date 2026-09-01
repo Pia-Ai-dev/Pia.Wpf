@@ -138,9 +138,10 @@ live-provider tests). `dotnet build -t:Rebuild` reports `0 Warnung(en) / 0 Fehle
 
 Known open, carried rather than closed:
 
-- **Risk 3 is mitigated, not closed.** On a vault-routed run the DECLARED half still probes against the
-  workspace root and reads NOT FOUND; it is the REPORTED channel that is now probed, so the verdict no
-  longer under-reports. Closing it fully means teaching the declared probe about vault references.
+- **Risk 3 is closed on both channels** by [2026-09-01-vault-probe-plan.md](2026-09-01-vault-probe-plan.md):
+  the probe now stats the vault on whichever channel names a vault-shaped reference, so a declared
+  `sources/hr/urlaub-2026.md` reaches the vault too. The declared half keeps its true working-folder
+  `NOT FOUND` on purpose; the pair is reconciled by the standing guidance in the artifact block.
 - **Withheld rows can outlive several park/resume cycles**, holding up to 512 K chars that was never
   executed. Bounded by the per-park and per-run caps and the terminal purge. The cheap tightening
   (supersede every unreplayed row on each park) is rejected on purpose — it would drop the surviving
