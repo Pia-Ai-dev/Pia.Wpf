@@ -27,7 +27,8 @@ when the filename gives nothing away.
 
 - Build: Debug at `9ca2af00`. Debug matters — `IsDevMode` puts the logger at `Debug`, which is
   what makes the `SensitiveDebug` tool-args and tool-result lines visible. Gate green before the
-  run (6420 total / 0 failed), 0 warnings in Debug and Release rebuilds.
+  run (6420 total / 0 failed) and again after the smart-case fix below (6423 / 0), 0 warnings in
+  Debug and Release rebuilds of both.
 - Profile: the real one. Sandbox root `C:\Users\maltm\Documents\Pia Assistant`,
   `assistantDefaultWorkingDirectory = Playground`, so the effective root was
   `…\Pia Assistant\Playground`.
