@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:element name="root" msdata:IsDataSet="true">
@@ -559,15 +559,11 @@
   <data name="Dialog_FolderMove_Verifying" xml:space="preserve"><value>Vérification…</value></data>
   <data name="Dialog_FolderMove_CleaningUp" xml:space="preserve"><value>Nettoyage…</value></data>
   <data name="Settings_Chat_Section" xml:space="preserve"><value>Historique des chats</value></data>
-  <data name="Settings_Chat_HistoryEnabled" xml:space="preserve"><value>Enregistrer l'historique des chats</value></data>
-  <data name="Settings_Chat_HistoryEnabled_Description" xml:space="preserve"><value>Conserver les chats de l'assistant sur cet appareil pour pouvoir les reprendre et les rechercher plus tard.</value></data>
   <data name="Settings_Chat_RetentionDays" xml:space="preserve"><value>Supprimer les chats non ouverts depuis {0} jours</value></data>
   <data name="Settings_Chat_RetentionDays_Label" xml:space="preserve"><value>Conservation (jours)</value></data>
   <data name="Settings_Chat_AutoTitle" xml:space="preserve"><value>Générer automatiquement les titres des chats (consomme des jetons)</value></data>
   <data name="Settings_Chat_AutoTitle_Hint" xml:space="preserve"><value>Effectue une petite requête supplémentaire pour générer un titre court par chat.</value></data>
   <data name="Settings_Chat_DeleteAllNow" xml:space="preserve"><value>Supprimer tout l'historique des chats maintenant</value></data>
-  <data name="Settings_Chat_DisableConfirmTitle" xml:space="preserve"><value>Désactiver l'historique des chats ?</value></data>
-  <data name="Settings_Chat_DisableConfirmBody" xml:space="preserve"><value>Désactiver l'historique des chats supprimera tous les chats locaux existants. Cette action est irréversible. Continuer ?</value></data>
   <data name="AssistantHistory_DeleteAllConfirmTitle" xml:space="preserve"><value>Supprimer tous les chats</value></data>
   <data name="AssistantHistory_DeleteAllConfirmBody" xml:space="preserve"><value>Supprimer tous les chats de cet appareil ? Cette action est irréversible.</value></data>
   <data name="Settings_GlobalHotkeys" xml:space="preserve"><value>Raccourcis globaux</value></data>

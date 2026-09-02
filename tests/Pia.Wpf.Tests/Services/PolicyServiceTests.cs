@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services;
@@ -104,6 +104,45 @@ public class PolicyServiceTests : IDisposable
         service.ApplyPolicy(settings);
 
         Assert.Equal(AppTheme.Light, settings.Theme);
+    }
+
+    [Fact]
+    public async Task ApplyPolicy_EnforcedRetentionDays_IsWrittenAndLocked()
+    {
+        var service = await LoadedService("""{ "enforce": { "chatHistoryRetentionDays": 45 } }""");
+
+        var settings = new AppSettings { ChatHistoryRetentionDays = 90 };
+        service.ApplyPolicy(settings);
+
+        Assert.Equal(45, settings.ChatHistoryRetentionDays);
+        Assert.True(service.IsEnforced(nameof(AppSettings.ChatHistoryRetentionDays)));
+    }
+
+    /// <summary>The retention default moved from 30 to 180. Without the superseded-default allowance an
+    /// install still sitting on 30 reads as a value the user picked and never sees the admin's.</summary>
+    [Fact]
+    public async Task ApplyPolicy_DefaultedRetentionDays_ReachesAnInstallOnTheSupersededDefault()
+    {
+        var service = await LoadedService("""{ "defaults": { "chatHistoryRetentionDays": 14 } }""");
+
+        var settings = new AppSettings
+        {
+            ChatHistoryRetentionDays = AppSettings.LegacyChatHistoryRetentionDays,
+        };
+        service.ApplyPolicy(settings);
+
+        Assert.Equal(14, settings.ChatHistoryRetentionDays);
+    }
+
+    [Fact]
+    public async Task ApplyPolicy_DefaultedRetentionDays_PreservesAValueTheUserPicked()
+    {
+        var service = await LoadedService("""{ "defaults": { "chatHistoryRetentionDays": 14 } }""");
+
+        var settings = new AppSettings { ChatHistoryRetentionDays = 90 };
+        service.ApplyPolicy(settings);
+
+        Assert.Equal(90, settings.ChatHistoryRetentionDays);
     }
 
     [Fact]

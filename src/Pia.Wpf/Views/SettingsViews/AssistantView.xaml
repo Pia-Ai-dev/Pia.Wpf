@@ -1,4 +1,4 @@
-<UserControl x:Class="Pia.Views.SettingsViews.AssistantView"
+﻿<UserControl x:Class="Pia.Views.SettingsViews.AssistantView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
@@ -134,33 +134,22 @@
                  Margin="0,8,0,8"/>
 
       <StackPanel Margin="0,0,0,20">
-        <CheckBox Content="{loc:Str Settings_Chat_HistoryEnabled}"
-                  IsChecked="{Binding ChatHistoryEnabled}"
-                  IsEnabled="{Binding Policy[ChatHistoryEnabled]}"
-                  AutomationProperties.AutomationId="Settings_Assistant_ChatHistoryEnabled"/>
-        <TextBlock Text="{loc:Str Settings_Chat_HistoryEnabled_Description}"
-                   Style="{StaticResource PiaSettingsDescriptionStyle}"
-                   Margin="22,4,0,0"/>
-      </StackPanel>
-
-      <StackPanel Margin="0,0,0,20">
         <CheckBox Content="{loc:Str Settings_AssistantChatHistoryToolsEnabled}"
                   IsChecked="{Binding ChatHistoryToolsEnabled}"
                   IsEnabled="{Binding Policy[AssistantChatHistoryToolsEnabled]}"
                   AutomationProperties.AutomationId="Settings_Assistant_ChatHistoryToolsEnabled"/>
       </StackPanel>
 
-      <StackPanel Margin="0,0,0,20"
-                  IsEnabled="{Binding ChatHistoryEnabled}">
+      <StackPanel Margin="0,0,0,20">
         <TextBlock Text="{loc:Str Settings_Chat_RetentionDays_Label}"
                    Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
         <Slider HorizontalAlignment="Left"
                 Width="400"
-                Minimum="1"
-                Maximum="365"
-                TickFrequency="1"
+                Minimum="7"
+                Maximum="730"
+                TickFrequency="7"
                 IsSnapToTickEnabled="True"
-                Value="{Binding ChatHistoryRetentionDays, Mode=TwoWay}"
+                Value="{Binding RetentionSliderDays, Mode=TwoWay}"
                 IsEnabled="{Binding Policy[ChatHistoryRetentionDays]}"
                 AutomationProperties.AutomationId="Settings_Assistant_ChatHistoryRetentionDays"
                 VerticalAlignment="Center"/>

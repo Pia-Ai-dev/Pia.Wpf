@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging.Abstractions;
+﻿using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Pia.Infrastructure;
@@ -20,7 +20,7 @@ public sealed class AssistantChatRetentionServiceTests
     public async Task RetentionCleanup_PrunesTheTimelineWithTheSameCutoff()
     {
         var ct = TestContext.Current.CancellationToken;
-        _settings.GetSettingsAsync().Returns(new AppSettings { ChatHistoryEnabled = true, ChatHistoryRetentionDays = 30 });
+        _settings.GetSettingsAsync().Returns(new AppSettings { ChatHistoryRetentionDays = 30 });
         DateTime? evictCutoff = null;
         _chats.EvictOlderThanAsync(Arg.Do<DateTime>(c => evictCutoff = c), Arg.Any<CancellationToken>())
             .Returns(new List<Guid>());
@@ -35,32 +35,34 @@ public sealed class AssistantChatRetentionServiceTests
         Assert.Equal(evictCutoff, pruneCutoff);
     }
 
-    [Fact]
-    public async Task RetentionCleanup_PrunesToTheOneDayFloorWhenHistoryIsDisabled()
+    [Theory]
+    [InlineData(180, 180)]
+    [InlineData(730, 730)]
+    // Nothing gates the sweep any more, and an out-of-range stored window clamps rather than escaping.
+    [InlineData(5000, AppSettings.MaxChatHistoryRetentionDaysCap)]
+    [InlineData(0, AppSettings.MinChatHistoryRetentionDays)]
+    public async Task RetentionCleanup_AlwaysEvictsOnTheClampedWindow(int stored, int expectedDays)
     {
         var ct = TestContext.Current.CancellationToken;
-        // A long retention the user cannot reach with history off, so it must not be honoured here.
-        _settings.GetSettingsAsync().Returns(new AppSettings { ChatHistoryEnabled = false, ChatHistoryRetentionDays = 365 });
-        DateTime? pruneCutoff = null;
-        _timeline.PruneOlderThanAsync(Arg.Do<DateTime>(c => pruneCutoff = c), Arg.Any<CancellationToken>()).Returns(0);
+        _settings.GetSettingsAsync().Returns(new AppSettings { ChatHistoryRetentionDays = stored });
+        DateTime? evictCutoff = null;
+        _chats.EvictOlderThanAsync(Arg.Do<DateTime>(c => evictCutoff = c), Arg.Any<CancellationToken>())
+            .Returns(new List<Guid>());
+        _timeline.PruneOlderThanAsync(Arg.Any<DateTime>(), Arg.Any<CancellationToken>()).Returns(0);
 
         await CreateSut().RunCleanupAsync(ct);
 
-        // History off prunes to a one-day floor rather than to UtcNow, which would wipe a live run's trace.
-        Assert.NotNull(pruneCutoff);
-        var expected = DateTime.UtcNow - TimeSpan.FromDays(1);
-        Assert.True(Math.Abs((pruneCutoff.Value - expected).TotalMinutes) < 5,
-            $"expected a ~1-day cutoff, got {pruneCutoff:O}");
-
-        // Chat eviction stays gated: turning history off already wiped the chats once.
-        await _chats.DidNotReceive().EvictOlderThanAsync(Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
+        Assert.NotNull(evictCutoff);
+        var expected = DateTime.UtcNow - TimeSpan.FromDays(expectedDays);
+        Assert.True(Math.Abs((evictCutoff.Value - expected).TotalMinutes) < 5,
+            $"expected a ~{expectedDays}-day cutoff, got {evictCutoff:O}");
     }
 
     [Fact]
     public async Task AFailingPruneDoesNotStopTheTimer()
     {
         var ct = TestContext.Current.CancellationToken;
-        _settings.GetSettingsAsync().Returns(new AppSettings { ChatHistoryEnabled = true, ChatHistoryRetentionDays = 30 });
+        _settings.GetSettingsAsync().Returns(new AppSettings { ChatHistoryRetentionDays = 30 });
         _chats.EvictOlderThanAsync(Arg.Any<DateTime>(), Arg.Any<CancellationToken>()).Returns(new List<Guid>());
         _timeline.PruneOlderThanAsync(Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("the store is broken"));

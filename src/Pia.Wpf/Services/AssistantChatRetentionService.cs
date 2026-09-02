@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Hosting;
+﻿using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Pia.Services.Interfaces;
 
@@ -62,30 +62,15 @@ public class AssistantChatRetentionService : BackgroundService
     }
 
     /// <summary>
-    /// One retention pass. <c>internal</c> rather than private so the three facts about it can drive it
-    /// directly instead of racing a 5-second timer.
+    /// One retention pass. <c>internal</c> rather than private so the tests can drive it directly
+    /// instead of racing a 5-second timer.
     /// </summary>
     internal async Task RunCleanupAsync(CancellationToken ct)
     {
         try
         {
             var settings = await _settingsService.GetSettingsAsync();
-            var days = Math.Clamp(settings.ChatHistoryRetentionDays, 1, 365);
-
-            if (!settings.ChatHistoryEnabled)
-            {
-                // History off does NOT mean nothing accumulates. Nothing else in the codebase gates chat or run
-                // persistence on this flag — it is read here and in the settings VM and nowhere else — so runs
-                // keep emitting up to 501 timeline rows each, and the chat-eviction cascade that would
-                // otherwise reach them deliberately exempts Planned-run chats. Skipping the pass therefore
-                // removed the ONLY bound on the audit table for exactly the most privacy-sensitive
-                // configuration. So prune HARDER instead: the one-day floor the clamp above allows, rather than
-                // DateTime.UtcNow, which would delete a live run's trace out from under the open panel.
-                _logger.LogDebug("Assistant chat history disabled; pruning the run timeline to the one-day floor");
-                await PruneTimelineAsync(DateTime.UtcNow - TimeSpan.FromDays(1), days: 1, ct);
-                return;
-            }
-
+            var days = settings.GetChatHistoryRetentionDays();
             var cutoff = DateTime.UtcNow - TimeSpan.FromDays(days);
 
             var evicted = await _chatService.EvictOlderThanAsync(cutoff, ct);
@@ -99,10 +84,10 @@ public class AssistantChatRetentionService : BackgroundService
                     evicted.Count, days);
             }
 
-            // Batch 03: the per-run audit trail ages out with the chat history it describes, on the SAME
-            // cutoff, so it needs no setting of its own. It cannot ride the chat cascade alone: the eviction
-            // above deliberately skips chats bearing a Planned run — precisely the runs a timeline is for.
-            // Inside this try, because a prune fault must not stop the 24 h timer.
+            // The per-run audit trail ages out on the SAME cutoff, so it needs no setting of its own. It
+            // cannot ride the chat cascade alone: the eviction above deliberately skips chats bearing a
+            // Planned run — precisely the runs a timeline is for. Inside this try, because a prune fault
+            // must not stop the 24 h timer.
             await PruneTimelineAsync(cutoff, days, ct);
         }
         catch (OperationCanceledException)
@@ -115,7 +100,6 @@ public class AssistantChatRetentionService : BackgroundService
         }
     }
 
-    /// <summary>The one prune call site, so both retention modes report it the same way.</summary>
     private async Task PruneTimelineAsync(DateTime cutoff, int days, CancellationToken ct)
     {
         var prunedEvents = await _timelineService.PruneOlderThanAsync(cutoff, ct);

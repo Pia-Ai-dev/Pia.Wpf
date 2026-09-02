@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -331,6 +331,7 @@ public class PolicyService : IPolicyService
 
             var userValue = prop.GetValue(userSettings);
             if (!MatchesBuiltInDefault(prop, userValue, prop.GetValue(builtIn))
+                && !MatchesSupersededDefault(prop, userValue, name)
                 && !MatchesAppliedDefault(prop, userValue, applied, name))
                 continue;
 
@@ -367,6 +368,19 @@ public class PolicyService : IPolicyService
         var user = SerializeValue(prop, userValue);
         return user is not null && user == SerializeValue(prop, builtInValue);
     }
+
+    /// <summary>What a setting's built-in default used to be. A default that moves would otherwise read
+    /// as a value the user picked, and the policy default would stop reaching every install still sitting
+    /// on the old one.</summary>
+    private static readonly Dictionary<string, object?[]> SupersededBuiltInDefaults =
+        new(StringComparer.Ordinal)
+        {
+            [nameof(AppSettings.ChatHistoryRetentionDays)] = [AppSettings.LegacyChatHistoryRetentionDays],
+        };
+
+    private static bool MatchesSupersededDefault(PropertyInfo prop, object? userValue, string name) =>
+        SupersededBuiltInDefaults.TryGetValue(name, out var superseded)
+        && superseded.Any(v => MatchesBuiltInDefault(prop, userValue, v));
 
     private static bool MatchesAppliedDefault(
         PropertyInfo prop, object? userValue, Dictionary<string, string>? applied, string name)

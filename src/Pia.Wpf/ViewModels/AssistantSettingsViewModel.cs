@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -143,17 +143,47 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
     public ObservableCollection<string> AvailableWorkingDirectories { get; } = [];
 
     [ObservableProperty]
-    private bool _chatHistoryEnabled = true;
-
-    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(RetentionDaysDisplay))]
-    private int _chatHistoryRetentionDays = 30;
+    [NotifyPropertyChangedFor(nameof(RetentionSliderDays))]
+    private int _chatHistoryRetentionDays = AppSettings.DefaultChatHistoryRetentionDays;
 
     [ObservableProperty]
     private bool _chatAutoTitleEnabled;
 
     public string RetentionDaysDisplay =>
         _localizationService.Format("Settings_Chat_RetentionDays", ChatHistoryRetentionDays);
+
+    private const int RetentionTickDays = 7;
+
+    /// <summary>Where the slider sits, which is NOT the stored window: the ticks are 7 days apart and
+    /// neither the 180-day default nor a policy-supplied 45 lands on that grid. Reads snap for the thumb;
+    /// writes ignore the value WPF pushes back after coercing its own render position, so only a drag to a
+    /// different tick counts as a change and simply opening the page rewrites nothing.</summary>
+    public int RetentionSliderDays
+    {
+        get => SnapRetentionDays(ChatHistoryRetentionDays);
+        set
+        {
+            if (value == SnapRetentionDays(ChatHistoryRetentionDays))
+                return;
+            ChatHistoryRetentionDays = value;
+        }
+    }
+
+    private static int SnapRetentionDays(int days)
+    {
+        var clamped = Math.Clamp(
+            days, AppSettings.MinChatHistoryRetentionDays, AppSettings.MaxChatHistoryRetentionDaysCap);
+        const int topTick = AppSettings.MaxChatHistoryRetentionDaysCap
+            - AppSettings.MaxChatHistoryRetentionDaysCap % RetentionTickDays;
+        var onGrid = Math.Clamp(
+            (int)Math.Round(clamped / (double)RetentionTickDays) * RetentionTickDays, RetentionTickDays, topTick);
+
+        // The cap is reachable as the slider's endpoint even though it is not on the grid.
+        return Math.Abs(clamped - onGrid) <= Math.Abs(clamped - AppSettings.MaxChatHistoryRetentionDaysCap)
+            ? onGrid
+            : AppSettings.MaxChatHistoryRetentionDaysCap;
+    }
 
     partial void OnSuggestionsEnabledChanged(bool value)
     {
@@ -235,16 +265,11 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
             AvailableWorkingDirectories.Add(name);
     }
 
-    partial void OnChatHistoryEnabledChanged(bool value)
-    {
-        if (_isLoading) return;
-        HandleChatHistoryToggleAsync(value).SafeFireAndForget(_logger);
-    }
-
     partial void OnChatHistoryRetentionDaysChanged(int value)
     {
         if (_isLoading) return;
-        var clamped = Math.Clamp(value, 1, 365);
+        var clamped = Math.Clamp(
+            value, AppSettings.MinChatHistoryRetentionDays, AppSettings.MaxChatHistoryRetentionDaysCap);
         if (clamped != value)
         {
             ChatHistoryRetentionDays = clamped;
@@ -510,8 +535,10 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
         ChatHistoryToolsEnabled = settings.AssistantChatHistoryToolsEnabled;
 
         DefaultWorkingDirectory = settings.AssistantDefaultWorkingDirectory;
-        ChatHistoryEnabled = settings.ChatHistoryEnabled;
-        ChatHistoryRetentionDays = Math.Clamp(settings.ChatHistoryRetentionDays, 1, 365);
+        ChatHistoryRetentionDays = Math.Clamp(
+            settings.ChatHistoryRetentionDays,
+            AppSettings.MinChatHistoryRetentionDays,
+            AppSettings.MaxChatHistoryRetentionDaysCap);
         ChatAutoTitleEnabled = settings.ChatAutoTitleEnabled;
 
         AgentMaxSteps = Math.Clamp(settings.AgentMaxSteps, RunProfile.MinSteps, RunProfile.MaxStepsCap);
@@ -638,35 +665,6 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
         }
     }
 
-    private async Task HandleChatHistoryToggleAsync(bool enabled)
-    {
-        if (!enabled)
-        {
-            var confirmed = await _dialogService.ShowConfirmationDialogAsync(
-                _localizationService["Settings_Chat_DisableConfirmTitle"],
-                _localizationService["Settings_Chat_DisableConfirmBody"]);
-            if (!confirmed)
-            {
-                _isLoading = true;
-                ChatHistoryEnabled = true;
-                _isLoading = false;
-                return;
-            }
-
-            try
-            {
-                var deleted = await _chatService.DeleteAllAsync();
-                _logger.LogInformation("Cleared assistant chats after disabling history ({Count} chats)", deleted.Count);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to clear assistant chats on history disable");
-            }
-        }
-
-        await SaveSettingsAsync();
-    }
-
     private async Task SaveSettingsAsync()
     {
         var settings = await _settingsService.GetSettingsAsync();
@@ -679,7 +677,6 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
         settings.AssistantChatHistoryToolsEnabled = ChatHistoryToolsEnabled;
         if (DefaultWorkingDirectory is not null)
             settings.AssistantDefaultWorkingDirectory = DefaultWorkingDirectory;
-        settings.ChatHistoryEnabled = ChatHistoryEnabled;
         settings.ChatHistoryRetentionDays = ChatHistoryRetentionDays;
         settings.ChatAutoTitleEnabled = ChatAutoTitleEnabled;
         settings.AgentMaxSteps = AgentMaxSteps;

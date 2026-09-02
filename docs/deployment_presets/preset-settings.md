@@ -1,4 +1,4 @@
-# Deploying Pia.Wpf with presets — what `policy.json` can manage
+﻿# Deploying Pia.Wpf with presets — what `policy.json` can manage
 
 Current as of 2026-08-27. The policy engine was rewritten on 2026-08-19 to key off **which keys the
 admin wrote** instead of comparing values against the built-in defaults; see **Upgrade note** for what
@@ -182,8 +182,7 @@ sync/managed personas.
 
 | Key | Type / default | |
 |---|---|---|
-| `chatHistoryEnabled` | bool, `true` | ✓ |
-| `chatHistoryRetentionDays` | int, `30` | ✓ |
+| `chatHistoryRetentionDays` | int, `180` | ✓ |
 | `chatAutoTitleEnabled` | bool, `false` | ✓ |
 
 ### Meeting attendee & transcription

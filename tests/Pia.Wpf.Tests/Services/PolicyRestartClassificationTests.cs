@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using Pia.Models;
 using Pia.Services;
 using Pia.Shared.Policy;
@@ -24,7 +24,6 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.AutoUpdateEnabled),
         nameof(AppSettings.BlockedBuiltInPersonas),
         nameof(AppSettings.ChatAutoTitleEnabled),
-        nameof(AppSettings.ChatHistoryEnabled),
         nameof(AppSettings.ChatHistoryRetentionDays),
         nameof(AppSettings.DefaultOutputAction),
         nameof(AppSettings.DefaultWindowMode),
@@ -179,7 +178,7 @@ public class PolicyRestartClassificationTests
     public void ANewSettingForcesAnExplicitClassification()
     {
         Assert.True(
-            LiveAlready.Length == 46 && LiveWithWork.Length == 23
+            LiveAlready.Length == 45 && LiveWithWork.Length == 23
                 && RestartRequired.Length == 12 && NoRuntimeEffect.Length == 28,
             "the four sets are written out in full, found "
                 + $"{LiveAlready.Length}/{LiveWithWork.Length}/{RestartRequired.Length}/{NoRuntimeEffect.Length}");
