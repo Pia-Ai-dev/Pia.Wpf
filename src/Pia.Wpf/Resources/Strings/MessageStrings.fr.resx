@@ -72,6 +72,9 @@
   <data name="Msg_File_OneImageOnly" xml:space="preserve"><value>Une seule image peut être jointe – « {0} » a été conservée.</value></data>
   <data name="Msg_File_DropFailed" xml:space="preserve"><value>Impossible de récupérer « {0} » depuis l'application source. Enregistrez l'élément dans un fichier et faites glisser celui-ci.</value></data>
   <data name="Msg_File_DropNoFile" xml:space="preserve"><value>Cette application ne fournit aucun fichier, seulement sa référence interne. Enregistrez d'abord l'élément dans un fichier, puis faites glisser celui-ci.</value></data>
+  <data name="FileDrop_Overlay_Hint_MeetingInvite" xml:space="preserve"><value>Déposez l’invitation pour remplir le lien</value></data>
+  <data name="Msg_Meeting_InviteNoUrl" xml:space="preserve"><value>Aucun lien de réunion Teams dans cette invitation. Collez le lien à la place.</value></data>
+  <data name="Msg_Meeting_InviteUnreadable" xml:space="preserve"><value>Cette invitation n’a pas pu être lue. Collez le lien à la place.</value></data>
 
   <data name="Msg_Tts_NoVoiceLoaded" xml:space="preserve"><value>Aucun modèle vocal chargé. Choisissez une voix dans les paramètres pour utiliser Lire à voix haute.</value></data>
   <data name="Msg_Tts_NoVoiceLoaded_OpenSettings" xml:space="preserve"><value>Ouvrir les paramètres</value></data>

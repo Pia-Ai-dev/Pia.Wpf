@@ -67,6 +67,7 @@
   <data name="MeetingAttendee_SaveToVault" xml:space="preserve"><value>Im Vault speichern…</value></data>
   <data name="MeetingAttendee_Url_Label" xml:space="preserve"><value>Teams-Meeting-Link</value></data>
   <data name="MeetingAttendee_Url_Placeholder" xml:space="preserve"><value>https://teams.microsoft.com/l/meetup-join/…</value></data>
+  <data name="MeetingAttendee_Url_DropHint" xml:space="preserve"><value>Oder ziehen Sie die Outlook-Einladung hierher — Pia liest den Link daraus.</value></data>
   <data name="MeetingAttendee_Consent_Label" xml:space="preserve"><value>Ich bestätige, dass ich einen Assistenten an diesem Meeting teilnehmen und es transkribieren lassen darf.</value></data>
   <data name="MeetingAttendee_OpenSettings" xml:space="preserve"><value>Besprechungseinstellungen</value></data>
   <data name="MeetingAttendee_Speaker_Placeholder" xml:space="preserve"><value>Meeting</value></data>

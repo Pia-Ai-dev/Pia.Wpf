@@ -2,6 +2,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -114,6 +115,7 @@ public static class FileDropBehavior
     private static void OnDragEnter(object sender, DragEventArgs e)
     {
         if (sender is not DependencyObject target) return;
+        if (HasNearerTarget(target, e.OriginalSource)) return;
 
         var count = GetDragCounter(target) + 1;
         SetDragCounter(target, count);
@@ -130,12 +132,14 @@ public static class FileDropBehavior
     private static void OnDragOver(object sender, DragEventArgs e)
     {
         if (sender is not DependencyObject target) return;
+        if (HasNearerTarget(target, e.OriginalSource)) return;
         TryAcceptDrag(target, e);
     }
 
     private static void OnDragLeave(object sender, DragEventArgs e)
     {
         if (sender is not DependencyObject target) return;
+        if (HasNearerTarget(target, e.OriginalSource)) return;
 
         // DragEnter/DragLeave fire for child elements too; only clear once every enter
         // has been matched by a leave (i.e. the drag has truly left the target).
@@ -156,6 +160,10 @@ public static class FileDropBehavior
         SetIsDragOver(target, false);
         var verdict = GetDragVerdict(target);
         SetDragVerdict(target, DragVerdict.Reject);
+
+        // Standing down for a nearer target happens AFTER the reset above: the drag is over either way,
+        // and leaving the overlay latched would strand this target's hint on screen.
+        if (HasNearerTarget(target, e.OriginalSource)) return;
 
         if (verdict == DragVerdict.Reject) return;
 
@@ -192,6 +200,27 @@ public static class FileDropBehavior
         e.Effects = accepted ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
         return accepted;
+    }
+
+    /// <summary>
+    /// Whether something between <paramref name="originalSource"/> and this target is itself an enabled
+    /// drop target. The handlers tunnel, so an ancestor sees every drag first and would swallow it;
+    /// it stands down here and lets the nearer target answer instead. A collapsed subtree is not
+    /// hit-tested, so a hidden inner target never takes a drag away from its ancestor.
+    /// </summary>
+    internal static bool HasNearerTarget(DependencyObject target, object? originalSource)
+    {
+        var node = originalSource as DependencyObject;
+        while (node is not null && node != target)
+        {
+            if (GetIsEnabled(node)) return true;
+
+            // VisualTreeHelper throws on anything that is not a Visual, and a hit can land on a
+            // ContentElement (a Run inside a TextBlock).
+            node = node is Visual ? VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node);
+        }
+
+        return false;
     }
 
     /// <summary>

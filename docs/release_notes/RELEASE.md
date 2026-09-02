@@ -8,6 +8,17 @@
   and only one of them showed an icon. They all say Vault now, and each of
   those buttons carries the same icon.
 
+## Meetings
+
+- You can now drag a meeting invite onto the "Join a Teams meeting" panel and
+  Pia fills in the meeting link for you. Drag it straight out of classic
+  Outlook, or drop a saved .msg, .eml or .ics file — no need to open the
+  invite and hunt for the join link. Pia picks the actual join link out of the
+  invite and ignores the organizer's meeting-options link and the dial-in
+  numbers that sit next to it. If the invite carries no Teams link, it says so
+  under the box and leaves what you typed alone. Consent is unchanged: filling
+  in the link never starts a meeting.
+
 ## Live transcription
 
 - The sentence a participant has to say to be transcribed is shorter in all

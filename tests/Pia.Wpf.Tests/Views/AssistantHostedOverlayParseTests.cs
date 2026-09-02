@@ -10,9 +10,10 @@ namespace Pia.Tests.Views;
 [Collection("WpfApplicationStatic")]
 public class AssistantHostedOverlayParseTests
 {
-    /// <summary>Floors, not counts: measured 9 and 20 on 2026-08-02.</summary>
+    /// <summary>Floors, not counts: measured 9 and 20 on 2026-08-02; the attendee overlay measured 28 on
+    /// 2026-09-02, once the invite-drop bindings landed.</summary>
     private const int MinimumVoiceModePaths = 6;
-    private const int MinimumMeetingAttendeePaths = 13;
+    private const int MinimumMeetingAttendeePaths = 18;
 
     /// <summary>Floor, not a count: <see cref="BindingPathWalker"/> walks only the logical tree, so DataTemplate bindings do not count toward it.</summary>
     private const int MinimumDirectTranscriptionPaths = 15;

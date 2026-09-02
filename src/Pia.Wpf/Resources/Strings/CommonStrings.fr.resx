@@ -67,6 +67,7 @@
   <data name="MeetingAttendee_SaveToVault" xml:space="preserve"><value>Vers le coffre…</value></data>
   <data name="MeetingAttendee_Url_Label" xml:space="preserve"><value>Lien de la réunion Teams</value></data>
   <data name="MeetingAttendee_Url_Placeholder" xml:space="preserve"><value>https://teams.microsoft.com/l/meetup-join/…</value></data>
+  <data name="MeetingAttendee_Url_DropHint" xml:space="preserve"><value>Ou faites glisser l’invitation Outlook ici — Pia y lit le lien.</value></data>
   <data name="MeetingAttendee_Consent_Label" xml:space="preserve"><value>Je confirme être autorisé à faire participer un assistant à cette réunion et à la transcrire.</value></data>
   <data name="MeetingAttendee_OpenSettings" xml:space="preserve"><value>Paramètres de la réunion</value></data>
   <data name="MeetingAttendee_Speaker_Placeholder" xml:space="preserve"><value>réunion</value></data>

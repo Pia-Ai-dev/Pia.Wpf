@@ -7,6 +7,7 @@
   xmlns:loc="clr-namespace:Pia.Localization"
   xmlns:models="clr-namespace:Pia.Models"
   xmlns:controls="clr-namespace:Pia.Views.Controls"
+  xmlns:behaviors="clr-namespace:Pia.Behaviors"
   mc:Ignorable="d"
   d:DesignHeight="700" d:DesignWidth="1200">
 
@@ -16,7 +17,12 @@
        Transparent root those navigable pages use. The master/detail split of those pages does not
        map here (a meeting is a single live session, not a browsable collection), so the content
        region swaps between the join setup and the live transcript instead. -->
-  <Grid Background="{DynamicResource BgCanvasBrush}">
+  <Grid x:Name="DropRoot"
+        Background="{DynamicResource BgCanvasBrush}"
+        behaviors:FileDropBehavior.IsEnabled="{Binding IsJoinSetupVisible}"
+        behaviors:FileDropBehavior.AcceptedExtensions=".msg,.eml,.ics"
+        behaviors:FileDropBehavior.FilesDroppedCommand="{Binding HandleInviteDroppedCommand}"
+        behaviors:FileDropBehavior.DropFailedCommand="{Binding HandleDropFailedCommand}">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
@@ -157,6 +163,18 @@
                         PlaceholderText="{loc:Str MeetingAttendee_Url_Placeholder}"
                         PlaceholderEnabled="True"
                         FontSize="13" />
+            <TextBlock Text="{loc:Str MeetingAttendee_Url_DropHint}"
+                       Style="{StaticResource PiaSettingsDescriptionStyle}"
+                       TextWrapping="Wrap"
+                       Margin="0,6,0,0" />
+            <!-- Inline, not a snackbar: a drop does not activate this window, so a top-right toast can
+                 sit behind the app the invite was dragged from. -->
+            <TextBlock Text="{Binding DropFailureMessage}"
+                       Foreground="{DynamicResource WarnBrush}"
+                       FontSize="12"
+                       TextWrapping="Wrap"
+                       Margin="0,6,0,0"
+                       Visibility="{Binding DropFailureMessage, Converter={StaticResource NullToVisibilityConverter}}" />
 
             <!-- Editable display name the assistant joins under (pre-filled with "{user}'s assistant"). -->
             <TextBlock Text="{loc:Str MeetingAttendee_DisplayName_Label}"
@@ -471,6 +489,31 @@
                    Appearance="Secondary"
                    Content="{loc:Str MeetingAttendee_Summarize}"
                    Visibility="{Binding IsRunning, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+      </StackPanel>
+    </Border>
+
+    <!-- Drag-over hint. Sits above the overlay's own content; the chat view's hint stays away because
+         FileDropBehavior stands down for the nearer target, leaving its IsDragOver false. -->
+    <Border Grid.Row="0" Grid.RowSpan="3"
+            IsHitTestVisible="False"
+            Panel.ZIndex="20"
+            Margin="8"
+            CornerRadius="8"
+            BorderThickness="2"
+            BorderBrush="{DynamicResource AccentFillColorDefaultBrush}"
+            Background="{DynamicResource AcrylicBackgroundFillColorBaseBrush}"
+            Visibility="{Binding Path=(behaviors:FileDropBehavior.IsDragOver), ElementName=DropRoot, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+        <ui:SymbolIcon Symbol="CalendarArrowDown24"
+                       FontSize="48"
+                       HorizontalAlignment="Center"
+                       Foreground="{DynamicResource AccentFillColorDefaultBrush}" />
+        <TextBlock Text="{loc:Str FileDrop_Overlay_Hint_MeetingInvite}"
+                   FontSize="16"
+                   FontWeight="SemiBold"
+                   Margin="0,12,0,0"
+                   HorizontalAlignment="Center"
+                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
       </StackPanel>
     </Border>
   </Grid>

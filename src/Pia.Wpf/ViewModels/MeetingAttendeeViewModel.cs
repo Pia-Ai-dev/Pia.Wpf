@@ -1,3 +1,4 @@
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -32,10 +33,16 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
     /// </summary>
     public IRelayCommand StopCommand { get; }
 
-    /// <summary>The Teams meeting URL the user pastes. Gates <see cref="StartCommand"/>.</summary>
+    /// <summary>The Teams meeting URL the user pastes, or that a dropped invite supplies. Gates <see cref="StartCommand"/>.</summary>
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StartCommand))]
     private string _meetingUrl = string.Empty;
+
+    /// <summary>Why the last invite drop produced no URL, shown under the URL box.</summary>
+    [ObservableProperty]
+    private string? _dropFailureMessage;
+
+    partial void OnMeetingUrlChanged(string value) => DropFailureMessage = null;
 
     /// <summary>
     /// One-time, in-session acknowledgement that the user is allowed to have an assistant join and
@@ -167,8 +174,62 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
             // keeps the transcript until the overlay is closed; reopening is a deliberate clean slate.
             _hasAttendedMeeting = false;
             ClearTranscript();
+            DropFailureMessage = null;
             OnPropertyChanged(nameof(IsJoinSetupVisible));
         });
+    }
+
+    // ---- Invite drop -----------------------------------------------------------------------------
+
+    /// <summary>
+    /// Fills <see cref="MeetingUrl"/> from a dropped Outlook invite (.msg/.eml) or calendar file (.ics),
+    /// so the join link does not have to be dug out of the invite by hand. Never starts a meeting —
+    /// consent stays a deliberate act.
+    /// </summary>
+    [RelayCommand]
+    private async Task HandleInviteDroppedAsync(
+        IReadOnlyList<string>? paths, CancellationToken cancellationToken)
+    {
+        if (paths is null || paths.Count == 0 || !IsJoinSetupVisible) return;
+
+        // One invite is one URL; a multi-item drag has no sensible answer.
+        var path = paths[0];
+        var result = await MeetingInviteReader.ReadAsync(path, cancellationToken).ConfigureAwait(false);
+
+        // Do NOT log the URL (privacy); only whether one was found, and out of what.
+        _logger.LogInformation("MeetingAttendee: invite drop {Status} from {Extension}",
+            result.Status, Path.GetExtension(path));
+
+        DispatchToUi(() =>
+        {
+            if (result.Url is { } url)
+            {
+                MeetingUrl = url;
+                return;
+            }
+
+            DropFailureMessage = _localizationService[
+                result.Status == MeetingInviteReader.ReadStatus.NoUrl
+                    ? "Msg_Meeting_InviteNoUrl"
+                    : "Msg_Meeting_InviteUnreadable"];
+        });
+    }
+
+    /// <summary>
+    /// The source offered an item and then would not hand it over. Reported inline rather than through a
+    /// snackbar: a drop does not activate the target window, so the top-right toast can sit behind the
+    /// app the item was dragged from.
+    /// </summary>
+    [RelayCommand]
+    private void HandleDropFailed(string? fileName)
+    {
+        _logger.LogWarning(
+            "MeetingAttendee: a dragged invite could not be taken from its source (named={Named})",
+            !string.IsNullOrWhiteSpace(fileName));
+
+        DropFailureMessage = string.IsNullOrWhiteSpace(fileName)
+            ? _localizationService["Msg_File_DropNoFile"]
+            : _localizationService.Format("Msg_File_DropFailed", fileName);
     }
 
     // ---- Start ------------------------------------------------------------------------------------

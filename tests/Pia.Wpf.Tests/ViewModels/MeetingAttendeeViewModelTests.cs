@@ -1,3 +1,5 @@
+using System;
+using System.IO;
 using System.Threading.Channels;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -1154,6 +1156,100 @@ public class MeetingAttendeeViewModelTests
             TranscriptSpeaker.Them, text,
             new DateTimeOffset(2026, 8, 21, 14, 0, 0, TimeSpan.Zero).AddSeconds(atSeconds),
             label, segmentId));
+
+    // ---- Invite drop -----------------------------------------------------------------------------
+
+    private const string DroppedJoinUrl =
+        "https://teams.microsoft.com/l/meetup-join/19%3ameeting_ZGVjb3k%40thread.v2/0?context=x";
+
+    [Fact]
+    public async Task InviteDrop_FillsTheUrl_AndJoinFollowsOnceConsentIsGiven()
+    {
+        var (vm, _) = CreateSut();
+
+        await DropAsync(vm, ".eml", string.Join("\r\n",
+            "Subject: Standup",
+            "",
+            "Microsoft Teams meeting",
+            "Join: <" + DroppedJoinUrl + ">",
+            ""));
+
+        Assert.Equal(DroppedJoinUrl, vm.MeetingUrl);
+        Assert.Null(vm.DropFailureMessage);
+
+        vm.ConsentAcknowledged = true;
+        Assert.True(vm.StartCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task InviteDrop_WithoutALink_ReportsInlineAndLeavesTheUrlAlone()
+    {
+        var (vm, _) = CreateSut();
+
+        await DropAsync(vm, ".eml", "Subject: Lunch\r\n\r\nSee you at one.\r\n");
+
+        Assert.Equal("", vm.MeetingUrl);
+        Assert.Equal("Msg_Meeting_InviteNoUrl", vm.DropFailureMessage);
+    }
+
+    [Fact]
+    public async Task InviteDrop_ThatCannotBeRead_SaysSo()
+    {
+        var (vm, _) = CreateSut();
+        var missing = Path.Combine(Path.GetTempPath(), $"pia-invite-{Guid.NewGuid():N}.msg");
+
+        await vm.HandleInviteDroppedCommand.ExecuteAsync(new[] { missing });
+
+        Assert.Equal("Msg_Meeting_InviteUnreadable", vm.DropFailureMessage);
+    }
+
+    [Fact]
+    public async Task InviteDrop_IsIgnored_WhileAMeetingIsRunning()
+    {
+        var (vm, service) = CreateSut();
+        service.RaiseState(MeetingAttendeeState.Joining);
+
+        await DropAsync(vm, ".eml", "Subject: x\r\n\r\nJoin: <" + DroppedJoinUrl + ">\r\n");
+
+        Assert.Equal("", vm.MeetingUrl);
+        Assert.Null(vm.DropFailureMessage);
+    }
+
+    [Fact]
+    public void EditingTheUrl_ClearsTheDropFailure()
+    {
+        var (vm, _) = CreateSut();
+        vm.HandleDropFailedCommand.Execute("invite.msg");
+        Assert.Equal("Msg_File_DropFailed invite.msg", vm.DropFailureMessage);
+
+        vm.MeetingUrl = ValidUrl;
+
+        Assert.Null(vm.DropFailureMessage);
+    }
+
+    [Fact]
+    public void DropFailed_WithNoName_UsesTheNoFileWording()
+    {
+        var (vm, _) = CreateSut();
+
+        vm.HandleDropFailedCommand.Execute(null);
+
+        Assert.Equal("Msg_File_DropNoFile", vm.DropFailureMessage);
+    }
+
+    private static async Task DropAsync(MeetingAttendeeViewModel vm, string extension, string content)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"pia-invite-{Guid.NewGuid():N}{extension}");
+        await File.WriteAllTextAsync(path, content);
+        try
+        {
+            await vm.HandleInviteDroppedCommand.ExecuteAsync(new[] { path });
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
 
     // ---- helpers ----------------------------------------------------------------------------------
 

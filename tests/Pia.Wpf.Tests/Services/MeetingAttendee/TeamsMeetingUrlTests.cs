@@ -127,4 +127,131 @@ public sealed class TeamsMeetingUrlTests
     {
         Assert.False(TeamsMeetingUrl.IsLikelyTeamsUrl(url));
     }
+    // ---- ExtractFromText -------------------------------------------------------------------------
+
+    // The shape a real Outlook Teams invite writes into PR_BODY, GUIDs redacted: two joinable links,
+    // plus links that sit on a Teams host or merely look like one and must not be picked.
+    private const string MeetupJoinUrl =
+        "https://teams.microsoft.com/l/meetup-join/19%3ameeting_ZGVjb3k%40thread.v2/0"
+        + "?context=%7b%22Tid%22%3a%2200000000-0000-0000-0000-000000000001%22"
+        + "%2c%22Oid%22%3a%2200000000-0000-0000-0000-000000000002%22%7d";
+
+    private const string ShortJoinUrl = "https://teams.microsoft.com/meet/368400251931177?p=1HSbqlBpMrcHsvZhWY";
+
+    private static string InviteBody() => string.Join("\n",
+        "________________________________________________________________________________",
+        "Microsoft Teams meeting ",
+        "Join: " + ShortJoinUrl + " ",
+        "Meeting ID: 368 400 251 931 177 ",
+        "Passcode: 7vb2KS7F ",
+        "________________________________",
+        "",
+        "Ben\u00F6tigen Sie Hilfe? <https://aka.ms/JoinTeamsMeeting?omkt=de-DE>  | System reference <"
+            + MeetupJoinUrl + ">  ",
+        "Dial in by phone ",
+        "+49 69 365057559,,332996648# <tel:+4969365057559,,332996648#>  Deutschland, Frankfurt ",
+        "Find a local number <https://dialin.teams.cloud.microsoft/dfe5b9cc?id=332996648>  ",
+        "Phone conference ID: 332 996 648# ",
+        "For organizers: Besprechungsoptionen <https://teams.microsoft.com/meetingOptions/"
+            + "?organizerId=00000000-0000-0000-0000-000000000002&language=de-DE>  ",
+        "________________________________________________________________________________");
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void ExtractFromText_ReturnsNull_ForNullOrWhitespace(string? input)
+    {
+        Assert.Null(TeamsMeetingUrl.ExtractFromText(input));
+    }
+
+    [Fact]
+    public void ExtractFromText_PrefersTheClassicDeepLink_OverTheShortJoinLink()
+    {
+        // Escapes included: %3a/%40/%7b carry the meeting context and must survive verbatim.
+        Assert.Equal(MeetupJoinUrl, TeamsMeetingUrl.ExtractFromText(InviteBody()));
+    }
+
+    [Fact]
+    public void ExtractFromText_FallsBackToTheShortJoinLink_WhenItIsTheOnlyOne()
+    {
+        var body = "Microsoft Teams meeting\nJoin: " + ShortJoinUrl + "\nPasscode: 7vb2KS7F";
+
+        Assert.Equal(ShortJoinUrl, TeamsMeetingUrl.ExtractFromText(body));
+    }
+
+    [Fact]
+    public void ExtractFromText_SkipsTheOrganizerAndDialInPages()
+    {
+        var body = "For organizers: <https://teams.microsoft.com/meetingOptions/?organizerId=x>\n"
+            + "Reset PIN <https://teams.microsoft.com/usp/pstnconferencing>\n"
+            + "Launcher <https://teams.microsoft.com/dl/launcher/launcher.html?url=x>";
+
+        Assert.Null(TeamsMeetingUrl.ExtractFromText(body));
+    }
+
+    [Fact]
+    public void ExtractFromText_SkipsHostsThatAreNotTeams()
+    {
+        var body = "Help <https://aka.ms/JoinTeamsMeeting?omkt=de-DE>\n"
+            + "Dial in <https://dialin.teams.cloud.microsoft/dfe5b9cc?id=332996648>\n"
+            + "Spoof <https://evil.example/?x=teams.microsoft.com/l/meetup-join/19>";
+
+        Assert.Null(TeamsMeetingUrl.ExtractFromText(body));
+    }
+
+    [Fact]
+    public void ExtractFromText_DropsTrailingSentencePunctuation()
+    {
+        Assert.Equal(ShortJoinUrl, TeamsMeetingUrl.ExtractFromText("Join at " + ShortJoinUrl + "."));
+    }
+
+    [Fact]
+    public void ExtractFromText_DoesNotUnfoldAPlainTextBody()
+    {
+        // A mail body indents its own wrapped lines. Unfolding here would splice the next line onto the
+        // URL, which is why the unfold is gated on the iCalendar marker.
+        var body = "Join here: " + ShortJoinUrl + "\n and bring your notes.";
+
+        Assert.Equal(ShortJoinUrl, TeamsMeetingUrl.ExtractFromText(body));
+    }
+
+    [Fact]
+    public void ExtractFromText_UnfoldsAnIcalendarDescription()
+    {
+        var calendar = string.Join("\r\n",
+            "BEGIN:VCALENDAR",
+            "BEGIN:VEVENT",
+            "SUMMARY:Standup\\, daily",
+            "DESCRIPTION:Join here: https://teams.microsoft.com/l/meetup-jo",
+            " in/19%3ameeting_ZGVjb3k%40thread.v2/0?context=x",
+            "END:VEVENT",
+            "END:VCALENDAR");
+
+        Assert.Equal(
+            "https://teams.microsoft.com/l/meetup-join/19%3ameeting_ZGVjb3k%40thread.v2/0?context=x",
+            TeamsMeetingUrl.ExtractFromText(calendar));
+    }
+
+    [Fact]
+    public void ExtractFromText_ReadsTheFoldedSkypeTeamsProperty()
+    {
+        var calendar = string.Join("\r\n",
+            "BEGIN:VCALENDAR",
+            "BEGIN:VEVENT",
+            "X-MICROSOFT-SKYPETEAMSMEETINGURL:https://teams.microsoft.com/l/meetup-join/19%3ame",
+            " eting_ZGVjb3k%40thread.v2/0?context=y",
+            "END:VEVENT",
+            "END:VCALENDAR");
+
+        Assert.Equal(
+            "https://teams.microsoft.com/l/meetup-join/19%3ameeting_ZGVjb3k%40thread.v2/0?context=y",
+            TeamsMeetingUrl.ExtractFromText(calendar));
+    }
+
+    [Fact]
+    public void ExtractFromText_ReturnsNull_WhenTheMailCarriesNoLink()
+    {
+        Assert.Null(TeamsMeetingUrl.ExtractFromText("Subject: Lunch\n===\n\nSee you at one."));
+    }
 }
