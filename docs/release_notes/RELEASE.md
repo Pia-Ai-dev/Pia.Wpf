@@ -8,6 +8,18 @@
   and only one of them showed an icon. They all say Vault now, and each of
   those buttons carries the same icon.
 
+## Assistant
+
+- The files an agent step changes now collapse into one line. A step that
+  wrote twenty files used to leave twenty bordered diff cards behind, each
+  with its own "Auto-approved" footer under it, so scrolling back through a
+  finished run meant scrolling past a screen of near-identical boxes. Applied
+  edits are now folded into a single "N file(s) changed" row with the total
+  added and removed lines; open it to see one line per file, and open a file
+  to see its diff exactly as before. A write still waiting for your approval
+  keeps its own full card and its own buttons, and a write you declined stays
+  visible on its own instead of disappearing into the roll-up.
+
 ## Fixes
 
 - Starting a meeting transcription no longer raises Windows Firewall

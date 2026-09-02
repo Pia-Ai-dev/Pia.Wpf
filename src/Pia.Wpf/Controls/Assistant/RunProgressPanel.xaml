@@ -36,44 +36,6 @@
       </Style.Triggers>
     </Style>
 
-    <!-- Full-width disclosure header for the trace and the sub-agents, in place of the framework Expander:
-         the sections need a tinted full-bleed bar with a count and a badge in it, and the content has to stay in
-         the LOGICAL tree whether or not it is expanded (RunProgressPanelParseTests walks it). -->
-    <Style x:Key="RunSectionHeaderStyle" TargetType="ToggleButton">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="14,9" />
-      <Setter Property="Cursor" Value="Hand" />
-      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-      <Setter Property="Template">
-        <Setter.Value>
-          <ControlTemplate TargetType="ToggleButton">
-            <Border x:Name="Bd" Background="{TemplateBinding Background}"
-                    Padding="{TemplateBinding Padding}">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <ContentPresenter Grid.Column="0" VerticalAlignment="Center" />
-                <ui:SymbolIcon x:Name="Chevron" Grid.Column="1" Symbol="ChevronDown24" FontSize="12"
-                               Margin="8,0,0,0" VerticalAlignment="Center"
-                               Foreground="{DynamicResource TextMutedBrush}" />
-              </Grid>
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property="IsChecked" Value="True">
-                <Setter TargetName="Chevron" Property="Symbol" Value="ChevronUp24" />
-              </Trigger>
-              <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-
     <!-- The band's own disclosure: folds everything below the signal band, which keeps the actions. Checked =
          open, mirroring the section headers' chevron direction. -->
     <Style x:Key="RunCardCollapseStyle" TargetType="ToggleButton">

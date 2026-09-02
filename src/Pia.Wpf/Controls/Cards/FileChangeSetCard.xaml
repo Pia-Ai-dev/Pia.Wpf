@@ -1,0 +1,141 @@
+<UserControl x:Class="Pia.Controls.Cards.FileChangeSetCard"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:chat="clr-namespace:Pia.Controls.Chat"
+             xmlns:cards="clr-namespace:Pia.Controls.Cards"
+             xmlns:converters="clr-namespace:Pia.Converters">
+  <!-- DataContext is the hosting FileChangeSet (inherited from the CardRows template). -->
+  <UserControl.Resources>
+    <converters:ChangedFilesLabelConverter x:Key="ChangedFilesLabelConverter" />
+  </UserControl.Resources>
+
+  <Border CornerRadius="8"
+          Background="{DynamicResource SurfaceBrush}"
+          BorderBrush="{DynamicResource BorderStrongBrush}"
+          BorderThickness="1"
+          Margin="0,4,0,0"
+          ClipToBounds="True">
+    <Grid>
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+
+      <!-- Header stripe. Manage sits OUTSIDE the toggle so clicking it cannot also fold the set. -->
+      <Border Grid.Row="0"
+              Background="{DynamicResource SurfaceMutedBrush}"
+              BorderBrush="{DynamicResource BorderStrongBrush}"
+              Padding="0,0,8,0">
+        <Border.Style>
+          <Style TargetType="Border">
+            <Setter Property="BorderThickness" Value="0" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding IsExpanded}" Value="True">
+                <Setter Property="BorderThickness" Value="0,0,0,1" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
+
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+
+          <ToggleButton Grid.Column="0"
+                        Style="{StaticResource RunSectionHeaderStyle}"
+                        Padding="8,5"
+                        IsChecked="{Binding IsExpanded, Mode=TwoWay}"
+                        AutomationProperties.Name="{loc:Str ActionCard_ChangeSet_Toggle}"
+                        AutomationProperties.AutomationId="{Binding Id, StringFormat='ChangeSet_Toggle_{0}'}">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+
+              <ui:SymbolIcon Grid.Column="0"
+                             Symbol="DocumentMultiple24"
+                             FontSize="14"
+                             Margin="0,0,8,0"
+                             VerticalAlignment="Center"
+                             Foreground="{DynamicResource TextMutedBrush}" />
+
+              <TextBlock Grid.Column="1"
+                         VerticalAlignment="Center"
+                         FontSize="12"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextDefaultBrush}"
+                         Text="{Binding FileCount, Converter={StaticResource ChangedFilesLabelConverter}}" />
+
+              <TextBlock Grid.Column="2"
+                         VerticalAlignment="Center"
+                         Margin="10,0,0,0"
+                         FontSize="12"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource DiffAddedBrush}"
+                         Text="{Binding TotalAdded, StringFormat='+{0}'}" />
+              <TextBlock Grid.Column="3"
+                         VerticalAlignment="Center"
+                         Margin="6,0,0,0"
+                         FontSize="12"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource DiffRemovedBrush}"
+                         Text="{Binding TotalRemoved, StringFormat='−{0}'}" />
+
+              <!-- Status is the icon plus its tooltip, never inline text: the sentence names the tool
+                   ("you always allow Write file"), so a step mixing write_file with edit_file has no one
+                   sentence to show — and a folded header is the point. -->
+              <ui:SymbolIcon Grid.Column="4"
+                             FontSize="12"
+                             Margin="12,0,0,0"
+                             HorizontalAlignment="Left"
+                             VerticalAlignment="Center"
+                             ToolTip="{Binding ResolvedStatusText}"
+                             ToolTipService.IsEnabled="{Binding HasResolvedStatusText}">
+                <ui:SymbolIcon.Style>
+                  <Style TargetType="ui:SymbolIcon">
+                    <Setter Property="Symbol" Value="Checkmark24" />
+                    <Setter Property="Foreground" Value="#0F7B0F" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding IsAutoApproved}" Value="True">
+                        <Setter Property="Symbol" Value="ShieldCheckmark24" />
+                        <Setter Property="Foreground" Value="{DynamicResource PiaAccentBrush}" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </ui:SymbolIcon.Style>
+              </ui:SymbolIcon>
+            </Grid>
+          </ToggleButton>
+
+          <ui:HyperlinkButton Grid.Column="1"
+                              Content="{loc:Str ActionCard_Manage}"
+                              FontSize="12"
+                              Padding="6,0,0,0"
+                              VerticalAlignment="Center"
+                              AutomationProperties.AutomationId="{Binding Id, StringFormat='ChangeSet_Manage_{0}'}"
+                              Visibility="{Binding IsAutoApproved, Converter={StaticResource BooleanToVisibilityConverter}}"
+                              Command="{Binding ManageToolPermissionsCommand, RelativeSource={RelativeSource AncestorType={x:Type chat:PiaAssistantMessage}}}" />
+        </Grid>
+      </Border>
+
+      <!-- One bare row per edit; each keeps its own chevron and opens its diff in place. -->
+      <ItemsControl Grid.Row="1"
+                    ItemsSource="{Binding Cards}"
+                    Visibility="{Binding IsExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <cards:FileDiffCard Chromeless="True" />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </Grid>
+  </Border>
+</UserControl>

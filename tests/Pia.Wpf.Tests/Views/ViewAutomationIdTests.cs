@@ -84,8 +84,11 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Controls.Chat.PiaSourceChip), 1, 1, "")]
     [InlineData(typeof(Pia.Controls.Chat.PiaChipOverflowPanel), 1, 1, "")]
     [InlineData(typeof(Pia.Views.AssignmentsView), 4, 2, "PiaEmptyState,PiaHelpHint")]
-    [InlineData(typeof(Pia.Controls.ActionCardControl), 3, 3, "CardDecisionBar,FileDiffCard")]
-    [InlineData(typeof(Pia.Controls.Cards.FileDiffCard), 1, 1, "")]
+    [InlineData(typeof(Pia.Controls.ActionCardControl), 2, 2, "CardDecisionBar,FileDiffCard")]
+    [InlineData(typeof(Pia.Controls.Cards.FileDiffCard), 2, 2, "")]
+    // The row template's root IS the FileDiffCard, so the walk descends into it rather than stopping:
+    // the four ids below are the set's own two plus that card's two.
+    [InlineData(typeof(Pia.Controls.Cards.FileChangeSetCard), 4, 4, "")]
     [InlineData(typeof(Pia.Controls.Flow.FlowView), 10, 10, "CardDecisionBar,PiaChatStateBadge")]
     [InlineData(typeof(Pia.Controls.Assistant.PiaChatTitleChip), 11, 2, "PiaAssistantChatRowContent")]
     [InlineData(typeof(Pia.Views.VoiceModeOverlay), 3, 0, "RecordingIndicator")]

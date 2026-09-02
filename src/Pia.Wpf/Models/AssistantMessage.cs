@@ -28,7 +28,7 @@ public partial class AssistantMessage : ObservableObject
     private bool _isSpeaking;
 
     /// <summary>Whether the collapsed reasoning toggle is expanded to show the full reasoning.
-    /// Per-message UI state (the message template is reused as the list virtualizes).</summary>
+    /// Per-message UI state.</summary>
     [ObservableProperty]
     private bool _isReasoningExpanded;
 
@@ -37,6 +37,17 @@ public partial class AssistantMessage : ObservableObject
     private string _reasoningDurationLabel = string.Empty;
 
     public ObservableCollection<ActionCardInfo> ActionCards { get; } = [];
+
+    /// <summary>
+    /// What the transcript actually renders: pending, declined and non-diff cards in arrival order,
+    /// with a step's accepted diffs folded into one <see cref="FileChangeSet"/> at the position of the
+    /// first of them. A projection, because <see cref="ActionCards"/> has to stay append-ordered —
+    /// ChatSession attributes each finished tool call by reading its last element.
+    /// </summary>
+    public ObservableCollection<object> CardRows { get; } = [];
+
+    // One instance for the message's lifetime, so its fold state survives later cards arriving.
+    private readonly FileChangeSet _fileChanges = new();
 
     public ObservableCollection<SourceRef> Sources { get; } = [];
 
@@ -279,12 +290,73 @@ public partial class AssistantMessage : ObservableObject
 
         OnPropertyChanged(nameof(HasActionCards));
         OnPropertyChanged(nameof(HasPendingConfirmation));
+        Reproject();
     }
 
     private void OnActionCardPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(ActionCardInfo.IsPending))
             OnPropertyChanged(nameof(HasPendingConfirmation));
+        if (e.PropertyName == nameof(ActionCardInfo.State))
+            Reproject();
+    }
+
+    /// <summary>
+    /// A declined write changed nothing, so only accepted diffs are foldable — keeping a declined one
+    /// standalone leaves the anomaly visible and out of the set's +/- totals.
+    /// </summary>
+    private static bool IsFoldable(ActionCardInfo card) =>
+        card.HasDiff && card.State == ActionCardState.Accepted;
+
+    private void Reproject()
+    {
+        var foldable = ActionCards.Where(IsFoldable).ToList();
+        var fold = foldable.Count >= FileChangeSet.MinimumCards;
+
+        Reconcile(_fileChanges.Cards, fold ? foldable : []);
+
+        var rows = new List<object>();
+        var placed = false;
+        foreach (var card in ActionCards)
+        {
+            if (fold && IsFoldable(card))
+            {
+                if (placed) continue;
+                rows.Add(_fileChanges);
+                placed = true;
+                continue;
+            }
+            rows.Add(card);
+        }
+
+        Reconcile(CardRows, rows);
+    }
+
+    // Insert/Move/RemoveAt rather than Clear-and-refill: a Reset regenerates every container in the
+    // message, which would re-realize any open diff each time another card lands.
+    private static void Reconcile<T>(ObservableCollection<T> target, List<T> desired)
+    {
+        for (var i = 0; i < desired.Count; i++)
+        {
+            var at = IndexFrom(target, desired[i], i);
+            if (at < 0)
+                target.Insert(i, desired[i]);
+            else if (at != i)
+                target.Move(at, i);
+        }
+
+        while (target.Count > desired.Count)
+            target.RemoveAt(target.Count - 1);
+    }
+
+    // From the write position, not from 0: the same card instance can legitimately appear twice, and a
+    // match behind i would be an already-placed earlier row.
+    private static int IndexFrom<T>(ObservableCollection<T> target, T item, int start)
+    {
+        for (var i = start; i < target.Count; i++)
+            if (EqualityComparer<T>.Default.Equals(target[i], item))
+                return i;
+        return -1;
     }
 
     public ChatMessage ToChatMessage() => BuildChatMessage(Content);

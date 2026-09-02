@@ -3,6 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Pia.Controls"
              xmlns:chat="clr-namespace:Pia.Controls.Chat"
+             xmlns:cards="clr-namespace:Pia.Controls.Cards"
+             xmlns:models="clr-namespace:Pia.Models"
              x:Name="Root">
   <StackPanel>
 
@@ -50,14 +52,18 @@
                                            AddToPiiRequested="Markdown_AddToPiiRequested" />
         </Border>
 
-        <!-- Inline action cards (existing behavior) -->
-        <ItemsControl ItemsSource="{Binding ActionCards}" Margin="0,6,0,0"
+        <!-- Inline action cards. Bound to CardRows, not ActionCards: a step's accepted diffs render
+             as one folded change set, everything else stays a card in arrival order. -->
+        <ItemsControl ItemsSource="{Binding CardRows}" Margin="0,6,0,0"
                       Visibility="{Binding HasActionCards, Converter={StaticResource BooleanToVisibilityConverter}}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate>
+          <ItemsControl.Resources>
+            <DataTemplate DataType="{x:Type models:ActionCardInfo}">
               <controls:ActionCardControl />
             </DataTemplate>
-          </ItemsControl.ItemTemplate>
+            <DataTemplate DataType="{x:Type models:FileChangeSet}">
+              <cards:FileChangeSetCard />
+            </DataTemplate>
+          </ItemsControl.Resources>
         </ItemsControl>
       </StackPanel>
     </Border>

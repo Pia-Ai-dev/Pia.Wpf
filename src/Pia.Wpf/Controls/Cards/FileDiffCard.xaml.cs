@@ -1,3 +1,4 @@
+using System.Windows;
 using System.Windows.Controls;
 
 namespace Pia.Controls.Cards;
@@ -9,6 +10,17 @@ namespace Pia.Controls.Cards;
 /// </summary>
 public partial class FileDiffCard : UserControl
 {
+    /// <summary>Renders as a bare row instead of its own card, for use inside a <c>FileChangeSetCard</c>.</summary>
+    public static readonly DependencyProperty ChromelessProperty =
+        DependencyProperty.Register(nameof(Chromeless), typeof(bool), typeof(FileDiffCard),
+            new PropertyMetadata(false));
+
+    public bool Chromeless
+    {
+        get => (bool)GetValue(ChromelessProperty);
+        set => SetValue(ChromelessProperty, value);
+    }
+
     public FileDiffCard()
     {
         InitializeComponent();

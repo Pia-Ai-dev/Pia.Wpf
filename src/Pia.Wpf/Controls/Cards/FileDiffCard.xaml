@@ -3,19 +3,34 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:chat="clr-namespace:Pia.Controls.Chat"
              xmlns:converters="clr-namespace:Pia.Converters"
-             xmlns:models="clr-namespace:Pia.Models">
+             xmlns:models="clr-namespace:Pia.Models"
+             x:Name="Root">
   <!-- DataContext is the hosting ActionCardInfo (inherited from ActionCardControl's diff child). -->
   <UserControl.Resources>
     <converters:UnchangedLinesLabelConverter x:Key="UnchangedLinesLabelConverter" />
   </UserControl.Resources>
 
-  <Border CornerRadius="8"
-          Background="{DynamicResource SurfaceBrush}"
-          BorderBrush="{DynamicResource BorderStrongBrush}"
-          BorderThickness="1"
-          Margin="0,4,0,0"
+  <Border BorderBrush="{DynamicResource BorderStrongBrush}"
           ClipToBounds="True">
+    <Border.Style>
+      <Style TargetType="Border">
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Margin" Value="0,4,0,0" />
+        <Style.Triggers>
+          <!-- Inside a change set the row is not its own card: only the divider survives. -->
+          <DataTrigger Binding="{Binding Chromeless, ElementName=Root}" Value="True">
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="Margin" Value="0" />
+          </DataTrigger>
+        </Style.Triggers>
+      </Style>
+    </Border.Style>
     <Grid>
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
@@ -24,15 +39,27 @@
 
       <!-- Header stripe: chevron · file icon · path · +N/−N stats -->
       <Border Grid.Row="0"
-              Background="{DynamicResource SurfaceMutedBrush}"
               BorderBrush="{DynamicResource BorderStrongBrush}"
-              BorderThickness="0,0,0,1"
               Padding="4,3,8,3">
+        <Border.Style>
+          <Style TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding Chromeless, ElementName=Root}" Value="True">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
         <Grid>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
@@ -98,6 +125,63 @@
                      FontWeight="SemiBold"
                      Foreground="{DynamicResource DiffRemovedBrush}"
                      Text="{Binding RemovedCount, StringFormat='−{0}'}" />
+
+          <!-- The decision outcome lives in the stripe, not in a second bordered strip below the
+               card. The sentence is long and the path column is elastic, so it is a tooltip. -->
+          <ui:SymbolIcon Grid.Column="5"
+                         FontSize="12"
+                         Margin="10,0,0,0"
+                         VerticalAlignment="Center"
+                         ToolTip="{Binding ResolvedStatusText}">
+            <ui:SymbolIcon.Style>
+              <Style TargetType="ui:SymbolIcon">
+                <Setter Property="Visibility" Value="Collapsed" />
+                <Setter Property="Symbol" Value="Dismiss24" />
+                <Setter Property="Foreground" Value="{DynamicResource TextPlaceholderColorBrush}" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding State}" Value="{x:Static models:ActionCardState.Accepted}">
+                    <Setter Property="Symbol" Value="Checkmark24" />
+                    <Setter Property="Foreground" Value="#0F7B0F" />
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding IsAutoApproved}" Value="True">
+                    <Setter Property="Symbol" Value="ShieldCheckmark24" />
+                    <Setter Property="Foreground" Value="{DynamicResource PiaAccentBrush}" />
+                  </DataTrigger>
+                  <!-- Chromeless rows stay silent: the set header says it once for the whole set. -->
+                  <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                      <Condition Binding="{Binding IsResolved}" Value="True" />
+                      <Condition Binding="{Binding Chromeless, ElementName=Root}" Value="False" />
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Visibility" Value="Visible" />
+                  </MultiDataTrigger>
+                </Style.Triggers>
+              </Style>
+            </ui:SymbolIcon.Style>
+          </ui:SymbolIcon>
+
+          <ui:HyperlinkButton Grid.Column="6"
+                              Content="{loc:Str ActionCard_Manage}"
+                              FontSize="12"
+                              Padding="6,0,0,0"
+                              VerticalAlignment="Center"
+                              AutomationProperties.AutomationId="{Binding Id, StringFormat='ActionCard_Manage_{0}'}"
+                              Command="{Binding ManageToolPermissionsCommand, RelativeSource={RelativeSource AncestorType={x:Type chat:PiaAssistantMessage}}}">
+            <ui:HyperlinkButton.Style>
+              <Style TargetType="ui:HyperlinkButton">
+                <Setter Property="Visibility" Value="Collapsed" />
+                <Style.Triggers>
+                  <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                      <Condition Binding="{Binding IsAutoApproved}" Value="True" />
+                      <Condition Binding="{Binding Chromeless, ElementName=Root}" Value="False" />
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Visibility" Value="Visible" />
+                  </MultiDataTrigger>
+                </Style.Triggers>
+              </Style>
+            </ui:HyperlinkButton.Style>
+          </ui:HyperlinkButton>
         </Grid>
       </Border>
 
