@@ -10,14 +10,15 @@
 
 ## Meetings
 
-- You can now drag a meeting invite onto the "Join a Teams meeting" panel and
-  Pia fills in the meeting link for you. Drag it straight out of classic
-  Outlook, or drop a saved .msg, .eml or .ics file — no need to open the
-  invite and hunt for the join link. Pia picks the actual join link out of the
-  invite and ignores the organizer's meeting-options link and the dial-in
-  numbers that sit next to it. If the invite carries no Teams link, it says so
-  under the box and leaves what you typed alone. Consent is unchanged: filling
-  in the link never starts a meeting.
+- The Meeting attendee panel can now read the invite itself: drag the invite
+  onto the panel and Pia fills in the Teams meeting link for you. Drag it
+  straight out of classic Outlook, or drop a saved .msg, .eml or .ics file —
+  no more opening the invite to hunt for the join link. A Teams invite carries
+  several links side by side, so Pia picks the join link and leaves the
+  organizer's meeting-options page and the dial-in numbers alone. If there is
+  no Teams link in it, the panel says so and leaves the box as you left it.
+  Nothing happens on its own: you still tick the confirmation and press Join
+  meeting.
 
 ## Live transcription
 
