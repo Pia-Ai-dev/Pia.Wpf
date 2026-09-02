@@ -30,10 +30,30 @@ Markdown**, while GitHub renders the same bytes. Both have to be legible:
 Write for someone deciding whether to update — what they can now do, and what changes under them.
 Not commit subjects, never a `Co-Authored-By:` trailer or an internal batch or spec id.
 
-## After a release
+## After a release — archive by hand
 
-`build-and-release.yml` does this for you: it copies `RELEASE.md` to `YYYY-MM-DD-<version>.md` in
-this folder as the archive, empties it out for the next cycle, and pushes that as a `[skip ci]`
-commit — only when it actually shipped curated notes, so a fallback build never wipes real content.
-Leaving `RELEASE.md` empty between edits is safe: the diff-since-last-tag check downgrades an
-unchanged file to git-cliff rather than shipping the wrong notes.
+Two steps, and the build will not do either for you:
+
+```bash
+cp docs/release_notes/RELEASE.md "docs/release_notes/$(date +%Y-%m-%d)-<version>.md"
+: > docs/release_notes/RELEASE.md
+git commit -am "docs: archive <version> release notes [skip ci]"   # [skip ci] or you cut another release
+```
+
+`build-and-release.yml` used to do this itself and **never could**. It pushed the emptied file to
+`main` as `github-actions[bot]`, and the `Main` ruleset requires a pull request with an approving
+review plus verified signatures, with Admin as the only bypass actor. The push was refused with
+`GH013` *after* the release had already been published — a red run on a shipped release — and it
+took the pia-ai.de step below down with it, so the website silently stayed on the previous version.
+The step is gone; a bypass for the bot was considered and declined, to keep the rules meaning what
+they say.
+
+**What the automation was protecting against, and what replaces it.** If `RELEASE.md` keeps a
+shipped body and someone appends the next entry, the diff-since-last-tag check sees a change, takes
+the curated path, and republishes the old notes alongside the new. That is how the 1.4.0 body shipped
+at v1.4.0 *and* v1.4.5. The **Refuse to republish the last release's notes** step now fails the run
+if the file still contains the whole body released at the previous tag. It sits immediately after
+checkout, so it costs seconds rather than a full signed build.
+
+Leaving `RELEASE.md` empty between edits is safe, and is the point: an unchanged or empty file
+downgrades to git-cliff rather than shipping the wrong notes.

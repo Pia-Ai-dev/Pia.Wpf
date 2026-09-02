@@ -38,6 +38,34 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
+      # The archive step this replaces pushed the emptied RELEASE.md to main as github-actions[bot],
+      # and the Main ruleset refuses that: a pull request with an approving review, plus verified
+      # signatures, with Admin as the only bypass actor. It failed after the release was already
+      # published - a red run on a shipped release - and took the pia-ai.de step down with it.
+      #
+      # So archiving stays manual (docs/release_notes/README.md), and this guards the failure that
+      # automation was there to prevent: RELEASE.md keeps a shipped body, someone appends the next
+      # entry, the diff-since-last-tag check sees a change and republishes both. That is how the
+      # 1.4.0 body shipped at v1.4.0 AND v1.4.5. Fails in seconds, before anything is signed.
+      - name: Refuse to republish the last release's notes
+        shell: bash
+        run: |
+          NOTES=docs/release_notes/RELEASE.md
+          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          [ -n "$PREV_TAG" ] && [ -s "$NOTES" ] || exit 0
+
+          # Line 1 is the version header, which the notes step rewrites anyway.
+          PREV_BODY=$(git show "$PREV_TAG:$NOTES" 2>/dev/null | tail -n +2) || exit 0
+          [ -n "$(printf '%s' "$PREV_BODY" | tr -d '[:space:]')" ] || exit 0
+
+          # -z makes this a true multi-line substring test: does the WHOLE shipped body still sit in
+          # the file? A rewritten file cannot match, so only a never-truncated one trips this.
+          if tail -n +2 "$NOTES" | grep -qzF "$PREV_BODY"; then
+            echo "::error::$NOTES still contains the body released at $PREV_TAG, so this release would republish it. Archive it first: cp $NOTES docs/release_notes/$(date +%Y-%m-%d)-<version>.md, truncate $NOTES, commit with [skip ci]."
+            exit 1
+          fi
+          echo "$NOTES does not carry $PREV_TAG's body - safe to release."
+
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v5
         with:
@@ -202,23 +230,6 @@ jobs:
             Releases/*.nupkg \
             Releases/RELEASES \
             Releases/releases.*.json
-
-      # docs/release_notes/README.md documents archiving RELEASE.md and emptying it after each
-      # release; this is that step. [skip ci] keeps the bot commit from triggering its own build.
-      - name: Archive release notes
-        if: steps.notes.outputs.source == 'curated'
-        shell: bash
-        env:
-          VERSION: ${{ steps.info.outputs.version }}
-        run: |
-          ARCHIVE="docs/release_notes/$(date +%Y-%m-%d)-${VERSION}.md"
-          cp docs/release_notes/RELEASE.md "$ARCHIVE"
-          : > docs/release_notes/RELEASE.md
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "$ARCHIVE" docs/release_notes/RELEASE.md
-          git commit -m "docs: archive $VERSION release notes [skip ci]"
-          git push
 
       # The mirror on pia-ai.de is published from the private Pia repo, which owns that step because the
       # Hetzner SSH key must not sit in a public repo. Triggering it is deliberately manual, so the notes
