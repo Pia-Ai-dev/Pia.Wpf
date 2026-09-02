@@ -34,11 +34,12 @@ public class FilesToolHandlerSearchTests : IDisposable
 
     private async Task<string> SearchAsync(
         string pattern, string? path = null, string? mode = null, int? offset = null, int? limit = null,
-        string? include = null)
+        string? include = null, bool? caseSensitive = null)
     {
         var args = new Dictionary<string, object?> { ["pattern"] = pattern };
         if (path is not null) args["path"] = path;
         if (include is not null) args["include"] = include;
+        if (caseSensitive is not null) args["case_sensitive"] = caseSensitive.Value;
         if (mode is not null) args["mode"] = mode;
         if (offset is not null) args["offset"] = offset.Value;
         if (limit is not null) args["limit"] = limit.Value;
@@ -422,19 +423,21 @@ public class FilesToolHandlerSearchTests : IDisposable
     }
 
     [Fact]
-    public async Task Search_PatternWithACapital_MatchesCaseExactly()
+    public async Task Search_CapitalisedPattern_StillIgnoresCase()
     {
-        Write("a.txt", "todo: buy milk");
+        // A model capitalises a German noun or an English topic word as orthography, not as a
+        // demand for an exact match — reading intent into that capital costs a silent miss.
+        Write("a.txt", "zwei cookies gegessen");
 
-        Assert.Contains("No matches found", await SearchAsync("TODO"));
+        Assert.Contains("a.txt:1:zwei cookies gegessen", await SearchAsync("Cookie"));
     }
 
     [Fact]
-    public async Task Search_AnEscapeIsNotACapital()
+    public async Task Search_CaseSensitiveTrue_MatchesCapitalisationExactly()
     {
-        // '\S' must not read as an uppercase S, or the pattern would silently turn case-sensitive.
-        Write("a.txt", "Kekse");
+        Write("a.txt", "todo: buy milk");
 
-        Assert.Contains("a.txt:1:Kekse", await SearchAsync(@"kekse\S*"));
+        Assert.Contains("No matches found", await SearchAsync("TODO", caseSensitive: true));
+        Assert.Contains("a.txt:1:todo: buy milk", await SearchAsync("TODO"));
     }
 }

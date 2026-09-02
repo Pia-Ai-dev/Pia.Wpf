@@ -620,9 +620,11 @@ public class FilesToolHandler : IFilesToolHandler
         Regex regex;
         try
         {
-            // Smart case: an all-lowercase pattern is plain language and matches case-insensitively;
-            // any capital the caller typed is taken as meant, so TODO/URGENT stay exact.
-            var caseOption = HasUppercaseLiteral(pattern) ? RegexOptions.None : RegexOptions.IgnoreCase;
+            // Case-insensitive unless asked otherwise. Inferring intent from the pattern's own
+            // capitals (ripgrep's smart case) reads a developer's deliberate SHOUTING into what is
+            // just orthography here — a model writes "Cookie" or a German noun capitalized without
+            // meaning "exact", and would silently miss the lowercase occurrences.
+            var caseOption = GetBoolArg(args, "case_sensitive") ? RegexOptions.None : RegexOptions.IgnoreCase;
             regex = new Regex(pattern, caseOption, SearchRegexTimeout);
         }
         catch (ArgumentException ex)
@@ -825,17 +827,6 @@ public class FilesToolHandler : IFilesToolHandler
         _logger.SensitiveDebug("search_files pattern {Pattern} under {Path}", pattern, requestedPath ?? "(root)");
 
         return FormatSearchResults(matches, mode, offset, limit, diagnostics);
-    }
-
-    /// <summary>Uppercase the caller typed, ignoring escapes — <c>\S</c> is a class, not a capital S.</summary>
-    private static bool HasUppercaseLiteral(string pattern)
-    {
-        for (int i = 0; i < pattern.Length; i++)
-        {
-            if (pattern[i] == '\\') { i++; continue; }
-            if (char.IsUpper(pattern[i])) return true;
-        }
-        return false;
     }
 
     private static string NormalizeSearchMode(string? mode)
@@ -2063,12 +2054,13 @@ public class FilesToolHandler : IFilesToolHandler
 
     [Description("Search text files in the assistant files folder for a regular-expression pattern. Read-only. Ignored paths (built-in defaults such as .git/bin/obj/node_modules, plus any .gitignore/.piaignore in the folder) are skipped.")]
     private static string SearchFilesSchema(
-        [Description("Regular expression to search for, applied per line. An all-lowercase pattern ignores case; add a capital letter to match case exactly.")] string pattern,
+        [Description("Regular expression to search for, applied per line. Capitalisation is ignored — write it however reads naturally.")] string pattern,
         [Description("Optional subdirectory (relative to the assistant files folder) to scope the search. Defaults to the whole folder.")] string? path = null,
         [Description("Optional file glob restricting which files are searched, matched against the path relative to the searched folder — e.g. '*.cs' or 'docs/**/*.md'.")] string? include = null,
         [Description("Output mode: 'content' (matching lines, default), 'files' (matching file paths only), or 'count' (number of matches per file).")] string? mode = null,
         [Description("1-indexed result to start from (default 1, minimum 1).")] int offset = 1,
-        [Description("Maximum number of results to return (default 100, maximum 500).")] int limit = 100) => "";
+        [Description("Maximum number of results to return (default 100, maximum 500).")] int limit = 100,
+        [Description("Set true to match capitalisation exactly, e.g. to find the marker TODO without also matching the word 'todo'. Default false.")] bool case_sensitive = false) => "";
 
     private static string GetStringArg(IDictionary<string, object?> args, string key)
     {

@@ -102,17 +102,35 @@ A model that lowercases its search term gets a confident "not there" for a folde
 has it. That is the failure this whole change exists to prevent, arriving through a different
 door.
 
-Fixed with **smart case**, ripgrep's rule: an all-lowercase pattern matches case-insensitively;
-any capital the caller typed makes the match exact. Escapes do not count as capitals, so `\S`
-does not silently turn a pattern case-sensitive. Re-verified live on the rebuilt binary:
+The first fix was **smart case**, ripgrep's rule: an all-lowercase pattern matches
+case-insensitively, any capital makes the match exact. Verified live — `kekse` 3 files (was 0),
+`Kekse` 3, `KEKSE` 0.
 
-| Pattern | Matches | |
+**That rule was then withdrawn, because this run's own evidence contradicts it.** Smart case
+infers intent from the pattern's capitals, which is sound for a developer typing `TODO` at a
+terminal and wrong for a model writing prose. E9 is the proof: DeepSeek searched
+
+```
+{"pattern":"Keks|Cookie|Plätzchen", …}
+```
+
+It capitalised `Cookie` as orthography, not as a demand for an exact match — and under smart case
+that pattern silently stops matching `cookies` written lower-case. The inverse of the defect,
+reached by the most natural thing the caller does.
+
+Final rule: **capitalisation is always ignored**, with an explicit `case_sensitive: true`
+argument for the rare search that wants exactness. No inference, so no silent miss in either
+direction. The cost is a false positive — `TODO` also matching the word "todo" in prose — which
+is cheap next to a confident "not found". Re-verified live on a fixture carrying both cases
+(`rezept-15-lebkuchen.docx` has lower-case "cookies" and an upper-case `TODO:`; `notizen.md` has
+a lower-case `todo:`):
+
+| Call | Matches | |
 |---|---|---|
-| `kekse` | 3 files | was 0 before the fix |
-| `Kekse` | 3 files | unchanged |
-| `KEKSE` | 0 files | capital means exact, so `TODO` / `URGENT` / `DISCONTINUED` still mean what they say |
-
-Three unit tests were added with it, including one asserting `\S` is not read as a capital S.
+| `cookie` | `mail-von-tante.eml`, `rezept-15-lebkuchen.docx`, `weihnachtsplaetzchen.docx` | finds `Cookies` and `cookies` |
+| `Cookie` | the same 3 | the inverse trap is gone; smart case would have dropped `rezept-15` |
+| `TODO` | `notizen.md`, `rezept-15-lebkuchen.docx` | lower-case `todo:` included |
+| `TODO` + `case_sensitive:true` | `rezept-15-lebkuchen.docx` | the opt-out narrows, and the model set it from plain German |
 
 ### 2. "Do not read everything" made the model stop looking entirely — observation, not a defect
 
