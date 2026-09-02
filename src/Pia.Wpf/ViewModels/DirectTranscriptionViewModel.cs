@@ -29,6 +29,8 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
     private const int ChipColorPaletteSize = 5;
 
     private readonly IDirectTranscriptionService _service;
+    private readonly IClipboardService? _clipboardService;
+    private readonly IConsentSoundPlayer? _consentSoundPlayer;
 
     private readonly Dictionary<string, int> _chipColorIndex = new(StringComparer.Ordinal);
     private int _nextChipColorIndex;
@@ -98,11 +100,15 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
         IIngestScheduler ingestScheduler,
         Wpf.Ui.ISnackbarService snackbarService,
         ILogger<DirectTranscriptionViewModel> logger,
-        IUiDispatcher uiDispatcher)
+        IUiDispatcher uiDispatcher,
+        IClipboardService? clipboardService = null,
+        IConsentSoundPlayer? consentSoundPlayer = null)
         : base(settingsService, localizationService, fileDialogService, dialogService, memoryService,
             ingestScheduler, snackbarService, logger, uiDispatcher)
     {
         _service = service;
+        _clipboardService = clipboardService;
+        _consentSoundPlayer = consentSoundPlayer;
 
         // Construct StopCommand BEFORE subscribing to StateChanged: a state change raised during wiring
         // would NRE in OnRunningChanged (mirrors MeetingAttendeeViewModel's ctor ordering).
@@ -118,8 +124,39 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
         _service.SpeakerRegistered += OnSpeakerRegistered;
         _service.SpeakingChanged += OnSpeakingChanged;
         _service.ConsentSessionReset += OnConsentSessionReset;
+        _localizationService.LanguageChanged += OnUiLanguageChanged;
 
         StatusText = _localizationService["DirectTrans_Status_Idle"];
+    }
+
+    // ---- Consent sentence ----------------------------------------------------------------------------
+
+    /// <summary>
+    /// The consent sentence in the UI language, for the in-session reminder. The three sentences are
+    /// keyed by the language they are SPOKEN in, not by the UI locale, so all three resx files carry the
+    /// same values and the UI language has to pick among the keys here.
+    /// </summary>
+    public string ConsentSentenceForUiLanguage => _localizationService.CurrentLanguage switch
+    {
+        TargetLanguage.DE => _localizationService["DirectTrans_Disclaimer_ConsentSentence_De"],
+        TargetLanguage.FR => _localizationService["DirectTrans_Disclaimer_ConsentSentence_Fr"],
+        _ => _localizationService["DirectTrans_Disclaimer_ConsentSentence_En"],
+    };
+
+    private void OnUiLanguageChanged(object? sender, TargetLanguage e)
+        => DispatchToUi(() => OnPropertyChanged(nameof(ConsentSentenceForUiLanguage)));
+
+    /// <summary>
+    /// Puts one consent sentence on the clipboard so the host can paste it into the meeting chat — the
+    /// only channel that reaches a participant who never sees this window.
+    /// </summary>
+    [RelayCommand]
+    private void CopyConsentSentence(string? sentence)
+    {
+        if (string.IsNullOrWhiteSpace(sentence) || _clipboardService is null) return;
+
+        try { _clipboardService.SetText(sentence); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Failed to copy the consent sentence to the clipboard"); }
     }
 
     // ---- Open / warmup -----------------------------------------------------------------------------
@@ -469,6 +506,11 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
             chip.IsConsented = true;
             chip.StatusText = _localizationService["DirectTrans_Chip_Consented"];
         });
+
+        // Outside the dispatch so a slow audio device cannot delay the relabel. The host hears it; a
+        // remote participant only would if their conferencing client did not cancel the loudspeaker
+        // path, so this confirms the grant to the person running the session, not to the room.
+        _consentSoundPlayer?.PlayConsentGranted();
     }
 
     /// <summary>
@@ -628,6 +670,7 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
         _service.SpeakerRegistered -= OnSpeakerRegistered;
         _service.SpeakingChanged -= OnSpeakingChanged;
         _service.ConsentSessionReset -= OnConsentSessionReset;
+        _localizationService.LanguageChanged -= OnUiLanguageChanged;
 
         if (_service.State is not DirectTranscriptionState.Idle)
         {

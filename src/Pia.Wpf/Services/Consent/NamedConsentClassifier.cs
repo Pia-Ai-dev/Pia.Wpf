@@ -54,6 +54,11 @@ public sealed class NamedConsentClassifier : INamedConsentClassifier
             if (string.IsNullOrWhiteSpace(utteranceText))
                 return NamedConsentResult.NoConsent(languages[0]);
 
+            // The hinted language's failure is the one worth reporting: the other two are tried only
+            // because a participant may answer in their own language, and their "missing" component is
+            // an artifact of the wrong lexicon rather than of the sentence.
+            NamedConsentResult? hintedFailure = null;
+
             foreach (var language in languages)
             {
                 var result = ClassifyForLanguage(utteranceText, language);
@@ -67,12 +72,14 @@ public sealed class NamedConsentClassifier : INamedConsentClassifier
                         result.ExtractedName, result.Language);
                     return result;
                 }
+
+                hintedFailure ??= result;
             }
 
             _logger.LogDebug(
-                "NamedConsentClassifier: no consent recognised (firstLanguageTried={Language})",
-                languages[0]);
-            return NamedConsentResult.NoConsent(languages[0]);
+                "NamedConsentClassifier: no consent recognised (firstLanguageTried={Language} missing={Missing})",
+                languages[0], hintedFailure?.MissingComponent);
+            return hintedFailure ?? NamedConsentResult.NoConsent(languages[0]);
         }
         catch (Exception ex)
         {
@@ -99,20 +106,20 @@ public sealed class NamedConsentClassifier : INamedConsentClassifier
 
         // Component 1: name introduction with a capturable name.
         if (!TryCaptureName(tokens, language, out var nameTokens, out var markerRepaired))
-            return NamedConsentResult.NoConsent(language);
+            return NamedConsentResult.NoConsent(language, ConsentComponent.NameIntroduction);
 
         // Component 2: acceptance verb — with the negation guard applied to EVERY occurrence, not just
         // the first one in table order (see TryResolveAcceptance).
         if (!TryResolveAcceptance(tokens, language, out var acceptRepaired))
-            return NamedConsentResult.NoConsent(language);
+            return NamedConsentResult.NoConsent(language, ConsentComponent.Acceptance);
 
         // Component 3: recording reference.
         if (!TryFindPhrase(tokens, ConsentLexicon.Recording[language], out _, out _, out var recordingRepaired))
-            return NamedConsentResult.NoConsent(language);
+            return NamedConsentResult.NoConsent(language, ConsentComponent.RecordingReference);
 
         // Component 4: a reference to Pia (hard requirement, fuzzy-matched — D-1).
         if (!TryFindPiaReference(tokens, out var piaRepaired))
-            return NamedConsentResult.NoConsent(language);
+            return NamedConsentResult.NoConsent(language, ConsentComponent.PiaReference);
 
         var anyRepaired = markerRepaired || acceptRepaired || recordingRepaired || piaRepaired;
         var confidence = anyRepaired ? RepairedConfidence : CrispConfidence;

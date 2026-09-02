@@ -118,11 +118,10 @@ internal static class ConsentLexicon
                 new[] { "aufzeichnung" },
                 new[] { "aufnahme" },
                 new[] { "mitschnitt" },
-                // Present-tense/infinitive forms. These are NOT optional extras: the sentence the
-                // disclaimer instructs German participants to say (DirectTrans_Disclaimer_ConsentSentence_De)
-                // ends "…dass Pia dieses Gespräch AUFZEICHNET", which is 2 edits from "aufgezeichnet" and
-                // 3 from "aufzeichnung", so the fuzzy repair could never reach it and the app's own
-                // instruction was impossible to satisfy in German.
+                // Present-tense/infinitive forms. Kept even though the instructed sentence now uses the
+                // noun "Aufzeichnung": "…dass Pia dieses Gespräch AUFZEICHNET" was what the disclaimer
+                // asked for until 2026-09, it is 2 edits from "aufgezeichnet" and 3 from "aufzeichnung"
+                // so no fuzzy repair reaches it, and anyone who learned that wording still has to get in.
                 new[] { "aufzeichnet" },
                 new[] { "aufzeichnen" },
                 new[] { "aufzeichne" },
@@ -279,6 +278,9 @@ internal static class ConsentLexicon
     /// <item><c>pias</c>, <c>pia's</c> — EN plural/possessive; the apostrophe survives tokenization.</item>
     /// <item><c>pea</c>, <c>peas</c>, <c>peer</c>, <c>pier</c> — EN STT renderings of /ˈpiːə/, the design
     /// doc's own worked examples of how "Pia" gets mis-transcribed by English acoustic models.</item>
+    /// <item><c>pieer</c> — observed from Parakeet in a live session. Rule (b) cannot reach it
+    /// (<c>Levenshtein("pieer","pia") == 3</c>), and it is a word in none of the three languages, so
+    /// listing it costs no false-grant risk.</item>
     /// <item><c>piya</c>, <c>peeya</c> — EN phonetic spellings STT sometimes emits for the same vowel glide.</item>
     /// <item><c>pija</c>, <c>piha</c>, <c>bia</c> — DE renderings: /j/-glide insertion, /h/ epenthesis, and
     /// p→b voicing confusion respectively.</item>
@@ -287,7 +289,7 @@ internal static class ConsentLexicon
     /// </summary>
     public static readonly string[] PiaAliases =
     {
-        "pias", "pia's", "pea", "peas", "peer", "pier",
+        "pias", "pia's", "pea", "peas", "peer", "pier", "pieer",
         "piya", "peeya", "pija", "piha", "bia", "pya", "piat",
     };
 

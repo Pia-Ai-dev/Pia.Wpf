@@ -322,8 +322,11 @@ public sealed class ConsentForwardLoop
         if (!result.IsConsent || result.Confidence < NamedConsentClassifier.GrantConfidenceThreshold)
         {
             Interlocked.Increment(ref _droppedUnconsentedCount);
+            // `missing` names a component, never any transcribed text, so it is safe in a release log —
+            // and it is the only place a support log says WHY a repeated consent sentence keeps failing.
             _logger.LogInformation(
-                "Dropped an unconsented loopback utterance (confidence={Confidence:F2})", result.Confidence);
+                "Dropped an unconsented loopback utterance (confidence={Confidence:F2} missing={Missing})",
+                result.Confidence, result.MissingComponent);
             _logger.SensitiveDebug("Dropped unconsented utterance text for {Label}: '{Text}'", label, utterance.Text);
             return ConsentGateOutcome.DropUnconsented;
         }

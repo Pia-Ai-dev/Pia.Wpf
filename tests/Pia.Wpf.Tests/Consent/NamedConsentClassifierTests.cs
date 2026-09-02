@@ -46,6 +46,9 @@ public sealed class NamedConsentClassifierTests
     {
         { "EN Pia -> pea", "my name is john doe and i accept that this meeting gets recorded by pea", TargetSpeechLanguage.EN, "John Doe", "en" },
         { "EN Pia -> peer", "my name is john doe and i accept that this meeting gets recorded by peer", TargetSpeechLanguage.EN, "John Doe", "en" },
+        // Observed from Parakeet in a live session. 3 edits from "pia", so rule (b) never reaches it —
+        // only the curated alias list can, and without the alias the sentence could not be accepted at all.
+        { "EN Pia -> pieer (Parakeet, observed live)", "my name is john doe and i accept this recording by pieer", TargetSpeechLanguage.EN, "John Doe", "en" },
         { "EN Pia -> letter-spelled p i a", "my name is john doe and i accept that this meeting gets recorded by p i a", TargetSpeechLanguage.EN, "John Doe", "en" },
         { "EN acceptance typo (acept)", "my name is John Doe and I acept that this meeting gets recorded by Pia", TargetSpeechLanguage.EN, "John Doe", "en" },
         // Also covers a raw STT shape: no punctuation and no capitalisation anywhere.
@@ -101,6 +104,41 @@ public sealed class NamedConsentClassifierTests
         Assert.Equal(0f, result.Confidence);
     }
 
+    public static TheoryData<string, string, TargetSpeechLanguage, ConsentComponent> MissingComponentCases => new()
+    {
+        { "no name introduction", "I accept that this is recorded by Pia", TargetSpeechLanguage.EN, ConsentComponent.NameIntroduction },
+        { "no acceptance verb", "My name is John Doe and this meeting is recorded by Pia", TargetSpeechLanguage.EN, ConsentComponent.Acceptance },
+        { "no recording reference", "My name is John Doe and I accept that Pia is here", TargetSpeechLanguage.EN, ConsentComponent.RecordingReference },
+        { "no Pia reference", "My name is John Doe and I accept that this meeting is recorded", TargetSpeechLanguage.EN, ConsentComponent.PiaReference },
+        { "DE no Pia reference", "Mein Name ist John Doe und ich bin einverstanden, dass dieses Gespräch aufgezeichnet wird", TargetSpeechLanguage.DE, ConsentComponent.PiaReference },
+    };
+
+    /// <summary>
+    /// The reported component is the one the HINTED language stopped on: the other two lexicons are tried
+    /// only in case the speaker answered in their own language, so their verdict describes the wrong
+    /// lexicon rather than the sentence.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(MissingComponentCases))]
+    public void Reject_NamesTheComponentThatWasMissing(
+        string label, string text, TargetSpeechLanguage hint, ConsentComponent expected)
+    {
+        var result = _sut.Classify(text, hint);
+
+        Assert.False(result.IsConsent, $"{label}: expected no consent");
+        Assert.Equal(expected, result.MissingComponent);
+    }
+
+    [Fact]
+    public void Accept_ReportsNoMissingComponent()
+    {
+        var result = _sut.Classify(
+            "my name is John Doe and I accept that this meeting gets recorded by Pia", TargetSpeechLanguage.EN);
+
+        Assert.True(result.IsConsent);
+        Assert.Null(result.MissingComponent);
+    }
+
     public static TheoryData<string, string, TargetSpeechLanguage> NegatedCases => new()
     {
         { "EN 'do not accept'", "my name is John Doe and I do not accept that this meeting is recorded by Pia", TargetSpeechLanguage.EN },
@@ -140,9 +178,48 @@ public sealed class NamedConsentClassifierTests
         Assert.True(NegatedCases.Count >= 10, "non-vacuity: expected far-negation, multi-clause and mangled-negation rows");
     }
 
-    private const string InstructedEn = "My name is [Name] and I accept that Pia is recording this conversation.";
-    private const string InstructedDe = "Mein Name ist [Name] und ich bin einverstanden, dass Pia dieses Gespräch aufzeichnet.";
-    private const string InstructedFr = "Je m’appelle [Nom] et j’accepte que Pia enregistre cette conversation.";
+    private static string Personalize(string template)
+        => template.Replace("[Name]", "Anna Schmidt", StringComparison.Ordinal)
+                   .Replace("[Nom]", "Anna Schmidt", StringComparison.Ordinal);
+
+    private const string InstructedEn = "My name is [Name] and I accept this recording by Pia.";
+    private const string InstructedDe = "Mein Name ist [Name] und ich akzeptiere diese Aufzeichnung durch Pia.";
+    private const string InstructedFr = "Je m’appelle [Nom] et j’accepte cet enregistrement par Pia.";
+
+    // Shortened 2026-09 so the sentence fits in one breath: the VAD closes a segment on 512 ms of
+    // silence and §3.5 requires all four components in ONE utterance, so a mid-sentence pause used to
+    // make the sentence unmatchable. These are the wordings the app asked for until then, and anyone
+    // who learned one of them — or pasted it into a meeting invite — must still be able to consent.
+    public static TheoryData<string, string, TargetSpeechLanguage, string> LegacyInstructedSentenceCases => new()
+    {
+        {
+            "en (pre-2026-09 wording)",
+            "My name is [Name] and I accept that Pia is recording this conversation.",
+            TargetSpeechLanguage.EN, "en"
+        },
+        {
+            "de (pre-2026-09 wording, verb-final 'aufzeichnet')",
+            "Mein Name ist [Name] und ich bin einverstanden, dass Pia dieses Gespräch aufzeichnet.",
+            TargetSpeechLanguage.DE, "de"
+        },
+        {
+            "fr (pre-2026-09 wording)",
+            "Je m’appelle [Nom] et j’accepte que Pia enregistre cette conversation.",
+            TargetSpeechLanguage.FR, "fr"
+        },
+    };
+
+    [Theory]
+    [MemberData(nameof(LegacyInstructedSentenceCases))]
+    public void LegacyInstructedConsentSentence_IsStillRecognised(
+        string label, string template, TargetSpeechLanguage hint, string expectedLanguage)
+    {
+        var result = _sut.Classify(Personalize(template), hint);
+
+        Assert.True(result.IsConsent, $"{label}: the old instructed sentence must still grant consent");
+        Assert.Equal("Anna Schmidt", result.ExtractedName);
+        Assert.Equal(expectedLanguage, result.Language);
+    }
 
     public static TheoryData<string, string, TargetSpeechLanguage, string> InstructedSentenceCases => new()
     {
@@ -151,7 +228,7 @@ public sealed class NamedConsentClassifierTests
         { "fr (as shipped, typographic apostrophes U+2019)", InstructedFr, TargetSpeechLanguage.FR, "fr" },
         {
             "fr (same sentence with ASCII apostrophes, as some STT backends emit)",
-            "Je m'appelle [Nom] et j'accepte que Pia enregistre cette conversation.",
+            "Je m'appelle [Nom] et j'accepte cet enregistrement par Pia.",
             TargetSpeechLanguage.FR, "fr"
         },
     };
@@ -161,8 +238,7 @@ public sealed class NamedConsentClassifierTests
     public void InstructedConsentSentence_IsRecognised(
         string label, string template, TargetSpeechLanguage hint, string expectedLanguage)
     {
-        var text = template.Replace("[Name]", "Anna Schmidt", StringComparison.Ordinal)
-                           .Replace("[Nom]", "Anna Schmidt", StringComparison.Ordinal);
+        var text = Personalize(template);
 
         var result = _sut.Classify(text, hint);
 

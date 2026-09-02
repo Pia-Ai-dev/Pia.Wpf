@@ -3,6 +3,25 @@ using Pia.Models;
 namespace Pia.Services.Consent;
 
 /// <summary>
+/// The four components a consent sentence must carry, in the order they are checked. Names a component
+/// only, never any transcribed text, so it is safe in a release log.
+/// </summary>
+public enum ConsentComponent
+{
+    /// <summary>A self-introduction marker followed by a capturable name.</summary>
+    NameIntroduction,
+
+    /// <summary>An acceptance verb with no negation scoped to its clause.</summary>
+    Acceptance,
+
+    /// <summary>A reference to the recording itself.</summary>
+    RecordingReference,
+
+    /// <summary>A reference to Pia (fuzzy-matched, but a hard requirement).</summary>
+    PiaReference,
+}
+
+/// <summary>
 /// Result of classifying one utterance as a spoken consent sentence.
 /// </summary>
 /// <param name="IsConsent">
@@ -28,8 +47,20 @@ public sealed record NamedConsentResult(
     string Language,
     float Confidence)
 {
+    /// <summary>
+    /// The first of the four components that was not found, or <c>null</c> when the sentence was
+    /// recognised (or was empty). Diagnostic only — nothing branches on it. It exists because a
+    /// participant who has to repeat the sentence several times has no way to learn what was missing,
+    /// and neither did anyone reading their support log.
+    /// </summary>
+    public ConsentComponent? MissingComponent { get; init; }
+
     /// <summary>The canonical negative result for a given language.</summary>
     public static NamedConsentResult NoConsent(string language) => new(false, null, language, 0f);
+
+    /// <summary>Negative result that also names the component that stopped it.</summary>
+    public static NamedConsentResult NoConsent(string language, ConsentComponent missing)
+        => new(false, null, language, 0f) { MissingComponent = missing };
 }
 
 /// <summary>

@@ -8,6 +8,36 @@
   and only one of them showed an icon. They all say Vault now, and each of
   those buttons carries the same icon.
 
+## Live transcription
+
+- The sentence a participant has to say to be transcribed is shorter in all
+  three languages, and the German one no longer has a comma in the middle:
+  "My name is [Name] and I accept this recording by Pia." Speech recognition
+  only accepts the sentence if it hears the whole thing as one utterance, and
+  the old, longer wording invited a pause in the middle that split it in two —
+  which is why it often took several attempts. The previous wording still
+  works, so nobody who learned it is locked out.
+- Pia now recognises itself when speech recognition writes its name as
+  "Pieer", which the Parakeet model does. That spelling is too far from "Pia"
+  for the automatic repair to bridge, so a participant saying the sentence
+  perfectly could be refused over nothing but a mis-heard name.
+- Each of the three sentences now has a copy button next to it, on its own
+  line with its language marked. Paste one into the meeting chat — that is the
+  only way somebody joining over system audio ever gets to read it, and the
+  pre-start panel it used to live in is only ever on your screen.
+- The same sentence, in your UI language, now stays at the top of the
+  transcription window for the whole session, with its own copy button. It
+  used to appear only before you pressed Start, so by the time you noticed a
+  participant was not being transcribed it was gone.
+- A short chime now confirms each accepted consent sentence, so you hear that
+  a participant was let in without watching the chips. You hear it, not the
+  far end: your conferencing app removes your own loudspeaker output from what
+  it sends out.
+- A refused consent sentence now records which of the four required parts was
+  missing — the name introduction, the acceptance, the reference to the
+  recording, or the reference to Pia. It goes in the log you would attach to a
+  support request, and it names the part only, never anything anyone said.
+
 ## Assistant
 
 - The files an agent step changes now collapse into one line. A step that

@@ -463,6 +463,7 @@ public static class Bootstrapper
 
         // UI abstractions that keep System.Windows out of ViewModels
         services.AddSingleton<IClipboardService, ClipboardService>();
+        services.AddSingleton<IConsentSoundPlayer, ConsentSoundPlayer>();
         services.AddSingleton<IObsidianService, ObsidianService>();
         services.AddSingleton<ICollectionViewService, CollectionViewService>();
         services.AddSingleton<IFileDialogService, FileDialogService>();

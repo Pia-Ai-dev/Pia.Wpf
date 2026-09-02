@@ -110,17 +110,110 @@
                          TextWrapping="Wrap"
                          TextAlignment="Center"
                          Margin="0,0,0,10" />
-              <TextBlock Text="{loc:Str DirectTrans_Disclaimer_ConsentSentence_En}"
-                         FontSize="16"
-                         TextWrapping="Wrap"
-                         Margin="0,0,0,6" />
-              <TextBlock Text="{loc:Str DirectTrans_Disclaimer_ConsentSentence_De}"
-                         FontSize="16"
-                         TextWrapping="Wrap"
-                         Margin="0,0,0,6" />
-              <TextBlock Text="{loc:Str DirectTrans_Disclaimer_ConsentSentence_Fr}"
-                         FontSize="16"
-                         TextWrapping="Wrap" />
+              <!-- One row per language, each with its own copy button: the host reads the room's language
+                   off the tag and pastes the sentence into the meeting chat, which is the only way a
+                   remote participant ever gets to see it. -->
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0"
+                           Text="EN"
+                           MinWidth="26"
+                           FontSize="11"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                <TextBlock Grid.Column="1"
+                           Text="{loc:Str DirectTrans_Disclaimer_ConsentSentence_En}"
+                           FontSize="16"
+                           TextWrapping="Wrap"
+                           VerticalAlignment="Center" />
+                <ui:Button Grid.Column="2"
+                           Command="{Binding CopyConsentSentenceCommand}"
+                           CommandParameter="{loc:Str DirectTrans_Disclaimer_ConsentSentence_En}"
+                           AutomationProperties.AutomationId="DirectTrans_CopyConsentSentenceEn"
+                           AutomationProperties.Name="{loc:Str DirectTrans_ConsentSentence_Copy}"
+                           ToolTip="{loc:Str DirectTrans_ConsentSentence_Copy}"
+                           Width="32"
+                           Height="32"
+                           Padding="0"
+                           Margin="10,0,0,0"
+                           VerticalAlignment="Center"
+                           Appearance="Secondary">
+                  <ui:SymbolIcon Symbol="Copy20" FontSize="14" />
+                </ui:Button>
+              </Grid>
+
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0"
+                           Text="DE"
+                           MinWidth="26"
+                           FontSize="11"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                <TextBlock Grid.Column="1"
+                           Text="{loc:Str DirectTrans_Disclaimer_ConsentSentence_De}"
+                           FontSize="16"
+                           TextWrapping="Wrap"
+                           VerticalAlignment="Center" />
+                <ui:Button Grid.Column="2"
+                           Command="{Binding CopyConsentSentenceCommand}"
+                           CommandParameter="{loc:Str DirectTrans_Disclaimer_ConsentSentence_De}"
+                           AutomationProperties.AutomationId="DirectTrans_CopyConsentSentenceDe"
+                           AutomationProperties.Name="{loc:Str DirectTrans_ConsentSentence_Copy}"
+                           ToolTip="{loc:Str DirectTrans_ConsentSentence_Copy}"
+                           Width="32"
+                           Height="32"
+                           Padding="0"
+                           Margin="10,0,0,0"
+                           VerticalAlignment="Center"
+                           Appearance="Secondary">
+                  <ui:SymbolIcon Symbol="Copy20" FontSize="14" />
+                </ui:Button>
+              </Grid>
+
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0"
+                           Text="FR"
+                           MinWidth="26"
+                           FontSize="11"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                <TextBlock Grid.Column="1"
+                           Text="{loc:Str DirectTrans_Disclaimer_ConsentSentence_Fr}"
+                           FontSize="16"
+                           TextWrapping="Wrap"
+                           VerticalAlignment="Center" />
+                <ui:Button Grid.Column="2"
+                           Command="{Binding CopyConsentSentenceCommand}"
+                           CommandParameter="{loc:Str DirectTrans_Disclaimer_ConsentSentence_Fr}"
+                           AutomationProperties.AutomationId="DirectTrans_CopyConsentSentenceFr"
+                           AutomationProperties.Name="{loc:Str DirectTrans_ConsentSentence_Copy}"
+                           ToolTip="{loc:Str DirectTrans_ConsentSentence_Copy}"
+                           Width="32"
+                           Height="32"
+                           Padding="0"
+                           Margin="10,0,0,0"
+                           VerticalAlignment="Center"
+                           Appearance="Secondary">
+                  <ui:SymbolIcon Symbol="Copy20" FontSize="14" />
+                </ui:Button>
+              </Grid>
             </StackPanel>
           </Border>
 
@@ -185,12 +278,54 @@
           Visibility="{Binding IsDisclaimerVisible, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
         <RowDefinition Height="*" />
       </Grid.RowDefinitions>
 
+      <!-- Repeated for the whole session, in the UI language only: the disclaimer is gone by the time
+           anyone notices a participant is not being transcribed. -->
+      <Border Grid.Row="0"
+              Background="{DynamicResource ControlFillColorSecondaryBrush}"
+              BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+              BorderThickness="1"
+              CornerRadius="6"
+              Padding="12,8"
+              Margin="20,10,20,0">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel Grid.Column="0" VerticalAlignment="Center">
+            <TextBlock Text="{loc:Str DirectTrans_ConsentSentence_Reminder}"
+                       FontSize="11"
+                       TextWrapping="Wrap"
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            <TextBlock Text="{Binding ConsentSentenceForUiLanguage}"
+                       FontSize="13"
+                       TextWrapping="Wrap"
+                       Margin="0,2,0,0" />
+          </StackPanel>
+          <ui:Button Grid.Column="1"
+                     Command="{Binding CopyConsentSentenceCommand}"
+                     CommandParameter="{Binding ConsentSentenceForUiLanguage}"
+                     AutomationProperties.AutomationId="DirectTrans_CopyConsentSentenceCurrent"
+                     AutomationProperties.Name="{loc:Str DirectTrans_ConsentSentence_Copy}"
+                     ToolTip="{loc:Str DirectTrans_ConsentSentence_Copy}"
+                     Width="32"
+                     Height="32"
+                     Padding="0"
+                     Margin="10,0,0,0"
+                     VerticalAlignment="Center"
+                     Appearance="Secondary">
+            <ui:SymbolIcon Symbol="Copy20" FontSize="14" />
+          </ui:Button>
+        </Grid>
+      </Border>
+
       <!-- Per-speaker consent chips: one per detected loopback speaker, muted while awaiting consent,
            accented once granted (design §3.9 — replaces the old single global consent badge). -->
-      <ItemsControl Grid.Row="0"
+      <ItemsControl Grid.Row="1"
                     ItemsSource="{Binding ConsentChips}"
                     Margin="20,10,20,0"
                     Visibility="{Binding ConsentChips.Count, Converter={StaticResource IntToVisibilityConverter}}">
@@ -271,7 +406,7 @@
       </ItemsControl>
 
       <!-- Voice-stats flyout: floats above the bubble list; toggled from the header button. -->
-      <Border Grid.Row="0" Grid.RowSpan="2"
+      <Border Grid.Row="0" Grid.RowSpan="3"
               HorizontalAlignment="Right"
               VerticalAlignment="Top"
               Margin="0,8,20,0"
@@ -322,7 +457,7 @@
 
       <!-- Bubble list. -->
       <ScrollViewer x:Name="BubbleScroll"
-                    Grid.Row="1"
+                    Grid.Row="2"
                     VerticalScrollBarVisibility="Auto"
                     HorizontalScrollBarVisibility="Disabled"
                     Padding="20,12,20,8">

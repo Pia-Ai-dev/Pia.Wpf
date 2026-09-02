@@ -418,6 +418,71 @@ public class DirectTranscriptionViewModelTests
         await ingest.DidNotReceive().RunAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public void CopyConsentSentence_PutsTheGivenSentenceOnTheClipboard()
+    {
+        var clipboard = Substitute.For<IClipboardService>();
+        var (vm, _, _, _, _) = CreateSutWithVault(clipboard: clipboard);
+
+        vm.CopyConsentSentenceCommand.Execute("My name is Alice and I accept that Pia is recording this conversation.");
+
+        clipboard.Received(1)
+            .SetText("My name is Alice and I accept that Pia is recording this conversation.");
+    }
+
+    [Fact]
+    public void CopyConsentSentence_WithNothingToCopy_DoesNotTouchTheClipboard()
+    {
+        // The in-session banner binds its CommandParameter, so the command can fire before the binding
+        // has produced a value.
+        var clipboard = Substitute.For<IClipboardService>();
+        var (vm, _, _, _, _) = CreateSutWithVault(clipboard: clipboard);
+
+        vm.CopyConsentSentenceCommand.Execute(null);
+        vm.CopyConsentSentenceCommand.Execute("   ");
+
+        clipboard.DidNotReceive().SetText(Arg.Any<string>());
+    }
+
+    [Theory]
+    [InlineData(TargetLanguage.EN, "DirectTrans_Disclaimer_ConsentSentence_En")]
+    [InlineData(TargetLanguage.DE, "DirectTrans_Disclaimer_ConsentSentence_De")]
+    [InlineData(TargetLanguage.FR, "DirectTrans_Disclaimer_ConsentSentence_Fr")]
+    public void ConsentSentenceForUiLanguage_PicksTheSentenceKeyForTheUiLanguage(
+        TargetLanguage uiLanguage, string expectedKey)
+    {
+        // All three resx files carry all three sentences (they are keyed by the language they are SPOKEN
+        // in), so nothing but this switch decides which one the in-session banner shows.
+        var (vm, _, _, _, _) = CreateSutWithVault(uiLanguage: uiLanguage);
+
+        Assert.Equal(expectedKey, vm.ConsentSentenceForUiLanguage);
+    }
+
+    [Fact]
+    public void SpeakerConsentChanged_Granted_PlaysTheConfirmationTone()
+    {
+        var sound = Substitute.For<IConsentSoundPlayer>();
+        var (vm, service, _, _, _) = CreateSutWithVault(consentSound: sound);
+        service.RaiseSpeakerRegistered("Speaker 2");
+
+        service.RaiseConsentChanged(
+            "Alice", ConsentState.Unknown, ConsentState.Granted, "Alice", originalSpeakerLabel: "Speaker 2");
+
+        sound.Received(1).PlayConsentGranted();
+    }
+
+    [Fact]
+    public void SpeakerConsentChanged_Revoked_PlaysNoTone()
+    {
+        var sound = Substitute.For<IConsentSoundPlayer>();
+        var (vm, service, _, _, _) = CreateSutWithVault(consentSound: sound);
+        service.RaiseSpeakerRegistered("Speaker 2");
+
+        service.RaiseConsentChanged("Speaker 2", ConsentState.Granted, ConsentState.Revoked, null);
+
+        sound.DidNotReceive().PlayConsentGranted();
+    }
+
     private static (DirectTranscriptionViewModel vm, FakeDirectTranscriptionService service) CreateSut()
     {
         var (vm, service, _) = CreateSutWithDialog();
@@ -432,13 +497,17 @@ public class DirectTranscriptionViewModelTests
     }
 
     private static (DirectTranscriptionViewModel vm, FakeDirectTranscriptionService service, IDialogService dialog,
-        IMemoryService memory, IIngestScheduler ingest) CreateSutWithVault()
+        IMemoryService memory, IIngestScheduler ingest) CreateSutWithVault(
+        IClipboardService? clipboard = null,
+        IConsentSoundPlayer? consentSound = null,
+        TargetLanguage uiLanguage = TargetLanguage.EN)
     {
         var settingsService = Substitute.For<ISettingsService>();
         settingsService.GetSettingsAsync().Returns(new AppSettings());
 
         // Echo the key back as its own value so status/title assertions can match by key without a real resx.
         var loc = Substitute.For<ILocalizationService>();
+        loc.CurrentLanguage.Returns(uiLanguage);
         loc[Arg.Any<string>()].Returns(ci => ci.Arg<string>());
         // Key plus its arguments, so an assertion can see the substituted detail without a real resx.
         loc.Format(Arg.Any<string>(), Arg.Any<object[]>())
@@ -457,7 +526,8 @@ public class DirectTranscriptionViewModelTests
         var vm = new DirectTranscriptionViewModel(
             service, settingsService, loc, files, dialog, memory, ingest,
             Substitute.For<Wpf.Ui.ISnackbarService>(),
-            NullLogger<DirectTranscriptionViewModel>.Instance, new InlineUiDispatcher());
+            NullLogger<DirectTranscriptionViewModel>.Instance, new InlineUiDispatcher(),
+            clipboard, consentSound);
 
         return (vm, service, dialog, memory, ingest);
     }

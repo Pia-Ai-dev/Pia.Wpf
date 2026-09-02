@@ -92,7 +92,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Controls.Flow.FlowView), 10, 10, "CardDecisionBar,PiaChatStateBadge")]
     [InlineData(typeof(Pia.Controls.Assistant.PiaChatTitleChip), 11, 2, "PiaAssistantChatRowContent")]
     [InlineData(typeof(Pia.Views.VoiceModeOverlay), 3, 0, "RecordingIndicator")]
-    [InlineData(typeof(Pia.Views.DirectTranscriptionOverlay), 12, 1, "ListeningIndicator")]
+    [InlineData(typeof(Pia.Views.DirectTranscriptionOverlay), 16, 1, "ListeningIndicator")]
     [InlineData(typeof(Pia.Controls.Chat.PiaSuggestionChips), 1, 1, "")]
     [InlineData(typeof(Pia.Controls.Chat.PiaAgentModeChip), 1, 1, "")]
     [InlineData(typeof(Pia.Controls.MarkdownMessageControl), 1, 0, "")]
