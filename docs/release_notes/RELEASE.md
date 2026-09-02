@@ -117,6 +117,9 @@ Successor to 1.3.389, covering roughly six weeks of work.
   image — is named in the result, so an unsearchable document no longer looks
   like an absent answer. Saved mail is read-only: Pia will not write over a
   .msg or .eml.
+- Searching those files no longer depends on getting the capitalisation right.
+  A search typed in lower case matches any capitalisation; adding a capital
+  letter asks for an exact match, so looking for TODO still finds only TODO.
 - Answers can be exported to a file, and Pia asks where it should go.
 
 ## Privacy, security and administration

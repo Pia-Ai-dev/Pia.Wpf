@@ -412,4 +412,29 @@ public class FilesToolHandlerSearchTests : IDisposable
         Assert.Contains("scan.pdf", result);
         Assert.Contains("notes.txt:1:", result);
     }
+
+    [Fact]
+    public async Task Search_AllLowercasePattern_IgnoresCase()
+    {
+        Write("a.txt", "Kekse mit Zimt");
+
+        Assert.Contains("a.txt:1:Kekse mit Zimt", await SearchAsync("kekse"));
+    }
+
+    [Fact]
+    public async Task Search_PatternWithACapital_MatchesCaseExactly()
+    {
+        Write("a.txt", "todo: buy milk");
+
+        Assert.Contains("No matches found", await SearchAsync("TODO"));
+    }
+
+    [Fact]
+    public async Task Search_AnEscapeIsNotACapital()
+    {
+        // '\S' must not read as an uppercase S, or the pattern would silently turn case-sensitive.
+        Write("a.txt", "Kekse");
+
+        Assert.Contains("a.txt:1:Kekse", await SearchAsync(@"kekse\S*"));
+    }
 }
