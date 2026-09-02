@@ -201,10 +201,10 @@
   <data name="Msg_Memory_SourcesNoTextTitle" xml:space="preserve"><value>Keine Textdateien</value></data>
   <data name="Msg_Memory_SourcesNoText" xml:space="preserve"><value>Nur Textdateien können zu den Quellen hinzugefügt werden.</value></data>
   <data name="Msg_Memory_SourcesAddFailed" xml:space="preserve"><value>Die abgelegten Dateien konnten nicht hinzugefügt werden: {0}</value></data>
-  <data name="Msg_MeetingSave_Saved" xml:space="preserve"><value>Im Wissensspeicher gesichert</value></data>
+  <data name="Msg_MeetingSave_Saved" xml:space="preserve"><value>Im Vault gespeichert</value></data>
   <data name="Msg_MeetingSave_SavedDetail" xml:space="preserve"><value>{0} — Verarbeitung gestartet</value></data>
-  <data name="Msg_MeetingSave_Failed" xml:space="preserve"><value>Das Meeting konnte nicht im Wissensspeicher gesichert werden: {0}</value></data>
-  <data name="Msg_MeetingSave_NoFreeName" xml:space="preserve"><value>unter diesem Namen sind bereits zu viele Meetings gesichert</value></data>
+  <data name="Msg_MeetingSave_Failed" xml:space="preserve"><value>Das Meeting konnte nicht im Vault gespeichert werden: {0}</value></data>
+  <data name="Msg_MeetingSave_NoFreeName" xml:space="preserve"><value>unter diesem Namen sind bereits zu viele Meetings gespeichert</value></data>
   <data name="Msg_Memory_SaveFailed" xml:space="preserve"><value>Speichern der Erinnerung fehlgeschlagen: {0}</value></data>
   <data name="Msg_Memory_StaleDeleted" xml:space="preserve"><value>{0} veraltete Erinnerungen gelöscht.</value></data>
   <data name="Msg_Memory_StaleFound" xml:space="preserve"><value>{0} Erinnerungen gefunden, auf die seit über 90 Tagen nicht zugegriffen wurde:</value></data>

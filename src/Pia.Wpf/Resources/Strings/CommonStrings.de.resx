@@ -64,7 +64,7 @@
   <data name="MeetingAttendee_Join" xml:space="preserve"><value>Meeting beitreten</value></data>
   <data name="MeetingAttendee_Stop" xml:space="preserve"><value>Meeting verlassen</value></data>
   <data name="MeetingAttendee_Save" xml:space="preserve"><value>Speichern…</value></data>
-  <data name="MeetingAttendee_SaveToVault" xml:space="preserve"><value>In Wissensspeicher…</value></data>
+  <data name="MeetingAttendee_SaveToVault" xml:space="preserve"><value>Im Vault speichern…</value></data>
   <data name="MeetingAttendee_Url_Label" xml:space="preserve"><value>Teams-Meeting-Link</value></data>
   <data name="MeetingAttendee_Url_Placeholder" xml:space="preserve"><value>https://teams.microsoft.com/l/meetup-join/…</value></data>
   <data name="MeetingAttendee_Consent_Label" xml:space="preserve"><value>Ich bestätige, dass ich einen Assistenten an diesem Meeting teilnehmen und es transkribieren lassen darf.</value></data>
@@ -102,7 +102,7 @@
   <data name="DirectTrans_Stop" xml:space="preserve"><value>Stopp</value></data>
   <data name="DirectTrans_Resume" xml:space="preserve"><value>Fortsetzen</value></data>
   <data name="DirectTrans_Save" xml:space="preserve"><value>Speichern</value></data>
-  <data name="DirectTrans_SaveToVault" xml:space="preserve"><value>In Wissensspeicher…</value></data>
+  <data name="DirectTrans_SaveToVault" xml:space="preserve"><value>Im Vault speichern…</value></data>
   <data name="DirectTrans_SaveAndSummarize" xml:space="preserve"><value>Speichern &amp; Zusammenfassen</value></data>
   <data name="DirectTrans_SaveDialog_Title" xml:space="preserve"><value>Transkript speichern</value></data>
   <data name="DirectTrans_SaveDialog_Filter" xml:space="preserve"><value>Markdown-Dateien (*.md)|*.md</value></data>
@@ -134,7 +134,7 @@
   <data name="DirectTrans_SummaryPrompt" xml:space="preserve"><value>Bitte fasse das folgende Transkript einer Direktaufzeichnung vom {0} zusammen.</value></data>
   <data name="Speaker_Me" xml:space="preserve"><value>ich</value></data>
   <data name="Speaker_Them" xml:space="preserve"><value>sie</value></data>
-  <data name="MeetingSave_DialogTitle" xml:space="preserve"><value>Meeting im Wissensspeicher sichern</value></data>
+  <data name="MeetingSave_DialogTitle" xml:space="preserve"><value>Meeting im Vault speichern</value></data>
   <data name="MeetingSave_DefaultTitle" xml:space="preserve"><value>Meeting {0}</value></data>
   <data name="MeetingSave_Title_Label" xml:space="preserve"><value>Titel</value></data>
   <data name="MeetingSave_Title_Placeholder" xml:space="preserve"><value>Worum ging es in diesem Meeting?</value></data>

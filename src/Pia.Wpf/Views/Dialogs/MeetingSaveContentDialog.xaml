@@ -6,6 +6,7 @@
                   xmlns:loc="clr-namespace:Pia.Localization"
                   Title="{loc:Str MeetingSave_DialogTitle}"
                   PrimaryButtonText="{loc:Str Common_Save}"
+                  PrimaryButtonIcon="{ui:SymbolIcon BookAdd24}"
                   CloseButtonText="{loc:Str Common_Cancel}"
                   DefaultButton="Primary"
                   IsPrimaryButtonEnabled="{Binding CanSave}"

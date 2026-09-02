@@ -6,6 +6,7 @@
                   xmlns:loc="clr-namespace:Pia.Localization"
                   Title="{loc:Str AnswerExport_DialogTitle}"
                   PrimaryButtonText="{loc:Str AnswerExport_StoreInVault}"
+                  PrimaryButtonIcon="{ui:SymbolIcon BookAdd24}"
                   SecondaryButtonText="{loc:Str AnswerExport_External}"
                   CloseButtonText="{loc:Str Common_Cancel}"
                   DefaultButton="Primary"

@@ -461,6 +461,7 @@
                    Margin="8,0,0,0"
                    Padding="20,10"
                    Appearance="Secondary"
+                   Icon="{ui:SymbolIcon BookAdd24}"
                    Content="{loc:Str MeetingAttendee_SaveToVault}"
                    Visibility="{Binding IsRunning, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
         <ui:Button Command="{Binding SummarizeWithAssistantCommand}"
