@@ -87,11 +87,11 @@ rewrite it in place as work lands; it ships as the GitHub release body and, verb
 back to a raw `git-cliff` commit dump only when the file has no changes since the last release
 tag — so an unedited file is safe, but the bar for "curated" is that the body actually changed,
 not that anyone remembered a version number. Read `docs/release_notes/README.md` for the format
-rules (hard-wrap 80, one bullet level, no tables) before editing it. After a release ships you
-**must** archive it by hand — copy to `YYYY-MM-DD-<version>.md`, truncate `RELEASE.md`, commit with
-`[skip ci]` — because a push to `main` without it cuts another release. CI cannot do this: the
-`Main` ruleset refuses the bot's push, so the step was removed. A build now refuses to start if
-`RELEASE.md` still holds the previous release's body.
+rules (hard-wrap 80, one bullet level, no tables, four lines per bullet) before editing it. After
+a release ships you **must** archive it by hand — copy to `YYYY-MM-DD-<version>.md`, truncate
+`RELEASE.md`, commit with `[skip ci]` — because a push to `main` without it cuts another release.
+CI cannot do this: the `Main` ruleset refuses the bot's push, so the step was removed. A build now
+refuses to start if `RELEASE.md` still holds the previous release's body.
 
 ## Privacy-First Logging
 

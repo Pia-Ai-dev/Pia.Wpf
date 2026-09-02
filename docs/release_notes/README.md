@@ -27,8 +27,24 @@ Markdown**, while GitHub renders the same bytes. Both have to be legible:
   changed since the last release tag, so notes nobody refreshed fall back to git-cliff instead of
   republishing the previous release's text.
 
-Write for someone deciding whether to update — what they can now do, and what changes under them.
-Not commit subjects, never a `Co-Authored-By:` trailer or an internal batch or spec id.
+## How long, and how precise
+
+Write for someone deciding whether to update. Not commit subjects, never a `Co-Authored-By:`
+trailer or an internal batch or spec id.
+
+- **One bullet per change, and the bullet is the change** — not its history.
+- **Sentence one says what the reader can now do**, or what changes under them. Every later sentence
+  has to earn its place: a caveat, a migration, a number, a thing that still needs doing.
+- **Four lines is the ceiling**, six if a migration has to be spelled out. A section is one to five
+  bullets. If a bullet needs more, it is two changes or it is explaining itself.
+- **Cut**: how it used to work, unless the old behaviour is what misled people · why it was built ·
+  the mechanism · class, file and setting names · what it was measured against · anything a reader
+  cannot act on.
+- Name UI exactly as the UI does — panel titles, button labels, checkbox text. An invented name
+  sends the reader hunting for something that is not there.
+
+The bar is that a reader can tell in one line whether this release affects them. Prose that explains
+itself belongs in the commit message, which is where the reasoning is preserved anyway.
 
 ## After a release — archive by hand
 
