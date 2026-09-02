@@ -1,4 +1,4 @@
-# Pia 1.4
+﻿# Pia 1.4
 
 ## Vault
 
@@ -9,6 +9,16 @@
   those buttons carries the same icon.
 
 ## Assistant
+
+- Chat history is now always cleaned up, and you can keep it for up to two
+  years. The "Save chat history" checkbox is gone. Unchecking it never
+  stopped Pia from storing chats — it only switched off the cleanup, so
+  chats piled up for good on exactly the machines that had asked for the
+  opposite. New installations keep chats for 180 days rather than 30, and an
+  installation that had the checkbox off moves to that 180-day window instead
+  of being cut back to the old 30 days. Everyone else keeps the retention they
+  already had. The slider moves in one-week steps so the longer range stays
+  usable, and "Delete all chat history now" still clears everything at once.
 
 - The files an agent step changes now collapse into one line. A step that
   wrote twenty files used to leave twenty bordered diff cards behind, each

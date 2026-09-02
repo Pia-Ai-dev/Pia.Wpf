@@ -1,4 +1,4 @@
-# Assistant Chat History — Server Contract
+﻿# Assistant Chat History — Server Contract
 
 Spec for the server endpoints, schemas, and behavior required to support the
 **Assistant Chat History** feature in `Pia.Wpf` (`feature/assistant_history`).
@@ -269,8 +269,8 @@ the chat document as a whole is the unit of conflict.
 
 ## 7. Retention (server side)
 
-The **client owns retention policy** (user-configurable, default 30 days
-without access, max 365). The server's role:
+The **client owns retention policy** (user-configurable, default 180 days
+without access, max 730). The server's role:
 
 - Store chats indefinitely until the client explicitly `DELETE`s them.
 - Tombstones (§4.4) should live at least 30 days so multi-device deletes

@@ -1,4 +1,4 @@
-# Open WebUI import: the freeze and the one-message chats
+﻿# Open WebUI import: the freeze and the one-message chats
 
 **Status:** Implemented (both reported defects fixed and verified end-to-end)
 **Owner:** Marco Altmann
@@ -116,7 +116,7 @@ service makes `Import_DoesNotRunOnTheCallersSynchronizationContext` fail on all 
 
 ### Retention deletes an imported archive on the next launch — read this before importing
 
-`AssistantChatRetentionService` evicts chats older than `ChatHistoryRetentionDays` (default 30) at
+`AssistantChatRetentionService` evicts chats older than `ChatHistoryRetentionDays` (default 180) at
 startup. An Open WebUI migration is almost entirely older than that, so the very next launch deleted
 **561 of the 573** imported chats. Reproduced in the throwaway profile; raising the setting to 365 was
 what made the verification above possible at all.

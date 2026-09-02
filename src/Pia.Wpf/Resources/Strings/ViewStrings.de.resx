@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:element name="root" msdata:IsDataSet="true">
@@ -559,15 +559,11 @@
   <data name="Dialog_FolderMove_Verifying" xml:space="preserve"><value>Wird überprüft…</value></data>
   <data name="Dialog_FolderMove_CleaningUp" xml:space="preserve"><value>Wird aufgeräumt…</value></data>
   <data name="Settings_Chat_Section" xml:space="preserve"><value>Chatverlauf</value></data>
-  <data name="Settings_Chat_HistoryEnabled" xml:space="preserve"><value>Chatverlauf speichern</value></data>
-  <data name="Settings_Chat_HistoryEnabled_Description" xml:space="preserve"><value>Assistenten-Chats auf diesem Gerät speichern, damit du sie später fortsetzen und durchsuchen kannst.</value></data>
   <data name="Settings_Chat_RetentionDays" xml:space="preserve"><value>Chats löschen, die seit {0} Tagen nicht geöffnet wurden</value></data>
   <data name="Settings_Chat_RetentionDays_Label" xml:space="preserve"><value>Aufbewahrung (Tage)</value></data>
   <data name="Settings_Chat_AutoTitle" xml:space="preserve"><value>Chat-Titel automatisch erstellen (verbraucht Tokens)</value></data>
   <data name="Settings_Chat_AutoTitle_Hint" xml:space="preserve"><value>Führt eine kleine zusätzliche Anfrage aus, um einen kurzen Titel pro Chat zu generieren.</value></data>
   <data name="Settings_Chat_DeleteAllNow" xml:space="preserve"><value>Gesamten Chatverlauf jetzt löschen</value></data>
-  <data name="Settings_Chat_DisableConfirmTitle" xml:space="preserve"><value>Chatverlauf deaktivieren?</value></data>
-  <data name="Settings_Chat_DisableConfirmBody" xml:space="preserve"><value>Beim Deaktivieren des Chatverlaufs werden alle bestehenden lokalen Chats gelöscht. Dies kann nicht rückgängig gemacht werden. Fortfahren?</value></data>
   <data name="AssistantHistory_DeleteAllConfirmTitle" xml:space="preserve"><value>Alle Chats löschen</value></data>
   <data name="AssistantHistory_DeleteAllConfirmBody" xml:space="preserve"><value>Wirklich alle Chats auf diesem Gerät löschen? Dies kann nicht rückgängig gemacht werden.</value></data>
   <data name="Settings_GlobalHotkeys" xml:space="preserve"><value>Globale Tastenkürzel</value></data>

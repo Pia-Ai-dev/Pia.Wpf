@@ -1,4 +1,4 @@
-namespace Pia.Models;
+﻿namespace Pia.Models;
 
 public enum OutputAction
 {
@@ -434,8 +434,23 @@ public class AppSettings
     public int AssistantFolderLayoutVersion { get; set; } = 0;
 
     // Assistant chat history
-    public bool ChatHistoryEnabled { get; set; } = true;
-    public int ChatHistoryRetentionDays { get; set; } = 30;
+    public int ChatHistoryRetentionDays { get; set; } = DefaultChatHistoryRetentionDays;
+
+    public const int MinChatHistoryRetentionDays = 1;
+
+    public const int MaxChatHistoryRetentionDaysCap = 730;
+
+    public const int DefaultChatHistoryRetentionDays = 180;
+
+    /// <summary>What new installs started on before the default moved to 180. Policy default-matching
+    /// still reads it as untouched, or adding a policy default would stop reaching those installs.</summary>
+    public const int LegacyChatHistoryRetentionDays = 30;
+
+    /// <summary>The retention window, clamped on READ so a hand-edited or out-of-range policy value
+    /// cannot evict everything at zero or outlive the cap.</summary>
+    public int GetChatHistoryRetentionDays() =>
+        Math.Clamp(ChatHistoryRetentionDays, MinChatHistoryRetentionDays, MaxChatHistoryRetentionDaysCap);
+
     public bool ChatAutoTitleEnabled { get; set; } = false;
 
     // Auto-update

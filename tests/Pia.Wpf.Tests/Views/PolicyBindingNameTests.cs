@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.RegularExpressions;
 using Pia.Models;
 using Xunit;
@@ -54,7 +54,7 @@ public class PolicyBindingNameTests
         var names = BoundNames();
 
         Assert.True(names.Length >= 20, $"expected the settings views to carry policy bindings, found {names.Length}");
-        Assert.Contains(names, n => n.Name == nameof(AppSettings.ChatHistoryEnabled));
+        Assert.Contains(names, n => n.Name == nameof(AppSettings.ChatHistoryRetentionDays));
         Assert.Contains(names, n => n.Name == nameof(AppSettings.AssistantFileToolsEnabled));
     }
 }
