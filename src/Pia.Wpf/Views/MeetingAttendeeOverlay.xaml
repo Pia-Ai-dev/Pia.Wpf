@@ -493,7 +493,9 @@
     </Border>
 
     <!-- Drag-over hint. Sits above the overlay's own content; the chat view's hint stays away because
-         FileDropBehavior stands down for the nearer target, leaving its IsDragOver false. -->
+         FileDropBehavior stands down for the nearer target, leaving its IsDragOver false. The backdrop
+         is opaque, unlike the chat view's acrylic one: that reads as frosted glass only because
+         AssistantView blurs its content underneath, and this overlay has no such blur. -->
     <Border Grid.Row="0" Grid.RowSpan="3"
             IsHitTestVisible="False"
             Panel.ZIndex="20"
@@ -501,7 +503,7 @@
             CornerRadius="8"
             BorderThickness="2"
             BorderBrush="{DynamicResource AccentFillColorDefaultBrush}"
-            Background="{DynamicResource AcrylicBackgroundFillColorBaseBrush}"
+            Background="{DynamicResource BgCanvasBrush}"
             Visibility="{Binding Path=(behaviors:FileDropBehavior.IsDragOver), ElementName=DropRoot, Converter={StaticResource BooleanToVisibilityConverter}}">
       <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
         <ui:SymbolIcon Symbol="CalendarArrowDown24"
