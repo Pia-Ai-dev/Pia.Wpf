@@ -58,6 +58,43 @@ public sealed class TeamsMeetingSession : IMeetingSession
     /// </summary>
     private const string BrowserLocale = "en-US";
 
+    /// <summary>
+    /// Mirror of the Playwright driver's own disabledFeatures, in its order. Chromium keeps only the
+    /// last <c>--disable-features</c>, so ours has to re-state Playwright's or its hardening — Cast
+    /// and DIAL device discovery among it — silently comes back on.
+    /// </summary>
+    internal static readonly string[] PlaywrightDisabledFeatures =
+    [
+        "AvoidUnnecessaryBeforeUnloadCheckSync",
+        "BoundaryEventDispatchTracksNodeRemoval",
+        "DestroyProfileOnBrowserClose",
+        "DialMediaRouteProvider",
+        "GlobalMediaControls",
+        "HttpsUpgrades",
+        "LensOverlay",
+        "MediaRouter",
+        "PaintHolding",
+        "ThirdPartyStoragePartitioning",
+        "BlockOriginHeaderModificationOnRedirect",
+        "Translate",
+        "AutoDeElevate",
+        "OptimizationHints",
+        "msForceBrowserSignIn",
+        "msEdgeUpdateLaunchServicesPreferredVersion",
+    ];
+
+    /// <summary>Pia's own additions on top of <see cref="PlaywrightDisabledFeatures"/>.</summary>
+    internal static readonly string[] PiaDisabledFeatures =
+    [
+        // The window is parked off-screen, which computes as occluded and throttles the very renderer
+        // whose audio we capture.
+        "CalculateNativeWinOcclusion",
+        // Chromium's mDNS candidate obfuscation binds UDP 5353 on every interface, which asks a
+        // non-admin user for Windows Firewall access mid-join. Local IPs in the SDP are no loss here:
+        // the join is anonymous and the SDP never leaves the meeting.
+        "WebRtcHideLocalIpsWithMdns",
+    ];
+
     // ---- Centralized selectors / page text (ported from join-procedure.ts) ------------------
     private const string ContinueOnWebSelector = "button[data-tid=\"joinOnWeb\"]";
     private const string HangupButtonSelector = "button[id=\"hangup-button\"]";
@@ -857,29 +894,29 @@ public sealed class TeamsMeetingSession : IMeetingSession
         return TeamsMeetingUrl.BuildLauncherUrl(resolved);
     }
 
-    private async Task LaunchBrowserAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// The Chromium switches for one launch. Static and internal so the test gate can assert the
+    /// single <c>--disable-features</c> still carries the Playwright list it would otherwise replace.
+    /// </summary>
+    internal static string[] BuildLaunchArgs(BrowserLaunchSpec spec)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        _playwright = await Microsoft.Playwright.Playwright.CreateAsync().ConfigureAwait(false);
-
         var args = new List<string>
         {
             // Allow media to start playing without a user gesture so meeting audio renders.
             // NOTE: deliberately NO --mute-audio and NO fake audio output device — muting output
             // or faking the playback device would kill the very audio we need to capture.
             "--autoplay-policy=no-user-gesture-required",
-            // Occlusion / background-throttling insurance: a non-visible (off-screen) window can have
-            // its renderer backgrounded/throttled, which can stall the audio render we capture.
-            "--disable-features=CalculateNativeWinOcclusion",
+            // One switch for both lists, because Chromium honours only the last occurrence. Never add
+            // an --enable-features here either: Playwright passes its own and we would erase it.
+            $"--disable-features={string.Join(',', PlaywrightDisabledFeatures.Concat(PiaDisabledFeatures))}",
             "--disable-backgrounding-occluded-windows",
             "--disable-renderer-backgrounding",
             "--disable-background-timer-throttling",
-            // Chromium's own UI language and its default Accept-Language; the context Locale below is
-            // what Teams actually reads, but a system Chrome/Edge should not disagree with it.
+            // Chromium's own UI language and its default Accept-Language; the context Locale set after
+            // launch is what Teams actually reads, but a system Chrome/Edge should not disagree with it.
             $"--lang={BrowserLocale}",
         };
-        if (!_launchSpec.ShowWindow)
+        if (!spec.ShowWindow)
         {
             // Far off-screen + a real size so the page lays out yet nothing is visible on screen.
             args.Add("--window-position=-32000,-32000");
@@ -887,11 +924,20 @@ public sealed class TeamsMeetingSession : IMeetingSession
         }
         // else: no off-screen args — let the window open on-screen and the meeting be audible.
 
+        return [.. args];
+    }
+
+    private async Task LaunchBrowserAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        _playwright = await Microsoft.Playwright.Playwright.CreateAsync().ConfigureAwait(false);
+
         var options = new BrowserTypeLaunchOptions
         {
             // Headed: required so Chromium creates a real audio render session we can capture.
             Headless = false,
-            Args = args.ToArray(),
+            Args = BuildLaunchArgs(_launchSpec),
         };
         // Exactly one of Channel / ExecutablePath is set (mutually exclusive in Playwright): a Channel
         // drives a system/branded install (Chrome/Edge), an ExecutablePath the bundled / arbitrary build.

@@ -120,3 +120,7 @@ the payload automatically.
   proving it cost a 0.1 MiB `install ffmpeg` rather than a browser download.
 - Not covered by tests, worth one human check after the next Playwright bump: the cache ends up with
   a single `chromium-<new revision>` folder and no `chromium_headless_shell-*`.
+
+This doc covers provisioning and cleanup, not the browser's network behaviour. For the local
+sockets it binds once launched, see
+`docs/meeting_firewall_prompt/2026-09-02-chromium-firewall-prompt.md`.

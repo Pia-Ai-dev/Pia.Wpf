@@ -12,6 +12,10 @@ allow, what leaves the machine and to whom, and whether any of it has rotted. Th
 more than it sounds — every call below is lazy (first use) and wrapped in a catch-and-log, so a dead
 URL presents as "nothing happened", not as an error.
 
+This inventory is **egress only**. For the sockets the meeting browser *binds* locally, and why
+that raised a Windows Firewall prompt, see
+`docs/meeting_firewall_prompt/2026-09-02-chromium-firewall-prompt.md`.
+
 **Scope.** Runtime egress from the shipped client. Build-time feeds (`api.nuget.org`) and the
 live-provider endpoints under `tests/` are excluded; a user's machine never dials those.
 
